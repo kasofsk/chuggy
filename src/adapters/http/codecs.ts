@@ -29,6 +29,7 @@ import { asPublicInstant } from "../../interpreter/publicResource.ts";
 import type { NotificationBatch } from "../../interpreter/notifications.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
+import { asConfigurationVersion } from "../../interpreter/repositoryConfigurationIdentity.ts";
 import { parseInventoryCursor } from "./contract.ts";
 
 export const errorResponseSchema = errorEnvelopeSchema;
@@ -70,10 +71,18 @@ function dispatchViewPage(value: DispatchViewResponse): DispatchViewPage {
   return {
     result: "Page",
     token: value.token,
-    candidates: value.candidates.map((candidate) => ({
-      ...candidate,
-      ticket: asTicketId(candidate.ticket),
-    })),
+    candidates: value.candidates.map(
+      ({ configurationVersion, ...candidate }) => ({
+        ...candidate,
+        ticket: asTicketId(candidate.ticket),
+        ...(configurationVersion === undefined
+          ? {}
+          : {
+              configurationVersion:
+                asConfigurationVersion(configurationVersion),
+            }),
+      }),
+    ),
     ...(value.nextAfter === undefined
       ? {}
       : { nextAfter: asTicketId(value.nextAfter) }),

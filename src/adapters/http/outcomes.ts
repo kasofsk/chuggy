@@ -431,6 +431,9 @@ function draftBody(draft: DraftResource): unknown {
     authoringVersion: draft.authoringVersion,
     state: draft.state,
     configurationRevision: draft.configurationRevision,
+    ...(draft.configurationVersion === undefined
+      ? {}
+      : { configurationVersion: draft.configurationVersion }),
     authoring: {
       dependencies: [...draft.authoring.deps],
       program: draft.authoring.prog,

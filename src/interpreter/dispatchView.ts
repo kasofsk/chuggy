@@ -7,6 +7,7 @@ import type { Config } from "../domain/config.ts";
 import { ticketAt, ticketIds } from "../domain/core.ts";
 import type { Core, Stage } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
+import type { ConfigurationVersion } from "./repositoryConfigurationIdentity.ts";
 import {
   decodeFinalizationPricing,
   decodeReworkPolicy,
@@ -37,6 +38,8 @@ export interface DispatchCandidate {
   readonly configurationRevision: string;
   readonly configurationDigest: string;
   readonly configurationCanonical: string;
+  /** The label a read attaches beside the digested value, which `canonicalCandidate` omits. */
+  readonly configurationVersion?: ConfigurationVersion;
 }
 
 export interface DispatchContractPin {

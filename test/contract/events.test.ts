@@ -36,6 +36,7 @@ import {
   draft as draftResource,
   operation,
   partition,
+  versionedConfiguration,
 } from "./representations.ts";
 
 const ticketRepresentation = ticketResponse({
@@ -101,6 +102,24 @@ test("every kind parses the body its own GET route answers with", () => {
       kind,
     );
   }
+});
+
+test("a configuration frame carries the version the read answers with", () => {
+  const event = parseProjectStreamEvent({
+    event: "Configuration",
+    id: "8",
+    data: {
+      version: projectStreamVersion,
+      resource: "revision-one",
+      representation: configurationResponse(versionedConfiguration).body,
+    },
+  });
+  assert.deepEqual(
+    event.event === "Configuration"
+      ? event.data.representation?.version
+      : undefined,
+    { name: "work", number: 3 },
+  );
 });
 
 test("a representation another kind's route would answer with is refused", () => {

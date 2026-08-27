@@ -17,6 +17,9 @@ import type {
   DraftResource,
 } from "../../src/interpreter/authoring.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
+import { dispatchViewSchemaVersion } from "../../src/contract/http.ts";
+import type { DispatchViewPage } from "../../src/interpreter/dispatchView.ts";
+import { asConfigurationVersion } from "../../src/interpreter/repositoryConfigurationIdentity.ts";
 import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
 import type { ExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
 import type {
@@ -108,6 +111,19 @@ export const configuration: ConfigurationRevisionResource = {
   digest,
 };
 
+/** The label a repository-imported revision carries, which an authored one has none of. */
+export const configurationVersion = asConfigurationVersion({
+  name: "work",
+  number: 3,
+});
+
+export const versionedConfiguration: ConfigurationRevisionResource = {
+  ...configuration,
+  version: configurationVersion,
+};
+
+export const versionedDraft: DraftResource = { ...draft, configurationVersion };
+
 export const requirement: ExecutionRequirement = {
   mode: "Container",
   operatingSystem: "Linux",
@@ -132,6 +148,41 @@ export const executionSummary: ExecutionSummary = {
   retriesSpent: 2,
   registeredAt: instant,
   terminalAt: instant,
+};
+
+export const versionedExecutionSummary: ExecutionSummary = {
+  ...executionSummary,
+  configurationVersion,
+};
+
+/** One dispatch page, whose candidate carries the label beside the digested pin. */
+export const versionedDispatchViewPage: DispatchViewPage = {
+  result: "Page",
+  token: {
+    ...partition,
+    recoveryEpoch: "epoch-one",
+    schemaVersion: dispatchViewSchemaVersion,
+    watermark: 4,
+    digest,
+  },
+  candidates: [
+    {
+      ticket: asTicketId(3),
+      ticketVersion: 2,
+      dependencies: [],
+      workFanout: 1,
+      program: [{ fanout: 1, combinator: "UnanimousPass" }],
+      reworkPolicy: { type: "BudgetedRework", value: 0 },
+      finalizationPricing: "DeadlineOnly",
+      resumePricing: "RetryCharged",
+      finalizer: "ManagedFinalizer",
+      configurationRevision: revision,
+      configurationDigest: digest,
+      configurationCanonical: "{}",
+      configurationVersion,
+    },
+  ],
+  notificationCursor: 7,
 };
 
 export const execution: ExecutionResource = {

@@ -11,6 +11,7 @@ import type {
 } from "./executionScheduler.ts";
 import { allExecutionStatuses } from "./executionScheduler.ts";
 import type { Partition } from "./projectStore.ts";
+import type { ConfigurationVersion } from "./repositoryConfigurationIdentity.ts";
 import type { AttemptId, ClusterId, ExecutionId } from "./schedulerIdentity.ts";
 import type {
   ArtifactDigest,
@@ -72,6 +73,7 @@ export interface ExecutionSummary {
   readonly stage?: number;
   readonly cluster: ClusterId;
   readonly configurationRevision: ConfigurationRevisionId;
+  readonly configurationVersion?: ConfigurationVersion;
   readonly requirementIdentity: string;
   readonly requirement: ExecutionRequirement;
   readonly requirementDigest: string;

@@ -10,6 +10,7 @@ import {
   deriveDispatchCandidates,
   dispatchViewDigest,
 } from "../../src/interpreter/dispatchView.ts";
+import { asConfigurationVersion } from "../../src/interpreter/repositoryConfigurationIdentity.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 
@@ -87,6 +88,20 @@ test("every strict candidate fact participates in the digest", () => {
       dispatchViewDigest(candidates),
       dispatchViewDigest([replacement, ...candidates.slice(1)]),
     );
+});
+
+test("a configuration version sits beside the digested candidate, never inside it", () => {
+  const candidates = pendingCandidates();
+  const first = candidates[0];
+  assert.ok(first !== undefined);
+  const labelled = {
+    ...first,
+    configurationVersion: asConfigurationVersion({ name: "work", number: 2 }),
+  };
+  assert.equal(
+    dispatchViewDigest(candidates),
+    dispatchViewDigest([labelled, ...candidates.slice(1)]),
+  );
 });
 
 test("facts outside the strict view cannot invalidate its digest", () => {

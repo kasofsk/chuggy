@@ -205,6 +205,15 @@ const executionRequirementSchema = z.discriminatedUnion("mode", [
 ]);
 
 /**
+ * A repository-imported configuration's label. Absent means no label is known,
+ * which is what an authored revision carries.
+ */
+export const configurationVersionSchema = z.strictObject({
+  name: identitySchema,
+  number: ticketNumberSchema,
+});
+
+/**
  * The label the catalog holds for an admitted image. It sits beside the
  * requirement rather than inside it, because the requirement is the digested
  * value and a label is not part of what an execution is.
@@ -222,6 +231,7 @@ export const executionSummarySchema = z.object({
   stage: countSchema.optional(),
   cluster: identitySchema,
   configurationRevision: identitySchema,
+  configurationVersion: configurationVersionSchema.optional(),
   requirementIdentity: identitySchema,
   requirement: executionRequirementSchema,
   requirementDigest: digestSchema,
@@ -360,6 +370,7 @@ const dispatchCandidateSchema = z.strictObject({
   resumePricing: resumePricingSchema,
   finalizer: finalizerSchema,
   configurationRevision: identitySchema,
+  configurationVersion: configurationVersionSchema.optional(),
   configurationDigest: digestSchema,
   configurationCanonical: z.string().min(1),
 });
@@ -382,6 +393,7 @@ export const configurationResponseSchema = z.object({
   parent: identitySchema.optional(),
   canonical: z.string().min(1),
   digest: z.string().min(1),
+  version: configurationVersionSchema.optional(),
 });
 export type ConfigurationResponse = z.infer<typeof configurationResponseSchema>;
 
@@ -402,6 +414,7 @@ const configurationSummaryBase = {
   digest: z.string().min(1),
   createdAt: instantSchema,
   provenance: configurationProvenanceSchema,
+  version: configurationVersionSchema.optional(),
 };
 
 const configurationSummarySchema = z.discriminatedUnion("readiness", [
@@ -452,6 +465,7 @@ export const draftResponseSchema = z.object({
   authoringVersion: countSchema,
   state: z.enum(draftStates),
   configurationRevision: identitySchema,
+  configurationVersion: configurationVersionSchema.optional(),
   authoring: authoringResponseSchema,
   brief: briefResponseSchema.optional(),
 });

@@ -9,6 +9,15 @@ export type RepositoryConfigurationPath = string & {
   readonly [repositoryConfigurationPathBrand]: true;
 };
 
+/**
+ * A repository-imported configuration's label: the name it was declared under
+ * and the number that name's import order gave this declaration's digest.
+ */
+export interface ConfigurationVersion {
+  readonly name: RepositoryConfigurationName;
+  readonly number: number;
+}
+
 export const repositoryConfigurationDeclarationsMax = 100;
 export const repositoryConfigurationNameCharsMax = 128;
 export const repositoryConfigurationPathCharsMax = 256;
@@ -25,6 +34,19 @@ export function asRepositoryConfigurationName(
     /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/u.test(value)
     ? (value as RepositoryConfigurationName)
     : undefined;
+}
+
+/** The label a wire value names, refusing what the name rule does not admit. */
+export function asConfigurationVersion(value: {
+  readonly name: string;
+  readonly number: number;
+}): ConfigurationVersion {
+  const name = asRepositoryConfigurationName(value.name);
+  if (name === undefined)
+    throw new TypeError("configuration version names no configuration");
+  if (!Number.isSafeInteger(value.number) || value.number < 1)
+    throw new RangeError("configuration version is not a positive integer");
+  return { name, number: value.number };
 }
 
 export function asRepositoryConfigurationPath(
