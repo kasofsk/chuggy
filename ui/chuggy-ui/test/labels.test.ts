@@ -50,7 +50,7 @@ test("a repository revision offers its commit short, and an authored one none", 
       source: "Repository",
       repository: "kasofsk/chuggy",
       commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
-      path: ".chug/configurations/chuggy.json",
+      path: "configurations/chuggy.json",
       name: "chuggy",
     }),
   ).toBe("cfaca0a");

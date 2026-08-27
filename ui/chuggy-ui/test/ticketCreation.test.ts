@@ -73,7 +73,7 @@ test("the sentence names the configuration and keeps its revision on hover", () 
         source: "Repository",
         repository: "kasofsk/chuggy",
         commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
-        path: ".chug/configurations/chuggy.json",
+        path: "configurations/chuggy.json",
         name: "chuggy",
       },
       version: { name: "chuggy", number: 12 },
