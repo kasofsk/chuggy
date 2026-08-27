@@ -15,6 +15,7 @@ import { inboxCountLabel } from "../core/inboxList.ts";
 import { lastProjectWrite } from "../core/lastProject.ts";
 import { projectsInventoryKey } from "../core/projectQueryKeys.ts";
 import { usePanelQuery } from "./api.ts";
+import { Footer } from "./Footer.tsx";
 import { useInboxRows } from "./Inbox.tsx";
 import { persistentStore } from "./ports.ts";
 import { useSessionHolder } from "./session.tsx";
@@ -141,6 +142,7 @@ export function Shell(props: {
       <main className="shell-body">
         <Outlet />
       </main>
+      <Footer />
     </div>
   );
 }

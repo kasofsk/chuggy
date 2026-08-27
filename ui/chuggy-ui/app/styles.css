@@ -122,6 +122,13 @@ select:hover {
   font-size: var(--text-small);
 }
 
+.shell-foot {
+  padding: var(--gap) var(--gap-wide);
+  color: var(--ink-dim);
+  font-size: var(--text-small);
+  border-top: 1px solid var(--edge);
+}
+
 .banner {
   padding: var(--gap) var(--gap-wide);
   background: color-mix(in srgb, var(--warn) 14%, var(--ground));

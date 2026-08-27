@@ -22,6 +22,7 @@ import { apiProjectInventoryAll } from "../core/apiRoutes.ts";
 import { lastProjectOrFirst, lastProjectRead } from "../core/lastProject.ts";
 import { projectsInventoryKey } from "../core/projectQueryKeys.ts";
 import { usePanelQuery } from "./api.ts";
+import { Footer } from "./Footer.tsx";
 import { Inbox } from "./Inbox.tsx";
 import { Panel } from "./Panel.tsx";
 import { persistentStore } from "./ports.ts";
@@ -31,7 +32,9 @@ import { ProjectStreamProvider } from "./stream.tsx";
 import { TicketCreation } from "./TicketCreation.tsx";
 import { TicketPage } from "./TicketPage.tsx";
 
-function Landing(): ReactNode {
+/** Exported so a suite can mount the landing route directly — it builds its own
+ * shell markup rather than mounting `Shell`. */
+export function Landing(): ReactNode {
   const navigate = useNavigate();
   const state = usePanelQuery(projectsInventoryKey(), (ports) =>
     apiProjectInventoryAll(ports),
@@ -65,6 +68,7 @@ function Landing(): ReactNode {
           }
         </Panel>
       </main>
+      <Footer />
     </div>
   );
 }
