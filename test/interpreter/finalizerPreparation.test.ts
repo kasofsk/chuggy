@@ -37,6 +37,7 @@ import {
   conflictManifestBytesMax,
   conflictManifestText,
   handoffAccepted,
+  handoffSuperseded,
   type AttemptRecord,
   type HandoffArtifact,
   type HandoffGathering,
@@ -70,22 +71,29 @@ const partition = {
   project: asProjectId("project-prepare"),
 };
 
-/** One passed work execution, over the configuration a case names. */
-function workOf(canonical: string, marker = "a"): HandoffWork {
+/** One passed work execution of a named spawn, over the configuration a case names. */
+function workOf(
+  canonical: string,
+  marker = "a",
+  spawn = "spawn-a",
+  task = 1,
+): HandoffWork {
   return {
     execution: asExecutionId(`execution-${marker}`),
     attempt: asAttemptId(`attempt-${marker}`),
+    spawn,
+    task,
     manifest: asResultManifestId(`manifest-${marker}`),
     configuration: { revision: `revision-${marker}`, digest: digestOf(marker) },
     canonical: asCanonicalConfiguration(canonical),
   };
 }
 
-/** One declared handoff artifact of that execution. */
-function artifactOf(path: string, bytes = 1): HandoffArtifact {
+/** One declared handoff artifact of the execution a case names. */
+function artifactOf(path: string, bytes = 1, marker = "a"): HandoffArtifact {
   return {
-    execution: asExecutionId("execution-a"),
-    attempt: asAttemptId("attempt-a"),
+    execution: asExecutionId(`execution-${marker}`),
+    attempt: asAttemptId(`attempt-${marker}`),
     path: asArtifactPath(path),
     digest: asArtifactDigest(digestOf("b")),
     bytes,
@@ -104,12 +112,88 @@ function sourceOf(marker: string): HandoffSource {
   };
 }
 
+/** The configuration every supersession fixture pins, so no case there turns on the revision. */
+const oneConfiguration = '{"image":"i","version":1}';
+
 /** The plainest gathering there is: one passed execution and one artifact. */
 const plain: HandoffGathering = {
-  work: [workOf('{"image":"i","version":1}')],
+  work: [workOf(oneConfiguration)],
   artifacts: [artifactOf("one.txt")],
   sources: [],
 };
+
+/** One spawn's fan-out of two passed executions, which is where two sources genuinely conflict. */
+const fanned: HandoffGathering = {
+  work: [
+    workOf(oneConfiguration, "a", "spawn-one", 1),
+    {
+      ...workOf(oneConfiguration, "a", "spawn-one", 2),
+      execution: asExecutionId("execution-d"),
+      attempt: asAttemptId("attempt-d"),
+      manifest: asResultManifestId("manifest-d"),
+    },
+  ],
+  artifacts: [],
+  sources: [],
+};
+
+/** Three passed spawns of one ticket, latest first, as a reworked ticket's gather hands them over. */
+const reworked: HandoffGathering = {
+  work: [
+    workOf(oneConfiguration, "c", "spawn-three", 5),
+    workOf(oneConfiguration, "b", "spawn-two", 3),
+    workOf(oneConfiguration, "a", "spawn-one", 1),
+  ],
+  artifacts: [],
+  sources: [sourceOf("c"), sourceOf("b"), sourceOf("a")],
+};
+
+test("a rework supersedes the work it re-ran, and the latest spawn alone is prepared", () => {
+  const superseded = handoffSuperseded(reworked);
+  assert.deepEqual(
+    superseded.work.map((each) => each.execution),
+    ["execution-c"],
+  );
+  const accepted = handoffAccepted(superseded);
+  if (accepted.accepted !== "Handoff") assert.fail(JSON.stringify(accepted));
+  if (accepted.handoff.kind !== "Source") assert.fail("a source handoff");
+  assert.equal(accepted.handoff.source.execution, "execution-c");
+  assert.deepEqual(accepted.handoff.manifests, ["manifest-c"]);
+});
+
+test("a superseded spawn's artifacts are dropped rather than read as a second declaration", () => {
+  const accepted = handoffAccepted(
+    handoffSuperseded({
+      work: [
+        workOf(oneConfiguration, "c", "spawn-three", 5),
+        workOf(oneConfiguration, "a", "spawn-one", 1),
+      ],
+      artifacts: [artifactOf("one.txt", 1, "c"), artifactOf("one.txt", 2, "a")],
+      sources: [],
+    }),
+  );
+  if (accepted.accepted !== "Handoff") assert.fail(JSON.stringify(accepted));
+  if (accepted.handoff.kind !== "Artifacts") assert.fail("an artifact handoff");
+  assert.deepEqual(
+    accepted.handoff.artifacts.map((each) => each.execution),
+    ["execution-c"],
+  );
+});
+
+test("two sources declared by one spawn are the conflict the refusal was written for", () => {
+  const conflicting = { ...fanned, sources: [sourceOf("a"), sourceOf("d")] };
+  assert.deepEqual(handoffSuperseded(conflicting), conflicting);
+  const accepted = handoffAccepted(handoffSuperseded(conflicting));
+  assert.equal(
+    accepted.accepted === "Refused" ? accepted.refusal : accepted.accepted,
+    "SourceDeclaredTwice",
+  );
+});
+
+test("a gathering with no passed work at all supersedes nothing", () => {
+  const empty: HandoffGathering = { work: [], artifacts: [], sources: [] };
+  assert.deepEqual(handoffSuperseded(empty), empty);
+});
 
 test("a gathering with one passed execution is a candidate's worth of artifacts", () => {
   const accepted = handoffAccepted(plain);
@@ -176,7 +260,7 @@ test("every refusal names the revision an attempt must pin, and none of them is 
         artifactOf(`file-${String(index)}.txt`),
       ),
     }),
-    handoffAccepted({ ...plain, sources: [sourceOf("a"), sourceOf("b")] }),
+    handoffAccepted({ ...fanned, sources: [sourceOf("a"), sourceOf("d")] }),
     handoffAccepted({ ...plain, sources: [sourceOf("a")] }),
     handoffAccepted({
       ...plain,

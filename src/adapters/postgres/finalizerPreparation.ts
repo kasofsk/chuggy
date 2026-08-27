@@ -13,9 +13,17 @@
  * a candidate's worth is `../../interpreter/finalizerPreparation.ts`'s to say,
  * so this file has no notion of a refusal and no notion of an approval policy —
  * it hands back the passed work, its artifacts in path order, and the canonical
- * configuration those executions ran under. Both draws stop one row past the
+ * configuration those executions ran under. Every draw stops one row past the
  * ceiling the decision is made against, which is what keeps the refusal for
  * exceeding it reachable while bounding what a decision is ever handed.
+ *
+ * A REWORKED TICKET'S PASSED WORK IS SEVERAL SPAWNS DEEP, and which of them
+ * supersedes the rest is the interpreter's to say, so each draw is ordered by
+ * descending task number: the latest spawn's rows are the ones a ceiling can
+ * never truncate, and the rows a truncation drops are the superseded ones the
+ * decision was going to discard anyway. The task number is the ticket-local
+ * task id the domain mints, and every spawn's ids continue the ticket's
+ * sequential history, so descending task order is descending spawn order.
  *
  * THE FINALIZER READS EXECUTION ROWS AND WRITES NONE. Migration thirteen revokes
  * every scheduler relation from the role and then grants back `SELECT` on the
@@ -88,6 +96,8 @@ import { finalizerRowPresent, finalizerRowValue } from "./finalizerRows.ts";
 interface WorkRow {
   readonly execution: string;
   readonly attempt: string;
+  readonly spawn: string;
+  readonly task: string;
   readonly manifest: string;
   readonly configuration_revision: string;
   readonly configuration_digest: string;
@@ -133,6 +143,7 @@ async function preparationPassedWork(
   const found = await client.query<WorkRow>(
     sql`WITH passed AS (
     SELECT e.tenant, e.project, e.execution, r.attempt, r.manifest,
+           e.source_request, e.task,
            e.configuration_revision, e.configuration_digest, c.canonical
       FROM execution e
       JOIN execution_request_task t
@@ -148,14 +159,14 @@ async function preparationPassedWork(
      WHERE e.tenant = ${tenant} AND e.project = ${project} AND e.ticket = ${claim.ticket}
        AND t.kind = 'Work' AND e.status = 'Terminal' AND e.outcome = 'Passed'
        AND r.verdict = 'Pass')
-     SELECT execution, attempt, manifest, configuration_revision,
-            configuration_digest, canonical
-       FROM passed ORDER BY execution LIMIT ${candidateExecutionsMax + 1}`,
+     SELECT execution, attempt, source_request AS spawn, task::text AS task,
+            manifest, configuration_revision, configuration_digest, canonical
+       FROM passed ORDER BY task DESC LIMIT ${candidateExecutionsMax + 1}`,
   );
   return found.rows;
 }
 
-/** The handoff artifacts that passed work declared, in path order and bounded. */
+/** The handoff artifacts that passed work declared, latest spawn first and then in path order. */
 async function preparationPassedArtifacts(
   client: pg.PoolClient,
   claim: FinalizationClaim,
@@ -163,7 +174,7 @@ async function preparationPassedArtifacts(
   const { tenant, project } = claim.partition;
   const found = await client.query<ArtifactRow>(
     sql`WITH passed AS (
-    SELECT e.tenant, e.project, e.execution, r.attempt, r.manifest
+    SELECT e.tenant, e.project, e.execution, e.task, r.attempt, r.manifest
       FROM execution e
       JOIN execution_request_task t
         ON t.tenant = e.tenant AND t.project = e.project
@@ -183,13 +194,13 @@ async function preparationPassedArtifacts(
        JOIN execution_result_artifact a
          ON a.tenant = p.tenant AND a.project = p.project
             AND a.manifest = p.manifest
-      WHERE a.role = 'Handoff' ORDER BY a.path
+      WHERE a.role = 'Handoff' ORDER BY p.task DESC, a.path
       LIMIT ${candidateFilesMax + 1}`,
   );
   return found.rows;
 }
 
-/** The immutable source candidates that passed work declared. */
+/** The immutable source candidates that passed work declared, latest spawn first. */
 async function preparationPassedSources(
   client: pg.PoolClient,
   claim: FinalizationClaim,
@@ -211,7 +222,7 @@ async function preparationPassedSources(
      WHERE e.tenant = ${tenant} AND e.project = ${project} AND e.ticket = ${claim.ticket}
        AND t.kind = 'Work' AND e.status = 'Terminal' AND e.outcome = 'Passed'
        AND r.verdict = 'Pass'
-     ORDER BY e.execution LIMIT 2`,
+     ORDER BY e.task DESC LIMIT ${candidateExecutionsMax + 1}`,
   );
   return found.rows;
 }
@@ -228,6 +239,8 @@ export async function finalizerPreparationGathering(
     work: work.map((row): HandoffWork => ({
       execution: asExecutionId(row.execution),
       attempt: asAttemptId(row.attempt),
+      spawn: row.spawn,
+      task: projectRowCounter(row.task, "execution task"),
       manifest: asResultManifestId(row.manifest),
       configuration: {
         revision: row.configuration_revision,

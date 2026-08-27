@@ -37,18 +37,25 @@ import {
   asRepositoryId,
   type FinalizationClaim,
 } from "../../src/interpreter/finalizer.ts";
-import type { AttemptRecord } from "../../src/interpreter/finalizerPreparation.ts";
+import {
+  handoffAccepted,
+  handoffSuperseded,
+  type AttemptRecord,
+} from "../../src/interpreter/finalizerPreparation.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import {
   finalizerBriefBranch,
   finalizerClaim,
   finalizerCommit,
+  finalizerDeclareSource,
   finalizerDigest,
   finalizerExpireClaim,
   finalizerGitVerb,
   finalizerIdentity,
   finalizerMovingPort,
   finalizerPassOnce,
+  finalizerPassedWork,
+  finalizerProject,
   finalizerRemoteCommit,
   finalizerRemotePort,
   finalizerRigOpen,
@@ -478,4 +485,43 @@ test("the conflict manifest the attempt names is stored, read-only, and hashes t
     evidence["mergeBase"],
     finalizerGitVerb(remote.seed, "rev-parse", "HEAD~1"),
   );
+});
+
+test("a reworked ticket's gather hands back the source its latest passed work declared", async () => {
+  const project = await finalizerProject(rig, "supersede", undefined, 1);
+  const superseded = await finalizerPassedWork(rig, project, "a", []);
+  const latest = await finalizerPassedWork(rig, project, "b", []);
+  const retired = finalizerCommit();
+  const authoritative = finalizerCommit();
+  await finalizerDeclareSource(
+    rig,
+    project,
+    superseded,
+    "refs/heads/chuggy/tickets/1/attempts/one",
+    retired,
+  );
+  await finalizerDeclareSource(
+    rig,
+    project,
+    latest,
+    "refs/heads/chuggy/tickets/1/attempts/two",
+    authoritative,
+  );
+
+  const claim = await finalizerClaim(rig, project, "owner-supersede");
+  const gathering = await postgresFinalizer(rig.pool).handoffGathering(claim);
+
+  assert.deepEqual(
+    gathering.work.map((each) => each.execution),
+    [latest.execution, superseded.execution],
+  );
+  assert.deepEqual(
+    gathering.sources.map((each) => each.commit),
+    [authoritative, retired],
+  );
+  const accepted = handoffAccepted(handoffSuperseded(gathering));
+  if (accepted.accepted !== "Handoff") assert.fail(JSON.stringify(accepted));
+  if (accepted.handoff.kind !== "Source") assert.fail("a source handoff");
+  assert.equal(accepted.handoff.source.commit, authoritative);
+  assert.deepEqual(accepted.handoff.manifests, [latest.manifest]);
 });

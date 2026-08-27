@@ -127,6 +127,7 @@ import {
   canonicalInputBundle,
   conflictManifestText,
   handoffAccepted,
+  handoffSuperseded,
   type AttemptRecord,
   type FinalizationDigestFunction,
   type FinalizerIdentityFactory,
@@ -780,7 +781,9 @@ async function finalizerBuildSource(
 
 /**
  * Everything one preparation or one abort pins, gathered before any of it is
- * written down, and the handoff where the ticket's work declared one.
+ * written down, and the handoff where the ticket's work declared one. The
+ * gathering is superseded here rather than at either reader below, so the
+ * bundle's manifests and the accepted handoff name the same spawn's work.
  */
 async function finalizerGathered(
   service: FinalizerService,
@@ -796,7 +799,9 @@ async function finalizerGathered(
       "finalizer pass: an attempt was authorized against no bound repository",
     );
   }
-  const gathering = await service.store.handoffGathering(view.claim);
+  const gathering = handoffSuperseded(
+    await service.store.handoffGathering(view.claim),
+  );
   const accepted = handoffAccepted(gathering);
   if (accepted.accepted === "NoPassedWork") {
     finalizerHold(service, tally, "NoPassedWork");
