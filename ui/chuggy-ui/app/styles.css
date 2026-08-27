@@ -133,6 +133,14 @@ select:hover {
   color: var(--warn);
 }
 
+.shell-foot {
+  padding: var(--gap) var(--gap-wide);
+  background: var(--ground-sunken);
+  border-top: 1px solid var(--edge);
+  color: var(--ink-dim);
+  font-size: var(--text-small);
+}
+
 .panel {
   border: 1px solid var(--edge);
   border-radius: var(--radius);
