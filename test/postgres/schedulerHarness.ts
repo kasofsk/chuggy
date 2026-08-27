@@ -52,6 +52,7 @@ import {
 import { id } from "../domain/fixtures.ts";
 import {
   asClusterId,
+  asPlacementId,
   asSchedulerOwnerId,
   type ClusterId,
   type AttemptReport,
@@ -407,6 +408,40 @@ export async function schedulerClaimFor(
     owner,
   };
 }
+
+/**
+ * One admitted execution's attempt, opened and placed: what a case that is
+ * about what an attempt may write starts from rather than assembling.
+ */
+export async function schedulerPlacedAttempt(
+  rig: SchedulerRig,
+  project: SchedulerProject,
+  label: string,
+) {
+  const admitted = await rig.store.admit(project.cluster);
+  if (admitted.admitted !== "Admitted")
+    throw new Error(`scheduler harness: ${label} admitted no execution`);
+  const opened = await rig.store.openAttempt({
+    partition: project.partition,
+    execution: admitted.execution,
+    epoch: project.epoch,
+    leaseSecs: schedulerPlacedLeaseSecs,
+    retriesMax: schedulerPlacedRetriesMax,
+    placementBackoffSecs: 1,
+  });
+  if (opened.opened !== "Opened")
+    throw new Error(`scheduler harness: ${label} opened no attempt`);
+  const placement = asPlacementId(`placement-${label}-${randomUUID()}`);
+  if (!(await rig.store.attemptPlaced(opened.attempt, placement)))
+    throw new Error(`scheduler harness: ${label} could not place its attempt`);
+  return { execution: admitted.execution, attempt: opened.attempt };
+}
+
+/** How long a placed attempt's lease runs for, past any case's own duration. */
+const schedulerPlacedLeaseSecs = 300;
+
+/** How many retries a placed attempt is opened with, past any case's own. */
+const schedulerPlacedRetriesMax = 3;
 
 /** How long a case waits for calls it did not await to reach the lock that stalls them. */
 const schedulerStallWaitMsMax = 5_000;

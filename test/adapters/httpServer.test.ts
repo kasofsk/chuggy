@@ -52,6 +52,9 @@ type ServedNativeWeb = Pick<
   | "operationalStatus"
   | "selectorOperationalContext"
   | "outputContent"
+  | "runTurns"
+  | "runTranscript"
+  | "runConfiguration"
 >;
 
 function fakeTicket(calls: string[]): NativeWeb["ticket"] {
@@ -138,6 +141,9 @@ function fakeOperations(
   | "executions"
   | "execution"
   | "outputContent"
+  | "runTurns"
+  | "runTranscript"
+  | "runConfiguration"
 > {
   return {
     selectorOperationalContext: () => {
@@ -160,6 +166,18 @@ function fakeOperations(
     },
     outputContent: (_principal, _partition, execution, ordinal) => {
       calls.push(`output:${execution}:${String(ordinal)}`);
+      return Promise.resolve({ read: "NotFound" });
+    },
+    runTurns: (_principal, _partition, execution, attempt, query) => {
+      calls.push(`runTurns:${execution}:${attempt}:${String(query.limit)}`);
+      return Promise.resolve(undefined);
+    },
+    runTranscript: (_principal, _partition, execution, attempt, after) => {
+      calls.push(`runTranscript:${execution}:${attempt}:${String(after)}`);
+      return Promise.resolve({ read: "NotFound" });
+    },
+    runConfiguration: (_principal, _partition, execution, attempt) => {
+      calls.push(`runConfiguration:${execution}:${attempt}`);
       return Promise.resolve({ read: "NotFound" });
     },
   };

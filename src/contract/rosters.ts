@@ -93,6 +93,28 @@ export const attemptStates = [
 ] as const;
 export type AttemptState = (typeof attemptStates)[number];
 
+/** Why an attempt ended without a result, restating the interpreter's own list. */
+export const attemptEvidences = [
+  "PolicyDenied",
+  "PolicyUnavailable",
+  "PlacementDenied",
+  "PlacementUnavailable",
+  "Evicted",
+  "Vanished",
+  "LeaseExpired",
+  "ManifestInvalid",
+  "Fenced",
+  "RunFailed",
+  "RunRateLimited",
+  "RunTurnsExhausted",
+  "RunUploadRefused",
+] as const;
+export type AttemptEvidence = (typeof attemptEvidences)[number];
+
+/** What a cost figure is: the agent runtime's published list price, never a bill. */
+export const runCostBases = ["List"] as const;
+export type RunCostBasis = (typeof runCostBases)[number];
+
 export const artifactRoles = ["Handoff", "Diagnostic"] as const;
 export type ArtifactRole = (typeof artifactRoles)[number];
 

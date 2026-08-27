@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import {
   createWorkerPlaneApp,
   workerPlaneRoutes,
+  type WorkerRunEvidencePorts,
 } from "../../src/adapters/http/workerPlaneServer.ts";
+import {
+  runConfigurationBytesMax,
+  runTranscriptBatchBytesMax,
+  runTranscriptBatchesMax,
+  runTurnSeriesMax,
+} from "../../src/contract/http.ts";
 import {
   asAttemptCapabilitySecret,
   asAttemptId,
@@ -34,6 +42,20 @@ const heartbeatService = {
   heartbeatLeaseSecs: 300,
 } as const;
 
+/** The evidence ports a case about something else never reaches. */
+const runEvidenceService = {
+  runEvidence: {
+    configurations: { record: () => Promise.resolve("Stored" as const) },
+    transcripts: { record: () => Promise.resolve("Stored" as const) },
+    turns: {
+      record: () =>
+        Promise.resolve({ recorded: "Recorded" as const, turnsRecorded: 0 }),
+    },
+    totals: { record: () => Promise.resolve("Stored" as const) },
+    endings: { end: () => Promise.resolve(true) },
+  },
+} as const;
+
 test("the worker plane has no tenant-shaped or project-shaped route", () => {
   for (const route of workerPlaneRoutes) {
     assert.doesNotMatch(route, /tenant|project/u);
@@ -46,6 +68,7 @@ test("one live bearer scopes input, upload and report to its attempt", async () 
   const reported: unknown[] = [];
   const app = createWorkerPlaneApp({
     ...heartbeatService,
+    ...runEvidenceService,
     authority: {
       authenticate: (secret) =>
         Promise.resolve(
@@ -102,6 +125,7 @@ test("an unknown or oversized bearer reaches no attempt act", async () => {
   let acts = 0;
   const app = createWorkerPlaneApp({
     ...heartbeatService,
+    ...runEvidenceService,
     authority: { authenticate: () => Promise.resolve(undefined) },
     reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
     artifacts: {
@@ -135,6 +159,7 @@ test("a live bearer renews only its fenced attempt generation", async () => {
   const calls: unknown[] = [];
   const app = createWorkerPlaneApp({
     ...heartbeatService,
+    ...runEvidenceService,
     authority: { authenticate: () => Promise.resolve(authority) },
     heartbeats: {
       heartbeat: (secret, generation, leaseSecs) => {
@@ -167,6 +192,7 @@ test("a live bearer renews only its fenced attempt generation", async () => {
 test("an invalid worker-controlled artifact path is a predictable client refusal", async () => {
   const app = createWorkerPlaneApp({
     ...heartbeatService,
+    ...runEvidenceService,
     authority: { authenticate: () => Promise.resolve(authority) },
     reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
     artifacts: {
@@ -197,6 +223,7 @@ test("an invalid worker-controlled artifact path is a predictable client refusal
 test("an exhausted attempt artifact quota is a terminal payload refusal", async () => {
   const app = createWorkerPlaneApp({
     ...heartbeatService,
+    ...runEvidenceService,
     authority: { authenticate: () => Promise.resolve(authority) },
     reservations: {
       reserve: () => Promise.resolve({ reserved: "QuotaExceeded" }),
@@ -231,6 +258,7 @@ async function refusedReport(
 ): Promise<{ readonly statusCode: number; readonly body: unknown }> {
   const app = createWorkerPlaneApp({
     ...heartbeatService,
+    ...runEvidenceService,
     authority: { authenticate: () => Promise.resolve(authority) },
     reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
     artifacts: { store: () => Promise.resolve({ stored: "Stored" }) },
@@ -296,6 +324,7 @@ test("identical terminal report redelivery reaches its absorbed operation", asyn
   let reports = 0;
   const app = createWorkerPlaneApp({
     ...heartbeatService,
+    ...runEvidenceService,
     authority: {
       authenticate: () =>
         Promise.resolve({ ...authority, live: reports === 0 }),
@@ -333,5 +362,385 @@ test("identical terminal report redelivery reaches its absorbed operation", asyn
     assert.equal(response.statusCode, 202);
   }
   assert.equal(reports, 2);
+  await app.close();
+});
+
+/** One plane whose evidence ports are the ones a case is about, everything else inert. */
+function runEvidencePlane(
+  evidence: Partial<WorkerRunEvidencePorts>,
+  stored: unknown[] = [],
+) {
+  return createWorkerPlaneApp({
+    ...heartbeatService,
+    ...runEvidenceService,
+    runEvidence: { ...runEvidenceService.runEvidence, ...evidence },
+    authority: {
+      authenticate: (secret) =>
+        Promise.resolve(
+          secret === asAttemptCapabilitySecret("held") ? authority : undefined,
+        ),
+    },
+    reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
+    artifacts: {
+      store: (input) => {
+        stored.push({ path: input.path, bytes: input.content.byteLength });
+        return Promise.resolve({ stored: "Stored" });
+      },
+    },
+    reports: { report: () => Promise.resolve({ ingested: "Fenced" }) },
+    ready: () => Promise.resolve(true),
+    uploadBytesMax: workerPlaneUploadBytesMax,
+  });
+}
+
+/** The transport's own body ceiling, above every bound a run's own route holds. */
+const workerPlaneUploadBytesMax = runConfigurationBytesMax * 2;
+
+const octets = { "content-type": "application/octet-stream" };
+const held = { authorization: "Bearer held" };
+
+test("no run evidence route answers a bearer that is not a live attempt", async () => {
+  let reached = 0;
+  const counted = () => {
+    reached += 1;
+    return Promise.resolve("Stored" as const);
+  };
+  const app = runEvidencePlane({
+    configurations: { record: counted },
+    transcripts: { record: counted },
+    turns: {
+      record: () => {
+        reached += 1;
+        return Promise.resolve({ recorded: "Recorded", turnsRecorded: 0 });
+      },
+    },
+    totals: { record: counted },
+    endings: {
+      end: () => {
+        reached += 1;
+        return Promise.resolve(true);
+      },
+    },
+  });
+  const stranger = { authorization: "Bearer stranger" };
+  for (const [method, url, body, kind] of [
+    ["PUT", "/v1/run/configuration", Buffer.from("{}"), octets],
+    ["PUT", "/v1/run/transcript/1", Buffer.from("{}"), octets],
+    ["POST", "/v1/run/turns", { turns: [] }, {}],
+    ["POST", "/v1/run/totals", {}, {}],
+    ["POST", "/v1/run/ended", { evidence: "RunFailed" }, {}],
+  ] as const) {
+    const response = await app.inject({
+      method,
+      url,
+      headers: { ...stranger, ...kind },
+      payload: body,
+    });
+    assert.equal(response.statusCode, 401, url);
+  }
+  assert.equal(reached, 0);
+  await app.close();
+});
+
+test("a reported attempt writes no evidence, its bearer still resolving", async () => {
+  let reached = 0;
+  const counted = () => {
+    reached += 1;
+    return Promise.resolve("Stored" as const);
+  };
+  const app = createWorkerPlaneApp({
+    ...heartbeatService,
+    ...runEvidenceService,
+    runEvidence: {
+      ...runEvidenceService.runEvidence,
+      configurations: { record: counted },
+      transcripts: { record: counted },
+      totals: { record: counted },
+    },
+    authority: {
+      authenticate: () => Promise.resolve({ ...authority, live: false }),
+    },
+    reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
+    artifacts: { store: () => Promise.resolve({ stored: "Stored" }) },
+    reports: { report: () => Promise.resolve({ ingested: "Fenced" }) },
+    ready: () => Promise.resolve(true),
+    uploadBytesMax: workerPlaneUploadBytesMax,
+  });
+  for (const [method, url, body, kind] of [
+    ["PUT", "/v1/run/configuration", Buffer.from("{}"), octets],
+    ["PUT", "/v1/run/transcript/1", Buffer.from("{}"), octets],
+    ["POST", "/v1/run/totals", {}, {}],
+  ] as const) {
+    const response = await app.inject({
+      method,
+      url,
+      headers: { ...held, ...kind },
+      payload: body,
+    });
+    assert.equal(response.statusCode, 401, url);
+  }
+  assert.equal(reached, 0);
+  await app.close();
+});
+
+test("a recorded snapshot and batch are stored at the path the server derived", async () => {
+  const stored: unknown[] = [];
+  const offered: unknown[] = [];
+  const app = runEvidencePlane(
+    {
+      configurations: {
+        record: (input) => {
+          offered.push({ bytes: input.bytes, digest: input.digest });
+          return Promise.resolve("Stored");
+        },
+      },
+      transcripts: {
+        record: (input) => {
+          offered.push({ batch: input.batch, events: input.events });
+          return Promise.resolve("Stored");
+        },
+      },
+    },
+    stored,
+  );
+  const snapshot = await app.inject({
+    method: "PUT",
+    url: "/v1/run/configuration",
+    headers: { ...held, ...octets },
+    payload: Buffer.from("{}\n"),
+  });
+  assert.equal(snapshot.statusCode, 204);
+  const batch = await app.inject({
+    method: "PUT",
+    url: "/v1/run/transcript/3",
+    headers: { ...held, ...octets },
+    payload: Buffer.from('{"one":1}\n{"two":2}\n'),
+  });
+  assert.equal(batch.statusCode, 204);
+  assert.deepEqual(stored, [
+    { path: ".chuggy/run/configuration.json", bytes: 3 },
+    { path: ".chuggy/run/transcript/3.jsonl", bytes: 20 },
+  ]);
+  assert.deepEqual(offered, [
+    {
+      bytes: 3,
+      digest: createHash("sha256").update("{}\n").digest("hex"),
+    },
+    { batch: 3, events: 2 },
+  ]);
+  await app.close();
+});
+
+test("a refused durable write stores no bytes and answers what refused it", async () => {
+  for (const [verdict, status] of [
+    ["Conflict", 409],
+    ["OutOfOrder", 409],
+    ["Fenced", 409],
+    ["QuotaExceeded", 413],
+  ] as const) {
+    const stored: unknown[] = [];
+    const app = runEvidencePlane(
+      { transcripts: { record: () => Promise.resolve(verdict) } },
+      stored,
+    );
+    const response = await app.inject({
+      method: "PUT",
+      url: "/v1/run/transcript/1",
+      headers: { ...held, ...octets },
+      payload: Buffer.from("{}\n"),
+    });
+    assert.equal(response.statusCode, status, verdict);
+    assert.equal(response.json<{ reason: string }>().reason, verdict);
+    assert.deepEqual(stored, []);
+    await app.close();
+  }
+});
+
+test("a batch outside the run's bound never reaches the durable boundary", async () => {
+  let reached = 0;
+  const app = runEvidencePlane({
+    transcripts: {
+      record: () => {
+        reached += 1;
+        return Promise.resolve("Stored");
+      },
+    },
+  });
+  for (const named of ["0", "x", "-1", String(runTranscriptBatchesMax + 1)]) {
+    const response = await app.inject({
+      method: "PUT",
+      url: `/v1/run/transcript/${named}`,
+      headers: { ...held, ...octets },
+      payload: Buffer.from("{}\n"),
+    });
+    assert.equal(response.statusCode, 400, named);
+  }
+  assert.equal(reached, 0);
+  await app.close();
+});
+
+test("a body past the bound its own route holds is refused before it is stored", async () => {
+  const stored: unknown[] = [];
+  let reached = 0;
+  const app = runEvidencePlane(
+    {
+      configurations: {
+        record: () => {
+          reached += 1;
+          return Promise.resolve("Stored");
+        },
+      },
+      transcripts: {
+        record: () => {
+          reached += 1;
+          return Promise.resolve("Stored");
+        },
+      },
+    },
+    stored,
+  );
+  for (const [url, bytes] of [
+    ["/v1/run/configuration", runConfigurationBytesMax + 1],
+    ["/v1/run/transcript/1", runTranscriptBatchBytesMax + 1],
+  ] as const) {
+    const response = await app.inject({
+      method: "PUT",
+      url,
+      headers: { ...held, ...octets },
+      payload: Buffer.alloc(bytes),
+    });
+    assert.equal(response.statusCode, 413, url);
+  }
+  assert.equal(reached, 0);
+  assert.deepEqual(stored, []);
+  await app.close();
+});
+
+test("a turn page answers with the high-water the boundary stored", async () => {
+  const offered: unknown[] = [];
+  const app = runEvidencePlane({
+    turns: {
+      record: (input) => {
+        offered.push(input.turns);
+        return Promise.resolve({ recorded: "Recorded", turnsRecorded: 9 });
+      },
+    },
+  });
+  const turn = {
+    ordinal: 1,
+    model: "claude-fixture",
+    tokensInput: 1,
+    tokensOutput: 2,
+    tokensCacheCreation: 3,
+    tokensCacheRead: 4,
+  };
+  const recorded = await app.inject({
+    method: "POST",
+    url: "/v1/run/turns",
+    headers: held,
+    payload: { turns: [turn] },
+  });
+  assert.equal(recorded.statusCode, 200);
+  assert.deepEqual(recorded.json(), { turnsRecorded: 9 });
+  assert.deepEqual(offered, [[turn]]);
+  for (const payload of [
+    { turns: [] },
+    { turns: [{ ...turn, ordinal: runTurnSeriesMax + 1 }] },
+    { turns: [{ ...turn, model: "" }] },
+    { turns: [{ ...turn, extra: 1 }] },
+    { turns: [{ ...turn, tokensInput: -1 }] },
+  ]) {
+    const refused = await app.inject({
+      method: "POST",
+      url: "/v1/run/turns",
+      headers: held,
+      payload,
+    });
+    assert.equal(refused.statusCode, 400, JSON.stringify(payload));
+  }
+  assert.equal(offered.length, 1);
+  await app.close();
+});
+
+test("a run's totals and its ending are taken as the contract names them", async () => {
+  const offered: unknown[] = [];
+  const app = runEvidencePlane({
+    totals: {
+      record: (input) => {
+        offered.push(input.totals);
+        return Promise.resolve("Stored");
+      },
+    },
+    endings: {
+      end: (input) => {
+        offered.push(input.evidence);
+        return Promise.resolve(true);
+      },
+    },
+  });
+  const totals = {
+    turns: 2,
+    durationMs: 10,
+    durationApiMs: 5,
+    tokensInput: 1,
+    tokensOutput: 2,
+    tokensCacheCreation: 3,
+    tokensCacheRead: 4,
+    costUsdMicros: 7,
+    costBasis: "List",
+    models: [],
+    permissionDenials: 0,
+  };
+  assert.equal(
+    (
+      await app.inject({
+        method: "POST",
+        url: "/v1/run/totals",
+        headers: held,
+        payload: totals,
+      })
+    ).statusCode,
+    204,
+  );
+  assert.equal(
+    (
+      await app.inject({
+        method: "POST",
+        url: "/v1/run/ended",
+        headers: held,
+        payload: { evidence: "RunRateLimited" },
+      })
+    ).statusCode,
+    204,
+  );
+  assert.deepEqual(offered, [totals, "RunRateLimited"]);
+  for (const [url, payload] of [
+    ["/v1/run/totals", { ...totals, costBasis: "Invoice" }],
+    ["/v1/run/ended", { evidence: "LeaseExpired" }],
+    ["/v1/run/ended", { evidence: "RunFailed", extra: 1 }],
+  ] as const) {
+    const refused = await app.inject({
+      method: "POST",
+      url,
+      headers: held,
+      payload,
+    });
+    assert.equal(refused.statusCode, 400, JSON.stringify(payload));
+  }
+  assert.equal(offered.length, 2);
+  await app.close();
+});
+
+test("an ending the boundary refuses is a conflict and not a silent success", async () => {
+  const app = runEvidencePlane({
+    endings: { end: () => Promise.resolve(false) },
+  });
+  const refused = await app.inject({
+    method: "POST",
+    url: "/v1/run/ended",
+    headers: held,
+    payload: { evidence: "RunFailed" },
+  });
+  assert.equal(refused.statusCode, 409);
   await app.close();
 });

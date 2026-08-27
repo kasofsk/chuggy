@@ -36,6 +36,7 @@ import {
 } from "../../interpreter/operationInbox.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { projectRowCounter } from "./rows.ts";
+import { postgresTicketRunTotals } from "./runEvidence.ts";
 import { draftBriefOf, type DraftBriefRow } from "./ticketBrief.ts";
 
 interface PublicOperationRow {
@@ -392,9 +393,12 @@ function nativeReadsResources(
       const row = found.rows[0];
       if (row === undefined) return undefined;
       const brief = draftBriefOf(row);
-      return brief === undefined
-        ? ticketResource(row)
-        : { ...ticketResource(row), brief };
+      const runTotals = await postgresTicketRunTotals(pool, partition, ticket);
+      return {
+        ...ticketResource(row),
+        ...(brief === undefined ? {} : { brief }),
+        ...(runTotals === undefined ? {} : { runTotals }),
+      };
     },
   };
 }

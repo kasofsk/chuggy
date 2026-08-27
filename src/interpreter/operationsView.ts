@@ -4,11 +4,13 @@ import type {
   ConfigurationRevisionId,
 } from "./authoring.ts";
 import type {
+  AttemptEvidence,
   AttemptState,
   ExecutionOutcome,
   ExecutionStatus,
   ExecutionTaskKind,
 } from "./executionScheduler.ts";
+import type { ExecutionRunResource, RunTotals } from "./runEvidence.ts";
 import { allExecutionStatuses } from "./executionScheduler.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ConfigurationVersion } from "./repositoryConfigurationIdentity.ts";
@@ -85,6 +87,7 @@ export interface ExecutionSummary {
   readonly retriesSpent: number;
   readonly registeredAt: PublicInstant;
   readonly terminalAt?: PublicInstant;
+  readonly runTotals?: RunTotals;
 }
 
 /**
@@ -98,6 +101,15 @@ export function executionSummaryLabelled(
   if (summary.requirement.mode !== "Container") return summary;
   const worker = workers.get(summary.requirement.image);
   return worker === undefined ? summary : { ...summary, worker };
+}
+
+/** The same summary carrying what its own attempts' runs sum to, where any ran. */
+export function executionSummaryTotalled(
+  summary: ExecutionSummary,
+  totals: ReadonlyMap<string, RunTotals>,
+): ExecutionSummary {
+  const runTotals = totals.get(summary.execution);
+  return runTotals === undefined ? summary : { ...summary, runTotals };
 }
 
 /** Every image the given summaries pin, which is what a catalog is asked for. */
@@ -116,6 +128,8 @@ export interface ExecutionAttemptResource {
   readonly state: AttemptState;
   readonly openedAt: PublicInstant;
   readonly endedAt?: PublicInstant;
+  readonly evidence?: AttemptEvidence;
+  readonly run?: ExecutionRunResource;
 }
 
 export interface ResultArtifactResource {
@@ -135,6 +149,7 @@ export interface ExecutionResultResource {
   readonly verdict: "Pass" | "Fail";
   readonly recordedAt: PublicInstant;
   readonly artifacts: readonly ResultArtifactResource[];
+  readonly report?: string;
 }
 
 export const outputPreviewBytesMax = 1_048_576;

@@ -49,7 +49,10 @@ import {
   type TicketCommand,
 } from "../../src/interpreter/operationInbox.ts";
 import { dispatchEvent, revokeEvent } from "../../src/actor/decisionEvent.ts";
-import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
+import {
+  asAttemptId,
+  asExecutionId,
+} from "../../src/interpreter/schedulerIdentity.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -556,6 +559,38 @@ test("operational resources authorize before scheduler or artifact reads", async
     await read(denied.web);
     assert.deepEqual(denied.calls, ["authorize:Read"]);
   }
+});
+
+test("every run evidence read authorizes before it reaches a store", async () => {
+  const execution = asExecutionId("execution");
+  const attempt = asAttemptId("attempt");
+  for (const read of [
+    (web: NativeWeb) =>
+      web.runTurns(principal, partition, execution, attempt, { limit: 10 }),
+    (web: NativeWeb) =>
+      web.runTranscript(principal, partition, execution, attempt, 0),
+    (web: NativeWeb) =>
+      web.runConfiguration(principal, partition, execution, attempt),
+  ]) {
+    const denied = boundary(false);
+    await read(denied.web);
+    assert.deepEqual(denied.calls, ["authorize:Read"]);
+  }
+});
+
+test("an authorized run evidence read without a store composed is a fault", async () => {
+  const allowed = boundary(true);
+  await assert.rejects(
+    () =>
+      allowed.web.runTurns(
+        principal,
+        partition,
+        asExecutionId("execution"),
+        asAttemptId("attempt"),
+        { limit: 10 },
+      ),
+    /no run evidence read store/u,
+  );
 });
 
 test("cancellation reauthorizes before reading or writing", async () => {

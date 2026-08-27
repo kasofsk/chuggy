@@ -17,11 +17,11 @@ import {
   manifestBytesMax,
   type CanonicalManifest,
 } from "../../src/interpreter/resultManifest.ts";
-import { asPlacementId } from "../../src/interpreter/executionScheduler.ts";
 import { postgresHarnessUrl } from "./harness.ts";
 import {
   schedulerClaimFor,
   schedulerOwner,
+  schedulerPlacedAttempt,
   schedulerProject,
   schedulerReport,
   schedulerRigOpen,
@@ -48,25 +48,7 @@ async function placedAttempt(label: string) {
     ),
     200,
   );
-  const admitted = await rig.store.admit(project.cluster);
-  assert.ok(admitted.admitted === "Admitted");
-  const opened = await rig.store.openAttempt({
-    partition: project.partition,
-    execution: admitted.execution,
-    epoch: project.epoch,
-    leaseSecs: 300,
-    retriesMax: 3,
-    placementBackoffSecs: 1,
-  });
-  assert.ok(opened.opened === "Opened");
-  assert.equal(
-    await rig.store.attemptPlaced(
-      opened.attempt,
-      asPlacementId(`placement-${label}`),
-    ),
-    true,
-  );
-  return opened.attempt;
+  return (await schedulerPlacedAttempt(rig, project, label)).attempt;
 }
 
 function acceptedSourceManifest(

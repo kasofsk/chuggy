@@ -16,6 +16,17 @@ import { inputBundleReferencesMax } from "../../interpreter/finalizer.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
 import { asResultManifestId } from "../../interpreter/resultManifest.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
+import {
+  allRunEvidenceStored,
+  runConfigurationPath,
+  runTranscriptBatchPath,
+  type RunEvidenceStored,
+  type WorkerRunConfigurationPort,
+  type WorkerRunEndedPort,
+  type WorkerRunTotalPort,
+  type WorkerRunTranscriptPort,
+  type WorkerRunTurnsPort,
+} from "../../interpreter/runEvidence.ts";
 import type {
   WorkerAttemptAuthority,
   WorkerAttemptHeartbeatPort,
@@ -25,6 +36,24 @@ import type {
 } from "../../interpreter/workerPlane.ts";
 import { projectRowCounter } from "./rows.ts";
 import { postgresTransaction } from "./pool.ts";
+
+/** The digest an attempt's bearer is keyed by, which is all the database holds of it. */
+function workerSecretDigest(secret: AttemptCapabilitySecret): string {
+  return createHash("sha256").update(secret, "utf8").digest("hex");
+}
+
+/** The verdict one run-evidence write answered with, refusing anything else. */
+function workerRunStored(
+  verdict: string | null | undefined,
+  what: string,
+): RunEvidenceStored {
+  const stored = allRunEvidenceStored.find((known) => known === verdict);
+  if (stored === undefined)
+    throw new Error(
+      `postgres worker plane: ${what} answered ${String(verdict)}`,
+    );
+  return stored;
+}
 
 interface WorkerAuthorityRow {
   readonly tenant: string | null;
@@ -164,6 +193,98 @@ export function postgresWorkerArtifactReservations(
             `postgres worker plane: unknown artifact reservation ${String(verdict)}`,
           );
       }
+    },
+  };
+}
+
+export function postgresWorkerRunConfiguration(
+  pool: pg.Pool,
+): WorkerRunConfigurationPort {
+  return {
+    record: async (input) => {
+      const stored = await pool.query<{ stored: string | null }>(
+        sql`SELECT record_worker_run_configuration(
+          ${workerSecretDigest(input.secret)},${input.generation},
+          ${runConfigurationPath()},${input.digest},${input.bytes})::text AS stored`,
+      );
+      return workerRunStored(stored.rows[0]?.stored, "a run configuration");
+    },
+  };
+}
+
+export function postgresWorkerRunTranscript(
+  pool: pg.Pool,
+): WorkerRunTranscriptPort {
+  return {
+    record: async (input) => {
+      const stored = await pool.query<{ stored: string | null }>(
+        sql`SELECT record_worker_run_transcript_batch(
+          ${workerSecretDigest(input.secret)},${input.generation},${input.batch},
+          ${runTranscriptBatchPath(input.batch)},${input.digest},${input.bytes},
+          ${input.events})::text AS stored`,
+      );
+      return workerRunStored(stored.rows[0]?.stored, "a transcript batch");
+    },
+  };
+}
+
+export function postgresWorkerRunTurns(pool: pg.Pool): WorkerRunTurnsPort {
+  return {
+    record: async (input) => {
+      const recorded = await pool.query<{
+        recorded: string | null;
+        turns: string | null;
+      }>(
+        sql`SELECT recorded,turns::text AS turns FROM record_worker_run_turns(
+          ${workerSecretDigest(input.secret)},${input.generation},
+          ${JSON.stringify(input.turns)}::jsonb)`,
+      );
+      const row = recorded.rows[0];
+      if (row?.recorded === "Conflict" || row?.recorded === "Fenced")
+        return { recorded: row.recorded };
+      if (row?.recorded !== "Recorded" || row.turns === null)
+        throw new Error(
+          `postgres worker plane: a run turn page answered ${String(row?.recorded)}`,
+        );
+      return {
+        recorded: "Recorded",
+        turnsRecorded: projectRowCounter(row.turns, "recorded run turns"),
+      };
+    },
+  };
+}
+
+export function postgresWorkerRunTotal(pool: pg.Pool): WorkerRunTotalPort {
+  return {
+    record: async (input) => {
+      const totals = input.totals;
+      const stored = await pool.query<{ stored: string | null }>(
+        sql`SELECT record_worker_run_total(
+          ${workerSecretDigest(input.secret)},${input.generation},${totals.turns},
+          ${totals.durationMs},${totals.durationApiMs},${totals.tokensInput},
+          ${totals.tokensOutput},${totals.tokensCacheCreation},
+          ${totals.tokensCacheRead},${totals.costUsdMicros},${totals.costBasis},
+          ${totals.permissionDenials},${totals.resultSubtype ?? null},
+          ${totals.stopReason ?? null},
+          ${JSON.stringify(totals.models)}::jsonb)::text AS stored`,
+      );
+      return workerRunStored(stored.rows[0]?.stored, "a run total");
+    },
+  };
+}
+
+/**
+ * Narrowing a live attempt to the label its own run ended under, through the
+ * boundary that already ends one; the lease sweep ends it either way.
+ */
+export function postgresWorkerRunEnded(pool: pg.Pool): WorkerRunEndedPort {
+  return {
+    end: async (input) => {
+      const ended = await pool.query<{ ended: boolean | null }>(
+        sql`SELECT lose_worker_attempt(${workerSecretDigest(input.secret)},
+          ${input.generation},${input.evidence})::boolean AS ended`,
+      );
+      return ended.rows[0]?.ended === true;
     },
   };
 }

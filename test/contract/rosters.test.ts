@@ -14,6 +14,7 @@ import test from "node:test";
 import {
   architectures,
   artifactRoles,
+  attemptEvidences,
   attemptStates,
   configurationProvenanceSources,
   configurationReadinesses,
@@ -40,9 +41,17 @@ import {
   requirementSources,
   resultVerdicts,
   resumePricings,
+  runCostBases,
   schedulerFreshnesses,
 } from "../../src/contract/rosters.ts";
-import { nativeHttpPageItemsMax } from "../../src/contract/http.ts";
+import {
+  nativeHttpPageItemsMax,
+  resultReportCharsMax,
+  runConfigurationBytesMax,
+} from "../../src/contract/http.ts";
+import { resultReportCharsMax as interpretedReportCharsMax } from "../../src/interpreter/resultManifest.ts";
+import { runTurnsPageLimitMax } from "../../src/interpreter/runEvidence.ts";
+import type { RunTotals } from "../../src/interpreter/runEvidence.ts";
 import { projectChangeKinds } from "../../src/contract/events.ts";
 import {
   phaseTags,
@@ -54,6 +63,7 @@ import type {
   RetryPricing,
 } from "../../src/domain/generated/modelTypes.ts";
 import {
+  allAttemptEvidence,
   allAttemptStates,
   allExecutionOutcomes,
   allExecutionStatuses,
@@ -78,6 +88,7 @@ import {
 import type { OperationRefusalCode } from "../../src/interpreter/nativeWeb.ts";
 import {
   executionPageLimitMax,
+  outputPreviewBytesMax,
   type ExecutionResultResource,
   type OutputRenderer,
   type ProjectOperationalStatus,
@@ -157,6 +168,21 @@ test("the requirement rosters are exhaustive over the interpreter's unions", () 
   assert.deepEqual(sorted(architectures), keysOf(widths));
   assert.deepEqual(sorted(nativeDrivers), keysOf(drivers));
   assert.deepEqual(sorted(requirementSources), keysOf(sources));
+});
+
+test("the wire's evidence labels are the interpreter's own list", () => {
+  assert.deepEqual([...attemptEvidences], [...allAttemptEvidence]);
+});
+
+test("the cost basis roster is exhaustive over the union it induces", () => {
+  const bases: Record<RunTotals["costBasis"], true> = { List: true };
+  assert.deepEqual(sorted(runCostBases), keysOf(bases));
+});
+
+test("a run's read bounds are the ones the layers beneath them hold", () => {
+  assert.equal(runConfigurationBytesMax, outputPreviewBytesMax);
+  assert.equal(resultReportCharsMax, interpretedReportCharsMax);
+  assert.equal(nativeHttpPageItemsMax, runTurnsPageLimitMax);
 });
 
 test("one page bound serves every collection route", () => {

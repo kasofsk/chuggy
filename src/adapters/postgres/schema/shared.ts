@@ -56,6 +56,16 @@ export const workerAttemptLostFunction = "lose_worker_attempt";
 export const workerResultSubmitFunction = "submit_worker_result";
 export const workerResultReportFunction = "store_worker_result_report";
 export const workerArtifactReserveFunction = "reserve_worker_artifact";
+export const workerRunBindingFunction = "worker_run_binding";
+export const workerRunConfigurationFunction = "record_worker_run_configuration";
+export const workerRunTranscriptFunction = "record_worker_run_transcript_batch";
+export const workerRunTurnsFunction = "record_worker_run_turns";
+export const workerRunTotalFunction = "record_worker_run_total";
+export const runEvidenceImmutableFunction =
+  "execution_run_evidence_is_immutable";
+export const runConfigurationImmutableFunction =
+  "execution_run_is_written_once";
+export const projectChangeRunFunction = "execution_run_appends_a_change";
 export const finalizerRole = "chuggy_finalizer";
 export const completionFunction = "submit_task_completion";
 export const finalizationFunction = "submit_finalization_result";

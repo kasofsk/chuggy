@@ -10,6 +10,7 @@ import {
   allAttemptStates,
   allExecutionOutcomes,
   allExecutionStatuses,
+  attemptEvidenceLabel,
   type ExecutionStatus,
 } from "../../interpreter/executionScheduler.ts";
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
@@ -17,6 +18,7 @@ import {
   configuredOutputs,
   executionSummaryImages,
   executionSummaryLabelled,
+  executionSummaryTotalled,
   type ExecutionAttemptResource,
   type ExecutionListQuery,
   type ExecutionPage,
@@ -40,7 +42,12 @@ import {
   asResultManifestId,
   type ArtifactRole,
 } from "../../interpreter/resultManifest.ts";
+import type { ExecutionRunResource } from "../../interpreter/runEvidence.ts";
 import { projectRowCounter } from "./rows.ts";
+import {
+  postgresAttemptRuns,
+  postgresExecutionRunTotals,
+} from "./runEvidence.ts";
 import { postgresWorkerCatalog } from "./workerCatalog.ts";
 import {
   configurationVersionOf,
@@ -80,6 +87,7 @@ interface AttemptViewRow {
   readonly state: string;
   readonly opened_at: string;
   readonly ended_at: string | null;
+  readonly evidence: string | null;
 }
 
 interface ResultViewRow {
@@ -89,6 +97,7 @@ interface ResultViewRow {
   readonly digest: string;
   readonly verdict: string;
   readonly recorded_at: string;
+  readonly report: string | null;
 }
 
 interface ArtifactViewRow {
@@ -163,7 +172,12 @@ function executionSummary(row: ExecutionViewRow): ExecutionSummary {
   };
 }
 
-function attemptResource(row: AttemptViewRow): ExecutionAttemptResource {
+function attemptResource(
+  row: AttemptViewRow,
+  run: ExecutionRunResource | undefined,
+): ExecutionAttemptResource {
+  const evidence =
+    row.evidence === null ? undefined : attemptEvidenceLabel(row.evidence);
   return {
     attempt: asAttemptId(row.attempt),
     number: projectRowCounter(row.attempt_number, "attempt number"),
@@ -173,6 +187,8 @@ function attemptResource(row: AttemptViewRow): ExecutionAttemptResource {
     ...(row.ended_at === null
       ? {}
       : { endedAt: asPublicInstant(row.ended_at) }),
+    ...(evidence === undefined ? {} : { evidence }),
+    ...(run === undefined ? {} : { run }),
   };
 }
 
@@ -265,9 +281,17 @@ async function executionPage(
     pool,
     executionSummaryImages(summaries),
   );
+  const totals = await postgresExecutionRunTotals(
+    pool,
+    partition,
+    summaries.map((summary) => summary.execution),
+  );
   return {
     executions: summaries.map((summary) =>
-      executionSummaryLabelled(summary, workers),
+      executionSummaryTotalled(
+        executionSummaryLabelled(summary, workers),
+        totals,
+      ),
     ),
     ...(next === undefined ? {} : { nextAfter: asExecutionId(next.execution) }),
   };
@@ -314,13 +338,14 @@ async function attempts(
   const found = await pool.query<AttemptViewRow>(
     sql`SELECT attempt,attempt_number::text AS attempt_number,
                generation::text AS generation,state,opened_at::text AS opened_at,
-               ended_at::text AS ended_at
+               ended_at::text AS ended_at,evidence
           FROM execution_attempt
          WHERE tenant=${partition.tenant} AND project=${partition.project}
            AND execution=${execution}
          ORDER BY attempt_number LIMIT 100`,
   );
-  return found.rows.map(attemptResource);
+  const runs = await postgresAttemptRuns(pool, partition, execution);
+  return found.rows.map((row) => attemptResource(row, runs.get(row.attempt)));
 }
 
 async function resultResource(
@@ -330,10 +355,13 @@ async function resultResource(
   canonical: string,
 ): Promise<ExecutionResultResource | undefined> {
   const found = await pool.query<ResultViewRow>(
-    sql`SELECT manifest,attempt,schema_version,digest,verdict,recorded_at::text AS recorded_at
-          FROM execution_result
-         WHERE tenant=${partition.tenant} AND project=${partition.project}
-           AND manifest=${manifest}`,
+    sql`SELECT r.manifest,r.attempt,r.schema_version,r.digest,r.verdict,
+               r.recorded_at::text AS recorded_at,p.report
+          FROM execution_result r
+          LEFT JOIN execution_result_report p
+            ON p.tenant=r.tenant AND p.project=r.project AND p.manifest=r.manifest
+         WHERE r.tenant=${partition.tenant} AND r.project=${partition.project}
+           AND r.manifest=${manifest}`,
   );
   const row = found.rows[0];
   if (row === undefined) return undefined;
@@ -355,6 +383,7 @@ async function resultResource(
     artifacts: artifacts.rows
       .slice(0, 256)
       .map((artifact) => artifactResource(artifact, outputs)),
+    ...(row.report === null ? {} : { report: row.report }),
   };
 }
 
@@ -412,9 +441,15 @@ export function postgresOperationalReads(pool: pg.Pool): OperationalReadStore {
         throw new Error("operational read: execution result is absent");
       const summary = executionSummary(row);
       return {
-        ...executionSummaryLabelled(
-          summary,
-          await postgresWorkerCatalog(pool, executionSummaryImages([summary])),
+        ...executionSummaryTotalled(
+          executionSummaryLabelled(
+            summary,
+            await postgresWorkerCatalog(
+              pool,
+              executionSummaryImages([summary]),
+            ),
+          ),
+          await postgresExecutionRunTotals(pool, partition, [execution]),
         ),
         attempts: await attempts(pool, partition, execution),
         ...(result === undefined ? {} : { result }),

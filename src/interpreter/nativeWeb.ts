@@ -75,7 +75,20 @@ import {
   type OutputContentRead,
   type ProjectOperationalStatus,
 } from "./operationsView.ts";
-import type { ExecutionId } from "./schedulerIdentity.ts";
+import {
+  checkedRunTranscriptAfter,
+  checkedRunTurnsQuery,
+  runConfigurationPath,
+  type RunConfigurationRead,
+  type RunEvidenceContentPort,
+  type RunEvidenceReadStore,
+  type RunTotals,
+  type RunTranscriptBatch,
+  type RunTranscriptRead,
+  type RunTurnsPage,
+  type RunTurnsQuery,
+} from "./runEvidence.ts";
+import type { AttemptId, ExecutionId } from "./schedulerIdentity.ts";
 import { type PublicInstant } from "./publicResource.ts";
 import type { SelectorOperationalContext } from "./selector.ts";
 import type { SelectorOperationalContextRead } from "./selectorOperationalContext.ts";
@@ -189,6 +202,7 @@ export interface TicketResource {
   readonly sequence: number;
   readonly reason?: EscalationReason;
   readonly brief?: DraftBrief;
+  readonly runTotals?: RunTotals;
 }
 
 /**
@@ -433,6 +447,26 @@ export interface NativeWeb {
     execution: ExecutionId,
     ordinal: number,
   ): Promise<OutputContentRead>;
+  runTurns(
+    principal: Principal,
+    partition: Partition,
+    execution: ExecutionId,
+    attempt: AttemptId,
+    query: RunTurnsQuery,
+  ): Promise<RunTurnsPage | undefined>;
+  runTranscript(
+    principal: Principal,
+    partition: Partition,
+    execution: ExecutionId,
+    attempt: AttemptId,
+    after: number,
+  ): Promise<RunTranscriptRead>;
+  runConfiguration(
+    principal: Principal,
+    partition: Partition,
+    execution: ExecutionId,
+    attempt: AttemptId,
+  ): Promise<RunConfigurationRead>;
   cancel(
     principal: Principal,
     partition: Partition,
@@ -782,6 +816,100 @@ function nativeOperationalMethods(
   };
 }
 
+type NativeRunEvidenceMethods = Pick<
+  NativeWeb,
+  "runTurns" | "runTranscript" | "runConfiguration"
+>;
+
+/** The bytes of one page of batches, or the first refusal drawing them met. */
+async function nativeRunTranscriptBatches(
+  contents: RunEvidenceContentPort,
+  stored: Awaited<ReturnType<RunEvidenceReadStore["transcript"]>>,
+): Promise<RunTranscriptRead> {
+  if (stored === undefined) return { read: "NotFound" };
+  const batches: RunTranscriptBatch[] = [];
+  for (const object of stored.objects) {
+    const drawn = await contents.readEvidence(object);
+    if (drawn.read !== "Content") return drawn;
+    batches.push({
+      batch: object.batch,
+      recordedAt: object.recordedAt,
+      bytes: object.bytes,
+      content: drawn.content,
+    });
+  }
+  return {
+    read: "Page",
+    page: {
+      batches,
+      observedAt: stored.observedAt,
+      complete: stored.complete,
+      ...(stored.nextAfter === undefined
+        ? {}
+        : { nextAfter: stored.nextAfter }),
+    },
+  };
+}
+
+/** The three run-evidence reads, each reauthorizing before it reaches a store. */
+function nativeRunEvidenceMethods(
+  access: ProjectAccess,
+  evidenceReads?: RunEvidenceReadStore,
+  evidenceContents?: RunEvidenceContentPort,
+): NativeRunEvidenceMethods {
+  const reads = () => {
+    if (evidenceReads === undefined)
+      throw new Error("native web: no run evidence read store was composed");
+    return evidenceReads;
+  };
+  const contents = () => {
+    if (evidenceContents === undefined)
+      throw new Error("native web: no run evidence content store was composed");
+    return evidenceContents;
+  };
+  return {
+    runTurns: async (principal, partition, execution, attempt, query) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? undefined
+        : reads().turns(
+            partition,
+            execution,
+            attempt,
+            checkedRunTurnsQuery(query),
+          ),
+    runTranscript: async (principal, partition, execution, attempt, after) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return { read: "NotFound" };
+      return nativeRunTranscriptBatches(
+        contents(),
+        await reads().transcript(
+          partition,
+          execution,
+          attempt,
+          checkedRunTranscriptAfter(after),
+        ),
+      );
+    },
+    runConfiguration: async (principal, partition, execution, attempt) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return { read: "NotFound" };
+      const stored = await reads().configuration(partition, execution, attempt);
+      if (stored === undefined) return { read: "NotFound" };
+      if (stored.object.path !== runConfigurationPath())
+        throw new Error("native web: a snapshot is stored off its own path");
+      const drawn = await contents().readEvidence(stored.object);
+      return drawn.read === "Content"
+        ? {
+            read: "Content",
+            digest: stored.object.digest,
+            bytes: stored.object.bytes,
+            content: drawn.content,
+          }
+        : drawn;
+    },
+  };
+}
+
 /** The ticket reads, each reauthorizing before it reaches the projection. */
 function nativeTicketMethods(
   access: ProjectAccess,
@@ -823,8 +951,11 @@ export function nativeWeb(
   outputContents?: OutputContentPort,
   selectorContexts?: SelectorOperationalContextRead,
   repositoryConfigurationImports?: RepositoryConfigurationImportPorts,
+  runEvidenceReads?: RunEvidenceReadStore,
+  runEvidenceContents?: RunEvidenceContentPort,
 ): NativeWeb {
   return {
+    ...nativeRunEvidenceMethods(access, runEvidenceReads, runEvidenceContents),
     importRepositoryConfigurations: nativeRepositoryConfigurationImportMethod(
       access,
       repositoryConfigurationImports,
