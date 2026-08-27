@@ -5,7 +5,8 @@ COPY package.json package-lock.json ./
 COPY ui/chuggy-ui/package.json ui/chuggy-ui/package.json
 RUN npm ci --ignore-scripts
 
-COPY scripts/check-console-policy.ts scripts/check-console-policy.ts
+COPY scripts/check-console-policy.ts scripts/console-policy.ts scripts/
+COPY src/contract src/contract
 COPY ui/chuggy-ui ui/chuggy-ui
 RUN npm run build --workspace=chuggy-ui
 
