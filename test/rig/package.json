@@ -1,0 +1,11 @@
+{
+  "name": "chuggy-rig-acceptance",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "acceptance": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
+}
