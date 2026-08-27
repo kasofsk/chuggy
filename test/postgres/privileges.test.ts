@@ -814,6 +814,7 @@ test("the scheduler reads execution and capacity, and of the project only its li
       "execution_result_artifact",
       "execution_result_report",
       "execution_result_source",
+      "input_bundle_reference",
       "project",
       "recovery_epoch",
       "scheduler_incident",

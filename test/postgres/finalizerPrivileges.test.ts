@@ -39,7 +39,7 @@ const mailbox = [
   "ticket_projection",
 ] as const;
 
-/** Every finalizer-owned relation no prior role may reach at all. */
+/** Every relation migration thirteen took from the roles that came before it. */
 const added = [
   "project_repository",
   "input_bundle",
@@ -132,10 +132,23 @@ test("the scheduler rows a handoff is spelled across are readable and nothing mo
   }
 });
 
-test("no prior role reaches any finalizer-owned relation", async () => {
+/** The one relation in `added` a later migration handed back, and to one role only. */
+const schedulerReadable = "input_bundle_reference";
+
+test("a prior role writes no finalizer-owned relation and reads only the granted one", async () => {
   for (const role of [apiRole, selectorServiceRole, schedulerRole]) {
     for (const relation of added) {
-      for (const statement of await everyVerb(relation)) {
+      const [read, ...written] = await everyVerb(relation);
+      const refusal = await harness.attemptAs(role, read ?? "");
+      if (role === schedulerRole && relation === schedulerReadable)
+        assert.equal(refusal, undefined, `${role}: ${read ?? ""}`);
+      else
+        assert.match(
+          refusal ?? "",
+          postgresHarnessDenial(relation),
+          `${role}: ${read ?? ""}`,
+        );
+      for (const statement of written) {
         assert.match(
           (await harness.attemptAs(role, statement)) ?? "",
           postgresHarnessDenial(relation),

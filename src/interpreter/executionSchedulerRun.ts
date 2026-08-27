@@ -113,6 +113,7 @@ import {
   type PinnedConfigurationPort,
   type PinnedTaskConfiguration,
   type PracticeCatalog,
+  type PriorWorkReports,
   type PriorWorkReportsPort,
   type RuntimeFacts,
   type RuntimeFactsPort,
@@ -433,6 +434,23 @@ async function schedulerUnready(
   }
 }
 
+/** Reads the bounded work summaries this execution's own input bundle pinned. */
+async function schedulerPriorWorkReports(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+): Promise<PriorWorkReports | BriefingUnready> {
+  const read = await service.priorWorkReports.reports(
+    execution.partition,
+    execution.execution,
+  );
+  switch (read.read) {
+    case "Reports":
+      return read.reports;
+    case "Unavailable":
+      return { gathered: "Unavailable" };
+  }
+}
+
 /** What a placement needs before it may be asked for: the profile, and the composed invocation. */
 interface TaskLaunch {
   readonly profile: ExecutionProfile;
@@ -468,10 +486,11 @@ async function schedulerPrepare(
     await schedulerUnready(service, execution, attempt, runtime);
     return undefined;
   }
-  const priorWorkReports = await service.priorWorkReports.reports(
-    execution.partition,
-    execution.execution,
-  );
+  const priorWorkReports = await schedulerPriorWorkReports(service, execution);
+  if ("gathered" in priorWorkReports) {
+    await schedulerUnready(service, execution, attempt, priorWorkReports);
+    return undefined;
+  }
   const brief = await service.ticketBriefs.brief(
     execution.partition,
     execution.ticket,

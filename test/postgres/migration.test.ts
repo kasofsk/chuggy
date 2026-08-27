@@ -1514,3 +1514,36 @@ test("migration 43 widens a kind check installed before that kind existed", asyn
     );
   });
 });
+
+test("migration 44 returns the scheduler the bundle references its briefing joins", async () => {
+  await migrationDatabase("scheduler_bundle_reference", async (subject) => {
+    await migrationSeedApplied(subject, 44);
+    const privilege = async (relation: string, verb: string) =>
+      (
+        await subject.query<{ granted: boolean }>(
+          "SELECT has_table_privilege($1,$2,$3) AS granted",
+          [schedulerRole, relation, verb],
+        )
+      ).rows[0]?.granted;
+    assert.equal(
+      await privilege("input_bundle_reference", "SELECT"),
+      false,
+      "migration 13 revoked the read migration 37's join needs",
+    );
+
+    await applyMigration(subject, 44);
+
+    for (const [relation, verb, granted] of [
+      ["input_bundle_reference", "SELECT", true],
+      ["input_bundle_reference", "INSERT", false],
+      ["input_bundle_reference", "UPDATE", false],
+      ["input_bundle_reference", "DELETE", false],
+      ["input_bundle", "SELECT", false],
+    ] as const)
+      assert.equal(
+        await privilege(relation, verb),
+        granted,
+        `${schedulerRole} holds ${verb} on ${relation}`,
+      );
+  });
+});
