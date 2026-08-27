@@ -291,6 +291,29 @@ test("an admitted-images list longer than its bound is refused", async () => {
   assert.equal(found.parsed, undefined);
 });
 
+test("a shared worker database is site data a placement carries, and is optional", async () => {
+  const database = { secretName: "worker-database", key: "url" };
+  const found = JSON.parse(
+    await schedulerProgram(
+      parseProgram({
+        ...environment,
+        CHUG_SCHEDULER_WORKER_DATABASE: JSON.stringify(database),
+      }),
+    ),
+  ) as { readonly parsed?: { readonly workers?: Record<string, unknown> } };
+  assert.deepEqual(found.parsed?.workers?.["database"], database);
+
+  const refused = JSON.parse(
+    await schedulerProgram(
+      parseProgram({
+        ...environment,
+        CHUG_SCHEDULER_WORKER_DATABASE: JSON.stringify({ secretName: "s" }),
+      }),
+    ),
+  ) as { readonly refused?: string };
+  assert.match(refused.refused ?? "", /CHUG_SCHEDULER_WORKER_DATABASE/u);
+});
+
 test("every prerequisite variable is refused by its own name", async () => {
   for (const name of required) {
     const named = Object.fromEntries(

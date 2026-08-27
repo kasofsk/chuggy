@@ -239,9 +239,19 @@ GRANT chuggy_boundary_owner, chuggy_ticket_service, chuggy_api, chuggy_selector_
       chuggy_selector_control, chuggy_selector_review, chuggy_scheduler,
       chuggy_finalizer, chuggy_worker_plane, chuggy_configuration_importer TO chuggy_owner;
 
--- CONNECT is granted to PUBLIC on a stock database and revoked on a hardened
--- one, so it is named rather than assumed. current_database() keeps the file
--- from carrying a database name it would then have to agree with.
+-- PUBLIC HOLDS CONNECT ON A STOCK DATABASE, AND EVERY ROLE ON THE SERVER IS
+-- PUBLIC. It is not a read of any relation — the grants below and the
+-- migration's decide those — but a session in this database can read the
+-- catalog, which is every table, column and function body this deployment has.
+-- The server is not this deployment's alone: a rig that runs the workers'
+-- databases here as well has roles on it that agent-authored code reaches, and
+-- those roles are PUBLIC too. So the privilege is taken from PUBLIC and then
+-- given by name, and neither half is left to the database's defaults.
+SELECT format('REVOKE CONNECT ON DATABASE %I FROM PUBLIC', current_database())
+\gexec
+
+-- current_database() keeps the file from carrying a database name it would
+-- then have to agree with.
 SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), role_name)
   FROM unnest(ARRAY['chuggy_owner', 'chuggy_ticket_service_login', 'chuggy_api_login',
                     'chuggy_selector_service_login', 'chuggy_scheduler_login',

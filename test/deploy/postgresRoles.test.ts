@@ -276,6 +276,14 @@ test("every login role is created, attributed, passworded and connected alike", 
     );
 });
 
+test("the database takes CONNECT from PUBLIC before it gives it by name", () => {
+  assert.match(
+    rolesFile,
+    /REVOKE CONNECT ON DATABASE %I FROM PUBLIC', current_database\(\)\) \\gexec/u,
+    `${rolesFilePath} leaves PUBLIC holding CONNECT, so every role on the server reaches this database`,
+  );
+});
+
 test("no login role is left locked out by an attribute a rotation does not touch", () => {
   const restated = Array.from(
     rolesFile.matchAll(/ALTER ROLE (chuggy_\w+) WITH LOGIN ([^;]*);/gu),
