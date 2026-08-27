@@ -47,9 +47,13 @@ import {
 import {
   nativeHttpPageItemsMax,
   resultReportCharsMax,
+  resultReportSchemaVersionMin,
   runConfigurationBytesMax,
 } from "../../src/contract/http.ts";
-import { resultReportCharsMax as interpretedReportCharsMax } from "../../src/interpreter/resultManifest.ts";
+import {
+  resultReportCharsMax as interpretedReportCharsMax,
+  resultManifestSchemaVersion,
+} from "../../src/interpreter/resultManifest.ts";
 import { runTurnsPageLimitMax } from "../../src/interpreter/runEvidence.ts";
 import type { RunTotals } from "../../src/interpreter/runEvidence.ts";
 import { projectChangeKinds } from "../../src/contract/events.ts";
@@ -183,6 +187,14 @@ test("a run's read bounds are the ones the layers beneath them hold", () => {
   assert.equal(runConfigurationBytesMax, outputPreviewBytesMax);
   assert.equal(resultReportCharsMax, interpretedReportCharsMax);
   assert.equal(nativeHttpPageItemsMax, runTurnsPageLimitMax);
+});
+
+/**
+ * Held in both directions: too high draws "too old" over every run there is,
+ * and too low draws nothing at all for the versions #363 is about.
+ */
+test("the version a summary begins at is the one the manifest reader requires it at", () => {
+  assert.equal(resultReportSchemaVersionMin, resultManifestSchemaVersion);
 });
 
 test("one page bound serves every collection route", () => {

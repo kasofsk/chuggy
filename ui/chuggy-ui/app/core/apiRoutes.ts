@@ -29,6 +29,9 @@ import {
   projectNativeActionsResponseSchema,
   projectResponseSchema,
   repositoryConfigurationImportedSchema,
+  runConfigurationResponseSchema,
+  runTranscriptResponseSchema,
+  runTurnsResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
 } from "../../../../src/contract/responses.ts";
@@ -49,6 +52,9 @@ import type {
   ProjectInventoryResponse,
   ProjectNativeActionsResponse,
   ProjectResponse,
+  RunConfigurationResponse,
+  RunTranscriptResponse,
+  RunTurnsResponse,
   TicketNativeActionsResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
@@ -287,6 +293,75 @@ export function apiOutputContent(
     ports,
     apiSegments(partition, "executions", execution, "artifacts", ordinal),
     (value) => outputContentResponseSchema.parse(value),
+  );
+}
+
+export interface RunTurnsPage {
+  readonly after?: number | undefined;
+  readonly limit?: number | undefined;
+}
+
+function apiAttemptSegments(
+  partition: PartitionIdentity,
+  execution: string,
+  attempt: string,
+  read: string,
+): string {
+  return apiSegments(
+    partition,
+    "executions",
+    execution,
+    "attempts",
+    attempt,
+    read,
+  );
+}
+
+/** One run's per-turn series, ascending, resumed by the ordinal already held. */
+export function apiRunTurns(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  execution: string,
+  attempt: string,
+  page: RunTurnsPage = {},
+): Promise<ApiResult<RunTurnsResponse>> {
+  return apiGet(
+    ports,
+    apiPath(apiAttemptSegments(partition, execution, attempt, "turns"), {
+      after: page.after,
+      limit: page.limit,
+    }),
+    (value) => runTurnsResponseSchema.parse(value),
+  );
+}
+
+/** The batches above the one named, which is the highest a pane already holds. */
+export function apiRunTranscript(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  execution: string,
+  attempt: string,
+  after: number,
+): Promise<ApiResult<RunTranscriptResponse>> {
+  return apiGet(
+    ports,
+    apiPath(apiAttemptSegments(partition, execution, attempt, "transcript"), {
+      after,
+    }),
+    (value) => runTranscriptResponseSchema.parse(value),
+  );
+}
+
+export function apiRunConfiguration(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  execution: string,
+  attempt: string,
+): Promise<ApiResult<RunConfigurationResponse>> {
+  return apiGet(
+    ports,
+    apiAttemptSegments(partition, execution, attempt, "configuration"),
+    (value) => runConfigurationResponseSchema.parse(value),
   );
 }
 

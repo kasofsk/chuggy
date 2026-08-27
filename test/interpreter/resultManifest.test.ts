@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 
+import { resultReportSchemaVersionMin } from "../../src/contract/http.ts";
 import {
   acceptResultManifest,
   allManifestRejections,
@@ -29,6 +30,7 @@ import {
   manifestsAgree,
   resultDigestFold,
   resultDigestFoldHexChars,
+  resultManifestSchemaVersion,
   resultManifestTextCharsMax,
   type CanonicalManifest,
   type ManifestAccepted,
@@ -120,6 +122,35 @@ function workerReport(verdict: string, source?: unknown): string {
     diagnostics: [row("log/session.json")],
   });
 }
+
+/** A body at one retained version with no summary in it, which is what the
+ * required-key list decides about. */
+function withoutReport(version: number): string {
+  return JSON.stringify({
+    version,
+    verdict: "Pass",
+    handoffs: [],
+    diagnostics: [],
+  });
+}
+
+/**
+ * The console draws "report schema too old" below this version, so a value
+ * either side of the reader's own decision is a pane that lies about #363.
+ */
+test("the contract's summary version is where this reader begins requiring one", () => {
+  const retained = [1, 2, resultManifestSchemaVersion];
+  const requiring = retained.filter(
+    (version) =>
+      acceptResultManifest(
+        binding,
+        manifestId,
+        withoutReport(version),
+        digestOf,
+      ).accepted === "Rejected",
+  );
+  assert.deepEqual(requiring, [resultReportSchemaVersionMin]);
+});
 
 const source = {
   repository: "repository-one",

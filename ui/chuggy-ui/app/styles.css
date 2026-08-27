@@ -624,3 +624,161 @@ textarea:focus-visible {
     --bad: #b3261e;
   }
 }
+
+/* Run evidence: the stage breakdown above the executions it groups, and the
+ * four panes an expanded run draws. */
+
+.stages,
+.runs {
+  list-style: none;
+  margin: 0;
+  padding: var(--gap) var(--gap-wide);
+  display: grid;
+  gap: var(--gap);
+}
+
+.stage {
+  display: grid;
+  grid-template-columns: 12rem 1fr;
+  gap: 0 var(--gap-wide);
+  align-items: baseline;
+}
+
+.stage-label {
+  color: var(--ink-bright);
+  font-weight: 600;
+}
+
+.stage .run-totals,
+.stage .panel-note {
+  grid-column: 1 / -1;
+}
+
+.run-totals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gap-wide);
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-cost {
+  color: var(--ink-bright);
+}
+
+.run-tokens,
+.run-turns,
+.run-duration {
+  color: var(--ink-dim);
+  font-size: var(--text-small);
+}
+
+.run {
+  border-top: 1px solid var(--edge);
+  padding-top: var(--gap);
+  display: grid;
+  gap: var(--gap);
+}
+
+.run-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gap-wide);
+  margin: 0;
+}
+
+.run-number {
+  color: var(--ink-bright);
+  font-weight: 600;
+}
+
+.run-state {
+  color: var(--ink-dim);
+}
+
+.run-report,
+.argv {
+  margin: 0;
+  padding: var(--gap);
+  background: var(--ground-sunken);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.run-reads {
+  display: grid;
+  gap: var(--gap);
+}
+
+.turns {
+  border-collapse: collapse;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+.turns th,
+.turns td {
+  text-align: left;
+  padding: 0.1rem var(--gap);
+  border-bottom: 1px solid var(--edge);
+  font-weight: 400;
+}
+
+.turns th {
+  color: var(--ink-dim);
+  font-size: var(--text-small);
+}
+
+.configuration-file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gap);
+}
+
+.configuration-file .preview {
+  flex-basis: 100%;
+}
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: var(--gap) var(--gap-wide);
+  display: grid;
+  gap: var(--gap);
+  max-height: 32rem;
+  overflow: auto;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 0 var(--gap-wide);
+  align-items: baseline;
+}
+
+.step-type {
+  color: var(--ink-dim);
+}
+
+.step-tools {
+  color: var(--accent);
+}
+
+.step-capped,
+.step-elided {
+  grid-column: 2;
+  color: var(--warn);
+  font-size: var(--text-small);
+}
+
+.step-text {
+  grid-column: 2;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
