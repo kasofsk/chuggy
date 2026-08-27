@@ -17,6 +17,7 @@
   },
   "type": "module",
   "workspaces": [
+    "test/rig",
     "ui/chuggy-ui"
   ],
   "scripts": {
