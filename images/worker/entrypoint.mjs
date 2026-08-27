@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createInterface } from "node:readline";
 
@@ -10,12 +11,18 @@ import { claudeInvocation, claudeResult } from "./claude.mjs";
 import { keepWorkerLease } from "./lease.mjs";
 import { scopedDatabase } from "./postgres.mjs";
 import { workerRepositories, workerRepository } from "./repository.mjs";
+import { credentialScrub, runEvidenceRecorder } from "./runEvidence.mjs";
+import { runConfigurationSnapshot } from "./snapshot.mjs";
 import { commitAndPushSource, resultDocument } from "./source.mjs";
 import { workerRequest } from "./transport.mjs";
 
 const executeFile = promisify(execFile);
+const claudeCredentialFile = "/var/run/chuggy/credentials/claude-code";
+const workerCredentialFilesMax = 64;
 let activeTask;
 let activeBearer;
+let activeScrub;
+let activeEvidence;
 
 function required(name) {
   const value = process.env[name];
@@ -75,13 +82,48 @@ async function prepareWorker(task, directory) {
   }
 }
 
-async function runClaude(task, directory) {
-  const token = (
-    await readFile("/var/run/chuggy/credentials/claude-code", "utf8")
-  ).trim();
-  const child = spawn("claude", claudeInvocation(task), {
-    cwd: directory,
-    env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: token },
+async function captureConfiguration(context, argv, init) {
+  const snapshot = await runConfigurationSnapshot({
+    argv,
+    init,
+    task: context.task,
+    cwd: context.directory,
+    home: process.env.HOME,
+    scrub: context.scrub,
+  });
+  await context.evidence.configuration(snapshot);
+}
+
+async function readClaudeStream(context, child, argv) {
+  let resultEvent;
+  let captured = false;
+  const lines = createInterface({ input: child.stdout });
+  for await (const line of lines) {
+    process.stdout.write(`${line}\n`);
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      throw new Error("Claude Code emitted invalid streaming JSON");
+    }
+    if (!captured && event?.type === "system" && event.subtype === "init") {
+      captured = true;
+      await captureConfiguration(context, argv, event);
+    }
+    if (event?.type === "result") {
+      resultEvent = event;
+      context.evidence.observed(event);
+    }
+    await context.evidence.record(line, event);
+  }
+  return resultEvent;
+}
+
+async function runClaude(context) {
+  const argv = claudeInvocation(context.task);
+  const child = spawn("claude", argv, {
+    cwd: context.directory,
+    env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: context.token },
     stdio: ["ignore", "pipe", "inherit"],
   });
   const exited = new Promise((resolve, reject) => {
@@ -90,18 +132,7 @@ async function runClaude(task, directory) {
       resolve([exitCode, exitSignal]),
     );
   });
-  let resultEvent;
-  const lines = createInterface({ input: child.stdout });
-  for await (const line of lines) {
-    process.stdout.write(`${line}\n`);
-    try {
-      const event = JSON.parse(line);
-      if (event?.type === "result" && event.structured_output !== undefined)
-        resultEvent = event;
-    } catch {
-      throw new Error("Claude Code emitted invalid streaming JSON");
-    }
-  }
+  const resultEvent = await readClaudeStream(context, child, argv);
   const [code, signal] = await exited;
   if (code !== 0)
     throw new Error(
@@ -118,8 +149,8 @@ function artifact(path, content) {
   };
 }
 
-async function upload(task, bearer, path, content) {
-  await workerRequest(task, bearer, `/v1/artifacts/${path}`, {
+async function upload(task, bearer, path, content, request = workerRequest) {
+  await request(task, bearer, `/v1/artifacts/${path}`, {
     method: "PUT",
     headers: { "content-type": "application/octet-stream" },
     body: content,
@@ -127,34 +158,46 @@ async function upload(task, bearer, path, content) {
   return artifact(path, content);
 }
 
-async function workSource(
-  task,
-  repositoryId,
-  repository,
-  base,
-  directory,
-  verdict,
-  environment,
-) {
+async function workSource(task, workspace, verdict) {
   if (task.taskKind !== "Work" || verdict !== "Pass") return undefined;
-  return commitAndPushSource({
-    task,
+  return commitAndPushSource({ task, ...workspace, command });
+}
+
+async function workerWorkspace(task, repositories, credentialFiles, bearer) {
+  const input = await (await workerRequest(task, bearer, "/v1/input")).json();
+  const repositoryId = oneReference(input, "Repository");
+  const { repository, credential, environment } = workerRepository(
+    repositories,
+    credentialFiles,
     repositoryId,
+  );
+  if (!task.authority.credentials.includes(credential))
+    throw new Error(`worker authority does not grant ${credential}`);
+  const base = oneReference(input, "TargetCommit");
+  const directory = await cloneRepository(
     repository,
     base,
-    directory,
-    command,
+    required("CHUG_WORKER_WORKSPACE"),
     environment,
-  });
+  );
+  return { repositoryId, repository, base, directory, environment };
 }
 
-async function diagnostic(task, bearer, result) {
-  const content = Buffer.from(`${JSON.stringify(result, null, 2)}\n`);
-  return upload(task, bearer, ".chuggy/claude-result.json", content);
+async function diagnostic(context, result) {
+  const content = Buffer.from(
+    context.scrub(`${JSON.stringify(result, null, 2)}\n`),
+  );
+  return upload(
+    context.task,
+    context.bearer,
+    ".chuggy/claude-result.json",
+    content,
+    context.request,
+  );
 }
 
-async function report(task, bearer, manifest) {
-  await workerRequest(task, bearer, "/v1/report", {
+async function report(context, manifest) {
+  await context.request(context.task, context.bearer, "/v1/report", {
     method: "POST",
     headers: { "content-type": "text/plain; charset=utf-8" },
     body: JSON.stringify(resultDocument(manifest)),
@@ -163,6 +206,39 @@ async function report(task, bearer, manifest) {
 
 function reportSummary(summary) {
   return summary.replace(/\s+/gu, " ").trim();
+}
+
+async function credentialValues(credentialFiles) {
+  const values = [];
+  for (const path of Object.values(credentialFiles).slice(
+    0,
+    workerCredentialFilesMax,
+  )) {
+    if (typeof path !== "string" || !path.startsWith("/")) continue;
+    try {
+      values.push((await readFile(path, "utf8")).trim());
+    } catch {
+      process.stderr.write(`worker credential ${path} could not be read\n`);
+    }
+  }
+  return values;
+}
+
+async function workerRun(task, bearer, credentialFiles) {
+  const token = (await readFile(claudeCredentialFile, "utf8")).trim();
+  const scrub = credentialScrub([
+    token,
+    bearer,
+    ...(await credentialValues(credentialFiles)),
+  ]);
+  activeScrub = scrub;
+  const evidence = runEvidenceRecorder(task, bearer, scrub);
+  activeEvidence = evidence;
+  return { token, scrub, evidence };
+}
+
+function scrubbed(text) {
+  return activeScrub === undefined ? text : activeScrub(text);
 }
 
 async function main() {
@@ -182,50 +258,39 @@ async function main() {
     await readFile(task.workerPlane.capabilityFile, "utf8")
   ).trim();
   activeBearer = bearer;
+  const { token, scrub, evidence } = await workerRun(
+    task,
+    bearer,
+    credentialFiles,
+  );
   const stopLease = keepWorkerLease(task, bearer);
   let dropDatabase = async () => undefined;
   try {
-    const input = await (await workerRequest(task, bearer, "/v1/input")).json();
-    const repositoryId = oneReference(input, "Repository");
-    const { repository, credential, environment } = workerRepository(
+    const workspace = await workerWorkspace(
+      task,
       repositories,
       credentialFiles,
-      repositoryId,
-    );
-    if (!task.authority.credentials.includes(credential))
-      throw new Error(`worker authority does not grant ${credential}`);
-    const base = oneReference(input, "TargetCommit");
-    const directory = await cloneRepository(
-      repository,
-      base,
-      required("CHUG_WORKER_WORKSPACE"),
-      environment,
+      bearer,
     );
     dropDatabase = await scopedDatabase(
       required("CHUG_WORKER_DATABASE_URL"),
       required("CHUG_WORKER_DATABASE_SCOPE"),
     );
-    await prepareWorker(task, directory);
-    const { output, result } = await runClaude(task, directory);
-    const source = await workSource(
+    await prepareWorker(task, workspace.directory);
+    const { output, result } = await runClaude({
       task,
-      repositoryId,
-      repository,
-      base,
-      directory,
-      result.verdict,
-      environment,
-    );
-    const diagnostics = [await diagnostic(task, bearer, output)];
-    await stopLease();
-    await report(task, bearer, {
-      verdict: result.verdict,
-      report: reportSummary(result.summary),
-      handoffs: [],
-      ...(source === undefined ? {} : { source }),
-      diagnostics,
+      directory: workspace.directory,
+      token,
+      scrub,
+      evidence,
     });
+    await publishWorkerResult(
+      { task, bearer, evidence, scrub, stopLease, request: workerRequest },
+      workspace,
+      { output, result },
+    );
   } finally {
+    evidence.stop();
     try {
       await dropDatabase();
     } finally {
@@ -234,26 +299,75 @@ async function main() {
   }
 }
 
-main().catch(async (failure) => {
-  const message = failure instanceof Error ? failure.message : "worker failed";
+/**
+ * What a finished run leaves behind, in the order it has to leave it: the run's
+ * totals reach the plane before the report that terminalizes the execution, so
+ * a settled task never carries figures nothing wrote.
+ */
+export async function publishWorkerResult(
+  context,
+  workspace,
+  { output, result },
+) {
+  await context.evidence.finish();
+  const source = await workSource(context.task, workspace, result.verdict);
+  const diagnostics = [await diagnostic(context, output)];
+  await context.stopLease();
+  await report(context, {
+    verdict: result.verdict,
+    report: context.scrub(reportSummary(result.summary)),
+    handoffs: [],
+    ...(source === undefined ? {} : { source }),
+    diagnostics,
+  });
+}
+
+/**
+ * What a crashed run leaves behind: its figures, its error text, and the label
+ * that ends the attempt. It reports no verdict, because a run that died is a
+ * lost attempt and never a failed task.
+ */
+export async function reportWorkerFailure(
+  { task, bearer, evidence, request = workerRequest, scrub = scrubbed },
+  message,
+) {
+  await evidence?.finish();
+  try {
+    await upload(
+      task,
+      bearer,
+      ".chuggy/worker-error.txt",
+      Buffer.from(scrub(`${message}\n`)),
+      request,
+    );
+  } catch {
+    process.stderr.write("worker failure text could not be uploaded\n");
+  }
+  await evidence?.ended();
+}
+
+async function reportActiveFailure(failure) {
+  const message = scrubbed(
+    failure instanceof Error ? failure.message : "worker failed",
+  );
   process.stderr.write(`${message}\n`);
   if (activeTask !== undefined && activeBearer !== undefined) {
     try {
-      const error = await upload(
-        activeTask,
-        activeBearer,
-        ".chuggy/worker-error.txt",
-        Buffer.from(`${message}\n`),
+      await reportWorkerFailure(
+        {
+          task: activeTask,
+          bearer: activeBearer,
+          evidence: activeEvidence,
+          scrub: scrubbed,
+        },
+        message,
       );
-      await report(activeTask, activeBearer, {
-        verdict: "Fail",
-        report: message,
-        handoffs: [],
-        diagnostics: [error],
-      });
     } catch {
       process.stderr.write("worker failure could not be reported\n");
     }
   }
   process.exitCode = 1;
-});
+}
+
+if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url))
+  main().catch(reportActiveFailure);
