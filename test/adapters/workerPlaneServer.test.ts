@@ -12,6 +12,7 @@ import {
 } from "../../src/interpreter/executionScheduler.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
+import type { ReportIngested } from "../../src/interpreter/executionSchedulerReport.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
 
 const authority = {
@@ -222,6 +223,73 @@ test("an exhausted attempt artifact quota is a terminal payload refusal", async 
     reason: "QuotaExceeded",
   });
   await app.close();
+});
+
+/** Injects one report against a plane whose ingest always answers this, and reads the reply. */
+async function refusedReport(
+  ingested: ReportIngested,
+): Promise<{ readonly statusCode: number; readonly body: unknown }> {
+  const app = createWorkerPlaneApp({
+    ...heartbeatService,
+    authority: { authenticate: () => Promise.resolve(authority) },
+    reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
+    artifacts: { store: () => Promise.resolve({ stored: "Stored" }) },
+    reports: { report: () => Promise.resolve(ingested) },
+    ready: () => Promise.resolve(true),
+    uploadBytesMax: 64,
+  });
+  const response = await app.inject({
+    method: "POST",
+    url: "/v1/report",
+    headers: { authorization: "Bearer held", "content-type": "text/plain" },
+    payload: "{}",
+  });
+  await app.close();
+  return { statusCode: response.statusCode, body: JSON.parse(response.body) };
+}
+
+test("a refused report carries why it was refused, from the closed rosters", async () => {
+  const malformed = await refusedReport({
+    ingested: "Malformed",
+    code: "MissingField",
+  });
+  assert.equal(malformed.statusCode, 409);
+  assert.deepEqual(malformed.body, { action: "stop", reason: "MissingField" });
+  const at = { role: "Handoff", index: 2 } as const;
+  const sited = await refusedReport({
+    ingested: "Malformed",
+    code: "PathAbsolute",
+    at,
+  });
+  assert.deepEqual(sited.body, {
+    action: "stop",
+    reason: "PathAbsolute",
+    at,
+  });
+  const unconfirmed = await refusedReport({
+    ingested: "Unconfirmed",
+    failure: "DigestMismatch",
+    at,
+  });
+  assert.equal(unconfirmed.statusCode, 409);
+  assert.deepEqual(unconfirmed.body, {
+    action: "stop",
+    reason: "DigestMismatch",
+    at,
+  });
+});
+
+test("a refusal that is not about the report itself names nothing further", async () => {
+  for (const ingested of ["Fenced", "Stale", "NotAdmitted"] as const) {
+    const response = await refusedReport({ ingested });
+    assert.equal(response.statusCode, 409);
+    assert.deepEqual(response.body, { action: "stop" });
+  }
+  const conflicting = await refusedReport({
+    ingested: "Conflicting",
+    incident: "two results for one attempt",
+  });
+  assert.deepEqual(conflicting.body, { action: "stop" });
 });
 
 test("identical terminal report redelivery reaches its absorbed operation", async () => {

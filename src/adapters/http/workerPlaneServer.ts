@@ -5,6 +5,9 @@ import { asAttemptCapabilitySecret } from "../../interpreter/executionScheduler.
 import {
   artifactPathRejection,
   resultManifestTextCharsMax,
+  type ArtifactFailure,
+  type ArtifactSite,
+  type ManifestRejection,
 } from "../../interpreter/resultManifest.ts";
 import type {
   WorkerArtifactReservationPort,
@@ -152,6 +155,24 @@ function workerUploadRoute(
   });
 }
 
+/**
+ * The body a refused report is answered with, naming the roster member it was
+ * refused for and the row that was reached where there is one. Both rosters are
+ * closed, so what a worker may write into an error artifact is bounded.
+ */
+function workerReportRefused(
+  reason: ManifestRejection | ArtifactFailure,
+  at: ArtifactSite | undefined,
+): {
+  readonly action: "stop";
+  readonly reason: string;
+  readonly at?: ArtifactSite;
+} {
+  return at === undefined
+    ? { action: "stop", reason }
+    : { action: "stop", reason, at };
+}
+
 function workerReportRoute(
   app: FastifyInstance,
   service: WorkerPlaneServerService,
@@ -188,9 +209,15 @@ function workerReportRoute(
       case "Stale":
       case "NotAdmitted":
       case "Conflicting":
-      case "Malformed":
-      case "Unconfirmed":
         return reply.code(409).send({ action: "stop" });
+      case "Malformed":
+        return reply
+          .code(409)
+          .send(workerReportRefused(ingested.code, ingested.at));
+      case "Unconfirmed":
+        return reply
+          .code(409)
+          .send(workerReportRefused(ingested.failure, ingested.at));
     }
   });
 }

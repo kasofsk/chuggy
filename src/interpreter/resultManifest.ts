@@ -9,6 +9,11 @@
  * form — and issue #180's normalized paths
  * are paths that arrived normalized rather than paths that were made so.
  *
+ * AN OMITTED `source` IS NOT A REPAIRED ONE. The key is optional from version
+ * two on, so a report with no source handoff declares that by leaving it out
+ * or by spelling it null, and neither form is rewritten into the other. Every
+ * other key of the envelope stays required, and an unknown one stays refused.
+ *
  * AN UNSEALED MANIFEST CANNOT BE ASSEMBLED. `ResultManifest` carries a seal only
  * `acceptResultManifest` can produce, and the scheduler's terminal transaction
  * takes that type — so a record built field by field cannot be offered to it,
@@ -521,6 +526,26 @@ function manifestDuplicatePath(rows: readonly ArtifactRow[]): boolean {
   );
 }
 
+/**
+ * The refusal a report's own keys earn: an unknown key is refused because an
+ * ignored field is an accepted one, and an absent required key is refused as
+ * the field it is missing. An optional key is one a worker omits rather than
+ * spells null — `source`, which every task carrying no source handoff leaves
+ * out — so its absence and its null are the same declaration.
+ */
+function manifestEnvelopeKeysRejection(
+  record: Record<string, unknown>,
+  required: readonly string[],
+  optional: readonly string[],
+): ManifestRejection | undefined {
+  const found = Object.keys(record);
+  if (found.some((key) => !required.includes(key) && !optional.includes(key)))
+    return "UnexpectedField";
+  return required.every((key) => found.includes(key))
+    ? undefined
+    : "MissingField";
+}
+
 /** The envelope a report must carry, or the refusal reading it earns. */
 function manifestEnvelope(
   text: string,
@@ -538,14 +563,13 @@ function manifestEnvelope(
   const version = record["version"];
   if (version !== 1 && version !== 2 && version !== resultManifestSchemaVersion)
     return manifestRejected("UnsupportedSchemaVersion");
-  const keys =
-    version === 1
-      ? ["version", "verdict", "handoffs", "diagnostics"]
-      : version === 2
-        ? ["version", "verdict", "handoffs", "diagnostics", "source"]
-        : ["version", "verdict", "report", "handoffs", "diagnostics", "source"];
-  if (!manifestKeysAre(record, keys))
-    return manifestRejected("UnexpectedField");
+  const required =
+    version === resultManifestSchemaVersion
+      ? ["version", "verdict", "report", "handoffs", "diagnostics"]
+      : ["version", "verdict", "handoffs", "diagnostics"];
+  const optional = version === 1 ? [] : ["source"];
+  const refusal = manifestEnvelopeKeysRejection(record, required, optional);
+  if (refusal !== undefined) return manifestRejected(refusal);
   if (record["verdict"] !== "Pass" && record["verdict"] !== "Fail")
     return manifestRejected("UnknownVerdict");
   return { value: record };
@@ -573,8 +597,10 @@ function manifestReport(
 function manifestSource(
   record: Record<string, unknown>,
 ): SourceHandoff | undefined | ManifestAccepted {
-  if (record["version"] === 1 || record["source"] === null) return undefined;
-  const source = manifestRecord(record["source"]);
+  const declared = record["source"];
+  if (record["version"] === 1 || declared === null || declared === undefined)
+    return undefined;
+  const source = manifestRecord(declared);
   if (
     source === undefined ||
     !manifestKeysAre(source, ["repository", "ref", "commit", "base"])
