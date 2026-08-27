@@ -165,7 +165,7 @@ function workerReportRefused(
   at: ArtifactSite | undefined,
 ): {
   readonly action: "stop";
-  readonly reason: string;
+  readonly reason: ManifestRejection | ArtifactFailure;
   readonly at?: ArtifactSite;
 } {
   return at === undefined

@@ -184,6 +184,33 @@ test("an omitted source and an explicit null are one declaration", () => {
   );
 });
 
+test("a key optional at one schema version is unknown at the ones before it", () => {
+  assert.equal(
+    rejection(
+      JSON.stringify({
+        version: 1,
+        verdict: "Pass",
+        handoffs: [],
+        diagnostics: [],
+        source: null,
+      }),
+    ),
+    "UnexpectedField",
+  );
+  assert.equal(
+    rejection(
+      JSON.stringify({
+        version: 2,
+        verdict: "Pass",
+        report: "a review",
+        handoffs: [],
+        diagnostics: [],
+      }),
+    ),
+    "UnexpectedField",
+  );
+});
+
 test("the other envelope keys stay required and unknown ones stay refused", () => {
   assert.equal(
     rejection(
