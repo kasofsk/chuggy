@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { releaseTicketEvent } from "../../src/actor/decisionEvent.ts";
+import {
+  dispatchEvent,
+  releaseTicketEvent,
+  taskDoneEvent,
+  ticketAt,
+  workReduceEvent,
+} from "../../src/actor/decisionEvent.ts";
 import { actorInit, journalStep, memoryCore } from "../../src/actor/state.ts";
 import {
   asOperationId,
@@ -10,6 +16,7 @@ import {
 import type { DecisionInput } from "../../src/interpreter/projectDiscovery.ts";
 import type {
   Decision,
+  ExecutionRequestPlan,
   ProjectDecision,
 } from "../../src/interpreter/projectDecision.ts";
 import type { ProjectStore } from "../../src/interpreter/projectStore.ts";
@@ -38,7 +45,14 @@ import {
   dispatchViewDigest,
 } from "../../src/interpreter/dispatchView.ts";
 import type { TicketCommand } from "../../src/interpreter/ticketCommand.ts";
-import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
+import { executionSourceObservation } from "../../src/interpreter/executionSourceObservation.ts";
+import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
+import { asTaskId } from "../../src/domain/ids.ts";
+import {
+  plainAuthoring,
+  plainResult,
+  refinementInstance,
+} from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 
 const partition = {
@@ -289,4 +303,108 @@ test("the branch a ticket was briefed with names the ref its work is observed at
       : undefined,
     "refs/heads/rt/ticket-brief",
   );
+});
+
+const workBase = asGitObjectId("b".repeat(40));
+const workCommit = asGitObjectId("c".repeat(40));
+
+/** The memory of a ticket whose single work task has passed and awaits its reduce. */
+function workPassedMemory(): ProjectMemory {
+  const config = refinementInstance;
+  let state = journalStep(
+    config,
+    actorInit(),
+    releaseTicketEvent(id(1), plainAuthoring),
+  );
+  state = journalStep(config, state, dispatchEvent(id(1)));
+  state = journalStep(
+    config,
+    state,
+    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+  );
+  return { ...releasedMemory(), core: memoryCore(state) };
+}
+
+/** The reduce that turns passed work into the evaluation spawn under test. */
+function workReduceInput(memory: ProjectMemory): DecisionInput {
+  const ticket = ticketAt(memory.core, id(1));
+  return {
+    partition,
+    ordinal: 1,
+    priority: "Continuation",
+    source: {
+      kind: "Continuation",
+      continuation: "continuation",
+      command: workReduceEvent(id(1)),
+      expectedTicketVersion: 1,
+      expectedPhase: ticket.phase,
+      taskSetGeneration: ticket.spawned,
+    },
+  };
+}
+
+/** The evaluation spawn a work reduce materializes over one work spawn's declarations. */
+async function evaluationSpawn(
+  declared: readonly ReturnType<typeof asGitObjectId>[],
+): Promise<ExecutionRequestPlan | undefined> {
+  const memory = workPassedMemory();
+  let captured: Decision | undefined;
+  await projectWriterDecide(
+    {
+      config: refinementInstance,
+      store: {} as ProjectStore,
+      decisions: {
+        decide: (decision) => {
+          captured = decision;
+          return Promise.resolve({ decided: "Refused" });
+        },
+      },
+      ticketBriefs: { brief: () => Promise.resolve(undefined) },
+      executionSources: executionSourceObservation(
+        {
+          binding: () => {
+            throw new Error("an evaluation must not read the project binding");
+          },
+        },
+        {
+          observeTarget: () => {
+            throw new Error("mutable Git must not be observed");
+          },
+        },
+        {
+          workSource: () =>
+            Promise.resolve({
+              repository: asRepositoryId("work-repository"),
+              base: workBase,
+              declared,
+              manifests: [asResultManifestId("manifest-one")],
+            }),
+        },
+      ),
+    },
+    memory,
+    workReduceInput(memory),
+  );
+  return captured?.outcome.outcome === "Journaled"
+    ? captured.outcome.materialization.execution[0]
+    : undefined;
+}
+
+test("an evaluation spawn pins the commit its work produced, not the base it ran on", async () => {
+  const spawn = await evaluationSpawn([workCommit]);
+  assert.equal(spawn?.kind, "SpawnEvaluation");
+  assert.deepEqual(spawn?.bundle?.source, {
+    repository: "work-repository",
+    targetCommit: workCommit,
+    manifests: ["manifest-one"],
+  });
+});
+
+test("a fan-out that declared several commits spawns its evaluation at the base", async () => {
+  const spawn = await evaluationSpawn([
+    workCommit,
+    asGitObjectId("d".repeat(40)),
+  ]);
+  assert.equal(spawn?.kind, "SpawnEvaluation");
+  assert.equal(spawn?.bundle?.source?.targetCommit, workBase);
 });
