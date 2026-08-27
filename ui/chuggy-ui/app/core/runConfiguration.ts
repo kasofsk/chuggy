@@ -3,9 +3,9 @@
  * runtime's own init event, the resolved command line, and the instruction,
  * settings and plugin files it named.
  *
- * The snapshot is bytes a worker wrote, so it is parsed leniently and a
- * snapshot this console cannot read is said to be unreadable rather than
- * thrown on. Everything the worker left out — a file too large to keep, a
+ * The snapshot is bytes a worker wrote, so it is parsed leniently: the init
+ * event is opaque to the schema and read field by field, because a runtime that
+ * says something new about itself must cost that field and not the document. Everything the worker left out — a file too large to keep, a
  * command line that did not fit — is listed as itself, because what was
  * omitted is part of what the run was configured with.
  */
@@ -50,22 +50,14 @@ const snapshotFileSchema = z.object({
 });
 export type RunConfigurationFile = z.infer<typeof snapshotFileSchema>;
 
-const snapshotInitSchema = z.object({
-  model: z.string().optional(),
-  permissionMode: z.string().optional(),
-  cwd: z.string().optional(),
-  tools: z.array(z.string()).optional(),
-  skills: z.array(z.unknown()).optional(),
-  claude_code_version: z.string().optional(),
-});
-
 export const runConfigurationSnapshotSchema = z.object({
   argv: z.array(z.string()).max(runConfigurationArgvMax),
   argvTruncated: truncationMarkerSchema.optional(),
   claudeVersion: z.string().optional(),
-  init: z.union([truncationMarkerSchema, snapshotInitSchema]).optional(),
+  init: z.unknown(),
   files: z.array(snapshotFileSchema).max(runConfigurationFilesMax),
   dropped: z.array(snapshotFileSchema).max(runConfigurationFilesMax),
+  droppedOmitted: z.number().int().nonnegative().optional(),
 });
 export type RunConfigurationSnapshot = z.infer<
   typeof runConfigurationSnapshotSchema
@@ -116,22 +108,44 @@ export interface RunConfigurationHead {
   readonly initElidedBytes: number | undefined;
 }
 
+function initRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function initText(
+  init: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = init[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function initCount(
+  init: Record<string, unknown>,
+  key: string,
+): number | undefined {
+  const value = init[key];
+  return Array.isArray(value) ? value.length : undefined;
+}
+
+/**
+ * Each field is read on its own, so a runtime that says something new about
+ * itself in one of them costs that field and not the whole event.
+ */
 export function runConfigurationHead(
   snapshot: RunConfigurationSnapshot,
 ): RunConfigurationHead {
   const elided = truncationMarkerOf(snapshot.init);
-  const init =
-    elided === undefined
-      ? snapshotInitSchema.safeParse(snapshot.init ?? {})
-      : undefined;
-  const read = init?.success === true ? init.data : undefined;
+  const init = elided === undefined ? initRecord(snapshot.init) : {};
   return {
     claudeVersion: snapshot.claudeVersion,
-    model: read?.model,
-    permissionMode: read?.permissionMode,
-    cwd: read?.cwd,
-    tools: read?.tools?.length,
-    skills: read?.skills?.length,
+    model: initText(init, "model"),
+    permissionMode: initText(init, "permissionMode"),
+    cwd: initText(init, "cwd"),
+    tools: initCount(init, "tools"),
+    skills: initCount(init, "skills"),
     initElidedBytes: elided?.bytes,
   };
 }
@@ -197,6 +211,20 @@ export function runConfigurationFileSentence(
   return file.truncated === true
     ? "only the head of this file is kept; its digest and size are of the whole"
     : undefined;
+}
+
+/**
+ * How many files the walk reached but the snapshot had no room even to name,
+ * which is the difference between a short file list and a complete one.
+ */
+export function runConfigurationOmittedSentence(
+  snapshot: RunConfigurationSnapshot,
+): string | undefined {
+  const omitted = snapshot.droppedOmitted ?? 0;
+  if (omitted === 0) return undefined;
+  return omitted === 1
+    ? "1 further file was not named"
+    : `${runCountLabel(omitted)} further files were not named`;
 }
 
 /** What the command line was, when it did not fit the snapshot whole. */

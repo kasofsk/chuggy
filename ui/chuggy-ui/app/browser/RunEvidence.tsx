@@ -22,6 +22,7 @@ import {
   runConfigurationCapabilitiesSentence,
   runConfigurationFileSentence,
   runConfigurationHead,
+  runConfigurationOmittedSentence,
   runConfigurationOrdered,
   runConfigurationRead,
   runConfigurationSourceSentence,
@@ -212,6 +213,7 @@ function RunConfigurationBody(props: { readonly content: string }): ReactNode {
   const snapshot = reading.snapshot;
   const head = runConfigurationHead(snapshot);
   const argv = runConfigurationArgvSentence(snapshot);
+  const omitted = runConfigurationOmittedSentence(snapshot);
   return (
     <div className="configuration">
       <dl className="fields">
@@ -246,6 +248,7 @@ function RunConfigurationBody(props: { readonly content: string }): ReactNode {
           <RunConfigurationFileRow key={`dropped/${file.path}`} file={file} />
         ))}
       </ul>
+      {omitted === undefined ? null : <p className="panel-absent">{omitted}</p>}
     </div>
   );
 }

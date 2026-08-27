@@ -117,6 +117,7 @@ function transcript(
       batch,
       recordedAt: "2026-08-27T00:00:10Z",
       bytes: 20,
+      read: "Content",
       content: `{"type":"assistant","message":{"content":[{"type":"text","text":"batch ${String(batch)}"}]}}`,
     })),
     observedAt: "2026-08-27T00:00:10Z",

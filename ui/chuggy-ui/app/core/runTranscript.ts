@@ -4,8 +4,10 @@
  *
  * The high-water mark rides the `Execution` frame the browser already receives,
  * so the only question here is which batches sit above the highest one held —
- * nothing polls and nothing follows. Every line is drawn, and a line this
- * console cannot read is drawn as it stands rather than dropped or thrown on.
+ * nothing polls and nothing follows. Every line is drawn, a line this console
+ * cannot read is drawn as it stands rather than dropped or thrown on, and a
+ * batch whose bytes are gone or fail their digest is a step naming the gap it
+ * leaves, in the place the record puts it.
  */
 
 import type { RunTranscriptResponse } from "../../../../src/contract/responses.ts";
@@ -35,6 +37,9 @@ const turnsTruncatedType = "chuggy_turns_truncated";
 const truncationMarkerKey = "chuggy_truncated";
 
 export type RunTranscriptBatch = RunTranscriptResponse["batches"][number];
+
+/** Whether a batch answered with its characters, or why it did not. */
+export type RunTranscriptBatchRead = RunTranscriptBatch["read"];
 
 /** What one pane holds of one run's transcript, and how it came to hold it. */
 export interface RunTranscriptHeld {
@@ -144,6 +149,13 @@ export type RunTranscriptStep =
       readonly step: "Unreadable";
       readonly ordinal: number;
       readonly line: string;
+    }
+  | {
+      readonly step: "Unavailable";
+      readonly ordinal: number;
+      readonly batch: number;
+      readonly read: RunTranscriptBatchRead;
+      readonly sentence: string;
     };
 
 /** What a payload replaced by its own reference is worth saying about it. */
@@ -259,18 +271,60 @@ export interface RunTranscriptReading {
   readonly stepsBefore: number;
 }
 
+interface RunTranscriptLine {
+  readonly batch: number;
+  readonly read: RunTranscriptBatchRead;
+  readonly line: string | undefined;
+}
+
+/** What stands in the record's own order where a batch's characters are not. */
+export function runTranscriptGapSentence(
+  batch: number,
+  read: RunTranscriptBatchRead,
+): string {
+  switch (read) {
+    case "Content":
+      return `batch ${runCountLabel(batch)}: no lines recorded`;
+    case "Missing":
+      return `batch ${runCountLabel(batch)}: bytes unavailable`;
+    case "Corrupt":
+      return `batch ${runCountLabel(batch)}: bytes corrupt`;
+  }
+}
+
+/** A batch the server answered no characters for carries no line, and stands
+ * for itself so the gap in the record is visible where it falls. */
+function runTranscriptLines(
+  batch: RunTranscriptBatch,
+): readonly RunTranscriptLine[] {
+  const drawn =
+    batch.read === "Content"
+      ? batch.content.split("\n").filter((line) => line.trim().length > 0)
+      : [];
+  return drawn.length === 0
+    ? [{ batch: batch.batch, read: batch.read, line: undefined }]
+    : drawn.map((line) => ({ batch: batch.batch, read: batch.read, line }));
+}
+
 /** Every held batch's lines in order, capped from the end. */
 export function runTranscriptRead(
   held: RunTranscriptHeld,
 ): RunTranscriptReading {
-  const lines = held.batches.flatMap((batch) =>
-    batch.content.split("\n").filter((line) => line.trim().length > 0),
-  );
+  const lines = held.batches.flatMap(runTranscriptLines);
   const from = Math.max(lines.length - runTranscriptStepsMax, 0);
   return {
-    steps: lines
-      .slice(from)
-      .map((line, at) => runTranscriptStep(from + at + 1, line)),
+    steps: lines.slice(from).map((held, at) => {
+      const ordinal = from + at + 1;
+      return held.line === undefined
+        ? {
+            step: "Unavailable" as const,
+            ordinal,
+            batch: held.batch,
+            read: held.read,
+            sentence: runTranscriptGapSentence(held.batch, held.read),
+          }
+        : runTranscriptStep(ordinal, held.line);
+    }),
     stepsBefore: from,
   };
 }

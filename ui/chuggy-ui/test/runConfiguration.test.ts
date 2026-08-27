@@ -13,6 +13,7 @@ import {
   runConfigurationArgvSentence,
   runConfigurationCapabilitiesSentence,
   runConfigurationFileSentence,
+  runConfigurationOmittedSentence,
   runConfigurationHead,
   runConfigurationOrdered,
   runConfigurationRead,
@@ -38,6 +39,7 @@ function snapshotOf(over: Record<string, unknown> = {}): string {
     },
     files: [],
     dropped: [],
+    droppedOmitted: 0,
     ...over,
   });
 }
@@ -162,4 +164,86 @@ test("what the runtime could reach is counted, and none of it is said as that", 
       runConfigurationHead(read(snapshotOf({ init: marker }))),
     ),
   ).toBe("none were reported");
+});
+
+/**
+ * `snapshot.mjs` builds its frame as `JSON.parse(scrub(JSON.stringify(init ??
+ * null)))`, so a run taken with no init event writes `init: null` — and a
+ * schema that refused it would lose the argv, the files and the dropped list
+ * with it, which is everything the pane exists to show.
+ */
+test("a snapshot whose init the worker wrote as null still draws the rest", () => {
+  const snapshot = read(
+    snapshotOf({
+      init: null,
+      files: [
+        {
+          source: "MemoryPath",
+          path: "/home/agent/.claude/CLAUDE.md",
+          bytes: 12,
+          digest: "a".repeat(64),
+          content: "remember",
+        },
+      ],
+      dropped: [
+        {
+          source: "ProjectInstruction",
+          path: "/work/huge.md",
+          bytes: 9_000_000,
+        },
+      ],
+    }),
+  );
+  expect(snapshot.argv).toEqual(["claude", "--print", "do the thing"]);
+  expect(snapshot.files.map((file) => file.path)).toEqual([
+    "/home/agent/.claude/CLAUDE.md",
+  ]);
+  expect(snapshot.dropped.map((file) => file.path)).toEqual(["/work/huge.md"]);
+  expect(runConfigurationHead(snapshot).model).toBeUndefined();
+});
+
+/** The init event is the runtime's own vocabulary, and §A.2 declines to close
+ * a roster over it for exactly this reason. */
+test("an init field this console cannot read costs that field and no other", () => {
+  const snapshot = read(
+    snapshotOf({
+      init: {
+        model: "opus",
+        cwd: "/work",
+        tools: [{ name: "Read" }, { name: "Bash" }],
+        skills: { one: true },
+      },
+      files: [{ source: "Settings", path: "/work/.mcp.json", bytes: 2 }],
+    }),
+  );
+  const head = runConfigurationHead(snapshot);
+  expect(head.model).toBe("opus");
+  expect(head.cwd).toBe("/work");
+  expect(head.tools).toBe(2);
+  expect(head.skills).toBeUndefined();
+  expect(snapshot.files.map((file) => file.path)).toEqual(["/work/.mcp.json"]);
+});
+
+/**
+ * A `dropped` reference is itself bytes, so a snapshot that fills its cap can
+ * reach files it has no room even to name; a pane that drew nothing would show
+ * a file list that looks complete.
+ */
+test("the files the snapshot had no room to name are said to be there", () => {
+  expect(runConfigurationOmittedSentence(read(snapshotOf()))).toBeUndefined();
+  expect(
+    runConfigurationOmittedSentence(read(snapshotOf({ droppedOmitted: 3 }))),
+  ).toBe("3 further files were not named");
+  expect(
+    runConfigurationOmittedSentence(read(snapshotOf({ droppedOmitted: 1 }))),
+  ).toBe("1 further file was not named");
+});
+
+/** A snapshot from a worker that predates the field reads as it always did. */
+test("a snapshot naming no omitted count says nothing about one", () => {
+  const older = JSON.parse(snapshotOf()) as Record<string, unknown>;
+  delete older["droppedOmitted"];
+  const snapshot = read(JSON.stringify(older));
+  expect(snapshot.droppedOmitted).toBeUndefined();
+  expect(runConfigurationOmittedSentence(snapshot)).toBeUndefined();
 });

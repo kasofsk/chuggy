@@ -82,6 +82,13 @@ function Step(props: { readonly step: RunTranscriptStep }): ReactNode {
           <Elisions elided={step.elided} />
         </li>
       );
+    case "Unavailable":
+      return (
+        <li className="step" data-step="unavailable">
+          <span className="step-type">batch</span>
+          <span className="step-capped">{step.sentence}</span>
+        </li>
+      );
     case "Unreadable":
       return (
         <li className="step" data-step="unreadable">
