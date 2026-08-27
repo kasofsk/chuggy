@@ -10,6 +10,7 @@ import {
   runTotals,
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
+  runModelCharsMax,
   runTranscriptEventBytesMax,
   runTurn,
   runTurnSeriesMax,
@@ -214,6 +215,31 @@ test("a run that emitted no result event still states its totals", () => {
       costUsdMicros: 0,
     },
   ]);
+});
+
+test("a turn the runtime left unnamed still names a model the plane takes", () => {
+  const turn = runTurn(assistantEvent("", { input_tokens: 3 }), 1);
+
+  assert.ok(turn.model.length >= 1);
+  assert.ok(turn.model.length <= runModelCharsMax);
+  assert.equal(turn.model, "unknown");
+  assert.equal(turn.tokensInput, 3);
+});
+
+test("a model identity longer than the plane stores is cut to it", () => {
+  const turn = runTurn(assistantEvent("m".repeat(500), {}), 1);
+
+  assert.equal(turn.model.length, runModelCharsMax);
+});
+
+test("an unnamed model in the runtime's own breakdown is named too", () => {
+  const totals = runTotals(
+    { type: "result", modelUsage: { "": { inputTokens: 4, costUSD: 0.5 } } },
+    [],
+  );
+
+  assert.equal(totals.models[0].model, "unknown");
+  assert.equal(totals.models[0].tokensInput, 4);
 });
 
 test("an event that is not a charged turn folds to nothing", () => {

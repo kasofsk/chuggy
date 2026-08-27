@@ -259,6 +259,15 @@ test("a dropped list too long for the cap cannot push the body over it", async (
   );
   assert.ok(snapshot.files.length > 0);
   assert.ok(snapshot.dropped.length > 0);
+  assert.ok(
+    snapshot.droppedOmitted > 0,
+    "this packing is meant to reach the boundary the count exists for",
+  );
+  assert.equal(
+    snapshot.files.length + snapshot.dropped.length + snapshot.droppedOmitted,
+    memory.length,
+    "every file that was there is kept, referenced or counted",
+  );
 });
 
 test("a file too large to digest is named by its size alone", async () => {
@@ -330,6 +339,54 @@ test("the snapshot never exceeds the bound one read answers whole", async () => 
   );
 
   assert.ok(bytes.byteLength <= runConfigurationBytesMax);
+});
+
+test("no packing of the boundary carries the body over the cap", async () => {
+  const memory = [];
+  for (let index = 0; index < runConfigurationFilesMax; index += 1)
+    memory.push(`/memory/${String(index)}/CLAUDE.md`);
+  const services = {
+    readdir: async () => {
+      throw new Error("no directory");
+    },
+    stat: async () => ({
+      size: runConfigurationDigestBytesMax + 1,
+      isFile: () => true,
+    }),
+    readFile: async () => Buffer.alloc(0),
+  };
+  const over = [];
+  for (let pad = 0; pad < 48; pad += 1) {
+    const bytes = await runConfigurationSnapshot(
+      {
+        argv: ["a".repeat(runConfigurationBytesMax - 9_000 + pad)],
+        init: { memory_paths: memory },
+        cwd: undefined,
+        home: undefined,
+        scrub: (text) => text,
+      },
+      services,
+    );
+    const snapshot = JSON.parse(bytes.toString("utf8"));
+    if (bytes.byteLength > runConfigurationBytesMax)
+      over.push(`${String(pad)}:${String(bytes.byteLength)}`);
+    assert.equal(
+      snapshot.files.length + snapshot.dropped.length + snapshot.droppedOmitted,
+      memory.length,
+    );
+  }
+
+  assert.deepEqual(over, [], "the count the body ends with has to be budgeted");
+});
+
+test("a snapshot that loses nothing to its cap says it omitted nothing", async () => {
+  const snapshot = await snapshotOf({
+    [`${cwd}/CLAUDE.md`]: "project instructions",
+  });
+
+  assert.equal(snapshot.droppedOmitted, 0);
+  assert.equal(snapshot.files.length, 1);
+  assert.deepEqual(snapshot.dropped, []);
 });
 
 test("a provisioned file is named and digested but its bytes are not resent", async () => {

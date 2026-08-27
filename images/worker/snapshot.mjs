@@ -5,9 +5,15 @@
  *
  * THE LIST IS A PRIORITY ORDER, NOT A SEARCH. Memory paths first, then the
  * project's instruction files, then settings, then plugins, then what the
- * platform provisioned; a file that does not fit the snapshot's cap is listed
- * with its path, size and digest instead of its bytes, so what was left out is
- * still nameable.
+ * platform provisioned; a file whose bytes do not fit the snapshot's cap is
+ * listed by path, size and digest instead, so what was left out is still
+ * nameable.
+ *
+ * WHAT THE CAP COSTS IS COUNTED, NOT HIDDEN. A reference is itself bytes, so a
+ * cap that binds can leave files the snapshot cannot even name;
+ * `droppedOmitted` is how many, and the three figures sum to the files that
+ * were there to gather. A candidate path that does not exist was never a file
+ * and is counted nowhere.
  *
  * NOTHING HERE READS AN UNBOUNDED FILE OR WALKS AN UNBOUNDED TREE. Every walk,
  * read and total has its own limit, and a file past the largest of them is
@@ -233,6 +239,7 @@ function snapshotFrame(argv, init, scrub) {
     init: scrubbedInit,
     files: [],
     dropped: [],
+    droppedOmitted: runConfigurationFilesMax,
   };
   if (frameBytes(frame) <= runConfigurationBytesMax) return frame;
   frame.init = truncationMarker(JSON.stringify(scrubbedInit));
@@ -256,9 +263,10 @@ function droppedReference(entry) {
 }
 
 /**
- * The snapshot as the bytes the worker uploads, with every file that did not
- * fit listed by path, size and digest instead. Every entry it holds, kept or
- * dropped, is charged against the cap, so the body it returns is never over it.
+ * The snapshot as the bytes the worker uploads: every entry it holds, kept or
+ * referenced, is charged against the cap, so the body is never over it. A file
+ * the cap left no room even to name is counted in `droppedOmitted`, so those
+ * three figures sum to the files that were found.
  */
 export async function runConfigurationSnapshot(
   { argv, init, task, cwd, home, scrub },
@@ -267,6 +275,7 @@ export async function runConfigurationSnapshot(
   const walked = await walkInstructionFiles(cwd, services);
   const snapshot = snapshotFrame(argv, init, scrub);
   let used = frameBytes(snapshot);
+  let omitted = 0;
   for (const candidate of configurationCandidates({
     init,
     cwd,
@@ -286,9 +295,13 @@ export async function runConfigurationSnapshot(
       continue;
     }
     const reference = droppedReference(entry);
-    if (used + entryCost(reference) > runConfigurationBytesMax) continue;
+    if (used + entryCost(reference) > runConfigurationBytesMax) {
+      omitted += 1;
+      continue;
+    }
     snapshot.dropped.push(reference);
     used += entryCost(reference);
   }
+  snapshot.droppedOmitted = omitted;
   return Buffer.from(JSON.stringify(snapshot));
 }

@@ -59,6 +59,7 @@ const credentialRedaction = "[redacted credential]";
 const rateLimitLabel = "rate_limit";
 const turnsExhaustedSubtype = "error_max_turns";
 const runCostBasis = "List";
+const unnamedModel = "unknown";
 const runTurnPagesMax = Math.ceil(runTurnSeriesMax / runPageItemsMax);
 
 /**
@@ -165,6 +166,13 @@ function label(name, value) {
     : {};
 }
 
+/** A model identity inside the length the plane stores, named where the runtime
+ * left it blank. */
+function boundedModel(model) {
+  const named = model.slice(0, runModelCharsMax);
+  return named.length > 0 ? named : unnamedModel;
+}
+
 function streamTokens(usage) {
   return {
     tokensInput: count(usage?.input_tokens),
@@ -185,7 +193,7 @@ export function runTurn(event, ordinal) {
     return undefined;
   return {
     ordinal,
-    model: model.slice(0, runModelCharsMax),
+    model: boundedModel(model),
     ...streamTokens(event.message.usage),
   };
 }
@@ -195,7 +203,7 @@ function reportedModels(modelUsage) {
   return Object.entries(modelUsage)
     .slice(0, runPageItemsMax)
     .map(([model, usage]) => ({
-      model: model.slice(0, runModelCharsMax),
+      model: boundedModel(model),
       tokensInput: count(usage?.inputTokens),
       tokensOutput: count(usage?.outputTokens),
       tokensCacheCreation: count(usage?.cacheCreationInputTokens),
