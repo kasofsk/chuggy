@@ -86,6 +86,9 @@ type ServedWeb = Pick<
   | "operationalStatus"
   | "selectorOperationalContext"
   | "outputContent"
+  | "runTurns"
+  | "runTranscript"
+  | "runConfiguration"
 >;
 
 function servedWeb(
@@ -135,6 +138,9 @@ function servedWeb(
     operationalStatus: notFound,
     selectorOperationalContext: notFound,
     outputContent: () => Promise.resolve({ read: "NotFound" }),
+    runTurns: () => Promise.resolve(undefined),
+    runTranscript: () => Promise.resolve({ read: "NotFound" }),
+    runConfiguration: () => Promise.resolve({ read: "NotFound" }),
   };
 }
 

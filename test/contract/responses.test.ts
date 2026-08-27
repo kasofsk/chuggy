@@ -26,6 +26,9 @@ import {
   operationalStatusResponse,
   outputContentResponse,
   projectResponse,
+  runConfigurationResponse,
+  runTranscriptResponse,
+  runTurnsResponse,
   repositoryConfigurationImportResponse,
   submissionResponse,
   ticketNativeActionsResponse,
@@ -47,13 +50,21 @@ import {
   projectInventoryResponseSchema,
   projectResponseSchema,
   repositoryConfigurationRefusalsSchema,
+  runConfigurationResponseSchema,
+  runTranscriptResponseSchema,
+  runTurnsResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
 } from "../../src/contract/responses.ts";
 import { authoringSchema } from "../../src/contract/authoring.ts";
-import { errorEnvelopeSchema } from "../../src/contract/http.ts";
+import {
+  errorEnvelopeSchema,
+  runModelCharsMax,
+  runTranscriptPageBatchesMax,
+} from "../../src/contract/http.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
+import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
 import {
   asAuthorityKind,
   asOperationId,
@@ -68,8 +79,10 @@ import {
   configurationVersion,
   digest,
   draft as draftResource,
+  evidencedExecution,
   execution,
   executionSummary,
+  runTotals,
   requirement,
   instant,
   partition,
@@ -662,5 +675,150 @@ test("a draft initialization offers no default brief, an intent having no defaul
   assert.equal(
     Object.hasOwn(body["defaults"] as Record<string, unknown>, "brief"),
     false,
+  );
+});
+
+test("a run's evidence rides on the attempt that produced it", () => {
+  const detail = executionResponseSchema.parse(
+    executionResponse(evidencedExecution).body,
+  );
+  assert.equal(detail.runTotals?.costUsdMicros, runTotals.costUsdMicros);
+  assert.equal(detail.runTotals?.costBasis, "List");
+  assert.equal(detail.attempts[0]?.evidence, "RunRateLimited");
+  assert.equal(detail.attempts[0]?.run?.transcript?.highWaterBatch, 3);
+  assert.equal(detail.attempts[0]?.run?.turnsRecorded, 4);
+  assert.equal(
+    detail.attempts[0]?.run?.totals?.models[0]?.model,
+    "claude-representation",
+  );
+  assert.equal(detail.result?.report, "The fixture ran.");
+});
+
+test("a run that wrote nothing carries neither evidence nor a total", () => {
+  const detail = executionResponseSchema.parse(
+    executionResponse(execution).body,
+  );
+  assert.equal(detail.runTotals, undefined);
+  assert.equal(detail.attempts[0]?.run, undefined);
+  assert.equal(detail.attempts[0]?.evidence, undefined);
+  assert.equal(detail.result?.report, undefined);
+});
+
+test("a ticket read carries the rollup and an untouched ticket omits it", () => {
+  const rolled = ticketResponseSchema.parse(
+    ticketResponse({
+      ticket: asTicketId(3),
+      phase: "Done",
+      sequence: 4,
+      runTotals,
+    }).body,
+  );
+  assert.equal(rolled.runTotals?.turns, runTotals.turns);
+  assert.equal(
+    ticketResponseSchema.parse(
+      ticketResponse({ ticket: asTicketId(3), phase: "Done", sequence: 4 })
+        .body,
+    ).runTotals,
+    undefined,
+  );
+});
+
+test("the three run reads parse as the contract names them", () => {
+  const page = runTurnsResponseSchema.parse(
+    runTurnsResponse({
+      turns: [
+        {
+          ordinal: 1,
+          model: "claude-representation",
+          tokensInput: 1,
+          tokensOutput: 2,
+          tokensCacheCreation: 3,
+          tokensCacheRead: 4,
+          recordedAt: instant,
+        },
+      ],
+      nextAfter: 1,
+    }).body,
+  );
+  assert.equal(page.turns[0]?.ordinal, 1);
+  assert.equal(page.nextAfter, 1);
+  const transcript = runTranscriptResponseSchema.parse(
+    runTranscriptResponse({
+      read: "Page",
+      page: {
+        batches: [
+          {
+            read: "Content",
+            batch: 1,
+            recordedAt: instant,
+            bytes: 5,
+            content: "{}\n",
+          },
+          { read: "Missing", batch: 2, recordedAt: instant, bytes: 7 },
+          { read: "Corrupt", batch: 3, recordedAt: instant, bytes: 9 },
+        ],
+        observedAt: instant,
+        complete: false,
+      },
+    }).body,
+  );
+  assert.equal(transcript.complete, false);
+  const first = transcript.batches[0];
+  assert.equal(first?.read === "Content" ? first.content : undefined, "{}\n");
+  assert.deepEqual(
+    transcript.batches.map((batch) => batch.read),
+    ["Content", "Missing", "Corrupt"],
+  );
+  const snapshot = runConfigurationResponseSchema.parse(
+    runConfigurationResponse({
+      read: "Content",
+      digest: asArtifactDigest(digest),
+      bytes: 2,
+      content: "{}",
+    }).body,
+  );
+  assert.equal(snapshot.digest, digest);
+  assert.equal(snapshot.content, "{}");
+});
+
+test("a run figure past the bound the contract names is refused", () => {
+  assert.throws(() =>
+    runTurnsResponseSchema.parse(
+      runTurnsResponse({
+        turns: [
+          {
+            ordinal: 1,
+            model: "m".repeat(runModelCharsMax + 1),
+            tokensInput: 0,
+            tokensOutput: 0,
+            tokensCacheCreation: 0,
+            tokensCacheRead: 0,
+            recordedAt: instant,
+          },
+        ],
+      }).body,
+    ),
+  );
+  assert.throws(() =>
+    runTranscriptResponseSchema.parse(
+      runTranscriptResponse({
+        read: "Page",
+        page: {
+          batches: Array.from(
+            { length: runTranscriptPageBatchesMax + 1 },
+            (_unused, index) =>
+              ({
+                read: "Content",
+                batch: index + 1,
+                recordedAt: instant,
+                bytes: 0,
+                content: "",
+              }) as const,
+          ),
+          observedAt: instant,
+          complete: true,
+        },
+      }).body,
+    ),
   );
 });

@@ -11,6 +11,7 @@ import {
 import { postgresWorkerReportStore } from "../../src/adapters/postgres/workerPlane.ts";
 import { migration028 } from "../../src/adapters/postgres/schema/migrations/028-worker-plane-authority.ts";
 import { migration037 } from "../../src/adapters/postgres/schema/migrations/037-evaluation-work-reports.ts";
+import { migration049 } from "../../src/adapters/postgres/schema/migrations/049-run-evidence.ts";
 import { workerPlaneRole } from "../../src/adapters/postgres/schema.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 
@@ -260,5 +261,24 @@ test("a current worker result persists its report in the completion transaction"
   assert.equal(
     stored.rawValues[2],
     "Changed the parser and ran its focused test.",
+  );
+});
+
+test("run evidence grants the worker role four functions and no table", () => {
+  const grants = migration049.statements.filter(
+    (statement) =>
+      statement.startsWith("GRANT") &&
+      statement.includes(`TO ${workerPlaneRole}`),
+  );
+  assert.equal(grants.length, 4);
+  for (const grant of grants)
+    assert.match(grant, /^GRANT EXECUTE ON FUNCTION record_worker_run_/u);
+  assert.deepEqual(
+    migration049.statements.filter(
+      (statement) =>
+        statement.includes(workerPlaneRole) &&
+        !statement.startsWith("GRANT EXECUTE ON FUNCTION"),
+    ),
+    [],
   );
 });

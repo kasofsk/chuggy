@@ -14,7 +14,10 @@ import {
 import type { Principal } from "../../interpreter/nativeWeb.ts";
 import type { NativeWeb } from "../../interpreter/nativeWeb.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
-import { asExecutionId } from "../../interpreter/schedulerIdentity.ts";
+import {
+  asAttemptId,
+  asExecutionId,
+} from "../../interpreter/schedulerIdentity.ts";
 import { asConfigurationRevisionId } from "../../interpreter/authoring.ts";
 import type {
   ProjectStream,
@@ -67,6 +70,9 @@ import {
   operationalStatusResponse,
   selectorOperationalContextResponse,
   outputContentResponse,
+  runConfigurationResponse,
+  runTranscriptResponse,
+  runTurnsResponse,
   submissionResponse,
   type NativeHttpResponse,
 } from "./outcomes.ts";
@@ -121,6 +127,9 @@ type InitialNativeWeb = Pick<
   | "operationalStatus"
   | "selectorOperationalContext"
   | "outputContent"
+  | "runTurns"
+  | "runTranscript"
+  | "runConfiguration"
 >;
 
 function send(reply: FastifyReply, result: NativeHttpResponse): void {
@@ -398,6 +407,66 @@ function registerProject(app: FastifyInstance, web: InitialNativeWeb): void {
   });
   registerNativeActions(app, web, root);
   registerOperationalRoutes(app, web, root);
+  registerRunEvidenceRoutes(app, web, root);
+}
+
+function registerRunEvidenceRoutes(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+  root: string,
+): void {
+  const run = `${root}/executions/:execution/attempts/:attempt`;
+  app.get(`${run}/turns`, async (request, reply) => {
+    const params = record(request.params);
+    const query = fieldsOnly(request.query, ["after", "limit"]);
+    send(
+      reply,
+      runTurnsResponse(
+        await web.runTurns(
+          principalOf(request),
+          partitionOf(request),
+          asExecutionId(textField(params, "execution")),
+          asAttemptId(textField(params, "attempt")),
+          {
+            ...(query["after"] === undefined
+              ? {}
+              : { after: integerField(query, "after") }),
+            limit: integerField(query, "limit", 50),
+          },
+        ),
+      ),
+    );
+  });
+  app.get(`${run}/transcript`, async (request, reply) => {
+    const params = record(request.params);
+    const query = fieldsOnly(request.query, ["after"]);
+    send(
+      reply,
+      runTranscriptResponse(
+        await web.runTranscript(
+          principalOf(request),
+          partitionOf(request),
+          asExecutionId(textField(params, "execution")),
+          asAttemptId(textField(params, "attempt")),
+          integerField(query, "after", 0),
+        ),
+      ),
+    );
+  });
+  app.get(`${run}/configuration`, async (request, reply) => {
+    const params = record(request.params);
+    send(
+      reply,
+      runConfigurationResponse(
+        await web.runConfiguration(
+          principalOf(request),
+          partitionOf(request),
+          asExecutionId(textField(params, "execution")),
+          asAttemptId(textField(params, "attempt")),
+        ),
+      ),
+    );
+  });
 }
 
 function registerNativeActions(

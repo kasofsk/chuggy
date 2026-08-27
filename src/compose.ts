@@ -97,7 +97,9 @@ import type { ProjectDiscovery } from "./interpreter/projectDiscovery.ts";
 import type { ProjectStore } from "./interpreter/projectStore.ts";
 import type { ExecutionBacklogGuard } from "./interpreter/schedulerContext.ts";
 import { postgresOperationalReads } from "./adapters/postgres/operationalReads.ts";
+import { postgresRunEvidenceReads } from "./adapters/postgres/runEvidence.ts";
 import type { OutputContentPort } from "./interpreter/operationsView.ts";
+import type { RunEvidenceContentPort } from "./interpreter/runEvidence.ts";
 import type { SelectorOperationalContextRead } from "./interpreter/selectorOperationalContext.ts";
 import type { RepositoryConfigurationSnapshotPort } from "./interpreter/repositoryConfiguration.ts";
 import {
@@ -283,7 +285,7 @@ export function composeNativeWeb(
   config: TicketServiceConfig = ticketServiceDefaults,
   metrics: TicketServiceMetrics = silentTicketServiceMetrics,
   inventory?: ProjectInventory,
-  outputContents?: OutputContentPort,
+  outputContents?: OutputContentPort & RunEvidenceContentPort,
   selectorContexts?: SelectorOperationalContextRead,
   repositoryConfigurationSnapshots?: RepositoryConfigurationSnapshotPort,
 ): NativeWeb {
@@ -309,6 +311,8 @@ export function composeNativeWeb(
           snapshots: repositoryConfigurationSnapshots,
           store: authoring,
         },
+    postgresRunEvidenceReads(apiPool),
+    outputContents,
   );
 }
 

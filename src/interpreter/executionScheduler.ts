@@ -464,7 +464,11 @@ export type AttemptEvidence =
   | "Vanished"
   | "LeaseExpired"
   | "ManifestInvalid"
-  | "Fenced";
+  | "Fenced"
+  | "RunFailed"
+  | "RunRateLimited"
+  | "RunTurnsExhausted"
+  | "RunUploadRefused";
 
 /** Every evidence label, so a suite and a database CHECK iterate rather than restate. */
 export const allAttemptEvidence: readonly AttemptEvidence[] = [
@@ -477,6 +481,10 @@ export const allAttemptEvidence: readonly AttemptEvidence[] = [
   "LeaseExpired",
   "ManifestInvalid",
   "Fenced",
+  "RunFailed",
+  "RunRateLimited",
+  "RunTurnsExhausted",
+  "RunUploadRefused",
 ];
 
 /**
@@ -489,6 +497,18 @@ export const allAttemptEvidence: readonly AttemptEvidence[] = [
 export type AttemptEvidenceRecord =
   | AttemptEvidence
   | `${AttemptEvidence}: ${BriefingFault | TaskConfigurationReadFault}`;
+
+/**
+ * The label a recorded evidence begins with, which is what a reader outside the
+ * scheduler is shown; a stored value naming no label at all is nothing this
+ * layer can speak for.
+ */
+export function attemptEvidenceLabel(
+  recorded: string,
+): AttemptEvidence | undefined {
+  const label = recorded.split(": ", 1)[0];
+  return allAttemptEvidence.find((known) => known === label);
+}
 
 /** What a registration pass found for one focused spawn request. */
 export type SpawnRegistered =

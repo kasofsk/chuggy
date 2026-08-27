@@ -6,8 +6,10 @@ import {
   branchDiffOutput,
   checkedExecutionListQuery,
   configuredOutputs,
+  executionSummaryTotalled,
   workSummaryOutput,
 } from "../../src/interpreter/operationsView.ts";
+import { executionSummary, runTotals } from "../contract/representations.ts";
 
 test("standard completion outputs have stable presentation contracts", () => {
   assert.deepEqual(
@@ -50,5 +52,22 @@ test("execution selections reject empty, duplicate, and unbounded pages", () => 
         selection: { selection: "Selected", states: ["Queued", "Queued"] },
       }),
     RangeError,
+  );
+});
+
+test("a summary carries what its own execution's runs sum to, and no other's", () => {
+  const totalled = executionSummaryTotalled(
+    executionSummary,
+    new Map([[executionSummary.execution, runTotals]]),
+  );
+  assert.equal(totalled.runTotals, runTotals);
+  assert.equal(
+    executionSummaryTotalled(executionSummary, new Map([["other", runTotals]]))
+      .runTotals,
+    undefined,
+  );
+  assert.equal(
+    executionSummaryTotalled(executionSummary, new Map()).runTotals,
+    undefined,
   );
 });

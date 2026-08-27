@@ -23,6 +23,36 @@ export const nativeHttpPageItemsDefault = 50;
 /** The version a dispatch view token carries, so a stale reader is refused. */
 export const dispatchViewSchemaVersion = 1;
 
+/** The largest count any run figure carries, which is what a browser can hold exactly. */
+export const runCountMax = Number.MAX_SAFE_INTEGER;
+
+/**
+ * The most turns one run's durable series retains, above any turn ceiling a
+ * worker configuration names, so the series is whole for a run that names one.
+ */
+export const runTurnSeriesMax = 1_000;
+
+/** One transcript batch is one wire body's worth, so a batch never needs a second read. */
+export const runTranscriptBatchBytesMax = nativeHttpBodyBytesMax;
+
+/** The most batches one run writes, past which its transcript carries its own truncation. */
+export const runTranscriptBatchesMax = 4_096;
+
+/** How many batches one transcript page carries, so a page stays under the preview bound. */
+export const runTranscriptPageBatchesMax = 8;
+
+/** The largest configuration snapshot, which is what one read answers whole. */
+export const runConfigurationBytesMax = 1_048_576;
+
+/** The longest label the agent runtime names its own outcome with. */
+export const runOutcomeLabelCharsMax = 64;
+
+/** The longest model identity a usage row names. */
+export const runModelCharsMax = 128;
+
+/** The longest summary a result carries, restating what the manifest reader accepts. */
+export const resultReportCharsMax = 8_192;
+
 export const nativeHttpRoutes = {
   contract: `${nativeHttpBasePath}/contract`,
   installation: `${nativeHttpBasePath}/installation`,
@@ -37,6 +67,9 @@ export const nativeHttpRoutes = {
   executions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions`,
   execution: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution`,
   outputContent: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/artifacts/:ordinal`,
+  runTurns: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/turns`,
+  runTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/transcript`,
+  runConfiguration: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/configuration`,
   operations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operations`,
   operation: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operations/:operation`,
   notifications: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/notifications`,

@@ -31,6 +31,11 @@ import type {
   OutputContentRead,
 } from "../../interpreter/operationsView.ts";
 import type {
+  RunConfigurationRead,
+  RunTranscriptRead,
+  RunTurnsPage,
+} from "../../interpreter/runEvidence.ts";
+import type {
   Accepted,
   Cancelled,
   OperationId,
@@ -339,6 +344,57 @@ export function outputContentResponse(
       return response(
         409,
         nativeHttpError("OutputCorrupt", "The output failed verification."),
+      );
+  }
+}
+
+/** A run nobody may read and a run that never happened answer alike. */
+export function runTurnsResponse(
+  page: RunTurnsPage | undefined,
+): NativeHttpResponse {
+  return page === undefined
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, page);
+}
+
+export function runTranscriptResponse(
+  result: RunTranscriptRead,
+): NativeHttpResponse {
+  switch (result.read) {
+    case "Page":
+      return response(200, result.page);
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Unavailable":
+      return retry(503, result.retryAfterSeconds, "TranscriptUnavailable");
+    case "Corrupt":
+      return response(
+        409,
+        nativeHttpError(
+          "TranscriptCorrupt",
+          "The transcript failed verification.",
+        ),
+      );
+  }
+}
+
+export function runConfigurationResponse(
+  result: RunConfigurationRead,
+): NativeHttpResponse {
+  switch (result.read) {
+    case "Content":
+      return response(200, result);
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Unavailable":
+      return retry(503, result.retryAfterSeconds, "ConfigurationUnavailable");
+    case "Corrupt":
+      return response(
+        409,
+        nativeHttpError(
+          "ConfigurationCorrupt",
+          "The configuration snapshot failed verification.",
+        ),
       );
   }
 }

@@ -21,6 +21,11 @@ import {
   selectorServiceRole,
   ticketServiceRole,
   workerPlaneRole,
+  workerRunBindingFunction,
+  workerRunConfigurationFunction,
+  workerRunTotalFunction,
+  workerRunTranscriptFunction,
+  workerRunTurnsFunction,
 } from "../../src/adapters/postgres/schema.ts";
 import {
   postgresHarnessDenial,
@@ -37,6 +42,14 @@ const schedulerSourceInsertPrivilege = {
   columns: sourceInsertColumns,
 };
 const admittedWorkerColumns = "image,name,published_at,version";
+/** The five relations one run's evidence lives in, named once for every case. */
+const runEvidenceRelations = [
+  "execution_run",
+  "execution_run_transcript_batch",
+  "execution_run_turn",
+  "execution_run_total",
+  "execution_run_model_usage",
+];
 const schedulerReportInsertPrivilege = {
   table_name: "execution_result_report",
   privilege_type: "INSERT",
@@ -887,4 +900,74 @@ test("the retired dispatcher role owns nothing here and is granted nothing here"
     ),
     [{ count: "0" }],
   );
+});
+
+/**
+ * The worker plane reaches run evidence through four functions and holds no
+ * table privilege on the five relations behind them, so a bearer that got past
+ * one boundary still cannot write a row the others own.
+ */
+test("run evidence is written through its boundary and read by the API alone", async () => {
+  for (const named of [
+    `${workerRunConfigurationFunction}('digest',1,'path','digest',1)`,
+    `${workerRunTranscriptFunction}('digest',1,1,'path','digest',1,1)`,
+    `${workerRunTurnsFunction}('digest',1,'[]'::jsonb)`,
+    `${workerRunTotalFunction}('digest',1,1,1,1,1,1,1,1,1,'List',1,NULL,NULL,'[]'::jsonb)`,
+  ]) {
+    assert.equal(
+      await harness.attemptAs(workerPlaneRole, `SELECT ${named}`),
+      undefined,
+    );
+    for (const role of [
+      apiRole,
+      ticketServiceRole,
+      schedulerRole,
+      finalizerRole,
+    ])
+      assert.match(
+        (await harness.attemptAs(role, `SELECT ${named}`)) ?? "",
+        /permission denied for function/u,
+      );
+  }
+  for (const relation of runEvidenceRelations) {
+    assert.equal(
+      await harness.attemptAs(apiRole, `SELECT tenant FROM ${relation}`),
+      undefined,
+    );
+    assert.match(
+      (await harness.attemptAs(
+        workerPlaneRole,
+        `SELECT tenant FROM ${relation}`,
+      )) ?? "",
+      postgresHarnessDenial(relation),
+    );
+    assert.match(
+      (await harness.attemptAs(apiRole, `DELETE FROM ${relation}`)) ?? "",
+      postgresHarnessDenial(relation),
+    );
+  }
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      "SELECT report FROM execution_result_report",
+    ),
+    undefined,
+  );
+});
+
+test("the binding every evidence function opens with is nobody's to call", async () => {
+  for (const role of [
+    apiRole,
+    ticketServiceRole,
+    schedulerRole,
+    finalizerRole,
+    workerPlaneRole,
+  ])
+    assert.match(
+      (await harness.attemptAs(
+        role,
+        `SELECT * FROM ${workerRunBindingFunction}('digest',1)`,
+      )) ?? "",
+      /permission denied for function/u,
+    );
 });

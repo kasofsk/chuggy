@@ -10,6 +10,11 @@ import {
   postgresWorkerAttemptHeartbeats,
   postgresWorkerArtifactReservations,
   postgresWorkerReportStore,
+  postgresWorkerRunConfiguration,
+  postgresWorkerRunEnded,
+  postgresWorkerRunTotal,
+  postgresWorkerRunTranscript,
+  postgresWorkerRunTurns,
 } from "../adapters/postgres/workerPlane.ts";
 import { silentSchedulerTelemetry } from "../interpreter/executionScheduler.ts";
 import { executionSchedulerIngest } from "../interpreter/executionSchedulerReport.ts";
@@ -46,6 +51,13 @@ async function main(): Promise<void> {
     heartbeatLeaseSecs: positive("CHUG_WORKER_PLANE_HEARTBEAT_LEASE_SECS", 300),
     reservations: postgresWorkerArtifactReservations(pool),
     artifacts,
+    runEvidence: {
+      configurations: postgresWorkerRunConfiguration(pool),
+      transcripts: postgresWorkerRunTranscript(pool),
+      turns: postgresWorkerRunTurns(pool),
+      totals: postgresWorkerRunTotal(pool),
+      endings: postgresWorkerRunEnded(pool),
+    },
     reports: {
       report: (secret, submission) =>
         executionSchedulerIngest(

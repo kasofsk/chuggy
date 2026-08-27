@@ -26,6 +26,10 @@ import type {
   ExecutionResource,
   ExecutionSummary,
 } from "../../src/interpreter/operationsView.ts";
+import type {
+  ExecutionRunResource,
+  RunTotals,
+} from "../../src/interpreter/runEvidence.ts";
 import { workSummaryOutput } from "../../src/interpreter/operationsView.ts";
 import type { OperationResource } from "../../src/interpreter/nativeWeb.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
@@ -215,4 +219,69 @@ export const execution: ExecutionResource = {
       },
     ],
   },
+};
+
+/** What one run spent, as every rollup and every run row carries it. */
+export const runTotals: RunTotals = {
+  turns: 4,
+  durationMs: 12_000,
+  durationApiMs: 9_000,
+  tokensInput: 100,
+  tokensOutput: 200,
+  tokensCacheCreation: 300,
+  tokensCacheRead: 400,
+  costUsdMicros: 420_000,
+  costBasis: "List",
+  models: [
+    {
+      model: "claude-representation",
+      tokensInput: 100,
+      tokensOutput: 200,
+      tokensCacheCreation: 300,
+      tokensCacheRead: 400,
+      costUsdMicros: 420_000,
+    },
+  ],
+  permissionDenials: 0,
+  resultSubtype: "success",
+  stopReason: "end_turn",
+};
+
+/** One run's evidence, which the attempt that produced it carries. */
+export const executionRun: ExecutionRunResource = {
+  startedAt: instant,
+  configuration: {
+    digest: asArtifactDigest(digest),
+    bytes: 2_048,
+    recordedAt: instant,
+  },
+  transcript: {
+    batches: 3,
+    bytes: 4_096,
+    highWaterBatch: 3,
+    observedAt: instant,
+  },
+  turnsRecorded: 4,
+  totals: runTotals,
+};
+
+/** The same execution once its run wrote evidence, which is what a console draws. */
+export const evidencedExecution: ExecutionResource = {
+  ...execution,
+  runTotals,
+  attempts: [
+    {
+      attempt: asAttemptId("attempt-one"),
+      number: 1,
+      generation: 1,
+      state: "Lost",
+      openedAt: instant,
+      endedAt: instant,
+      evidence: "RunRateLimited",
+      run: executionRun,
+    },
+  ],
+  ...(execution.result === undefined
+    ? {}
+    : { result: { ...execution.result, report: "The fixture ran." } }),
 };

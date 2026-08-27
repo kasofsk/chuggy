@@ -20,6 +20,10 @@ import {
   instantSchema,
   nativeHttpPageItemsMax,
   partitionSchema,
+  resultReportCharsMax,
+  runModelCharsMax,
+  runOutcomeLabelCharsMax,
+  runTranscriptPageBatchesMax,
   ticketNumberSchema,
 } from "./http.ts";
 import {
@@ -37,6 +41,7 @@ import { briefResponseSchema } from "./brief.ts";
 import {
   architectures,
   artifactRoles,
+  attemptEvidences,
   attemptStates,
   draftStates,
   escalationReasons,
@@ -58,6 +63,7 @@ import {
   repositoryConfigurationFaults,
   requirementSources,
   resultVerdicts,
+  runCostBases,
   schedulerFreshnesses,
 } from "./rosters.ts";
 
@@ -81,6 +87,72 @@ export type ProjectInventoryResponse = z.infer<
   typeof projectInventoryResponseSchema
 >;
 
+/** Tokens by kind, as the agent runtime counts them. */
+const runTokensSchema = z.object({
+  tokensInput: countSchema,
+  tokensOutput: countSchema,
+  tokensCacheCreation: countSchema,
+  tokensCacheRead: countSchema,
+});
+
+/** One model's share of a run, which is what a per-model breakdown is a page of. */
+export const runModelUsageSchema = runTokensSchema.extend({
+  model: z.string().min(1).max(runModelCharsMax),
+  costUsdMicros: countSchema,
+});
+
+/**
+ * What one run spent. `costUsdMicros` is the runtime's own list price in
+ * millionths of a dollar, so a durable row holds an integer rather than a float.
+ */
+export const runTotalsSchema = runTokensSchema.extend({
+  turns: countSchema,
+  durationMs: countSchema,
+  durationApiMs: countSchema,
+  costUsdMicros: countSchema,
+  costBasis: z.enum(runCostBases),
+  models: page(runModelUsageSchema),
+  permissionDenials: countSchema,
+  resultSubtype: z.string().min(1).max(runOutcomeLabelCharsMax).optional(),
+  stopReason: z.string().min(1).max(runOutcomeLabelCharsMax).optional(),
+});
+export type RunTotals = z.infer<typeof runTotalsSchema>;
+
+/** One assistant turn's usage, folded so it outlives the transcript it came from. */
+export const runTurnSchema = runTokensSchema.extend({
+  ordinal: countSchema,
+  model: z.string().min(1).max(runModelCharsMax),
+  recordedAt: instantSchema,
+});
+
+/** Where the snapshot is and how much of it there is; its contents are their own read. */
+const runConfigurationRefSchema = z.strictObject({
+  digest: digestSchema,
+  bytes: countSchema,
+  recordedAt: instantSchema,
+});
+
+/**
+ * How far the transcript has been written and when. `observedAt` is the
+ * instant the newest batch was recorded, which is the pane's "as of".
+ */
+const runTranscriptRefSchema = z.strictObject({
+  batches: countSchema,
+  bytes: countSchema,
+  highWaterBatch: countSchema,
+  observedAt: instantSchema,
+});
+
+/** One run's evidence, which is what the attempt that produced it carries. */
+export const executionRunSchema = z.object({
+  startedAt: instantSchema,
+  configuration: runConfigurationRefSchema.optional(),
+  transcript: runTranscriptRefSchema.optional(),
+  turnsRecorded: countSchema,
+  totals: runTotalsSchema.optional(),
+});
+export type ExecutionRun = z.infer<typeof executionRunSchema>;
+
 /**
  * A ticket as the project table and its own read both carry it. The brief is
  * the ticket's own read alone: an intent is a paragraph, and a page of them is
@@ -92,6 +164,7 @@ export const ticketResponseSchema = z.object({
   sequence: countSchema,
   reason: z.enum(escalationReasons).optional(),
   brief: briefResponseSchema.optional(),
+  runTotals: runTotalsSchema.optional(),
 });
 export type TicketResponse = z.infer<typeof ticketResponseSchema>;
 
@@ -243,6 +316,7 @@ export const executionSummarySchema = z.object({
   retriesSpent: countSchema,
   registeredAt: instantSchema,
   terminalAt: instantSchema.optional(),
+  runTotals: runTotalsSchema.optional(),
 });
 export type ExecutionSummary = z.infer<typeof executionSummarySchema>;
 
@@ -275,6 +349,8 @@ const executionAttemptSchema = z.object({
   state: z.enum(attemptStates),
   openedAt: instantSchema,
   endedAt: instantSchema.optional(),
+  evidence: z.enum(attemptEvidences).optional(),
+  run: executionRunSchema.optional(),
 });
 
 const executionResultSchema = z.object({
@@ -285,6 +361,7 @@ const executionResultSchema = z.object({
   verdict: z.enum(resultVerdicts),
   recordedAt: instantSchema,
   artifacts: page(resultArtifactSchema),
+  report: z.string().min(1).max(resultReportCharsMax).optional(),
 });
 
 export const executionResponseSchema = executionSummarySchema.extend({
@@ -300,6 +377,57 @@ export const outputContentResponseSchema = z.object({
   content: z.string(),
 });
 export type OutputContentResponse = z.infer<typeof outputContentResponseSchema>;
+
+/** One page of a run's per-turn series, ascending, resumed by the last ordinal. */
+export const runTurnsResponseSchema = z.object({
+  turns: page(runTurnSchema),
+  nextAfter: countSchema.optional(),
+});
+export type RunTurnsResponse = z.infer<typeof runTurnsResponseSchema>;
+
+const runTranscriptBatchAt = {
+  batch: countSchema,
+  recordedAt: instantSchema,
+  bytes: countSchema,
+};
+
+/**
+ * One batch of a run's transcript: its characters, or the reason it has none.
+ * A batch whose stored object is gone or fails its digest is marked rather than
+ * refusing the batches around it, because a run that died never retries the
+ * upload and those neighbours are the whole of what it left.
+ */
+const runTranscriptBatchSchema = z.discriminatedUnion("read", [
+  z.object({
+    ...runTranscriptBatchAt,
+    read: z.literal("Content"),
+    content: z.string(),
+  }),
+  z.object({ ...runTranscriptBatchAt, read: z.literal("Missing") }),
+  z.object({ ...runTranscriptBatchAt, read: z.literal("Corrupt") }),
+]);
+
+/**
+ * One page of a run's transcript. `complete` says the attempt is no longer
+ * live, so no further batch can arrive; it is derived and never stored.
+ */
+export const runTranscriptResponseSchema = z.object({
+  batches: z.array(runTranscriptBatchSchema).max(runTranscriptPageBatchesMax),
+  observedAt: instantSchema,
+  complete: z.boolean(),
+  nextAfter: countSchema.optional(),
+});
+export type RunTranscriptResponse = z.infer<typeof runTranscriptResponseSchema>;
+
+export const runConfigurationResponseSchema = z.object({
+  read: z.literal("Content"),
+  digest: digestSchema,
+  bytes: countSchema,
+  content: z.string(),
+});
+export type RunConfigurationResponse = z.infer<
+  typeof runConfigurationResponseSchema
+>;
 
 const operationIdentitySchema = {
   operation: identitySchema,

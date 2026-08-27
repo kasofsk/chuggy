@@ -91,6 +91,11 @@ import {
   type ResultManifest,
 } from "../../interpreter/resultManifest.ts";
 import type {
+  RunEvidenceContentPort,
+  RunEvidenceContentRead,
+  RunEvidenceObject,
+} from "../../interpreter/runEvidence.ts";
+import type {
   WorkerArtifactStored,
   WorkerArtifactUploadPort,
 } from "../../interpreter/workerPlane.ts";
@@ -126,6 +131,7 @@ export type ArtifactStore = ArtifactVerificationPort &
   HandoffContentPort &
   ProjectArtifactPort &
   OutputContentPort &
+  RunEvidenceContentPort &
   WorkerArtifactUploadPort;
 
 /** The most bytes one read of a stored object draws at a time. */
@@ -568,11 +574,28 @@ async function artifactStoreOutput(
     input.artifact,
     true,
   );
+  const drawn = artifactStoreCharacters(own, confirmed);
+  return drawn.read === "Content"
+    ? {
+        read: "Content",
+        mediaType: output.mediaType,
+        renderer: output.renderer,
+        content: drawn.content,
+        ...(output.schema === undefined ? {} : { schema: output.schema }),
+      }
+    : drawn;
+}
+
+/**
+ * What one confirmed object's bytes are as characters, or the reason there are
+ * none: an outage, an absence and a fault are three answers and not one.
+ */
+function artifactStoreCharacters(
+  own: ArtifactStoreState,
+  confirmed: ArtifactStoreConfirmed,
+): RunEvidenceContentRead {
   if (confirmed.confirmed === "Unavailable")
-    return {
-      read: "Unavailable",
-      retryAfterSeconds: own.unavailableRetrySecs,
-    };
+    return { read: "Unavailable", retryAfterSeconds: own.unavailableRetrySecs };
   if (confirmed.confirmed === "Rejected")
     return confirmed.failure === "Missing" ||
       confirmed.failure === "ForeignProject"
@@ -582,16 +605,43 @@ async function artifactStoreOutput(
   try {
     return {
       read: "Content",
-      mediaType: output.mediaType,
-      renderer: output.renderer,
       content: new TextDecoder("utf-8", { fatal: true }).decode(
         confirmed.content,
       ),
-      ...(output.schema === undefined ? {} : { schema: output.schema }),
     };
   } catch {
     return { read: "Corrupt" };
   }
+}
+
+/**
+ * The bytes behind one run-evidence row. The row's own digest is what the
+ * object is confirmed against, so unverified evidence is unrepresentable here
+ * exactly as an unverified output is.
+ */
+async function artifactStoreEvidence(
+  own: ArtifactStoreState,
+  object: RunEvidenceObject,
+): Promise<RunEvidenceContentRead> {
+  const directory = artifactProjectDirectory(
+    own.root,
+    object.partition.tenant,
+    object.partition.project,
+  );
+  return artifactStoreCharacters(
+    own,
+    await artifactStoreConfirm(
+      directory,
+      artifactAttemptFile(
+        directory,
+        object.execution,
+        object.attempt,
+        object.path,
+      ),
+      { path: object.path, digest: object.digest, bytes: object.bytes },
+      true,
+    ),
+  );
 }
 
 /** The store over its options, refusing at construction what no later call could work around. */
@@ -631,5 +681,6 @@ export function artifactStore(options: ArtifactStoreOptions): ArtifactStore {
     writeArtifact: (write) => artifactStoreWrite(own, write),
     store: (input) => artifactStoreAttemptWrite(own, input),
     read: (input) => artifactStoreOutput(own, input),
+    readEvidence: (object) => artifactStoreEvidence(own, object),
   };
 }
