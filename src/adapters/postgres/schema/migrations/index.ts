@@ -43,6 +43,7 @@ import { migration042 } from "./042-ticket-brief.ts";
 import { migration043 } from "./043-native-action-change.ts";
 import { migration044 } from "./044-scheduler-input-bundle-reference-read.ts";
 import { migration045 } from "./045-finalizer-ticket-brief-read.ts";
+import { migration046 } from "./046-ticket-service-work-source-read.ts";
 import type { Migration } from "../shared.ts";
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -92,4 +93,5 @@ export const migrations: readonly Migration[] = [
   migration043,
   migration044,
   migration045,
+  migration046,
 ];

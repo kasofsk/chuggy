@@ -13,6 +13,7 @@ import {
   asRecoveryEpoch,
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
+import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -148,4 +149,77 @@ test("the ticket's own branch is the last word on what work is observed against"
     source.observed === "Source" ? source.source.target.ref : undefined,
     "refs/heads/ticket",
   );
+});
+
+const workBase = asGitObjectId("b".repeat(40));
+const workCommit = asGitObjectId("c".repeat(40));
+
+/** An observation whose history answers with one work spawn's declarations. */
+function observingWork(
+  declared: readonly ReturnType<typeof asGitObjectId>[],
+): ReturnType<typeof executionSourceObservation> {
+  return executionSourceObservation(
+    {
+      binding: () => {
+        throw new Error("an evaluation must not read the project binding");
+      },
+    },
+    {
+      observeTarget: () => {
+        throw new Error("mutable Git must not be observed");
+      },
+    },
+    {
+      workSource: () =>
+        Promise.resolve({
+          repository: asRepositoryId("work-repository"),
+          base: workBase,
+          declared,
+          manifests: [asResultManifestId("manifest-one")],
+        }),
+    },
+  );
+}
+
+test("evaluation is observed at the commit its work produced", async () => {
+  const observed = await observingWork([workCommit]).observe({
+    partition,
+    ticket: 1,
+    kind: "Evaluation",
+  });
+  assert.deepEqual(observed, {
+    observed: "Source",
+    source: {
+      repository: "work-repository",
+      target: { commit: workCommit },
+      manifests: ["manifest-one"],
+    },
+  });
+});
+
+test("work that declared no commit leaves its evaluation the base it ran on", async () => {
+  const observed = await observingWork([]).observe({
+    partition,
+    ticket: 1,
+    kind: "Evaluation",
+  });
+  assert.equal(
+    observed.observed === "Source" ? observed.source.target.commit : undefined,
+    workBase,
+  );
+});
+
+test("a fan-out that declared several commits is evaluated at the base they shared", async () => {
+  const observed = await observingWork([
+    workCommit,
+    asGitObjectId("d".repeat(40)),
+  ]).observe({ partition, ticket: 1, kind: "Evaluation" });
+  assert.deepEqual(observed, {
+    observed: "Source",
+    source: {
+      repository: "work-repository",
+      target: { commit: workBase },
+      manifests: ["manifest-one"],
+    },
+  });
 });
