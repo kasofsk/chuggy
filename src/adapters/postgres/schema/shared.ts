@@ -55,6 +55,7 @@ export const workerAttemptHeartbeatFunction = "heartbeat_worker_attempt";
 export const workerAttemptLostFunction = "lose_worker_attempt";
 export const workerResultSubmitFunction = "submit_worker_result";
 export const workerResultReportFunction = "store_worker_result_report";
+export const schedulerWorkReportsFunction = "read_scheduler_work_reports";
 export const workerArtifactReserveFunction = "reserve_worker_artifact";
 export const finalizerRole = "chuggy_finalizer";
 export const completionFunction = "submit_task_completion";

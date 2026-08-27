@@ -26,8 +26,12 @@ import {
   postgresHarnessDenial,
   postgresHarnessOpen,
   postgresHarnessProject,
+  postgresHarnessRolePool,
   type PostgresHarness,
 } from "./harness.ts";
+import { postgresPriorWorkReports } from "../../src/adapters/postgres/evaluationReports.ts";
+import { asExecutionId } from "../../src/interpreter/executionScheduler.ts";
+import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 
 const sourceInsertColumns =
   "base,commit,expected_base,manifest,project,ref,repository,tenant";
@@ -66,6 +70,21 @@ test("every runtime role may read only the migration ledger contract", async () 
       ),
       undefined,
     );
+  }
+});
+
+test("the scheduler can read the immutable work reports used to compose a briefing", async () => {
+  const pool = postgresHarnessRolePool(schedulerRole);
+  try {
+    assert.deepEqual(
+      await postgresPriorWorkReports(pool).reports(
+        { tenant: asTenantId("absent"), project: asProjectId("absent") },
+        asExecutionId("absent"),
+      ),
+      { reports: [] },
+    );
+  } finally {
+    await pool.end();
   }
 });
 

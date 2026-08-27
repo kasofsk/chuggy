@@ -22,8 +22,5 @@ test("evaluation reports come only from result manifests pinned by the execution
   );
   assert.deepEqual(reports, { reports: ["work one", "work two"] });
   const query = statement as { readonly template: readonly string[] };
-  assert.match(
-    query.template.join(""),
-    /input_bundle_reference[\s\S]+reference_kind='ResultManifest'[\s\S]+execution_result_report/u,
-  );
+  assert.match(query.template.join(""), /read_scheduler_work_reports/u);
 });
