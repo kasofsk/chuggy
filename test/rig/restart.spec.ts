@@ -16,6 +16,7 @@ import {
   apiRevision,
   briefIntent,
   createDraft,
+  deleteDraft,
   drill,
   evidence,
   notLiveBanner,
@@ -33,10 +34,7 @@ drill(
   "a restarted API is reconnected to and misses nothing retained",
   async ({ signedIn, context }) => {
     const bearer = signedIn.bearer();
-    const draft = await createDraft(
-      bearer,
-      `rig acceptance, the restart drill at ${new Date().toISOString()}`,
-    );
+    const draft = await createDraft(bearer, "the restart drill");
     const watcher = await context.newPage();
     await openTicket(watcher, draft);
     const before = await apiRevision();
@@ -57,9 +55,8 @@ drill(
     await dropped;
     await evidence(watcher, "drill4-stream-dropped");
 
-    const written = `written while disconnected at ${new Date().toISOString()}`;
-    const version = await throughRestart(() =>
-      reviseDraftIntent(bearer, draft, written),
+    const written = await throughRestart(() =>
+      reviseDraftIntent(bearer, draft, "written while disconnected"),
     );
     await onRig([
       "kubectl",
@@ -82,8 +79,9 @@ drill(
     expect(after).not.toBe(before);
     drill.info().annotations.push({
       type: "restart",
-      description: `generation ${before} became ${after}; draft ${String(draft)} reached version ${String(version)} while the console was disconnected`,
+      description: `generation ${before} became ${after} while draft ${String(draft)} was rewritten`,
     });
     await evidence(watcher, "drill4-reconnected");
+    await throughRestart(() => deleteDraft(bearer, draft));
   },
 );

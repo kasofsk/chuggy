@@ -12,8 +12,8 @@
 import { expect } from "@playwright/test";
 
 import {
-  actorReady,
   createTicket,
+  deploymentReady,
   drill,
   evidence,
   frameTimeoutMs,
@@ -21,13 +21,14 @@ import {
   openProject,
   openTicket,
   panel,
+  rigActorDeployment,
 } from "./rig.ts";
 
 drill(
   "an escalation reaches the badge and the inbox, and the answer clears both",
   async ({ signedIn, context }) => {
     drill.skip(
-      !(await actorReady()),
+      !(await deploymentReady(rigActorDeployment)),
       "the installation has no journalled actor up, so no release can settle",
     );
     const watcher = await context.newPage();
@@ -37,11 +38,11 @@ drill(
     const at = new Date().toISOString();
     const dependency = await createTicket(
       signedIn.page,
-      `rig acceptance, the dependency at ${at}`,
+      `the dependency at ${at}`,
     );
     const dependent = await createTicket(
       signedIn.page,
-      `rig acceptance, the dependent at ${at}`,
+      `the dependent at ${at}`,
       dependency,
     );
     drill.info().annotations.push({

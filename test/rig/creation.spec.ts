@@ -1,60 +1,51 @@
 /**
- * Drill one: a ticket created from the console's own form reaches a project
- * table nobody reloaded, and the transition that follows reaches it the same way.
+ * Drill one, in two halves, because #325's first criterion asks for two things
+ * and an installation can be able to show one without the other.
+ *
+ * THE CREATION HALF needs the journalled actor, because releasing a draft is its
+ * work. THE EXECUTION HALF needs the selector as well, because dispatch is the
+ * selector's and no console action can stand in for it. Each states what it
+ * needs and skips when the installation has not got it, and a skip is what
+ * `test/rig/verdict.ts` turns into a could-not-run: a run that could not exercise
+ * a numbered criterion must not report that it did.
  *
  * The table is watched in a second tab that is opened once and never navigated
  * again, because a screen that refetched on its own navigation would pass this
- * whether or not a frame ever arrived. What the selector dispatches is not this
- * drill's to require: a rig running it at no replicas reports the frames that
- * did arrive instead of failing.
- *
- * RELEASING A DRAFT NEEDS THE JOURNALLED ACTOR, so this drill states that as a
- * precondition and skips when the installation has none up. A skip is not a
- * pass, and it is the honest verdict when nothing the console does could have
- * settled the release.
+ * whether or not a frame ever arrived.
  */
 
 import { expect } from "@playwright/test";
-import type { Page } from "@playwright/test";
 
 import {
-  actorReady,
   createTicket,
+  deploymentReady,
   drill,
   evidence,
   frameTimeoutMs,
   openProject,
   panel,
+  rigActorDeployment,
+  rigSelectorDeployment,
   ticketLink,
 } from "./rig.ts";
 
-/** How long a dispatch is waited for before the drill reports that none came. */
-const dispatchTimeoutMs = 60_000;
+/** How long a dispatched execution is waited for before the drill gives up on it. */
+const dispatchTimeoutMs = 120_000;
 
-/** Whether anything ran for this ticket, an empty panel being an answer and not a failure. */
-async function executionsReached(page: Page): Promise<boolean> {
-  return page
-    .locator("li.execution")
-    .first()
-    .waitFor({ state: "visible", timeout: dispatchTimeoutMs })
-    .then(
-      () => true,
-      () => false,
-    );
-}
+const noActor =
+  "the installation has no journalled actor up, so no release can settle";
+const noSelector =
+  "the installation runs its selector at no replicas, so nothing dispatches";
 
 drill(
   "a created ticket and its transition reach an unreloaded table",
   async ({ signedIn, context }) => {
-    drill.skip(
-      !(await actorReady()),
-      "the installation has no journalled actor up, so no release can settle",
-    );
+    drill.skip(!(await deploymentReady(rigActorDeployment)), noActor);
     const table = await context.newPage();
     await openProject(table);
     const ticket = await createTicket(
       signedIn.page,
-      `rig acceptance, ticket created at ${new Date().toISOString()}`,
+      `ticket created at ${new Date().toISOString()}`,
     );
     drill.info().annotations.push({
       type: "ticket",
@@ -66,31 +57,36 @@ drill(
     });
     await evidence(table, "drill1-created-row-live");
 
-    const ran = await executionsReached(signedIn.page);
-    if (ran) {
-      await expect(
-        signedIn.page.locator(".execution-status").first(),
-      ).not.toBeEmpty();
-    } else {
-      await expect(
-        panel(signedIn.page, "executions").getByText(
-          "nothing has run for this ticket",
-        ),
-      ).toBeVisible();
-    }
-    drill.info().annotations.push({
-      type: "dispatch",
-      description: ran
-        ? "an execution arrived and carried a status"
-        : "no execution arrived inside the wait; the Draft and Ticket frames are what this drill observed",
-    });
-    await evidence(signedIn.page, "drill1-ticket-page");
-
     await signedIn.page.getByRole("button", { name: "revoke" }).click();
     await expect(
       ticketLink(panel(table, "failed or revoked"), ticket),
     ).toBeVisible({ timeout: frameTimeoutMs });
     await expect(ticketLink(panel(table, "up next"), ticket)).toHaveCount(0);
     await evidence(table, "drill1-transition-live");
+  },
+);
+
+drill(
+  "a dispatched ticket's execution appears with its status",
+  async ({ signedIn }) => {
+    drill.skip(!(await deploymentReady(rigActorDeployment)), noActor);
+    drill.skip(!(await deploymentReady(rigSelectorDeployment)), noSelector);
+    const ticket = await createTicket(
+      signedIn.page,
+      `execution observed at ${new Date().toISOString()}`,
+    );
+    const executions = panel(signedIn.page, "executions");
+    await expect(executions.locator("li.execution").first()).toBeVisible({
+      timeout: dispatchTimeoutMs,
+    });
+    await expect(
+      signedIn.page.locator(".execution-status").first(),
+    ).not.toBeEmpty();
+    await evidence(signedIn.page, "drill1-execution");
+    drill.info().annotations.push({
+      type: "ticket",
+      description: `created ticket ${String(ticket)} and observed an execution`,
+    });
+    await signedIn.page.getByRole("button", { name: "revoke" }).click();
   },
 );

@@ -6,16 +6,22 @@
  * reached over the ssh an operator would use. Every wait is bounded and every
  * bound is named, so a drill that runs out of one says which.
  *
- * THE WORKLOAD NAMES BELOW ARE THIS INSTALLATION'S. Three drills act on the
+ * A RIG THAT CANNOT BE ASKED IS NOT A RIG WITH NOTHING RUNNING. `onRig` turns a
+ * failed command into an error carrying `rigCouldNotRunPrefix`, so a wrong ssh
+ * destination, a missing `kubectl` and a denied role all reach the report as
+ * themselves; only a command that SUCCEEDED and answered nothing is a workload
+ * at no replicas, which is the one thing a drill may skip on.
+ *
+ * THE WORKLOAD NAMES BELOW ARE THIS INSTALLATION'S. Most drills act on the
  * cluster rather than on the console — they terminate the listener, restart the
- * API and ask whether the journalled actor is up — and none of that can be said
- * without naming what to act on. They are gathered here so a rig that names its
- * workloads differently is one edit rather than a search.
+ * API, and ask whether the journalled actor and the selector are up — and none
+ * of that can be said without naming what to act on. They are gathered here so
+ * a rig that names its workloads differently is one edit rather than a search.
  *
  * A DRAFT IS THE CHANGE THE API MAKES ALONE. Releasing one is the journalled
- * actor's and running it is the selector's, so a drill about the stream creates
- * and revises a draft: the frame is a real one off the durable change log, and
- * nothing but the API had to be up to produce it.
+ * actor's and running it is the selector's, so a drill about the stream creates,
+ * revises and then deletes a draft: the frame is a real one off the durable
+ * change log, and nothing but the API had to be up to produce it.
  */
 
 import { execFile, spawn } from "node:child_process";
@@ -34,6 +40,7 @@ import {
   draftInitializationResponseSchema,
   draftResponseSchema,
 } from "../../src/contract/responses.ts";
+import { rigCouldNotRunPrefix } from "./verdict.ts";
 
 const runCommand = promisify(execFile);
 
@@ -48,6 +55,9 @@ export interface RigEnvironment {
   readonly ssh: string;
   readonly evidenceDir: string;
 }
+
+/** What every intent this suite writes begins with, so its residue is identifiable. */
+export const acceptanceIntentPrefix = "rig acceptance";
 
 /** How long one live frame may take to be drawn, which bounds every liveness assertion. */
 export const frameTimeoutMs = 30_000;
@@ -73,8 +83,12 @@ export const rigNamespace = "chuggy";
 export const rigDeploymentKind = "deployment";
 export const rigApiDeployment = "chuggy-api";
 export const rigActorDeployment = "chuggy-ticket-service";
+export const rigSelectorDeployment = "chuggy-selector";
 export const rigDatabasePod = "postgres-0";
 export const rigDatabase = "chuggy";
+
+/** The environment name a deployment raises the stream cap with. */
+export const streamConnectionsVariable = "CHUG_API_STREAM_CONNECTIONS_MAX";
 
 /** The one session the API listens for its doorbell on, named as its own query states it. */
 export const listenerTerminationQuery =
@@ -121,30 +135,43 @@ function quoted(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-/** One command on the rig, over ssh, bounded. */
-export async function onRig(command: readonly string[]): Promise<string> {
-  const done = await runCommand(
-    "ssh",
-    [rig.ssh, command.map(quoted).join(" ")],
-    {
-      timeout: rigCommandTimeoutMs,
-    },
+function couldNotAsk(command: readonly string[], failure: unknown): Error {
+  const said =
+    failure instanceof Error && "stderr" in failure
+      ? failure.stderr
+      : undefined;
+  const detail = typeof said === "string" && said.trim().length > 0 ? said : "";
+  return new Error(
+    `${rigCouldNotRunPrefix}: ${command.join(" ")}${detail === "" ? "" : ` — ${detail.trim()}`}`,
   );
-  return done.stdout;
 }
 
-/** Whether the journalled actor is up, which is what a release needs and a read does not. */
-export async function actorReady(): Promise<boolean> {
+/** One command on the rig, over ssh, bounded; a command that failed is not an answer. */
+export async function onRig(command: readonly string[]): Promise<string> {
+  try {
+    const done = await runCommand(
+      "ssh",
+      [rig.ssh, command.map(quoted).join(" ")],
+      { timeout: rigCommandTimeoutMs },
+    );
+    return done.stdout;
+  } catch (failure: unknown) {
+    throw couldNotAsk(command, failure);
+  }
+}
+
+/** Whether one deployment has a replica up, asked of a cluster that answered. */
+export async function deploymentReady(name: string): Promise<boolean> {
   const replicas = await onRig([
     "kubectl",
     "-n",
     rigNamespace,
     "get",
     rigDeploymentKind,
-    rigActorDeployment,
+    name,
     "-o",
     "jsonpath={.status.readyReplicas}",
-  ]).catch(() => "");
+  ]);
   return Number(replicas.trim()) > 0;
 }
 
@@ -161,6 +188,22 @@ export async function apiRevision(): Promise<string> {
     "jsonpath={.metadata.annotations.deployment\\.kubernetes\\.io/revision}",
   ]);
   return said.trim();
+}
+
+/** How many streams this API will hold open, which the deployment may raise. */
+export async function streamConnectionsMax(whenUnset: number): Promise<number> {
+  const said = await onRig([
+    "kubectl",
+    "-n",
+    rigNamespace,
+    "get",
+    rigDeploymentKind,
+    rigApiDeployment,
+    "-o",
+    `jsonpath={.spec.template.spec.containers[0].env[?(@.name=="${streamConnectionsVariable}")].value}`,
+  ]);
+  const named = Number(said.trim());
+  return Number.isSafeInteger(named) && named > 0 ? named : whenUnset;
 }
 
 /** Terminates every backend holding the doorbell, answering how many it ended. */
@@ -258,11 +301,28 @@ export async function openProject(page: Page): Promise<void> {
   await awaitLive(page);
 }
 
-/** One ticket's own page, whose brief is what a `Draft` frame is drawn into. */
-export async function openTicket(page: Page, ticket: number): Promise<void> {
+/**
+ * One ticket's own page, drawn but not waited on for a stream. A drill that
+ * refuses the stream on purpose starts here, because the page is readable
+ * without one and that is half of what it is checking.
+ */
+export async function openTicketPage(
+  page: Page,
+  ticket: number,
+): Promise<void> {
   await page.goto(`${projectUrl()}/tickets/${String(ticket)}`);
   await expect(panel(page, "brief")).toBeVisible({ timeout: frameTimeoutMs });
+}
+
+/** The same page, live, which is where every drill but the fallback one starts. */
+export async function openTicket(page: Page, ticket: number): Promise<void> {
+  await openTicketPage(page, ticket);
   await awaitLive(page);
+}
+
+/** The address the console opens its event stream at, which a drill may refuse. */
+export function isStreamRequest(url: URL): boolean {
+  return url.pathname.endsWith("/events");
 }
 
 const ticketPathPattern = /\/tickets\/(\d+)$/u;
@@ -280,7 +340,7 @@ export async function createTicket(
   await page.goto(`${projectUrl()}/tickets/new`);
   await page
     .getByPlaceholder("what this ticket is for")
-    .fill(intent, { timeout: frameTimeoutMs });
+    .fill(`${acceptanceIntentPrefix}, ${intent}`, { timeout: frameTimeoutMs });
   if (dependsOn !== undefined) {
     await page.getByText("advanced", { exact: true }).click();
     await page
@@ -315,12 +375,15 @@ async function apiCall(
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
+  const said = await answered.text();
   if (!answered.ok)
-    throw new Error(`${method} ${path} answered ${String(answered.status)}`);
-  return answered.json();
+    throw new Error(
+      `${method} ${path} answered ${String(answered.status)}: ${said}`,
+    );
+  return said.length === 0 ? undefined : JSON.parse(said);
 }
 
-/** The ordinary read a drill asks for while it is holding streams open. */
+/** The ordinary read a drill asks for while it is holding streams or a doorbell down. */
 export async function readProjectStatus(bearer: string): Promise<number> {
   const answered = await fetch(`${rig.apiUrl}${projectPath()}?limit=1`, {
     headers: {
@@ -346,6 +409,10 @@ async function readyRevision(bearer: string): Promise<string> {
   return ready.revision;
 }
 
+function draftPath(ticket: number): string {
+  return `${projectPath()}/drafts/${String(ticket)}`;
+}
+
 /** One draft, created through the API and left unreleased for a drill to change. */
 export async function createDraft(
   bearer: string,
@@ -365,7 +432,7 @@ export async function createDraft(
       configurationDigest: initialized.fence.configurationDigest,
       expectedProjectSequence: initialized.fence.projectSequence,
       authoring: initialized.defaults,
-      brief: { intent, links: [] },
+      brief: { intent: `${acceptanceIntentPrefix}, ${intent}`, links: [] },
     }),
   );
   return created.ticket;
@@ -376,18 +443,31 @@ export async function reviseDraftIntent(
   bearer: string,
   ticket: number,
   intent: string,
-): Promise<number> {
-  const path = `${projectPath()}/drafts/${String(ticket)}`;
+): Promise<string> {
+  const path = draftPath(ticket);
+  const written = `${acceptanceIntentPrefix}, ${intent}`;
   const draft = draftResponseSchema.parse(await apiCall(bearer, "GET", path));
-  const revised = draftResponseSchema.parse(
-    await apiCall(bearer, "PUT", path, {
-      expectedVersion: draft.authoringVersion,
-      configurationRevision: draft.configurationRevision,
-      authoring: draft.authoring,
-      brief: { links: [], ...draft.brief, intent },
-    }),
+  await apiCall(bearer, "PUT", path, {
+    expectedVersion: draft.authoringVersion,
+    configurationRevision: draft.configurationRevision,
+    authoring: draft.authoring,
+    brief: { links: [], ...draft.brief, intent: written },
+  });
+  return written;
+}
+
+/** The draft a drill made, taken back, so a run leaves the project as it found it. */
+export async function deleteDraft(
+  bearer: string,
+  ticket: number,
+): Promise<void> {
+  const path = draftPath(ticket);
+  const draft = draftResponseSchema.parse(await apiCall(bearer, "GET", path));
+  await apiCall(
+    bearer,
+    "DELETE",
+    `${path}?expectedVersion=${String(draft.authoringVersion)}`,
   );
-  return revised.authoringVersion;
 }
 
 /**

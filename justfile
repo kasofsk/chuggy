@@ -23,6 +23,10 @@ suites:
 # of its projects, and a browser download, none of which a gate may assume. It
 # breaks what it drives, too — it terminates the API's listener and restarts the
 # API — so it is asked for by name or not at all.
+#
+# THE RUNNER'S EXIT IS NOT THE VERDICT. Playwright exits zero on a run whose
+# drills all skipped, so the report it wrote is read back afterwards and a drill
+# that did not run is a could-not-run like any other gate's.
 acceptance *ARGS:
     #!/bin/sh
     set -eu
@@ -41,7 +45,17 @@ acceptance *ARGS:
         echo "  Browsers install once: npx playwright install chromium" >&2
         exit 2
     fi
-    exec npm run acceptance --workspace test/rig -- {{ ARGS }}
+    evidence="${CHUG_RIG_EVIDENCE_DIR:-${TMPDIR:-/tmp}/chuggy-rig-acceptance}"
+    CHUG_RIG_EVIDENCE_DIR="$evidence"
+    export CHUG_RIG_EVIDENCE_DIR
+    rm -f "$evidence/report.json"
+    ran=0
+    npm run acceptance --workspace test/rig -- {{ ARGS }} || ran=$?
+    unreached=0
+    node --experimental-strip-types test/rig/verdict.ts \
+        "$evidence/report.json" || unreached=$?
+    [ "$unreached" -eq 0 ] || exit "$unreached"
+    exit "$ran"
 
 # Install the pre-commit hook. A fresh clone needs this once.
 hooks:
