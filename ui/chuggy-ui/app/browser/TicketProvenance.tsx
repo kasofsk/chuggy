@@ -62,7 +62,7 @@ function Brief(props: { readonly brief: TicketBriefBody }): ReactNode {
         )}
       </Field>
       <Field name="branch">{branch ?? "none"}</Field>
-      {finalization === undefined ? null : (
+      {finalization?.target === undefined ? null : (
         <Field name="lands on">{finalization.target}</Field>
       )}
     </>

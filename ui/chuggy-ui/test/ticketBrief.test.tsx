@@ -116,6 +116,22 @@ test("a brief naming no target draws no field for one", () => {
   expect(screen.queryByText("lands on")).toBeNull();
 });
 
+/** The contract lets a finalization name a mode and no reference, which is the
+ * work landing where it happened; the field would draw empty. */
+test("a finalization naming no reference draws no field either", () => {
+  render(
+    <TicketBrief
+      state={draft({
+        intent: "an intent",
+        links: [],
+        branch: "refs/heads/rt/console-ticket-page",
+        finalization: { mode: "Push" },
+      })}
+    />,
+  );
+  expect(screen.queryByText("lands on")).toBeNull();
+});
+
 test("a ticket with no brief says why, and draws no empty intent", () => {
   render(<TicketBrief state={draft()} />);
   expect(screen.getByText(/released before a brief was kept/u)).toBeDefined();

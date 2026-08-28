@@ -25,6 +25,7 @@ import {
   briefLinksMax,
 } from "../../../../src/contract/brief.ts";
 import { draftCreationSchema } from "../../../../src/contract/requests.ts";
+import type { BriefFinalizationMode } from "../../../../src/contract/rosters.ts";
 import type { PublicMutation } from "../../../../src/contract/requests.ts";
 import type {
   ConfigurationSummary,
@@ -230,6 +231,9 @@ function creationStatedFaults(
   return stated;
 }
 
+/** The one way this console lands work, named rather than read off the roster. */
+const creationFinalizationMode: BriefFinalizationMode = "Push";
+
 /**
  * The brief a form becomes. A finalization is what naming a target means, so a
  * form that names none sends none rather than a target repeating the branch.
@@ -243,7 +247,12 @@ function creationBriefOf(
     links: form.links.map((link) => link.trim()).filter((link) => link !== ""),
     ...(branches.branch.named === "Ref" ? { branch: branches.branch.ref } : {}),
     ...(branches.target.named === "Ref"
-      ? { finalization: { mode: "Push", target: branches.target.ref } }
+      ? {
+          finalization: {
+            mode: creationFinalizationMode,
+            target: branches.target.ref,
+          },
+        }
       : {}),
   };
 }
