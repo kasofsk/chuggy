@@ -16,6 +16,7 @@ import {
   finalizerGitEnvironmentNames,
   finalizerRuntimeDefaults,
   finalizerSettingsOf,
+  forgeBindingFilesMax,
   repositoryCredentialFilesMax,
   type FinalizerEnvironment,
 } from "../../src/interpreter/finalizerSettings.ts";
@@ -102,6 +103,8 @@ test("every pass and pace bound a deployment names reaches the parsed configurat
     CHUG_FINALIZER_PROMOTIONS_PER_PASS_MAX: "5",
     CHUG_FINALIZER_RECONCILIATIONS_PER_PASS_MAX: "6",
     CHUG_FINALIZER_HELD_PERMITS_PER_PASS_MAX: "7",
+    CHUG_FINALIZER_PROPOSALS_PER_PASS_MAX: "9",
+    CHUG_FINALIZER_PROPOSAL_RECONCILIATIONS_MAX: "10",
   });
   assert.deepEqual(settings.runtime, {
     idleIntervalMilliseconds: 250,
@@ -115,6 +118,8 @@ test("every pass and pace bound a deployment names reaches the parsed configurat
     promotionsPerPassMax: 5,
     reconciliationsPerPassMax: 6,
     heldPermitsPerPassMax: 7,
+    proposalsPerPassMax: 9,
+    proposalReconciliationsMax: 10,
   });
 });
 
@@ -169,6 +174,90 @@ test("a credential source is a repository and a path, and nothing else is one", 
         }),
       /CHUG_FINALIZER_CREDENTIAL_SOURCES/u,
       sources.slice(0, 40),
+    );
+  }
+});
+
+test("a deployment binding no forge opens no change proposal and still parses", () => {
+  assert.deepEqual(finalizerSettingsOf(complete).forges, []);
+  assert.deepEqual(
+    finalizerSettingsOf({ ...complete, CHUG_FINALIZER_FORGE_BINDINGS: "[]" })
+      .forges,
+    [],
+  );
+});
+
+test("a forge binding names a forge, a repository host, a credential and the file it stands in", () => {
+  const settings = finalizerSettingsOf({
+    ...complete,
+    CHUG_FINALIZER_FORGE_BINDINGS: JSON.stringify([
+      {
+        forge: "forge-alpha",
+        repositoryHost: "github.test",
+        apiHost: "api.github.test",
+        credentialReference: "forge-alpha-proposals",
+        path: "/run/secrets/forge-alpha",
+      },
+      {
+        forge: "forge-beta",
+        repositoryHost: "forge.test",
+        credentialReference: "forge-beta-proposals",
+        path: "/run/secrets/forge-beta",
+      },
+    ]),
+  });
+  assert.deepEqual(settings.forges, [
+    {
+      forge: "forge-alpha",
+      repositoryHost: "github.test",
+      apiHost: "api.github.test",
+      credentialReference: "forge-alpha-proposals",
+      path: "/run/secrets/forge-alpha",
+    },
+    {
+      forge: "forge-beta",
+      repositoryHost: "forge.test",
+      credentialReference: "forge-beta-proposals",
+      path: "/run/secrets/forge-beta",
+    },
+  ]);
+});
+
+test("a forge binding that is not one, or names a forge or host twice, is refused", () => {
+  const bound = {
+    forge: "forge-alpha",
+    repositoryHost: "github.test",
+    credentialReference: "forge-alpha-proposals",
+    path: "/run/secrets/forge-alpha",
+  };
+  for (const bindings of [
+    "{}",
+    "[null]",
+    JSON.stringify([{ ...bound, forge: "" }]),
+    JSON.stringify([{ ...bound, repositoryHost: "" }]),
+    JSON.stringify([{ ...bound, repositoryHost: "github.test/owner" }]),
+    JSON.stringify([{ ...bound, repositoryHost: "https://github.test" }]),
+    JSON.stringify([{ ...bound, apiHost: "api.github.test/v3" }]),
+    JSON.stringify([{ ...bound, credentialReference: "" }]),
+    JSON.stringify([{ ...bound, path: "" }]),
+    JSON.stringify([bound, { ...bound, repositoryHost: "other.test" }]),
+    JSON.stringify([bound, { ...bound, forge: "forge-beta" }]),
+    JSON.stringify(
+      Array.from({ length: forgeBindingFilesMax + 1 }, (_, index) => ({
+        ...bound,
+        forge: `forge-${String(index)}`,
+        repositoryHost: `forge-${String(index)}.test`,
+      })),
+    ),
+  ]) {
+    assert.throws(
+      () =>
+        finalizerSettingsOf({
+          ...complete,
+          CHUG_FINALIZER_FORGE_BINDINGS: bindings,
+        }),
+      /CHUG_FINALIZER_FORGE_BINDINGS/u,
+      bindings.slice(0, 60),
     );
   }
 });

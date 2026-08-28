@@ -20,7 +20,13 @@ import {
   credentialFiles,
   credentialFilesDefaults,
   credentialFilesPrecondition,
+  forgeCredentialFiles,
+  forgeCredentialFilesPrecondition,
 } from "../../src/adapters/credentials/credentialFiles.ts";
+import {
+  asForgeBindingId,
+  asForgeCredentialReference,
+} from "../../src/interpreter/changeProposal.ts";
 import {
   finalizerIdentityCharsMax,
   asRepositoryId,
@@ -191,6 +197,105 @@ test("a mapping that answers one repository two ways is refused at construction"
         ],
       }),
     /a repository names two files/u,
+  );
+});
+
+/** One forge binding this deployment names, over the file a case writes for it. */
+function forgeBinding(path: string, reference = "forge-alpha-proposals") {
+  return {
+    forge: asForgeBindingId("forge-alpha"),
+    repositoryHost: "example.invalid",
+    credentialReference: asForgeCredentialReference(reference),
+    path,
+  };
+}
+
+test("a forge resolves its own credential and never a repository's", async (t) => {
+  const root = directory(t);
+  const path = join(root, "forge");
+  writeFileSync(path, "forge-secret\n");
+  const source = forgeCredentialFiles({ bindings: [forgeBinding(path)] });
+  assert.deepEqual(
+    await source.credential({
+      forge: asForgeBindingId("forge-alpha"),
+      credential: asForgeCredentialReference("forge-alpha-proposals"),
+    }),
+    { resolved: "Credential", credential: "forge-secret" },
+  );
+  assert.deepEqual(
+    await source.credential({
+      forge: asForgeBindingId("forge-alpha"),
+      credential: asForgeCredentialReference("some-other-credential"),
+    }),
+    { resolved: "Denied" },
+  );
+});
+
+test("a forge credential is refused rather than quoted where the file is not one", async (t) => {
+  const root = directory(t);
+  const absent = join(root, "absent");
+  const empty = join(root, "empty");
+  writeFileSync(empty, "\n  \n");
+  const oversized = join(root, "oversized");
+  writeFileSync(oversized, "s".repeat(finalizerIdentityCharsMax + 1));
+  for (const path of [absent, empty, oversized]) {
+    const resolved = await forgeCredentialFiles({
+      bindings: [forgeBinding(path)],
+    }).credential({
+      forge: asForgeBindingId("forge-alpha"),
+      credential: asForgeCredentialReference("forge-alpha-proposals"),
+    });
+    assert.deepEqual(resolved, { resolved: "Unavailable" }, path);
+    assert.deepEqual(Object.keys(resolved), ["resolved"], path);
+  }
+});
+
+test("a forge credential file the port would refuse fails the precondition too", async (t) => {
+  const root = directory(t);
+  const path = join(root, "forge");
+  writeFileSync(path, "s".repeat(finalizerIdentityCharsMax + 1));
+  const signal = new AbortController().signal;
+  const precondition = forgeCredentialFilesPrecondition({
+    bindings: [forgeBinding(path)],
+  });
+  assert.equal(precondition.name, "forge-credentials-available");
+  assert.equal(await precondition.check(signal), false);
+  writeFileSync(path, "forge-secret");
+  assert.equal(await precondition.check(signal), true);
+  assert.equal(
+    await forgeCredentialFilesPrecondition({ bindings: [] }).check(signal),
+    true,
+    "a deployment binding no forge meets the precondition it has nothing to fail",
+  );
+});
+
+test("two forge bindings naming one credential two files are refused at construction", async (t) => {
+  const root = directory(t);
+  assert.throws(
+    () =>
+      forgeCredentialFiles({
+        bindings: [
+          forgeBinding(join(root, "a")),
+          { ...forgeBinding(join(root, "b")), repositoryHost: "other.invalid" },
+        ],
+      }),
+    /a credential names two files/u,
+  );
+  const shared = join(root, "shared");
+  writeFileSync(shared, "forge-secret");
+  const source = forgeCredentialFiles({
+    bindings: [
+      forgeBinding(shared),
+      { ...forgeBinding(shared), repositoryHost: "other.invalid" },
+    ],
+  });
+  assert.deepEqual(
+    await source.credential({
+      forge: asForgeBindingId("forge-alpha"),
+      credential: asForgeCredentialReference("forge-alpha-proposals"),
+    }),
+    { resolved: "Credential", credential: "forge-secret" },
+    "two hosts held under one account name one reference and one file",
   );
 });
 

@@ -13,8 +13,6 @@
 
 import { z } from "zod";
 
-import { briefFinalizationModes } from "./rosters.ts";
-
 /**
  * The longest line a briefing renders, which is the whole of what a brief is
  * measured in: an intent renders as lines and a link renders as one, so this
@@ -51,14 +49,24 @@ export const briefBranchSchema = z
   .startsWith(briefBranchPrefix);
 
 /**
- * How and where a finalization lands the work: the mode it lands under, and
- * the reference it lands on where that is not the branch the work happened on.
- * The target shares the branch's grammar, being the same kind of name.
+ * How and where a finalization lands the work, as one variant per mode: a push
+ * names the reference it lands on only where that is not the branch the work
+ * happened on, and a pull request must name one, because a proposal opened into
+ * nothing is not a proposal. The target shares the branch's grammar, being the
+ * same kind of name.
  */
-export const briefFinalizationSchema = z.strictObject({
-  mode: z.enum(briefFinalizationModes),
-  target: briefBranchSchema.optional(),
-});
+const briefFinalizationShapes = {
+  Push: { mode: z.literal("Push"), target: briefBranchSchema.optional() },
+  PullRequest: {
+    mode: z.literal("PullRequest"),
+    target: briefBranchSchema,
+  },
+} as const;
+
+export const briefFinalizationSchema = z.discriminatedUnion("mode", [
+  z.strictObject(briefFinalizationShapes.Push),
+  z.strictObject(briefFinalizationShapes.PullRequest),
+]);
 
 /**
  * The brief as a write states it, its finalization omitted where the work
@@ -74,7 +82,11 @@ export const briefSchema = z.strictObject({
 
 export type TicketBriefBody = z.infer<typeof briefSchema>;
 
-export const briefFinalizationResponseSchema = briefFinalizationSchema.strip();
+/** The same finalization read back, each variant dropping a field the reader does not know. */
+export const briefFinalizationResponseSchema = z.discriminatedUnion("mode", [
+  z.object(briefFinalizationShapes.Push),
+  z.object(briefFinalizationShapes.PullRequest),
+]);
 
 /** The same brief read back, dropping a field the reader does not know at either depth. */
 export const briefResponseSchema = briefSchema.strip().extend({

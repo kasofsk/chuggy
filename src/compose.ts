@@ -10,8 +10,19 @@ import {
 import {
   credentialFiles,
   credentialFilesPrecondition,
+  forgeCredentialFiles,
+  forgeCredentialFilesPrecondition,
   type CredentialFilesOptions,
+  type ForgeCredentialFilesOptions,
 } from "./adapters/credentials/credentialFiles.ts";
+import { githubChangeProposals } from "./adapters/forge/githubChangeProposals.ts";
+import {
+  forgeBindingOf,
+  type ChangeProposalForges,
+  type ChangeProposalPort,
+  type ForgeCredentialPort,
+  type ForgeRepositoryBinding,
+} from "./interpreter/changeProposal.ts";
 import {
   gitAvailablePrecondition,
   gitScratchWritablePrecondition,
@@ -75,7 +86,10 @@ import {
   type FinalizerIdentityFactory,
 } from "./interpreter/finalizerPreparation.ts";
 import type { FinalizerService } from "./interpreter/finalizerRun.ts";
-import type { FinalizerSettings } from "./interpreter/finalizerSettings.ts";
+import type {
+  FinalizerSettings,
+  ForgeBindingFile,
+} from "./interpreter/finalizerSettings.ts";
 import type { RuntimePrecondition } from "./interpreter/serviceRuntime.ts";
 import {
   silentFinalizerTelemetry,
@@ -173,8 +187,47 @@ export function composeSelectorService(
 /** What a finalizer deployment answers its own ports with, none of it read from an environment. */
 export interface FinalizerServiceRuntime {
   readonly git: GitPromotionPort;
+  readonly forges: ChangeProposalForges;
   readonly artifactRoot: string;
   readonly artifacts?: ArtifactStoreOptions;
+}
+
+/**
+ * The forges one deployment opens change proposals on: every adapter is built
+ * here from the binding that named it, so the interpreter selects one by its
+ * forge identity and constructs none, and a deployment binding none answers
+ * every repository with no binding, which is the denial a proposal holds under.
+ * A binding names itself rather than its provider, so every one it does bind is
+ * answered by the one adapter this tree has.
+ */
+export function composeChangeProposalForges(
+  bindings: readonly ForgeBindingFile[],
+  credentials: ForgeCredentialPort,
+): ChangeProposalForges {
+  const adapters = new Map<string, ChangeProposalPort>(
+    bindings.map((binding) => [
+      binding.forge,
+      githubChangeProposals({
+        credentials,
+        fetch,
+        repositoryHost: binding.repositoryHost,
+        ...(binding.apiHost === undefined ? {} : { apiHost: binding.apiHost }),
+      }),
+    ]),
+  );
+  const repositories: readonly ForgeRepositoryBinding[] = bindings.map(
+    (binding) => ({
+      binding: {
+        forge: binding.forge,
+        credential: binding.credentialReference,
+      },
+      repositoryHost: binding.repositoryHost,
+    }),
+  );
+  return {
+    selector: { select: (forge) => adapters.get(forge) },
+    bindingOf: (repository) => forgeBindingOf(repositories, repository),
+  };
 }
 
 /** The identities one preparation mints, which the layer below may not draw for itself. */
@@ -212,6 +265,7 @@ export function composeFinalizerService(
   return {
     store: postgresFinalizer(finalizerPool),
     git: runtime.git,
+    forges: runtime.forges,
     ticketBriefs: postgresTicketBrief(finalizerPool),
     handoffs: artifacts,
     artifacts,
@@ -244,6 +298,12 @@ export function composeFinalizerRuntime(
       : { credentialBytesMax: settings.credentialBytesMax }),
   };
   const credentials = credentialFiles(credentialOptions);
+  const forgeOptions: ForgeCredentialFilesOptions = {
+    bindings: settings.forges,
+    ...(settings.credentialBytesMax === undefined
+      ? {}
+      : { credentialBytesMax: settings.credentialBytesMax }),
+  };
   const git = settings.git;
   return {
     preconditions: [
@@ -251,8 +311,13 @@ export function composeFinalizerRuntime(
       gitScratchWritablePrecondition(git.scratchDirectory),
       artifactRootPrecondition(settings.artifactRoot),
       credentialFilesPrecondition(credentialOptions),
+      forgeCredentialFilesPrecondition(forgeOptions),
     ],
     service: () => ({
+      forges: composeChangeProposalForges(
+        settings.forges,
+        forgeCredentialFiles(forgeOptions),
+      ),
       git: gitPromotion({
         scratchDirectory: git.scratchDirectory,
         identity: { name: git.commitName, email: git.commitEmail },

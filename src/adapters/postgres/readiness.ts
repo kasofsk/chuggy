@@ -65,6 +65,7 @@ import {
   type TicketCommand,
 } from "../../interpreter/ticketCommand.ts";
 import { parseDraftAuthoring } from "../../interpreter/authoring.ts";
+import { asBriefFinalization } from "../../interpreter/ticketBrief.ts";
 import {
   allInputBundleReferenceKinds,
   asFinalizationAttemptId,
@@ -132,11 +133,17 @@ async function releaseDraftSource(
     authoring: string;
     digest: string;
     canonical: string;
+    finalization_mode: string | null;
+    finalization_target: string | null;
   }>(
-    sql`SELECT r.authoring,c.digest,c.canonical FROM draft_revision r
+    sql`SELECT r.authoring,c.digest,c.canonical,
+           b.finalization_mode,b.finalization_target
+      FROM draft_revision r
        JOIN configuration_revision c
          ON c.tenant=r.tenant AND c.project=r.project
         AND c.revision=r.configuration_revision
+       LEFT JOIN draft_brief b
+         ON b.tenant=r.tenant AND b.project=r.project AND b.ticket=r.ticket
       WHERE r.tenant=${partition.tenant} AND r.project=${partition.project}
         AND r.ticket=${command.ticket}
         AND r.authoring_version=${command.authoringVersion}
@@ -161,6 +168,16 @@ async function releaseDraftSource(
       configurationRevision: command.configurationRevision,
       configurationDigest: found.digest,
       configurationCanonical: found.canonical,
+      ...(found.finalization_mode === null
+        ? {}
+        : {
+            briefFinalization: asBriefFinalization({
+              mode: found.finalization_mode,
+              ...(found.finalization_target === null
+                ? {}
+                : { target: found.finalization_target }),
+            }),
+          }),
     },
   };
 }

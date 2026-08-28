@@ -25,6 +25,11 @@
  * brief naming no finalization means `briefFinalizationDefault` and lands on
  * `branch`, so a ticket that named only a branch works and lands there.
  *
+ * A MODE IS A VARIANT AND NOT A FLAG BESIDE AN OPTIONAL FIELD. A push may land
+ * where the work happened and so may leave its target unsaid; a pull request
+ * has to be opened into something, so the reference is part of what that mode
+ * is rather than a field every reader re-asks about.
+ *
  * A RELEASED TICKET'S BRIEF NO LONGER MOVES, which is what lets a retry read it
  * rather than pin it: a revision is refused for a draft that is not one, so the
  * row a ticket reaches is frozen the moment the ticket exists. That refusal is
@@ -53,11 +58,21 @@ declare const briefLinkUrlBrand: unique symbol;
 export type BriefIntent = string & { readonly [briefIntentBrand]: true };
 export type BriefLinkUrl = string & { readonly [briefLinkUrlBrand]: true };
 
-/** How and where one ticket's work is landed, which is the finalizer's half of a brief. */
-export interface BriefFinalization {
-  readonly mode: BriefFinalizationMode;
+/** Landing by advancing the reference itself, which is where a brief naming none lands. */
+export interface BriefPushFinalization {
+  readonly mode: Extract<BriefFinalizationMode, "Push">;
   readonly target?: GitRefName;
 }
+
+/** Landing by opening a change proposal into the reference, which one must always name. */
+export interface BriefPullRequestFinalization {
+  readonly mode: Extract<BriefFinalizationMode, "PullRequest">;
+  readonly target: GitRefName;
+}
+
+/** How and where one ticket's work is landed, which is the finalizer's half of a brief. */
+export type BriefFinalization =
+  BriefPushFinalization | BriefPullRequestFinalization;
 
 /** What a brief naming no finalization says, and what a row saying it reads back as none. */
 export const briefFinalizationDefault: BriefFinalization = { mode: "Push" };
@@ -122,7 +137,11 @@ export function asBriefBranch(value: string): GitRefName {
   return ref;
 }
 
-/** Brands a finalization, its target through the grammar a branch takes. */
+/**
+ * Brands a finalization, its target through the grammar a branch takes. The
+ * variant a mode selects is what says whether that target is optional, so a
+ * mode added to the roster and to no variant is refused by the compiler here.
+ */
 export function asBriefFinalization(value: {
   readonly mode: string;
   readonly target?: string;
@@ -132,12 +151,16 @@ export function asBriefFinalization(value: {
     throw new RangeError(
       "ticket finalization: the mode is not one this tree lands under",
     );
-  return {
-    mode,
-    ...(value.target === undefined
-      ? {}
-      : { target: asBriefBranch(value.target) }),
-  };
+  const target =
+    value.target === undefined ? undefined : asBriefBranch(value.target);
+  if (mode === "PullRequest") {
+    if (target === undefined)
+      throw new RangeError(
+        "ticket finalization: a pull request names no reference to open it into",
+      );
+    return { mode, target };
+  }
+  return { mode, ...(target === undefined ? {} : { target }) };
 }
 
 /** Brands one whole brief, which is the only way an unchecked one becomes a stored one. */

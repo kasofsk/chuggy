@@ -35,7 +35,7 @@ import {
   type HandoffConfigurationFault,
 } from "./handoffConfiguration.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
-import type { DraftBrief } from "./ticketBrief.ts";
+import type { BriefFinalization, DraftBrief } from "./ticketBrief.ts";
 import {
   authoredTaskConfigurationReadiness,
   type AuthoredTaskConfiguration,
@@ -55,6 +55,18 @@ export type ReleaseConfiguration = Readonly<Record<string, unknown>> & {
   readonly image: string;
 } & AuthoredTaskConfiguration;
 
+/**
+ * Why one configuration is not releasable. `HandoffProposesChange` is the one
+ * fault about the pairing rather than the document: a configuration carrying a
+ * handoff and a brief that opens a change proposal contradict each other, and
+ * the document alone is fine.
+ */
+export type ReleaseConfigurationFault =
+  | "ReleaseShapeInvalid"
+  | "HandoffProposesChange"
+  | TaskConfigurationFault
+  | HandoffConfigurationFault;
+
 export type ReleaseConfigurationReadiness =
   | {
       readonly readiness: "Ready";
@@ -62,10 +74,7 @@ export type ReleaseConfigurationReadiness =
     }
   | {
       readonly readiness: "Incomplete";
-      readonly fault:
-        | "ReleaseShapeInvalid"
-        | TaskConfigurationFault
-        | HandoffConfigurationFault;
+      readonly fault: ReleaseConfigurationFault;
     };
 
 function boundedText(value: string, what: string, maximum: number): string {
@@ -110,9 +119,15 @@ export function canonicalConfigurationOf(
   return asCanonicalConfiguration(canonicalJson(value));
 }
 
-/** Applies the release-time semantic minimum without restricting draft authoring. */
+/**
+ * Applies the release-time semantic minimum without restricting draft
+ * authoring. The brief's finalization is read where the caller has one, because
+ * a handoff configuration and a brief that proposes a change contradict each
+ * other and release is the last moment either can still be edited.
+ */
 export function releaseConfigurationReadiness(
   configuration: CanonicalConfiguration,
+  finalization?: BriefFinalization,
 ): ReleaseConfigurationReadiness {
   const value: unknown = JSON.parse(configuration);
   const authored = authoredTaskConfigurationReadiness(value);
@@ -131,6 +146,8 @@ export function releaseConfigurationReadiness(
   if (
     (value as Record<string, unknown>)[handoffConfigurationField] !== undefined
   ) {
+    if (finalization?.mode === "PullRequest")
+      return { readiness: "Incomplete", fault: "HandoffProposesChange" };
     const handoff = authoredHandoffConfigurationReadiness(value);
     if (handoff.readiness === "Incomplete") return handoff;
   }

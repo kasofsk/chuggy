@@ -1,3 +1,25 @@
+/**
+ * The provider-neutral change proposal: the deterministic request one is opened
+ * under, the evidence a forge answers with, and the bounded publication that
+ * turns an unsettled create into an answer.
+ *
+ * A HEAD IS EITHER DERIVED OR NAMED, AND THE REST OF THE REQUEST IS THE SAME
+ * EITHER WAY. A handoff has no branch of its own, so its head is minted from
+ * the request identity; a ticket finishing by proposing its own work has one
+ * already, and the commit a person will review is the one its promotion landed
+ * there. Both are built through one bounding, so the two cannot drift apart in
+ * the marker, the metadata or anything else a read compares.
+ *
+ * THE BASE IS IDENTIFIED BY ITS REF AND THE HEAD BY BOTH. A proposal targets a
+ * branch, and what that branch holds is the forge's to move between the moment
+ * a base is observed and the moment the proposal is created — so comparing the
+ * base's commit would refuse a proposal this request had successfully opened
+ * whenever anybody landed anything on the base in between. Each side's commit
+ * stays in the request and in the evidence as what it observed, and the head's
+ * is compared because a different commit under the same head is a different
+ * change rather than the same one seen later.
+ */
+
 import { asBoundedText } from "./boundedText.ts";
 import type { GitObjectId, GitRefName, RepositoryId } from "./finalizer.ts";
 import { asGitRefName, finalizerIdentityCharsMax } from "./finalizer.ts";
@@ -35,6 +57,9 @@ export const proposalTitleCharsMax = 256;
 export const proposalBodyCharsMax = 16_384;
 export const proposalMarkerCharsMax = 128;
 export const proposalDisplayUrlCharsMax = 2_048;
+
+/** The most one proposal's evidence is stored at: its own fields, and the encoding around them. */
+export const proposalEvidenceCharsMax = 32_768;
 export const proposalBranchPrefix = "refs/heads/chuggy/handoff/";
 export const changeProposalRequestIdentityChars = 64;
 
@@ -115,6 +140,30 @@ export interface ForgeBinding {
   readonly credential: ForgeCredentialReference;
 }
 
+/** One forge as a repository reaches it, under the host that is what selects it. */
+export interface ForgeRepositoryBinding {
+  readonly binding: ForgeBinding;
+  readonly repositoryHost: string;
+}
+
+/**
+ * The forge whose host a repository's own address names. A repository identity
+ * is the remote's URL, so the host in it is what says which forge holds it; a
+ * deployment that binds none for that host has no proposal to open there.
+ */
+export function forgeBindingOf(
+  bindings: readonly ForgeRepositoryBinding[],
+  repository: RepositoryId,
+): ForgeBinding | undefined {
+  let host: string;
+  try {
+    host = new URL(repository).host;
+  } catch {
+    return undefined;
+  }
+  return bindings.find((bound) => bound.repositoryHost === host)?.binding;
+}
+
 export interface ChangeProposalIdentity {
   readonly forge: ForgeBindingId;
   readonly remote: ProposalRemoteIdentity;
@@ -162,6 +211,28 @@ export type ChangeProposalContradiction =
   | "MetadataMismatch"
   | "MarkerMismatch";
 
+/** Every contradiction, so a suite and a database CHECK iterate rather than restate. */
+export const allChangeProposalContradictions: readonly ChangeProposalContradiction[] =
+  [
+    "Closed",
+    "Merged",
+    "Superseded",
+    "ForgeMismatch",
+    "RepositoryMismatch",
+    "HeadMismatch",
+    "BaseMismatch",
+    "MetadataMismatch",
+    "MarkerMismatch",
+  ];
+
+/** Every status a proposal stands in, so a suite and a stored row iterate rather than restate. */
+export const allChangeProposalStatuses: readonly ChangeProposalStatus[] = [
+  "Open",
+  "Closed",
+  "Merged",
+  "Superseded",
+];
+
 export type ChangeProposalCreated =
   | {
       readonly created: "Created";
@@ -179,6 +250,17 @@ export type ChangeProposalCreated =
   | { readonly created: "Ambiguous" }
   | { readonly created: "Unavailable" }
   | { readonly created: "Denied" };
+
+/** Every arm a create answers with, so a suite and a database CHECK iterate rather than restate. */
+export const allChangeProposalCreations: readonly ChangeProposalCreated["created"][] =
+  [
+    "Created",
+    "AlreadyExists",
+    "Contradictory",
+    "Ambiguous",
+    "Unavailable",
+    "Denied",
+  ];
 
 export type ChangeProposalRead =
   | { readonly read: "Found"; readonly evidence: ChangeProposalEvidence }
@@ -199,6 +281,10 @@ export type ChangeProposalReconciled =
     }
   | { readonly reconciled: "Unavailable" }
   | { readonly reconciled: "Denied" };
+
+/** Every arm a reconciliation answers with, so a suite and a database CHECK iterate rather than restate. */
+export const allChangeProposalReconciliations: readonly ChangeProposalReconciled["reconciled"][] =
+  ["Accepted", "Absent", "Contradictory", "Unavailable", "Denied"];
 
 export type ChangeProposalPublicationNext =
   | { readonly next: "Create" }
@@ -228,6 +314,16 @@ export interface ChangeProposalAdapterSelector {
   select(forge: ForgeBindingId): ChangeProposalPort | undefined;
 }
 
+/**
+ * Every forge a deployment opens change proposals on: which one holds a given
+ * repository, and which adapter answers for it. Both are the composition's, so
+ * a deployment that binds none opens none rather than failing to start.
+ */
+export interface ChangeProposalForges {
+  readonly selector: ChangeProposalAdapterSelector;
+  bindingOf(repository: RepositoryId): ForgeBinding | undefined;
+}
+
 /** Resolves proposal API authority independently of either repository credential. */
 export interface ForgeCredentialPort {
   credential(
@@ -250,15 +346,21 @@ export interface ChangeProposalRequestInput {
   readonly body: string;
 }
 
+/** The same request over a head branch the caller names rather than one derived from the identity. */
+export interface ChangeProposalBranchRequestInput extends ChangeProposalRequestInput {
+  readonly headRef: GitRefName;
+}
+
 export interface ChangeProposalPublicationView {
   readonly creation?: ChangeProposalCreated;
   readonly reconciliation?: ChangeProposalReconciled;
   readonly reconciliations: number;
 }
 
-/** Constructs the single marker and branch identity every retry must reuse. */
-export function changeProposalRequest(
+/** Bounds one request's metadata and pins it to the head every retry must reuse. */
+function changeProposalRequestOf(
   input: ChangeProposalRequestInput,
+  headRef: GitRefName,
 ): ChangeProposalRequest {
   const title = asBoundedText(
     input.title,
@@ -272,16 +374,28 @@ export function changeProposalRequest(
     repository: input.repository,
     request: input.request,
     marker: proposalMarkerOf(input.request),
-    head: {
-      ref: proposalHeadRefOf(input.request),
-      commit: input.headCommit,
-    },
+    head: { ref: headRef, commit: input.headCommit },
     base: { ref: input.baseRef, commit: input.baseCommit },
     title,
     body: input.body,
   };
 }
 
+/** Constructs the single marker and branch identity every retry must reuse. */
+export function changeProposalRequest(
+  input: ChangeProposalRequestInput,
+): ChangeProposalRequest {
+  return changeProposalRequestOf(input, proposalHeadRefOf(input.request));
+}
+
+/** The same request over a branch the work already happened on, named rather than minted. */
+export function changeProposalRequestFromBranch(
+  input: ChangeProposalBranchRequestInput,
+): ChangeProposalRequest {
+  return changeProposalRequestOf(input, input.headRef);
+}
+
+/** Whether one proposal is this request's, and what it is not where it is not. */
 function proposalContradiction(
   request: ChangeProposalRequest,
   evidence: ChangeProposalEvidence,
@@ -294,11 +408,7 @@ function proposalContradiction(
     evidence.head.commit !== request.head.commit
   )
     return "HeadMismatch";
-  if (
-    evidence.base.ref !== request.base.ref ||
-    evidence.base.commit !== request.base.commit
-  )
-    return "BaseMismatch";
+  if (evidence.base.ref !== request.base.ref) return "BaseMismatch";
   if (evidence.title !== request.title || evidence.body !== request.body)
     return "MetadataMismatch";
   if (evidence.status === "Closed") return "Closed";

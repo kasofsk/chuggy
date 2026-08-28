@@ -10,42 +10,12 @@ import {
   promoteForHandoffConfiguration,
   publishHandoffConfiguration,
 } from "../../src/interpreter/handoffConfiguration.ts";
+import { handoffFixture } from "./handoffFixture.ts";
 
 const commit = "a".repeat(40);
 
 function document(overrides: Record<string, unknown> = {}): unknown {
-  return {
-    finalizationHandoff: {
-      version: 1,
-      mode: "DirectCommit",
-      repositories: {
-        work: {
-          repository: "ledger-engine",
-          targetRef: "refs/heads/release",
-        },
-        handoff: {
-          repository: "platform-desires",
-          targetRef: "refs/heads/team-orange",
-        },
-      },
-      credentials: {
-        work: "ledger-release-writer",
-        handoff: "platform-request-writer",
-      },
-      renderer: {
-        identity: "ContainerBuildRequest",
-        version: 1,
-        parameters: {
-          targetImageRepository: "registry.example/ledger",
-          builderProfile: "rootless-multiarch",
-          platforms: ["linux/amd64", "linux/arm64"],
-        },
-      },
-      destinationPath: "builds/ledger/request.json",
-      outputBytesMax: 4096,
-      ...overrides,
-    },
-  };
+  return { finalizationHandoff: handoffFixture(overrides) };
 }
 
 function digest(value: string): string {

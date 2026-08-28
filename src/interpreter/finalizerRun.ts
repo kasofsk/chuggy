@@ -49,6 +49,16 @@
  * publication is the one exception, its destination being a repository the
  * ticket never worked in.
  *
+ * A PULL REQUEST MOVES THAT TARGET, AND ONLY FOR THE FINALIZATION THAT OPENS
+ * ONE. Under `RunFinalizer` a brief that proposes lands on the branch its work
+ * happened on, because that branch is the head the proposal is opened from and
+ * the reference its finalization names is the base. A handoff request narrows
+ * by that reference exactly as a push does: its promotion is into a repository
+ * the ticket never worked in and has nothing to do with the brief's mode. The
+ * pairing is refused where the two are written — a configuration that hands off
+ * will not release a brief that proposes — so this is a narrowing and not a
+ * decision about which of them wins.
+ *
  * A BRIEF NAMING BOTH IS READ TWICE, AND THE TWO READS DO DIFFERENT JOBS. The
  * branch the work happened on — the one `./executionSourceObservation.ts`
  * observed that work against — is the tree a candidate is built over and the
@@ -105,6 +115,24 @@
  * abort is the preparation that ticket will now get, so it spends the
  * preparation budget and is observed as one, with no restart behind it.
  *
+ * A PROPOSAL IS OPENED AFTER THE PROMOTION AND UNDER THE SAME ORDER. Where the
+ * brief lands by opening a change proposal, the candidate is promoted onto the
+ * ticket's own branch exactly as any other, and the proposal is opened from
+ * that branch into the reference the finalization names. The row saying a
+ * create may have happened is written and committed before `create` is called,
+ * for the reason the permit is granted before the ref update: a crash between
+ * the two leaves a row with no result, which reads back as a create that may
+ * have happened and sends the next pass to `readByMarker` rather than to a
+ * second create. The ticket concludes once the forge is proved to hold the
+ * proposal, and never because a create returned.
+ *
+ * THE PROPOSAL'S BASE IS A THIRD OBSERVATION AND IS NEVER CREATED. The branch
+ * the work happened on and the one the promotion lands are both read above; the
+ * base is read as itself, without the binding's fallback, because a proposal
+ * opened into a branch the remote does not hold is not one the forge could
+ * accept — so an unreadable base is a hold, and making that branch is nobody's
+ * job here.
+ *
  * NOTHING HERE READS A CLOCK. Every lease and expiry is a duration handed to the
  * store, which asks the database what time it is.
  *
@@ -115,6 +143,24 @@
  */
 
 import { assertNever } from "../domain/assertNever.ts";
+import {
+  asChangeProposalRequestIdentity,
+  changeProposalRequestFromBranch,
+  proposalMarkerOf,
+  reconcileChangeProposal,
+  type ChangeProposalForges,
+  type ChangeProposalRequest,
+  type ForgeBinding,
+} from "./changeProposal.ts";
+import {
+  finalizationProposalBody,
+  finalizationProposalNext,
+  finalizationProposalTitle,
+  type ChangeProposalResult,
+  type FinalizationProposalGathered,
+  type FinalizerProposalStore,
+  type StoredChangeProposal,
+} from "./finalizationProposal.ts";
 import {
   checkedFinalizerConfig,
   finalizationNext,
@@ -141,12 +187,14 @@ import {
   type InputBundleReference,
   type ObservedTarget,
   type RepositoryBinding,
+  type RepositoryId,
   type TargetObserved,
   inputBundleReferencesMax,
   repositoryBindingNarrowed,
   repositoryTargetObserved,
 } from "./finalizer.ts";
 import {
+  canonicalChangeProposalRequest,
   canonicalFinalizationAttempt,
   canonicalInputBundle,
   conflictManifestText,
@@ -169,12 +217,15 @@ import {
 } from "./finalizerTelemetry.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
-import type { TicketBriefPort } from "./ticketBrief.ts";
+import type { DraftBrief, TicketBriefPort } from "./ticketBrief.ts";
 
 /** Everything a finalizer pass calls out through, and the bounds it works within. */
 export interface FinalizerService {
-  readonly store: FinalizerStore & FinalizerPreparationStore;
+  readonly store: FinalizerStore &
+    FinalizerPreparationStore &
+    FinalizerProposalStore;
   readonly git: GitPromotionPort;
+  readonly forges: ChangeProposalForges;
   readonly ticketBriefs: TicketBriefPort;
   readonly handoffs: HandoffContentPort;
   readonly artifacts: ProjectArtifactPort;
@@ -192,6 +243,7 @@ export interface FinalizerPassReport {
   readonly approvals: number;
   readonly promotions: number;
   readonly reconciliations: number;
+  readonly proposals: number;
   readonly conclusions: number;
   readonly holds: number;
 }
@@ -207,6 +259,7 @@ interface FinalizerTally {
   approvals: number;
   promotions: number;
   reconciliations: number;
+  proposals: number;
   conclusions: number;
   holds: number;
 }
@@ -365,17 +418,24 @@ async function finalizerReadHolds(
   }
 }
 
-/** The two branches one brief names: where the work happened, and where it lands. */
+/**
+ * The branches one brief names: where the work happened, and where the
+ * promotion lands it. The brief itself is kept, because the mode it names is
+ * what the pure pass reads of it.
+ */
 interface FinalizerBranches {
   readonly work?: GitRefName;
   readonly target?: GitRefName;
+  readonly brief?: DraftBrief;
 }
 
 /**
- * What the ticket's brief says about both: the target is the reference its
- * finalization names or the work's own branch where it names none. A
- * publication names neither whatever the brief reads, because its destination
- * is a repository the ticket never worked in.
+ * What the ticket's brief says about each: a push lands on the reference its
+ * finalization names or on the work's own branch where it names none, and a
+ * pull request always lands on the work's branch, that branch being the head a
+ * proposal is opened from and its finalization's reference the base. A
+ * publication names none, its destination being a repository the ticket never
+ * worked in.
  */
 async function finalizerGatherBranches(
   service: FinalizerService,
@@ -387,8 +447,14 @@ async function finalizerGatherBranches(
     view.claim.ticket,
   );
   if (brief === undefined) return {};
-  const target = brief.finalization?.target ?? brief.branch;
+  const finalization = brief.finalization;
+  const proposing =
+    view.claim.kind === "RunFinalizer" && finalization?.mode === "PullRequest";
+  const target = proposing
+    ? brief.branch
+    : (finalization?.target ?? brief.branch);
   return {
+    brief,
     ...(brief.branch === undefined ? {} : { work: brief.branch }),
     ...(target === undefined ? {} : { target }),
   };
@@ -437,6 +503,9 @@ async function finalizerGather(
     ...durable,
     repository: repositoryBindingNarrowed(durable.repository, branches.target),
     ...(branches.target === undefined ? {} : { targetBranch: branches.target }),
+    ...(branches.brief?.finalization === undefined
+      ? {}
+      : { finalizationMode: branches.brief.finalization.mode }),
   };
   if (observed.observed !== "Target") return view;
   const work = await finalizerGatherWorkBranch(
@@ -1054,6 +1123,222 @@ async function finalizerAwaitApproval(
   else finalizerHold(service, tally, "ApprovalUnopened");
 }
 
+/**
+ * The request one stored row asked the forge for, rebuilt so that every later
+ * pass reconciles and concludes against what was actually sent. Nothing is
+ * observed for it: a proposal already opened is not re-derived from a brief and
+ * a remote that have both moved on since.
+ */
+function finalizerStoredProposal(
+  binding: ForgeBinding,
+  repository: RepositoryId,
+  stored: StoredChangeProposal,
+): FinalizationProposalGathered {
+  const { asked } = stored;
+  return {
+    gathered: "Request",
+    request: changeProposalRequestFromBranch({
+      binding,
+      repository,
+      request: asked.request,
+      headRef: asked.head.ref,
+      headCommit: asked.head.commit,
+      baseRef: asked.base.ref,
+      baseCommit: asked.base.commit,
+      title: asked.title,
+      body: asked.body,
+    }),
+    publication: stored.publication,
+  };
+}
+
+/**
+ * The request a proposal nobody has opened yet would ask for. This is the one
+ * place the base is observed, and it is read as itself rather than through the
+ * binding's fallback, so a base the remote does not hold is unreadable instead
+ * of silently becoming the default branch.
+ */
+async function finalizerOpeningProposal(
+  service: FinalizerService,
+  view: FinalizationView,
+  pinned: FinalizerCandidate,
+  binding: ForgeBinding,
+): Promise<FinalizationProposalGathered> {
+  const brief = await service.ticketBriefs.brief(
+    view.claim.partition,
+    view.claim.ticket,
+  );
+  const finalization = brief?.finalization;
+  if (brief === undefined || finalization?.mode !== "PullRequest") {
+    throw new Error(
+      "finalizer proposal: a proposal was authorized by no brief that opens one",
+    );
+  }
+  const observed = await service.git.observeTarget(
+    repositoryBindingNarrowed(pinned.repository, finalization.target),
+  );
+  if (observed.observed !== "Target") return { gathered: "BaseUnreadable" };
+  const identity = asChangeProposalRequestIdentity(
+    service.digestOf(canonicalChangeProposalRequest(view.claim)),
+  );
+  return {
+    gathered: "Request",
+    request: changeProposalRequestFromBranch({
+      binding,
+      repository: pinned.repository.repository,
+      request: identity,
+      headRef: pinned.target.ref,
+      headCommit: pinned.candidate,
+      baseRef: observed.target.ref,
+      baseCommit: observed.target.commit,
+      title: finalizationProposalTitle(view.claim.ticket, brief.intent),
+      body: finalizationProposalBody(brief.intent, proposalMarkerOf(identity)),
+    }),
+    publication: { reconciliations: 0 },
+  };
+}
+
+/**
+ * Everything the proposal step reads, gathered before it runs. A row already
+ * there answers the whole of it, so a proposal that has been proved concludes
+ * without asking the remote anything — and a base branch somebody deleted after
+ * the proposal was opened holds nothing that was already settled.
+ */
+async function finalizerGatherProposal(
+  service: FinalizerService,
+  view: FinalizationView,
+): Promise<FinalizationProposalGathered> {
+  const pinned = finalizerCandidateOf(view);
+  const repository = pinned.repository.repository;
+  const binding = service.forges.bindingOf(repository);
+  if (binding === undefined) return { gathered: "Unbound" };
+  const stored = await service.store.changeProposal(view.claim);
+  return stored === undefined
+    ? finalizerOpeningProposal(service, view, pinned, binding)
+    : finalizerStoredProposal(binding, repository, stored);
+}
+
+/** Records one result against the open row, a refusal leaving the proposal where it stood. */
+async function finalizerRecordProposal(
+  service: FinalizerService,
+  view: FinalizationView,
+  result: ChangeProposalResult["result"],
+  tally: FinalizerTally,
+): Promise<void> {
+  const recorded = await service.store.recordChangeProposal({
+    claim: view.claim,
+    result,
+  });
+  if (recorded.recorded !== "Result")
+    finalizerHold(service, tally, "ProposalUnrecorded");
+}
+
+/**
+ * Asks the forge for the one proposal this request names. The row is written
+ * and committed before the create is called, so a crash between the two leaves a
+ * row with no creation result — which reads back as a create that may have
+ * happened, and never as authority for a second one.
+ */
+async function finalizerProposeChange(
+  service: FinalizerService,
+  view: FinalizationView,
+  request: ChangeProposalRequest,
+  tally: FinalizerTally,
+): Promise<void> {
+  const permit = view.permit;
+  if (permit === undefined) {
+    throw new Error(
+      "finalizer proposal: a proposal named no permit that landed its head",
+    );
+  }
+  const port = service.forges.selector.select(request.binding.forge);
+  if (port === undefined) {
+    finalizerHold(service, tally, "ProposalDenied");
+    return;
+  }
+  const opened = await service.store.openChangeProposal({
+    claim: view.claim,
+    permit: permit.permit,
+    request,
+  });
+  if (opened.opened !== "Opened") {
+    finalizerHold(service, tally, "ProposalUnopened");
+    return;
+  }
+  const created = await port.create(request);
+  await finalizerRecordProposal(
+    service,
+    view,
+    { records: "Creation", created },
+    tally,
+  );
+}
+
+/** Reads back whether the forge holds the proposal this request's marker names. */
+async function finalizerReconcileProposal(
+  service: FinalizerService,
+  view: FinalizationView,
+  request: ChangeProposalRequest,
+  tally: FinalizerTally,
+): Promise<void> {
+  const port = service.forges.selector.select(request.binding.forge);
+  if (port === undefined) {
+    finalizerHold(service, tally, "ProposalDenied");
+    return;
+  }
+  const read = await port.readByMarker(request);
+  await finalizerRecordProposal(
+    service,
+    view,
+    {
+      records: "Reconciliation",
+      reconciled: reconcileChangeProposal(request, read),
+    },
+    tally,
+  );
+}
+
+/** Advances one promoted candidate's own change proposal by at most one act. */
+async function finalizerProposal(
+  service: FinalizerService,
+  view: FinalizationView,
+  tally: FinalizerTally,
+): Promise<void> {
+  const config = checkedFinalizerConfig(service.config);
+  const decision = finalizationProposalNext(
+    await finalizerGatherProposal(service, view),
+    config.proposalReconciliationsMax,
+  );
+  if (decision.decide === "Hold") {
+    finalizerHold(service, tally, decision.hold);
+    return;
+  }
+  if (decision.decide === "Conclude") {
+    await finalizerConclude(
+      service,
+      view,
+      { outcome: "FinalizationSucceeded" },
+      tally,
+    );
+    return;
+  }
+  if (
+    finalizerCeilingReached(
+      service,
+      tally,
+      "proposals",
+      config.proposalsPerPassMax,
+    )
+  )
+    return;
+  tally.proposals += 1;
+  if (decision.decide === "ProposeChange") {
+    await finalizerProposeChange(service, view, decision.request, tally);
+    return;
+  }
+  await finalizerReconcileProposal(service, view, decision.request, tally);
+}
+
 /** Offers the one conclusion to the one authenticated door. */
 async function finalizerConclude(
   service: FinalizerService,
@@ -1134,6 +1419,9 @@ async function finalizerAdvance(
       tally.reconciliations += 1;
       await finalizerProve(service, view, decision.permit, tally);
       return;
+    case "Propose":
+      await finalizerProposal(service, view, tally);
+      return;
     case "Conclude":
       await finalizerConclude(service, view, decision.conclusion, tally);
       return;
@@ -1156,6 +1444,7 @@ export async function finalizerPass(
     approvals: 0,
     promotions: 0,
     reconciliations: 0,
+    proposals: 0,
     conclusions: 0,
     holds: 0,
   };

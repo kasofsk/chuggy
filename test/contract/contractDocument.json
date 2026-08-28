@@ -416,20 +416,40 @@
               "pattern": "^refs\\/heads\\/.*"
             },
             "finalization": {
-              "type": "object",
-              "properties": {
-                "mode": {
-                  "type": "string",
-                  "enum": ["Push"]
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "Push"
+                    },
+                    "target": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "pattern": "^refs\\/heads\\/.*"
+                    }
+                  },
+                  "required": ["mode"],
+                  "additionalProperties": false
                 },
-                "target": {
-                  "type": "string",
-                  "maxLength": 256,
-                  "pattern": "^refs\\/heads\\/.*"
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "PullRequest"
+                    },
+                    "target": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "pattern": "^refs\\/heads\\/.*"
+                    }
+                  },
+                  "required": ["mode", "target"],
+                  "additionalProperties": false
                 }
-              },
-              "required": ["mode"],
-              "additionalProperties": false
+              ]
             }
           },
           "required": ["intent", "links"],
@@ -578,20 +598,40 @@
               "pattern": "^refs\\/heads\\/.*"
             },
             "finalization": {
-              "type": "object",
-              "properties": {
-                "mode": {
-                  "type": "string",
-                  "enum": ["Push"]
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "Push"
+                    },
+                    "target": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "pattern": "^refs\\/heads\\/.*"
+                    }
+                  },
+                  "required": ["mode"],
+                  "additionalProperties": false
                 },
-                "target": {
-                  "type": "string",
-                  "maxLength": 256,
-                  "pattern": "^refs\\/heads\\/.*"
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "PullRequest"
+                    },
+                    "target": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "pattern": "^refs\\/heads\\/.*"
+                    }
+                  },
+                  "required": ["mode", "target"],
+                  "additionalProperties": false
                 }
-              },
-              "required": ["mode"],
-              "additionalProperties": false
+              ]
             }
           },
           "required": ["intent", "links"],

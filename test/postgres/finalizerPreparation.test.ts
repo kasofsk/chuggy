@@ -30,6 +30,15 @@ import {
 } from "../../src/adapters/artifacts/artifactKey.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import {
+  asForgeBindingId,
+  asForgeCredentialReference,
+  asProposalDisplayUrl,
+  asProposalRemoteIdentity,
+  type ChangeProposalForges,
+  type ChangeProposalPort,
+  type ChangeProposalRequest,
+} from "../../src/interpreter/changeProposal.ts";
+import {
   asFinalizationAttemptId,
   asGitObjectId,
   asGitRefName,
@@ -57,6 +66,7 @@ import {
   finalizerPassOnce,
   finalizerPassedWork,
   finalizerProject,
+  finalizerPromote,
   finalizerRacingPort,
   finalizerSpawnTasks,
   finalizerRemoteAttempt,
@@ -66,6 +76,7 @@ import {
   finalizerStoreArtifact,
   finalizerSubject,
   type FinalizerProject,
+  type FinalizerRemote,
   type FinalizerRig,
 } from "./finalizerHarness.ts";
 
@@ -290,6 +301,381 @@ test("a ticket landing elsewhere carries what accumulated on the branch it worke
     finalizerGitVerb(remote.origin, "rev-parse", briefBranch),
     worked,
     "the branch the work happened on is not where the work landed",
+  );
+});
+
+/** One stored change proposal as a case reads it back. */
+interface ProposalState {
+  readonly head_ref: string;
+  readonly head_commit: string;
+  readonly base_ref: string;
+  readonly base_commit: string;
+  readonly title: string;
+  readonly body: string;
+  readonly creation: string | null;
+  readonly proposal_url: string | null;
+  readonly reconciliations: string;
+}
+
+/** The change proposal this project's request left, and nothing where it left none. */
+async function proposalOf(
+  project: FinalizerProject,
+): Promise<ProposalState | undefined> {
+  const rows = (await rig.as(
+    `SELECT head_ref, head_commit, base_ref, base_commit, title, body,
+            creation, proposal_url, reconciliations::text AS reconciliations
+       FROM finalization_change_proposal WHERE tenant=$1 AND project=$2`,
+    [project.partition.tenant, project.partition.project],
+  )) as readonly unknown[] as readonly ProposalState[];
+  return rows[0];
+}
+
+/**
+ * The forge this case's repository is bound to. Which binding a repository
+ * selects is decided by its host and proved where that selection is composed,
+ * so a fixture whose remote is a filesystem path binds one outright.
+ */
+function proposalForges(port: ChangeProposalPort): ChangeProposalForges {
+  const binding = {
+    forge: asForgeBindingId("forge-rig"),
+    credential: asForgeCredentialReference("forge-rig-proposals"),
+  };
+  return { selector: { select: () => port }, bindingOf: () => binding };
+}
+
+/** The evidence a fixture forge answers with, which is the request's own fields. */
+function proposalEvidence(request: ChangeProposalRequest) {
+  return {
+    identity: {
+      forge: request.binding.forge,
+      remote: asProposalRemoteIdentity("proposal-rig"),
+    },
+    repository: request.repository,
+    marker: request.marker,
+    head: request.head,
+    base: request.base,
+    title: request.title,
+    body: request.body,
+    status: "Open" as const,
+    url: asProposalDisplayUrl("https://forge.invalid/proposals/1"),
+  };
+}
+
+/** What one fixture forge was asked for, answering with the request's own fields. */
+interface ProposalPort extends ChangeProposalPort {
+  readonly creates: ChangeProposalRequest[];
+  readonly reads: ChangeProposalRequest[];
+  read: "Absent" | "Found";
+  /** Whether a create raises, which is how a case proves none was attempted. */
+  createRefused: boolean;
+}
+
+/** A forge that opens the proposal it is asked for, or refuses to be asked at all. */
+function proposalPort(): ProposalPort {
+  const own: ProposalPort = {
+    creates: [],
+    reads: [],
+    read: "Absent",
+    createRefused: false,
+    create: (request) => {
+      if (own.createRefused) {
+        throw new Error(
+          "the pass asked this forge to create a second proposal",
+        );
+      }
+      own.creates.push(request);
+      return Promise.resolve({
+        created: "Created" as const,
+        evidence: proposalEvidence(request),
+      });
+    },
+    readByMarker: (request) => {
+      own.reads.push(request);
+      return Promise.resolve(
+        own.read === "Found"
+          ? { read: "Found" as const, evidence: proposalEvidence(request) }
+          : { read: "Absent" as const },
+      );
+    },
+  };
+  return own;
+}
+
+/** A finalizing ticket whose brief works on one branch and proposes into another. */
+async function proposingSubject(label: string): Promise<{
+  project: FinalizerProject;
+  remote: FinalizerRemote;
+}> {
+  const { project, remote } = await finalizerSubject(rig, label, [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  finalizerGitVerb(remote.origin, "branch", "chuggy/footer-2026", "main");
+  finalizerGitVerb(remote.origin, "branch", "chuggy/footer-landing", "main");
+  await finalizerBriefBranch(
+    rig,
+    project.partition,
+    project.ticket,
+    briefBranch,
+  );
+  await finalizerBriefFinalizationTarget(
+    rig,
+    project.partition,
+    project.ticket,
+    landingBranch,
+    "PullRequest",
+  );
+  return { project, remote };
+}
+
+test("a ticket that finishes by proposing lands on its branch and opens one into its target", async () => {
+  const { project, remote } = await proposingSubject("proposing");
+  const port = finalizerRemotePort(rig);
+  const forge = proposalPort();
+  const forges = proposalForges(forge);
+  const landing = finalizerGitVerb(remote.origin, "rev-parse", landingBranch);
+
+  const prepared = await finalizerPassOnce(rig, project, port, "proposing");
+  assert.equal(prepared.preparations, 1);
+  const attempt = (await attemptsOf(project))[0];
+  assert.equal(
+    attempt?.target_ref,
+    briefBranch,
+    "a proposing ticket is promoted onto the branch its work happened on",
+  );
+
+  await finalizerExpireClaim(rig, project);
+  const promoted = await finalizerPassOnce(
+    rig,
+    project,
+    port,
+    "proposing-on",
+    forges,
+  );
+  assert.equal(promoted.promotions, 1);
+  assert.equal(
+    finalizerGitVerb(remote.origin, "rev-parse", briefBranch),
+    attempt?.candidate_commit,
+  );
+  assert.equal(
+    finalizerGitVerb(remote.origin, "rev-parse", landingBranch),
+    landing,
+    "the branch a proposal is opened into is not written to",
+  );
+
+  await finalizerExpireClaim(rig, project);
+  const opening = await finalizerPassOnce(
+    rig,
+    project,
+    port,
+    "proposing-open",
+    forges,
+  );
+  assert.equal(opening.proposals, 1);
+  assert.equal(opening.conclusions, 0);
+  const stored = await proposalOf(project);
+  assert.equal(stored?.head_ref, briefBranch);
+  assert.equal(stored?.head_commit, attempt?.candidate_commit);
+  assert.equal(stored?.base_ref, landingBranch);
+  assert.equal(stored?.base_commit, landing);
+  assert.equal(stored?.creation, "Created");
+  assert.equal(stored?.proposal_url, "https://forge.invalid/proposals/1");
+  assert.equal(stored?.reconciliations, "0");
+  assert.equal(forge.creates[0]?.head.ref, briefBranch);
+  assert.equal(stored?.body.includes(forge.creates[0]?.marker ?? ""), true);
+
+  await finalizerExpireClaim(rig, project);
+  const concluded = await finalizerPassOnce(
+    rig,
+    project,
+    port,
+    "proposing-done",
+    forges,
+  );
+  assert.equal(concluded.conclusions, 1);
+  assert.equal(concluded.proposals, 0, "a proved proposal spends no forge act");
+  assert.equal(forge.creates.length, 1, "no second create was authorized");
+});
+
+/** The permit this project's one promotion was granted under. */
+async function permitOf(project: FinalizerProject): Promise<string> {
+  const rows = (await rig.as(
+    `SELECT permit FROM commit_permit WHERE tenant=$1 AND project=$2`,
+    [project.partition.tenant, project.partition.project],
+  )) as readonly { permit: string }[];
+  const permit = rows[0]?.permit;
+  if (permit === undefined) {
+    throw new Error("finalizer case: the promotion granted no permit");
+  }
+  return permit;
+}
+
+test("a row a crash left before any result is read back, and no second proposal is created", async () => {
+  const { project, remote } = await proposingSubject("proposalcrash");
+  const port = finalizerRemotePort(rig);
+  const forge = proposalPort();
+  const forges = proposalForges(forge);
+  const landing = finalizerGitVerb(remote.origin, "rev-parse", landingBranch);
+
+  await finalizerPassOnce(rig, project, port, "proposalcrash");
+  const attempt = (await attemptsOf(project))[0];
+  await finalizerExpireClaim(rig, project);
+  await finalizerPassOnce(rig, project, port, "proposalcrash-on", forges);
+
+  const identity = finalizerDigest();
+  await rig.as(
+    `INSERT INTO finalization_change_proposal
+       (tenant,project,request,permit,proposal_request,head_ref,head_commit,
+        base_ref,base_commit,title,body)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      project.request,
+      await permitOf(project),
+      identity,
+      briefBranch,
+      attempt?.candidate_commit,
+      landingBranch,
+      landing,
+      "ticket 1: propose it",
+      `propose it\n\nchuggy-handoff:${identity}`,
+    ],
+  );
+  assert.equal(
+    (await proposalOf(project))?.creation,
+    null,
+    "the row a crash between the insert and the answer leaves",
+  );
+
+  forge.createRefused = true;
+  forge.read = "Found";
+  await finalizerExpireClaim(rig, project);
+  const recovered = await finalizerPassOnce(
+    rig,
+    project,
+    port,
+    "proposalcrash-read",
+    forges,
+  );
+
+  assert.equal(recovered.proposals, 1);
+  assert.equal(recovered.conclusions, 0);
+  assert.equal(forge.creates.length, 0, "no second create was authorized");
+  assert.equal(forge.reads.length, 1, "the row authorized a reading instead");
+  const read = await proposalOf(project);
+  assert.equal(
+    read?.creation,
+    null,
+    "a reading records no creation of its own",
+  );
+  assert.equal(read?.reconciliations, "1");
+
+  await finalizerExpireClaim(rig, project);
+  const concluded = await finalizerPassOnce(
+    rig,
+    project,
+    port,
+    "proposalcrash-done",
+    forges,
+  );
+
+  assert.equal(concluded.conclusions, 1);
+  assert.equal(forge.creates.length, 0);
+});
+
+/** One project whose promoted attempt a change proposal row may be written against. */
+async function proposalRowSubject(label: string): Promise<FinalizerProject> {
+  const { project } = await finalizerSubject(rig, label, [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  await finalizerPromote(rig, project, label);
+  const permit = await permitOf(project);
+  await rig.as(
+    `INSERT INTO finalization_change_proposal
+       (tenant,project,request,permit,proposal_request,head_ref,head_commit,
+        base_ref,base_commit,title,body)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      project.request,
+      permit,
+      finalizerDigest(),
+      briefBranch,
+      finalizerCommit(),
+      landingBranch,
+      finalizerCommit(),
+      "ticket 1: propose it",
+      "propose it\n\nchuggy-handoff:x",
+    ],
+  );
+  return project;
+}
+
+/** The key every statement below addresses that one row by. */
+function proposalRowKey(project: FinalizerProject): readonly string[] {
+  return [project.partition.tenant, project.partition.project, project.request];
+}
+
+test("what a change proposal asked the forge for is written once and erased by nobody", async () => {
+  const project = await proposalRowSubject("proposalasked");
+  const rewrite = `UPDATE finalization_change_proposal SET head_commit=$4
+      WHERE tenant=$1 AND project=$2 AND request=$3`;
+  const erase = `DELETE FROM finalization_change_proposal
+      WHERE tenant=$1 AND project=$2 AND request=$3`;
+  const rewritten = [...proposalRowKey(project), finalizerCommit()];
+  assert.match(
+    await rig.refusal(rewrite, rewritten),
+    /permission denied/u,
+    "the finalizer holds no grant on what the forge was asked for",
+  );
+  assert.match(
+    await rig.ownerRefusal(rewrite, rewritten),
+    /asked for is written once/u,
+    "and nobody else may rewrite it either",
+  );
+  assert.match(
+    await rig.refusal(erase, proposalRowKey(project)),
+    /permission denied/u,
+    "the finalizer holds no grant that could erase one",
+  );
+  assert.match(
+    await rig.ownerRefusal(erase, proposalRowKey(project)),
+    /could be erased is not evidence/u,
+    "and nobody else may erase one either",
+  );
+});
+
+test("a change proposal is created once and read back as often as a reading is taken", async () => {
+  const project = await proposalRowSubject("proposalresult");
+  const key = proposalRowKey(project);
+  await rig.as(
+    `UPDATE finalization_change_proposal SET creation='Created'
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    key,
+  );
+  assert.match(
+    await rig.refusal(
+      `UPDATE finalization_change_proposal SET creation='Ambiguous'
+        WHERE tenant=$1 AND project=$2 AND request=$3`,
+      key,
+    ),
+    /created once and read back after/u,
+  );
+  await rig.as(
+    `UPDATE finalization_change_proposal
+        SET reconciliation='Absent', reconciliations=reconciliations+1
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    key,
+  );
+  assert.equal((await proposalOf(project))?.reconciliations, "1");
+  assert.match(
+    await rig.refusal(
+      `UPDATE finalization_change_proposal SET reconciliation='Rebased'
+        WHERE tenant=$1 AND project=$2 AND request=$3`,
+      key,
+    ),
+    /finalization_change_proposal_results_are_whole/u,
   );
 });
 

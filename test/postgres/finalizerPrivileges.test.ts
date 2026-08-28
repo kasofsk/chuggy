@@ -48,6 +48,7 @@ const added = [
   "commit_permit",
   "finalization_reconciliation",
   "finalization_request_configuration",
+  "finalization_change_proposal",
 ] as const;
 
 /**
@@ -329,6 +330,67 @@ test("the finalizer reads of the project only its lifecycle", async () => {
   }
 });
 
+/** Every column the finalizer may write, as the server groups its own grants. */
+const writeSurface = [
+  {
+    table_name: "commit_permit",
+    privilege_type: "INSERT",
+    columns:
+      "attempt,concluded_at,granted_at,lifecycle_generation,permit,project,recovery_epoch,state,tenant",
+  },
+  {
+    table_name: "commit_permit",
+    privilege_type: "UPDATE",
+    columns: "concluded_at,state",
+  },
+  {
+    table_name: "finalization_attempt",
+    privilege_type: "INSERT",
+    columns:
+      "approval_required,attempt,attempt_digest,candidate_commit,configuration_digest,configuration_revision,conflict_manifest,conflict_manifest_digest,failure_kind,input_bundle,input_bundle_digest,outcome,prepared_at,project,repository,request,strategy,target_commit,target_ref,tenant,ticket",
+  },
+  {
+    table_name: "finalization_change_proposal",
+    privilege_type: "INSERT",
+    columns:
+      "base_commit,base_ref,body,creation,creation_contradiction,creation_evidence,head_commit,head_ref,opened_at,permit,project,proposal_request,proposal_url,reconciliation,reconciliation_contradiction,reconciliation_evidence,reconciliations,request,tenant,title",
+  },
+  {
+    table_name: "finalization_change_proposal",
+    privilege_type: "UPDATE",
+    columns:
+      "creation,creation_contradiction,creation_evidence,proposal_url,reconciliation,reconciliation_contradiction,reconciliation_evidence,reconciliations",
+  },
+  {
+    table_name: "finalization_reconciliation",
+    privilege_type: "INSERT",
+    columns:
+      "candidate_commit,observed_commit,permit,project,reconciled_at,target_ref,tenant,verdict",
+  },
+  {
+    table_name: "finalization_reconciliation",
+    privilege_type: "UPDATE",
+    columns: "observed_commit,reconciled_at,verdict",
+  },
+  {
+    table_name: "finalization_request",
+    privilege_type: "UPDATE",
+    columns:
+      "claim_expires_at,claim_generation,claim_owner,recovery_epoch,state",
+  },
+  {
+    table_name: "input_bundle",
+    privilege_type: "INSERT",
+    columns: "bundle,created_at,digest,project,tenant",
+  },
+  {
+    table_name: "input_bundle_reference",
+    privilege_type: "INSERT",
+    columns:
+      "bundle,ordinal,project,reference_digest,reference_id,reference_kind,tenant",
+  },
+];
+
 test("the finalizer's write surface is exactly the columns its moves need", async () => {
   assert.deepEqual(
     await harness.query(
@@ -340,53 +402,7 @@ test("the finalizer's write surface is exactly the columns its moves need", asyn
         ORDER BY table_name, privilege_type`,
       [finalizerRole],
     ),
-    [
-      {
-        table_name: "commit_permit",
-        privilege_type: "INSERT",
-        columns:
-          "attempt,concluded_at,granted_at,lifecycle_generation,permit,project,recovery_epoch,state,tenant",
-      },
-      {
-        table_name: "commit_permit",
-        privilege_type: "UPDATE",
-        columns: "concluded_at,state",
-      },
-      {
-        table_name: "finalization_attempt",
-        privilege_type: "INSERT",
-        columns:
-          "approval_required,attempt,attempt_digest,candidate_commit,configuration_digest,configuration_revision,conflict_manifest,conflict_manifest_digest,failure_kind,input_bundle,input_bundle_digest,outcome,prepared_at,project,repository,request,strategy,target_commit,target_ref,tenant,ticket",
-      },
-      {
-        table_name: "finalization_reconciliation",
-        privilege_type: "INSERT",
-        columns:
-          "candidate_commit,observed_commit,permit,project,reconciled_at,target_ref,tenant,verdict",
-      },
-      {
-        table_name: "finalization_reconciliation",
-        privilege_type: "UPDATE",
-        columns: "observed_commit,reconciled_at,verdict",
-      },
-      {
-        table_name: "finalization_request",
-        privilege_type: "UPDATE",
-        columns:
-          "claim_expires_at,claim_generation,claim_owner,recovery_epoch,state",
-      },
-      {
-        table_name: "input_bundle",
-        privilege_type: "INSERT",
-        columns: "bundle,created_at,digest,project,tenant",
-      },
-      {
-        table_name: "input_bundle_reference",
-        privilege_type: "INSERT",
-        columns:
-          "bundle,ordinal,project,reference_digest,reference_id,reference_kind,tenant",
-      },
-    ],
+    writeSurface,
   );
 });
 
@@ -410,6 +426,7 @@ test("the finalizer's read surface is exactly the relations its view is gathered
       "execution_result_artifact",
       "execution_result_source",
       "finalization_attempt",
+      "finalization_change_proposal",
       "finalization_reconciliation",
       "finalization_request",
       "finalization_request_configuration",

@@ -14,19 +14,39 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 
 import { composeFinalizerRuntime } from "../../src/compose.ts";
+import { asForgeBindingId } from "../../src/interpreter/changeProposal.ts";
+import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import {
   finalizerSettingsOf,
   type FinalizerSettings,
 } from "../../src/interpreter/finalizerSettings.ts";
 
-function settings(t: TestContext): FinalizerSettings {
+/** The repository the fixture forge binding holds, which is what selects that binding. */
+const forgeRepository = asRepositoryId("https://forge.invalid/acme/atlas.git");
+
+function settings(t: TestContext, forges = true): FinalizerSettings {
   const root = mkdtempSync(join(tmpdir(), "chuggy-compose-finalizer-"));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
   });
   const credential = join(root, "credential");
   writeFileSync(credential, "secret-a1b2c3");
+  const forgeCredential = join(root, "forge-credential");
+  writeFileSync(forgeCredential, "forge-secret");
   return finalizerSettingsOf({
+    ...(forges
+      ? {
+          CHUG_FINALIZER_FORGE_BINDINGS: JSON.stringify([
+            {
+              forge: "forge-alpha",
+              repositoryHost: "forge.invalid",
+              apiHost: "api.forge.invalid",
+              credentialReference: "forge-alpha-proposals",
+              path: forgeCredential,
+            },
+          ]),
+        }
+      : {}),
     CHUG_FINALIZER_DATABASE_URL: "postgres://finalizer@localhost/chuggy",
     CHUG_FINALIZER_OWNER: "finalizer-1",
     CHUG_FINALIZER_RECOVERY_EPOCH: "epoch-1",
@@ -50,11 +70,53 @@ test("a deployment is held to its git, its scratch, its storage and its credenti
       "git-scratch-writable",
       "artifact-root-writable",
       "repository-credentials-available",
+      "forge-credentials-available",
     ],
   );
   const signal = new AbortController().signal;
   for (const precondition of composition.preconditions)
     assert.equal(await precondition.check(signal), true, precondition.name);
+});
+
+test("a repository's forge is selected by the host its own address names", (t) => {
+  const forges = composeFinalizerRuntime(settings(t)).service().forges;
+  const binding = forges.bindingOf(forgeRepository);
+  assert.deepEqual(binding, {
+    forge: "forge-alpha",
+    credential: "forge-alpha-proposals",
+  });
+  assert.equal(
+    typeof forges.selector.select(asForgeBindingId("forge-alpha"))?.create,
+    "function",
+  );
+  assert.equal(
+    forges.selector.select(asForgeBindingId("forge-beta")),
+    undefined,
+  );
+  assert.equal(
+    forges.bindingOf(
+      asRepositoryId("https://elsewhere.invalid/acme/atlas.git"),
+    ),
+    undefined,
+    "a repository on a host this deployment binds no forge for opens no proposal",
+  );
+  assert.equal(forges.bindingOf(asRepositoryId("acme/atlas")), undefined);
+});
+
+test("a deployment binding no forge composes one that opens no change proposal", (t) => {
+  const composition = composeFinalizerRuntime(settings(t, false));
+  assert.ok(
+    composition.preconditions.some(
+      (precondition) => precondition.name === "forge-credentials-available",
+    ),
+    "the precondition stands over the nothing it has to check",
+  );
+  const forges = composition.service().forges;
+  assert.equal(forges.bindingOf(forgeRepository), undefined);
+  assert.equal(
+    forges.selector.select(asForgeBindingId("forge-alpha")),
+    undefined,
+  );
 });
 
 test("the composed service promotes through the port and stores under the named root", (t) => {

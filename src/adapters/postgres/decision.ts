@@ -641,7 +641,10 @@ async function decisionReleaseOutcome(
       "release configuration content contradicts its retained digest",
     );
   const canonical = asCanonicalConfiguration(revision.canonical);
-  if (releaseConfigurationReadiness(canonical).readiness === "Incomplete")
+  if (
+    releaseConfigurationReadiness(canonical, fence.briefFinalization)
+      .readiness === "Incomplete"
+  )
     return { outcome: "Refused", code: "ConfigurationInvalid" };
   if (decision.outcome.outcome === "Journaled" && !(await releaseFence(true)))
     throw new Error(
