@@ -1,6 +1,7 @@
 /**
  * The brief a ticket carries beside its authoring: what a human asked for,
- * what to read first, and the branch the work happens on.
+ * what to read first, the branch the work happens on, and where a finalization
+ * lands it.
  *
  * A brief is not authoring. `authoringSchema` is the model's own release event
  * and every value of it decides how the machine runs the ticket; none of these
@@ -11,6 +12,8 @@
  */
 
 import { z } from "zod";
+
+import { briefFinalizationModes } from "./rosters.ts";
 
 /**
  * The longest line a briefing renders, which is the whole of what a brief is
@@ -48,14 +51,25 @@ export const briefBranchSchema = z
   .startsWith(briefBranchPrefix);
 
 /**
- * The brief as a write states it. The intent cannot be empty, because a
- * ticket nobody stated a purpose for is the one thing an agent cannot be
- * briefed on.
+ * How and where a finalization lands the work: the mode it lands under, and
+ * the reference it lands on where that is not the branch the work happened on.
+ * The target shares the branch's grammar, being the same kind of name.
+ */
+export const briefFinalizationSchema = z.strictObject({
+  mode: z.enum(briefFinalizationModes),
+  target: briefBranchSchema.optional(),
+});
+
+/**
+ * The brief as a write states it, its finalization omitted where the work
+ * lands where it happened. The intent cannot be empty, because a ticket nobody
+ * stated a purpose for is the one thing an agent cannot be briefed on.
  */
 export const briefSchema = z.strictObject({
   intent: z.string().min(1).max(briefIntentCharsMax),
   links: z.array(briefLinkSchema).max(briefLinksMax),
   branch: briefBranchSchema.optional(),
+  finalization: briefFinalizationSchema.optional(),
 });
 
 export type TicketBriefBody = z.infer<typeof briefSchema>;

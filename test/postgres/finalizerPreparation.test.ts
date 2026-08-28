@@ -45,6 +45,7 @@ import {
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import {
   finalizerBriefBranch,
+  finalizerBriefFinalizationTarget,
   finalizerClaim,
   finalizerCommit,
   finalizerDeclareSource,
@@ -227,6 +228,53 @@ test("a ticket whose brief names a branch is prepared and promoted there and nev
   assert.equal(
     finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main"),
     untouched,
+  );
+});
+
+/** The branch the landing case promotes onto, which is neither the work's nor the default. */
+const landingBranch = "refs/heads/chuggy/footer-landing";
+
+test("a ticket landing elsewhere is promoted there and leaves the branch it worked on alone", async () => {
+  const { project, remote } = await finalizerSubject(rig, "landing", [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  finalizerGitVerb(remote.origin, "branch", "chuggy/footer-2026", "main");
+  finalizerGitVerb(remote.origin, "branch", "chuggy/footer-landing", "main");
+  await finalizerBriefBranch(
+    rig,
+    project.partition,
+    project.ticket,
+    briefBranch,
+  );
+  await finalizerBriefFinalizationTarget(
+    rig,
+    project.partition,
+    project.ticket,
+    landingBranch,
+  );
+  const port = finalizerRemotePort(rig);
+  const worked = finalizerGitVerb(remote.origin, "rev-parse", briefBranch);
+
+  const report = await finalizerPassOnce(rig, project, port, "landing");
+
+  assert.equal(report.preparations, 1);
+  assert.equal(report.holds, 0);
+  const written = (await attemptsOf(project))[0];
+  assert.equal(written?.outcome, "Prepared");
+  assert.equal(written?.target_ref, landingBranch);
+
+  await finalizerExpireClaim(rig, project);
+  const promoted = await finalizerPassOnce(rig, project, port, "landing-on");
+
+  assert.equal(promoted.promotions, 1);
+  assert.equal(
+    finalizerGitVerb(remote.origin, "rev-parse", landingBranch),
+    written?.candidate_commit,
+  );
+  assert.equal(
+    finalizerGitVerb(remote.origin, "rev-parse", briefBranch),
+    worked,
+    "the branch the work happened on is not where the work landed",
   );
 });
 

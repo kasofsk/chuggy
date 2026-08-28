@@ -671,6 +671,27 @@ export async function finalizerBriefBranch(
   }
 }
 
+/**
+ * The reference this project's ticket lands on, apart from the branch its work
+ * happens on. A harness draft names none, so a case about landing elsewhere is
+ * what puts one there.
+ */
+export async function finalizerBriefFinalizationTarget(
+  rig: FinalizerRig,
+  partition: Partition,
+  ticket: number,
+  target: string,
+): Promise<void> {
+  const updated = await rig.harness.query(
+    `UPDATE draft_brief SET finalization_target=$4
+      WHERE tenant=$1 AND project=$2 AND ticket=$3 RETURNING ticket`,
+    [partition.tenant, partition.project, ticket, target],
+  );
+  if (updated.length !== 1) {
+    throw new Error("finalizer harness: the ticket carries no brief");
+  }
+}
+
 /** Hexadecimal no other call has produced, at least as long as the widest identity a case needs. */
 function finalizerHex(): string {
   return `${randomUUID()}${randomUUID()}`.replaceAll("-", "");

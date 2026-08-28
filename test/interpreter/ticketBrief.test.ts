@@ -5,8 +5,8 @@
  * is what holds those to the interpreter constants they came from; this suite
  * is about the shapes a bound alone does not decide — the lines an intent
  * renders as, the one scheme a link is read over, and the reference-name
- * grammar the branch borrows from the handoff configuration rather than
- * restating.
+ * grammar the branch and the finalization target borrow from the handoff
+ * configuration rather than restating.
  */
 
 import assert from "node:assert/strict";
@@ -23,6 +23,7 @@ import {
   asBriefBranch,
   asBriefIntent,
   asBriefLinkUrl,
+  asBriefFinalization,
   asDraftBrief,
   briefIntentLines,
 } from "../../src/interpreter/ticketBrief.ts";
@@ -117,6 +118,53 @@ test("a whole brief brands each of its parts and omits the branch it has none of
         intent: "Fix the importer.",
         links: ["https://example.test/one"],
         branch: "not-a-ref",
+      }),
+    RangeError,
+  );
+});
+
+test("a finalization target takes the branch's own grammar and no other mode lands", () => {
+  assert.deepEqual(
+    asBriefFinalization({ mode: "Push", target: "refs/heads/rt/landing" }),
+    { mode: "Push", target: "refs/heads/rt/landing" },
+  );
+  assert.deepEqual(asBriefFinalization({ mode: "Push" }), { mode: "Push" });
+  for (const value of [
+    { mode: "PullRequest" },
+    { mode: "push" },
+    { mode: "Push", target: "rt/landing" },
+    { mode: "Push", target: "refs/heads/one..two" },
+    { mode: "Push", target: `refs/heads/${"a".repeat(briefBranchCharsMax)}` },
+  ])
+    assert.throws(
+      () => asBriefFinalization(value),
+      RangeError,
+      `refused: ${JSON.stringify(value)}`,
+    );
+});
+
+test("a whole brief brands where it lands apart from where its work happens", () => {
+  assert.deepEqual(
+    asDraftBrief({
+      intent: "Fix the importer.",
+      links: [],
+      branch: "refs/heads/rt/work",
+      finalization: { mode: "Push", target: "refs/heads/rt/landing" },
+    }),
+    {
+      intent: "Fix the importer.",
+      links: [],
+      branch: "refs/heads/rt/work",
+      finalization: { mode: "Push", target: "refs/heads/rt/landing" },
+    },
+  );
+  assert.throws(
+    () =>
+      asDraftBrief({
+        intent: "Fix the importer.",
+        links: [],
+        branch: "refs/heads/rt/work",
+        finalization: { mode: "Push", target: "not-a-ref" },
       }),
     RangeError,
   );

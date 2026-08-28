@@ -40,17 +40,22 @@
  * lapsed is not self-healing and nothing claimable can be drawn until those rows
  * say so again.
  *
- * THE TICKET'S OWN BRANCH IS THE LAST WORD ON WHERE ITS WORK LANDS. The target
- * is the project's binding narrowed by the configuration's handoff role and
- * then by the branch the ticket's brief names, which is the same narrowing
- * `./executionSourceObservation.ts` observes the work against — so a ticket
- * whose work was based on its own branch is promoted onto that branch and never
- * onto whatever the remote's default happens to hold. A publication is the one
- * exception, its destination being a repository the ticket never worked in.
+ * THE TICKET'S OWN BRIEF IS THE LAST WORD ON WHERE ITS WORK LANDS, AND SAYS IT
+ * APART FROM WHERE THE WORK STARTED. The target is the project's binding
+ * narrowed by the configuration's handoff role and then by the brief: by the
+ * reference its finalization targets, or by the branch the work happened on
+ * where it targets none, which is the narrowing
+ * `./executionSourceObservation.ts` observes that work against. So a ticket is
+ * promoted onto the branch its brief named and never onto whatever the remote's
+ * default happens to hold, and one naming a target apart from its branch is
+ * worked on the one and landed on the other — the candidate descending from the
+ * branch and being integrated against the target, which is the merge path any
+ * other target takes. A publication is the one exception, its destination being
+ * a repository the ticket never worked in.
  *
  * A BRANCH THE REMOTE DOES NOT HOLD YET IS CREATED BY THE PROMOTION. The base
- * is the binding's own target, the attempt pins the branch the brief names, and
- * the one conditional ref update creates it — so a ticket authored against a
+ * is the binding's own target, the attempt pins the branch the work lands on,
+ * and the one conditional ref update creates it — so a ticket landing on a
  * branch nobody has made is finalized rather than held. A branch that appeared
  * in the meantime refuses that update and the revision fence re-prepares
  * against it, which is the same path a target that moved takes.
@@ -351,12 +356,12 @@ async function finalizerReadHolds(
 }
 
 /**
- * The branch one finalization's work lands on: the one the ticket's brief
- * names, or none where it names none. A publication names none whatever the
- * brief reads, because its destination is a repository the ticket never worked
- * in.
+ * The branch one finalization's work lands on: the reference the ticket's brief
+ * targets, the branch its work happened on where it targets none, and none
+ * where the brief names neither. A publication names none whatever the brief
+ * reads, because its destination is a repository the ticket never worked in.
  */
-async function finalizerGatherBranch(
+async function finalizerGatherTargetBranch(
   service: FinalizerService,
   view: FinalizationView,
 ): Promise<GitRefName | undefined> {
@@ -365,7 +370,7 @@ async function finalizerGatherBranch(
     view.claim.partition,
     view.claim.ticket,
   );
-  return brief?.branch;
+  return brief?.finalization?.target ?? brief?.branch;
 }
 
 /**
@@ -378,16 +383,16 @@ async function finalizerGather(
 ): Promise<FinalizationView | undefined> {
   const durable = await service.store.durableView(claim);
   if (durable === undefined || durable.repository === undefined) return durable;
-  const branch = await finalizerGatherBranch(service, durable);
+  const targetBranch = await finalizerGatherTargetBranch(service, durable);
   const observed = await repositoryTargetObserved(
     service.git,
     durable.repository,
-    branch,
+    targetBranch,
   );
   const view: FinalizationView = {
     ...durable,
-    repository: repositoryBindingNarrowed(durable.repository, branch),
-    ...(branch === undefined ? {} : { targetBranch: branch }),
+    repository: repositoryBindingNarrowed(durable.repository, targetBranch),
+    ...(targetBranch === undefined ? {} : { targetBranch }),
   };
   if (observed.observed !== "Target") return view;
   return { ...view, observedTarget: observed.target };
@@ -740,8 +745,8 @@ async function finalizerBuild(
 
 /**
  * What one candidate is integrated against: what the remote holds now, or the
- * target the candidate was built over where the branch the ticket's brief names
- * is still one the remote does not hold. A branch nothing holds has nothing to
+ * target the candidate was built over where the branch the work lands on is
+ * still one the remote does not hold. A branch nothing holds has nothing to
  * integrate with, and the promotion creates it at the candidate.
  */
 function finalizerIntegrationTarget(
