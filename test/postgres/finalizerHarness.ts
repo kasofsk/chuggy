@@ -297,6 +297,23 @@ export function finalizerMovingPort(
   };
 }
 
+/**
+ * A port that lets one case act in the window between the target a promotion
+ * was decided against and the conditional ref update itself.
+ */
+export function finalizerRacingPort(
+  port: GitPromotionPort,
+  race: () => void,
+): GitPromotionPort {
+  return {
+    ...port,
+    promoteCandidate: (promotion) => {
+      race();
+      return port.promoteCandidate(promotion);
+    },
+  };
+}
+
 /** Invalidates every live request but this project's, so a pass draws one claim. */
 export async function finalizerQuiesce(
   rig: FinalizerRig,

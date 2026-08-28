@@ -651,6 +651,53 @@ test("a finalization observes and pins the branch the ticket's brief names", asy
   assert.equal(store.attempts[0]?.target.ref, briefBranch);
 });
 
+/** A remote holding its default and no branch by the name the case names. */
+function gitWithoutBranch(branch: string): GitRecorder {
+  const git = recordingGit();
+  git.observeTarget = (repository) => {
+    git.observations.push(repository);
+    const answer: TargetObserved =
+      repository.targetRef === branch
+        ? { observed: "Unreadable", evidence: "RefUnreadable" }
+        : {
+            observed: "Target",
+            target: {
+              ref: asGitRefName("refs/heads/main"),
+              commit: asGitObjectId(commitOf("a")),
+            },
+          };
+    return Promise.resolve(answer);
+  };
+  return git;
+}
+
+test("a brief branch the remote does not hold is prepared over the binding's own target", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = gitWithoutBranch(briefBranch);
+
+  const report = await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(briefBranch),
+  });
+
+  assert.equal(report.preparations, 1);
+  assert.equal(report.holds, 0);
+  assert.deepEqual(
+    git.observations.map((each) => each.targetRef),
+    [briefBranch, undefined, briefBranch],
+    "the branch is asked for, the binding's own target stands in, and the branch is asked for again",
+  );
+  assert.deepEqual(git.preparations[0]?.target, {
+    ref: briefBranch,
+    commit: commitOf("a"),
+    baseRef: "refs/heads/main",
+  });
+  assert.equal(git.integrations[0]?.target.ref, briefBranch);
+  assert.equal(store.attempts[0]?.outcome, "Prepared");
+  assert.equal(store.attempts[0]?.target.ref, briefBranch);
+  assert.equal(store.attempts[0]?.target.commit, commitOf("a"));
+});
+
 test("a ticket whose brief names no branch is finalized against the binding's own default", async () => {
   const store = recordingStore([preparableView("request-one")]);
   const git = recordingGit();

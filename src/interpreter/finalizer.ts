@@ -355,6 +355,35 @@ export function repositoryBindingNarrowed(
   return ref === undefined ? binding : { ...binding, targetRef: ref };
 }
 
+/**
+ * What a ticket's work is observed against: the branch its brief names, or the
+ * binding's own target where the remote does not hold that branch yet. A branch
+ * nobody has created is not an unreadable ref — it is where the first promotion
+ * puts the work, started from what the binding already names.
+ */
+export async function repositoryTargetObserved(
+  git: Pick<GitPromotionPort, "observeTarget">,
+  binding: RepositoryBinding,
+  branch: GitRefName | undefined,
+): Promise<TargetObserved> {
+  const observed = await git.observeTarget(
+    repositoryBindingNarrowed(binding, branch),
+  );
+  if (branch === undefined || observed.observed === "Target") return observed;
+  if (observed.evidence !== "RefUnreadable") return observed;
+  const base = await git.observeTarget(binding);
+  return base.observed === "Target"
+    ? {
+        observed: "Target",
+        target: {
+          ref: branch,
+          commit: base.target.commit,
+          baseRef: base.target.ref,
+        },
+      }
+    : base;
+}
+
 export interface PromoteForHandoffRequest {
   readonly kind: "PromoteForHandoff";
   readonly configurationRevision: string;
@@ -377,10 +406,16 @@ export interface PublishHandoffRequest {
 export type HandoffFinalizationRequest =
   PromoteForHandoffRequest | PublishHandoffRequest;
 
-/** The immutable target one preparation observed, re-read from the remote and never remembered. */
+/**
+ * The immutable target one preparation observed, re-read from the remote and
+ * never remembered. `baseRef` names the ref the commit was read from where the
+ * target's own ref is a branch the remote does not hold yet, so a fetch has a
+ * ref to ask for while the promotion still lands on the branch.
+ */
 export interface ObservedTarget {
   readonly ref: GitRefName;
   readonly commit: GitObjectId;
+  readonly baseRef?: GitRefName;
 }
 
 /** One claim of a focused finalization request, held for a bounded stretch of database time. */
@@ -484,6 +519,8 @@ export interface FinalizationView {
   readonly claim: FinalizationClaim;
   readonly lifecycle: Lifecycle;
   readonly repository?: RepositoryBinding;
+  /** The branch the ticket's brief names, which the remote may not hold yet and the first promotion creates. */
+  readonly targetBranch?: GitRefName;
   readonly handoffRequest?: HandoffFinalizationRequest;
   readonly observedTarget?: ObservedTarget;
   readonly attempt?: FinalizationAttempt;

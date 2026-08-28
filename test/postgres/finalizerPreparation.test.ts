@@ -56,6 +56,7 @@ import {
   finalizerPassOnce,
   finalizerPassedWork,
   finalizerProject,
+  finalizerRacingPort,
   finalizerSpawnTasks,
   finalizerRemoteCommit,
   finalizerRemotePort,
@@ -226,6 +227,90 @@ test("a ticket whose brief names a branch is prepared and promoted there and nev
     finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main"),
     untouched,
   );
+});
+
+/** The branch the uncreated-branch cases name, which no fixture remote holds. */
+const unheldBranch = "refs/heads/chuggy/unheld";
+
+test("a brief branch the remote does not hold is prepared over the default and created by the promotion", async () => {
+  const { project, remote } = await finalizerSubject(rig, "unheld", [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  await finalizerBriefBranch(
+    rig,
+    project.partition,
+    project.ticket,
+    unheldBranch,
+  );
+  const port = finalizerRemotePort(rig);
+  const untouched = finalizerGitVerb(
+    remote.origin,
+    "rev-parse",
+    "refs/heads/main",
+  );
+
+  const report = await finalizerPassOnce(rig, project, port, "unheld");
+
+  assert.equal(report.preparations, 1);
+  assert.equal(report.holds, 0);
+  const written = (await attemptsOf(project))[0];
+  assert.equal(written?.outcome, "Prepared");
+  assert.equal(written?.target_ref, unheldBranch);
+  assert.equal(written?.target_commit, untouched);
+
+  await finalizerExpireClaim(rig, project);
+  const promoted = await finalizerPassOnce(rig, project, port, "unheld-on");
+
+  assert.equal(promoted.promotions, 1);
+  assert.equal(
+    finalizerGitVerb(remote.origin, "rev-parse", unheldBranch),
+    written?.candidate_commit,
+  );
+  assert.equal(
+    finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main"),
+    untouched,
+  );
+});
+
+test("a branch created before the update lands refuses it, and the next pass prepares against it", async () => {
+  const { project, remote } = await finalizerSubject(rig, "raced", [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  await finalizerBriefBranch(
+    rig,
+    project.partition,
+    project.ticket,
+    unheldBranch,
+  );
+  const port = finalizerRemotePort(rig);
+  await finalizerPassOnce(rig, project, port, "raced");
+  const prepared = (await attemptsOf(project))[0];
+  assert.equal(prepared?.outcome, "Prepared");
+
+  let theirs = "";
+  const racing = finalizerRacingPort(port, () => {
+    theirs = finalizerRemoteCommit(remote, "theirs.txt", "theirs\n", "theirs");
+    finalizerGitVerb(remote.origin, "update-ref", unheldBranch, theirs);
+  });
+  await finalizerExpireClaim(rig, project);
+  const refused = await finalizerPassOnce(rig, project, racing, "raced-on");
+
+  assert.equal(refused.promotions, 1);
+  assert.notEqual(theirs, "");
+  assert.equal(
+    finalizerGitVerb(remote.origin, "rev-parse", unheldBranch),
+    theirs,
+    "the branch somebody else created holds what they put on it",
+  );
+
+  await finalizerExpireClaim(rig, project);
+  const again = await finalizerPassOnce(rig, project, port, "raced-again");
+
+  assert.equal(again.preparations, 1);
+  const attempts = await attemptsOf(project);
+  assert.equal(attempts.length, 2);
+  assert.equal(attempts[1]?.target_ref, unheldBranch);
+  assert.equal(attempts[1]?.target_commit, theirs);
 });
 
 test("a genuine conflict prices one failure and stores its evidence outside every row", async () => {

@@ -7,6 +7,7 @@ import {
   asGitObjectId,
   asGitRefName,
   asRepositoryId,
+  type TargetObserved,
 } from "../../src/interpreter/finalizer.ts";
 import {
   asProjectId,
@@ -149,6 +150,94 @@ test("the ticket's own branch is the last word on what work is observed against"
     source.observed === "Source" ? source.source.target.ref : undefined,
     "refs/heads/ticket",
   );
+});
+
+/** The branch the absent-branch cases name, which no fixture remote holds. */
+const ticketBranch = "refs/heads/ticket";
+
+/** What the work ref holds, which is the commit an absent branch is based on. */
+const workRefCommit = asGitObjectId("e".repeat(40));
+
+/**
+ * An observation whose remote holds every ref but one, each at a commit of its
+ * own, so a source's commit says which ref it was read from.
+ */
+function observingWithout(
+  absent: string,
+  observed: (string | undefined)[],
+  evidence: Extract<TargetObserved, { observed: "Unreadable" }>["evidence"],
+): ReturnType<typeof executionSourceObservation> {
+  return executionSourceObservation(
+    {
+      binding: () =>
+        Promise.resolve({
+          partition,
+          repository: asRepositoryId("project-default"),
+          recoveryEpoch: asRecoveryEpoch("epoch"),
+        }),
+    },
+    {
+      observeTarget: (repository) => {
+        observed.push(repository.targetRef);
+        const answer: TargetObserved =
+          repository.targetRef === absent
+            ? { observed: "Unreadable", evidence }
+            : {
+                observed: "Target",
+                target: {
+                  ref: asGitRefName(repository.targetRef ?? "refs/heads/head"),
+                  commit: workRefCommit,
+                },
+              };
+        return Promise.resolve(answer);
+      },
+    },
+    { workSource: () => Promise.resolve(undefined) },
+  );
+}
+
+test("a brief branch the remote does not hold is based on the binding's own target", async () => {
+  const observed: (string | undefined)[] = [];
+  const source = await observingWithout(
+    ticketBranch,
+    observed,
+    "RefUnreadable",
+  ).observe({
+    partition,
+    ticket: 1,
+    kind: "Work",
+    configurationCanonical: configuredWorkSource,
+    ref: asGitRefName(ticketBranch),
+  });
+  assert.deepEqual(observed, [ticketBranch, "refs/heads/work"]);
+  assert.deepEqual(source, {
+    observed: "Source",
+    source: {
+      repository: "work-repository",
+      target: { ref: ticketBranch, commit: workRefCommit },
+      manifests: [],
+    },
+  });
+});
+
+test("a branch nobody can read is unreadable still, and is asked about once", async () => {
+  const observed: (string | undefined)[] = [];
+  const source = await observingWithout(
+    ticketBranch,
+    observed,
+    "RemoteUnreachable",
+  ).observe({
+    partition,
+    ticket: 1,
+    kind: "Work",
+    configurationCanonical: configuredWorkSource,
+    ref: asGitRefName(ticketBranch),
+  });
+  assert.deepEqual(source, {
+    observed: "Unreadable",
+    evidence: "RemoteUnreachable",
+  });
+  assert.deepEqual(observed, [ticketBranch]);
 });
 
 const workBase = asGitObjectId("b".repeat(40));
