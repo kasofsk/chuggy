@@ -2,12 +2,15 @@
  * Building a candidate commit out of verified handoff artifacts, and
  * integrating one against an observed target.
  *
- * A CANDIDATE IS THE OBSERVED TARGET WITH THE ARTIFACTS STANDING IN IT, and its
- * parent is that target. A handoff names the files one task produced and not
- * the repository entire, so a tree built from the artifacts alone would promote
- * the deletion of everything nobody handed over; the observed commit's tree is
- * what the artifacts are written on top of, and the tree that comes out is a
- * function of those two things and nothing else.
+ * A CANDIDATE IS THE OBSERVED BASE IT IS HANDED WITH THE ARTIFACTS STANDING IN
+ * IT, and its parent is that base. A handoff names the files one task produced
+ * and not the repository entire, so a tree built from the artifacts alone would
+ * promote the deletion of everything nobody handed over; the observed commit's
+ * tree is what the artifacts are written on top of, and the tree that comes out
+ * is a function of those two things and nothing else. Which commit that is, is
+ * the caller's answer and never this adapter's — it is the target for a ticket
+ * landing where it worked, and the branch the work happened on for one landing
+ * anywhere else.
  *
  * THE CONTENT ARRIVES AS A VALUE AND IS NEVER READ FROM ANYWHERE. The store
  * that holds an artifact is another adapter's, so this one is handed bytes and
@@ -149,11 +152,11 @@ async function candidatePrepareBlobs(
 }
 
 /**
- * The ref a target's commit is fetched from: its own, or the one it was based
- * on where the target names a branch the remote does not hold yet.
+ * The ref a base's commit is fetched from: its own, or the one it was based on
+ * where the base names a branch the remote does not hold yet.
  */
-function candidateBaseRef(target: ObservedTarget): GitRefName {
-  return target.baseRef ?? target.ref;
+function candidateBaseRef(base: ObservedTarget): GitRefName {
+  return base.baseRef ?? base.ref;
 }
 
 /** Builds the candidate commit for one preparation, with no working tree at any point. */
@@ -164,8 +167,8 @@ export async function candidatePrepare(
 ): Promise<CandidatePrepared> {
   candidateAssertFiles(preparation.files);
   const repository = preparation.repository.repository;
-  const commit = preparation.target.commit;
-  const ref = candidateBaseRef(preparation.target);
+  const commit = preparation.base.commit;
+  const ref = candidateBaseRef(preparation.base);
   if (!(await scratchFetchRef(scratch, repository, credential, ref))) {
     return { prepared: "Failed", evidence: "RemoteUnreachable" };
   }

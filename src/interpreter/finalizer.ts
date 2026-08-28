@@ -356,10 +356,10 @@ export function repositoryBindingNarrowed(
 }
 
 /**
- * What a ticket's work is observed against: the branch its brief names, or the
- * binding's own target where the remote does not hold that branch yet. A branch
- * nobody has created is not an unreadable ref — it is where the first promotion
- * puts the work, started from what the binding already names.
+ * What a branch the brief names resolves to: the branch itself, or the
+ * binding's own target under that branch's name where the remote does not hold
+ * it yet. A branch nobody has created is not an unreadable ref — it is where
+ * work starts or lands, from what the binding already names.
  */
 export async function repositoryTargetObserved(
   git: Pick<GitPromotionPort, "observeTarget">,
@@ -519,10 +519,12 @@ export interface FinalizationView {
   readonly claim: FinalizationClaim;
   readonly lifecycle: Lifecycle;
   readonly repository?: RepositoryBinding;
-  /** The branch the ticket's brief names, which the remote may not hold yet and the first promotion creates. */
+  /** The branch the ticket's brief lands its work on, which the remote may not hold yet and the first promotion creates. */
   readonly targetBranch?: GitRefName;
   readonly handoffRequest?: HandoffFinalizationRequest;
   readonly observedTarget?: ObservedTarget;
+  /** What the branch the work happened on holds, which is the tree a candidate is built over. */
+  readonly observedWorkBranch?: ObservedTarget;
   readonly attempt?: FinalizationAttempt;
   readonly approval: ApprovalStanding;
   readonly permit?: CommitPermit;
@@ -803,7 +805,7 @@ export interface CandidatePreparation {
   readonly repository: RepositoryBinding;
   readonly ticket: TicketId;
   readonly bundle: InputBundleId;
-  readonly target: ObservedTarget;
+  readonly base: ObservedTarget;
   readonly files: readonly CandidateFile[];
 }
 

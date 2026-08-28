@@ -1483,6 +1483,56 @@ test("migration 42 leaves an upgraded database's drafts unbriefed and briefs the
   });
 });
 
+test("migration 50 lands an existing brief where its work happened and takes a target from the next", async () => {
+  await migrationDatabase("brief_finalization", async (subject) => {
+    await migrationSeedApplied(subject, 50);
+    await seedBrieflessDraft(subject);
+    await subject.query(
+      `INSERT INTO draft_brief (tenant,project,ticket,intent,branch)
+       VALUES ('tenant','project',1,'Fix the importer.','refs/heads/rt/ticket-brief')`,
+    );
+
+    await applyMigration(subject, 50);
+
+    assert.deepEqual(
+      (
+        await subject.query<{ mode: string; target: string | null }>(
+          "SELECT finalization_mode AS mode,finalization_target AS target FROM draft_brief",
+        )
+      ).rows,
+      [{ mode: "Push", target: null }],
+      "a brief written before the columns existed lands on the branch it names",
+    );
+    const created = await subject.query<{ result: string; ticket: string }>(
+      `SELECT result,ticket::text AS ticket FROM create_draft('tenant','project','revision','digest',1,
+         'authoring','Fix the importer.',ARRAY[]::text[],
+         'refs/heads/rt/work','Push','refs/heads/rt/landing','User','author')`,
+    );
+    assert.equal(created.rows[0]?.result, "Created");
+    assert.deepEqual(
+      (
+        await subject.query<{ branch: string; target: string | null }>(
+          `SELECT branch,finalization_target AS target FROM draft_brief
+            WHERE ticket=$1`,
+          [created.rows[0]?.ticket],
+        )
+      ).rows,
+      [{ branch: "refs/heads/rt/work", target: "refs/heads/rt/landing" }],
+    );
+    for (const [column, value] of [
+      ["finalization_mode", "PullRequest"],
+      ["finalization_target", "rt/landing"],
+    ] as const)
+      await assert.rejects(
+        subject.query(`UPDATE draft_brief SET ${column}=$2 WHERE ticket=$1`, [
+          created.rows[0]?.ticket,
+          value,
+        ]),
+        `the brief refuses ${column}=${value}`,
+      );
+  });
+});
+
 test("migration 43 widens a kind check installed before that kind existed", async () => {
   await migrationDatabase("native_action_change", async (subject) => {
     await migrationSeedApplied(subject, 43);

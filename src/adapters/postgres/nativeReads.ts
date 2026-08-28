@@ -377,6 +377,7 @@ function nativeReadsResources(
     ticket: async (partition, ticket) => {
       const found = await pool.query<TicketProjectionRow & DraftBriefRow>(
         sql`SELECT t.ticket,t.phase,t.seq,t.reason,b.intent,b.branch,
+                   b.finalization_mode,b.finalization_target,
                    (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
                      WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS links
               FROM ticket_projection t

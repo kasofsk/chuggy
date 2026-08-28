@@ -74,6 +74,39 @@ test("a brief states an intent and bounds what it points at", () => {
   assert.ok(briefSchema.safeParse({ intent: "Do it.", links: [] }).success);
 });
 
+test("a brief lands where its work happened unless its finalization says otherwise", () => {
+  const landing = (finalization: unknown) =>
+    briefSchema.safeParse({ intent: "Do it.", links: [], finalization });
+  assert.deepEqual(landing({ mode: "Push" }).data?.finalization, {
+    mode: "Push",
+  });
+  assert.deepEqual(
+    landing({ mode: "Push", target: `${briefBranchPrefix}rt/landing` }).data
+      ?.finalization,
+    { mode: "Push", target: "refs/heads/rt/landing" },
+  );
+  assert.equal(
+    briefSchema.safeParse({ intent: "Do it.", links: [] }).data?.finalization,
+    undefined,
+    "a brief naming no finalization carries none",
+  );
+  for (const value of [
+    {},
+    { mode: "PullRequest" },
+    { mode: "Push", target: "rt/landing" },
+    {
+      mode: "Push",
+      target: `${briefBranchPrefix}${"a".repeat(briefBranchCharsMax)}`,
+    },
+    { mode: "Push", unnamed: true },
+  ])
+    assert.equal(
+      landing(value).success,
+      false,
+      `a finalization is refused: ${JSON.stringify(value)}`,
+    );
+});
+
 test("a brief carrying no intent, an oversized one or an unreadable link is refused", () => {
   for (const value of [
     { intent: "", links: [] },

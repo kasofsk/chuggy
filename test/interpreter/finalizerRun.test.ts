@@ -101,7 +101,9 @@ import {
 } from "../../src/interpreter/projectStore.ts";
 import {
   asBriefBranch,
+  asBriefFinalization,
   asBriefIntent,
+  type DraftBrief,
   type TicketBriefPort,
 } from "../../src/interpreter/ticketBrief.ts";
 
@@ -421,20 +423,26 @@ function promotableView(request: string): FinalizationView {
   };
 }
 
-/** A brief port answering the branch a case names, and no brief at all when it names none. */
-function briefsOf(branch?: string): TicketBriefPort {
-  return {
-    brief: () =>
-      Promise.resolve(
-        branch === undefined
-          ? undefined
-          : {
-              intent: asBriefIntent("carry the ticket's own branch"),
-              links: [],
-              branch: asBriefBranch(branch),
-            },
-      ),
-  };
+/**
+ * A brief port answering whichever of the two branches a case names — the one
+ * its work happens on, the one its finalization lands on, or both, each being
+ * optional of the other. No brief at all when it names neither.
+ */
+function briefsOf(branch?: string, target?: string): TicketBriefPort {
+  const brief: DraftBrief | undefined =
+    branch === undefined && target === undefined
+      ? undefined
+      : {
+          intent: asBriefIntent("carry the ticket's own branch"),
+          links: [],
+          ...(branch === undefined ? {} : { branch: asBriefBranch(branch) }),
+          ...(target === undefined
+            ? {}
+            : {
+                finalization: asBriefFinalization({ mode: "Push", target }),
+              }),
+        };
+  return { brief: () => Promise.resolve(brief) };
 }
 
 /** The service a case drives, over the ceilings it names. */
@@ -609,7 +617,7 @@ test("a clean preparation builds over the observed target and records one prepar
   assert.equal(report.preparations, 1);
   assert.equal(report.holds, 0);
   assert.deepEqual(
-    git.preparations.map((each) => each.target.commit),
+    git.preparations.map((each) => each.base.commit),
     [commitOf("a")],
   );
   assert.deepEqual(
@@ -645,13 +653,14 @@ test("a finalization observes and pins the branch the ticket's brief names", asy
   assert.deepEqual(
     git.observations.map((each) => each.targetRef),
     [briefBranch, briefBranch],
-    "the target is read at the ticket's branch before and after the candidate",
+    "the target is read at the ticket's branch before and after the candidate, and nowhere else",
   );
+  assert.equal(git.preparations[0]?.base.ref, briefBranch);
   assert.equal(git.integrations[0]?.target.ref, briefBranch);
   assert.equal(store.attempts[0]?.target.ref, briefBranch);
 });
 
-/** A remote holding its default and no branch by the name the case names. */
+/** A remote holding every ref a case asks for but the one it names, and its default under none. */
 function gitWithoutBranch(branch: string): GitRecorder {
   const git = recordingGit();
   git.observeTarget = (repository) => {
@@ -662,7 +671,7 @@ function gitWithoutBranch(branch: string): GitRecorder {
         : {
             observed: "Target",
             target: {
-              ref: asGitRefName("refs/heads/main"),
+              ref: asGitRefName(repository.targetRef ?? "refs/heads/main"),
               commit: asGitObjectId(commitOf("a")),
             },
           };
@@ -687,7 +696,7 @@ test("a brief branch the remote does not hold is prepared over the binding's own
     [briefBranch, undefined, briefBranch],
     "the branch is asked for, the binding's own target stands in, and the branch is asked for again",
   );
-  assert.deepEqual(git.preparations[0]?.target, {
+  assert.deepEqual(git.preparations[0]?.base, {
     ref: briefBranch,
     commit: commitOf("a"),
     baseRef: "refs/heads/main",
@@ -696,6 +705,169 @@ test("a brief branch the remote does not hold is prepared over the binding's own
   assert.equal(store.attempts[0]?.outcome, "Prepared");
   assert.equal(store.attempts[0]?.target.ref, briefBranch);
   assert.equal(store.attempts[0]?.target.commit, commitOf("a"));
+});
+
+/** The branch a case's finalization lands on, which is neither the work's nor anyone's default. */
+const landingBranch = "refs/heads/chuggy/footer-landing";
+
+/** A remote holding a commit of its own under every ref, so two branches cannot be confused. */
+function gitPerBranch(): GitRecorder {
+  const git = recordingGit();
+  git.observeTarget = (repository) => {
+    git.observations.push(repository);
+    const ref = repository.targetRef ?? "refs/heads/main";
+    return Promise.resolve<TargetObserved>({
+      observed: "Target",
+      target: {
+        ref: asGitRefName(ref),
+        commit: asGitObjectId(commitOf(ref === landingBranch ? "b" : "a")),
+      },
+    });
+  };
+  return git;
+}
+
+test("a brief targeting a branch apart from its work's lands there and never on the work's", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = gitPerBranch();
+
+  await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(briefBranch, landingBranch),
+  });
+
+  assert.deepEqual(
+    git.observations.map((each) => each.targetRef),
+    [landingBranch, briefBranch, landingBranch],
+    "the target is read, then the branch the work happened on, then the target again",
+  );
+  assert.equal(git.integrations[0]?.target.ref, landingBranch);
+  assert.equal(store.attempts[0]?.target.ref, landingBranch);
+  assert.equal(store.attempts[0]?.target.commit, commitOf("b"));
+});
+
+test("a candidate for a brief landing elsewhere is built over the branch the work happened on", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = gitPerBranch();
+
+  const report = await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(briefBranch, landingBranch),
+  });
+
+  assert.equal(report.preparations, 1);
+  assert.deepEqual(
+    git.preparations[0]?.base,
+    { ref: briefBranch, commit: commitOf("a") },
+    "the candidate descends from the work's own branch, so what accumulated there lands too",
+  );
+  assert.equal(git.integrations[0]?.target.commit, commitOf("b"));
+});
+
+test("a brief landing somewhere while naming no branch of its own is built over the binding's default", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = gitPerBranch();
+
+  const report = await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(undefined, landingBranch),
+  });
+
+  assert.equal(report.preparations, 1);
+  assert.deepEqual(
+    git.observations.map((each) => each.targetRef),
+    [landingBranch, undefined, landingBranch],
+    "the target is read, then the default the work ran against, then the target again",
+  );
+  assert.deepEqual(
+    git.preparations[0]?.base,
+    { ref: "refs/heads/main", commit: commitOf("a") },
+    "the candidate is built over the tree the work was observed against",
+  );
+  assert.equal(git.integrations[0]?.target.commit, commitOf("b"));
+  assert.notEqual(
+    git.preparations[0]?.base.commit,
+    git.integrations[0]?.target.commit,
+    "the target is not the candidate's own parent, so the integration is a merge and not a passthrough",
+  );
+});
+
+/** A remote answering for the branch a case lands on and failing on the one it worked on. */
+function gitWithoutWorkBranch(): GitRecorder {
+  const git = recordingGit();
+  git.observeTarget = (repository) => {
+    git.observations.push(repository);
+    const answer: TargetObserved =
+      repository.targetRef === briefBranch
+        ? { observed: "Unreadable", evidence: "RemoteUnreachable" }
+        : {
+            observed: "Target",
+            target: {
+              ref: asGitRefName(repository.targetRef ?? "refs/heads/main"),
+              commit: asGitObjectId(commitOf("b")),
+            },
+          };
+    return Promise.resolve(answer);
+  };
+  return git;
+}
+
+test("a work branch the remote could not answer for holds rather than building over the target", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = gitWithoutWorkBranch();
+
+  const report = await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(briefBranch, landingBranch),
+  });
+
+  assert.equal(report.holds, 1);
+  assert.deepEqual(
+    git.preparations,
+    [],
+    "no candidate is built at all, the target's own tree included",
+  );
+  assert.deepEqual(git.integrations, []);
+  assert.deepEqual(store.attempts, []);
+});
+
+test("a target the remote does not hold is pinned at the binding's own target and built over the work", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = gitWithoutBranch(landingBranch);
+
+  const report = await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(briefBranch, landingBranch),
+  });
+
+  assert.equal(report.preparations, 1);
+  assert.equal(report.holds, 0);
+  assert.deepEqual(git.preparations[0]?.base, {
+    ref: briefBranch,
+    commit: commitOf("a"),
+  });
+  assert.deepEqual(store.attempts[0]?.target, {
+    ref: landingBranch,
+    commit: commitOf("a"),
+    baseRef: "refs/heads/main",
+  });
+});
+
+test("a brief naming no target reads one branch and builds the candidate over it", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = gitPerBranch();
+
+  await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(briefBranch),
+  });
+
+  assert.deepEqual(
+    git.observations.map((each) => each.targetRef),
+    [briefBranch, briefBranch],
+    "the branch the work lands on is the branch it happened on, so it is read once for both",
+  );
+  assert.deepEqual(git.preparations[0]?.base, store.attempts[0]?.target);
 });
 
 test("a ticket whose brief names no branch is finalized against the binding's own default", async () => {
@@ -944,7 +1116,7 @@ test("the target the integration was answered against is what the attempt pins",
   const report = await passOver(serviceOf(store, git));
   assert.equal(report.preparations, 1);
   assert.deepEqual(
-    git.preparations.map((each) => each.target.commit),
+    git.preparations.map((each) => each.base.commit),
     [commitOf("a")],
   );
   assert.deepEqual(

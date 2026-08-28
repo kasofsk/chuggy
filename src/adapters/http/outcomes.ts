@@ -477,6 +477,9 @@ function briefBody(brief: DraftBrief): unknown {
     intent: brief.intent,
     links: [...brief.links],
     ...(brief.branch === undefined ? {} : { branch: brief.branch }),
+    ...(brief.finalization === undefined
+      ? {}
+      : { finalization: { ...brief.finalization } }),
   };
 }
 

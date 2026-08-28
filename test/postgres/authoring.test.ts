@@ -1005,6 +1005,57 @@ test("the brief is written with the draft, replaced with it, and read back besid
   );
 });
 
+test("where a brief lands is written, replaced and read back apart from where it works", async () => {
+  const { partition, store, revision, draft } = await draftFixture();
+  assert.equal(draft.brief?.finalization, undefined);
+  const landing = asDraftBrief({
+    intent: "Land it on the release branch.",
+    links: [],
+    branch: "refs/heads/harness",
+    finalization: { mode: "Push", target: "refs/heads/harness-landing" },
+  });
+  const revised = await store.reviseDraft({
+    partition,
+    authority,
+    ticket: draft.ticket,
+    expectedVersion: 1,
+    configurationRevision: revision,
+    authoring: plainAuthoring,
+    brief: landing,
+  });
+  assert.deepEqual(
+    revised.revised === "Revised" ? revised.draft.brief : undefined,
+    landing,
+  );
+  assert.deepEqual(
+    (await store.draft(partition, draft.ticket))?.brief,
+    landing,
+  );
+  assert.deepEqual(
+    await postgresTicketBrief(pool).brief(partition, draft.ticket),
+    landing,
+  );
+
+  const cleared = await store.reviseDraft({
+    partition,
+    authority,
+    ticket: draft.ticket,
+    expectedVersion: 2,
+    configurationRevision: revision,
+    authoring: plainAuthoring,
+    brief: postgresHarnessBrief,
+  });
+  assert.deepEqual(
+    cleared.revised === "Revised" ? cleared.draft.brief : undefined,
+    postgresHarnessBrief,
+    "a revision naming no finalization lands the work where it happens again",
+  );
+  assert.deepEqual(
+    await postgresTicketBrief(pool).brief(partition, draft.ticket),
+    postgresHarnessBrief,
+  );
+});
+
 test("a draft authored before a brief existed reads back without one", async () => {
   const { partition, store, draft } = await draftFixture();
   await harness.query(
@@ -1028,6 +1079,8 @@ test("the server refuses a brief that reached it around the interpreter's rules"
     ["intent", ""],
     ["intent", "Fix it.\u0007"],
     ["branch", "rt/ticket-brief"],
+    ["finalization_mode", "PullRequest"],
+    ["finalization_target", "rt/ticket-brief"],
   ] as const)
     await assert.rejects(
       harness.query(

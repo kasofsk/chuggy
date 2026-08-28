@@ -1,6 +1,7 @@
 /**
  * The brief one ticket carries: the intent a human stated, the links they
- * pointed at, and the branch the work happens on.
+ * pointed at, the branch the work happens on, and where a finalization lands
+ * it.
  *
  * IT IS NOT AUTHORING. Authoring is the model's release event, and every value
  * of it decides how the machine runs the ticket. None of these do: they are
@@ -15,7 +16,14 @@
  *
  * A BRANCH IS A REFERENCE NAME AND SHARES ITS GRAMMAR. `handoffRef` is the one
  * statement of what a reference name is in this tree, and a second spelling of
- * it here would be a second answer to the same question.
+ * it here would be a second answer to the same question. A finalization's
+ * target is a reference name too and takes the same grammar.
+ *
+ * WHERE THE WORK LANDS IS SAID APART FROM WHERE IT STARTS. `branch` is the
+ * branch the work happens on and the ref its executions are observed at; a
+ * finalization's `target` is the reference the finalizer promotes onto. A
+ * brief naming no finalization means `briefFinalizationDefault` and lands on
+ * `branch`, so a ticket that named only a branch works and lands there.
  *
  * A RELEASED TICKET'S BRIEF NO LONGER MOVES, which is what lets a retry read it
  * rather than pin it: a revision is refused for a draft that is not one, so the
@@ -30,6 +38,10 @@ import {
   briefLinkScheme,
   briefLinksMax,
 } from "../contract/brief.ts";
+import {
+  briefFinalizationModes,
+  type BriefFinalizationMode,
+} from "../contract/rosters.ts";
 import type { GitRefName } from "./finalizer.ts";
 import { handoffRef } from "./handoffConfiguration.ts";
 import type { Partition } from "./projectStore.ts";
@@ -41,11 +53,21 @@ declare const briefLinkUrlBrand: unique symbol;
 export type BriefIntent = string & { readonly [briefIntentBrand]: true };
 export type BriefLinkUrl = string & { readonly [briefLinkUrlBrand]: true };
 
+/** How and where one ticket's work is landed, which is the finalizer's half of a brief. */
+export interface BriefFinalization {
+  readonly mode: BriefFinalizationMode;
+  readonly target?: GitRefName;
+}
+
+/** What a brief naming no finalization says, and what a row saying it reads back as none. */
+export const briefFinalizationDefault: BriefFinalization = { mode: "Push" };
+
 /** One ticket's brief, as everything but the wire holds it. */
 export interface DraftBrief {
   readonly intent: BriefIntent;
   readonly links: readonly BriefLinkUrl[];
   readonly branch?: GitRefName;
+  readonly finalization?: BriefFinalization;
 }
 
 /** The lines one intent renders as, which is the form it is bounded and stored in. */
@@ -100,11 +122,30 @@ export function asBriefBranch(value: string): GitRefName {
   return ref;
 }
 
+/** Brands a finalization, its target through the grammar a branch takes. */
+export function asBriefFinalization(value: {
+  readonly mode: string;
+  readonly target?: string;
+}): BriefFinalization {
+  const mode = briefFinalizationModes.find((known) => known === value.mode);
+  if (mode === undefined)
+    throw new RangeError(
+      "ticket finalization: the mode is not one this tree lands under",
+    );
+  return {
+    mode,
+    ...(value.target === undefined
+      ? {}
+      : { target: asBriefBranch(value.target) }),
+  };
+}
+
 /** Brands one whole brief, which is the only way an unchecked one becomes a stored one. */
 export function asDraftBrief(value: {
   readonly intent: string;
   readonly links: readonly string[];
   readonly branch?: string;
+  readonly finalization?: { readonly mode: string; readonly target?: string };
 }): DraftBrief {
   if (value.links.length > briefLinksMax)
     throw new RangeError("ticket brief: more links than one brief carries");
@@ -114,6 +155,9 @@ export function asDraftBrief(value: {
     ...(value.branch === undefined
       ? {}
       : { branch: asBriefBranch(value.branch) }),
+    ...(value.finalization === undefined
+      ? {}
+      : { finalization: asBriefFinalization(value.finalization) }),
   };
 }
 

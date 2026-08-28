@@ -5,10 +5,11 @@
  * A roster here is a restatement of one the model or the interpreter owns, and
  * `test/contract/rosters.test.ts` holds each against its source — against a
  * runtime list where one exists, and otherwise against a record the compiler
- * rejects when the union gains or loses a member. `notificationKinds` is the
- * exception and the only one: the wire owns it outright, `src/interpreter/
- * notifications.ts` takes `NotificationKind` from here, and what stands behind
- * it instead is the relation to `projectChangeKinds` that the same suite pins.
+ * rejects when the union gains or loses a member. `notificationKinds` and
+ * `briefFinalizationModes` are the exceptions: the wire owns each outright and
+ * the interpreter takes its union from here. What stands behind the first is
+ * the relation to `projectChangeKinds` that the same suite pins; behind the
+ * second, the CHECK the brief's own relation spells the same list into.
  */
 
 export const phaseRoster = [
@@ -185,6 +186,13 @@ export type ResumePricing = (typeof resumePricings)[number];
 
 export const finalizers = ["NoFinalizer", "ManagedFinalizer"] as const;
 export type FinalizerChoice = (typeof finalizers)[number];
+
+/**
+ * How a finalization lands one ticket's work on the reference its brief names.
+ * `src/interpreter/ticketBrief.ts` takes `BriefFinalizationMode` from here.
+ */
+export const briefFinalizationModes = ["Push"] as const;
+export type BriefFinalizationMode = (typeof briefFinalizationModes)[number];
 
 export const configurationReadinesses = ["Ready", "Incomplete"] as const;
 export type ConfigurationReadiness = (typeof configurationReadinesses)[number];

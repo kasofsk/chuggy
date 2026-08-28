@@ -414,6 +414,22 @@
               "type": "string",
               "maxLength": 256,
               "pattern": "^refs\\/heads\\/.*"
+            },
+            "finalization": {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "enum": ["Push"]
+                },
+                "target": {
+                  "type": "string",
+                  "maxLength": 256,
+                  "pattern": "^refs\\/heads\\/.*"
+                }
+              },
+              "required": ["mode"],
+              "additionalProperties": false
             }
           },
           "required": ["intent", "links"],
@@ -560,6 +576,22 @@
               "type": "string",
               "maxLength": 256,
               "pattern": "^refs\\/heads\\/.*"
+            },
+            "finalization": {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "enum": ["Push"]
+                },
+                "target": {
+                  "type": "string",
+                  "maxLength": 256,
+                  "pattern": "^refs\\/heads\\/.*"
+                }
+              },
+              "required": ["mode"],
+              "additionalProperties": false
             }
           },
           "required": ["intent", "links"],
