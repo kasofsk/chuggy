@@ -805,7 +805,7 @@ export interface CandidatePreparation {
   readonly repository: RepositoryBinding;
   readonly ticket: TicketId;
   readonly bundle: InputBundleId;
-  readonly target: ObservedTarget;
+  readonly base: ObservedTarget;
   readonly files: readonly CandidateFile[];
 }
 
