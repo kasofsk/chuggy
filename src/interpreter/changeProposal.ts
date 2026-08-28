@@ -1,3 +1,25 @@
+/**
+ * The provider-neutral change proposal: the deterministic request one is opened
+ * under, the evidence a forge answers with, and the bounded publication that
+ * turns an unsettled create into an answer.
+ *
+ * A HEAD IS EITHER DERIVED OR NAMED, AND THE REST OF THE REQUEST IS THE SAME
+ * EITHER WAY. A handoff has no branch of its own, so its head is minted from
+ * the request identity; a ticket finishing by proposing its own work has one
+ * already, and the commit a person will review is the one its promotion landed
+ * there. Both are built through one bounding, so the two cannot drift apart in
+ * the marker, the metadata or anything else a read compares.
+ *
+ * THE BASE IS IDENTIFIED BY ITS REF AND THE HEAD BY BOTH. A proposal targets a
+ * branch, and what that branch holds is the forge's to move between the moment
+ * a base is observed and the moment the proposal is created — so comparing the
+ * base's commit would refuse a proposal this request had successfully opened
+ * whenever anybody landed anything on the base in between. Each side's commit
+ * stays in the request and in the evidence as what it observed, and the head's
+ * is compared because a different commit under the same head is a different
+ * change rather than the same one seen later.
+ */
+
 import { asBoundedText } from "./boundedText.ts";
 import type { GitObjectId, GitRefName, RepositoryId } from "./finalizer.ts";
 import { asGitRefName, finalizerIdentityCharsMax } from "./finalizer.ts";
@@ -250,15 +272,21 @@ export interface ChangeProposalRequestInput {
   readonly body: string;
 }
 
+/** The same request over a head branch the caller names rather than one derived from the identity. */
+export interface ChangeProposalBranchRequestInput extends ChangeProposalRequestInput {
+  readonly headRef: GitRefName;
+}
+
 export interface ChangeProposalPublicationView {
   readonly creation?: ChangeProposalCreated;
   readonly reconciliation?: ChangeProposalReconciled;
   readonly reconciliations: number;
 }
 
-/** Constructs the single marker and branch identity every retry must reuse. */
-export function changeProposalRequest(
+/** Bounds one request's metadata and pins it to the head every retry must reuse. */
+function changeProposalRequestOf(
   input: ChangeProposalRequestInput,
+  headRef: GitRefName,
 ): ChangeProposalRequest {
   const title = asBoundedText(
     input.title,
@@ -272,16 +300,28 @@ export function changeProposalRequest(
     repository: input.repository,
     request: input.request,
     marker: proposalMarkerOf(input.request),
-    head: {
-      ref: proposalHeadRefOf(input.request),
-      commit: input.headCommit,
-    },
+    head: { ref: headRef, commit: input.headCommit },
     base: { ref: input.baseRef, commit: input.baseCommit },
     title,
     body: input.body,
   };
 }
 
+/** Constructs the single marker and branch identity every retry must reuse. */
+export function changeProposalRequest(
+  input: ChangeProposalRequestInput,
+): ChangeProposalRequest {
+  return changeProposalRequestOf(input, proposalHeadRefOf(input.request));
+}
+
+/** The same request over a branch the work already happened on, named rather than minted. */
+export function changeProposalRequestFromBranch(
+  input: ChangeProposalBranchRequestInput,
+): ChangeProposalRequest {
+  return changeProposalRequestOf(input, input.headRef);
+}
+
+/** Whether one proposal is this request's, and what it is not where it is not. */
 function proposalContradiction(
   request: ChangeProposalRequest,
   evidence: ChangeProposalEvidence,
@@ -294,11 +334,7 @@ function proposalContradiction(
     evidence.head.commit !== request.head.commit
   )
     return "HeadMismatch";
-  if (
-    evidence.base.ref !== request.base.ref ||
-    evidence.base.commit !== request.base.commit
-  )
-    return "BaseMismatch";
+  if (evidence.base.ref !== request.base.ref) return "BaseMismatch";
   if (evidence.title !== request.title || evidence.body !== request.body)
     return "MetadataMismatch";
   if (evidence.status === "Closed") return "Closed";

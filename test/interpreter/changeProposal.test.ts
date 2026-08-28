@@ -9,6 +9,8 @@ import {
   asProposalRemoteIdentity,
   changeProposalPublicationNext,
   changeProposalRequest,
+  changeProposalRequestFromBranch,
+  proposalBodyCharsMax,
   reconcileChangeProposal,
   type ChangeProposalAdapterSelector,
   type ChangeProposalEvidence,
@@ -117,6 +119,15 @@ test("closed, merged, retargeted, and mismatched proposals are explicit contradi
       },
       "BaseMismatch",
     ],
+    [
+      {
+        head: {
+          ref: asGitRefName("refs/heads/another-head"),
+          commit: request.head.commit,
+        },
+      },
+      "HeadMismatch",
+    ],
     [{ repository: asRepositoryId("other-repository") }, "RepositoryMismatch"],
     [{ title: "Changed title" }, "MetadataMismatch"],
     [{ body: "Changed body" }, "MetadataMismatch"],
@@ -144,6 +155,66 @@ test("closed, merged, retargeted, and mismatched proposals are explicit contradi
     assert.deepEqual(
       reconcileChangeProposal(request, { read: "Found", evidence: found }),
       { reconciled: "Contradictory", contradiction, evidence: found },
+    );
+  }
+});
+
+test("a base branch that moved between the observation and the create is the same proposal", () => {
+  const moved = evidence({
+    base: {
+      ref: request.base.ref,
+      commit: asGitObjectId("e".repeat(40)),
+    },
+  });
+  assert.deepEqual(
+    reconcileChangeProposal(request, { read: "Found", evidence: moved }),
+    { reconciled: "Accepted", evidence: moved },
+  );
+  assert.deepEqual(
+    changeProposalPublicationNext(
+      request,
+      { creation: { created: "Created", evidence: moved }, reconciliations: 0 },
+      2,
+    ),
+    { next: "Accepted", evidence: moved },
+  );
+});
+
+test("a proposal from a named branch shares every bound and marker with a derived one", () => {
+  const headRef = asGitRefName("refs/heads/chuggy/footer-2026");
+  const branched = changeProposalRequestFromBranch({
+    binding: request.binding,
+    repository: request.repository,
+    request: requestIdentity,
+    headRef,
+    headCommit: request.head.commit,
+    baseRef: request.base.ref,
+    baseCommit: request.base.commit,
+    title: request.title,
+    body: request.body,
+  });
+  assert.equal(branched.head.ref, headRef);
+  assert.equal(branched.head.commit, request.head.commit);
+  assert.deepEqual(branched.base, request.base);
+  assert.equal(branched.marker, request.marker);
+  assert.notEqual(request.head.ref, headRef);
+  for (const unbounded of [
+    { title: "", body: request.body },
+    { title: request.title, body: "x".repeat(proposalBodyCharsMax + 1) },
+  ]) {
+    assert.throws(
+      () =>
+        changeProposalRequestFromBranch({
+          binding: request.binding,
+          repository: request.repository,
+          request: requestIdentity,
+          headRef,
+          headCommit: request.head.commit,
+          baseRef: request.base.ref,
+          baseCommit: request.base.commit,
+          ...unbounded,
+        }),
+      RangeError,
     );
   }
 });
