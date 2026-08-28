@@ -14,6 +14,7 @@ import { workerRepositories, workerRepository } from "./repository.mjs";
 import { credentialScrub, runEvidenceRecorder } from "./runEvidence.mjs";
 import { runConfigurationSnapshot } from "./snapshot.mjs";
 import { commitAndPushSource, resultDocument } from "./source.mjs";
+import { releaseOnTermination } from "./termination.mjs";
 import { workerRequest } from "./transport.mjs";
 
 const executeFile = promisify(execFile);
@@ -265,6 +266,23 @@ async function main() {
   );
   const stopLease = keepWorkerLease(task, bearer);
   let dropDatabase = async () => undefined;
+  // The scheduler cancels an attempt by deleting its pod, and the kubelet's
+  // SIGTERM ends this process without unwinding: what the attempt made on the
+  // shared server would outlive it. Both paths pay the same release.
+  const release = releaseOnTermination(
+    async () => {
+      try {
+        await dropDatabase();
+      } finally {
+        await stopLease();
+      }
+    },
+    {
+      on: (signal, handler) => process.once(signal, handler),
+      exit: (code) => process.exit(code),
+      report: (message) => process.stderr.write(`${message}\n`),
+    },
+  );
   try {
     const workspace = await workerWorkspace(
       task,
@@ -291,11 +309,7 @@ async function main() {
     );
   } finally {
     evidence.stop();
-    try {
-      await dropDatabase();
-    } finally {
-      await stopLease();
-    }
+    await release();
   }
 }
 

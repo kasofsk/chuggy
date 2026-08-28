@@ -547,13 +547,21 @@ DNS as well — the rehearsal in `deploy/rig/isolation/` does, deliberately, and
 name.
 
 **What an attempt leaves behind.** The entrypoint drops every database the
-attempt's role owns when the attempt ends, and then the role. A pod killed
-before that runs leaves them, and they are attributable: every name carries the
-attempt's own, which is also what keeps two attempts running
-`.chug/tasks/check-postgres.sh` at once from colliding. A sweep is by owner:
+attempt's role owns when the attempt ends, and does the same when the scheduler
+cancels it — a pod deletion arrives as SIGTERM, which ends the process without
+unwinding, so the release is registered as a handler too rather than left to a
+`finally`. What neither reaches is a container killed instead of signalled:
+SIGKILL when the grace period runs out, or a node that stops.
+
+`sweep-worker-databases.sh` is the backstop for those. It asks the cluster which
+scopes live pods carry, leaves every one of them alone, and reports the rest;
+`--remove` drops their databases and then their roles. A namespace it cannot ask
+sweeps nothing, because an empty pod list and an unreachable one look the same
+and only one of them means every attempt is over:
 
 ```sh
-psql -c "SELECT rolname FROM pg_roles WHERE rolname LIKE 'chug\_%'"
+deploy/rig/postgres/sweep-worker-databases.sh            # report only
+deploy/rig/postgres/sweep-worker-databases.sh --remove   # and drop them
 ```
 
 ## Reversing it
