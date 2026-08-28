@@ -523,6 +523,9 @@ export const finalizationDigestFormat = "chuggy:finalization:v1";
 /** The part that separates a bundle's canonical bytes from an attempt's, which a backfill spells too. */
 export const inputBundleCanonicalPart = "bundle";
 
+/** The part that separates a change proposal request's canonical bytes from either of those. */
+export const changeProposalCanonicalPart = "proposal";
+
 /** Length-prefixes each part, so no opaque value can spell out a boundary. */
 function finalizationParts(parts: readonly string[]): CanonicalFinalization {
   return parts
@@ -548,6 +551,24 @@ export function canonicalInputBundle(
       reference.reference,
       reference.digest ?? "",
     ]),
+  ]);
+}
+
+/**
+ * The exact bytes one change proposal request's identity is taken over. It is
+ * the finalization request rather than the attempt, so every re-preparation of
+ * one ticket asks the forge for the same proposal under the same marker.
+ */
+export function canonicalChangeProposalRequest(
+  claim: FinalizationClaim,
+): CanonicalFinalization {
+  return finalizationParts([
+    finalizationDigestFormat,
+    changeProposalCanonicalPart,
+    claim.partition.tenant,
+    claim.partition.project,
+    String(claim.ticket),
+    claim.request,
   ]);
 }
 

@@ -86,6 +86,7 @@ import {
   type FinalizerOwnerId,
   type FinalizerStore,
 } from "../../interpreter/finalizer.ts";
+import type { FinalizerProposalStore } from "../../interpreter/finalizationProposal.ts";
 import type { FinalizerPreparationStore } from "../../interpreter/finalizerPreparation.ts";
 import { nativeActionResolutions } from "../../interpreter/ticketCommand.ts";
 import {
@@ -98,6 +99,11 @@ import {
 import { postgresOwnershipEpoch } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
+import {
+  finalizerChangeProposalOpen,
+  finalizerChangeProposalPublication,
+  finalizerChangeProposalRecord,
+} from "./finalizerChangeProposal.ts";
 import {
   finalizerPermitGrant,
   finalizerPermitHolds,
@@ -732,12 +738,31 @@ function postgresFinalizerPreparation(
   };
 }
 
+/** The three moves a change proposal owns, over the same pool the rest of the authority runs on. */
+function postgresFinalizerProposals(pool: pg.Pool): FinalizerProposalStore {
+  return {
+    changeProposalPublication: (claim) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalPublication(client, claim),
+      ),
+    openChangeProposal: (record) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalOpen(client, record),
+      ),
+    recordChangeProposal: (record) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalRecord(client, record),
+      ),
+  };
+}
+
 /** The durable finalization authority for one installation, over a finalizer-role pool. */
 export function postgresFinalizer(
   pool: pg.Pool,
-): FinalizerStore & FinalizerPreparationStore {
+): FinalizerStore & FinalizerPreparationStore & FinalizerProposalStore {
   return {
     ...postgresFinalizerPreparation(pool),
+    ...postgresFinalizerProposals(pool),
     claimRequests: (owner, epoch, requestsMax, leaseSecs) =>
       postgresTransaction(pool, (client) =>
         finalizerClaimRequests(client, owner, epoch, requestsMax, leaseSecs),

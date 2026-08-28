@@ -57,6 +57,9 @@ export const proposalTitleCharsMax = 256;
 export const proposalBodyCharsMax = 16_384;
 export const proposalMarkerCharsMax = 128;
 export const proposalDisplayUrlCharsMax = 2_048;
+
+/** The most one proposal's evidence is stored at: its own fields, and the encoding around them. */
+export const proposalEvidenceCharsMax = 32_768;
 export const proposalBranchPrefix = "refs/heads/chuggy/handoff/";
 export const changeProposalRequestIdentityChars = 64;
 
@@ -208,6 +211,28 @@ export type ChangeProposalContradiction =
   | "MetadataMismatch"
   | "MarkerMismatch";
 
+/** Every contradiction, so a suite and a database CHECK iterate rather than restate. */
+export const allChangeProposalContradictions: readonly ChangeProposalContradiction[] =
+  [
+    "Closed",
+    "Merged",
+    "Superseded",
+    "ForgeMismatch",
+    "RepositoryMismatch",
+    "HeadMismatch",
+    "BaseMismatch",
+    "MetadataMismatch",
+    "MarkerMismatch",
+  ];
+
+/** Every status a proposal stands in, so a suite and a stored row iterate rather than restate. */
+export const allChangeProposalStatuses: readonly ChangeProposalStatus[] = [
+  "Open",
+  "Closed",
+  "Merged",
+  "Superseded",
+];
+
 export type ChangeProposalCreated =
   | {
       readonly created: "Created";
@@ -225,6 +250,17 @@ export type ChangeProposalCreated =
   | { readonly created: "Ambiguous" }
   | { readonly created: "Unavailable" }
   | { readonly created: "Denied" };
+
+/** Every arm a create answers with, so a suite and a database CHECK iterate rather than restate. */
+export const allChangeProposalCreations: readonly ChangeProposalCreated["created"][] =
+  [
+    "Created",
+    "AlreadyExists",
+    "Contradictory",
+    "Ambiguous",
+    "Unavailable",
+    "Denied",
+  ];
 
 export type ChangeProposalRead =
   | { readonly read: "Found"; readonly evidence: ChangeProposalEvidence }
@@ -245,6 +281,10 @@ export type ChangeProposalReconciled =
     }
   | { readonly reconciled: "Unavailable" }
   | { readonly reconciled: "Denied" };
+
+/** Every arm a reconciliation answers with, so a suite and a database CHECK iterate rather than restate. */
+export const allChangeProposalReconciliations: readonly ChangeProposalReconciled["reconciled"][] =
+  ["Accepted", "Absent", "Contradictory", "Unavailable", "Denied"];
 
 export type ChangeProposalPublicationNext =
   | { readonly next: "Create" }
