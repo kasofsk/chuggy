@@ -406,14 +406,13 @@ async function finalizerReadHolds(
 }
 
 /**
- * The branches one brief names: where the work happened, where the promotion
- * lands it, and where a proposal about it is opened. The brief itself is kept,
- * because the words a proposal carries are the ticket's own.
+ * The branches one brief names: where the work happened, and where the
+ * promotion lands it. The brief itself is kept, because the mode it names is
+ * what the pure pass reads of it.
  */
 interface FinalizerBranches {
   readonly work?: GitRefName;
   readonly target?: GitRefName;
-  readonly proposalBase?: GitRefName;
   readonly brief?: DraftBrief;
 }
 
@@ -444,7 +443,6 @@ async function finalizerGatherBranches(
     brief,
     ...(brief.branch === undefined ? {} : { work: brief.branch }),
     ...(target === undefined ? {} : { target }),
-    ...(proposing ? { proposalBase: finalization.target } : {}),
   };
 }
 
