@@ -35,10 +35,12 @@ function Field(props: {
 
 /**
  * What a person asked for. A ticket released before the brief was on the wire
- * carries none, and says so rather than drawing empty fields.
+ * carries none and says so rather than drawing empty fields, and where the
+ * work lands is drawn only where the brief names a second reference — the
+ * branch above it is the answer whenever it does not.
  */
 function Brief(props: { readonly brief: TicketBriefBody }): ReactNode {
-  const { intent, links, branch } = props.brief;
+  const { intent, links, branch, finalization } = props.brief;
   return (
     <>
       <Field name="intent">
@@ -60,6 +62,9 @@ function Brief(props: { readonly brief: TicketBriefBody }): ReactNode {
         )}
       </Field>
       <Field name="branch">{branch ?? "none"}</Field>
+      {finalization?.target === undefined ? null : (
+        <Field name="lands on">{finalization.target}</Field>
+      )}
     </>
   );
 }

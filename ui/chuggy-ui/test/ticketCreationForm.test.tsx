@@ -229,6 +229,37 @@ test("what was typed survives a re-render and a fresh initialization", async () 
   ).toBe("topic/one");
 });
 
+/**
+ * The two branch fields are one screen apart and two references on the wire,
+ * so what is asserted is the body that left rather than the state behind it.
+ */
+test("both branch fields reach the wire, the target as the finalization", async () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, []);
+  typeIntent("ship it");
+  fireEvent.change(screen.getByPlaceholderText("the branch name"), {
+    target: { value: "topic/one" },
+  });
+  fireEvent.change(screen.getByPlaceholderText("the branch to land on"), {
+    target: { value: "release/next" },
+  });
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  const body = drafts(held.sent)[0]?.body;
+  expect(
+    body !== null && typeof body === "object" && "brief" in body
+      ? body.brief
+      : undefined,
+  ).toStrictEqual({
+    intent: "ship it",
+    links: [],
+    branch: "refs/heads/topic/one",
+    finalization: { mode: "Push", target: "refs/heads/release/next" },
+  });
+});
+
 test("a held draft is released again, under the identity it was released under", async () => {
   const held = api({ state: "Cancelled" });
   draw(held.ports, []);

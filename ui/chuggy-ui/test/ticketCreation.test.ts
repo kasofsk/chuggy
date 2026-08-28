@@ -153,6 +153,62 @@ test("a reference pasted where a name was asked for is refused, not prefixed twi
   ]);
 });
 
+/**
+ * Naming a target is the whole of what asking for a finalization is, so the
+ * field is absent from a brief that names none rather than repeating the
+ * branch the work started from.
+ */
+test("a named target is a finalization on the wire, and no target is no field", () => {
+  const landing = creationBodyFrom(
+    creationInitialization,
+    creationForm({ branchName: "topic/one", targetBranchName: "release/next" }),
+  );
+  expect(landing.assembled).toBe("Body");
+  if (landing.assembled !== "Body") return;
+  expect(landing.body.brief).toStrictEqual({
+    intent: "ship it",
+    links: [],
+    branch: "refs/heads/topic/one",
+    finalization: { mode: "Push", target: "refs/heads/release/next" },
+  });
+  const worked = creationBodyFrom(
+    creationInitialization,
+    creationForm({ branchName: "topic/one" }),
+  );
+  expect(
+    worked.assembled === "Body" && "finalization" in worked.body.brief,
+  ).toBe(false);
+});
+
+test("a target names where work lands whether or not a branch says where it starts", () => {
+  const assembled = creationBodyFrom(
+    creationInitialization,
+    creationForm({ targetBranchName: "release/next" }),
+  );
+  expect(assembled.assembled).toBe("Body");
+  if (assembled.assembled !== "Body") return;
+  expect(assembled.body.brief).toStrictEqual({
+    intent: "ship it",
+    links: [],
+    finalization: { mode: "Push", target: "refs/heads/release/next" },
+  });
+});
+
+test("a target is refused the way a branch is, and says the same edit fixes it", () => {
+  const assembled = creationBodyFrom(
+    creationInitialization,
+    creationForm({ targetBranchName: "refs/heads/main" }),
+  );
+  expect(assembled.assembled === "Faults" && assembled.faults).toStrictEqual([
+    { field: "target", reason: creationBranchPrefixedSentence },
+  ]);
+  expect(
+    faultFields(
+      creationForm({ targetBranchName: "b".repeat(briefBranchCharsMax + 1) }),
+    ),
+  ).toStrictEqual(["target"]);
+});
+
 test("a branch name the wire's reference bound refuses is a fault, not a body", () => {
   expect(
     faultFields(
@@ -175,6 +231,7 @@ test("each bound the contract states is where the form's verdict turns", () => {
     { links: Array.from({ length: briefLinksMax }, () => "https://a.test") },
     { links: [linkAt] },
     { branchName: branchAt },
+    { targetBranchName: branchAt },
   ];
   const overBound: readonly Partial<TicketCreationForm>[] = [
     { intent: "x".repeat(briefIntentCharsMax + 1) },
@@ -184,6 +241,7 @@ test("each bound the contract states is where the form's verdict turns", () => {
     },
     { links: [`${linkAt}a`] },
     { branchName: `${branchAt}b` },
+    { targetBranchName: `${branchAt}b` },
   ];
   for (const over of atBound)
     expect([over, faultFields(creationForm(over))]).toStrictEqual([over, []]);

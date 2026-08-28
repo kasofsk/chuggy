@@ -85,6 +85,53 @@ test("a brief with no branch says so rather than drawing an empty field", () => 
   );
 });
 
+test("a brief that names where its work lands draws that reference too", () => {
+  render(
+    <TicketBrief
+      state={draft({
+        intent: "an intent",
+        links: [],
+        branch: "refs/heads/rt/console-ticket-page",
+        finalization: { mode: "Push", target: "refs/heads/release/next" },
+      })}
+    />,
+  );
+  expect(screen.getByText("lands on").nextElementSibling?.textContent).toBe(
+    "refs/heads/release/next",
+  );
+});
+
+/** The branch is where a brief naming no target lands, so a second field
+ * saying "none" would read as a landing nobody chose. */
+test("a brief naming no target draws no field for one", () => {
+  render(
+    <TicketBrief
+      state={draft({
+        intent: "an intent",
+        links: [],
+        branch: "refs/heads/rt/console-ticket-page",
+      })}
+    />,
+  );
+  expect(screen.queryByText("lands on")).toBeNull();
+});
+
+/** The contract lets a finalization name a mode and no reference, which is the
+ * work landing where it happened; the field would draw empty. */
+test("a finalization naming no reference draws no field either", () => {
+  render(
+    <TicketBrief
+      state={draft({
+        intent: "an intent",
+        links: [],
+        branch: "refs/heads/rt/console-ticket-page",
+        finalization: { mode: "Push" },
+      })}
+    />,
+  );
+  expect(screen.queryByText("lands on")).toBeNull();
+});
+
 test("a ticket with no brief says why, and draws no empty intent", () => {
   render(<TicketBrief state={draft()} />);
   expect(screen.getByText(/released before a brief was kept/u)).toBeDefined();

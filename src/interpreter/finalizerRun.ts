@@ -55,7 +55,9 @@
  * commit it descends from, which is what carries everything that accumulated
  * there onto the target. The target is what that candidate is then integrated
  * against, what the attempt pins, and what the revision fence and the one
- * conditional ref update are about. Where the brief lands the work where it
+ * conditional ref update are about. The work's own branch is read once and
+ * fenced by nothing: no attempt pins it, and a pass that found it moved would
+ * have nothing to compare against. Where the brief lands the work where it
  * happened the two are one ref, the second read is not made at all, and the
  * remote is asked exactly what it was asked before.
  *
@@ -448,9 +450,11 @@ async function finalizerGatherBranches(
 
 /**
  * What the branch the work happened on holds, which is the tree a candidate is
- * built over. It is the target's own observation where the brief lands the work
- * where it happened, so a ticket naming no target asks the remote nothing it
- * did not already ask.
+ * built over — the binding's own default for a brief naming no branch of its
+ * own, that being what such work was observed against. The target's observation
+ * stands in only where the two are one ref, a brief naming neither among them,
+ * so nothing is asked of the remote twice and nothing is built over a ref the
+ * work never saw.
  */
 async function finalizerGatherWorkBranch(
   service: FinalizerService,
@@ -458,8 +462,7 @@ async function finalizerGatherWorkBranch(
   branches: FinalizerBranches,
   target: ObservedTarget,
 ): Promise<ObservedTarget | undefined> {
-  if (branches.work === undefined || branches.work === branches.target)
-    return target;
+  if (branches.work === branches.target) return target;
   const observed = await repositoryTargetObserved(
     service.git,
     binding,
@@ -847,7 +850,7 @@ async function finalizerBuild(
     repository: subject.repository,
     ticket: subject.view.claim.ticket,
     bundle: subject.bundle.bundle,
-    target: base,
+    base,
     files,
   });
   if (prepared.prepared !== "Candidate") {

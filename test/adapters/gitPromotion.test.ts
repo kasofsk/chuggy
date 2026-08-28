@@ -188,7 +188,7 @@ async function fixturePrepare(
     repository: binding,
     ticket: asTicketId(1),
     bundle: asInputBundleId("bundle-1"),
-    target,
+    base: target,
     files: fixtureFiles(entries),
   });
   if (prepared.prepared !== "Candidate") {
@@ -369,7 +369,7 @@ test("a path git will not take is a failed preparation and never a candidate mis
     repository: binding,
     ticket: asTicketId(1),
     bundle: asInputBundleId("bundle-1"),
-    target,
+    base: target,
     files: fixtureFiles([
       ["handed.txt", "handed\n"],
       [".git.", "hijacked\n"],
@@ -409,7 +409,7 @@ test("an observed commit the remote no longer holds cannot be built on", async (
     repository: binding,
     ticket: asTicketId(1),
     bundle: asInputBundleId("bundle-1"),
-    target,
+    base: target,
     files: fixtureFiles([["new.txt", "new\n"]]),
   });
   assert.deepEqual(prepared, { prepared: "Failed", evidence: "ObjectMissing" });
