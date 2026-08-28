@@ -241,6 +241,41 @@ function handoffOf(path: string, content: string): HandoffArtifact {
   };
 }
 
+/**
+ * The proposal half of that store, which holds the one row a real one does: it
+ * is opened once, its creation result is written once, and every recorded
+ * reading counts itself.
+ */
+function recordingProposals(
+  store: () => FinalizerRecorder,
+): FinalizerProposalStore {
+  return {
+    changeProposalPublication: () => Promise.resolve(store().publication),
+    openChangeProposal: (record) => {
+      const own = store();
+      if (own.publication !== undefined)
+        return Promise.resolve({ opened: "Refused" });
+      own.opened.push(record);
+      own.publication = { reconciliations: 0 };
+      return Promise.resolve({ opened: "Opened" });
+    },
+    recordChangeProposal: (record) => {
+      const own = store();
+      own.results.push(record);
+      const held = own.publication ?? { reconciliations: 0 };
+      own.publication =
+        record.result.records === "Creation"
+          ? { ...held, creation: record.result.created }
+          : {
+              ...held,
+              reconciliation: record.result.reconciled,
+              reconciliations: held.reconciliations + 1,
+            };
+      return Promise.resolve({ recorded: "Result" });
+    },
+  };
+}
+
 /** A store that answers from the views a case hands it and records every move. */
 function recordingStore(
   views: readonly FinalizationView[],
@@ -255,27 +290,7 @@ function recordingStore(
     asks: [],
     opened: [],
     results: [],
-    changeProposalPublication: () => Promise.resolve(own.publication),
-    openChangeProposal: (record) => {
-      if (own.publication !== undefined)
-        return Promise.resolve({ opened: "Refused" });
-      own.opened.push(record);
-      own.publication = { reconciliations: 0 };
-      return Promise.resolve({ opened: "Opened" });
-    },
-    recordChangeProposal: (record) => {
-      own.results.push(record);
-      const held = own.publication ?? { reconciliations: 0 };
-      own.publication =
-        record.result.records === "Creation"
-          ? { ...held, creation: record.result.created }
-          : {
-              ...held,
-              reconciliation: record.result.reconciled,
-              reconciliations: held.reconciliations + 1,
-            };
-      return Promise.resolve({ recorded: "Result" });
-    },
+    ...recordingProposals(() => own),
     gathering: {
       work: [passedWork],
       artifacts: [handoffOf("one.txt", "one")],

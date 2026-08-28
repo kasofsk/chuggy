@@ -76,6 +76,7 @@ import {
   finalizerStoreArtifact,
   finalizerSubject,
   type FinalizerProject,
+  type FinalizerRemote,
   type FinalizerRig,
 } from "./finalizerHarness.ts";
 
@@ -373,8 +374,12 @@ function proposalPort(): ChangeProposalPort & {
   return own;
 }
 
-test("a ticket that finishes by proposing lands on its branch and opens one into its target", async () => {
-  const { project, remote } = await finalizerSubject(rig, "proposing", [
+/** A finalizing ticket whose brief works on one branch and proposes into another. */
+async function proposingSubject(label: string): Promise<{
+  project: FinalizerProject;
+  remote: FinalizerRemote;
+}> {
+  const { project, remote } = await finalizerSubject(rig, label, [
     { path: "one.txt", content: "one\n" },
   ]);
   finalizerGitVerb(remote.origin, "branch", "chuggy/footer-2026", "main");
@@ -392,6 +397,11 @@ test("a ticket that finishes by proposing lands on its branch and opens one into
     landingBranch,
     "PullRequest",
   );
+  return { project, remote };
+}
+
+test("a ticket that finishes by proposing lands on its branch and opens one into its target", async () => {
+  const { project, remote } = await proposingSubject("proposing");
   const port = finalizerRemotePort(rig);
   const forge = proposalPort();
   const forges = proposalForges(forge);
@@ -459,18 +469,18 @@ test("a ticket that finishes by proposing lands on its branch and opens one into
   assert.equal(forge.creates.length, 1, "no second create was authorized");
 });
 
-test("a change proposal is created once, opened once, and never erased", async () => {
-  const { project } = await finalizerSubject(rig, "proposalrow", [
+/** One project whose promoted attempt a change proposal row may be written against. */
+async function proposalRowSubject(label: string): Promise<FinalizerProject> {
+  const { project } = await finalizerSubject(rig, label, [
     { path: "one.txt", content: "one\n" },
   ]);
-  await finalizerPromote(rig, project, "proposalrow");
+  await finalizerPromote(rig, project, label);
   const permit = (
     (await rig.as(
       `SELECT permit FROM commit_permit WHERE tenant=$1 AND project=$2`,
       [project.partition.tenant, project.partition.project],
     )) as readonly { permit: string }[]
   )[0]?.permit;
-  const request = finalizerDigest();
   await rig.as(
     `INSERT INTO finalization_change_proposal
        (tenant,project,request,permit,proposal_request,head_ref,head_commit,
@@ -481,7 +491,7 @@ test("a change proposal is created once, opened once, and never erased", async (
       project.partition.project,
       project.request,
       permit,
-      request,
+      finalizerDigest(),
       briefBranch,
       finalizerCommit(),
       landingBranch,
@@ -490,76 +500,71 @@ test("a change proposal is created once, opened once, and never erased", async (
       "propose it\n\nchuggy-handoff:x",
     ],
   );
+  return project;
+}
+
+/** The key every statement below addresses that one row by. */
+function proposalRowKey(project: FinalizerProject): readonly string[] {
+  return [project.partition.tenant, project.partition.project, project.request];
+}
+
+test("what a change proposal asked the forge for is written once and erased by nobody", async () => {
+  const project = await proposalRowSubject("proposalasked");
+  const rewrite = `UPDATE finalization_change_proposal SET head_commit=$4
+      WHERE tenant=$1 AND project=$2 AND request=$3`;
+  const erase = `DELETE FROM finalization_change_proposal
+      WHERE tenant=$1 AND project=$2 AND request=$3`;
+  const rewritten = [...proposalRowKey(project), finalizerCommit()];
+  assert.match(
+    await rig.refusal(rewrite, rewritten),
+    /permission denied/u,
+    "the finalizer holds no grant on what the forge was asked for",
+  );
+  assert.match(
+    await rig.ownerRefusal(rewrite, rewritten),
+    /asked for is written once/u,
+    "and nobody else may rewrite it either",
+  );
+  assert.match(
+    await rig.refusal(erase, proposalRowKey(project)),
+    /permission denied/u,
+    "the finalizer holds no grant that could erase one",
+  );
+  assert.match(
+    await rig.ownerRefusal(erase, proposalRowKey(project)),
+    /could be erased is not evidence/u,
+    "and nobody else may erase one either",
+  );
+});
+
+test("a change proposal is created once and read back as often as a reading is taken", async () => {
+  const project = await proposalRowSubject("proposalresult");
+  const key = proposalRowKey(project);
   await rig.as(
     `UPDATE finalization_change_proposal SET creation='Created'
       WHERE tenant=$1 AND project=$2 AND request=$3`,
-    [project.partition.tenant, project.partition.project, project.request],
+    key,
   );
   assert.match(
     await rig.refusal(
       `UPDATE finalization_change_proposal SET creation='Ambiguous'
         WHERE tenant=$1 AND project=$2 AND request=$3`,
-      [project.partition.tenant, project.partition.project, project.request],
+      key,
     ),
     /created once and read back after/u,
-  );
-  assert.match(
-    await rig.refusal(
-      `UPDATE finalization_change_proposal SET head_commit=$4
-        WHERE tenant=$1 AND project=$2 AND request=$3`,
-      [
-        project.partition.tenant,
-        project.partition.project,
-        project.request,
-        finalizerCommit(),
-      ],
-    ),
-    /permission denied/u,
-    "the finalizer holds no grant on what the forge was asked for",
-  );
-  assert.match(
-    await rig.ownerRefusal(
-      `UPDATE finalization_change_proposal SET head_commit=$4
-        WHERE tenant=$1 AND project=$2 AND request=$3`,
-      [
-        project.partition.tenant,
-        project.partition.project,
-        project.request,
-        finalizerCommit(),
-      ],
-    ),
-    /asked for is written once/u,
-    "and nobody else may rewrite it either",
-  );
-  assert.match(
-    await rig.refusal(
-      `DELETE FROM finalization_change_proposal
-        WHERE tenant=$1 AND project=$2 AND request=$3`,
-      [project.partition.tenant, project.partition.project, project.request],
-    ),
-    /permission denied/u,
-    "the finalizer holds no grant that could erase one",
-  );
-  assert.match(
-    await rig.ownerRefusal(
-      `DELETE FROM finalization_change_proposal
-        WHERE tenant=$1 AND project=$2 AND request=$3`,
-      [project.partition.tenant, project.partition.project, project.request],
-    ),
-    /could be erased is not evidence/u,
-    "and nobody else may erase one either",
   );
   await rig.as(
     `UPDATE finalization_change_proposal
         SET reconciliation='Absent', reconciliations=reconciliations+1
       WHERE tenant=$1 AND project=$2 AND request=$3`,
-    [project.partition.tenant, project.partition.project, project.request],
+    key,
   );
+  assert.equal((await proposalOf(project))?.reconciliations, "1");
   assert.match(
     await rig.refusal(
       `UPDATE finalization_change_proposal SET reconciliation='Rebased'
         WHERE tenant=$1 AND project=$2 AND request=$3`,
-      [project.partition.tenant, project.partition.project, project.request],
+      key,
     ),
     /finalization_change_proposal_results_are_whole/u,
   );
