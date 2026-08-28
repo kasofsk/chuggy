@@ -269,7 +269,7 @@ test("a forge credential file the port would refuse fails the precondition too",
   );
 });
 
-test("two forge bindings naming one credential two files are refused at construction", (t) => {
+test("two forge bindings naming one credential two files are refused at construction", async (t) => {
   const root = directory(t);
   assert.throws(
     () =>
@@ -280,6 +280,22 @@ test("two forge bindings naming one credential two files are refused at construc
         ],
       }),
     /a credential names two files/u,
+  );
+  const shared = join(root, "shared");
+  writeFileSync(shared, "forge-secret");
+  const source = forgeCredentialFiles({
+    bindings: [
+      forgeBinding(shared),
+      { ...forgeBinding(shared), repositoryHost: "other.invalid" },
+    ],
+  });
+  assert.deepEqual(
+    await source.credential({
+      forge: asForgeBindingId("forge-alpha"),
+      credential: asForgeCredentialReference("forge-alpha-proposals"),
+    }),
+    { resolved: "Credential", credential: "forge-secret" },
+    "two hosts held under one account name one reference and one file",
   );
 });
 

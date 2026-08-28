@@ -150,13 +150,19 @@ export function credentialFiles(
   };
 }
 
-/** Where each forge's own credential stands, keyed by the reference a binding names it under. */
+/**
+ * Where each forge's own credential stands, keyed by the reference a binding
+ * names it under. Two forges may name one reference and one file — that is a
+ * deployment holding one account across two hosts — and only two files under
+ * one reference is a mapping that would answer one forge two ways.
+ */
 function forgeCredentialFilesState(
   options: ForgeCredentialFilesOptions,
 ): CredentialFilesState<ForgeCredential> {
   const paths = new Map<string, string>();
   for (const binding of options.bindings) {
-    if (paths.has(binding.credentialReference))
+    const named = paths.get(binding.credentialReference);
+    if (named !== undefined && named !== binding.path)
       throw new RangeError("forge credentials: a credential names two files");
     paths.set(binding.credentialReference, binding.path);
   }

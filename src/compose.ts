@@ -193,10 +193,12 @@ export interface FinalizerServiceRuntime {
 }
 
 /**
- * The forges one deployment opens change proposals on. Every adapter is built
+ * The forges one deployment opens change proposals on: every adapter is built
  * here from the binding that named it, so the interpreter selects one by its
- * forge identity and constructs none; a deployment binding no forge answers
+ * forge identity and constructs none, and a deployment binding none answers
  * every repository with no binding, which is the denial a proposal holds under.
+ * A binding names itself rather than its provider, so every one it does bind is
+ * answered by the one adapter this tree has.
  */
 export function composeChangeProposalForges(
   bindings: readonly ForgeBindingFile[],
