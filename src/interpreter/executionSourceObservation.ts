@@ -4,10 +4,15 @@
  * is the most specific of the three and therefore the last word. An evaluation
  * is observed against the work instead, because what it judges is what the work
  * produced rather than what the work was handed.
+ *
+ * A BRANCH THE REMOTE DOES NOT HOLD YET IS WHERE THE WORK LANDS, NOT A FAILED
+ * OBSERVATION. The base is the binding's own target, exactly as it is for a
+ * brief naming no branch at all, and the source still names the ticket's
+ * branch — which is the branch the finalizer's first promotion creates.
  */
 
 import {
-  repositoryBindingNarrowed,
+  repositoryTargetObserved,
   type GitObjectId,
   type GitPromotionPort,
   type RepositoryBinding,
@@ -101,24 +106,28 @@ export function executionSourceObservation(
       const work = executionSourceConfiguredWork(
         request.configurationCanonical,
       );
-      const repository: RepositoryBinding = repositoryBindingNarrowed(
-        {
-          ...project,
-          ...(work === undefined ? {} : { repository: work.repository }),
-          ...(work === undefined ? {} : { targetRef: work.targetRef }),
-          ...(work === undefined
-            ? {}
-            : { credentialReference: work.credentialReference }),
-        },
+      const repository: RepositoryBinding = {
+        ...project,
+        ...(work === undefined ? {} : { repository: work.repository }),
+        ...(work === undefined ? {} : { targetRef: work.targetRef }),
+        ...(work === undefined
+          ? {}
+          : { credentialReference: work.credentialReference }),
+      };
+      const observed = await repositoryTargetObserved(
+        git,
+        repository,
         request.ref,
       );
-      const observed = await git.observeTarget(repository);
       return observed.observed === "Target"
         ? {
             observed: "Source",
             source: {
               repository: repository.repository,
-              target: observed.target,
+              target: {
+                ref: observed.target.ref,
+                commit: observed.target.commit,
+              },
               manifests: [],
             },
           }

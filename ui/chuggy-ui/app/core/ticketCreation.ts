@@ -126,9 +126,9 @@ export function creationIntentLines(intent: string): readonly string[] {
 /**
  * What one branch field holds: nothing, the reference a typed name becomes, or
  * an input this field will not read. A reference pasted where a name is asked
- * for would otherwise be prefixed a second time and name a branch that does not
- * exist, and nothing downstream refuses that — the doubled value is a
- * well-formed reference name.
+ * for would otherwise be prefixed a second time, and nothing downstream refuses
+ * the doubled value — it is a well-formed reference name, and one the machine
+ * would create.
  */
 export type CreationBranch =
   | { readonly named: "None" }
@@ -142,8 +142,8 @@ export function creationBranchOf(branchName: string): CreationBranch {
   return { named: "Ref", ref: `${briefBranchPrefix}${named}` };
 }
 
-/** What the branch field asks for, said beside it rather than only when refused. */
-export const creationBranchHint = `a branch name, not a reference: this console sends it as ${briefBranchPrefix}<name>`;
+/** What the branch field asks for and what naming it does, said beside it rather than only when refused. */
+export const creationBranchHint = `the branch this work starts from and lands on, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>`;
 
 /** The one input the branch field refuses, said as the edit that fixes it. */
 export const creationBranchPrefixedSentence = `enter the branch name, not the ref: this console adds ${briefBranchPrefix} itself`;

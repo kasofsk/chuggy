@@ -48,6 +48,13 @@
  * onto whatever the remote's default happens to hold. A publication is the one
  * exception, its destination being a repository the ticket never worked in.
  *
+ * A BRANCH THE REMOTE DOES NOT HOLD YET IS CREATED BY THE PROMOTION. The base
+ * is the binding's own target, the attempt pins the branch the brief names, and
+ * the one conditional ref update creates it — so a ticket authored against a
+ * branch nobody has made is finalized rather than held. A branch that appeared
+ * in the meantime refuses that update and the revision fence re-prepares
+ * against it, which is the same path a target that moved takes.
+ *
  * PREPARATION OBSERVES THE TARGET TWICE AND INTEGRATES AGAINST THE SECOND. The
  * candidate is the tree of the target the view observed with the verified
  * handoff artifacts standing in it, so integrating it against that same commit
@@ -119,8 +126,10 @@ import {
   type InputBundleReference,
   type ObservedTarget,
   type RepositoryBinding,
+  type TargetObserved,
   inputBundleReferencesMax,
   repositoryBindingNarrowed,
+  repositoryTargetObserved,
 } from "./finalizer.ts";
 import {
   canonicalFinalizationAttempt,
@@ -342,23 +351,21 @@ async function finalizerReadHolds(
 }
 
 /**
- * Where one finalization's work belongs: the binding, narrowed by the
- * configuration's handoff role where the durable view carried one, and then by
- * the ticket's own branch. A publication's destination is the request's own and
- * is narrowed by nothing, because it names a repository the ticket never
- * worked in.
+ * The branch one finalization's work lands on: the one the ticket's brief
+ * names, or none where it names none. A publication names none whatever the
+ * brief reads, because its destination is a repository the ticket never worked
+ * in.
  */
-async function finalizerGatherTarget(
+async function finalizerGatherBranch(
   service: FinalizerService,
   view: FinalizationView,
-  repository: RepositoryBinding,
-): Promise<RepositoryBinding> {
-  if (view.handoffRequest?.kind === "PublishHandoff") return repository;
+): Promise<GitRefName | undefined> {
+  if (view.handoffRequest?.kind === "PublishHandoff") return undefined;
   const brief = await service.ticketBriefs.brief(
     view.claim.partition,
     view.claim.ticket,
   );
-  return repositoryBindingNarrowed(repository, brief?.branch);
+  return brief?.branch;
 }
 
 /**
@@ -371,13 +378,17 @@ async function finalizerGather(
 ): Promise<FinalizationView | undefined> {
   const durable = await service.store.durableView(claim);
   if (durable === undefined || durable.repository === undefined) return durable;
-  const repository = await finalizerGatherTarget(
-    service,
-    durable,
+  const branch = await finalizerGatherBranch(service, durable);
+  const observed = await repositoryTargetObserved(
+    service.git,
     durable.repository,
+    branch,
   );
-  const observed = await service.git.observeTarget(repository);
-  const view: FinalizationView = { ...durable, repository };
+  const view: FinalizationView = {
+    ...durable,
+    repository: repositoryBindingNarrowed(durable.repository, branch),
+    ...(branch === undefined ? {} : { targetBranch: branch }),
+  };
   if (observed.observed !== "Target") return view;
   return { ...view, observedTarget: observed.target };
 }
@@ -727,6 +738,23 @@ async function finalizerBuild(
   await finalizerIntegratePrepared(service, subject, prepared.candidate, tally);
 }
 
+/**
+ * What one candidate is integrated against: what the remote holds now, or the
+ * target the candidate was built over where the branch the ticket's brief names
+ * is still one the remote does not hold. A branch nothing holds has nothing to
+ * integrate with, and the promotion creates it at the candidate.
+ */
+function finalizerIntegrationTarget(
+  subject: FinalizerPreparation,
+  observed: TargetObserved,
+): ObservedTarget | undefined {
+  if (observed.observed === "Target") return observed.target;
+  return subject.view.targetBranch !== undefined &&
+    observed.evidence === "RefUnreadable"
+    ? subject.target
+    : undefined;
+}
+
 /** Re-observes and integrates one candidate, however that candidate was prepared. */
 async function finalizerIntegratePrepared(
   service: FinalizerService,
@@ -734,21 +762,24 @@ async function finalizerIntegratePrepared(
   candidate: GitObjectId,
   tally: FinalizerTally,
 ): Promise<void> {
-  const observed = await service.git.observeTarget(subject.repository);
-  if (observed.observed !== "Target") {
+  const target = finalizerIntegrationTarget(
+    subject,
+    await service.git.observeTarget(subject.repository),
+  );
+  if (target === undefined) {
     finalizerHold(service, tally, "TargetUnobserved");
     return;
   }
   const integrated = await service.git.integrateCandidate({
     repository: subject.repository,
-    target: observed.target,
+    target,
     candidate,
     strategy: finalizerStrategy,
   });
   await finalizerIntegrated(
     service,
     subject,
-    observed.target,
+    target,
     candidate,
     integrated,
     tally,

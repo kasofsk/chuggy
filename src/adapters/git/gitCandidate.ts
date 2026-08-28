@@ -32,6 +32,8 @@ import {
   type CandidateIntegration,
   type CandidatePrepared,
   type CandidatePreparation,
+  type GitRefName,
+  type ObservedTarget,
   type RepositoryCredential,
 } from "../../interpreter/finalizer.ts";
 import {
@@ -146,6 +148,14 @@ async function candidatePrepareBlobs(
   return entries;
 }
 
+/**
+ * The ref a target's commit is fetched from: its own, or the one it was based
+ * on where the target names a branch the remote does not hold yet.
+ */
+function candidateBaseRef(target: ObservedTarget): GitRefName {
+  return target.baseRef ?? target.ref;
+}
+
 /** Builds the candidate commit for one preparation, with no working tree at any point. */
 export async function candidatePrepare(
   scratch: GitScratch,
@@ -154,7 +164,8 @@ export async function candidatePrepare(
 ): Promise<CandidatePrepared> {
   candidateAssertFiles(preparation.files);
   const repository = preparation.repository.repository;
-  const { ref, commit } = preparation.target;
+  const commit = preparation.target.commit;
+  const ref = candidateBaseRef(preparation.target);
   if (!(await scratchFetchRef(scratch, repository, credential, ref))) {
     return { prepared: "Failed", evidence: "RemoteUnreachable" };
   }
@@ -241,8 +252,9 @@ async function candidateIntegrateHasTarget(
   integration: CandidateIntegration,
 ): Promise<boolean> {
   const repository = integration.repository.repository;
-  const { ref, commit } = integration.target;
+  const commit = integration.target.commit;
   if (await scratchHasCommit(scratch, repository, commit)) return true;
+  const ref = candidateBaseRef(integration.target);
   if (!(await scratchFetchRef(scratch, repository, credential, ref))) {
     return false;
   }

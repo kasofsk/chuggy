@@ -570,6 +570,76 @@ test("a clean promotion advances the ref, and repeating it moves nothing", async
   );
 });
 
+/** The branch the cases about an uncreated branch name, which no fixture remote holds. */
+const fixtureUnheldBranch = "refs/heads/chuggy/unheld";
+
+/** The target a ticket branch nobody has created is prepared over: the default's commit under the branch's name. */
+function fixtureUnheldTarget(base: ObservedTarget): ObservedTarget {
+  return {
+    ref: asGitRefName(fixtureUnheldBranch),
+    commit: base.commit,
+    baseRef: base.ref,
+  };
+}
+
+test("a candidate for a branch the remote does not hold is built over its base and creates the ref", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const port = fixturePort(fixture);
+  const base = await fixtureTarget(port, binding);
+  const target = fixtureUnheldTarget(base);
+  const candidate = await fixturePrepare(port, binding, target, [
+    ["new.txt", "new\n"],
+  ]);
+  assert.equal(
+    fixtureGit(fixtureScratch(fixture), "rev-parse", `${candidate}^`),
+    base.commit,
+  );
+  assert.deepEqual(
+    await port.promoteCandidate({
+      repository: binding,
+      permit: asCommitPermitId("permit-1"),
+      target,
+      candidate,
+    }),
+    { promoted: "Advanced" },
+  );
+  assert.equal(
+    fixtureGit(fixture.remote, "rev-parse", fixtureUnheldBranch),
+    candidate,
+  );
+  assert.equal(
+    fixtureGit(fixture.remote, "rev-parse", "refs/heads/main"),
+    base.commit,
+  );
+});
+
+test("a branch somebody else created under the candidate refuses the update", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const port = fixturePort(fixture);
+  const base = await fixtureTarget(port, binding);
+  const target = fixtureUnheldTarget(base);
+  const candidate = await fixturePrepare(port, binding, target, [
+    ["new.txt", "new\n"],
+  ]);
+  const theirs = fixtureCommit(fixture, "theirs.txt", "theirs\n", "theirs");
+  fixtureGit(fixture.remote, "update-ref", fixtureUnheldBranch, theirs);
+  assert.deepEqual(
+    await port.promoteCandidate({
+      repository: binding,
+      permit: asCommitPermitId("permit-1"),
+      target,
+      candidate,
+    }),
+    { promoted: "Rejected", observed: theirs },
+  );
+  assert.equal(
+    fixtureGit(fixture.remote, "rev-parse", fixtureUnheldBranch),
+    theirs,
+  );
+});
+
 test("a candidate built over a target that has moved is refused, and the ref does not move", async (t) => {
   const fixture = fixtureOpen(t);
   const binding = fixtureBinding(fixture.remote);
