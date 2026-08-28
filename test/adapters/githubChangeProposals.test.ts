@@ -30,6 +30,7 @@ import {
   asProposalRemoteIdentity,
   changeProposalRequest,
   proposalTitleCharsMax,
+  reconcileChangeProposal,
   type ChangeProposalEvidence,
   type ChangeProposalPort,
   type ChangeProposalRequest,
@@ -50,6 +51,10 @@ const fixtureHeadCommit = asGitObjectId("b".repeat(40));
 const fixtureBaseCommit = asGitObjectId("c".repeat(40));
 const fixtureRemote = "PR_kwDOnode17";
 const fixtureDisplayUrl = "https://github.com/kasofsk/chuggy/pull/17";
+
+/** Two commits no request names, so a case can tell an answered field from an echoed one. */
+const fixtureAnsweredHeadCommit = asGitObjectId("d".repeat(40));
+const fixtureAnsweredBaseCommit = asGitObjectId("e".repeat(40));
 
 /** One request whose body carries its own marker, which is what a read can conclude. */
 function fixtureRequest(
@@ -177,6 +182,29 @@ function fixtureRefusal(
   headers: Record<string, string> = {},
 ): Response {
   return new Response("{}", { status, headers });
+}
+
+/** Whether the body of one answer was given back, which a refused read owes the connection. */
+interface FixtureCancelled {
+  value: boolean;
+}
+
+/** One answer whose body records having been cancelled and is never drawn on unless it is read. */
+function fixtureWatchedAnswer(
+  text: string,
+  headers: Record<string, string>,
+  cancelled: FixtureCancelled,
+): Response {
+  const body = new ReadableStream<Uint8Array>({
+    pull: (controller) => {
+      controller.enqueue(new TextEncoder().encode(text));
+      controller.close();
+    },
+    cancel: () => {
+      cancelled.value = true;
+    },
+  });
+  return new Response(body, { status: 200, headers });
 }
 
 /** The evidence a forge answering with the fixture pull request stands for. */
@@ -426,4 +454,130 @@ test("a credential the composition will not hand over is answered without a requ
     { read: "Unavailable" },
   );
   assert.equal(denied.calls.length + unavailable.calls.length, 0);
+});
+
+test("evidence carries what the forge answered and never what the request asked", async () => {
+  const request = fixtureRequest();
+  const edited = `${request.marker}\n\nsomebody rewrote the case.`;
+  const cases = [
+    {
+      answered: {
+        head: { ref: "chuggy/handoff/other", sha: fixtureAnsweredHeadCommit },
+      },
+      evidence: {
+        head: {
+          ref: asGitRefName("refs/heads/chuggy/handoff/other"),
+          commit: fixtureAnsweredHeadCommit,
+        },
+      },
+      contradiction: "HeadMismatch",
+    },
+    {
+      answered: {
+        base: {
+          ref: "release",
+          sha: fixtureAnsweredBaseCommit,
+          repo: { full_name: "kasofsk/chuggy" },
+        },
+      },
+      evidence: {
+        base: {
+          ref: asGitRefName("refs/heads/release"),
+          commit: fixtureAnsweredBaseCommit,
+        },
+      },
+      contradiction: "BaseMismatch",
+    },
+    {
+      answered: { title: "Another title entirely", body: edited },
+      evidence: { title: "Another title entirely", body: edited },
+      contradiction: "MetadataMismatch",
+    },
+  ] as const;
+  for (const one of cases) {
+    const recorder = fixtureForge([
+      fixtureAnswer(200, [fixturePull(request, one.answered)]),
+    ]);
+    const read = await fixtureAdapter(recorder).readByMarker(request);
+    const answered = { ...fixtureEvidence(request), ...one.evidence };
+    assert.deepEqual(read, { read: "Found", evidence: answered });
+    assert.deepEqual(reconcileChangeProposal(request, read), {
+      reconciled: "Contradictory",
+      contradiction: one.contradiction,
+      evidence: answered,
+    });
+  }
+});
+
+test("a proposal the forge has closed or merged carries that standing", async () => {
+  const request = fixtureRequest();
+  const closed = fixtureForge([
+    fixtureAnswer(200, [
+      fixturePull(request, { state: "closed", merged_at: null }),
+    ]),
+  ]);
+  assert.deepEqual(await fixtureAdapter(closed).readByMarker(request), {
+    read: "Found",
+    evidence: { ...fixtureEvidence(request), status: "Closed" },
+  });
+  const merged = fixtureForge([
+    fixtureAnswer(200, [
+      fixturePull(request, {
+        state: "closed",
+        merged_at: "2026-08-28T09:00:00Z",
+      }),
+    ]),
+  ]);
+  assert.deepEqual(await fixtureAdapter(merged).readByMarker(request), {
+    read: "Found",
+    evidence: { ...fixtureEvidence(request), status: "Merged" },
+  });
+});
+
+test("a forge naming a delay is an outage under the status it also denies with", async () => {
+  const request = fixtureRequest();
+  const throttled = fixtureForge([
+    fixtureRefusal(403, { "retry-after": "60" }),
+    fixtureRefusal(403, { "retry-after": "60" }),
+  ]);
+  const adapter = fixtureAdapter(throttled);
+  assert.deepEqual(await adapter.create(request), { created: "Unavailable" });
+  assert.deepEqual(await adapter.readByMarker(request), {
+    read: "Unavailable",
+  });
+  const limited = fixtureForge([fixtureRefusal(429, { "retry-after": "60" })]);
+  assert.deepEqual(await fixtureAdapter(limited).create(request), {
+    created: "Unavailable",
+  });
+});
+
+test("a response declaring more bytes than the bound gives its body back", async () => {
+  const request = fixtureRequest();
+  const cancelled = { value: false };
+  const recorder = fixtureForge([
+    fixtureWatchedAnswer(
+      JSON.stringify(fixturePull(request)),
+      { "content-length": "9999" },
+      cancelled,
+    ),
+  ]);
+  assert.deepEqual(
+    await fixtureAdapter(recorder, "Credential", 64).create(request),
+    { created: "Ambiguous" },
+  );
+  assert.equal(cancelled.value, true);
+});
+
+test("a display URL this forge did not serve is not carried into evidence", async () => {
+  const request = fixtureRequest();
+  const recorder = fixtureForge([
+    fixtureAnswer(200, [
+      fixturePull(request, {
+        html_url: "https://elsewhere.invalid/kasofsk/chuggy/pull/17",
+      }),
+    ]),
+  ]);
+  const read = await fixtureAdapter(recorder).readByMarker(request);
+  assert.equal(read.read, "Found");
+  assert.equal(read.read === "Found" ? read.evidence.url : "unread", undefined);
 });
