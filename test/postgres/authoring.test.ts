@@ -9,6 +9,7 @@ import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { migration048 } from "../../src/adapters/postgres/schema/migrations/048-repository-configuration-version.ts";
 import {
   asCanonicalConfiguration,
+  canonicalConfigurationOf,
   asConfigurationRevisionId,
 } from "../../src/interpreter/authoring.ts";
 import {
@@ -877,6 +878,100 @@ test("release journals the retained draft only while its revision is current", a
       },
     ],
   );
+});
+
+/** The configuration a handing-off project pins, which no proposal may be opened under. */
+const handoffConfiguration = canonicalConfigurationOf({
+  ...(JSON.parse(postgresHarnessConfiguration) as Record<string, unknown>),
+  finalizationHandoff: {
+    version: 1,
+    mode: "DirectCommit",
+    repositories: {
+      work: { repository: "ledger-engine", targetRef: "refs/heads/release" },
+      handoff: {
+        repository: "platform-desires",
+        targetRef: "refs/heads/team-orange",
+      },
+    },
+    credentials: {
+      work: "ledger-release-writer",
+      handoff: "platform-request-writer",
+    },
+    renderer: {
+      identity: "ContainerBuildRequest",
+      version: 1,
+      parameters: {
+        targetImageRepository: "registry.example/ledger",
+        builderProfile: "rootless-multiarch",
+        platforms: ["linux/amd64"],
+      },
+    },
+    destinationPath: "builds/ledger/request.json",
+    outputBytesMax: 4096,
+  },
+});
+
+test("a brief that proposes a change refuses release against a handing-off configuration", async () => {
+  const fixture = await draftFixture(handoffConfiguration);
+  await harness.query(
+    `UPDATE draft_brief
+        SET finalization_mode='PullRequest',finalization_target='refs/heads/rt/landing'
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [fixture.partition.tenant, fixture.partition.project, fixture.draft.ticket],
+  );
+  const submission = releaseSubmission(fixture);
+  assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
+  const input = await harness.discovery.next(fixture.partition);
+  assert.ok(input !== undefined);
+  const lease = await postgresHarnessHeld(
+    harness.store,
+    fixture.partition,
+    "handoff-proposes",
+  );
+  const writer = postgresHarnessWriter(harness);
+
+  const result = await projectWriterDecide(
+    writer,
+    await projectWriterLoad(writer, lease),
+    input,
+  );
+
+  assert.equal(result.decided.decided, "Refused");
+  assert.deepEqual(
+    await harness.query(
+      "SELECT state,outcome_code FROM decision_input WHERE input_id=$1",
+      [submission.operation],
+    ),
+    [{ state: "Refused", outcome_code: "ConfigurationInvalid" }],
+  );
+  assert.deepEqual(
+    await harness.query(
+      "SELECT state FROM draft WHERE tenant=$1 AND ticket=$2",
+      [fixture.partition.tenant, fixture.draft.ticket],
+    ),
+    [{ state: "Draft" }],
+    "the draft is still editable, which is the point of refusing here",
+  );
+});
+
+test("the same handing-off configuration releases a brief that pushes", async () => {
+  const fixture = await draftFixture(handoffConfiguration);
+  const submission = releaseSubmission(fixture);
+  assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
+  const input = await harness.discovery.next(fixture.partition);
+  assert.ok(input !== undefined);
+  const lease = await postgresHarnessHeld(
+    harness.store,
+    fixture.partition,
+    "handoff-pushes",
+  );
+  const writer = postgresHarnessWriter(harness);
+  const result = await projectWriterDecide(
+    writer,
+    await projectWriterLoad(writer, lease),
+    input,
+  );
+  assert.equal(result.decided.decided, "Committed");
 });
 
 test("semantic configuration failure durably refuses release without an entry", async () => {

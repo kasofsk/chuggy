@@ -49,6 +49,16 @@
  * publication is the one exception, its destination being a repository the
  * ticket never worked in.
  *
+ * A PULL REQUEST MOVES THAT TARGET, AND ONLY FOR THE FINALIZATION THAT OPENS
+ * ONE. Under `RunFinalizer` a brief that proposes lands on the branch its work
+ * happened on, because that branch is the head the proposal is opened from and
+ * the reference its finalization names is the base. A handoff request narrows
+ * by that reference exactly as a push does: its promotion is into a repository
+ * the ticket never worked in and has nothing to do with the brief's mode. The
+ * pairing is refused where the two are written — a configuration that hands off
+ * will not release a brief that proposes — so this is a narrowing and not a
+ * decision about which of them wins.
+ *
  * A BRIEF NAMING BOTH IS READ TWICE, AND THE TWO READS DO DIFFERENT JOBS. The
  * branch the work happened on — the one `./executionSourceObservation.ts`
  * observed that work against — is the tree a candidate is built over and the
@@ -438,7 +448,8 @@ async function finalizerGatherBranches(
   );
   if (brief === undefined) return {};
   const finalization = brief.finalization;
-  const proposing = finalization?.mode === "PullRequest";
+  const proposing =
+    view.claim.kind === "RunFinalizer" && finalization?.mode === "PullRequest";
   const target = proposing
     ? brief.branch
     : (finalization?.target ?? brief.branch);

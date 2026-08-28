@@ -14,7 +14,10 @@ import { createHash } from "node:crypto";
 import { test } from "node:test";
 
 import { asTicketId } from "../../src/domain/ids.ts";
-import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
+import {
+  briefFinalizationModes,
+  type BriefFinalizationMode,
+} from "../../src/contract/rosters.ts";
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 import {
   asForgeBindingId,
@@ -1295,10 +1298,45 @@ test("a handoff promotion never proposes, whatever mode its ticket's brief names
     },
   ]);
   const forge = recordingForge(store);
-  const report = await passOver(proposingService(store, recordingGit(), forge));
+  const git = recordingGit();
+  const report = await passOver(proposingService(store, git, forge));
   assert.equal(report.conclusions, 1);
   assert.equal(report.proposals, 0);
   assert.deepEqual(forge.creates, []);
+  assert.equal(
+    git.observations[0]?.targetRef,
+    landingBranch,
+    "a handoff promotes onto the reference its brief targets, as it always did",
+  );
+});
+
+test("a handoff prepares onto the reference its brief targets whatever mode it names", async () => {
+  for (const mode of populated<BriefFinalizationMode>(
+    briefFinalizationModes,
+    "briefFinalizationModes",
+  )) {
+    const store = recordingStore([
+      {
+        ...preparableView("request-one"),
+        claim: {
+          ...preparableView("request-one").claim,
+          kind: "PromoteForHandoff",
+        },
+      },
+    ]);
+    const git = recordingGit();
+
+    await passOver({
+      ...serviceOf(store, git),
+      ticketBriefs: briefsOf(briefBranch, landingBranch, mode),
+    });
+
+    assert.equal(
+      store.attempts[0]?.target.ref,
+      landingBranch,
+      `${mode}: a handoff is promoted onto the reference its brief targets`,
+    );
+  }
 });
 
 test("a proposal already proved concludes though its base branch is gone", async () => {
