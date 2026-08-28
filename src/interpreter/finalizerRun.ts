@@ -140,6 +140,7 @@ import {
   reconcileChangeProposal,
   type ChangeProposalForges,
   type ChangeProposalRequest,
+  type ForgeBinding,
 } from "./changeProposal.ts";
 import {
   finalizationProposalBody,
@@ -148,6 +149,7 @@ import {
   type ChangeProposalResult,
   type FinalizationProposalGathered,
   type FinalizerProposalStore,
+  type StoredChangeProposal,
 } from "./finalizationProposal.ts";
 import {
   checkedFinalizerConfig,
@@ -175,6 +177,7 @@ import {
   type InputBundleReference,
   type ObservedTarget,
   type RepositoryBinding,
+  type RepositoryId,
   type TargetObserved,
   inputBundleReferencesMax,
   repositoryBindingNarrowed,
@@ -1110,17 +1113,46 @@ async function finalizerAwaitApproval(
 }
 
 /**
- * Everything the proposal step reads, gathered before it runs. The base is
- * observed here and nowhere else, because it is a third reference apart from
- * the branch the work happened on and the one the promotion landed; it is read
- * as itself rather than through the binding's fallback, so a base the remote
- * does not hold is unreadable instead of silently becoming the default branch.
+ * The request one stored row asked the forge for, rebuilt so that every later
+ * pass reconciles and concludes against what was actually sent. Nothing is
+ * observed for it: a proposal already opened is not re-derived from a brief and
+ * a remote that have both moved on since.
  */
-async function finalizerGatherProposal(
+function finalizerStoredProposal(
+  binding: ForgeBinding,
+  repository: RepositoryId,
+  stored: StoredChangeProposal,
+): FinalizationProposalGathered {
+  const { asked } = stored;
+  return {
+    gathered: "Request",
+    request: changeProposalRequestFromBranch({
+      binding,
+      repository,
+      request: asked.request,
+      headRef: asked.head.ref,
+      headCommit: asked.head.commit,
+      baseRef: asked.base.ref,
+      baseCommit: asked.base.commit,
+      title: asked.title,
+      body: asked.body,
+    }),
+    publication: stored.publication,
+  };
+}
+
+/**
+ * The request a proposal nobody has opened yet would ask for. This is the one
+ * place the base is observed, and it is read as itself rather than through the
+ * binding's fallback, so a base the remote does not hold is unreadable instead
+ * of silently becoming the default branch.
+ */
+async function finalizerOpeningProposal(
   service: FinalizerService,
   view: FinalizationView,
+  pinned: FinalizerCandidate,
+  binding: ForgeBinding,
 ): Promise<FinalizationProposalGathered> {
-  const pinned = finalizerCandidateOf(view);
   const brief = await service.ticketBriefs.brief(
     view.claim.partition,
     view.claim.ticket,
@@ -1131,8 +1163,6 @@ async function finalizerGatherProposal(
       "finalizer proposal: a proposal was authorized by no brief that opens one",
     );
   }
-  const binding = service.forges.bindingOf(pinned.repository.repository);
-  if (binding === undefined) return { gathered: "Unbound" };
   const observed = await service.git.observeTarget(
     repositoryBindingNarrowed(pinned.repository, finalization.target),
   );
@@ -1153,12 +1183,28 @@ async function finalizerGatherProposal(
       title: finalizationProposalTitle(view.claim.ticket, brief.intent),
       body: finalizationProposalBody(brief.intent, proposalMarkerOf(identity)),
     }),
-    publication: (await service.store.changeProposalPublication(
-      view.claim,
-    )) ?? {
-      reconciliations: 0,
-    },
+    publication: { reconciliations: 0 },
   };
+}
+
+/**
+ * Everything the proposal step reads, gathered before it runs. A row already
+ * there answers the whole of it, so a proposal that has been proved concludes
+ * without asking the remote anything — and a base branch somebody deleted after
+ * the proposal was opened holds nothing that was already settled.
+ */
+async function finalizerGatherProposal(
+  service: FinalizerService,
+  view: FinalizationView,
+): Promise<FinalizationProposalGathered> {
+  const pinned = finalizerCandidateOf(view);
+  const repository = pinned.repository.repository;
+  const binding = service.forges.bindingOf(repository);
+  if (binding === undefined) return { gathered: "Unbound" };
+  const stored = await service.store.changeProposal(view.claim);
+  return stored === undefined
+    ? finalizerOpeningProposal(service, view, pinned, binding)
+    : finalizerStoredProposal(binding, repository, stored);
 }
 
 /** Records one result against the open row, a refusal leaving the proposal where it stood. */

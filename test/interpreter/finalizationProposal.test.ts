@@ -172,8 +172,9 @@ test("a deployment binding no forge and an unreadable base are holds and not con
     finalizationProposalNext({ gathered: "BaseUnreadable" }, 2),
     {
       decide: "Hold",
-      hold: "TargetUnreadable",
+      hold: "ProposalBaseUnreadable",
     },
+    "the base a proposal opens into is named apart from the ref it landed on",
   );
 });
 

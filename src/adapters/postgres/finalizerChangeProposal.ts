@@ -42,6 +42,7 @@ import {
   allChangeProposalCreations,
   allChangeProposalReconciliations,
   allChangeProposalStatuses,
+  asChangeProposalRequestIdentity,
   asForgeBindingId,
   asProposalDisplayUrl,
   asProposalRemoteIdentity,
@@ -54,10 +55,12 @@ import {
   type ProposalMarker,
 } from "../../interpreter/changeProposal.ts";
 import type {
+  ChangeProposalAsked,
   ChangeProposalOpened,
   ChangeProposalRecord,
   ChangeProposalRecorded,
   ChangeProposalResult,
+  StoredChangeProposal,
 } from "../../interpreter/finalizationProposal.ts";
 import {
   asGitObjectId,
@@ -70,6 +73,13 @@ import { finalizerRowValue } from "./finalizerRows.ts";
 
 /** One stored proposal as the pure step reads it back. */
 interface ChangeProposalRow {
+  readonly proposal_request: string;
+  readonly head_ref: string;
+  readonly head_commit: string;
+  readonly base_ref: string;
+  readonly base_commit: string;
+  readonly title: string;
+  readonly body: string;
   readonly creation: string | null;
   readonly creation_contradiction: string | null;
   readonly creation_evidence: unknown;
@@ -232,27 +242,25 @@ function changeProposalReconciledOf(
   }
 }
 
-/**
- * Everything the pure step reads of one stored proposal, absent until one is
- * opened. A row carrying no creation result is a create that may have happened
- * and is read as an ambiguous one, which is the whole reason the row is written
- * before the forge is called: the answer it authorizes is a reading, never a
- * second create.
- */
-export async function finalizerChangeProposalPublication(
-  client: pg.PoolClient,
-  claim: FinalizationClaim,
-): Promise<ChangeProposalPublicationView | undefined> {
-  const found = await client.query<ChangeProposalRow>(
-    sql`SELECT creation, creation_contradiction, creation_evidence,
-            reconciliation, reconciliation_contradiction, reconciliation_evidence,
-            reconciliations::text AS reconciliations
-       FROM finalization_change_proposal
-      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
-        AND request = ${claim.request}`,
-  );
-  const row = found.rows[0];
-  if (row === undefined) return undefined;
+/** What the row says the forge was asked for, which every later pass rebuilds its request from. */
+function changeProposalAskedOf(row: ChangeProposalRow): ChangeProposalAsked {
+  return {
+    request: asChangeProposalRequestIdentity(row.proposal_request),
+    head: {
+      ref: asGitRefName(row.head_ref),
+      commit: asGitObjectId(row.head_commit),
+    },
+    base: {
+      ref: asGitRefName(row.base_ref),
+      commit: asGitObjectId(row.base_commit),
+    },
+    title: row.title,
+    body: row.body,
+  };
+}
+
+/** What the row says has come back, a row with no creation result being an ambiguous create. */
+function publicationOf(row: ChangeProposalRow): ChangeProposalPublicationView {
   const creation = row.creation;
   const reconciliation = row.reconciliation;
   return {
@@ -273,6 +281,32 @@ export async function finalizerChangeProposalPublication(
       "change proposal reconciliations",
     ),
   };
+}
+
+/**
+ * Everything the pure step reads of one stored proposal, absent until one is
+ * opened. A row carrying no creation result is a create that may have happened
+ * and is read as an ambiguous one, which is the whole reason the row is written
+ * before the forge is called: the answer it authorizes is a reading, never a
+ * second create.
+ */
+export async function finalizerChangeProposalRead(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+): Promise<StoredChangeProposal | undefined> {
+  const found = await client.query<ChangeProposalRow>(
+    sql`SELECT proposal_request, head_ref, head_commit, base_ref, base_commit,
+            title, body,
+            creation, creation_contradiction, creation_evidence,
+            reconciliation, reconciliation_contradiction, reconciliation_evidence,
+            reconciliations::text AS reconciliations
+       FROM finalization_change_proposal
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}`,
+  );
+  const row = found.rows[0];
+  if (row === undefined) return undefined;
+  return { asked: changeProposalAskedOf(row), publication: publicationOf(row) };
 }
 
 /**

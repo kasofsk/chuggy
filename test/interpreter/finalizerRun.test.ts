@@ -30,6 +30,7 @@ import {
   type ChangeProposalRequest,
 } from "../../src/interpreter/changeProposal.ts";
 import type {
+  ChangeProposalAsked,
   ChangeProposalRecord,
   ChangeProposalResult,
   FinalizerProposalStore,
@@ -217,6 +218,8 @@ interface FinalizerRecorder
   asked: ApprovalAsked;
   granted?: PermitGranted;
   publication?: ChangeProposalPublicationView;
+  /** What the row says the forge was asked for, written when the row is opened. */
+  askedProposal?: ChangeProposalAsked;
   /** Whether a creation result has been recorded, which a row admits exactly once. */
   createdRecorded?: boolean;
   /** Whether every result is refused, which is what the pass sees of a crash before one lands. */
@@ -256,12 +259,28 @@ function recordingProposals(
   store: () => FinalizerRecorder,
 ): FinalizerProposalStore {
   return {
-    changeProposalPublication: () => Promise.resolve(store().publication),
+    changeProposal: () => {
+      const own = store();
+      const publication = own.publication;
+      const asked = own.askedProposal;
+      return Promise.resolve(
+        publication === undefined || asked === undefined
+          ? undefined
+          : { asked, publication },
+      );
+    },
     openChangeProposal: (record) => {
       const own = store();
       if (own.publication !== undefined)
         return Promise.resolve({ opened: "Refused" });
       own.opened.push(record);
+      own.askedProposal = {
+        request: record.request.request,
+        head: record.request.head,
+        base: record.request.base,
+        title: record.request.title,
+        body: record.request.body,
+      };
       own.publication = {
         creation: { created: "Ambiguous" },
         reconciliations: 0,
@@ -1280,6 +1299,27 @@ test("a handoff promotion never proposes, whatever mode its ticket's brief names
   assert.equal(report.conclusions, 1);
   assert.equal(report.proposals, 0);
   assert.deepEqual(forge.creates, []);
+});
+
+test("a proposal already proved concludes though its base branch is gone", async () => {
+  const store = recordingStore([proposedView("request-one")]);
+  const forge = recordingForge(store);
+  forge.created = "Created";
+  const service = proposingService(store, recordingGit(), forge);
+
+  await passOver(service);
+
+  const gone = gitWithoutBranch(landingBranch);
+  const concluded = await passOver({ ...service, git: gone });
+
+  assert.equal(concluded.conclusions, 1);
+  assert.equal(concluded.holds, 0);
+  assert.deepEqual(
+    gone.observations.filter((each) => each.targetRef === landingBranch),
+    [],
+    "a settled proposal asks the remote nothing about the base it opened into",
+  );
+  assert.deepEqual(store.submitted, ["request-one"]);
 });
 
 test("a base the remote does not hold holds the proposal and never creates one", async () => {

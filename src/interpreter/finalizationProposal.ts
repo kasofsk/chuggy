@@ -11,11 +11,13 @@
  * returned; who merges that proposal, and when, is outside this machine
  * entirely, so `model/` sees the same success it always did.
  *
- * THE BASE IS OBSERVED AND NEVER CREATED. A proposal is opened into a branch,
- * and a branch the remote does not hold is not one a proposal can name — so an
- * unreadable base is a hold, and creating it is nobody's job here: the
- * promotion creates the branch the work lands on, which is the head, and the
- * base is somebody else's line of development.
+ * THE BASE IS OBSERVED ONCE, AND ONLY TO ASK FOR THE PROPOSAL. A proposal is
+ * opened into a branch, and a branch the remote does not hold is not one a
+ * proposal can name — so an unreadable base holds the opening, and creating it
+ * is nobody's job here: the promotion creates the branch the work lands on,
+ * which is the head, and the base is somebody else's line of development. Once
+ * the row exists the request is rebuilt from it, so a proposal already proved
+ * concludes whatever became of the branch it was opened into afterwards.
  *
  * A HANDOFF NEVER PROPOSES. A handoff promotion lands in a repository the ticket
  * never worked in and carries its own publication afterwards, so the mode a
@@ -23,8 +25,9 @@
  * has. This step is reached only under `RunFinalizer`.
  *
  * THIS STEP AWAITS NOTHING AND REACHES NO FORGE. The request, the durable row
- * and the base's observation are gathered before it runs, so what it reads of a
- * proposal is what was written down about one and never what a forge says now.
+ * and any observation they needed are gathered before it runs, so what it reads
+ * of a proposal is what was written down about one and never what a forge says
+ * now.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -37,6 +40,7 @@ import {
   type ChangeProposalPublicationView,
   type ChangeProposalReconciled,
   type ChangeProposalRequest,
+  type ChangeProposalRequestIdentity,
   type ProposalMarker,
 } from "./changeProposal.ts";
 import type { CommitPermitId, FinalizationClaim } from "./finalizer.ts";
@@ -106,7 +110,7 @@ export function finalizationProposalNext(
   if (gathered.gathered === "Unbound")
     return { decide: "Hold", hold: "ProposalDenied" };
   if (gathered.gathered === "BaseUnreadable")
-    return { decide: "Hold", hold: "TargetUnreadable" };
+    return { decide: "Hold", hold: "ProposalBaseUnreadable" };
   const { request } = gathered;
   const next = changeProposalPublicationNext(
     request,
@@ -202,16 +206,36 @@ export type ChangeProposalRecorded =
   { readonly recorded: "Result" } | { readonly recorded: "Refused" };
 
 /**
+ * What one stored row says the forge was asked for. It is what the request is
+ * rebuilt from on every later pass, so a proposal is reconciled and concluded
+ * against what was actually sent rather than against what the brief and the
+ * remote would produce now.
+ */
+export interface ChangeProposalAsked {
+  readonly request: ChangeProposalRequestIdentity;
+  readonly head: ChangeProposalRequest["head"];
+  readonly base: ChangeProposalRequest["base"];
+  readonly title: string;
+  readonly body: string;
+}
+
+/** One stored proposal whole: what it asked the forge for, and what has come back. */
+export interface StoredChangeProposal {
+  readonly asked: ChangeProposalAsked;
+  readonly publication: ChangeProposalPublicationView;
+}
+
+/**
  * The durable rows one change proposal leaves, which the finalizer role reaches
  * and nothing else does. The row is written before the create is called and its
  * creation result exactly once afterwards, so a crash between the two reads back
  * as a create that may have happened.
  */
 export interface FinalizerProposalStore {
-  /** What the row says one finalization's proposal has come to, absent until one is opened. */
-  changeProposalPublication(
+  /** What one finalization's proposal asked for and has come to, absent until one is opened. */
+  changeProposal(
     claim: FinalizationClaim,
-  ): Promise<ChangeProposalPublicationView | undefined>;
+  ): Promise<StoredChangeProposal | undefined>;
 
   /** Writes the row that says a create may have happened, before any create is called. */
   openChangeProposal(

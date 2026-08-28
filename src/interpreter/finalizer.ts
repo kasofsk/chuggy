@@ -553,6 +553,7 @@ export type FinalizationHoldKind =
   | "ProposalRefused"
   | "ProposalUnavailable"
   | "ProposalDenied"
+  | "ProposalBaseUnreadable"
   | "ProposalReconciliationsExhausted";
 
 /** Every hold kind, so a suite and a database CHECK iterate rather than restate. */
@@ -566,6 +567,7 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "ProposalRefused",
   "ProposalUnavailable",
   "ProposalDenied",
+  "ProposalBaseUnreadable",
   "ProposalReconciliationsExhausted",
 ];
 
