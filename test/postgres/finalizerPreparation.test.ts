@@ -58,6 +58,7 @@ import {
   finalizerProject,
   finalizerRacingPort,
   finalizerSpawnTasks,
+  finalizerRemoteAttempt,
   finalizerRemoteCommit,
   finalizerRemotePort,
   finalizerRigOpen,
@@ -270,6 +271,57 @@ test("a brief branch the remote does not hold is prepared over the default and c
     finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main"),
     untouched,
   );
+});
+
+/**
+ * The one path where the base is fetched rather than already held: a worker
+ * that pushed a branch declares a source, so the preparation fetches that
+ * attempt's ref and nothing else — and a default branch that moved after the
+ * worker started is a commit the integration must go and get. Under a brief
+ * branch nobody holds, the ref that commit is asked for by is the only thing
+ * standing between the ticket and a hold it repeats every pass.
+ */
+test("a source handoff for an unheld brief branch fetches the base the default moved to", async () => {
+  const { project, remote, work } = await finalizerSubject(
+    rig,
+    "unheldsource",
+    [],
+  );
+  const base = finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main");
+  const attemptRef = `refs/heads/chuggy/tickets/${String(project.ticket)}/attempts/one`;
+  const worked = finalizerRemoteAttempt(
+    remote,
+    "worker.txt",
+    "worker\n",
+    attemptRef,
+  );
+  await finalizerDeclareSource(rig, project, work, attemptRef, worked, base);
+  const moved = finalizerRemoteCommit(remote, "moved.txt", "moved\n", "moved");
+  await finalizerBriefBranch(
+    rig,
+    project.partition,
+    project.ticket,
+    unheldBranch,
+  );
+
+  const report = await finalizerPassOnce(
+    rig,
+    project,
+    finalizerRemotePort(rig),
+    "unheldsource",
+  );
+
+  assert.equal(report.preparations, 1);
+  assert.equal(report.holds, 0);
+  const written = (await attemptsOf(project))[0];
+  assert.equal(written?.outcome, "Prepared");
+  assert.equal(written?.target_ref, unheldBranch);
+  assert.equal(
+    written?.target_commit,
+    moved,
+    "the base is the commit the default moved to, which no fetched ref held",
+  );
+  assert.notEqual(written?.candidate_commit, worked);
 });
 
 test("a branch created before the update lands refuses it, and the next pass prepares against it", async () => {

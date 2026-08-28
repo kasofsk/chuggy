@@ -245,6 +245,34 @@ export function finalizerRemoteCommit(
   return finalizerGitVerb(remote.seed, "rev-parse", "HEAD");
 }
 
+/**
+ * One worker's published attempt: a commit off the seed's current tip, pushed
+ * to a ref of its own. It is what a source handoff declares, and the default
+ * branch never holds it.
+ */
+export function finalizerRemoteAttempt(
+  remote: FinalizerRemote,
+  path: string,
+  content: string,
+  ref: string,
+): string {
+  finalizerGitVerb(remote.seed, "checkout", "-q", "-B", "attempt");
+  writeFileSync(join(remote.seed, path), content);
+  finalizerGitVerb(remote.seed, "add", "-A");
+  finalizerGitVerb(
+    remote.seed,
+    "-c",
+    "commit.gpgsign=false",
+    "commit",
+    "-qm",
+    path,
+  );
+  const commit = finalizerGitVerb(remote.seed, "rev-parse", "HEAD");
+  finalizerGitVerb(remote.seed, "push", "-q", remote.origin, `HEAD:${ref}`);
+  finalizerGitVerb(remote.seed, "checkout", "-q", "main");
+  return commit;
+}
+
 /** A bare origin with one commit on `main`, and the clone a case pushes through. */
 export function finalizerRemoteOpen(
   rig: FinalizerRig,
@@ -1174,7 +1202,8 @@ export async function finalizerSpawnTasks(
  * The immutable Git candidate one passed work declared, which is the handoff a
  * worker leaves when it pushed a branch rather than files. The base it names is
  * the base it was told to expect, because a row disagreeing with itself is one
- * the schema refuses.
+ * the schema refuses; a case whose source is really prepared names the commit
+ * its attempt descends from, and one that never reaches Git names none.
  */
 export async function finalizerDeclareSource(
   rig: FinalizerRig,
@@ -1182,8 +1211,9 @@ export async function finalizerDeclareSource(
   work: FinalizerWork,
   ref: string,
   commit: string,
+  declared?: string,
 ): Promise<void> {
-  const base = finalizerCommit();
+  const base = declared ?? finalizerCommit();
   await rig.harness.query(
     `INSERT INTO execution_result_source
        (tenant, project, manifest, repository, ref, commit, base, expected_base)
