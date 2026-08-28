@@ -73,12 +73,8 @@ import {
 } from "../../src/adapters/artifacts/artifactKey.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
-import {
-  forgeBindingOf,
-  type ChangeProposalForges,
-  type ChangeProposalPort,
-  type ForgeBinding,
-} from "../../src/interpreter/changeProposal.ts";
+import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
+import type { ChangeProposalForges } from "../../src/interpreter/changeProposal.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import { gitPromotion } from "../../src/adapters/git/gitPromotion.ts";
 import {
@@ -142,6 +138,12 @@ import {
   postgresHarnessWriter,
   type PostgresHarness,
 } from "./harness.ts";
+
+/** What a deployment binding no forge answers with, which is what every pushing case needs. */
+const finalizerNoForges: ChangeProposalForges = {
+  selector: { select: () => undefined },
+  bindingOf: () => undefined,
+};
 
 /** A pool whose every session runs as the finalizer's own role. */
 export function finalizerRolePool(): pg.Pool {
@@ -367,9 +369,10 @@ export function finalizerPassOnce(
   project: FinalizerProject,
   git: GitPromotionPort,
   label: string,
+  forges?: ChangeProposalForges,
 ): Promise<FinalizerPassReport> {
   return finalizerPass(
-    finalizerService(rig, git),
+    finalizerService(rig, git, silentFinalizerTelemetry, forges),
     asFinalizerOwnerId(`owner-${label}`),
     asRecoveryEpoch(project.epoch),
   );
@@ -687,11 +690,12 @@ export async function finalizerBriefFinalizationTarget(
   partition: Partition,
   ticket: number,
   target: string,
+  mode: BriefFinalizationMode = "Push",
 ): Promise<void> {
   const updated = await rig.harness.query(
-    `UPDATE draft_brief SET finalization_target=$4
+    `UPDATE draft_brief SET finalization_target=$4, finalization_mode=$5
       WHERE tenant=$1 AND project=$2 AND ticket=$3 RETURNING ticket`,
-    [partition.tenant, partition.project, ticket, target],
+    [partition.tenant, partition.project, ticket, target, mode],
   );
   if (updated.length !== 1) {
     throw new Error("finalizer harness: the ticket carries no brief");
@@ -940,34 +944,6 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
   return fake;
 }
 
-/**
- * The forges a case binds and the adapter each answers with. A case naming none
- * is a deployment that opens no change proposal, which is what every suite
- * about pushing needs the finalizer to be.
- */
-export function finalizerForges(
-  bound: readonly {
-    readonly binding: ForgeBinding;
-    readonly repositoryHost: string;
-    readonly port: ChangeProposalPort;
-  }[],
-): ChangeProposalForges {
-  const adapters = new Map(
-    bound.map((each) => [each.binding.forge as string, each.port]),
-  );
-  return {
-    selector: { select: (forge) => adapters.get(forge) },
-    bindingOf: (repository) =>
-      forgeBindingOf(
-        bound.map((each) => ({
-          binding: each.binding,
-          repositoryHost: each.repositoryHost,
-        })),
-        repository,
-      ),
-  };
-}
-
 /** The identities a preparation mints, drawn per call so no two cases share one. */
 export function finalizerIdentities(): FinalizerIdentityFactory {
   return {
@@ -1000,7 +976,7 @@ export function finalizerService(
   return {
     store: postgresFinalizer(rig.pool),
     git,
-    forges: forges ?? finalizerForges([]),
+    forges: forges ?? finalizerNoForges,
     ticketBriefs: postgresTicketBrief(rig.pool),
     handoffs: artifacts,
     artifacts,

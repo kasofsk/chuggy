@@ -14,8 +14,26 @@ import { createHash } from "node:crypto";
 import { test } from "node:test";
 
 import { asTicketId } from "../../src/domain/ids.ts";
+import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
-import type { ChangeProposalForges } from "../../src/interpreter/changeProposal.ts";
+import {
+  asForgeBindingId,
+  asForgeCredentialReference,
+  asProposalDisplayUrl,
+  asProposalRemoteIdentity,
+  type ChangeProposalCreated,
+  type ChangeProposalEvidence,
+  type ChangeProposalForges,
+  type ChangeProposalPort,
+  type ChangeProposalPublicationView,
+  type ChangeProposalRead,
+  type ChangeProposalRequest,
+} from "../../src/interpreter/changeProposal.ts";
+import type {
+  ChangeProposalRecord,
+  ChangeProposalResult,
+  FinalizerProposalStore,
+} from "../../src/interpreter/finalizationProposal.ts";
 import {
   allClosingLifecycles,
   asCommitPermitId,
@@ -184,16 +202,20 @@ function permitOf(request: string): CommitPermit {
 }
 
 /** What one fixture store hands out and what it was asked to write. */
-interface FinalizerRecorder extends FinalizerStore, FinalizerPreparationStore {
+interface FinalizerRecorder
+  extends FinalizerStore, FinalizerPreparationStore, FinalizerProposalStore {
   readonly grants: PermitRequest[];
   readonly readings: ReconciliationRecord[];
   readonly settled: string[];
   readonly submitted: string[];
   readonly attempts: AttemptRecord[];
   readonly asks: ApprovalAsk[];
+  readonly opened: ChangeProposalRecord[];
+  readonly results: ChangeProposalResult[];
   gathering: HandoffGathering;
   asked: ApprovalAsked;
   granted?: PermitGranted;
+  publication?: ChangeProposalPublicationView;
 }
 
 /** One passed work execution every preparation fixture reads its revision from. */
@@ -230,6 +252,29 @@ function recordingStore(
     submitted: [],
     attempts: [],
     asks: [],
+    opened: [],
+    results: [],
+    changeProposalPublication: () => Promise.resolve(own.publication),
+    openChangeProposal: (record) => {
+      if (own.publication !== undefined)
+        return Promise.resolve({ opened: "Refused" });
+      own.opened.push(record);
+      own.publication = { reconciliations: 0 };
+      return Promise.resolve({ opened: "Opened" });
+    },
+    recordChangeProposal: (record) => {
+      own.results.push(record);
+      const held = own.publication ?? { reconciliations: 0 };
+      own.publication =
+        record.result.records === "Creation"
+          ? { ...held, creation: record.result.created }
+          : {
+              ...held,
+              reconciliation: record.result.reconciled,
+              reconciliations: held.reconciliations + 1,
+            };
+      return Promise.resolve({ recorded: "Result" });
+    },
     gathering: {
       work: [passedWork],
       artifacts: [handoffOf("one.txt", "one")],
@@ -428,7 +473,11 @@ function promotableView(request: string): FinalizationView {
  * one, the target its finalization lands on. No brief at all when it names
  * neither.
  */
-function briefsOf(branch?: string, target?: string): TicketBriefPort {
+function briefsOf(
+  branch?: string,
+  target?: string,
+  mode: BriefFinalizationMode = "Push",
+): TicketBriefPort {
   return {
     brief: () =>
       Promise.resolve(
@@ -441,10 +490,7 @@ function briefsOf(branch?: string, target?: string): TicketBriefPort {
               ...(target === undefined
                 ? {}
                 : {
-                    finalization: asBriefFinalization({
-                      mode: "Push",
-                      target,
-                    }),
+                    finalization: asBriefFinalization({ mode, target }),
                   }),
             },
       ),
@@ -452,11 +498,88 @@ function briefsOf(branch?: string, target?: string): TicketBriefPort {
 }
 
 /** The forges a case binds, none at all being what a deployment landing every ticket by pushing names. */
-function forgesOf(): ChangeProposalForges {
+function forgesOf(port?: ChangeProposalPort): ChangeProposalForges {
   return {
-    selector: { select: () => undefined },
-    bindingOf: () => undefined,
+    selector: { select: () => port },
+    bindingOf: () =>
+      port === undefined
+        ? undefined
+        : {
+            forge: asForgeBindingId("forge-run"),
+            credential: asForgeCredentialReference("forge-run-proposals"),
+          },
   };
+}
+
+/** What one fixture forge was asked for, and what it was told to answer. */
+interface ForgeRecorder extends ChangeProposalPort {
+  readonly creates: ChangeProposalRequest[];
+  readonly reads: ChangeProposalRequest[];
+  /** Whether the row saying a create may have happened was already there when it was called. */
+  readonly openedBeforeCreate: boolean[];
+  created: ChangeProposalCreated["created"];
+  read: ChangeProposalRead["read"];
+}
+
+/** The evidence the forge answers a request with, which is that request's own fields. */
+function forgeEvidence(
+  request: ChangeProposalRequest,
+  overrides: Partial<ChangeProposalEvidence> = {},
+): ChangeProposalEvidence {
+  return {
+    identity: {
+      forge: request.binding.forge,
+      remote: asProposalRemoteIdentity("proposal-run"),
+    },
+    repository: request.repository,
+    marker: request.marker,
+    head: request.head,
+    base: request.base,
+    title: request.title,
+    body: request.body,
+    status: "Open",
+    url: asProposalDisplayUrl("https://forge.invalid/proposals/1"),
+    ...overrides,
+  };
+}
+
+/**
+ * A forge that records what it was asked for, and reads the store as it is
+ * called: the row saying a create may have happened must already be there when
+ * `create` runs, and this is what sees whether it was.
+ */
+function recordingForge(store: FinalizerRecorder): ForgeRecorder {
+  const own: ForgeRecorder = {
+    creates: [],
+    reads: [],
+    openedBeforeCreate: [],
+    created: "Ambiguous",
+    read: "Absent",
+    create: (request) => {
+      own.creates.push(request);
+      own.openedBeforeCreate.push(store.opened.length > 0);
+      const created = own.created;
+      if (created === "Created" || created === "AlreadyExists")
+        return Promise.resolve({ created, evidence: forgeEvidence(request) });
+      if (created === "Contradictory")
+        return Promise.resolve({
+          created,
+          contradiction: "Closed",
+          evidence: forgeEvidence(request, { status: "Closed" }),
+        });
+      return Promise.resolve({ created });
+    },
+    readByMarker: (request) => {
+      own.reads.push(request);
+      const read = own.read;
+      return Promise.resolve(
+        read === "Found"
+          ? { read, evidence: forgeEvidence(request) }
+          : { read },
+      );
+    },
+  };
+  return own;
 }
 
 /** The service a case drives, over the ceilings it names. */
@@ -857,6 +980,201 @@ test("the promotion pushes the branch the brief names and never the binding defa
     git.promotions.map((each) => each.target.ref),
     [briefBranch],
   );
+});
+
+/** One view whose candidate is promoted and whose brief lands it by opening a proposal. */
+function proposedView(request: string): FinalizationView {
+  return {
+    ...promotableView(request),
+    finalizationMode: "PullRequest",
+    permit: { ...permitOf(request), state: "Concluded" },
+    attempt: {
+      ...attemptOf(request),
+      target: {
+        ref: asGitRefName(briefBranch),
+        commit: asGitObjectId(commitOf("a")),
+      },
+    },
+    reconciliation: {
+      permit: asCommitPermitId(`permit-${request}`),
+      candidate: asGitObjectId(commitOf("c")),
+      target: asGitRefName(briefBranch),
+      verdict: "Promoted",
+      observed: asGitObjectId(commitOf("c")),
+    },
+  };
+}
+
+/** The service every proposal case drives: the ticket's brief, and the forge it is bound to. */
+function proposingService(
+  store: FinalizerRecorder,
+  git: GitPromotionPort,
+  forge: ForgeRecorder | undefined,
+  bounds: Partial<typeof finalizerDefaults> = {},
+): FinalizerService {
+  return {
+    ...serviceOf(store, git, bounds),
+    forges: forgesOf(forge),
+    ticketBriefs: briefsOf(briefBranch, landingBranch, "PullRequest"),
+  };
+}
+
+test("a promoted candidate whose brief proposes opens one from its branch into its target", async () => {
+  const store = recordingStore([proposedView("request-one")]);
+  const forge = recordingForge(store);
+  forge.created = "Created";
+  const service = proposingService(store, recordingGit(), forge);
+
+  const opening = await passOver(service);
+
+  assert.equal(opening.proposals, 1);
+  assert.equal(opening.conclusions, 0, "a create is not yet a proved proposal");
+  assert.deepEqual(
+    forge.openedBeforeCreate,
+    [true],
+    "the row saying a create may have happened was written before it was called",
+  );
+  assert.equal(forge.creates[0]?.head.ref, briefBranch);
+  assert.equal(forge.creates[0]?.head.commit, commitOf("c"));
+  assert.equal(forge.creates[0]?.base.ref, landingBranch);
+  assert.deepEqual(store.opened[0]?.request, forge.creates[0]);
+  assert.equal(store.results[0]?.result.records, "Creation");
+  assert.equal(
+    forge.creates[0]?.body.includes(forge.creates[0].marker),
+    true,
+    "a body without its marker is one no read could conclude",
+  );
+  assert.equal(
+    forge.creates[0]?.title,
+    "ticket 1: carry the ticket's own branch",
+  );
+
+  const proved = await passOver(service);
+
+  assert.equal(proved.conclusions, 1);
+  assert.equal(proved.proposals, 0, "a proved proposal spends no forge act");
+  assert.equal(forge.creates.length, 1, "no second create was authorized");
+  assert.deepEqual(forge.reads, []);
+  assert.deepEqual(store.submitted, ["request-one"]);
+});
+
+test("a create that may have happened is read back, and the reading is what concludes", async () => {
+  const store = recordingStore([proposedView("request-one")]);
+  const forge = recordingForge(store);
+  const service = proposingService(store, recordingGit(), forge);
+
+  await passOver(service);
+  forge.read = "Found";
+  const reading = await passOver(service);
+
+  assert.equal(forge.creates.length, 1, "no second create was authorized");
+  assert.equal(forge.reads.length, 1);
+  assert.equal(reading.proposals, 1);
+  assert.equal(reading.conclusions, 0);
+  assert.equal(store.results[1]?.result.records, "Reconciliation");
+
+  const proved = await passOver(service);
+
+  assert.equal(proved.conclusions, 1);
+  assert.equal(forge.reads.length, 1, "a proved proposal is not read again");
+  assert.deepEqual(store.submitted, ["request-one"]);
+});
+
+test("a proposal nothing can find within its bound is held and never created again", async () => {
+  const store = recordingStore([proposedView("request-one")]);
+  const forge = recordingForge(store);
+  const service = proposingService(store, recordingGit(), forge, {
+    proposalReconciliationsMax: 2,
+  });
+
+  await passOver(service);
+  for (let reading = 0; reading < 2; reading += 1) await passOver(service);
+  const exhausted = await passOver(service);
+
+  assert.equal(forge.creates.length, 1);
+  assert.equal(forge.reads.length, 2);
+  assert.equal(exhausted.holds, 1);
+  assert.equal(exhausted.conclusions, 0);
+});
+
+test("a proposal the forge says stands against another change is refused and held", async () => {
+  const store = recordingStore([proposedView("request-one")]);
+  const forge = recordingForge(store);
+  forge.created = "Contradictory";
+  const service = proposingService(store, recordingGit(), forge);
+
+  await passOver(service);
+  const refused = await passOver(service);
+
+  assert.equal(refused.holds, 1);
+  assert.equal(refused.conclusions, 0);
+  assert.equal(forge.creates.length, 1);
+});
+
+test("a pass opens no more proposals than its ceiling admits", async () => {
+  const store = recordingStore([
+    proposedView("request-one"),
+    proposedView("request-two"),
+  ]);
+  const forge = recordingForge(store);
+  const report = await passOver(
+    proposingService(store, recordingGit(), forge, { proposalsPerPassMax: 1 }),
+  );
+  assert.equal(report.proposals, 1);
+  assert.equal(forge.creates.length, 1);
+  assert.equal(report.holds, 1);
+});
+
+test("a brief that pushes reaches no forge however the deployment is bound", async () => {
+  const store = recordingStore([
+    { ...proposedView("request-one"), finalizationMode: "Push" },
+  ]);
+  const forge = recordingForge(store);
+  const report = await passOver({
+    ...proposingService(store, recordingGit(), forge),
+    ticketBriefs: briefsOf(briefBranch, landingBranch),
+  });
+  assert.equal(report.conclusions, 1);
+  assert.equal(report.proposals, 0);
+  assert.deepEqual(forge.creates, []);
+  assert.deepEqual(store.opened, []);
+});
+
+test("a handoff promotion never proposes, whatever mode its ticket's brief names", async () => {
+  const store = recordingStore([
+    {
+      ...proposedView("request-one"),
+      claim: {
+        ...proposedView("request-one").claim,
+        kind: "PromoteForHandoff",
+      },
+    },
+  ]);
+  const forge = recordingForge(store);
+  const report = await passOver(proposingService(store, recordingGit(), forge));
+  assert.equal(report.conclusions, 1);
+  assert.equal(report.proposals, 0);
+  assert.deepEqual(forge.creates, []);
+});
+
+test("a base the remote does not hold holds the proposal and never creates one", async () => {
+  const store = recordingStore([proposedView("request-one")]);
+  const git = gitWithoutBranch(landingBranch);
+  const forge = recordingForge(store);
+  const report = await passOver(proposingService(store, git, forge));
+  assert.equal(report.holds, 1);
+  assert.deepEqual(forge.creates, []);
+  assert.deepEqual(store.opened, []);
+});
+
+test("a repository this deployment binds no forge for holds rather than crashing", async () => {
+  const store = recordingStore([proposedView("request-one")]);
+  const report = await passOver(
+    proposingService(store, recordingGit(), undefined),
+  );
+  assert.equal(report.holds, 1);
+  assert.equal(report.conclusions, 0);
+  assert.deepEqual(store.opened, []);
 });
 
 test("a source handoff is verified from Git and integrated without reading artifact bytes", async () => {

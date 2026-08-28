@@ -48,6 +48,7 @@ const added = [
   "commit_permit",
   "finalization_reconciliation",
   "finalization_request_configuration",
+  "finalization_change_proposal",
 ] as const;
 
 /**
@@ -359,6 +360,18 @@ test("the finalizer's write surface is exactly the columns its moves need", asyn
           "approval_required,attempt,attempt_digest,candidate_commit,configuration_digest,configuration_revision,conflict_manifest,conflict_manifest_digest,failure_kind,input_bundle,input_bundle_digest,outcome,prepared_at,project,repository,request,strategy,target_commit,target_ref,tenant,ticket",
       },
       {
+        table_name: "finalization_change_proposal",
+        privilege_type: "INSERT",
+        columns:
+          "base_commit,base_ref,body,creation,creation_contradiction,creation_evidence,creation_url,head_commit,head_ref,opened_at,permit,project,proposal_request,reconciliation,reconciliation_contradiction,reconciliation_evidence,reconciliations,request,tenant,title",
+      },
+      {
+        table_name: "finalization_change_proposal",
+        privilege_type: "UPDATE",
+        columns:
+          "creation,creation_contradiction,creation_evidence,creation_url,reconciliation,reconciliation_contradiction,reconciliation_evidence,reconciliations",
+      },
+      {
         table_name: "finalization_reconciliation",
         privilege_type: "INSERT",
         columns:
@@ -410,6 +423,7 @@ test("the finalizer's read surface is exactly the relations its view is gathered
       "execution_result_artifact",
       "execution_result_source",
       "finalization_attempt",
+      "finalization_change_proposal",
       "finalization_reconciliation",
       "finalization_request",
       "finalization_request_configuration",
