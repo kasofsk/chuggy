@@ -33,6 +33,12 @@
  * marker is one no read could ever conclude, and is refused before a proposal
  * nothing could recognise is asked for.
  *
+ * A REQUEST THIS FORGE COULD NEVER BE ASKED IS `Denied`. A remote that is no
+ * repository here, a head outside the branch namespace and a body missing its
+ * own marker are each settled for as long as the composition stands, so they
+ * take the one answer that holds the publication for an operator immediately
+ * rather than spending reconciliations re-asking a question with no answer.
+ *
  * NOTHING HERE READS AN ENVIRONMENT, a clock or a global. The host, the bounds
  * and `fetch` itself are all given at construction.
  */
@@ -104,6 +110,9 @@ const githubRateLimitRemainingHeader = "x-ratelimit-remaining";
 
 /** The value that header takes when the allowance is gone. */
 const githubRateLimitSpent = "0";
+
+/** The header a forge names a throttle in, which its secondary limits answer with instead. */
+const githubRetryAfterHeader = "retry-after";
 
 /** The statuses that are the forge refusing this caller rather than failing. */
 const githubDeniedStatuses: readonly number[] = [401, 403, 404];
@@ -250,22 +259,34 @@ function githubChangeProposalsHeaders(
   };
 }
 
-/** What a refusal was, a spent allowance kept apart from a forge refusing this caller outright. */
-function githubChangeProposalsRefusalOf(response: Response): GithubAnswer {
-  const spent =
+/**
+ * Whether the forge said to ask again. A spent allowance is one way of saying
+ * it and a throttle naming a delay is the other, and this forge answers its
+ * secondary limits with the second under the status it also denies with.
+ */
+function githubChangeProposalsThrottled(response: Response): boolean {
+  return (
     response.headers.get(githubRateLimitRemainingHeader) ===
-    githubRateLimitSpent;
+      githubRateLimitSpent ||
+    response.headers.get(githubRetryAfterHeader) !== null
+  );
+}
+
+/** What a refusal was, a forge asking to be asked again kept apart from one refusing this caller. */
+function githubChangeProposalsRefusalOf(response: Response): GithubAnswer {
   if (response.status === githubBusyStatus) return { answer: "Busy" };
   if (githubDeniedStatuses.includes(response.status)) {
-    return spent ? { answer: "Busy" } : { answer: "Denied" };
+    return githubChangeProposalsThrottled(response)
+      ? { answer: "Busy" }
+      : { answer: "Denied" };
   }
   return { answer: "Unsettled" };
 }
 
 /**
  * One response's whole text, refused rather than truncated once it passes the
- * bound. The declared length is read first so an oversized body is refused
- * before any of it is drawn on.
+ * bound. A body refused before it is read is cancelled first, because a refusal
+ * that leaves the stream open holds the connection it refused.
  */
 async function githubChangeProposalsTextOf(
   response: Response,
@@ -273,6 +294,7 @@ async function githubChangeProposalsTextOf(
 ): Promise<string> {
   const declared = response.headers.get("content-length");
   if (declared !== null && Number(declared) > bytesMax) {
+    await response.body?.cancel().catch(() => undefined);
     throw new RangeError(
       "github proposals: a response declares too many bytes",
     );
@@ -367,15 +389,26 @@ function githubChangeProposalsStatusOf(
     : "Merged";
 }
 
-/** The display URL a forge named, absent where a stored row could not hold it. */
+/** The display URL a forge named, absent where it is no page on this forge or no stored row could hold it. */
 function githubChangeProposalsUrlOf(
   pull: GithubPullRequest,
+  host: string,
 ): Pick<ChangeProposalEvidence, "url"> {
-  return pull.html_url.length === 0 ||
+  if (
     pull.html_url.length > proposalDisplayUrlCharsMax ||
     !pull.html_url.isWellFormed()
-    ? {}
-    : { url: asProposalDisplayUrl(pull.html_url) };
+  ) {
+    return {};
+  }
+  let url: URL;
+  try {
+    url = new URL(pull.html_url);
+  } catch {
+    return {};
+  }
+  return url.protocol === "https:" && url.host === host
+    ? { url: asProposalDisplayUrl(pull.html_url) }
+    : {};
 }
 
 /**
@@ -387,6 +420,7 @@ function githubChangeProposalsUrlOf(
 function githubChangeProposalsEvidenceOf(
   request: ChangeProposalRequest,
   address: GithubAddress,
+  host: string,
   pull: GithubPullRequest,
 ): ChangeProposalEvidence | undefined {
   const body = pull.body ?? "";
@@ -423,7 +457,7 @@ function githubChangeProposalsEvidenceOf(
     title: pull.title,
     body,
     status: githubChangeProposalsStatusOf(pull),
-    ...githubChangeProposalsUrlOf(pull),
+    ...githubChangeProposalsUrlOf(pull, host),
   };
 }
 
@@ -485,6 +519,7 @@ async function githubChangeProposalsCreate(
   const evidence = githubChangeProposalsEvidenceOf(
     request,
     target.address,
+    own.repositoryHost,
     parsed.data,
   );
   return evidence === undefined
@@ -530,6 +565,7 @@ async function githubChangeProposalsRead(
     const evidence = githubChangeProposalsEvidenceOf(
       request,
       target.address,
+      own.repositoryHost,
       pull,
     );
     if (evidence !== undefined) return { read: "Found", evidence };
