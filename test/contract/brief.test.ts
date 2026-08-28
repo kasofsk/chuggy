@@ -14,6 +14,7 @@ import test from "node:test";
 import {
   briefBranchCharsMax,
   briefBranchPrefix,
+  briefFinalizationSchema,
   briefIntentCharsMax,
   briefIntentLinesMax,
   briefLineCharsMax,
@@ -23,6 +24,7 @@ import {
   briefSchema,
 } from "../../src/contract/brief.ts";
 import { draftCreationSchema } from "../../src/contract/requests.ts";
+import { briefFinalizationModes } from "../../src/contract/rosters.ts";
 import { proposalBodyCharsMax } from "../../src/interpreter/changeProposal.ts";
 import { gitRefNameCharsMax } from "../../src/interpreter/finalizer.ts";
 import { handoffRefPrefix } from "../../src/interpreter/handoffConfiguration.ts";
@@ -90,21 +92,37 @@ test("a brief lands where its work happened unless its finalization says otherwi
     undefined,
     "a brief naming no finalization carries none",
   );
+  assert.deepEqual(
+    landing({
+      mode: "PullRequest",
+      target: `${briefBranchPrefix}rt/landing`,
+    }).data?.finalization,
+    { mode: "PullRequest", target: "refs/heads/rt/landing" },
+  );
   for (const value of [
     {},
     { mode: "PullRequest" },
     { mode: "Push", target: "rt/landing" },
+    { mode: "PullRequest", target: "rt/landing" },
     {
       mode: "Push",
       target: `${briefBranchPrefix}${"a".repeat(briefBranchCharsMax)}`,
     },
     { mode: "Push", unnamed: true },
+    { mode: "PullRequest", target: `${briefBranchPrefix}rt/x`, unnamed: true },
   ])
     assert.equal(
       landing(value).success,
       false,
       `a finalization is refused: ${JSON.stringify(value)}`,
     );
+});
+
+test("the modes the roster names are exactly the variants the wire publishes", () => {
+  assert.deepEqual(
+    briefFinalizationSchema.options.map((option) => option.shape.mode.value),
+    [...briefFinalizationModes],
+  );
 });
 
 test("a brief carrying no intent, an oversized one or an unreadable link is refused", () => {

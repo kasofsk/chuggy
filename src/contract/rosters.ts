@@ -188,10 +188,11 @@ export const finalizers = ["NoFinalizer", "ManagedFinalizer"] as const;
 export type FinalizerChoice = (typeof finalizers)[number];
 
 /**
- * How a finalization lands one ticket's work on the reference its brief names.
+ * How a finalization lands one ticket's work on the reference its brief names:
+ * by advancing that reference, or by opening a change proposal into it.
  * `src/interpreter/ticketBrief.ts` takes `BriefFinalizationMode` from here.
  */
-export const briefFinalizationModes = ["Push"] as const;
+export const briefFinalizationModes = ["Push", "PullRequest"] as const;
 export type BriefFinalizationMode = (typeof briefFinalizationModes)[number];
 
 export const configurationReadinesses = ["Ready", "Incomplete"] as const;

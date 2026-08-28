@@ -130,11 +130,30 @@ test("a finalization target takes the branch's own grammar and no other mode lan
   );
   assert.deepEqual(asBriefFinalization({ mode: "Push" }), { mode: "Push" });
   for (const value of [
-    { mode: "PullRequest" },
     { mode: "push" },
+    { mode: "PullRequestly" },
     { mode: "Push", target: "rt/landing" },
     { mode: "Push", target: "refs/heads/one..two" },
     { mode: "Push", target: `refs/heads/${"a".repeat(briefBranchCharsMax)}` },
+  ])
+    assert.throws(
+      () => asBriefFinalization(value),
+      RangeError,
+      `refused: ${JSON.stringify(value)}`,
+    );
+});
+
+test("a pull request lands into the reference it names and is refused without one", () => {
+  assert.deepEqual(
+    asBriefFinalization({
+      mode: "PullRequest",
+      target: "refs/heads/rt/landing",
+    }),
+    { mode: "PullRequest", target: "refs/heads/rt/landing" },
+  );
+  for (const value of [
+    { mode: "PullRequest" },
+    { mode: "PullRequest", target: "rt/landing" },
   ])
     assert.throws(
       () => asBriefFinalization(value),

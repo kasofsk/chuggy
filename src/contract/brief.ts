@@ -13,8 +13,6 @@
 
 import { z } from "zod";
 
-import { briefFinalizationModes } from "./rosters.ts";
-
 /**
  * The longest line a briefing renders, which is the whole of what a brief is
  * measured in: an intent renders as lines and a link renders as one, so this
@@ -51,14 +49,22 @@ export const briefBranchSchema = z
   .startsWith(briefBranchPrefix);
 
 /**
- * How and where a finalization lands the work: the mode it lands under, and
- * the reference it lands on where that is not the branch the work happened on.
- * The target shares the branch's grammar, being the same kind of name.
+ * How and where a finalization lands the work, as one variant per mode: a push
+ * names the reference it lands on only where that is not the branch the work
+ * happened on, and a pull request must name one, because a proposal opened into
+ * nothing is not a proposal. The target shares the branch's grammar, being the
+ * same kind of name.
  */
-export const briefFinalizationSchema = z.strictObject({
-  mode: z.enum(briefFinalizationModes),
-  target: briefBranchSchema.optional(),
-});
+export const briefFinalizationSchema = z.discriminatedUnion("mode", [
+  z.strictObject({
+    mode: z.literal("Push"),
+    target: briefBranchSchema.optional(),
+  }),
+  z.strictObject({
+    mode: z.literal("PullRequest"),
+    target: briefBranchSchema,
+  }),
+]);
 
 /**
  * The brief as a write states it, its finalization omitted where the work
