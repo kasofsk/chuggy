@@ -573,9 +573,15 @@ test("a hand-assembled read drops an unknown field at every depth", () => {
       reworkPolicy: { type: "BudgetedRework", value: 0, ceiling: 4 },
       program: [{ fanout: 1, combinator: "UnanimousPass", label: "review" }],
     },
+    brief: {
+      intent: "Land it elsewhere.",
+      links: [],
+      finalization: { mode: "Push", strategy: "Rebase" },
+    },
   };
   const parsed = draftResponseSchema.parse(later);
   assert.equal(parsed.state, "Draft");
+  assert.deepEqual(parsed.brief?.finalization, { mode: "Push" });
   assert.deepEqual(parsed.authoring.program, [
     { fanout: 1, combinator: "UnanimousPass" },
   ]);
