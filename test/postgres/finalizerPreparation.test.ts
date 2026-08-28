@@ -234,11 +234,16 @@ test("a ticket whose brief names a branch is prepared and promoted there and nev
 /** The branch the landing case promotes onto, which is neither the work's nor the default. */
 const landingBranch = "refs/heads/chuggy/footer-landing";
 
-test("a ticket landing elsewhere is promoted there and leaves the branch it worked on alone", async () => {
+test("a ticket landing elsewhere carries what accumulated on the branch it worked on", async () => {
   const { project, remote } = await finalizerSubject(rig, "landing", [
     { path: "one.txt", content: "one\n" },
   ]);
-  finalizerGitVerb(remote.origin, "branch", "chuggy/footer-2026", "main");
+  const worked = finalizerRemoteAttempt(
+    remote,
+    "accumulated.txt",
+    "accumulated\n",
+    briefBranch,
+  );
   finalizerGitVerb(remote.origin, "branch", "chuggy/footer-landing", "main");
   await finalizerBriefBranch(
     rig,
@@ -253,7 +258,6 @@ test("a ticket landing elsewhere is promoted there and leaves the branch it work
     landingBranch,
   );
   const port = finalizerRemotePort(rig);
-  const worked = finalizerGitVerb(remote.origin, "rev-parse", briefBranch);
 
   const report = await finalizerPassOnce(rig, project, port, "landing");
 
@@ -270,6 +274,17 @@ test("a ticket landing elsewhere is promoted there and leaves the branch it work
   assert.equal(
     finalizerGitVerb(remote.origin, "rev-parse", landingBranch),
     written?.candidate_commit,
+  );
+  assert.deepEqual(
+    finalizerGitVerb(
+      remote.origin,
+      "ls-tree",
+      "-r",
+      "--name-only",
+      landingBranch,
+    ).split("\n"),
+    ["accumulated.txt", "base.txt", "one.txt"],
+    "the branch's own work and the handoff both reach the target",
   );
   assert.equal(
     finalizerGitVerb(remote.origin, "rev-parse", briefBranch),
