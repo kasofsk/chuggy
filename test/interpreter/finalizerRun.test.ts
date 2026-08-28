@@ -15,6 +15,7 @@ import { test } from "node:test";
 
 import { asTicketId } from "../../src/domain/ids.ts";
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
+import type { ChangeProposalForges } from "../../src/interpreter/changeProposal.ts";
 import {
   allClosingLifecycles,
   asCommitPermitId,
@@ -450,6 +451,14 @@ function briefsOf(branch?: string, target?: string): TicketBriefPort {
   };
 }
 
+/** The forges a case binds, none at all being what a deployment landing every ticket by pushing names. */
+function forgesOf(): ChangeProposalForges {
+  return {
+    selector: { select: () => undefined },
+    bindingOf: () => undefined,
+  };
+}
+
 /** The service a case drives, over the ceilings it names. */
 function serviceOf(
   store: FinalizerRecorder,
@@ -461,6 +470,7 @@ function serviceOf(
   return {
     store,
     git,
+    forges: forgesOf(),
     ticketBriefs: briefsOf(),
     handoffs: artifacts,
     artifacts,

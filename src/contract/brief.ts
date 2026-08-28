@@ -55,15 +55,17 @@ export const briefBranchSchema = z
  * nothing is not a proposal. The target shares the branch's grammar, being the
  * same kind of name.
  */
-export const briefFinalizationSchema = z.discriminatedUnion("mode", [
-  z.strictObject({
-    mode: z.literal("Push"),
-    target: briefBranchSchema.optional(),
-  }),
-  z.strictObject({
+const briefFinalizationShapes = {
+  Push: { mode: z.literal("Push"), target: briefBranchSchema.optional() },
+  PullRequest: {
     mode: z.literal("PullRequest"),
     target: briefBranchSchema,
-  }),
+  },
+} as const;
+
+export const briefFinalizationSchema = z.discriminatedUnion("mode", [
+  z.strictObject(briefFinalizationShapes.Push),
+  z.strictObject(briefFinalizationShapes.PullRequest),
 ]);
 
 /**
@@ -80,7 +82,11 @@ export const briefSchema = z.strictObject({
 
 export type TicketBriefBody = z.infer<typeof briefSchema>;
 
-export const briefFinalizationResponseSchema = briefFinalizationSchema.strip();
+/** The same finalization read back, each variant dropping a field the reader does not know. */
+export const briefFinalizationResponseSchema = z.discriminatedUnion("mode", [
+  z.object(briefFinalizationShapes.Push),
+  z.object(briefFinalizationShapes.PullRequest),
+]);
 
 /** The same brief read back, dropping a field the reader does not know at either depth. */
 export const briefResponseSchema = briefSchema.strip().extend({

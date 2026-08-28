@@ -137,6 +137,30 @@ export interface ForgeBinding {
   readonly credential: ForgeCredentialReference;
 }
 
+/** One forge as a repository reaches it, under the host that is what selects it. */
+export interface ForgeRepositoryBinding {
+  readonly binding: ForgeBinding;
+  readonly repositoryHost: string;
+}
+
+/**
+ * The forge whose host a repository's own address names. A repository identity
+ * is the remote's URL, so the host in it is what says which forge holds it; a
+ * deployment that binds none for that host has no proposal to open there.
+ */
+export function forgeBindingOf(
+  bindings: readonly ForgeRepositoryBinding[],
+  repository: RepositoryId,
+): ForgeBinding | undefined {
+  let host: string;
+  try {
+    host = new URL(repository).host;
+  } catch {
+    return undefined;
+  }
+  return bindings.find((bound) => bound.repositoryHost === host)?.binding;
+}
+
 export interface ChangeProposalIdentity {
   readonly forge: ForgeBindingId;
   readonly remote: ProposalRemoteIdentity;
@@ -248,6 +272,16 @@ export interface ChangeProposalPort {
 /** The composition boundary selects one adapter by the configured forge binding. */
 export interface ChangeProposalAdapterSelector {
   select(forge: ForgeBindingId): ChangeProposalPort | undefined;
+}
+
+/**
+ * Every forge a deployment opens change proposals on: which one holds a given
+ * repository, and which adapter answers for it. Both are the composition's, so
+ * a deployment that binds none opens none rather than failing to start.
+ */
+export interface ChangeProposalForges {
+  readonly selector: ChangeProposalAdapterSelector;
+  bindingOf(repository: RepositoryId): ForgeBinding | undefined;
 }
 
 /** Resolves proposal API authority independently of either repository credential. */

@@ -73,6 +73,12 @@ import {
 } from "../../src/adapters/artifacts/artifactKey.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
+import {
+  forgeBindingOf,
+  type ChangeProposalForges,
+  type ChangeProposalPort,
+  type ForgeBinding,
+} from "../../src/interpreter/changeProposal.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import { gitPromotion } from "../../src/adapters/git/gitPromotion.ts";
 import {
@@ -934,6 +940,34 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
   return fake;
 }
 
+/**
+ * The forges a case binds and the adapter each answers with. A case naming none
+ * is a deployment that opens no change proposal, which is what every suite
+ * about pushing needs the finalizer to be.
+ */
+export function finalizerForges(
+  bound: readonly {
+    readonly binding: ForgeBinding;
+    readonly repositoryHost: string;
+    readonly port: ChangeProposalPort;
+  }[],
+): ChangeProposalForges {
+  const adapters = new Map(
+    bound.map((each) => [each.binding.forge as string, each.port]),
+  );
+  return {
+    selector: { select: (forge) => adapters.get(forge) },
+    bindingOf: (repository) =>
+      forgeBindingOf(
+        bound.map((each) => ({
+          binding: each.binding,
+          repositoryHost: each.repositoryHost,
+        })),
+        repository,
+      ),
+  };
+}
+
 /** The identities a preparation mints, drawn per call so no two cases share one. */
 export function finalizerIdentities(): FinalizerIdentityFactory {
   return {
@@ -960,11 +994,13 @@ export function finalizerService(
   rig: FinalizerRig,
   git: GitPromotionPort,
   metrics: FinalizerTelemetry = silentFinalizerTelemetry,
+  forges?: ChangeProposalForges,
 ): FinalizerService {
   const artifacts = artifactStore({ root: rig.artifactRoot });
   return {
     store: postgresFinalizer(rig.pool),
     git,
+    forges: forges ?? finalizerForges([]),
     ticketBriefs: postgresTicketBrief(rig.pool),
     handoffs: artifacts,
     artifacts,

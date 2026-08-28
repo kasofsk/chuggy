@@ -113,6 +113,7 @@
  */
 
 import { assertNever } from "../domain/assertNever.ts";
+import type { ChangeProposalForges } from "./changeProposal.ts";
 import {
   checkedFinalizerConfig,
   finalizationNext,
@@ -173,6 +174,7 @@ import type { TicketBriefPort } from "./ticketBrief.ts";
 export interface FinalizerService {
   readonly store: FinalizerStore & FinalizerPreparationStore;
   readonly git: GitPromotionPort;
+  readonly forges: ChangeProposalForges;
   readonly ticketBriefs: TicketBriefPort;
   readonly handoffs: HandoffContentPort;
   readonly artifacts: ProjectArtifactPort;

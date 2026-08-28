@@ -942,6 +942,8 @@ export interface FinalizerConfig {
   readonly promotionsPerPassMax: number;
   readonly reconciliationsPerPassMax: number;
   readonly heldPermitsPerPassMax: number;
+  readonly proposalsPerPassMax: number;
+  readonly proposalReconciliationsMax: number;
 }
 
 /** The values a deployment starts from when it names none. */
@@ -953,6 +955,8 @@ export const finalizerDefaults: FinalizerConfig = {
   promotionsPerPassMax: 8,
   reconciliationsPerPassMax: 32,
   heldPermitsPerPassMax: 32,
+  proposalsPerPassMax: 8,
+  proposalReconciliationsMax: 3,
 };
 
 /**
