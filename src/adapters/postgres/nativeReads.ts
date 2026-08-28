@@ -88,7 +88,9 @@ function refusalCode(value: string): OperationRefusalCode {
     value === "ConfigurationInvalid" ||
     value === "TicketChanged" ||
     value === "SelectionChanged" ||
-    value === "CommandUnreadable"
+    value === "CommandUnreadable" ||
+    value === "ExecutionSourceUnreadable" ||
+    value === "ExecutionSourceDenied"
   )
     return value;
   throw new Error(`native read: ${value} is not a public refusal code`);

@@ -230,6 +230,8 @@ test("the rosters with no runtime list are exhaustive over their unions", () => 
     TicketChanged: true,
     SelectionChanged: true,
     CommandUnreadable: true,
+    ExecutionSourceUnreadable: true,
+    ExecutionSourceDenied: true,
   };
   const freshness: Record<
     ProjectOperationalStatus["schedulerFreshness"],

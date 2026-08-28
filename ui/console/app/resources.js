@@ -273,6 +273,8 @@ export const operationRefusalCodes = [
   "TicketChanged",
   "SelectionChanged",
   "CommandUnreadable",
+  "ExecutionSourceUnreadable",
+  "ExecutionSourceDenied",
 ];
 
 /**
