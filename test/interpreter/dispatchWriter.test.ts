@@ -438,12 +438,23 @@ function unreadableSources(
   };
 }
 
+/** Every durable evidence, beside the refusal it earns and the wall it parks on. */
+const durableEvidences = [
+  ["RefUnreadable", "ExecutionSourceUnreadable", "TicketConfigIncompatible"],
+  ["ObjectMissing", "ExecutionSourceUnreadable", "TicketConfigIncompatible"],
+  [
+    "IntegrationFailed",
+    "ExecutionSourceUnreadable",
+    "TicketConfigIncompatible",
+  ],
+  ["RemoteDenied", "ExecutionSourceDenied", "ExecutionPolicyDenied"],
+] as const;
+
+/** Every evidence a later observation may find readable. */
+const transientEvidences = ["RemoteUnreachable", "PromotionTimedOut"] as const;
+
 test("a source no dispatch can read is refused under the evidence that named it", async () => {
-  for (const [evidence, code] of [
-    ["RefUnreadable", "ExecutionSourceUnreadable"],
-    ["ObjectMissing", "ExecutionSourceUnreadable"],
-    ["RemoteDenied", "ExecutionSourceDenied"],
-  ] as const) {
+  for (const [evidence, code] of durableEvidences) {
     const memory = releasedMemory();
     const { offered, result } = await decidedWith(
       memory,
@@ -457,48 +468,63 @@ test("a source no dispatch can read is refused under the evidence that named it"
 });
 
 test("a source that may read later defers the input rather than deciding it", async () => {
-  const memory = releasedMemory();
-  const { offered, result } = await decidedWith(
-    memory,
-    operationInput(manualDispatch),
-    unreadableSources("RemoteUnreachable"),
-  );
-  assert.equal(offered, undefined);
-  assert.equal(result.memory, memory);
-  assert.deepEqual(result.decided, {
-    decided: "Deferred",
-    evidence: "RemoteUnreachable",
-  });
+  for (const evidence of transientEvidences) {
+    const memory = releasedMemory();
+    const { offered, result } = await decidedWith(
+      memory,
+      operationInput(manualDispatch),
+      unreadableSources(evidence),
+    );
+    assert.equal(offered, undefined);
+    assert.equal(result.memory, memory);
+    assert.deepEqual(result.decided, { decided: "Deferred", evidence });
+  }
 });
 
 test("a continuation whose source cannot be read parks its ticket on the desk", async () => {
-  const memory = workPassedMemory();
-  const { offered } = await decidedWith(
-    memory,
-    workReduceInput(memory),
-    unreadableSources("RefUnreadable"),
-  );
-  assert.equal(offered?.outcome.outcome, "Journaled");
-  if (offered?.outcome.outcome !== "Journaled") return;
-  assert.deepEqual(offered.outcome.entry.event, {
-    type: "ExecutionBlocked",
-    value: { ticket: id(1), reason: "TicketConfigIncompatible" },
-  });
-  assert.deepEqual(
-    offered.outcome.projection.map((row) => [
-      row.ticket,
-      row.phase,
-      row.reason,
-    ]),
-    [[id(1), "Escalated", "TicketConfigIncompatible"]],
-  );
-  assert.deepEqual(
-    offered.outcome.materialization.actions.map((action) => [
-      action.kind,
-      action.capability,
-    ]),
-    [["TicketEscalation", "ResolveTicket"]],
-  );
+  for (const [evidence, , reason] of durableEvidences) {
+    const memory = workPassedMemory();
+    const { offered } = await decidedWith(
+      memory,
+      workReduceInput(memory),
+      unreadableSources(evidence),
+    );
+    assert.equal(offered?.outcome.outcome, "Journaled");
+    if (offered?.outcome.outcome !== "Journaled") continue;
+    assert.deepEqual(offered.outcome.entry.event, {
+      type: "ExecutionBlocked",
+      value: { ticket: id(1), reason },
+    });
+    assert.deepEqual(
+      offered.outcome.projection.map((row) => [
+        row.ticket,
+        row.phase,
+        row.reason,
+      ]),
+      [[id(1), "Escalated", reason]],
+    );
+    assert.deepEqual(
+      offered.outcome.materialization.actions.map((action) => [
+        action.kind,
+        action.capability,
+      ]),
+      [["TicketEscalation", "ResolveTicket"]],
+    );
+  }
+});
+
+test("a continuation meeting a source that may read later is deferred, not parked", async () => {
+  for (const evidence of transientEvidences) {
+    const memory = workPassedMemory();
+    const { offered, result } = await decidedWith(
+      memory,
+      workReduceInput(memory),
+      unreadableSources(evidence),
+    );
+    assert.equal(offered, undefined);
+    assert.equal(result.memory, memory);
+    assert.deepEqual(result.decided, { decided: "Deferred", evidence });
+  }
 });
 
 test("a deferred input ends the run it arrived in without clearing readiness", async () => {

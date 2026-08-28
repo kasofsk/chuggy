@@ -5,6 +5,7 @@ import type pg from "pg";
 
 import {
   escalationReasons,
+  operationRefusalCodes,
   type EscalationReason,
 } from "../../contract/rosters.ts";
 import { phaseTags, type Phase } from "../../domain/generated/modelTypes.ts";
@@ -82,18 +83,10 @@ function operationState(value: string): OperationState {
 }
 
 function refusalCode(value: string): OperationRefusalCode {
-  if (
-    value === "NotEnabled" ||
-    value === "AuthoringChanged" ||
-    value === "ConfigurationInvalid" ||
-    value === "TicketChanged" ||
-    value === "SelectionChanged" ||
-    value === "CommandUnreadable" ||
-    value === "ExecutionSourceUnreadable" ||
-    value === "ExecutionSourceDenied"
-  )
-    return value;
-  throw new Error(`native read: ${value} is not a public refusal code`);
+  const code = operationRefusalCodes.find((candidate) => candidate === value);
+  if (code === undefined)
+    throw new Error(`native read: ${value} is not a public refusal code`);
+  return code;
 }
 
 function requiredCounter(value: string | null, what: string): number {
