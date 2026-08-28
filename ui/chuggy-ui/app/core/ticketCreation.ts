@@ -45,17 +45,18 @@ export type CreationStage = CreationAuthoring["program"][number];
 
 /**
  * One screen's whole contents: the authoring an initialization prefilled, and
- * the three values only a human states. The branch is held as the name a
- * person types rather than the reference it becomes.
+ * the values only a human states. Both branches are held as the names a person
+ * types rather than the references they become.
  */
 export interface TicketCreationForm extends CreationAuthoring {
   readonly intent: string;
   readonly links: readonly string[];
   readonly branchName: string;
+  readonly targetBranchName: string;
 }
 
 export type CreationField =
-  "intent" | "links" | "branch" | "authoring" | "fence";
+  "intent" | "links" | "branch" | "target" | "authoring" | "fence";
 
 export interface CreationFault {
   readonly field: CreationField;
@@ -108,6 +109,7 @@ export function creationFormFrom(
     intent: "",
     links: [],
     branchName: "",
+    targetBranchName: "",
   };
 }
 
@@ -124,11 +126,12 @@ export function creationIntentLines(intent: string): readonly string[] {
 }
 
 /**
- * What one branch field holds: nothing, the reference a typed name becomes, or
- * an input this field will not read. A reference pasted where a name is asked
- * for would otherwise be prefixed a second time, and nothing downstream refuses
- * the doubled value — it is a well-formed reference name, and one the machine
- * would create.
+ * What a branch field holds — either of them, so a name means the same thing
+ * wherever the screen asks for one: nothing, the reference a typed name
+ * becomes, or an input the field will not read. A reference pasted where a name
+ * is asked for would otherwise be prefixed a second time, and nothing
+ * downstream refuses the doubled value — it is a well-formed reference name,
+ * and one the machine would create.
  */
 export type CreationBranch =
   | { readonly named: "None" }
@@ -143,9 +146,12 @@ export function creationBranchOf(branchName: string): CreationBranch {
 }
 
 /** What the branch field asks for and what naming it does, said beside it rather than only when refused. */
-export const creationBranchHint = `the branch this work starts from and lands on, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>`;
+export const creationBranchHint = `the branch this work starts from, and lands on unless a target names another, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>`;
 
-/** The one input the branch field refuses, said as the edit that fixes it. */
+/** The same, for the field that names where the work ends up instead. */
+export const creationTargetBranchHint = `where the finished work is merged, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>`;
+
+/** The one input either branch field refuses, said as the edit that fixes it. */
 export const creationBranchPrefixedSentence = `enter the branch name, not the ref: this console adds ${briefBranchPrefix} itself`;
 
 /**
@@ -160,6 +166,7 @@ export function creationFaultSentence(field: CreationField): string {
     case "links":
       return `each link is an ${briefLinkScheme} URL of at most ${String(briefLineCharsMax)} characters, and one ticket carries at most ${String(briefLinksMax)}`;
     case "branch":
+    case "target":
       return `a branch is named here without its ${briefBranchPrefix} prefix, and the whole reference is at most ${String(briefBranchCharsMax)} characters`;
     case "authoring":
       return "one advanced setting is not one this project offers";
@@ -172,7 +179,8 @@ function creationFieldOf(path: readonly PropertyKey[]): CreationField {
   if (path[0] === "authoring") return "authoring";
   if (path[0] !== "brief") return "fence";
   if (path[1] === "intent") return "intent";
-  return path[1] === "branch" ? "branch" : "links";
+  if (path[1] === "branch") return "branch";
+  return path[1] === "finalization" ? "target" : "links";
 }
 
 /**
@@ -194,27 +202,49 @@ function creationFaultsOf(
   ];
 }
 
+/** The two references one form names: the one work starts from, and the one it lands on. */
+interface CreationBranches {
+  readonly branch: CreationBranch;
+  readonly target: CreationBranch;
+}
+
+function creationBranchesOf(form: TicketCreationForm): CreationBranches {
+  return {
+    branch: creationBranchOf(form.branchName),
+    target: creationBranchOf(form.targetBranchName),
+  };
+}
+
 /** The faults this form decides for itself, the wire's parser deciding the rest. */
 function creationStatedFaults(
   form: TicketCreationForm,
-  branch: CreationBranch,
+  branches: CreationBranches,
 ): readonly CreationFault[] {
   const stated: CreationFault[] = [];
   if (creationIntentLines(form.intent).length > briefIntentLinesMax)
     stated.push({ field: "intent", reason: creationFaultSentence("intent") });
-  if (branch.named === "Prefixed")
+  if (branches.branch.named === "Prefixed")
     stated.push({ field: "branch", reason: creationBranchPrefixedSentence });
+  if (branches.target.named === "Prefixed")
+    stated.push({ field: "target", reason: creationBranchPrefixedSentence });
   return stated;
 }
 
+/**
+ * The brief a form becomes. A finalization is what naming a target means, so a
+ * form that names none sends none rather than a target repeating the branch.
+ */
 function creationBriefOf(
   form: TicketCreationForm,
-  branch: CreationBranch,
+  branches: CreationBranches,
 ): unknown {
   return {
     intent: creationIntentNormalized(form.intent).trim(),
     links: form.links.map((link) => link.trim()).filter((link) => link !== ""),
-    ...(branch.named === "Ref" ? { branch: branch.ref } : {}),
+    ...(branches.branch.named === "Ref" ? { branch: branches.branch.ref } : {}),
+    ...(branches.target.named === "Ref"
+      ? { finalization: { mode: "Push", target: branches.target.ref } }
+      : {}),
   };
 }
 
@@ -227,7 +257,7 @@ export function creationBodyFrom(
   initialization: DraftInitializationResponse,
   form: TicketCreationForm,
 ): CreationAssembly {
-  const branch = creationBranchOf(form.branchName);
+  const branches = creationBranchesOf(form);
   const candidate = {
     configurationRevision: initialization.configuration.revision,
     configurationDigest: initialization.fence.configurationDigest,
@@ -241,9 +271,9 @@ export function creationBodyFrom(
       resumePricing: form.resumePricing,
       finalizer: form.finalizer,
     },
-    brief: creationBriefOf(form, branch),
+    brief: creationBriefOf(form, branches),
   };
-  const stated = creationStatedFaults(form, branch);
+  const stated = creationStatedFaults(form, branches);
   const parsed = draftCreationSchema.safeParse(candidate);
   if (parsed.success && stated.length === 0)
     return { assembled: "Body", body: parsed.data };
