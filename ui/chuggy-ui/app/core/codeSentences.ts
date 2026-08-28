@@ -92,6 +92,10 @@ export function operationRefusalSentence(code: OperationRefusalCode): string {
       return "the dispatch selection this answered is no longer the current one";
     case "CommandUnreadable":
       return "the API could not read the command this console submitted";
+    case "ExecutionSourceUnreadable":
+      return "the repository reference this ticket's work would start from is not on the remote";
+    case "ExecutionSourceDenied":
+      return "the remote declined the credential this project holds for the repository";
   }
 }
 

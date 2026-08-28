@@ -30,11 +30,18 @@ import {
   asGitObjectId,
   asGitRefName,
   asRepositoryId,
+  type GitEvidence,
 } from "../../src/interpreter/finalizer.ts";
 import {
+  projectTicketWriterRun,
   projectWriterDecide,
+  type ProjectDecided,
   type ProjectMemory,
 } from "../../src/interpreter/projectWriter.ts";
+import {
+  silentTicketServiceMetrics,
+  ticketServiceDefaults,
+} from "../../src/interpreter/ticketService.ts";
 import type { ExecutionSourceObservationPort } from "../../src/interpreter/executionSource.ts";
 import {
   asDraftBrief,
@@ -104,44 +111,69 @@ function operationInput(command: TicketCommand): DecisionInput {
   };
 }
 
+/** The source a test that is not about observation is answered with. */
+const readableSources: ExecutionSourceObservationPort = {
+  observe: () =>
+    Promise.resolve({
+      observed: "Source",
+      source: {
+        repository: asRepositoryId("repository"),
+        target: { commit: asGitObjectId("a".repeat(40)) },
+        manifests: [],
+      },
+    }),
+};
+
+/** The brief a test that is not about briefing is answered with. */
+const unbriefedTickets: TicketBriefPort = {
+  brief: () => Promise.resolve(undefined),
+};
+
+/** What one decision left behind: what it offered the authority, and the memory it kept. */
+async function decidedWith(
+  memory: ProjectMemory,
+  input: DecisionInput,
+  executionSources: ExecutionSourceObservationPort = readableSources,
+  ticketBriefs: TicketBriefPort = unbriefedTickets,
+): Promise<{
+  readonly offered: Decision | undefined;
+  readonly result: ProjectDecided;
+}> {
+  let offered: Decision | undefined;
+  const decisions: ProjectDecision = {
+    decide: (decision) => {
+      offered = decision;
+      return Promise.resolve({ decided: "Refused" });
+    },
+  };
+  const result = await projectWriterDecide(
+    {
+      config: refinementInstance,
+      store: {} as ProjectStore,
+      decisions,
+      ticketBriefs,
+      executionSources,
+    },
+    memory,
+    input,
+  );
+  return { offered, result };
+}
+
 async function planned(
   memory: ProjectMemory,
   command: TicketCommand,
   executionSources?: ExecutionSourceObservationPort,
   ticketBriefs?: TicketBriefPort,
 ): Promise<Decision> {
-  let captured: Decision | undefined;
-  const decisions: ProjectDecision = {
-    decide: (decision) => {
-      captured = decision;
-      return Promise.resolve({ decided: "Refused" });
-    },
-  };
-  await projectWriterDecide(
-    {
-      config: refinementInstance,
-      store: {} as ProjectStore,
-      decisions,
-      ticketBriefs: ticketBriefs ?? {
-        brief: () => Promise.resolve(undefined),
-      },
-      executionSources: executionSources ?? {
-        observe: () =>
-          Promise.resolve({
-            observed: "Source",
-            source: {
-              repository: asRepositoryId("repository"),
-              target: { commit: asGitObjectId("a".repeat(40)) },
-              manifests: [],
-            },
-          }),
-      },
-    },
+  const { offered } = await decidedWith(
     memory,
     operationInput(command),
+    executionSources,
+    ticketBriefs,
   );
-  assert.ok(captured !== undefined);
-  return captured;
+  assert.ok(offered !== undefined);
+  return offered;
 }
 
 /** A port that records what it was asked to observe and answers at the ref it was given. */
@@ -348,45 +380,33 @@ async function evaluationSpawn(
   declared: readonly ReturnType<typeof asGitObjectId>[],
 ): Promise<ExecutionRequestPlan | undefined> {
   const memory = workPassedMemory();
-  let captured: Decision | undefined;
-  await projectWriterDecide(
-    {
-      config: refinementInstance,
-      store: {} as ProjectStore,
-      decisions: {
-        decide: (decision) => {
-          captured = decision;
-          return Promise.resolve({ decided: "Refused" });
-        },
-      },
-      ticketBriefs: { brief: () => Promise.resolve(undefined) },
-      executionSources: executionSourceObservation(
-        {
-          binding: () => {
-            throw new Error("an evaluation must not read the project binding");
-          },
-        },
-        {
-          observeTarget: () => {
-            throw new Error("mutable Git must not be observed");
-          },
-        },
-        {
-          workSource: () =>
-            Promise.resolve({
-              repository: asRepositoryId("work-repository"),
-              base: workBase,
-              declared,
-              manifests: [asResultManifestId("manifest-one")],
-            }),
-        },
-      ),
-    },
+  const { offered } = await decidedWith(
     memory,
     workReduceInput(memory),
+    executionSourceObservation(
+      {
+        binding: () => {
+          throw new Error("an evaluation must not read the project binding");
+        },
+      },
+      {
+        observeTarget: () => {
+          throw new Error("mutable Git must not be observed");
+        },
+      },
+      {
+        workSource: () =>
+          Promise.resolve({
+            repository: asRepositoryId("work-repository"),
+            base: workBase,
+            declared,
+            manifests: [asResultManifestId("manifest-one")],
+          }),
+      },
+    ),
   );
-  return captured?.outcome.outcome === "Journaled"
-    ? captured.outcome.materialization.execution[0]
+  return offered?.outcome.outcome === "Journaled"
+    ? offered.outcome.materialization.execution[0]
     : undefined;
 }
 
@@ -407,4 +427,152 @@ test("a fan-out that declared several commits spawns its evaluation at the base"
   ]);
   assert.equal(spawn?.kind, "SpawnEvaluation");
   assert.equal(spawn?.bundle?.source?.targetCommit, workBase);
+});
+
+/** A port that reads no source and says why, which is the whole of what it answers. */
+function unreadableSources(
+  evidence: GitEvidence,
+): ExecutionSourceObservationPort {
+  return {
+    observe: () => Promise.resolve({ observed: "Unreadable", evidence }),
+  };
+}
+
+/** Every durable evidence, beside the refusal it earns and the wall it parks on. */
+const durableEvidences = [
+  ["RefUnreadable", "ExecutionSourceUnreadable", "TicketConfigIncompatible"],
+  ["ObjectMissing", "ExecutionSourceUnreadable", "TicketConfigIncompatible"],
+  [
+    "IntegrationFailed",
+    "ExecutionSourceUnreadable",
+    "TicketConfigIncompatible",
+  ],
+  ["RemoteDenied", "ExecutionSourceDenied", "ExecutionPolicyDenied"],
+] as const;
+
+/** Every evidence a later observation may find readable. */
+const transientEvidences = ["RemoteUnreachable", "PromotionTimedOut"] as const;
+
+test("a source no dispatch can read is refused under the evidence that named it", async () => {
+  for (const [evidence, code] of durableEvidences) {
+    const memory = releasedMemory();
+    const { offered, result } = await decidedWith(
+      memory,
+      operationInput(manualDispatch),
+      unreadableSources(evidence),
+    );
+    assert.deepEqual(offered?.outcome, { outcome: "Refused", code });
+    assert.equal(result.memory, memory);
+    assert.equal(result.decided.decided, "Refused");
+  }
+});
+
+test("a source that may read later defers the input rather than deciding it", async () => {
+  for (const evidence of transientEvidences) {
+    const memory = releasedMemory();
+    const { offered, result } = await decidedWith(
+      memory,
+      operationInput(manualDispatch),
+      unreadableSources(evidence),
+    );
+    assert.equal(offered, undefined);
+    assert.equal(result.memory, memory);
+    assert.deepEqual(result.decided, { decided: "Deferred", evidence });
+  }
+});
+
+test("a continuation whose source cannot be read parks its ticket on the desk", async () => {
+  for (const [evidence, , reason] of durableEvidences) {
+    const memory = workPassedMemory();
+    const { offered } = await decidedWith(
+      memory,
+      workReduceInput(memory),
+      unreadableSources(evidence),
+    );
+    assert.equal(offered?.outcome.outcome, "Journaled");
+    if (offered?.outcome.outcome !== "Journaled") continue;
+    assert.deepEqual(offered.outcome.entry.event, {
+      type: "ExecutionBlocked",
+      value: { ticket: id(1), reason },
+    });
+    assert.deepEqual(
+      offered.outcome.projection.map((row) => [
+        row.ticket,
+        row.phase,
+        row.reason,
+      ]),
+      [[id(1), "Escalated", reason]],
+    );
+    assert.deepEqual(
+      offered.outcome.materialization.actions.map((action) => [
+        action.kind,
+        action.capability,
+      ]),
+      [["TicketEscalation", "ResolveTicket"]],
+    );
+  }
+});
+
+test("a continuation meeting a source that may read later is deferred, not parked", async () => {
+  for (const evidence of transientEvidences) {
+    const memory = workPassedMemory();
+    const { offered, result } = await decidedWith(
+      memory,
+      workReduceInput(memory),
+      unreadableSources(evidence),
+    );
+    assert.equal(offered, undefined);
+    assert.equal(result.memory, memory);
+    assert.deepEqual(result.decided, { decided: "Deferred", evidence });
+  }
+});
+
+test("a deferred input ends the run it arrived in without clearing readiness", async () => {
+  const journal = journalStep(
+    refinementInstance,
+    actorInit(),
+    releaseTicketEvent(id(1), plainAuthoring),
+  ).journal;
+  const taken: number[] = [];
+  let deferred = 0;
+  let cleared = 0;
+  const memory = await projectTicketWriterRun(
+    {
+      config: refinementInstance,
+      store: {
+        load: () => Promise.resolve({ parsed: "Ok", value: journal }),
+      } as unknown as ProjectStore,
+      decisions: {
+        decide: () =>
+          Promise.reject(new Error("a deferred input offers no decision")),
+      },
+      ticketBriefs: { brief: () => Promise.resolve(undefined) },
+      executionSources: unreadableSources("RemoteUnreachable"),
+    },
+    {
+      ready: () => Promise.resolve([]),
+      next: () => {
+        taken.push(taken.length);
+        return Promise.resolve(operationInput(manualDispatch));
+      },
+      clearReadiness: () => {
+        cleared += 1;
+        return Promise.resolve({ cleared: "Cleared" });
+      },
+    },
+    { partition, generation: 1 },
+    releasedMemory().lease,
+    () => 0,
+    ticketServiceDefaults,
+    {
+      ...silentTicketServiceMetrics,
+      executionSourceDeferred: () => {
+        deferred += 1;
+      },
+    },
+  );
+  assert.deepEqual(taken, [0]);
+  assert.equal(deferred, 1);
+  assert.equal(cleared, 0);
+  assert.equal(memory.lease.head, 1);
 });

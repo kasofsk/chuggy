@@ -72,6 +72,12 @@ export interface TicketServiceMetrics {
   ): void;
   focusedRequest(kind: "Execution" | "Finalization"): void;
   nativeAction(outcome: "Opened" | "Resolved" | "Withdrawn"): void;
+
+  /**
+   * An input left pending because the source its spawn needed was transiently
+   * unreadable, which is the one landing of that fault leaving no durable row.
+   */
+  executionSourceDeferred(): void;
 }
 
 export const silentTicketServiceMetrics: TicketServiceMetrics = {
@@ -82,6 +88,7 @@ export const silentTicketServiceMetrics: TicketServiceMetrics = {
   continuation: () => undefined,
   focusedRequest: () => undefined,
   nativeAction: () => undefined,
+  executionSourceDeferred: () => undefined,
 };
 
 /** Runs best-effort telemetry outside the correctness transaction. */

@@ -145,6 +145,8 @@ export const operationRefusalCodes = [
   "TicketChanged",
   "SelectionChanged",
   "CommandUnreadable",
+  "ExecutionSourceUnreadable",
+  "ExecutionSourceDenied",
 ] as const;
 export type OperationRefusalCode = (typeof operationRefusalCodes)[number];
 

@@ -168,7 +168,9 @@ export type OperationRefusalCode =
   | "ConfigurationInvalid"
   | "TicketChanged"
   | "SelectionChanged"
-  | "CommandUnreadable";
+  | "CommandUnreadable"
+  | "ExecutionSourceUnreadable"
+  | "ExecutionSourceDenied";
 
 interface OperationResourceBase {
   readonly operation: OperationId;

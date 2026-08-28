@@ -19,6 +19,12 @@
  * priority belong to authenticated ingress; this writer alone decides whether
  * the requested domain transition is enabled at its serialized position.
  *
+ * AN UNREADABLE EXECUTION SOURCE IS AN OUTCOME, NOT A FAULT. What a remote
+ * holds is a fact about the world rather than a contradiction in this
+ * partition's journal, so a source the writer cannot read lands as a coded
+ * refusal, as a ticket parked on the desk, or as a deferral a later quantum
+ * retries — never as a rejection that ends the run the input arrived in.
+ *
  * THE PROJECTION IS DERIVED, NEVER OBSERVED. Its rows are a function of the
  * replayed `Core` alone, so rebuilding them from the journal and folding the
  * per-decision changes reach the same table — which is what makes it a
@@ -31,24 +37,27 @@ import { ticketEquals } from "../actor/equality.ts";
 import {
   decisionEventEnabled,
   execDecisionEvent,
+  executionBlockedEvent,
 } from "../actor/decisionEvent.ts";
 import type { DecisionEvent } from "../actor/decisionEvent.ts";
 import type { Config } from "../domain/config.ts";
 import { ticketAt, ticketIds } from "../domain/core.ts";
-import type { Core } from "../domain/generated/modelTypes.ts";
+import type { Core, Reason } from "../domain/generated/modelTypes.ts";
 import { dependableIn } from "../domain/enablement.ts";
 import { effectFromLabel } from "../domain/effect.ts";
-import { asTicketId } from "../domain/ids.ts";
+import { asTicketId, type TicketId } from "../domain/ids.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
 import type {
   ExecutionSourceObservation,
   ExecutionSourceObservationPort,
 } from "./executionSource.ts";
+import type { GitEvidence } from "./finalizer.ts";
 import type { ProjectDiscovery, Readiness } from "./projectDiscovery.ts";
 import type {
   Decided,
   DecisionOutcome,
   ProjectDecision,
+  RefusalCode,
   TicketProjection,
 } from "./projectDecision.ts";
 import type { Lease, ProjectStore } from "./projectStore.ts";
@@ -88,10 +97,18 @@ export interface ProjectMemory {
 
 export class IntegrityContradiction extends Error {}
 
+/**
+ * What one input left the writer with: what the durable authority decided, or
+ * the transient evidence that stopped a decision being offered for it at all.
+ * A deferred input is still pending, so a later quantum decides it.
+ */
+export type InputDecided =
+  Decided | { readonly decided: "Deferred"; readonly evidence: GitEvidence };
+
 /** A decision's outcome and the memory it leaves behind, which is the old one unless it committed. */
 export interface ProjectDecided {
   readonly memory: ProjectMemory;
-  readonly decided: Decided;
+  readonly decided: InputDecided;
 }
 
 /** Every ticket's current phase, which is the whole projection and the rebuild of it. */
@@ -376,27 +393,67 @@ function projectWriterSourceConfiguration(
   return contract?.configurationCanonical;
 }
 
+/** What the source a decision's spawns would run on was observed to be. */
+type SpawnSourceObserved =
+  | {
+      readonly observed: "Source";
+      readonly source?: ExecutionSourceObservation;
+    }
+  | {
+      readonly observed: "Unreadable";
+      readonly evidence: GitEvidence;
+      readonly ticket: TicketId;
+    };
+
+/**
+ * The evidence a later observation may find readable, because each names a
+ * moment at the remote rather than a fact about what it holds.
+ */
+const transientGitEvidences: readonly GitEvidence[] = [
+  "RemoteUnreachable",
+  "PromotionTimedOut",
+];
+
+/**
+ * Which refusal an unreadable source earns its client: a credential the remote
+ * declined is the project's to mend, and every other evidence is the reference
+ * the work was to be based on.
+ */
+function executionSourceRefusalCode(evidence: GitEvidence): RefusalCode {
+  return evidence === "RemoteDenied"
+    ? "ExecutionSourceDenied"
+    : "ExecutionSourceUnreadable";
+}
+
+/** The same distinction as a wall the machine already parks an execution on. */
+function executionSourceBlockedReason(evidence: GitEvidence): Reason {
+  return evidence === "RemoteDenied"
+    ? "ExecutionPolicyDenied"
+    : "TicketConfigIncompatible";
+}
+
 async function projectWriterExecutionSource(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
   item: DecisionInput,
   command: DecisionEvent,
-): Promise<ExecutionSourceObservation | undefined> {
+): Promise<SpawnSourceObserved> {
   if (
     item.source.kind === "Operation" &&
     item.source.finalizationRequest?.evidence !== undefined
   )
-    return undefined;
+    return { observed: "Source" };
   const rec = execDecisionEvent(writer.config, memory.core, command).rec;
   const spawn = rec.effects.find((label) => {
     const effect = effectFromLabel(label);
     return effect === "SpawnWorkTasks" || effect === "SpawnEvalTasks";
   });
-  if (spawn === undefined) return undefined;
+  if (spawn === undefined) return { observed: "Source" };
   const effect = effectFromLabel(spawn);
-  const ticket = rec.transitions[rec.effects.indexOf(spawn)]?.ticket;
-  if (ticket === undefined)
+  const spawned = rec.transitions[rec.effects.indexOf(spawn)]?.ticket;
+  if (spawned === undefined)
     throw new IntegrityContradiction("a spawn effect has no ticket transition");
+  const ticket = asTicketId(spawned);
   const configurationCanonical = projectWriterSourceConfiguration(
     memory,
     item,
@@ -410,9 +467,72 @@ async function projectWriterExecutionSource(
     ...(configurationCanonical === undefined ? {} : { configurationCanonical }),
     ...(brief?.branch === undefined ? {} : { ref: brief.branch }),
   });
-  if (observed.observed !== "Source")
-    throw new Error(`project writer: execution source is ${observed.evidence}`);
-  return observed.source;
+  return observed.observed === "Source"
+    ? { observed: "Source", source: observed.source }
+    : { observed: "Unreadable", evidence: observed.evidence, ticket };
+}
+
+/**
+ * What a source nobody could read lands as. A transient evidence defers the
+ * input so a later quantum retries it; a durable one answers an operation with
+ * a code, and parks a continuation's ticket on the desk instead, because a
+ * continuation has no client waiting to be told.
+ */
+function projectWriterUnreadableLanding(
+  item: DecisionInput,
+  unreadable: Extract<SpawnSourceObserved, { observed: "Unreadable" }>,
+):
+  | { readonly landing: "Deferred" }
+  | { readonly landing: "Refused"; readonly code: RefusalCode }
+  | { readonly landing: "Blocked"; readonly event: DecisionEvent } {
+  if (transientGitEvidences.includes(unreadable.evidence))
+    return { landing: "Deferred" };
+  if (item.source.kind === "Operation")
+    return {
+      landing: "Refused",
+      code: executionSourceRefusalCode(unreadable.evidence),
+    };
+  return {
+    landing: "Blocked",
+    event: executionBlockedEvent(
+      unreadable.ticket,
+      executionSourceBlockedReason(unreadable.evidence),
+    ),
+  };
+}
+
+/**
+ * The plan an accepted command earns once the source its spawns would run on
+ * has been observed, which is the deferral, refusal or escalation that
+ * unreadability lands as where there was no source to pin.
+ */
+async function projectWriterPlan(
+  writer: ProjectTicketWriter,
+  memory: ProjectMemory,
+  item: DecisionInput,
+  command: DecisionEvent,
+): Promise<ProjectPlan | { readonly deferred: GitEvidence }> {
+  const observed = await projectWriterExecutionSource(
+    writer,
+    memory,
+    item,
+    command,
+  );
+  if (observed.observed === "Source")
+    return journaledPlan(writer, memory, item, command, observed.source);
+  const landing = projectWriterUnreadableLanding(item, observed);
+  if (landing.landing === "Deferred") return { deferred: observed.evidence };
+  if (landing.landing === "Refused") {
+    return {
+      outcome: { outcome: "Refused", code: landing.code },
+      post: memory.core,
+    };
+  }
+  if (!decisionEventEnabled(writer.config, memory.core, landing.event))
+    throw new IntegrityContradiction(
+      "a ticket spawning work is not blockable from the phase it spawns in",
+    );
+  return journaledPlan(writer, memory, item, landing.event, undefined);
 }
 
 /**
@@ -427,19 +547,13 @@ export async function projectWriterDecide(
   const preflight = projectWriterPreflight(writer, memory, item);
   const plan =
     "command" in preflight
-      ? journaledPlan(
-          writer,
-          memory,
-          item,
-          preflight.command,
-          await projectWriterExecutionSource(
-            writer,
-            memory,
-            item,
-            preflight.command,
-          ),
-        )
+      ? await projectWriterPlan(writer, memory, item, preflight.command)
       : preflight;
+  if ("deferred" in plan)
+    return {
+      memory,
+      decided: { decided: "Deferred", evidence: plan.deferred },
+    };
   const decided = await writer.decisions.decide({
     lease: memory.lease,
     cause:
@@ -519,6 +633,12 @@ export async function projectTicketWriterRun(
       throw error;
     }
     memory = result.memory;
+    if (result.decided.decided === "Deferred") {
+      observe(() => {
+        metrics.executionSourceDeferred();
+      });
+      return memory;
+    }
     if (
       result.decided.decided !== "Committed" &&
       result.decided.decided !== "Refused" &&

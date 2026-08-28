@@ -68,7 +68,9 @@ export type RefusalCode =
   | "AuthoringChanged"
   | "ConfigurationInvalid"
   | "TicketChanged"
-  | "SelectionChanged";
+  | "SelectionChanged"
+  | "ExecutionSourceUnreadable"
+  | "ExecutionSourceDenied";
 
 /** Every refusal code, in the order this file declares them, so a suite and a CHECK can iterate rather than restate. */
 export const allRefusalCodes: readonly RefusalCode[] = [
@@ -77,6 +79,8 @@ export const allRefusalCodes: readonly RefusalCode[] = [
   "ConfigurationInvalid",
   "TicketChanged",
   "SelectionChanged",
+  "ExecutionSourceUnreadable",
+  "ExecutionSourceDenied",
 ];
 
 export interface ConfigurationPin {
