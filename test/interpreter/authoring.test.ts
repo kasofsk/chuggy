@@ -12,6 +12,7 @@ import {
   releaseConfigurationReadiness,
 } from "../../src/interpreter/authoring.ts";
 import { asBriefBranch } from "../../src/interpreter/ticketBrief.ts";
+import { handoffFixture } from "./handoffFixture.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
@@ -127,35 +128,7 @@ test("a configuration that hands off refuses a brief that would propose a change
   const parsed = JSON.parse(readyConfiguration) as Record<string, unknown>;
   const handing = canonicalConfigurationOf({
     ...parsed,
-    finalizationHandoff: {
-      version: 1,
-      mode: "DirectCommit",
-      repositories: {
-        work: {
-          repository: "ledger-engine",
-          targetRef: "refs/heads/release",
-        },
-        handoff: {
-          repository: "platform-desires",
-          targetRef: "refs/heads/team-orange",
-        },
-      },
-      credentials: {
-        work: "ledger-release-writer",
-        handoff: "platform-request-writer",
-      },
-      renderer: {
-        identity: "ContainerBuildRequest",
-        version: 1,
-        parameters: {
-          targetImageRepository: "registry.example/ledger",
-          builderProfile: "rootless-multiarch",
-          platforms: ["linux/amd64"],
-        },
-      },
-      destinationPath: "builds/ledger/request.json",
-      outputBytesMax: 4096,
-    },
+    finalizationHandoff: handoffFixture(),
   });
   assert.deepEqual(
     releaseConfigurationReadiness(handing, {

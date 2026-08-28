@@ -39,6 +39,7 @@ import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import { briefLinksMax } from "../../src/contract/brief.ts";
 import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
+import { handoffFixture } from "../interpreter/handoffFixture.ts";
 import {
   postgresHarnessBrief,
   postgresHarnessHeld,
@@ -883,33 +884,31 @@ test("release journals the retained draft only while its revision is current", a
 /** The configuration a handing-off project pins, which no proposal may be opened under. */
 const handoffConfiguration = canonicalConfigurationOf({
   ...(JSON.parse(postgresHarnessConfiguration) as Record<string, unknown>),
-  finalizationHandoff: {
-    version: 1,
-    mode: "DirectCommit",
-    repositories: {
-      work: { repository: "ledger-engine", targetRef: "refs/heads/release" },
-      handoff: {
-        repository: "platform-desires",
-        targetRef: "refs/heads/team-orange",
-      },
-    },
-    credentials: {
-      work: "ledger-release-writer",
-      handoff: "platform-request-writer",
-    },
-    renderer: {
-      identity: "ContainerBuildRequest",
-      version: 1,
-      parameters: {
-        targetImageRepository: "registry.example/ledger",
-        builderProfile: "rootless-multiarch",
-        platforms: ["linux/amd64"],
-      },
-    },
-    destinationPath: "builds/ledger/request.json",
-    outputBytesMax: 4096,
-  },
+  finalizationHandoff: handoffFixture(),
 });
+
+/** Accepts one release and decides it, which is the whole of what a release case drives. */
+async function releaseDecision(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+  label: string,
+) {
+  const submission = releaseSubmission(fixture);
+  assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
+  const input = await harness.discovery.next(fixture.partition);
+  assert.ok(input !== undefined);
+  const lease = await postgresHarnessHeld(
+    harness.store,
+    fixture.partition,
+    label,
+  );
+  const writer = postgresHarnessWriter(harness);
+  const result = await projectWriterDecide(
+    writer,
+    await projectWriterLoad(writer, lease),
+    input,
+  );
+  return { submission, result };
+}
 
 test("a brief that proposes a change refuses release against a handing-off configuration", async () => {
   const fixture = await draftFixture(handoffConfiguration);
@@ -919,21 +918,10 @@ test("a brief that proposes a change refuses release against a handing-off confi
       WHERE tenant=$1 AND project=$2 AND ticket=$3`,
     [fixture.partition.tenant, fixture.partition.project, fixture.draft.ticket],
   );
-  const submission = releaseSubmission(fixture);
-  assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
-  const input = await harness.discovery.next(fixture.partition);
-  assert.ok(input !== undefined);
-  const lease = await postgresHarnessHeld(
-    harness.store,
-    fixture.partition,
-    "handoff-proposes",
-  );
-  const writer = postgresHarnessWriter(harness);
 
-  const result = await projectWriterDecide(
-    writer,
-    await projectWriterLoad(writer, lease),
-    input,
+  const { submission, result } = await releaseDecision(
+    fixture,
+    "handoff-proposes",
   );
 
   assert.equal(result.decided.decided, "Refused");
@@ -956,21 +944,9 @@ test("a brief that proposes a change refuses release against a handing-off confi
 
 test("the same handing-off configuration releases a brief that pushes", async () => {
   const fixture = await draftFixture(handoffConfiguration);
-  const submission = releaseSubmission(fixture);
-  assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
-  const input = await harness.discovery.next(fixture.partition);
-  assert.ok(input !== undefined);
-  const lease = await postgresHarnessHeld(
-    harness.store,
-    fixture.partition,
-    "handoff-pushes",
-  );
-  const writer = postgresHarnessWriter(harness);
-  const result = await projectWriterDecide(
-    writer,
-    await projectWriterLoad(writer, lease),
-    input,
-  );
+
+  const { result } = await releaseDecision(fixture, "handoff-pushes");
+
   assert.equal(result.decided.decided, "Committed");
 });
 
