@@ -523,6 +523,8 @@ export interface FinalizationView {
   readonly targetBranch?: GitRefName;
   readonly handoffRequest?: HandoffFinalizationRequest;
   readonly observedTarget?: ObservedTarget;
+  /** What the branch the work happened on holds, which is the tree a candidate is built over. */
+  readonly observedWorkBranch?: ObservedTarget;
   readonly attempt?: FinalizationAttempt;
   readonly approval: ApprovalStanding;
   readonly permit?: CommitPermit;

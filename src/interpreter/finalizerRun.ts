@@ -41,17 +41,23 @@
  * say so again.
  *
  * THE TICKET'S OWN BRIEF IS THE LAST WORD ON WHERE ITS WORK LANDS, AND SAYS IT
- * APART FROM WHERE THE WORK STARTED. The target is the project's binding
+ * APART FROM WHERE THE WORK HAPPENED. The target is the project's binding
  * narrowed by the configuration's handoff role and then by the brief: by the
  * reference its finalization targets, or by the branch the work happened on
- * where it targets none, which is the narrowing
- * `./executionSourceObservation.ts` observes that work against. So a ticket is
- * promoted onto the branch its brief named and never onto whatever the remote's
- * default happens to hold, and one naming a target apart from its branch is
- * worked on the one and landed on the other — the candidate descending from the
- * branch and being integrated against the target, which is the merge path any
- * other target takes. A publication is the one exception, its destination being
- * a repository the ticket never worked in.
+ * where it targets none. So a ticket is promoted onto the branch its brief
+ * named and never onto whatever the remote's default happens to hold. A
+ * publication is the one exception, its destination being a repository the
+ * ticket never worked in.
+ *
+ * A BRIEF NAMING BOTH IS READ TWICE, AND THE TWO READS DO DIFFERENT JOBS. The
+ * branch the work happened on — the one `./executionSourceObservation.ts`
+ * observed that work against — is the tree a candidate is built over and the
+ * commit it descends from, which is what carries everything that accumulated
+ * there onto the target. The target is what that candidate is then integrated
+ * against, what the attempt pins, and what the revision fence and the one
+ * conditional ref update are about. Where the brief lands the work where it
+ * happened the two are one ref, the second read is not made at all, and the
+ * remote is asked exactly what it was asked before.
  *
  * A BRANCH THE REMOTE DOES NOT HOLD YET IS CREATED BY THE PROMOTION. The base
  * is the binding's own target, the attempt pins the branch the work lands on,
@@ -61,14 +67,16 @@
  * against it, which is the same path a target that moved takes.
  *
  * PREPARATION OBSERVES THE TARGET TWICE AND INTEGRATES AGAINST THE SECOND. The
- * candidate is the tree of the target the view observed with the verified
- * handoff artifacts standing in it, so integrating it against that same commit
- * could only ever be the candidate itself and no automatic integration would
- * ever be attempted at all. The remote is therefore re-read once the candidate
- * exists, and the one integration this preparation is allowed is against what
- * the remote holds then — which is where a merge base, a clean automatic merge
- * and a genuine conflict all come from. The attempt pins that second
- * observation, because it is the commit the promotion will be conditional on.
+ * candidate is the tree of the branch the work happened on with the verified
+ * handoff artifacts standing in it, which for a ticket landing where it worked
+ * is the tree of the target the view observed — so integrating it against that
+ * same commit could only ever be the candidate itself and no automatic
+ * integration would ever be attempted at all. The remote is therefore re-read
+ * once the candidate exists, and the one integration this preparation is
+ * allowed is against what the remote holds then — which is where a merge base,
+ * a clean automatic merge and a genuine conflict all come from. The attempt
+ * pins that second observation, because it is the commit the promotion will be
+ * conditional on.
  *
  * ONE INTEGRATION PER OBSERVED TARGET, AND THE FENCE DOES THE REST. Nothing here
  * loops until the remote holds still: a target that moved again is found by the
@@ -355,22 +363,55 @@ async function finalizerReadHolds(
   }
 }
 
+/** The two branches one brief names: where the work happened, and where it lands. */
+interface FinalizerBranches {
+  readonly work?: GitRefName;
+  readonly target?: GitRefName;
+}
+
 /**
- * The branch one finalization's work lands on: the reference the ticket's brief
- * targets, the branch its work happened on where it targets none, and none
- * where the brief names neither. A publication names none whatever the brief
- * reads, because its destination is a repository the ticket never worked in.
+ * What the ticket's brief says about both: the target is the reference its
+ * finalization names or the work's own branch where it names none. A
+ * publication names neither whatever the brief reads, because its destination
+ * is a repository the ticket never worked in.
  */
-async function finalizerGatherTargetBranch(
+async function finalizerGatherBranches(
   service: FinalizerService,
   view: FinalizationView,
-): Promise<GitRefName | undefined> {
-  if (view.handoffRequest?.kind === "PublishHandoff") return undefined;
+): Promise<FinalizerBranches> {
+  if (view.handoffRequest?.kind === "PublishHandoff") return {};
   const brief = await service.ticketBriefs.brief(
     view.claim.partition,
     view.claim.ticket,
   );
-  return brief?.finalization?.target ?? brief?.branch;
+  if (brief === undefined) return {};
+  const target = brief.finalization?.target ?? brief.branch;
+  return {
+    ...(brief.branch === undefined ? {} : { work: brief.branch }),
+    ...(target === undefined ? {} : { target }),
+  };
+}
+
+/**
+ * What the branch the work happened on holds, which is the tree a candidate is
+ * built over. It is the target's own observation where the brief lands the work
+ * where it happened, so a ticket naming no target asks the remote nothing it
+ * did not already ask.
+ */
+async function finalizerGatherWorkBranch(
+  service: FinalizerService,
+  binding: RepositoryBinding,
+  branches: FinalizerBranches,
+  target: ObservedTarget,
+): Promise<ObservedTarget | undefined> {
+  if (branches.work === undefined || branches.work === branches.target)
+    return target;
+  const observed = await repositoryTargetObserved(
+    service.git,
+    binding,
+    branches.work,
+  );
+  return observed.observed === "Target" ? observed.target : undefined;
 }
 
 /**
@@ -383,19 +424,29 @@ async function finalizerGather(
 ): Promise<FinalizationView | undefined> {
   const durable = await service.store.durableView(claim);
   if (durable === undefined || durable.repository === undefined) return durable;
-  const targetBranch = await finalizerGatherTargetBranch(service, durable);
+  const branches = await finalizerGatherBranches(service, durable);
   const observed = await repositoryTargetObserved(
     service.git,
     durable.repository,
-    targetBranch,
+    branches.target,
   );
   const view: FinalizationView = {
     ...durable,
-    repository: repositoryBindingNarrowed(durable.repository, targetBranch),
-    ...(targetBranch === undefined ? {} : { targetBranch }),
+    repository: repositoryBindingNarrowed(durable.repository, branches.target),
+    ...(branches.target === undefined ? {} : { targetBranch: branches.target }),
   };
   if (observed.observed !== "Target") return view;
-  return { ...view, observedTarget: observed.target };
+  const work = await finalizerGatherWorkBranch(
+    service,
+    durable.repository,
+    branches,
+    observed.target,
+  );
+  return {
+    ...view,
+    observedTarget: observed.target,
+    ...(work === undefined ? {} : { observedWorkBranch: work }),
+  };
 }
 
 /** What the view's prepared attempt pinned, refusing a view no promotion could act on. */
@@ -719,9 +770,10 @@ async function finalizerIntegrated(
 }
 
 /**
- * Builds the candidate over the target the view observed, re-reads the remote,
- * and integrates against what it holds now. No working tree is asked for at any
- * point, and nothing is written down until the integration has answered.
+ * Builds the candidate over the branch the work happened on, re-reads the
+ * remote, and integrates against what the target holds now. No working tree is
+ * asked for at any point, and nothing is written down until the integration has
+ * answered.
  */
 async function finalizerBuild(
   service: FinalizerService,
@@ -729,11 +781,16 @@ async function finalizerBuild(
   files: readonly CandidateFile[],
   tally: FinalizerTally,
 ): Promise<void> {
+  const base = subject.view.observedWorkBranch;
+  if (base === undefined) {
+    finalizerHold(service, tally, "TargetUnobserved");
+    return;
+  }
   const prepared = await service.git.prepareCandidate({
     repository: subject.repository,
     ticket: subject.view.claim.ticket,
     bundle: subject.bundle.bundle,
-    target: subject.target,
+    target: base,
     files,
   });
   if (prepared.prepared !== "Candidate") {

@@ -80,5 +80,9 @@ export const briefSchema = z.strictObject({
 
 export type TicketBriefBody = z.infer<typeof briefSchema>;
 
-/** The same brief read back, dropping a field the reader does not know. */
-export const briefResponseSchema = briefSchema.strip();
+export const briefFinalizationResponseSchema = briefFinalizationSchema.strip();
+
+/** The same brief read back, dropping a field the reader does not know at either depth. */
+export const briefResponseSchema = briefSchema.strip().extend({
+  finalization: briefFinalizationResponseSchema.optional(),
+});
