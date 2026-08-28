@@ -177,6 +177,25 @@ async function ticketPage(served: {
   return { container: view.container, reads, push: server.push };
 }
 
+function assistantTranscript(text: string): Record<string, unknown> {
+  return {
+    batches: [
+      {
+        batch: 1,
+        recordedAt: "2026-08-27T00:00:10Z",
+        bytes: 20,
+        read: "Content",
+        content: JSON.stringify({
+          type: "assistant",
+          message: { content: [{ type: "text", text }] },
+        }),
+      },
+    ],
+    observedAt: "2026-08-27T00:00:10Z",
+    complete: true,
+  };
+}
+
 function transcriptReads(reads: readonly string[]): readonly string[] {
   return reads
     .filter((url) => url.includes("/transcript"))
@@ -366,4 +385,46 @@ test("a run from a worker that wrote no evidence says so", async () => {
     rendered.container.querySelector(".ticket-head")?.textContent,
   ).toContain("no run has recorded evidence for this ticket");
   expect(transcriptReads(rendered.reads)).toEqual([]);
+});
+
+/** A run report is markdown the worker wrote, and a reader who sees `##` and
+ * `**` instead of a heading and bold text is reading it unrendered. */
+test("a run report's markdown is drawn as its own elements", async () => {
+  const rendered = await ticketPage({
+    ticket,
+    executions: [summary()],
+    execution: {
+      ...summary(),
+      attempts: [attempt("a1")],
+      result: {
+        manifest: "m1",
+        attempt: "a1",
+        schemaVersion: 3,
+        digest,
+        verdict: "Pass",
+        recordedAt: "2026-08-27T00:01:00Z",
+        artifacts: [],
+        report: "## Summary\n\nthe work **passed** with no findings.",
+      },
+    },
+    transcripts: [transcript([1], true)],
+  });
+  const report = rendered.container.querySelector(".run-report");
+  expect(report?.querySelector("h2")?.textContent).toBe("Summary");
+  expect(report?.querySelector("strong")?.textContent).toBe("passed");
+});
+
+/** An assistant turn's text is markdown too, and its own line breaks are the
+ * floor: a reader must be able to tell where one line ends and the next
+ * begins even where nothing else about the turn renders. */
+test("an assistant turn's markdown is drawn as its own elements, line breaks kept", async () => {
+  const rendered = await ticketPage({
+    ticket,
+    executions: [summary()],
+    execution: { ...summary(), attempts: [attempt("a1")] },
+    transcripts: [assistantTranscript("line one\nline two with **bold**")],
+  });
+  const step = rendered.container.querySelector(".step-text");
+  expect(step?.querySelector("strong")?.textContent).toBe("bold");
+  expect(step?.textContent).toContain("line one\nline two with bold");
 });

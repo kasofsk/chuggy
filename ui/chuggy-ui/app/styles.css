@@ -709,6 +709,36 @@ textarea:focus-visible {
   word-break: break-word;
 }
 
+.markdown {
+  display: grid;
+  gap: var(--gap);
+}
+
+.markdown-heading {
+  margin: 0;
+  color: var(--ink-bright);
+}
+
+.markdown-paragraph {
+  margin: 0;
+  white-space: pre-line;
+}
+
+.markdown-list {
+  margin: 0;
+  padding-left: var(--gap-wide);
+}
+
+.markdown-code {
+  margin: 0;
+  padding: var(--gap);
+  background: var(--ground-sunken);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .run-reads {
   display: grid;
   gap: var(--gap);
@@ -778,7 +808,5 @@ textarea:focus-visible {
 
 .step-text {
   grid-column: 2;
-  margin: 0;
-  white-space: pre-wrap;
   word-break: break-word;
 }

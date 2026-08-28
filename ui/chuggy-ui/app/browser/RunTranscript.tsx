@@ -4,8 +4,9 @@
  * The pane fetches the batches above the highest it holds, and it does so when
  * the high-water mark on the `Execution` frame the browser already receives
  * rises — there is no poll and no follow control, because neither would learn
- * anything the frame does not already carry. Every step is drawn as characters
- * and nothing in a transcript is interpreted.
+ * anything the frame does not already carry. Every step is drawn as the
+ * characters it holds, and an assistant step's text is read as the markdown it
+ * was written in rather than printed unread.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -30,6 +31,7 @@ import type {
   RunTranscriptStep,
 } from "../core/runTranscript.ts";
 import { useApiPorts } from "./api.ts";
+import { Markdown } from "./Markdown.tsx";
 import { useNowMs } from "./Panel.tsx";
 
 function Elisions(props: { readonly elided: readonly number[] }): ReactNode {
@@ -52,7 +54,9 @@ function Step(props: { readonly step: RunTranscriptStep }): ReactNode {
           {step.tools.length === 0 ? null : (
             <span className="step-tools">{step.tools.join(", ")}</span>
           )}
-          <pre className="step-text">{step.text}</pre>
+          <div className="step-text">
+            <Markdown text={step.text} />
+          </div>
           <Elisions elided={step.elided} />
         </li>
       );
