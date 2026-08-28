@@ -394,9 +394,10 @@ async function finalizerGatherBranches(
 
 /**
  * What the branch the work happened on holds, which is the tree a candidate is
- * built over. It is the target's own observation where the brief lands the work
- * where it happened, so a ticket naming no target asks the remote nothing it
- * did not already ask.
+ * built over. Naming none of its own, a brief works against the binding's own
+ * default and is read there. The target's own observation stands in only where
+ * the two are the same ref — a brief naming neither among them — so nothing is
+ * asked of the remote twice and nothing is built over a ref the work never saw.
  */
 async function finalizerGatherWorkBranch(
   service: FinalizerService,
@@ -404,8 +405,7 @@ async function finalizerGatherWorkBranch(
   branches: FinalizerBranches,
   target: ObservedTarget,
 ): Promise<ObservedTarget | undefined> {
-  if (branches.work === undefined || branches.work === branches.target)
-    return target;
+  if (branches.work === branches.target) return target;
   const observed = await repositoryTargetObserved(
     service.git,
     binding,

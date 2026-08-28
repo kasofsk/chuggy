@@ -103,6 +103,7 @@ import {
   asBriefBranch,
   asBriefFinalization,
   asBriefIntent,
+  type DraftBrief,
   type TicketBriefPort,
 } from "../../src/interpreter/ticketBrief.ts";
 
@@ -423,31 +424,25 @@ function promotableView(request: string): FinalizationView {
 }
 
 /**
- * A brief port answering the branch a case names and, where it names a second
- * one, the target its finalization lands on. No brief at all when it names
- * neither.
+ * A brief port answering whichever of the two branches a case names — the one
+ * its work happens on, the one its finalization lands on, or both, each being
+ * optional of the other. No brief at all when it names neither.
  */
 function briefsOf(branch?: string, target?: string): TicketBriefPort {
-  return {
-    brief: () =>
-      Promise.resolve(
-        branch === undefined
-          ? undefined
-          : {
-              intent: asBriefIntent("carry the ticket's own branch"),
-              links: [],
-              branch: asBriefBranch(branch),
-              ...(target === undefined
-                ? {}
-                : {
-                    finalization: asBriefFinalization({
-                      mode: "Push",
-                      target,
-                    }),
-                  }),
-            },
-      ),
-  };
+  const brief: DraftBrief | undefined =
+    branch === undefined && target === undefined
+      ? undefined
+      : {
+          intent: asBriefIntent("carry the ticket's own branch"),
+          links: [],
+          ...(branch === undefined ? {} : { branch: asBriefBranch(branch) }),
+          ...(target === undefined
+            ? {}
+            : {
+                finalization: asBriefFinalization({ mode: "Push", target }),
+              }),
+        };
+  return { brief: () => Promise.resolve(brief) };
 }
 
 /** The service a case drives, over the ceilings it names. */
@@ -767,6 +762,34 @@ test("a candidate for a brief landing elsewhere is built over the branch the wor
     "the candidate descends from the work's own branch, so what accumulated there lands too",
   );
   assert.equal(git.integrations[0]?.target.commit, commitOf("b"));
+});
+
+test("a brief landing somewhere while naming no branch of its own is built over the binding's default", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = gitPerBranch();
+
+  const report = await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(undefined, landingBranch),
+  });
+
+  assert.equal(report.preparations, 1);
+  assert.deepEqual(
+    git.observations.map((each) => each.targetRef),
+    [landingBranch, undefined, landingBranch],
+    "the target is read, then the default the work ran against, then the target again",
+  );
+  assert.deepEqual(
+    git.preparations[0]?.target,
+    { ref: "refs/heads/main", commit: commitOf("a") },
+    "the candidate is built over the tree the work was observed against",
+  );
+  assert.equal(git.integrations[0]?.target.commit, commitOf("b"));
+  assert.notEqual(
+    git.preparations[0]?.target.commit,
+    git.integrations[0]?.target.commit,
+    "the target is not the candidate's own parent, so the integration is a merge and not a passthrough",
+  );
 });
 
 test("a target the remote does not hold is pinned at the binding's own target and built over the work", async () => {
