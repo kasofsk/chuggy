@@ -232,7 +232,13 @@ function changeProposalReconciledOf(
   }
 }
 
-/** Everything the pure step reads of one stored proposal, absent until one is opened. */
+/**
+ * Everything the pure step reads of one stored proposal, absent until one is
+ * opened. A row carrying no creation result is a create that may have happened
+ * and is read as an ambiguous one, which is the whole reason the row is written
+ * before the forge is called: the answer it authorizes is a reading, never a
+ * second create.
+ */
 export async function finalizerChangeProposalPublication(
   client: pg.PoolClient,
   claim: FinalizationClaim,
@@ -250,9 +256,10 @@ export async function finalizerChangeProposalPublication(
   const creation = row.creation;
   const reconciliation = row.reconciliation;
   return {
-    ...(creation === null
-      ? {}
-      : { creation: changeProposalCreatedOf({ ...row, creation }) }),
+    creation:
+      creation === null
+        ? { created: "Ambiguous" }
+        : changeProposalCreatedOf({ ...row, creation }),
     ...(reconciliation === null
       ? {}
       : {
@@ -356,7 +363,7 @@ async function finalizerChangeProposalCreated(
         SET creation = ${columns.kind},
             creation_contradiction = ${columns.contradiction},
             creation_evidence = ${columns.evidence}::jsonb,
-            creation_url = ${columns.url}
+            proposal_url = ${columns.url}
       WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
         AND request = ${claim.request} AND creation IS NULL`,
   );
@@ -366,9 +373,11 @@ async function finalizerChangeProposalCreated(
 }
 
 /**
- * Records what one reading read and counts it. A reading that found the proposal
- * carries the display URL forward, which is how a surface reaches one for a
- * proposal whose own create never answered.
+ * Records what one reading read and counts it, over a row whose create answered
+ * and over one whose create never did — which is the row a crash leaves and the
+ * only row a reading can settle. A reading that found the proposal carries the
+ * display URL forward, which is how a surface reaches one whose create never
+ * answered.
  */
 async function finalizerChangeProposalReconciled(
   client: pg.PoolClient,
@@ -381,10 +390,10 @@ async function finalizerChangeProposalReconciled(
         SET reconciliation = ${columns.kind},
             reconciliation_contradiction = ${columns.contradiction},
             reconciliation_evidence = ${columns.evidence}::jsonb,
-            creation_url = coalesce(${columns.url}, creation_url),
+            proposal_url = coalesce(${columns.url}, proposal_url),
             reconciliations = reconciliations + 1
       WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
-        AND request = ${claim.request} AND creation IS NOT NULL`,
+        AND request = ${claim.request}`,
   );
   return recorded.rowCount === 1
     ? { recorded: "Result" }

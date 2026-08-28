@@ -217,6 +217,10 @@ interface FinalizerRecorder
   asked: ApprovalAsked;
   granted?: PermitGranted;
   publication?: ChangeProposalPublicationView;
+  /** Whether a creation result has been recorded, which a row admits exactly once. */
+  createdRecorded?: boolean;
+  /** Whether every result is refused, which is what the pass sees of a crash before one lands. */
+  dropResults?: boolean;
 }
 
 /** One passed work execution every preparation fixture reads its revision from. */
@@ -244,7 +248,9 @@ function handoffOf(path: string, content: string): HandoffArtifact {
 /**
  * The proposal half of that store, which holds the one row a real one does: it
  * is opened once, its creation result is written once, and every recorded
- * reading counts itself.
+ * reading counts itself. An opened row that has recorded no creation result
+ * reads back as an ambiguous create, exactly as the durable authority reads
+ * one, so a case can leave the row a crash leaves.
  */
 function recordingProposals(
   store: () => FinalizerRecorder,
@@ -256,21 +262,30 @@ function recordingProposals(
       if (own.publication !== undefined)
         return Promise.resolve({ opened: "Refused" });
       own.opened.push(record);
-      own.publication = { reconciliations: 0 };
+      own.publication = {
+        creation: { created: "Ambiguous" },
+        reconciliations: 0,
+      };
       return Promise.resolve({ opened: "Opened" });
     },
     recordChangeProposal: (record) => {
       const own = store();
+      const held = own.publication;
+      if (held === undefined || own.dropResults)
+        return Promise.resolve({ recorded: "Refused" });
+      if (record.result.records === "Creation") {
+        if (own.createdRecorded)
+          return Promise.resolve({ recorded: "Refused" });
+        own.createdRecorded = true;
+        own.publication = { ...held, creation: record.result.created };
+      } else {
+        own.publication = {
+          ...held,
+          reconciliation: record.result.reconciled,
+          reconciliations: held.reconciliations + 1,
+        };
+      }
       own.results.push(record);
-      const held = own.publication ?? { reconciliations: 0 };
-      own.publication =
-        record.result.records === "Creation"
-          ? { ...held, creation: record.result.created }
-          : {
-              ...held,
-              reconciliation: record.result.reconciled,
-              reconciliations: held.reconciliations + 1,
-            };
       return Promise.resolve({ recorded: "Result" });
     },
   };
@@ -1156,6 +1171,38 @@ test("a create that may have happened is read back, and the reading is what conc
   assert.equal(proved.conclusions, 1);
   assert.equal(forge.reads.length, 1, "a proved proposal is not read again");
   assert.deepEqual(store.submitted, ["request-one"]);
+});
+
+test("a row left by a crash before any result is recorded is read back, never created again", async () => {
+  const store = recordingStore([proposedView("request-one")]);
+  const forge = recordingForge(store);
+  forge.created = "Created";
+  store.dropResults = true;
+  const service = proposingService(store, recordingGit(), forge);
+
+  const crashed = await passOver(service);
+
+  assert.equal(forge.creates.length, 1);
+  assert.equal(crashed.holds, 1, "the result nothing recorded is a hold");
+  assert.equal(store.results.length, 0, "the row carries no result at all");
+
+  store.dropResults = false;
+  forge.read = "Found";
+  const recovered = await passOver(service);
+
+  assert.equal(
+    forge.creates.length,
+    1,
+    "a row with no creation result never authorizes a second create",
+  );
+  assert.equal(forge.reads.length, 1, "it authorizes a reading instead");
+  assert.equal(recovered.proposals, 1);
+  assert.equal(store.results[0]?.result.records, "Reconciliation");
+
+  const proved = await passOver(service);
+
+  assert.equal(proved.conclusions, 1);
+  assert.equal(forge.creates.length, 1);
 });
 
 test("a proposal nothing can find within its bound is held and never created again", async () => {

@@ -31,6 +31,13 @@ import {
  * happened, and is the only reason this relation exists rather than the request
  * being rebuilt each pass.
  *
+ * A ROW WITH NO CREATION RESULT IS THE ROW THAT CRASH LEAVES, so nothing here
+ * requires one before a reading may be recorded. A constraint demanding a
+ * creation beside a reconciliation would forbid exactly the recovery this
+ * relation exists for: the reading that settles a create nobody heard back
+ * from is written against a row with no creation, and the count it increments
+ * is what bounds it.
+ *
  * WHAT WAS ASKED FOR IS RECORDED BESIDE WHAT CAME BACK. The head and base each
  * carry the commit they were observed at, and neither is derivable afterwards:
  * a rebuild reads whatever those refs hold now, and an operator settling a hold
@@ -58,7 +65,7 @@ const finalizationChangeProposal = [
      creation               text,
      creation_contradiction text,
      creation_evidence      jsonb,
-     creation_url           text,
+     proposal_url           text,
      reconciliation               text,
      reconciliation_contradiction text,
      reconciliation_evidence      jsonb,
@@ -84,16 +91,14 @@ const finalizationChangeProposal = [
        AND length(base_ref) BETWEEN 1 AND ${gitRefNameCharsMax}
        AND length(title) BETWEEN 1 AND ${proposalTitleCharsMax}
        AND length(body) BETWEEN 1 AND ${proposalBodyCharsMax}
-       AND coalesce(length(creation_url), 1) BETWEEN 1 AND ${proposalDisplayUrlCharsMax}),
+       AND coalesce(length(proposal_url), 1) BETWEEN 1 AND ${proposalDisplayUrlCharsMax}),
      CONSTRAINT finalization_change_proposal_results_are_whole CHECK (
        (creation IS NULL
          OR creation IN (${schemaTextSet(allChangeProposalCreations)}))
        AND (reconciliation IS NULL
          OR reconciliation IN (${schemaTextSet(allChangeProposalReconciliations)}))
        AND (creation_evidence IS NULL OR creation IS NOT NULL)
-       AND (creation_url IS NULL OR creation IS NOT NULL)
        AND (reconciliation_evidence IS NULL OR reconciliation IS NOT NULL)
-       AND (reconciliation IS NULL OR creation IS NOT NULL)
        AND (creation_contradiction IS NULL) = (creation IS DISTINCT FROM 'Contradictory')
        AND (reconciliation_contradiction IS NULL)
          = (reconciliation IS DISTINCT FROM 'Contradictory')
@@ -102,8 +107,7 @@ const finalizationChangeProposal = [
        AND (reconciliation_contradiction IS NULL
          OR reconciliation_contradiction IN (${schemaTextSet(allChangeProposalContradictions)}))),
      CONSTRAINT finalization_change_proposal_reconciliations_are_counted CHECK (
-       reconciliations >= 0
-       AND (reconciliations = 0 OR creation IS NOT NULL)),
+       reconciliations >= 0),
      CONSTRAINT finalization_change_proposal_evidence_is_bounded CHECK (
        coalesce(length(creation_evidence::text), 1)
          BETWEEN 1 AND ${proposalEvidenceCharsMax}
@@ -157,7 +161,7 @@ const finalizationChangeProposalWriteOnce = [
      FROM ${apiRole}, ${ticketServiceRole}, ${selectorServiceRole}, ${schedulerRole}`,
   `GRANT SELECT, INSERT ON finalization_change_proposal TO ${finalizerRole}`,
   `GRANT UPDATE (creation, creation_contradiction, creation_evidence,
-     creation_url, reconciliation, reconciliation_contradiction,
+     proposal_url, reconciliation, reconciliation_contradiction,
      reconciliation_evidence, reconciliations)
      ON finalization_change_proposal TO ${finalizerRole}`,
 ];

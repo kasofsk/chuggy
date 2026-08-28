@@ -313,7 +313,7 @@ interface ProposalState {
   readonly title: string;
   readonly body: string;
   readonly creation: string | null;
-  readonly creation_url: string | null;
+  readonly proposal_url: string | null;
   readonly reconciliations: string;
 }
 
@@ -323,7 +323,7 @@ async function proposalOf(
 ): Promise<ProposalState | undefined> {
   const rows = (await rig.as(
     `SELECT head_ref, head_commit, base_ref, base_commit, title, body,
-            creation, creation_url, reconciliations::text AS reconciliations
+            creation, proposal_url, reconciliations::text AS reconciliations
        FROM finalization_change_proposal WHERE tenant=$1 AND project=$2`,
     [project.partition.tenant, project.partition.project],
   )) as readonly unknown[] as readonly ProposalState[];
@@ -343,33 +343,60 @@ function proposalForges(port: ChangeProposalPort): ChangeProposalForges {
   return { selector: { select: () => port }, bindingOf: () => binding };
 }
 
-/** A forge that opens the proposal it is asked for, answering with the request's own fields. */
-function proposalPort(): ChangeProposalPort & {
+/** The evidence a fixture forge answers with, which is the request's own fields. */
+function proposalEvidence(request: ChangeProposalRequest) {
+  return {
+    identity: {
+      forge: request.binding.forge,
+      remote: asProposalRemoteIdentity("proposal-rig"),
+    },
+    repository: request.repository,
+    marker: request.marker,
+    head: request.head,
+    base: request.base,
+    title: request.title,
+    body: request.body,
+    status: "Open" as const,
+    url: asProposalDisplayUrl("https://forge.invalid/proposals/1"),
+  };
+}
+
+/** What one fixture forge was asked for, answering with the request's own fields. */
+interface ProposalPort extends ChangeProposalPort {
   readonly creates: ChangeProposalRequest[];
-} {
-  const own = {
-    creates: [] as ChangeProposalRequest[],
-    create: (request: ChangeProposalRequest) => {
+  readonly reads: ChangeProposalRequest[];
+  read: "Absent" | "Found";
+  /** Whether a create raises, which is how a case proves none was attempted. */
+  createRefused: boolean;
+}
+
+/** A forge that opens the proposal it is asked for, or refuses to be asked at all. */
+function proposalPort(): ProposalPort {
+  const own: ProposalPort = {
+    creates: [],
+    reads: [],
+    read: "Absent",
+    createRefused: false,
+    create: (request) => {
+      if (own.createRefused) {
+        throw new Error(
+          "the pass asked this forge to create a second proposal",
+        );
+      }
       own.creates.push(request);
       return Promise.resolve({
         created: "Created" as const,
-        evidence: {
-          identity: {
-            forge: request.binding.forge,
-            remote: asProposalRemoteIdentity("proposal-rig"),
-          },
-          repository: request.repository,
-          marker: request.marker,
-          head: request.head,
-          base: request.base,
-          title: request.title,
-          body: request.body,
-          status: "Open" as const,
-          url: asProposalDisplayUrl("https://forge.invalid/proposals/1"),
-        },
+        evidence: proposalEvidence(request),
       });
     },
-    readByMarker: () => Promise.resolve({ read: "Absent" as const }),
+    readByMarker: (request) => {
+      own.reads.push(request);
+      return Promise.resolve(
+        own.read === "Found"
+          ? { read: "Found" as const, evidence: proposalEvidence(request) }
+          : { read: "Absent" as const },
+      );
+    },
   };
   return own;
 }
@@ -451,7 +478,7 @@ test("a ticket that finishes by proposing lands on its branch and opens one into
   assert.equal(stored?.base_ref, landingBranch);
   assert.equal(stored?.base_commit, landing);
   assert.equal(stored?.creation, "Created");
-  assert.equal(stored?.creation_url, "https://forge.invalid/proposals/1");
+  assert.equal(stored?.proposal_url, "https://forge.invalid/proposals/1");
   assert.equal(stored?.reconciliations, "0");
   assert.equal(forge.creates[0]?.head.ref, briefBranch);
   assert.equal(stored?.body.includes(forge.creates[0]?.marker ?? ""), true);
@@ -469,18 +496,100 @@ test("a ticket that finishes by proposing lands on its branch and opens one into
   assert.equal(forge.creates.length, 1, "no second create was authorized");
 });
 
+/** The permit this project's one promotion was granted under. */
+async function permitOf(project: FinalizerProject): Promise<string> {
+  const rows = (await rig.as(
+    `SELECT permit FROM commit_permit WHERE tenant=$1 AND project=$2`,
+    [project.partition.tenant, project.partition.project],
+  )) as readonly { permit: string }[];
+  const permit = rows[0]?.permit;
+  if (permit === undefined) {
+    throw new Error("finalizer case: the promotion granted no permit");
+  }
+  return permit;
+}
+
+test("a row a crash left before any result is read back, and no second proposal is created", async () => {
+  const { project, remote } = await proposingSubject("proposalcrash");
+  const port = finalizerRemotePort(rig);
+  const forge = proposalPort();
+  const forges = proposalForges(forge);
+  const landing = finalizerGitVerb(remote.origin, "rev-parse", landingBranch);
+
+  await finalizerPassOnce(rig, project, port, "proposalcrash");
+  const attempt = (await attemptsOf(project))[0];
+  await finalizerExpireClaim(rig, project);
+  await finalizerPassOnce(rig, project, port, "proposalcrash-on", forges);
+
+  const identity = finalizerDigest();
+  await rig.as(
+    `INSERT INTO finalization_change_proposal
+       (tenant,project,request,permit,proposal_request,head_ref,head_commit,
+        base_ref,base_commit,title,body)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      project.request,
+      await permitOf(project),
+      identity,
+      briefBranch,
+      attempt?.candidate_commit,
+      landingBranch,
+      landing,
+      "ticket 1: propose it",
+      `propose it\n\nchuggy-handoff:${identity}`,
+    ],
+  );
+  assert.equal(
+    (await proposalOf(project))?.creation,
+    null,
+    "the row a crash between the insert and the answer leaves",
+  );
+
+  forge.createRefused = true;
+  forge.read = "Found";
+  await finalizerExpireClaim(rig, project);
+  const recovered = await finalizerPassOnce(
+    rig,
+    project,
+    port,
+    "proposalcrash-read",
+    forges,
+  );
+
+  assert.equal(recovered.proposals, 1);
+  assert.equal(recovered.conclusions, 0);
+  assert.equal(forge.creates.length, 0, "no second create was authorized");
+  assert.equal(forge.reads.length, 1, "the row authorized a reading instead");
+  const read = await proposalOf(project);
+  assert.equal(
+    read?.creation,
+    null,
+    "a reading records no creation of its own",
+  );
+  assert.equal(read?.reconciliations, "1");
+
+  await finalizerExpireClaim(rig, project);
+  const concluded = await finalizerPassOnce(
+    rig,
+    project,
+    port,
+    "proposalcrash-done",
+    forges,
+  );
+
+  assert.equal(concluded.conclusions, 1);
+  assert.equal(forge.creates.length, 0);
+});
+
 /** One project whose promoted attempt a change proposal row may be written against. */
 async function proposalRowSubject(label: string): Promise<FinalizerProject> {
   const { project } = await finalizerSubject(rig, label, [
     { path: "one.txt", content: "one\n" },
   ]);
   await finalizerPromote(rig, project, label);
-  const permit = (
-    (await rig.as(
-      `SELECT permit FROM commit_permit WHERE tenant=$1 AND project=$2`,
-      [project.partition.tenant, project.partition.project],
-    )) as readonly { permit: string }[]
-  )[0]?.permit;
+  const permit = await permitOf(project);
   await rig.as(
     `INSERT INTO finalization_change_proposal
        (tenant,project,request,permit,proposal_request,head_ref,head_commit,
