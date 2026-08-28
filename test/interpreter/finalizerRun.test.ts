@@ -792,6 +792,45 @@ test("a brief landing somewhere while naming no branch of its own is built over 
   );
 });
 
+/** A remote answering for the branch a case lands on and failing on the one it worked on. */
+function gitWithoutWorkBranch(): GitRecorder {
+  const git = recordingGit();
+  git.observeTarget = (repository) => {
+    git.observations.push(repository);
+    const answer: TargetObserved =
+      repository.targetRef === briefBranch
+        ? { observed: "Unreadable", evidence: "RemoteUnreachable" }
+        : {
+            observed: "Target",
+            target: {
+              ref: asGitRefName(repository.targetRef ?? "refs/heads/main"),
+              commit: asGitObjectId(commitOf("b")),
+            },
+          };
+    return Promise.resolve(answer);
+  };
+  return git;
+}
+
+test("a work branch the remote could not answer for holds rather than building over the target", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = gitWithoutWorkBranch();
+
+  const report = await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(briefBranch, landingBranch),
+  });
+
+  assert.equal(report.holds, 1);
+  assert.deepEqual(
+    git.preparations,
+    [],
+    "no candidate is built at all, the target's own tree included",
+  );
+  assert.deepEqual(git.integrations, []);
+  assert.deepEqual(store.attempts, []);
+});
+
 test("a target the remote does not hold is pinned at the binding's own target and built over the work", async () => {
   const store = recordingStore([preparableView("request-one")]);
   const git = gitWithoutBranch(landingBranch);
