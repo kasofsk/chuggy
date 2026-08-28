@@ -36,6 +36,7 @@ test("an attempt gets a role that owns one database on the shared server", async
   assert.deepEqual(statements(calls), [
     "CREATE ROLE chug_a1b2 LOGIN PASSWORD 'attempt-secret'" +
       " CREATEDB NOSUPERUSER NOCREATEROLE NOREPLICATION NOBYPASSRLS",
+    "GRANT chug_a1b2 TO CURRENT_USER WITH SET TRUE",
     "CREATE DATABASE chug_a1b2 OWNER chug_a1b2",
     "REVOKE CONNECT ON DATABASE chug_a1b2 FROM PUBLIC",
   ]);
