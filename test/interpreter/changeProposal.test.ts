@@ -9,7 +9,6 @@ import {
   asProposalRemoteIdentity,
   changeProposalPublicationNext,
   changeProposalRequest,
-  changeProposalRequestFromBranch,
   proposalBodyCharsMax,
   proposalEvidenceCharsMax,
   proposalMarkerCharsMax,
@@ -32,6 +31,7 @@ import {
 } from "../../src/interpreter/finalizer.ts";
 const requestIdentity = asChangeProposalRequestIdentity("a".repeat(64));
 const forge = asForgeBindingId("forge-alpha");
+const requestHeadRef = asGitRefName("refs/heads/chuggy/footer-2026");
 const request = changeProposalRequest({
   binding: {
     forge,
@@ -39,6 +39,7 @@ const request = changeProposalRequest({
   },
   repository: asRepositoryId("platform-desires"),
   request: requestIdentity,
+  headRef: requestHeadRef,
   headCommit: asGitObjectId("b".repeat(40)),
   baseRef: asGitRefName("refs/heads/team-orange"),
   baseCommit: asGitObjectId("c".repeat(40)),
@@ -328,45 +329,6 @@ test("a head branch pushed to between the create and the reading is the same pro
   );
 });
 
-test("a proposal from a named branch shares every bound and marker with a derived one", () => {
-  const headRef = asGitRefName("refs/heads/chuggy/footer-2026");
-  const branched = changeProposalRequestFromBranch({
-    binding: request.binding,
-    repository: request.repository,
-    request: requestIdentity,
-    headRef,
-    headCommit: request.head.commit,
-    baseRef: request.base.ref,
-    baseCommit: request.base.commit,
-    title: request.title,
-    body: request.body,
-  });
-  assert.equal(branched.head.ref, headRef);
-  assert.equal(branched.head.commit, request.head.commit);
-  assert.deepEqual(branched.base, request.base);
-  assert.equal(branched.marker, request.marker);
-  assert.notEqual(request.head.ref, headRef);
-  for (const unbounded of [
-    { title: "", body: request.body },
-    { title: request.title, body: "x".repeat(proposalBodyCharsMax + 1) },
-  ]) {
-    assert.throws(
-      () =>
-        changeProposalRequestFromBranch({
-          binding: request.binding,
-          repository: request.repository,
-          request: requestIdentity,
-          headRef,
-          headCommit: request.head.commit,
-          baseRef: request.base.ref,
-          baseCommit: request.base.commit,
-          ...unbounded,
-        }),
-      RangeError,
-    );
-  }
-});
-
 test("created and existing evidence from another forge is never accepted", () => {
   const wrongForge = evidence({
     identity: {
@@ -443,35 +405,27 @@ test("the same contract selects adapters with unrelated provider vocabularies", 
   assert.equal(selector.select(asForgeBindingId("unbound-forge")), undefined);
 });
 
-test("proposal metadata and deterministic branch identity are bounded", () => {
-  assert.throws(
-    () =>
-      changeProposalRequest({
-        ...request,
-        headCommit: request.head.commit,
-        baseRef: request.base.ref,
-        baseCommit: request.base.commit,
-        title: "",
-        body: request.body,
-      }),
-    RangeError,
-  );
-  assert.throws(
-    () =>
-      changeProposalRequest({
-        ...request,
-        headCommit: request.head.commit,
-        baseRef: request.base.ref,
-        baseCommit: request.base.commit,
-        title: request.title,
-        body: "x".repeat(16_385),
-      }),
-    RangeError,
-  );
-  assert.equal(
-    request.head.ref,
-    `refs/heads/chuggy/handoff/${requestIdentity}`,
-  );
+test("proposal metadata is bounded and the head is the branch the caller named", () => {
+  for (const unbounded of [
+    { title: "", body: request.body },
+    { title: request.title, body: "x".repeat(proposalBodyCharsMax + 1) },
+  ]) {
+    assert.throws(
+      () =>
+        changeProposalRequest({
+          binding: request.binding,
+          repository: request.repository,
+          request: requestIdentity,
+          headRef: requestHeadRef,
+          headCommit: request.head.commit,
+          baseRef: request.base.ref,
+          baseCommit: request.base.commit,
+          ...unbounded,
+        }),
+      RangeError,
+    );
+  }
+  assert.equal(request.head.ref, requestHeadRef);
   assert.equal(asChangeProposalRequestIdentity("f".repeat(64)).length, 64);
   for (const malformed of [
     "f".repeat(63),

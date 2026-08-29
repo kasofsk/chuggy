@@ -50,6 +50,10 @@ const fixtureSecret = "forge-secret-z9y8x7";
 
 const fixtureForgeBinding = asForgeBindingId("forge-alpha");
 const fixtureIdentity = asChangeProposalRequestIdentity("a".repeat(64));
+
+/** The ticket's own work branch, as the forge names it and as a ref name holds it. */
+const fixtureHeadBranch = "chuggy/footer-2026";
+const fixtureHeadRef = asGitRefName(`refs/heads/${fixtureHeadBranch}`);
 const fixtureHeadCommit = asGitObjectId("b".repeat(40));
 const fixtureBaseCommit = asGitObjectId("c".repeat(40));
 const fixtureRemote = "PR_kwDOnode17";
@@ -75,6 +79,7 @@ function fixtureRequest(
       },
       repository: asRepositoryId("https://github.com/kasofsk/chuggy"),
       request: fixtureIdentity,
+      headRef: fixtureHeadRef,
       headCommit: fixtureHeadCommit,
       baseRef: asGitRefName("refs/heads/main"),
       baseCommit: fixtureBaseCommit,
@@ -188,7 +193,7 @@ function fixturePull(
     body: request.body,
     state: "open",
     merged_at: null,
-    head: { ref: `chuggy/handoff/${fixtureIdentity}`, sha: fixtureHeadCommit },
+    head: { ref: fixtureHeadBranch, sha: fixtureHeadCommit },
     base: {
       ref: "main",
       sha: fixtureBaseCommit,
@@ -274,7 +279,7 @@ test("a created proposal is asked for once, addressed and headed exactly", async
   assert.deepEqual(JSON.parse(call?.body ?? ""), {
     title: request.title,
     body: request.body,
-    head: `chuggy/handoff/${fixtureIdentity}`,
+    head: fixtureHeadBranch,
     base: "main",
   });
 });
@@ -294,7 +299,7 @@ test("a proposal the forge says already exists is unsettled until it is read bac
   assert.equal(recorder.calls.length, 2);
   assert.equal(
     recorder.calls[1]?.url,
-    `https://api.github.com/repos/kasofsk/chuggy/pulls?state=all&head=kasofsk%3Achuggy%2Fhandoff%2F${fixtureIdentity}&per_page=${String(githubChangeProposalsDefaults.proposalsPerReadMax)}`,
+    `https://api.github.com/repos/kasofsk/chuggy/pulls?state=all&head=kasofsk%3Achuggy%2Ffooter-2026&per_page=${String(githubChangeProposalsDefaults.proposalsPerReadMax)}`,
   );
   assert.equal(recorder.calls[1]?.method, "GET");
   assert.equal(recorder.calls[1]?.body, undefined);
@@ -439,7 +444,7 @@ test("a proposal carrying the marker past the bounds a stored row holds is not a
   const request = fixtureRequest();
   const unholdable = [
     { title: "t".repeat(proposalTitleCharsMax + 1) },
-    { head: { ref: "chuggy/handoff/one", sha: "short" } },
+    { head: { ref: fixtureHeadBranch, sha: "short" } },
     { base: { ref: "main", sha: fixtureBaseCommit, repo: null } },
     { node_id: "n".repeat(4_096) },
   ];
@@ -468,7 +473,7 @@ test("a forge answer carrying a NUL is unsettled rather than thrown", async () =
     { node_id: `${fixtureRemote}${fixtureNul}` },
     {
       head: {
-        ref: `chuggy/handoff/${fixtureIdentity}${fixtureNul}`,
+        ref: `${fixtureHeadBranch}${fixtureNul}`,
         sha: fixtureHeadCommit,
       },
     },
@@ -606,11 +611,11 @@ test("evidence carries what the forge answered and never what the request asked"
   const cases = [
     {
       answered: {
-        head: { ref: "chuggy/handoff/other", sha: fixtureAnsweredHeadCommit },
+        head: { ref: "chuggy/other-ticket", sha: fixtureAnsweredHeadCommit },
       },
       evidence: {
         head: {
-          ref: asGitRefName("refs/heads/chuggy/handoff/other"),
+          ref: asGitRefName("refs/heads/chuggy/other-ticket"),
           commit: fixtureAnsweredHeadCommit,
         },
       },

@@ -160,7 +160,7 @@
 import { assertNever } from "../domain/assertNever.ts";
 import {
   asChangeProposalRequestIdentity,
-  changeProposalRequestFromBranch,
+  changeProposalRequest,
   proposalMarkerOf,
   reconcileChangeProposal,
   type ChangeProposalForges,
@@ -1173,7 +1173,7 @@ function finalizerStoredProposal(
   const { asked } = stored;
   return {
     gathered: "Request",
-    request: changeProposalRequestFromBranch({
+    request: changeProposalRequest({
       binding,
       repository,
       request: asked.request,
@@ -1219,7 +1219,7 @@ async function finalizerOpeningProposal(
   );
   return {
     gathered: "Request",
-    request: changeProposalRequestFromBranch({
+    request: changeProposalRequest({
       binding,
       repository: pinned.repository.repository,
       request: identity,

@@ -27,7 +27,7 @@ import {
   asForgeBindingId,
   asForgeCredentialReference,
   asProposalRemoteIdentity,
-  changeProposalRequestFromBranch,
+  changeProposalRequest,
   proposalBodyCharsMax,
   proposalMarkerOf,
   proposalTitleCharsMax,
@@ -50,7 +50,7 @@ const identity = asChangeProposalRequestIdentity("a".repeat(64));
 const marker = proposalMarkerOf(identity);
 const intent = asBriefIntent("Serve the escalation reason.\nRead the ticket.");
 
-const request = changeProposalRequestFromBranch({
+const request = changeProposalRequest({
   binding: {
     forge: asForgeBindingId("forge-alpha"),
     credential: asForgeCredentialReference("forge-alpha-proposals"),

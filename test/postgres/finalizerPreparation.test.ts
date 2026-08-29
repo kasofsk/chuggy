@@ -35,7 +35,7 @@ import {
   asForgeCredentialReference,
   asProposalDisplayUrl,
   asProposalRemoteIdentity,
-  changeProposalRequestFromBranch,
+  changeProposalRequest,
   proposalEvidenceCharsMax,
   proposalMarkerOf,
   type ChangeProposalEvidence,
@@ -898,7 +898,7 @@ test("evidence larger than this relation holds settles the create the same way",
 /** The request a case offers the store, over the branches this fixture's proposals stand between. */
 function proposalRequestOf(project: FinalizerProject): ChangeProposalRequest {
   const identity = asChangeProposalRequestIdentity(finalizerDigest());
-  return changeProposalRequestFromBranch({
+  return changeProposalRequest({
     binding: {
       forge: asForgeBindingId("forge-rig"),
       credential: asForgeCredentialReference("forge-rig-proposals"),

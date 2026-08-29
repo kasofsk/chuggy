@@ -3,12 +3,9 @@
  * under, the evidence a forge answers with, and the bounded publication that
  * turns an unsettled create into an answer.
  *
- * EVERY REQUEST A FINALIZATION BUILDS NAMES THE BRANCH ITS WORK LANDED ON. The
- * commit a person will review is the one the promotion put on the ticket's own
- * branch, so the head is the caller's rather than minted here — no finalization
- * takes the derived head, which is a handoff's, a handoff having no branch of
- * its own. Both are built through one bounding, so the two cannot drift apart
- * in the marker, the metadata or anything else a read compares.
+ * EVERY REQUEST NAMES THE BRANCH ITS WORK LANDED ON. The commit a person will
+ * review is the one the promotion put on the ticket's own branch, so the head
+ * is the caller's and nothing here mints one.
  *
  * EACH SIDE IS IDENTIFIED BY ITS REF, AND THE PROPOSAL BY ITS MARKER. A
  * proposal stands between two branches, and what either branch holds is the
@@ -33,7 +30,7 @@
 import { assertNever } from "../domain/assertNever.ts";
 import { asBoundedText } from "./boundedText.ts";
 import type { GitObjectId, GitRefName, RepositoryId } from "./finalizer.ts";
-import { asGitRefName, finalizerIdentityCharsMax } from "./finalizer.ts";
+import { finalizerIdentityCharsMax } from "./finalizer.ts";
 declare const forgeBindingIdBrand: unique symbol;
 declare const proposalRemoteIdentityBrand: unique symbol;
 declare const proposalMarkerBrand: unique symbol;
@@ -75,7 +72,6 @@ export const proposalDisplayUrlCharsMax = 2_048;
  * can be read into needs storing at more than it.
  */
 export const proposalEvidenceCharsMax = 131_072;
-export const proposalBranchPrefix = "refs/heads/chuggy/handoff/";
 export const changeProposalRequestIdentityChars = 64;
 
 export function asForgeBindingId(value: string): ForgeBindingId {
@@ -142,12 +138,6 @@ export function proposalMarkerOf(
     "proposal marker",
     proposalMarkerCharsMax,
   ) as ProposalMarker;
-}
-
-export function proposalHeadRefOf(
-  request: ChangeProposalRequestIdentity,
-): GitRefName {
-  return asGitRefName(`${proposalBranchPrefix}${request}`);
 }
 
 export interface ForgeBinding {
@@ -397,16 +387,12 @@ export interface ChangeProposalRequestInput {
   readonly binding: ForgeBinding;
   readonly repository: RepositoryId;
   readonly request: ChangeProposalRequestIdentity;
+  readonly headRef: GitRefName;
   readonly headCommit: GitObjectId;
   readonly baseRef: GitRefName;
   readonly baseCommit: GitObjectId;
   readonly title: string;
   readonly body: string;
-}
-
-/** The same request over a head branch the caller names rather than one derived from the identity. */
-export interface ChangeProposalBranchRequestInput extends ChangeProposalRequestInput {
-  readonly headRef: GitRefName;
 }
 
 /**
@@ -441,10 +427,9 @@ export interface ChangeProposalPublicationBounds {
   readonly reconciliationsMax: number;
 }
 
-/** Bounds one request's metadata and pins it to the head every retry must reuse. */
-function changeProposalRequestOf(
+/** Bounds one request's metadata and pins the marker and head every retry must reuse. */
+export function changeProposalRequest(
   input: ChangeProposalRequestInput,
-  headRef: GitRefName,
 ): ChangeProposalRequest {
   const title = asBoundedText(
     input.title,
@@ -458,25 +443,11 @@ function changeProposalRequestOf(
     repository: input.repository,
     request: input.request,
     marker: proposalMarkerOf(input.request),
-    head: { ref: headRef, commit: input.headCommit },
+    head: { ref: input.headRef, commit: input.headCommit },
     base: { ref: input.baseRef, commit: input.baseCommit },
     title,
     body: input.body,
   };
-}
-
-/** Constructs the single marker and branch identity every retry must reuse. */
-export function changeProposalRequest(
-  input: ChangeProposalRequestInput,
-): ChangeProposalRequest {
-  return changeProposalRequestOf(input, proposalHeadRefOf(input.request));
-}
-
-/** The same request over a branch the work already happened on, named rather than minted. */
-export function changeProposalRequestFromBranch(
-  input: ChangeProposalBranchRequestInput,
-): ChangeProposalRequest {
-  return changeProposalRequestOf(input, input.headRef);
 }
 
 /** Whether one proposal is this request's, and what it is not where it is not. */
