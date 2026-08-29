@@ -787,6 +787,16 @@ test("a forge is reached at the two hosts it was composed with, or at neither", 
     TypeError,
     "a repository host without its API host composes nothing",
   );
+  assert.throws(
+    () =>
+      githubChangeProposals({
+        credentials: fixtureCredentials("Credential"),
+        fetch: recorder.requestFetch,
+        hosts: { apiHost: ":80", repositoryHost: "forge.invalid" },
+      }),
+    /github proposals: the API host is not a host/u,
+    "a host no URL parses is refused as this adapter's own",
+  );
 });
 
 test("a redirect on the create is refused rather than followed", async () => {

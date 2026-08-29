@@ -259,14 +259,23 @@ function finalizerSettingsField(
   return value;
 }
 
+/** The URL one authority composes, and nothing where the parser reads no URL at all. */
+function finalizerSettingsHostUrl(value: string): URL | undefined {
+  try {
+    return new URL(`https://${value}`);
+  } catch {
+    return undefined;
+  }
+}
+
 /** The host a URL's authority may be, refusing anything a URL would not read as one. */
 function finalizerSettingsHost(
   fields: Readonly<Record<string, unknown>>,
   name: string,
 ): string {
   const value = finalizerSettingsField(fields, name, forgeHostCharsMax);
-  const url = new URL(`https://${value}`);
-  if (url.host !== value || url.pathname !== "/")
+  const url = finalizerSettingsHostUrl(value);
+  if (url === undefined || url.host !== value || url.pathname !== "/")
     throw new Error(`${forgeBindingsVariable} has an invalid entry`);
   return value;
 }

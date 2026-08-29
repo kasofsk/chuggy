@@ -58,10 +58,11 @@
  * nothing could recognise is asked for.
  *
  * A REQUEST THIS FORGE COULD NEVER BE ASKED IS `Denied`. A remote that is no
- * repository here, a head outside the branch namespace and a body missing its
- * own marker are each settled for as long as the composition stands, so they
- * take the one answer that holds the publication for an operator immediately
- * rather than spending reconciliations re-asking a question with no answer.
+ * repository here, a head or a base outside the branch namespace and a body
+ * missing its own marker are each settled for as long as the composition
+ * stands, so they take the one answer that holds the publication for an
+ * operator immediately rather than spending reconciliations re-asking a
+ * question with no answer.
  *
  * NOTHING HERE READS AN ENVIRONMENT, A CLOCK OR A CONFIGURATION. The hosts, the
  * bounds and `fetch` itself are all given at construction, and the moment a
@@ -237,10 +238,19 @@ function githubChangeProposalsBound(
   return value;
 }
 
+/** The URL one authority composes, and nothing where the parser reads no URL at all. */
+function githubChangeProposalsHostUrl(value: string): URL | undefined {
+  try {
+    return new URL(`https://${value}`);
+  } catch {
+    return undefined;
+  }
+}
+
 /** Refuses a host that is not one, so every URL this adapter builds is built from a host it checked once. */
 function githubChangeProposalsHost(value: string, what: string): string {
-  const url = new URL(`https://${value}`);
-  if (url.host !== value || url.pathname !== "/") {
+  const url = githubChangeProposalsHostUrl(value);
+  if (url === undefined || url.host !== value || url.pathname !== "/") {
     throw new TypeError(`github proposals: ${what} is not a host`);
   }
   return value;
