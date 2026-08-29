@@ -20,6 +20,7 @@ import test from "node:test";
 import {
   githubChangeProposals,
   githubChangeProposalsDefaults,
+  githubChangeProposalsPerPageMax,
 } from "../../src/adapters/forge/githubChangeProposals.ts";
 import {
   asChangeProposalRequestIdentity,
@@ -51,6 +52,9 @@ const fixtureHeadCommit = asGitObjectId("b".repeat(40));
 const fixtureBaseCommit = asGitObjectId("c".repeat(40));
 const fixtureRemote = "PR_kwDOnode17";
 const fixtureDisplayUrl = "https://github.com/kasofsk/chuggy/pull/17";
+
+/** The code point no stored row holds, written as an escape so a fixture stays text. */
+const fixtureNul = "\u0000";
 
 /** Two commits no request names, so a case can tell an answered field from an echoed one. */
 const fixtureAnsweredHeadCommit = asGitObjectId("d".repeat(40));
@@ -421,6 +425,80 @@ test("a proposal past the bounds a stored row holds is not this request's", asyn
   }
 });
 
+/**
+ * A NUL is no character a stored row holds, so every brand refuses one. What
+ * this pins is that the refusal reaches the caller as the port's own answer: a
+ * create the forge answered with one is unsettled and a read does not match,
+ * where a throw would have failed the pass the finalizer made it in.
+ */
+test("a forge answer carrying a NUL is unsettled rather than thrown", async () => {
+  const request = fixtureRequest();
+  const nulled = [
+    { node_id: `${fixtureRemote}${fixtureNul}` },
+    {
+      head: {
+        ref: `chuggy/handoff/${fixtureIdentity}${fixtureNul}`,
+        sha: fixtureHeadCommit,
+      },
+    },
+    {
+      base: {
+        ref: `main${fixtureNul}`,
+        sha: fixtureBaseCommit,
+        repo: { full_name: "kasofsk/chuggy" },
+      },
+    },
+    {
+      base: {
+        ref: "main",
+        sha: fixtureBaseCommit,
+        repo: { full_name: `kasofsk/chug${fixtureNul}gy` },
+      },
+    },
+    { title: `${request.title}${fixtureNul}` },
+    { body: `${request.body}${fixtureNul}` },
+  ];
+  for (const overrides of nulled) {
+    const answered = JSON.stringify(overrides);
+    const creating = fixtureForge([
+      fixtureAnswer(201, fixturePull(request, overrides)),
+    ]);
+    assert.deepEqual(
+      await fixtureAdapter(creating).create(request),
+      { created: "Ambiguous" },
+      `a create is unsettled: ${answered}`,
+    );
+    const reading = fixtureForge([
+      fixtureAnswer(200, [fixturePull(request, overrides)]),
+    ]);
+    assert.deepEqual(
+      await fixtureAdapter(reading).readByMarker(request),
+      { read: "Absent" },
+      `a read does not match: ${answered}`,
+    );
+  }
+});
+
+test("a read bound past the page this forge serves is refused at construction", () => {
+  const constructed = (proposalsPerReadMax: number) =>
+    githubChangeProposals({
+      credentials: fixtureCredentials("Credential"),
+      fetch: fixtureForge([]).requestFetch,
+      proposalsPerReadMax,
+    });
+  assert.ok(constructed(githubChangeProposalsPerPageMax));
+  assert.throws(
+    () => constructed(githubChangeProposalsPerPageMax + 1),
+    RangeError,
+    "a bound the forge would not serve is refused",
+  );
+  assert.throws(() => constructed(0), RangeError);
+  assert.ok(
+    githubChangeProposalsDefaults.proposalsPerReadMax <=
+      githubChangeProposalsPerPageMax,
+  );
+});
+
 test("a repository the forge spells its own way is the one this request addressed", async () => {
   const request = fixtureRequest();
   const answered = {
@@ -628,4 +706,15 @@ test("a display URL this forge did not serve is not carried into evidence", asyn
   const read = await fixtureAdapter(recorder).readByMarker(request);
   assert.equal(read.read, "Found");
   assert.equal(read.read === "Found" ? read.evidence.url : "unread", undefined);
+  const nulled = fixtureForge([
+    fixtureAnswer(200, [
+      fixturePull(request, { html_url: `${fixtureDisplayUrl}${fixtureNul}` }),
+    ]),
+  ]);
+  const carried = await fixtureAdapter(nulled).readByMarker(request);
+  assert.equal(carried.read, "Found", "a URL no row holds is not a mismatch");
+  assert.equal(
+    carried.read === "Found" ? carried.evidence.url : "unread",
+    undefined,
+  );
 });

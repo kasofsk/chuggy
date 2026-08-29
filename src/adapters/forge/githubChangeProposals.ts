@@ -37,6 +37,14 @@
  * be a positive claim the read did not establish, so a full page is
  * `Unavailable` and the bounded reconciliation asks again.
  *
+ * NO FORGE ANSWER LEAVES THIS ADAPTER AS A THROW. Every field of one is turned
+ * into the value this tree brands it through a single helper that catches, so a
+ * bound, an encoding or a code point no stored row holds makes a create
+ * `Ambiguous` and a read no match — the answers the port already has for a
+ * proposal it cannot conclude — rather than rejecting the pass the finalizer
+ * makes it in. One helper is also what keeps the refusals from drifting apart:
+ * there is one place to hold a field to, and it is the brand itself.
+ *
  * NOTHING IS APPENDED TO WHAT A CALLER OFFERS, because evidence is compared
  * against the request field by field and a body this adapter edited could never
  * equal the one it was given. So a request whose own body does not carry its
@@ -58,11 +66,11 @@
 
 import { z } from "zod";
 
+import { asBoundedText } from "../../interpreter/boundedText.ts";
 import {
   asProposalDisplayUrl,
   asProposalRemoteIdentity,
   proposalBodyCharsMax,
-  proposalDisplayUrlCharsMax,
   proposalTitleCharsMax,
   type ChangeProposalCreated,
   type ChangeProposalEvidence,
@@ -78,9 +86,6 @@ import {
   asGitObjectId,
   asGitRefName,
   asRepositoryId,
-  finalizerIdentityCharsMax,
-  gitObjectIdPattern,
-  gitRefNameCharsMax,
   type GitObjectId,
   type GitRefName,
   type RepositoryId,
@@ -115,6 +120,14 @@ const githubApiVersion = "2022-11-28";
 
 /** The agent this tree presents itself to a forge as. */
 const githubUserAgent = "chuggy-finalizer";
+
+/**
+ * The most proposals this forge's `per_page` parameter is honoured for. A read
+ * asking for more is served a page of this many instead, so a page filled to it
+ * would be shorter than the bound the read compares against and would read as an
+ * absence the forge never established.
+ */
+export const githubChangeProposalsPerPageMax = 100;
 
 /** The namespace a proposal's head and base must name, a branch being the only ref a pull request is opened over. */
 const githubBranchRefPrefix = "refs/heads/";
@@ -192,10 +205,19 @@ const githubPullRequestSchema = z.object({
 
 type GithubPullRequest = z.infer<typeof githubPullRequestSchema>;
 
-/** Refuses a bound no later call could work around. */
-function githubChangeProposalsBound(value: number, what: string): number {
+/** Refuses a bound no later call could work around, a ceiling among them where the forge sets one. */
+function githubChangeProposalsBound(
+  value: number,
+  what: string,
+  valueMax = Number.MAX_SAFE_INTEGER,
+): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new RangeError(`github proposals: ${what} is not a positive bound`);
+  }
+  if (value > valueMax) {
+    throw new RangeError(
+      `github proposals: ${what} is past the ${String(valueMax)} this forge serves`,
+    );
   }
   return value;
 }
@@ -378,19 +400,34 @@ async function githubChangeProposalsSend(
   }
 }
 
+/**
+ * One field a forge answered, as the value this tree brands it — and nothing
+ * where the brand refuses it. This is the whole of what the adapter holds an
+ * answer to: the bound, the encoding and the code points are the brand's, and a
+ * refusal it raises is an absence here rather than a throw out of the port.
+ */
+function githubChangeProposalsBranded<Branded>(
+  value: string,
+  brand: (value: string) => Branded,
+): Branded | undefined {
+  try {
+    return brand(value);
+  } catch {
+    return undefined;
+  }
+}
+
 /** The commit a forge named, and nothing where it named a width git addresses no object at. */
 function githubChangeProposalsCommitOf(sha: string): GitObjectId | undefined {
-  return new RegExp(gitObjectIdPattern(), "u").test(sha)
-    ? asGitObjectId(sha)
-    : undefined;
+  return githubChangeProposalsBranded(sha, asGitObjectId);
 }
 
 /** The fully qualified ref one branch name is, and nothing where a stored row could not hold it. */
 function githubChangeProposalsRefOf(branch: string): GitRefName | undefined {
-  const ref = `${githubBranchRefPrefix}${branch}`;
-  return ref.length > gitRefNameCharsMax || !ref.isWellFormed()
-    ? undefined
-    : asGitRefName(ref);
+  return githubChangeProposalsBranded(
+    `${githubBranchRefPrefix}${branch}`,
+    asGitRefName,
+  );
 }
 
 /** Where a proposal stands, a merged one told from a closed one by the moment it was merged. */
@@ -408,21 +445,18 @@ function githubChangeProposalsUrlOf(
   pull: GithubPullRequest,
   host: string,
 ): Pick<ChangeProposalEvidence, "url"> {
-  if (
-    pull.html_url.length > proposalDisplayUrlCharsMax ||
-    !pull.html_url.isWellFormed()
-  ) {
-    return {};
-  }
   let url: URL;
   try {
     url = new URL(pull.html_url);
   } catch {
     return {};
   }
-  return url.protocol === "https:" && url.host === host
-    ? { url: asProposalDisplayUrl(pull.html_url) }
-    : {};
+  if (url.protocol !== "https:" || url.host !== host) return {};
+  const display = githubChangeProposalsBranded(
+    pull.html_url,
+    asProposalDisplayUrl,
+  );
+  return display === undefined ? {} : { url: display };
 }
 
 /**
@@ -444,10 +478,10 @@ function githubChangeProposalsRepositoryOf(
   const addressed = `${address.owner}/${address.name}`;
   if (named.toLowerCase() === addressed.toLowerCase())
     return request.repository;
-  const remote = `https://${host}/${named}`;
-  return remote.length > finalizerIdentityCharsMax || !remote.isWellFormed()
-    ? undefined
-    : asRepositoryId(remote);
+  return githubChangeProposalsBranded(
+    `https://${host}/${named}`,
+    asRepositoryId,
+  );
 }
 
 /**
@@ -462,7 +496,7 @@ function githubChangeProposalsEvidenceOf(
   host: string,
   pull: GithubPullRequest,
 ): ChangeProposalEvidence | undefined {
-  const body = pull.body ?? "";
+  const answered = pull.body ?? "";
   const repository = githubChangeProposalsRepositoryOf(
     request,
     address,
@@ -470,34 +504,33 @@ function githubChangeProposalsEvidenceOf(
     pull,
   );
   if (repository === undefined) return undefined;
-  if (!body.includes(request.marker)) return undefined;
-  if (
-    pull.node_id.length > finalizerIdentityCharsMax ||
-    !pull.node_id.isWellFormed() ||
-    pull.title.length === 0 ||
-    pull.title.length > proposalTitleCharsMax ||
-    body.length > proposalBodyCharsMax ||
-    !pull.title.isWellFormed() ||
-    !body.isWellFormed()
-  ) {
-    return undefined;
-  }
+  if (!answered.includes(request.marker)) return undefined;
+  const remote = githubChangeProposalsBranded(
+    pull.node_id,
+    asProposalRemoteIdentity,
+  );
+  const title = githubChangeProposalsBranded(pull.title, (value) =>
+    asBoundedText(value, "proposal title", proposalTitleCharsMax),
+  );
+  const body = githubChangeProposalsBranded(answered, (value) =>
+    asBoundedText(value, "proposal body", proposalBodyCharsMax),
+  );
   const head = githubChangeProposalsRefOf(pull.head.ref);
   const base = githubChangeProposalsRefOf(pull.base.ref);
   const headCommit = githubChangeProposalsCommitOf(pull.head.sha);
   const baseCommit = githubChangeProposalsCommitOf(pull.base.sha);
+  if (remote === undefined || title === undefined || body === undefined) {
+    return undefined;
+  }
   if (head === undefined || base === undefined) return undefined;
   if (headCommit === undefined || baseCommit === undefined) return undefined;
   return {
-    identity: {
-      forge: request.binding.forge,
-      remote: asProposalRemoteIdentity(pull.node_id),
-    },
+    identity: { forge: request.binding.forge, remote },
     repository,
     marker: request.marker,
     head: { ref: head, commit: headCommit },
     base: { ref: base, commit: baseCommit },
-    title: pull.title,
+    title,
     body,
     status: githubChangeProposalsStatusOf(pull),
     ...githubChangeProposalsUrlOf(pull, host),
@@ -647,6 +680,7 @@ export function githubChangeProposals(
       options.proposalsPerReadMax ??
         githubChangeProposalsDefaults.proposalsPerReadMax,
       "the proposals a read considers",
+      githubChangeProposalsPerPageMax,
     ),
   };
   return {
