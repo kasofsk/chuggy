@@ -9,7 +9,8 @@
  * `briefFinalizationModes` are the exceptions: the wire owns each outright and
  * the interpreter takes its union from here. What stands behind the first is
  * the relation to `projectChangeKinds` that the same suite pins; behind the
- * second, the CHECK the brief's own relation spells the same list into.
+ * second, `test/contract/brief.test.ts` holding this list against the
+ * finalization variants the wire publishes.
  */
 
 export const phaseRoster = [

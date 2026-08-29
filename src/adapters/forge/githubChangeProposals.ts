@@ -49,8 +49,11 @@
  * take the one answer that holds the publication for an operator immediately
  * rather than spending reconciliations re-asking a question with no answer.
  *
- * NOTHING HERE READS AN ENVIRONMENT, a clock or a global. The host, the bounds
- * and `fetch` itself are all given at construction.
+ * NOTHING HERE READS AN ENVIRONMENT, A CLOCK OR A CONFIGURATION. The host, the
+ * bounds and `fetch` itself are all given at construction, and the moment a
+ * request is abandoned at is the given bound counted down by the platform's own
+ * timer: `AbortSignal.timeout` is the one ambient thing a call reaches, and it
+ * answers this adapter nothing that could reach a decision.
  */
 
 import { z } from "zod";
