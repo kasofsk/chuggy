@@ -1484,6 +1484,107 @@ test("migration 42 leaves an upgraded database's drafts unbriefed and briefs the
   });
 });
 
+test("migration 43 widens a kind check installed before that kind existed", async () => {
+  await migrationDatabase("native_action_change", async (subject) => {
+    await migrationSeedApplied(subject, 43);
+    await subject.query(
+      `ALTER TABLE project_change
+         DROP CONSTRAINT project_change_kind_is_known,
+         ADD CONSTRAINT project_change_kind_is_known CHECK
+           (kind IN (${schemaTextSet(
+             allProjectChangeKinds.filter((kind) => kind !== "NativeAction"),
+           )}))`,
+    );
+    const append = `SELECT ${projectChangeAppendFunction}('tenant','project','NativeAction','1')`;
+    await assert.rejects(
+      () => subject.query(append),
+      /project_change_kind_is_known/u,
+      "the log installed with 38 refuses a kind it was created before",
+    );
+
+    await applyMigration(subject, 43);
+
+    await subject.query(append);
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT kind,resource FROM project_change ORDER BY sequence",
+        )
+      ).rows,
+      [{ kind: "NativeAction", resource: "1" }],
+    );
+  });
+});
+
+test("migration 44 returns the scheduler the bundle references its briefing joins", async () => {
+  await migrationDatabase("scheduler_bundle_reference", async (subject) => {
+    await migrationSeedApplied(subject, 44);
+    const privilege = async (relation: string, verb: string) =>
+      (
+        await subject.query<{ granted: boolean }>(
+          "SELECT has_table_privilege($1,$2,$3) AS granted",
+          [schedulerRole, relation, verb],
+        )
+      ).rows[0]?.granted;
+    assert.equal(
+      await privilege("input_bundle_reference", "SELECT"),
+      false,
+      "migration 13 revoked the read migration 37's join needs",
+    );
+
+    await applyMigration(subject, 44);
+
+    for (const [relation, verb, granted] of [
+      ["input_bundle_reference", "SELECT", true],
+      ["input_bundle_reference", "INSERT", false],
+      ["input_bundle_reference", "UPDATE", false],
+      ["input_bundle_reference", "DELETE", false],
+      ["input_bundle", "SELECT", false],
+    ] as const)
+      assert.equal(
+        await privilege(relation, verb),
+        granted,
+        `${schedulerRole} holds ${verb} on ${relation}`,
+      );
+  });
+});
+
+test("migration 45 gives the finalizer the brief its target is narrowed by", async () => {
+  await migrationDatabase("finalizer_ticket_brief", async (subject) => {
+    await migrationSeedApplied(subject, 45);
+    const privilege = async (relation: string, verb: string) =>
+      (
+        await subject.query<{ granted: boolean }>(
+          "SELECT has_table_privilege($1,$2,$3) AS granted",
+          [finalizerRole, relation, verb],
+        )
+      ).rows[0]?.granted;
+    assert.equal(
+      await privilege("draft_brief", "SELECT"),
+      false,
+      "migration 42 gave the brief to the roles that render it and to no other",
+    );
+
+    await applyMigration(subject, 45);
+
+    for (const [relation, verb, granted] of [
+      ["draft_brief", "SELECT", true],
+      ["draft_brief", "INSERT", false],
+      ["draft_brief", "UPDATE", false],
+      ["draft_brief", "DELETE", false],
+      ["draft_brief_link", "SELECT", true],
+      ["draft_brief_link", "INSERT", false],
+      ["draft_brief_link", "DELETE", false],
+      ["draft", "SELECT", false],
+    ] as const)
+      assert.equal(
+        await privilege(relation, verb),
+        granted,
+        `${finalizerRole} holds ${verb} on ${relation}`,
+      );
+  });
+});
+
 test("migration 50 lands an existing brief where its work happened and takes a target from the next", async () => {
   await migrationDatabase("brief_finalization", async (subject) => {
     await migrationSeedApplied(subject, 50);
@@ -1596,106 +1697,5 @@ test("migration 51 admits a mode installed before it existed and refuses one ope
       /draft_brief_finalization_is_whole/u,
       "a pull request naming no reference is never written",
     );
-  });
-});
-
-test("migration 43 widens a kind check installed before that kind existed", async () => {
-  await migrationDatabase("native_action_change", async (subject) => {
-    await migrationSeedApplied(subject, 43);
-    await subject.query(
-      `ALTER TABLE project_change
-         DROP CONSTRAINT project_change_kind_is_known,
-         ADD CONSTRAINT project_change_kind_is_known CHECK
-           (kind IN (${schemaTextSet(
-             allProjectChangeKinds.filter((kind) => kind !== "NativeAction"),
-           )}))`,
-    );
-    const append = `SELECT ${projectChangeAppendFunction}('tenant','project','NativeAction','1')`;
-    await assert.rejects(
-      () => subject.query(append),
-      /project_change_kind_is_known/u,
-      "the log installed with 38 refuses a kind it was created before",
-    );
-
-    await applyMigration(subject, 43);
-
-    await subject.query(append);
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT kind,resource FROM project_change ORDER BY sequence",
-        )
-      ).rows,
-      [{ kind: "NativeAction", resource: "1" }],
-    );
-  });
-});
-
-test("migration 44 returns the scheduler the bundle references its briefing joins", async () => {
-  await migrationDatabase("scheduler_bundle_reference", async (subject) => {
-    await migrationSeedApplied(subject, 44);
-    const privilege = async (relation: string, verb: string) =>
-      (
-        await subject.query<{ granted: boolean }>(
-          "SELECT has_table_privilege($1,$2,$3) AS granted",
-          [schedulerRole, relation, verb],
-        )
-      ).rows[0]?.granted;
-    assert.equal(
-      await privilege("input_bundle_reference", "SELECT"),
-      false,
-      "migration 13 revoked the read migration 37's join needs",
-    );
-
-    await applyMigration(subject, 44);
-
-    for (const [relation, verb, granted] of [
-      ["input_bundle_reference", "SELECT", true],
-      ["input_bundle_reference", "INSERT", false],
-      ["input_bundle_reference", "UPDATE", false],
-      ["input_bundle_reference", "DELETE", false],
-      ["input_bundle", "SELECT", false],
-    ] as const)
-      assert.equal(
-        await privilege(relation, verb),
-        granted,
-        `${schedulerRole} holds ${verb} on ${relation}`,
-      );
-  });
-});
-
-test("migration 45 gives the finalizer the brief its target is narrowed by", async () => {
-  await migrationDatabase("finalizer_ticket_brief", async (subject) => {
-    await migrationSeedApplied(subject, 45);
-    const privilege = async (relation: string, verb: string) =>
-      (
-        await subject.query<{ granted: boolean }>(
-          "SELECT has_table_privilege($1,$2,$3) AS granted",
-          [finalizerRole, relation, verb],
-        )
-      ).rows[0]?.granted;
-    assert.equal(
-      await privilege("draft_brief", "SELECT"),
-      false,
-      "migration 42 gave the brief to the roles that render it and to no other",
-    );
-
-    await applyMigration(subject, 45);
-
-    for (const [relation, verb, granted] of [
-      ["draft_brief", "SELECT", true],
-      ["draft_brief", "INSERT", false],
-      ["draft_brief", "UPDATE", false],
-      ["draft_brief", "DELETE", false],
-      ["draft_brief_link", "SELECT", true],
-      ["draft_brief_link", "INSERT", false],
-      ["draft_brief_link", "DELETE", false],
-      ["draft", "SELECT", false],
-    ] as const)
-      assert.equal(
-        await privilege(relation, verb),
-        granted,
-        `${finalizerRole} holds ${verb} on ${relation}`,
-      );
   });
 });
