@@ -101,6 +101,25 @@ test("a brief that names where its work lands draws that reference too", () => {
   );
 });
 
+/** A proposal into a reference and a push onto it name the same reference, so
+ * the field's name is the only thing that tells the two apart. */
+test("a brief proposing its work into a reference does not say it lands there", () => {
+  render(
+    <TicketBrief
+      state={draft({
+        intent: "an intent",
+        links: [],
+        branch: "refs/heads/rt/console-ticket-page",
+        finalization: { mode: "PullRequest", target: "refs/heads/main" },
+      })}
+    />,
+  );
+  expect(
+    screen.getByText("proposed into").nextElementSibling?.textContent,
+  ).toBe("refs/heads/main");
+  expect(screen.queryByText("lands on")).toBeNull();
+});
+
 /** The branch is where a brief naming no target lands, so a second field
  * saying "none" would read as a landing nobody chose. */
 test("a brief naming no target draws no field for one", () => {

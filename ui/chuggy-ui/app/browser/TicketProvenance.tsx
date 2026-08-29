@@ -33,11 +33,26 @@ function Field(props: {
   );
 }
 
+/** How a brief reaches the reference it lands on, which is the whole of what
+ * its two modes differ in. */
+function briefLandingName(
+  finalization: NonNullable<TicketBriefBody["finalization"]>,
+): string {
+  switch (finalization.mode) {
+    case "Push":
+      return "lands on";
+    case "PullRequest":
+      return "proposed into";
+  }
+}
+
 /**
  * What a person asked for. A ticket released before the brief was on the wire
  * carries none and says so rather than drawing empty fields, and where the
  * work lands is drawn only where the brief names a second reference — the
- * branch above it is the answer whenever it does not.
+ * branch above it is the answer whenever it does not. Which way it lands there
+ * is the field's own name, a reference pushed onto and one proposed into being
+ * the same reference and not the same act.
  */
 function Brief(props: { readonly brief: TicketBriefBody }): ReactNode {
   const { intent, links, branch, finalization } = props.brief;
@@ -63,7 +78,9 @@ function Brief(props: { readonly brief: TicketBriefBody }): ReactNode {
       </Field>
       <Field name="branch">{branch ?? "none"}</Field>
       {finalization?.target === undefined ? null : (
-        <Field name="lands on">{finalization.target}</Field>
+        <Field name={briefLandingName(finalization)}>
+          {finalization.target}
+        </Field>
       )}
     </>
   );
@@ -82,7 +99,7 @@ export function TicketBrief(props: {
         return (
           <dl className="fields">
             {draft.brief === undefined ? (
-              <Field name="intent, links, branch">
+              <Field name="intent, links, branch, landing">
                 <span className="panel-absent">
                   this ticket was released before a brief was kept for one
                 </span>
