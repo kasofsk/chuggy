@@ -101,6 +101,7 @@ import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
   finalizerChangeProposalAttempt,
+  finalizerChangeProposalDecline,
   finalizerChangeProposalRead,
   finalizerChangeProposalRecord,
   finalizerChangeProposalRefuse,
@@ -739,7 +740,7 @@ function postgresFinalizerPreparation(
   };
 }
 
-/** The four moves a change proposal owns, over the same pool the rest of the authority runs on. */
+/** The moves a change proposal owns, over the same pool the rest of the authority runs on. */
 function postgresFinalizerProposals(pool: pg.Pool): FinalizerProposalStore {
   return {
     changeProposal: (claim) =>
@@ -753,6 +754,10 @@ function postgresFinalizerProposals(pool: pg.Pool): FinalizerProposalStore {
     refuseChangeProposalAttempt: (claim) =>
       postgresTransaction(pool, (client) =>
         finalizerChangeProposalRefuse(client, claim),
+      ),
+    declineChangeProposalAttempt: (claim) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalDecline(client, claim),
       ),
     recordChangeProposal: (record) =>
       postgresTransaction(pool, (client) =>

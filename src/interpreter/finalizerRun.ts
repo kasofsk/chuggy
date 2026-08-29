@@ -130,13 +130,14 @@
  * and a create answering with none is read back by its marker.
  *
  * A FORGE THAT DECLINED TO BE ASKED HAS ANSWERED NOTHING. A create the forge
- * would not take — a rate limit, a credential this deployment could not read —
- * says nothing about whether a proposal stands, so the attempt it refused is
- * released and a later pass may make another while `proposalCreationsMax` is
- * unspent. Readings answer the same way: one that could not be made is no
- * reading about the proposal, and readings that reached the forge and found
- * nothing spend the attempt they were taken for, after which another create is
- * what the ceiling authorizes. Every act is bounded by the pass as well: one
+ * would not take — a rate limit, a credential this deployment could not read,
+ * an authority a rotation withdrew — says nothing about whether a proposal
+ * stands, so the attempt it declined is released with the create it stood for
+ * unspent and the request holds and asks again, exactly as an unreadable remote
+ * does. Readings answer the same way: one that could not be made is no reading
+ * about the proposal, and readings that reached the forge and found nothing
+ * spend the create they were taken about, after which another one is what
+ * `proposalCreationsMax` authorizes. Every act is bounded by the pass as well: one
  * proposal act per claimed request, and no more of them in a pass than
  * `proposalsPerPassMax`.
  *
@@ -1161,8 +1162,8 @@ async function finalizerAwaitApproval(
 /**
  * The request one stored row asked the forge for, rebuilt so that every later
  * pass reconciles and concludes against what was actually sent. Nothing is
- * observed for it: a proposal already opened is not re-derived from a brief and
- * a remote that have both moved on since.
+ * observed for it: a proposal already opened is not re-derived from a remote
+ * that has moved on since.
  */
 function finalizerStoredProposal(
   binding: ForgeBinding,
@@ -1253,14 +1254,22 @@ async function finalizerGatherProposal(
     : finalizerStoredProposal(binding, repository, stored);
 }
 
-/** Releases the attempt in flight, so that a later pass may make another create. */
-async function finalizerRefuseProposalAttempt(
+/**
+ * Releases the attempt in flight so that a later pass may make another create,
+ * spending the create it stood for where the forge may have taken it and
+ * nothing where the forge would not.
+ */
+async function finalizerReleaseProposalAttempt(
   service: FinalizerService,
   view: FinalizationView,
+  released: "Refused" | "Declined",
   tally: FinalizerTally,
   hold: FinalizerHoldReason | undefined,
 ): Promise<void> {
-  const wrote = await service.store.refuseChangeProposalAttempt(view.claim);
+  const wrote =
+    released === "Refused"
+      ? await service.store.refuseChangeProposalAttempt(view.claim)
+      : await service.store.declineChangeProposalAttempt(view.claim);
   if (wrote.wrote !== "Row")
     finalizerHold(service, tally, "ProposalUnrecorded");
   else if (hold !== undefined) finalizerHold(service, tally, hold);
@@ -1278,8 +1287,14 @@ async function finalizerRecordProposal(
     finalizerHold(service, tally, recording.hold);
     return;
   }
-  if (recording.record === "Refusal") {
-    await finalizerRefuseProposalAttempt(service, view, tally, recording.hold);
+  if (recording.record === "Decline") {
+    await finalizerReleaseProposalAttempt(
+      service,
+      view,
+      "Declined",
+      tally,
+      recording.hold,
+    );
     return;
   }
   const wrote = await service.store.recordChangeProposal({
@@ -1386,7 +1401,13 @@ async function finalizerProposal(
       );
       return;
     case "RefuseProposalAttempt":
-      await finalizerRefuseProposalAttempt(service, view, tally, undefined);
+      await finalizerReleaseProposalAttempt(
+        service,
+        view,
+        "Refused",
+        tally,
+        undefined,
+      );
       return;
     case "ProposeChange":
       await finalizerProposeChange(service, view, decision.request, tally);
