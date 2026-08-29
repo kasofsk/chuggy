@@ -88,6 +88,7 @@ const brief = {
   intent: "Serve the brief on the ticket resource.",
   links: ["https://example.test/issues/340"],
   branch: "refs/heads/rt/ticket-brief",
+  finalization: { mode: "PullRequest", target: "refs/heads/main" },
 } as const;
 
 test("authoring DTOs translate into existing application types", () => {
@@ -138,6 +139,7 @@ test("authoring DTOs translate into existing application types", () => {
         intent: "Serve the brief on the ticket resource.",
         links: ["https://example.test/issues/340"],
         branch: "refs/heads/rt/ticket-brief",
+        finalization: { mode: "PullRequest", target: "refs/heads/main" },
       },
     },
   );
@@ -299,6 +301,11 @@ test("a brief the interpreter would refuse never reaches a draft", () => {
     { intent: "Fix it.", links: [], branch: "rt/ticket-brief" },
     { intent: "Fix it.", links: [], branch: "refs/heads/one..two" },
     { intent: "Fix it.", links: [], branch: "refs/heads/one.lock" },
+    {
+      intent: "Fix it.",
+      links: [],
+      finalization: { mode: "Push", target: "refs/heads/one..two" },
+    },
   ])
     assert.throws(
       () => parseDraftCreation({ ...creation, brief: refused }),

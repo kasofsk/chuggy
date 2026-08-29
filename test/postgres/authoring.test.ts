@@ -9,6 +9,7 @@ import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { migration048 } from "../../src/adapters/postgres/schema/migrations/048-repository-configuration-version.ts";
 import {
   asCanonicalConfiguration,
+  canonicalConfigurationOf,
   asConfigurationRevisionId,
 } from "../../src/interpreter/authoring.ts";
 import {
@@ -38,6 +39,7 @@ import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import { briefLinksMax } from "../../src/contract/brief.ts";
 import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
+import { handoffFixture } from "../interpreter/handoffFixture.ts";
 import {
   postgresHarnessBrief,
   postgresHarnessHeld,
@@ -879,6 +881,75 @@ test("release journals the retained draft only while its revision is current", a
   );
 });
 
+/** The configuration a handing-off project pins, which no proposal may be opened under. */
+const handoffConfiguration = canonicalConfigurationOf({
+  ...(JSON.parse(postgresHarnessConfiguration) as Record<string, unknown>),
+  finalizationHandoff: handoffFixture(),
+});
+
+/** Accepts one release and decides it, which is the whole of what a release case drives. */
+async function releaseDecision(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+  label: string,
+) {
+  const submission = releaseSubmission(fixture);
+  assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
+  const input = await harness.discovery.next(fixture.partition);
+  assert.ok(input !== undefined);
+  const lease = await postgresHarnessHeld(
+    harness.store,
+    fixture.partition,
+    label,
+  );
+  const writer = postgresHarnessWriter(harness);
+  const result = await projectWriterDecide(
+    writer,
+    await projectWriterLoad(writer, lease),
+    input,
+  );
+  return { submission, result };
+}
+
+test("a brief that proposes a change refuses release against a handing-off configuration", async () => {
+  const fixture = await draftFixture(handoffConfiguration);
+  await harness.query(
+    `UPDATE draft_brief
+        SET finalization_mode='PullRequest',finalization_target='refs/heads/rt/landing'
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [fixture.partition.tenant, fixture.partition.project, fixture.draft.ticket],
+  );
+
+  const { submission, result } = await releaseDecision(
+    fixture,
+    "handoff-proposes",
+  );
+
+  assert.equal(result.decided.decided, "Refused");
+  assert.deepEqual(
+    await harness.query(
+      "SELECT state,outcome_code FROM decision_input WHERE input_id=$1",
+      [submission.operation],
+    ),
+    [{ state: "Refused", outcome_code: "ConfigurationInvalid" }],
+  );
+  assert.deepEqual(
+    await harness.query(
+      "SELECT state FROM draft WHERE tenant=$1 AND ticket=$2",
+      [fixture.partition.tenant, fixture.draft.ticket],
+    ),
+    [{ state: "Draft" }],
+    "the draft is still editable, which is the point of refusing here",
+  );
+});
+
+test("the same handing-off configuration releases a brief that pushes", async () => {
+  const fixture = await draftFixture(handoffConfiguration);
+
+  const { result } = await releaseDecision(fixture, "handoff-pushes");
+
+  assert.equal(result.decided.decided, "Committed");
+});
+
 test("semantic configuration failure durably refuses release without an entry", async () => {
   const fixture = await draftFixture(asCanonicalConfiguration("{}"));
   const submission = releaseSubmission(fixture);
@@ -1005,6 +1076,57 @@ test("the brief is written with the draft, replaced with it, and read back besid
   );
 });
 
+test("where a brief lands is written, replaced and read back apart from where it works", async () => {
+  const { partition, store, revision, draft } = await draftFixture();
+  assert.equal(draft.brief?.finalization, undefined);
+  const landing = asDraftBrief({
+    intent: "Land it on the release branch.",
+    links: [],
+    branch: "refs/heads/harness",
+    finalization: { mode: "Push", target: "refs/heads/harness-landing" },
+  });
+  const revised = await store.reviseDraft({
+    partition,
+    authority,
+    ticket: draft.ticket,
+    expectedVersion: 1,
+    configurationRevision: revision,
+    authoring: plainAuthoring,
+    brief: landing,
+  });
+  assert.deepEqual(
+    revised.revised === "Revised" ? revised.draft.brief : undefined,
+    landing,
+  );
+  assert.deepEqual(
+    (await store.draft(partition, draft.ticket))?.brief,
+    landing,
+  );
+  assert.deepEqual(
+    await postgresTicketBrief(pool).brief(partition, draft.ticket),
+    landing,
+  );
+
+  const cleared = await store.reviseDraft({
+    partition,
+    authority,
+    ticket: draft.ticket,
+    expectedVersion: 2,
+    configurationRevision: revision,
+    authoring: plainAuthoring,
+    brief: postgresHarnessBrief,
+  });
+  assert.deepEqual(
+    cleared.revised === "Revised" ? cleared.draft.brief : undefined,
+    postgresHarnessBrief,
+    "a revision naming no finalization lands the work where it happens again",
+  );
+  assert.deepEqual(
+    await postgresTicketBrief(pool).brief(partition, draft.ticket),
+    postgresHarnessBrief,
+  );
+});
+
 test("a draft authored before a brief existed reads back without one", async () => {
   const { partition, store, draft } = await draftFixture();
   await harness.query(
@@ -1028,6 +1150,8 @@ test("the server refuses a brief that reached it around the interpreter's rules"
     ["intent", ""],
     ["intent", "Fix it.\u0007"],
     ["branch", "rt/ticket-brief"],
+    ["finalization_mode", "PullRequest"],
+    ["finalization_target", "rt/ticket-brief"],
   ] as const)
     await assert.rejects(
       harness.query(

@@ -57,6 +57,7 @@ import type { Lease, Lifecycle } from "./projectStore.ts";
 import type { DispatchCandidate } from "./dispatchView.ts";
 import type { FinalizationEvidence } from "./finalizerPreparation.ts";
 import type { NativeActionResolution } from "./ticketCommand.ts";
+import type { BriefFinalization } from "./ticketBrief.ts";
 
 /**
  * The finite vocabulary a refused operation answers with. It is closed because
@@ -92,6 +93,12 @@ export interface DraftReleaseFence extends ConfigurationPin {
   readonly ticket: number;
   readonly authoringVersion: number;
   readonly configurationCanonical: string;
+  /**
+   * How the draft's brief lands its work, absent for a draft carrying no brief.
+   * Release is where the brief and the configuration it pins are both still
+   * editable, so it is where a pair that contradicts each other is refused.
+   */
+  readonly briefFinalization?: BriefFinalization;
 }
 
 /**

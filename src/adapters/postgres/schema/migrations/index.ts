@@ -47,6 +47,9 @@ import { migration046 } from "./046-ticket-service-work-source-read.ts";
 import { migration047 } from "./047-admitted-worker-catalog.ts";
 import { migration048 } from "./048-repository-configuration-version.ts";
 import { migration049 } from "./049-run-evidence.ts";
+import { migration050 } from "./050-brief-finalization-target.ts";
+import { migration051 } from "./051-brief-pull-request-finalization.ts";
+import { migration052 } from "./052-finalization-change-proposal.ts";
 import type { Migration } from "../shared.ts";
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -100,4 +103,7 @@ export const migrations: readonly Migration[] = [
   migration047,
   migration048,
   migration049,
+  migration050,
+  migration051,
+  migration052,
 ];

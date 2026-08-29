@@ -31,6 +31,7 @@ import {
   postgresRuntimeSchema,
   runtimeSchemaContract,
 } from "../../src/adapters/postgres/runtimeSchema.ts";
+import { briefFinalizationModes } from "../../src/contract/rosters.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import { schemaCompatibilityPrecondition } from "../../src/interpreter/serviceRuntime.ts";
 import { postgresHarnessUrl } from "./harness.ts";
@@ -1580,6 +1581,118 @@ test("migration 45 gives the finalizer the brief its target is narrowed by", asy
         await privilege(relation, verb),
         granted,
         `${finalizerRole} holds ${verb} on ${relation}`,
+      );
+  });
+});
+
+test("migration 50 lands an existing brief where its work happened and takes a target from the next", async () => {
+  await migrationDatabase("brief_finalization", async (subject) => {
+    await migrationSeedApplied(subject, 50);
+    await seedBrieflessDraft(subject);
+    await subject.query(
+      `INSERT INTO draft_brief (tenant,project,ticket,intent,branch)
+       VALUES ('tenant','project',1,'Fix the importer.','refs/heads/rt/ticket-brief')`,
+    );
+
+    await applyMigration(subject, 50);
+
+    assert.deepEqual(
+      (
+        await subject.query<{ mode: string; target: string | null }>(
+          "SELECT finalization_mode AS mode,finalization_target AS target FROM draft_brief",
+        )
+      ).rows,
+      [{ mode: "Push", target: null }],
+      "a brief written before the columns existed lands on the branch it names",
+    );
+    const created = await subject.query<{ result: string; ticket: string }>(
+      `SELECT result,ticket::text AS ticket FROM create_draft('tenant','project','revision','digest',1,
+         'authoring','Fix the importer.',ARRAY[]::text[],
+         'refs/heads/rt/work','Push','refs/heads/rt/landing','User','author')`,
+    );
+    assert.equal(created.rows[0]?.result, "Created");
+    assert.deepEqual(
+      (
+        await subject.query<{ branch: string; target: string | null }>(
+          `SELECT branch,finalization_target AS target FROM draft_brief
+            WHERE ticket=$1`,
+          [created.rows[0]?.ticket],
+        )
+      ).rows,
+      [{ branch: "refs/heads/rt/work", target: "refs/heads/rt/landing" }],
+    );
+    for (const [column, value] of [
+      ["finalization_mode", "Rebase"],
+      ["finalization_target", "rt/landing"],
+    ] as const)
+      await assert.rejects(
+        subject.query(`UPDATE draft_brief SET ${column}=$2 WHERE ticket=$1`, [
+          created.rows[0]?.ticket,
+          value,
+        ]),
+        `the brief refuses ${column}=${value}`,
+      );
+  });
+});
+
+test("migration 51 admits a mode installed before it existed and refuses one opening from or into nothing", async () => {
+  await migrationDatabase("brief_pull_request", async (subject) => {
+    await migrationSeedApplied(subject, 51);
+    await subject.query(
+      `ALTER TABLE draft_brief
+         DROP CONSTRAINT draft_brief_finalization_mode_is_known,
+         ADD CONSTRAINT draft_brief_finalization_mode_is_known CHECK
+           (finalization_mode IN (${schemaTextSet(
+             briefFinalizationModes.filter((mode) => mode !== "PullRequest"),
+           )}))`,
+    );
+    await seedBrieflessDraft(subject);
+    await subject.query(
+      `INSERT INTO draft_brief (tenant,project,ticket,intent,branch)
+       VALUES ('tenant','project',1,'Fix the importer.','refs/heads/rt/ticket-brief')`,
+    );
+    const landing = `UPDATE draft_brief
+        SET finalization_mode='PullRequest',finalization_target='refs/heads/rt/landing'
+      WHERE ticket=1`;
+    await assert.rejects(
+      () => subject.query(landing),
+      /draft_brief_finalization_mode_is_known/u,
+      "the brief installed with 50 refuses a mode it was created before",
+    );
+
+    await applyMigration(subject, 51);
+
+    assert.deepEqual(
+      (
+        await subject.query<{ mode: string; target: string | null }>(
+          "SELECT finalization_mode AS mode,finalization_target AS target FROM draft_brief",
+        )
+      ).rows,
+      [{ mode: "Push", target: null }],
+      "a brief that already lands by pushing is untouched",
+    );
+    await subject.query(landing);
+    assert.deepEqual(
+      (
+        await subject.query<{ mode: string; target: string | null }>(
+          "SELECT finalization_mode AS mode,finalization_target AS target FROM draft_brief",
+        )
+      ).rows,
+      [{ mode: "PullRequest", target: "refs/heads/rt/landing" }],
+    );
+    for (const [written, why] of [
+      ["finalization_target=NULL", "loses the reference it opens into"],
+      [
+        "finalization_mode='PullRequest',finalization_target=NULL",
+        "is written naming no reference at all",
+      ],
+      ["branch=NULL", "names no branch to open from"],
+      ["branch=finalization_target", "opens from its own base"],
+    ] as const)
+      await assert.rejects(
+        () => subject.query(`UPDATE draft_brief SET ${written} WHERE ticket=1`),
+        /draft_brief_finalization_is_whole/u,
+        `no pull request ${why}`,
       );
   });
 });

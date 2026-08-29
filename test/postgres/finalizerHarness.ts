@@ -73,6 +73,8 @@ import {
 } from "../../src/adapters/artifacts/artifactKey.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
+import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
+import type { ChangeProposalForges } from "../../src/interpreter/changeProposal.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import { gitPromotion } from "../../src/adapters/git/gitPromotion.ts";
 import {
@@ -136,6 +138,12 @@ import {
   postgresHarnessWriter,
   type PostgresHarness,
 } from "./harness.ts";
+
+/** What a deployment binding no forge answers with, which is what every pushing case needs. */
+const finalizerNoForges: ChangeProposalForges = {
+  selector: { select: () => undefined },
+  bindingOf: () => undefined,
+};
 
 /** A pool whose every session runs as the finalizer's own role. */
 export function finalizerRolePool(): pg.Pool {
@@ -361,9 +369,10 @@ export function finalizerPassOnce(
   project: FinalizerProject,
   git: GitPromotionPort,
   label: string,
+  forges?: ChangeProposalForges,
 ): Promise<FinalizerPassReport> {
   return finalizerPass(
-    finalizerService(rig, git),
+    finalizerService(rig, git, silentFinalizerTelemetry, forges),
     asFinalizerOwnerId(`owner-${label}`),
     asRecoveryEpoch(project.epoch),
   );
@@ -671,6 +680,28 @@ export async function finalizerBriefBranch(
   }
 }
 
+/**
+ * The reference this project's ticket lands on, apart from the branch its work
+ * happens on. A harness draft names none, so a case about landing elsewhere is
+ * what puts one there.
+ */
+export async function finalizerBriefFinalizationTarget(
+  rig: FinalizerRig,
+  partition: Partition,
+  ticket: number,
+  target: string,
+  mode: BriefFinalizationMode = "Push",
+): Promise<void> {
+  const updated = await rig.harness.query(
+    `UPDATE draft_brief SET finalization_target=$4, finalization_mode=$5
+      WHERE tenant=$1 AND project=$2 AND ticket=$3 RETURNING ticket`,
+    [partition.tenant, partition.project, ticket, target, mode],
+  );
+  if (updated.length !== 1) {
+    throw new Error("finalizer harness: the ticket carries no brief");
+  }
+}
+
 /** Hexadecimal no other call has produced, at least as long as the widest identity a case needs. */
 function finalizerHex(): string {
   return `${randomUUID()}${randomUUID()}`.replaceAll("-", "");
@@ -939,11 +970,13 @@ export function finalizerService(
   rig: FinalizerRig,
   git: GitPromotionPort,
   metrics: FinalizerTelemetry = silentFinalizerTelemetry,
+  forges?: ChangeProposalForges,
 ): FinalizerService {
   const artifacts = artifactStore({ root: rig.artifactRoot });
   return {
     store: postgresFinalizer(rig.pool),
     git,
+    forges: forges ?? finalizerNoForges,
     ticketBriefs: postgresTicketBrief(rig.pool),
     handoffs: artifacts,
     artifacts,

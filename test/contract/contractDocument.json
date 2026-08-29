@@ -26,6 +26,7 @@
     "operation": "percent-encoded opaque UTF-8 path segment",
     "cursor": "opaque canonical base64url"
   },
+  "briefFinalization": "a PullRequest finalization requires the brief to name a branch, and a target that is not it",
   "routes": {
     "contract": "/api/v1/contract",
     "installation": "/api/v1/installation",
@@ -414,6 +415,42 @@
               "type": "string",
               "maxLength": 256,
               "pattern": "^refs\\/heads\\/.*"
+            },
+            "finalization": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "Push"
+                    },
+                    "target": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "pattern": "^refs\\/heads\\/.*"
+                    }
+                  },
+                  "required": ["mode"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "PullRequest"
+                    },
+                    "target": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "pattern": "^refs\\/heads\\/.*"
+                    }
+                  },
+                  "required": ["mode", "target"],
+                  "additionalProperties": false
+                }
+              ]
             }
           },
           "required": ["intent", "links"],
@@ -560,6 +597,42 @@
               "type": "string",
               "maxLength": 256,
               "pattern": "^refs\\/heads\\/.*"
+            },
+            "finalization": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "Push"
+                    },
+                    "target": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "pattern": "^refs\\/heads\\/.*"
+                    }
+                  },
+                  "required": ["mode"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "PullRequest"
+                    },
+                    "target": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "pattern": "^refs\\/heads\\/.*"
+                    }
+                  },
+                  "required": ["mode", "target"],
+                  "additionalProperties": false
+                }
+              ]
             }
           },
           "required": ["intent", "links"],

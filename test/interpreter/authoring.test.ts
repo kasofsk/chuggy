@@ -11,6 +11,8 @@ import {
   parseDraftAuthoring,
   releaseConfigurationReadiness,
 } from "../../src/interpreter/authoring.ts";
+import { asBriefBranch } from "../../src/interpreter/ticketBrief.ts";
+import { handoffFixture } from "./handoffFixture.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
@@ -123,6 +125,39 @@ test("release readiness is stricter than structurally valid draft configuration"
       asCanonicalConfiguration('{"image":"worker:v1","version":1}'),
     ),
     { readiness: "Incomplete", fault: "BriefingShapeMissing" },
+  );
+});
+
+test("a configuration that hands off refuses a brief that would propose a change", () => {
+  const parsed = JSON.parse(readyConfiguration) as Record<string, unknown>;
+  const handing = canonicalConfigurationOf({
+    ...parsed,
+    finalizationHandoff: handoffFixture(),
+  });
+  assert.deepEqual(
+    releaseConfigurationReadiness(handing, {
+      mode: "PullRequest",
+      target: asBriefBranch("refs/heads/rt/landing"),
+    }),
+    { readiness: "Incomplete", fault: "HandoffProposesChange" },
+  );
+  assert.equal(
+    releaseConfigurationReadiness(handing, { mode: "Push" }).readiness,
+    "Ready",
+    "the same configuration releases under every other mode",
+  );
+  assert.equal(
+    releaseConfigurationReadiness(handing).readiness,
+    "Ready",
+    "and for a caller with no brief to read",
+  );
+  assert.equal(
+    releaseConfigurationReadiness(readyConfiguration, {
+      mode: "PullRequest",
+      target: asBriefBranch("refs/heads/rt/landing"),
+    }).readiness,
+    "Ready",
+    "a configuration that hands nothing off is proposed against freely",
   );
 });
 

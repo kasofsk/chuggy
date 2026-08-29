@@ -86,6 +86,7 @@ import {
   type FinalizerOwnerId,
   type FinalizerStore,
 } from "../../interpreter/finalizer.ts";
+import type { FinalizerProposalStore } from "../../interpreter/finalizationProposal.ts";
 import type { FinalizerPreparationStore } from "../../interpreter/finalizerPreparation.ts";
 import { nativeActionResolutions } from "../../interpreter/ticketCommand.ts";
 import {
@@ -98,6 +99,13 @@ import {
 import { postgresOwnershipEpoch } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
+import {
+  finalizerChangeProposalAttempt,
+  finalizerChangeProposalDecline,
+  finalizerChangeProposalRead,
+  finalizerChangeProposalRecord,
+  finalizerChangeProposalRefuse,
+} from "./finalizerChangeProposal.ts";
 import {
   finalizerPermitGrant,
   finalizerPermitHolds,
@@ -732,12 +740,39 @@ function postgresFinalizerPreparation(
   };
 }
 
+/** The moves a change proposal owns, over the same pool the rest of the authority runs on. */
+function postgresFinalizerProposals(pool: pg.Pool): FinalizerProposalStore {
+  return {
+    changeProposal: (claim) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalRead(client, claim),
+      ),
+    markChangeProposalAttempt: (record) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalAttempt(client, record),
+      ),
+    refuseChangeProposalAttempt: (claim) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalRefuse(client, claim),
+      ),
+    declineChangeProposalAttempt: (claim) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalDecline(client, claim),
+      ),
+    recordChangeProposal: (record) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalRecord(client, record),
+      ),
+  };
+}
+
 /** The durable finalization authority for one installation, over a finalizer-role pool. */
 export function postgresFinalizer(
   pool: pg.Pool,
-): FinalizerStore & FinalizerPreparationStore {
+): FinalizerStore & FinalizerPreparationStore & FinalizerProposalStore {
   return {
     ...postgresFinalizerPreparation(pool),
+    ...postgresFinalizerProposals(pool),
     claimRequests: (owner, epoch, requestsMax, leaseSecs) =>
       postgresTransaction(pool, (client) =>
         finalizerClaimRequests(client, owner, epoch, requestsMax, leaseSecs),

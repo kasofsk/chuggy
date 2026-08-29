@@ -50,6 +50,7 @@ import {
   asRecoveryEpoch,
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
+import { briefFinalizationModes } from "../../src/contract/rosters.ts";
 import { asSafeInteger } from "../../src/domain/ids.ts";
 import { assertBoundsAreRefused } from "./configBounds.ts";
 import { populated } from "./roster.ts";
@@ -618,6 +619,86 @@ test("publication concludes only from publication-specific durable evidence", ()
       conclusion: { outcome: "HandoffPublicationUnproven" },
     },
   );
+});
+
+test("a promoted candidate whose brief proposes is not concluded by the promotion", () => {
+  const promoted = {
+    attempt: prepared,
+    attemptsMade: 1,
+    permit: permitIn("Concluded"),
+    reconciliation: reconciliationOf("Promoted"),
+  };
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({ ...promoted, finalizationMode: "PullRequest" }),
+    ),
+    { decide: "Propose" },
+  );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({ ...promoted, finalizationMode: "Push" }),
+    ),
+    { decide: "Conclude", conclusion: { outcome: "FinalizationSucceeded" } },
+  );
+  assert.deepEqual(
+    finalizationNext(finalizerDefaults, viewWith(promoted)),
+    { decide: "Conclude", conclusion: { outcome: "FinalizationSucceeded" } },
+    "a ticket carrying no brief lands where it always did",
+  );
+});
+
+test("a handoff never proposes, whatever mode its ticket's brief names", () => {
+  for (const kind of ["PromoteForHandoff", "PublishHandoff"] as const) {
+    const decision = finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        claim: { ...viewWith({}).claim, kind },
+        finalizationMode: "PullRequest",
+        attempt: prepared,
+        attemptsMade: 1,
+        permit: permitIn("Concluded"),
+        reconciliation: reconciliationOf("Promoted"),
+      }),
+    );
+    assert.deepEqual(
+      decision,
+      {
+        decide: "Conclude",
+        conclusion: {
+          outcome:
+            kind === "PromoteForHandoff"
+              ? "PromotionAccepted"
+              : "FinalizationSucceeded",
+        },
+      },
+      kind,
+    );
+  }
+});
+
+test("nothing before the promotion is decided by the mode a brief names", () => {
+  for (const mode of populated(
+    briefFinalizationModes,
+    "briefFinalizationModes",
+  )) {
+    for (const varied of [
+      {},
+      { attempt: prepared, attemptsMade: 1 },
+      { attempt: prepared, attemptsMade: 1, permit: permitIn("Granted") },
+      { attempt: attemptFailed("MergeConflict"), attemptsMade: 1 },
+    ]) {
+      assert.deepEqual(
+        finalizationNext(
+          finalizerDefaults,
+          viewWith({ ...varied, finalizationMode: mode }),
+        ),
+        finalizationNext(finalizerDefaults, viewWith(varied)),
+        `${mode}/${JSON.stringify(Object.keys(varied))}`,
+      );
+    }
+  }
 });
 
 test("an ambiguous promotion has no path to a conclusive outcome", () => {

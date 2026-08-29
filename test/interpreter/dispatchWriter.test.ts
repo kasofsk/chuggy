@@ -337,6 +337,26 @@ test("the branch a ticket was briefed with names the ref its work is observed at
   );
 });
 
+test("a brief landing elsewhere still has its work observed at the branch it happens on", async () => {
+  const observed: Parameters<ExecutionSourceObservationPort["observe"]>[0][] =
+    [];
+  await planned(releasedMemory(), manualDispatch, recordingSources(observed), {
+    brief: () =>
+      Promise.resolve(
+        asDraftBrief({
+          intent: "Fix the importer.",
+          links: [],
+          branch: "refs/heads/rt/ticket-brief",
+          finalization: { mode: "Push", target: "refs/heads/rt/landing" },
+        }),
+      ),
+  });
+  assert.deepEqual(
+    observed.map((request) => request.ref),
+    ["refs/heads/rt/ticket-brief"],
+  );
+});
+
 const workBase = asGitObjectId("b".repeat(40));
 const workCommit = asGitObjectId("c".repeat(40));
 

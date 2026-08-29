@@ -3,11 +3,12 @@
  * asked about.
  *
  * What is visible is what only a person can state — the intent, what to read
- * first, and the branch the work happens on; the rest is prefilled behind the
- * disclosure. Submit creates the draft and releases it in one motion, and the
- * navigation happens on a settled success alone, so a screen never hands a
- * reader a ticket the projection has not got to yet. Every other ending is
- * drawn here with its reason and the form still holding what was typed.
+ * first, the branch the work happens on and the one it lands on; the rest is
+ * prefilled behind the disclosure. Submit creates the draft and releases it in
+ * one motion, and the navigation happens on a settled success alone, so a
+ * screen never hands a reader a ticket the projection has not got to yet.
+ * Every other ending is drawn here with its reason and the form still holding
+ * what was typed.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -32,6 +33,7 @@ import {
   creationConfigurationSentence,
   creationFormFrom,
   creationStepSentence,
+  creationTargetBranchHint,
 } from "../core/ticketCreation.ts";
 import type {
   CreationFault,
@@ -162,6 +164,24 @@ function Branch(props: FormEdit): ReactNode {
   );
 }
 
+function TargetBranch(props: FormEdit): ReactNode {
+  const { form, onChange } = props;
+  return (
+    <label className="creation-row">
+      <span>target branch</span>
+      <input
+        type="text"
+        value={form.targetBranchName}
+        placeholder="the branch to land on"
+        onChange={(event) => {
+          onChange({ ...form, targetBranchName: event.target.value });
+        }}
+      />
+      <span className="creation-hint">{creationTargetBranchHint}</span>
+    </label>
+  );
+}
+
 function AttemptNote(props: { readonly attempt: Attempt }): ReactNode {
   const attempt = props.attempt;
   switch (attempt.attempt) {
@@ -215,6 +235,8 @@ function CreationFields(
       <Fault field="links" faults={faults} />
       <Branch form={form} onChange={onChange} />
       <Fault field="branch" faults={faults} />
+      <TargetBranch form={form} onChange={onChange} />
+      <Fault field="target" faults={faults} />
       <TicketCreationAdvanced
         form={form}
         onChange={onChange}

@@ -14,15 +14,18 @@ import test from "node:test";
 import {
   briefBranchCharsMax,
   briefBranchPrefix,
+  briefFinalizationSchema,
   briefIntentCharsMax,
   briefIntentLinesMax,
   briefLineCharsMax,
   briefLinkSchema,
   briefLinkScheme,
   briefLinksMax,
+  briefResponseSchema,
   briefSchema,
 } from "../../src/contract/brief.ts";
 import { draftCreationSchema } from "../../src/contract/requests.ts";
+import { briefFinalizationModes } from "../../src/contract/rosters.ts";
 import { proposalBodyCharsMax } from "../../src/interpreter/changeProposal.ts";
 import { gitRefNameCharsMax } from "../../src/interpreter/finalizer.ts";
 import { handoffRefPrefix } from "../../src/interpreter/handoffConfiguration.ts";
@@ -72,6 +75,117 @@ test("a brief states an intent and bounds what it points at", () => {
     },
   );
   assert.ok(briefSchema.safeParse({ intent: "Do it.", links: [] }).success);
+});
+
+test("a brief lands where its work happened unless its finalization says otherwise", () => {
+  const landing = (finalization: unknown) =>
+    briefSchema.safeParse({
+      intent: "Do it.",
+      links: [],
+      branch: `${briefBranchPrefix}rt/work`,
+      finalization,
+    });
+  assert.deepEqual(landing({ mode: "Push" }).data?.finalization, {
+    mode: "Push",
+  });
+  assert.deepEqual(
+    landing({ mode: "Push", target: `${briefBranchPrefix}rt/landing` }).data
+      ?.finalization,
+    { mode: "Push", target: "refs/heads/rt/landing" },
+  );
+  assert.equal(
+    briefSchema.parse({ intent: "Do it.", links: [] }).finalization,
+    undefined,
+    "a brief naming no finalization carries none",
+  );
+  assert.deepEqual(
+    landing({
+      mode: "PullRequest",
+      target: `${briefBranchPrefix}rt/landing`,
+    }).data?.finalization,
+    { mode: "PullRequest", target: "refs/heads/rt/landing" },
+  );
+  for (const value of [
+    {},
+    { mode: "PullRequest" },
+    { mode: "Push", target: "rt/landing" },
+    { mode: "PullRequest", target: "rt/landing" },
+    {
+      mode: "Push",
+      target: `${briefBranchPrefix}${"a".repeat(briefBranchCharsMax)}`,
+    },
+    { mode: "Push", unnamed: true },
+    { mode: "PullRequest", target: `${briefBranchPrefix}rt/x`, unnamed: true },
+  ])
+    assert.equal(
+      landing(value).success,
+      false,
+      `a finalization is refused: ${JSON.stringify(value)}`,
+    );
+});
+
+test("a brief that proposes is opened from a branch of its own into another", () => {
+  const proposing = (branch?: string) =>
+    briefSchema.safeParse({
+      intent: "Do it.",
+      links: [],
+      ...(branch === undefined ? {} : { branch }),
+      finalization: {
+        mode: "PullRequest",
+        target: `${briefBranchPrefix}rt/landing`,
+      },
+    });
+  assert.equal(proposing(`${briefBranchPrefix}rt/work`).success, true);
+  assert.equal(
+    proposing().success,
+    false,
+    "a proposal has no head where the brief names no branch",
+  );
+  assert.equal(
+    proposing(`${briefBranchPrefix}rt/landing`).success,
+    false,
+    "a proposal is never opened from its own base",
+  );
+});
+
+/**
+ * The read schema is the write schema extended, and the extension is what could
+ * silently drop the pairing the write refuses under. So the same three shapes
+ * are put to it directly: a brief is one thing in both directions or the reader
+ * is served a landing the writer would never have taken.
+ */
+test("a brief read back is refused the pairings a written one is", () => {
+  const reading = (brief: Readonly<Record<string, unknown>>) =>
+    briefResponseSchema.safeParse({ intent: "Do it.", links: [], ...brief });
+  const proposing = {
+    mode: "PullRequest",
+    target: `${briefBranchPrefix}rt/landing`,
+  };
+  assert.equal(
+    reading({ branch: `${briefBranchPrefix}rt/work`, finalization: proposing })
+      .success,
+    true,
+  );
+  assert.equal(
+    reading({ finalization: proposing }).success,
+    false,
+    "a proposal has no head where the brief names no branch",
+  );
+  assert.equal(
+    reading({
+      branch: `${briefBranchPrefix}rt/landing`,
+      finalization: proposing,
+    }).success,
+    false,
+    "a proposal is never opened from its own base",
+  );
+});
+
+test("the modes the roster names are exactly the variants the wire publishes", () => {
+  assert.deepEqual(
+    briefFinalizationSchema.options.map((option) => option.shape.mode.value),
+    [...briefFinalizationModes],
+  );
 });
 
 test("a brief carrying no intent, an oversized one or an unreadable link is refused", () => {

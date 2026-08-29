@@ -573,9 +573,15 @@ test("a hand-assembled read drops an unknown field at every depth", () => {
       reworkPolicy: { type: "BudgetedRework", value: 0, ceiling: 4 },
       program: [{ fanout: 1, combinator: "UnanimousPass", label: "review" }],
     },
+    brief: {
+      intent: "Land it elsewhere.",
+      links: [],
+      finalization: { mode: "Push", strategy: "Rebase" },
+    },
   };
   const parsed = draftResponseSchema.parse(later);
   assert.equal(parsed.state, "Draft");
+  assert.deepEqual(parsed.brief?.finalization, { mode: "Push" });
   assert.deepEqual(parsed.authoring.program, [
     { fanout: 1, combinator: "UnanimousPass" },
   ]);
@@ -646,6 +652,7 @@ test("a briefed draft and ticket read carry the brief, and an older one omits it
     intent: "Serve the brief on the ticket resource.",
     links: ["https://example.test/issues/340"],
     branch: "refs/heads/rt/ticket-brief",
+    finalization: { mode: "PullRequest", target: "refs/heads/main" },
   });
   assert.equal(
     draftResponseSchema.parse(draftResponse(draftResource).body).brief,
@@ -660,6 +667,10 @@ test("a briefed draft and ticket read carry the brief, and an older one omits it
     }).body,
   );
   assert.deepEqual(ticket.brief?.links, ["https://example.test/issues/340"]);
+  assert.deepEqual(ticket.brief?.finalization, {
+    mode: "PullRequest",
+    target: "refs/heads/main",
+  });
   assert.equal(
     ticketResponseSchema.parse(
       ticketResponse({ ticket: asTicketId(3), phase: "Working", sequence: 9 })

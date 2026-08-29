@@ -1,14 +1,17 @@
 /**
  * What a ticket's work is observed against: the project's binding, narrowed by
- * the configuration's handoff role and then by the ticket's own branch, which
- * is the most specific of the three and therefore the last word. An evaluation
- * is observed against the work instead, because what it judges is what the work
- * produced rather than what the work was handed.
+ * the configuration's handoff role and then by the branch the ticket's brief
+ * says its work happens on, which is the most specific of the three and
+ * therefore the last word. Where that work lands is the brief's separate answer
+ * and the finalizer's to read. An evaluation is observed against the work
+ * instead, because what it judges is what the work produced rather than what
+ * the work was handed.
  *
- * A BRANCH THE REMOTE DOES NOT HOLD YET IS WHERE THE WORK LANDS, NOT A FAILED
+ * A BRANCH THE REMOTE DOES NOT HOLD YET IS WHERE THE WORK STARTS, NOT A FAILED
  * OBSERVATION. The base is the binding's own target, exactly as it is for a
  * brief naming no branch at all, and the source still names the ticket's
- * branch — which is the branch the finalizer's first promotion creates.
+ * branch — which the finalizer's first promotion creates where the brief lands
+ * its work there.
  */
 
 import {

@@ -28,6 +28,13 @@
  * answers against the immutable candidate identity. That is what makes
  * idempotence the repository's rather than the row's.
  *
+ * A PROMOTED CANDIDATE IS NOT ALWAYS A FINISHED TICKET. Where the brief lands
+ * by opening a change proposal, the conditional ref update is the same act it
+ * always was and the proposal is what follows it, so a promotion authorizes
+ * `Propose` rather than a conclusion and `./finalizationProposal.ts` says which
+ * act that comes to. A handoff is exempt whatever its brief reads: its
+ * promotion is into a repository the ticket never worked in.
+ *
  * A HOLD IS A STATE AND NOT AN ABSENCE. An unreadable ref, a timeout and
  * contradictory evidence are one durable answer recorded on the reconciliation,
  * because an absent row is indistinguishable from a crash. An operator supplies
@@ -49,7 +56,7 @@
  * cannot be erased before it has been read.
  *
  * THE GLOBAL LOCK ORDER IS REQUEST, THEN REPOSITORY, THEN PROJECT, THEN PERMIT,
- * THEN ATTEMPT, and within each class in key order. Every transaction taking
+ * THEN ATTEMPT, THEN CHANGE PROPOSAL, and within each class in key order. Every transaction taking
  * more than one of them takes them in that order, because a declared order
  * makes a deadlock unreachable where a retry only makes it rare.
  *
@@ -59,6 +66,7 @@
  * it runs, so a decision never acquires a mock.
  */
 
+import type { BriefFinalizationMode } from "../contract/rosters.ts";
 import type { FinalizationOutcome } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import { asBoundedText } from "./boundedText.ts";
@@ -356,10 +364,10 @@ export function repositoryBindingNarrowed(
 }
 
 /**
- * What a ticket's work is observed against: the branch its brief names, or the
- * binding's own target where the remote does not hold that branch yet. A branch
- * nobody has created is not an unreadable ref — it is where the first promotion
- * puts the work, started from what the binding already names.
+ * What a branch the brief names resolves to: the branch itself, or the
+ * binding's own target under that branch's name where the remote does not hold
+ * it yet. A branch nobody has created is not an unreadable ref — it is where
+ * work starts or lands, from what the binding already names.
  */
 export async function repositoryTargetObserved(
   git: Pick<GitPromotionPort, "observeTarget">,
@@ -519,10 +527,14 @@ export interface FinalizationView {
   readonly claim: FinalizationClaim;
   readonly lifecycle: Lifecycle;
   readonly repository?: RepositoryBinding;
-  /** The branch the ticket's brief names, which the remote may not hold yet and the first promotion creates. */
+  /** The branch the ticket's brief lands its work on, which the remote may not hold yet and the first promotion creates. */
   readonly targetBranch?: GitRefName;
+  /** How the ticket's brief lands its work, absent for a ticket carrying no brief at all. */
+  readonly finalizationMode?: BriefFinalizationMode;
   readonly handoffRequest?: HandoffFinalizationRequest;
   readonly observedTarget?: ObservedTarget;
+  /** What the branch the work happened on holds, which is the tree a candidate is built over. */
+  readonly observedWorkBranch?: ObservedTarget;
   readonly attempt?: FinalizationAttempt;
   readonly approval: ApprovalStanding;
   readonly permit?: CommitPermit;
@@ -537,9 +549,15 @@ export type FinalizationHoldKind =
   | "PreparationRestartsExhausted"
   | "ApprovalDeclined"
   | "ReconciliationUnreadable"
-  | "ContradictoryEvidence";
+  | "ContradictoryEvidence"
+  | "ProposalRefused"
+  | "ProposalUnavailable"
+  | "ProposalDenied"
+  | "ProposalBaseUnreadable"
+  | "ProposalEvidenceUnstorable"
+  | "ProposalCreationsExhausted";
 
-/** Every hold kind, so a suite and a database CHECK iterate rather than restate. */
+/** Every hold kind, so a suite iterates over them rather than restating them. */
 export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "RepositoryUnbound",
   "TargetUnreadable",
@@ -547,6 +565,12 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "ApprovalDeclined",
   "ReconciliationUnreadable",
   "ContradictoryEvidence",
+  "ProposalRefused",
+  "ProposalUnavailable",
+  "ProposalDenied",
+  "ProposalBaseUnreadable",
+  "ProposalEvidenceUnstorable",
+  "ProposalCreationsExhausted",
 ];
 
 /** The one conclusive thing `Core` is told, which carries a kind only where the model prices a failure. */
@@ -581,6 +605,7 @@ export type FinalizationDecision =
   | { readonly decide: "Abort"; readonly target: ObservedTarget }
   | { readonly decide: "Promote"; readonly attempt: FinalizationAttemptId }
   | { readonly decide: "Reconcile"; readonly permit: CommitPermitId }
+  | { readonly decide: "Propose" }
   | { readonly decide: "Conclude"; readonly conclusion: FinalizationConclusion }
   | { readonly decide: "Hold"; readonly hold: FinalizationHoldKind }
   | { readonly decide: "Settled" };
@@ -658,6 +683,30 @@ function finalizationNextRestart(
 }
 
 /**
+ * What a promoted candidate concludes as. A brief landing by pull request is
+ * not finished when the branch moved — the proposal it asked for still has to
+ * exist — where a handoff never proposes at all, its promotion being into a
+ * repository the ticket never worked in.
+ */
+function finalizationNextPromoted(
+  view: FinalizationView,
+): FinalizationDecision {
+  if (view.claim.kind === "PromoteForHandoff") {
+    return { decide: "Conclude", conclusion: { outcome: "PromotionAccepted" } };
+  }
+  if (
+    view.claim.kind === "RunFinalizer" &&
+    view.finalizationMode === "PullRequest"
+  ) {
+    return { decide: "Propose" };
+  }
+  return {
+    decide: "Conclude",
+    conclusion: { outcome: "FinalizationSucceeded" },
+  };
+}
+
+/**
  * What a finalization holding a permit may do next. A granted permit is
  * abandoned only by a reconciliation that concluded, so an ambiguous promotion
  * has no path to a conclusive outcome through here.
@@ -676,15 +725,7 @@ function finalizationNextUnderPermit(
       return { decide: "Hold", hold: "ContradictoryEvidence" };
     }
     if (reconciliation.verdict === "Promoted") {
-      return {
-        decide: "Conclude",
-        conclusion: {
-          outcome:
-            view.claim.kind === "PromoteForHandoff"
-              ? "PromotionAccepted"
-              : "FinalizationSucceeded",
-        },
-      };
+      return finalizationNextPromoted(view);
     }
     return finalizationNextRestart(config, view);
   }
@@ -803,7 +844,7 @@ export interface CandidatePreparation {
   readonly repository: RepositoryBinding;
   readonly ticket: TicketId;
   readonly bundle: InputBundleId;
-  readonly target: ObservedTarget;
+  readonly base: ObservedTarget;
   readonly files: readonly CandidateFile[];
 }
 
@@ -940,6 +981,9 @@ export interface FinalizerConfig {
   readonly promotionsPerPassMax: number;
   readonly reconciliationsPerPassMax: number;
   readonly heldPermitsPerPassMax: number;
+  readonly proposalsPerPassMax: number;
+  readonly proposalCreationsMax: number;
+  readonly proposalReconciliationsMax: number;
 }
 
 /** The values a deployment starts from when it names none. */
@@ -951,6 +995,9 @@ export const finalizerDefaults: FinalizerConfig = {
   promotionsPerPassMax: 8,
   reconciliationsPerPassMax: 32,
   heldPermitsPerPassMax: 32,
+  proposalsPerPassMax: 8,
+  proposalCreationsMax: 3,
+  proposalReconciliationsMax: 3,
 };
 
 /**

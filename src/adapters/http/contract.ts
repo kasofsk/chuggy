@@ -133,12 +133,25 @@ function releaseAuthoring(value: ReleaseAuthoringBody): ReleaseAuthoring {
   };
 }
 
+/** Where the brief lands its work, as the unbranded shape the interpreter takes. */
+function releaseBriefFinalization(
+  value: NonNullable<TicketBriefBody["finalization"]>,
+): { readonly mode: string; readonly target?: string } {
+  return {
+    mode: value.mode,
+    ...(value.target === undefined ? {} : { target: value.target }),
+  };
+}
+
 /** The brief beside it, branded through the rules the interpreter states once. */
 function releaseBrief(value: TicketBriefBody): DraftBrief {
   return asDraftBrief({
     intent: value.intent,
     links: value.links,
     ...(value.branch === undefined ? {} : { branch: value.branch }),
+    ...(value.finalization === undefined
+      ? {}
+      : { finalization: releaseBriefFinalization(value.finalization) }),
   });
 }
 
