@@ -40,6 +40,12 @@ test("every refusal code reads as a distinct sentence and not as its code", () =
   );
 });
 
+test("the refusal two release contradictions share names each of them", () => {
+  const said = operationRefusalSentence("ConfigurationInvalid");
+  expect(said).toContain("configuration");
+  expect(said).toContain("pull request");
+});
+
 test("every escalation reason reads as a distinct sentence and not as its code", () => {
   sentences(escalationReasons.map(escalationReasonSentence), escalationReasons);
 });
