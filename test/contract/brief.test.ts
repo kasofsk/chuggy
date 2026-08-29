@@ -21,6 +21,7 @@ import {
   briefLinkSchema,
   briefLinkScheme,
   briefLinksMax,
+  briefResponseSchema,
   briefSchema,
 } from "../../src/contract/brief.ts";
 import { draftCreationSchema } from "../../src/contract/requests.ts";
@@ -142,6 +143,39 @@ test("a brief that proposes is opened from a branch of its own into another", ()
   );
   assert.equal(
     proposing(`${briefBranchPrefix}rt/landing`).success,
+    false,
+    "a proposal is never opened from its own base",
+  );
+});
+
+/**
+ * The read schema is the write schema extended, and the extension is what could
+ * silently drop the pairing the write refuses under. So the same three shapes
+ * are put to it directly: a brief is one thing in both directions or the reader
+ * is served a landing the writer would never have taken.
+ */
+test("a brief read back is refused the pairings a written one is", () => {
+  const reading = (brief: Readonly<Record<string, unknown>>) =>
+    briefResponseSchema.safeParse({ intent: "Do it.", links: [], ...brief });
+  const proposing = {
+    mode: "PullRequest",
+    target: `${briefBranchPrefix}rt/landing`,
+  };
+  assert.equal(
+    reading({ branch: `${briefBranchPrefix}rt/work`, finalization: proposing })
+      .success,
+    true,
+  );
+  assert.equal(
+    reading({ finalization: proposing }).success,
+    false,
+    "a proposal has no head where the brief names no branch",
+  );
+  assert.equal(
+    reading({
+      branch: `${briefBranchPrefix}rt/landing`,
+      finalization: proposing,
+    }).success,
     false,
     "a proposal is never opened from its own base",
   );
