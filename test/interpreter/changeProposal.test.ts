@@ -6,6 +6,7 @@ import {
   asForgeCredentialReference,
   asChangeProposalRequestIdentity,
   asProposalDisplayUrl,
+  asProposalMarker,
   asProposalRemoteIdentity,
   changeProposalPublicationNext,
   changeProposalRequest,
@@ -434,5 +435,12 @@ test("proposal metadata is bounded and the head is the branch the caller named",
     `${"f".repeat(63)}g`,
   ]) {
     assert.throws(() => asChangeProposalRequestIdentity(malformed), RangeError);
+  }
+});
+
+test("a marker read back out of a stored row is bounded rather than believed", () => {
+  assert.equal(asProposalMarker(request.marker), request.marker);
+  for (const unbounded of ["", "m".repeat(proposalMarkerCharsMax + 1)]) {
+    assert.throws(() => asProposalMarker(unbounded), RangeError);
   }
 });

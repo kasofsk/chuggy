@@ -44,11 +44,12 @@
  * cannot both answer it; and the trigger refuses either from rewriting what the
  * forge was asked for.
  *
- * EVIDENCE NO COLUMN HOLDS IS RECORDED WITHOUT IT. A NUL is a character `jsonb`
- * takes no value carrying and a document over the bound is one this relation
- * refuses, and a create is already made by the time either would be discovered
- * — so the answer is stored as unstorable instead, which counts and settles
- * rather than raising out of a pass that cannot then record anything at all.
+ * EVIDENCE NO COLUMN HOLDS IS RECORDED WITHOUT IT. A NUL and an unpaired
+ * surrogate are characters `jsonb` takes no value carrying and a document over
+ * the bound is one this relation refuses, and a create is already made by the
+ * time any of them would be discovered — so the answer is stored as unstorable
+ * instead, which counts and settles rather than raising out of a pass that
+ * cannot then record anything at all.
  *
  * STORED EVIDENCE IS PARSED AND NEVER CAST. The pure step compares every field
  * of it against the request, so evidence that arrived as a document the driver
@@ -70,6 +71,7 @@ import {
   asChangeProposalRequestIdentity,
   asForgeBindingId,
   asProposalDisplayUrl,
+  asProposalMarker,
   asProposalRemoteIdentity,
   proposalEvidenceCharsMax,
   type ChangeProposalContradiction,
@@ -79,7 +81,6 @@ import {
   type ChangeProposalReconciliationAnswer,
   type ChangeProposalReconciliationStored,
   type OpenedChangeProposalPublication,
-  type ProposalMarker,
 } from "../../interpreter/changeProposal.ts";
 import type {
   ChangeProposalAsked,
@@ -161,7 +162,7 @@ function changeProposalEvidenceOf(
       remote: asProposalRemoteIdentity(value.identity.remote),
     },
     repository: asRepositoryId(value.repository),
-    marker: value.marker as ProposalMarker,
+    marker: asProposalMarker(value.marker),
     head: {
       ref: asGitRefName(value.head.ref),
       commit: asGitObjectId(value.head.commit),
@@ -460,17 +461,21 @@ export function finalizerChangeProposalDecline(
 
 /**
  * The document one answer's evidence is stored as, absent where no column holds
- * it: a NUL is a character no `jsonb` value carries, and a document over the
- * bound is one the relation refuses. Either is discovered only after the create
- * it is recording has already been made, so the store is total against whatever
- * an adapter brands rather than raising out of the pass that must record it.
+ * it: a NUL and an unpaired surrogate are characters no `jsonb` value carries,
+ * and a document over the bound is one the relation refuses. Any of them is
+ * discovered only after the create it is recording has already been made, so
+ * the store is total against whatever an adapter brands rather than raising out
+ * of the pass that must record it.
  */
 function changeProposalStoredEvidence(
   evidence: ChangeProposalEvidence,
 ): string | undefined {
   let holdable = true;
   const document = JSON.stringify(evidence, (_key: string, value: unknown) => {
-    if (typeof value === "string" && value.includes("\u0000")) {
+    if (
+      typeof value === "string" &&
+      (value.includes("\u0000") || !value.isWellFormed())
+    ) {
       holdable = false;
     }
     return value;

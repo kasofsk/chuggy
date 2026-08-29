@@ -129,15 +129,18 @@ export function asForgeCredentialReference(
   ) as ForgeCredentialReference;
 }
 
-export function proposalMarkerOf(
-  request: ChangeProposalRequestIdentity,
-): ProposalMarker {
-  const marker = `chuggy-handoff:${request}`;
+export function asProposalMarker(value: string): ProposalMarker {
   return asBoundedText(
-    marker,
+    value,
     "proposal marker",
     proposalMarkerCharsMax,
   ) as ProposalMarker;
+}
+
+export function proposalMarkerOf(
+  request: ChangeProposalRequestIdentity,
+): ProposalMarker {
+  return asProposalMarker(`chuggy-handoff:${request}`);
 }
 
 export interface ForgeBinding {

@@ -873,6 +873,33 @@ test("evidence carrying a NUL settles the create rather than raising out of the 
   );
 });
 
+test("evidence carrying an unpaired surrogate settles the create the same way", async () => {
+  const project = await proposalRowSubject("proposallone");
+  const claim = await finalizerClaim(rig, project, "proposallone");
+  const store = postgresFinalizer(rig.pool);
+  const evidence = proposalEvidenceTitled(
+    project,
+    "ticket 1: propose it\ud800",
+  );
+  assert.deepEqual(
+    await store.recordChangeProposal({
+      claim,
+      result: {
+        records: "Creation",
+        created: { created: "Created", evidence },
+      },
+    }),
+    { wrote: "Row" },
+    "a document whose escape no jsonb parses is recorded without it rather than offered",
+  );
+  assert.equal((await proposalOf(project))?.creation, "Unstorable");
+  assert.deepEqual(
+    (await store.changeProposal(claim))?.publication,
+    { publication: "Answered", creation: { created: "Unstorable" } },
+    "so the ticket is held on it rather than creating a second proposal",
+  );
+});
+
 test("evidence larger than this relation holds settles the create the same way", async () => {
   const project = await proposalRowSubject("proposalhuge");
   const claim = await finalizerClaim(rig, project, "proposalhuge");
