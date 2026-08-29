@@ -360,7 +360,7 @@ const writeSurface = [
     table_name: "finalization_change_proposal",
     privilege_type: "UPDATE",
     columns:
-      "attempts,creation,creation_contradiction,creation_evidence,reconciliation,reconciliation_contradiction,reconciliation_evidence,reconciliations,refusals",
+      "attempts,creation,creation_contradiction,creation_evidence,declines,reconciliation,reconciliation_contradiction,reconciliation_evidence,reconciliations,refusals",
   },
   {
     table_name: "finalization_reconciliation",

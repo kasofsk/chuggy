@@ -33,13 +33,17 @@ import {
  * a create that may have happened, and is the only reason this relation exists
  * rather than the request being rebuilt each pass.
  *
- * `attempts` AND `refusals` ARE THE STATE, AND THEIR DIFFERENCE IS AT MOST ONE.
- * Equal, nothing is in flight and another create may be made; one apart with no
- * creation answer, one create is outstanding and only a reading may follow it;
- * and an answered row is one apart for good. The CHECK admits no other
- * difference and the trigger advances either counter by at most one, so no pass
- * can send a second create while one is outstanding and none can lose an
- * attempt that was sent.
+ * THE COUNTERS ARE THE STATE, AND `attempts` IS `refusals + declines` OR ONE
+ * MORE. Equal, nothing is in flight and another create may be made; one more,
+ * with no creation answer, one create is outstanding and only a reading may
+ * follow it; and an answered row is one more for good. An attempt is released
+ * as a refusal where readings proved nothing came of the create and as a
+ * decline where the forge would not take it at all, which is what makes
+ * `attempts - declines` the creates that may have reached the forge and the
+ * only ones a ceiling is spent from. The CHECK admits no other difference and
+ * the trigger advances every counter by at most one, so no pass can send a
+ * second create while one is outstanding and none can lose an attempt that was
+ * sent.
  *
  * WHAT WAS ASKED FOR IS RECORDED BESIDE WHAT CAME BACK. The head and base each
  * carry the commit they were observed at, and neither is derivable afterwards:
@@ -105,6 +109,7 @@ const finalizationChangeProposal = [
      reconciliation_evidence      jsonb,
      attempts             integer NOT NULL DEFAULT 0,
      refusals             integer NOT NULL DEFAULT 0,
+     declines             integer NOT NULL DEFAULT 0,
      reconciliations      integer NOT NULL DEFAULT 0,
      opened_at        timestamptz NOT NULL DEFAULT now(),
      PRIMARY KEY (tenant, project, request),
@@ -158,9 +163,9 @@ const finalizationChangeProposal = [
        AND (reconciliation_contradiction IS NULL
          OR reconciliation_contradiction IN (${schemaTextSet(allChangeProposalContradictions)}))),
      CONSTRAINT finalization_change_proposal_attempts_are_counted CHECK (
-       refusals >= 0 AND reconciliations >= 0
-       AND attempts BETWEEN refusals AND refusals + 1
-       AND (creation IS NULL OR attempts = refusals + 1)),
+       refusals >= 0 AND declines >= 0 AND reconciliations >= 0
+       AND attempts BETWEEN refusals + declines AND refusals + declines + 1
+       AND (creation IS NULL OR attempts = refusals + declines + 1)),
      CONSTRAINT finalization_change_proposal_evidence_is_bounded CHECK (
        coalesce(length(creation_evidence::text), 1)
          BETWEEN 1 AND ${proposalEvidenceCharsMax}
@@ -201,6 +206,7 @@ const finalizationChangeProposalWriteOnce = [
        END IF;
        IF NEW.attempts NOT IN (OLD.attempts, OLD.attempts + 1)
           OR NEW.refusals NOT IN (OLD.refusals, OLD.refusals + 1)
+          OR NEW.declines NOT IN (OLD.declines, OLD.declines + 1)
           OR NEW.reconciliations
              NOT IN (OLD.reconciliations, OLD.reconciliations + 1) THEN
          RAISE EXCEPTION 'a change proposal counts one act at a time'
@@ -223,7 +229,7 @@ const finalizationChangeProposalWriteOnce = [
      ON finalization_change_proposal TO ${finalizerRole}`,
   `GRANT UPDATE (creation, creation_contradiction, creation_evidence,
      reconciliation, reconciliation_contradiction, reconciliation_evidence,
-     attempts, refusals, reconciliations)
+     attempts, refusals, declines, reconciliations)
      ON finalization_change_proposal TO ${finalizerRole}`,
 ];
 

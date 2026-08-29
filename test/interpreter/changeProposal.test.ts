@@ -87,11 +87,11 @@ const bounds = { creationsMax: 2, reconciliationsMax: 2 };
 
 /** One create in flight, with however many readings a case has already taken. */
 function unanswered(
-  attempts: number,
+  creations: number,
   reconciliations: number,
   reading?: ChangeProposalReconciliationStored,
 ): ChangeProposalPublication {
-  return { publication: "Unanswered", attempts, reconciliations, reading };
+  return { publication: "Unanswered", creations, reconciliations, reading };
 }
 
 test("a create nobody heard back from is read back within its bound and then released", () => {
@@ -137,16 +137,16 @@ test("only a state with nothing in flight creates, and only while the creations 
   assert.deepEqual(
     changeProposalPublicationNext(
       request,
-      { publication: "Idle", attempts: 1 },
+      { publication: "Idle", creations: 1 },
       bounds,
     ),
     { next: "Create" },
-    "a create the forge refused to take leaves another one to make",
+    "a create that spent one of them leaves another one to make",
   );
   assert.deepEqual(
     changeProposalPublicationNext(
       request,
-      { publication: "Idle", attempts: 2 },
+      { publication: "Idle", creations: 2 },
       bounds,
     ),
     { next: "Held", reason: "CreationsExhausted" },
@@ -197,7 +197,7 @@ test("no publication in flight and no answered one reaches a create", () => {
     unanswered(1, 0),
     unanswered(1, 1, { reconciled: "Absent" }),
     unanswered(2, 4, { reconciled: "Absent" }),
-    { publication: "Idle", attempts: 2 },
+    { publication: "Idle", creations: 2 },
     { publication: "Answered", creation: { created: "Unstorable" } },
     {
       publication: "Answered",

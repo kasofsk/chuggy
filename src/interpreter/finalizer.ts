@@ -56,7 +56,7 @@
  * cannot be erased before it has been read.
  *
  * THE GLOBAL LOCK ORDER IS REQUEST, THEN REPOSITORY, THEN PROJECT, THEN PERMIT,
- * THEN ATTEMPT, and within each class in key order. Every transaction taking
+ * THEN ATTEMPT, THEN CHANGE PROPOSAL, and within each class in key order. Every transaction taking
  * more than one of them takes them in that order, because a declared order
  * makes a deadlock unreachable where a retry only makes it rare.
  *
@@ -557,7 +557,7 @@ export type FinalizationHoldKind =
   | "ProposalEvidenceUnstorable"
   | "ProposalCreationsExhausted";
 
-/** Every hold kind, so a suite and a database CHECK iterate rather than restate. */
+/** Every hold kind, so a suite iterates over them rather than restating them. */
 export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "RepositoryUnbound",
   "TargetUnreadable",

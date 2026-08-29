@@ -35,6 +35,7 @@ import {
   asForgeCredentialReference,
   asProposalDisplayUrl,
   asProposalRemoteIdentity,
+  changeProposalRequestFromBranch,
   proposalEvidenceCharsMax,
   proposalMarkerOf,
   type ChangeProposalEvidence,
@@ -43,6 +44,7 @@ import {
   type ChangeProposalRequest,
 } from "../../src/interpreter/changeProposal.ts";
 import {
+  asCommitPermitId,
   asFinalizationAttemptId,
   asGitObjectId,
   asGitRefName,
@@ -317,8 +319,10 @@ interface ProposalState {
   readonly title: string;
   readonly body: string;
   readonly creation: string | null;
+  readonly reconciliation: string | null;
   readonly attempts: string;
   readonly refusals: string;
+  readonly declines: string;
   readonly reconciliations: string;
 }
 
@@ -327,8 +331,10 @@ async function proposalOf(
   project: FinalizerProject,
 ): Promise<ProposalState | undefined> {
   const rows = (await rig.as(
-    `SELECT head_ref, head_commit, base_ref, base_commit, title, body, creation,
+    `SELECT head_ref, head_commit, base_ref, base_commit, title, body,
+            creation, reconciliation,
             attempts::text AS attempts, refusals::text AS refusals,
+            declines::text AS declines,
             reconciliations::text AS reconciliations
        FROM finalization_change_proposal WHERE tenant=$1 AND project=$2`,
     [project.partition.tenant, project.partition.project],
@@ -372,6 +378,8 @@ interface ProposalPort extends ChangeProposalPort {
   readonly creates: ChangeProposalRequest[];
   readonly reads: ChangeProposalRequest[];
   read: "Absent" | "Found";
+  /** What a create answers, a forge that would not take one having said nothing about a proposal. */
+  created: "Created" | "Unavailable";
   /** Whether a create raises, which is how a case proves none was attempted. */
   createRefused: boolean;
 }
@@ -382,6 +390,7 @@ function proposalPort(): ProposalPort {
     creates: [],
     reads: [],
     read: "Absent",
+    created: "Created",
     createRefused: false,
     create: (request) => {
       if (own.createRefused) {
@@ -390,10 +399,11 @@ function proposalPort(): ProposalPort {
         );
       }
       own.creates.push(request);
-      return Promise.resolve({
-        created: "Created" as const,
-        evidence: proposalEvidence(request),
-      });
+      return Promise.resolve(
+        own.created === "Unavailable"
+          ? { created: own.created }
+          : { created: own.created, evidence: proposalEvidence(request) },
+      );
     },
     readByMarker: (request) => {
       own.reads.push(request);
@@ -486,6 +496,7 @@ test("a ticket that finishes by proposing lands on its branch and opens one into
   assert.equal(stored?.creation, "Created");
   assert.equal(stored?.attempts, "1");
   assert.equal(stored?.refusals, "0");
+  assert.equal(stored?.declines, "0");
   assert.equal(stored?.reconciliations, "0");
   assert.equal(forge.creates[0]?.head.ref, briefBranch);
   assert.equal(stored?.body.includes(forge.creates[0]?.marker ?? ""), true);
@@ -592,12 +603,87 @@ test("a row a crash left before any result is read back, and no second proposal 
   assert.equal(forge.creates.length, 0);
 });
 
-/** One project whose promoted attempt a change proposal row may be written against. */
-async function proposalRowSubject(label: string): Promise<FinalizerProject> {
+/** How many creates one deployment declines before the forge takes one, past every ceiling. */
+const proposalDeclinesBeforeCreate = 4;
+
+test("a create the forge would not take spends none of the creates this request is allowed", async () => {
+  const { project } = await proposingSubject("proposaldeclined");
+  const port = finalizerRemotePort(rig);
+  const forge = proposalPort();
+  const forges = proposalForges(forge);
+
+  await finalizerPassOnce(rig, project, port, "proposaldeclined");
+  await finalizerExpireClaim(rig, project);
+  await finalizerPassOnce(rig, project, port, "proposaldeclined-on", forges);
+
+  forge.created = "Unavailable";
+  for (let pass = 0; pass < proposalDeclinesBeforeCreate; pass += 1) {
+    await finalizerExpireClaim(rig, project);
+    const declined = await finalizerPassOnce(
+      rig,
+      project,
+      port,
+      `proposaldeclined-${String(pass)}`,
+      forges,
+    );
+    assert.equal(
+      declined.holds,
+      1,
+      "a forge that would not be asked is a hold",
+    );
+  }
+  const released = await proposalOf(project);
+  assert.deepEqual(
+    [released?.attempts, released?.declines, released?.refusals],
+    [
+      String(proposalDeclinesBeforeCreate),
+      String(proposalDeclinesBeforeCreate),
+      "0",
+    ],
+    "every declined attempt is released without counting a create",
+  );
+  assert.equal(released?.creation, null);
+
+  forge.created = "Created";
+  await finalizerExpireClaim(rig, project);
+  const opening = await finalizerPassOnce(
+    rig,
+    project,
+    port,
+    "proposaldeclined-open",
+    forges,
+  );
+
+  assert.equal(opening.proposals, 1);
+  assert.equal((await proposalOf(project))?.creation, "Created");
+  assert.equal(forge.creates.length, proposalDeclinesBeforeCreate + 1);
+  assert.deepEqual(forge.reads, [], "nothing was ever there to read back");
+
+  await finalizerExpireClaim(rig, project);
+  const concluded = await finalizerPassOnce(
+    rig,
+    project,
+    port,
+    "proposaldeclined-done",
+    forges,
+  );
+  assert.equal(concluded.conclusions, 1);
+});
+
+/** One project whose candidate is promoted, which is what a proposal is opened over. */
+async function proposalPromotedSubject(
+  label: string,
+): Promise<FinalizerProject> {
   const { project } = await finalizerSubject(rig, label, [
     { path: "one.txt", content: "one\n" },
   ]);
   await finalizerPromote(rig, project, label);
+  return project;
+}
+
+/** One project whose promoted attempt a change proposal row may be written against. */
+async function proposalRowSubject(label: string): Promise<FinalizerProject> {
+  const project = await proposalPromotedSubject(label);
   const permit = await permitOf(project);
   await rig.as(
     `INSERT INTO finalization_change_proposal
@@ -787,6 +873,177 @@ test("evidence carrying a NUL settles the create rather than raising out of the 
   );
 });
 
+test("evidence larger than this relation holds settles the create the same way", async () => {
+  const project = await proposalRowSubject("proposalhuge");
+  const claim = await finalizerClaim(rig, project, "proposalhuge");
+  const store = postgresFinalizer(rig.pool);
+  const evidence = proposalEvidenceTitled(
+    project,
+    "t".repeat(proposalEvidenceCharsMax),
+  );
+  assert.deepEqual(
+    await store.recordChangeProposal({
+      claim,
+      result: {
+        records: "Creation",
+        created: { created: "Created", evidence },
+      },
+    }),
+    { wrote: "Row" },
+    "a document over the bound is recorded without it rather than offered",
+  );
+  assert.equal((await proposalOf(project))?.creation, "Unstorable");
+});
+
+/** The request a case offers the store, over the branches this fixture's proposals stand between. */
+function proposalRequestOf(project: FinalizerProject): ChangeProposalRequest {
+  const identity = asChangeProposalRequestIdentity(finalizerDigest());
+  return changeProposalRequestFromBranch({
+    binding: {
+      forge: asForgeBindingId("forge-rig"),
+      credential: asForgeCredentialReference("forge-rig-proposals"),
+    },
+    repository: asRepositoryId(project.repository),
+    request: identity,
+    headRef: asGitRefName(briefBranch),
+    headCommit: asGitObjectId(finalizerCommit()),
+    baseRef: asGitRefName(landingBranch),
+    baseCommit: asGitObjectId(finalizerCommit()),
+    title: "ticket 1: propose it",
+    body: `propose it\n\n${proposalMarkerOf(identity)}`,
+  });
+}
+
+/** Advances the claim on this project's request, which is what a takeover leaves behind. */
+async function proposalClaimRetired(project: FinalizerProject): Promise<void> {
+  await rig.as(
+    `UPDATE finalization_request SET claim_generation = claim_generation + 1
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    proposalRowKey(project),
+  );
+}
+
+test("a change proposal a retired holder attempts is refused before any forge is asked", async () => {
+  const project = await proposalPromotedSubject("proposalfenced");
+  const claim = await finalizerClaim(rig, project, "owner-proposalfenced");
+  const store = postgresFinalizer(rig.pool);
+  const record = {
+    claim,
+    permit: asCommitPermitId(await permitOf(project)),
+    request: proposalRequestOf(project),
+  };
+
+  await proposalClaimRetired(project);
+
+  assert.deepEqual(await store.markChangeProposalAttempt(record), {
+    wrote: "Nothing",
+  });
+  assert.equal(
+    await proposalOf(project),
+    undefined,
+    "and the row that would have authorized a create is not there",
+  );
+});
+
+test("no answer about a create is recorded by a holder a takeover has retired", async () => {
+  const project = await proposalRowSubject("proposalretired");
+  const claim = await finalizerClaim(rig, project, "owner-proposalretired");
+  const store = postgresFinalizer(rig.pool);
+  const evidence = proposalEvidenceTitled(project, "ticket 1: propose it");
+
+  await proposalClaimRetired(project);
+
+  assert.deepEqual(
+    await store.recordChangeProposal({
+      claim,
+      result: {
+        records: "Creation",
+        created: { created: "Created", evidence },
+      },
+    }),
+    { wrote: "Nothing" },
+  );
+  assert.deepEqual(await store.refuseChangeProposalAttempt(claim), {
+    wrote: "Nothing",
+  });
+  assert.deepEqual(await store.declineChangeProposalAttempt(claim), {
+    wrote: "Nothing",
+  });
+  const untouched = await proposalOf(project);
+  assert.deepEqual(
+    [
+      untouched?.creation,
+      untouched?.attempts,
+      untouched?.refusals,
+      untouched?.declines,
+    ],
+    [null, "1", "0", "0"],
+    "the row another finalizer now owns stands exactly as it stood",
+  );
+});
+
+test("a takeover leaves an old-epoch holder unable to answer for the create it made", async () => {
+  const project = await proposalRowSubject("proposalepoch");
+  const claim = await finalizerClaim(rig, project, "owner-proposalepoch");
+  const store = postgresFinalizer(rig.pool);
+
+  await rig.harness.store.establishRecoveryEpoch(
+    asRecoveryEpoch(`epoch-proposal-${project.partition.project}`),
+  );
+
+  assert.deepEqual(await store.declineChangeProposalAttempt(claim), {
+    wrote: "Nothing",
+  });
+  assert.deepEqual(
+    await store.recordChangeProposal({
+      claim,
+      result: {
+        records: "Reconciliation",
+        reconciled: { reconciled: "Absent" },
+      },
+    }),
+    { wrote: "Nothing" },
+  );
+  const untouched = await proposalOf(project);
+  assert.deepEqual(
+    [
+      untouched?.reconciliation,
+      untouched?.reconciliations,
+      untouched?.declines,
+    ],
+    [null, "0", "0"],
+  );
+});
+
+test("a released attempt takes its reading with it and leaves the readings it spent counted", async () => {
+  const project = await proposalRowSubject("proposalreading");
+  const claim = await finalizerClaim(rig, project, "owner-proposalreading");
+  const store = postgresFinalizer(rig.pool);
+
+  assert.deepEqual(
+    await store.recordChangeProposal({
+      claim,
+      result: {
+        records: "Reconciliation",
+        reconciled: { reconciled: "Absent" },
+      },
+    }),
+    { wrote: "Row" },
+  );
+  assert.equal((await proposalOf(project))?.reconciliation, "Absent");
+
+  assert.deepEqual(await store.refuseChangeProposalAttempt(claim), {
+    wrote: "Row",
+  });
+
+  const released = await proposalOf(project);
+  assert.deepEqual(
+    [released?.reconciliation, released?.reconciliations, released?.refusals],
+    [null, "1", "1"],
+    "the next reading is about whatever create comes after this one",
+  );
+});
+
 /** The columns one attempted row names, every one of them bounded. */
 interface ProposalOfferedRow {
   readonly proposal_request: string;
@@ -869,21 +1126,31 @@ test("every bound this relation names refuses the value it is there to refuse", 
 });
 
 /** Every counter a row keeps, each of which advances one step at a time and no further. */
-const proposalCountersAdvanced = ["attempts", "refusals", "reconciliations"];
+const proposalCountersAdvanced = [
+  "attempts",
+  "refusals",
+  "declines",
+  "reconciliations",
+];
+
+/** The steps no counter takes: past the next value, and back towards the last one. */
+const proposalCounterStepsRefused = ["+ 2", "- 1"];
 
 test("a change proposal counts one act at a time and never more creates than it made", async () => {
   const project = await proposalRowSubject("proposalcounts");
   const key = proposalRowKey(project);
   for (const counter of proposalCountersAdvanced) {
-    assert.match(
-      await rig.refusal(
-        `UPDATE finalization_change_proposal SET ${counter} = ${counter} + 2
-          WHERE tenant=$1 AND project=$2 AND request=$3`,
-        key,
-      ),
-      /counts one act at a time/u,
-      counter,
-    );
+    for (const step of proposalCounterStepsRefused) {
+      assert.match(
+        await rig.refusal(
+          `UPDATE finalization_change_proposal SET ${counter} = ${counter} ${step}
+            WHERE tenant=$1 AND project=$2 AND request=$3`,
+          key,
+        ),
+        /counts one act at a time/u,
+        `${counter} ${step}`,
+      );
+    }
   }
   assert.match(
     await rig.refusal(
@@ -909,6 +1176,27 @@ test("a change proposal counts one act at a time and never more creates than it 
     [released?.attempts, released?.refusals],
     ["2", "1"],
     "a released attempt is what makes another create possible",
+  );
+  await rig.as(
+    `UPDATE finalization_change_proposal SET declines = declines + 1
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    key,
+  );
+  const declined = await proposalOf(project);
+  assert.deepEqual(
+    [declined?.attempts, declined?.refusals, declined?.declines],
+    ["2", "1", "1"],
+    "and an attempt the forge would not take is released the same way",
+  );
+  await rig.as(
+    `UPDATE finalization_change_proposal SET attempts = attempts + 1
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    key,
+  );
+  assert.equal(
+    (await proposalOf(project))?.attempts,
+    "3",
+    "a declined attempt releases the row as surely as a refused one",
   );
 });
 

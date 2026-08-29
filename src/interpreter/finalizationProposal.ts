@@ -15,9 +15,11 @@
  *
  * WHICH ANSWERS ARE WRITTEN DOWN IS DECIDED HERE AND NOWHERE ELSE. A forge that
  * would not be asked has said nothing about a proposal, so it is not recorded
- * as one and it releases the attempt it refused rather than spending the
- * request's only create. The caller performs the recording this step names and
- * decides none of it, which is what keeps the vocabulary in one place.
+ * as one and the attempt it declined is released without spending one of the
+ * creates the request is allowed — the deployment holds and asks again, as it
+ * does for every other answer about itself. The caller performs the recording
+ * this step names and decides none of it, which is what keeps the vocabulary in
+ * one place.
  *
  * THE BASE IS OBSERVED ONCE, AND ONLY TO ASK FOR THE PROPOSAL. A proposal is
  * opened into a branch, and a branch the remote does not hold is not one a
@@ -159,14 +161,15 @@ export type FinalizationProposalRecording =
       readonly record: "Reconciliation";
       readonly reconciled: ChangeProposalReconciliationAnswer;
     }
-  | { readonly record: "Refusal"; readonly hold: FinalizationHoldKind }
+  | { readonly record: "Decline"; readonly hold: FinalizationHoldKind }
   | { readonly record: "Nothing"; readonly hold: FinalizationHoldKind }
   | { readonly record: "Unanswered" };
 
 /**
  * What one create's answer is written down as. A forge that would not take the
- * create has said nothing about a proposal and released the attempt it refused,
- * and one that answered nothing at all leaves the attempt exactly where it is.
+ * create has said nothing about a proposal, so the attempt it declined is
+ * released and the create it stood for is unspent; one that answered nothing at
+ * all leaves the attempt exactly where it is.
  */
 export function finalizationProposalCreationRecording(
   created: ChangeProposalCreated,
@@ -177,9 +180,9 @@ export function finalizationProposalCreationRecording(
     case "Contradictory":
       return { record: "Creation", created };
     case "Unavailable":
-      return { record: "Refusal", hold: "ProposalUnavailable" };
+      return { record: "Decline", hold: "ProposalUnavailable" };
     case "Denied":
-      return { record: "Refusal", hold: "ProposalDenied" };
+      return { record: "Decline", hold: "ProposalDenied" };
     case "Ambiguous":
       return { record: "Unanswered" };
     default:
@@ -303,7 +306,9 @@ export interface StoredChangeProposal {
 /**
  * The durable rows one change proposal leaves, which the finalizer role reaches
  * and nothing else does. Every attempt is counted before the create it stands
- * for is called, so a crash between the two reads back as a create in flight.
+ * for is called and every write is fenced on the claim, so a crash between the
+ * two reads back as a create in flight and a holder a takeover has retired
+ * writes nothing at all.
  */
 export interface FinalizerProposalStore {
   /** What one finalization's proposal asked for and has come to, absent until one is attempted. */
@@ -316,8 +321,13 @@ export interface FinalizerProposalStore {
     record: ChangeProposalRecord,
   ): Promise<ChangeProposalWritten>;
 
-  /** Records that the attempt in flight was never taken, which releases it. */
+  /** Records that no reading found the create in flight, which releases the attempt it spent. */
   refuseChangeProposalAttempt(
+    claim: FinalizationClaim,
+  ): Promise<ChangeProposalWritten>;
+
+  /** Records that the forge would not take the create, which releases the attempt unspent. */
+  declineChangeProposalAttempt(
     claim: FinalizationClaim,
   ): Promise<ChangeProposalWritten>;
 

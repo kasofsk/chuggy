@@ -3,12 +3,12 @@
  * under, the evidence a forge answers with, and the bounded publication that
  * turns an unsettled create into an answer.
  *
- * A HEAD IS EITHER DERIVED OR NAMED, AND THE REST OF THE REQUEST IS THE SAME
- * EITHER WAY. A handoff has no branch of its own, so its head is minted from
- * the request identity; a ticket finishing by proposing its own work has one
- * already, and the commit a person will review is the one its promotion landed
- * there. Both are built through one bounding, so the two cannot drift apart in
- * the marker, the metadata or anything else a read compares.
+ * EVERY REQUEST A FINALIZATION BUILDS NAMES THE BRANCH ITS WORK LANDED ON. The
+ * commit a person will review is the one the promotion put on the ticket's own
+ * branch, so the head is the caller's rather than minted here — no finalization
+ * takes the derived head, which is a handoff's, a handoff having no branch of
+ * its own. Both are built through one bounding, so the two cannot drift apart
+ * in the marker, the metadata or anything else a read compares.
  *
  * EACH SIDE IS IDENTIFIED BY ITS REF, AND THE PROPOSAL BY ITS MARKER. A
  * proposal stands between two branches, and what either branch holds is the
@@ -23,10 +23,11 @@
  * A CREATE IS EITHER IN FLIGHT OR IT IS NOT, AND THAT IS THE WHOLE STATE. An
  * attempt is counted before the forge is asked, so a create whose outcome
  * nobody heard is the state a crash and a lost answer both leave, and it can
- * only be read back. A create the forge answered by refusing to take it leaves
- * nothing in flight, so a later pass may make another one while the creations
- * are unspent; readings that reached the forge and found nothing spend an
- * attempt the same way, which is what makes both ceilings bound one loop.
+ * only be read back. Releasing that attempt is what lets a later pass make
+ * another create, and what the ceiling below is spent from is the creates that
+ * may have reached the forge: one that readings found nothing of spends one,
+ * and one the forge would not take at all spends none, because that answer is
+ * about this deployment rather than about the proposal.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -411,14 +412,15 @@ export interface ChangeProposalBranchRequestInput extends ChangeProposalRequestI
 /**
  * The three states one proposal stands in, and whether a row records it at all.
  * A create is in flight in exactly one of them, which is what says whether
- * another may be made.
+ * another may be made, and `creations` counts the creates that may have reached
+ * the forge, which is what both ceilings below are spent from.
  */
 export type ChangeProposalPublication =
   | { readonly publication: "Unopened" }
-  | { readonly publication: "Idle"; readonly attempts: number }
+  | { readonly publication: "Idle"; readonly creations: number }
   | {
       readonly publication: "Unanswered";
-      readonly attempts: number;
+      readonly creations: number;
       readonly reconciliations: number;
       readonly reading: ChangeProposalReconciliationStored | undefined;
     }
@@ -555,7 +557,7 @@ function proposalUnansweredNext(
   >,
   bounds: ChangeProposalPublicationBounds,
 ): ChangeProposalPublicationNext {
-  if (publication.attempts < 1)
+  if (publication.creations < 1)
     throw new RangeError("proposal publication: nothing is in flight");
   const reading = publication.reading;
   if (reading?.reconciled === "Unstorable")
@@ -566,7 +568,7 @@ function proposalUnansweredNext(
   )
     return proposalEvidenceNext(request, reading.evidence);
   return publication.reconciliations <
-    publication.attempts * bounds.reconciliationsMax
+    publication.creations * bounds.reconciliationsMax
     ? { next: "Reconcile" }
     : { next: "RefuseAttempt" };
 }
@@ -586,7 +588,7 @@ export function changeProposalPublicationNext(
     case "Unopened":
       return { next: "Create" };
     case "Idle":
-      return publication.attempts < bounds.creationsMax
+      return publication.creations < bounds.creationsMax
         ? { next: "Create" }
         : { next: "Held", reason: "CreationsExhausted" };
     case "Unanswered":

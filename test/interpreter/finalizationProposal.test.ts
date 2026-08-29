@@ -97,11 +97,11 @@ function gathered(
 
 /** One create in flight, with however many readings a case has already taken. */
 function unanswered(
-  attempts: number,
+  creations: number,
   reconciliations: number,
   reading?: ChangeProposalReconciliationStored,
 ): ChangeProposalPublication {
-  return { publication: "Unanswered", attempts, reconciliations, reading };
+  return { publication: "Unanswered", creations, reconciliations, reading };
 }
 
 test("a proposal nobody has attempted is created, and one in flight is read back", () => {
@@ -115,11 +115,11 @@ test("a proposal nobody has attempted is created, and one in flight is read back
   );
   assert.deepEqual(
     finalizationProposalNext(
-      gathered({ publication: "Idle", attempts: 1 }),
+      gathered({ publication: "Idle", creations: 1 }),
       bounds,
     ),
     { decide: "ProposeChange", request },
-    "a create nothing took leaves another one to make",
+    "a create that spent one of them leaves another one to make",
   );
 });
 
@@ -151,7 +151,7 @@ test("a proposal the forge proves it holds is the one thing that concludes", () 
 test("every reason a publication is held reaches a hold this tree declares", () => {
   const holds = new Set<string>(allFinalizationHoldKinds);
   const held: readonly [ChangeProposalPublication, string][] = [
-    [{ publication: "Idle", attempts: 2 }, "ProposalCreationsExhausted"],
+    [{ publication: "Idle", creations: 2 }, "ProposalCreationsExhausted"],
     [
       { publication: "Answered", creation: { created: "Unstorable" } },
       "ProposalEvidenceUnstorable",
@@ -202,7 +202,7 @@ test("no publication carrying a create in flight reaches a create", () => {
     unanswered(1, 9),
     unanswered(1, 1, { reconciled: "Absent" }),
     unanswered(2, 4, { reconciled: "Absent" }),
-    { publication: "Idle", attempts: 2 },
+    { publication: "Idle", creations: 2 },
     { publication: "Answered", creation: { created: "Unstorable" } },
     {
       publication: "Answered",
@@ -239,11 +239,12 @@ test("a bound that is not a positive count is refused rather than treated as non
 test("an answer about this deployment is never recorded as one about the proposal", () => {
   assert.deepEqual(
     finalizationProposalCreationRecording({ created: "Unavailable" }),
-    { record: "Refusal", hold: "ProposalUnavailable" },
+    { record: "Decline", hold: "ProposalUnavailable" },
+    "a create the forge would not take releases the attempt it stood on",
   );
   assert.deepEqual(
     finalizationProposalCreationRecording({ created: "Denied" }),
-    { record: "Refusal", hold: "ProposalDenied" },
+    { record: "Decline", hold: "ProposalDenied" },
   );
   assert.deepEqual(
     finalizationProposalCreationRecording({ created: "Ambiguous" }),
