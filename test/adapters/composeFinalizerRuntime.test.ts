@@ -24,7 +24,11 @@ import {
 /** The repository the fixture forge binding holds, which is what selects that binding. */
 const forgeRepository = asRepositoryId("https://forge.invalid/acme/atlas.git");
 
-function settings(t: TestContext, forges = true): FinalizerSettings {
+function settings(
+  t: TestContext,
+  forges = true,
+  bound: Readonly<Record<string, unknown>> = {},
+): FinalizerSettings {
   const root = mkdtempSync(join(tmpdir(), "chuggy-compose-finalizer-"));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
@@ -43,6 +47,7 @@ function settings(t: TestContext, forges = true): FinalizerSettings {
               apiHost: "api.forge.invalid",
               credentialReference: "forge-alpha-proposals",
               path: forgeCredential,
+              ...bound,
             },
           ]),
         }
@@ -116,6 +121,19 @@ test("a deployment binding no forge composes one that opens no change proposal",
   assert.equal(
     forges.selector.select(asForgeBindingId("forge-alpha")),
     undefined,
+  );
+});
+
+/**
+ * A binding is what an adapter is built from here, and the adapter is what
+ * holds that forge's credential. A binding naming the repositories and not the
+ * API is refused before one is composed, an adapter defaulting the second host
+ * being one that sends the credential to a forge nobody named.
+ */
+test("a forge binding naming no API host composes no adapter at all", (t) => {
+  assert.throws(
+    () => settings(t, true, { apiHost: undefined }),
+    /CHUG_FINALIZER_FORGE_BINDINGS/u,
   );
 });
 

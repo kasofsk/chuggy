@@ -210,8 +210,10 @@ export function composeChangeProposalForges(
       githubChangeProposals({
         credentials,
         fetch,
-        repositoryHost: binding.repositoryHost,
-        ...(binding.apiHost === undefined ? {} : { apiHost: binding.apiHost }),
+        hosts: {
+          apiHost: binding.apiHost,
+          repositoryHost: binding.repositoryHost,
+        },
       }),
     ]),
   );

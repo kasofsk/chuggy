@@ -14,7 +14,10 @@
  * EXACTLY ONE FORGE REQUEST IS MADE PER CALL, and there is no retry loop here.
  * `changeProposalPublicationNext` is the retry, bounded by the reconciliation
  * count it is given, so a loop here would be a second unbounded one underneath
- * a bounded one.
+ * a bounded one. A redirect is the other way one call becomes two, and it is
+ * the worse way: the platform answers a redirected POST by reissuing it as a
+ * GET with the body dropped, so the request refuses to follow one and an
+ * answer nobody could have taken is unsettled.
  *
  * A CREDENTIAL IS RESOLVED PER ACT AND NEVER HELD. `ForgeCredentialPort`
  * answers it, the composition root answers that port, and the value reaches
@@ -31,19 +34,22 @@
  * case of an owner or a name, so an address typed one way and answered in the
  * canonical spelling is one repository and not two.
  *
- * A FULL PAGE IS NOT AN ABSENCE. One read asks for as many proposals as it may
- * consider and looks no further, so a page filled to that bound with no match
- * leaves a proposal past it neither found nor ruled out. `Absent` there would
- * be a positive claim the read did not establish, so a full page is
- * `Unavailable` and the bounded reconciliation asks again.
+ * ONLY A READ THAT RULED THE PROPOSAL OUT IS AN ABSENCE. One read asks for as
+ * many proposals as it may consider and looks no further, so a page filled to
+ * that bound with no match leaves a proposal past it neither found nor ruled
+ * out; and a proposal whose body carries this request's marker is found however
+ * little of it can be held. `Absent` in either place would be a positive claim
+ * the read did not establish, so both are `Unavailable` and the bounded
+ * reconciliation asks again.
  *
  * NO FORGE ANSWER LEAVES THIS ADAPTER AS A THROW. Every field of one is turned
  * into the value this tree brands it through a single helper that catches, so a
  * bound, an encoding or a code point no stored row holds makes a create
- * `Ambiguous` and a read no match — the answers the port already has for a
- * proposal it cannot conclude — rather than rejecting the pass the finalizer
- * makes it in. One helper is also what keeps the refusals from drifting apart:
- * there is one place to hold a field to, and it is the brand itself.
+ * `Ambiguous` and a marked read `Unavailable` — the answers the port already
+ * has for a proposal it cannot conclude — rather than rejecting the pass the
+ * finalizer makes it in. One helper is also what keeps the refusals from
+ * drifting apart: there is one place to hold a field to, and it is the brand
+ * itself.
  *
  * NOTHING IS APPENDED TO WHAT A CALLER OFFERS, because evidence is compared
  * against the request field by field and a body this adapter edited could never
@@ -57,7 +63,7 @@
  * take the one answer that holds the publication for an operator immediately
  * rather than spending reconciliations re-asking a question with no answer.
  *
- * NOTHING HERE READS AN ENVIRONMENT, A CLOCK OR A CONFIGURATION. The host, the
+ * NOTHING HERE READS AN ENVIRONMENT, A CLOCK OR A CONFIGURATION. The hosts, the
  * bounds and `fetch` itself are all given at construction, and the moment a
  * request is abandoned at is the given bound counted down by the platform's own
  * timer: `AbortSignal.timeout` is the one ambient thing a call reaches, and it
@@ -91,12 +97,22 @@ import {
   type RepositoryId,
 } from "../../interpreter/finalizer.ts";
 
+/**
+ * The two hosts one forge stands at: the repositories it holds and the API it
+ * is asked through. They are one value because they are one forge — a
+ * composition naming the first and defaulting the second would put a credential
+ * minted for that forge in a request to another.
+ */
+export interface GithubChangeProposalsHosts {
+  readonly apiHost: string;
+  readonly repositoryHost: string;
+}
+
 /** Everything the adapter is composed with, `fetch` among them because nothing here reaches a global. */
 export interface GithubChangeProposalsOptions {
   readonly credentials: ForgeCredentialPort;
   readonly fetch: typeof fetch;
-  readonly apiHost?: string;
-  readonly repositoryHost?: string;
+  readonly hosts?: GithubChangeProposalsHosts;
   readonly requestTimeoutSecsMax?: number;
   readonly responseBytesMax?: number;
   readonly proposalsPerReadMax?: number;
@@ -104,8 +120,7 @@ export interface GithubChangeProposalsOptions {
 
 /** The hosts and the bounds a deployment gets when it names none. */
 export const githubChangeProposalsDefaults = {
-  apiHost: "api.github.com",
-  repositoryHost: "github.com",
+  hosts: { apiHost: "api.github.com", repositoryHost: "github.com" },
   requestTimeoutSecsMax: 30,
   responseBytesMax: 1_048_576,
   proposalsPerReadMax: 32,
@@ -229,6 +244,24 @@ function githubChangeProposalsHost(value: string, what: string): string {
     throw new TypeError(`github proposals: ${what} is not a host`);
   }
   return value;
+}
+
+/**
+ * The pair of hosts this adapter stands on, both of them named or neither. A
+ * caller past the type that half-names them is refused here, the API host it
+ * left out being no host at all rather than the default of some other forge.
+ */
+function githubChangeProposalsHostsOf(
+  hosts: GithubChangeProposalsHosts | undefined,
+): GithubChangeProposalsHosts {
+  const named = hosts ?? githubChangeProposalsDefaults.hosts;
+  return {
+    apiHost: githubChangeProposalsHost(named.apiHost, "the API host"),
+    repositoryHost: githubChangeProposalsHost(
+      named.repositoryHost,
+      "the repository host",
+    ),
+  };
 }
 
 /**
@@ -378,6 +411,7 @@ async function githubChangeProposalsSend(
       method: body === undefined ? "GET" : "POST",
       headers: githubChangeProposalsHeaders(credential, body !== undefined),
       ...(body === undefined ? {} : { body }),
+      redirect: "error",
       signal: AbortSignal.timeout(
         own.requestTimeoutSecsMax * millisecondsPerSecond,
       ),
@@ -402,18 +436,20 @@ async function githubChangeProposalsSend(
 
 /**
  * One field a forge answered, as the value this tree brands it — and nothing
- * where the brand refuses it. This is the whole of what the adapter holds an
- * answer to: the bound, the encoding and the code points are the brand's, and a
- * refusal it raises is an absence here rather than a throw out of the port.
+ * where the brand refuses it, the bound, the encoding and the code points a
+ * stored row holds to being the brand's own and every one of them refused as a
+ * `RangeError`. Anything else a brand raises is a fault in this tree rather
+ * than an answer, and leaves as it arrived.
  */
-function githubChangeProposalsBranded<Branded>(
+export function githubChangeProposalsBranded<Branded>(
   value: string,
   brand: (value: string) => Branded,
 ): Branded | undefined {
   try {
     return brand(value);
-  } catch {
-    return undefined;
+  } catch (raised) {
+    if (raised instanceof RangeError) return undefined;
+    throw raised;
   }
 }
 
@@ -485,26 +521,36 @@ function githubChangeProposalsRepositoryOf(
 }
 
 /**
- * What one pull request is evidence of, and nothing where it is not this
- * request's. A proposal is this request's only where the forge named which
- * repository it answered for and the body carries the marker, and only where
- * every field of it is one a stored row holds.
+ * What one pull request came to when this request was matched against it.
+ * `Unmarked` is somebody else's proposal; `Unholdable` is this request's own,
+ * found and past what a stored row holds, which is the one thing an absence
+ * would misreport.
+ */
+type GithubProposalMatch =
+  | { readonly matched: "Evidence"; readonly evidence: ChangeProposalEvidence }
+  | { readonly matched: "Unmarked" }
+  | { readonly matched: "Unholdable" };
+
+/**
+ * What one pull request is evidence of. The marker is asked first, because
+ * everything after it is about a proposal already known to be this request's:
+ * a forge that named no repository and a field no stored row holds each leave
+ * it found and unusable rather than absent.
  */
 function githubChangeProposalsEvidenceOf(
   request: ChangeProposalRequest,
   address: GithubAddress,
   host: string,
   pull: GithubPullRequest,
-): ChangeProposalEvidence | undefined {
+): GithubProposalMatch {
   const answered = pull.body ?? "";
+  if (!answered.includes(request.marker)) return { matched: "Unmarked" };
   const repository = githubChangeProposalsRepositoryOf(
     request,
     address,
     host,
     pull,
   );
-  if (repository === undefined) return undefined;
-  if (!answered.includes(request.marker)) return undefined;
   const remote = githubChangeProposalsBranded(
     pull.node_id,
     asProposalRemoteIdentity,
@@ -519,21 +565,31 @@ function githubChangeProposalsEvidenceOf(
   const base = githubChangeProposalsRefOf(pull.base.ref);
   const headCommit = githubChangeProposalsCommitOf(pull.head.sha);
   const baseCommit = githubChangeProposalsCommitOf(pull.base.sha);
-  if (remote === undefined || title === undefined || body === undefined) {
-    return undefined;
+  if (
+    repository === undefined ||
+    remote === undefined ||
+    title === undefined ||
+    body === undefined ||
+    head === undefined ||
+    base === undefined ||
+    headCommit === undefined ||
+    baseCommit === undefined
+  ) {
+    return { matched: "Unholdable" };
   }
-  if (head === undefined || base === undefined) return undefined;
-  if (headCommit === undefined || baseCommit === undefined) return undefined;
   return {
-    identity: { forge: request.binding.forge, remote },
-    repository,
-    marker: request.marker,
-    head: { ref: head, commit: headCommit },
-    base: { ref: base, commit: baseCommit },
-    title,
-    body,
-    status: githubChangeProposalsStatusOf(pull),
-    ...githubChangeProposalsUrlOf(pull, host),
+    matched: "Evidence",
+    evidence: {
+      identity: { forge: request.binding.forge, remote },
+      repository,
+      marker: request.marker,
+      head: { ref: head, commit: headCommit },
+      base: { ref: base, commit: baseCommit },
+      title,
+      body,
+      status: githubChangeProposalsStatusOf(pull),
+      ...githubChangeProposalsUrlOf(pull, host),
+    },
   };
 }
 
@@ -592,15 +648,15 @@ async function githubChangeProposalsCreate(
   if (answer.answer === "Unsettled") return { created: "Ambiguous" };
   const parsed = githubPullRequestSchema.safeParse(answer.body);
   if (!parsed.success) return { created: "Ambiguous" };
-  const evidence = githubChangeProposalsEvidenceOf(
+  const match = githubChangeProposalsEvidenceOf(
     request,
     target.address,
     own.repositoryHost,
     parsed.data,
   );
-  return evidence === undefined
-    ? { created: "Ambiguous" }
-    : { created: "Created", evidence };
+  return match.matched === "Evidence"
+    ? { created: "Created", evidence: match.evidence }
+    : { created: "Ambiguous" };
 }
 
 /** The collection query one read is, bounded to the proposals a read may consider. */
@@ -638,13 +694,15 @@ async function githubChangeProposalsRead(
   const parsed = z.array(githubPullRequestSchema).safeParse(answer.body);
   if (!parsed.success) return { read: "Unavailable" };
   for (const pull of parsed.data.slice(0, own.proposalsPerReadMax)) {
-    const evidence = githubChangeProposalsEvidenceOf(
+    const match = githubChangeProposalsEvidenceOf(
       request,
       target.address,
       own.repositoryHost,
       pull,
     );
-    if (evidence !== undefined) return { read: "Found", evidence };
+    if (match.matched === "Evidence")
+      return { read: "Found", evidence: match.evidence };
+    if (match.matched === "Unholdable") return { read: "Unavailable" };
   }
   return parsed.data.length < own.proposalsPerReadMax
     ? { read: "Absent" }
@@ -658,14 +716,7 @@ export function githubChangeProposals(
   const own: GithubChangeProposalsState = {
     credentials: options.credentials,
     requestFetch: options.fetch,
-    apiHost: githubChangeProposalsHost(
-      options.apiHost ?? githubChangeProposalsDefaults.apiHost,
-      "the API host",
-    ),
-    repositoryHost: githubChangeProposalsHost(
-      options.repositoryHost ?? githubChangeProposalsDefaults.repositoryHost,
-      "the repository host",
-    ),
+    ...githubChangeProposalsHostsOf(options.hosts),
     requestTimeoutSecsMax: githubChangeProposalsBound(
       options.requestTimeoutSecsMax ??
         githubChangeProposalsDefaults.requestTimeoutSecsMax,

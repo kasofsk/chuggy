@@ -205,6 +205,7 @@ function forgeBinding(path: string, reference = "forge-alpha-proposals") {
   return {
     forge: asForgeBindingId("forge-alpha"),
     repositoryHost: "example.invalid",
+    apiHost: "api.example.invalid",
     credentialReference: asForgeCredentialReference(reference),
     path,
   };

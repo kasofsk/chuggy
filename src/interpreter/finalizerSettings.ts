@@ -59,7 +59,7 @@ export const repositoryCredentialFilesMax = 256;
 export interface ForgeBindingFile {
   readonly forge: ForgeBindingId;
   readonly repositoryHost: string;
-  readonly apiHost?: string;
+  readonly apiHost: string;
   readonly credentialReference: ForgeCredentialReference;
   readonly path: string;
 }
@@ -271,21 +271,28 @@ function finalizerSettingsHost(
   return value;
 }
 
-/** One declared forge binding, refusing an entry that names no forge, host, credential or path. */
+/**
+ * One declared forge binding, refusing an entry that names no forge, host,
+ * credential or path. Both hosts are named or the entry is refused, the
+ * repositories a forge holds and the API it is asked through being one forge:
+ * an entry naming only the first would have its credential sent to whatever API
+ * the adapter composed for it defaults to.
+ */
 function finalizerSettingsForgeBinding(entry: unknown): ForgeBindingFile {
   if (typeof entry !== "object" || entry === null)
     throw new Error(`${forgeBindingsVariable} has an invalid entry`);
   const fields = entry as Readonly<Record<string, unknown>>;
-  const apiHost =
-    fields["apiHost"] === undefined
-      ? undefined
-      : finalizerSettingsHost(fields, "apiHost");
+  if (fields["apiHost"] === undefined) {
+    throw new Error(
+      `${forgeBindingsVariable} names a repository host without the API host that forge is asked through`,
+    );
+  }
   return {
     forge: asForgeBindingId(
       finalizerSettingsField(fields, "forge", finalizerIdentityCharsMax),
     ),
     repositoryHost: finalizerSettingsHost(fields, "repositoryHost"),
-    ...(apiHost === undefined ? {} : { apiHost }),
+    apiHost: finalizerSettingsHost(fields, "apiHost"),
     credentialReference: asForgeCredentialReference(
       finalizerSettingsField(
         fields,

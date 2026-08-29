@@ -19,8 +19,10 @@ import test from "node:test";
 
 import {
   githubChangeProposals,
+  githubChangeProposalsBranded,
   githubChangeProposalsDefaults,
   githubChangeProposalsPerPageMax,
+  type GithubChangeProposalsHosts,
 } from "../../src/adapters/forge/githubChangeProposals.ts";
 import {
   asChangeProposalRequestIdentity,
@@ -89,11 +91,17 @@ interface ForgeCall {
   readonly method: string;
   readonly headers: Record<string, string>;
   readonly body: string | undefined;
+  readonly redirect: RequestInit["redirect"];
 }
 
 interface ForgeRecorder {
   readonly requestFetch: typeof fetch;
   readonly calls: ForgeCall[];
+}
+
+/** Whether one answer is a redirect, which the platform treats as neither an answer nor a refusal. */
+function fixtureRedirects(answer: Response): boolean {
+  return answer.status >= 300 && answer.status < 400;
 }
 
 /** The address a request was made to, whichever of the three shapes it arrived in. */
@@ -102,26 +110,39 @@ function fixtureUrlOf(input: string | URL | Request): string {
   return input instanceof URL ? input.href : input.url;
 }
 
-/** The forge this suite composes the adapter with, answering the given answers in order. */
+/**
+ * The forge this suite composes the adapter with, answering the given answers
+ * in order and treating a redirect the way the platform does: a request that
+ * refused one is rejected, and one that did not is made a second time.
+ */
 function fixtureForge(answers: readonly (Response | Error)[]): ForgeRecorder {
   const calls: ForgeCall[] = [];
   let served = 0;
-  const requestFetch: typeof fetch = (input, init) => {
-    const request = init ?? {};
+  const serve = (
+    input: string | URL | Request,
+    request: RequestInit,
+  ): Promise<Response> => {
     calls.push({
       url: fixtureUrlOf(input),
       method: String(request.method),
       headers: { ...(request.headers as Record<string, string>) },
       body: typeof request.body === "string" ? request.body : undefined,
+      redirect: request.redirect,
     });
     const answer = answers[served];
     served += 1;
     if (answer === undefined)
       return Promise.reject(new Error("the fixture forge ran out"));
-    return answer instanceof Error
-      ? Promise.reject(answer)
-      : Promise.resolve(answer);
+    if (answer instanceof Error) return Promise.reject(answer);
+    if (!fixtureRedirects(answer)) return Promise.resolve(answer);
+    if (request.redirect === "error")
+      return Promise.reject(new TypeError("the fixture forge redirected"));
+    return serve(answer.headers.get("location") ?? "", {
+      headers: request.headers ?? {},
+      method: "GET",
+    });
   };
+  const requestFetch: typeof fetch = (input, init) => serve(input, init ?? {});
   return { requestFetch, calls };
 }
 
@@ -407,29 +428,39 @@ test("a body that could never carry the marker back is refused without a request
   assert.equal(recorder.calls.length, 0);
 });
 
-test("a proposal past the bounds a stored row holds is not this request's", async () => {
+/**
+ * A person may edit a proposal's title or body past what a stored row holds,
+ * and the forge takes it. What this pins is that the marker is what decides
+ * whose proposal it is, so a proposal carrying it that cannot be held is found
+ * and unreadable rather than absent — an absence is what would spend the
+ * request's creations opening a proposal the forge already holds.
+ */
+test("a proposal carrying the marker past the bounds a stored row holds is not an absence", async () => {
   const request = fixtureRequest();
-  const unusable = [
+  const unholdable = [
     { title: "t".repeat(proposalTitleCharsMax + 1) },
     { head: { ref: "chuggy/handoff/one", sha: "short" } },
     { base: { ref: "main", sha: fixtureBaseCommit, repo: null } },
     { node_id: "n".repeat(4_096) },
   ];
-  for (const overrides of unusable) {
+  for (const overrides of unholdable) {
     const recorder = fixtureForge([
       fixtureAnswer(200, [fixturePull(request, overrides)]),
     ]);
-    assert.deepEqual(await fixtureAdapter(recorder).readByMarker(request), {
-      read: "Absent",
-    });
+    assert.deepEqual(
+      await fixtureAdapter(recorder).readByMarker(request),
+      { read: "Unavailable" },
+      JSON.stringify(overrides),
+    );
   }
 });
 
 /**
  * A NUL is no character a stored row holds, so every brand refuses one. What
  * this pins is that the refusal reaches the caller as the port's own answer: a
- * create the forge answered with one is unsettled and a read does not match,
- * where a throw would have failed the pass the finalizer made it in.
+ * create the forge answered with one is unsettled and a read of the proposal
+ * carrying the marker is unavailable, where a throw would have failed the pass
+ * the finalizer made it in.
  */
 test("a forge answer carrying a NUL is unsettled rather than thrown", async () => {
   const request = fixtureRequest();
@@ -473,8 +504,8 @@ test("a forge answer carrying a NUL is unsettled rather than thrown", async () =
     ]);
     assert.deepEqual(
       await fixtureAdapter(reading).readByMarker(request),
-      { read: "Absent" },
-      `a read does not match: ${answered}`,
+      { read: "Unavailable" },
+      `a read cannot hold what it found: ${answered}`,
     );
   }
 });
@@ -716,5 +747,75 @@ test("a display URL this forge did not serve is not carried into evidence", asyn
   assert.equal(
     carried.read === "Found" ? carried.evidence.url : "unread",
     undefined,
+  );
+});
+
+/**
+ * A binding names the repositories a forge holds and the API it is asked
+ * through, and a composition that took the first and defaulted the second would
+ * put that forge's credential in a request to `api.github.com`.
+ */
+test("a forge is reached at the two hosts it was composed with, or at neither", async () => {
+  const request = fixtureRequest({
+    repository: asRepositoryId("https://forge.invalid/kasofsk/chuggy"),
+  });
+  const recorder = fixtureForge([fixtureAnswer(201, fixturePull(request))]);
+  const bound = githubChangeProposals({
+    credentials: fixtureCredentials("Credential"),
+    fetch: recorder.requestFetch,
+    hosts: { apiHost: "api.forge.invalid", repositoryHost: "forge.invalid" },
+  });
+  assert.equal((await bound.create(request)).created, "Created");
+  assert.equal(
+    recorder.calls[0]?.url,
+    "https://api.forge.invalid/repos/kasofsk/chuggy/pulls",
+  );
+  assert.throws(
+    () =>
+      githubChangeProposals({
+        credentials: fixtureCredentials("Credential"),
+        fetch: recorder.requestFetch,
+        hosts: {
+          repositoryHost: "forge.invalid",
+        } as unknown as GithubChangeProposalsHosts,
+      }),
+    TypeError,
+    "a repository host without its API host composes nothing",
+  );
+});
+
+test("a redirect on the create is refused rather than followed", async () => {
+  const request = fixtureRequest();
+  const recorder = fixtureForge([
+    new Response("", {
+      status: 301,
+      headers: { location: "https://api.github.com/repositories/9/pulls" },
+    }),
+    fixtureAnswer(200, [fixturePull(request)]),
+  ]);
+  assert.deepEqual(await fixtureAdapter(recorder).create(request), {
+    created: "Ambiguous",
+  });
+  assert.equal(recorder.calls.length, 1);
+  assert.equal(recorder.calls[0]?.redirect, "error");
+});
+
+test("a brand's own refusal is an absence and anything else it raises escapes", () => {
+  assert.equal(
+    githubChangeProposalsBranded(
+      `${fixtureRemote}${fixtureNul}`,
+      asProposalRemoteIdentity,
+    ),
+    undefined,
+  );
+  const faulty = (): string => {
+    throw new TypeError("a brand this tree composed wrongly");
+  };
+  assert.throws(
+    () => {
+      githubChangeProposalsBranded(fixtureRemote, faulty);
+    },
+    TypeError,
+    "a throw that is no refusal is not an answer",
   );
 });

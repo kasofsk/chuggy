@@ -203,6 +203,7 @@ test("a forge binding names a forge, a repository host, a credential and the fil
       {
         forge: "forge-beta",
         repositoryHost: "forge.test",
+        apiHost: "forge.test",
         credentialReference: "forge-beta-proposals",
         path: "/run/secrets/forge-beta",
       },
@@ -219,16 +220,42 @@ test("a forge binding names a forge, a repository host, a credential and the fil
     {
       forge: "forge-beta",
       repositoryHost: "forge.test",
+      apiHost: "forge.test",
       credentialReference: "forge-beta-proposals",
       path: "/run/secrets/forge-beta",
     },
   ]);
 });
 
+/**
+ * A forge is the repositories it holds and the API it is asked through
+ * together. What this pins is that a binding naming only the first is refused
+ * where it is read, rather than composing an adapter that sends that forge's
+ * credential to whatever API the adapter defaults to.
+ */
+test("a forge binding naming a repository host without its API host is refused", () => {
+  assert.throws(
+    () =>
+      finalizerSettingsOf({
+        ...complete,
+        CHUG_FINALIZER_FORGE_BINDINGS: JSON.stringify([
+          {
+            forge: "forge-alpha",
+            repositoryHost: "github.test",
+            credentialReference: "forge-alpha-proposals",
+            path: "/run/secrets/forge-alpha",
+          },
+        ]),
+      }),
+    /CHUG_FINALIZER_FORGE_BINDINGS names a repository host without the API host/u,
+  );
+});
+
 test("a forge binding that is not one, or names a forge or host twice, is refused", () => {
   const bound = {
     forge: "forge-alpha",
     repositoryHost: "github.test",
+    apiHost: "api.github.test",
     credentialReference: "forge-alpha-proposals",
     path: "/run/secrets/forge-alpha",
   };
