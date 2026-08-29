@@ -709,6 +709,19 @@ textarea:focus-visible {
   word-break: break-word;
 }
 
+.run-report > :first-child {
+  margin-top: 0;
+}
+
+.run-report > :last-child {
+  margin-bottom: 0;
+}
+
+.run-report pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .run-reads {
   display: grid;
   gap: var(--gap);

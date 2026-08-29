@@ -37,6 +37,7 @@ import {
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import type { ProjectQueryKey } from "../core/projectQueryKeys.ts";
 import { usePanelQuery } from "./api.ts";
+import { MarkdownReport } from "./MarkdownReport.tsx";
 import { Panel } from "./Panel.tsx";
 import { RunTranscript } from "./RunTranscript.tsx";
 
@@ -286,7 +287,7 @@ function RunSummary(props: {
 }): ReactNode {
   const summary = runSummaryOf(props.attempt, props.result);
   return summary.summary === "Report" ? (
-    <pre className="run-report">{summary.report}</pre>
+    <MarkdownReport text={summary.report} />
   ) : (
     <p className="panel-note">{summary.sentence}</p>
   );

@@ -347,6 +347,35 @@ test("the ticket's total is the figure the ticket read answered with", async () 
   ).toBe("$0.30 (list price)");
 });
 
+/** A report the worker wrote as markdown must draw as markdown, and the
+ * newline between two lines of the same paragraph must survive as a line
+ * break rather than being folded into a run-on sentence. */
+test("a reported run draws its markdown and keeps its line breaks", async () => {
+  const rendered = await ticketPage({
+    ticket,
+    executions: [summary()],
+    execution: {
+      ...summary(),
+      attempts: [attempt("a1")],
+      result: {
+        manifest: "m1",
+        attempt: "a1",
+        schemaVersion: 3,
+        digest,
+        verdict: "Pass",
+        recordedAt: "2026-08-27T00:01:00Z",
+        artifacts: [],
+        report: "**All good.**\nEvery check passed.",
+      },
+    },
+    transcripts: [transcript([1, 2], true)],
+  });
+  const report = rendered.container.querySelector(".run-report");
+  expect(report?.querySelector("strong")?.textContent).toBe("All good.");
+  expect(report?.querySelector("br")).toBeTruthy();
+  expect(report?.textContent).toBe("All good.Every check passed.");
+});
+
 /** An old worker wrote no evidence, and the pane it leaves is a stated absence
  * rather than a blank one. */
 test("a run from a worker that wrote no evidence says so", async () => {
