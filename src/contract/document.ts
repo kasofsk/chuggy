@@ -49,6 +49,8 @@ export function nativeHttpContractDocument(): unknown {
       operation: "percent-encoded opaque UTF-8 path segment",
       cursor: "opaque canonical base64url",
     },
+    briefFinalization:
+      "a PullRequest finalization requires the brief to name a branch, and a target that is not it",
     routes: nativeHttpRoutes,
     schemas: {
       publicMutation: z.toJSONSchema(publicMutationSchema),

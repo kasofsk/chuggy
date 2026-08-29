@@ -94,7 +94,7 @@ test("a brief lands where its work happened unless its finalization says otherwi
     { mode: "Push", target: "refs/heads/rt/landing" },
   );
   assert.equal(
-    briefSchema.safeParse({ intent: "Do it.", links: [] }).data?.finalization,
+    briefSchema.parse({ intent: "Do it.", links: [] }).finalization,
     undefined,
     "a brief naming no finalization carries none",
   );
