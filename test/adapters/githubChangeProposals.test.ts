@@ -331,6 +331,23 @@ test("a read answers with the proposal carrying this request's marker and nothin
   assert.deepEqual(await adapter.readByMarker(request), { read: "Absent" });
 });
 
+test("a page filled to the bound with no match is not an absence", async () => {
+  const request = fixtureRequest();
+  const foreign = fixturePull(request, { body: "somebody else's work" });
+  const page = Array.from(
+    { length: githubChangeProposalsDefaults.proposalsPerReadMax },
+    () => foreign,
+  );
+  const full = fixtureForge([fixtureAnswer(200, page)]);
+  assert.deepEqual(await fixtureAdapter(full).readByMarker(request), {
+    read: "Unavailable",
+  });
+  const room = fixtureForge([fixtureAnswer(200, page.slice(1))]);
+  assert.deepEqual(await fixtureAdapter(room).readByMarker(request), {
+    read: "Absent",
+  });
+});
+
 test("a response past its byte bound is not read", async () => {
   const request = fixtureRequest();
   const wide = fixturePull(request, { title: "w".repeat(4_096) });

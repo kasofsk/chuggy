@@ -31,6 +31,12 @@
  * case of an owner or a name, so an address typed one way and answered in the
  * canonical spelling is one repository and not two.
  *
+ * A FULL PAGE IS NOT AN ABSENCE. One read asks for as many proposals as it may
+ * consider and looks no further, so a page filled to that bound with no match
+ * leaves a proposal past it neither found nor ruled out. `Absent` there would
+ * be a positive claim the read did not establish, so a full page is
+ * `Unavailable` and the bounded reconciliation asks again.
+ *
  * NOTHING IS APPENDED TO WHAT A CALLER OFFERS, because evidence is compared
  * against the request field by field and a body this adapter edited could never
  * equal the one it was given. So a request whose own body does not carry its
@@ -604,7 +610,9 @@ async function githubChangeProposalsRead(
     );
     if (evidence !== undefined) return { read: "Found", evidence };
   }
-  return { read: "Absent" };
+  return parsed.data.length < own.proposalsPerReadMax
+    ? { read: "Absent" }
+    : { read: "Unavailable" };
 }
 
 /** The adapter over its options, refusing at construction what it could never serve. */
