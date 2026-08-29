@@ -109,8 +109,6 @@ database="${CHUG_RIG_DATABASE:-chuggy}"
 fabric_repo="${CHUG_FABRIC_REPO:-gdoteof/chuggy-fabric}"
 wait_secs="${CHUG_RELEASE_WAIT_SECS:-600}"
 registry_prefix=registry.chuggy.internal/chuggy
-export CHUG_IMAGE_PREFIX="$registry_prefix"
-export CHUG_RIG_SSH
 
 kube() { kubectl --context "$context" "$@"; }
 sql() { # <statement>
@@ -290,11 +288,13 @@ fi
 
 # --- the images -----------------------------------------------------------------
 
+# The builder's own variables are handed to it here and nowhere earlier: the
+# gate runs first, and its suites for the builder read the same names.
 build() { # <image> [env...]
 	image="$1"
 	shift
 	set +e
-	env "$@" deploy/rig/images/build-and-import.sh "$image"
+	env CHUG_IMAGE_PREFIX="$registry_prefix" CHUG_RIG_SSH="$node" "$@" deploy/rig/images/build-and-import.sh "$image"
 	built=$?
 	set -e
 	[ "$built" -eq 0 ] || leave_as "$built" "$image did not reach the node"
