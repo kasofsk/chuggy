@@ -57,6 +57,13 @@ acceptance *ARGS:
     [ "$unreached" -eq 0 ] || exit "$unreached"
     exit "$ran"
 
+# Release HEAD to the rig: gate it, build and publish what changed, and open
+# the chuggy-fabric pull request that selects it. `just deploy-to-gtr --merge`
+# lands that pull request and watches the rollout. The script's header is the
+# procedure and names what it needs.
+deploy-to-gtr *ARGS:
+    ./deploy/rig/deploy-to-gtr.sh {{ ARGS }}
+
 # Install the pre-commit hook. A fresh clone needs this once.
 hooks:
     git config core.hooksPath .githooks
