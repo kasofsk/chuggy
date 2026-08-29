@@ -35,6 +35,7 @@ import {
   asForgeCredentialReference,
   asProposalDisplayUrl,
   asProposalRemoteIdentity,
+  proposalEvidenceCharsMax,
   proposalMarkerOf,
   type ChangeProposalEvidence,
   type ChangeProposalForges,
@@ -316,7 +317,8 @@ interface ProposalState {
   readonly title: string;
   readonly body: string;
   readonly creation: string | null;
-  readonly proposal_url: string | null;
+  readonly attempts: string;
+  readonly refusals: string;
   readonly reconciliations: string;
 }
 
@@ -325,8 +327,9 @@ async function proposalOf(
   project: FinalizerProject,
 ): Promise<ProposalState | undefined> {
   const rows = (await rig.as(
-    `SELECT head_ref, head_commit, base_ref, base_commit, title, body,
-            creation, proposal_url, reconciliations::text AS reconciliations
+    `SELECT head_ref, head_commit, base_ref, base_commit, title, body, creation,
+            attempts::text AS attempts, refusals::text AS refusals,
+            reconciliations::text AS reconciliations
        FROM finalization_change_proposal WHERE tenant=$1 AND project=$2`,
     [project.partition.tenant, project.partition.project],
   )) as readonly unknown[] as readonly ProposalState[];
@@ -481,7 +484,8 @@ test("a ticket that finishes by proposing lands on its branch and opens one into
   assert.equal(stored?.base_ref, landingBranch);
   assert.equal(stored?.base_commit, landing);
   assert.equal(stored?.creation, "Created");
-  assert.equal(stored?.proposal_url, "https://forge.invalid/proposals/1");
+  assert.equal(stored?.attempts, "1");
+  assert.equal(stored?.refusals, "0");
   assert.equal(stored?.reconciliations, "0");
   assert.equal(forge.creates[0]?.head.ref, briefBranch);
   assert.equal(stored?.body.includes(forge.creates[0]?.marker ?? ""), true);
@@ -528,8 +532,8 @@ test("a row a crash left before any result is read back, and no second proposal 
   await rig.as(
     `INSERT INTO finalization_change_proposal
        (tenant,project,request,permit,proposal_request,head_ref,head_commit,
-        base_ref,base_commit,title,body)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        base_ref,base_commit,title,body,attempts)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,1)`,
     [
       project.partition.tenant,
       project.partition.project,
@@ -544,10 +548,12 @@ test("a row a crash left before any result is read back, and no second proposal 
       `propose it\n\nchuggy-handoff:${identity}`,
     ],
   );
-  assert.equal(
-    (await proposalOf(project))?.creation,
-    null,
-    "the row a crash between the insert and the answer leaves",
+  const crashed = await proposalOf(project);
+  assert.equal(crashed?.creation, null);
+  assert.deepEqual(
+    [crashed?.attempts, crashed?.refusals],
+    ["1", "0"],
+    "the row a crash between the attempt and the answer leaves",
   );
 
   forge.createRefused = true;
@@ -596,8 +602,8 @@ async function proposalRowSubject(label: string): Promise<FinalizerProject> {
   await rig.as(
     `INSERT INTO finalization_change_proposal
        (tenant,project,request,permit,proposal_request,head_ref,head_commit,
-        base_ref,base_commit,title,body)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        base_ref,base_commit,title,body,attempts)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,1)`,
     [
       project.partition.tenant,
       project.partition.project,
@@ -667,7 +673,7 @@ test("a change proposal is created once and read back as often as a reading is t
   );
   assert.match(
     await rig.refusal(
-      `UPDATE finalization_change_proposal SET creation='Ambiguous'
+      `UPDATE finalization_change_proposal SET creation='Unstorable'
         WHERE tenant=$1 AND project=$2 AND request=$3`,
       key,
     ),
@@ -754,7 +760,7 @@ function proposalEvidenceTitled(
   };
 }
 
-test("evidence carrying a NUL is refused before the statement that would cast it", async () => {
+test("evidence carrying a NUL settles the create rather than raising out of the pass", async () => {
   const project = await proposalRowSubject("proposalnul");
   const claim = await finalizerClaim(rig, project, "proposalnul");
   const store = postgresFinalizer(rig.pool);
@@ -762,22 +768,171 @@ test("evidence carrying a NUL is refused before the statement that would cast it
     project,
     "ticket 1: propose it\u0000",
   );
-  await assert.rejects(
-    () =>
-      store.recordChangeProposal({
-        claim,
-        result: {
-          records: "Creation",
-          created: { created: "Created", evidence },
-        },
-      }),
-    RangeError,
-    "a document no jsonb value holds is refused rather than cast",
+  assert.deepEqual(
+    await store.recordChangeProposal({
+      claim,
+      result: {
+        records: "Creation",
+        created: { created: "Created", evidence },
+      },
+    }),
+    { wrote: "Row" },
+    "a document no jsonb value holds is recorded without it rather than cast",
   );
-  assert.equal(
-    (await proposalOf(project))?.creation,
-    null,
-    "so the create stays unanswered and the next pass reads rather than creates",
+  assert.equal((await proposalOf(project))?.creation, "Unstorable");
+  assert.deepEqual(
+    (await store.changeProposal(claim))?.publication,
+    { publication: "Answered", creation: { created: "Unstorable" } },
+    "so the ticket is held on it rather than creating a second proposal",
+  );
+});
+
+/** The columns one attempted row names, every one of them bounded. */
+interface ProposalOfferedRow {
+  readonly proposal_request: string;
+  readonly head_ref: string;
+  readonly head_commit: string;
+  readonly base_ref: string;
+  readonly base_commit: string;
+  readonly title: string;
+  readonly body: string;
+}
+
+/** One such row, sound until a case replaces one of its columns. */
+function proposalBoundedRow(): ProposalOfferedRow {
+  return {
+    proposal_request: finalizerDigest(),
+    head_ref: briefBranch,
+    head_commit: finalizerCommit(),
+    base_ref: landingBranch,
+    base_commit: finalizerCommit(),
+    title: "ticket 1: propose it",
+    body: "propose it",
+  };
+}
+
+/** Every value one of this relation's bounds refuses, named by the bound that refuses it. */
+const proposalBoundsRefused: readonly [Partial<ProposalOfferedRow>, string][] =
+  [
+    [{ proposal_request: "not a digest" }, "identity_is_a_digest"],
+    [{ head_commit: "zz" }, "commits_are_object_ids"],
+    [{ base_commit: "zz" }, "commits_are_object_ids"],
+    [{ title: "" }, "text_is_bounded"],
+    [{ base_ref: "x".repeat(1_000) }, "text_is_bounded"],
+  ];
+
+/** Offers the owner one whole row, whose evidence a case makes as large as it likes. */
+async function proposalRowOffered(
+  project: FinalizerProject,
+  overrides: Partial<ProposalOfferedRow>,
+  evidence: string,
+): Promise<string> {
+  const row = { ...proposalBoundedRow(), ...overrides };
+  return rig.ownerRefusal(
+    `INSERT INTO finalization_change_proposal
+       (tenant,project,request,permit,proposal_request,head_ref,head_commit,
+        base_ref,base_commit,title,body,attempts,creation,creation_evidence)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,1,'Created',${evidence})`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      project.request,
+      await permitOf(project),
+      row.proposal_request,
+      row.head_ref,
+      row.head_commit,
+      row.base_ref,
+      row.base_commit,
+      row.title,
+      row.body,
+    ],
+  );
+}
+
+test("every bound this relation names refuses the value it is there to refuse", async () => {
+  const project = await proposalRowSubject("proposalbounds");
+  for (const [overrides, constraint] of proposalBoundsRefused) {
+    assert.match(
+      await proposalRowOffered(project, overrides, proposalEvidenceStored),
+      new RegExp(`finalization_change_proposal_${constraint}`, "u"),
+      JSON.stringify(overrides),
+    );
+  }
+  assert.match(
+    await proposalRowOffered(
+      project,
+      {},
+      `to_jsonb(repeat('x',${String(proposalEvidenceCharsMax + 1)}))`,
+    ),
+    /finalization_change_proposal_evidence_is_bounded/u,
+  );
+});
+
+/** Every counter a row keeps, each of which advances one step at a time and no further. */
+const proposalCountersAdvanced = ["attempts", "refusals", "reconciliations"];
+
+test("a change proposal counts one act at a time and never more creates than it made", async () => {
+  const project = await proposalRowSubject("proposalcounts");
+  const key = proposalRowKey(project);
+  for (const counter of proposalCountersAdvanced) {
+    assert.match(
+      await rig.refusal(
+        `UPDATE finalization_change_proposal SET ${counter} = ${counter} + 2
+          WHERE tenant=$1 AND project=$2 AND request=$3`,
+        key,
+      ),
+      /counts one act at a time/u,
+      counter,
+    );
+  }
+  assert.match(
+    await rig.refusal(
+      `UPDATE finalization_change_proposal SET attempts = attempts + 1
+        WHERE tenant=$1 AND project=$2 AND request=$3`,
+      key,
+    ),
+    /finalization_change_proposal_attempts_are_counted/u,
+    "a second create while one is in flight is the row this relation refuses",
+  );
+  await rig.as(
+    `UPDATE finalization_change_proposal SET refusals = refusals + 1
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    key,
+  );
+  await rig.as(
+    `UPDATE finalization_change_proposal SET attempts = attempts + 1
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    key,
+  );
+  const released = await proposalOf(project);
+  assert.deepEqual(
+    [released?.attempts, released?.refusals],
+    ["2", "1"],
+    "a released attempt is what makes another create possible",
+  );
+});
+
+test("a change proposal is never born answered, whatever a role writes into it", async () => {
+  const project = await proposalRowSubject("proposalborn");
+  assert.match(
+    await rig.refusal(
+      `INSERT INTO finalization_change_proposal
+         (tenant,project,request,permit,proposal_request,head_ref,head_commit,
+          base_ref,base_commit,title,body,attempts,creation,creation_evidence)
+       VALUES ($1,$2,$3,'permit','${finalizerDigest()}',$4,$5,$6,$7,'t','b',1,
+               'Created',${proposalEvidenceStored})`,
+      [
+        project.partition.tenant,
+        project.partition.project,
+        project.request,
+        briefBranch,
+        finalizerCommit(),
+        landingBranch,
+        finalizerCommit(),
+      ],
+    ),
+    /permission denied/u,
+    "the finalizer's insert names the request columns and not one result column",
   );
 });
 

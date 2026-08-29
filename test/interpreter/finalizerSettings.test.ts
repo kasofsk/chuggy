@@ -104,6 +104,7 @@ test("every pass and pace bound a deployment names reaches the parsed configurat
     CHUG_FINALIZER_RECONCILIATIONS_PER_PASS_MAX: "6",
     CHUG_FINALIZER_HELD_PERMITS_PER_PASS_MAX: "7",
     CHUG_FINALIZER_PROPOSALS_PER_PASS_MAX: "9",
+    CHUG_FINALIZER_PROPOSAL_CREATIONS_MAX: "11",
     CHUG_FINALIZER_PROPOSAL_RECONCILIATIONS_MAX: "10",
   });
   assert.deepEqual(settings.runtime, {
@@ -119,6 +120,7 @@ test("every pass and pace bound a deployment names reaches the parsed configurat
     reconciliationsPerPassMax: 6,
     heldPermitsPerPassMax: 7,
     proposalsPerPassMax: 9,
+    proposalCreationsMax: 11,
     proposalReconciliationsMax: 10,
   });
 });

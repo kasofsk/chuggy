@@ -19,8 +19,17 @@
  * after the create. The marker is what says a proposal is this request's and
  * the two refs are where it stands, so each side's commit stays in the request
  * and in the evidence as what was observed and is compared with nothing.
+ *
+ * A CREATE IS EITHER IN FLIGHT OR IT IS NOT, AND THAT IS THE WHOLE STATE. An
+ * attempt is counted before the forge is asked, so a create whose outcome
+ * nobody heard is the state a crash and a lost answer both leave, and it can
+ * only be read back. A create the forge answered by refusing to take it leaves
+ * nothing in flight, so a later pass may make another one while the creations
+ * are unspent; readings that reached the forge and found nothing spend an
+ * attempt the same way, which is what makes both ceilings bound one loop.
  */
 
+import { assertNever } from "../domain/assertNever.ts";
 import { asBoundedText } from "./boundedText.ts";
 import type { GitObjectId, GitRefName, RepositoryId } from "./finalizer.ts";
 import { asGitRefName, finalizerIdentityCharsMax } from "./finalizer.ts";
@@ -59,8 +68,12 @@ export const proposalBodyCharsMax = 16_384;
 export const proposalMarkerCharsMax = 128;
 export const proposalDisplayUrlCharsMax = 2_048;
 
-/** The most one proposal's evidence is stored at: its own fields, and the encoding around them. */
-export const proposalEvidenceCharsMax = 32_768;
+/**
+ * The most one proposal's evidence is stored at. Every field of it is bounded
+ * above, so the bound is above the whole of them escaped and no answer a forge
+ * can be read into needs storing at more than it.
+ */
+export const proposalEvidenceCharsMax = 131_072;
 export const proposalBranchPrefix = "refs/heads/chuggy/handoff/";
 export const changeProposalRequestIdentityChars = 64;
 
@@ -263,6 +276,27 @@ export const allChangeProposalCreations: readonly ChangeProposalCreated["created
     "Denied",
   ];
 
+/** The arms a create the forge took answers with, which are the only ones that settle a row. */
+export type ChangeProposalCreationAnswer = Extract<
+  ChangeProposalCreated,
+  { readonly evidence: ChangeProposalEvidence }
+>;
+
+/**
+ * What a row says one create came to: the answer the forge gave, or that this
+ * deployment could not store the evidence of it.
+ */
+export type ChangeProposalCreationStored =
+  ChangeProposalCreationAnswer | { readonly created: "Unstorable" };
+
+/** Every answer a create settles a row with, so a suite and a database CHECK iterate. */
+export const allChangeProposalCreationAnswers: readonly ChangeProposalCreationAnswer["created"][] =
+  ["Created", "AlreadyExists", "Contradictory"];
+
+/** Every arm a row records a create as. */
+export const allChangeProposalCreationsStored: readonly ChangeProposalCreationStored["created"][] =
+  [...allChangeProposalCreationAnswers, "Unstorable"];
+
 export type ChangeProposalRead =
   | { readonly read: "Found"; readonly evidence: ChangeProposalEvidence }
   | { readonly read: "Absent" }
@@ -287,9 +321,31 @@ export type ChangeProposalReconciled =
 export const allChangeProposalReconciliations: readonly ChangeProposalReconciled["reconciled"][] =
   ["Accepted", "Absent", "Contradictory", "Unavailable", "Denied"];
 
+/** The arms a reading that reached the forge answers with, which are the only readings about a proposal. */
+export type ChangeProposalReconciliationAnswer = Exclude<
+  ChangeProposalReconciled,
+  { readonly reconciled: "Unavailable" | "Denied" }
+>;
+
+/**
+ * What a row says one reading came to: what the forge answered, or that this
+ * deployment could not store the evidence of it.
+ */
+export type ChangeProposalReconciliationStored =
+  ChangeProposalReconciliationAnswer | { readonly reconciled: "Unstorable" };
+
+/** Every answer a reading records, so a suite and a database CHECK iterate. */
+export const allChangeProposalReconciliationAnswers: readonly ChangeProposalReconciliationAnswer["reconciled"][] =
+  ["Accepted", "Absent", "Contradictory"];
+
+/** Every arm a row records a reading as. */
+export const allChangeProposalReconciliationsStored: readonly ChangeProposalReconciliationStored["reconciled"][] =
+  [...allChangeProposalReconciliationAnswers, "Unstorable"];
+
 export type ChangeProposalPublicationNext =
   | { readonly next: "Create" }
   | { readonly next: "Reconcile" }
+  | { readonly next: "RefuseAttempt" }
   | {
       readonly next: "Accepted";
       readonly evidence: ChangeProposalEvidence;
@@ -301,7 +357,7 @@ export type ChangeProposalPublicationNext =
     }
   | {
       readonly next: "Held";
-      readonly reason: "Unavailable" | "Denied" | "ReconciliationExhausted";
+      readonly reason: "CreationsExhausted" | "EvidenceUnstorable";
     };
 
 /** The provider-neutral API selected by an explicit forge binding at composition. */
@@ -352,10 +408,35 @@ export interface ChangeProposalBranchRequestInput extends ChangeProposalRequestI
   readonly headRef: GitRefName;
 }
 
-export interface ChangeProposalPublicationView {
-  readonly creation?: ChangeProposalCreated;
-  readonly reconciliation?: ChangeProposalReconciled;
-  readonly reconciliations: number;
+/**
+ * The three states one proposal stands in, and whether a row records it at all.
+ * A create is in flight in exactly one of them, which is what says whether
+ * another may be made.
+ */
+export type ChangeProposalPublication =
+  | { readonly publication: "Unopened" }
+  | { readonly publication: "Idle"; readonly attempts: number }
+  | {
+      readonly publication: "Unanswered";
+      readonly attempts: number;
+      readonly reconciliations: number;
+      readonly reading: ChangeProposalReconciliationStored | undefined;
+    }
+  | {
+      readonly publication: "Answered";
+      readonly creation: ChangeProposalCreationStored;
+    };
+
+/** The states a stored row stands in, a row that is there never reading as no row. */
+export type OpenedChangeProposalPublication = Exclude<
+  ChangeProposalPublication,
+  { readonly publication: "Unopened" }
+>;
+
+/** How many creates one request may make, and how many readings each of them is read back by. */
+export interface ChangeProposalPublicationBounds {
+  readonly creationsMax: number;
+  readonly reconciliationsMax: number;
 }
 
 /** Bounds one request's metadata and pins it to the head every retry must reuse. */
@@ -439,58 +520,82 @@ export function reconcileChangeProposal(
   }
 }
 
-function proposalAcceptedNext(
+/** What evidence of a proposal settles this request to, whichever answer carried it. */
+function proposalEvidenceNext(
   request: ChangeProposalRequest,
   evidence: ChangeProposalEvidence,
 ): ChangeProposalPublicationNext {
-  const reconciled = reconcileChangeProposal(request, {
-    read: "Found",
-    evidence,
-  });
-  return reconciled.reconciled === "Accepted"
-    ? { next: "Accepted", evidence: reconciled.evidence }
-    : reconciled.reconciled === "Contradictory"
-      ? {
-          next: "Refused",
-          contradiction: reconciled.contradiction,
-          evidence: reconciled.evidence,
-        }
-      : { next: "Held", reason: "Unavailable" };
+  const contradiction = proposalContradiction(request, evidence);
+  return contradiction === undefined
+    ? { next: "Accepted", evidence }
+    : { next: "Refused", contradiction, evidence };
+}
+
+/** Refuses a bound that is not a count, which no ceiling below could then fire on. */
+function proposalBoundsAsserted(bounds: ChangeProposalPublicationBounds): void {
+  if (!Number.isSafeInteger(bounds.creationsMax) || bounds.creationsMax < 1)
+    throw new RangeError("proposal creation bound must be positive");
+  if (
+    !Number.isSafeInteger(bounds.reconciliationsMax) ||
+    bounds.reconciliationsMax < 1
+  )
+    throw new RangeError("proposal reconciliation bound must be positive");
 }
 
 /**
- * Continues one recorded create. An ambiguous create can only be read back;
- * redelivery never authorizes a second create.
+ * What a create nobody has heard back from authorizes. Its readings are spent
+ * on it alone, so a create no reading of them found is one the forge never
+ * took and the attempt it stands on is refused.
+ */
+function proposalUnansweredNext(
+  request: ChangeProposalRequest,
+  publication: Extract<
+    ChangeProposalPublication,
+    { readonly publication: "Unanswered" }
+  >,
+  bounds: ChangeProposalPublicationBounds,
+): ChangeProposalPublicationNext {
+  if (publication.attempts < 1)
+    throw new RangeError("proposal publication: nothing is in flight");
+  const reading = publication.reading;
+  if (reading?.reconciled === "Unstorable")
+    return { next: "Held", reason: "EvidenceUnstorable" };
+  if (
+    reading?.reconciled === "Accepted" ||
+    reading?.reconciled === "Contradictory"
+  )
+    return proposalEvidenceNext(request, reading.evidence);
+  return publication.reconciliations <
+    publication.attempts * bounds.reconciliationsMax
+    ? { next: "Reconcile" }
+    : { next: "RefuseAttempt" };
+}
+
+/**
+ * Continues one publication from the state its row is in. A create whose
+ * outcome is unknown can only be read back; only a state with nothing in
+ * flight authorizes another create, and only while the creations are unspent.
  */
 export function changeProposalPublicationNext(
   request: ChangeProposalRequest,
-  view: ChangeProposalPublicationView,
-  reconciliationsMax: number,
+  publication: ChangeProposalPublication,
+  bounds: ChangeProposalPublicationBounds,
 ): ChangeProposalPublicationNext {
-  if (!Number.isSafeInteger(reconciliationsMax) || reconciliationsMax < 1)
-    throw new RangeError("proposal reconciliation bound must be positive");
-  if (view.creation === undefined) return { next: "Create" };
-  switch (view.creation.created) {
-    case "Created":
-    case "AlreadyExists":
-    case "Contradictory":
-      return proposalAcceptedNext(request, view.creation.evidence);
-    case "Unavailable":
-      return { next: "Held", reason: "Unavailable" };
-    case "Denied":
-      return { next: "Held", reason: "Denied" };
-    case "Ambiguous":
-      break;
+  proposalBoundsAsserted(bounds);
+  switch (publication.publication) {
+    case "Unopened":
+      return { next: "Create" };
+    case "Idle":
+      return publication.attempts < bounds.creationsMax
+        ? { next: "Create" }
+        : { next: "Held", reason: "CreationsExhausted" };
+    case "Unanswered":
+      return proposalUnansweredNext(request, publication, bounds);
+    case "Answered":
+      return publication.creation.created === "Unstorable"
+        ? { next: "Held", reason: "EvidenceUnstorable" }
+        : proposalEvidenceNext(request, publication.creation.evidence);
+    default:
+      return assertNever(publication);
   }
-  const reconciled = view.reconciliation;
-  if (
-    reconciled?.reconciled === "Accepted" ||
-    reconciled?.reconciled === "Contradictory"
-  )
-    return proposalAcceptedNext(request, reconciled.evidence);
-  if (reconciled?.reconciled === "Denied")
-    return { next: "Held", reason: "Denied" };
-  return view.reconciliations < reconciliationsMax
-    ? { next: "Reconcile" }
-    : { next: "Held", reason: "ReconciliationExhausted" };
 }

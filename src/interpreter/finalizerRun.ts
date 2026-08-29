@@ -121,24 +121,23 @@
  * A PROPOSAL IS OPENED AFTER THE PROMOTION AND UNDER THE SAME ORDER. Where the
  * brief lands by opening a change proposal, the candidate is promoted onto the
  * ticket's own branch exactly as any other, and the proposal is opened from
- * that branch into the reference the finalization names. The row saying a
- * create may have happened is written and committed before `create` is called,
- * for the reason the permit is granted before the ref update: a crash between
- * the two leaves a row with no result, which reads back as a create that may
- * have happened and sends the next pass to `readByMarker` rather than to a
- * second create. The ticket concludes on evidence that the forge holds the
- * proposal: a create answering with evidence is that proof itself, and a create
- * answering with none is read back by its marker under
- * `proposalReconciliationsMax`.
+ * that branch into the reference the finalization names. The attempt is counted
+ * and committed before `create` is called, for the reason the permit is granted
+ * before the ref update: a crash between the two leaves a create in flight that
+ * nobody heard back from, which sends the next pass to `readByMarker` rather
+ * than to a second create. The ticket concludes on evidence that the forge
+ * holds the proposal: a create answering with evidence is that proof itself,
+ * and a create answering with none is read back by its marker.
  *
  * A FORGE THAT DECLINED TO BE ASKED HAS ANSWERED NOTHING. A create the forge
  * would not take — a rate limit, a credential this deployment could not read —
- * says nothing about whether a proposal stands, so it is not written down as
- * what the create came to and the row is left as unanswered as a crash leaves
- * one. The creation result is written once, so whatever settles that row
- * settles it for good, and an answer that will not still be true in an hour is
- * not one of those. The hold is bounded by the pass like every other act here:
- * one proposal act per claimed request, and no more of them in a pass than
+ * says nothing about whether a proposal stands, so the attempt it refused is
+ * released and a later pass may make another while `proposalCreationsMax` is
+ * unspent. Readings answer the same way: one that could not be made is no
+ * reading about the proposal, and readings that reached the forge and found
+ * nothing spend the attempt they were taken for, after which another create is
+ * what the ceiling authorizes. Every act is bounded by the pass as well: one
+ * proposal act per claimed request, and no more of them in a pass than
  * `proposalsPerPassMax`.
  *
  * THE PROPOSAL'S BASE IS A THIRD OBSERVATION AND IS NEVER CREATED. The branch
@@ -169,10 +168,12 @@ import {
 } from "./changeProposal.ts";
 import {
   finalizationProposalBody,
+  finalizationProposalCreationRecording,
   finalizationProposalNext,
+  finalizationProposalReadingRecording,
   finalizationProposalTitle,
-  type ChangeProposalResult,
   type FinalizationProposalGathered,
+  type FinalizationProposalRecording,
   type FinalizerProposalStore,
   type StoredChangeProposal,
 } from "./finalizationProposal.ts";
@@ -1228,7 +1229,7 @@ async function finalizerOpeningProposal(
       title: finalizationProposalTitle(view.claim.ticket, brief.intent),
       body: finalizationProposalBody(brief.intent, proposalMarkerOf(identity)),
     }),
-    publication: { reconciliations: 0 },
+    publication: { publication: "Unopened" },
   };
 }
 
@@ -1252,27 +1253,51 @@ async function finalizerGatherProposal(
     : finalizerStoredProposal(binding, repository, stored);
 }
 
-/** Records one result against the open row, a refusal leaving the proposal where it stood. */
+/** Releases the attempt in flight, so that a later pass may make another create. */
+async function finalizerRefuseProposalAttempt(
+  service: FinalizerService,
+  view: FinalizationView,
+  tally: FinalizerTally,
+  hold: FinalizerHoldReason | undefined,
+): Promise<void> {
+  const wrote = await service.store.refuseChangeProposalAttempt(view.claim);
+  if (wrote.wrote !== "Row")
+    finalizerHold(service, tally, "ProposalUnrecorded");
+  else if (hold !== undefined) finalizerHold(service, tally, hold);
+}
+
+/** Performs the one recording a forge answer authorizes, which the pure step named. */
 async function finalizerRecordProposal(
   service: FinalizerService,
   view: FinalizationView,
-  result: ChangeProposalResult["result"],
+  recording: FinalizationProposalRecording,
   tally: FinalizerTally,
 ): Promise<void> {
-  const recorded = await service.store.recordChangeProposal({
+  if (recording.record === "Unanswered") return;
+  if (recording.record === "Nothing") {
+    finalizerHold(service, tally, recording.hold);
+    return;
+  }
+  if (recording.record === "Refusal") {
+    await finalizerRefuseProposalAttempt(service, view, tally, recording.hold);
+    return;
+  }
+  const wrote = await service.store.recordChangeProposal({
     claim: view.claim,
-    result,
+    result:
+      recording.record === "Creation"
+        ? { records: "Creation", created: recording.created }
+        : { records: "Reconciliation", reconciled: recording.reconciled },
   });
-  if (recorded.recorded !== "Result")
+  if (wrote.wrote !== "Row")
     finalizerHold(service, tally, "ProposalUnrecorded");
 }
 
 /**
- * Asks the forge for the one proposal this request names, over a row written
- * and committed before the create is called — so a crash between the two, and a
- * forge that declined to be asked and therefore said nothing about a proposal,
- * each leave a row with no creation result. Such a row reads back as a create
- * that may have happened, and never as authority for a second one.
+ * Asks the forge for the one proposal this request names, over an attempt
+ * counted and committed before the create is called — so a crash between the
+ * two leaves a create in flight that nobody heard back from, which reads back
+ * as one to be read rather than as authority for a second create.
  */
 async function finalizerProposeChange(
   service: FinalizerService,
@@ -1291,24 +1316,21 @@ async function finalizerProposeChange(
     finalizerHold(service, tally, "ProposalDenied");
     return;
   }
-  const opened = await service.store.openChangeProposal({
+  const marked = await service.store.markChangeProposalAttempt({
     claim: view.claim,
     permit: permit.permit,
     request,
   });
-  if (opened.opened !== "Opened") {
-    finalizerHold(service, tally, "ProposalUnopened");
+  if (marked.wrote !== "Row") {
+    finalizerHold(service, tally, "ProposalUnattempted");
     return;
   }
+  tally.proposals += 1;
   const created = await port.create(request);
-  if (created.created === "Unavailable") {
-    finalizerHold(service, tally, "ProposalUnavailable");
-    return;
-  }
   await finalizerRecordProposal(
     service,
     view,
-    { records: "Creation", created },
+    finalizationProposalCreationRecording(created),
     tally,
   );
 }
@@ -1325,14 +1347,14 @@ async function finalizerReconcileProposal(
     finalizerHold(service, tally, "ProposalDenied");
     return;
   }
+  tally.proposals += 1;
   const read = await port.readByMarker(request);
   await finalizerRecordProposal(
     service,
     view,
-    {
-      records: "Reconciliation",
-      reconciled: reconcileChangeProposal(request, read),
-    },
+    finalizationProposalReadingRecording(
+      reconcileChangeProposal(request, read),
+    ),
     tally,
   );
 }
@@ -1346,36 +1368,35 @@ async function finalizerProposal(
   const config = checkedFinalizerConfig(service.config);
   const decision = finalizationProposalNext(
     await finalizerGatherProposal(service, view),
-    config.proposalReconciliationsMax,
+    {
+      creationsMax: config.proposalCreationsMax,
+      reconciliationsMax: config.proposalReconciliationsMax,
+    },
   );
-  if (decision.decide === "Hold") {
-    finalizerHold(service, tally, decision.hold);
-    return;
+  switch (decision.decide) {
+    case "Hold":
+      finalizerHold(service, tally, decision.hold);
+      return;
+    case "Conclude":
+      await finalizerConclude(
+        service,
+        view,
+        { outcome: "FinalizationSucceeded" },
+        tally,
+      );
+      return;
+    case "RefuseProposalAttempt":
+      await finalizerRefuseProposalAttempt(service, view, tally, undefined);
+      return;
+    case "ProposeChange":
+      await finalizerProposeChange(service, view, decision.request, tally);
+      return;
+    case "ReconcileProposal":
+      await finalizerReconcileProposal(service, view, decision.request, tally);
+      return;
+    default:
+      return assertNever(decision);
   }
-  if (decision.decide === "Conclude") {
-    await finalizerConclude(
-      service,
-      view,
-      { outcome: "FinalizationSucceeded" },
-      tally,
-    );
-    return;
-  }
-  if (
-    finalizerCeilingReached(
-      service,
-      tally,
-      "proposals",
-      config.proposalsPerPassMax,
-    )
-  )
-    return;
-  tally.proposals += 1;
-  if (decision.decide === "ProposeChange") {
-    await finalizerProposeChange(service, view, decision.request, tally);
-    return;
-  }
-  await finalizerReconcileProposal(service, view, decision.request, tally);
 }
 
 /** Offers the one conclusion to the one authenticated door. */
@@ -1464,6 +1485,7 @@ async function finalizerAdvance(
       await finalizerProve(service, view, decision.permit, tally);
       return;
     case "Propose":
+      if (ceilingReached("proposals", config.proposalsPerPassMax)) return;
       await finalizerProposal(service, view, tally);
       return;
     case "Conclude":
