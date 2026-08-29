@@ -10,15 +10,17 @@
  * between the count and the answer sends the next pass to `readByMarker` and
  * never to a second create.
  *
- * THE THREE COUNTERS ARE THE WHOLE STATE. `attempts` counts the creates this
- * row may have sent, `refusals` the ones readings proved nothing came of, and
+ * THE COUNTERS ARE THE WHOLE STATE. `attempts` counts the creates this row may
+ * have sent, `refusals` the ones readings proved nothing came of, and
  * `declines` the ones the forge would not take at all, so `attempts = refusals
  * + declines` is nothing in flight and one more than that is a create nobody
  * heard back from. The relation admits no other difference, which is what makes
  * a second create impossible while one is outstanding and possible once one is
- * released; what the ceiling is spent from is `attempts - declines`, the
+ * released; what the create ceiling is spent from is `attempts - declines`, the
  * creates that may have reached the forge, so a deployment whose credential was
- * unreadable for a few passes has spent nothing and waits.
+ * unreadable for a few passes has spent nothing and waits. `reconciliations`
+ * counts the readings taken about those creates, and is what the reconciliation
+ * ceiling is spent from.
  *
  * A RELEASED ATTEMPT TAKES ITS READING WITH IT. A reading is only ever taken
  * about the create in flight, so the release that ends one clears what was read
