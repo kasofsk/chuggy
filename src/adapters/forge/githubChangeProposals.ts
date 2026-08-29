@@ -426,12 +426,12 @@ function githubChangeProposalsUrlOf(
 }
 
 /**
- * The repository one pull request was answered for, under the identity this
- * request already carries where the forge named the repository it addressed.
- * This forge tells one owner and name from another without regard to case, so a
- * full name differing only in case is that same repository; any other is one
- * the request did not address, and it is named so the pure layer reports the
- * mismatch. A forge naming no repository leaves nothing to say which it was.
+ * The repository one pull request was answered for: the identity this request
+ * already carries where the forge named the repository it addressed — without
+ * regard to case, which is how this forge itself tells one owner and name from
+ * another — and the full name as the forge spelled it where it named some
+ * other, so the pure layer is what reports the mismatch. A forge naming no
+ * repository leaves nothing to say which it was.
  */
 function githubChangeProposalsRepositoryOf(
   request: ChangeProposalRequest,
