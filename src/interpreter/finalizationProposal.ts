@@ -6,10 +6,12 @@
  * THE PROMOTION IS NOT THE END OF A PULL REQUEST FINALIZATION. The candidate is
  * landed on the ticket's own branch exactly as a push with no target lands one —
  * the same conditional ref update, the same permit, the same reading — and the
- * proposal is what follows. A ticket concludes `FinalizationSucceeded` once the
- * forge is proved to hold a proposal for it, and never because a create
- * returned; who merges that proposal, and when, is outside this machine
- * entirely, so `model/` sees the same success it always did.
+ * proposal is what follows. A ticket concludes `FinalizationSucceeded` on
+ * evidence that the forge holds a proposal for it: a create that answered with
+ * evidence is that proof itself, and a create that answered with none is read
+ * back by its marker under the reconciliation ceiling this step is given. Who
+ * merges that proposal, and when, is outside this machine entirely, so `model/`
+ * sees the same success it always did.
  *
  * THE BASE IS OBSERVED ONCE, AND ONLY TO ASK FOR THE PROPOSAL. A proposal is
  * opened into a branch, and a branch the remote does not hold is not one a

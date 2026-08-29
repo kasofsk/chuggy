@@ -2,9 +2,10 @@ import { briefFinalizationModes } from "../../../../contract/rosters.ts";
 import { schemaTextSet, type Migration } from "../shared.ts";
 
 /**
- * The enlarged roster, and the reference a proposal is opened into. A push may
- * land where its work happened and so may name no target; a pull request has
- * nothing to open into without one, so the server refuses the pairing rather
+ * The enlarged roster, and the two references a proposal stands between. A push
+ * may land where its work happened and so may name no target; a pull request is
+ * opened from the branch the work happened on into the one it names, so it has
+ * both and they are different branches. The server refuses the pairing rather
  * than leaving a row only the interpreter would have caught.
  */
 const briefPullRequestFinalization = [
@@ -15,7 +16,9 @@ const briefPullRequestFinalization = [
          ...briefFinalizationModes,
        ])})),
      ADD CONSTRAINT draft_brief_finalization_is_whole
-       CHECK (finalization_mode <> 'PullRequest' OR finalization_target IS NOT NULL)`,
+       CHECK (finalization_mode <> 'PullRequest'
+         OR (finalization_target IS NOT NULL AND branch IS NOT NULL
+           AND branch <> finalization_target))`,
 ];
 
 /**

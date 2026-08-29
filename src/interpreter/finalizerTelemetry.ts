@@ -59,7 +59,8 @@ export type FinalizerHoldReason =
   | "PassCeilingReached"
   | "ReconciliationUnrecorded"
   | "ProposalUnopened"
-  | "ProposalUnrecorded";
+  | "ProposalUnrecorded"
+  | "ProposalUnbranched";
 
 /** Closed, identifier-free observations emitted by the finalizer. */
 export interface FinalizerMetrics {

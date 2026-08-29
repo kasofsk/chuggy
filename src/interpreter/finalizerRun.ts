@@ -57,7 +57,10 @@
  * the ticket never worked in and has nothing to do with the brief's mode. The
  * pairing is refused where the two are written — a configuration that hands off
  * will not release a brief that proposes — so this is a narrowing and not a
- * decision about which of them wins.
+ * decision about which of them wins. A proposing brief naming no branch of its
+ * own is a hold and never a fallback: the branch it does not name is the head
+ * the proposal needs, and the binding's default is somebody else's line of
+ * development rather than a stand-in for it.
  *
  * A BRIEF NAMING BOTH IS READ TWICE, AND THE TWO READS DO DIFFERENT JOBS. The
  * branch the work happened on — the one `./executionSourceObservation.ts`
@@ -123,8 +126,20 @@
  * for the reason the permit is granted before the ref update: a crash between
  * the two leaves a row with no result, which reads back as a create that may
  * have happened and sends the next pass to `readByMarker` rather than to a
- * second create. The ticket concludes once the forge is proved to hold the
- * proposal, and never because a create returned.
+ * second create. The ticket concludes on evidence that the forge holds the
+ * proposal: a create answering with evidence is that proof itself, and a create
+ * answering with none is read back by its marker under
+ * `proposalReconciliationsMax`.
+ *
+ * A FORGE THAT DECLINED TO BE ASKED HAS ANSWERED NOTHING. A create the forge
+ * would not take — a rate limit, a credential this deployment could not read —
+ * says nothing about whether a proposal stands, so it is not written down as
+ * what the create came to and the row is left as unanswered as a crash leaves
+ * one. The creation result is written once, so whatever settles that row
+ * settles it for good, and an answer that will not still be true in an hour is
+ * not one of those. The hold is bounded by the pass like every other act here:
+ * one proposal act per claimed request, and no more of them in a pass than
+ * `proposalsPerPassMax`.
  *
  * THE PROPOSAL'S BASE IS A THIRD OBSERVATION AND IS NEVER CREATED. The branch
  * the work happened on and the one the promotion lands are both read above; the
@@ -431,16 +446,18 @@ interface FinalizerBranches {
 
 /**
  * What the ticket's brief says about each: a push lands on the reference its
- * finalization names or on the work's own branch where it names none, and a
- * pull request always lands on the work's branch, that branch being the head a
- * proposal is opened from and its finalization's reference the base. A
+ * finalization names or on the work's own branch where it names none, a pull
+ * request always lands on the work's branch — that branch being the head a
+ * proposal is opened from and its finalization's reference the base — and a
  * publication names none, its destination being a repository the ticket never
- * worked in.
+ * worked in. A proposing brief naming no branch of its own is answered by none
+ * of them, because such a brief is refused where briefs are written and the
+ * binding's default is not a stand-in for the head a proposal opens from.
  */
 async function finalizerGatherBranches(
   service: FinalizerService,
   view: FinalizationView,
-): Promise<FinalizerBranches> {
+): Promise<FinalizerBranches | undefined> {
   if (view.handoffRequest?.kind === "PublishHandoff") return {};
   const brief = await service.ticketBriefs.brief(
     view.claim.partition,
@@ -450,6 +467,7 @@ async function finalizerGatherBranches(
   const finalization = brief.finalization;
   const proposing =
     view.claim.kind === "RunFinalizer" && finalization?.mode === "PullRequest";
+  if (proposing && brief.branch === undefined) return undefined;
   const target = proposing
     ? brief.branch
     : (finalization?.target ?? brief.branch);
@@ -484,16 +502,29 @@ async function finalizerGatherWorkBranch(
 }
 
 /**
+ * What one gathering came to: the view a decision is made from, or the reason
+ * one could not be made from what was read. A request nothing durable answers
+ * for at all is neither, and is left to the sweep that reopens it.
+ */
+type FinalizerGathered =
+  | { readonly gathered: "View"; readonly view: FinalizationView }
+  | { readonly gathered: "Held"; readonly hold: FinalizerHoldReason };
+
+/**
  * Everything the pure pass reads, the remote's current target among it. The read
  * happens here so the decision that follows awaits nothing.
  */
 async function finalizerGather(
   service: FinalizerService,
   claim: FinalizationClaim,
-): Promise<FinalizationView | undefined> {
+): Promise<FinalizerGathered | undefined> {
   const durable = await service.store.durableView(claim);
-  if (durable === undefined || durable.repository === undefined) return durable;
+  if (durable === undefined) return undefined;
+  if (durable.repository === undefined)
+    return { gathered: "View", view: durable };
   const branches = await finalizerGatherBranches(service, durable);
+  if (branches === undefined)
+    return { gathered: "Held", hold: "ProposalUnbranched" };
   const observed = await repositoryTargetObserved(
     service.git,
     durable.repository,
@@ -507,7 +538,7 @@ async function finalizerGather(
       ? {}
       : { finalizationMode: branches.brief.finalization.mode }),
   };
-  if (observed.observed !== "Target") return view;
+  if (observed.observed !== "Target") return { gathered: "View", view };
   const work = await finalizerGatherWorkBranch(
     service,
     durable.repository,
@@ -515,9 +546,12 @@ async function finalizerGather(
     observed.target,
   );
   return {
-    ...view,
-    observedTarget: observed.target,
-    ...(work === undefined ? {} : { observedWorkBranch: work }),
+    gathered: "View",
+    view: {
+      ...view,
+      observedTarget: observed.target,
+      ...(work === undefined ? {} : { observedWorkBranch: work }),
+    },
   };
 }
 
@@ -1234,10 +1268,11 @@ async function finalizerRecordProposal(
 }
 
 /**
- * Asks the forge for the one proposal this request names. The row is written
- * and committed before the create is called, so a crash between the two leaves a
- * row with no creation result — which reads back as a create that may have
- * happened, and never as authority for a second one.
+ * Asks the forge for the one proposal this request names, over a row written
+ * and committed before the create is called — so a crash between the two, and a
+ * forge that declined to be asked and therefore said nothing about a proposal,
+ * each leave a row with no creation result. Such a row reads back as a create
+ * that may have happened, and never as authority for a second one.
  */
 async function finalizerProposeChange(
   service: FinalizerService,
@@ -1266,6 +1301,10 @@ async function finalizerProposeChange(
     return;
   }
   const created = await port.create(request);
+  if (created.created === "Unavailable") {
+    finalizerHold(service, tally, "ProposalUnavailable");
+    return;
+  }
   await finalizerRecordProposal(
     service,
     view,
@@ -1375,8 +1414,13 @@ async function finalizerAdvance(
   tally: FinalizerTally,
 ): Promise<void> {
   const config = checkedFinalizerConfig(service.config);
-  const view = await finalizerGather(service, claim);
-  if (view === undefined) return;
+  const gathered = await finalizerGather(service, claim);
+  if (gathered === undefined) return;
+  if (gathered.gathered === "Held") {
+    finalizerHold(service, tally, gathered.hold);
+    return;
+  }
+  const { view } = gathered;
   const decision = finalizationNext(config, view);
   const ceilingReached = (
     spent: keyof FinalizerTally,

@@ -85,7 +85,7 @@ export function operationRefusalSentence(code: OperationRefusalCode): string {
     case "AuthoringChanged":
       return "the ticket's authoring changed after this was submitted";
     case "ConfigurationInvalid":
-      return "the configuration this named is not one the project will run";
+      return "the configuration this named is not one the project will run, or it hands the work off where this brief opens a pull request";
     case "TicketChanged":
       return "the ticket changed after this was submitted";
     case "SelectionChanged":

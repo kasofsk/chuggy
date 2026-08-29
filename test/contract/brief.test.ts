@@ -78,7 +78,12 @@ test("a brief states an intent and bounds what it points at", () => {
 
 test("a brief lands where its work happened unless its finalization says otherwise", () => {
   const landing = (finalization: unknown) =>
-    briefSchema.safeParse({ intent: "Do it.", links: [], finalization });
+    briefSchema.safeParse({
+      intent: "Do it.",
+      links: [],
+      branch: `${briefBranchPrefix}rt/work`,
+      finalization,
+    });
   assert.deepEqual(landing({ mode: "Push" }).data?.finalization, {
     mode: "Push",
   });
@@ -116,6 +121,30 @@ test("a brief lands where its work happened unless its finalization says otherwi
       false,
       `a finalization is refused: ${JSON.stringify(value)}`,
     );
+});
+
+test("a brief that proposes is opened from a branch of its own into another", () => {
+  const proposing = (branch?: string) =>
+    briefSchema.safeParse({
+      intent: "Do it.",
+      links: [],
+      ...(branch === undefined ? {} : { branch }),
+      finalization: {
+        mode: "PullRequest",
+        target: `${briefBranchPrefix}rt/landing`,
+      },
+    });
+  assert.equal(proposing(`${briefBranchPrefix}rt/work`).success, true);
+  assert.equal(
+    proposing().success,
+    false,
+    "a proposal has no head where the brief names no branch",
+  );
+  assert.equal(
+    proposing(`${briefBranchPrefix}rt/landing`).success,
+    false,
+    "a proposal is never opened from its own base",
+  );
 });
 
 test("the modes the roster names are exactly the variants the wire publishes", () => {
