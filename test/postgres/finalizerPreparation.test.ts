@@ -37,6 +37,7 @@ import {
   asProposalRemoteIdentity,
   changeProposalRequest,
   proposalEvidenceCharsMax,
+  proposalMarkerCharsMax,
   proposalMarkerOf,
   type ChangeProposalEvidence,
   type ChangeProposalForges,
@@ -920,6 +921,27 @@ test("evidence larger than this relation holds settles the create the same way",
     "a document over the bound is recorded without it rather than offered",
   );
   assert.equal((await proposalOf(project))?.creation, "Unstorable");
+});
+
+test("a stored marker past what a proposal carries raises on the read rather than travelling on", async () => {
+  const project = await proposalRowSubject("proposalmarker");
+  const claim = await finalizerClaim(rig, project, "owner-proposalmarker");
+  const store = postgresFinalizer(rig.pool);
+  const document = JSON.stringify({
+    ...proposalEvidenceTitled(project, "ticket 1: propose it"),
+    marker: "m".repeat(proposalMarkerCharsMax + 1),
+  });
+  await rig.as(
+    `UPDATE finalization_change_proposal
+        SET creation='Created', creation_evidence=$4::jsonb
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [...proposalRowKey(project), document],
+  );
+  await assert.rejects(
+    store.changeProposal(claim),
+    RangeError,
+    "a document every other field of which parses is still refused on that one",
+  );
 });
 
 /** The request a case offers the store, over the branches this fixture's proposals stand between. */
