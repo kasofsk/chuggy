@@ -154,7 +154,7 @@ for file in src/a.ts src/contract/c.ts ui/chuggy-ui/app.ts ui/console/index.html
 done
 cat >"$REPO/.chug/tasks/ci.sh" <<'STUB'
 #!/bin/sh
-printf 'ci %s\n' "$*" >>"$CHUG_STUB_LOG"
+printf 'ci prefix=<%s>\n' "${CHUG_IMAGE_PREFIX:-}" >>"$CHUG_STUB_LOG"
 exit "${CHUG_STUB_GATE_RC:-0}"
 STUB
 cat >"$REPO/deploy/rig/images/build-and-import.sh" <<'STUB'
@@ -224,7 +224,7 @@ fresh_case() {
 	for ref in $(git --git-dir="$FABRIC_GIT" for-each-ref --format='%(refname:short)' refs/heads/release); do
 		git --git-dir="$FABRIC_GIT" branch -q -D "$ref"
 	done
-	unset CHUG_RIG_SSH CHUG_RIG_ARCHIVE CHUG_RELEASE_GATE
+	unset CHUG_RIG_SSH CHUG_RIG_ARCHIVE CHUG_RELEASE_GATE CHUG_IMAGE_PREFIX
 	unset CHUG_STUB_DIGEST CHUG_STUB_PUSH_RC CHUG_STUB_GATE_RC CHUG_STUB_BUILD_RC CHUG_STUB_CONSISTENCY_RC
 	unset CHUG_STUB_RENDER_RC CHUG_STUB_WORK_PODS CHUG_STUB_LIVE_ROWS CHUG_STUB_PR_HEAD CHUG_STUB_PR_URL
 	unset CHUG_STUB_MERGE_RC CHUG_STUB_MERGED CHUG_STUB_JOB_RC CHUG_STUB_ROLLOUT_RC CHUG_STUB_STALE CHUG_STUB_BRANCH
@@ -352,8 +352,11 @@ check "the pull request reports the gate" 0 "$RC" "Gate at $TAG: clean"
 fresh_case
 advance src/a.ts
 run
-check "a server change builds the api" 0 "$RC" "build-and-import api tag=$TAG"
+check "a server change builds the api" 0 "$RC" "build-and-import api tag=$TAG site= prefix=registry.chuggy.internal/chuggy"
 check "a server change builds only the api" 0 "$RC" "builds attempted: 1"
+# The builder's suite runs inside the gate and reads the builder's variables,
+# so the gate must not inherit them.
+check "the gate is not handed the builder's prefix" 0 "$RC" "ci prefix=<>"
 OUT="$WORK/.release"
 printf 'api digests moved: %s\n' "$(count_in_release "chuggy/api@$NEW")" >"$OUT"
 check "every control-plane manifest selects the new api" 0 "$RC" "api digests moved: 8"
