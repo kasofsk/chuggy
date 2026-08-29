@@ -554,7 +554,8 @@ export type FinalizationHoldKind =
   | "ProposalUnavailable"
   | "ProposalDenied"
   | "ProposalBaseUnreadable"
-  | "ProposalReconciliationsExhausted";
+  | "ProposalEvidenceUnstorable"
+  | "ProposalCreationsExhausted";
 
 /** Every hold kind, so a suite and a database CHECK iterate rather than restate. */
 export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
@@ -568,7 +569,8 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "ProposalUnavailable",
   "ProposalDenied",
   "ProposalBaseUnreadable",
-  "ProposalReconciliationsExhausted",
+  "ProposalEvidenceUnstorable",
+  "ProposalCreationsExhausted",
 ];
 
 /** The one conclusive thing `Core` is told, which carries a kind only where the model prices a failure. */
@@ -980,6 +982,7 @@ export interface FinalizerConfig {
   readonly reconciliationsPerPassMax: number;
   readonly heldPermitsPerPassMax: number;
   readonly proposalsPerPassMax: number;
+  readonly proposalCreationsMax: number;
   readonly proposalReconciliationsMax: number;
 }
 
@@ -993,6 +996,7 @@ export const finalizerDefaults: FinalizerConfig = {
   reconciliationsPerPassMax: 32,
   heldPermitsPerPassMax: 32,
   proposalsPerPassMax: 8,
+  proposalCreationsMax: 3,
   proposalReconciliationsMax: 3,
 };
 

@@ -100,9 +100,10 @@ import { postgresOwnershipEpoch } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
-  finalizerChangeProposalOpen,
+  finalizerChangeProposalAttempt,
   finalizerChangeProposalRead,
   finalizerChangeProposalRecord,
+  finalizerChangeProposalRefuse,
 } from "./finalizerChangeProposal.ts";
 import {
   finalizerPermitGrant,
@@ -738,16 +739,20 @@ function postgresFinalizerPreparation(
   };
 }
 
-/** The three moves a change proposal owns, over the same pool the rest of the authority runs on. */
+/** The four moves a change proposal owns, over the same pool the rest of the authority runs on. */
 function postgresFinalizerProposals(pool: pg.Pool): FinalizerProposalStore {
   return {
     changeProposal: (claim) =>
       postgresTransaction(pool, (client) =>
         finalizerChangeProposalRead(client, claim),
       ),
-    openChangeProposal: (record) =>
+    markChangeProposalAttempt: (record) =>
       postgresTransaction(pool, (client) =>
-        finalizerChangeProposalOpen(client, record),
+        finalizerChangeProposalAttempt(client, record),
+      ),
+    refuseChangeProposalAttempt: (claim) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalRefuse(client, claim),
       ),
     recordChangeProposal: (record) =>
       postgresTransaction(pool, (client) =>

@@ -1,15 +1,14 @@
 import {
   allChangeProposalContradictions,
-  allChangeProposalCreations,
-  allChangeProposalReconciliations,
+  allChangeProposalCreationsStored,
+  allChangeProposalReconciliationsStored,
   changeProposalRequestIdentityChars,
   proposalBodyCharsMax,
-  proposalDisplayUrlCharsMax,
   proposalEvidenceCharsMax,
   proposalTitleCharsMax,
-  type ChangeProposalCreated,
+  type ChangeProposalCreationStored,
   type ChangeProposalEvidence,
-  type ChangeProposalReconciled,
+  type ChangeProposalReconciliationStored,
 } from "../../../../interpreter/changeProposal.ts";
 import {
   finalizerIdentityCharsMax,
@@ -28,18 +27,19 @@ import {
 } from "../shared.ts";
 
 /**
- * The row one change proposal leaves. It is written before the forge is asked
- * for the proposal and its creation result exactly once afterwards, so a crash
- * between the two leaves a row with no result — which is a create that may have
- * happened, and is the only reason this relation exists rather than the request
- * being rebuilt each pass.
+ * The row one change proposal leaves. Every attempt is counted before the forge
+ * is asked for the proposal and its answer written exactly once afterwards, so a
+ * crash between the two leaves an attempt nothing has caught up with — which is
+ * a create that may have happened, and is the only reason this relation exists
+ * rather than the request being rebuilt each pass.
  *
- * A ROW WITH NO CREATION RESULT IS THE ROW THAT CRASH LEAVES, so nothing here
- * requires one before a reading may be recorded. A constraint demanding a
- * creation beside a reconciliation would forbid exactly the recovery this
- * relation exists for: the reading that settles a create nobody heard back
- * from is written against a row with no creation, and the count it increments
- * is what bounds it.
+ * `attempts` AND `refusals` ARE THE STATE, AND THEIR DIFFERENCE IS AT MOST ONE.
+ * Equal, nothing is in flight and another create may be made; one apart with no
+ * creation answer, one create is outstanding and only a reading may follow it;
+ * and an answered row is one apart for good. The CHECK admits no other
+ * difference and the trigger advances either counter by at most one, so no pass
+ * can send a second create while one is outstanding and none can lose an
+ * attempt that was sent.
  *
  * WHAT WAS ASKED FOR IS RECORDED BESIDE WHAT CAME BACK. The head and base each
  * carry the commit they were observed at, and neither is derivable afterwards:
@@ -54,28 +54,27 @@ import {
  * in both directions: a kind naming a proposal nobody stored the evidence of is
  * a row every read of it raises on, and the trigger below leaves it unrepairable.
  *
- * `proposal_url` IS THE ONE FIELD OF THE EVIDENCE THAT OUTLIVES IT. Everything
- * else a result carries is read back through the document; the URL is what a
- * person opens, and it is a column of its own because the row of a create that
- * never answered holds no document to take it from. Nothing in this tree reads
- * the column back yet.
+ * `Unstorable` IS THE ANSWER WHOSE EVIDENCE NO DOCUMENT HOLDS. It carries none
+ * and settles the publication where a kind naming a proposal would be a row
+ * nothing could read back, which is what keeps an answer this deployment cannot
+ * keep from wedging a create that was already made.
  */
 
 /**
- * The arms a result names no proposal on, taken from the arms' own types so an
- * answer that grew evidence is a compile error here rather than a CHECK that
- * quietly stopped requiring one. What a row must hold evidence for is every
+ * The arms a stored result names no proposal on, taken from the arms' own types
+ * so an answer that grew evidence is a compile error here rather than a CHECK
+ * that quietly stopped requiring one. What a row must hold evidence for is every
  * other arm of the roster, which is why neither list is written out twice.
  */
 const changeProposalCreationsWithoutEvidence: readonly Exclude<
-  ChangeProposalCreated,
+  ChangeProposalCreationStored,
   { readonly evidence: ChangeProposalEvidence }
->["created"][] = ["Ambiguous", "Unavailable", "Denied"];
+>["created"][] = ["Unstorable"];
 
 const changeProposalReconciliationsWithoutEvidence: readonly Exclude<
-  ChangeProposalReconciled,
+  ChangeProposalReconciliationStored,
   { readonly evidence: ChangeProposalEvidence }
->["reconciled"][] = ["Absent", "Unavailable", "Denied"];
+>["reconciled"][] = ["Absent", "Unstorable"];
 
 /** The arms of one roster a stored result carries evidence for. */
 function changeProposalKindsWithEvidence(
@@ -101,10 +100,11 @@ const finalizationChangeProposal = [
      creation               text,
      creation_contradiction text,
      creation_evidence      jsonb,
-     proposal_url           text,
      reconciliation               text,
      reconciliation_contradiction text,
      reconciliation_evidence      jsonb,
+     attempts             integer NOT NULL DEFAULT 0,
+     refusals             integer NOT NULL DEFAULT 0,
      reconciliations      integer NOT NULL DEFAULT 0,
      opened_at        timestamptz NOT NULL DEFAULT now(),
      PRIMARY KEY (tenant, project, request),
@@ -126,19 +126,18 @@ const finalizationChangeProposal = [
        AND length(head_ref) BETWEEN 1 AND ${gitRefNameCharsMax}
        AND length(base_ref) BETWEEN 1 AND ${gitRefNameCharsMax}
        AND length(title) BETWEEN 1 AND ${proposalTitleCharsMax}
-       AND length(body) BETWEEN 1 AND ${proposalBodyCharsMax}
-       AND coalesce(length(proposal_url), 1) BETWEEN 1 AND ${proposalDisplayUrlCharsMax}),
+       AND length(body) BETWEEN 1 AND ${proposalBodyCharsMax}),
      CONSTRAINT finalization_change_proposal_results_are_whole CHECK (
        (creation IS NULL
-         OR creation IN (${schemaTextSet(allChangeProposalCreations)}))
+         OR creation IN (${schemaTextSet(allChangeProposalCreationsStored)}))
        AND (reconciliation IS NULL
-         OR reconciliation IN (${schemaTextSet(allChangeProposalReconciliations)}))
+         OR reconciliation IN (${schemaTextSet(allChangeProposalReconciliationsStored)}))
        AND (creation_evidence IS NULL OR creation IS NOT NULL)
        AND (reconciliation_evidence IS NULL OR reconciliation IS NOT NULL)
        AND (creation IS NULL
          OR creation NOT IN (${schemaTextSet(
            changeProposalKindsWithEvidence(
-             allChangeProposalCreations,
+             allChangeProposalCreationsStored,
              changeProposalCreationsWithoutEvidence,
            ),
          )})
@@ -146,7 +145,7 @@ const finalizationChangeProposal = [
        AND (reconciliation IS NULL
          OR reconciliation NOT IN (${schemaTextSet(
            changeProposalKindsWithEvidence(
-             allChangeProposalReconciliations,
+             allChangeProposalReconciliationsStored,
              changeProposalReconciliationsWithoutEvidence,
            ),
          )})
@@ -158,8 +157,10 @@ const finalizationChangeProposal = [
          OR creation_contradiction IN (${schemaTextSet(allChangeProposalContradictions)}))
        AND (reconciliation_contradiction IS NULL
          OR reconciliation_contradiction IN (${schemaTextSet(allChangeProposalContradictions)}))),
-     CONSTRAINT finalization_change_proposal_reconciliations_are_counted CHECK (
-       reconciliations >= 0),
+     CONSTRAINT finalization_change_proposal_attempts_are_counted CHECK (
+       refusals >= 0 AND reconciliations >= 0
+       AND attempts BETWEEN refusals AND refusals + 1
+       AND (creation IS NULL OR attempts = refusals + 1)),
      CONSTRAINT finalization_change_proposal_evidence_is_bounded CHECK (
        coalesce(length(creation_evidence::text), 1)
          BETWEEN 1 AND ${proposalEvidenceCharsMax}
@@ -169,10 +170,10 @@ const finalizationChangeProposal = [
 ];
 
 /**
- * What may still be written after the row exists: the creation result once, and
- * the reconciliation's as often as one is read. Everything the forge was asked
- * for is immutable, so a second pass cannot rewrite the request it is
- * reconciling and then call the answer a match.
+ * What may still be written after the row exists: the creation answer once, the
+ * reconciliation's as often as one is read, and each counter one step at a
+ * time. Everything the forge was asked for is immutable, so a second pass cannot
+ * rewrite the request it is reconciling and then call the answer a match.
  */
 const finalizationChangeProposalWriteOnce = [
   `CREATE FUNCTION finalization_change_proposal_is_written_once()
@@ -198,6 +199,13 @@ const finalizationChangeProposalWriteOnce = [
          RAISE EXCEPTION 'a change proposal is created once and read back after'
            USING ERRCODE = 'integrity_constraint_violation';
        END IF;
+       IF NEW.attempts NOT IN (OLD.attempts, OLD.attempts + 1)
+          OR NEW.refusals NOT IN (OLD.refusals, OLD.refusals + 1)
+          OR NEW.reconciliations
+             NOT IN (OLD.reconciliations, OLD.reconciliations + 1) THEN
+         RAISE EXCEPTION 'a change proposal counts one act at a time'
+           USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
        RETURN NEW;
      END $$`,
   `ALTER FUNCTION finalization_change_proposal_is_written_once()
@@ -209,10 +217,13 @@ const finalizationChangeProposalWriteOnce = [
      FOR EACH ROW EXECUTE FUNCTION finalization_change_proposal_is_written_once()`,
   `REVOKE ALL ON finalization_change_proposal
      FROM ${apiRole}, ${ticketServiceRole}, ${selectorServiceRole}, ${schedulerRole}`,
-  `GRANT SELECT, INSERT ON finalization_change_proposal TO ${finalizerRole}`,
+  `GRANT SELECT ON finalization_change_proposal TO ${finalizerRole}`,
+  `GRANT INSERT (tenant, project, request, permit, proposal_request,
+     head_ref, head_commit, base_ref, base_commit, title, body, attempts)
+     ON finalization_change_proposal TO ${finalizerRole}`,
   `GRANT UPDATE (creation, creation_contradiction, creation_evidence,
-     proposal_url, reconciliation, reconciliation_contradiction,
-     reconciliation_evidence, reconciliations)
+     reconciliation, reconciliation_contradiction, reconciliation_evidence,
+     attempts, refusals, reconciliations)
      ON finalization_change_proposal TO ${finalizerRole}`,
 ];
 

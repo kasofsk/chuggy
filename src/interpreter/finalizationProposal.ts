@@ -8,10 +8,16 @@
  * the same conditional ref update, the same permit, the same reading — and the
  * proposal is what follows. A ticket concludes `FinalizationSucceeded` on
  * evidence that the forge holds a proposal for it: a create that answered with
- * evidence is that proof itself, and a create that answered with none is read
- * back by its marker under the reconciliation ceiling this step is given. Who
- * merges that proposal, and when, is outside this machine entirely, so `model/`
- * sees the same success it always did.
+ * evidence is that proof itself, and a create nobody heard back from is read
+ * back by its marker under the ceilings this step is given. Who merges that
+ * proposal, and when, is outside this machine entirely, so `model/` sees the
+ * same success it always did.
+ *
+ * WHICH ANSWERS ARE WRITTEN DOWN IS DECIDED HERE AND NOWHERE ELSE. A forge that
+ * would not be asked has said nothing about a proposal, so it is not recorded
+ * as one and it releases the attempt it refused rather than spending the
+ * request's only create. The caller performs the recording this step names and
+ * decides none of it, which is what keeps the vocabulary in one place.
  *
  * THE BASE IS OBSERVED ONCE, AND ONLY TO ASK FOR THE PROPOSAL. A proposal is
  * opened into a branch, and a branch the remote does not hold is not one a
@@ -39,10 +45,14 @@ import {
   proposalBodyCharsMax,
   proposalTitleCharsMax,
   type ChangeProposalCreated,
-  type ChangeProposalPublicationView,
+  type ChangeProposalCreationAnswer,
+  type ChangeProposalPublication,
+  type ChangeProposalPublicationBounds,
   type ChangeProposalReconciled,
+  type ChangeProposalReconciliationAnswer,
   type ChangeProposalRequest,
   type ChangeProposalRequestIdentity,
+  type OpenedChangeProposalPublication,
   type ProposalMarker,
 } from "./changeProposal.ts";
 import type { CommitPermitId, FinalizationClaim } from "./finalizer.ts";
@@ -60,7 +70,7 @@ export type FinalizationProposalGathered =
   | {
       readonly gathered: "Request";
       readonly request: ChangeProposalRequest;
-      readonly publication: ChangeProposalPublicationView;
+      readonly publication: ChangeProposalPublication;
     }
   | { readonly gathered: "Unbound" }
   | { readonly gathered: "BaseUnreadable" };
@@ -78,6 +88,7 @@ export type FinalizationProposalDecision =
       readonly decide: "ReconcileProposal";
       readonly request: ChangeProposalRequest;
     }
+  | { readonly decide: "RefuseProposalAttempt" }
   | { readonly decide: "Conclude" }
   | { readonly decide: "Hold"; readonly hold: FinalizationHoldKind };
 
@@ -89,12 +100,10 @@ function finalizationProposalHeld(
   >["reason"],
 ): FinalizationHoldKind {
   switch (reason) {
-    case "Unavailable":
-      return "ProposalUnavailable";
-    case "Denied":
-      return "ProposalDenied";
-    case "ReconciliationExhausted":
-      return "ProposalReconciliationsExhausted";
+    case "CreationsExhausted":
+      return "ProposalCreationsExhausted";
+    case "EvidenceUnstorable":
+      return "ProposalEvidenceUnstorable";
     default:
       return assertNever(reason);
   }
@@ -107,7 +116,7 @@ function finalizationProposalHeld(
  */
 export function finalizationProposalNext(
   gathered: FinalizationProposalGathered,
-  reconciliationsMax: number,
+  bounds: ChangeProposalPublicationBounds,
 ): FinalizationProposalDecision {
   if (gathered.gathered === "Unbound")
     return { decide: "Hold", hold: "ProposalDenied" };
@@ -117,13 +126,15 @@ export function finalizationProposalNext(
   const next = changeProposalPublicationNext(
     request,
     gathered.publication,
-    reconciliationsMax,
+    bounds,
   );
   switch (next.next) {
     case "Create":
       return { decide: "ProposeChange", request };
     case "Reconcile":
       return { decide: "ReconcileProposal", request };
+    case "RefuseAttempt":
+      return { decide: "RefuseProposalAttempt" };
     case "Accepted":
       return { decide: "Conclude" };
     case "Refused":
@@ -132,6 +143,69 @@ export function finalizationProposalNext(
       return { decide: "Hold", hold: finalizationProposalHeld(next.reason) };
     default:
       return assertNever(next);
+  }
+}
+
+/**
+ * What one forge answer is written against the row, and what it leaves the pass
+ * holding. Nothing here writes anything; the caller performs the arm it names.
+ */
+export type FinalizationProposalRecording =
+  | {
+      readonly record: "Creation";
+      readonly created: ChangeProposalCreationAnswer;
+    }
+  | {
+      readonly record: "Reconciliation";
+      readonly reconciled: ChangeProposalReconciliationAnswer;
+    }
+  | { readonly record: "Refusal"; readonly hold: FinalizationHoldKind }
+  | { readonly record: "Nothing"; readonly hold: FinalizationHoldKind }
+  | { readonly record: "Unanswered" };
+
+/**
+ * What one create's answer is written down as. A forge that would not take the
+ * create has said nothing about a proposal and released the attempt it refused,
+ * and one that answered nothing at all leaves the attempt exactly where it is.
+ */
+export function finalizationProposalCreationRecording(
+  created: ChangeProposalCreated,
+): FinalizationProposalRecording {
+  switch (created.created) {
+    case "Created":
+    case "AlreadyExists":
+    case "Contradictory":
+      return { record: "Creation", created };
+    case "Unavailable":
+      return { record: "Refusal", hold: "ProposalUnavailable" };
+    case "Denied":
+      return { record: "Refusal", hold: "ProposalDenied" };
+    case "Ambiguous":
+      return { record: "Unanswered" };
+    default:
+      return assertNever(created);
+  }
+}
+
+/**
+ * What one reading is written down as. A read that could not be made and one
+ * the forge refused are answers about this deployment rather than about the
+ * proposal, so neither is recorded and neither spends a reading.
+ */
+export function finalizationProposalReadingRecording(
+  reconciled: ChangeProposalReconciled,
+): FinalizationProposalRecording {
+  switch (reconciled.reconciled) {
+    case "Accepted":
+    case "Absent":
+    case "Contradictory":
+      return { record: "Reconciliation", reconciled };
+    case "Unavailable":
+      return { record: "Nothing", hold: "ProposalUnavailable" };
+    case "Denied":
+      return { record: "Nothing", hold: "ProposalDenied" };
+    default:
+      return assertNever(reconciled);
   }
 }
 
@@ -188,24 +262,23 @@ export interface ChangeProposalRecord {
   readonly request: ChangeProposalRequest;
 }
 
-/** Whether the row saying a create may have happened is now there and unanswered. */
-export type ChangeProposalOpened =
-  { readonly opened: "Opened" } | { readonly opened: "Refused" };
+/** What one durable write against the row did, a refusal leaving the proposal where it stood. */
+export type ChangeProposalWritten =
+  { readonly wrote: "Row" } | { readonly wrote: "Nothing" };
 
-/** One result offered against that row: what a create returned, or what one reading read. */
+/** One answer offered against that row: what a create returned, or what one reading read. */
 export interface ChangeProposalResult {
   readonly claim: FinalizationClaim;
   readonly result:
-    | { readonly records: "Creation"; readonly created: ChangeProposalCreated }
+    | {
+        readonly records: "Creation";
+        readonly created: ChangeProposalCreationAnswer;
+      }
     | {
         readonly records: "Reconciliation";
-        readonly reconciled: ChangeProposalReconciled;
+        readonly reconciled: ChangeProposalReconciliationAnswer;
       };
 }
-
-/** What recording one result did, a refusal leaving the proposal exactly where it stood. */
-export type ChangeProposalRecorded =
-  { readonly recorded: "Result" } | { readonly recorded: "Refused" };
 
 /**
  * What one stored row says the forge was asked for. It is what the request is
@@ -224,28 +297,32 @@ export interface ChangeProposalAsked {
 /** One stored proposal whole: what it asked the forge for, and what has come back. */
 export interface StoredChangeProposal {
   readonly asked: ChangeProposalAsked;
-  readonly publication: ChangeProposalPublicationView;
+  readonly publication: OpenedChangeProposalPublication;
 }
 
 /**
  * The durable rows one change proposal leaves, which the finalizer role reaches
- * and nothing else does. The row is written before the create is called and its
- * creation result exactly once afterwards, so a crash between the two reads back
- * as a create that may have happened.
+ * and nothing else does. Every attempt is counted before the create it stands
+ * for is called, so a crash between the two reads back as a create in flight.
  */
 export interface FinalizerProposalStore {
-  /** What one finalization's proposal asked for and has come to, absent until one is opened. */
+  /** What one finalization's proposal asked for and has come to, absent until one is attempted. */
   changeProposal(
     claim: FinalizationClaim,
   ): Promise<StoredChangeProposal | undefined>;
 
-  /** Writes the row that says a create may have happened, before any create is called. */
-  openChangeProposal(
+  /** Counts one attempt, refused where a create is already in flight or answered. */
+  markChangeProposalAttempt(
     record: ChangeProposalRecord,
-  ): Promise<ChangeProposalOpened>;
+  ): Promise<ChangeProposalWritten>;
 
-  /** Records one result against that row, the creation's being writable exactly once. */
+  /** Records that the attempt in flight was never taken, which releases it. */
+  refuseChangeProposalAttempt(
+    claim: FinalizationClaim,
+  ): Promise<ChangeProposalWritten>;
+
+  /** Records one answer against that row, the creation's being writable exactly once. */
   recordChangeProposal(
     record: ChangeProposalResult,
-  ): Promise<ChangeProposalRecorded>;
+  ): Promise<ChangeProposalWritten>;
 }

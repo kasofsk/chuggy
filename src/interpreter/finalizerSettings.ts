@@ -149,6 +149,7 @@ const reconciliationsPerPassVariable =
   "CHUG_FINALIZER_RECONCILIATIONS_PER_PASS_MAX";
 const heldPermitsPerPassVariable = "CHUG_FINALIZER_HELD_PERMITS_PER_PASS_MAX";
 const proposalsPerPassVariable = "CHUG_FINALIZER_PROPOSALS_PER_PASS_MAX";
+const proposalCreationsVariable = "CHUG_FINALIZER_PROPOSAL_CREATIONS_MAX";
 const proposalReconciliationsVariable =
   "CHUG_FINALIZER_PROPOSAL_RECONCILIATIONS_MAX";
 
@@ -423,6 +424,11 @@ function finalizerSettingsFinalizer(
       environment,
       proposalsPerPassVariable,
       finalizerDefaults.proposalsPerPassMax,
+    ),
+    proposalCreationsMax: finalizerSettingsBoundOr(
+      environment,
+      proposalCreationsVariable,
+      finalizerDefaults.proposalCreationsMax,
     ),
     proposalReconciliationsMax: finalizerSettingsBoundOr(
       environment,

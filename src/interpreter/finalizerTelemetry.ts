@@ -58,7 +58,7 @@ export type FinalizerHoldReason =
   | "PermitRefused"
   | "PassCeilingReached"
   | "ReconciliationUnrecorded"
-  | "ProposalUnopened"
+  | "ProposalUnattempted"
   | "ProposalUnrecorded"
   | "ProposalUnbranched";
 

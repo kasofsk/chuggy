@@ -32,11 +32,14 @@ import {
   proposalMarkerOf,
   proposalTitleCharsMax,
   type ChangeProposalEvidence,
-  type ChangeProposalPublicationView,
+  type ChangeProposalPublication,
+  type ChangeProposalReconciliationStored,
 } from "../../src/interpreter/changeProposal.ts";
 import {
   finalizationProposalBody,
+  finalizationProposalCreationRecording,
   finalizationProposalNext,
+  finalizationProposalReadingRecording,
   finalizationProposalTitle,
   type FinalizationProposalGathered,
 } from "../../src/interpreter/finalizationProposal.ts";
@@ -82,24 +85,41 @@ function evidence(
   };
 }
 
+/** The ceilings every case below continues a publication under. */
+const bounds = { creationsMax: 2, reconciliationsMax: 2 };
+
 /** One gathered proposal over the publication a case names. */
 function gathered(
-  publication: ChangeProposalPublicationView,
+  publication: ChangeProposalPublication,
 ): FinalizationProposalGathered {
   return { gathered: "Request", request, publication };
 }
 
-test("a proposal nobody has opened is created, and one that may exist is read back", () => {
+/** One create in flight, with however many readings a case has already taken. */
+function unanswered(
+  attempts: number,
+  reconciliations: number,
+  reading?: ChangeProposalReconciliationStored,
+): ChangeProposalPublication {
+  return { publication: "Unanswered", attempts, reconciliations, reading };
+}
+
+test("a proposal nobody has attempted is created, and one in flight is read back", () => {
   assert.deepEqual(
-    finalizationProposalNext(gathered({ reconciliations: 0 }), 2),
+    finalizationProposalNext(gathered({ publication: "Unopened" }), bounds),
     { decide: "ProposeChange", request },
   );
   assert.deepEqual(
-    finalizationProposalNext(
-      gathered({ creation: { created: "Ambiguous" }, reconciliations: 0 }),
-      2,
-    ),
+    finalizationProposalNext(gathered(unanswered(1, 0)), bounds),
     { decide: "ReconcileProposal", request },
+  );
+  assert.deepEqual(
+    finalizationProposalNext(
+      gathered({ publication: "Idle", attempts: 1 }),
+      bounds,
+    ),
+    { decide: "ProposeChange", request },
+    "a create nothing took leaves another one to make",
   );
 });
 
@@ -108,10 +128,10 @@ test("a proposal the forge proves it holds is the one thing that concludes", () 
     assert.deepEqual(
       finalizationProposalNext(
         gathered({
+          publication: "Answered",
           creation: { created, evidence: evidence() },
-          reconciliations: 0,
         }),
-        2,
+        bounds,
       ),
       { decide: "Conclude" },
       created,
@@ -119,12 +139,10 @@ test("a proposal the forge proves it holds is the one thing that concludes", () 
   }
   assert.deepEqual(
     finalizationProposalNext(
-      gathered({
-        creation: { created: "Ambiguous" },
-        reconciliation: { reconciled: "Accepted", evidence: evidence() },
-        reconciliations: 1,
-      }),
-      2,
+      gathered(
+        unanswered(1, 1, { reconciled: "Accepted", evidence: evidence() }),
+      ),
+      bounds,
     ),
     { decide: "Conclude" },
   );
@@ -132,30 +150,30 @@ test("a proposal the forge proves it holds is the one thing that concludes", () 
 
 test("every reason a publication is held reaches a hold this tree declares", () => {
   const holds = new Set<string>(allFinalizationHoldKinds);
-  const held: readonly [ChangeProposalPublicationView, string][] = [
+  const held: readonly [ChangeProposalPublication, string][] = [
+    [{ publication: "Idle", attempts: 2 }, "ProposalCreationsExhausted"],
     [
-      { creation: { created: "Unavailable" }, reconciliations: 0 },
-      "ProposalUnavailable",
+      { publication: "Answered", creation: { created: "Unstorable" } },
+      "ProposalEvidenceUnstorable",
     ],
-    [{ creation: { created: "Denied" }, reconciliations: 0 }, "ProposalDenied"],
     [
-      { creation: { created: "Ambiguous" }, reconciliations: 2 },
-      "ProposalReconciliationsExhausted",
+      unanswered(1, 1, { reconciled: "Unstorable" }),
+      "ProposalEvidenceUnstorable",
     ],
     [
       {
+        publication: "Answered",
         creation: {
           created: "Created",
           evidence: evidence({ status: "Closed" }),
         },
-        reconciliations: 0,
       },
       "ProposalRefused",
     ],
   ];
   for (const [publication, hold] of held) {
     assert.deepEqual(
-      finalizationProposalNext(gathered(publication), 2),
+      finalizationProposalNext(gathered(publication), bounds),
       { decide: "Hold", hold },
       hold,
     );
@@ -164,12 +182,12 @@ test("every reason a publication is held reaches a hold this tree declares", () 
 });
 
 test("a deployment binding no forge and an unreadable base are holds and not conclusions", () => {
-  assert.deepEqual(finalizationProposalNext({ gathered: "Unbound" }, 2), {
+  assert.deepEqual(finalizationProposalNext({ gathered: "Unbound" }, bounds), {
     decide: "Hold",
     hold: "ProposalDenied",
   });
   assert.deepEqual(
-    finalizationProposalNext({ gathered: "BaseUnreadable" }, 2),
+    finalizationProposalNext({ gathered: "BaseUnreadable" }, bounds),
     {
       decide: "Hold",
       hold: "ProposalBaseUnreadable",
@@ -178,39 +196,26 @@ test("a deployment binding no forge and an unreadable base are holds and not con
   );
 });
 
-test("no publication this machine can be handed reaches a create twice", () => {
-  const publications: readonly ChangeProposalPublicationView[] = [
-    { creation: { created: "Ambiguous" }, reconciliations: 0 },
-    { creation: { created: "Ambiguous" }, reconciliations: 9 },
+test("no publication carrying a create in flight reaches a create", () => {
+  const publications: readonly ChangeProposalPublication[] = [
+    unanswered(1, 0),
+    unanswered(1, 9),
+    unanswered(1, 1, { reconciled: "Absent" }),
+    unanswered(2, 4, { reconciled: "Absent" }),
+    { publication: "Idle", attempts: 2 },
+    { publication: "Answered", creation: { created: "Unstorable" } },
     {
-      creation: { created: "Ambiguous" },
-      reconciliation: { reconciled: "Absent" },
-      reconciliations: 1,
-    },
-    {
-      creation: { created: "Ambiguous" },
-      reconciliation: { reconciled: "Unavailable" },
-      reconciliations: 1,
-    },
-    {
-      creation: { created: "Ambiguous" },
-      reconciliation: { reconciled: "Denied" },
-      reconciliations: 1,
-    },
-    { creation: { created: "Unavailable" }, reconciliations: 0 },
-    { creation: { created: "Denied" }, reconciliations: 0 },
-    {
+      publication: "Answered",
       creation: {
         created: "Contradictory",
         contradiction: "Closed",
         evidence: evidence({ status: "Closed" }),
       },
-      reconciliations: 0,
     },
   ];
   for (const publication of populated(publications, "the publications")) {
     assert.notEqual(
-      finalizationProposalNext(gathered(publication), 2).decide,
+      finalizationProposalNext(gathered(publication), bounds).decide,
       "ProposeChange",
       JSON.stringify(publication).slice(0, 60),
     );
@@ -220,11 +225,55 @@ test("no publication this machine can be handed reaches a create twice", () => {
 test("a bound that is not a positive count is refused rather than treated as none", () => {
   for (const bound of [0, -1, 1.5]) {
     assert.throws(
-      () => finalizationProposalNext(gathered({ reconciliations: 0 }), bound),
+      () =>
+        finalizationProposalNext(gathered({ publication: "Unopened" }), {
+          creationsMax: bound,
+          reconciliationsMax: bound,
+        }),
       RangeError,
       String(bound),
     );
   }
+});
+
+test("an answer about this deployment is never recorded as one about the proposal", () => {
+  assert.deepEqual(
+    finalizationProposalCreationRecording({ created: "Unavailable" }),
+    { record: "Refusal", hold: "ProposalUnavailable" },
+  );
+  assert.deepEqual(
+    finalizationProposalCreationRecording({ created: "Denied" }),
+    { record: "Refusal", hold: "ProposalDenied" },
+  );
+  assert.deepEqual(
+    finalizationProposalCreationRecording({ created: "Ambiguous" }),
+    { record: "Unanswered" },
+  );
+  assert.deepEqual(
+    finalizationProposalCreationRecording({
+      created: "Created",
+      evidence: evidence(),
+    }),
+    {
+      record: "Creation",
+      created: { created: "Created", evidence: evidence() },
+    },
+  );
+  assert.deepEqual(
+    finalizationProposalReadingRecording({ reconciled: "Unavailable" }),
+    { record: "Nothing", hold: "ProposalUnavailable" },
+  );
+  assert.deepEqual(
+    finalizationProposalReadingRecording({ reconciled: "Denied" }),
+    { record: "Nothing", hold: "ProposalDenied" },
+  );
+  assert.deepEqual(
+    finalizationProposalReadingRecording({ reconciled: "Absent" }),
+    {
+      record: "Reconciliation",
+      reconciled: { reconciled: "Absent" },
+    },
+  );
 });
 
 test("the words a proposal carries name its ticket and always end on its marker", () => {

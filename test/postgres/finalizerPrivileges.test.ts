@@ -354,13 +354,13 @@ const writeSurface = [
     table_name: "finalization_change_proposal",
     privilege_type: "INSERT",
     columns:
-      "base_commit,base_ref,body,creation,creation_contradiction,creation_evidence,head_commit,head_ref,opened_at,permit,project,proposal_request,proposal_url,reconciliation,reconciliation_contradiction,reconciliation_evidence,reconciliations,request,tenant,title",
+      "attempts,base_commit,base_ref,body,head_commit,head_ref,permit,project,proposal_request,request,tenant,title",
   },
   {
     table_name: "finalization_change_proposal",
     privilege_type: "UPDATE",
     columns:
-      "creation,creation_contradiction,creation_evidence,proposal_url,reconciliation,reconciliation_contradiction,reconciliation_evidence,reconciliations",
+      "attempts,creation,creation_contradiction,creation_evidence,reconciliation,reconciliation_contradiction,reconciliation_evidence,reconciliations,refusals",
   },
   {
     table_name: "finalization_reconciliation",

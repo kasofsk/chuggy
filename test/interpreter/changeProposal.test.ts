@@ -11,15 +11,24 @@ import {
   changeProposalRequest,
   changeProposalRequestFromBranch,
   proposalBodyCharsMax,
+  proposalEvidenceCharsMax,
+  proposalMarkerCharsMax,
+  proposalDisplayUrlCharsMax,
+  proposalTitleCharsMax,
   reconcileChangeProposal,
   type ChangeProposalAdapterSelector,
   type ChangeProposalEvidence,
   type ChangeProposalPort,
+  type ChangeProposalPublication,
+  type ChangeProposalReconciliationStored,
 } from "../../src/interpreter/changeProposal.ts";
 import {
   asGitObjectId,
   asGitRefName,
   asRepositoryId,
+  allGitObjectIdChars,
+  finalizerIdentityCharsMax,
+  gitRefNameCharsMax,
 } from "../../src/interpreter/finalizer.ts";
 const requestIdentity = asChangeProposalRequestIdentity("a".repeat(64));
 const forge = asForgeBindingId("forge-alpha");
@@ -73,36 +82,166 @@ test("ambiguous creation is accepted only after the deterministic marker reconci
   });
 });
 
-test("redelivery after an ambiguous create only reconciles within its bound", () => {
-  const creation = { created: "Ambiguous" } as const;
+/** The ceilings every publication case below is continued under. */
+const bounds = { creationsMax: 2, reconciliationsMax: 2 };
+
+/** One create in flight, with however many readings a case has already taken. */
+function unanswered(
+  attempts: number,
+  reconciliations: number,
+  reading?: ChangeProposalReconciliationStored,
+): ChangeProposalPublication {
+  return { publication: "Unanswered", attempts, reconciliations, reading };
+}
+
+test("a create nobody heard back from is read back within its bound and then released", () => {
   assert.deepEqual(
-    changeProposalPublicationNext(request, { creation, reconciliations: 0 }, 2),
-    { next: "Reconcile" },
+    changeProposalPublicationNext(request, unanswered(1, 0), bounds),
+    {
+      next: "Reconcile",
+    },
   );
   assert.deepEqual(
     changeProposalPublicationNext(
       request,
-      {
-        creation,
-        reconciliation: { reconciled: "Absent" },
-        reconciliations: 1,
-      },
-      2,
+      unanswered(1, 1, { reconciled: "Absent" }),
+      bounds,
     ),
     { next: "Reconcile" },
   );
   assert.deepEqual(
     changeProposalPublicationNext(
       request,
-      {
-        creation,
-        reconciliation: { reconciled: "Absent" },
-        reconciliations: 2,
-      },
-      2,
+      unanswered(1, 2, { reconciled: "Absent" }),
+      bounds,
     ),
-    { next: "Held", reason: "ReconciliationExhausted" },
+    { next: "RefuseAttempt" },
+    "readings that all found nothing prove the create was never taken",
   );
+  assert.deepEqual(
+    changeProposalPublicationNext(
+      request,
+      unanswered(2, 3, { reconciled: "Absent" }),
+      bounds,
+    ),
+    { next: "Reconcile" },
+    "the second attempt is read back under a budget of its own",
+  );
+});
+
+test("only a state with nothing in flight creates, and only while the creations are unspent", () => {
+  assert.deepEqual(
+    changeProposalPublicationNext(request, { publication: "Unopened" }, bounds),
+    { next: "Create" },
+  );
+  assert.deepEqual(
+    changeProposalPublicationNext(
+      request,
+      { publication: "Idle", attempts: 1 },
+      bounds,
+    ),
+    { next: "Create" },
+    "a create the forge refused to take leaves another one to make",
+  );
+  assert.deepEqual(
+    changeProposalPublicationNext(
+      request,
+      { publication: "Idle", attempts: 2 },
+      bounds,
+    ),
+    { next: "Held", reason: "CreationsExhausted" },
+  );
+});
+
+test("an answer whose evidence nothing could store is held rather than proposed again", () => {
+  assert.deepEqual(
+    changeProposalPublicationNext(
+      request,
+      { publication: "Answered", creation: { created: "Unstorable" } },
+      bounds,
+    ),
+    { next: "Held", reason: "EvidenceUnstorable" },
+  );
+  assert.deepEqual(
+    changeProposalPublicationNext(
+      request,
+      unanswered(1, 1, { reconciled: "Unstorable" }),
+      bounds,
+    ),
+    { next: "Held", reason: "EvidenceUnstorable" },
+  );
+});
+
+test("a bound that is not a count is refused rather than treated as none", () => {
+  for (const bound of [0, -1, 1.5]) {
+    for (const offered of [
+      { creationsMax: bound, reconciliationsMax: 2 },
+      { creationsMax: 2, reconciliationsMax: bound },
+    ]) {
+      assert.throws(
+        () =>
+          changeProposalPublicationNext(
+            request,
+            { publication: "Unopened" },
+            offered,
+          ),
+        RangeError,
+        JSON.stringify(offered),
+      );
+    }
+  }
+});
+
+test("no publication in flight and no answered one reaches a create", () => {
+  const publications: readonly ChangeProposalPublication[] = [
+    unanswered(1, 0),
+    unanswered(1, 1, { reconciled: "Absent" }),
+    unanswered(2, 4, { reconciled: "Absent" }),
+    { publication: "Idle", attempts: 2 },
+    { publication: "Answered", creation: { created: "Unstorable" } },
+    {
+      publication: "Answered",
+      creation: { created: "Created", evidence: evidence() },
+    },
+  ];
+  for (const publication of publications) {
+    assert.notEqual(
+      changeProposalPublicationNext(request, publication, bounds).next,
+      "Create",
+      JSON.stringify(publication).slice(0, 60),
+    );
+  }
+});
+
+/** One string of the character a JSON rendering spends the most on. */
+function escaped(chars: number): string {
+  return String.fromCodePoint(1).repeat(chars);
+}
+
+test("the largest evidence any bounded answer carries is stored under the evidence bound", () => {
+  const widest = Math.max(...allGitObjectIdChars);
+  const largest: ChangeProposalEvidence = {
+    identity: {
+      forge: asForgeBindingId(escaped(finalizerIdentityCharsMax)),
+      remote: asProposalRemoteIdentity(escaped(finalizerIdentityCharsMax)),
+    },
+    repository: asRepositoryId(escaped(finalizerIdentityCharsMax)),
+    marker: request.marker,
+    head: {
+      ref: asGitRefName(escaped(gitRefNameCharsMax)),
+      commit: asGitObjectId("a".repeat(widest)),
+    },
+    base: {
+      ref: asGitRefName(escaped(gitRefNameCharsMax)),
+      commit: asGitObjectId("b".repeat(widest)),
+    },
+    title: escaped(proposalTitleCharsMax),
+    body: escaped(proposalBodyCharsMax),
+    status: "Superseded",
+    url: asProposalDisplayUrl(escaped(proposalDisplayUrlCharsMax)),
+  };
+  assert.equal(largest.marker.length <= proposalMarkerCharsMax, true);
+  assert.equal(JSON.stringify(largest).length < proposalEvidenceCharsMax, true);
 });
 
 test("closed, merged, retargeted, and mismatched proposals are explicit contradictions", () => {
@@ -164,8 +303,11 @@ test("a base branch that moved between the observation and the create is the sam
   assert.deepEqual(
     changeProposalPublicationNext(
       request,
-      { creation: { created: "Created", evidence: moved }, reconciliations: 0 },
-      2,
+      {
+        publication: "Answered",
+        creation: { created: "Created", evidence: moved },
+      },
+      bounds,
     ),
     { next: "Accepted", evidence: moved },
   );
@@ -180,11 +322,7 @@ test("a head branch pushed to between the create and the reading is the same pro
     { reconciled: "Accepted", evidence: pushed },
   );
   assert.deepEqual(
-    changeProposalPublicationNext(
-      request,
-      { creation: { created: "Ambiguous" }, reconciliations: 0 },
-      2,
-    ),
+    changeProposalPublicationNext(request, unanswered(1, 0), bounds),
     { next: "Reconcile" },
     "the reading that finds it is the one this recovers through",
   );
@@ -241,10 +379,10 @@ test("created and existing evidence from another forge is never accepted", () =>
       changeProposalPublicationNext(
         request,
         {
+          publication: "Answered",
           creation: { created, evidence: wrongForge },
-          reconciliations: 0,
         },
-        2,
+        bounds,
       ),
       {
         next: "Refused",
@@ -256,11 +394,10 @@ test("created and existing evidence from another forge is never accepted", () =>
 });
 
 test("stored reconciliation results are rebound to the current request", () => {
-  const creation = { created: "Ambiguous" } as const;
   const stale = evidence({
     repository: asRepositoryId("stale-repository"),
   });
-  for (const reconciliation of [
+  for (const reading of [
     { reconciled: "Accepted", evidence: stale },
     {
       reconciled: "Contradictory",
@@ -269,11 +406,7 @@ test("stored reconciliation results are rebound to the current request", () => {
     },
   ] as const) {
     assert.deepEqual(
-      changeProposalPublicationNext(
-        request,
-        { creation, reconciliation, reconciliations: 1 },
-        2,
-      ),
+      changeProposalPublicationNext(request, unanswered(1, 1, reading), bounds),
       {
         next: "Refused",
         contradiction: "RepositoryMismatch",
