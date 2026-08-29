@@ -1,5 +1,5 @@
 /**
- * Every constraint migration thirteen's relations carry, met by the row that
+ * Every constraint the finalizer's durable relations carry, met by the row that
  * violates it. A constraint nobody wrote a violating row against is a claim
  * about the schema and not a fact about the server, and the shapes that go
  * wrong here — a closed set that admits one more member, a wholeness rule that
@@ -418,6 +418,74 @@ test("a reconciliation belongs to a permit and there is one of it per permit", a
       constraint,
     );
   }
+});
+
+/** The row every change-proposal case offers, whose keys and identity each one chooses. */
+const proposalOffered = `INSERT INTO finalization_change_proposal
+     (tenant, project, request, permit, proposal_request, head_ref, head_commit,
+      base_ref, base_commit, title, body, attempts)
+   VALUES ($1,$2,$3,$4,$5,'refs/heads/brief',$6,'refs/heads/main',$7,
+           'ticket 1: propose it','propose it',1)`;
+
+/** One such row's values, everything but the keys and the identity being whole. */
+function proposalValues(
+  held: readonly string[],
+  request: string,
+  named: string,
+  identity: string,
+): readonly unknown[] {
+  return [
+    ...held,
+    request,
+    named,
+    identity,
+    finalizerCommit(),
+    finalizerCommit(),
+  ];
+}
+
+test("a change proposal names its request and its permit, under an identity nothing reuses", async () => {
+  const held = [project.partition.tenant, project.partition.project];
+  const identity = finalizerDigest();
+  for (const [values, constraint] of [
+    [
+      proposalValues(held, "no-such-request", permit, finalizerDigest()),
+      "finalization_change_proposal_has_its_request",
+    ],
+    [
+      proposalValues(
+        held,
+        project.request,
+        "no-such-permit",
+        finalizerDigest(),
+      ),
+      "finalization_change_proposal_has_its_permit",
+    ],
+  ] as readonly (readonly [readonly unknown[], string])[]) {
+    assert.match(
+      await rig.refusal(proposalOffered, values),
+      new RegExp(constraint, "u"),
+      constraint,
+    );
+  }
+  await rig.as(
+    proposalOffered,
+    proposalValues(held, project.request, permit, identity),
+  );
+  const other = await finalizerProject(rig, "constraints-proposal");
+  const only = await finalizerPrepare(rig, other, "constraints-proposal");
+  assert.match(
+    await rig.refusal(
+      proposalOffered,
+      proposalValues(
+        [other.partition.tenant, other.partition.project],
+        other.request,
+        await finalizerGrantPermit(rig, other, only, "constraints-proposal"),
+        identity,
+      ),
+    ),
+    /finalization_change_proposal_identity_is_never_reused/u,
+  );
 });
 
 test("a project binds multiple repositories while each repository keeps one owner", async () => {
