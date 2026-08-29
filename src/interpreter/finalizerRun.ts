@@ -126,8 +126,10 @@
  * for the reason the permit is granted before the ref update: a crash between
  * the two leaves a row with no result, which reads back as a create that may
  * have happened and sends the next pass to `readByMarker` rather than to a
- * second create. The ticket concludes once the forge is proved to hold the
- * proposal, and never because a create returned.
+ * second create. The ticket concludes on evidence that the forge holds the
+ * proposal: a create answering with evidence is that proof itself, and a create
+ * answering with none is read back by its marker under
+ * `proposalReconciliationsMax`.
  *
  * A FORGE THAT DECLINED TO BE ASKED HAS ANSWERED NOTHING. A create the forge
  * would not take — a rate limit, a credential this deployment could not read —

@@ -5,9 +5,13 @@
  *
  * IT IS NOT AUTHORING. Authoring is the model's release event, and every value
  * of it decides how the machine runs the ticket. None of these do: they are
- * read by the agent and by the observation that names a target, and the
- * machine never sees them. So they live beside the draft rather than inside
- * the event, and nothing here reaches the domain.
+ * read by the agent, by the observation that names a target and by the
+ * finalizer that lands the work, and no value of them is priced, metered or
+ * decided on. The release reads one of them once, to refuse the pairing a
+ * configuration that hands off and a finalization that proposes make, which is
+ * a refusal to release and not a way for a brief to run the ticket. So they
+ * live beside the draft rather than inside the event, and nothing here reaches
+ * the domain.
  *
  * AN INTENT IS STORED AS IT RENDERS. Every value that gets this far has
  * already been split into the lines a briefing would print and refused unless
