@@ -21,11 +21,15 @@
  * exactly one header and no diagnostic, evidence field or returned string.
  *
  * THE MARKER IS WHAT MAKES A PROPOSAL THIS REQUEST'S. A pull request the forge
- * returns is evidence only where its body carries the request's marker and the
- * forge names the repository this call addressed; anything else on the same
- * head branch is somebody else's and is not found. The read filters on the head
- * branch alone, because a proposal opened against another base is the
- * `BaseMismatch` the pure layer exists to report rather than a row to hide.
+ * returns is evidence only where its body carries the request's marker;
+ * anything else on the same head branch is somebody else's and is not found.
+ * The read filters on the head branch alone, because a proposal opened against
+ * another base is the `BaseMismatch` the pure layer exists to report rather
+ * than a row to hide, and a proposal the forge answered for another repository
+ * is the `RepositoryMismatch` beside it for the same reason. Which repository a
+ * forge named is decided the way this forge decides it, without regard to the
+ * case of an owner or a name, so an address typed one way and answered in the
+ * canonical spelling is one repository and not two.
  *
  * NOTHING IS APPENDED TO WHAT A CALLER OFFERS, because evidence is compared
  * against the request field by field and a body this adapter edited could never
@@ -64,6 +68,7 @@ import {
 import {
   asGitObjectId,
   asGitRefName,
+  asRepositoryId,
   finalizerIdentityCharsMax,
   gitObjectIdPattern,
   gitRefNameCharsMax,
@@ -412,10 +417,35 @@ function githubChangeProposalsUrlOf(
 }
 
 /**
+ * The repository one pull request was answered for, under the identity this
+ * request already carries where the forge named the repository it addressed.
+ * This forge tells one owner and name from another without regard to case, so a
+ * full name differing only in case is that same repository; any other is one
+ * the request did not address, and it is named so the pure layer reports the
+ * mismatch. A forge naming no repository leaves nothing to say which it was.
+ */
+function githubChangeProposalsRepositoryOf(
+  request: ChangeProposalRequest,
+  address: GithubAddress,
+  host: string,
+  pull: GithubPullRequest,
+): RepositoryId | undefined {
+  const named = pull.base.repo?.full_name;
+  if (named === undefined) return undefined;
+  const addressed = `${address.owner}/${address.name}`;
+  if (named.toLowerCase() === addressed.toLowerCase())
+    return request.repository;
+  const remote = `https://${host}/${named}`;
+  return remote.length > finalizerIdentityCharsMax || !remote.isWellFormed()
+    ? undefined
+    : asRepositoryId(remote);
+}
+
+/**
  * What one pull request is evidence of, and nothing where it is not this
- * request's. A proposal is this request's only where the forge answered for the
- * addressed repository and the body carries the marker, and only where every
- * field of it is one a stored row holds.
+ * request's. A proposal is this request's only where the forge named which
+ * repository it answered for and the body carries the marker, and only where
+ * every field of it is one a stored row holds.
  */
 function githubChangeProposalsEvidenceOf(
   request: ChangeProposalRequest,
@@ -424,9 +454,13 @@ function githubChangeProposalsEvidenceOf(
   pull: GithubPullRequest,
 ): ChangeProposalEvidence | undefined {
   const body = pull.body ?? "";
-  if (pull.base.repo?.full_name !== `${address.owner}/${address.name}`) {
-    return undefined;
-  }
+  const repository = githubChangeProposalsRepositoryOf(
+    request,
+    address,
+    host,
+    pull,
+  );
+  if (repository === undefined) return undefined;
   if (!body.includes(request.marker)) return undefined;
   if (
     pull.node_id.length > finalizerIdentityCharsMax ||
@@ -450,7 +484,7 @@ function githubChangeProposalsEvidenceOf(
       forge: request.binding.forge,
       remote: asProposalRemoteIdentity(pull.node_id),
     },
-    repository: request.repository,
+    repository,
     marker: request.marker,
     head: { ref: head, commit: headCommit },
     base: { ref: base, commit: baseCommit },

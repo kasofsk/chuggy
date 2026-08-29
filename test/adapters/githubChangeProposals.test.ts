@@ -392,13 +392,6 @@ test("a proposal past the bounds a stored row holds is not this request's", asyn
     { title: "t".repeat(proposalTitleCharsMax + 1) },
     { head: { ref: "chuggy/handoff/one", sha: "short" } },
     { base: { ref: "main", sha: fixtureBaseCommit, repo: null } },
-    {
-      base: {
-        ref: "main",
-        sha: fixtureBaseCommit,
-        repo: { full_name: "other/repository" },
-      },
-    },
     { node_id: "n".repeat(4_096) },
   ];
   for (const overrides of unusable) {
@@ -409,6 +402,31 @@ test("a proposal past the bounds a stored row holds is not this request's", asyn
       read: "Absent",
     });
   }
+});
+
+test("a repository the forge spells its own way is the one this request addressed", async () => {
+  const request = fixtureRequest();
+  const answered = {
+    base: {
+      ref: "main",
+      sha: fixtureBaseCommit,
+      repo: { full_name: "Kasofsk/Chuggy" },
+    },
+  };
+  const creating = fixtureForge([
+    fixtureAnswer(201, fixturePull(request, answered)),
+  ]);
+  assert.deepEqual(await fixtureAdapter(creating).create(request), {
+    created: "Created",
+    evidence: fixtureEvidence(request),
+  });
+  const reading = fixtureForge([
+    fixtureAnswer(200, [fixturePull(request, answered)]),
+  ]);
+  assert.deepEqual(await fixtureAdapter(reading).readByMarker(request), {
+    read: "Found",
+    evidence: fixtureEvidence(request),
+  });
 });
 
 test("the credential reaches one header and nothing the adapter returns", async () => {
@@ -492,6 +510,19 @@ test("evidence carries what the forge answered and never what the request asked"
       answered: { title: "Another title entirely", body: edited },
       evidence: { title: "Another title entirely", body: edited },
       contradiction: "MetadataMismatch",
+    },
+    {
+      answered: {
+        base: {
+          ref: "main",
+          sha: fixtureBaseCommit,
+          repo: { full_name: "other/repository" },
+        },
+      },
+      evidence: {
+        repository: asRepositoryId("https://github.com/other/repository"),
+      },
+      contradiction: "RepositoryMismatch",
     },
   ] as const;
   for (const one of cases) {
