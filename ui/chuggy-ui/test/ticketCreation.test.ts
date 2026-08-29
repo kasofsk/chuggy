@@ -129,9 +129,9 @@ test("a branch is a name here and a full reference on the wire", () => {
   });
   expect(creationBranchOf("  ")).toStrictEqual({ named: "None" });
   const assembled = creationBodyFrom(creationInitialization, creationForm());
-  expect(
-    assembled.assembled === "Body" && "branch" in assembled.body.brief,
-  ).toBe(false);
+  expect(assembled.assembled).toBe("Body");
+  if (assembled.assembled !== "Body") return;
+  expect("branch" in assembled.body.brief).toBe(false);
 });
 
 /**
@@ -175,9 +175,9 @@ test("a named target is a finalization on the wire, and no target is no field", 
     creationInitialization,
     creationForm({ branchName: "topic/one" }),
   );
-  expect(
-    worked.assembled === "Body" && "finalization" in worked.body.brief,
-  ).toBe(false);
+  expect(worked.assembled).toBe("Body");
+  if (worked.assembled !== "Body") return;
+  expect("finalization" in worked.body.brief).toBe(false);
 });
 
 test("a target names where work lands whether or not a branch says where it starts", () => {

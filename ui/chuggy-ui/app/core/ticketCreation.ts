@@ -150,7 +150,7 @@ export function creationBranchOf(branchName: string): CreationBranch {
 export const creationBranchHint = `the branch this work starts from, and lands on unless a target names another, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>`;
 
 /** The same, for the field that names where the work ends up instead. */
-export const creationTargetBranchHint = `where the finished work is merged, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>`;
+export const creationTargetBranchHint = `where the finished work lands, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>`;
 
 /** The one input either branch field refuses, said as the edit that fixes it. */
 export const creationBranchPrefixedSentence = `enter the branch name, not the ref: this console adds ${briefBranchPrefix} itself`;
