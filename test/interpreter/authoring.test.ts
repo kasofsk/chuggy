@@ -36,12 +36,16 @@ test("draft initialization exposes deployment choices with server defaults", () 
     deps: new Set(),
     prog: [{ fanout: refinementInstance.nTasks, combinator: "UnanimousPass" }],
     workFanout: 1,
-    reworkPolicy: { type: "BudgetedRework", value: 0 },
+    reworkPolicy: refinementInstance.reworkPolicy,
     finalizationPricing: "DeadlineOnly",
     resumePricing: "RetryCharged",
     finalizer: "ManagedFinalizer",
   });
   assert.ok(policy.choices.workFanouts.includes(1));
+  assert.deepEqual(
+    policy.choices.reworkPolicies.at(-1),
+    policy.defaults.reworkPolicy,
+  );
   assert.ok(policy.choices.reworkPolicies.some((choice) => choice.value === 0));
   assert.ok(policy.choices.finalizers.includes("ManagedFinalizer"));
 });

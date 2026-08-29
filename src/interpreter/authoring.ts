@@ -16,7 +16,6 @@ import {
   workFanoutChoices,
   type Config,
 } from "../domain/config.ts";
-import { reworkBudgetOf } from "../domain/pricing.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import type { PublicInstant } from "./publicResource.ts";
@@ -382,7 +381,7 @@ export function draftInitializationPolicy(
               combinator: "UnanimousPass" as const,
             })),
       workFanout: 1,
-      reworkPolicy: reworkBudgetOf(0),
+      reworkPolicy: config.reworkPolicy,
       finalizationPricing: "DeadlineOnly",
       resumePricing: "RetryCharged",
       finalizer: "ManagedFinalizer",
