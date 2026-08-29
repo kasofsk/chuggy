@@ -258,6 +258,20 @@ fi
 # The release: gate, build, publish, select, and open the pull request.
 # ================================================================================
 
+# --- what must answer before anything slow runs -----------------------------------
+# The gate and the builds take minutes; the node, the registry and the push
+# identity are each a second to ask, and a release that cannot be pushed is
+# refused here rather than after all of that. The push is rehearsed dry: git
+# reaches the remote as the identity the real push will use, and the remote's
+# refusal is quoted as it was given.
+
+ssh "$node" true >/dev/null 2>&1 || refuse "$node does not answer over ssh, so nothing could be imported or pushed"
+registry_ip="$(kube -n chuggy-registry get service registry -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)"
+[ -n "$registry_ip" ] || refuse "the registry Service could not be read through context $context, so there is nowhere to push"
+if ! git -C "$fabric" push --dry-run -q origin "HEAD:refs/heads/$branch" 2>"$work/push-check"; then
+	refuse "$fabric_repo refuses a push to $branch from this identity; git said: $(grep -v '^$' "$work/push-check" | head -n 1)"
+fi
+
 moved() { # <path>...
 	! git diff --quiet "$deployed" HEAD -- "$@"
 }
@@ -313,12 +327,6 @@ if [ "$web_moved" -eq 1 ]; then
 fi
 
 # --- the registry ---------------------------------------------------------------
-
-registry_ip=""
-if [ "$api_moved$ui_moved$web_moved" != "000" ]; then
-	registry_ip="$(kube -n chuggy-registry get service registry -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)"
-	[ -n "$registry_ip" ] || refuse "the registry Service could not be read through context $context, so there is nowhere to push"
-fi
 
 # The node's containerd is the client: the imported image is tagged with the
 # Service address and pushed there, because the logical registry name resolves
