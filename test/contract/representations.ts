@@ -76,11 +76,16 @@ export const authoringWireBody = {
   finalizer: "ManagedFinalizer",
 };
 
-/** The brief a ticket carries, as everything but the wire holds it. */
+/**
+ * The brief a ticket carries, as everything but the wire holds it. It names
+ * where its work lands as well as where the work happens, because a
+ * finalization no fixture carries is a boundary nothing crosses.
+ */
 export const brief = asDraftBrief({
   intent: "Serve the brief on the ticket resource.",
   links: ["https://example.test/issues/340"],
   branch: "refs/heads/rt/ticket-brief",
+  finalization: { mode: "PullRequest", target: "refs/heads/main" },
 });
 
 /** The same brief as a request body writes it. */
@@ -88,6 +93,7 @@ export const briefWireBody = {
   intent: "Serve the brief on the ticket resource.",
   links: ["https://example.test/issues/340"],
   branch: "refs/heads/rt/ticket-brief",
+  finalization: { mode: "PullRequest", target: "refs/heads/main" },
 };
 
 /** A draft authored before a draft carried a brief, which is what an absent one looks like. */

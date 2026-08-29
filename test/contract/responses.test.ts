@@ -652,6 +652,7 @@ test("a briefed draft and ticket read carry the brief, and an older one omits it
     intent: "Serve the brief on the ticket resource.",
     links: ["https://example.test/issues/340"],
     branch: "refs/heads/rt/ticket-brief",
+    finalization: { mode: "PullRequest", target: "refs/heads/main" },
   });
   assert.equal(
     draftResponseSchema.parse(draftResponse(draftResource).body).brief,
@@ -666,6 +667,10 @@ test("a briefed draft and ticket read carry the brief, and an older one omits it
     }).body,
   );
   assert.deepEqual(ticket.brief?.links, ["https://example.test/issues/340"]);
+  assert.deepEqual(ticket.brief?.finalization, {
+    mode: "PullRequest",
+    target: "refs/heads/main",
+  });
   assert.equal(
     ticketResponseSchema.parse(
       ticketResponse({ ticket: asTicketId(3), phase: "Working", sequence: 9 })
