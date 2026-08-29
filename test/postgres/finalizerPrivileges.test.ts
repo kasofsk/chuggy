@@ -1,6 +1,6 @@
 /**
- * What migration thirteen's grants and revokes let each role do, asked of the
- * server rather than read off the DDL. A grant nobody exercised and a revoke
+ * What the finalizer migrations' grants and revokes let each role do, asked of
+ * the server rather than read off the DDL. A grant nobody exercised and a revoke
  * nobody attempted are both unverified controls, so every privilege the
  * finalizer holds is used here and every one it does not hold is attempted.
  */
@@ -39,7 +39,7 @@ const mailbox = [
   "ticket_projection",
 ] as const;
 
-/** Every relation migration thirteen took from the roles that came before it. */
+/** Every relation a finalizer migration took from the roles that came before it. */
 const added = [
   "project_repository",
   "input_bundle",
@@ -165,6 +165,7 @@ test("the ticket service reaches only the finalizer relations its boundary needs
     "project_repository",
     "commit_permit",
     "finalization_reconciliation",
+    "finalization_change_proposal",
   ]) {
     for (const statement of await everyVerb(relation)) {
       assert.match(
