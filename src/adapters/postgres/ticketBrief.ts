@@ -22,12 +22,16 @@ import {
   type TicketBriefPort,
 } from "../../interpreter/ticketBrief.ts";
 
-/** The columns any brief-bearing read selects, joined from the brief's own relation and its links. */
-export interface DraftBriefRow {
-  readonly intent: string | null;
-  readonly branch: string | null;
+/** The pair of columns a brief's finalization is read from, wherever a query selected them. */
+export interface DraftBriefFinalizationRow {
   readonly finalization_mode: string | null;
   readonly finalization_target: string | null;
+}
+
+/** The columns any brief-bearing read selects, joined from the brief's own relation and its links. */
+export interface DraftBriefRow extends DraftBriefFinalizationRow {
+  readonly intent: string | null;
+  readonly branch: string | null;
   readonly links: string[] | null;
 }
 
@@ -36,8 +40,8 @@ export interface DraftBriefRow {
  * none means — which is what leaves a draft written before the columns existed
  * reading back as it always did.
  */
-function draftBriefFinalizationOf(
-  row: DraftBriefRow,
+export function draftBriefFinalizationOf(
+  row: DraftBriefFinalizationRow,
 ): BriefFinalization | undefined {
   if (row.finalization_mode === null) return undefined;
   if (

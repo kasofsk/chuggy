@@ -65,7 +65,7 @@ import {
   type TicketCommand,
 } from "../../interpreter/ticketCommand.ts";
 import { parseDraftAuthoring } from "../../interpreter/authoring.ts";
-import { asBriefFinalization } from "../../interpreter/ticketBrief.ts";
+import { draftBriefFinalizationOf } from "./ticketBrief.ts";
 import {
   allInputBundleReferenceKinds,
   asFinalizationAttemptId,
@@ -154,6 +154,7 @@ async function releaseDraftSource(
     throw new Error(
       `release draft ${String(command.ticket)} has no retained revision`,
     );
+  const briefFinalization = draftBriefFinalizationOf(found);
   return {
     kind: "Operation",
     operation: asOperationId(operation),
@@ -168,16 +169,7 @@ async function releaseDraftSource(
       configurationRevision: command.configurationRevision,
       configurationDigest: found.digest,
       configurationCanonical: found.canonical,
-      ...(found.finalization_mode === null
-        ? {}
-        : {
-            briefFinalization: asBriefFinalization({
-              mode: found.finalization_mode,
-              ...(found.finalization_target === null
-                ? {}
-                : { target: found.finalization_target }),
-            }),
-          }),
+      ...(briefFinalization === undefined ? {} : { briefFinalization }),
     },
   };
 }
