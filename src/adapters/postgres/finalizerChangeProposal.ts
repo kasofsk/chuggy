@@ -23,7 +23,10 @@
  * THE COUNT IS THE ROW'S AND NOT THE CALLER'S. Every recorded reconciliation
  * increments it in the same statement that writes the verdict, which is what
  * makes the bound the pure step reads a bound on readings that happened rather
- * than on ones a caller remembered.
+ * than on ones a caller remembered. Splitting the two would not survive a
+ * failing verdict either, because each function here is its own transaction and
+ * a rollback takes an increment beside it — so what keeps the bound advancing
+ * is that a value the statement cannot store is refused before it runs.
  *
  * STORED EVIDENCE IS PARSED AND NEVER CAST. The pure step compares every field
  * of it against the request, so evidence that arrived as a document the driver
@@ -46,7 +49,6 @@ import {
   asForgeBindingId,
   asProposalDisplayUrl,
   asProposalRemoteIdentity,
-  proposalEvidenceCharsMax,
   type ChangeProposalContradiction,
   type ChangeProposalCreated,
   type ChangeProposalEvidence,
@@ -333,18 +335,26 @@ export async function finalizerChangeProposalOpen(
   return opened.rowCount === 1 ? { opened: "Opened" } : { opened: "Refused" };
 }
 
-/** The evidence one result carries, refused rather than truncated past what a row holds. */
+/**
+ * The evidence one result carries, refused where it holds a NUL — a value no
+ * `jsonb` document takes, and one the cast discovers only after the create it is
+ * recording has happened. Size is the column constraint's alone, because that
+ * measures the rendering PostgreSQL stores and this encoding is not that
+ * rendering, so a second measurement here would be a bound disagreeing with the
+ * one that decides.
+ */
 function changeProposalStoredEvidence(
   evidence: ChangeProposalEvidence | undefined,
 ): string | null {
   if (evidence === undefined) return null;
-  const encoded = JSON.stringify(evidence);
-  if (encoded.length > proposalEvidenceCharsMax) {
-    throw new RangeError(
-      "postgres finalizer: a proposal's evidence is past what a row holds",
-    );
-  }
-  return encoded;
+  return JSON.stringify(evidence, (_key: string, value: unknown) => {
+    if (typeof value === "string" && value.includes("\u0000")) {
+      throw new RangeError(
+        "postgres finalizer: a proposal's evidence carries a NUL no document holds",
+      );
+    }
+    return value;
+  });
 }
 
 /** The columns one create's answer writes. */
@@ -410,8 +420,9 @@ async function finalizerChangeProposalCreated(
  * Records what one reading read and counts it, over a row whose create answered
  * and over one whose create never did — which is the row a crash leaves and the
  * only row a reading can settle. A reading that found the proposal carries the
- * display URL forward, which is how a surface reaches one whose create never
- * answered.
+ * display URL onto the column of its own, which nothing in this tree reads back
+ * yet: it is the one field of the evidence a person needs and the row of a
+ * create that never answered holds no evidence to take it from.
  */
 async function finalizerChangeProposalReconciled(
   client: pg.PoolClient,

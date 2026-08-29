@@ -30,10 +30,13 @@ import {
 } from "../../src/adapters/artifacts/artifactKey.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import {
+  asChangeProposalRequestIdentity,
   asForgeBindingId,
   asForgeCredentialReference,
   asProposalDisplayUrl,
   asProposalRemoteIdentity,
+  proposalMarkerOf,
+  type ChangeProposalEvidence,
   type ChangeProposalForges,
   type ChangeProposalPort,
   type ChangeProposalRequest,
@@ -646,11 +649,19 @@ test("what a change proposal asked the forge for is written once and erased by n
   );
 });
 
+/**
+ * A document standing where a stored result's evidence goes. What the relation
+ * requires of it is that it is there, the fields being the pure layer's to
+ * compare, so a case proving the pairing names no more than that.
+ */
+const proposalEvidenceStored = `'{"status":"Open"}'::jsonb`;
+
 test("a change proposal is created once and read back as often as a reading is taken", async () => {
   const project = await proposalRowSubject("proposalresult");
   const key = proposalRowKey(project);
   await rig.as(
-    `UPDATE finalization_change_proposal SET creation='Created'
+    `UPDATE finalization_change_proposal
+        SET creation='Created', creation_evidence=${proposalEvidenceStored}
       WHERE tenant=$1 AND project=$2 AND request=$3`,
     key,
   );
@@ -676,6 +687,97 @@ test("a change proposal is created once and read back as often as a reading is t
       key,
     ),
     /finalization_change_proposal_results_are_whole/u,
+  );
+});
+
+/** Every result whose kind names a proposal, which is every result a row holds evidence for. */
+const proposalResultsNamingOne = [
+  "creation='Created'",
+  "creation='AlreadyExists'",
+  "creation='Contradictory', creation_contradiction='Closed'",
+  "reconciliation='Accepted'",
+  "reconciliation='Contradictory', reconciliation_contradiction='Closed'",
+] as const;
+
+test("a result naming a proposal is refused where the row carries no evidence of it", async () => {
+  const project = await proposalRowSubject("proposalwhole");
+  const key = proposalRowKey(project);
+  for (const result of proposalResultsNamingOne) {
+    assert.match(
+      await rig.refusal(
+        `UPDATE finalization_change_proposal SET ${result}
+          WHERE tenant=$1 AND project=$2 AND request=$3`,
+        key,
+      ),
+      /finalization_change_proposal_results_are_whole/u,
+      result,
+    );
+  }
+  await rig.as(
+    `UPDATE finalization_change_proposal
+        SET creation='Created', creation_evidence=${proposalEvidenceStored}
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    key,
+  );
+  assert.equal(
+    (await proposalOf(project))?.creation,
+    "Created",
+    "the same result with its evidence is admitted",
+  );
+});
+
+/** The evidence a case offers the store, whose title a caller may have put anything in. */
+function proposalEvidenceTitled(
+  project: FinalizerProject,
+  title: string,
+): ChangeProposalEvidence {
+  const request = asChangeProposalRequestIdentity(finalizerDigest());
+  return {
+    identity: {
+      forge: asForgeBindingId("forge-rig"),
+      remote: asProposalRemoteIdentity("proposal-rig"),
+    },
+    repository: asRepositoryId(project.repository),
+    marker: proposalMarkerOf(request),
+    head: {
+      ref: asGitRefName(briefBranch),
+      commit: asGitObjectId(finalizerCommit()),
+    },
+    base: {
+      ref: asGitRefName(landingBranch),
+      commit: asGitObjectId(finalizerCommit()),
+    },
+    title,
+    body: `propose it\n\n${proposalMarkerOf(request)}`,
+    status: "Open",
+    url: asProposalDisplayUrl("https://forge.invalid/proposals/1"),
+  };
+}
+
+test("evidence carrying a NUL is refused before the statement that would cast it", async () => {
+  const project = await proposalRowSubject("proposalnul");
+  const claim = await finalizerClaim(rig, project, "proposalnul");
+  const store = postgresFinalizer(rig.pool);
+  const evidence = proposalEvidenceTitled(
+    project,
+    "ticket 1: propose it\u0000",
+  );
+  await assert.rejects(
+    () =>
+      store.recordChangeProposal({
+        claim,
+        result: {
+          records: "Creation",
+          created: { created: "Created", evidence },
+        },
+      }),
+    RangeError,
+    "a document no jsonb value holds is refused rather than cast",
+  );
+  assert.equal(
+    (await proposalOf(project))?.creation,
+    null,
+    "so the create stays unanswered and the next pass reads rather than creates",
   );
 });
 

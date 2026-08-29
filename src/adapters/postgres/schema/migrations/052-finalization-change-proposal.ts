@@ -7,6 +7,9 @@ import {
   proposalDisplayUrlCharsMax,
   proposalEvidenceCharsMax,
   proposalTitleCharsMax,
+  type ChangeProposalCreated,
+  type ChangeProposalEvidence,
+  type ChangeProposalReconciled,
 } from "../../../../interpreter/changeProposal.ts";
 import {
   finalizerIdentityCharsMax,
@@ -47,8 +50,41 @@ import {
  * A RESULT IS A KIND AND ITS EVIDENCE, as a reconciliation verdict is. The
  * evidence is one document rather than a column apiece because the pure layer
  * compares every field of it against the request, so a column omitted here
- * would be a comparison that silently stopped happening.
+ * would be a comparison that silently stopped happening. The pairing is refused
+ * in both directions: a kind naming a proposal nobody stored the evidence of is
+ * a row every read of it raises on, and the trigger below leaves it unrepairable.
+ *
+ * `proposal_url` IS THE ONE FIELD OF THE EVIDENCE THAT OUTLIVES IT. Everything
+ * else a result carries is read back through the document; the URL is what a
+ * person opens, and it is a column of its own because the row of a create that
+ * never answered holds no document to take it from. Nothing in this tree reads
+ * the column back yet.
  */
+
+/**
+ * The arms a result names no proposal on, taken from the arms' own types so an
+ * answer that grew evidence is a compile error here rather than a CHECK that
+ * quietly stopped requiring one. What a row must hold evidence for is every
+ * other arm of the roster, which is why neither list is written out twice.
+ */
+const changeProposalCreationsWithoutEvidence: readonly Exclude<
+  ChangeProposalCreated,
+  { readonly evidence: ChangeProposalEvidence }
+>["created"][] = ["Ambiguous", "Unavailable", "Denied"];
+
+const changeProposalReconciliationsWithoutEvidence: readonly Exclude<
+  ChangeProposalReconciled,
+  { readonly evidence: ChangeProposalEvidence }
+>["reconciled"][] = ["Absent", "Unavailable", "Denied"];
+
+/** The arms of one roster a stored result carries evidence for. */
+function changeProposalKindsWithEvidence(
+  roster: readonly string[],
+  without: readonly string[],
+): readonly string[] {
+  return roster.filter((kind) => !without.includes(kind));
+}
+
 const finalizationChangeProposal = [
   `CREATE TABLE finalization_change_proposal (
      tenant           text NOT NULL,
@@ -99,6 +135,22 @@ const finalizationChangeProposal = [
          OR reconciliation IN (${schemaTextSet(allChangeProposalReconciliations)}))
        AND (creation_evidence IS NULL OR creation IS NOT NULL)
        AND (reconciliation_evidence IS NULL OR reconciliation IS NOT NULL)
+       AND (creation IS NULL
+         OR creation NOT IN (${schemaTextSet(
+           changeProposalKindsWithEvidence(
+             allChangeProposalCreations,
+             changeProposalCreationsWithoutEvidence,
+           ),
+         )})
+         OR creation_evidence IS NOT NULL)
+       AND (reconciliation IS NULL
+         OR reconciliation NOT IN (${schemaTextSet(
+           changeProposalKindsWithEvidence(
+             allChangeProposalReconciliations,
+             changeProposalReconciliationsWithoutEvidence,
+           ),
+         )})
+         OR reconciliation_evidence IS NOT NULL)
        AND (creation_contradiction IS NULL) = (creation IS DISTINCT FROM 'Contradictory')
        AND (reconciliation_contradiction IS NULL)
          = (reconciliation IS DISTINCT FROM 'Contradictory')
@@ -114,8 +166,6 @@ const finalizationChangeProposal = [
        AND coalesce(length(reconciliation_evidence::text), 1)
          BETWEEN 1 AND ${proposalEvidenceCharsMax})
    )`,
-  `CREATE INDEX finalization_change_proposal_unanswered
-     ON finalization_change_proposal (opened_at) WHERE creation IS NULL`,
 ];
 
 /**
