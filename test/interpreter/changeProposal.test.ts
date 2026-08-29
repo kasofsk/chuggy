@@ -140,15 +140,6 @@ test("closed, merged, retargeted, and mismatched proposals are explicit contradi
       },
       "ForgeMismatch",
     ],
-    [
-      {
-        head: {
-          ref: request.head.ref,
-          commit: asGitObjectId("d".repeat(40)),
-        },
-      },
-      "HeadMismatch",
-    ],
   ];
   for (const [overrides, contradiction] of cases) {
     const found = evidence(overrides);
@@ -177,6 +168,25 @@ test("a base branch that moved between the observation and the create is the sam
       2,
     ),
     { next: "Accepted", evidence: moved },
+  );
+});
+
+test("a head branch pushed to between the create and the reading is the same proposal", () => {
+  const pushed = evidence({
+    head: { ref: request.head.ref, commit: asGitObjectId("d".repeat(40)) },
+  });
+  assert.deepEqual(
+    reconcileChangeProposal(request, { read: "Found", evidence: pushed }),
+    { reconciled: "Accepted", evidence: pushed },
+  );
+  assert.deepEqual(
+    changeProposalPublicationNext(
+      request,
+      { creation: { created: "Ambiguous" }, reconciliations: 0 },
+      2,
+    ),
+    { next: "Reconcile" },
+    "the reading that finds it is the one this recovers through",
   );
 });
 

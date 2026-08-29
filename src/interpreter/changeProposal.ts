@@ -10,14 +10,15 @@
  * there. Both are built through one bounding, so the two cannot drift apart in
  * the marker, the metadata or anything else a read compares.
  *
- * THE BASE IS IDENTIFIED BY ITS REF AND THE HEAD BY BOTH. A proposal targets a
- * branch, and what that branch holds is the forge's to move between the moment
- * a base is observed and the moment the proposal is created — so comparing the
- * base's commit would refuse a proposal this request had successfully opened
- * whenever anybody landed anything on the base in between. Each side's commit
- * stays in the request and in the evidence as what it observed, and the head's
- * is compared because a different commit under the same head is a different
- * change rather than the same one seen later.
+ * EACH SIDE IS IDENTIFIED BY ITS REF, AND THE PROPOSAL BY ITS MARKER. A
+ * proposal stands between two branches, and what either branch holds is the
+ * forge's to move between the moment it is observed and every later reading —
+ * so comparing a commit would refuse a proposal this request had successfully
+ * opened whenever anybody landed anything on either side in between, which for
+ * a head that is the ticket's own work branch is every push the ticket makes
+ * after the create. The marker is what says a proposal is this request's and
+ * the two refs are where it stands, so each side's commit stays in the request
+ * and in the evidence as what was observed and is compared with nothing.
  */
 
 import { asBoundedText } from "./boundedText.ts";
@@ -403,11 +404,7 @@ function proposalContradiction(
   if (evidence.identity.forge !== request.binding.forge) return "ForgeMismatch";
   if (evidence.marker !== request.marker) return "MarkerMismatch";
   if (evidence.repository !== request.repository) return "RepositoryMismatch";
-  if (
-    evidence.head.ref !== request.head.ref ||
-    evidence.head.commit !== request.head.commit
-  )
-    return "HeadMismatch";
+  if (evidence.head.ref !== request.head.ref) return "HeadMismatch";
   if (evidence.base.ref !== request.base.ref) return "BaseMismatch";
   if (evidence.title !== request.title || evidence.body !== request.body)
     return "MetadataMismatch";
