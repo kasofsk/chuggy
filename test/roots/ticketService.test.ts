@@ -55,7 +55,7 @@ const validConfiguration = {
     environment: {
       PATH: process.env["PATH"],
       HOME: process.env["HOME"],
-      TMPDIR: process.env["TMPDIR"],
+      TMPDIR: process.env["TMPDIR"] ?? "/tmp",
     },
     sources: [
       {
