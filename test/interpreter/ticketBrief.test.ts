@@ -188,3 +188,29 @@ test("a whole brief brands where it lands apart from where its work happens", ()
     RangeError,
   );
 });
+
+test("a brief that proposes brands a branch of its own and not the one it opens into", () => {
+  const proposing = (branch?: string) =>
+    asDraftBrief({
+      intent: "Fix the importer.",
+      links: [],
+      ...(branch === undefined ? {} : { branch }),
+      finalization: { mode: "PullRequest", target: "refs/heads/rt/landing" },
+    });
+  assert.deepEqual(proposing("refs/heads/rt/work"), {
+    intent: "Fix the importer.",
+    links: [],
+    branch: "refs/heads/rt/work",
+    finalization: { mode: "PullRequest", target: "refs/heads/rt/landing" },
+  });
+  assert.throws(
+    () => proposing(),
+    RangeError,
+    "a proposal has no head where the brief names no branch",
+  );
+  assert.throws(
+    () => proposing("refs/heads/rt/landing"),
+    RangeError,
+    "a proposal is never opened from its own base",
+  );
+});

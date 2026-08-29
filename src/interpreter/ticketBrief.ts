@@ -30,6 +30,13 @@
  * has to be opened into something, so the reference is part of what that mode
  * is rather than a field every reader re-asks about.
  *
+ * A PULL REQUEST NAMES BOTH SIDES AND THEY ARE NOT THE SAME SIDE. The head is
+ * the branch the work happened on and the base is the reference the mode names,
+ * so a brief that proposes and names no branch has no head to propose from, and
+ * one naming the target as its branch proposes a change into itself. Neither is
+ * a brief: the pairing is refused where the whole is branded, on the wire by
+ * the same statement of it, and by the brief's own relation.
+ *
  * A RELEASED TICKET'S BRIEF NO LONGER MOVES, which is what lets a retry read it
  * rather than pin it: a revision is refused for a draft that is not one, so the
  * row a ticket reaches is frozen the moment the ticket exists. That refusal is
@@ -40,6 +47,7 @@ import {
   briefBranchCharsMax,
   briefIntentCharsMax,
   briefIntentLinesMax,
+  briefLandingIsWhole,
   briefLinkScheme,
   briefLinksMax,
 } from "../contract/brief.ts";
@@ -163,7 +171,12 @@ export function asBriefFinalization(value: {
   return { mode, ...(target === undefined ? {} : { target }) };
 }
 
-/** Brands one whole brief, which is the only way an unchecked one becomes a stored one. */
+/**
+ * Brands one whole brief, which is the only way an unchecked one becomes a
+ * stored one. The pairing of the branch and the finalization is the wire's own
+ * rule read here, so a brief reaching this tree by any other door is refused by
+ * the same statement of it.
+ */
 export function asDraftBrief(value: {
   readonly intent: string;
   readonly links: readonly string[];
@@ -172,7 +185,7 @@ export function asDraftBrief(value: {
 }): DraftBrief {
   if (value.links.length > briefLinksMax)
     throw new RangeError("ticket brief: more links than one brief carries");
-  return {
+  const brief: DraftBrief = {
     intent: asBriefIntent(value.intent),
     links: value.links.map(asBriefLinkUrl),
     ...(value.branch === undefined
@@ -182,6 +195,11 @@ export function asDraftBrief(value: {
       ? {}
       : { finalization: asBriefFinalization(value.finalization) }),
   };
+  if (!briefLandingIsWhole(brief))
+    throw new RangeError(
+      "ticket brief: a pull request opens from a branch of its own into another",
+    );
+  return brief;
 }
 
 /** The brief a ticket carries, behind a typed port, absent for a ticket authored without one. */

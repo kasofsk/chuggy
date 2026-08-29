@@ -1534,7 +1534,7 @@ test("migration 50 lands an existing brief where its work happened and takes a t
   });
 });
 
-test("migration 51 admits a mode installed before it existed and refuses one opening into nothing", async () => {
+test("migration 51 admits a mode installed before it existed and refuses one opening from or into nothing", async () => {
   await migrationDatabase("brief_pull_request", async (subject) => {
     await migrationSeedApplied(subject, 51);
     await subject.query(
@@ -1579,23 +1579,20 @@ test("migration 51 admits a mode installed before it existed and refuses one ope
       ).rows,
       [{ mode: "PullRequest", target: "refs/heads/rt/landing" }],
     );
-    await assert.rejects(
-      () =>
-        subject.query(
-          `UPDATE draft_brief SET finalization_target=NULL WHERE ticket=1`,
-        ),
-      /draft_brief_finalization_is_whole/u,
-      "a pull request cannot lose the reference it opens into",
-    );
-    await assert.rejects(
-      () =>
-        subject.query(
-          `UPDATE draft_brief SET finalization_mode='PullRequest',finalization_target=NULL
-            WHERE ticket=1`,
-        ),
-      /draft_brief_finalization_is_whole/u,
-      "a pull request naming no reference is never written",
-    );
+    for (const [written, why] of [
+      ["finalization_target=NULL", "loses the reference it opens into"],
+      [
+        "finalization_mode='PullRequest',finalization_target=NULL",
+        "is written naming no reference at all",
+      ],
+      ["branch=NULL", "names no branch to open from"],
+      ["branch=finalization_target", "opens from its own base"],
+    ] as const)
+      await assert.rejects(
+        () => subject.query(`UPDATE draft_brief SET ${written} WHERE ticket=1`),
+        /draft_brief_finalization_is_whole/u,
+        `no pull request ${why}`,
+      );
   });
 });
 

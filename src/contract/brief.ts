@@ -69,16 +69,38 @@ export const briefFinalizationSchema = z.discriminatedUnion("mode", [
 ]);
 
 /**
+ * Whether one brief's branch and its finalization stand together. A proposal is
+ * opened from the branch the work happened on into the reference it names, so a
+ * brief that proposes names a branch of its own and names a different one; a
+ * brief that lands any other way pairs with either.
+ */
+export function briefLandingIsWhole(value: {
+  readonly branch?: string | undefined;
+  readonly finalization?:
+    { readonly mode: string; readonly target?: string | undefined } | undefined;
+}): boolean {
+  const finalization = value.finalization;
+  if (finalization?.mode !== "PullRequest") return true;
+  return value.branch !== undefined && value.branch !== finalization.target;
+}
+
+/**
  * The brief as a write states it, its finalization omitted where the work
  * lands where it happened. The intent cannot be empty, because a ticket nobody
- * stated a purpose for is the one thing an agent cannot be briefed on.
+ * stated a purpose for is the one thing an agent cannot be briefed on, and the
+ * pairing above is refused here so that a brief the finalizer could not open a
+ * proposal for is never a brief at all.
  */
-export const briefSchema = z.strictObject({
-  intent: z.string().min(1).max(briefIntentCharsMax),
-  links: z.array(briefLinkSchema).max(briefLinksMax),
-  branch: briefBranchSchema.optional(),
-  finalization: briefFinalizationSchema.optional(),
-});
+export const briefSchema = z
+  .strictObject({
+    intent: z.string().min(1).max(briefIntentCharsMax),
+    links: z.array(briefLinkSchema).max(briefLinksMax),
+    branch: briefBranchSchema.optional(),
+    finalization: briefFinalizationSchema.optional(),
+  })
+  .refine(briefLandingIsWhole, {
+    error: "a pull request is opened from a branch of its own into another",
+  });
 
 export type TicketBriefBody = z.infer<typeof briefSchema>;
 
@@ -88,7 +110,11 @@ export const briefFinalizationResponseSchema = z.discriminatedUnion("mode", [
   z.object(briefFinalizationShapes.PullRequest),
 ]);
 
-/** The same brief read back, dropping a field the reader does not know at either depth. */
-export const briefResponseSchema = briefSchema.strip().extend({
+/**
+ * The same brief read back, dropping a field the reader does not know at either
+ * depth and carrying the pairing forward, a brief being one thing in both
+ * directions.
+ */
+export const briefResponseSchema = briefSchema.strip().safeExtend({
   finalization: briefFinalizationResponseSchema.optional(),
 });

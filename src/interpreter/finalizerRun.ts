@@ -57,7 +57,10 @@
  * the ticket never worked in and has nothing to do with the brief's mode. The
  * pairing is refused where the two are written — a configuration that hands off
  * will not release a brief that proposes — so this is a narrowing and not a
- * decision about which of them wins.
+ * decision about which of them wins. A proposing brief naming no branch of its
+ * own is a hold and never a fallback: the branch it does not name is the head
+ * the proposal needs, and the binding's default is somebody else's line of
+ * development rather than a stand-in for it.
  *
  * A BRIEF NAMING BOTH IS READ TWICE, AND THE TWO READS DO DIFFERENT JOBS. The
  * branch the work happened on — the one `./executionSourceObservation.ts`
@@ -431,16 +434,18 @@ interface FinalizerBranches {
 
 /**
  * What the ticket's brief says about each: a push lands on the reference its
- * finalization names or on the work's own branch where it names none, and a
- * pull request always lands on the work's branch, that branch being the head a
- * proposal is opened from and its finalization's reference the base. A
+ * finalization names or on the work's own branch where it names none, a pull
+ * request always lands on the work's branch — that branch being the head a
+ * proposal is opened from and its finalization's reference the base — and a
  * publication names none, its destination being a repository the ticket never
- * worked in.
+ * worked in. A proposing brief naming no branch of its own is answered by none
+ * of them, because such a brief is refused where briefs are written and the
+ * binding's default is not a stand-in for the head a proposal opens from.
  */
 async function finalizerGatherBranches(
   service: FinalizerService,
   view: FinalizationView,
-): Promise<FinalizerBranches> {
+): Promise<FinalizerBranches | undefined> {
   if (view.handoffRequest?.kind === "PublishHandoff") return {};
   const brief = await service.ticketBriefs.brief(
     view.claim.partition,
@@ -450,6 +455,7 @@ async function finalizerGatherBranches(
   const finalization = brief.finalization;
   const proposing =
     view.claim.kind === "RunFinalizer" && finalization?.mode === "PullRequest";
+  if (proposing && brief.branch === undefined) return undefined;
   const target = proposing
     ? brief.branch
     : (finalization?.target ?? brief.branch);
@@ -484,16 +490,29 @@ async function finalizerGatherWorkBranch(
 }
 
 /**
+ * What one gathering came to: the view a decision is made from, or the reason
+ * one could not be made from what was read. A request nothing durable answers
+ * for at all is neither, and is left to the sweep that reopens it.
+ */
+type FinalizerGathered =
+  | { readonly gathered: "View"; readonly view: FinalizationView }
+  | { readonly gathered: "Held"; readonly hold: FinalizerHoldReason };
+
+/**
  * Everything the pure pass reads, the remote's current target among it. The read
  * happens here so the decision that follows awaits nothing.
  */
 async function finalizerGather(
   service: FinalizerService,
   claim: FinalizationClaim,
-): Promise<FinalizationView | undefined> {
+): Promise<FinalizerGathered | undefined> {
   const durable = await service.store.durableView(claim);
-  if (durable === undefined || durable.repository === undefined) return durable;
+  if (durable === undefined) return undefined;
+  if (durable.repository === undefined)
+    return { gathered: "View", view: durable };
   const branches = await finalizerGatherBranches(service, durable);
+  if (branches === undefined)
+    return { gathered: "Held", hold: "ProposalUnbranched" };
   const observed = await repositoryTargetObserved(
     service.git,
     durable.repository,
@@ -507,7 +526,7 @@ async function finalizerGather(
       ? {}
       : { finalizationMode: branches.brief.finalization.mode }),
   };
-  if (observed.observed !== "Target") return view;
+  if (observed.observed !== "Target") return { gathered: "View", view };
   const work = await finalizerGatherWorkBranch(
     service,
     durable.repository,
@@ -515,9 +534,12 @@ async function finalizerGather(
     observed.target,
   );
   return {
-    ...view,
-    observedTarget: observed.target,
-    ...(work === undefined ? {} : { observedWorkBranch: work }),
+    gathered: "View",
+    view: {
+      ...view,
+      observedTarget: observed.target,
+      ...(work === undefined ? {} : { observedWorkBranch: work }),
+    },
   };
 }
 
@@ -1375,8 +1397,13 @@ async function finalizerAdvance(
   tally: FinalizerTally,
 ): Promise<void> {
   const config = checkedFinalizerConfig(service.config);
-  const view = await finalizerGather(service, claim);
-  if (view === undefined) return;
+  const gathered = await finalizerGather(service, claim);
+  if (gathered === undefined) return;
+  if (gathered.gathered === "Held") {
+    finalizerHold(service, tally, gathered.hold);
+    return;
+  }
+  const { view } = gathered;
   const decision = finalizationNext(config, view);
   const ceilingReached = (
     spent: keyof FinalizerTally,
