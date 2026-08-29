@@ -111,9 +111,9 @@ const briefWriters = [
 /**
  * Where a ticket's work lands, said apart from the branch it happens on and
  * carried by the brief's own relation, so the doors that write a brief are
- * replaced rather than 42 edited, the ledger being append-only. Every role that
- * reads the brief already holds the relation rather than its columns, so no
- * grant moves.
+ * replaced rather than migration 42 edited, the ledger being append-only. Every
+ * role that reads the brief already holds the relation rather than its columns,
+ * so no grant moves.
  */
 export const migration050: Migration = {
   version: 50,

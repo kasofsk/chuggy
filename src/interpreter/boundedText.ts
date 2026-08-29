@@ -10,9 +10,11 @@
 
 /**
  * Refuses text a bounded column cannot hold, and text that is not text: an
- * opaque string with no cap is an unbounded row, and one carrying an unpaired
+ * opaque string with no cap is an unbounded row, one carrying an unpaired
  * surrogate is a value every UTF-8 encoding of it folds to the replacement
- * character, so two such strings share one digest and one stored row.
+ * character, so two such strings share one digest and one stored row, and one
+ * carrying a NUL is a value no PostgreSQL text or `jsonb` holds at all — a row
+ * refused by the cast that discovers it rather than by the door that took it.
  */
 export function asBoundedText(
   value: string,
@@ -24,6 +26,9 @@ export function asBoundedText(
     throw new RangeError(
       `${what}: an unpaired surrogate is not a value a digest can separate`,
     );
+  }
+  if (value.includes("\u0000")) {
+    throw new RangeError(`${what}: a NUL is not a value a stored row holds`);
   }
   if (value.length > charsMax) {
     throw new RangeError(

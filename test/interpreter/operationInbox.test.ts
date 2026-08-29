@@ -1,6 +1,6 @@
 /**
- * The branded text constructors' refusal of a value that is not well-formed
- * text, which is the one refusal on this boundary no column constraint
+ * The branded text constructors' refusal of a value that is not text a stored
+ * row holds, which are the refusals on this boundary no column constraint
  * repeats.
  *
  * WHY IT IS NOT BESIDE THE CAPS. `test/postgres/keying.test.ts` drives the
@@ -9,6 +9,11 @@
  * column at all — it is refused before a digest is taken — so the case belongs
  * where it runs, and a pair of them is what says the refusal buys something: a
  * digest cannot separate two keys whose encodings are the same value.
+ *
+ * A NUL IS THE SAME KIND OF VALUE FOR A DIFFERENT REASON. No PostgreSQL text or
+ * `jsonb` value holds one, and what refuses it there is the encoding rather than
+ * a constraint — which is a raise from underneath whatever statement carried it,
+ * after the act that statement was recording already happened.
  */
 
 import assert from "node:assert/strict";
@@ -27,6 +32,9 @@ const loneSurrogateFirst = "\uD800";
 
 /** A different one, so a case can be about two values rather than about one being odd. */
 const loneSurrogateLater = "\uD801";
+
+/** Well-formed text around a NUL, so the case is about the NUL and not about an empty value. */
+const embeddedNul = "a client's\u0000value";
 
 /** Every constructor `asBoundedText` backs, so a refusal is the boundary's and not one door's. */
 const boundedConstructors: readonly ((value: string) => string)[] = [
@@ -49,6 +57,12 @@ test("every bounded constructor refuses either of them", () => {
   for (const construct of boundedConstructors) {
     assert.throws(() => construct(loneSurrogateFirst), /unpaired surrogate/);
     assert.throws(() => construct(loneSurrogateLater), /unpaired surrogate/);
+  }
+});
+
+test("every bounded constructor refuses text carrying a NUL", () => {
+  for (const construct of boundedConstructors) {
+    assert.throws(() => construct(embeddedNul), /NUL/u);
   }
 });
 
