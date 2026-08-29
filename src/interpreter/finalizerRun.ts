@@ -129,6 +129,16 @@
  * second create. The ticket concludes once the forge is proved to hold the
  * proposal, and never because a create returned.
  *
+ * A FORGE THAT DECLINED TO BE ASKED HAS ANSWERED NOTHING. A create the forge
+ * would not take — a rate limit, a credential this deployment could not read —
+ * says nothing about whether a proposal stands, so it is not written down as
+ * what the create came to and the row is left as unanswered as a crash leaves
+ * one. The creation result is written once, so whatever settles that row
+ * settles it for good, and an answer that will not still be true in an hour is
+ * not one of those. The hold is bounded by the pass like every other act here:
+ * one proposal act per claimed request, and no more of them in a pass than
+ * `proposalsPerPassMax`.
+ *
  * THE PROPOSAL'S BASE IS A THIRD OBSERVATION AND IS NEVER CREATED. The branch
  * the work happened on and the one the promotion lands are both read above; the
  * base is read as itself, without the binding's fallback, because a proposal
@@ -1256,10 +1266,11 @@ async function finalizerRecordProposal(
 }
 
 /**
- * Asks the forge for the one proposal this request names. The row is written
- * and committed before the create is called, so a crash between the two leaves a
- * row with no creation result — which reads back as a create that may have
- * happened, and never as authority for a second one.
+ * Asks the forge for the one proposal this request names, over a row written
+ * and committed before the create is called — so a crash between the two, and a
+ * forge that declined to be asked and therefore said nothing about a proposal,
+ * each leave a row with no creation result. Such a row reads back as a create
+ * that may have happened, and never as authority for a second one.
  */
 async function finalizerProposeChange(
   service: FinalizerService,
@@ -1288,6 +1299,10 @@ async function finalizerProposeChange(
     return;
   }
   const created = await port.create(request);
+  if (created.created === "Unavailable") {
+    finalizerHold(service, tally, "ProposalUnavailable");
+    return;
+  }
   await finalizerRecordProposal(
     service,
     view,

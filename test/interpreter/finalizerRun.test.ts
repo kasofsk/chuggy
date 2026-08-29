@@ -1249,6 +1249,36 @@ test("a row left by a crash before any result is recorded is read back, never cr
   assert.equal(forge.creates.length, 1);
 });
 
+test("a create the forge would not take settles nothing, and the proposal is read back", async () => {
+  const store = recordingStore([proposedView("request-one")]);
+  const forge = recordingForge(store);
+  forge.created = "Unavailable";
+  const service = proposingService(store, recordingGit(), forge);
+
+  const declined = await passOver(service);
+
+  assert.equal(declined.holds, 1);
+  assert.equal(declined.conclusions, 0);
+  assert.equal(
+    store.results.length,
+    0,
+    "a forge that would not be asked is no answer to record",
+  );
+
+  forge.read = "Found";
+  const reading = await passOver(service);
+
+  assert.equal(forge.creates.length, 1, "no second create was authorized");
+  assert.equal(forge.reads.length, 1, "the row authorizes a reading instead");
+  assert.equal(store.results[0]?.result.records, "Reconciliation");
+  assert.equal(reading.conclusions, 0);
+
+  const proved = await passOver(service);
+
+  assert.equal(proved.conclusions, 1);
+  assert.deepEqual(store.submitted, ["request-one"]);
+});
+
 test("a proposal nothing can find within its bound is held and never created again", async () => {
   const store = recordingStore([proposedView("request-one")]);
   const forge = recordingForge(store);
