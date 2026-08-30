@@ -11,6 +11,8 @@ export const selectorServiceRole = "chuggy_selector_service";
 export const selectorControlRole = "chuggy_selector_control";
 export const selectorReviewRole = "chuggy_selector_review";
 export const selectorSettingsFunction = "update_selector_runtime_settings";
+export const selectorProjectSettingsFunction =
+  "update_selector_project_settings";
 export const selectorReviewFunction = "review_selector_proposal";
 export const selectorReconcileClaimFunction =
   "claim_selector_proposal_reconciliation";

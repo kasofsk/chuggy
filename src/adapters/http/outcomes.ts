@@ -25,6 +25,12 @@ import type {
 } from "../../interpreter/nativeWeb.ts";
 import type { SelectorOperationalContext } from "../../interpreter/selector.ts";
 import type {
+  SelectorProjectSettingsHistoryRead,
+  SelectorProjectSettingsRead,
+  SelectorProjectSettingsRecord,
+  SelectorProjectSettingsWritten,
+} from "../../interpreter/selectorProjectSettings.ts";
+import type {
   ExecutionPage,
   ExecutionResource,
   ProjectOperationalStatus,
@@ -304,6 +310,69 @@ export function selectorOperationalContextResponse(
   return result.result === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
     : response(200, result.value);
+}
+
+/** The record on the wire, whose effective half names no partition twice. */
+function selectorProjectSettingsBody(
+  settings: SelectorProjectSettingsRecord,
+): unknown {
+  const effective = settings.effective;
+  return {
+    partition: settings.partition,
+    revision: settings.revision,
+    overrides: settings.overrides,
+    effective: {
+      revision: effective.revision,
+      projectRevision: effective.projectRevision,
+      mode: effective.mode,
+      dispatchMode: effective.dispatchMode,
+      basePrompt: effective.basePrompt,
+      ...(effective.northStar === undefined
+        ? {}
+        : { northStar: effective.northStar }),
+      modelAllowlist: effective.modelAllowlist,
+      toolAllowlist: effective.toolAllowlist,
+      limits: effective.limits,
+      operationalContextMaxAgeMs: effective.operationalContextMaxAgeMs,
+    },
+  };
+}
+
+export function selectorProjectSettingsResponse(
+  result: SelectorProjectSettingsRead,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, selectorProjectSettingsBody(result.settings));
+}
+
+export function selectorProjectSettingsWriteResponse(
+  result: SelectorProjectSettingsWritten,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Conflict":
+      return response(409, {
+        ...nativeHttpError(
+          "SettingsRevisionConflict",
+          "The selector settings moved under this write.",
+        ),
+        settings: selectorProjectSettingsBody(result.settings),
+      });
+    case "Written":
+      return response(200, selectorProjectSettingsBody(result.settings));
+    default:
+      return assertNever(result);
+  }
+}
+
+export function selectorSettingsHistoryResponse(
+  result: SelectorProjectSettingsHistoryRead,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, { revisions: result.revisions });
 }
 
 export function executionsResponse(

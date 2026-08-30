@@ -18,6 +18,7 @@ import {
   draftRevisionSchema,
   publicMutationSchema,
   repositoryConfigurationImportSchema,
+  selectorProjectSettingsSchema,
 } from "./requests.ts";
 
 export function nativeHttpContractDocument(): unknown {
@@ -51,6 +52,8 @@ export function nativeHttpContractDocument(): unknown {
     },
     briefFinalization:
       "a PullRequest finalization requires the brief to name a branch, and a target that is not it",
+    selectorProjectSettings:
+      "installation settings are defaults; an absent override inherits one, and a write replaces the whole set under the revision it was read at",
     routes: nativeHttpRoutes,
     schemas: {
       publicMutation: z.toJSONSchema(publicMutationSchema),
@@ -60,6 +63,7 @@ export function nativeHttpContractDocument(): unknown {
       ),
       draftCreation: z.toJSONSchema(draftCreationSchema),
       draftRevision: z.toJSONSchema(draftRevisionSchema),
+      selectorProjectSettings: z.toJSONSchema(selectorProjectSettingsSchema),
     },
   };
 }

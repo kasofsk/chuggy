@@ -43,6 +43,8 @@ import {
   resumePricings,
   runCostBases,
   schedulerFreshnesses,
+  selectorDispatchModes,
+  selectorModes,
 } from "../../src/contract/rosters.ts";
 import {
   nativeHttpPageItemsMax,
@@ -112,6 +114,7 @@ import type {
   DraftState,
 } from "../../src/interpreter/authoring.ts";
 import type { RepositoryConfigurationFault } from "../../src/interpreter/repositoryConfiguration.ts";
+import type { SelectorRuntimeSettings } from "../../src/interpreter/selector.ts";
 
 function keysOf(record: Readonly<Record<string, true>>): readonly string[] {
   return Object.keys(record).sort();
@@ -257,6 +260,19 @@ test("the rosters with no runtime list are exhaustive over their unions", () => 
   assert.deepEqual(sorted(resultVerdicts), keysOf(verdicts));
   assert.deepEqual(sorted(dispatchViewResults), keysOf(dispatchResults));
   assert.deepEqual(sorted(notificationResults), keysOf(batches));
+});
+
+test("the selector rosters are exhaustive over the settings they name", () => {
+  const modes: Record<SelectorRuntimeSettings["mode"], true> = {
+    Running: true,
+    Paused: true,
+  };
+  const dispatch: Record<SelectorRuntimeSettings["dispatchMode"], true> = {
+    Automatic: true,
+    ApprovalRequired: true,
+  };
+  assert.deepEqual(sorted(selectorModes), keysOf(modes));
+  assert.deepEqual(sorted(selectorDispatchModes), keysOf(dispatch));
 });
 
 test("the authoring rosters are exhaustive over the model unions", () => {

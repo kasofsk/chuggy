@@ -19,6 +19,12 @@ import {
   ticketNativeActionsResponseSchema,
 } from "../../src/contract/responses.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
+import { resolvedSelectorSettings } from "../../src/interpreter/selector.ts";
+import type {
+  SelectorProjectSettingsAdministration,
+  SelectorProjectSettingsRecord,
+} from "../../src/interpreter/selectorProjectSettings.ts";
+import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asInstallationId, asTicketId } from "../../src/domain/ids.ts";
 
 const authority = {
@@ -295,6 +301,80 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
   };
 }
 
+const selectorPartition = {
+  tenant: asTenantId("acme"),
+  project: asProjectId("atlas"),
+};
+
+const selectorDefaults = {
+  revision: 3,
+  mode: "Running",
+  dispatchMode: "ApprovalRequired",
+  basePrompt: "Select at most one currently dispatchable ticket.",
+  modelAllowlist: ["*"],
+  toolAllowlist: ["*"],
+  limits: {
+    tokensPerDecision: 8192,
+    millisecondsPerDecision: 120_000,
+    toolCallsPerDecision: 20,
+    inputBytesPerDecision: 1_048_576,
+    candidatePagesPerDecision: 1,
+    concurrentDecisions: 4,
+    selectionsPerMinute: 60,
+  },
+  operationalContextMaxAgeMs: 30_000,
+} as const;
+
+function selectorRecord(
+  revision: number,
+  northStar?: string,
+): SelectorProjectSettingsRecord {
+  const overrides = northStar === undefined ? {} : { northStar };
+  return {
+    partition: selectorPartition,
+    revision,
+    overrides,
+    effective: resolvedSelectorSettings(
+      selectorPartition,
+      selectorDefaults,
+      revision,
+      overrides,
+    ),
+  };
+}
+
+function fakeSelectorSettings(
+  calls: string[],
+): SelectorProjectSettingsAdministration {
+  return {
+    read: () => {
+      calls.push("selector-settings:read");
+      return Promise.resolve({
+        result: "Found",
+        settings: selectorRecord(1, "Ship the console."),
+      });
+    },
+    write: (_principal, _partition, expectedRevision, overrides) => {
+      calls.push(
+        `selector-settings:write:${String(expectedRevision)}:${String(overrides.northStar)}`,
+      );
+      return expectedRevision === 1
+        ? Promise.resolve({
+            result: "Written",
+            settings: selectorRecord(2, overrides.northStar),
+          })
+        : Promise.resolve({
+            result: "Conflict",
+            settings: selectorRecord(1, "Ship the console."),
+          });
+    },
+    history: (_principal, _partition, after, limit) => {
+      calls.push(`selector-settings:history:${String(after)}:${String(limit)}`);
+      return Promise.resolve({ result: "Found", revisions: [] });
+    },
+  };
+}
+
 function appOf(
   calls: string[],
   authenticated = true,
@@ -313,8 +393,92 @@ function appOf(
     { ready: () => Promise.resolve(true) },
     authority,
     limits,
+    undefined,
+    fakeSelectorSettings(calls),
   );
 }
+
+const selectorSettingsPath =
+  "/api/v1/tenants/acme/projects/atlas/selector-settings";
+
+test("a project's selector settings are read, written and historied", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const headers = { authorization: "Bearer valid" };
+  const found = await app.inject({
+    method: "GET",
+    url: selectorSettingsPath,
+    headers,
+  });
+  assert.equal(found.statusCode, 200);
+  assert.equal(
+    found.json<{ effective: { northStar?: string } }>().effective.northStar,
+    "Ship the console.",
+  );
+  const written = await app.inject({
+    method: "PUT",
+    url: selectorSettingsPath,
+    headers: {
+      ...headers,
+      "content-type": "application/vnd.chuggy.v1+json",
+    },
+    payload: JSON.stringify({
+      expectedRevision: 1,
+      overrides: { northStar: "Land the panel." },
+    }),
+  });
+  assert.equal(written.statusCode, 200);
+  assert.equal(written.json<{ revision: number }>().revision, 2);
+  const listed = await app.inject({
+    method: "GET",
+    url: `${selectorSettingsPath}/history?after=1&limit=10`,
+    headers,
+  });
+  assert.equal(listed.statusCode, 200);
+  assert.deepEqual(calls, [
+    "selector-settings:read",
+    "selector-settings:write:1:Land the panel.",
+    "selector-settings:history:1:10",
+  ]);
+});
+
+test("a settings write that lost its fence is a conflict rather than a rewrite", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const refused = await app.inject({
+    method: "PUT",
+    url: selectorSettingsPath,
+    headers: {
+      authorization: "Bearer valid",
+      "content-type": "application/vnd.chuggy.v1+json",
+    },
+    payload: JSON.stringify({ expectedRevision: 9, overrides: {} }),
+  });
+  assert.equal(refused.statusCode, 409);
+  assert.equal(
+    refused.json<HttpErrorEnvelope>().error.code,
+    "SettingsRevisionConflict",
+  );
+});
+
+test("a settings body naming a field the wire does not is refused", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const refused = await app.inject({
+    method: "PUT",
+    url: selectorSettingsPath,
+    headers: {
+      authorization: "Bearer valid",
+      "content-type": "application/vnd.chuggy.v1+json",
+    },
+    payload: JSON.stringify({
+      expectedRevision: 1,
+      overrides: { concurrentDecisions: 9 },
+    }),
+  });
+  assert.equal(refused.statusCode, 400);
+  assert.deepEqual(calls, []);
+});
 
 test("authentication failure never reaches NativeWeb", async () => {
   const calls: string[] = [];

@@ -54,7 +54,7 @@ const request: SelectorPolicyRequest = {
       },
     },
   },
-  instructions: { revision: 1, content: "select" },
+  instructions: { revision: "1.0", content: "select" },
   constraints: {
     models: ["model"],
     tools: [],

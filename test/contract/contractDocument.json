@@ -27,6 +27,7 @@
     "cursor": "opaque canonical base64url"
   },
   "briefFinalization": "a PullRequest finalization requires the brief to name a branch, and a target that is not it",
+  "selectorProjectSettings": "installation settings are defaults; an absent override inherits one, and a write replaces the whole set under the revision it was read at",
   "routes": {
     "contract": "/api/v1/contract",
     "installation": "/api/v1/installation",
@@ -38,6 +39,8 @@
     "nativeActions": "/api/v1/tenants/:tenant/projects/:project/native-actions",
     "operationalStatus": "/api/v1/tenants/:tenant/projects/:project/operational-status",
     "selectorContext": "/api/v1/tenants/:tenant/projects/:project/selector-context",
+    "selectorSettings": "/api/v1/tenants/:tenant/projects/:project/selector-settings",
+    "selectorSettingsHistory": "/api/v1/tenants/:tenant/projects/:project/selector-settings/history",
     "executions": "/api/v1/tenants/:tenant/projects/:project/executions",
     "execution": "/api/v1/tenants/:tenant/projects/:project/executions/:execution",
     "outputContent": "/api/v1/tenants/:tenant/projects/:project/executions/:execution/artifacts/:ordinal",
@@ -645,6 +648,97 @@
         "authoring",
         "brief"
       ],
+      "additionalProperties": false
+    },
+    "selectorProjectSettings": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "overrides": {
+          "type": "object",
+          "properties": {
+            "northStar": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 65536
+            },
+            "mode": {
+              "type": "string",
+              "enum": ["Running", "Paused"]
+            },
+            "dispatchMode": {
+              "type": "string",
+              "enum": ["Automatic", "ApprovalRequired"]
+            },
+            "basePrompt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 65536
+            },
+            "modelAllowlist": {
+              "maxItems": 64,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "toolAllowlist": {
+              "maxItems": 64,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "limits": {
+              "type": "object",
+              "properties": {
+                "tokensPerDecision": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "millisecondsPerDecision": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "toolCallsPerDecision": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "inputBytesPerDecision": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "candidatePagesPerDecision": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "additionalProperties": false
+            },
+            "operationalContextMaxAgeMs": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": ["expectedRevision", "overrides"],
       "additionalProperties": false
     }
   }

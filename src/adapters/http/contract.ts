@@ -22,8 +22,13 @@ import {
   draftRevisionSchema,
   publicMutationSchema,
   repositoryConfigurationImportSchema,
+  selectorProjectSettingsSchema,
   type PublicMutation,
 } from "../../contract/requests.ts";
+import type {
+  SelectorProjectLimitOverrides,
+  SelectorProjectOverrides,
+} from "../../interpreter/selector.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import {
   asCanonicalConfiguration,
@@ -165,6 +170,34 @@ export function parseConfigurationCreation(
       ? {}
       : { parent: asConfigurationRevisionId(value.parent) }),
     canonical: asCanonicalConfiguration(value.canonical),
+  };
+}
+
+/**
+ * Drops the keys the parsed body carries as undefined, because an optional
+ * override the interpreter holds is absent rather than present-and-undefined.
+ */
+function withoutAbsentFields<T extends object>(
+  value: T,
+): Partial<{ [Key in keyof T]: Exclude<T[Key], undefined> }> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, held]) => held !== undefined),
+  ) as Partial<{ [Key in keyof T]: Exclude<T[Key], undefined> }>;
+}
+
+/** The whole override set and the revision it was read at, as the interpreter takes them. */
+export function parseSelectorProjectSettings(body: unknown): {
+  readonly expectedRevision: number;
+  readonly overrides: SelectorProjectOverrides;
+} {
+  const value = selectorProjectSettingsSchema.parse(body);
+  const limits: SelectorProjectLimitOverrides | undefined =
+    value.overrides.limits === undefined
+      ? undefined
+      : withoutAbsentFields(value.overrides.limits);
+  return {
+    expectedRevision: value.expectedRevision,
+    overrides: withoutAbsentFields({ ...value.overrides, limits }),
   };
 }
 

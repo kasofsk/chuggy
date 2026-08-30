@@ -128,6 +128,7 @@ export const allProjectAccessKinds = [
   "Mutate",
   "DispatchTicket",
   "ProposeDispatch",
+  "ManageSelector",
 ] as const;
 
 export type ProjectAccessKind = (typeof allProjectAccessKinds)[number];

@@ -9,7 +9,9 @@ import {
   type SelectorPolicyHost,
   type SelectorProjectState,
   type SelectorProposal,
-  type SelectorRuntimeSettings,
+  selectorSettingsFence,
+  selectorSettingsFenceHolds,
+  type SelectorResolvedSettings,
   type SelectorRuntimeSettingsSource,
   type SelectorStateStore,
   type SelectorTicketService,
@@ -127,13 +129,15 @@ async function observeProject(
   identities: SelectorIdentityFactory,
   control: SelectorRuntimeSettingsSource,
 ): Promise<ProjectObservationResult> {
-  let settings: SelectorRuntimeSettings;
+  let settings: SelectorResolvedSettings;
   try {
-    settings = await control.settings();
+    if ((await control.settings()).mode === "Paused")
+      return stoppedProjectObservation;
+    settings = await control.projectSettings(partition);
   } catch {
     return projectObservationFailure("Settings", partition);
   }
-  if (settings.mode === "Paused") return stoppedProjectObservation;
+  if (settings.mode === "Paused") return emptyProjectObservation;
   const identity = identities.next(partition);
   let allocated: boolean;
   try {
@@ -176,9 +180,48 @@ function projectObservationFailure(
   return { ...emptyProjectObservation, failures: [{ phase, partition }] };
 }
 
+/** Runs one decision under settings the fence has just been re-read against. */
+async function observeFencedProject(
+  partition: Partition,
+  settings: SelectorResolvedSettings,
+  store: SelectorStateStore,
+  source: SelectorRuntimeSource,
+  policy: SelectorPolicyHost,
+  identity: SelectorCycleIdentity,
+): Promise<SelectorProposal | undefined> {
+  const state = (await store.project(partition)) ?? initialState(partition);
+  const observation = await observeSelectorProject(
+    state,
+    source,
+    100,
+    Math.floor(settings.limits.inputBytesPerDecision / 2),
+  );
+  if (observation === undefined) {
+    await store.terminateAttempt(
+      identity.selectorDecisionReference,
+      "no current observation",
+    );
+    return undefined;
+  }
+  await store.runningAttempt(
+    identity.selectorDecisionReference,
+    observation,
+    selectorSettingsFence(settings),
+  );
+  return runObservedSelectorCycle(
+    state,
+    observation,
+    source,
+    store,
+    policy,
+    identity,
+    settings,
+  );
+}
+
 async function observePermittedProject(
   partition: Partition,
-  expectedSettings: SelectorRuntimeSettings,
+  expectedSettings: SelectorResolvedSettings,
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
@@ -190,10 +233,13 @@ async function observePermittedProject(
   let observed = false;
   let stop = false;
   try {
-    const settings = await control.settings();
+    const settings = await control.projectSettings(partition);
     if (
       settings.mode === "Paused" ||
-      settings.revision !== expectedSettings.revision
+      !selectorSettingsFenceHolds(
+        selectorSettingsFence(expectedSettings),
+        settings,
+      )
     ) {
       stop = true;
       await store.terminateAttempt(
@@ -201,36 +247,14 @@ async function observePermittedProject(
         "settings changed before policy execution",
       );
     } else {
-      const state = (await store.project(partition)) ?? initialState(partition);
-      const observation = await observeSelectorProject(
-        state,
+      proposal = await observeFencedProject(
+        partition,
+        settings,
+        store,
         source,
-        100,
-        Math.floor(settings.limits.inputBytesPerDecision / 2),
+        policy,
+        identity,
       );
-      if (observation !== undefined)
-        await store.runningAttempt(
-          identity.selectorDecisionReference,
-          observation,
-          settings.revision,
-        );
-      proposal =
-        observation === undefined
-          ? undefined
-          : await runObservedSelectorCycle(
-              state,
-              observation,
-              source,
-              store,
-              policy,
-              identity,
-              settings,
-            );
-      if (observation === undefined)
-        await store.terminateAttempt(
-          identity.selectorDecisionReference,
-          "no current observation",
-        );
       observed = true;
     }
   } catch (error) {

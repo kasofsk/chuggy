@@ -13,11 +13,18 @@ import {
   countSchema,
   digestSchema,
   dispatchViewSchemaVersion,
+  selectorAllowlistNameCharsMax,
+  selectorAllowlistNamesMax,
+  selectorSettingsTextCharsMax,
   ticketNumberSchema,
 } from "./http.ts";
 import { authoringSchema } from "./authoring.ts";
 import { briefSchema } from "./brief.ts";
-import { nativeActionResolutions } from "./rosters.ts";
+import {
+  nativeActionResolutions,
+  selectorDispatchModes,
+  selectorModes,
+} from "./rosters.ts";
 
 /** An identity a body may carry, bounded only by the body limit itself. */
 const bodyIdentitySchema = z.string().min(1);
@@ -94,4 +101,44 @@ export const draftRevisionSchema = z.strictObject({
 export const submissionSchema = z.strictObject({
   operation: bodyIdentitySchema,
   mutation: publicMutationSchema,
+});
+
+const selectorLimitSchema = z.number().int().safe().positive();
+const selectorSettingsTextSchema = z
+  .string()
+  .min(1)
+  .max(selectorSettingsTextCharsMax);
+const selectorAllowlistSchema = z
+  .array(z.string().min(1).max(selectorAllowlistNameCharsMax))
+  .max(selectorAllowlistNamesMax);
+
+/**
+ * What one project sets for itself, an absent field meaning the installation
+ * default, so a write clears an override by omitting it. `concurrentDecisions`
+ * and `selectionsPerMinute` are not here, because they bound one shared pool
+ * rather than one project's behaviour.
+ */
+export const selectorProjectOverridesSchema = z.strictObject({
+  northStar: selectorSettingsTextSchema.optional(),
+  mode: z.enum(selectorModes).optional(),
+  dispatchMode: z.enum(selectorDispatchModes).optional(),
+  basePrompt: selectorSettingsTextSchema.optional(),
+  modelAllowlist: selectorAllowlistSchema.optional(),
+  toolAllowlist: selectorAllowlistSchema.optional(),
+  limits: z
+    .strictObject({
+      tokensPerDecision: selectorLimitSchema.optional(),
+      millisecondsPerDecision: selectorLimitSchema.optional(),
+      toolCallsPerDecision: selectorLimitSchema.optional(),
+      inputBytesPerDecision: selectorLimitSchema.optional(),
+      candidatePagesPerDecision: selectorLimitSchema.optional(),
+    })
+    .optional(),
+  operationalContextMaxAgeMs: selectorLimitSchema.optional(),
+});
+
+/** The whole override set, written under the revision the writer read it at. */
+export const selectorProjectSettingsSchema = z.strictObject({
+  expectedRevision: countSchema,
+  overrides: selectorProjectOverridesSchema,
 });

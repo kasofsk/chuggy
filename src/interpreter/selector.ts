@@ -72,7 +72,7 @@ export interface SelectorStateStore {
   runningAttempt(
     attempt: string,
     observation: SelectorObservation,
-    settingsRevision: number,
+    fence: SelectorSettingsFence,
   ): Promise<void>;
   quarantineAttempt(attempt: string): Promise<void>;
   terminateAttempt(attempt: string, evidence: string): Promise<void>;
@@ -289,6 +289,110 @@ export type SelectorPolicyControls = Pick<
   "modelAllowlist" | "toolAllowlist" | "limits" | "operationalContextMaxAgeMs"
 >;
 
+/**
+ * The limits a project may set for itself. `concurrentDecisions` and
+ * `selectionsPerMinute` are not among them, because they bound one shared pool
+ * rather than one project's behaviour.
+ */
+export type SelectorProjectLimitOverrides = Partial<
+  Omit<
+    SelectorRuntimeSettings["limits"],
+    "concurrentDecisions" | "selectionsPerMinute"
+  >
+>;
+
+/** What a project sets for itself, each absent field inheriting the installation default. */
+export interface SelectorProjectOverrides {
+  readonly northStar?: string;
+  readonly mode?: SelectorRuntimeSettings["mode"];
+  readonly dispatchMode?: SelectorRuntimeSettings["dispatchMode"];
+  readonly basePrompt?: string;
+  readonly modelAllowlist?: readonly string[];
+  readonly toolAllowlist?: readonly string[];
+  readonly limits?: SelectorProjectLimitOverrides;
+  readonly operationalContextMaxAgeMs?: number;
+}
+
+/**
+ * One project's settings, resolved against the installation defaults.
+ * `revision` remains the installation's and `projectRevision` is the project's,
+ * because either row moving changes what a decision would have run under.
+ */
+export interface SelectorResolvedSettings extends SelectorRuntimeSettings {
+  readonly partition: Partition;
+  readonly projectRevision: number;
+  readonly northStar?: string;
+}
+
+/** The revisions an in-flight decision is conditioned on, which is both rows it read. */
+export interface SelectorSettingsFence {
+  readonly settingsRevision: number;
+  readonly projectSettingsRevision: number;
+}
+
+/** Reads the fence a resolved settings value stands on. */
+export function selectorSettingsFence(
+  settings: SelectorResolvedSettings,
+): SelectorSettingsFence {
+  return {
+    settingsRevision: settings.revision,
+    projectSettingsRevision: settings.projectRevision,
+  };
+}
+
+/** Whether both halves of the fence still name what the decision started under. */
+export function selectorSettingsFenceHolds(
+  fence: SelectorSettingsFence,
+  settings: SelectorResolvedSettings,
+): boolean {
+  return (
+    fence.settingsRevision === settings.revision &&
+    fence.projectSettingsRevision === settings.projectRevision
+  );
+}
+
+/** Resolves every field to the project's own value, or to the installation default. */
+export function resolvedSelectorSettings(
+  partition: Partition,
+  defaults: SelectorRuntimeSettings,
+  projectRevision: number,
+  overrides: SelectorProjectOverrides,
+): SelectorResolvedSettings {
+  const limits = overrides.limits ?? {};
+  return {
+    partition,
+    projectRevision,
+    revision: defaults.revision,
+    mode: overrides.mode ?? defaults.mode,
+    dispatchMode: overrides.dispatchMode ?? defaults.dispatchMode,
+    basePrompt: overrides.basePrompt ?? defaults.basePrompt,
+    modelAllowlist: overrides.modelAllowlist ?? defaults.modelAllowlist,
+    toolAllowlist: overrides.toolAllowlist ?? defaults.toolAllowlist,
+    limits: {
+      tokensPerDecision:
+        limits.tokensPerDecision ?? defaults.limits.tokensPerDecision,
+      millisecondsPerDecision:
+        limits.millisecondsPerDecision ??
+        defaults.limits.millisecondsPerDecision,
+      toolCallsPerDecision:
+        limits.toolCallsPerDecision ?? defaults.limits.toolCallsPerDecision,
+      inputBytesPerDecision:
+        limits.inputBytesPerDecision ?? defaults.limits.inputBytesPerDecision,
+      candidatePagesPerDecision:
+        limits.candidatePagesPerDecision ??
+        defaults.limits.candidatePagesPerDecision,
+      concurrentDecisions: defaults.limits.concurrentDecisions,
+      selectionsPerMinute: defaults.limits.selectionsPerMinute,
+    },
+    operationalContextMaxAgeMs:
+      overrides.operationalContextMaxAgeMs ??
+      defaults.operationalContextMaxAgeMs,
+    ...(overrides.northStar === undefined
+      ? {}
+      : { northStar: overrides.northStar }),
+  };
+}
+
 export interface SelectorDrainStatus {
   readonly mode: SelectorRuntimeSettings["mode"];
   readonly awaitingApproval: number;
@@ -310,6 +414,7 @@ export interface SelectorSettingsRevision {
 /** Platform-owned, hot-reloadable selector controls with optimistic concurrency. */
 export interface SelectorRuntimeSettingsSource {
   settings(): Promise<SelectorRuntimeSettings>;
+  projectSettings(partition: Partition): Promise<SelectorResolvedSettings>;
 }
 
 export interface SelectorRuntimeControlStore extends SelectorRuntimeSettingsSource {
@@ -352,8 +457,9 @@ export interface SelectorPolicyRequest {
   readonly attempt: string;
   readonly observation: SelectorObservation;
   readonly instructions: {
-    readonly revision: number;
+    readonly revision: string;
     readonly content: string;
+    readonly northStar?: string;
   };
   readonly constraints: {
     readonly models: readonly string[];
@@ -639,7 +745,7 @@ export async function dryRunSelectorPolicy(
   policy: SelectorPolicyHost,
   source: Pick<SelectorObservationSource, "decisionDeadline">,
   observation: SelectorObservation,
-  settings: SelectorRuntimeSettings,
+  settings: SelectorResolvedSettings,
 ): Promise<SelectorPolicyResult> {
   const execution = await executeSelectorPolicy(
     source,
@@ -670,17 +776,28 @@ export interface SelectorCycleIdentity {
   readonly selectorDecisionReference: string;
 }
 
+/**
+ * Both halves of the fence, which is what identifies the instructions a
+ * decision was given: the project's North Star and every field it overrode are
+ * recovered from the settings history at this pair.
+ */
+function selectorInstructionsVersion(
+  settings: SelectorResolvedSettings,
+): string {
+  return `${String(settings.revision)}.${String(settings.projectRevision)}`;
+}
+
 function selectorInteraction(
   execution: SelectorPolicyExecution,
   observation: SelectorObservation,
   identity: SelectorCycleIdentity,
-  settings: SelectorRuntimeSettings,
+  settings: SelectorResolvedSettings,
   partition: Partition,
 ): SelectorInteraction {
   return {
     decision: identity.selectorDecisionReference,
     partition,
-    instructionsVersion: String(settings.revision),
+    instructionsVersion: selectorInstructionsVersion(settings),
     instructions: settings.basePrompt,
     observedView: observation.candidates,
     observedToken: observation.token,
@@ -703,7 +820,7 @@ async function executeSelectorPolicy(
   source: Pick<SelectorObservationSource, "decisionDeadline">,
   policy: SelectorPolicyHost,
   observation: SelectorObservation,
-  settings: SelectorRuntimeSettings,
+  settings: SelectorResolvedSettings,
   attempt: string,
 ): Promise<SelectorPolicyExecution> {
   const policyObservation = persistablePolicyObservation(observation, settings);
@@ -711,8 +828,11 @@ async function executeSelectorPolicy(
     attempt,
     observation: Object.freeze(policyObservation),
     instructions: Object.freeze({
-      revision: settings.revision,
+      revision: selectorInstructionsVersion(settings),
       content: settings.basePrompt,
+      ...(settings.northStar === undefined
+        ? {}
+        : { northStar: settings.northStar }),
     }),
     constraints: policyConstraints(settings),
   });
@@ -755,7 +875,7 @@ async function executeSelectorPolicy(
 
 function persistablePolicyObservation(
   observation: SelectorObservation,
-  settings: SelectorRuntimeSettings,
+  settings: SelectorResolvedSettings,
 ): SelectorObservation {
   try {
     if (settings.basePrompt.length < 1 || settings.basePrompt.length > 65_536)
@@ -764,6 +884,7 @@ function persistablePolicyObservation(
       {
         token: observation.token,
         instructions: settings.basePrompt,
+        northStar: settings.northStar ?? null,
         candidates: observation.candidates,
         context: {
           operationalContext: observation.operationalContext,
@@ -848,7 +969,7 @@ function policyFailureCode(error: unknown): string {
 function failedSelectorInteraction(
   observation: SelectorObservation,
   identity: SelectorCycleIdentity,
-  settings: SelectorRuntimeSettings,
+  settings: SelectorResolvedSettings,
   partition: Partition,
   error: unknown,
   completedAt: string,
@@ -858,7 +979,7 @@ function failedSelectorInteraction(
   return {
     decision: identity.selectorDecisionReference,
     partition,
-    instructionsVersion: String(settings.revision),
+    instructionsVersion: selectorInstructionsVersion(settings),
     instructions: settings.basePrompt,
     observedView: observation.candidates,
     observedToken: observation.token,
@@ -882,7 +1003,7 @@ async function recordFailedSelectorCycle(
   state: SelectorProjectState,
   observation: SelectorObservation,
   identity: SelectorCycleIdentity,
-  settings: SelectorRuntimeSettings,
+  settings: SelectorResolvedSettings,
   error: unknown,
   completedAt: string,
 ): Promise<void> {
@@ -912,7 +1033,7 @@ async function recordCompletedSelectorCycle(
   state: SelectorProjectState,
   observation: SelectorObservation,
   identity: SelectorCycleIdentity,
-  settings: SelectorRuntimeSettings,
+  settings: SelectorResolvedSettings,
   execution: SelectorPolicyExecution,
 ): Promise<SelectorProposal | undefined> {
   const result = execution.result;
@@ -967,7 +1088,7 @@ export async function runSelectorCycle(
   store: SelectorStateStore,
   policy: SelectorPolicyHost,
   identity: SelectorCycleIdentity,
-  settings: SelectorRuntimeSettings,
+  settings: SelectorResolvedSettings,
 ): Promise<SelectorProposal | undefined> {
   const observation = await observeSelectorProject(
     state,
@@ -995,7 +1116,7 @@ export async function runObservedSelectorCycle(
   store: SelectorStateStore,
   policy: SelectorPolicyHost,
   identity: SelectorCycleIdentity,
-  settings: SelectorRuntimeSettings,
+  settings: SelectorResolvedSettings,
 ): Promise<SelectorProposal | undefined> {
   if (!observationMatchesProject(observation, state.partition))
     throw new Error("selector observation crossed its project boundary");

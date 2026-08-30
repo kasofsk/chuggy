@@ -6,9 +6,11 @@ import {
   observeSelectorProject,
   runObservedSelectorCycle,
   runSelectorCycle,
+  resolvedSelectorSettings,
   selectorBacklogsAdmitDispatch,
   type SelectorRuntimeControlStore,
   type SelectorRuntimeSettings,
+  type SelectorRuntimeSettingsSource,
   type SelectorPolicyExecution,
   type SelectorPolicyHost,
   type SelectorPolicyRequest,
@@ -115,6 +117,24 @@ const runtimeSettings: SelectorRuntimeSettings = {
   },
   operationalContextMaxAgeMs: 30_000,
 };
+
+/** The installation defaults as one project resolves them, overriding nothing. */
+function resolved(
+  settings: SelectorRuntimeSettings = runtimeSettings,
+): ReturnType<typeof resolvedSelectorSettings> {
+  return resolvedSelectorSettings(partition, settings, 0, {});
+}
+
+/** A source whose every project resolves the installation defaults it is given. */
+function settingsSource(
+  read: () => Promise<SelectorRuntimeSettings>,
+): SelectorRuntimeSettingsSource {
+  return {
+    settings: read,
+    projectSettings: async (of) =>
+      resolvedSelectorSettings(of, await read(), 0, {}),
+  };
+}
 
 function waitingExecution(
   workingMemory: JsonValue = {},
@@ -472,10 +492,9 @@ test("a paused runtime creates no new observations but still drains durable work
         selectorDecisionReference: "unused",
       }),
     },
-    {
-      settings: () =>
-        Promise.resolve({ ...runtimeSettings, revision: 4, mode: "Paused" }),
-    },
+    settingsSource(() =>
+      Promise.resolve({ ...runtimeSettings, revision: 4, mode: "Paused" }),
+    ),
   );
   assert.deepEqual(result, {
     observed: 0,
@@ -522,7 +541,7 @@ test("inventory progress follows scanned projects when a permit is unavailable",
         selectorDecisionReference: "inventory-decision",
       }),
     },
-    { settings: () => Promise.resolve(runtimeSettings) },
+    settingsSource(() => Promise.resolve(runtimeSettings)),
     { projectsMax: 2, deliveriesMax: 1, reconciliationsMax: 1 },
   );
   assert.equal(result.observed, 1);
@@ -556,12 +575,20 @@ test("a pause observed after permit acquisition prevents a new decision", async 
       }),
     },
     {
-      settings: () => {
+      settings: () => Promise.resolve(runtimeSettings),
+      projectSettings: (of) => {
         settingsReads += 1;
-        return Promise.resolve({
-          ...runtimeSettings,
-          mode: settingsReads === 3 ? "Paused" : "Running",
-        });
+        return Promise.resolve(
+          resolvedSelectorSettings(
+            of,
+            {
+              ...runtimeSettings,
+              mode: settingsReads === 2 ? "Paused" : "Running",
+            },
+            0,
+            {},
+          ),
+        );
       },
     },
   );
@@ -622,7 +649,7 @@ test("a stale persisted observation releases its permit without starting policy"
       operation: asOperationId("stale-operation"),
       selectorDecisionReference: "stale-decision",
     },
-    runtimeSettings,
+    resolved(),
   );
   assert.equal(started, false);
   assert.equal(releases, 1);
@@ -652,7 +679,7 @@ test("unconfirmed attempt reconciliation yields to newer attempts", async () => 
         selectorDecisionReference: "unused",
       }),
     },
-    { settings: () => Promise.resolve(runtimeSettings) },
+    settingsSource(() => Promise.resolve(runtimeSettings)),
   );
   assert.equal(deferred, 1);
 });
@@ -694,7 +721,7 @@ test("one failed attempt inspection does not starve later quarantines", async ()
         selectorDecisionReference: "unused",
       }),
     },
-    { settings: () => Promise.resolve(runtimeSettings) },
+    settingsSource(() => Promise.resolve(runtimeSettings)),
   );
   assert.deepEqual(inspected, ["poisoned", "healthy"]);
   assert.deepEqual(rotated, ["poisoned"]);
@@ -737,7 +764,7 @@ test("a selector decision uses and records one hot-loaded prompt revision", asyn
       operation: asOperationId("prompt-operation"),
       selectorDecisionReference: "prompt-decision",
     },
-    settings,
+    resolved(settings),
   );
   assert.equal(recorded, settings.basePrompt);
   assert.equal(constrainedPrompt, settings.basePrompt);
@@ -811,7 +838,7 @@ test("the runtime deadline confirms capability cancellation before returning", a
       operation: asOperationId("timed-operation"),
       selectorDecisionReference: "timed-decision",
     },
-    runtimeSettings,
+    resolved(),
   );
   assert.equal(result, undefined);
   assert.equal(aborted, true);
@@ -854,7 +881,7 @@ test("unconfirmed capability cancellation quarantines its durable attempt", asyn
         selectorDecisionReference: "unsafe-decision",
       }),
     },
-    { settings: () => Promise.resolve(runtimeSettings) },
+    settingsSource(() => Promise.resolve(runtimeSettings)),
   );
   assert.equal(released, 0);
   assert.equal(quarantined, "unsafe-decision");
@@ -886,7 +913,7 @@ test("an unconfirmed permit release enters reconciliation", async () => {
         selectorDecisionReference: "release-decision",
       }),
     },
-    { settings: () => Promise.resolve(runtimeSettings) },
+    settingsSource(() => Promise.resolve(runtimeSettings)),
   );
   assert.equal(quarantined, "release-decision");
   assert.deepEqual(result.failures, [
@@ -908,7 +935,6 @@ test("settings and permit failures remain isolated to their projects", async () 
     tenant: partition.tenant,
     project: asProjectId("healthy-after-boundary-failures"),
   };
-  let settingsReads = 0;
   const result = await selectorRunOnce(
     {
       ...stateStore(() => undefined),
@@ -945,12 +971,13 @@ test("settings and permit failures remain isolated to their projects", async () 
       }),
     },
     {
-      settings: () => {
-        settingsReads += 1;
-        return settingsReads === 2
+      settings: () => Promise.resolve(runtimeSettings),
+      projectSettings: (of) =>
+        of.project === settingsBroken.project
           ? Promise.reject(new Error("settings unavailable"))
-          : Promise.resolve(runtimeSettings);
-      },
+          : Promise.resolve(
+              resolvedSelectorSettings(of, runtimeSettings, 0, {}),
+            ),
     },
     { projectsMax: 3, deliveriesMax: 1, reconciliationsMax: 1 },
   );
@@ -991,7 +1018,11 @@ test("policy-host constraints and observations are immutable", async () => {
       operation: asOperationId("enforcement-operation"),
       selectorDecisionReference: "enforcement-decision",
     },
-    { ...runtimeSettings, modelAllowlist: ["model-1"], toolAllowlist: [] },
+    resolved({
+      ...runtimeSettings,
+      modelAllowlist: ["model-1"],
+      toolAllowlist: [],
+    }),
   );
   assert.equal(mutationRejected, true);
   assert.equal(observationMutationRejected, true);
@@ -1022,7 +1053,7 @@ test("a rejected measured execution retains its available provenance", async () 
       operation: asOperationId("rejected-operation"),
       selectorDecisionReference: "rejected-decision",
     },
-    { ...runtimeSettings, modelAllowlist: ["another-model"] },
+    resolved({ ...runtimeSettings, modelAllowlist: ["another-model"] }),
   );
   assert.deepEqual(interaction?.result, {
     outcome: "Failed",
@@ -1060,7 +1091,7 @@ test("structurally invalid JSON is audited instead of reaching persistence", asy
       operation: asOperationId("malformed-operation"),
       selectorDecisionReference: "malformed-decision",
     },
-    runtimeSettings,
+    resolved(),
   );
   assert.deepEqual(recordedFailure, {
     outcome: "Failed",
@@ -1097,7 +1128,7 @@ test("policy timestamps compare chronologically across accepted precisions", asy
       operation: asOperationId("timestamp-operation"),
       selectorDecisionReference: "timestamp-decision",
     },
-    runtimeSettings,
+    resolved(),
   );
   assert.deepEqual(result, waitingExecution().result);
 });
@@ -1132,7 +1163,7 @@ test("unpersistable selector input is rejected before policy execution", async (
       operation: asOperationId("oversized-operation"),
       selectorDecisionReference: "oversized-decision",
     },
-    runtimeSettings,
+    resolved(),
   ).catch(() => undefined);
   assert.equal(started, false);
 });
@@ -1164,7 +1195,7 @@ test("invalid policy JSON is recorded as a bounded failed interaction", async ()
       operation: asOperationId("invalid-json-operation"),
       selectorDecisionReference: "invalid-json-decision",
     },
-    runtimeSettings,
+    resolved(),
   );
   assert.deepEqual(recordedFailure, {
     outcome: "Failed",
@@ -1215,7 +1246,7 @@ test("one project failure does not block later projects or durable delivery", as
         selectorDecisionReference: `decision-${scope.project}`,
       }),
     },
-    { settings: () => Promise.resolve(runtimeSettings) },
+    settingsSource(() => Promise.resolve(runtimeSettings)),
     { projectsMax: 2, deliveriesMax: 1, reconciliationsMax: 1 },
   );
   assert.equal(result.observed, 1);
@@ -1263,6 +1294,15 @@ test("one reconciliation failure does not abandon the rest of its claim", async 
     },
     {
       settings: () => Promise.resolve({ ...runtimeSettings, mode: "Paused" }),
+      projectSettings: (of) =>
+        Promise.resolve(
+          resolvedSelectorSettings(
+            of,
+            { ...runtimeSettings, mode: "Paused" },
+            0,
+            {},
+          ),
+        ),
     },
     { projectsMax: 1, deliveriesMax: 1, reconciliationsMax: 2 },
   );
@@ -1321,6 +1361,7 @@ test("selector configuration changes require platform administration", async () 
   } as const);
   const store: SelectorRuntimeControlStore = {
     settings: () => Promise.resolve(runtimeSettings),
+    projectSettings: () => Promise.resolve(resolved()),
     pause: () => {
       mutations += 1;
       return unchanged;
@@ -1421,7 +1462,7 @@ test("the trusted policy host starts once and bounds cancellation evidence", asy
         },
       },
     }),
-    instructions: Object.freeze({ revision: 1, content: "prompt" }),
+    instructions: Object.freeze({ revision: "1.0", content: "prompt" }),
     constraints: Object.freeze({
       models: Object.freeze(["model"]),
       tools: Object.freeze([]),

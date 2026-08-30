@@ -38,6 +38,7 @@ import {
   reworkPolicyResponseSchema,
 } from "./authoring.ts";
 import { briefResponseSchema } from "./brief.ts";
+import { selectorProjectOverridesSchema } from "./requests.ts";
 import {
   architectures,
   artifactRoles,
@@ -65,6 +66,8 @@ import {
   resultVerdicts,
   runCostBases,
   schedulerFreshnesses,
+  selectorDispatchModes,
+  selectorModes,
 } from "./rosters.ts";
 
 const page = <T extends z.ZodType>(item: T) =>
@@ -254,6 +257,61 @@ export const operationalStatusResponseSchema = z.object({
 });
 export type OperationalStatusResponse = z.infer<
   typeof operationalStatusResponseSchema
+>;
+
+const selectorLimitsResponseSchema = z.object({
+  tokensPerDecision: countSchema,
+  millisecondsPerDecision: countSchema,
+  toolCallsPerDecision: countSchema,
+  inputBytesPerDecision: countSchema,
+  candidatePagesPerDecision: countSchema,
+  concurrentDecisions: countSchema,
+  selectionsPerMinute: countSchema,
+});
+
+/**
+ * What the selector actually runs a project under: every field is either the
+ * project's own or the installation default, and both revisions are named
+ * because a decision is fenced on the pair.
+ */
+export const selectorEffectiveSettingsResponseSchema = z.strictObject({
+  revision: countSchema,
+  projectRevision: countSchema,
+  mode: z.enum(selectorModes),
+  dispatchMode: z.enum(selectorDispatchModes),
+  basePrompt: z.string().min(1),
+  northStar: z.string().min(1).optional(),
+  modelAllowlist: z.array(z.string()),
+  toolAllowlist: z.array(z.string()),
+  limits: selectorLimitsResponseSchema,
+  operationalContextMaxAgeMs: countSchema,
+});
+
+export const selectorProjectSettingsResponseSchema = z.strictObject({
+  partition: partitionValueSchema,
+  revision: countSchema,
+  overrides: selectorProjectOverridesSchema,
+  effective: selectorEffectiveSettingsResponseSchema,
+});
+export type SelectorProjectSettingsResponse = z.infer<
+  typeof selectorProjectSettingsResponseSchema
+>;
+
+export const selectorSettingsRevisionResponseSchema = z.strictObject({
+  revision: countSchema,
+  overrides: selectorProjectOverridesSchema,
+  administrator: z.strictObject({
+    kind: identitySchema,
+    subject: identitySchema,
+  }),
+  recordedAt: instantSchema,
+});
+
+export const selectorSettingsHistoryResponseSchema = z.strictObject({
+  revisions: page(selectorSettingsRevisionResponseSchema),
+});
+export type SelectorSettingsHistoryResponse = z.infer<
+  typeof selectorSettingsHistoryResponseSchema
 >;
 
 /**

@@ -30,6 +30,7 @@ import {
   postgresHarnessHistory,
   postgresHarnessOpen,
   postgresHarnessProject,
+  postgresHarnessSelectorContext,
   postgresHarnessSubmission,
   postgresHarnessUrl,
   postgresHarnessWriter,
@@ -46,25 +47,7 @@ after(async () => {
 
 const selectorInteractionContext = {
   workingMemory: {},
-  operationalContext: {
-    version: 2,
-    observedAt: "2026-08-20T12:00:00.000Z",
-    observedAtEpochMs: 1_777_000_000_000,
-    reviewFeedback: [],
-    activeWork: { queued: 0, admitted: 0, launching: 0, running: 0 },
-    capacity: {
-      account: "project",
-      accountMaximum: 1,
-      accountActive: 0,
-      accountReservationDeficit: 0,
-      clusterSlotsMax: 1,
-      clusterActive: 0,
-    },
-    backlog: {
-      project: { queued: 0, ceiling: 10 },
-      installation: { queued: 0, ceiling: 100 },
-    },
-  },
+  operationalContext: postgresHarnessSelectorContext,
 } as const;
 
 const selectorAdministrator = {
@@ -795,7 +778,7 @@ test("attempt reconciliation cannot claim another runtime's active attempt", asy
         workingMemory: {},
         nextCandidateScan: { state: "Exhausted", token },
       },
-      1,
+      { settingsRevision: 1, projectSettingsRevision: 0 },
     );
     assert.deepEqual(await state.quarantinedAttempts(100), []);
     const administration = postgresPool(postgresHarnessUrl());

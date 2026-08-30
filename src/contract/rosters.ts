@@ -174,6 +174,12 @@ export type DispatchViewResult = (typeof dispatchViewResults)[number];
 
 /** What the scheduler is willing to claim about the counts it reports. */
 export const schedulerFreshnesses = ["Unknown"] as const;
+
+/** Whether the selector is running at all, at an installation or for one project. */
+export const selectorModes = ["Running", "Paused"] as const;
+
+/** Whether a selector proposal is dispatched or held for a reviewer. */
+export const selectorDispatchModes = ["Automatic", "ApprovalRequired"] as const;
 export type SchedulerFreshness = (typeof schedulerFreshnesses)[number];
 
 export const draftStates = ["Draft", "Released", "Deleted"] as const;
