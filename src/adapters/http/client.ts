@@ -10,11 +10,12 @@ import {
   proposalSubmissionResponseSchema,
 } from "./codecs.ts";
 import { nativeHttpMediaType } from "../../contract/http.ts";
+import { presentedAccessToken, type AccessTokenSource } from "./accessToken.ts";
 import { encodeInventoryCursor } from "./contract.ts";
 
 export interface NativeHttpClientConfig {
   readonly baseUrl: string;
-  readonly accessToken: (signal: AbortSignal) => Promise<string>;
+  readonly accessToken: AccessTokenSource;
   readonly requestTimeoutMs: number;
   readonly responseBytesMax: number;
   readonly fetch?: typeof fetch;
@@ -75,49 +76,12 @@ async function boundedJson(
   return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
 }
 
-function checkedToken(value: string): string {
-  if (value.length === 0 || /[\r\n]/u.test(value))
-    throw new RangeError("native HTTP bearer token is empty or malformed");
-  return value;
-}
-
 function retryAfter(response: Response): number {
   const value = response.headers.get("retry-after");
   const parsed = value === null ? Number.NaN : Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 0)
     throw new TypeError("native HTTP retry-after is invalid");
   return parsed;
-}
-
-function abortable<Value>(
-  operation: Promise<Value>,
-  signal: AbortSignal,
-): Promise<Value> {
-  const reason = (): Error =>
-    signal.reason instanceof Error
-      ? signal.reason
-      : new Error("native HTTP request aborted");
-  if (signal.aborted) return Promise.reject(reason());
-  return new Promise((resolve, reject) => {
-    const abort = (): void => {
-      reject(reason());
-    };
-    signal.addEventListener("abort", abort, { once: true });
-    void operation.then(
-      (value) => {
-        signal.removeEventListener("abort", abort);
-        resolve(value);
-      },
-      (failure: unknown) => {
-        signal.removeEventListener("abort", abort);
-        reject(
-          failure instanceof Error
-            ? failure
-            : new Error("native HTTP authentication failed"),
-        );
-      },
-    );
-  });
 }
 
 interface NativeHttpClientContext {
@@ -139,9 +103,7 @@ async function nativeRequest(
   init: Omit<RequestInit, "signal"> = {},
 ): Promise<NativeHttpFound> {
   const signal = AbortSignal.timeout(context.timeoutMs);
-  const token = checkedToken(
-    await abortable(context.accessToken(signal), signal),
-  );
+  const token = await presentedAccessToken(context.accessToken, signal);
   const headers = new Headers(init.headers);
   headers.set("authorization", `Bearer ${token}`);
   headers.set("accept", nativeHttpMediaType);
@@ -151,6 +113,7 @@ async function nativeRequest(
     headers,
     signal,
   });
+  if (response.status === 401) context.accessToken.invalidate(token);
   return {
     response,
     body: await boundedJson(response, context.bytesMax),

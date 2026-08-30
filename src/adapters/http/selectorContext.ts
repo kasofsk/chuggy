@@ -7,7 +7,7 @@ import {
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { SelectorOperationalContextRead } from "../../interpreter/selectorOperationalContext.ts";
 import { nativeHttpMediaType } from "../../contract/http.ts";
-import type { AccessTokenRead } from "./clientCredentials.ts";
+import { presentedAccessToken, type AccessTokenSource } from "./accessToken.ts";
 import { boundedResponseBytes } from "./boundedResponse.ts";
 
 const counter = z.number().int().safe().nonnegative();
@@ -57,16 +57,10 @@ export const selectorOperationalContextV2Schema = z.strictObject({
 
 export interface SelectorContextHttpConfig {
   readonly baseUrl: string;
-  readonly accessToken: AccessTokenRead;
+  readonly accessToken: AccessTokenSource;
   readonly requestTimeoutMs: number;
   readonly responseBytesMax: number;
   readonly responseReadsMax: number;
-}
-
-function checkedToken(value: string): string {
-  if (value.length === 0 || /[\r\n]/u.test(value))
-    throw new RangeError("selector context access token is empty or malformed");
-  return value;
 }
 
 function checkedPositive(value: number, name: string): number {
@@ -105,7 +99,7 @@ export function selectorContextHttp(
   return {
     context: async (partition) => {
       const signal = AbortSignal.timeout(timeoutMs);
-      const token = checkedToken(await config.accessToken(signal));
+      const token = await presentedAccessToken(config.accessToken, signal);
       const response = await transport(contextUrl(config.baseUrl, partition), {
         headers: {
           accept: nativeHttpMediaType,
@@ -113,10 +107,12 @@ export function selectorContextHttp(
         },
         signal,
       });
-      if (!response.ok)
+      if (!response.ok) {
+        if (response.status === 401) config.accessToken.invalidate(token);
         throw new Error(
           `selector context source returned ${String(response.status)}`,
         );
+      }
       const bytes = await boundedResponseBytes(
         response,
         responseBytesMax,

@@ -5,10 +5,8 @@ import { setTimeout as wait } from "node:timers/promises";
 import { z } from "zod";
 
 import { nativeHttpClient } from "../adapters/http/client.ts";
-import {
-  clientCredentialsTokenSource,
-  type AccessTokenRead,
-} from "../adapters/http/clientCredentials.ts";
+import type { AccessTokenSource } from "../adapters/http/accessToken.ts";
+import { clientCredentialsTokenSource } from "../adapters/http/clientCredentials.ts";
 import { selectorContextHttp } from "../adapters/http/selectorContext.ts";
 import {
   trustedSelectorPolicyHttpClient,
@@ -56,9 +54,13 @@ const service = z
     responseBytesMax: positiveInteger,
   })
   .strict();
+const credentialUrl = httpUrl.refine((value) => {
+  const url = new URL(value);
+  return url.username === "" && url.password === "";
+});
 const credential = z
   .object({
-    tokenUrl: httpUrl,
+    tokenUrl: credentialUrl,
     clientId: z.string().min(1).max(256),
     audience: z.array(z.string().min(1)).max(8),
     scope: z.array(z.string().min(1)).max(8),
@@ -209,7 +211,7 @@ async function nativeSourceReady(
 /** One token source behind both clients of the API, so a replacement is minted once and presented by both. */
 export function selectorSourceAccessToken(
   source: SelectorSourceCommandConfig,
-): AccessTokenRead {
+): AccessTokenSource {
   return clientCredentialsTokenSource({
     tokenUrl: source.credential.tokenUrl,
     clientId: source.credential.clientId,

@@ -110,7 +110,39 @@ test("the client secret is required and never reaches the diagnostic", async () 
     CHUG_SELECTOR_SOURCE_CLIENT_SECRET: "",
   });
   assert.equal(empty.code, 2);
-  assert.doesNotMatch(empty.stderr, /selector-client-secret/u);
+  assert.equal(
+    empty.stderr,
+    "selector configuration: CHUG_SELECTOR_SOURCE_CLIENT_SECRET is required\n",
+  );
+  const held = await executeFailure({
+    ...validEnvironment,
+    CHUG_SELECTOR_CONFIG: JSON.stringify({
+      ...validConfiguration,
+      source: { ...validConfiguration.source, baseUrl: "gopher://refused/" },
+    }),
+  });
+  assert.equal(held.code, 2);
+  assert.doesNotMatch(held.stderr, /selector-client-secret/u);
+  assert.match(held.stderr, /^selector configuration:/u);
+});
+
+test("a token URL carrying credentials is a configuration refusal", async () => {
+  const refused = await executeFailure({
+    ...validEnvironment,
+    CHUG_SELECTOR_CONFIG: JSON.stringify({
+      ...validConfiguration,
+      source: {
+        ...validConfiguration.source,
+        credential: {
+          ...validConfiguration.source.credential,
+          tokenUrl: "http://identity:hunter2@127.0.0.1:3/oauth2/token",
+        },
+      },
+    }),
+  });
+  assert.equal(refused.code, 2);
+  assert.match(refused.stderr, /^selector configuration:/u);
+  assert.doesNotMatch(refused.stderr, /hunter2/u);
 });
 
 test("malformed configuration has a stable credential-free diagnostic", async () => {

@@ -9,6 +9,9 @@
  *
  * THE READ BOUND IS WHAT ENDS AN EMPTY STREAM. A body that yields empty chunks
  * for ever passes any byte bound, so a reader with only that one never returns.
+ * It counts the chunks the body yields and not the reads made of it, so a body
+ * arriving in exactly `readsMax` chunks is read rather than refused; the read
+ * that reports the end is one more than that and is never counted.
  */
 
 export async function boundedResponseBytes(
@@ -29,13 +32,13 @@ export async function boundedResponseBytes(
   let reads = 0;
   try {
     while (true) {
+      const read = await reader.read();
+      if (read.done) break;
       reads += 1;
       if (reads > readsMax) {
         await reader.cancel();
         throw new RangeError("HTTP response exceeds its read bound");
       }
-      const read = await reader.read();
-      if (read.done) break;
       length += read.value.byteLength;
       if (length > bytesMax) {
         await reader.cancel();

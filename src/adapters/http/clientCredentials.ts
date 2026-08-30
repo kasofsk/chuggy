@@ -2,13 +2,19 @@
  * The access token an authenticated client presents, minted by the OAuth2
  * client-credentials grant and replaced before the issuer expires it.
  *
- * A TOKEN IS REPLACED AHEAD OF EXPIRY, NEVER AFTER A REFUSAL. The issuer signs
- * short-lived access tokens and the API verifies them offline, so a client that
- * waits for the 401 spends a failed request on every replacement and reports
- * the failure as the API's. `refreshMarginMs` is how far ahead of the granted
- * expiry a held token stops being handed out; a grant shorter than that margin
- * is held for half its lifetime instead, because a hold of nothing is a mint
- * per request.
+ * A TOKEN IS REPLACED AHEAD OF EXPIRY. The issuer signs short-lived access
+ * tokens and the API verifies them offline, so a client that waits for the 401
+ * spends a failed request on every replacement and reports the failure as the
+ * API's. `refreshMarginMs` is how far ahead of the granted expiry a held token
+ * stops being handed out; a grant shorter than that margin is held for half its
+ * lifetime instead, because a hold of nothing is a mint per request.
+ *
+ * A REFUSAL IS THE OTHER WAY A TOKEN ENDS, and the margin cannot see it: a
+ * rotated signing key or a clock that skewed further than the margin leaves a
+ * held token already worthless. `invalidate` discards it so the next read
+ * mints, and discards nothing when the token it names has already been
+ * replaced. It starts no retry of its own — the refused request fails, and the
+ * one after it carries a new token.
  *
  * ONE MINT AT A TIME. Callers arriving while a replacement is in flight join it
  * rather than each starting one, so the issuer sees a request per replacement
@@ -27,6 +33,7 @@
 
 import { z } from "zod";
 
+import { checkedBearerToken, type AccessTokenSource } from "./accessToken.ts";
 import { boundedResponseBytes } from "./boundedResponse.ts";
 
 const millisecondsPerSecond = 1_000;
@@ -56,9 +63,6 @@ export interface ClientCredentialsConfig {
   readonly fetch?: typeof fetch;
   readonly currentTimeEpochMs?: () => number;
 }
-
-/** What an authenticated client asks for once per request it sends. */
-export type AccessTokenRead = (signal: AbortSignal) => Promise<string>;
 
 interface ClientCredentialsHeld {
   readonly token: string;
@@ -90,7 +94,7 @@ function clientCredentialsChecked(
   return config;
 }
 
-/** Basic authentication as RFC 6749 states it, which encodes each half before joining them. */
+/** Basic authentication, percent-encoding each half so neither can contribute the colon that joins them. */
 function clientCredentialsAuthorization(
   config: ClientCredentialsConfig,
 ): string {
@@ -145,10 +149,8 @@ async function clientCredentialsMinted(
   );
   if (grant.token_type.toLowerCase() !== clientCredentialsTokenType)
     throw new Error("client credentials grant is not a bearer token");
-  if (/[\r\n]/u.test(grant.access_token))
-    throw new RangeError("client credentials access token is malformed");
   return {
-    token: grant.access_token,
+    token: checkedBearerToken(grant.access_token),
     replaceAtEpochMs:
       atEpochMs +
       clientCredentialsHoldMs(
@@ -161,7 +163,7 @@ async function clientCredentialsMinted(
 /** Mints on demand and holds the grant until its margin, sharing one mint between the callers waiting on it. */
 export function clientCredentialsTokenSource(
   input: ClientCredentialsConfig,
-): AccessTokenRead {
+): AccessTokenSource {
   const config = clientCredentialsChecked(input);
   const transport = config.fetch ?? fetch;
   const currentTimeEpochMs = config.currentTimeEpochMs ?? Date.now;
@@ -183,16 +185,21 @@ export function clientCredentialsTokenSource(
         throw failure;
       },
     ));
-  return async (signal) => {
-    signal.throwIfAborted();
-    const current = held;
-    if (
-      current !== undefined &&
-      currentTimeEpochMs() < current.replaceAtEpochMs
-    )
-      return current.token;
-    const granted = await mint();
-    signal.throwIfAborted();
-    return granted.token;
+  return {
+    token: async (signal) => {
+      signal.throwIfAborted();
+      const current = held;
+      if (
+        current !== undefined &&
+        currentTimeEpochMs() < current.replaceAtEpochMs
+      )
+        return current.token;
+      const granted = await mint();
+      signal.throwIfAborted();
+      return granted.token;
+    },
+    invalidate: (refused) => {
+      if (held?.token === refused) held = undefined;
+    },
   };
 }
