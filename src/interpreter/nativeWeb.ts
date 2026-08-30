@@ -195,14 +195,16 @@ export type OperationResource =
   | (OperationResourceBase & { readonly state: "Cancelled" });
 
 /**
- * The reason is present exactly when the ticket is parked on the desk, and the
- * brief exactly when the ticket was authored with one.
+ * The reason is present exactly when the ticket is parked on the desk, the
+ * brief exactly when the ticket was authored with one, and the title exactly
+ * when the brief is — it is the brief's own first line.
  */
 export interface TicketResource {
   readonly ticket: TicketId;
   readonly phase: Phase;
   readonly sequence: number;
   readonly reason?: EscalationReason;
+  readonly title?: string;
   readonly brief?: DraftBrief;
   readonly runTotals?: RunTotals;
 }

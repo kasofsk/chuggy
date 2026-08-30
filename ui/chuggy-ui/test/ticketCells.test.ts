@@ -23,6 +23,7 @@ function row(executionRead: ProjectTableRow["executionRead"]): ProjectTableRow {
     phase: "Escalated",
     section: "NeedsYou",
     badge: "work failed",
+    title: "Unset",
     executionRead,
     configuration: undefined,
     executionStatus: undefined,

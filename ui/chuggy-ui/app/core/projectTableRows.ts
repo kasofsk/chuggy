@@ -5,12 +5,11 @@
  * reads behind it — the ticket page and the index of what each ticket ran —
  * stay separate cache entries that separate frames fold into.
  *
- * THE FIRST COLUMN IS A SLOT. A ticket resource carries no intent, so what the
- * slot shows is the configuration the ticket's execution ran from, named where
- * the wire names it, which is the only thing on the wire that says what a
- * ticket is made of. When
- * a ticket states its own intent, this is where it goes and the row's other
- * columns do not move.
+ * THE TITLE COLUMN IS THE TICKET'S OWN, drawn from its own read: the intent's
+ * own first rendered line, until a ticket states a title apart from it. The
+ * configuration column beside it answers a different question — what the
+ * ticket's execution ran from — so a ticket naming neither draws `Unset` for
+ * the one and nothing for the other.
  *
  * A row therefore says which of three things is true of its execution columns:
  * they are joined, this ticket has never run, or what the index holds for it is
@@ -53,11 +52,16 @@ export const projectTableExecutionReads = [
 export type ProjectTableExecutionRead =
   (typeof projectTableExecutionReads)[number];
 
+/** What a row's title cell draws for a ticket that named none — the wire
+ * omits the field rather than inventing this, so only a row draws it. */
+export const projectTableTitleUnset = "Unset";
+
 export interface ProjectTableRow {
   readonly ticket: number;
   readonly phase: TicketPhase;
   readonly section: TicketSection;
   readonly badge: string | undefined;
+  readonly title: string;
   readonly executionRead: ProjectTableExecutionRead;
   readonly configuration: Label | undefined;
   readonly executionStatus: ExecutionStatus | undefined;
@@ -104,6 +108,7 @@ export function projectTableRow(
     phase: ticket.phase,
     section: ticketSectionOf(ticket.phase),
     badge: ticketBadgeLabel(ticket.phase, ticket.reason),
+    title: ticket.title ?? projectTableTitleUnset,
     executionRead: read,
     configuration:
       execution === undefined

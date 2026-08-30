@@ -155,14 +155,17 @@ export type ExecutionRun = z.infer<typeof executionRunSchema>;
 
 /**
  * A ticket as the project table and its own read both carry it. The brief is
- * the ticket's own read alone: an intent is a paragraph, and a page of them is
- * a page of documents rather than a table.
+ * the ticket's own read alone — an intent is a paragraph, and a page of them
+ * is a page of documents rather than a table — while `title` is the one line
+ * of it a table row can hold, the intent's own first rendered line until a
+ * ticket states one apart from it, so both reads carry that.
  */
 export const ticketResponseSchema = z.object({
   ticket: ticketNumberSchema,
   phase: z.enum(phaseRoster),
   sequence: countSchema,
   reason: z.enum(escalationReasons).optional(),
+  title: z.string().optional(),
   brief: briefResponseSchema.optional(),
   runTotals: runTotalsSchema.optional(),
 });

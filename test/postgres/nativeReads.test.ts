@@ -292,6 +292,49 @@ test("project reads page newest activity with a stable identity tie-breaker", as
   );
 });
 
+test("a ticket the project table reads carries its title, drawn from its own intent, and a ticket that named none carries none", async () => {
+  const partition = await postgresHarnessProject(
+    subject.harness.store,
+    "native-title",
+  );
+  await subject.harness.query(
+    `INSERT INTO configuration_revision (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+     VALUES ($1,$2,'rev-title','{}','digest-title','ProjectTicketWriter','test')`,
+    [partition.tenant, partition.project],
+  );
+  await subject.harness.query(
+    `INSERT INTO draft (tenant,project,ticket,authoring_version,state,configuration_revision)
+     VALUES ($1,$2,1,1,'Released','rev-title')`,
+    [partition.tenant, partition.project],
+  );
+  await subject.harness.query(
+    `INSERT INTO draft_brief (tenant,project,ticket,intent)
+     VALUES ($1,$2,1,$3)`,
+    [
+      partition.tenant,
+      partition.project,
+      "Ship the title column.\nThe rest is detail nobody puts in a table.",
+    ],
+  );
+  await subject.harness.query(
+    `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+     VALUES ($1,$2,1,'Pending',1)`,
+    [partition.tenant, partition.project],
+  );
+  await subject.harness.query(
+    `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+     VALUES ($1,$2,2,'Pending',2)`,
+    [partition.tenant, partition.project],
+  );
+  const reads = postgresNativeReads(subject.pool);
+  const first = await reads.project(partition, { limit: 10 });
+  assert.equal(first.result, "Found");
+  if (first.result !== "Found") return;
+  const [titled, untitled] = first.project.tickets;
+  assert.equal(titled?.title, "Ship the title column.");
+  assert.equal(untitled?.title, undefined);
+});
+
 test("project reads filter before paging and expose one ticket detail", async () => {
   const partition = await filterProject();
   await seedFilterProjection(partition);

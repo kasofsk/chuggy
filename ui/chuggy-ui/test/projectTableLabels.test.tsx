@@ -5,6 +5,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
+import type { TicketResponse } from "../../../src/contract/responses.ts";
 import { ProjectTable } from "../app/browser/ProjectTable.tsx";
 import {
   answer,
@@ -79,13 +80,16 @@ const execution = {
 };
 
 /** The table with one running ticket, joined to the execution above. */
-async function drawTable(): Promise<void> {
+async function drawTable(
+  ticketOverride: Partial<TicketResponse> = {},
+): Promise<void> {
+  const drawn = { ...ticket, ...ticketOverride };
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
       if (url.includes("/executions"))
         return answer({ executions: [execution] });
-      return answer({ partition: atlas, sequence: 8, tickets: [ticket] });
+      return answer({ partition: atlas, sequence: 8, tickets: [drawn] });
     },
   });
   vi.stubGlobal("fetch", api.fetch);
@@ -100,6 +104,14 @@ async function drawTable(): Promise<void> {
   );
   await settled();
 }
+
+/** The title cell clips like the label columns above, which `projectTableRows.test.ts`
+ * cannot show because clipping is a property of the markup and not of the row. */
+test("the title cell keeps clipping a long title", async () => {
+  await drawTable({ title: "Ship the title column." });
+  const cell = screen.getByText("Ship the title column.");
+  expect(cell.className).toContain("clipped");
+});
 
 test("the configuration cell keeps the revision, and keeps clipping it", async () => {
   await drawTable();

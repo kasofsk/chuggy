@@ -91,6 +91,25 @@ test("a row names the configuration and the worker the wire named", () => {
   });
 });
 
+test("a row draws the ticket's own title, and 'Unset' for a ticket that named none", () => {
+  const titled: TicketResponse = {
+    ticket: 5,
+    phase: "Pending",
+    sequence: 1,
+    title: "Ship the title column.",
+  };
+  expect(projectTableRow(titled, undefined, false).title).toBe(
+    "Ship the title column.",
+  );
+  expect(
+    projectTableRow(
+      { ticket: 6, phase: "Pending", sequence: 1 },
+      undefined,
+      false,
+    ).title,
+  ).toBe("Unset");
+});
+
 test("a ticket running nothing states no execution rather than a blank one", () => {
   const row = projectTableRow(
     { ticket: 4, phase: "Pending", sequence: 1 },

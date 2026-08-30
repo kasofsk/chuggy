@@ -26,6 +26,7 @@ import {
   asBriefFinalization,
   asDraftBrief,
   briefIntentLines,
+  briefTitleOf,
 } from "../../src/interpreter/ticketBrief.ts";
 import { taskConfigurationLineFault } from "../../src/interpreter/taskConfiguration.ts";
 
@@ -37,6 +38,18 @@ test("an intent is stored as the lines a briefing would print", () => {
   ]);
   for (const line of briefIntentLines(intent))
     assert.equal(taskConfigurationLineFault(line), undefined);
+});
+
+test("a title is the intent's own first rendered line", () => {
+  const intent = asBriefIntent(
+    "Ship the title column.\nThe rest is detail nobody puts in a table.",
+  );
+  assert.equal(briefTitleOf(intent), "Ship the title column.");
+});
+
+test("an intent of one line is its own title whole", () => {
+  const intent = asBriefIntent("One line and nothing else.");
+  assert.equal(briefTitleOf(intent), "One line and nothing else.");
 });
 
 test("an intent no briefing could print is refused before it is stored", () => {

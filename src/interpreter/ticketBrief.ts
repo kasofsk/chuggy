@@ -102,6 +102,18 @@ export function briefIntentLines(intent: BriefIntent): readonly string[] {
   return intent.split("\n").filter((line) => line.trim().length > 0);
 }
 
+/**
+ * A ticket's title, until it states one of its own: the intent's own first
+ * rendered line, already bounded to what one line renders as because
+ * `asBriefIntent` refused it otherwise.
+ */
+export function briefTitleOf(intent: BriefIntent): string {
+  const line = briefIntentLines(intent)[0];
+  if (line === undefined)
+    throw new Error("brief title: a branded intent has no rendered line");
+  return line;
+}
+
 /** Normalizes line endings so a browser's newline is the one this tree bounds. */
 function briefIntentNormalized(value: string): string {
   return value.replaceAll("\r\n", "\n").replaceAll("\r", "\n");

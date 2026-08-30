@@ -147,6 +147,25 @@ test("an escalated ticket names its wall and an unparked one omits it", () => {
   );
 });
 
+test("a ticket's title crosses the wire and a ticket that named none omits it", () => {
+  const titled = ticketResponseSchema.parse(
+    ticketResponse({
+      ticket: asTicketId(3),
+      phase: "Working",
+      sequence: 9,
+      title: "Ship the title column.",
+    }).body,
+  );
+  assert.equal(titled.title, "Ship the title column.");
+  assert.equal(
+    ticketResponseSchema.parse(
+      ticketResponse({ ticket: asTicketId(3), phase: "Working", sequence: 9 })
+        .body,
+    ).title,
+    undefined,
+  );
+});
+
 test("a ticket's open actions carry a fence and only answers their kind asks for", () => {
   const listed = ticketNativeActionsResponseSchema.parse(
     ticketNativeActionsResponse([

@@ -142,6 +142,11 @@ function TicketRow(props: {
   return (
     <tr>
       <TicketNumberCell partition={props.partition} ticket={row.ticket} />
+      <td>
+        <span className="clipped" title={row.title}>
+          {row.title}
+        </span>
+      </td>
       <td className="cell-dim">
         <span className="clipped" title={row.configuration?.title}>
           {ticketRowExecutionCell(row, row.configuration?.text)}
@@ -179,6 +184,7 @@ function TicketTable(props: {
         <thead>
           <tr>
             <th scope="col">ticket</th>
+            <th scope="col">title</th>
             <th scope="col">configuration</th>
             <th scope="col">phase</th>
             <th scope="col">why</th>
