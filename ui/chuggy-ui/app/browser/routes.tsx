@@ -20,8 +20,7 @@ import type { ReactNode } from "react";
 
 import { apiProjectInventoryAll } from "../core/apiRoutes.ts";
 import { lastProjectOrFirst, lastProjectRead } from "../core/lastProject.ts";
-import { projectsInventoryKey } from "../core/projectQueryKeys.ts";
-import { usePanelQuery } from "./api.ts";
+import { usePanelInventory } from "./api.ts";
 import { Footer } from "./Footer.tsx";
 import { Inbox } from "./Inbox.tsx";
 import { Panel } from "./Panel.tsx";
@@ -34,9 +33,7 @@ import { TicketPage } from "./TicketPage.tsx";
 
 export function Landing(): ReactNode {
   const navigate = useNavigate();
-  const state = usePanelQuery(projectsInventoryKey(), (ports) =>
-    apiProjectInventoryAll(ports),
-  );
+  const state = usePanelInventory((ports) => apiProjectInventoryAll(ports));
   const chosen =
     state.state === "Ready"
       ? lastProjectOrFirst(lastProjectRead(persistentStore), state.value)

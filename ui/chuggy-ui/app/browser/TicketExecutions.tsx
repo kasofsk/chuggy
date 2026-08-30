@@ -27,38 +27,32 @@ import {
 } from "../core/apiRoutes.ts";
 import { artifactPreviewOffer } from "../core/artifactPreview.ts";
 import { executionRequirementLabel } from "../core/labels.ts";
-import {
-  projectListKey,
-  projectResourceKey,
-} from "../core/projectQueryKeys.ts";
+import { projectListFolded } from "../core/projectQueryKeys.ts";
+import type { ProjectListChange } from "../core/projectQueryKeys.ts";
 import { runStageCoverageSentence, runStageLabel } from "../core/runTotals.ts";
 import type { RunStageRow } from "../core/runTotals.ts";
 import {
   ticketExecutionStages,
   ticketExecutionsFolded,
 } from "../core/ticketExecutions.ts";
-import type { ProjectExecutionChange } from "../core/ticketExecutions.ts";
-import { usePanelQuery } from "./api.ts";
+import { usePanelList, usePanelResource } from "./api.ts";
 import { Panel } from "./Panel.tsx";
 import { RunEvidence, RunTotalsLine } from "./RunEvidence.tsx";
-import { useProjectListFold } from "./stream.tsx";
 
 type ResultArtifact = NonNullable<
   ExecutionResponse["result"]
 >["artifacts"][number];
 
-/** The artifact's own path under its execution is the resource this key names. */
+/** The artifact's own path under its execution is the resource this names. */
 function ArtifactPreview(props: {
   readonly partition: PartitionIdentity;
   readonly execution: string;
   readonly ordinal: number;
 }): ReactNode {
-  const state = usePanelQuery(
-    projectResourceKey(
-      props.partition,
-      "Execution",
-      `${props.execution}/artifacts/${String(props.ordinal)}`,
-    ),
+  const state = usePanelResource(
+    props.partition,
+    "Execution",
+    `${props.execution}/artifacts/${String(props.ordinal)}`,
     (ports) =>
       apiOutputContent(ports, props.partition, props.execution, props.ordinal),
   );
@@ -174,8 +168,10 @@ function ExecutionDetail(props: {
   readonly partition: PartitionIdentity;
   readonly execution: string;
 }): ReactNode {
-  const state = usePanelQuery(
-    projectResourceKey(props.partition, "Execution", props.execution),
+  const state = usePanelResource(
+    props.partition,
+    "Execution",
+    props.execution,
     (ports) => apiExecution(ports, props.partition, props.execution),
   );
   return (
@@ -271,24 +267,15 @@ export function TicketExecutions(props: {
   readonly ticket: number;
 }): ReactNode {
   const { partition, ticket } = props;
-  const key = projectListKey(
-    partition,
-    "Execution",
-    `ticket:${String(ticket)}`,
-  );
-  const state = usePanelQuery(key, (ports) =>
-    apiExecutions(ports, partition, { ticket }),
-  );
   const fold = useCallback(
-    (previous: unknown, change: ProjectExecutionChange) =>
-      ticketExecutionsFolded(
-        ticket,
-        previous as ExecutionsResponse | undefined,
-        change,
-      ),
+    (previous: ExecutionsResponse | undefined, change: ProjectListChange) =>
+      ticketExecutionsFolded(ticket, previous, change),
     [ticket],
   );
-  useProjectListFold("Execution", key, fold);
+  const state = usePanelList(
+    projectListFolded(partition, "Execution", `ticket:${String(ticket)}`, fold),
+    (ports) => apiExecutions(ports, partition, { ticket }),
+  );
   return (
     <Panel title="executions" state={state}>
       {(page) =>

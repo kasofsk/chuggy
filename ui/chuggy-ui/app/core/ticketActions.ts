@@ -11,10 +11,14 @@
  * offers what the phase permits and the server refuses the rest by code.
  */
 
+import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 import type { PublicMutation } from "../../../../src/contract/requests.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import type { DispatchViewResponse } from "../../../../src/contract/responses.ts";
+
+import { projectListReread } from "./projectQueryKeys.ts";
+import type { ProjectList } from "./projectQueryKeys.ts";
 
 /** Settled, or past the point of no return: the complement of `revocableIn`. */
 export const ticketUnrevocablePhases: readonly TicketPhase[] = [
@@ -74,6 +78,26 @@ export function actionsFor(ticket: TicketResponse): readonly TicketAction[] {
       mutation: { mutation: "RevokeTicket", ticket: ticket.ticket },
     });
   return offered;
+}
+
+/**
+ * Where one ticket's dispatch availability is held, and what makes it stale.
+ *
+ * The view is the server's own candidate table and a `Ticket` frame does not
+ * carry it, so the entry is read again rather than folded — on this ticket's
+ * own frames alone, because a ticket whose dispatchability changed is a ticket
+ * that changed, and every other ticket has an entry of its own.
+ */
+export function ticketDispatchList(
+  partition: PartitionIdentity,
+  ticket: number,
+): ProjectList<DispatchViewResponse> {
+  return projectListReread<DispatchViewResponse>(
+    partition,
+    "Ticket",
+    `dispatch:${String(ticket)}`,
+    (change) => change.resource === String(ticket),
+  );
 }
 
 export function manualDispatchAction(

@@ -13,9 +13,12 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
 import type { ProjectPage } from "./apiRoutes.ts";
-import { projectListKey } from "./projectQueryKeys.ts";
-import type { ProjectQueryKey } from "./projectQueryKeys.ts";
-import { projectTicketRowsHaveMore } from "./projectTicketPages.ts";
+import { projectListFolded } from "./projectQueryKeys.ts";
+import type { ProjectList } from "./projectQueryKeys.ts";
+import {
+  projectTicketRowsFold,
+  projectTicketRowsHaveMore,
+} from "./projectTicketPages.ts";
 import type { ProjectTicketRows } from "./projectTicketPages.ts";
 import { ticketSectionPhases } from "./ticketSections.ts";
 import type { TicketSection } from "./ticketSections.ts";
@@ -32,13 +35,28 @@ export function ticketFilterPhases(
   return filter === ticketFilterAll ? undefined : ticketSectionPhases(filter);
 }
 
-/** One entry per filter: they hold different rows, and a shared entry would let
- * one filter's page walk answer another's. */
-export function ticketFilterKey(
+/**
+ * One entry per filter: they hold different rows, and a shared entry would let
+ * one filter's page walk answer another's. The fold is here with the key rather
+ * than in the component, because the phases a filter admits decide both which
+ * rows a read asks for and which rows a frame is allowed to add.
+ */
+export function ticketFilterList(
   partition: PartitionIdentity,
   filter: TicketFilter,
-): ProjectQueryKey {
-  return projectListKey(partition, "Ticket", `table:${filter}`);
+): ProjectList<ProjectTicketRows> {
+  return projectListFolded<ProjectTicketRows>(
+    partition,
+    "Ticket",
+    `table:${filter}`,
+    (previous, change) =>
+      projectTicketRowsFold(
+        previous,
+        change.resource,
+        change.representation,
+        ticketFilterPhases(filter),
+      ),
+  );
 }
 
 /** The page size is asked for rather than left to the route's default, so the

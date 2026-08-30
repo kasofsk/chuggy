@@ -7,13 +7,17 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
 import {
-  answer,
   apiDouble,
   openedStream,
   ScreenHarness,
   settled,
   turned,
 } from "./screenHarness.tsx";
+import {
+  ticketDispatchViewOf,
+  ticketPageCandidate,
+  ticketPageRoutes,
+} from "./ticketPageFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
@@ -29,43 +33,12 @@ vi.mock("@tanstack/react-router", () => ({
   ),
   useParams: () => ({ ...atlas, ticket: "11" }),
 }));
-// jscpd:ignore-end
+// jscpd:ignore-end -- the case's own doubles resume here
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-
-const ticket = { ticket: 11, phase: "Pending", sequence: 7 };
-
-const dispatchView = {
-  result: "Page",
-  token: {
-    tenant: "acme",
-    project: "atlas",
-    recoveryEpoch: "epoch",
-    schemaVersion: 1,
-    watermark: 7,
-    digest: "a".repeat(64),
-  },
-  candidates: [
-    {
-      ticket: 11,
-      ticketVersion: 4,
-      dependencies: [],
-      workFanout: 1,
-      program: [],
-      reworkPolicy: { type: "BudgetedRework", value: 1 },
-      finalizationPricing: "DeadlineOnly",
-      resumePricing: "RetryFree",
-      finalizer: "NoFinalizer",
-      configurationRevision: "r1",
-      configurationDigest: "b".repeat(64),
-      configurationCanonical: "{}",
-    },
-  ],
-  notificationCursor: 2,
-};
 
 test("a dispatchable ticket submits the version from the strict view", async () => {
   const api = apiDouble({
@@ -75,14 +48,9 @@ test("a dispatchable ticket submits the version from the strict view", async () 
       state: "Succeeded",
       decidedSequence: 8,
     },
-    route: (url) => {
-      if (url.includes("/dispatch-view")) return answer(dispatchView);
-      if (url.includes("/native-actions")) return answer({ actions: [] });
-      if (url.includes("/executions")) return answer({ executions: [] });
-      if (url.includes("/drafts/")) return answer({}, 404);
-      if (url.includes("/tickets/")) return answer(ticket);
-      return answer({ partition: atlas, sequence: 8, tickets: [ticket] });
-    },
+    route: ticketPageRoutes(atlas, () =>
+      ticketDispatchViewOf(atlas, [ticketPageCandidate]),
+    ),
   });
   vi.stubGlobal("fetch", api.fetch);
   const server = openedStream();

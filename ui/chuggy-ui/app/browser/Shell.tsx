@@ -13,8 +13,11 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { apiProjectInventoryAll } from "../core/apiRoutes.ts";
 import { inboxCountLabel } from "../core/inboxList.ts";
 import { lastProjectWrite } from "../core/lastProject.ts";
-import { projectsInventoryKey } from "../core/projectQueryKeys.ts";
-import { usePanelQuery } from "./api.ts";
+import {
+  projectStreamCarrying,
+  projectStreamUnanswered,
+} from "../core/projectStream.ts";
+import { usePanelInventory } from "./api.ts";
 import { Footer } from "./Footer.tsx";
 import { useInboxRows } from "./Inbox.tsx";
 import { persistentStore } from "./ports.ts";
@@ -24,10 +27,18 @@ import {
   useProjectStreamStatus,
 } from "./stream.tsx";
 
-function StreamBanner(): ReactNode {
+/**
+ * What the reader is told, which is the other half of what `useStreamFallback`
+ * reads on: the fallback runs while the stream is not carrying, and this speaks
+ * while it is not carrying and has opened at least once. So a reopen is drawn —
+ * the screen is stale and the reader should know it — and a first paint is not,
+ * because nothing has stopped arriving yet.
+ */
+export function StreamBanner(): ReactNode {
   const status = useProjectStreamStatus();
   const exhausted = useProjectFallbackExhausted();
-  if (status.connection === "Open" && status.source === "live") return null;
+  if (projectStreamCarrying(status) || projectStreamUnanswered(status))
+    return null;
   const detail =
     status.reason ??
     (status.source === "degraded"
@@ -45,9 +56,7 @@ function ProjectSwitcher(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const navigate = useNavigate();
-  const state = usePanelQuery(projectsInventoryKey(), (ports) =>
-    apiProjectInventoryAll(ports),
-  );
+  const state = usePanelInventory((ports) => apiProjectInventoryAll(ports));
   if (state.state !== "Ready")
     return <span className="switcher-note">projects unavailable</span>;
   return (
@@ -92,16 +101,23 @@ function InboxCount(props: {
   );
 }
 
+/**
+ * The shell states whether the stream is carrying, because the banner no longer
+ * answers that: it is silent both when the stream is live and when a first
+ * connection has not opened yet. A reader has the banner; anything watching the
+ * console from outside has this.
+ */
 export function Shell(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const holder = useSessionHolder();
+  const carrying = projectStreamCarrying(useProjectStreamStatus());
   const params = {
     tenant: props.partition.tenant,
     project: props.partition.project,
   };
   return (
-    <div className="shell">
+    <div className="shell" data-stream={carrying ? "live" : "not-live"}>
       <header className="shell-head">
         <span className="brand">chuggy</span>
         <ProjectSwitcher partition={props.partition} />

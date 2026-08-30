@@ -25,7 +25,6 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
-import { projectListKey } from "../core/projectQueryKeys.ts";
 import type { ProjectQueryKey } from "../core/projectQueryKeys.ts";
 import {
   creationBodyFrom,
@@ -42,20 +41,18 @@ import type {
 } from "../core/ticketCreation.ts";
 import {
   createAndReleaseTicket,
+  creationContextList,
   creationContextSentence,
   readCreationContext,
 } from "../core/ticketCreationRun.ts";
 import type { CreationContext } from "../core/ticketCreationRun.ts";
 import { operationSubmitting } from "../core/operationFollow.ts";
 import type { OperationStep } from "../core/operationFollow.ts";
-import { usePanelQuery, useApiPorts } from "./api.ts";
+import { usePanelList, useApiPorts } from "./api.ts";
 import { Panel } from "./Panel.tsx";
 import { drawBytes } from "./ports.ts";
 import { operationIdBytesCount } from "../core/operationFollow.ts";
 import { TicketCreationAdvanced } from "./TicketCreationAdvanced.tsx";
-
-/** The one list key this screen reads under, the context being the project's. */
-export const creationContextName = "creation";
 
 type Attempt =
   | { readonly attempt: "Idle" }
@@ -387,12 +384,9 @@ export function TicketCreation(): ReactNode {
     tenant: params.tenant,
     project: params.project,
   };
-  const queryKey = projectListKey(
-    partition,
-    "Configuration",
-    creationContextName,
-  );
-  const state = usePanelQuery(queryKey, (readPorts) =>
+  const list = creationContextList(partition);
+  const queryKey = list.key;
+  const state = usePanelList(list, (readPorts) =>
     readCreationContext(readPorts, partition),
   );
   return (

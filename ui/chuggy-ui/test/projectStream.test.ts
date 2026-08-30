@@ -11,7 +11,9 @@ import { expect, test } from "vitest";
 import type { ProjectStreamEvent } from "../../../src/contract/events.ts";
 import {
   openProjectStream,
+  projectStreamCarrying,
   projectStreamDelayMs,
+  projectStreamUnanswered,
   projectStreamUrl,
   streamOpenFailuresMax,
   streamReopenDelayMsMax,
@@ -185,4 +187,66 @@ test("stopping abandons the request that is reading rather than leaving it", asy
   await opened.finished;
   expect(server.aborts.length).toBe(1);
   expect(server.headersSeen.length).toBe(1);
+});
+
+function statusAt(
+  connection: ProjectStreamStatus["connection"],
+  source: ProjectStreamStatus["source"],
+  answered = true,
+): ProjectStreamStatus {
+  return {
+    connection,
+    source,
+    answered,
+    reason: undefined,
+    lastSequence: undefined,
+  };
+}
+
+test("only an open connection on a live log is carrying what a screen shows", () => {
+  expect(projectStreamCarrying(statusAt("Open", "live"))).toBe(true);
+  expect(projectStreamCarrying(statusAt("Open", "degraded"))).toBe(false);
+  expect(projectStreamCarrying(statusAt("Opening", "unknown", false))).toBe(
+    false,
+  );
+  expect(projectStreamCarrying(statusAt("Waiting", "live"))).toBe(false);
+  expect(projectStreamCarrying(statusAt("Stopped", "live"))).toBe(false);
+});
+
+/**
+ * The pair the shell's banner and the bounded fallback both read. Opening is
+ * not carrying, so the fallback runs across a whole reopen ladder rather than
+ * being restarted at each rung; and every rung but the first has been answered,
+ * so a stale screen is drawn as one while a first paint is not.
+ */
+test("only a first open that nothing has answered is unanswered", () => {
+  expect(projectStreamUnanswered(statusAt("Opening", "unknown", false))).toBe(
+    true,
+  );
+  expect(projectStreamUnanswered(statusAt("Opening", "unknown"))).toBe(false);
+  expect(projectStreamUnanswered(statusAt("Opening", "live"))).toBe(false);
+  expect(projectStreamUnanswered(statusAt("Waiting", "unknown", false))).toBe(
+    false,
+  );
+  expect(projectStreamUnanswered(statusAt("Open", "unknown", false))).toBe(
+    false,
+  );
+});
+
+/** The reopen the banner has to be able to tell from a first open: the run says
+ * so itself, rather than the shell inferring it from an absent source. */
+test("a reopen is answered even when no open has ever succeeded", async () => {
+  const server = streamServer([
+    { status: 500 },
+    { status: 200, chunks: [], hold: true },
+  ]);
+  const seen = collector();
+  const opened = openProjectStream(server.ports, partition, seen.handlers);
+  await server.holding;
+  opened.stop();
+  await opened.finished;
+  const opening = seen.statuses.filter(
+    (status) => status.connection === "Opening",
+  );
+  expect(opening.map((status) => status.answered)).toEqual([false, true]);
 });

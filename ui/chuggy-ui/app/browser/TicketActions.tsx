@@ -43,14 +43,12 @@ import {
   ticketConfirmed,
 } from "../core/operationFollow.ts";
 import type { OperationStep } from "../core/operationFollow.ts";
-import {
-  projectListKey,
-  projectResourceKey,
-} from "../core/projectQueryKeys.ts";
+import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import {
   actionsFor,
   manualDispatchAction,
   ticketActionSentence,
+  ticketDispatchList,
 } from "../core/ticketActions.ts";
 import type { TicketAction } from "../core/ticketActions.ts";
 import { useApiPorts } from "./api.ts";
@@ -191,11 +189,7 @@ function useSubmitting(
   const [cancelled, setCancelled] = useState<string | undefined>(undefined);
   const key = projectResourceKey(partition, "Ticket", String(ticket));
   const openKey = projectResourceKey(partition, "NativeAction", String(ticket));
-  const dispatchKey = projectListKey(
-    partition,
-    "Ticket",
-    `dispatch:${String(ticket)}`,
-  );
+  const dispatchKey = ticketDispatchList(partition, ticket).key;
 
   const follow = async (action: TicketAction): Promise<void> => {
     setCancelled(undefined);

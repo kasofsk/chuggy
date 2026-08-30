@@ -16,15 +16,17 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import type { ProjectChangeKind } from "../../../src/contract/events.ts";
 import {
-  projectListKey,
+  projectListFolded,
+  projectListReread,
   projectResourceKey,
 } from "../app/core/projectQueryKeys.ts";
-import type { ProjectQueryKey } from "../app/core/projectQueryKeys.ts";
+import type { ProjectList } from "../app/core/projectQueryKeys.ts";
 import type { SessionHolder } from "../app/core/sessionHolder.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
+import { StreamBanner } from "../app/browser/Shell.tsx";
 import {
   ProjectStreamProvider,
-  useProjectListFold,
+  useProjectListRefresh,
   useProjectStreamStatus,
 } from "../app/browser/stream.tsx";
 import { frame, streamServer } from "./streamDouble.ts";
@@ -134,15 +136,17 @@ test("a live frame is written into the cache and nothing is refetched", async ()
 });
 
 /**
- * One `Ticket` change, and a list fold registered for whichever kind the case
- * is about, so that what separates the two cases below is the kind alone.
+ * One `Ticket` change naming ticket 3, offered to one registered list, so that
+ * what separates the cases below is the list's own declaration alone. The
+ * client is handed back because a reread leaves its entry where it is and marks
+ * it, which is a state rather than a value.
  */
-async function foldedResources(
-  registeredKind: ProjectChangeKind,
-  key: ProjectQueryKey,
-): Promise<unknown> {
+async function refreshedEntry(
+  list: ProjectList<readonly string[]>,
+  held: readonly string[],
+): Promise<QueryClient> {
   const client = new QueryClient();
-  client.setQueryData(key, []);
+  client.setQueryData(list.key, held);
   const server = streamServer([
     {
       status: 200,
@@ -156,11 +160,8 @@ async function foldedResources(
       hold: true,
     },
   ]);
-  function Folder(): ReactNode {
-    useProjectListFold(registeredKind, key, (previous, change) => [
-      ...(previous as unknown[]),
-      change.resource,
-    ]);
+  function Registered(): ReactNode {
+    useProjectListRefresh(list);
     return null;
   }
   render(
@@ -170,27 +171,60 @@ async function foldedResources(
       partition={atlas}
       transport={server.ports.fetch}
     >
-      <Folder />
+      <Registered />
     </Harness>,
   );
   await settled();
-  return client.getQueryData(key);
+  return client;
+}
+
+/** The resources its kind's frames named, which is the smallest fold that shows
+ * which frames a registration was offered. */
+function namingList(
+  kind: ProjectChangeKind,
+  name: string,
+): ProjectList<readonly string[]> {
+  return projectListFolded<readonly string[]>(
+    atlas,
+    kind,
+    name,
+    (previous, change) => [...(previous ?? []), change.resource],
+  );
+}
+
+/** A list of the ticket named in its own name, which is the shape of the
+ * dispatch entry a ticket page reads. */
+function followingList(ticketFollowed: string): ProjectList<readonly string[]> {
+  return projectListReread<readonly string[]>(
+    atlas,
+    "Ticket",
+    `dispatch:${ticketFollowed}`,
+    (change) => change.resource === ticketFollowed,
+  );
 }
 
 test("a registered list fold is offered the same representation", async () => {
-  const folded = await foldedResources(
-    "Ticket",
-    projectListKey(atlas, "Ticket", "frontier"),
-  );
-  expect(folded).toEqual(["3"]);
+  const client = await refreshedEntry(namingList("Ticket", "frontier"), []);
+  expect(client.getQueryData(namingList("Ticket", "frontier").key)).toEqual([
+    "3",
+  ]);
 });
 
 test("a fold registered for one kind is not offered another kind's change", async () => {
-  const folded = await foldedResources(
-    "Draft",
-    projectListKey(atlas, "Draft", "drafts"),
-  );
-  expect(folded).toEqual([]);
+  const client = await refreshedEntry(namingList("Draft", "drafts"), []);
+  expect(client.getQueryData(namingList("Draft", "drafts").key)).toEqual([]);
+});
+
+test("a list that rereads is marked stale by the frame it follows", async () => {
+  const list = followingList("3");
+  const client = await refreshedEntry(list, ["held"]);
+  expect(client.getQueryState(list.key)?.isInvalidated).toBe(true);
+});
+
+test("a list that rereads is left alone by another resource's frame", async () => {
+  const list = followingList("9");
+  const client = await refreshedEntry(list, ["held"]);
+  expect(client.getQueryState(list.key)?.isInvalidated).toBe(false);
 });
 
 test("a project change abandons the connection and opens the next one", async () => {
@@ -268,4 +302,37 @@ test("a stream that is not live says so where a reader will see it", async () =>
   );
   await settled();
   expect(screen.getByText("Open/degraded")).toBeDefined();
+});
+
+/** The banner over a transport the case chooses, so what is read is the one
+ * thing the shell decides rather than the whole shell. */
+async function banner(
+  transport: Parameters<typeof ProjectStreamProvider>[0]["transport"],
+): Promise<Element | null> {
+  const view = render(
+    <Harness
+      holder={holderDouble()}
+      client={new QueryClient()}
+      partition={atlas}
+      transport={transport}
+    >
+      <StreamBanner />
+    </Harness>,
+  );
+  await settled();
+  return view.container.querySelector(".banner");
+}
+
+/**
+ * A first connection has never had the chance to fail, so there is nothing to
+ * tell a reader; a refused one has, and saying nothing then would leave a stale
+ * screen silent.
+ */
+test("a connection that is still opening for the first time says nothing", async () => {
+  expect(await banner(() => new Promise(() => undefined))).toBeNull();
+});
+
+test("a connection the API refuses says so where a reader will see it", async () => {
+  const server = streamServer([{ status: 401 }]);
+  expect(await banner(server.ports.fetch)).not.toBeNull();
 });

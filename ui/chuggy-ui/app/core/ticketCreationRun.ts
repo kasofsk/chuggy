@@ -35,6 +35,8 @@ import {
 } from "./codeSentences.ts";
 import { followOperation } from "./operationFollow.ts";
 import type { OperationStep } from "./operationFollow.ts";
+import { projectListReread } from "./projectQueryKeys.ts";
+import type { ProjectList } from "./projectQueryKeys.ts";
 import {
   creationReleaseMutation,
   latestReadyConfiguration,
@@ -121,6 +123,29 @@ async function readyConfiguration(
     outcome: "Ok",
     value: { found: "Unknown", pagesRead: configurationPagesMax },
   };
+}
+
+/** The one list the creation screen reads under, the context being the
+ * project's rather than any one revision's. */
+export const creationContextName = "creation";
+
+/**
+ * Where the creation context is held, and what makes it stale.
+ *
+ * Every `Configuration` frame does, because the context is whichever revision
+ * is ready and the frame's own revision does not say which one that now is —
+ * a newer revision reaching ready changes the answer without ever appearing in
+ * the entry the screen holds.
+ */
+export function creationContextList(
+  partition: PartitionIdentity,
+): ProjectList<CreationContext> {
+  return projectListReread<CreationContext>(
+    partition,
+    "Configuration",
+    creationContextName,
+    () => true,
+  );
 }
 
 /** The revision a ticket would be shaped by, and the defaults it is fenced with. */

@@ -17,26 +17,25 @@ import {
   projectExecutionPage,
 } from "../core/projectExecutionIndex.ts";
 import type { ProjectExecutionIndex } from "../core/projectExecutionIndex.ts";
-import { projectListKey } from "../core/projectQueryKeys.ts";
-import { usePanelQuery } from "./api.ts";
-import { useProjectListFold } from "./stream.tsx";
+import { projectListFolded } from "../core/projectQueryKeys.ts";
+import { usePanelList } from "./api.ts";
 
 const executionIndexListName = "latest";
 
 export function useProjectExecutionIndex(
   partition: PartitionIdentity,
 ): PanelState<ProjectExecutionIndex> {
-  const key = projectListKey(partition, "Execution", executionIndexListName);
-  const state = usePanelQuery<ProjectExecutionIndex>(key, (at) =>
-    projectExecutionIndexRead((selection, after) =>
-      apiExecutions(at, partition, projectExecutionPage(selection, after)),
+  return usePanelList(
+    projectListFolded<ProjectExecutionIndex>(
+      partition,
+      "Execution",
+      executionIndexListName,
+      (previous, change) =>
+        projectExecutionIndexFold(previous, change.representation),
     ),
+    (at) =>
+      projectExecutionIndexRead((selection, after) =>
+        apiExecutions(at, partition, projectExecutionPage(selection, after)),
+      ),
   );
-  useProjectListFold("Execution", key, (previous, change) =>
-    projectExecutionIndexFold(
-      previous as ProjectExecutionIndex | undefined,
-      change.representation,
-    ),
-  );
-  return state;
 }

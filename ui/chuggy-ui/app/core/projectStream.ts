@@ -34,6 +34,31 @@ export interface ProjectStreamStatus {
   readonly source: ProjectSourceState | "unknown";
   readonly reason: string | undefined;
   readonly lastSequence: number | undefined;
+  /** Whether an attempt to open has ever ended — opened, been refused, or
+   * failed. Until one has, this console knows nothing about the stream, which
+   * is a different thing from knowing something bad about it. */
+  readonly answered: boolean;
+}
+
+/**
+ * Whether what the screens show is arriving. The bounded fallback reads while
+ * this is false, and the shell's banner says so while this is false and the
+ * stream has opened at least once — one decision about `Opening` seen from two
+ * sides, kept in one place because the two disagreeing is what left a reopening
+ * console stale under a banner with nothing reading behind it.
+ */
+export function projectStreamCarrying(status: ProjectStreamStatus): boolean {
+  return status.connection === "Open" && status.source === "live";
+}
+
+/**
+ * A first open that has not settled: a connection that has never had the chance
+ * to fail. Nothing has stopped arriving and there is nothing to warn a reader
+ * about — which a reopen, on a ladder whose every rung passes back through
+ * `Opening`, is not.
+ */
+export function projectStreamUnanswered(status: ProjectStreamStatus): boolean {
+  return status.connection === "Opening" && !status.answered;
 }
 
 export interface StreamReader {
@@ -79,6 +104,7 @@ export interface ProjectStreamHandle {
 interface StreamHeld {
   lastSequence: number | undefined;
   source: ProjectSourceState | "unknown";
+  answered: boolean;
 }
 
 interface StreamEnd {
@@ -117,6 +143,7 @@ function projectStreamStatus(
     source: held.source,
     reason,
     lastSequence: held.lastSequence,
+    answered: held.answered,
   };
 }
 
@@ -208,13 +235,18 @@ async function projectStreamRun(
   handlers: ProjectStreamHandlers,
   signal: AbortSignal,
 ): Promise<void> {
-  const held: StreamHeld = { lastSequence: undefined, source: "unknown" };
+  const held: StreamHeld = {
+    lastSequence: undefined,
+    source: "unknown",
+    answered: false,
+  };
   const url = projectStreamUrl(partition);
   let failures = 0;
   while (!signal.aborted) {
     handlers.onStatus(projectStreamStatus("Opening", held, undefined));
     const openedAtMs = ports.nowMs();
     const end = await projectStreamOnce(ports, url, held, handlers, signal);
+    held.answered = true;
     if (signal.aborted) return;
     if (end.stop !== undefined) {
       handlers.onStatus(projectStreamStatus("Stopped", held, end.stop));

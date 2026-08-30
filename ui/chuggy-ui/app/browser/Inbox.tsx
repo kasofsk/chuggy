@@ -78,7 +78,7 @@ import {
   projectNativeActionRowsRead,
 } from "../core/projectNativeActionPages.ts";
 import type { ProjectNativeActionRows } from "../core/projectNativeActionPages.ts";
-import { projectListKey } from "../core/projectQueryKeys.ts";
+import { projectListFolded } from "../core/projectQueryKeys.ts";
 import {
   projectTableExecutionPhrase,
   projectTableRow,
@@ -93,11 +93,10 @@ import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
 import { actionsFor, ticketActionSentence } from "../core/ticketActions.ts";
 import type { TicketAction } from "../core/ticketActions.ts";
 import { ticketSectionTitles } from "../core/ticketSections.ts";
-import { useApiPorts, usePanelQuery } from "./api.ts";
+import { useApiPorts, usePanelList } from "./api.ts";
 import { useProjectExecutionIndex } from "./executionIndex.ts";
 import { Panel } from "./Panel.tsx";
 import { drawBytes } from "./ports.ts";
-import { useProjectListFold } from "./stream.tsx";
 import {
   cellAbsent,
   cellExecutionUnread,
@@ -126,20 +125,23 @@ export interface InboxRowsHeld {
 function useInboxOpenActions(
   partition: PartitionIdentity,
 ): PanelState<ProjectNativeActionRows> {
-  const key = projectListKey(partition, "NativeAction", inboxListName);
-  const state = usePanelQuery<ProjectNativeActionRows>(key, (at) =>
-    projectNativeActionRowsRead((cursor) =>
-      apiNativeActions(at, partition, inboxActionsPage(cursor)),
+  return usePanelList(
+    projectListFolded<ProjectNativeActionRows>(
+      partition,
+      "NativeAction",
+      inboxListName,
+      (previous, change) =>
+        projectNativeActionRowsFold(
+          previous,
+          change.resource,
+          change.representation,
+        ),
     ),
+    (at) =>
+      projectNativeActionRowsRead((cursor) =>
+        apiNativeActions(at, partition, inboxActionsPage(cursor)),
+      ),
   );
-  useProjectListFold("NativeAction", key, (previous, change) =>
-    projectNativeActionRowsFold(
-      previous as ProjectNativeActionRows | undefined,
-      change.resource,
-      change.representation,
-    ),
-  );
-  return state;
 }
 
 /** The tickets a phase puts in front of a person, live under the same key. */
@@ -148,22 +150,26 @@ function useInboxPhaseRows(partition: PartitionIdentity): {
   readonly readMore: (() => void) | undefined;
   readonly reading: boolean;
 } {
-  const key = projectListKey(partition, "Ticket", inboxListName);
+  const list = projectListFolded<ProjectTicketRows>(
+    partition,
+    "Ticket",
+    inboxListName,
+    (previous, change) =>
+      projectTicketRowsFold(
+        previous,
+        change.resource,
+        change.representation,
+        inboxPhases,
+      ),
+  );
+  const key = list.key;
   const client = useQueryClient();
   const ports = useApiPorts();
   const [reading, setReading] = useState(false);
-  const state = usePanelQuery<ProjectTicketRows>(key, (at) =>
+  const state = usePanelList(list, (at) =>
     projectTicketRowsRead(
       client.getQueryData<ProjectTicketRows>(key),
       (cursor) => apiProject(at, partition, inboxPage(cursor)),
-    ),
-  );
-  useProjectListFold("Ticket", key, (previous, change) =>
-    projectTicketRowsFold(
-      previous as ProjectTicketRows | undefined,
-      change.resource,
-      change.representation,
-      inboxPhases,
     ),
   );
   const rows = state.state === "Ready" ? state.value : undefined;

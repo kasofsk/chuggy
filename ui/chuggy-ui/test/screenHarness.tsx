@@ -101,12 +101,20 @@ export function apiDouble(served: {
   };
 }
 
-/** A stream that opens, says it is ready, and holds so a case can push. */
+/**
+ * A stream that opens, says it is ready and live, and holds so a case can push.
+ * The source frame is not decoration: a real open sends one before anything
+ * else, and a double that left it out would leave every screen under it reading
+ * on the fallback rather than on the frames the case pushes.
+ */
 export function openedStream(): StreamServer {
   return streamServer([
     {
       status: 200,
-      chunks: [frame("ready", undefined, { version: 1 })],
+      chunks: [
+        frame("ready", undefined, { version: 1 }),
+        frame("source", undefined, { version: 1, state: "live" }),
+      ],
       hold: true,
     },
   ]);

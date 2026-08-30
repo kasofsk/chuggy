@@ -16,7 +16,7 @@ import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { projectExecutionPage } from "../app/core/projectExecutionIndex.ts";
 import {
   ticketFilterAll,
-  ticketFilterKey,
+  ticketFilterList,
 } from "../app/core/projectTableFilters.ts";
 import { projectTicketRowsEmpty } from "../app/core/projectTicketPages.ts";
 
@@ -53,7 +53,7 @@ function recording(): { readonly ports: ApiPorts; readonly urls: string[] } {
 
 test("the ticket read takes its page count from the entry it is replacing", async () => {
   const client = new QueryClient();
-  client.setQueryData(ticketFilterKey(partition, ticketFilterAll), {
+  client.setQueryData(ticketFilterList(partition, ticketFilterAll).key, {
     ...projectTicketRowsEmpty,
     pagesRead: 3,
     nextCursor: "after-0",
