@@ -24,6 +24,7 @@ module execution_requirement {
   }
   type MaterializationResult = Materialized(MaterializedExecutionRequirement) | RequirementRefused
   type PinResult = Pinned(MaterializedExecutionRequirement) | PinRefused
+  type WorkerMode = LegacyWorker | SingleAgentWorker(ExecutionCapability)
 
   pure def candidate(m: int -> ExecutionRequirement, key: int): RequirementCandidate =
     if (m.keys().contains(key)) Requested(m.get(key)) else NoRequirement
@@ -79,6 +80,24 @@ module execution_requirement {
         }
     }
 
+  /// The authored worker mode names its primary agent concern. Materialization
+  /// translates that concern into the scheduler's capability vocabulary while
+  /// retaining the selected container platform. Legacy workers remain pinned
+  /// to their selected exact image.
+  pure def requirementForWorker(
+    selected: ExecutionRequirement, workerMode: WorkerMode
+  ): ExecutionRequirement = match workerMode {
+    | LegacyWorker => selected
+    | SingleAgentWorker(agent) => match selected {
+        | ContainerRequirement(container) => CapabilityRequirement({
+            operatingSystem: container.operatingSystem,
+            architecture: container.architecture,
+            capabilities: Set(agent)
+          })
+        | _ => selected
+      }
+  }
+
   /// Digest calculation is deliberately canonical and total over the closed
   /// variants. The identity belongs to the execution and is not configuration.
   pure def requirementDigest(value: ExecutionRequirement): int = match value {
@@ -101,19 +120,20 @@ module execution_requirement {
 
   pure def materialize(
     execution: int, task: int, taskKind: int, ticket: int,
-    defaults: RequirementDefaults
+    defaults: RequirementDefaults, workerMode: WorkerMode
   ): MaterializationResult =
     val selected = selectedRequirement(task, taskKind, ticket, defaults)
+    val value = requirementForWorker(selected.value, workerMode)
     if (and {
       defaults.platformDefaultVersion > 0,
       wellFormed(defaults.platformDefault),
-      wellFormed(selected.value),
+      wellFormed(value),
       refines(selected.value, defaults.platformDefault)
     }) Materialized({
       execution: execution,
-      value: selected.value,
+      value: value,
       identity: execution,
-      digest: requirementDigest(selected.value),
+      digest: requirementDigest(value),
       source: selected.source,
       platformDefaultVersion: defaults.platformDefaultVersion
     })
