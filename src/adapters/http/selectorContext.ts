@@ -9,6 +9,7 @@ import type { SelectorOperationalContextRead } from "../../interpreter/selectorO
 import { nativeHttpMediaType } from "../../contract/http.ts";
 import { presentedAccessToken, type AccessTokenSource } from "./accessToken.ts";
 import { boundedResponseBytes } from "./boundedResponse.ts";
+import { checkedPositiveBound } from "./bounds.ts";
 
 const counter = z.number().int().safe().nonnegative();
 const authoritySchema = z.strictObject({
@@ -63,12 +64,6 @@ export interface SelectorContextHttpConfig {
   readonly responseReadsMax: number;
 }
 
-function checkedPositive(value: number, name: string): number {
-  if (!Number.isSafeInteger(value) || value < 1)
-    throw new RangeError(`${name} must be a positive safe integer`);
-  return value;
-}
-
 function contextUrl(baseUrl: string, partition: Partition): URL {
   return new URL(
     [
@@ -87,12 +82,15 @@ export function selectorContextHttp(
   config: SelectorContextHttpConfig,
   transport: typeof fetch = fetch,
 ): SelectorOperationalContextRead {
-  const timeoutMs = checkedPositive(config.requestTimeoutMs, "request timeout");
-  const responseBytesMax = checkedPositive(
+  const timeoutMs = checkedPositiveBound(
+    config.requestTimeoutMs,
+    "request timeout",
+  );
+  const responseBytesMax = checkedPositiveBound(
     config.responseBytesMax,
     "response byte bound",
   );
-  const responseReadsMax = checkedPositive(
+  const responseReadsMax = checkedPositiveBound(
     config.responseReadsMax,
     "response read bound",
   );
@@ -108,6 +106,7 @@ export function selectorContextHttp(
         signal,
       });
       if (!response.ok) {
+        await response.body?.cancel();
         if (response.status === 401) config.accessToken.invalidate(token);
         throw new Error(
           `selector context source returned ${String(response.status)}`,

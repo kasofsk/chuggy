@@ -267,3 +267,33 @@ test("a body arriving in exactly its read bound is read, not refused", async () 
     body,
   );
 });
+
+test("a refused selector context read disposes of the body it will not parse", async () => {
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      controller.enqueue(new Uint8Array([1]));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const source = selectorContextHttp(
+    {
+      baseUrl: "https://native.example/",
+      accessToken: constantAccessToken("token"),
+      requestTimeoutMs: 1_000,
+      responseBytesMax: 10_000,
+      responseReadsMax: 100,
+    },
+    () => Promise.resolve(new Response(stream, { status: 401 })),
+  );
+  await assert.rejects(
+    source.context({
+      tenant: asTenantId("tenant"),
+      project: asProjectId("project"),
+    }),
+    /returned 401/u,
+  );
+  assert.equal(cancelled, true);
+});

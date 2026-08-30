@@ -240,26 +240,30 @@ test("the request deadline aborts an unresponsive transport", async () => {
   });
 });
 
-test("the request deadline also bounds authentication", async () => {
-  let fetched = false;
-  const client = nativeHttpClient({
-    baseUrl: "https://ticket.example/",
-    accessToken: {
-      token: () => new Promise<string>(() => undefined),
-      invalidate: () => undefined,
-    },
-    requestTimeoutMs: 5,
-    responseBytesMax: 1_000,
-    fetch: () => {
-      fetched = true;
-      return Promise.resolve(jsonResponse({ projects: [] }));
-    },
-  });
-  await assert.rejects(client.projectInventory(principal, undefined, 10), {
-    name: "TimeoutError",
-  });
-  assert.equal(fetched, false);
-});
+test(
+  "the request deadline also bounds authentication",
+  { timeout: 5_000 },
+  async () => {
+    let fetched = false;
+    const client = nativeHttpClient({
+      baseUrl: "https://ticket.example/",
+      accessToken: {
+        token: () => new Promise<string>(() => undefined),
+        invalidate: () => undefined,
+      },
+      requestTimeoutMs: 5,
+      responseBytesMax: 1_000,
+      fetch: () => {
+        fetched = true;
+        return Promise.resolve(jsonResponse({ projects: [] }));
+      },
+    });
+    await assert.rejects(client.projectInventory(principal, undefined, 10), {
+      name: "TimeoutError",
+    });
+    assert.equal(fetched, false);
+  },
+);
 
 test("a refused request tells the source which token it refused", async () => {
   const invalidated: string[] = [];

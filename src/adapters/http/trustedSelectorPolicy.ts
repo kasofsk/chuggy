@@ -6,6 +6,7 @@ import type {
 } from "../../interpreter/selector.ts";
 import type { TrustedSelectorPolicy } from "../../interpreter/trustedSelectorPolicyHost.ts";
 import { selectorOperationalContextV2Schema } from "./selectorContext.ts";
+import { checkedPositiveBound } from "./bounds.ts";
 
 export const trustedSelectorPolicyProtocolVersion = 1;
 export const trustedSelectorPolicyMediaType =
@@ -221,12 +222,6 @@ interface CheckedConfig {
   readonly responseBytesMax: number;
 }
 
-function checkedPositiveInteger(value: number, what: string): number {
-  if (!Number.isSafeInteger(value) || value < 1)
-    throw new RangeError(`${what} must be a positive safe integer`);
-  return value;
-}
-
 function checkedConfig(
   config: TrustedSelectorPolicyClientConfig,
 ): CheckedConfig {
@@ -249,11 +244,11 @@ function checkedConfig(
   return {
     baseUrl,
     authorization: `Bearer ${config.bearerToken}`,
-    requestDeadlineMs: checkedPositiveInteger(
+    requestDeadlineMs: checkedPositiveBound(
       config.requestDeadlineMs,
       "selector policy request deadline",
     ),
-    responseBytesMax: checkedPositiveInteger(
+    responseBytesMax: checkedPositiveBound(
       config.responseBytesMax,
       "selector policy response bound",
     ),

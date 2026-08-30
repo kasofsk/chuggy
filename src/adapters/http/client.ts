@@ -10,6 +10,7 @@ import {
   proposalSubmissionResponseSchema,
 } from "./codecs.ts";
 import { nativeHttpMediaType } from "../../contract/http.ts";
+import { checkedPositiveBound } from "./bounds.ts";
 import { presentedAccessToken, type AccessTokenSource } from "./accessToken.ts";
 import { encodeInventoryCursor } from "./contract.ts";
 
@@ -19,12 +20,6 @@ export interface NativeHttpClientConfig {
   readonly requestTimeoutMs: number;
   readonly responseBytesMax: number;
   readonly fetch?: typeof fetch;
-}
-
-function checkedPositiveBound(value: number, name: string): number {
-  if (!Number.isSafeInteger(value) || value < 1)
-    throw new RangeError(`${name} must be a positive safe integer`);
-  return value;
 }
 
 function projectPath(partition: Partition): string {

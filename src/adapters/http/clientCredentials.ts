@@ -16,6 +16,14 @@
  * replaced. It starts no retry of its own — the refused request fails, and the
  * one after it carries a new token.
  *
+ * `refusalFloorMs` IS WHAT STOPS THAT BECOMING AN AMPLIFIER. A refusal does
+ * not prove the token is bad — an issuer whose key set is unreachable refuses
+ * a good one — so a token discarded on every refusal answers an issuer outage
+ * with a grant per refused read, aimed at the issuer that is failing. A token
+ * held for less than this is kept instead, which caps what a refusal that
+ * never stops can cost at one grant per floor. The rotated key is unaffected:
+ * the token it invalidates was minted long before the refusal arrived.
+ *
  * ONE MINT AT A TIME. Callers arriving while a replacement is in flight join it
  * rather than each starting one, so the issuer sees a request per replacement
  * however many are waiting. A failed mint is not held: the next caller mints
@@ -35,6 +43,7 @@ import { z } from "zod";
 
 import { checkedBearerToken, type AccessTokenSource } from "./accessToken.ts";
 import { boundedResponseBytes } from "./boundedResponse.ts";
+import { checkedPositiveBound } from "./bounds.ts";
 
 const millisecondsPerSecond = 1_000;
 const clientCredentialsGrantType = "client_credentials";
@@ -60,21 +69,15 @@ export interface ClientCredentialsConfig {
   readonly responseBytesMax: number;
   readonly responseReadsMax: number;
   readonly refreshMarginMs: number;
+  readonly refusalFloorMs: number;
   readonly fetch?: typeof fetch;
   readonly currentTimeEpochMs?: () => number;
 }
 
 interface ClientCredentialsHeld {
   readonly token: string;
+  readonly mintedAtEpochMs: number;
   readonly replaceAtEpochMs: number;
-}
-
-function clientCredentialsPositive(value: number, what: string): number {
-  if (!Number.isSafeInteger(value) || value < 1)
-    throw new RangeError(
-      `client credentials ${what} must be a positive safe integer`,
-    );
-  return value;
 }
 
 function clientCredentialsChecked(
@@ -87,10 +90,26 @@ function clientCredentialsChecked(
     throw new RangeError("client credentials token URL carries credentials");
   if (config.clientId.length === 0 || config.clientSecret.length === 0)
     throw new RangeError("client credentials identity or secret is empty");
-  clientCredentialsPositive(config.requestTimeoutMs, "request timeout");
-  clientCredentialsPositive(config.responseBytesMax, "response byte bound");
-  clientCredentialsPositive(config.responseReadsMax, "response read bound");
-  clientCredentialsPositive(config.refreshMarginMs, "refresh margin");
+  checkedPositiveBound(
+    config.requestTimeoutMs,
+    "client credentials request timeout",
+  );
+  checkedPositiveBound(
+    config.responseBytesMax,
+    "client credentials response byte bound",
+  );
+  checkedPositiveBound(
+    config.responseReadsMax,
+    "client credentials response read bound",
+  );
+  checkedPositiveBound(
+    config.refreshMarginMs,
+    "client credentials refresh margin",
+  );
+  checkedPositiveBound(
+    config.refusalFloorMs,
+    "client credentials refusal floor",
+  );
   return config;
 }
 
@@ -151,6 +170,7 @@ async function clientCredentialsMinted(
     throw new Error("client credentials grant is not a bearer token");
   return {
     token: checkedBearerToken(grant.access_token),
+    mintedAtEpochMs: atEpochMs,
     replaceAtEpochMs:
       atEpochMs +
       clientCredentialsHoldMs(
@@ -199,7 +219,14 @@ export function clientCredentialsTokenSource(
       return granted.token;
     },
     invalidate: (refused) => {
-      if (held?.token === refused) held = undefined;
+      const current = held;
+      if (current === undefined || current.token !== refused) return;
+      if (
+        currentTimeEpochMs() - current.mintedAtEpochMs <
+        config.refusalFloorMs
+      )
+        return;
+      held = undefined;
     },
   };
 }

@@ -30,6 +30,7 @@ const validConfiguration = {
       audience: ["https://chuggy.example/api"],
       scope: [],
       refreshMarginMs: 60_000,
+      refusalFloorMs: 30_000,
     },
     requestDeadlineMs: 10,
     responseBytesMax: 10_000,
