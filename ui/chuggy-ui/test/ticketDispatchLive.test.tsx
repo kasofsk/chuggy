@@ -1,11 +1,11 @@
 /**
  * The ticket page's dispatch availability, kept live by the stream.
  *
- * The entry is the server's own candidate view and a `Ticket` frame does not
- * carry it, so what is checked is that the frame reaches the entry at all: the
- * button appears with nothing reloaded and nothing submitted from this screen.
- * A release made on the creation screen is exactly such a frame, and it is the
- * one that used to arrive at an entry no fold was registered for.
+ * THE FRAME IS ANOTHER TICKET'S. A ticket becomes dispatchable when its last
+ * dependency reaches Done, and the decision leaves the dependent's own row
+ * alone, so the only frame the console ever sees is the dependency's — a case
+ * that pushed this ticket's own frame would pass against a console that reads
+ * nothing for the reader whose page is open.
  *
  * `sleepMs` is the real one here, unlike the sibling case that follows an
  * operation: this case wants the bounded fallback to stay asleep, so that the
@@ -32,8 +32,8 @@ import { frame } from "./streamDouble.ts";
 import {
   ticketDispatchViewOf,
   ticketPageCandidate,
+  ticketPageDependency,
   ticketPageRoutes,
-  ticketPageTicket,
 } from "./ticketPageFixture.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
@@ -73,15 +73,17 @@ function drawn(dispatchable: () => boolean): ReturnType<typeof openedStream> {
   return server;
 }
 
-function ticketFrame(resource: string): string {
+/** The dependency reaching Done, which is the frame that makes the ticket on
+ * screen dispatchable without ever naming it. */
+function dependencyDoneFrame(): string {
   return frame("Ticket", "8", {
     version: 1,
-    resource,
-    representation: ticketPageTicket,
+    resource: String(ticketPageDependency.ticket),
+    representation: ticketPageDependency,
   });
 }
 
-test("this ticket's own frame makes its dispatch availability be read again", async () => {
+test("a dependency's frame makes this ticket's dispatch availability be read again", async () => {
   let dispatchable = false;
   const server = drawn(() => dispatchable);
   await settled();
@@ -89,22 +91,21 @@ test("this ticket's own frame makes its dispatch availability be read again", as
 
   dispatchable = true;
   await turned(() => {
-    server.push(ticketFrame("11"));
+    server.push(dependencyDoneFrame());
   });
   await settled();
 
   expect(screen.getByRole("button", { name: "dispatch" })).toBeDefined();
 });
 
-test("another ticket's frame leaves this ticket's dispatch entry alone", async () => {
+/** The other half of the case above: without the frame the entry stands, so
+ * what drew the button there was the frame and not a rerender. */
+test("an unchanged project leaves the dispatch entry where it was read", async () => {
   let dispatchable = false;
-  const server = drawn(() => dispatchable);
+  drawn(() => dispatchable);
   await settled();
 
   dispatchable = true;
-  await turned(() => {
-    server.push(ticketFrame("12"));
-  });
   await settled();
 
   expect(screen.queryByRole("button", { name: "dispatch" })).toBeNull();

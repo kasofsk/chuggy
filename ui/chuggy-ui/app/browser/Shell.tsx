@@ -102,22 +102,30 @@ function InboxCount(props: {
 }
 
 /**
- * The shell states whether the stream is carrying, because the banner no longer
- * answers that: it is silent both when the stream is live and when a first
- * connection has not opened yet. A reader has the banner; anything watching the
- * console from outside has this.
+ * The shell's own element, which states whether the stream is carrying because
+ * the banner no longer answers that: the banner is silent when the stream is
+ * live and silent again when a first connection has not been answered. A reader
+ * has the banner; anything watching the console from outside has this.
  */
+export function ShellFrame(props: { readonly children: ReactNode }): ReactNode {
+  const carrying = projectStreamCarrying(useProjectStreamStatus());
+  return (
+    <div className="shell" data-stream={carrying ? "live" : "not-live"}>
+      {props.children}
+    </div>
+  );
+}
+
 export function Shell(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const holder = useSessionHolder();
-  const carrying = projectStreamCarrying(useProjectStreamStatus());
   const params = {
     tenant: props.partition.tenant,
     project: props.partition.project,
   };
   return (
-    <div className="shell" data-stream={carrying ? "live" : "not-live"}>
+    <ShellFrame>
       <header className="shell-head">
         <span className="brand">chuggy</span>
         <ProjectSwitcher partition={props.partition} />
@@ -159,6 +167,6 @@ export function Shell(props: {
         <Outlet />
       </main>
       <Footer />
-    </div>
+    </ShellFrame>
   );
 }

@@ -81,12 +81,11 @@ export function actionsFor(ticket: TicketResponse): readonly TicketAction[] {
 }
 
 /**
- * Where one ticket's dispatch availability is held, and what makes it stale.
- *
- * The view is the server's own candidate table and a `Ticket` frame does not
- * carry it, so the entry is read again rather than folded — on this ticket's
- * own frames alone, because a ticket whose dispatchability changed is a ticket
- * that changed, and every other ticket has an entry of its own.
+ * Where one ticket's dispatch availability is held, and what makes it stale:
+ * every `Ticket` frame, because candidacy is `isReadyIn` — this ticket's phase
+ * AND every dependency being Done — so the frame that makes a ticket
+ * dispatchable is its last dependency's, and a decision that leaves this
+ * ticket's own row alone never names it.
  */
 export function ticketDispatchList(
   partition: PartitionIdentity,
@@ -96,7 +95,7 @@ export function ticketDispatchList(
     partition,
     "Ticket",
     `dispatch:${String(ticket)}`,
-    (change) => change.resource === String(ticket),
+    () => true,
   );
 }
 

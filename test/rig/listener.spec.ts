@@ -43,6 +43,7 @@ import { expect } from "@playwright/test";
 
 import { fallbackIntervalMs } from "../../ui/chuggy-ui/app/core/projectFallback.ts";
 import {
+  awaitLive,
   briefIntent,
   createDraft,
   deleteDraft,
@@ -64,10 +65,12 @@ const outageMs = 45_000;
 const outageIntervalMs = 2_000;
 
 /**
- * How long a fallback read is waited for. The loop runs from the mount and
- * sleeps before each refetch, so the change may be written just after one
- * refetch has gone and be drawn by the next: two intervals and one for the
- * round trip, derived from the console's own interval rather than written down.
+ * How long a fallback read is waited for: the loop sleeps before each refetch
+ * and the change may be written just after one has gone, so two intervals and
+ * one for the round trip, derived from the console's own interval rather than
+ * written down. NOT YET CONFIRMED ON A RIG — it is the arithmetic of the loop
+ * that replaced the flickering one rather than a measurement, so widen it here
+ * if it proves tight.
  */
 const fallbackReadTimeoutMs = fallbackIntervalMs * 3;
 
@@ -100,9 +103,7 @@ drill(
       type: "listener",
       description: `terminated ${String(await outage)} listening backend(s)`,
     });
-    await expect(notLiveBanner(watcher)).toHaveCount(0, {
-      timeout: recoveryTimeoutMs,
-    });
+    await awaitLive(watcher);
 
     const live = await reviseDraftIntent(bearer, draft, "drawn live again");
     await expect(briefIntent(watcher)).toHaveText(live, {

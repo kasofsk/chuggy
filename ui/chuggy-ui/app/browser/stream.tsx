@@ -138,6 +138,20 @@ function useStreamConnection(
   const [status, setStatus] =
     useState<ProjectStreamStatus>(streamStatusInitial);
   const { tenant, project } = partition;
+
+  /**
+   * What this console has learnt about this partition's stream, which outlives
+   * any one run of it: a token renewal replaces the run under a reader who has
+   * gone nowhere, and a run counting from nothing would report that reopen as a
+   * first open and take the banner down over a screen that had stopped
+   * updating. A different project is a first open of its own, and this effect
+   * is declared before the one below so the forgetting happens first.
+   */
+  const answered = useRef(false);
+  useEffect(() => {
+    answered.current = false;
+  }, [tenant, project]);
+
   useEffect(() => {
     const opened = openProjectStream(
       {
@@ -155,8 +169,12 @@ function useStreamConnection(
           ))
             applyCommand(client, folds, command);
         },
-        onStatus: setStatus,
+        onStatus: (reported) => {
+          if (reported.answered) answered.current = true;
+          setStatus(reported);
+        },
       },
+      answered.current,
     );
     return () => {
       opened.stop();

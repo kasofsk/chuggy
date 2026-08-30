@@ -5,12 +5,17 @@
  * frame can be written into the same key with `setQueryData`; a failed read
  * therefore arrives as the error, carrying the outcome the contract classified.
  *
- * There is a hook per kind of key and none that takes a key, because a panel
- * that named its own entry could name a list entry the stream has not been told
- * about, and a screen with no live refresh path compiles and runs exactly like
- * one that has one. So the key is built here: `usePanelResource` from what a
- * frame of that kind carries, which is what the stream writes; `usePanelList`
- * from a `ProjectList`, which cannot be made without its refresh.
+ * There is a hook per kind of key and none that takes a key. WHAT THAT MAKES
+ * UNWRITABLE IS A LIST ENTRY WITH NO REFRESH, and only that: `usePanelList`
+ * takes a `ProjectList`, which cannot be made without one, so the omission that
+ * left a dispatch panel reading once is now a compile error.
+ *
+ * IT PROMISES NOTHING ABOUT A RESOURCE. `usePanelResource` takes the resource
+ * name as a string, and a name no frame carries typechecks: the evidence panels
+ * read parts under an execution — a run's turns, its configuration, an
+ * artifact's body — while the change log names the bare execution id. Those
+ * entries are reached by the partition's own refetch and by nothing else, which
+ * is the freshness a finished run's evidence needs and is not live.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -31,7 +36,7 @@ import { apiFetch, sleepMs } from "./ports.ts";
 import { useSessionHolder } from "./session.tsx";
 import { useProjectListRefresh } from "./stream.tsx";
 
-export type PanelRead<T> = (
+type PanelRead<T> = (
   ports: ApiPorts,
   signal: AbortSignal,
 ) => Promise<ApiResult<T>>;
@@ -68,8 +73,8 @@ function usePanelQuery<T>(
   });
 }
 
-/** One resource of one kind: the stream writes this entry from the frame that
- * carries it, so the panel has a live refresh path and declares nothing. */
+/** One resource of one kind, written by the frame that names it — or a part
+ * under one, which no frame names and the partition's refetch reaches. */
 export function usePanelResource<T>(
   partition: PartitionIdentity,
   kind: ProjectChangeKind,
@@ -88,8 +93,12 @@ export function usePanelList<T>(
   return usePanelQuery(list.key, read);
 }
 
-/** The inventory belongs to no partition and so to no stream: it is read at the
- * landing, where there is no project yet to open one for. */
+/**
+ * The inventory, which belongs to no partition and so has no refresh path at
+ * all: `["projects"]` is outside `projectPartitionKey`, so neither a `Project`
+ * frame nor the fallback's refetch reaches it and the switcher's list is the
+ * one this tab opened with (kasofsk/chuggy#439).
+ */
 export function usePanelInventory<T>(read: PanelRead<T>): PanelState<T> {
   return usePanelQuery(projectsInventoryKey(), read);
 }

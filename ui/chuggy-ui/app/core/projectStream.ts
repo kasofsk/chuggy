@@ -34,9 +34,10 @@ export interface ProjectStreamStatus {
   readonly source: ProjectSourceState | "unknown";
   readonly reason: string | undefined;
   readonly lastSequence: number | undefined;
-  /** Whether an attempt to open has ever ended — opened, been refused, or
-   * failed. Until one has, this console knows nothing about the stream, which
-   * is a different thing from knowing something bad about it. */
+  /** Whether an attempt to open has ended since this console started following
+   * this partition — opened, been refused, or failed. Until one has, the
+   * console knows nothing about the stream, which is a different thing from
+   * knowing something bad about it. */
   readonly answered: boolean;
 }
 
@@ -219,6 +220,7 @@ async function projectStreamOnce(
       response.body === null
     )
       return { reason: `the stream answered ${String(response.status)}` };
+    held.answered = true;
     handlers.onStatus(projectStreamStatus("Open", held, undefined));
     await projectStreamDrain(response.body, held, handlers);
     return { reason: "the stream closed" };
@@ -234,11 +236,12 @@ async function projectStreamRun(
   partition: PartitionIdentity,
   handlers: ProjectStreamHandlers,
   signal: AbortSignal,
+  answered: boolean,
 ): Promise<void> {
   const held: StreamHeld = {
     lastSequence: undefined,
     source: "unknown",
-    answered: false,
+    answered,
   };
   const url = projectStreamUrl(partition);
   let failures = 0;
@@ -272,12 +275,15 @@ async function projectStreamRun(
  * The stream, opened and kept open until it is stopped or refused.
  *
  * Stopping aborts the request in flight, which is what a project change and a
- * token refresh both do before opening the next one.
+ * token refresh both do before opening the next one — so `answered` is what the
+ * caller already learnt about this partition's stream, a run counting from
+ * nothing having no way to tell that reopen from a first open.
  */
 export function openProjectStream(
   ports: ProjectStreamPorts,
   partition: PartitionIdentity,
   handlers: ProjectStreamHandlers,
+  answered = false,
 ): ProjectStreamHandle {
   const controller = new AbortController();
   const finished = projectStreamRun(
@@ -285,6 +291,7 @@ export function openProjectStream(
     partition,
     handlers,
     controller.signal,
+    answered,
   );
   return {
     stop: () => {

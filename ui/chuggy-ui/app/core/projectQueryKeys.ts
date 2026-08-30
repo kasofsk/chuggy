@@ -82,11 +82,29 @@ export type ProjectListRefresh<T> =
       readonly stale: (change: ProjectListChange) => boolean;
     };
 
+/** Held by no value that exists, so the two constructors below are the only
+ * way to obtain a `ProjectList` and an object literal is not one. */
+declare const projectListWitness: unique symbol;
+
 /** A list entry and the refresh that keeps it live, which are one value. */
 export interface ProjectList<T> {
   readonly kind: ProjectChangeKind;
   readonly key: ProjectQueryKey;
   readonly refresh: ProjectListRefresh<T>;
+  readonly [projectListWitness]: true;
+}
+
+function projectListOf<T>(
+  partition: PartitionIdentity,
+  kind: ProjectChangeKind,
+  name: string,
+  refresh: ProjectListRefresh<T>,
+): ProjectList<T> {
+  return {
+    kind,
+    key: projectListKey(partition, kind, name),
+    refresh,
+  } as ProjectList<T>;
 }
 
 export function projectListFolded<T>(
@@ -95,11 +113,7 @@ export function projectListFolded<T>(
   name: string,
   fold: (previous: T | undefined, change: ProjectListChange) => T | undefined,
 ): ProjectList<T> {
-  return {
-    kind,
-    key: projectListKey(partition, kind, name),
-    refresh: { refresh: "Fold", fold },
-  };
+  return projectListOf(partition, kind, name, { refresh: "Fold", fold });
 }
 
 /** `stale` is asked of every frame of the kind, so a list following one
@@ -110,9 +124,5 @@ export function projectListReread<T>(
   name: string,
   stale: (change: ProjectListChange) => boolean,
 ): ProjectList<T> {
-  return {
-    kind,
-    key: projectListKey(partition, kind, name),
-    refresh: { refresh: "Reread", stale },
-  };
+  return projectListOf(partition, kind, name, { refresh: "Reread", stale });
 }

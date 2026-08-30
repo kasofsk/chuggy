@@ -21,15 +21,17 @@ import {
   projectResourceKey,
 } from "../app/core/projectQueryKeys.ts";
 import type { ProjectList } from "../app/core/projectQueryKeys.ts";
+import { creationContextList } from "../app/core/ticketCreationRun.ts";
 import type { SessionHolder } from "../app/core/sessionHolder.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
-import { StreamBanner } from "../app/browser/Shell.tsx";
+import { ShellFrame, StreamBanner } from "../app/browser/Shell.tsx";
 import {
   ProjectStreamProvider,
   useProjectListRefresh,
   useProjectStreamStatus,
 } from "../app/browser/stream.tsx";
 import { frame, streamServer } from "./streamDouble.ts";
+import type { StreamServer } from "./streamDouble.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 const beta: PartitionIdentity = { tenant: "acme", project: "beta" };
@@ -135,31 +137,37 @@ test("a live frame is written into the cache and nothing is refetched", async ()
   );
 });
 
+const ticketChange = frame("Ticket", "5", {
+  version: 1,
+  resource: "3",
+  representation: ticket,
+});
+
+const configurationChange = frame("Configuration", "6", {
+  version: 1,
+  resource: "r2",
+  representation: {
+    partition: atlas,
+    revision: "r2",
+    canonical: "{}",
+    digest: "d".repeat(64),
+  },
+});
+
 /**
- * One `Ticket` change naming ticket 3, offered to one registered list, so that
- * what separates the cases below is the list's own declaration alone. The
- * client is handed back because a reread leaves its entry where it is and marks
- * it, which is a state rather than a value.
+ * One change, offered to one registered list, so that what separates the cases
+ * below is the list's own declaration alone. The client is handed back because
+ * a reread leaves its entry where it is and marks it, which is a state rather
+ * than a value.
  */
-async function refreshedEntry(
-  list: ProjectList<readonly string[]>,
-  held: readonly string[],
+async function refreshedEntry<T>(
+  list: ProjectList<T>,
+  held: unknown,
+  change = ticketChange,
 ): Promise<QueryClient> {
   const client = new QueryClient();
   client.setQueryData(list.key, held);
-  const server = streamServer([
-    {
-      status: 200,
-      chunks: [
-        frame("Ticket", "5", {
-          version: 1,
-          resource: "3",
-          representation: ticket,
-        }),
-      ],
-      hold: true,
-    },
-  ]);
+  const server = streamServer([{ status: 200, chunks: [change], hold: true }]);
   function Registered(): ReactNode {
     useProjectListRefresh(list);
     return null;
@@ -224,6 +232,23 @@ test("a list that rereads is marked stale by the frame it follows", async () => 
 test("a list that rereads is left alone by another resource's frame", async () => {
   const list = followingList("9");
   const client = await refreshedEntry(list, ["held"]);
+  expect(client.getQueryState(list.key)?.isInvalidated).toBe(false);
+});
+
+/**
+ * The creation screen's context is whichever revision is ready, which no one
+ * frame's own revision settles — so any `Configuration` frame stales it, and a
+ * `Ticket` frame, being another kind, does not.
+ */
+test("the creation context is staled by a configuration frame", async () => {
+  const list = creationContextList(atlas);
+  const client = await refreshedEntry(list, "held", configurationChange);
+  expect(client.getQueryState(list.key)?.isInvalidated).toBe(true);
+});
+
+test("the creation context is left alone by a ticket frame", async () => {
+  const list = creationContextList(atlas);
+  const client = await refreshedEntry(list, "held");
   expect(client.getQueryState(list.key)?.isInvalidated).toBe(false);
 });
 
@@ -323,6 +348,47 @@ async function banner(
   return view.container.querySelector(".banner");
 }
 
+/** What the shell's own element says about the stream, which is not what the
+ * banner says: the banner is silent for two opposite reasons. */
+async function shellStream(
+  transport: Parameters<typeof ProjectStreamProvider>[0]["transport"],
+): Promise<string | null | undefined> {
+  const view = render(
+    <Harness
+      holder={holderDouble()}
+      client={new QueryClient()}
+      partition={atlas}
+      transport={transport}
+    >
+      <ShellFrame>
+        <p>drawn</p>
+      </ShellFrame>
+    </Harness>,
+  );
+  await settled();
+  return view.container.querySelector(".shell")?.getAttribute("data-stream");
+}
+
+test("the shell says the stream is live once it is carrying changes", async () => {
+  const server = streamServer([
+    {
+      status: 200,
+      chunks: [
+        frame("ready", undefined, { version: 1 }),
+        frame("source", undefined, { version: 1, state: "live" }),
+      ],
+      hold: true,
+    },
+  ]);
+  expect(await shellStream(server.ports.fetch)).toBe("live");
+});
+
+test("the shell says the stream is not live while it is still opening", async () => {
+  expect(await shellStream(() => new Promise(() => undefined))).toBe(
+    "not-live",
+  );
+});
+
 /**
  * A first connection has never had the chance to fail, so there is nothing to
  * tell a reader; a refused one has, and saying nothing then would leave a stale
@@ -335,4 +401,57 @@ test("a connection that is still opening for the first time says nothing", async
 test("a connection the API refuses says so where a reader will see it", async () => {
   const server = streamServer([{ status: 401 }]);
   expect(await banner(server.ports.fetch)).not.toBeNull();
+});
+
+/** A live connection, and then nothing: the second open never answers, which is
+ * what a renewal onto an API that has stopped responding looks like. */
+function openingThenHanging(
+  server: StreamServer,
+): NonNullable<Parameters<typeof ProjectStreamProvider>[0]["transport"]> {
+  let opens = 0;
+  return (url, init) => {
+    opens += 1;
+    return opens === 1
+      ? server.ports.fetch(url, init)
+      : new Promise(() => undefined);
+  };
+}
+
+/**
+ * A token renewal replaces the run, not the reader's place in the console, so
+ * the reopen it starts is not a first open. Reading it as one takes the banner
+ * down over screens still showing what they held before the renewal.
+ */
+test("a reopen after a token renewal is not read as a first open", async () => {
+  const holder = holderDouble();
+  const server = streamServer([
+    {
+      status: 200,
+      chunks: [
+        frame("ready", undefined, { version: 1 }),
+        frame("source", undefined, { version: 1, state: "live" }),
+      ],
+      hold: true,
+    },
+  ]);
+  const view = render(
+    <Harness
+      holder={holder}
+      client={new QueryClient()}
+      partition={atlas}
+      transport={openingThenHanging(server)}
+    >
+      <StreamBanner />
+    </Harness>,
+  );
+  await settled();
+  expect(view.container.querySelector(".banner")).toBeNull();
+
+  await act(async () => {
+    holder.renew();
+    await Promise.resolve();
+  });
+  await settled();
+
+  expect(view.container.querySelector(".banner")).not.toBeNull();
 });

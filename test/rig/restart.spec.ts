@@ -8,12 +8,18 @@
  * which did nothing cannot pass this either. Whether the frame arrives replayed
  * from the last identifier or after a reset is the hub's decision: the screen
  * must end up showing it.
+ *
+ * RECOVERY IS `awaitLive` AND NOT AN ABSENT BANNER. The banner is silent both
+ * when the stream is carrying and when a connection has not been answered, and
+ * a restart is exactly where the second happens — the token renewal this drill
+ * can provoke reopens onto an API that is not answering yet.
  */
 
 import { expect } from "@playwright/test";
 
 import {
   apiRevision,
+  awaitLive,
   briefIntent,
   createDraft,
   deleteDraft,
@@ -72,9 +78,7 @@ drill(
     await expect(briefIntent(watcher)).toHaveText(written, {
       timeout: recoveryTimeoutMs,
     });
-    await expect(notLiveBanner(watcher)).toHaveCount(0, {
-      timeout: recoveryTimeoutMs,
-    });
+    await awaitLive(watcher);
     const after = await apiRevision();
     expect(after).not.toBe(before);
     drill.info().annotations.push({

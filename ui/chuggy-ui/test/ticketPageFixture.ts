@@ -11,6 +11,14 @@ import { answer } from "./screenHarness.tsx";
 
 export const ticketPageTicket = { ticket: 11, phase: "Pending", sequence: 7 };
 
+/** The ticket the one above waits on, as the frame reporting it Done carries
+ * it: the transition that makes the page's ticket a candidate. */
+export const ticketPageDependency = {
+  ticket: 10,
+  phase: "Done",
+  sequence: 8,
+};
+
 export const ticketPageCandidate = {
   ticket: 11,
   ticketVersion: 4,
