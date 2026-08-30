@@ -23,6 +23,30 @@ const discoverySchema = z.object({
 
 const millisecondsPerSecond = 1_000;
 
+/**
+ * The failures that are the token's, listed rather than derived, so that
+ * anything not on the list — a key set that timed out, answered a non-200, or
+ * could not be reached at all — reads as this server failing to verify rather
+ * than as the caller failing to prove.
+ */
+const oidcInvalidTokenCodes = new Set([
+  "ERR_JOSE_ALG_NOT_ALLOWED",
+  "ERR_JWKS_MULTIPLE_MATCHING_KEYS",
+  "ERR_JWKS_NO_MATCHING_KEY",
+  "ERR_JWS_INVALID",
+  "ERR_JWS_SIGNATURE_VERIFICATION_FAILED",
+  "ERR_JWT_CLAIM_VALIDATION_FAILED",
+  "ERR_JWT_EXPIRED",
+  "ERR_JWT_INVALID",
+]);
+
+function oidcInvalidToken(failure: unknown): boolean {
+  if (typeof failure !== "object" || failure === null) return false;
+  if (!("code" in failure)) return false;
+  const code: unknown = failure.code;
+  return typeof code === "string" && oidcInvalidTokenCodes.has(code);
+}
+
 function positiveDuration(value: number, what: string): number {
   if (!Number.isSafeInteger(value) || value < 1)
     throw new RangeError(`${what} must be a positive integer`);
@@ -82,20 +106,32 @@ export async function oidcAuthentication(
   });
   return {
     authenticateBearer: async (token) => {
-      const verified = await jwtVerify(token, jwks, {
-        issuer: config.issuer,
-        audience: config.audience,
-        algorithms: [...config.algorithms],
-        requiredClaims: ["sub"],
-      });
+      let verified;
+      try {
+        verified = await jwtVerify(token, jwks, {
+          issuer: config.issuer,
+          audience: config.audience,
+          algorithms: [...config.algorithms],
+          requiredClaims: ["sub"],
+        });
+      } catch (failure) {
+        return {
+          authenticated: oidcInvalidToken(failure)
+            ? "InvalidToken"
+            : "AuthorityUnavailable",
+        };
+      }
       const subject = verified.payload.sub;
-      if (subject === undefined) throw new Error("OIDC token has no subject");
+      if (subject === undefined) return { authenticated: "InvalidToken" };
       const expiry = verified.payload.exp;
       return {
-        principal: oidcPrincipal(config.issuer, subject),
-        ...(expiry === undefined
-          ? {}
-          : { expiresAtMs: expiry * millisecondsPerSecond }),
+        authenticated: "Bearer",
+        bearer: {
+          principal: oidcPrincipal(config.issuer, subject),
+          ...(expiry === undefined
+            ? {}
+            : { expiresAtMs: expiry * millisecondsPerSecond }),
+        },
       };
     },
   };

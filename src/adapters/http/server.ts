@@ -83,8 +83,18 @@ export interface AuthenticatedBearer {
   readonly expiresAtMs?: number | undefined;
 }
 
+/**
+ * What one attempt to authenticate a bearer decided, which is three answers
+ * and not two: who the bearer is, a token this server can say is bad, and a
+ * verification it was unable to carry out.
+ */
+export type BearerAuthentication =
+  | { readonly authenticated: "Bearer"; readonly bearer: AuthenticatedBearer }
+  | { readonly authenticated: "InvalidToken" }
+  | { readonly authenticated: "AuthorityUnavailable" };
+
 export interface PrincipalAuthentication {
-  authenticateBearer(token: string): Promise<AuthenticatedBearer | undefined>;
+  authenticateBearer(token: string): Promise<BearerAuthentication>;
 }
 
 export interface NativeHttpReadiness {
@@ -226,6 +236,46 @@ declare module "fastify" {
   }
 }
 
+/** How long a caller is told to wait before asking this server to verify again. */
+const authorityRetryAfterSeconds = 1;
+
+/**
+ * RFC 6750's two challenges. A request that offered nothing is told what to
+ * offer; a request whose token this server verified and rejected is told that,
+ * so a client can tell a credential it must replace from one it need not.
+ */
+async function unauthenticated(
+  reply: FastifyReply,
+  invalidToken: boolean,
+): Promise<void> {
+  void reply.header(
+    "www-authenticate",
+    invalidToken ? 'Bearer error="invalid_token"' : "Bearer",
+  );
+  await reply
+    .code(401)
+    .type(nativeHttpMediaType)
+    .send(nativeHttpError("Unauthenticated", "Authentication is required."));
+}
+
+/**
+ * A key set this server could not reach or read is this server failing, and
+ * answering it as a refusal of the token would tell every caller to replace a
+ * credential that is not the problem.
+ */
+async function authorityUnavailable(reply: FastifyReply): Promise<void> {
+  await reply
+    .code(503)
+    .header("retry-after", String(authorityRetryAfterSeconds))
+    .type(nativeHttpMediaType)
+    .send(
+      nativeHttpError(
+        "AuthorityUnavailable",
+        "The token could not be verified.",
+      ),
+    );
+}
+
 function registerAuthentication(
   app: FastifyInstance,
   authentication: PrincipalAuthentication,
@@ -235,23 +285,24 @@ function registerAuthentication(
   app.addHook("preHandler", async (request, reply) => {
     if (request.routeOptions.config.public === true) return;
     const token = bearer(request.headers.authorization);
-    const bearerHolder =
-      token === undefined
-        ? undefined
-        : await authentication.authenticateBearer(token).catch(() => undefined);
-    if (bearerHolder === undefined) {
-      void reply.header("www-authenticate", "Bearer");
-      await reply
-        .code(401)
-        .type(nativeHttpMediaType)
-        .send(
-          nativeHttpError("Unauthenticated", "Authentication is required."),
-        );
+    if (token === undefined) {
+      await unauthenticated(reply, false);
       return reply;
     }
-    request.principal = bearerHolder.principal;
-    if (bearerHolder.expiresAtMs !== undefined)
-      request.bearerExpiresAtMs = bearerHolder.expiresAtMs;
+    const decided = await authentication
+      .authenticateBearer(token)
+      .catch(() => ({ authenticated: "AuthorityUnavailable" }) as const);
+    if (decided.authenticated === "AuthorityUnavailable") {
+      await authorityUnavailable(reply);
+      return reply;
+    }
+    if (decided.authenticated === "InvalidToken") {
+      await unauthenticated(reply, true);
+      return reply;
+    }
+    request.principal = decided.bearer.principal;
+    if (decided.bearer.expiresAtMs !== undefined)
+      request.bearerExpiresAtMs = decided.bearer.expiresAtMs;
   });
 }
 
