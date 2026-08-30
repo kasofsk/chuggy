@@ -66,6 +66,26 @@ module execution_requirement_test {
       | RequirementRefused => assert(false)
     }
 
+  run singleAgentWorkerAddsItsAgentToAnAuthoredCapabilityRequirementTest =
+    val capability = CapabilityRequirement({
+      operatingSystem: Linux, architecture: Amd64,
+      capabilities: Set(AgentClaude) })
+    val configured = {
+      explicitTasks: Map(), taskKinds: Map(), tickets: Map(),
+      platformDefault: capability, platformDefaultVersion: 1
+    }
+    match materialize(101, 11, 2, 3, configured, SingleAgentWorker(AgentCodex)) {
+      | Materialized(pinned) => assert(pinned.value == CapabilityRequirement({
+          operatingSystem: Linux, architecture: Amd64,
+          capabilities: Set(AgentClaude, AgentCodex) }))
+      | RequirementRefused => assert(false)
+    }
+
+  run singleAgentWorkerRefusesANativeRequirementTest =
+    assert(materialize(
+      101, 11, 2, 3, defaults, SingleAgentWorker(AgentCodex)
+    ) == RequirementRefused)
+
   run changingDefaultDoesNotRewritePinnedRequirementTest =
     val oldConfig = defaultsFromLegacyReleaseImage(42, 1)
     val newConfig = defaultsFromLegacyReleaseImage(99, 2)

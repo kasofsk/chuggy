@@ -86,15 +86,19 @@ module execution_requirement {
   /// to their selected exact image.
   pure def requirementForWorker(
     selected: ExecutionRequirement, workerMode: WorkerMode
-  ): ExecutionRequirement = match workerMode {
-    | LegacyWorker => selected
+  ): RequirementCandidate = match workerMode {
+    | LegacyWorker => Requested(selected)
     | SingleAgentWorker(agent) => match selected {
-        | ContainerRequirement(container) => CapabilityRequirement({
+        | ContainerRequirement(container) => Requested(CapabilityRequirement({
             operatingSystem: container.operatingSystem,
             architecture: container.architecture,
             capabilities: Set(agent)
-          })
-        | _ => selected
+          }))
+        | CapabilityRequirement(capability) => Requested(CapabilityRequirement({
+            ...capability,
+            capabilities: capability.capabilities.union(Set(agent))
+          }))
+        | NativeRequirement(_) => NoRequirement
       }
   }
 
@@ -123,21 +127,24 @@ module execution_requirement {
     defaults: RequirementDefaults, workerMode: WorkerMode
   ): MaterializationResult =
     val selected = selectedRequirement(task, taskKind, ticket, defaults)
-    val value = requirementForWorker(selected.value, workerMode)
-    if (and {
-      defaults.platformDefaultVersion > 0,
-      wellFormed(defaults.platformDefault),
-      wellFormed(value),
-      refines(selected.value, defaults.platformDefault)
-    }) Materialized({
-      execution: execution,
-      value: value,
-      identity: execution,
-      digest: requirementDigest(value),
-      source: selected.source,
-      platformDefaultVersion: defaults.platformDefaultVersion
-    })
-    else RequirementRefused
+    match requirementForWorker(selected.value, workerMode) {
+      | NoRequirement => RequirementRefused
+      | Requested(value) =>
+          if (and {
+            defaults.platformDefaultVersion > 0,
+            wellFormed(defaults.platformDefault),
+            wellFormed(value),
+            refines(selected.value, defaults.platformDefault)
+          }) Materialized({
+            execution: execution,
+            value: value,
+            identity: execution,
+            digest: requirementDigest(value),
+            source: selected.source,
+            platformDefaultVersion: defaults.platformDefaultVersion
+          })
+          else RequirementRefused
+    }
 
   /// Re-observation is idempotent, but neither a wider nor merely different
   /// value can replace what logical execution creation committed.
