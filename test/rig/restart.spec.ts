@@ -9,10 +9,10 @@
  * from the last identifier or after a reset is the hub's decision: the screen
  * must end up showing it.
  *
- * RECOVERY IS `awaitLive` AND NOT AN ABSENT BANNER. The banner is silent both
- * when the stream is carrying and when a connection has not been answered, and
- * a restart is exactly where the second happens — the token renewal this drill
- * can provoke reopens onto an API that is not answering yet.
+ * RECOVERY IS `awaitLive` AND NOT AN ABSENT BANNER. The banner is silent when
+ * the stream is carrying and silent again before a first connection has been
+ * answered, so its absence is two states and only one of them is recovery. The
+ * shell states the one this drill means.
  */
 
 import { expect } from "@playwright/test";

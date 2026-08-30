@@ -17,7 +17,6 @@ import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import type { ProjectChangeKind } from "../../../src/contract/events.ts";
 import {
   projectListFolded,
-  projectListReread,
   projectResourceKey,
 } from "../app/core/projectQueryKeys.ts";
 import type { ProjectList } from "../app/core/projectQueryKeys.ts";
@@ -200,17 +199,6 @@ function namingList(
   );
 }
 
-/** A list of the ticket named in its own name, which is the shape of the
- * dispatch entry a ticket page reads. */
-function followingList(ticketFollowed: string): ProjectList<readonly string[]> {
-  return projectListReread<readonly string[]>(
-    atlas,
-    "Ticket",
-    `dispatch:${ticketFollowed}`,
-    (change) => change.resource === ticketFollowed,
-  );
-}
-
 test("a registered list fold is offered the same representation", async () => {
   const client = await refreshedEntry(namingList("Ticket", "frontier"), []);
   expect(client.getQueryData(namingList("Ticket", "frontier").key)).toEqual([
@@ -223,22 +211,11 @@ test("a fold registered for one kind is not offered another kind's change", asyn
   expect(client.getQueryData(namingList("Draft", "drafts").key)).toEqual([]);
 });
 
-test("a list that rereads is marked stale by the frame it follows", async () => {
-  const list = followingList("3");
-  const client = await refreshedEntry(list, ["held"]);
-  expect(client.getQueryState(list.key)?.isInvalidated).toBe(true);
-});
-
-test("a list that rereads is left alone by another resource's frame", async () => {
-  const list = followingList("9");
-  const client = await refreshedEntry(list, ["held"]);
-  expect(client.getQueryState(list.key)?.isInvalidated).toBe(false);
-});
-
 /**
  * The creation screen's context is whichever revision is ready, which no one
  * frame's own revision settles — so any `Configuration` frame stales it, and a
- * `Ticket` frame, being another kind, does not.
+ * `Ticket` frame, being another kind, does not. A reread names no resource, so
+ * the kind is the whole of what separates these two.
  */
 test("the creation context is staled by a configuration frame", async () => {
   const list = creationContextList(atlas);
@@ -454,4 +431,52 @@ test("a reopen after a token renewal is not read as a first open", async () => {
   await settled();
 
   expect(view.container.querySelector(".banner")).not.toBeNull();
+});
+
+/**
+ * The other side of that: a different project is a first open of its own, and
+ * what this console learnt about one partition's stream says nothing about the
+ * next one's. Carrying it across would paint the alarm over the new project's
+ * first paint, on every use of the switcher.
+ */
+test("a project change is a first open again rather than a reopen", async () => {
+  const holder = holderDouble();
+  const server = streamServer([
+    {
+      status: 200,
+      chunks: [
+        frame("ready", undefined, { version: 1 }),
+        frame("source", undefined, { version: 1, state: "live" }),
+      ],
+      hold: true,
+    },
+  ]);
+  const client = new QueryClient();
+  const transport = openingThenHanging(server);
+  const view = render(
+    <Harness
+      holder={holder}
+      client={client}
+      partition={atlas}
+      transport={transport}
+    >
+      <StreamBanner />
+    </Harness>,
+  );
+  await settled();
+  expect(view.container.querySelector(".banner")).toBeNull();
+
+  view.rerender(
+    <Harness
+      holder={holder}
+      client={client}
+      partition={beta}
+      transport={transport}
+    >
+      <StreamBanner />
+    </Harness>,
+  );
+  await settled();
+
+  expect(view.container.querySelector(".banner")).toBeNull();
 });

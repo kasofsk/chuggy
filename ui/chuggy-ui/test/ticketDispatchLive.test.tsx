@@ -51,15 +51,35 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** A turn of the runner, which is what a read is made to take more than one of
+ * so that a frame can arrive while one is still going. */
+function tick(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** The same API, answering a turn later than it was asked, so a case can push a
+ * frame at a read that has not come back. */
+function readingSlowly(answering: typeof fetch, turns: number): typeof fetch {
+  return (async (url: string, init?: unknown) => {
+    for (let turn = 0; turn < turns; turn += 1) await tick();
+    return (
+      answering as unknown as (u: string, i?: unknown) => Promise<Response>
+    )(url, init);
+  }) as unknown as typeof fetch;
+}
+
 /** One ticket page over an API whose dispatch answer the case changes. */
-function drawn(dispatchable: () => boolean): ReturnType<typeof openedStream> {
+function drawn(
+  dispatchable: () => boolean,
+  turns = 0,
+): ReturnType<typeof openedStream> {
   const api = apiDouble({
     operation: operationAt("Succeeded"),
     route: ticketPageRoutes(atlas, () =>
       ticketDispatchViewOf(atlas, dispatchable() ? [ticketPageCandidate] : []),
     ),
   });
-  vi.stubGlobal("fetch", api.fetch);
+  vi.stubGlobal("fetch", readingSlowly(api.fetch, turns));
   const server = openedStream();
   render(
     <ScreenHarness
@@ -98,15 +118,53 @@ test("a dependency's frame makes this ticket's dispatch availability be read aga
   expect(screen.getByRole("button", { name: "dispatch" })).toBeDefined();
 });
 
-/** The other half of the case above: without the frame the entry stands, so
- * what drew the button there was the frame and not a rerender. */
-test("an unchanged project leaves the dispatch entry where it was read", async () => {
+/** A frame of a kind the dispatch entry does not follow, which is what says the
+ * case above turned on the frame's kind rather than on any frame arriving. */
+function configurationFrame(): string {
+  return frame("Configuration", "9", {
+    version: 1,
+    resource: "r2",
+    representation: {
+      partition: atlas,
+      revision: "r2",
+      canonical: "{}",
+      digest: "d".repeat(64),
+    },
+  });
+}
+
+test("a configuration frame leaves the dispatch entry where it was read", async () => {
   let dispatchable = false;
-  drawn(() => dispatchable);
+  const server = drawn(() => dispatchable);
   await settled();
 
   dispatchable = true;
+  await turned(() => {
+    server.push(configurationFrame());
+  });
   await settled();
 
   expect(screen.queryByRole("button", { name: "dispatch" })).toBeNull();
+});
+
+/**
+ * A BURST MUST NOT STARVE THE READ IT ASKS FOR: every frame of the kind stales
+ * this entry and the query cache cancels an in-flight refetch by default, so
+ * frames arriving faster than the API answers would restart the read at each
+ * one and the button would wait for the burst to stop. The read here takes two
+ * turns and the burst runs for longer, so a read allowed to finish has.
+ */
+test("a burst of frames does not stop the dispatch read from finishing", async () => {
+  let dispatchable = false;
+  const server = drawn(() => dispatchable, 2);
+  await settled();
+  expect(screen.queryByRole("button", { name: "dispatch" })).toBeNull();
+
+  dispatchable = true;
+  for (let pushed = 0; pushed < 10; pushed += 1)
+    await turned(() => {
+      server.push(dependencyDoneFrame());
+    });
+
+  expect(screen.getByRole("button", { name: "dispatch" })).toBeDefined();
 });

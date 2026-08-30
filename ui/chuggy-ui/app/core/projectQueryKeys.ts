@@ -63,11 +63,16 @@ export interface ProjectListChange {
 }
 
 /**
- * What a frame of the list's kind does to its entry: `Fold` where the frame
+ * What a frame of the list's kind does to its entry — `Fold` where the frame
  * carries the whole truth about it, `Reread` where the server derives it and
- * the frame does not — dispatch candidacy, a creation context. Neither is
- * optional, because an entry with no refresh at all is the defect this pair
- * exists to make unwritable.
+ * the frame does not — neither being optional, since an entry with no refresh
+ * is the defect this pair exists to make unwritable.
+ *
+ * `Reread` NAMES NO RESOURCE AND THE KIND IS THE WHOLE OF ITS FILTER, because a
+ * derived entry is derived from more than the resource a frame happens to carry
+ * — candidacy is every dependency being Done, the creation context is whichever
+ * revision is ready — and narrowing to one resource is what left the dispatch
+ * panel waiting on a frame that never arrives.
  */
 export type ProjectListRefresh<T> =
   | {
@@ -77,14 +82,12 @@ export type ProjectListRefresh<T> =
         change: ProjectListChange,
       ) => T | undefined;
     }
-  | {
-      readonly refresh: "Reread";
-      readonly stale: (change: ProjectListChange) => boolean;
-    };
+  | { readonly refresh: "Reread" };
 
-/** Held by no value that exists, so the two constructors below are the only
- * way to obtain a `ProjectList` and an object literal is not one. */
-declare const projectListWitness: unique symbol;
+/** Held by no literal a caller can write, so a `ProjectList` is one of the
+ * constructors' own — though a spread of one is still a value of the type, and
+ * what the brand stops is a list assembled rather than one taken apart. */
+const projectListWitness: unique symbol = Symbol("projectListWitness");
 
 /** A list entry and the refresh that keeps it live, which are one value. */
 export interface ProjectList<T> {
@@ -104,7 +107,8 @@ function projectListOf<T>(
     kind,
     key: projectListKey(partition, kind, name),
     refresh,
-  } as ProjectList<T>;
+    [projectListWitness]: true,
+  };
 }
 
 export function projectListFolded<T>(
@@ -116,13 +120,12 @@ export function projectListFolded<T>(
   return projectListOf(partition, kind, name, { refresh: "Fold", fold });
 }
 
-/** `stale` is asked of every frame of the kind, so a list following one
- * resource is not read again for another's. */
+/** Every frame of the kind stales the entry, this being for entries no frame
+ * carries and none of them therefore settles. */
 export function projectListReread<T>(
   partition: PartitionIdentity,
   kind: ProjectChangeKind,
   name: string,
-  stale: (change: ProjectListChange) => boolean,
 ): ProjectList<T> {
-  return projectListOf(partition, kind, name, { refresh: "Reread", stale });
+  return projectListOf(partition, kind, name, { refresh: "Reread" });
 }

@@ -65,12 +65,11 @@ const outageMs = 45_000;
 const outageIntervalMs = 2_000;
 
 /**
- * How long a fallback read is waited for: the loop sleeps before each refetch
- * and the change may be written just after one has gone, so two intervals and
- * one for the round trip, derived from the console's own interval rather than
- * written down. NOT YET CONFIRMED ON A RIG — it is the arithmetic of the loop
- * that replaced the flickering one rather than a measurement, so widen it here
- * if it proves tight.
+ * How long a fallback read is waited for: `runProjectFallback` sleeps
+ * `fallbackIntervalMs` before each refetch and runs from the page's mount, so a
+ * change written just after one refetch has gone is drawn by the next — two
+ * intervals, and a third for the round trip. NOT YET CONFIRMED ON A RIG, being
+ * the loop's arithmetic rather than a measurement, so widen it here if tight.
  */
 const fallbackReadTimeoutMs = fallbackIntervalMs * 3;
 

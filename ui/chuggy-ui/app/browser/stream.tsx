@@ -75,6 +75,14 @@ const ProjectStreamContext = createContext<ProjectStreamHeld | undefined>(
   undefined,
 );
 
+/**
+ * `cancelRefetch` IS FALSE BECAUSE THE QUERY CACHE DEFAULTS IT TRUE, and a
+ * reread fires once per frame of its kind: a burst would abort the read in
+ * flight and start another at each frame, leaving the entry unread for as long
+ * as the burst lasted — the symptom the reread exists to remove. False lets the
+ * read already going finish, which asks for the state after the frame that
+ * started it and leaves the entry marked stale either way.
+ */
 function applyListRefresh(
   client: QueryClient,
   registered: ProjectListRegistration,
@@ -88,11 +96,10 @@ function applyListRefresh(
       );
       return;
     case "Reread":
-      if (refresh.stale(change))
-        void client.invalidateQueries({
-          queryKey: registered.key,
-          exact: true,
-        });
+      void client.invalidateQueries(
+        { queryKey: registered.key, exact: true },
+        { cancelRefetch: false },
+      );
       return;
   }
 }

@@ -144,7 +144,6 @@ export function creationContextList(
     partition,
     "Configuration",
     creationContextName,
-    () => true,
   );
 }
 

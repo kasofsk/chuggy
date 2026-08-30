@@ -95,7 +95,6 @@ export function ticketDispatchList(
     partition,
     "Ticket",
     `dispatch:${String(ticket)}`,
-    () => true,
   );
 }
 
