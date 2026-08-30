@@ -58,6 +58,7 @@ set -u
 printf 'ssh %s\n' "$*" >>"$CHUG_STUB_LOG"
 shift
 case "$1" in
+true) exit "${CHUG_STUB_NODE_RC:-0}" ;;
 curl)
 	printf 'HTTP/1.1 200 OK\r\n'
 	printf 'Content-Type: application/vnd.oci.image.manifest.v1+json\r\n'
@@ -108,7 +109,11 @@ cat >"$BIN/gh" <<'STUB'
 set -u
 printf 'gh %s\n' "$*" >>"$CHUG_STUB_LOG"
 case "$1 $2" in
-'repo clone') git clone -q "$CHUG_STUB_FABRIC" "$4" ;;
+'repo clone')
+	git clone -q "$CHUG_STUB_FABRIC" "$4"
+	# A clone whose pushes go where this identity may not write.
+	[ -z "${CHUG_STUB_PUSH_DENIED:-}" ] || git -C "$4" remote set-url --push origin "$CHUG_STUB_PUSH_DENIED"
+	;;
 'pr list')
 	head=""
 	while [ "$#" -gt 0 ]; do
@@ -228,7 +233,7 @@ fresh_case() {
 	unset CHUG_STUB_DIGEST CHUG_STUB_PUSH_RC CHUG_STUB_GATE_RC CHUG_STUB_BUILD_RC CHUG_STUB_CONSISTENCY_RC
 	unset CHUG_STUB_RENDER_RC CHUG_STUB_WORK_PODS CHUG_STUB_LIVE_ROWS CHUG_STUB_PR_HEAD CHUG_STUB_PR_URL
 	unset CHUG_STUB_MERGE_RC CHUG_STUB_MERGED CHUG_STUB_JOB_RC CHUG_STUB_ROLLOUT_RC CHUG_STUB_STALE CHUG_STUB_BRANCH
-	unset CHUG_STUB_DUMP
+	unset CHUG_STUB_DUMP CHUG_STUB_NODE_RC CHUG_STUB_PUSH_DENIED
 	export CHUG_RIG_SSH=nobody@no-such-host
 	export CHUG_STUB_DIGEST="$NEW"
 }
@@ -315,6 +320,29 @@ fresh_case
 run
 check "a HEAD the rig already runs is nothing to release" 0 "$RC" "already at $DEPLOYED"
 check "nothing to release builds nothing" 0 "$RC" "builds attempted: 0"
+
+# --- what must answer before the slow work, and refuses before it ----------------
+
+fresh_case
+advance src/a.ts
+export CHUG_STUB_NODE_RC=255
+run
+check "a node that does not answer is refused" 2 "$RC" "does not answer over ssh"
+check "a silent node is refused before the gate" 2 "$RC" "gates run: 0"
+
+fresh_case
+advance src/a.ts
+export CHUG_STUB_PUSH_DENIED="$WORK/nowhere.git"
+run
+check "a push this identity may not make is refused" 2 "$RC" "refuses a push to release/chuggy-$TAG from this identity; git said:"
+check "a denied push is refused before the gate" 2 "$RC" "gates run: 0"
+check "a denied push builds nothing" 2 "$RC" "builds attempted: 0"
+
+# The mirror: the same run with the push allowed goes through the gate.
+fresh_case
+advance src/a.ts
+run
+check "a push this identity may make is rehearsed dry and then gated" 0 "$RC" "gates run: 1"
 
 # --- which images a change rebuilds ---------------------------------------------
 
