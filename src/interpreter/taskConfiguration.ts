@@ -21,12 +21,22 @@ export interface EvaluationBlock extends PurposeBlock {
   readonly purpose: "Review" | "Check";
 }
 
-/** One agent invocation, the only worker execution mode currently admitted. */
-export interface SingleAgentWorkerMode {
+interface SingleClaudeWorkerMode {
   readonly type: "SingleAgent";
-  readonly agent: "Claude" | "Codex";
+  readonly agent: "Claude";
   readonly arguments: readonly string[];
 }
+
+interface SingleCodexWorkerMode {
+  readonly type: "SingleAgent";
+  readonly agent: "Codex";
+  readonly model: string;
+  readonly arguments: readonly string[];
+}
+
+/** One agent invocation, the only worker execution mode currently admitted. */
+export type SingleAgentWorkerMode =
+  SingleClaudeWorkerMode | SingleCodexWorkerMode;
 
 /** How the worker executes a task, discriminated so each mode owns its options. */
 export type WorkerMode = SingleAgentWorkerMode;
@@ -268,13 +278,15 @@ function authoredWorkerConfiguration(
     return undefined;
   const record = value as Record<string, unknown>;
   const mode = authoredWorkerMode(record["mode"]);
+  const modePresent = Object.hasOwn(record, "mode");
   const legacyArguments = authoredTaskConfigurationStringArray(
     record["arguments"],
   );
   const setup = authoredTaskConfigurationStringArray(record["setup"]);
   const files = record["files"];
   if (
-    (mode === undefined && legacyArguments === undefined) ||
+    (modePresent && mode === undefined) ||
+    (!modePresent && legacyArguments === undefined) ||
     (mode !== undefined && legacyArguments !== undefined) ||
     setup === undefined ||
     !Array.isArray(files) ||
@@ -307,14 +319,22 @@ function authoredWorkerMode(value: unknown): WorkerMode | undefined {
   const record = value as Record<string, unknown>;
   if (record["type"] !== "SingleAgent") return undefined;
   const agent = record["agent"];
+  const model = record["model"];
   const args = authoredTaskConfigurationStringArray(record["arguments"]);
   if (
     (agent !== "Claude" && agent !== "Codex") ||
+    (agent === "Claude" && model !== undefined) ||
+    (agent === "Codex" &&
+      (typeof model !== "string" ||
+        model.length === 0 ||
+        model.length > 128)) ||
     args === undefined ||
     args.length > workerEntriesMax
   )
     return undefined;
-  return { type: "SingleAgent", agent, arguments: args };
+  return agent === "Claude"
+    ? { type: "SingleAgent", agent, arguments: args }
+    : { type: "SingleAgent", agent, model: model as string, arguments: args };
 }
 
 function authoredTaskConfigurationEvaluationBlock(

@@ -125,10 +125,15 @@ async function runAgent(context) {
   const argv = context.agent.invocation(context.task, {
     resultSchema: agentResultSchemaFile,
   });
-  if (context.agent.name === "Codex")
-    await captureConfiguration(context, argv, {
-      agent: context.agent.name,
-    });
+  if (context.agent.configuration !== undefined)
+    await captureConfiguration(
+      context,
+      argv,
+      await context.agent.configuration(context.task, {
+        ...process.env,
+        ...context.agentEnvironment,
+      }),
+    );
   const child = spawn(context.agent.executable, argv, {
     cwd: context.directory,
     env: { ...process.env, ...context.agentEnvironment },

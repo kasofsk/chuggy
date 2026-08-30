@@ -1,7 +1,10 @@
 import { agentResult } from "./result.mjs";
+import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
+import { promisify } from "node:util";
 
 const codexHome = "/tmp/chuggy-codex-home";
+const executeFile = promisify(execFile);
 
 const reservedCodexArguments = [
   "exec",
@@ -11,6 +14,15 @@ const reservedCodexArguments = [
   "--cd",
   "-C",
   "--ephemeral",
+  "--ignore-user-config",
+  "--model",
+  "-m",
+  "--config",
+  "-c",
+  "--profile",
+  "-p",
+  "--oss",
+  "--local-provider",
   "--sandbox",
   "-s",
   "--dangerously-bypass-approvals-and-sandbox",
@@ -39,12 +51,35 @@ export function codexInvocation(task, paths) {
     "exec",
     "--json",
     "--ephemeral",
+    "--ignore-user-config",
+    "--model",
+    task.worker.mode.model,
     "--dangerously-bypass-approvals-and-sandbox",
     "--output-schema",
     paths.resultSchema,
     ...configuredArguments(task),
     task.briefing.text,
   ];
+}
+
+export async function codexConfiguration(
+  task,
+  environment,
+  execute = executeFile,
+) {
+  const { stdout } = await execute("codex", ["--version"], {
+    env: environment,
+    maxBuffer: 4096,
+  });
+  const version = stdout.trim();
+  if (version.length === 0)
+    throw new Error("Codex reported no runtime version");
+  return {
+    agent: "Codex",
+    codexVersion: version,
+    model: task.worker.mode.model,
+    userConfig: "Ignored",
+  };
 }
 
 function codexMessage(event) {
@@ -108,6 +143,7 @@ export const codexAgent = {
   invocation: codexInvocation,
   result: codexResult,
   prepareCredential: prepareCodexCredential,
+  configuration: codexConfiguration,
   configurationEvent: () => false,
   resultEvent: (event) => codexMessage(event) !== undefined,
   observed: codexObserved,

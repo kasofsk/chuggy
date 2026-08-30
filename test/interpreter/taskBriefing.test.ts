@@ -124,7 +124,12 @@ test("worker setup is parsed and carried into the composed invocation", () => {
 
 test("the single-agent mode admits Codex and refuses an unknown mode", () => {
   const codex = {
-    mode: { type: "SingleAgent", agent: "Codex", arguments: [] },
+    mode: {
+      type: "SingleAgent",
+      agent: "Codex",
+      model: "gpt-5.3-codex",
+      arguments: [],
+    },
     setup: [],
     files: [],
   } as const;
@@ -142,6 +147,16 @@ test("the single-agent mode admits Codex and refuses an unknown mode", () => {
     authoredTaskConfigurationReadiness({
       ...authoredConfiguration,
       worker: { ...codex, mode: { type: "ParallelAgents" } },
+    }),
+    { readiness: "Incomplete", fault: "WorkerInvalid" },
+  );
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      worker: {
+        ...codex,
+        mode: { type: "SingleAgent", agent: "Codex", arguments: [] },
+      },
     }),
     { readiness: "Incomplete", fault: "WorkerInvalid" },
   );

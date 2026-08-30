@@ -50,7 +50,12 @@ test("a single-agent mode materializes an agent capability instead of an image c
         version: 1,
         image: "legacy-worker:v1",
         worker: {
-          mode: { type: "SingleAgent", agent: "Codex", arguments: [] },
+          mode: {
+            type: "SingleAgent",
+            agent: "Codex",
+            model: "gpt-5.3-codex",
+            arguments: [],
+          },
           setup: [],
           files: [],
         },

@@ -121,6 +121,8 @@ test("an agent capability resolves to an admitted runtime that provides it", asy
     imagesAdmitted: [
       {
         image: "registry.invalid/agents:v1",
+        operatingSystem: "Linux",
+        architecture: "Amd64",
         capabilities: ["Agent:Claude", "Agent:Codex"],
       },
     ],
@@ -142,6 +144,39 @@ test("an agent capability resolves to an admitted runtime that provides it", asy
       image: "registry.invalid/agents:v1",
       grant,
     },
+  );
+});
+
+test("an agent capability does not resolve to a runtime on the wrong platform", async () => {
+  const policy = suppliedExecutionPolicy({
+    profiles: new Map([["Work", work]]),
+    imagesAdmitted: [
+      {
+        image: "registry.invalid/agents-arm:v1",
+        operatingSystem: "Linux",
+        architecture: "Arm64",
+        capabilities: ["Agent:Codex"],
+      },
+      {
+        image: "registry.invalid/agents-macos:v1",
+        operatingSystem: "MacOS",
+        architecture: "Amd64",
+        capabilities: ["Agent:Codex"],
+      },
+    ],
+  });
+  const execution = executionOf("Work");
+  assert.deepEqual(
+    await policy.profileFor({
+      ...execution,
+      requirement: {
+        mode: "ContainerCapability",
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        capabilities: ["Agent:Codex"],
+      },
+    }),
+    { resolved: "Denied", reason: "RequiredCapabilityUnavailable" },
   );
 });
 

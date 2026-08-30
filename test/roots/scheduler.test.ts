@@ -239,11 +239,18 @@ test("both shapes mix, and admission never learns which entry was named", async 
 test("an admitted image publishes the execution capabilities it provides", async () => {
   const capable = {
     ...namedWorker,
+    operatingSystem: "Linux",
+    architecture: "Arm64",
     capabilities: ["Agent:Claude", "Agent:Codex"],
   };
   const found = await parsedAdmittedImages([capable]);
   assert.deepEqual(found.parsed?.policy.imagesAdmitted, [
-    { image: capable.image, capabilities: capable.capabilities },
+    {
+      image: capable.image,
+      operatingSystem: capable.operatingSystem,
+      architecture: capable.architecture,
+      capabilities: capable.capabilities,
+    },
   ]);
   assert.deepEqual(found.parsed?.workerCatalog, [namedWorker]);
 });

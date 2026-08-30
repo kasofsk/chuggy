@@ -230,13 +230,17 @@ function frameBytes(value) {
 
 function snapshotFrame(argv, init, agent, scrub) {
   const scrubbedInit = JSON.parse(scrub(JSON.stringify(init ?? null)));
-  const version = scrubbedInit?.claude_code_version;
+  const claudeVersion = scrubbedInit?.claude_code_version;
+  const codexVersion = scrubbedInit?.codexVersion;
+  const model = scrubbedInit?.model;
   const frame = {
     argv: (Array.isArray(argv) ? argv : []).map((value) =>
       scrub(String(value)),
     ),
     ...(agent === "Claude" || agent === "Codex" ? { agent } : {}),
-    ...(typeof version === "string" ? { claudeVersion: version } : {}),
+    ...(typeof claudeVersion === "string" ? { claudeVersion } : {}),
+    ...(typeof codexVersion === "string" ? { codexVersion } : {}),
+    ...(typeof model === "string" ? { model } : {}),
     init: scrubbedInit,
     files: [],
     dropped: [],

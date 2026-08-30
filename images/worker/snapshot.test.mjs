@@ -154,9 +154,20 @@ test("the snapshot names the selected agent", async () => {
   const snapshot = await snapshotOf(
     {},
     {
+      init: {
+        agent: "Codex",
+        codexVersion: "codex-cli 0.151.0",
+        model: "gpt-5.3-codex",
+        userConfig: "Ignored",
+      },
       task: {
         worker: {
-          mode: { type: "SingleAgent", agent: "Codex", arguments: [] },
+          mode: {
+            type: "SingleAgent",
+            agent: "Codex",
+            model: "gpt-5.3-codex",
+            arguments: [],
+          },
           files: [],
         },
       },
@@ -164,6 +175,9 @@ test("the snapshot names the selected agent", async () => {
   );
 
   assert.equal(snapshot.agent, "Codex");
+  assert.equal(snapshot.codexVersion, "codex-cli 0.151.0");
+  assert.equal(snapshot.model, "gpt-5.3-codex");
+  assert.equal(snapshot.init.userConfig, "Ignored");
 });
 
 test("a credential in an instruction file is redacted before it is uploaded", async () => {

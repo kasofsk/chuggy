@@ -22,6 +22,10 @@ import type {
   ProfileResolved,
 } from "../../interpreter/executionScheduler.ts";
 import type { ExecutionCapability } from "../../interpreter/executionRequirement.ts";
+import type {
+  Architecture,
+  OperatingSystem,
+} from "../../interpreter/executionRequirement.ts";
 import { grantTaskAuthority } from "../../interpreter/taskAuthority.ts";
 import type { PolicyAuthorityGrant } from "../../interpreter/taskAuthority.ts";
 import type { RuntimeFactsPort } from "../../interpreter/taskBriefing.ts";
@@ -43,12 +47,19 @@ export interface SuppliedExecutionPolicyConfig {
 
 export interface SuppliedRuntime {
   readonly image: string;
+  readonly operatingSystem: OperatingSystem;
+  readonly architecture: Architecture;
   readonly capabilities: readonly ExecutionCapability[];
 }
 
 function suppliedRuntime(runtime: string | SuppliedRuntime): SuppliedRuntime {
   return typeof runtime === "string"
-    ? { image: runtime, capabilities: ["Agent:Claude"] }
+    ? {
+        image: runtime,
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        capabilities: ["Agent:Claude"],
+      }
     : runtime;
 }
 
@@ -104,10 +115,13 @@ function suppliedAdmission(
     return runtimes.some((runtime) => runtime.image === requirement.image)
       ? {}
       : { denied: { resolved: "Denied", reason: "ExecutionPolicyDenied" } };
-  const runtime = runtimes.find((candidate) =>
-    requirement.capabilities.every((capability) =>
-      candidate.capabilities.includes(capability),
-    ),
+  const runtime = runtimes.find(
+    (candidate) =>
+      candidate.operatingSystem === requirement.operatingSystem &&
+      candidate.architecture === requirement.architecture &&
+      requirement.capabilities.every((capability) =>
+        candidate.capabilities.includes(capability),
+      ),
   );
   return runtime === undefined
     ? {

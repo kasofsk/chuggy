@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   codexAgent,
+  codexConfiguration,
   codexInvocation,
   codexResult,
   prepareCodexCredential,
@@ -13,7 +14,12 @@ import {
 
 const task = {
   worker: {
-    mode: { type: "SingleAgent", agent: "Codex", arguments: [] },
+    mode: {
+      type: "SingleAgent",
+      agent: "Codex",
+      model: "gpt-5.3-codex",
+      arguments: [],
+    },
   },
   briefing: { text: "briefing" },
 };
@@ -25,12 +31,38 @@ test("a Codex invocation is ephemeral and constrained to the result schema", () 
       "exec",
       "--json",
       "--ephemeral",
+      "--ignore-user-config",
+      "--model",
+      "gpt-5.3-codex",
       "--dangerously-bypass-approvals-and-sandbox",
       "--output-schema",
       "/tmp/result.json",
       "briefing",
     ],
   );
+});
+
+test("Codex configuration records the runtime version and pinned model", async () => {
+  const executed = [];
+  assert.deepEqual(
+    await codexConfiguration(task, { CODEX_HOME: "/tmp/codex" }, (...args) => {
+      executed.push(args);
+      return Promise.resolve({ stdout: "codex-cli 0.151.0\n" });
+    }),
+    {
+      agent: "Codex",
+      codexVersion: "codex-cli 0.151.0",
+      model: "gpt-5.3-codex",
+      userConfig: "Ignored",
+    },
+  );
+  assert.deepEqual(executed, [
+    [
+      "codex",
+      ["--version"],
+      { env: { CODEX_HOME: "/tmp/codex" }, maxBuffer: 4096 },
+    ],
+  ]);
 });
 
 test("the final Codex agent message supplies the structured result", () => {
@@ -70,6 +102,7 @@ test("ticket configuration cannot replace worker-owned Codex arguments", () => {
             mode: {
               type: "SingleAgent",
               agent: "Codex",
+              model: "gpt-5.3-codex",
               arguments: ["--output-schema=mine.json"],
             },
           },
@@ -77,6 +110,25 @@ test("ticket configuration cannot replace worker-owned Codex arguments", () => {
         { resultSchema: "/tmp/result.json" },
       ),
     /reserves Codex argument --output-schema=/u,
+  );
+});
+
+test("ticket configuration cannot override the pinned Codex model through config", () => {
+  assert.throws(
+    () =>
+      codexInvocation(
+        {
+          ...task,
+          worker: {
+            mode: {
+              ...task.worker.mode,
+              arguments: ['--config=model="other"'],
+            },
+          },
+        },
+        { resultSchema: "/tmp/result.json" },
+      ),
+    /reserves Codex argument --config=/u,
   );
 });
 
