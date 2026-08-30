@@ -307,21 +307,19 @@ async function observeInventory(
 }
 
 /**
- * Moves the cursor over the projects this sweep consumed and no further. A
- * sweep that stopped on its first project consumed none, and the page it was
- * given is the page the next sweep is owed.
+ * Moves the cursor over the projects this sweep consumed and no further: to the
+ * last one it consumed, or past the page when it consumed them all — which is
+ * `nextAfter`, and `nextAfter` is absent exactly when there is no next page, so
+ * an exhausted inventory wraps to the start rather than standing still. A sweep
+ * that consumed none of a page it was given leaves the cursor alone, because
+ * that page is the page the next sweep is owed.
  */
 async function saveInventoryProgress(
   store: SelectorStateStore,
   inventory: ProjectInventoryPage,
   scanned: number,
 ): Promise<void> {
-  if (inventory.projects.length === 0) {
-    if (inventory.nextAfter !== undefined)
-      await store.saveInventoryCursor(inventory.nextAfter);
-    return;
-  }
-  if (scanned === 0) return;
+  if (scanned === 0 && inventory.projects.length > 0) return;
   await store.saveInventoryCursor(
     scanned === inventory.projects.length
       ? inventory.nextAfter

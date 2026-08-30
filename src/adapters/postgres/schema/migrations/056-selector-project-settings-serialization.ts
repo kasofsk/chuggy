@@ -9,6 +9,7 @@ import {
 const selectorProjectSettingsArguments =
   "text,text,bigint,text,text,text,text,text,text,bigint,bigint,bigint,bigint,bigint,bigint,text,text";
 
+// jscpd:ignore-start -- a migration's body is frozen, so a later one restates it rather than sharing it
 const selectorProjectSettingsColumns = `
   revision bigint,north_star text,mode text,dispatch_mode text,base_prompt text,
   model_allowlist text,tool_allowlist text,tokens_per_decision bigint,
@@ -31,13 +32,19 @@ const selectorProjectSettingsProjection = `
     CROSS JOIN selector_runtime_settings installation
    WHERE settings.tenant=in_tenant AND settings.project=in_project
      AND settings.revision=written AND installation.singleton=1`;
+// jscpd:ignore-end -- the restatement above ends here
 
 /**
- * The fence is answered before any row is offered: the standing revision is read
- * first, and a caller naming a different one is told that and nothing else.
- * Revision zero names the project with no row of its own.
+ * Writes for one project take an advisory lock on that project first, so the
+ * revision this write is fenced against is the revision no other write is in
+ * the middle of leaving. A row lock cannot serve there: the revision-zero branch
+ * is the branch where the row does not exist yet, and `FOR UPDATE` over no row
+ * locks nothing — two administrators both writing revision zero would each pass
+ * the fence, and the second would reach an INSERT whose `BEFORE INSERT` trigger
+ * runs ahead of `ON CONFLICT` and answers for the readiness of a policy host
+ * rather than for the fence.
  */
-const selectorProjectSettingsFence = [
+const selectorProjectSettingsSerialization = [
   `CREATE OR REPLACE FUNCTION ${selectorProjectSettingsFunction}(
      in_tenant text,in_project text,expected_revision bigint,
      new_north_star text,new_mode text,new_dispatch_mode text,new_base_prompt text,
@@ -51,8 +58,10 @@ const selectorProjectSettingsFence = [
      SET search_path=pg_catalog,public,pg_temp AS $$
      DECLARE written bigint; standing bigint;
      BEGIN
+       PERFORM pg_advisory_xact_lock(
+         hashtextextended('selector-settings:'||in_tenant||'/'||in_project,0));
        SELECT settings.revision INTO standing FROM selector_project_settings settings
-         WHERE settings.tenant=in_tenant AND settings.project=in_project FOR UPDATE;
+         WHERE settings.tenant=in_tenant AND settings.project=in_project;
        IF coalesce(standing,0)<>expected_revision THEN RETURN; END IF;
        IF expected_revision=0 THEN
          INSERT INTO selector_project_settings
@@ -66,7 +75,6 @@ const selectorProjectSettingsFence = [
             new_tokens_per_decision,new_milliseconds_per_decision,
             new_tool_calls_per_decision,new_input_bytes_per_decision,
             new_candidate_pages_per_decision,new_operational_context_max_age_ms)
-           ON CONFLICT (tenant,project) DO NOTHING
            RETURNING selector_project_settings.revision INTO written;
        ELSE
          UPDATE selector_project_settings SET revision=selector_project_settings.revision+1,
@@ -108,8 +116,8 @@ const selectorProjectSettingsFence = [
      TO ${apiRole},${selectorControlRole}`,
 ];
 
-export const migration055: Migration = {
-  version: 55,
-  name: "selector project settings answer their fence first",
-  statements: [...selectorProjectSettingsFence],
+export const migration056: Migration = {
+  version: 56,
+  name: "selector project settings writes serialise per project",
+  statements: [...selectorProjectSettingsSerialization],
 };

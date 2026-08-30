@@ -618,8 +618,17 @@ interface SweptSweep {
   ) => SelectorProjectOverrides;
   /** What the installation says when the sweep asks whether to run at all. */
   readonly installation?: SelectorRuntimeSettings;
-  /** What a project's settings resolve against, which a pause may have moved. */
-  readonly resolvedAgainst?: SelectorRuntimeSettings;
+  /**
+   * What a project's settings resolve against on its Nth read, so a case can
+   * move the installation between the read that takes a permit and the re-read
+   * that fences the decision.
+   */
+  readonly resolvedAgainst?: (
+    of: typeof partition,
+    read: number,
+  ) => SelectorRuntimeSettings;
+  /** The project's own revision on its Nth read, which is half of the fence. */
+  readonly projectRevision?: (of: typeof partition, read: number) => number;
   readonly nextAfter?: typeof partition;
 }
 
@@ -627,7 +636,8 @@ async function sweptProjects(sweep: SweptSweep) {
   const projects = sweep.projects;
   const resolve = sweep.overrides ?? (() => ({}));
   const installation = sweep.installation ?? runtimeSettings;
-  const resolvedAgainst = sweep.resolvedAgainst ?? installation;
+  const resolvedAgainst = sweep.resolvedAgainst ?? (() => installation);
+  const projectRevision = sweep.projectRevision ?? (() => 1);
   const nextAfter = sweep.nextAfter;
   const reads = new Map<string, number>();
   const terminated: string[] = [];
@@ -664,11 +674,20 @@ async function sweptProjects(sweep: SweptSweep) {
         const read = (reads.get(of.project) ?? 0) + 1;
         reads.set(of.project, read);
         return Promise.resolve(
-          resolvedSelectorSettings(of, resolvedAgainst, 1, resolve(of, read)),
+          resolvedSelectorSettings(
+            of,
+            resolvedAgainst(of, read),
+            projectRevision(of, read),
+            resolve(of, read),
+          ),
         );
       },
     },
-    { projectsMax: 2, deliveriesMax: 1, reconciliationsMax: 1 },
+    {
+      projectsMax: Math.max(projects.length, 1),
+      deliveriesMax: 1,
+      reconciliationsMax: 1,
+    },
   );
   return { result, terminated, saved };
 }
@@ -693,47 +712,25 @@ test("a project's own fence moving mid-decision does not stop the sweep", async 
     tenant: partition.tenant,
     project: asProjectId("untouched"),
   };
-  const reads = new Map<string, number>();
-  const terminated: string[] = [];
-  const result = await selectorRunOnce(
-    {
-      ...stateStore(() => undefined),
-      terminateAttempt: (attempt) => {
-        terminated.push(attempt);
-        return Promise.resolve();
-      },
-    },
-    {
-      ...promptObservationSource(),
-      projects: () => Promise.resolve({ projects: [first, second] }),
-      dispatchView: (scope) =>
-        Promise.resolve(emptyDispatchPage(scope, "f".repeat(64))),
-      submit: () => Promise.reject(new Error("no delivery expected")),
-      operation: () => Promise.resolve(undefined),
-    },
-    policyHost(() => Promise.resolve(waitingExecution())),
-    perProjectIdentities(),
-    {
-      settings: () => Promise.resolve(runtimeSettings),
-      projectSettings: (of) => {
-        const read = (reads.get(of.project) ?? 0) + 1;
-        reads.set(of.project, read);
-        return Promise.resolve(
-          resolvedSelectorSettings(
-            of,
-            runtimeSettings,
-            of.project === first.project && read > 1 ? 2 : 1,
-            {},
-          ),
-        );
-      },
-    },
-    { projectsMax: 2, deliveriesMax: 1, reconciliationsMax: 1 },
-  );
-  assert.deepEqual(terminated, [`decision-${first.project}`]);
-  assert.equal(result.observed, 1);
-  assert.deepEqual(result.failures, []);
+  const swept = await sweptProjects({
+    projects: [first, second],
+    nextAfter: second,
+    projectRevision: (of, read) =>
+      of.project === first.project && read > 1 ? 2 : 1,
+  });
+  assert.deepEqual(swept.terminated, [`decision-${first.project}`]);
+  assert.equal(swept.result.observed, 1);
+  assert.deepEqual(swept.result.failures, []);
+  assert.deepEqual(swept.saved, [second]);
 });
+
+/** An installation paused after this project's permit was taken, and not before. */
+function pausedOnReread(
+  _of: typeof partition,
+  read: number,
+): SelectorRuntimeSettings {
+  return read > 1 ? { ...runtimeSettings, mode: "Paused" } : runtimeSettings;
+}
 
 test("an installation pause mid-decision stops the sweep where it stood", async () => {
   const first = { tenant: partition.tenant, project: asProjectId("halted") };
@@ -743,30 +740,57 @@ test("an installation pause mid-decision stops the sweep where it stood", async 
   };
   const swept = await sweptProjects({
     projects: [first, second],
-    installation: { ...runtimeSettings, mode: "Paused" },
     nextAfter: second,
+    resolvedAgainst: pausedOnReread,
   });
-  assert.deepEqual(swept.terminated, []);
+  assert.deepEqual(swept.terminated, [`decision-${first.project}`]);
   assert.equal(swept.result.observed, 0);
   assert.deepEqual(swept.saved, []);
 });
 
-test("a sweep that consumed no project leaves its cursor where it found it", async () => {
-  const first = { tenant: partition.tenant, project: asProjectId("first-of") };
-  const second = { tenant: partition.tenant, project: asProjectId("last-of") };
-  const stopped = await sweptProjects({
-    projects: [first, second],
-    resolvedAgainst: { ...runtimeSettings, mode: "Paused" },
-    nextAfter: second,
-  });
-  assert.equal(stopped.result.observed, 0);
-  assert.deepEqual(stopped.saved, []);
-  const swept = await sweptProjects({
-    projects: [first, second],
-    nextAfter: second,
-  });
-  assert.equal(swept.result.observed, 2);
-  assert.deepEqual(swept.saved, [second]);
+/**
+ * The cursor rule at every index a sweep can stop on, because a rule stated for
+ * one index is a rule two of its three branches are unexamined at.
+ */
+test("the cursor moves over the projects a sweep consumed and no further", async () => {
+  const page = ["alpha", "beta", "gamma", "delta"].map((name) => ({
+    tenant: partition.tenant,
+    project: asProjectId(name),
+  }));
+  const beyond = { tenant: partition.tenant, project: asProjectId("epsilon") };
+  for (const [stopAt, expected] of page.map(
+    (_project, index) => [index, page.at(index - 1)] as const,
+  )) {
+    const swept = await sweptProjects({
+      projects: page,
+      nextAfter: beyond,
+      resolvedAgainst: (of, read) =>
+        of.project === page[stopAt]?.project
+          ? pausedOnReread(of, read)
+          : runtimeSettings,
+    });
+    assert.equal(swept.result.observed, stopAt, `stopped at ${String(stopAt)}`);
+    assert.deepEqual(
+      swept.saved,
+      stopAt === 0 ? [] : [expected],
+      `stopped at ${String(stopAt)}`,
+    );
+  }
+  const whole = await sweptProjects({ projects: page, nextAfter: beyond });
+  assert.equal(whole.result.observed, page.length);
+  assert.deepEqual(whole.saved, [beyond]);
+});
+
+test("an exhausted inventory wraps rather than standing still", async () => {
+  const page = ["only-one", "only-two"].map((name) => ({
+    tenant: partition.tenant,
+    project: asProjectId(name),
+  }));
+  const lastPage = await sweptProjects({ projects: page });
+  assert.equal(lastPage.result.observed, page.length);
+  assert.deepEqual(lastPage.saved, [undefined]);
+  const emptyPage = await sweptProjects({ projects: [] });
+  assert.deepEqual(emptyPage.saved, [undefined]);
 });
 
 test("a pause observed after permit acquisition prevents a new decision", async () => {

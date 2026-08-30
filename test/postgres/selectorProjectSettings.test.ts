@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import type pg from "pg";
 import { after, before, test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 
 import {
   apiRole,
@@ -537,6 +538,18 @@ test("an interaction recorded without an attempt keeps both fence revisions", as
   }
 });
 
+/** One held client dressed as a pool, so a case can keep a write uncommitted. */
+function clientPool(client: pg.PoolClient): pg.Pool {
+  return {
+    query: (...parameters: readonly unknown[]) =>
+      (
+        client.query as unknown as (
+          ...args: readonly unknown[]
+        ) => Promise<unknown>
+      )(...parameters),
+  } as unknown as pg.Pool;
+}
+
 /** A pool that answers one crafted row, for the shapes a server cannot produce. */
 function stubbedPool(rows: readonly unknown[]): pg.Pool {
   return { query: () => Promise.resolve({ rows }) } as unknown as pg.Pool;
@@ -680,6 +693,94 @@ test("a stale fence is answered as one whatever the policy host is doing", async
       { written: "AutomaticDispatchUnavailable" },
     );
   } finally {
+    await pool.end();
+  }
+});
+
+test("a fence lost to an uncommitted write is still answered as a fence", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "selector-uncommitted-fence",
+  );
+  const pool = postgresHarnessRolePool(apiRole);
+  const store = postgresSelectorProjectSettings(pool);
+  const holder = await pool.connect();
+  try {
+    await holder.query("BEGIN");
+    assert.equal(
+      writtenSettings(
+        await postgresSelectorProjectSettings(clientPool(holder)).write(
+          partition,
+          0,
+          { northStar: "First, and not yet committed." },
+          administrator,
+        ),
+      ).revision,
+      1,
+    );
+    const raced = store.write(
+      partition,
+      0,
+      { dispatchMode: "Automatic" },
+      administrator,
+    );
+    assert.equal(
+      await Promise.race([
+        raced.then(() => "answered"),
+        delay(500).then(() => "waiting"),
+      ]),
+      "waiting",
+    );
+    await holder.query("COMMIT");
+    assert.deepEqual(await raced, { written: "FenceMoved" });
+  } finally {
+    await holder.query("ROLLBACK").catch(() => undefined);
+    holder.release();
+    await pool.end();
+  }
+});
+
+test("a ready policy host changes what a write may set and not what a fence says", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "selector-ready-host",
+  );
+  const pool = postgresHarnessRolePool(apiRole);
+  const servicePool = postgresHarnessRolePool(selectorServiceRole);
+  const store = postgresSelectorProjectSettings(pool);
+  try {
+    assert.equal(
+      writtenSettings(
+        await store.write(partition, 0, { northStar: "First." }, administrator),
+      ).revision,
+      1,
+    );
+    await postgresSelectorState(servicePool).setAutomaticReadiness(true);
+    assert.deepEqual(
+      await store.write(
+        partition,
+        0,
+        { dispatchMode: "Automatic" },
+        administrator,
+      ),
+      { written: "FenceMoved" },
+    );
+    assert.equal(
+      writtenSettings(
+        await store.write(
+          partition,
+          1,
+          { dispatchMode: "Automatic" },
+          administrator,
+        ),
+      ).effective.dispatchMode,
+      "Automatic",
+    );
+  } finally {
+    await postgresSelectorState(servicePool)
+      .setAutomaticReadiness(false)
+      .catch(() => undefined);
+    await servicePool.end();
     await pool.end();
   }
 });
