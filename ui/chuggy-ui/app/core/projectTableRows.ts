@@ -5,12 +5,11 @@
  * reads behind it — the ticket page and the index of what each ticket ran —
  * stay separate cache entries that separate frames fold into.
  *
- * THE FIRST COLUMN IS A SLOT. A ticket resource carries no intent, so what the
- * slot shows is the configuration the ticket's execution ran from, named where
- * the wire names it, which is the only thing on the wire that says what a
- * ticket is made of. When
- * a ticket states its own intent, this is where it goes and the row's other
- * columns do not move.
+ * THE FIRST COLUMN IS THE TICKET'S OWN TITLE, read where the wire states it.
+ * A ticket authored with none reads as `ticketTitleUnset` rather than as a
+ * blank cell, because a page of unnamed tickets is a page a reader cannot
+ * tell apart at a glance, and a blank cell and a stated absence are not the
+ * same claim.
  *
  * A row therefore says which of three things is true of its execution columns:
  * they are joined, this ticket has never run, or what the index holds for it is
@@ -35,7 +34,7 @@ import type {
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
 
-import { configurationLabel, workerLabel } from "./labels.ts";
+import { workerLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
 import { projectExecutionIndexAt } from "./projectExecutionIndex.ts";
 import type {
@@ -53,13 +52,16 @@ export const projectTableExecutionReads = [
 export type ProjectTableExecutionRead =
   (typeof projectTableExecutionReads)[number];
 
+/** What an untitled ticket's row states, rather than leaving the cell blank. */
+export const ticketTitleUnset = "Unset";
+
 export interface ProjectTableRow {
   readonly ticket: number;
+  readonly title: string;
   readonly phase: TicketPhase;
   readonly section: TicketSection;
   readonly badge: string | undefined;
   readonly executionRead: ProjectTableExecutionRead;
-  readonly configuration: Label | undefined;
   readonly executionStatus: ExecutionStatus | undefined;
   readonly executionOutcome: ExecutionOutcome | undefined;
   readonly runsOn: Label | undefined;
@@ -101,17 +103,11 @@ export function projectTableRow(
   const execution = read === "Joined" ? known?.execution : undefined;
   return {
     ticket: ticket.ticket,
+    title: ticket.title ?? ticketTitleUnset,
     phase: ticket.phase,
     section: ticketSectionOf(ticket.phase),
     badge: ticketBadgeLabel(ticket.phase, ticket.reason),
     executionRead: read,
-    configuration:
-      execution === undefined
-        ? undefined
-        : configurationLabel(
-            execution.configurationRevision,
-            execution.configurationVersion,
-          ),
     executionStatus: execution?.status,
     executionOutcome: execution?.outcome,
     runsOn: execution === undefined ? undefined : projectTableRunsOn(execution),

@@ -154,6 +154,46 @@ test("authoring DTOs translate into existing application types", () => {
   );
 });
 
+test("a draft's title is branded where the body names one, and absent where it does not", () => {
+  const created = parseDraftCreation({
+    configurationRevision: "revision",
+    configurationDigest: "a".repeat(64),
+    expectedProjectSequence: 7,
+    authoring,
+    title: "Carry the fix through",
+    brief,
+  });
+  assert.equal(created.title, "Carry the fix through");
+  assert.equal(
+    parseDraftCreation({
+      configurationRevision: "revision",
+      configurationDigest: "a".repeat(64),
+      expectedProjectSequence: 7,
+      authoring,
+      brief,
+    }).title,
+    undefined,
+  );
+  const revised = parseDraftRevision({
+    expectedVersion: 3,
+    configurationRevision: "revision",
+    authoring,
+    title: "Carry the fix through",
+    brief,
+  });
+  assert.equal(revised.title, "Carry the fix through");
+  assert.throws(() =>
+    parseDraftCreation({
+      configurationRevision: "revision",
+      configurationDigest: "a".repeat(64),
+      expectedProjectSequence: 7,
+      authoring,
+      title: "",
+      brief,
+    }),
+  );
+});
+
 test("authoring DTOs reject duplicates, unknown fields, and noncanonical config", () => {
   assert.throws(() =>
     parseDraftCreation({

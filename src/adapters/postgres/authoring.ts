@@ -25,7 +25,10 @@ import {
 } from "../../interpreter/authoring.ts";
 import { asGitObjectId, asRepositoryId } from "../../interpreter/finalizer.ts";
 import { draftBriefOf } from "./ticketBrief.ts";
-import { briefFinalizationDefault } from "../../interpreter/ticketBrief.ts";
+import {
+  asBriefTitle,
+  briefFinalizationDefault,
+} from "../../interpreter/ticketBrief.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
 import {
@@ -53,6 +56,7 @@ interface DraftRow extends ConfigurationVersionRow {
   readonly configuration_revision: string;
   readonly authoring: string;
   readonly intent: string | null;
+  readonly title: string | null;
   readonly branch: string | null;
   readonly finalization_mode: string | null;
   readonly finalization_target: string | null;
@@ -182,7 +186,7 @@ async function readDraft(
 ): Promise<DraftResource | undefined> {
   const found = await pool.query<DraftRow>(
     sql`SELECT d.ticket,d.authoring_version,d.state,d.configuration_revision,r.authoring,
-              b.intent,b.branch,b.finalization_mode,b.finalization_target,
+              b.intent,b.title,b.branch,b.finalization_mode,b.finalization_target,
               v.name AS version_name,v.number::text AS version_number,
               (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
                 WHERE k.tenant=d.tenant AND k.project=d.project AND k.ticket=d.ticket) AS links
@@ -215,6 +219,7 @@ async function readDraft(
     ),
     ...(configurationVersion === undefined ? {} : { configurationVersion }),
     authoring: parseDraftAuthoring(row.authoring),
+    ...(row.title === null ? {} : { title: asBriefTitle(row.title) }),
     ...(brief === undefined ? {} : { brief }),
   };
 }
@@ -470,7 +475,7 @@ async function createDraft(
     result: string | null;
     ticket: string | null;
   }>(
-    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.intent},${[...input.brief.links]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? briefFinalizationDefault.mode},${input.brief.finalization?.target ?? null},${input.authority.kind},${input.authority.subject})`,
+    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.intent},${input.title ?? null},${[...input.brief.links]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? briefFinalizationDefault.mode},${input.brief.finalization?.target ?? null},${input.authority.kind},${input.authority.subject})`,
   );
   const row = found.rows[0];
   if (row?.result === "ConfigurationNotFound")
@@ -493,7 +498,7 @@ async function reviseDraft(
     authoring_version: string | null;
     state: string | null;
   }>(
-    sql`SELECT * FROM revise_draft(${input.partition.tenant},${input.partition.project},${input.ticket},${input.expectedVersion},${input.configurationRevision},${encodeDraftAuthoring(input.authoring)},${input.brief.intent},${[...input.brief.links]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? briefFinalizationDefault.mode},${input.brief.finalization?.target ?? null},${input.authority.kind},${input.authority.subject})`,
+    sql`SELECT * FROM revise_draft(${input.partition.tenant},${input.partition.project},${input.ticket},${input.expectedVersion},${input.configurationRevision},${encodeDraftAuthoring(input.authoring)},${input.brief.intent},${input.title ?? null},${[...input.brief.links]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? briefFinalizationDefault.mode},${input.brief.finalization?.target ?? null},${input.authority.kind},${input.authority.subject})`,
   );
   const row = found.rows[0];
   if (row === undefined || row.result === "NotFound")

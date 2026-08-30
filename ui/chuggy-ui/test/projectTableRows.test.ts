@@ -17,6 +17,7 @@ import {
   projectTableRows,
   projectTableRowsIn,
   projectTableRunsOn,
+  ticketTitleUnset,
 } from "../app/core/projectTableRows.ts";
 
 const container: ExecutionSummary = {
@@ -56,22 +57,18 @@ const tickets: readonly TicketResponse[] = [
   { ticket: 3, phase: "Pending", sequence: 3 },
 ];
 
-test("a running ticket's row carries its status, what it runs on and its configuration", () => {
+test("a running ticket's row carries its status and what it runs on", () => {
   const row = projectTableRow(working, known(container), false);
   expect(row.executionStatus).toBe("Running");
   expect(row.runsOn).toEqual({
     text: "worker:1",
     title: "registry/worker:1",
   });
-  expect(row.configuration).toEqual({
-    text: "repository:abc:work",
-    title: "repository:abc:work",
-  });
   expect(row.activityAt).toBe("2026-08-26T10:00:00.000Z");
   expect(row.section).toBe("InProgress");
 });
 
-test("a row names the configuration and the worker the wire named", () => {
+test("a row names the worker the wire named", () => {
   const row = projectTableRow(
     working,
     known({
@@ -81,10 +78,6 @@ test("a row names the configuration and the worker the wire named", () => {
     }),
     false,
   );
-  expect(row.configuration).toEqual({
-    text: "work #12",
-    title: "repository:abc:work",
-  });
   expect(row.runsOn).toEqual({
     text: "chuggy-worker 3",
     title: "registry/worker:1",
@@ -99,9 +92,21 @@ test("a ticket running nothing states no execution rather than a blank one", () 
   );
   expect(row.executionStatus).toBeUndefined();
   expect(row.runsOn).toBeUndefined();
-  expect(row.configuration).toBeUndefined();
   expect(row.activityAt).toBeUndefined();
   expect(row.sequence).toBe(1);
+});
+
+test("an untitled ticket's row reads as unset, and a titled one carries its own title", () => {
+  expect(projectTableRow(working, undefined, false).title).toBe(
+    ticketTitleUnset,
+  );
+  expect(
+    projectTableRow(
+      { ...working, title: "Carry the fix through" },
+      undefined,
+      false,
+    ).title,
+  ).toBe("Carry the fix through");
 });
 
 const failedOlder: ExecutionSummary = {
@@ -144,7 +149,6 @@ test("a row that is not joined draws none of the execution it holds", () => {
   const row = projectTableRow(working, known(failedOlder, false), true);
   expect(row.executionOutcome).toBeUndefined();
   expect(row.executionStatus).toBeUndefined();
-  expect(row.configuration).toBeUndefined();
   expect(row.runsOn).toBeUndefined();
   expect(row.activityAt).toBeUndefined();
 });

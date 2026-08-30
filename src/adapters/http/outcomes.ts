@@ -502,6 +502,7 @@ function draftBody(draft: DraftResource): unknown {
       resumePricing: draft.authoring.resumePricing,
       finalizer: draft.authoring.finalizer,
     },
+    ...(draft.title === undefined ? {} : { title: draft.title }),
     ...(draft.brief === undefined ? {} : { brief: briefBody(draft.brief) }),
   };
 }

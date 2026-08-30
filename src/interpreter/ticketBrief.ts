@@ -52,6 +52,7 @@ import {
   briefIntentCharsMax,
   briefIntentLinesMax,
   briefLandingIsWhole,
+  briefLineCharsMax,
   briefLinkScheme,
   briefLinksMax,
 } from "../contract/brief.ts";
@@ -66,9 +67,11 @@ import { taskConfigurationLineFault } from "./taskConfiguration.ts";
 
 declare const briefIntentBrand: unique symbol;
 declare const briefLinkUrlBrand: unique symbol;
+declare const briefTitleBrand: unique symbol;
 
 export type BriefIntent = string & { readonly [briefIntentBrand]: true };
 export type BriefLinkUrl = string & { readonly [briefLinkUrlBrand]: true };
+export type BriefTitle = string & { readonly [briefTitleBrand]: true };
 
 /** Landing by advancing the reference itself, which is where a brief naming none lands. */
 export interface BriefPushFinalization {
@@ -138,6 +141,22 @@ export function asBriefLinkUrl(value: string): BriefLinkUrl {
   )
     throw new RangeError("ticket link: the URL is not a printable https URL");
   return value as BriefLinkUrl;
+}
+
+/**
+ * Brands a ticket's title, a display name a reader would rather see than a
+ * ticket number, through the same line rule a briefing's own line takes. It is
+ * stored beside the brief rather than inside it: nothing here decides on it,
+ * so it carries none of the pairing a brief's landing does.
+ */
+export function asBriefTitle(value: string): BriefTitle {
+  if (
+    value.length === 0 ||
+    value.length > briefLineCharsMax ||
+    taskConfigurationLineFault(value) !== undefined
+  )
+    throw new RangeError("ticket title: the value is not a printable line");
+  return value as BriefTitle;
 }
 
 /** Brands a branch through the one reference-name grammar this tree states. */

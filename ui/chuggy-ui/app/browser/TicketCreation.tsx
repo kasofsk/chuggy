@@ -83,6 +83,23 @@ function Fault(props: {
   );
 }
 
+function Title(props: FormEdit): ReactNode {
+  const { form, onChange } = props;
+  return (
+    <label className="creation-row">
+      <span>title</span>
+      <input
+        type="text"
+        value={form.title}
+        placeholder="a short name for this ticket"
+        onChange={(event) => {
+          onChange({ ...form, title: event.target.value });
+        }}
+      />
+    </label>
+  );
+}
+
 function Intent(props: FormEdit): ReactNode {
   const { form, onChange } = props;
   return (
@@ -229,6 +246,8 @@ function CreationFields(
       <p className="creation-configuration" title={shaping.title}>
         {shaping.text}
       </p>
+      <Title form={form} onChange={onChange} />
+      <Fault field="title" faults={faults} />
       <Intent form={form} onChange={onChange} />
       <Fault field="intent" faults={faults} />
       <Links form={form} onChange={onChange} />

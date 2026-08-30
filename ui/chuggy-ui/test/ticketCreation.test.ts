@@ -122,6 +122,21 @@ test("the fence the initialization stated is what the body carries", () => {
   expect(assembled.body.configurationRevision).toBe("r3");
 });
 
+test("a title is trimmed onto the body, and a blank one is no field at all", () => {
+  const titled = creationBodyFrom(
+    creationInitialization,
+    creationForm({ title: "  Ship the fix  " }),
+  );
+  expect(titled.assembled).toBe("Body");
+  if (titled.assembled !== "Body") return;
+  expect(titled.body.title).toBe("Ship the fix");
+
+  const blank = creationBodyFrom(creationInitialization, creationForm());
+  expect(blank.assembled).toBe("Body");
+  if (blank.assembled !== "Body") return;
+  expect("title" in blank.body).toBe(false);
+});
+
 test("a branch is a name here and a full reference on the wire", () => {
   expect(creationBranchOf("topic/one")).toStrictEqual({
     named: "Ref",
@@ -226,6 +241,7 @@ test("each bound the contract states is where the form's verdict turns", () => {
   const linkAt = `${briefLinkScheme}${"a".repeat(briefLineCharsMax - briefLinkScheme.length)}`;
   const branchAt = "b".repeat(briefBranchCharsMax - briefBranchPrefix.length);
   const atBound: readonly Partial<TicketCreationForm>[] = [
+    { title: "x".repeat(briefLineCharsMax) },
     { intent: "x".repeat(briefIntentCharsMax) },
     { intent: intentOf(briefIntentLinesMax) },
     { links: Array.from({ length: briefLinksMax }, () => "https://a.test") },
@@ -234,6 +250,7 @@ test("each bound the contract states is where the form's verdict turns", () => {
     { targetBranchName: branchAt },
   ];
   const overBound: readonly Partial<TicketCreationForm>[] = [
+    { title: "x".repeat(briefLineCharsMax + 1) },
     { intent: "x".repeat(briefIntentCharsMax + 1) },
     { intent: intentOf(briefIntentLinesMax + 1) },
     {

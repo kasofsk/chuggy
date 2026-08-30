@@ -16,7 +16,7 @@ import {
   ticketNumberSchema,
 } from "./http.ts";
 import { authoringSchema } from "./authoring.ts";
-import { briefSchema } from "./brief.ts";
+import { briefLineCharsMax, briefSchema } from "./brief.ts";
 import { nativeActionResolutions } from "./rosters.ts";
 
 /** An identity a body may carry, bounded only by the body limit itself. */
@@ -81,6 +81,7 @@ export const draftCreationSchema = z.strictObject({
   configurationDigest: digestSchema,
   expectedProjectSequence: countSchema,
   authoring: authoringSchema,
+  title: z.string().min(1).max(briefLineCharsMax).optional(),
   brief: briefSchema,
 });
 
@@ -88,6 +89,7 @@ export const draftRevisionSchema = z.strictObject({
   expectedVersion: countSchema,
   configurationRevision: bodyIdentitySchema,
   authoring: authoringSchema,
+  title: z.string().min(1).max(briefLineCharsMax).optional(),
   brief: briefSchema,
 });
 

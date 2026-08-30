@@ -37,7 +37,7 @@ import {
   reworkPolicySchema,
   reworkPolicyResponseSchema,
 } from "./authoring.ts";
-import { briefResponseSchema } from "./brief.ts";
+import { briefLineCharsMax, briefResponseSchema } from "./brief.ts";
 import {
   architectures,
   artifactRoles,
@@ -154,15 +154,17 @@ export const executionRunSchema = z.object({
 export type ExecutionRun = z.infer<typeof executionRunSchema>;
 
 /**
- * A ticket as the project table and its own read both carry it. The brief is
- * the ticket's own read alone: an intent is a paragraph, and a page of them is
- * a page of documents rather than a table.
+ * A ticket as the project table and its own read both carry it, `title`
+ * included: it is a bounded line, not a document, so a page of them costs the
+ * table nothing. The brief is the ticket's own read alone: an intent is a
+ * paragraph, and a page of them is a page of documents rather than a table.
  */
 export const ticketResponseSchema = z.object({
   ticket: ticketNumberSchema,
   phase: z.enum(phaseRoster),
   sequence: countSchema,
   reason: z.enum(escalationReasons).optional(),
+  title: z.string().min(1).max(briefLineCharsMax).optional(),
   brief: briefResponseSchema.optional(),
   runTotals: runTotalsSchema.optional(),
 });
@@ -595,6 +597,7 @@ export const draftResponseSchema = z.object({
   configurationRevision: identitySchema,
   configurationVersion: configurationVersionSchema.optional(),
   authoring: authoringResponseSchema,
+  title: z.string().min(1).max(briefLineCharsMax).optional(),
   brief: briefResponseSchema.optional(),
 });
 export type DraftResponse = z.infer<typeof draftResponseSchema>;

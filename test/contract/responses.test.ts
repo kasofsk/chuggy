@@ -70,6 +70,7 @@ import {
   asOperationId,
 } from "../../src/interpreter/operationInbox.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
+import { asBriefTitle } from "../../src/interpreter/ticketBrief.ts";
 import {
   authoring,
   authoringWireBody,
@@ -144,6 +145,25 @@ test("an escalated ticket names its wall and an unparked one omits it", () => {
       sequence: 9,
       reason: "NoReason",
     }),
+  );
+});
+
+test("a ticket names its title where it has one, and an untitled ticket carries none", () => {
+  const titled = ticketResponseSchema.parse(
+    ticketResponse({
+      ticket: asTicketId(3),
+      phase: "Working",
+      sequence: 9,
+      title: asBriefTitle("Carry the fix through"),
+    }).body,
+  );
+  assert.equal(titled.title, "Carry the fix through");
+  assert.equal(
+    ticketResponseSchema.parse(
+      ticketResponse({ ticket: asTicketId(3), phase: "Working", sequence: 9 })
+        .body,
+    ).title,
+    undefined,
   );
 });
 

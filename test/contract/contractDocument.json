@@ -394,6 +394,11 @@
           ],
           "additionalProperties": false
         },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
         "brief": {
           "type": "object",
           "properties": {
@@ -575,6 +580,11 @@
             "finalizer"
           ],
           "additionalProperties": false
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
         },
         "brief": {
           "type": "object",

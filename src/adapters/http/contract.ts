@@ -56,7 +56,9 @@ import {
   type GitObjectId,
 } from "../../interpreter/finalizer.ts";
 import {
+  asBriefTitle,
   asDraftBrief,
+  type BriefTitle,
   type DraftBrief,
 } from "../../interpreter/ticketBrief.ts";
 
@@ -111,6 +113,7 @@ export interface ParsedDraftCreation {
   readonly configurationDigest: string;
   readonly expectedProjectSequence: number;
   readonly authoring: ReleaseAuthoring;
+  readonly title?: BriefTitle;
   readonly brief: DraftBrief;
 }
 
@@ -118,6 +121,7 @@ export interface ParsedDraftRevision {
   readonly expectedVersion: number;
   readonly configurationRevision: ConfigurationRevisionId;
   readonly authoring: ReleaseAuthoring;
+  readonly title?: BriefTitle;
   readonly brief: DraftBrief;
 }
 
@@ -177,6 +181,7 @@ export function parseDraftCreation(body: unknown): ParsedDraftCreation {
     configurationDigest: value.configurationDigest,
     expectedProjectSequence: value.expectedProjectSequence,
     authoring: releaseAuthoring(value.authoring),
+    ...(value.title === undefined ? {} : { title: asBriefTitle(value.title) }),
     brief: releaseBrief(value.brief),
   };
 }
@@ -189,6 +194,7 @@ export function parseDraftRevision(body: unknown): ParsedDraftRevision {
       value.configurationRevision,
     ),
     authoring: releaseAuthoring(value.authoring),
+    ...(value.title === undefined ? {} : { title: asBriefTitle(value.title) }),
     brief: releaseBrief(value.brief),
   };
 }

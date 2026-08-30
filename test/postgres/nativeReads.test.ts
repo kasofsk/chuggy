@@ -1,11 +1,21 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 
 import {
   postgresNativeReads,
   publicOperation,
 } from "../../src/adapters/postgres/nativeReads.ts";
+import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
 import {
+  asAuthorityKind,
+  asAuthoritySubject,
+} from "../../src/interpreter/operationInbox.ts";
+import { asBriefTitle } from "../../src/interpreter/ticketBrief.ts";
+import { plainAuthoring } from "../actor/harness.ts";
+import {
+  postgresHarnessBrief,
+  postgresHarnessConfiguration,
   postgresHarnessProject,
   postgresHarnessSubmission,
 } from "./harness.ts";
@@ -13,6 +23,11 @@ import { postgresReadHarness } from "./readHarness.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { NativeActionResolution } from "../../src/interpreter/ticketCommand.ts";
 import { id } from "../domain/fixtures.ts";
+
+const authority = {
+  kind: asAuthorityKind("User"),
+  subject: asAuthoritySubject("author"),
+};
 
 const subject = postgresReadHarness();
 
@@ -352,6 +367,59 @@ test("project reads filter before paging and expose one ticket detail", async ()
     reason: "GasExhausted",
   });
   assert.equal(await reads.ticket(partition, id(9)), undefined);
+});
+
+test("a ticket's title is read beside its phase, on the project list and on its own", async () => {
+  const partition = await filterProject();
+  await seedFilterProjection(partition);
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  await subject.harness.authoring.createConfiguration({
+    partition,
+    authority,
+    revision,
+    canonical: postgresHarnessConfiguration,
+  });
+  const initialized = await subject.harness.authoring.initializeDraft(
+    partition,
+    revision,
+    100,
+  );
+  if (initialized === undefined || initialized === "PolicyUnavailable")
+    throw new Error("native read case: the draft was not initialized");
+  const created = await subject.harness.authoring.createDraft({
+    partition,
+    authority,
+    configurationRevision: revision,
+    configurationDigest: initialized.configuration.digest,
+    expectedProjectSequence: initialized.projectSequence,
+    authoring: plainAuthoring,
+    title: asBriefTitle("The completed ticket"),
+    brief: postgresHarnessBrief,
+  });
+  if (created.created !== "Created")
+    throw new Error("native read case: the titled draft was not created");
+  const titled = created.draft.ticket;
+  assert.equal(
+    titled,
+    1,
+    "the fresh project mints ticket 1 for its first draft",
+  );
+  const reads = postgresNativeReads(subject.pool);
+  const listed = await reads.project(partition, {
+    limit: 10,
+    phaseFilter: { selection: "Selected", phases: ["Done", "Revoked"] },
+  });
+  assert.equal(listed.result, "Found");
+  if (listed.result !== "Found") return;
+  assert.deepEqual(listed.project.tickets, [
+    { ticket: 1, phase: "Done", sequence: 1, title: "The completed ticket" },
+    { ticket: 3, phase: "Revoked", sequence: 3 },
+  ]);
+  assert.equal(
+    (await reads.ticket(partition, id(1)))?.title,
+    "The completed ticket",
+  );
+  assert.equal((await reads.ticket(partition, id(2)))?.title, undefined);
 });
 
 test("a ticket's open action carries its kind, its fence, and what it offered", async () => {

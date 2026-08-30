@@ -39,6 +39,7 @@ import type { Partition } from "../../interpreter/projectStore.ts";
 import { projectRowCounter } from "./rows.ts";
 import { postgresTicketRunTotals } from "./runEvidence.ts";
 import { draftBriefOf, type DraftBriefRow } from "./ticketBrief.ts";
+import { asBriefTitle } from "../../interpreter/ticketBrief.ts";
 
 interface PublicOperationRow {
   readonly operation: string;
@@ -55,6 +56,7 @@ interface TicketProjectionRow {
   readonly phase: string;
   readonly seq: string;
   readonly reason: string;
+  readonly title: string | null;
 }
 
 /** One open action, or a ticket that has none: every column is then null. */
@@ -212,6 +214,7 @@ function ticketResource(row: TicketProjectionRow): TicketResource {
     phase: projectionPhase(row.phase),
     sequence: projectRowCounter(row.seq, "ticket projection sequence"),
     ...(reason === undefined ? {} : { reason }),
+    ...(row.title === null ? {} : { title: asBriefTitle(row.title) }),
   };
 }
 
@@ -335,21 +338,25 @@ async function readProjectTickets(
 ): Promise<readonly TicketProjectionRow[]> {
   if (query.order === "RecentActivity") {
     const found = await client.query<TicketProjectionRow>(
-      sql`SELECT ticket,phase,seq,reason FROM ticket_projection
-        WHERE tenant=${partition.tenant} AND project=${partition.project}
+      sql`SELECT t.ticket,t.phase,t.seq,t.reason,b.title FROM ticket_projection t
+        LEFT JOIN draft_brief b
+          ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
+        WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
           AND (${query.recentActivityAfter?.sequence ?? null}::bigint IS NULL
-            OR (seq,ticket) < (${query.recentActivityAfter?.sequence ?? null},${query.recentActivityAfter?.ticket ?? null}))
-          AND phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
-        ORDER BY seq DESC,ticket DESC LIMIT ${query.limit + 1}`,
+            OR (t.seq,t.ticket) < (${query.recentActivityAfter?.sequence ?? null},${query.recentActivityAfter?.ticket ?? null}))
+          AND t.phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
+        ORDER BY t.seq DESC,t.ticket DESC LIMIT ${query.limit + 1}`,
     );
     return found.rows;
   }
   const found = await client.query<TicketProjectionRow>(
-    sql`SELECT ticket,phase,seq,reason FROM ticket_projection
-        WHERE tenant=${partition.tenant} AND project=${partition.project}
-          AND ticket>${query.after ?? 0}
-          AND phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
-        ORDER BY ticket LIMIT ${query.limit + 1}`,
+    sql`SELECT t.ticket,t.phase,t.seq,t.reason,b.title FROM ticket_projection t
+        LEFT JOIN draft_brief b
+          ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
+        WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
+          AND t.ticket>${query.after ?? 0}
+          AND t.phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
+        ORDER BY t.ticket LIMIT ${query.limit + 1}`,
   );
   return found.rows;
 }
@@ -376,7 +383,7 @@ function nativeReadsResources(
     project: (partition, query) => readProject(pool, partition, query),
     ticket: async (partition, ticket) => {
       const found = await pool.query<TicketProjectionRow & DraftBriefRow>(
-        sql`SELECT t.ticket,t.phase,t.seq,t.reason,b.intent,b.branch,
+        sql`SELECT t.ticket,t.phase,t.seq,t.reason,b.title,b.intent,b.branch,
                    b.finalization_mode,b.finalization_target,
                    (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
                      WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS links

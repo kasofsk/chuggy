@@ -14,17 +14,20 @@ import {
   cellExecutionUnread,
   ticketRowExecutionCell,
 } from "../app/browser/TicketCells.tsx";
-import { projectTableExecutionReads } from "../app/core/projectTableRows.ts";
+import {
+  projectTableExecutionReads,
+  ticketTitleUnset,
+} from "../app/core/projectTableRows.ts";
 import type { ProjectTableRow } from "../app/core/projectTableRows.ts";
 
 function row(executionRead: ProjectTableRow["executionRead"]): ProjectTableRow {
   return {
     ticket: 4,
+    title: ticketTitleUnset,
     phase: "Escalated",
     section: "NeedsYou",
     badge: "work failed",
     executionRead,
-    configuration: undefined,
     executionStatus: undefined,
     executionOutcome: undefined,
     runsOn: undefined,

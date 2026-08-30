@@ -36,8 +36,11 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
-import { briefLinksMax } from "../../src/contract/brief.ts";
-import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
+import { briefLineCharsMax, briefLinksMax } from "../../src/contract/brief.ts";
+import {
+  asBriefTitle,
+  asDraftBrief,
+} from "../../src/interpreter/ticketBrief.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import { handoffFixture } from "../interpreter/handoffFixture.ts";
 import {
@@ -1127,6 +1130,44 @@ test("where a brief lands is written, replaced and read back apart from where it
   );
 });
 
+test("a ticket's title is written with the draft, replaced with it, and cleared by a revision naming none", async () => {
+  const { partition, store, revision, draft } = await draftFixture();
+  assert.equal(draft.title, undefined);
+  assert.equal((await store.draft(partition, draft.ticket))?.title, undefined);
+  const titled = await store.reviseDraft({
+    partition,
+    authority,
+    ticket: draft.ticket,
+    expectedVersion: 1,
+    configurationRevision: revision,
+    authoring: plainAuthoring,
+    title: asBriefTitle("Harness the ticket"),
+    brief: postgresHarnessBrief,
+  });
+  assert.equal(
+    titled.revised === "Revised" ? titled.draft.title : undefined,
+    "Harness the ticket",
+  );
+  assert.equal(
+    (await store.draft(partition, draft.ticket))?.title,
+    "Harness the ticket",
+  );
+  const cleared = await store.reviseDraft({
+    partition,
+    authority,
+    ticket: draft.ticket,
+    expectedVersion: 2,
+    configurationRevision: revision,
+    authoring: plainAuthoring,
+    brief: postgresHarnessBrief,
+  });
+  assert.equal(
+    cleared.revised === "Revised" ? cleared.draft.title : undefined,
+    undefined,
+    "a revision naming no title replaces the one before it, as the rest of the brief does",
+  );
+});
+
 test("a draft authored before a brief existed reads back without one", async () => {
   const { partition, store, draft } = await draftFixture();
   await harness.query(
@@ -1147,8 +1188,11 @@ test("a draft authored before a brief existed reads back without one", async () 
 test("the server refuses a brief that reached it around the interpreter's rules", async () => {
   const { partition, draft } = await draftFixture();
   for (const [column, value] of [
+    ["title", ""],
+    ["title", "x".repeat(briefLineCharsMax + 1)],
     ["intent", ""],
     ["intent", "Fix it.\u0007"],
+    ["title", "Fix it."],
     ["branch", "rt/ticket-brief"],
     ["finalization_mode", "PullRequest"],
     ["finalization_target", "rt/ticket-brief"],

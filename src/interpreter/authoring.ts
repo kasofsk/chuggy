@@ -34,7 +34,11 @@ import {
   type HandoffConfigurationFault,
 } from "./handoffConfiguration.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
-import type { BriefFinalization, DraftBrief } from "./ticketBrief.ts";
+import type {
+  BriefFinalization,
+  BriefTitle,
+  DraftBrief,
+} from "./ticketBrief.ts";
 import {
   authoredTaskConfigurationReadiness,
   type AuthoredTaskConfiguration,
@@ -210,6 +214,7 @@ export interface DraftResource {
   readonly configurationRevision: ConfigurationRevisionId;
   readonly configurationVersion?: ConfigurationVersion;
   readonly authoring: ReleaseAuthoring;
+  readonly title?: BriefTitle;
   readonly brief?: DraftBrief;
 }
 
@@ -466,6 +471,7 @@ export interface AuthoringStore {
     readonly configurationDigest: string;
     readonly expectedProjectSequence: number;
     readonly authoring: ReleaseAuthoring;
+    readonly title?: BriefTitle;
     readonly brief: DraftBrief;
   }): Promise<DraftCreated>;
   reviseDraft(input: {
@@ -475,6 +481,7 @@ export interface AuthoringStore {
     readonly expectedVersion: number;
     readonly configurationRevision: ConfigurationRevisionId;
     readonly authoring: ReleaseAuthoring;
+    readonly title?: BriefTitle;
     readonly brief: DraftBrief;
   }): Promise<DraftRevised>;
   deleteDraft(input: {

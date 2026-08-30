@@ -47,7 +47,7 @@ import {
   releaseConfigurationReadiness,
 } from "./authoring.ts";
 import type { ReleaseAuthoring } from "../actor/decisionEvent.ts";
-import type { DraftBrief } from "./ticketBrief.ts";
+import type { BriefTitle, DraftBrief } from "./ticketBrief.ts";
 import {
   dispatchNeedsExecutionHeadroom,
   type BacklogScope,
@@ -203,6 +203,7 @@ export interface TicketResource {
   readonly phase: Phase;
   readonly sequence: number;
   readonly reason?: EscalationReason;
+  readonly title?: BriefTitle;
   readonly brief?: DraftBrief;
   readonly runTotals?: RunTotals;
 }
@@ -501,6 +502,7 @@ export interface NativeWeb {
       readonly configurationDigest: string;
       readonly expectedProjectSequence: number;
       readonly authoring: ReleaseAuthoring;
+      readonly title?: BriefTitle;
       readonly brief: DraftBrief;
     },
   ): Promise<AuthorizedResult<DraftCreated>>;
@@ -517,6 +519,7 @@ export interface NativeWeb {
       readonly expectedVersion: number;
       readonly configurationRevision: ConfigurationRevisionId;
       readonly authoring: ReleaseAuthoring;
+      readonly title?: BriefTitle;
       readonly brief: DraftBrief;
     },
   ): Promise<AuthorizedResult<DraftRevised>>;

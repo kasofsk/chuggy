@@ -50,6 +50,7 @@ export type CreationStage = CreationAuthoring["program"][number];
  * types rather than the references they become.
  */
 export interface TicketCreationForm extends CreationAuthoring {
+  readonly title: string;
   readonly intent: string;
   readonly links: readonly string[];
   readonly branchName: string;
@@ -57,7 +58,7 @@ export interface TicketCreationForm extends CreationAuthoring {
 }
 
 export type CreationField =
-  "intent" | "links" | "branch" | "target" | "authoring" | "fence";
+  "title" | "intent" | "links" | "branch" | "target" | "authoring" | "fence";
 
 export interface CreationFault {
   readonly field: CreationField;
@@ -107,6 +108,7 @@ export function creationFormFrom(
 ): TicketCreationForm {
   return {
     ...initialization.defaults,
+    title: "",
     intent: "",
     links: [],
     branchName: "",
@@ -162,6 +164,8 @@ export const creationBranchPrefixedSentence = `enter the branch name, not the re
  */
 export function creationFaultSentence(field: CreationField): string {
   switch (field) {
+    case "title":
+      return `a title is printed as one line, at most ${String(briefLineCharsMax)} characters`;
     case "intent":
       return `state what this ticket is for: at least one line, at most ${String(briefIntentLinesMax)} printed lines and ${String(briefIntentCharsMax)} characters`;
     case "links":
@@ -178,6 +182,7 @@ export function creationFaultSentence(field: CreationField): string {
 
 function creationFieldOf(path: readonly PropertyKey[]): CreationField {
   if (path[0] === "authoring") return "authoring";
+  if (path[0] === "title") return "title";
   if (path[0] !== "brief") return "fence";
   if (path[1] === "intent") return "intent";
   if (path[1] === "branch") return "branch";
@@ -280,6 +285,7 @@ export function creationBodyFrom(
       resumePricing: form.resumePricing,
       finalizer: form.finalizer,
     },
+    ...(form.title.trim() === "" ? {} : { title: form.title.trim() }),
     brief: creationBriefOf(form, branches),
   };
   const stated = creationStatedFaults(form, branches);
