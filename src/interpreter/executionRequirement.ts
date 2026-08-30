@@ -184,6 +184,17 @@ function refines(
       value.operatingSystem === baseline.operatingSystem &&
       value.architecture === baseline.architecture
     );
+  if (
+    value.mode === "ContainerCapability" &&
+    baseline.mode === "ContainerCapability"
+  )
+    return (
+      value.operatingSystem === baseline.operatingSystem &&
+      value.architecture === baseline.architecture &&
+      baseline.capabilities.every((capability) =>
+        value.capabilities.includes(capability),
+      )
+    );
   if (value.mode === "Native" && baseline.mode === "Native")
     return (
       value.architecture === baseline.architecture &&
@@ -192,6 +203,25 @@ function refines(
       value.sdkVersionMin >= baseline.sdkVersionMin
     );
   return false;
+}
+
+function requirementForAgent(
+  value: ExecutionRequirement,
+  capability: ExecutionCapability | undefined,
+): ExecutionRequirement | undefined {
+  if (capability === undefined) return value;
+  if (value.mode === "Native") return undefined;
+  if (value.mode === "Container")
+    return {
+      mode: "ContainerCapability",
+      operatingSystem: value.operatingSystem,
+      architecture: value.architecture,
+      capabilities: [capability],
+    };
+  return {
+    ...value,
+    capabilities: [...new Set([...value.capabilities, capability])],
+  };
 }
 
 function agentCapability(
@@ -221,10 +251,27 @@ function requirementMap(
   return result;
 }
 
+function platformDefaultMatchesLegacy(
+  platformDefault: ExecutionRequirement,
+  legacy: ExecutionRequirement,
+  capability: ExecutionCapability | undefined,
+): boolean {
+  if (capability === undefined)
+    return JSON.stringify(platformDefault) === JSON.stringify(legacy);
+  const effectiveDefault = requirementForAgent(platformDefault, capability);
+  const effectiveLegacy = requirementForAgent(legacy, capability);
+  return (
+    effectiveDefault !== undefined &&
+    effectiveLegacy !== undefined &&
+    refines(effectiveDefault, effectiveLegacy)
+  );
+}
+
 function configuredRequirements(
   value: unknown,
   legacy: ExecutionRequirement,
   stageQualifiedEvaluation: boolean,
+  capability: ExecutionCapability | undefined,
 ): RequirementConfiguration | undefined {
   const configured = record(value);
   if (
@@ -246,7 +293,7 @@ function configuredRequirements(
     Number(platformDefaultVersion) < 1
   )
     return undefined;
-  if (JSON.stringify(platformDefault) !== JSON.stringify(legacy))
+  if (!platformDefaultMatchesLegacy(platformDefault, legacy, capability))
     return undefined;
   const ticketDefault =
     configured?.["ticketDefault"] === undefined
@@ -308,11 +355,13 @@ function parsedConfiguration(
     architecture: "Amd64",
     image: root["image"],
   };
+  const capability = agentCapability(value);
   if (root["executionRequirements"] !== undefined)
     return configuredRequirements(
       root["executionRequirements"],
       legacy,
       root["evaluations"] !== undefined,
+      capability,
     );
   return {
     platformDefault: legacy,
@@ -353,15 +402,11 @@ export function materializeExecutionRequirement(
   const value =
     explicit ?? kindDefault ?? parsed.ticketDefault ?? parsed.platformDefault;
   const capability = agentCapability(configuration);
-  const selected =
-    capability !== undefined && value.mode === "Container"
-      ? {
-          mode: "ContainerCapability" as const,
-          operatingSystem: value.operatingSystem,
-          architecture: value.architecture,
-          capabilities: [capability],
-        }
-      : value;
+  const selected = requirementForAgent(value, capability);
+  if (selected === undefined)
+    throw new TypeError(
+      "single-agent worker requires a container execution requirement",
+    );
   const source: RequirementSource =
     explicit !== undefined
       ? "ExplicitTask"

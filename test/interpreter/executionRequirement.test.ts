@@ -22,6 +22,16 @@ const container = (
   architecture: "Amd64" as const,
   image,
 });
+const codexWorker = {
+  mode: {
+    type: "SingleAgent" as const,
+    agent: "Codex" as const,
+    model: "gpt-5.3-codex",
+    arguments: [],
+  },
+  setup: [],
+  files: [],
+};
 
 test("legacy release image materializes the identical Linux container default", () => {
   assert.deepEqual(
@@ -49,16 +59,7 @@ test("a single-agent mode materializes an agent capability instead of an image c
       {
         version: 1,
         image: "legacy-worker:v1",
-        worker: {
-          mode: {
-            type: "SingleAgent",
-            agent: "Codex",
-            model: "gpt-5.3-codex",
-            arguments: [],
-          },
-          setup: [],
-          files: [],
-        },
+        worker: codexWorker,
       },
       1,
       "Work",
@@ -69,6 +70,49 @@ test("a single-agent mode materializes an agent capability instead of an image c
       architecture: "Amd64",
       capabilities: ["Agent:Codex"],
     },
+  );
+});
+
+test("a single agent is added to an authored capability requirement", () => {
+  const authoredCapability = {
+    mode: "ContainerCapability" as const,
+    operatingSystem: "Linux" as const,
+    architecture: "Amd64" as const,
+    capabilities: ["Agent:Claude" as const],
+  };
+  const configuration = {
+    version: 1,
+    image: "legacy-worker:v1",
+    worker: codexWorker,
+    executionRequirements: {
+      platformDefault: authoredCapability,
+      platformDefaultVersion: 1,
+    },
+  };
+  assert.equal(executionRequirementConfigurationIsValid(configuration), true);
+  assert.deepEqual(
+    materializeExecutionRequirement(configuration, 1, "Work").value,
+    {
+      ...authoredCapability,
+      capabilities: ["Agent:Claude", "Agent:Codex"],
+    },
+  );
+});
+
+test("a single-agent worker refuses a native execution requirement", () => {
+  const configuration = {
+    version: 1,
+    image: "legacy-worker:v1",
+    worker: codexWorker,
+    executionRequirements: {
+      platformDefault: native(16, 18),
+      platformDefaultVersion: 1,
+    },
+  };
+  assert.equal(executionRequirementConfigurationIsValid(configuration), false);
+  assert.throws(
+    () => materializeExecutionRequirement(configuration, 1, "Work"),
+    /malformed or widening/u,
   );
 });
 

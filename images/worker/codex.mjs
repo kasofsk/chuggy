@@ -15,6 +15,7 @@ const reservedCodexArguments = [
   "-C",
   "--ephemeral",
   "--ignore-user-config",
+  "--ignore-rules",
   "--model",
   "-m",
   "--config",
@@ -30,6 +31,8 @@ const reservedCodexArguments = [
   "--resume",
 ];
 
+const reservedCodexShortArguments = ["-m", "-c", "-p", "-s", "-C"];
+
 function configuredArguments(task) {
   const args = task.worker?.mode?.arguments ?? [];
   for (const argument of args) {
@@ -37,6 +40,10 @@ function configuredArguments(task) {
       reservedCodexArguments.some(
         (reserved) =>
           argument === reserved || argument.startsWith(`${reserved}=`),
+      ) ||
+      reservedCodexShortArguments.some(
+        (reserved) =>
+          argument.startsWith(reserved) && argument.length > reserved.length,
       )
     )
       throw new Error(
@@ -52,6 +59,7 @@ export function codexInvocation(task, paths) {
     "--json",
     "--ephemeral",
     "--ignore-user-config",
+    "--ignore-rules",
     "--model",
     task.worker.mode.model,
     "--dangerously-bypass-approvals-and-sandbox",
@@ -79,6 +87,7 @@ export async function codexConfiguration(
     codexVersion: version,
     model: task.worker.mode.model,
     userConfig: "Ignored",
+    projectRules: "Ignored",
   };
 }
 

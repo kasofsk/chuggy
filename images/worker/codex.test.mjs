@@ -32,6 +32,7 @@ test("a Codex invocation is ephemeral and constrained to the result schema", () 
       "--json",
       "--ephemeral",
       "--ignore-user-config",
+      "--ignore-rules",
       "--model",
       "gpt-5.3-codex",
       "--dangerously-bypass-approvals-and-sandbox",
@@ -54,6 +55,7 @@ test("Codex configuration records the runtime version and pinned model", async (
       codexVersion: "codex-cli 0.151.0",
       model: "gpt-5.3-codex",
       userConfig: "Ignored",
+      projectRules: "Ignored",
     },
   );
   assert.deepEqual(executed, [
@@ -63,6 +65,29 @@ test("Codex configuration records the runtime version and pinned model", async (
       { env: { CODEX_HOME: "/tmp/codex" }, maxBuffer: 4096 },
     ],
   ]);
+});
+
+test("attached values cannot evade reserved Codex short options", () => {
+  for (const argument of [
+    "-mother-model",
+    '-cmodel="other"',
+    "-pother-profile",
+    "-sread-only",
+    "-C/other/workspace",
+  ])
+    assert.throws(
+      () =>
+        codexInvocation(
+          {
+            ...task,
+            worker: {
+              mode: { ...task.worker.mode, arguments: [argument] },
+            },
+          },
+          { resultSchema: "/tmp/result.json" },
+        ),
+      /reserves Codex argument/u,
+    );
 });
 
 test("the final Codex agent message supplies the structured result", () => {
