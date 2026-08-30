@@ -57,14 +57,19 @@ function tick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-/** The same API, answering a turn later than it was asked, so a case can push a
- * frame at a read that has not come back. */
+/**
+ * The same API, answering some turns after it was asked, so a case can push a
+ * frame at a read that has not come back. THE ANSWER IS DECIDED WHEN THE
+ * REQUEST ARRIVES, which is what a server does and what makes a read issued
+ * before a change carry the world from before it.
+ */
 function readingSlowly(answering: typeof fetch, turns: number): typeof fetch {
   return (async (url: string, init?: unknown) => {
-    for (let turn = 0; turn < turns; turn += 1) await tick();
-    return (
+    const answered = await (
       answering as unknown as (u: string, i?: unknown) => Promise<Response>
     )(url, init);
+    for (let turn = 0; turn < turns; turn += 1) await tick();
+    return answered;
   }) as unknown as typeof fetch;
 }
 
@@ -100,6 +105,16 @@ function dependencyDoneFrame(): string {
     version: 1,
     resource: String(ticketPageDependency.ticket),
     representation: ticketPageDependency,
+  });
+}
+
+/** Some other ticket moving, which stales this entry like any frame of the kind
+ * and is how a case gets a read in flight to push at. */
+function unrelatedTicketFrame(): string {
+  return frame("Ticket", "7", {
+    version: 1,
+    resource: "40",
+    representation: { ticket: 40, phase: "Working", sequence: 6 },
   });
 }
 
@@ -148,23 +163,48 @@ test("a configuration frame leaves the dispatch entry where it was read", async 
 });
 
 /**
- * A BURST MUST NOT STARVE THE READ IT ASKS FOR: every frame of the kind stales
- * this entry and the query cache cancels an in-flight refetch by default, so
- * frames arriving faster than the API answers would restart the read at each
- * one and the button would wait for the burst to stop. The read here takes two
- * turns and the burst runs for longer, so a read allowed to finish has.
+ * A FRAME ARRIVING MID-READ MUST STILL BE READ FOR. The read in flight asked
+ * the API before this frame's change existed, so its answer cannot carry it;
+ * joining that read rather than restarting it would settle the entry on the
+ * older answer and clear the staleness the frame had just set, and nothing
+ * would ask again — the switcher's other refetches are off and the fallback is
+ * down while the stream carries.
  */
-test("a burst of frames does not stop the dispatch read from finishing", async () => {
+test("a frame arriving while a read is in flight is still read for", async () => {
   let dispatchable = false;
   const server = drawn(() => dispatchable, 2);
   await settled();
   expect(screen.queryByRole("button", { name: "dispatch" })).toBeNull();
+
+  await turned(() => {
+    server.push(unrelatedTicketFrame());
+  });
+  dispatchable = true;
+  await turned(() => {
+    server.push(dependencyDoneFrame());
+  });
+  await settled();
+
+  expect(screen.getByRole("button", { name: "dispatch" })).toBeDefined();
+});
+
+/**
+ * A burst restarts the read at every frame, so nothing is drawn until it stops
+ * — bounded, self-healing, and unmeasured on a rig (kasofsk/chuggy#443). What
+ * has to hold is where it lands: the entry after the burst is what the API said
+ * after the last frame in it.
+ */
+test("a burst of frames leaves the dispatch entry correct once it stops", async () => {
+  let dispatchable = false;
+  const server = drawn(() => dispatchable, 2);
+  await settled();
 
   dispatchable = true;
   for (let pushed = 0; pushed < 10; pushed += 1)
     await turned(() => {
       server.push(dependencyDoneFrame());
     });
+  await settled();
 
   expect(screen.getByRole("button", { name: "dispatch" })).toBeDefined();
 });

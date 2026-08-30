@@ -17,8 +17,10 @@
  * writes a resource key itself, from the frame that carries that resource; a
  * list key it has not been told about is touched by nothing, and its entry then
  * stands until the reader reloads. So `projectListKey` is private and a list is
- * named only through `projectListFolded` or `projectListReread`, each of which
- * takes the refresh as an argument that cannot be left out.
+ * built by `projectListFolded` or `projectListReread`, which is where its
+ * refresh is chosen — what that stops is a list assembled without one, not a
+ * list taken apart, a spread of a built one being a value of the type like any
+ * other.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
