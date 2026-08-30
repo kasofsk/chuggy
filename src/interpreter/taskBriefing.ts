@@ -108,6 +108,7 @@ export {
   type TaskConfigurationReadFault,
   type TicketBrief,
   type WorkerConfiguration,
+  type WorkerMode,
 } from "./taskConfiguration.ts";
 import {
   briefingHeading,

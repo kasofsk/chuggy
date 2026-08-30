@@ -21,8 +21,28 @@ export interface EvaluationBlock extends PurposeBlock {
   readonly purpose: "Review" | "Check";
 }
 
+/** One agent invocation, the only worker execution mode currently admitted. */
+export interface SingleAgentWorkerMode {
+  readonly type: "SingleAgent";
+  readonly agent: "Claude" | "Codex";
+  readonly arguments: readonly string[];
+}
+
+/** How the worker executes a task, discriminated so each mode owns its options. */
+export type WorkerMode = SingleAgentWorkerMode;
+
 /** Runtime inputs whose canonical authored bytes travel with every task invocation. */
-export interface WorkerConfiguration {
+export interface ModeWorkerConfiguration {
+  readonly mode: WorkerMode;
+  readonly setup: readonly string[];
+  readonly files: readonly {
+    readonly path: string;
+    readonly content: string;
+  }[];
+}
+
+/** The worker shape retained by immutable configurations that predate modes. */
+export interface LegacyClaudeWorkerConfiguration {
   readonly arguments: readonly string[];
   readonly setup: readonly string[];
   readonly files: readonly {
@@ -30,6 +50,9 @@ export interface WorkerConfiguration {
     readonly content: string;
   }[];
 }
+
+export type WorkerConfiguration =
+  ModeWorkerConfiguration | LegacyClaudeWorkerConfiguration;
 
 /** The authored part of a task configuration, before storage supplies its immutable pin. */
 export interface AuthoredTaskConfiguration {
@@ -244,15 +267,19 @@ function authoredWorkerConfiguration(
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return undefined;
   const record = value as Record<string, unknown>;
-  const args = authoredTaskConfigurationStringArray(record["arguments"]);
+  const mode = authoredWorkerMode(record["mode"]);
+  const legacyArguments = authoredTaskConfigurationStringArray(
+    record["arguments"],
+  );
   const setup = authoredTaskConfigurationStringArray(record["setup"]);
   const files = record["files"];
   if (
-    args === undefined ||
+    (mode === undefined && legacyArguments === undefined) ||
+    (mode !== undefined && legacyArguments !== undefined) ||
     setup === undefined ||
     !Array.isArray(files) ||
-    args.length > workerEntriesMax ||
     setup.length > workerEntriesMax ||
+    (legacyArguments?.length ?? 0) > workerEntriesMax ||
     files.length > workerEntriesMax
   )
     return undefined;
@@ -268,10 +295,26 @@ function authoredWorkerConfiguration(
   });
   if (parsedFiles.some((file) => file === undefined)) return undefined;
   return {
-    arguments: args,
+    ...(mode === undefined ? { arguments: legacyArguments ?? [] } : { mode }),
     setup,
     files: parsedFiles as WorkerConfiguration["files"],
   };
+}
+
+function authoredWorkerMode(value: unknown): WorkerMode | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return undefined;
+  const record = value as Record<string, unknown>;
+  if (record["type"] !== "SingleAgent") return undefined;
+  const agent = record["agent"];
+  const args = authoredTaskConfigurationStringArray(record["arguments"]);
+  if (
+    (agent !== "Claude" && agent !== "Codex") ||
+    args === undefined ||
+    args.length > workerEntriesMax
+  )
+    return undefined;
+  return { type: "SingleAgent", agent, arguments: args };
 }
 
 function authoredTaskConfigurationEvaluationBlock(

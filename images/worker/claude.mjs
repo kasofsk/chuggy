@@ -1,12 +1,4 @@
-const resultSchema = JSON.stringify({
-  type: "object",
-  additionalProperties: false,
-  required: ["verdict", "summary"],
-  properties: {
-    verdict: { enum: ["Pass", "Fail"] },
-    summary: { type: "string", minLength: 1, maxLength: 8192 },
-  },
-});
+import { agentResult, agentResultSchema } from "./result.mjs";
 
 const reservedClaudeArguments = [
   "-p",
@@ -26,7 +18,7 @@ const reservedClaudeArguments = [
 ];
 
 function configuredArguments(task) {
-  const args = task.worker?.arguments ?? [];
+  const args = task.worker?.mode?.arguments ?? task.worker?.arguments ?? [];
   for (const argument of args) {
     if (
       reservedClaudeArguments.some(
@@ -48,7 +40,7 @@ export function claudeInvocation(task) {
     "stream-json",
     "--verbose",
     "--json-schema",
-    resultSchema,
+    JSON.stringify(agentResultSchema),
     "--permission-mode",
     "bypassPermissions",
     "--strict-mcp-config",
@@ -64,8 +56,20 @@ export function claudeResult(events) {
     (event) =>
       event?.type === "result" && event.structured_output !== undefined,
   );
-  const result = output?.structured_output;
-  if (result?.verdict !== "Pass" && result?.verdict !== "Fail")
-    throw new Error("Claude Code returned no structured verdict");
+  const result = agentResult(output?.structured_output, "Claude Code");
   return { output, result };
 }
+
+export const claudeAgent = {
+  name: "Claude",
+  runtime: "Claude Code",
+  executable: "claude",
+  credential: "claude-code",
+  invocation: claudeInvocation,
+  result: claudeResult,
+  environment: (token) => ({ CLAUDE_CODE_OAUTH_TOKEN: token }),
+  configurationEvent: (event) =>
+    event?.type === "system" && event.subtype === "init",
+  resultEvent: (event) => event?.type === "result",
+  observed: (event) => (event?.type === "result" ? event : undefined),
+};

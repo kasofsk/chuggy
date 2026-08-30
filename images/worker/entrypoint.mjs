@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createInterface } from "node:readline";
 
-import { claudeInvocation, claudeResult } from "./claude.mjs";
+import { workerAgent } from "./agent.mjs";
 import { keepWorkerLease } from "./lease.mjs";
 import { scopedDatabase } from "./postgres.mjs";
 import { workerRepositories, workerRepository } from "./repository.mjs";
@@ -15,9 +15,10 @@ import { credentialScrub, runEvidenceRecorder } from "./runEvidence.mjs";
 import { runConfigurationSnapshot } from "./snapshot.mjs";
 import { commitAndPushSource, resultDocument } from "./source.mjs";
 import { workerRequest } from "./transport.mjs";
+import { agentResultSchema } from "./result.mjs";
 
 const executeFile = promisify(execFile);
-const claudeCredentialFile = "/var/run/chuggy/credentials/claude-code";
+const agentResultSchemaFile = "/tmp/chuggy-agent-result-schema.json";
 const workerCredentialFilesMax = 64;
 let activeTask;
 let activeBearer;
@@ -94,7 +95,7 @@ async function captureConfiguration(context, argv, init) {
   await context.evidence.configuration(snapshot);
 }
 
-async function readClaudeStream(context, child, argv) {
+async function readAgentStream(context, child, argv) {
   let resultEvent;
   let captured = false;
   const lines = createInterface({ input: child.stdout });
@@ -104,26 +105,33 @@ async function readClaudeStream(context, child, argv) {
     try {
       event = JSON.parse(line);
     } catch {
-      throw new Error("Claude Code emitted invalid streaming JSON");
+      throw new Error(
+        `${context.agent.runtime} emitted invalid streaming JSON`,
+      );
     }
-    if (!captured && event?.type === "system" && event.subtype === "init") {
+    if (!captured && context.agent.configurationEvent(event)) {
       captured = true;
       await captureConfiguration(context, argv, event);
     }
-    if (event?.type === "result") {
-      resultEvent = event;
-      context.evidence.observed(event);
-    }
+    if (context.agent.resultEvent(event)) resultEvent = event;
+    const observed = context.agent.observed(event);
+    if (observed !== undefined) context.evidence.observed(observed);
     await context.evidence.record(line, event);
   }
   return resultEvent;
 }
 
-async function runClaude(context) {
-  const argv = claudeInvocation(context.task);
-  const child = spawn("claude", argv, {
+async function runAgent(context) {
+  const argv = context.agent.invocation(context.task, {
+    resultSchema: agentResultSchemaFile,
+  });
+  if (context.agent.name === "Codex")
+    await captureConfiguration(context, argv, {
+      agent: context.agent.name,
+    });
+  const child = spawn(context.agent.executable, argv, {
     cwd: context.directory,
-    env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: context.token },
+    env: { ...process.env, ...context.agent.environment(context.token) },
     stdio: ["ignore", "pipe", "inherit"],
   });
   const exited = new Promise((resolve, reject) => {
@@ -132,13 +140,13 @@ async function runClaude(context) {
       resolve([exitCode, exitSignal]),
     );
   });
-  const resultEvent = await readClaudeStream(context, child, argv);
+  const resultEvent = await readAgentStream(context, child, argv);
   const [code, signal] = await exited;
   if (code !== 0)
     throw new Error(
-      `Claude Code exited ${code ?? `after signal ${signal ?? "unknown"}`}`,
+      `${context.agent.runtime} exited ${code ?? `after signal ${signal ?? "unknown"}`}`,
     );
-  return claudeResult([resultEvent]);
+  return context.agent.result([resultEvent]);
 }
 
 function artifact(path, content) {
@@ -190,7 +198,7 @@ async function diagnostic(context, result) {
   return upload(
     context.task,
     context.bearer,
-    ".chuggy/claude-result.json",
+    ".chuggy/agent-result.json",
     content,
     context.request,
   );
@@ -224,8 +232,11 @@ async function credentialValues(credentialFiles) {
   return values;
 }
 
-async function workerRun(task, bearer, credentialFiles) {
-  const token = (await readFile(claudeCredentialFile, "utf8")).trim();
+async function workerRun(task, bearer, credentialFiles, agent) {
+  const credentialFile = credentialFiles[agent.credential];
+  if (typeof credentialFile !== "string")
+    throw new Error(`worker credential ${agent.credential} is not mounted`);
+  const token = (await readFile(credentialFile, "utf8")).trim();
   const scrub = credentialScrub([
     token,
     bearer,
@@ -244,8 +255,9 @@ function scrubbed(text) {
 async function main() {
   const task = parsed("CHUG_WORKER_TASK");
   activeTask = task;
-  if (!task.authority.credentials.includes("claude-code"))
-    throw new Error("worker authority does not grant claude-code");
+  const agent = workerAgent(task);
+  if (!task.authority.credentials.includes(agent.credential))
+    throw new Error(`worker authority does not grant ${agent.credential}`);
   if (!task.authority.network || task.authority.filesystem !== "WriteWorkspace")
     throw new Error(
       "development worker requires network and workspace write authority",
@@ -254,6 +266,9 @@ async function main() {
   const credentialFiles = workerRepositories(
     required("CHUG_WORKER_CREDENTIAL_FILES"),
   );
+  await writeFile(agentResultSchemaFile, JSON.stringify(agentResultSchema), {
+    flag: "wx",
+  });
   const bearer = (
     await readFile(task.workerPlane.capabilityFile, "utf8")
   ).trim();
@@ -262,6 +277,7 @@ async function main() {
     task,
     bearer,
     credentialFiles,
+    agent,
   );
   const stopLease = keepWorkerLease(task, bearer);
   let dropDatabase = async () => undefined;
@@ -277,12 +293,13 @@ async function main() {
       required("CHUG_WORKER_DATABASE_SCOPE"),
     );
     await prepareWorker(task, workspace.directory);
-    const { output, result } = await runClaude({
+    const { output, result } = await runAgent({
       task,
       directory: workspace.directory,
       token,
       scrub,
       evidence,
+      agent,
     });
     await publishWorkerResult(
       { task, bearer, evidence, scrub, stopLease, request: workerRequest },

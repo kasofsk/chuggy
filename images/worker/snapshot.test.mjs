@@ -150,6 +150,22 @@ test("the snapshot carries the argv, the init event and the files it names", asy
   assert.deepEqual(snapshot.dropped, []);
 });
 
+test("the snapshot names the selected agent", async () => {
+  const snapshot = await snapshotOf(
+    {},
+    {
+      task: {
+        worker: {
+          mode: { type: "SingleAgent", agent: "Codex", arguments: [] },
+          files: [],
+        },
+      },
+    },
+  );
+
+  assert.equal(snapshot.agent, "Codex");
+});
+
 test("a credential in an instruction file is redacted before it is uploaded", async () => {
   const secret = "sk-ant-oat01-0123456789abcdefghij";
   const snapshot = await snapshotOf(
