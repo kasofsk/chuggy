@@ -476,3 +476,63 @@ test("an expired token is the caller's to replace", async () => {
   });
   assert.equal(found.authenticated, "InvalidToken");
 });
+
+test("a subject that cannot name a principal is the caller's to replace", async () => {
+  const found = await decided({ sub: "" });
+  assert.equal(found.authenticated, "InvalidToken");
+});
+
+test("a key set that never answers is unavailable, not an invalid token", async () => {
+  const keys = await generateKeyPair("RS256", { extractable: true });
+  const token = await new SignJWT({ sub: "subject-one" })
+    .setProtectedHeader({ alg: "RS256", kid: "one" })
+    .setIssuer(config.issuer)
+    .setAudience(config.audience)
+    .sign(keys.privateKey);
+  const served = globalThis.fetch;
+  globalThis.fetch = (_input, init) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener(
+        "abort",
+        () => {
+          reject(new DOMException("The operation was aborted", "TimeoutError"));
+        },
+        { once: true },
+      );
+    });
+  try {
+    const authentication = await oidcAuthentication(
+      { ...config, jwksTimeoutMs: 20 },
+      () =>
+        Promise.resolve(
+          Response.json({
+            issuer: config.issuer,
+            jwks_uri: "https://accounts.example.test/jwks",
+          }),
+        ),
+    );
+    const found = await authentication.authenticateBearer(token);
+    assert.equal(found.authenticated, "AuthorityUnavailable");
+  } finally {
+    globalThis.fetch = served;
+  }
+});
+
+test("an algorithm this server cannot verify with a published key is refused", async () => {
+  const discovery = () =>
+    Promise.resolve(
+      Response.json({
+        issuer: config.issuer,
+        jwks_uri: "https://accounts.example.test/jwks",
+      }),
+    );
+  for (const algorithms of [["RS256", "HS256"], ["HS256"], ["none"], ["RS255"]])
+    await assert.rejects(
+      oidcAuthentication({ ...config, algorithms }, discovery),
+      /must verify with a published key/u,
+    );
+  await assert.rejects(
+    oidcAuthentication({ ...config, algorithms: [] }, discovery),
+    /algorithms are empty/u,
+  );
+});

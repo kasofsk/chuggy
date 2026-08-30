@@ -47,6 +47,39 @@ function oidcInvalidToken(failure: unknown): boolean {
   return typeof code === "string" && oidcInvalidTokenCodes.has(code);
 }
 
+/**
+ * Whether a verified claim can name a principal, which restates
+ * `oidcPrincipal`'s precondition on purpose: `jose` requires the subject claim
+ * to be present and says nothing about what is in it, so a token carrying an
+ * empty one verifies here and would refuse there — as a throw this server
+ * would report as its own inability to decide rather than as the unusable
+ * token it is.
+ */
+function oidcUsableSubject(subject: string | undefined): subject is string {
+  return subject !== undefined && subject !== "";
+}
+
+/**
+ * The algorithms whose verification key is public, listed rather than
+ * excluded. A shared-secret algorithm verifies with the same key it signs
+ * with, so configuring one beside an asymmetric algorithm lets a caller pick
+ * it, and the key set this server publishes is not a secret.
+ */
+const oidcAsymmetricAlgorithms = new Set([
+  "EdDSA",
+  "ES256",
+  "ES256K",
+  "ES384",
+  "ES512",
+  "Ed25519",
+  "PS256",
+  "PS384",
+  "PS512",
+  "RS256",
+  "RS384",
+  "RS512",
+]);
+
 function positiveDuration(value: number, what: string): number {
   if (!Number.isSafeInteger(value) || value < 1)
     throw new RangeError(`${what} must be a positive integer`);
@@ -68,8 +101,15 @@ function checkedConfiguration(
     throw new RangeError("OIDC issuer must not contain a query or fragment");
   if (config.audience.length === 0)
     throw new RangeError("OIDC audience is empty");
-  if (config.algorithms.length === 0 || config.algorithms.includes("none"))
-    throw new RangeError("OIDC algorithms are empty or insecure");
+  if (config.algorithms.length === 0)
+    throw new RangeError("OIDC algorithms are empty");
+  const refused = config.algorithms.filter(
+    (algorithm) => !oidcAsymmetricAlgorithms.has(algorithm),
+  );
+  if (refused.length > 0)
+    throw new RangeError(
+      `OIDC algorithms must verify with a published key: ${refused.join(",")}`,
+    );
   positiveDuration(config.discoveryTimeoutMs, "OIDC discovery timeout");
   positiveDuration(config.jwksTimeoutMs, "OIDC JWKS timeout");
   return config;
@@ -122,7 +162,7 @@ export async function oidcAuthentication(
         };
       }
       const subject = verified.payload.sub;
-      if (subject === undefined) return { authenticated: "InvalidToken" };
+      if (!oidcUsableSubject(subject)) return { authenticated: "InvalidToken" };
       const expiry = verified.payload.exp;
       return {
         authenticated: "Bearer",
