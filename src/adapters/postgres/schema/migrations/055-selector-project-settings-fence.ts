@@ -1,14 +1,6 @@
 import {
-  allProjectAccessKinds,
-  type ProjectAccessKind,
-} from "../../../../interpreter/nativeWeb.ts";
-import {
   apiRole,
   boundaryOwnerRole,
-  projectAccessColumns,
-  projectAuthorizationFunction,
-  schemaTextSet,
-  selectorAutomaticReadinessErrorCode,
   selectorControlRole,
   selectorProjectSettingsFunction,
   type Migration,
@@ -17,11 +9,6 @@ import {
 const selectorProjectSettingsArguments =
   "text,text,bigint,text,text,text,text,text,text,bigint,bigint,bigint,bigint,bigint,bigint,text,text";
 
-/**
- * What a project's settings resolve from, as one row: its own columns beside
- * the installation defaults they fall back to. The write returns it so a caller
- * reports the row it wrote rather than whatever a later read happens to find.
- */
 const selectorProjectSettingsColumns = `
   revision bigint,north_star text,mode text,dispatch_mode text,base_prompt text,
   model_allowlist text,tool_allowlist text,tokens_per_decision bigint,
@@ -46,14 +33,16 @@ const selectorProjectSettingsProjection = `
      AND settings.revision=written AND installation.singleton=1`;
 
 /**
- * A write that answers with the row it wrote, joined to the installation
- * defaults it resolves against. The `revision=written` predicate is what makes
- * the answer provably this write's own rather than whatever the row holds by the
- * time it is read.
+ * The fence is answered before any row is offered, so a caller at a revision
+ * the project has left is told that and nothing else. Revision zero is the
+ * project that has no row, and it is checked by locking the row rather than by
+ * letting an INSERT arbitrate: a `BEFORE INSERT` trigger runs ahead of `ON
+ * CONFLICT`, so the readiness refusal would answer for a write the conflict was
+ * going to reject anyway — and would answer differently depending on whether a
+ * policy host happened to be ready.
  */
-const selectorProjectSettingsWrite = [
-  `DROP FUNCTION ${selectorProjectSettingsFunction}(${selectorProjectSettingsArguments})`,
-  `CREATE FUNCTION ${selectorProjectSettingsFunction}(
+const selectorProjectSettingsFence = [
+  `CREATE OR REPLACE FUNCTION ${selectorProjectSettingsFunction}(
      in_tenant text,in_project text,expected_revision bigint,
      new_north_star text,new_mode text,new_dispatch_mode text,new_base_prompt text,
      new_model_allowlist text,new_tool_allowlist text,
@@ -64,8 +53,11 @@ const selectorProjectSettingsWrite = [
      RETURNS TABLE(${selectorProjectSettingsColumns})
      LANGUAGE plpgsql SECURITY DEFINER
      SET search_path=pg_catalog,public,pg_temp AS $$
-     DECLARE written bigint;
+     DECLARE written bigint; standing bigint;
      BEGIN
+       SELECT settings.revision INTO standing FROM selector_project_settings settings
+         WHERE settings.tenant=in_tenant AND settings.project=in_project FOR UPDATE;
+       IF coalesce(standing,0)<>expected_revision THEN RETURN; END IF;
        IF expected_revision=0 THEN
          INSERT INTO selector_project_settings
            (tenant,project,revision,north_star,mode,dispatch_mode,base_prompt,
@@ -120,71 +112,8 @@ const selectorProjectSettingsWrite = [
      TO ${apiRole},${selectorControlRole}`,
 ];
 
-/**
- * The readiness refusal carries a SQLSTATE of its own, because it is a normal
- * condition an administrator can fix rather than a fault: a caller that has to
- * recognise it by the text of a message recognises it wrongly the first time
- * the message is reworded.
- */
-const selectorAutomaticReadinessRefusal = [
-  `CREATE OR REPLACE FUNCTION enforce_selector_automatic_readiness() RETURNS trigger
-     LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
-     BEGIN
-       IF NEW.dispatch_mode='Automatic' AND NOT EXISTS (
-         SELECT 1 FROM selector_runtime_readiness
-           WHERE singleton=1 AND production_host) THEN
-         RAISE EXCEPTION 'automatic selector requires a production capability host'
-           USING ERRCODE='${selectorAutomaticReadinessErrorCode}';
-       END IF;
-       RETURN NEW;
-     END $$`,
-  `ALTER FUNCTION enforce_selector_automatic_readiness() OWNER TO ${boundaryOwnerRole}`,
-];
-
-/**
- * `ManageProjectSelector` is the project-scoped kind, named apart from the
- * installation-wide `ManageSelector` capability because a project administrator
- * moves their own project's settings and never the defaults every other project
- * inherits. Both the accepted kinds and the column each is granted by are
- * rendered from `projectAccessColumns`, so a kind added to the roster without a
- * column beside it is a compile error rather than a runtime refusal.
- */
-const projectAccessKindRename = [
-  `ALTER TABLE project_membership
-     RENAME COLUMN may_manage_selector TO ${projectAccessColumns.ManageProjectSelector}`,
-  `CREATE OR REPLACE FUNCTION ${projectAuthorizationFunction}(
-     in_principal text,in_tenant text,in_project text,in_access text)
-     RETURNS TABLE (authority_kind text,authority_subject text)
-     LANGUAGE plpgsql SECURITY DEFINER
-     SET search_path=pg_catalog,public,pg_temp AS $$
-     BEGIN
-       IF in_access NOT IN (${schemaTextSet([...allProjectAccessKinds])}) THEN
-         RAISE EXCEPTION 'unknown project access kind';
-       END IF;
-       RETURN QUERY
-         SELECT membership.authority_kind,membership.authority_subject
-           FROM project_membership membership
-          WHERE membership.principal=in_principal
-            AND membership.tenant=in_tenant AND membership.project=in_project
-            AND CASE in_access
-              ${allProjectAccessKinds
-                .map(
-                  (kind: ProjectAccessKind) =>
-                    `WHEN '${kind}' THEN membership.${projectAccessColumns[kind]}`,
-                )
-                .join("\n              ")}
-            END;
-     END $$`,
-  `ALTER FUNCTION ${projectAuthorizationFunction}(text,text,text,text)
-     OWNER TO ${boundaryOwnerRole}`,
-];
-
-export const migration054: Migration = {
-  version: 54,
-  name: "fenced per-project selector settings writes",
-  statements: [
-    ...selectorProjectSettingsWrite,
-    ...selectorAutomaticReadinessRefusal,
-    ...projectAccessKindRename,
-  ],
+export const migration055: Migration = {
+  version: 55,
+  name: "selector project settings answer their fence first",
+  statements: [...selectorProjectSettingsFence],
 };

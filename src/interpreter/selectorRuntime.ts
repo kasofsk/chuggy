@@ -218,6 +218,12 @@ async function observeFencedProject(
   );
 }
 
+/**
+ * Runs one permitted decision, re-reading the settings the permit was taken
+ * under. Only an installation pause stops the sweep: a project's own pause and
+ * either half of the fence moving are that project's events, so the attempt is
+ * terminated and the sweep goes on to the next project.
+ */
 async function observePermittedProject(
   partition: Partition,
   expectedSettings: SelectorResolvedSettings,
@@ -240,7 +246,7 @@ async function observePermittedProject(
         settings,
       )
     ) {
-      stop = true;
+      stop = settings.installationMode === "Paused";
       await store.terminateAttempt(
         identity.selectorDecisionReference,
         "settings changed before policy execution",
@@ -296,13 +302,31 @@ async function observeInventory(
     identities,
     control,
   );
-  if (progress.scanned > 0 || inventory.nextAfter !== undefined)
-    await store.saveInventoryCursor(
-      progress.scanned === inventory.projects.length
-        ? inventory.nextAfter
-        : inventory.projects.at(progress.scanned - 1),
-    );
+  await saveInventoryProgress(store, inventory, progress.scanned);
   return progress;
+}
+
+/**
+ * Moves the cursor over the projects this sweep consumed and no further. A
+ * sweep that stopped on its first project consumed none, and the page it was
+ * given is the page the next sweep is owed.
+ */
+async function saveInventoryProgress(
+  store: SelectorStateStore,
+  inventory: ProjectInventoryPage,
+  scanned: number,
+): Promise<void> {
+  if (inventory.projects.length === 0) {
+    if (inventory.nextAfter !== undefined)
+      await store.saveInventoryCursor(inventory.nextAfter);
+    return;
+  }
+  if (scanned === 0) return;
+  await store.saveInventoryCursor(
+    scanned === inventory.projects.length
+      ? inventory.nextAfter
+      : inventory.projects.at(scanned - 1),
+  );
 }
 
 /** Performs one bounded poll, policy, delivery, and reconciliation quantum. */

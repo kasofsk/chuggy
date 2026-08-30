@@ -8,6 +8,7 @@ import {
   runSelectorCycle,
   resolvedSelectorSettings,
   selectorBacklogsAdmitDispatch,
+  type SelectorProjectOverrides,
   type SelectorRuntimeControlStore,
   type SelectorRuntimeSettings,
   type SelectorRuntimeSettingsSource,
@@ -602,6 +603,170 @@ test("one project's pause skips that project and the sweep carries on", async ()
   assert.equal(result.observed, 1);
   assert.deepEqual(result.failures, []);
   assert.equal(installationReads, 1);
+});
+
+/**
+ * A sweep over two projects whose settings the case answers per project and per
+ * read, so a case can move one project's settings between the read that takes
+ * its permit and the re-read that fences its decision.
+ */
+interface SweptSweep {
+  readonly projects: readonly (typeof partition)[];
+  readonly overrides?: (
+    of: typeof partition,
+    read: number,
+  ) => SelectorProjectOverrides;
+  /** What the installation says when the sweep asks whether to run at all. */
+  readonly installation?: SelectorRuntimeSettings;
+  /** What a project's settings resolve against, which a pause may have moved. */
+  readonly resolvedAgainst?: SelectorRuntimeSettings;
+  readonly nextAfter?: typeof partition;
+}
+
+async function sweptProjects(sweep: SweptSweep) {
+  const projects = sweep.projects;
+  const resolve = sweep.overrides ?? (() => ({}));
+  const installation = sweep.installation ?? runtimeSettings;
+  const resolvedAgainst = sweep.resolvedAgainst ?? installation;
+  const nextAfter = sweep.nextAfter;
+  const reads = new Map<string, number>();
+  const terminated: string[] = [];
+  const saved: (typeof partition | undefined)[] = [];
+  const result = await selectorRunOnce(
+    {
+      ...stateStore(() => undefined),
+      terminateAttempt: (attempt) => {
+        terminated.push(attempt);
+        return Promise.resolve();
+      },
+      saveInventoryCursor: (cursor) => {
+        saved.push(cursor);
+        return Promise.resolve();
+      },
+    },
+    {
+      ...promptObservationSource(),
+      projects: () =>
+        Promise.resolve({
+          projects: [...projects],
+          ...(nextAfter === undefined ? {} : { nextAfter }),
+        }),
+      dispatchView: (scope) =>
+        Promise.resolve(emptyDispatchPage(scope, "f".repeat(64))),
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    policyHost(() => Promise.resolve(waitingExecution())),
+    perProjectIdentities(),
+    {
+      settings: () => Promise.resolve(installation),
+      projectSettings: (of) => {
+        const read = (reads.get(of.project) ?? 0) + 1;
+        reads.set(of.project, read);
+        return Promise.resolve(
+          resolvedSelectorSettings(of, resolvedAgainst, 1, resolve(of, read)),
+        );
+      },
+    },
+    { projectsMax: 2, deliveriesMax: 1, reconciliationsMax: 1 },
+  );
+  return { result, terminated, saved };
+}
+
+test("a project paused mid-decision leaves the rest of the sweep alone", async () => {
+  const first = { tenant: partition.tenant, project: asProjectId("first") };
+  const second = { tenant: partition.tenant, project: asProjectId("second") };
+  const swept = await sweptProjects({
+    projects: [first, second],
+    overrides: (of, read) =>
+      of.project === first.project && read > 1 ? { mode: "Paused" } : {},
+  });
+  assert.deepEqual(swept.terminated, [`decision-${first.project}`]);
+  assert.equal(swept.result.observed, 1);
+  assert.deepEqual(swept.result.failures, []);
+  assert.deepEqual(swept.saved, [undefined]);
+});
+
+test("a project's own fence moving mid-decision does not stop the sweep", async () => {
+  const first = { tenant: partition.tenant, project: asProjectId("fenced") };
+  const second = {
+    tenant: partition.tenant,
+    project: asProjectId("untouched"),
+  };
+  const reads = new Map<string, number>();
+  const terminated: string[] = [];
+  const result = await selectorRunOnce(
+    {
+      ...stateStore(() => undefined),
+      terminateAttempt: (attempt) => {
+        terminated.push(attempt);
+        return Promise.resolve();
+      },
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [first, second] }),
+      dispatchView: (scope) =>
+        Promise.resolve(emptyDispatchPage(scope, "f".repeat(64))),
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    policyHost(() => Promise.resolve(waitingExecution())),
+    perProjectIdentities(),
+    {
+      settings: () => Promise.resolve(runtimeSettings),
+      projectSettings: (of) => {
+        const read = (reads.get(of.project) ?? 0) + 1;
+        reads.set(of.project, read);
+        return Promise.resolve(
+          resolvedSelectorSettings(
+            of,
+            runtimeSettings,
+            of.project === first.project && read > 1 ? 2 : 1,
+            {},
+          ),
+        );
+      },
+    },
+    { projectsMax: 2, deliveriesMax: 1, reconciliationsMax: 1 },
+  );
+  assert.deepEqual(terminated, [`decision-${first.project}`]);
+  assert.equal(result.observed, 1);
+  assert.deepEqual(result.failures, []);
+});
+
+test("an installation pause mid-decision stops the sweep where it stood", async () => {
+  const first = { tenant: partition.tenant, project: asProjectId("halted") };
+  const second = {
+    tenant: partition.tenant,
+    project: asProjectId("unreached"),
+  };
+  const swept = await sweptProjects({
+    projects: [first, second],
+    installation: { ...runtimeSettings, mode: "Paused" },
+    nextAfter: second,
+  });
+  assert.deepEqual(swept.terminated, []);
+  assert.equal(swept.result.observed, 0);
+  assert.deepEqual(swept.saved, []);
+});
+
+test("a sweep that consumed no project leaves its cursor where it found it", async () => {
+  const first = { tenant: partition.tenant, project: asProjectId("first-of") };
+  const second = { tenant: partition.tenant, project: asProjectId("last-of") };
+  const stopped = await sweptProjects({
+    projects: [first, second],
+    resolvedAgainst: { ...runtimeSettings, mode: "Paused" },
+    nextAfter: second,
+  });
+  assert.equal(stopped.result.observed, 0);
+  assert.deepEqual(stopped.saved, []);
+  const swept = await sweptProjects({
+    projects: [first, second],
+    nextAfter: second,
+  });
+  assert.equal(swept.result.observed, 2);
+  assert.deepEqual(swept.saved, [second]);
 });
 
 test("a pause observed after permit acquisition prevents a new decision", async () => {

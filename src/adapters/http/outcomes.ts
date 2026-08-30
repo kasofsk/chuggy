@@ -325,6 +325,7 @@ function selectorProjectSettingsBody(
       revision: effective.revision,
       projectRevision: effective.projectRevision,
       mode: effective.mode,
+      installationMode: effective.installationMode,
       dispatchMode: effective.dispatchMode,
       basePrompt: effective.basePrompt,
       ...(effective.northStar === undefined

@@ -645,3 +645,41 @@ test("a fence no attempt row could hold is refused before any of it is written",
     await servicePool.end();
   }
 });
+
+test("a stale fence is answered as one whatever the policy host is doing", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "selector-stale-fence-refusal",
+  );
+  const pool = postgresHarnessRolePool(apiRole);
+  const store = postgresSelectorProjectSettings(pool);
+  try {
+    assert.equal(
+      writtenSettings(
+        await store.write(partition, 0, { northStar: "First." }, administrator),
+      ).revision,
+      1,
+    );
+    assert.deepEqual(
+      await store.write(
+        partition,
+        0,
+        { dispatchMode: "Automatic" },
+        administrator,
+      ),
+      { written: "FenceMoved" },
+    );
+    assert.equal((await store.read(partition)).overrides.northStar, "First.");
+    assert.deepEqual(
+      await store.write(
+        partition,
+        1,
+        { dispatchMode: "Automatic" },
+        administrator,
+      ),
+      { written: "AutomaticDispatchUnavailable" },
+    );
+  } finally {
+    await pool.end();
+  }
+});

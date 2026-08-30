@@ -597,8 +597,8 @@ function registerSelectorContext(
 
 /**
  * A project's own selector settings, read and written whole under the
- * `ManageSelector` access the administration itself checks. The history is
- * beside them because a rollback is a write of a revision this read named.
+ * `ManageProjectSelector` access the administration itself checks. The history
+ * is beside them because a rollback is a write of a revision this read named.
  */
 function registerSelectorSettings(
   app: FastifyInstance,

@@ -272,12 +272,15 @@ const selectorLimitsResponseSchema = z.object({
 /**
  * What the selector actually runs a project under: every field is either the
  * project's own or the installation default, and both revisions are named
- * because a decision is fenced on the pair.
+ * because a decision is fenced on the pair. `installationMode` is beside the
+ * resolved `mode` so a reader can tell a project's own pause from the
+ * installation-wide one it cannot lift.
  */
 export const selectorEffectiveSettingsResponseSchema = z.strictObject({
   revision: countSchema,
   projectRevision: countSchema,
   mode: z.enum(selectorModes),
+  installationMode: z.enum(selectorModes),
   dispatchMode: z.enum(selectorDispatchModes),
   basePrompt: z.string().min(1),
   northStar: z.string().min(1).optional(),

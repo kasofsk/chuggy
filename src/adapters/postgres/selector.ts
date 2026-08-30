@@ -745,9 +745,9 @@ function selectorAutomaticDispatchRefused(failure: unknown): boolean {
 }
 
 /**
- * One statement, which is what makes the answer the row this write wrote: a
- * second read would report whatever a racing administrator had left behind, and
- * report it under this write's own success.
+ * Writes one project's whole override set and answers with the row that write
+ * produced, in a single statement so the answer is that write's own and not a
+ * later state of the table.
  */
 async function writeProjectSettings(
   pool: pg.Pool,
@@ -1379,9 +1379,8 @@ async function insertSelectorInteraction(
 
 /**
  * Reconstructs the attempt an interaction was recorded without, or completes the
- * one it already has. The fence is taken as the two numbers the decision ran
- * under rather than read back out of the instructions label, which is prose and
- * has never been required to be a number.
+ * one it already has. Both fence columns are written from the two numbers the
+ * decision ran under, which the caller carries.
  */
 async function completeSelectorAttempt(
   client: pg.PoolClient,

@@ -68,6 +68,7 @@ import {
   runTranscriptPageBatchesMax,
 } from "../../src/contract/http.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { resolvedSelectorSettings } from "../../src/interpreter/selector.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
 import {
@@ -223,6 +224,31 @@ test("a project's selector settings parse as its overrides beside what they reso
     parsed.effective.limits.concurrentDecisions,
     selectorDefaults.limits.concurrentDecisions,
   );
+});
+
+test("a project pause and an installation pause are not the same body", () => {
+  const body = (installation: "Running" | "Paused") =>
+    selectorProjectSettingsResponse({
+      result: "Found",
+      settings: {
+        partition,
+        revision: 2,
+        overrides: { mode: "Paused" },
+        effective: resolvedSelectorSettings(
+          partition,
+          { ...selectorDefaults, mode: installation },
+          2,
+          { mode: "Paused" },
+        ),
+      },
+    }).body;
+  const stopped = selectorProjectSettingsResponseSchema.parse(body("Paused"));
+  const theirs = selectorProjectSettingsResponseSchema.parse(body("Running"));
+  assert.equal(stopped.effective.mode, "Paused");
+  assert.equal(theirs.effective.mode, "Paused");
+  assert.equal(stopped.effective.installationMode, "Paused");
+  assert.equal(theirs.effective.installationMode, "Running");
+  assert.notDeepEqual(body("Paused"), body("Running"));
 });
 
 test("a settings write that lost its fence answers a conflict carrying the current row", () => {
