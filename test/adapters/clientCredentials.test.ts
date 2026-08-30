@@ -61,22 +61,24 @@ interface DrivenTokenSource {
   readonly source: AccessTokenSource;
   readonly minted: MintedRequest[];
   advance(milliseconds: number): void;
+  stepClockBack(milliseconds: number): void;
 }
 
 interface DrivenGrant {
   readonly refreshMarginMs: number;
-  readonly refusalFloorMs: number;
+  readonly mintCooldownMs: number;
   readonly expiresInSeconds: number;
 }
 
 /** A source whose issuer numbers the tokens it grants and whose clock only moves when a test moves it. */
 function drivenTokenSource({
   refreshMarginMs,
-  refusalFloorMs,
+  mintCooldownMs,
   expiresInSeconds,
 }: DrivenGrant): DrivenTokenSource {
   const minted: MintedRequest[] = [];
   let nowEpochMs = 1_000_000;
+  let elapsedMs = 0;
   const source = clientCredentialsTokenSource({
     tokenUrl,
     clientId: "selector",
@@ -86,17 +88,23 @@ function drivenTokenSource({
     responseBytesMax: 10_000,
     responseReadsMax: 100,
     refreshMarginMs,
-    refusalFloorMs,
+    mintCooldownMs,
     fetch: mintingTransport(minted, (attempt) =>
       grantResponse(`token-${String(attempt)}`, expiresInSeconds),
     ),
     currentTimeEpochMs: () => nowEpochMs,
+    monotonicMs: () => elapsedMs,
   });
   return {
     source,
     minted,
     advance: (milliseconds) => {
       nowEpochMs += milliseconds;
+      elapsedMs += milliseconds;
+    },
+    stepClockBack: (milliseconds) => {
+      nowEpochMs -= milliseconds;
+      elapsedMs += 1;
     },
   };
 }
@@ -115,7 +123,7 @@ test("the grant is minted with basic authentication, audience and scope", async 
     responseBytesMax: 10_000,
     responseReadsMax: 100,
     refreshMarginMs: 1_000,
-    refusalFloorMs: 1_000,
+    mintCooldownMs: 500,
     fetch: mintingTransport(minted, () => grantResponse("first", 900)),
   });
   assert.equal(await source.token(AbortSignal.timeout(1_000)), "first");
@@ -134,7 +142,7 @@ test("the grant is minted with basic authentication, audience and scope", async 
 test("a held grant is replaced once its refresh margin is reached", async () => {
   const driven = drivenTokenSource({
     refreshMarginMs: 60_000,
-    refusalFloorMs: 30_000,
+    mintCooldownMs: 5_000,
     expiresInSeconds: 900,
   });
   assert.equal(await driven.source.token(bounded()), "token-1");
@@ -149,7 +157,7 @@ test("a held grant is replaced once its refresh margin is reached", async () => 
 test("a grant shorter than its margin is still held for part of its life", async () => {
   const driven = drivenTokenSource({
     refreshMarginMs: 600_000,
-    refusalFloorMs: 1_000,
+    mintCooldownMs: 500,
     expiresInSeconds: 10,
   });
   assert.equal(await driven.source.token(bounded()), "token-1");
@@ -163,7 +171,7 @@ test("a grant shorter than its margin is still held for part of its life", async
 test("callers waiting on a replacement share the mint in flight", async () => {
   const driven = drivenTokenSource({
     refreshMarginMs: 1_000,
-    refusalFloorMs: 1_000,
+    mintCooldownMs: 500,
     expiresInSeconds: 900,
   });
   const waiting = [
@@ -181,6 +189,7 @@ test("callers waiting on a replacement share the mint in flight", async () => {
 
 test("a refused mint is not held and the next caller mints again", async () => {
   const minted: MintedRequest[] = [];
+  let elapsedMs = 0;
   const source = clientCredentialsTokenSource({
     tokenUrl,
     clientId: "selector",
@@ -190,7 +199,7 @@ test("a refused mint is not held and the next caller mints again", async () => {
     responseBytesMax: 10_000,
     responseReadsMax: 100,
     refreshMarginMs: 1_000,
-    refusalFloorMs: 1_000,
+    mintCooldownMs: 500,
     fetch: mintingTransport(minted, (attempt) =>
       attempt === 1
         ? new Response("{}", {
@@ -199,11 +208,13 @@ test("a refused mint is not held and the next caller mints again", async () => {
           })
         : grantResponse("recovered", 900),
     ),
+    monotonicMs: () => elapsedMs,
   });
   await assert.rejects(
     source.token(AbortSignal.timeout(1_000)),
     /returned 401/u,
   );
+  elapsedMs += 500;
   assert.equal(await source.token(AbortSignal.timeout(1_000)), "recovered");
   assert.equal(minted.length, 2);
 });
@@ -227,7 +238,7 @@ test("a grant this client cannot bound or present is refused", async () => {
       responseBytesMax: 10_000,
       responseReadsMax: 100,
       refreshMarginMs: 1_000,
-      refusalFloorMs: 1_000,
+      mintCooldownMs: 500,
       fetch: () => Promise.resolve(response),
     });
     await assert.rejects(source.token(AbortSignal.timeout(1_000)), expected);
@@ -244,7 +255,7 @@ test("a response longer than the byte bound is refused before it is parsed", asy
     responseBytesMax: 1,
     responseReadsMax: 100,
     refreshMarginMs: 1_000,
-    refusalFloorMs: 1_000,
+    mintCooldownMs: 500,
     fetch: () => Promise.resolve(grantResponse("token", 900)),
   });
   await assert.rejects(source.token(AbortSignal.timeout(1_000)), /byte bound/u);
@@ -265,7 +276,7 @@ test("an endless empty grant response is refused by the read bound", async () =>
     responseBytesMax: 10_000,
     responseReadsMax: 3,
     refreshMarginMs: 1_000,
-    refusalFloorMs: 1_000,
+    mintCooldownMs: 500,
     fetch: () => Promise.resolve(new Response(stream)),
   });
   await assert.rejects(source.token(AbortSignal.timeout(1_000)), /read bound/u);
@@ -274,7 +285,7 @@ test("an endless empty grant response is refused by the read bound", async () =>
 test("the native client presents the replacement token, not the first one", async () => {
   const driven = drivenTokenSource({
     refreshMarginMs: 60_000,
-    refusalFloorMs: 30_000,
+    mintCooldownMs: 5_000,
     expiresInSeconds: 900,
   });
   const presented: (string | null)[] = [];
@@ -304,11 +315,11 @@ test("the native client presents the replacement token, not the first one", asyn
 test("an invalidated token is minted again, and only that one", async () => {
   const driven = drivenTokenSource({
     refreshMarginMs: 60_000,
-    refusalFloorMs: 30_000,
+    mintCooldownMs: 5_000,
     expiresInSeconds: 900,
   });
   assert.equal(await driven.source.token(bounded()), "token-1");
-  driven.advance(30_000);
+  driven.advance(5_000);
   driven.source.invalidate("token-1");
   assert.equal(await driven.source.token(bounded()), "token-2");
   assert.equal(driven.minted.length, 2);
@@ -321,7 +332,7 @@ test("an invalidated token is minted again, and only that one", async () => {
 test("invalidating before anything is held mints nothing", async () => {
   const driven = drivenTokenSource({
     refreshMarginMs: 60_000,
-    refusalFloorMs: 30_000,
+    mintCooldownMs: 5_000,
     expiresInSeconds: 900,
   });
   driven.source.invalidate("never-granted");
@@ -330,10 +341,10 @@ test("invalidating before anything is held mints nothing", async () => {
   assert.equal(driven.minted.length, 1);
 });
 
-test("a refusal that never stops costs one grant per floor, not one per read", async () => {
+test("a refusal that never stops costs one grant per cooldown, not one per read", async () => {
   const driven = drivenTokenSource({
     refreshMarginMs: 60_000,
-    refusalFloorMs: 30_000,
+    mintCooldownMs: 5_000,
     expiresInSeconds: 900,
   });
   let refused = 0;
@@ -356,12 +367,109 @@ test("a refusal that never stops costs one grant per floor, not one per read", a
     await assert.rejects(client.projectInventory(principal, undefined, 1));
   };
   for (let attempt = 0; attempt < 20; attempt += 1) await read();
-  assert.equal(refused, 20);
+  assert.equal(refused, 1);
   assert.equal(driven.minted.length, 1);
-  driven.advance(30_000);
-  await read();
+  driven.advance(5_000);
   await read();
   assert.equal(driven.minted.length, 2);
+});
+
+test("a token endpoint that never answers is asked once per cooldown", async () => {
+  const minted: MintedRequest[] = [];
+  let elapsedMs = 0;
+  const source = clientCredentialsTokenSource({
+    tokenUrl,
+    clientId: "selector",
+    clientSecret: "secret",
+    ...noAudienceOrScope,
+    requestTimeoutMs: 1_000,
+    responseBytesMax: 10_000,
+    responseReadsMax: 100,
+    refreshMarginMs: 60_000,
+    mintCooldownMs: 5_000,
+    fetch: mintingTransport(
+      minted,
+      () =>
+        new Response("{}", { status: 503, headers: { "retry-after": "1" } }),
+    ),
+    monotonicMs: () => elapsedMs,
+  });
+  for (let attempt = 0; attempt < 20; attempt += 1)
+    await assert.rejects(source.token(bounded()));
+  assert.equal(minted.length, 1);
+  elapsedMs += 5_000;
+  await assert.rejects(source.token(bounded()));
+  assert.equal(minted.length, 2);
+});
+
+test("a wall clock stepping backwards does not strand a refused token", async () => {
+  const driven = drivenTokenSource({
+    refreshMarginMs: 60_000,
+    mintCooldownMs: 5_000,
+    expiresInSeconds: 900,
+  });
+  assert.equal(await driven.source.token(bounded()), "token-1");
+  driven.advance(5_000);
+  driven.stepClockBack(7_200_000);
+  driven.source.invalidate("token-1");
+  assert.equal(await driven.source.token(bounded()), "token-2");
+  assert.equal(driven.minted.length, 2);
+});
+
+test("a cooldown as long as the refresh margin is refused, not accepted quietly", () => {
+  for (const mintCooldownMs of [60_000, 60_001])
+    assert.throws(
+      () =>
+        clientCredentialsTokenSource({
+          tokenUrl,
+          clientId: "selector",
+          clientSecret: "secret",
+          ...noAudienceOrScope,
+          requestTimeoutMs: 1_000,
+          responseBytesMax: 10_000,
+          responseReadsMax: 100,
+          refreshMarginMs: 60_000,
+          mintCooldownMs,
+        }),
+      /shorter than its refresh margin/u,
+    );
+});
+
+test("a token still held is presented through a cooldown rather than refused", async () => {
+  const minted: MintedRequest[] = [];
+  let nowEpochMs = 1_000_000;
+  let elapsedMs = 0;
+  const source = clientCredentialsTokenSource({
+    tokenUrl,
+    clientId: "selector",
+    clientSecret: "secret",
+    ...noAudienceOrScope,
+    requestTimeoutMs: 1_000,
+    responseBytesMax: 10_000,
+    responseReadsMax: 100,
+    refreshMarginMs: 60_000,
+    mintCooldownMs: 5_000,
+    fetch: mintingTransport(minted, (attempt) =>
+      attempt === 1
+        ? grantResponse("token-1", 900)
+        : new Response("{}", { status: 503 }),
+    ),
+    currentTimeEpochMs: () => nowEpochMs,
+    monotonicMs: () => elapsedMs,
+  });
+  const move = (milliseconds: number): void => {
+    nowEpochMs += milliseconds;
+    elapsedMs += milliseconds;
+  };
+  assert.equal(await source.token(bounded()), "token-1");
+  move(841_000);
+  await assert.rejects(source.token(bounded()), /returned 503/u);
+  move(1_000);
+  assert.equal(await source.token(bounded()), "token-1");
+  assert.equal(minted.length, 2);
+  move(5_000);
+  await assert.rejects(source.token(bounded()), /returned 503/u);
+  assert.equal(minted.length, 3);
 });
 
 test("a joining caller's deadline does not cancel the mint the others wait on", async () => {
@@ -376,7 +484,7 @@ test("a joining caller's deadline does not cancel the mint the others wait on", 
     responseBytesMax: 10_000,
     responseReadsMax: 100,
     refreshMarginMs: 1_000,
-    refusalFloorMs: 1_000,
+    mintCooldownMs: 500,
     fetch: (_input, init) =>
       new Promise<Response>((resolve, reject) => {
         grants += 1;

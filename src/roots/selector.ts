@@ -65,9 +65,10 @@ const credential = z
     audience: z.array(z.string().min(1)).max(8),
     scope: z.array(z.string().min(1)).max(8),
     refreshMarginMs: positiveInteger,
-    refusalFloorMs: positiveInteger,
+    mintCooldownMs: positiveInteger,
   })
-  .strict();
+  .strict()
+  .refine((value) => value.mintCooldownMs < value.refreshMarginMs);
 const configurationSchema = z
   .object({
     database: commandDatabaseSchema,
@@ -223,7 +224,7 @@ export function selectorSourceAccessToken(
     responseBytesMax: source.responseBytesMax,
     responseReadsMax: source.responseReadsMax,
     refreshMarginMs: source.credential.refreshMarginMs,
-    refusalFloorMs: source.credential.refusalFloorMs,
+    mintCooldownMs: source.credential.mintCooldownMs,
   });
 }
 

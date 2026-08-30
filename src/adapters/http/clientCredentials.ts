@@ -10,19 +10,32 @@
  * lifetime instead, because a hold of nothing is a mint per request.
  *
  * A REFUSAL IS THE OTHER WAY A TOKEN ENDS, and the margin cannot see it: a
- * rotated signing key or a clock that skewed further than the margin leaves a
- * held token already worthless. `invalidate` discards it so the next read
- * mints, and discards nothing when the token it names has already been
- * replaced. It starts no retry of its own — the refused request fails, and the
- * one after it carries a new token.
+ * rotated signing key, or a clock that stepped backwards so that an expired
+ * token still reads as fresh, leaves a held token already worthless.
+ * `invalidate` discards it so the next read mints, and discards nothing when
+ * the token it names has already been replaced. It starts no retry of its own
+ * — the refused request fails, and the one after it carries a new token.
  *
- * `refusalFloorMs` IS WHAT STOPS THAT BECOMING AN AMPLIFIER. A refusal does
- * not prove the token is bad — an issuer whose key set is unreachable refuses
- * a good one — so a token discarded on every refusal answers an issuer outage
- * with a grant per refused read, aimed at the issuer that is failing. A token
- * held for less than this is kept instead, which caps what a refusal that
- * never stops can cost at one grant per floor. The rotated key is unaffected:
- * the token it invalidates was minted long before the refusal arrived.
+ * `mintCooldownMs` IS THE BOUND ON ALL OF THAT. It is measured from the start
+ * of the last attempt, so it bounds grant requests to one per cooldown whether
+ * that attempt succeeded or failed and whether or not a token is held: neither
+ * a refusal that never stops nor a token endpoint that never answers can turn
+ * a loop of reads into a loop of grants. A caller arriving while an attempt is
+ * still in flight joins it rather than being turned away, and one arriving
+ * inside the cooldown with a token still held is given it, because past a
+ * refresh margin is not past an expiry.
+ *
+ * IT MUST BE SHORTER THAN THE REFRESH MARGIN, and that is refused rather than
+ * documented. The margin is the window a replacement has to be obtained in
+ * before the token really expires; a cooldown as long as the window can
+ * consume all of it, and a bound that can be configured never to fire is a
+ * control that reports success and enforces nothing.
+ *
+ * TWO CLOCKS, BECAUSE THEY MEASURE DIFFERENT THINGS. An expiry is the issuer's
+ * statement about wall-clock time and is held against one. A cooldown is a
+ * duration this process measures for itself, so it is held against a monotonic
+ * source, where no correction, snapshot resume or host sync can make elapsed
+ * time negative and strand a client that is waiting to recover.
  *
  * ONE MINT AT A TIME. Callers arriving while a replacement is in flight join it
  * rather than each starting one, so the issuer sees a request per replacement
@@ -69,14 +82,14 @@ export interface ClientCredentialsConfig {
   readonly responseBytesMax: number;
   readonly responseReadsMax: number;
   readonly refreshMarginMs: number;
-  readonly refusalFloorMs: number;
+  readonly mintCooldownMs: number;
   readonly fetch?: typeof fetch;
   readonly currentTimeEpochMs?: () => number;
+  readonly monotonicMs?: () => number;
 }
 
 interface ClientCredentialsHeld {
   readonly token: string;
-  readonly mintedAtEpochMs: number;
   readonly replaceAtEpochMs: number;
 }
 
@@ -107,9 +120,13 @@ function clientCredentialsChecked(
     "client credentials refresh margin",
   );
   checkedPositiveBound(
-    config.refusalFloorMs,
-    "client credentials refusal floor",
+    config.mintCooldownMs,
+    "client credentials mint cooldown",
   );
+  if (config.mintCooldownMs >= config.refreshMarginMs)
+    throw new RangeError(
+      "client credentials mint cooldown must be shorter than its refresh margin",
+    );
   return config;
 }
 
@@ -170,7 +187,6 @@ async function clientCredentialsMinted(
     throw new Error("client credentials grant is not a bearer token");
   return {
     token: checkedBearerToken(grant.access_token),
-    mintedAtEpochMs: atEpochMs,
     replaceAtEpochMs:
       atEpochMs +
       clientCredentialsHoldMs(
@@ -187,10 +203,18 @@ export function clientCredentialsTokenSource(
   const config = clientCredentialsChecked(input);
   const transport = config.fetch ?? fetch;
   const currentTimeEpochMs = config.currentTimeEpochMs ?? Date.now;
+  const monotonicMs = config.monotonicMs ?? performance.now.bind(performance);
   let held: ClientCredentialsHeld | undefined;
   let minting: Promise<ClientCredentialsHeld> | undefined;
-  const mint = (): Promise<ClientCredentialsHeld> =>
-    (minting ??= clientCredentialsMinted(
+  let attemptedAtMonotonicMs: number | undefined;
+  const cooling = (): boolean =>
+    attemptedAtMonotonicMs !== undefined &&
+    monotonicMs() - attemptedAtMonotonicMs < config.mintCooldownMs;
+  const mint = (): Promise<ClientCredentialsHeld> => {
+    const inFlight = minting;
+    if (inFlight !== undefined) return inFlight;
+    attemptedAtMonotonicMs = monotonicMs();
+    return (minting = clientCredentialsMinted(
       config,
       transport,
       currentTimeEpochMs(),
@@ -205,6 +229,7 @@ export function clientCredentialsTokenSource(
         throw failure;
       },
     ));
+  };
   return {
     token: async (signal) => {
       signal.throwIfAborted();
@@ -214,19 +239,16 @@ export function clientCredentialsTokenSource(
         currentTimeEpochMs() < current.replaceAtEpochMs
       )
         return current.token;
+      if (minting === undefined && cooling()) {
+        if (current !== undefined) return current.token;
+        throw new Error("client credentials grant is within its cooldown");
+      }
       const granted = await mint();
       signal.throwIfAborted();
       return granted.token;
     },
     invalidate: (refused) => {
-      const current = held;
-      if (current === undefined || current.token !== refused) return;
-      if (
-        currentTimeEpochMs() - current.mintedAtEpochMs <
-        config.refusalFloorMs
-      )
-        return;
-      held = undefined;
+      if (held?.token === refused) held = undefined;
     },
   };
 }

@@ -99,7 +99,7 @@ test("every client here narrows its bounds through that one check", () => {
         responseBytesMax: 1_000,
         responseReadsMax: 1_000,
         refreshMarginMs: 1_000,
-        refusalFloorMs: 0,
+        mintCooldownMs: 0,
       }),
     /must be a positive safe integer/u,
   );

@@ -30,7 +30,7 @@ const validConfiguration = {
       audience: ["https://chuggy.example/api"],
       scope: [],
       refreshMarginMs: 60_000,
-      refusalFloorMs: 30_000,
+      mintCooldownMs: 5_000,
     },
     requestDeadlineMs: 10,
     responseBytesMax: 10_000,
@@ -341,4 +341,22 @@ test("failure and signal overlap share one shutdown", async () => {
     result: { outcome: "Failed", failure: "lost source" },
     stopCalls: 1,
   });
+});
+
+test("a cooldown that could never fire is a configuration refusal", async () => {
+  const refused = await executeFailure({
+    ...validEnvironment,
+    CHUG_SELECTOR_CONFIG: JSON.stringify({
+      ...validConfiguration,
+      source: {
+        ...validConfiguration.source,
+        credential: {
+          ...validConfiguration.source.credential,
+          mintCooldownMs: validConfiguration.source.credential.refreshMarginMs,
+        },
+      },
+    }),
+  });
+  assert.equal(refused.code, 2);
+  assert.match(refused.stderr, /^selector configuration:/u);
 });

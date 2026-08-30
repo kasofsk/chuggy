@@ -298,10 +298,12 @@ async function responseJson(
   response: Response,
   bytesMax: number,
 ): Promise<unknown> {
-  if (!response.ok)
+  if (!response.ok) {
+    await response.body?.cancel();
     throw new Error(
       `selector policy service returned HTTP ${String(response.status)}`,
     );
+  }
   const contentType = response.headers.get("content-type")?.split(";", 1)[0];
   if (contentType !== trustedSelectorPolicyMediaType)
     throw new TypeError("selector policy response has the wrong media type");
