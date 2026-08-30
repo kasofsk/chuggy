@@ -19,6 +19,10 @@ export const cellAbsent = "—";
 
 export const cellExecutionUnread = "not read";
 
+/** What the slot column says when a ticket names no intent and no execution
+ * left it a configuration to fall back on — a specific claim, not the general dash. */
+export const ticketTitleUnset = "Unset";
+
 export function TicketNumberCell(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
@@ -43,4 +47,14 @@ export function ticketRowExecutionCell(
 ): string {
   if (row.executionRead === "IndexTruncated") return cellExecutionUnread;
   return drawn ?? cellAbsent;
+}
+
+/** The slot cell reads the same truncation as the execution columns where it
+ * fell back to one and found nothing either, and its own default where it did
+ * not fall back at all. */
+export function ticketRowSlotCell(row: ProjectTableRow): string {
+  if (row.slot !== undefined) return row.slot.text;
+  return row.executionRead === "IndexTruncated"
+    ? cellExecutionUnread
+    : ticketTitleUnset;
 }

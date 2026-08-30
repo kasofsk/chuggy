@@ -155,7 +155,7 @@ function projectionPhase(value: string): Phase {
 function projectResource(
   partition: Partition,
   head: string,
-  rows: readonly TicketProjectionRow[],
+  rows: readonly (TicketProjectionRow & DraftBriefRow)[],
   limit: number,
   order: ProjectReadQuery["order"],
 ): ProjectResource {
@@ -205,13 +205,17 @@ function projectionReason(value: string): EscalationReason | undefined {
   return reason;
 }
 
-function ticketResource(row: TicketProjectionRow): TicketResource {
+function ticketResource(
+  row: TicketProjectionRow & DraftBriefRow,
+): TicketResource {
   const reason = projectionReason(row.reason);
+  const brief = draftBriefOf(row);
   return {
     ticket: asTicketId(projectRowCounter(row.ticket, "ticket identity")),
     phase: projectionPhase(row.phase),
     sequence: projectRowCounter(row.seq, "ticket projection sequence"),
     ...(reason === undefined ? {} : { reason }),
+    ...(brief === undefined ? {} : { brief }),
   };
 }
 
@@ -332,24 +336,36 @@ async function readProjectTickets(
   client: pg.PoolClient,
   partition: Partition,
   query: ProjectReadQuery,
-): Promise<readonly TicketProjectionRow[]> {
+): Promise<readonly (TicketProjectionRow & DraftBriefRow)[]> {
   if (query.order === "RecentActivity") {
-    const found = await client.query<TicketProjectionRow>(
-      sql`SELECT ticket,phase,seq,reason FROM ticket_projection
-        WHERE tenant=${partition.tenant} AND project=${partition.project}
+    const found = await client.query<TicketProjectionRow & DraftBriefRow>(
+      sql`SELECT p.ticket,p.phase,p.seq,p.reason,b.intent,b.branch,
+                 b.finalization_mode,b.finalization_target,
+                 (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
+                   WHERE k.tenant=p.tenant AND k.project=p.project AND k.ticket=p.ticket) AS links
+            FROM ticket_projection p
+            LEFT JOIN draft_brief b
+              ON b.tenant=p.tenant AND b.project=p.project AND b.ticket=p.ticket
+        WHERE p.tenant=${partition.tenant} AND p.project=${partition.project}
           AND (${query.recentActivityAfter?.sequence ?? null}::bigint IS NULL
-            OR (seq,ticket) < (${query.recentActivityAfter?.sequence ?? null},${query.recentActivityAfter?.ticket ?? null}))
-          AND phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
-        ORDER BY seq DESC,ticket DESC LIMIT ${query.limit + 1}`,
+            OR (p.seq,p.ticket) < (${query.recentActivityAfter?.sequence ?? null},${query.recentActivityAfter?.ticket ?? null}))
+          AND p.phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
+        ORDER BY p.seq DESC,p.ticket DESC LIMIT ${query.limit + 1}`,
     );
     return found.rows;
   }
-  const found = await client.query<TicketProjectionRow>(
-    sql`SELECT ticket,phase,seq,reason FROM ticket_projection
-        WHERE tenant=${partition.tenant} AND project=${partition.project}
-          AND ticket>${query.after ?? 0}
-          AND phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
-        ORDER BY ticket LIMIT ${query.limit + 1}`,
+  const found = await client.query<TicketProjectionRow & DraftBriefRow>(
+    sql`SELECT p.ticket,p.phase,p.seq,p.reason,b.intent,b.branch,
+               b.finalization_mode,b.finalization_target,
+               (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
+                 WHERE k.tenant=p.tenant AND k.project=p.project AND k.ticket=p.ticket) AS links
+          FROM ticket_projection p
+          LEFT JOIN draft_brief b
+            ON b.tenant=p.tenant AND b.project=p.project AND b.ticket=p.ticket
+        WHERE p.tenant=${partition.tenant} AND p.project=${partition.project}
+          AND p.ticket>${query.after ?? 0}
+          AND p.phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
+        ORDER BY p.ticket LIMIT ${query.limit + 1}`,
   );
   return found.rows;
 }
@@ -388,11 +404,9 @@ function nativeReadsResources(
       );
       const row = found.rows[0];
       if (row === undefined) return undefined;
-      const brief = draftBriefOf(row);
       const runTotals = await postgresTicketRunTotals(pool, partition, ticket);
       return {
         ...ticketResource(row),
-        ...(brief === undefined ? {} : { brief }),
         ...(runTotals === undefined ? {} : { runTotals }),
       };
     },

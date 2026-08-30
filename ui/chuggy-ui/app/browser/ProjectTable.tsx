@@ -59,6 +59,7 @@ import { Panel } from "./Panel.tsx";
 import {
   cellAbsent,
   ticketRowExecutionCell,
+  ticketRowSlotCell,
   TicketNumberCell,
 } from "./TicketCells.tsx";
 import { useProjectListFold } from "./stream.tsx";
@@ -143,8 +144,8 @@ function TicketRow(props: {
     <tr>
       <TicketNumberCell partition={props.partition} ticket={row.ticket} />
       <td className="cell-dim">
-        <span className="clipped" title={row.configuration?.title}>
-          {ticketRowExecutionCell(row, row.configuration?.text)}
+        <span className="clipped" title={row.slot?.title}>
+          {ticketRowSlotCell(row)}
         </span>
       </td>
       <td>{row.phase}</td>
@@ -179,7 +180,7 @@ function TicketTable(props: {
         <thead>
           <tr>
             <th scope="col">ticket</th>
-            <th scope="col">configuration</th>
+            <th scope="col">title</th>
             <th scope="col">phase</th>
             <th scope="col">why</th>
             <th scope="col">execution</th>

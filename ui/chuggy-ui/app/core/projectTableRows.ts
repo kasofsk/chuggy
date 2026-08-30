@@ -5,12 +5,12 @@
  * reads behind it — the ticket page and the index of what each ticket ran —
  * stay separate cache entries that separate frames fold into.
  *
- * THE FIRST COLUMN IS A SLOT. A ticket resource carries no intent, so what the
- * slot shows is the configuration the ticket's execution ran from, named where
- * the wire names it, which is the only thing on the wire that says what a
- * ticket is made of. When
- * a ticket states its own intent, this is where it goes and the row's other
- * columns do not move.
+ * THE FIRST COLUMN IS A SLOT. A ticket's own intent is what it is made of, so
+ * it fills the slot wherever a brief states one; a ticket authored before a
+ * brief was kept, or released with none, falls back to the configuration its
+ * execution ran from — the next best thing the wire says about it — and a
+ * ticket with neither reads as unset. The row's other columns do not move for
+ * any of the three.
  *
  * A row therefore says which of three things is true of its execution columns:
  * they are joined, this ticket has never run, or what the index holds for it is
@@ -42,6 +42,7 @@ import type {
   ProjectExecutionIndex,
   ProjectExecutionKnown,
 } from "./projectExecutionIndex.ts";
+import { creationIntentLines } from "./ticketCreation.ts";
 import { ticketBadgeLabel, ticketSectionOf } from "./ticketSections.ts";
 import type { TicketSection } from "./ticketSections.ts";
 
@@ -59,7 +60,7 @@ export interface ProjectTableRow {
   readonly section: TicketSection;
   readonly badge: string | undefined;
   readonly executionRead: ProjectTableExecutionRead;
-  readonly configuration: Label | undefined;
+  readonly slot: Label | undefined;
   readonly executionStatus: ExecutionStatus | undefined;
   readonly executionOutcome: ExecutionOutcome | undefined;
   readonly runsOn: Label | undefined;
@@ -90,6 +91,23 @@ export function projectTableExecutionRead(
   return indexTruncated ? "IndexTruncated" : "NoneRegistered";
 }
 
+/** The one line a ticket's intent leads with, its full statement kept for the hover. */
+function projectTableIntentHeadline(intent: string): Label {
+  const [line] = creationIntentLines(intent);
+  return { text: (line ?? intent).trim(), title: intent };
+}
+
+/** What fills the slot: the ticket's own intent where a brief states one, the
+ * configuration its execution ran from otherwise. */
+function projectTableSlot(
+  ticket: TicketResponse,
+  configuration: Label | undefined,
+): Label | undefined {
+  return ticket.brief === undefined
+    ? configuration
+    : projectTableIntentHeadline(ticket.brief.intent);
+}
+
 /** The ticket's own last activity is its sequence; an instant is the execution's,
  * because that is where the wire states one. */
 export function projectTableRow(
@@ -99,19 +117,20 @@ export function projectTableRow(
 ): ProjectTableRow {
   const read = projectTableExecutionRead(known, indexTruncated);
   const execution = read === "Joined" ? known?.execution : undefined;
+  const configuration =
+    execution === undefined
+      ? undefined
+      : configurationLabel(
+          execution.configurationRevision,
+          execution.configurationVersion,
+        );
   return {
     ticket: ticket.ticket,
     phase: ticket.phase,
     section: ticketSectionOf(ticket.phase),
     badge: ticketBadgeLabel(ticket.phase, ticket.reason),
     executionRead: read,
-    configuration:
-      execution === undefined
-        ? undefined
-        : configurationLabel(
-            execution.configurationRevision,
-            execution.configurationVersion,
-          ),
+    slot: projectTableSlot(ticket, configuration),
     executionStatus: execution?.status,
     executionOutcome: execution?.outcome,
     runsOn: execution === undefined ? undefined : projectTableRunsOn(execution),

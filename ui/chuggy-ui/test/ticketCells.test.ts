@@ -13,18 +13,23 @@ import {
   cellAbsent,
   cellExecutionUnread,
   ticketRowExecutionCell,
+  ticketRowSlotCell,
+  ticketTitleUnset,
 } from "../app/browser/TicketCells.tsx";
 import { projectTableExecutionReads } from "../app/core/projectTableRows.ts";
 import type { ProjectTableRow } from "../app/core/projectTableRows.ts";
 
-function row(executionRead: ProjectTableRow["executionRead"]): ProjectTableRow {
+function row(
+  executionRead: ProjectTableRow["executionRead"],
+  slot: ProjectTableRow["slot"] = undefined,
+): ProjectTableRow {
   return {
     ticket: 4,
     phase: "Escalated",
     section: "NeedsYou",
     badge: "work failed",
     executionRead,
-    configuration: undefined,
+    slot,
     executionStatus: undefined,
     executionOutcome: undefined,
     runsOn: undefined,
@@ -59,4 +64,20 @@ test("only the truncated read is drawn as unread", () => {
       ticketRowExecutionCell(row(read), "Running") === cellExecutionUnread,
   );
   expect(unread).toStrictEqual(["IndexTruncated"]);
+});
+
+test("a ticket with neither an intent nor a configuration to fall back on reads as unset", () => {
+  expect(ticketRowSlotCell(row("NoneRegistered"))).toBe(ticketTitleUnset);
+});
+
+test("a slot the walk did not reach says so rather than claiming unset", () => {
+  expect(ticketRowSlotCell(row("IndexTruncated"))).toBe(cellExecutionUnread);
+});
+
+test("a slot with something to show draws it over either default", () => {
+  const filled = row("IndexTruncated", {
+    text: "ship the title",
+    title: "ship the title",
+  });
+  expect(ticketRowSlotCell(filled)).toBe("ship the title");
 });

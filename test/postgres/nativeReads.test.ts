@@ -354,6 +354,74 @@ test("project reads filter before paging and expose one ticket detail", async ()
   assert.equal(await reads.ticket(partition, id(9)), undefined);
 });
 
+/** A ticket's brief the way a raw insert reaches it: past the draft the
+ * authoring writer would have opened, straight to the row a project listing
+ * joins against. */
+async function seedTicketBrief(
+  partition: Partition,
+  ticket: number,
+  intent: string,
+  links: readonly string[],
+): Promise<void> {
+  await subject.harness.query(
+    `INSERT INTO configuration_revision (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+     VALUES ($1,$2,$3,'{}','digest','User','author')`,
+    [partition.tenant, partition.project, `revision-${String(ticket)}`],
+  );
+  await subject.harness.query(
+    `INSERT INTO draft (tenant,project,ticket,authoring_version,state,configuration_revision)
+     VALUES ($1,$2,$3,1,'Released',$4)`,
+    [partition.tenant, partition.project, ticket, `revision-${String(ticket)}`],
+  );
+  await subject.harness.query(
+    `INSERT INTO draft_brief (tenant,project,ticket,intent) VALUES ($1,$2,$3,$4)`,
+    [partition.tenant, partition.project, ticket, intent],
+  );
+  for (const [index, url] of links.entries())
+    await subject.harness.query(
+      `INSERT INTO draft_brief_link (tenant,project,ticket,ordinal,url) VALUES ($1,$2,$3,$4,$5)`,
+      [partition.tenant, partition.project, ticket, index + 1, url],
+    );
+}
+
+test("a project listing carries each ticket's own brief, not only its single-ticket read", async () => {
+  const partition = await postgresHarnessProject(
+    subject.harness.store,
+    "native-brief",
+  );
+  await subject.harness.query(
+    "UPDATE project SET head=2 WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project],
+  );
+  await seedTicketBrief(partition, 1, "Show a title on the project table.", [
+    "https://example.test/one",
+  ]);
+  await subject.harness.query(
+    `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq) VALUES ($1,$2,1,'Pending',1)`,
+    [partition.tenant, partition.project],
+  );
+  await subject.harness.query(
+    `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq) VALUES ($1,$2,2,'Pending',2)`,
+    [partition.tenant, partition.project],
+  );
+  const reads = postgresNativeReads(subject.pool);
+  const listed = await reads.project(partition, { limit: 10 });
+  assert.equal(listed.result, "Found");
+  if (listed.result !== "Found") return;
+  assert.deepEqual(listed.project.tickets, [
+    {
+      ticket: 1,
+      phase: "Pending",
+      sequence: 1,
+      brief: {
+        intent: "Show a title on the project table.",
+        links: ["https://example.test/one"],
+      },
+    },
+    { ticket: 2, phase: "Pending", sequence: 2 },
+  ]);
+});
+
 test("a ticket's open action carries its kind, its fence, and what it offered", async () => {
   const partition = await postgresHarnessProject(
     subject.harness.store,

@@ -63,7 +63,7 @@ test("a running ticket's row carries its status, what it runs on and its configu
     text: "worker:1",
     title: "registry/worker:1",
   });
-  expect(row.configuration).toEqual({
+  expect(row.slot).toEqual({
     text: "repository:abc:work",
     title: "repository:abc:work",
   });
@@ -81,7 +81,7 @@ test("a row names the configuration and the worker the wire named", () => {
     }),
     false,
   );
-  expect(row.configuration).toEqual({
+  expect(row.slot).toEqual({
     text: "work #12",
     title: "repository:abc:work",
   });
@@ -99,9 +99,24 @@ test("a ticket running nothing states no execution rather than a blank one", () 
   );
   expect(row.executionStatus).toBeUndefined();
   expect(row.runsOn).toBeUndefined();
-  expect(row.configuration).toBeUndefined();
+  expect(row.slot).toBeUndefined();
   expect(row.activityAt).toBeUndefined();
   expect(row.sequence).toBe(1);
+});
+
+test("a ticket that states its own intent fills the slot with it, not the configuration it ran from", () => {
+  const briefed: TicketResponse = {
+    ...working,
+    brief: {
+      intent: "Make the project table show a title.\nA second line for detail.",
+      links: [],
+    },
+  };
+  const row = projectTableRow(briefed, known(container), false);
+  expect(row.slot).toEqual({
+    text: "Make the project table show a title.",
+    title: "Make the project table show a title.\nA second line for detail.",
+  });
 });
 
 const failedOlder: ExecutionSummary = {
@@ -144,7 +159,7 @@ test("a row that is not joined draws none of the execution it holds", () => {
   const row = projectTableRow(working, known(failedOlder, false), true);
   expect(row.executionOutcome).toBeUndefined();
   expect(row.executionStatus).toBeUndefined();
-  expect(row.configuration).toBeUndefined();
+  expect(row.slot).toBeUndefined();
   expect(row.runsOn).toBeUndefined();
   expect(row.activityAt).toBeUndefined();
 });
