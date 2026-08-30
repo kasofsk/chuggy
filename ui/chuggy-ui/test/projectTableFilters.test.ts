@@ -8,7 +8,7 @@ import { expect, test } from "vitest";
 import { nativeHttpPageItemsMax } from "../../../src/contract/http.ts";
 import {
   ticketFilterAll,
-  ticketFilterKey,
+  ticketFilterList,
   ticketFilterMoreCursor,
   ticketFilterPage,
   ticketFilterPhases,
@@ -30,13 +30,13 @@ const filters: readonly TicketFilter[] = [
 
 test("every filter reads and writes under a key of its own", () => {
   const keys = filters.map((filter) =>
-    JSON.stringify(ticketFilterKey(partition, filter)),
+    JSON.stringify(ticketFilterList(partition, filter).key),
   );
   expect(new Set(keys).size).toBe(keys.length);
 });
 
 test("a filter's key stays under its partition, so a reset still reaches it", () => {
-  const key = ticketFilterKey(partition, "NeedsYou");
+  const key = ticketFilterList(partition, "NeedsYou").key;
   expect(key.slice(0, 3)).toStrictEqual(["project", "acme", "atlas"]);
 });
 

@@ -17,8 +17,7 @@ import type { DraftResponse } from "../../../../src/contract/responses.ts";
 import { apiConfiguration } from "../core/apiRoutes.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { configurationLabel } from "../core/labels.ts";
-import { projectResourceKey } from "../core/projectQueryKeys.ts";
-import { usePanelQuery } from "./api.ts";
+import { usePanelResource } from "./api.ts";
 import { Panel } from "./Panel.tsx";
 
 function Field(props: {
@@ -160,8 +159,10 @@ function TicketConfiguration(props: {
 }): ReactNode {
   const [open, setOpen] = useState(false);
   const label = configurationLabel(props.revision, props.version);
-  const state = usePanelQuery(
-    projectResourceKey(props.partition, "Configuration", props.revision),
+  const state = usePanelResource(
+    props.partition,
+    "Configuration",
+    props.revision,
     (ports) => apiConfiguration(ports, props.partition, props.revision),
   );
   return (

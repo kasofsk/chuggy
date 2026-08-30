@@ -26,17 +26,13 @@
  * asked for again. So that half also shows the page drawing its first read with
  * no stream at all, which is the other thing a fallback is for.
  *
- * `Opening` IS NOT DEGRADED AND THAT IS WHAT SETS THE BOUND. The browser reopens
- * on a ladder of `streamReopenDelayMsMin` doubling toward `streamReopenDelayMsMax`,
- * and every attempt passes back through `Opening`, which `useStreamFallback` does
- * not count — so the fallback's sleep only survives once a rung of that ladder
- * outlasts `fallbackIntervalMs`, or once `streamOpenFailuresMax` attempts have
- * been spent and the console has given up for good. That gap is a stale screen
- * under a banner that does not mention it, and it is filed as a console finding
- * rather than left here: kasofsk/chuggy#372. Both paths are inside the bound
- * below, and neither ends until this drill lifts the refusal, so the banner is
- * asserted still up at the instant the text arrives: the read cannot have been
- * the stream's.
+ * `Opening` IS NOT CARRYING, WHICH IS WHAT MAKES THE BOUND SMALL. The browser
+ * reopens on a ladder of `streamReopenDelayMsMin` doubling toward
+ * `streamReopenDelayMsMax` and every attempt passes back through `Opening`,
+ * which `projectStreamCarrying` answers no for — so the loop is started once,
+ * when the page mounts, and is not aborted at any rung of that ladder. The
+ * refusal is never lifted while the drill runs, so the banner is asserted still
+ * up at the instant the text arrives: the read cannot have been the stream's.
  *
  * This half does not put the stream back. A console that has given up needs a
  * reload to reopen one, and a reload is what this suite never does; the half
@@ -47,6 +43,7 @@ import { expect } from "@playwright/test";
 
 import { fallbackIntervalMs } from "../../ui/chuggy-ui/app/core/projectFallback.ts";
 import {
+  awaitLive,
   briefIntent,
   createDraft,
   deleteDraft,
@@ -68,12 +65,13 @@ const outageMs = 45_000;
 const outageIntervalMs = 2_000;
 
 /**
- * How long a fallback read is waited for: the browser's reopen ladder has to
- * reach a wait longer than one fallback sleep, or run out of attempts, before
- * `degraded` stops flickering — and both happen inside this, which is derived
- * from the console's own interval rather than written down.
+ * How long a fallback read is waited for: `runProjectFallback` sleeps
+ * `fallbackIntervalMs` before each refetch and runs from the page's mount, so a
+ * change written just after one refetch has gone is drawn by the next — two
+ * intervals, and a third for the round trip. NOT YET CONFIRMED ON A RIG, being
+ * the loop's arithmetic rather than a measurement, so widen it here if tight.
  */
-const fallbackReadTimeoutMs = fallbackIntervalMs * 5;
+const fallbackReadTimeoutMs = fallbackIntervalMs * 3;
 
 drill(
   "repeated listener loss degrades the console and it converges",
@@ -104,9 +102,7 @@ drill(
       type: "listener",
       description: `terminated ${String(await outage)} listening backend(s)`,
     });
-    await expect(notLiveBanner(watcher)).toHaveCount(0, {
-      timeout: recoveryTimeoutMs,
-    });
+    await awaitLive(watcher);
 
     const live = await reviseDraftIntent(bearer, draft, "drawn live again");
     await expect(briefIntent(watcher)).toHaveText(live, {

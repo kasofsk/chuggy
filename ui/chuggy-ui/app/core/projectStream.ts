@@ -34,6 +34,32 @@ export interface ProjectStreamStatus {
   readonly source: ProjectSourceState | "unknown";
   readonly reason: string | undefined;
   readonly lastSequence: number | undefined;
+  /** Whether an attempt to open has ended since this console started following
+   * this partition — opened, been refused, or failed. Until one has, the
+   * console knows nothing about the stream, which is a different thing from
+   * knowing something bad about it. */
+  readonly answered: boolean;
+}
+
+/**
+ * Whether what the screens show is arriving. The bounded fallback reads while
+ * this is false, and the shell's banner says so while this is false and the
+ * stream has opened at least once — one decision about `Opening` seen from two
+ * sides, kept in one place because the two disagreeing is what left a reopening
+ * console stale under a banner with nothing reading behind it.
+ */
+export function projectStreamCarrying(status: ProjectStreamStatus): boolean {
+  return status.connection === "Open" && status.source === "live";
+}
+
+/**
+ * A first open that has not settled: a connection that has never had the chance
+ * to fail. Nothing has stopped arriving and there is nothing to warn a reader
+ * about — which a reopen, on a ladder whose every rung passes back through
+ * `Opening`, is not.
+ */
+export function projectStreamUnanswered(status: ProjectStreamStatus): boolean {
+  return status.connection === "Opening" && !status.answered;
 }
 
 export interface StreamReader {
@@ -79,6 +105,7 @@ export interface ProjectStreamHandle {
 interface StreamHeld {
   lastSequence: number | undefined;
   source: ProjectSourceState | "unknown";
+  answered: boolean;
 }
 
 interface StreamEnd {
@@ -117,6 +144,7 @@ function projectStreamStatus(
     source: held.source,
     reason,
     lastSequence: held.lastSequence,
+    answered: held.answered,
   };
 }
 
@@ -192,6 +220,7 @@ async function projectStreamOnce(
       response.body === null
     )
       return { reason: `the stream answered ${String(response.status)}` };
+    held.answered = true;
     handlers.onStatus(projectStreamStatus("Open", held, undefined));
     await projectStreamDrain(response.body, held, handlers);
     return { reason: "the stream closed" };
@@ -207,14 +236,20 @@ async function projectStreamRun(
   partition: PartitionIdentity,
   handlers: ProjectStreamHandlers,
   signal: AbortSignal,
+  answered: boolean,
 ): Promise<void> {
-  const held: StreamHeld = { lastSequence: undefined, source: "unknown" };
+  const held: StreamHeld = {
+    lastSequence: undefined,
+    source: "unknown",
+    answered,
+  };
   const url = projectStreamUrl(partition);
   let failures = 0;
   while (!signal.aborted) {
     handlers.onStatus(projectStreamStatus("Opening", held, undefined));
     const openedAtMs = ports.nowMs();
     const end = await projectStreamOnce(ports, url, held, handlers, signal);
+    held.answered = true;
     if (signal.aborted) return;
     if (end.stop !== undefined) {
       handlers.onStatus(projectStreamStatus("Stopped", held, end.stop));
@@ -240,12 +275,15 @@ async function projectStreamRun(
  * The stream, opened and kept open until it is stopped or refused.
  *
  * Stopping aborts the request in flight, which is what a project change and a
- * token refresh both do before opening the next one.
+ * token refresh both do before opening the next one — so `answered` is what the
+ * caller already learnt about this partition's stream, a run counting from
+ * nothing having no way to tell that reopen from a first open.
  */
 export function openProjectStream(
   ports: ProjectStreamPorts,
   partition: PartitionIdentity,
   handlers: ProjectStreamHandlers,
+  answered = false,
 ): ProjectStreamHandle {
   const controller = new AbortController();
   const finished = projectStreamRun(
@@ -253,6 +291,7 @@ export function openProjectStream(
     partition,
     handlers,
     controller.signal,
+    answered,
   );
   return {
     stop: () => {

@@ -34,9 +34,7 @@ import {
   runCountLabel,
   runDurationLabel,
 } from "../core/runTotals.ts";
-import { projectResourceKey } from "../core/projectQueryKeys.ts";
-import type { ProjectQueryKey } from "../core/projectQueryKeys.ts";
-import { usePanelQuery } from "./api.ts";
+import { usePanelResource } from "./api.ts";
 import { MarkdownReport } from "./MarkdownReport.tsx";
 import { Panel } from "./Panel.tsx";
 import { RunTranscript } from "./RunTranscript.tsx";
@@ -49,17 +47,13 @@ type RunTotalsValue = NonNullable<
   NonNullable<ExecutionAttempt["run"]>["totals"]
 >;
 
-function attemptKey(
-  partition: PartitionIdentity,
+/** One part of one attempt, named under the execution the frames carry. */
+function attemptResource(
   execution: string,
   attempt: string,
-  read: string,
-): ProjectQueryKey {
-  return projectResourceKey(
-    partition,
-    "Execution",
-    `${execution}/attempts/${attempt}/${read}`,
-  );
+  part: string,
+): string {
+  return `${execution}/attempts/${attempt}/${part}`;
 }
 
 export function RunTotalsLine(props: {
@@ -123,9 +117,10 @@ function RunTurns(props: {
 }): ReactNode {
   const [walked, setWalked] = useState<readonly number[]>([]);
   const after = walked.at(-1);
-  const state = usePanelQuery(
-    attemptKey(
-      props.partition,
+  const state = usePanelResource(
+    props.partition,
+    "Execution",
+    attemptResource(
       props.execution,
       props.attempt,
       `turns/${String(after ?? 0)}`,
@@ -259,13 +254,10 @@ function RunConfiguration(props: {
   readonly execution: string;
   readonly attempt: string;
 }): ReactNode {
-  const state = usePanelQuery(
-    attemptKey(
-      props.partition,
-      props.execution,
-      props.attempt,
-      "configuration",
-    ),
+  const state = usePanelResource(
+    props.partition,
+    "Execution",
+    attemptResource(props.execution, props.attempt, "configuration"),
     (ports) =>
       apiRunConfiguration(
         ports,

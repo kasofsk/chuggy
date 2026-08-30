@@ -285,12 +285,15 @@ export async function signIn(page: Page): Promise<void> {
 }
 
 /**
- * A stream that has opened and is carrying changes. The banner is drawn while a
- * stream is still opening as well as when one has failed, so a drill that did
- * not wait here would find its "not live" already on screen.
+ * A stream that has opened and is carrying changes, which is what the shell
+ * states rather than what the banner does: the banner is silent both when the
+ * stream is live and when a first connection has not opened yet, so waiting for
+ * it to go away would be waiting for nothing. Pushing a change at a console
+ * before its stream is open is pushing it at nothing too, which is why every
+ * drill but the fallback one starts here.
  */
 export async function awaitLive(page: Page): Promise<void> {
-  await expect(notLiveBanner(page)).toHaveCount(0, {
+  await expect(page.locator(".shell")).toHaveAttribute("data-stream", "live", {
     timeout: recoveryTimeoutMs,
   });
 }

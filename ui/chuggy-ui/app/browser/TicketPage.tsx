@@ -27,9 +27,8 @@ import {
 } from "../core/apiRoutes.ts";
 import { escalationReasonSentence } from "../core/codeSentences.ts";
 import type { PanelState } from "../core/freshness.ts";
-import { projectResourceKey } from "../core/projectQueryKeys.ts";
-import { projectListKey } from "../core/projectQueryKeys.ts";
-import { usePanelQuery } from "./api.ts";
+import { ticketDispatchList } from "../core/ticketActions.ts";
+import { usePanelList, usePanelResource } from "./api.ts";
 import { Panel } from "./Panel.tsx";
 import { RunTotalsLine } from "./RunEvidence.tsx";
 import { TicketActions } from "./TicketActions.tsx";
@@ -92,20 +91,26 @@ export function TicketPage(): ReactNode {
     project: params.project,
   };
   const ticket = Number(params.ticket);
-  const ticketState = usePanelQuery(
-    projectResourceKey(partition, "Ticket", String(ticket)),
+  const ticketState = usePanelResource(
+    partition,
+    "Ticket",
+    String(ticket),
     (ports) => apiTicket(ports, partition, ticket),
   );
-  const draftState = usePanelQuery(
-    projectResourceKey(partition, "Draft", String(ticket)),
+  const draftState = usePanelResource(
+    partition,
+    "Draft",
+    String(ticket),
     (ports) => apiDraft(ports, partition, ticket),
   );
-  const openState = usePanelQuery(
-    projectResourceKey(partition, "NativeAction", String(ticket)),
+  const openState = usePanelResource(
+    partition,
+    "NativeAction",
+    String(ticket),
     (ports) => apiTicketNativeActions(ports, partition, ticket),
   );
-  const dispatchState = usePanelQuery(
-    projectListKey(partition, "Ticket", `dispatch:${String(ticket)}`),
+  const dispatchState = usePanelList(
+    ticketDispatchList(partition, ticket),
     (ports) =>
       apiDispatchView(ports, partition, {
         ...(ticket > 1 ? { after: ticket - 1 } : {}),

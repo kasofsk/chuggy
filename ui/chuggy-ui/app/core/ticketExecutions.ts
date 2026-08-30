@@ -16,13 +16,9 @@ import type {
   ExecutionSummary,
   ExecutionsResponse,
 } from "../../../../src/contract/responses.ts";
+import type { ProjectListChange } from "./projectQueryKeys.ts";
 import { runStageRows } from "./runTotals.ts";
 import type { RunStageRow } from "./runTotals.ts";
-
-export interface ProjectExecutionChange {
-  readonly resource: string;
-  readonly representation: unknown;
-}
 
 function executionOf(representation: unknown): ExecutionResponse | undefined {
   const parsed = executionResponseSchema.safeParse(representation);
@@ -73,7 +69,7 @@ function executionsWith(
 export function ticketExecutionsFolded(
   ticket: number,
   previous: ExecutionsResponse | undefined,
-  change: ProjectExecutionChange,
+  change: ProjectListChange,
 ): ExecutionsResponse | undefined {
   if (previous === undefined) return undefined;
   if (change.representation === null)

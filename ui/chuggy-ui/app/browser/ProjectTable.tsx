@@ -30,10 +30,9 @@ import { projectExecutionIndexUnread } from "../core/projectExecutionIndex.ts";
 import type { ProjectExecutionIndex } from "../core/projectExecutionIndex.ts";
 import {
   ticketFilterAll,
-  ticketFilterKey,
+  ticketFilterList,
   ticketFilterMoreCursor,
   ticketFilterPage,
-  ticketFilterPhases,
 } from "../core/projectTableFilters.ts";
 import type { TicketFilter } from "../core/projectTableFilters.ts";
 import {
@@ -44,7 +43,6 @@ import {
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
 import {
   projectTicketRowsAfterPage,
-  projectTicketRowsFold,
   projectTicketRowsRead,
 } from "../core/projectTicketPages.ts";
 import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
@@ -53,7 +51,7 @@ import {
   ticketSectionTitles,
 } from "../core/ticketSections.ts";
 import type { TicketSection } from "../core/ticketSections.ts";
-import { useApiPorts, usePanelQuery } from "./api.ts";
+import { useApiPorts, usePanelList } from "./api.ts";
 import { useProjectExecutionIndex } from "./executionIndex.ts";
 import { Panel } from "./Panel.tsx";
 import {
@@ -61,7 +59,6 @@ import {
   ticketRowExecutionCell,
   TicketNumberCell,
 } from "./TicketCells.tsx";
-import { useProjectListFold } from "./stream.tsx";
 
 interface TicketRowsHeld {
   readonly state: PanelState<ProjectTicketRows>;
@@ -80,7 +77,7 @@ export function ticketRowsRead(
   partition: PartitionIdentity,
   filter: TicketFilter,
 ): Promise<ApiResult<ProjectTicketRows>> {
-  const key = ticketFilterKey(partition, filter);
+  const key = ticketFilterList(partition, filter).key;
   return projectTicketRowsRead(
     client.getQueryData<ProjectTicketRows>(key),
     (cursor) => apiProject(ports, partition, ticketFilterPage(filter, cursor)),
@@ -93,20 +90,13 @@ function useTicketRows(
   partition: PartitionIdentity,
   filter: TicketFilter,
 ): TicketRowsHeld {
-  const key = ticketFilterKey(partition, filter);
+  const list = ticketFilterList(partition, filter);
+  const key = list.key;
   const client = useQueryClient();
   const ports = useApiPorts();
   const [reading, setReading] = useState(false);
-  const state = usePanelQuery<ProjectTicketRows>(key, (at) =>
+  const state = usePanelList(list, (at) =>
     ticketRowsRead(client, at, partition, filter),
-  );
-  useProjectListFold("Ticket", key, (previous, change) =>
-    projectTicketRowsFold(
-      previous as ProjectTicketRows | undefined,
-      change.resource,
-      change.representation,
-      ticketFilterPhases(filter),
-    ),
   );
   const rows = state.state === "Ready" ? state.value : undefined;
   const cursor = rows === undefined ? undefined : ticketFilterMoreCursor(rows);

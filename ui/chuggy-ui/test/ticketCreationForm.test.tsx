@@ -20,8 +20,8 @@ import {
 import { afterEach, expect, test } from "vitest";
 
 import type { ApiPorts } from "../app/core/apiRequest.ts";
-import { projectListKey } from "../app/core/projectQueryKeys.ts";
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
+import { creationContextList } from "../app/core/ticketCreationRun.ts";
 import {
   creationDraft,
   creationInitialization,
@@ -98,7 +98,7 @@ function api(options: {
   };
 }
 
-const queryKey = projectListKey(creationPartition, "Configuration", "creation");
+const queryKey = creationContextList(creationPartition).key;
 
 function draw(
   ports: ApiPorts,
