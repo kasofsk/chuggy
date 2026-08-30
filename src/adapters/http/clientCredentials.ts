@@ -12,9 +12,9 @@
  * A REFUSAL IS THE OTHER WAY A TOKEN ENDS, and the margin cannot see it: a
  * rotated signing key, or a clock that stepped backwards so that an expired
  * token still reads as fresh, leaves a held token already worthless.
- * `invalidate` discards it so the next read mints, and discards nothing when
- * the token it names has already been replaced. It starts no retry of its own
- * — the refused request fails, and the one after it carries a new token.
+ * `invalidate` discards it, and discards nothing when the token it names has
+ * already been replaced. It starts no retry of its own: the refused request
+ * fails, and the read after it mints unless the cooldown below says otherwise.
  *
  * `mintCooldownMs` IS THE BOUND ON ALL OF THAT. It is measured from the start
  * of the last attempt, so it bounds grant requests to one per cooldown whether
@@ -91,6 +91,7 @@ export interface ClientCredentialsConfig {
 interface ClientCredentialsHeld {
   readonly token: string;
   readonly replaceAtEpochMs: number;
+  readonly expiresAtEpochMs: number;
 }
 
 function clientCredentialsChecked(
@@ -185,15 +186,23 @@ async function clientCredentialsMinted(
   );
   if (grant.token_type.toLowerCase() !== clientCredentialsTokenType)
     throw new Error("client credentials grant is not a bearer token");
+  const lifetimeMs = grant.expires_in * millisecondsPerSecond;
   return {
     token: checkedBearerToken(grant.access_token),
     replaceAtEpochMs:
-      atEpochMs +
-      clientCredentialsHoldMs(
-        grant.expires_in * millisecondsPerSecond,
-        config.refreshMarginMs,
-      ),
+      atEpochMs + clientCredentialsHoldMs(lifetimeMs, config.refreshMarginMs),
+    expiresAtEpochMs: atEpochMs + lifetimeMs,
   };
+}
+
+/**
+ * The cooldown's clock when a caller supplies none, which is every deployment.
+ * It is process-relative and cannot go backwards, so no correction to the wall
+ * clock can make elapsed time negative and hold a source in a cooldown it has
+ * already served.
+ */
+export function clientCredentialsMonotonicMs(): number {
+  return performance.now();
 }
 
 /** Mints on demand and holds the grant until its margin, sharing one mint between the callers waiting on it. */
@@ -203,7 +212,7 @@ export function clientCredentialsTokenSource(
   const config = clientCredentialsChecked(input);
   const transport = config.fetch ?? fetch;
   const currentTimeEpochMs = config.currentTimeEpochMs ?? Date.now;
-  const monotonicMs = config.monotonicMs ?? performance.now.bind(performance);
+  const monotonicMs = config.monotonicMs ?? clientCredentialsMonotonicMs;
   let held: ClientCredentialsHeld | undefined;
   let minting: Promise<ClientCredentialsHeld> | undefined;
   let attemptedAtMonotonicMs: number | undefined;
@@ -240,7 +249,11 @@ export function clientCredentialsTokenSource(
       )
         return current.token;
       if (minting === undefined && cooling()) {
-        if (current !== undefined) return current.token;
+        if (
+          current !== undefined &&
+          currentTimeEpochMs() < current.expiresAtEpochMs
+        )
+          return current.token;
         throw new Error("client credentials grant is within its cooldown");
       }
       const granted = await mint();

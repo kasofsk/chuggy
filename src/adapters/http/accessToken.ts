@@ -11,23 +11,18 @@
  * An already-aborted caller never reaches the source at all, because a promise
  * started only to be abandoned is one nothing is left to settle.
  *
- * A REFUSAL IS A HINT AND NOT A VERDICT, which is why `invalidate` is named
- * for the token rather than for the response. A 401 is not proof the
- * credential is bad: this tree's own server answers one for every verification
- * failure, an unreachable JWKS endpoint included, so an issuer that is down
- * refuses a perfectly good token. A source that treats each refusal as reason
- * to mint would answer that outage by minting once per refused read, from the
- * issuer that is failing. So a source takes a refusal as licence to replace
- * what it holds and bounds how often it will act on one; what it holds when it
- * declines is a token that is no worse than the one a mint would fail to
- * fetch.
+ * A 401 IS TOLD TO THE SOURCE, AND ONLY A 401. It is the one status that says
+ * the credential is what was wrong, which is true of this API because it
+ * answers a verification it could not carry out with a 503 instead. What the
+ * source does about it is the source's: this module reports the token that was
+ * refused and holds no opinion on how often a source may act on one.
  */
 
 export interface AccessTokenSource {
   /** The token to present, held or newly minted, bounded by `signal`. */
   token(signal: AbortSignal): Promise<string>;
 
-  /** Offers `refused` as spent; a source may decline, and discards nothing once it holds something else. */
+  /** Reports `refused` as spent; a source discards nothing once it holds something else. */
   invalidate(refused: string): void;
 }
 

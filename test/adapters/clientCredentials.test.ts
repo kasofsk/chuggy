@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { setTimeout as wait } from "node:timers/promises";
 
 import { nativeHttpClient } from "../../src/adapters/http/client.ts";
 import {
   presentedAccessToken,
   type AccessTokenSource,
 } from "../../src/adapters/http/accessToken.ts";
-import { clientCredentialsTokenSource } from "../../src/adapters/http/clientCredentials.ts";
+import {
+  clientCredentialsMonotonicMs,
+  clientCredentialsTokenSource,
+} from "../../src/adapters/http/clientCredentials.ts";
 import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 
 const tokenUrl = "https://auth.example/oauth2/token";
@@ -105,6 +109,45 @@ function drivenTokenSource({
     stepClockBack: (milliseconds) => {
       nowEpochMs -= milliseconds;
       elapsedMs += 1;
+    },
+  };
+}
+
+interface GrantedOnce {
+  readonly source: AccessTokenSource;
+  readonly minted: MintedRequest[];
+  move(milliseconds: number): void;
+}
+
+/** A source whose issuer grants once and answers every later attempt with a failure. */
+function grantedOnceTokenSource(): GrantedOnce {
+  const minted: MintedRequest[] = [];
+  let nowEpochMs = 1_000_000;
+  let elapsedMs = 0;
+  const source = clientCredentialsTokenSource({
+    tokenUrl,
+    clientId: "selector",
+    clientSecret: "secret",
+    ...noAudienceOrScope,
+    requestTimeoutMs: 1_000,
+    responseBytesMax: 10_000,
+    responseReadsMax: 100,
+    refreshMarginMs: 60_000,
+    mintCooldownMs: 5_000,
+    fetch: mintingTransport(minted, (attempt) =>
+      attempt === 1
+        ? grantResponse("token-1", 900)
+        : new Response("{}", { status: 503 }),
+    ),
+    currentTimeEpochMs: () => nowEpochMs,
+    monotonicMs: () => elapsedMs,
+  });
+  return {
+    source,
+    minted,
+    move: (milliseconds) => {
+      nowEpochMs += milliseconds;
+      elapsedMs += milliseconds;
     },
   };
 }
@@ -436,40 +479,16 @@ test("a cooldown as long as the refresh margin is refused, not accepted quietly"
 });
 
 test("a token still held is presented through a cooldown rather than refused", async () => {
-  const minted: MintedRequest[] = [];
-  let nowEpochMs = 1_000_000;
-  let elapsedMs = 0;
-  const source = clientCredentialsTokenSource({
-    tokenUrl,
-    clientId: "selector",
-    clientSecret: "secret",
-    ...noAudienceOrScope,
-    requestTimeoutMs: 1_000,
-    responseBytesMax: 10_000,
-    responseReadsMax: 100,
-    refreshMarginMs: 60_000,
-    mintCooldownMs: 5_000,
-    fetch: mintingTransport(minted, (attempt) =>
-      attempt === 1
-        ? grantResponse("token-1", 900)
-        : new Response("{}", { status: 503 }),
-    ),
-    currentTimeEpochMs: () => nowEpochMs,
-    monotonicMs: () => elapsedMs,
-  });
-  const move = (milliseconds: number): void => {
-    nowEpochMs += milliseconds;
-    elapsedMs += milliseconds;
-  };
-  assert.equal(await source.token(bounded()), "token-1");
-  move(841_000);
-  await assert.rejects(source.token(bounded()), /returned 503/u);
-  move(1_000);
-  assert.equal(await source.token(bounded()), "token-1");
-  assert.equal(minted.length, 2);
-  move(5_000);
-  await assert.rejects(source.token(bounded()), /returned 503/u);
-  assert.equal(minted.length, 3);
+  const granted = grantedOnceTokenSource();
+  assert.equal(await granted.source.token(bounded()), "token-1");
+  granted.move(841_000);
+  await assert.rejects(granted.source.token(bounded()), /returned 503/u);
+  granted.move(1_000);
+  assert.equal(await granted.source.token(bounded()), "token-1");
+  assert.equal(granted.minted.length, 2);
+  granted.move(5_000);
+  await assert.rejects(granted.source.token(bounded()), /returned 503/u);
+  assert.equal(granted.minted.length, 3);
 });
 
 test("a joining caller's deadline does not cancel the mint the others wait on", async () => {
@@ -506,4 +525,48 @@ test("a joining caller's deadline does not cancel the mint the others wait on", 
   granted(grantResponse("token-1", 900));
   assert.equal(await waiting, "token-1");
   assert.equal(grants, 1);
+});
+
+test("the cooldown clock a deployment gets advances and is not the wall clock", async () => {
+  const started = clientCredentialsMonotonicMs();
+  await wait(20);
+  const ended = clientCredentialsMonotonicMs();
+  assert.ok(ended - started >= 10, "it advances with real time");
+  assert.ok(ended >= started, "it never goes backwards");
+  assert.ok(
+    ended < performance.timeOrigin,
+    "it counts from this process, not from the epoch",
+  );
+});
+
+test("a source given no clock still enforces and then lifts its cooldown", async () => {
+  const minted: MintedRequest[] = [];
+  const source = clientCredentialsTokenSource({
+    tokenUrl,
+    clientId: "selector",
+    clientSecret: "secret",
+    ...noAudienceOrScope,
+    requestTimeoutMs: 1_000,
+    responseBytesMax: 10_000,
+    responseReadsMax: 100,
+    refreshMarginMs: 400,
+    mintCooldownMs: 200,
+    fetch: mintingTransport(minted, () => new Response("{}", { status: 503 })),
+  });
+  await assert.rejects(source.token(bounded()), /returned 503/u);
+  await assert.rejects(source.token(bounded()), /within its cooldown/u);
+  assert.equal(minted.length, 1);
+  await wait(250);
+  await assert.rejects(source.token(bounded()), /returned 503/u);
+  assert.equal(minted.length, 2);
+});
+
+test("a held token past its expiry is not presented through a cooldown", async () => {
+  const granted = grantedOnceTokenSource();
+  assert.equal(await granted.source.token(bounded()), "token-1");
+  granted.move(900_001);
+  await assert.rejects(granted.source.token(bounded()), /returned 503/u);
+  granted.move(1_000);
+  await assert.rejects(granted.source.token(bounded()), /within its cooldown/u);
+  assert.equal(granted.minted.length, 2);
 });

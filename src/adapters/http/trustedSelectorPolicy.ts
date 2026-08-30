@@ -305,8 +305,10 @@ async function responseJson(
     );
   }
   const contentType = response.headers.get("content-type")?.split(";", 1)[0];
-  if (contentType !== trustedSelectorPolicyMediaType)
+  if (contentType !== trustedSelectorPolicyMediaType) {
+    await response.body?.cancel();
     throw new TypeError("selector policy response has the wrong media type");
+  }
   const bytes = await boundedResponseBytes(response, bytesMax);
   try {
     return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
