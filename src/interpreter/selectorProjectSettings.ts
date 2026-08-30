@@ -2,16 +2,21 @@
  * A project's own selector settings, reached through the project access that
  * bounds them.
  *
- * THE INSTALLATION'S SETTINGS ARE DEFAULTS AND NOT CEILINGS. A project may
- * override upward, and what bounds that is the `ManageSelector` access check
- * rather than a limit above it. Nothing here compares a project's value with
- * the installation's.
+ * THE INSTALLATION'S SETTINGS ARE DEFAULTS AND NOT CEILINGS, WITH ONE
+ * EXCEPTION. A project may override every field upward, and what bounds that is
+ * the `ManageProjectSelector` access check rather than a limit above it. The
+ * exception is `mode`: an installation pause is the operator's kill switch and
+ * stops the whole sweep before any project is resolved, so a project cannot
+ * unpause itself and `resolvedSelectorSettings` clamps `mode` to `Paused`
+ * rather than reporting a selector that will never run. Per-project pause is
+ * therefore the only direction that override travels today.
  *
  * A WRITE REPLACES THE WHOLE OVERRIDE SET under the revision it was read at, so
  * clearing an override and setting one are the same write and a rollback is a
  * replay of a historical revision rather than a second verb.
  */
 
+import { assertNever } from "../domain/assertNever.ts";
 import type { Principal, ProjectAccess } from "./nativeWeb.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
@@ -36,7 +41,21 @@ export interface SelectorProjectSettingsRevision {
   readonly recordedAt: string;
 }
 
-/** The durable per-project settings; a write answers undefined when the fence moved. */
+/**
+ * What one durable write answers with: the row it wrote, the fence it lost, or
+ * the refusal a project's `Automatic` dispatch meets while no policy host is
+ * production-ready. The refusal is a condition an administrator can act on, so
+ * it is a variant rather than a fault.
+ */
+export type SelectorProjectSettingsWriteOutcome =
+  | {
+      readonly written: "Settings";
+      readonly settings: SelectorProjectSettingsRecord;
+    }
+  | { readonly written: "FenceMoved" }
+  | { readonly written: "AutomaticDispatchUnavailable" };
+
+/** The durable per-project settings, whose write reports the row it wrote. */
 export interface SelectorProjectSettingsStore {
   read(partition: Partition): Promise<SelectorProjectSettingsRecord>;
   write(
@@ -44,7 +63,7 @@ export interface SelectorProjectSettingsStore {
     expectedRevision: number,
     overrides: SelectorProjectOverrides,
     administrator: Authority,
-  ): Promise<SelectorProjectSettingsRecord | undefined>;
+  ): Promise<SelectorProjectSettingsWriteOutcome>;
   history(
     partition: Partition,
     afterRevision: number,
@@ -68,6 +87,10 @@ export type SelectorProjectSettingsWritten =
   | {
       readonly result: "Written";
       readonly settings: SelectorProjectSettingsRecord;
+    }
+  | {
+      readonly result: "Refused";
+      readonly refusal: "AutomaticDispatchUnavailable";
     };
 
 export type SelectorProjectSettingsHistoryRead =
@@ -179,13 +202,13 @@ function checkedHistoryLimit(value: number): number {
   return value;
 }
 
-/** Exposes a project's selector settings only through current `ManageSelector` access. */
+/** Exposes a project's selector settings only through current `ManageProjectSelector` access. */
 export function selectorProjectSettingsAdministration(
   access: ProjectAccess,
   store: SelectorProjectSettingsStore,
 ): SelectorProjectSettingsAdministration {
   const administrator = (principal: Principal, partition: Partition) =>
-    access.authorize(principal, partition, "ManageSelector");
+    access.authorize(principal, partition, "ManageProjectSelector");
   return {
     read: async (principal, partition) =>
       (await administrator(principal, partition)) === undefined
@@ -200,9 +223,19 @@ export function selectorProjectSettingsAdministration(
         checkedSelectorProjectOverrides(overrides),
         authority,
       );
-      return written === undefined
-        ? { result: "Conflict", settings: await store.read(partition) }
-        : { result: "Written", settings: written };
+      switch (written.written) {
+        case "Settings":
+          return { result: "Written", settings: written.settings };
+        case "FenceMoved":
+          return { result: "Conflict", settings: await store.read(partition) };
+        case "AutomaticDispatchUnavailable":
+          return {
+            result: "Refused",
+            refusal: "AutomaticDispatchUnavailable",
+          };
+        default:
+          return assertNever(written);
+      }
     },
     history: async (principal, partition, afterRevision, limit) =>
       (await administrator(principal, partition)) === undefined

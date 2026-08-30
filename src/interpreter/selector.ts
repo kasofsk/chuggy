@@ -39,6 +39,7 @@ export interface SelectorInteraction {
 
 export interface SelectorProposal {
   readonly interaction: SelectorInteraction;
+  readonly fence: SelectorSettingsFence;
   readonly operation: OperationId;
   readonly command: Extract<
     TicketCommand,
@@ -82,6 +83,7 @@ export interface SelectorStateStore {
   recordInteraction(
     interaction: SelectorInteraction,
     state: SelectorProjectState,
+    fence: SelectorSettingsFence,
     planningIntent?: JsonValue,
   ): Promise<boolean>;
   record(
@@ -314,13 +316,17 @@ export interface SelectorProjectOverrides {
 }
 
 /**
- * One project's settings, resolved against the installation defaults.
- * `revision` remains the installation's and `projectRevision` is the project's,
+ * One project's settings, resolved against the installation defaults, where
+ * `revision` remains the installation's and `projectRevision` is the project's
  * because either row moving changes what a decision would have run under.
+ * `installationMode` is the unresolved default beside the resolved `mode`, so
+ * one read answers both what this project runs under and whether the whole
+ * installation is stopped.
  */
 export interface SelectorResolvedSettings extends SelectorRuntimeSettings {
   readonly partition: Partition;
   readonly projectRevision: number;
+  readonly installationMode: SelectorRuntimeSettings["mode"];
   readonly northStar?: string;
 }
 
@@ -351,7 +357,12 @@ export function selectorSettingsFenceHolds(
   );
 }
 
-/** Resolves every field to the project's own value, or to the installation default. */
+/**
+ * Resolves every field to the project's own value, or to the installation
+ * default. An installation pause is the one direction the default is a ceiling:
+ * it is the kill switch, so `mode` resolves to `Paused` whatever the project
+ * asked for, and the resolved value never claims a selector that will not run.
+ */
 export function resolvedSelectorSettings(
   partition: Partition,
   defaults: SelectorRuntimeSettings,
@@ -363,7 +374,8 @@ export function resolvedSelectorSettings(
     partition,
     projectRevision,
     revision: defaults.revision,
-    mode: overrides.mode ?? defaults.mode,
+    installationMode: defaults.mode,
+    mode: defaults.mode === "Paused" ? "Paused" : (overrides.mode ?? "Running"),
     dispatchMode: overrides.dispatchMode ?? defaults.dispatchMode,
     basePrompt: overrides.basePrompt ?? defaults.basePrompt,
     modelAllowlist: overrides.modelAllowlist ?? defaults.modelAllowlist,
@@ -777,9 +789,10 @@ export interface SelectorCycleIdentity {
 }
 
 /**
- * Both halves of the fence, which is what identifies the instructions a
- * decision was given: the project's North Star and every field it overrode are
- * recovered from the settings history at this pair.
+ * The label a decision's instructions are retained under, naming both revisions
+ * they were resolved from. It is read by people rather than by code: the pair a
+ * fence is checked against is `SelectorSettingsFence`, carried as two numbers
+ * beside this and recorded as two columns, so nothing has to parse this back.
  */
 function selectorInstructionsVersion(
   settings: SelectorResolvedSettings,
@@ -873,6 +886,12 @@ async function executeSelectorPolicy(
   }
 }
 
+/**
+ * Everything the policy is given, weighed against `inputBytesPerDecision` before
+ * any of it is sent. A project's North Star is inside that budget rather than
+ * beside it, so a long one narrows the view its own project can carry and does
+ * not quietly widen what one decision costs.
+ */
 function persistablePolicyObservation(
   observation: SelectorObservation,
   settings: SelectorResolvedSettings,
@@ -1025,6 +1044,7 @@ async function recordFailedSelectorCycle(
       workingMemory: observation.workingMemory,
       candidateScan: observation.nextCandidateScan,
     },
+    selectorSettingsFence(settings),
   );
 }
 
@@ -1061,12 +1081,14 @@ async function recordCompletedSelectorCycle(
     await store.recordInteraction(
       interaction,
       nextState,
+      selectorSettingsFence(settings),
       result.planningIntent,
     );
     return undefined;
   }
   const proposal: SelectorProposal = {
     interaction,
+    fence: selectorSettingsFence(settings),
     operation: identity.operation,
     command: proposalCommand({
       ticket: selected,

@@ -201,6 +201,16 @@ function promptObservationSource() {
   };
 }
 
+/** One identity per project, so a sweep over several names each decision after its own. */
+function perProjectIdentities() {
+  return {
+    next: (scope: typeof partition) => ({
+      operation: asOperationId(`operation-${scope.project}`),
+      selectorDecisionReference: `decision-${scope.project}`,
+    }),
+  };
+}
+
 function emptyDispatchPage(scope: typeof partition, digest: string) {
   return {
     result: "Page",
@@ -546,6 +556,52 @@ test("inventory progress follows scanned projects when a permit is unavailable",
   );
   assert.equal(result.observed, 1);
   assert.deepEqual(saved, second);
+});
+
+test("one project's pause skips that project and the sweep carries on", async () => {
+  const paused = { tenant: partition.tenant, project: asProjectId("paused") };
+  const running = { tenant: partition.tenant, project: asProjectId("running") };
+  const allocated: string[] = [];
+  let installationReads = 0;
+  const result = await selectorRunOnce(
+    {
+      ...stateStore(() => undefined),
+      allocateAttempt: (_attempt, scope) => {
+        allocated.push(scope.project);
+        return Promise.resolve(true);
+      },
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [paused, running] }),
+      dispatchView: (scope) =>
+        Promise.resolve(emptyDispatchPage(scope, "e".repeat(64))),
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    policyHost(() => Promise.resolve(waitingExecution())),
+    perProjectIdentities(),
+    {
+      settings: () => {
+        installationReads += 1;
+        return Promise.resolve(runtimeSettings);
+      },
+      projectSettings: (of) =>
+        Promise.resolve(
+          resolvedSelectorSettings(
+            of,
+            runtimeSettings,
+            1,
+            of.project === paused.project ? { mode: "Paused" } : {},
+          ),
+        ),
+    },
+    { projectsMax: 2, deliveriesMax: 1, reconciliationsMax: 1 },
+  );
+  assert.deepEqual(allocated, [running.project]);
+  assert.equal(result.observed, 1);
+  assert.deepEqual(result.failures, []);
+  assert.equal(installationReads, 1);
 });
 
 test("a pause observed after permit acquisition prevents a new decision", async () => {
@@ -964,12 +1020,7 @@ test("settings and permit failures remain isolated to their projects", async () 
       operation: () => Promise.resolve(undefined),
     },
     policyHost(() => Promise.resolve(waitingExecution())),
-    {
-      next: (scope) => ({
-        operation: asOperationId(`operation-${scope.project}`),
-        selectorDecisionReference: `decision-${scope.project}`,
-      }),
-    },
+    perProjectIdentities(),
     {
       settings: () => Promise.resolve(runtimeSettings),
       projectSettings: (of) =>
@@ -1240,12 +1291,7 @@ test("one project failure does not block later projects or durable delivery", as
       operation: () => Promise.resolve(undefined),
     },
     policyHost(() => Promise.resolve(waitingExecution())),
-    {
-      next: (scope) => ({
-        operation: asOperationId(`operation-${scope.project}`),
-        selectorDecisionReference: `decision-${scope.project}`,
-      }),
-    },
+    perProjectIdentities(),
     settingsSource(() => Promise.resolve(runtimeSettings)),
     { projectsMax: 2, deliveriesMax: 1, reconciliationsMax: 1 },
   );

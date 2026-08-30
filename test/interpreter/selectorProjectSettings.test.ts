@@ -20,6 +20,7 @@ import {
   selectorProjectSettingsAdministration,
   type SelectorProjectSettingsRecord,
   type SelectorProjectSettingsStore,
+  type SelectorProjectSettingsWriteOutcome,
 } from "../../src/interpreter/selectorProjectSettings.ts";
 
 const partition = {
@@ -78,7 +79,7 @@ function record(
 }
 
 function store(
-  written: SelectorProjectSettingsRecord | undefined,
+  written: SelectorProjectSettingsWriteOutcome,
 ): SelectorProjectSettingsStore & {
   readonly writes: {
     expectedRevision: number;
@@ -136,6 +137,26 @@ test("a project overrides upward and keeps the shared pool's limits", () => {
   assert.equal(resolved.projectRevision, 3);
 });
 
+test("an installation pause is the one ceiling, and the resolved mode says so", () => {
+  const paused = resolvedSelectorSettings(
+    partition,
+    { ...defaults, mode: "Paused" },
+    3,
+    { mode: "Running" },
+  );
+  assert.equal(paused.mode, "Paused");
+  assert.equal(paused.installationMode, "Paused");
+  const running = resolvedSelectorSettings(partition, defaults, 3, {
+    mode: "Paused",
+  });
+  assert.equal(running.mode, "Paused");
+  assert.equal(running.installationMode, "Running");
+  assert.equal(
+    resolvedSelectorSettings(partition, defaults, 3, {}).installationMode,
+    "Running",
+  );
+});
+
 test("the fence holds only while both revisions still name what was read", () => {
   const started = resolvedSelectorSettings(partition, defaults, 3, {});
   const fence = selectorSettingsFence(started);
@@ -188,7 +209,7 @@ test("an override no column would hold is refused before the row is offered one"
 test("reading and writing a project's settings needs selector administration", async () => {
   const denied = selectorProjectSettingsAdministration(
     access(["Read", "Mutate"]),
-    store(record(1, {})),
+    store({ written: "Settings", settings: record(1, {}) }),
   );
   assert.deepEqual(await denied.read(principal, partition), {
     result: "NotFound",
@@ -202,9 +223,12 @@ test("reading and writing a project's settings needs selector administration", a
 });
 
 test("a write carries the revision it was read at and the audited authority", async () => {
-  const durable = store(record(1, { northStar: "Ship the console." }));
+  const durable = store({
+    written: "Settings",
+    settings: record(1, { northStar: "Ship the console." }),
+  });
   const administration = selectorProjectSettingsAdministration(
-    access(["ManageSelector"]),
+    access(["ManageProjectSelector"]),
     durable,
   );
   const written = await administration.write(principal, partition, 0, {
@@ -218,8 +242,8 @@ test("a write carries the revision it was read at and the audited authority", as
 
 test("a write whose fence moved answers the current settings as a conflict", async () => {
   const administration = selectorProjectSettingsAdministration(
-    access(["ManageSelector"]),
-    store(undefined),
+    access(["ManageProjectSelector"]),
+    store({ written: "FenceMoved" }),
   );
   const written = await administration.write(principal, partition, 4, {});
   assert.equal(written.result, "Conflict");
@@ -231,8 +255,8 @@ test("a write whose fence moved answers the current settings as a conflict", asy
 
 test("an unbounded history page is refused rather than asked for", async () => {
   const administration = selectorProjectSettingsAdministration(
-    access(["ManageSelector"]),
-    store(undefined),
+    access(["ManageProjectSelector"]),
+    store({ written: "FenceMoved" }),
   );
   await assert.rejects(
     () => administration.history(principal, partition, 0, 0),

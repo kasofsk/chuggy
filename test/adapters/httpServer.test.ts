@@ -358,6 +358,11 @@ function fakeSelectorSettings(
       calls.push(
         `selector-settings:write:${String(expectedRevision)}:${String(overrides.northStar)}`,
       );
+      if (overrides.dispatchMode === "Automatic")
+        return Promise.resolve({
+          result: "Refused",
+          refusal: "AutomaticDispatchUnavailable",
+        });
       return expectedRevision === 1
         ? Promise.resolve({
             result: "Written",
@@ -458,6 +463,28 @@ test("a settings write that lost its fence is a conflict rather than a rewrite",
   assert.equal(
     refused.json<HttpErrorEnvelope>().error.code,
     "SettingsRevisionConflict",
+  );
+});
+
+test("automatic dispatch with no ready host is a refusal the caller can act on", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const refused = await app.inject({
+    method: "PUT",
+    url: selectorSettingsPath,
+    headers: {
+      authorization: "Bearer valid",
+      "content-type": "application/vnd.chuggy.v1+json",
+    },
+    payload: JSON.stringify({
+      expectedRevision: 1,
+      overrides: { dispatchMode: "Automatic" },
+    }),
+  });
+  assert.equal(refused.statusCode, 409);
+  assert.equal(
+    refused.json<HttpErrorEnvelope>().error.code,
+    "AutomaticDispatchUnavailable",
   );
 });
 

@@ -360,6 +360,14 @@ export function selectorProjectSettingsWriteResponse(
         ),
         settings: selectorProjectSettingsBody(result.settings),
       });
+    case "Refused":
+      return response(
+        409,
+        nativeHttpError(
+          result.refusal,
+          "Automatic dispatch needs a production-ready selector policy host.",
+        ),
+      );
     case "Written":
       return response(200, selectorProjectSettingsBody(result.settings));
     default:

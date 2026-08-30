@@ -35,7 +35,9 @@ import type {
   SelectorProjectSettingsRecord,
   SelectorProjectSettingsRevision,
   SelectorProjectSettingsStore,
+  SelectorProjectSettingsWriteOutcome,
 } from "../../interpreter/selectorProjectSettings.ts";
+import { selectorAutomaticReadinessErrorCode } from "./schema.ts";
 import {
   asProjectId,
   asTenantId,
@@ -250,7 +252,7 @@ async function runningAttempt(
         throw new Error("selector attempt observation identity conflicts");
     }
     await client.query(
-      sql`UPDATE selector_attempt SET settings_revision=${fence.settingsRevision},
+      sql`UPDATE selector_attempt SET settings_revision=${checkedSelectorFence(fence).settingsRevision},
          project_settings_revision=${fence.projectSettingsRevision},
          observation_digest=${digest}
        WHERE attempt=${attempt} AND state='Starting'`,
@@ -441,6 +443,31 @@ async function readInteractionResource<T>(
   );
 }
 
+/**
+ * Refuses a fence no attempt row could hold. `settings_revision` starts at one
+ * and `project_settings_revision` at zero, which is the project that has never
+ * overridden anything.
+ */
+function checkedSelectorFence(
+  fence: SelectorSettingsFence,
+): SelectorSettingsFence {
+  if (
+    !Number.isSafeInteger(fence.settingsRevision) ||
+    fence.settingsRevision < 1
+  )
+    throw new RangeError(
+      "selector settings revision must be a positive safe integer",
+    );
+  if (
+    !Number.isSafeInteger(fence.projectSettingsRevision) ||
+    fence.projectSettingsRevision < 0
+  )
+    throw new RangeError(
+      "selector project settings revision must be a non-negative safe integer",
+    );
+  return fence;
+}
+
 function checkedSelectorLimit(limit: number, what: string): number {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
     throw new RangeError(`${what} limit must be between 1 and 100`);
@@ -524,9 +551,9 @@ async function readSettings(pool: pg.Pool): Promise<SelectorRuntimeSettings> {
 
 interface SelectorProjectOverrideRow {
   readonly north_star: string | null;
-  readonly project_mode: string | null;
-  readonly project_dispatch_mode: string | null;
-  readonly project_base_prompt: string | null;
+  readonly mode: string | null;
+  readonly dispatch_mode: string | null;
+  readonly base_prompt: string | null;
   readonly model_allowlist: string | null;
   readonly tool_allowlist: string | null;
   readonly tokens_per_decision: string | null;
@@ -537,9 +564,44 @@ interface SelectorProjectOverrideRow {
   readonly operational_context_max_age_ms: string | null;
 }
 
-interface SelectorProjectSettingsRow
-  extends SelectorSettingsRow, SelectorProjectOverrideRow {
-  readonly project_revision: string | null;
+/**
+ * One project's override columns beside the installation defaults they fall
+ * back to, which is what the read and the write both answer with. The project's
+ * revision is NULL for a project that has never overridden anything.
+ */
+interface SelectorProjectSettingsRow extends SelectorProjectOverrideRow {
+  readonly revision: string | null;
+  readonly installation_revision: string;
+  readonly installation_mode: string;
+  readonly installation_dispatch_mode: string;
+  readonly installation_base_prompt: string;
+  readonly installation_controls: string;
+}
+
+/**
+ * The same row as the write answers it. Every column a set-returning function
+ * declares is nullable to the server, whatever the tables beneath it require,
+ * so the installation half is narrowed rather than assumed.
+ */
+type SelectorProjectSettingsWriteRow = {
+  readonly [Key in keyof SelectorProjectSettingsRow]:
+    SelectorProjectSettingsRow[Key] | null;
+};
+
+function selectorProjectSettingsWritten(
+  row: SelectorProjectSettingsWriteRow,
+): SelectorProjectSettingsRow {
+  const installation = {
+    installation_revision: row.installation_revision,
+    installation_mode: row.installation_mode,
+    installation_dispatch_mode: row.installation_dispatch_mode,
+    installation_base_prompt: row.installation_base_prompt,
+    installation_controls: row.installation_controls,
+  };
+  for (const [column, value] of Object.entries(installation))
+    if (value === null)
+      throw new Error(`selector settings write answered no ${column}`);
+  return { ...row, ...(installation as SelectorProjectSettingsRow) };
 }
 
 const selectorAllowlistSchema = z.array(z.string()).readonly();
@@ -592,21 +654,46 @@ function selectorProjectOverridesOf(
   );
   return {
     ...(row.north_star === null ? {} : { northStar: row.north_star }),
-    ...(row.project_mode === null
+    ...(row.mode === null ? {} : { mode: selectorMode(row.mode) }),
+    ...(row.dispatch_mode === null
       ? {}
-      : { mode: selectorMode(row.project_mode) }),
-    ...(row.project_dispatch_mode === null
-      ? {}
-      : { dispatchMode: selectorDispatchMode(row.project_dispatch_mode) }),
-    ...(row.project_base_prompt === null
-      ? {}
-      : { basePrompt: row.project_base_prompt }),
+      : { dispatchMode: selectorDispatchMode(row.dispatch_mode) }),
+    ...(row.base_prompt === null ? {} : { basePrompt: row.base_prompt }),
     ...(models === undefined ? {} : { modelAllowlist: models }),
     ...(tools === undefined ? {} : { toolAllowlist: tools }),
     ...(Object.keys(limits).length === 0 ? {} : { limits }),
     ...(contextMaxAge === undefined
       ? {}
       : { operationalContextMaxAgeMs: contextMaxAge }),
+  };
+}
+
+/** Builds the record from one row, which carries both halves of the resolution. */
+function selectorProjectSettingsRecordOf(
+  partition: Partition,
+  row: SelectorProjectSettingsRow,
+): SelectorProjectSettingsRecord {
+  const revision =
+    row.revision === null
+      ? 0
+      : projectRowCounter(row.revision, "selector project settings revision");
+  const overrides = selectorProjectOverridesOf(row);
+  return {
+    partition,
+    revision,
+    overrides,
+    effective: resolvedSelectorSettings(
+      partition,
+      settingsOf({
+        revision: row.installation_revision,
+        mode: row.installation_mode,
+        dispatch_mode: row.installation_dispatch_mode,
+        base_prompt: row.installation_base_prompt,
+        controls: row.installation_controls,
+      }),
+      revision,
+      overrides,
+    ),
   };
 }
 
@@ -621,19 +708,20 @@ async function readProjectSettings(
   partition: Partition,
 ): Promise<SelectorProjectSettingsRecord> {
   const found = await pool.query<SelectorProjectSettingsRow>(
-    sql`SELECT installation.revision::text,installation.mode,
-         installation.dispatch_mode,installation.base_prompt,installation.controls,
-         overrides.revision::text AS project_revision,overrides.north_star,
-         overrides.mode AS project_mode,
-         overrides.dispatch_mode AS project_dispatch_mode,
-         overrides.base_prompt AS project_base_prompt,
+    sql`SELECT overrides.revision::text,overrides.north_star,overrides.mode,
+         overrides.dispatch_mode,overrides.base_prompt,
          overrides.model_allowlist,overrides.tool_allowlist,
          overrides.tokens_per_decision::text,
          overrides.milliseconds_per_decision::text,
          overrides.tool_calls_per_decision::text,
          overrides.input_bytes_per_decision::text,
          overrides.candidate_pages_per_decision::text,
-         overrides.operational_context_max_age_ms::text
+         overrides.operational_context_max_age_ms::text,
+         installation.revision::text AS installation_revision,
+         installation.mode AS installation_mode,
+         installation.dispatch_mode AS installation_dispatch_mode,
+         installation.base_prompt AS installation_base_prompt,
+         installation.controls AS installation_controls
        FROM selector_runtime_settings installation
        LEFT JOIN selector_project_settings overrides
          ON overrides.tenant=${partition.tenant}
@@ -643,53 +731,71 @@ async function readProjectSettings(
   const row = found.rows[0];
   if (row === undefined)
     throw new Error("selector runtime settings are absent");
-  const revision =
-    row.project_revision === null
-      ? 0
-      : projectRowCounter(
-          row.project_revision,
-          "selector project settings revision",
-        );
-  const overrides = selectorProjectOverridesOf(row);
-  return {
-    partition,
-    revision,
-    overrides,
-    effective: resolvedSelectorSettings(
-      partition,
-      settingsOf(row),
-      revision,
-      overrides,
-    ),
-  };
+  return selectorProjectSettingsRecordOf(partition, row);
 }
 
+/** Whether a refusal is the readiness trigger's, which is a condition and not a fault. */
+function selectorAutomaticDispatchRefused(failure: unknown): boolean {
+  return (
+    typeof failure === "object" &&
+    failure !== null &&
+    (failure as { readonly code?: unknown }).code ===
+      selectorAutomaticReadinessErrorCode
+  );
+}
+
+/**
+ * One statement, which is what makes the answer the row this write wrote: a
+ * second read would report whatever a racing administrator had left behind, and
+ * report it under this write's own success.
+ */
 async function writeProjectSettings(
   pool: pg.Pool,
   partition: Partition,
   expectedRevision: number,
   overrides: SelectorProjectOverrides,
   administrator: Authority,
-): Promise<SelectorProjectSettingsRecord | undefined> {
+): Promise<SelectorProjectSettingsWriteOutcome> {
   const limits = overrides.limits ?? {};
-  const found = await pool.query<{ revision: string | null }>(
-    sql`SELECT update_selector_project_settings(
-         ${partition.tenant},${partition.project},${expectedRevision},
-         ${overrides.northStar ?? null},${overrides.mode ?? null},
-         ${overrides.dispatchMode ?? null},${overrides.basePrompt ?? null},
-         ${overrides.modelAllowlist === undefined ? null : encode(overrides.modelAllowlist)},
-         ${overrides.toolAllowlist === undefined ? null : encode(overrides.toolAllowlist)},
-         ${limits.tokensPerDecision ?? null},
-         ${limits.millisecondsPerDecision ?? null},
-         ${limits.toolCallsPerDecision ?? null},
-         ${limits.inputBytesPerDecision ?? null},
-         ${limits.candidatePagesPerDecision ?? null},
-         ${overrides.operationalContextMaxAgeMs ?? null},
-         ${administrator.kind},${administrator.subject})::text AS revision`,
-  );
-  return (found.rows[0]?.revision ?? null) === null
-    ? undefined
-    : readProjectSettings(pool, partition);
+  let found;
+  try {
+    found = await pool.query<SelectorProjectSettingsWriteRow>(
+      sql`SELECT revision::text,north_star,mode,dispatch_mode,base_prompt,
+           model_allowlist,tool_allowlist,tokens_per_decision::text,
+           milliseconds_per_decision::text,tool_calls_per_decision::text,
+           input_bytes_per_decision::text,candidate_pages_per_decision::text,
+           operational_context_max_age_ms::text,installation_revision::text,
+           installation_mode,installation_dispatch_mode,installation_base_prompt,
+           installation_controls
+         FROM update_selector_project_settings(
+           ${partition.tenant},${partition.project},${expectedRevision},
+           ${overrides.northStar ?? null},${overrides.mode ?? null},
+           ${overrides.dispatchMode ?? null},${overrides.basePrompt ?? null},
+           ${overrides.modelAllowlist === undefined ? null : encode(overrides.modelAllowlist)},
+           ${overrides.toolAllowlist === undefined ? null : encode(overrides.toolAllowlist)},
+           ${limits.tokensPerDecision ?? null},
+           ${limits.millisecondsPerDecision ?? null},
+           ${limits.toolCallsPerDecision ?? null},
+           ${limits.inputBytesPerDecision ?? null},
+           ${limits.candidatePagesPerDecision ?? null},
+           ${overrides.operationalContextMaxAgeMs ?? null},
+           ${administrator.kind},${administrator.subject})`,
+    );
+  } catch (failure) {
+    if (selectorAutomaticDispatchRefused(failure))
+      return { written: "AutomaticDispatchUnavailable" };
+    throw failure;
+  }
+  const row = found.rows[0];
+  return row === undefined
+    ? { written: "FenceMoved" }
+    : {
+        written: "Settings",
+        settings: selectorProjectSettingsRecordOf(
+          partition,
+          selectorProjectSettingsWritten(row),
+        ),
+      };
 }
 
 async function projectSettingsHistory(
@@ -706,10 +812,8 @@ async function projectSettingsHistory(
       recorded_at: Date;
     }
   >(
-    sql`SELECT history.revision::text,history.north_star,
-         history.mode AS project_mode,
-         history.dispatch_mode AS project_dispatch_mode,
-         history.base_prompt AS project_base_prompt,
+    sql`SELECT history.revision::text,history.north_star,history.mode,
+         history.dispatch_mode,history.base_prompt,
          history.model_allowlist,history.tool_allowlist,
          history.tokens_per_decision::text,
          history.milliseconds_per_decision::text,
@@ -1273,26 +1377,30 @@ async function insertSelectorInteraction(
   return false;
 }
 
+/**
+ * Reconstructs the attempt an interaction was recorded without, or completes the
+ * one it already has. The fence is taken as the two numbers the decision ran
+ * under rather than read back out of the instructions label, which is prose and
+ * has never been required to be a number.
+ */
 async function completeSelectorAttempt(
   client: pg.PoolClient,
   interaction: SelectorInteraction,
+  fence: SelectorSettingsFence,
 ): Promise<void> {
   const retained = await client.query<{ state: string }>(
     sql`SELECT state FROM selector_attempt WHERE attempt=${interaction.decision} FOR UPDATE`,
   );
   const state = retained.rows[0]?.state;
   if (state === undefined) {
-    const parsedRevision = Number(interaction.instructionsVersion);
-    const settingsRevision =
-      Number.isSafeInteger(parsedRevision) && parsedRevision >= 1
-        ? parsedRevision
-        : null;
     await client.query(
       sql`INSERT INTO selector_attempt
-       (attempt,tenant,project,state,settings_revision,terminal_evidence)
+       (attempt,tenant,project,state,settings_revision,project_settings_revision,
+        terminal_evidence)
        VALUES (${interaction.decision},${interaction.partition.tenant},
                ${interaction.partition.project},'Completed',
-               ${settingsRevision},'recorded trusted interaction')`,
+               ${checkedSelectorFence(fence).settingsRevision},
+               ${fence.projectSettingsRevision},'recorded trusted interaction')`,
     );
     await client.query(
       sql`INSERT INTO selector_decision_permit (attempt,released_at)
@@ -1355,12 +1463,13 @@ async function recordSelectorState(
   pool: pg.Pool,
   interaction: SelectorInteraction,
   state: SelectorProjectState,
+  fence: SelectorSettingsFence,
   planningIntent?: unknown,
   proposal?: SelectorProposal,
 ): Promise<boolean> {
   return postgresTransaction(pool, async (client) => {
     if (!(await lockSelectorProject(client, state))) return false;
-    await completeSelectorAttempt(client, interaction);
+    await completeSelectorAttempt(client, interaction, fence);
     if (!(await insertSelectorInteraction(client, interaction))) return false;
     await replacePlanningIntent(client, interaction, planningIntent);
     const proposalRecorded = await insertSelectorProposal(client, proposal);
@@ -1499,13 +1608,14 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
     quarantinedAttempts: (limit) => quarantinedAttempts(pool, limit),
     inventoryCursor: () => readInventoryCursor(pool),
     saveInventoryCursor: (cursor) => writeInventoryCursor(pool, cursor),
-    recordInteraction: (interaction, state, planningIntent) =>
-      recordSelectorState(pool, interaction, state, planningIntent),
+    recordInteraction: (interaction, state, fence, planningIntent) =>
+      recordSelectorState(pool, interaction, state, fence, planningIntent),
     record: (proposal, state) =>
       recordSelectorState(
         pool,
         proposal.interaction,
         state,
+        proposal.fence,
         proposal.planningIntent,
         proposal,
       ),

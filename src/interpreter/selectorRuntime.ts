@@ -131,12 +131,11 @@ async function observeProject(
 ): Promise<ProjectObservationResult> {
   let settings: SelectorResolvedSettings;
   try {
-    if ((await control.settings()).mode === "Paused")
-      return stoppedProjectObservation;
     settings = await control.projectSettings(partition);
   } catch {
     return projectObservationFailure("Settings", partition);
   }
+  if (settings.installationMode === "Paused") return stoppedProjectObservation;
   if (settings.mode === "Paused") return emptyProjectObservation;
   const identity = identities.next(partition);
   let allocated: boolean;
