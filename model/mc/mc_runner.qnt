@@ -8,6 +8,7 @@ module mc_registered_runner {
     containerPlatforms: Set(
       { operatingSystem: MacOS, architecture: Arm64 },
       { operatingSystem: Linux, architecture: Arm64 }),
+    executionCapabilities: Set(AgentClaude, AgentCodex),
     nativePlatform: { operatingSystem: MacOS, architecture: Arm64 },
     nativeDrivers: Set(XcodeBuild, XcodeTesting, IosSimulatorTesting),
     xcodeVersion: 16, sdkVersions: Set(18), revision: 1

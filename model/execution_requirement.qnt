@@ -40,6 +40,14 @@ module execution_requirement {
             }
           | _ => false
         }
+      | CapabilityRequirement(v) => match baseline {
+          | CapabilityRequirement(b) => and {
+              v.operatingSystem == b.operatingSystem,
+              v.architecture == b.architecture,
+              b.capabilities.subseteq(v.capabilities)
+            }
+          | _ => false
+        }
       | NativeRequirement(v) => match baseline {
           | NativeRequirement(b) => and {
               v.architecture == b.architecture,
@@ -53,6 +61,7 @@ module execution_requirement {
 
   pure def wellFormed(value: ExecutionRequirement): bool = match value {
     | ContainerRequirement(v) => v.image > 0
+    | CapabilityRequirement(v) => v.capabilities.size() > 0
     | NativeRequirement(v) => and { v.xcodeVersionMin > 0, v.sdkVersionMin > 0 }
   }
 
@@ -76,6 +85,11 @@ module execution_requirement {
     | ContainerRequirement(v) =>
         1000000 + (if (v.operatingSystem == MacOS) 100000 else 0) +
           (if (v.architecture == Arm64) 10000 else 0) + v.image
+    | CapabilityRequirement(v) =>
+        3000000 + (if (v.operatingSystem == MacOS) 100000 else 0) +
+          (if (v.architecture == Arm64) 10000 else 0) +
+          (if (v.capabilities.contains(AgentClaude)) 100 else 0) +
+          (if (v.capabilities.contains(AgentCodex)) 200 else 0)
     | NativeRequirement(v) =>
         2000000 + (if (v.architecture == Arm64) 100000 else 0) +
           (match v.driver {

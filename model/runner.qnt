@@ -14,22 +14,24 @@ module registered_runner {
   type ExecutionMode = Container | Native
   type OperatingSystem = Linux | MacOS
   type Architecture = Amd64 | Arm64
+  type ExecutionCapability = AgentClaude | AgentCodex
   type Platform = { operatingSystem: OperatingSystem, architecture: Architecture }
   /// First delivery is explicit routing: enabling registered runners cannot
   /// redirect or reduce Kubernetes placement. Automatic spillover is absent.
   type ExecutionRoute = Kubernetes | RegisteredRunner
   type NativeDriver = XcodeBuild | XcodeTesting | IosSimulatorTesting
   type ContainerExecutionRequirement = { operatingSystem: OperatingSystem, architecture: Architecture, image: int }
+  type CapabilityExecutionRequirement = { operatingSystem: OperatingSystem, architecture: Architecture, capabilities: Set[ExecutionCapability] }
   /// The bounded native surface is macOS-only by construction. A future
   /// Android/native contract is another closed variant, not Native{os=Linux}.
   type NativeExecutionRequirement = { architecture: Architecture, driver: NativeDriver, xcodeVersionMin: int, sdkVersionMin: int }
   /// Closed invocation variants let Kubernetes/container requirements acquire
   /// backend-specific fidelity without forcing native drivers into a generic
   /// lowest-common-denominator interface.
-  type ExecutionRequirement = ContainerRequirement(ContainerExecutionRequirement) | NativeRequirement(NativeExecutionRequirement)
+  type ExecutionRequirement = ContainerRequirement(ContainerExecutionRequirement) | CapabilityRequirement(CapabilityExecutionRequirement) | NativeRequirement(NativeExecutionRequirement)
   type ExecutionProfile = { route: ExecutionRoute, personalRunnerAllowed: bool, minimumTrust: int, secretsRequired: bool, sourceRequired: bool, dedicatedOwnerRequired: int }
   type CapabilityInventory = {
-    containerPlatforms: Set[Platform], nativePlatform: Platform,
+    containerPlatforms: Set[Platform], executionCapabilities: Set[ExecutionCapability], nativePlatform: Platform,
     nativeDrivers: Set[NativeDriver], xcodeVersion: int,
     sdkVersions: Set[int], revision: int
   }
@@ -48,6 +50,11 @@ module registered_runner {
   pure def inventoryMatches(r: ExecutionRequirement, i: CapabilityInventory): bool = match r {
     | ContainerRequirement(c) => i.containerPlatforms.contains({
         operatingSystem: c.operatingSystem, architecture: c.architecture })
+    | CapabilityRequirement(c) => and {
+        i.containerPlatforms.contains({
+          operatingSystem: c.operatingSystem, architecture: c.architecture }),
+        c.capabilities.subseteq(i.executionCapabilities)
+      }
     | NativeRequirement(n) => and {
         i.nativePlatform == { operatingSystem: MacOS, architecture: n.architecture },
         i.nativeDrivers.contains(n.driver), i.xcodeVersion >= n.xcodeVersionMin,
