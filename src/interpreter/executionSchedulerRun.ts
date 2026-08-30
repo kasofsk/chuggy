@@ -320,13 +320,21 @@ async function schedulerPolicyFor(
   execution: LogicalExecution,
   attempt: PhysicalAttempt,
 ): Promise<
-  | { readonly profile: ExecutionProfile; readonly grant: PolicyAuthorityGrant }
+  | {
+      readonly profile: ExecutionProfile;
+      readonly grant: PolicyAuthorityGrant;
+      readonly image?: string;
+    }
   | undefined
 > {
   const resolved = await service.policy.profileFor(execution);
   switch (resolved.resolved) {
     case "Profile":
-      return { profile: resolved.profile, grant: resolved.grant };
+      return {
+        profile: resolved.profile,
+        grant: resolved.grant,
+        ...(resolved.image === undefined ? {} : { image: resolved.image }),
+      };
     case "Denied":
       await schedulerBlock(
         service,
@@ -454,6 +462,7 @@ async function schedulerPriorWorkReports(
 /** What a placement needs before it may be asked for: the profile, and the composed invocation. */
 interface TaskLaunch {
   readonly profile: ExecutionProfile;
+  readonly image?: string;
   readonly invocation: TaskInvocation;
 }
 
@@ -507,7 +516,11 @@ async function schedulerPrepare(
   });
   switch (composed.composed) {
     case "Composed":
-      return { profile: policy.profile, invocation: composed.invocation };
+      return {
+        profile: policy.profile,
+        ...(policy.image === undefined ? {} : { image: policy.image }),
+        invocation: composed.invocation,
+      };
     case "Blocked":
       recordScheduler(service.metrics, (metrics) => {
         metrics.briefing(composed.fault);
@@ -549,6 +562,7 @@ async function schedulerPlace(
     requirement: execution.requirement,
     requirementDigest: execution.requirementDigest,
     profile: launch.profile,
+    ...(launch.image === undefined ? {} : { image: launch.image }),
     invocation: launch.invocation,
     capability: attempt.capability,
   });

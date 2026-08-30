@@ -115,6 +115,94 @@ test("an image the site does not admit is a definitive policy denial", async () 
   });
 });
 
+test("an agent capability resolves to an admitted runtime that provides it", async () => {
+  const policy = suppliedExecutionPolicy({
+    profiles: new Map([["Work", work]]),
+    imagesAdmitted: [
+      {
+        image: "registry.invalid/agents:v1",
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        capabilities: ["Agent:Claude", "Agent:Codex"],
+      },
+    ],
+  });
+  const execution = executionOf("Work");
+  assert.deepEqual(
+    await policy.profileFor({
+      ...execution,
+      requirement: {
+        mode: "ContainerCapability",
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        capabilities: ["Agent:Codex"],
+      },
+    }),
+    {
+      resolved: "Profile",
+      profile: work.profile,
+      image: "registry.invalid/agents:v1",
+      grant,
+    },
+  );
+});
+
+test("an agent capability does not resolve to a runtime on the wrong platform", async () => {
+  const policy = suppliedExecutionPolicy({
+    profiles: new Map([["Work", work]]),
+    imagesAdmitted: [
+      {
+        image: "registry.invalid/agents-arm:v1",
+        operatingSystem: "Linux",
+        architecture: "Arm64",
+        capabilities: ["Agent:Codex"],
+      },
+      {
+        image: "registry.invalid/agents-macos:v1",
+        operatingSystem: "MacOS",
+        architecture: "Amd64",
+        capabilities: ["Agent:Codex"],
+      },
+    ],
+  });
+  const execution = executionOf("Work");
+  assert.deepEqual(
+    await policy.profileFor({
+      ...execution,
+      requirement: {
+        mode: "ContainerCapability",
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        capabilities: ["Agent:Codex"],
+      },
+    }),
+    { resolved: "Denied", reason: "RequiredCapabilityUnavailable" },
+  );
+});
+
+test("a legacy admitted image provides the legacy Claude capability", async () => {
+  const policy = suppliedExecutionPolicy({
+    profiles: new Map([["Work", work]]),
+    imagesAdmitted: admitted,
+  });
+  const execution = executionOf("Work");
+  const capability = {
+    ...execution,
+    requirement: {
+      mode: "ContainerCapability" as const,
+      operatingSystem: "Linux" as const,
+      architecture: "Amd64" as const,
+      capabilities: ["Agent:Claude" as const],
+    },
+  };
+  assert.deepEqual(await policy.profileFor(capability), {
+    resolved: "Profile",
+    profile: work.profile,
+    image: admitted[0],
+    grant,
+  });
+});
+
 test("a native requirement is refused by capability and never by the image list", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),

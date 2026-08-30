@@ -150,6 +150,38 @@ test("the snapshot carries the argv, the init event and the files it names", asy
   assert.deepEqual(snapshot.dropped, []);
 });
 
+test("the snapshot names the selected agent", async () => {
+  const snapshot = await snapshotOf(
+    {},
+    {
+      init: {
+        agent: "Codex",
+        codexVersion: "codex-cli 0.151.0",
+        model: "gpt-5.3-codex",
+        userConfig: "Ignored",
+        projectRules: "Ignored",
+      },
+      task: {
+        worker: {
+          mode: {
+            type: "SingleAgent",
+            agent: "Codex",
+            model: "gpt-5.3-codex",
+            arguments: [],
+          },
+          files: [],
+        },
+      },
+    },
+  );
+
+  assert.equal(snapshot.agent, "Codex");
+  assert.equal(snapshot.codexVersion, "codex-cli 0.151.0");
+  assert.equal(snapshot.model, "gpt-5.3-codex");
+  assert.equal(snapshot.init.userConfig, "Ignored");
+  assert.equal(snapshot.init.projectRules, "Ignored");
+});
+
 test("a credential in an instruction file is redacted before it is uploaded", async () => {
   const secret = "sk-ant-oat01-0123456789abcdefghij";
   const snapshot = await snapshotOf(

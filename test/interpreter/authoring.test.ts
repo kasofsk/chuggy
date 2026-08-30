@@ -128,6 +128,24 @@ test("release readiness is stricter than structurally valid draft configuration"
   );
 });
 
+test("a present invalid worker mode is not interpreted as a legacy worker", () => {
+  const parsed = JSON.parse(readyConfiguration) as Record<string, unknown>;
+  assert.deepEqual(
+    releaseConfigurationReadiness(
+      canonicalConfigurationOf({
+        ...parsed,
+        worker: {
+          mode: { type: "Unknown" },
+          arguments: [],
+          setup: [],
+          files: [],
+        },
+      }),
+    ),
+    { readiness: "Incomplete", fault: "WorkerInvalid" },
+  );
+});
+
 test("a configuration that hands off refuses a brief that would propose a change", () => {
   const parsed = JSON.parse(readyConfiguration) as Record<string, unknown>;
   const handing = canonicalConfigurationOf({

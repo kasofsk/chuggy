@@ -758,6 +758,7 @@ export interface AttemptPlacement extends FencedAttempt {
   readonly requirement: ExecutionRequirement;
   readonly requirementDigest: string;
   readonly profile: ExecutionProfile;
+  readonly image?: string;
   readonly invocation: TaskInvocation;
   readonly capability: AttemptCapability;
 }
@@ -791,6 +792,7 @@ export type ProfileResolved =
       readonly resolved: "Profile";
       readonly profile: ExecutionProfile;
       readonly grant: PolicyAuthorityGrant;
+      readonly image?: string;
     }
   | { readonly resolved: "Denied"; readonly reason: BlockedReason }
   | { readonly resolved: "Unavailable" };

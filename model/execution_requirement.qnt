@@ -24,6 +24,7 @@ module execution_requirement {
   }
   type MaterializationResult = Materialized(MaterializedExecutionRequirement) | RequirementRefused
   type PinResult = Pinned(MaterializedExecutionRequirement) | PinRefused
+  type WorkerMode = LegacyWorker | SingleAgentWorker(ExecutionCapability)
 
   pure def candidate(m: int -> ExecutionRequirement, key: int): RequirementCandidate =
     if (m.keys().contains(key)) Requested(m.get(key)) else NoRequirement
@@ -40,6 +41,14 @@ module execution_requirement {
             }
           | _ => false
         }
+      | CapabilityRequirement(v) => match baseline {
+          | CapabilityRequirement(b) => and {
+              v.operatingSystem == b.operatingSystem,
+              v.architecture == b.architecture,
+              b.capabilities.subseteq(v.capabilities)
+            }
+          | _ => false
+        }
       | NativeRequirement(v) => match baseline {
           | NativeRequirement(b) => and {
               v.architecture == b.architecture,
@@ -53,6 +62,7 @@ module execution_requirement {
 
   pure def wellFormed(value: ExecutionRequirement): bool = match value {
     | ContainerRequirement(v) => v.image > 0
+    | CapabilityRequirement(v) => v.capabilities.size() > 0
     | NativeRequirement(v) => and { v.xcodeVersionMin > 0, v.sdkVersionMin > 0 }
   }
 
@@ -70,12 +80,39 @@ module execution_requirement {
         }
     }
 
+  /// The authored worker mode names its primary agent concern. Materialization
+  /// translates that concern into the scheduler's capability vocabulary while
+  /// retaining the selected container platform. Legacy workers remain pinned
+  /// to their selected exact image.
+  pure def requirementForWorker(
+    selected: ExecutionRequirement, workerMode: WorkerMode
+  ): RequirementCandidate = match workerMode {
+    | LegacyWorker => Requested(selected)
+    | SingleAgentWorker(agent) => match selected {
+        | ContainerRequirement(container) => Requested(CapabilityRequirement({
+            operatingSystem: container.operatingSystem,
+            architecture: container.architecture,
+            capabilities: Set(agent)
+          }))
+        | CapabilityRequirement(capability) => Requested(CapabilityRequirement({
+            ...capability,
+            capabilities: capability.capabilities.union(Set(agent))
+          }))
+        | NativeRequirement(_) => NoRequirement
+      }
+  }
+
   /// Digest calculation is deliberately canonical and total over the closed
   /// variants. The identity belongs to the execution and is not configuration.
   pure def requirementDigest(value: ExecutionRequirement): int = match value {
     | ContainerRequirement(v) =>
         1000000 + (if (v.operatingSystem == MacOS) 100000 else 0) +
           (if (v.architecture == Arm64) 10000 else 0) + v.image
+    | CapabilityRequirement(v) =>
+        3000000 + (if (v.operatingSystem == MacOS) 100000 else 0) +
+          (if (v.architecture == Arm64) 10000 else 0) +
+          (if (v.capabilities.contains(AgentClaude)) 100 else 0) +
+          (if (v.capabilities.contains(AgentCodex)) 200 else 0)
     | NativeRequirement(v) =>
         2000000 + (if (v.architecture == Arm64) 100000 else 0) +
           (match v.driver {
@@ -87,23 +124,27 @@ module execution_requirement {
 
   pure def materialize(
     execution: int, task: int, taskKind: int, ticket: int,
-    defaults: RequirementDefaults
+    defaults: RequirementDefaults, workerMode: WorkerMode
   ): MaterializationResult =
     val selected = selectedRequirement(task, taskKind, ticket, defaults)
-    if (and {
-      defaults.platformDefaultVersion > 0,
-      wellFormed(defaults.platformDefault),
-      wellFormed(selected.value),
-      refines(selected.value, defaults.platformDefault)
-    }) Materialized({
-      execution: execution,
-      value: selected.value,
-      identity: execution,
-      digest: requirementDigest(selected.value),
-      source: selected.source,
-      platformDefaultVersion: defaults.platformDefaultVersion
-    })
-    else RequirementRefused
+    match requirementForWorker(selected.value, workerMode) {
+      | NoRequirement => RequirementRefused
+      | Requested(value) =>
+          if (and {
+            defaults.platformDefaultVersion > 0,
+            wellFormed(defaults.platformDefault),
+            wellFormed(value),
+            refines(selected.value, defaults.platformDefault)
+          }) Materialized({
+            execution: execution,
+            value: value,
+            identity: execution,
+            digest: requirementDigest(value),
+            source: selected.source,
+            platformDefaultVersion: defaults.platformDefaultVersion
+          })
+          else RequirementRefused
+    }
 
   /// Re-observation is idempotent, but neither a wider nor merely different
   /// value can replace what logical execution creation committed.

@@ -228,14 +228,19 @@ function frameBytes(value) {
   return Buffer.byteLength(JSON.stringify(value));
 }
 
-function snapshotFrame(argv, init, scrub) {
+function snapshotFrame(argv, init, agent, scrub) {
   const scrubbedInit = JSON.parse(scrub(JSON.stringify(init ?? null)));
-  const version = scrubbedInit?.claude_code_version;
+  const claudeVersion = scrubbedInit?.claude_code_version;
+  const codexVersion = scrubbedInit?.codexVersion;
+  const model = scrubbedInit?.model;
   const frame = {
     argv: (Array.isArray(argv) ? argv : []).map((value) =>
       scrub(String(value)),
     ),
-    ...(typeof version === "string" ? { claudeVersion: version } : {}),
+    ...(agent === "Claude" || agent === "Codex" ? { agent } : {}),
+    ...(typeof claudeVersion === "string" ? { claudeVersion } : {}),
+    ...(typeof codexVersion === "string" ? { codexVersion } : {}),
+    ...(typeof model === "string" ? { model } : {}),
     init: scrubbedInit,
     files: [],
     dropped: [],
@@ -273,7 +278,7 @@ export async function runConfigurationSnapshot(
   services = { readFile, readdir, stat },
 ) {
   const walked = await walkInstructionFiles(cwd, services);
-  const snapshot = snapshotFrame(argv, init, scrub);
+  const snapshot = snapshotFrame(argv, init, task?.worker?.mode?.agent, scrub);
   let used = frameBytes(snapshot);
   let omitted = 0;
   for (const candidate of configurationCandidates({

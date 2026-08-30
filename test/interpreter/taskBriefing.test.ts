@@ -104,7 +104,11 @@ test("an authored document parses the complete task briefing contract", () => {
 
 test("worker setup is parsed and carried into the composed invocation", () => {
   const worker: WorkerConfiguration = {
-    arguments: ["--allowedTools", "Read,Edit"],
+    mode: {
+      type: "SingleAgent",
+      agent: "Claude",
+      arguments: ["--allowedTools", "Read,Edit"],
+    },
     setup: ["just hooks"],
     files: [{ path: ".claude/settings.json", content: '{"env":{}}' }],
   };
@@ -118,11 +122,81 @@ test("worker setup is parsed and carried into the composed invocation", () => {
   assert.deepEqual(composed(viewOf({ worker })).worker, worker);
 });
 
+test("the single-agent mode admits Codex and refuses an unknown mode", () => {
+  const codex = {
+    mode: {
+      type: "SingleAgent",
+      agent: "Codex",
+      model: "gpt-5.3-codex",
+      arguments: [],
+    },
+    setup: [],
+    files: [],
+  } as const;
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      worker: codex,
+    }),
+    {
+      readiness: "Ready",
+      configuration: { ...authoredConfiguration, worker: codex },
+    },
+  );
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      worker: { ...codex, mode: { type: "ParallelAgents" } },
+    }),
+    { readiness: "Incomplete", fault: "WorkerInvalid" },
+  );
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      worker: {
+        ...codex,
+        mode: { type: "SingleAgent", agent: "Codex", arguments: [] },
+      },
+    }),
+    { readiness: "Incomplete", fault: "WorkerInvalid" },
+  );
+});
+
+test("an immutable worker configuration from before modes keeps its shape", () => {
+  const worker = { arguments: ["--model", "opus"], setup: [], files: [] };
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({ ...authoredConfiguration, worker }),
+    {
+      readiness: "Ready",
+      configuration: { ...authoredConfiguration, worker },
+    },
+  );
+});
+
+test("a worker cannot carry both the legacy and mode configuration shapes", () => {
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      worker: {
+        arguments: [],
+        mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+        setup: [],
+        files: [],
+      },
+    }),
+    { readiness: "Incomplete", fault: "WorkerInvalid" },
+  );
+});
+
 test("an unreadable worker setup is refused at release parsing", () => {
   assert.deepEqual(
     authoredTaskConfigurationReadiness({
       ...authoredConfiguration,
-      worker: { arguments: [], setup: [], files: [{ path: 1, content: "x" }] },
+      worker: {
+        mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+        setup: [],
+        files: [{ path: 1, content: "x" }],
+      },
     }),
     { readiness: "Incomplete", fault: "WorkerInvalid" },
   );

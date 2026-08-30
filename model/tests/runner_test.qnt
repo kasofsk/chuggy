@@ -19,6 +19,7 @@ module registered_runner_test {
     containerPlatforms: Set(
       { operatingSystem: MacOS, architecture: Arm64 },
       { operatingSystem: Linux, architecture: Arm64 }),
+    executionCapabilities: Set(AgentClaude, AgentCodex),
     nativePlatform: { operatingSystem: MacOS, architecture: Arm64 },
     nativeDrivers: Set(XcodeBuild, XcodeTesting, IosSimulatorTesting),
     xcodeVersion: 16, sdkVersions: Set(18), revision: 1
@@ -196,6 +197,16 @@ module registered_runner_test {
     assert(and {
       inventoryMatches(linuxContainer, inventory),
       inventoryMatches(nativeRequirement, inventory)
+    })
+
+  run capabilityRequirementMatchesOnlyAnInventoryThatProvidesItTest =
+    val codex = CapabilityRequirement({
+      operatingSystem: Linux, architecture: Arm64,
+      capabilities: Set(AgentCodex) })
+    assert(and {
+      inventoryMatches(codex, inventory),
+      not(inventoryMatches(codex, {
+        ...inventory, executionCapabilities: Set(AgentClaude) }))
     })
 
   run enrolledCompatibleRunnerWithoutSessionIsUnavailableTest =

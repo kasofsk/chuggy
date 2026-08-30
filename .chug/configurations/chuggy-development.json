@@ -12,7 +12,11 @@
       "mayCompleteTask": false
     },
     "worker": {
-      "arguments": ["--allowedTools=Bash,Edit,Read,Write,Glob,Grep"],
+      "mode": {
+        "type": "SingleAgent",
+        "agent": "Claude",
+        "arguments": ["--allowedTools=Bash,Edit,Read,Write,Glob,Grep"]
+      },
       "setup": [],
       "files": []
     },

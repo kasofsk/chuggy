@@ -46,7 +46,6 @@
 import { createHash } from "node:crypto";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 
-import type { ExecutionRequirement } from "../../interpreter/executionRequirement.ts";
 import type {
   AttemptPlacement,
   BlockedReason,
@@ -439,18 +438,20 @@ export function kubernetesWorkerSecret(
 }
 
 /**
- * The image this attempt runs, which is the pinned requirement's and not a
- * lookup. Whether the site runs it at all was policy's answer before an
- * attempt was opened; what is left here is the one case a container backend
- * cannot serve whatever policy said, so a native requirement arriving is
- * refused rather than placed as a container.
+ * The image this attempt runs. Exact-image requirements carry it themselves;
+ * capability requirements carry the image scheduler policy resolved.
  */
 function kubernetesWorkerImage(
-  requirement: ExecutionRequirement,
+  placement: AttemptPlacement,
 ): { readonly image: string } | { readonly reason: BlockedReason } {
-  return requirement.mode === "Container"
-    ? { image: requirement.image }
-    : { reason: "RequiredCapabilityUnavailable" };
+  if (placement.requirement.mode === "Container")
+    return { image: placement.requirement.image };
+  if (
+    placement.requirement.mode === "ContainerCapability" &&
+    placement.image !== undefined
+  )
+    return { image: placement.image };
+  return { reason: "RequiredCapabilityUnavailable" };
 }
 
 /** The fenced identity and the pinned inputs, as the annotations a placed pod carries. */
@@ -702,7 +703,7 @@ export function kubernetesWorkerPodRequest(
   config: KubernetesWorkerLaunchConfig,
   placement: AttemptPlacement,
 ): KubernetesPodRequested {
-  const admitted = kubernetesWorkerImage(placement.requirement);
+  const admitted = kubernetesWorkerImage(placement);
   if ("reason" in admitted)
     return { requested: "Denied", reason: admitted.reason };
   const credentials = kubernetesWorkerCredentials(

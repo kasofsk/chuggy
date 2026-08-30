@@ -8,9 +8,16 @@ export interface Platform {
 }
 export type NativeDriver =
   "XcodeBuild" | "XcodeTesting" | "IosSimulatorTesting";
+export type ExecutionCapability = "Agent:Claude" | "Agent:Codex";
 
 export type ContainerExecutionRequirement = Readonly<
   Platform & { readonly mode: "Container"; readonly image: string }
+>;
+export type CapabilityExecutionRequirement = Readonly<
+  Platform & {
+    readonly mode: "ContainerCapability";
+    readonly capabilities: readonly ExecutionCapability[];
+  }
 >;
 export type NativeExecutionRequirement = Readonly<{
   readonly mode: "Native";
@@ -21,7 +28,9 @@ export type NativeExecutionRequirement = Readonly<{
 }>;
 
 export type ExecutionRequirement =
-  ContainerExecutionRequirement | NativeExecutionRequirement;
+  | ContainerExecutionRequirement
+  | CapabilityExecutionRequirement
+  | NativeExecutionRequirement;
 
 export type RequirementSource =
   "ExplicitTask" | "TaskKindDefault" | "TicketDefault" | "PlatformDefault";
@@ -67,6 +76,41 @@ function hasOnlyKeys(
   return Object.keys(value).every((key) => allowed.includes(key));
 }
 
+function capabilityRequirement(
+  item: Record<string, unknown>,
+): CapabilityExecutionRequirement | undefined {
+  if (
+    !hasOnlyKeys(item, [
+      "mode",
+      "operatingSystem",
+      "architecture",
+      "capabilities",
+    ])
+  )
+    return undefined;
+  const operatingSystem = item["operatingSystem"];
+  const architecture = item["architecture"];
+  const capabilities = item["capabilities"];
+  if (
+    (operatingSystem !== "Linux" && operatingSystem !== "MacOS") ||
+    (architecture !== "Amd64" && architecture !== "Arm64") ||
+    !Array.isArray(capabilities) ||
+    capabilities.length === 0 ||
+    !capabilities.every(
+      (capability) =>
+        capability === "Agent:Claude" || capability === "Agent:Codex",
+    ) ||
+    new Set(capabilities).size !== capabilities.length
+  )
+    return undefined;
+  return {
+    mode: "ContainerCapability",
+    operatingSystem,
+    architecture,
+    capabilities,
+  };
+}
+
 function requirement(value: unknown): ExecutionRequirement | undefined {
   const item = record(value);
   if (item?.["mode"] === "Container") {
@@ -85,6 +129,8 @@ function requirement(value: unknown): ExecutionRequirement | undefined {
     )
       return { mode: "Container", operatingSystem, architecture, image };
   }
+  if (item?.["mode"] === "ContainerCapability")
+    return capabilityRequirement(item);
   if (item?.["mode"] === "Native") {
     if (
       !hasOnlyKeys(item, [
@@ -138,6 +184,17 @@ function refines(
       value.operatingSystem === baseline.operatingSystem &&
       value.architecture === baseline.architecture
     );
+  if (
+    value.mode === "ContainerCapability" &&
+    baseline.mode === "ContainerCapability"
+  )
+    return (
+      value.operatingSystem === baseline.operatingSystem &&
+      value.architecture === baseline.architecture &&
+      baseline.capabilities.every((capability) =>
+        value.capabilities.includes(capability),
+      )
+    );
   if (value.mode === "Native" && baseline.mode === "Native")
     return (
       value.architecture === baseline.architecture &&
@@ -146,6 +203,36 @@ function refines(
       value.sdkVersionMin >= baseline.sdkVersionMin
     );
   return false;
+}
+
+function requirementForAgent(
+  value: ExecutionRequirement,
+  capability: ExecutionCapability | undefined,
+): ExecutionRequirement | undefined {
+  if (capability === undefined) return value;
+  if (value.mode === "Native") return undefined;
+  if (value.mode === "Container")
+    return {
+      mode: "ContainerCapability",
+      operatingSystem: value.operatingSystem,
+      architecture: value.architecture,
+      capabilities: [capability],
+    };
+  return {
+    ...value,
+    capabilities: [...new Set([...value.capabilities, capability])],
+  };
+}
+
+function agentCapability(
+  configuration: unknown,
+): ExecutionCapability | undefined {
+  const root = record(configuration);
+  const authored = record(root?.["configuration"] ?? configuration);
+  const worker = record(authored?.["worker"]);
+  const mode = record(worker?.["mode"]);
+  const agent = mode?.["type"] === "SingleAgent" ? mode["agent"] : undefined;
+  return agent === "Claude" || agent === "Codex" ? `Agent:${agent}` : undefined;
 }
 
 function requirementMap(
@@ -164,10 +251,27 @@ function requirementMap(
   return result;
 }
 
+function platformDefaultMatchesLegacy(
+  platformDefault: ExecutionRequirement,
+  legacy: ExecutionRequirement,
+  capability: ExecutionCapability | undefined,
+): boolean {
+  if (capability === undefined)
+    return JSON.stringify(platformDefault) === JSON.stringify(legacy);
+  const effectiveDefault = requirementForAgent(platformDefault, capability);
+  const effectiveLegacy = requirementForAgent(legacy, capability);
+  return (
+    effectiveDefault !== undefined &&
+    effectiveLegacy !== undefined &&
+    refines(effectiveDefault, effectiveLegacy)
+  );
+}
+
 function configuredRequirements(
   value: unknown,
   legacy: ExecutionRequirement,
   stageQualifiedEvaluation: boolean,
+  capability: ExecutionCapability | undefined,
 ): RequirementConfiguration | undefined {
   const configured = record(value);
   if (
@@ -189,7 +293,7 @@ function configuredRequirements(
     Number(platformDefaultVersion) < 1
   )
     return undefined;
-  if (JSON.stringify(platformDefault) !== JSON.stringify(legacy))
+  if (!platformDefaultMatchesLegacy(platformDefault, legacy, capability))
     return undefined;
   const ticketDefault =
     configured?.["ticketDefault"] === undefined
@@ -251,11 +355,13 @@ function parsedConfiguration(
     architecture: "Amd64",
     image: root["image"],
   };
+  const capability = agentCapability(value);
   if (root["executionRequirements"] !== undefined)
     return configuredRequirements(
       root["executionRequirements"],
       legacy,
       root["evaluations"] !== undefined,
+      capability,
     );
   return {
     platformDefault: legacy,
@@ -295,6 +401,12 @@ export function materializeExecutionRequirement(
   const kindDefault = parsed.taskKindDefaults?.[kindKey];
   const value =
     explicit ?? kindDefault ?? parsed.ticketDefault ?? parsed.platformDefault;
+  const capability = agentCapability(configuration);
+  const selected = requirementForAgent(value, capability);
+  if (selected === undefined)
+    throw new TypeError(
+      "single-agent worker requires a container execution requirement",
+    );
   const source: RequirementSource =
     explicit !== undefined
       ? "ExplicitTask"
@@ -304,7 +416,7 @@ export function materializeExecutionRequirement(
           ? "TicketDefault"
           : "PlatformDefault";
   return {
-    value,
+    value: selected,
     source,
     platformDefaultVersion: parsed.platformDefaultVersion,
   };

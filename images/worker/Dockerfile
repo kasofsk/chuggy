@@ -15,7 +15,8 @@
 #   docker buildx imagetools inspect node:26.7.0-bookworm
 FROM node:26.7.0-bookworm@sha256:e929171d35b9df7773a3ec5b068e387fa109441dc90f91e6560af5d39b7e9bf1
 
-ARG CLAUDE_CODE_VERSION=latest
+ARG CLAUDE_CODE_VERSION=2.1.251
+ARG CODEX_VERSION=0.151.0
 
 RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
     /etc/apt/sources.list.d/debian.sources \
@@ -25,8 +26,11 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
   && curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
     --location https://just.systems/install.sh \
     | bash -s -- --to /usr/local/bin \
-  && npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+  && npm install --global \
+    "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+    "@openai/codex@${CODEX_VERSION}" \
   && claude --version \
+  && codex --version \
   && psql --version \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
@@ -36,10 +40,13 @@ ENV DISABLE_AUTOUPDATER=1 \
     TMPDIR=/tmp
 
 COPY images/worker/entrypoint.mjs /usr/local/lib/chuggy/worker.mjs
+COPY images/worker/agent.mjs /usr/local/lib/chuggy/agent.mjs
 COPY images/worker/claude.mjs /usr/local/lib/chuggy/claude.mjs
+COPY images/worker/codex.mjs /usr/local/lib/chuggy/codex.mjs
 COPY images/worker/lease.mjs /usr/local/lib/chuggy/lease.mjs
 COPY images/worker/postgres.mjs /usr/local/lib/chuggy/postgres.mjs
 COPY images/worker/repository.mjs /usr/local/lib/chuggy/repository.mjs
+COPY images/worker/result.mjs /usr/local/lib/chuggy/result.mjs
 COPY images/worker/runEvidence.mjs /usr/local/lib/chuggy/runEvidence.mjs
 COPY images/worker/snapshot.mjs /usr/local/lib/chuggy/snapshot.mjs
 COPY images/worker/source.mjs /usr/local/lib/chuggy/source.mjs

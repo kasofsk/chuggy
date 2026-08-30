@@ -34,6 +34,7 @@ import type { KubernetesWorkerLaunchConfig } from "../adapters/kubernetes/worker
 import type {
   SuppliedExecutionPolicyConfig,
   SuppliedExecutionProfile,
+  SuppliedRuntime,
   SuppliedRuntimeFactsConfig,
 } from "../adapters/supplied/schedulerPorts.ts";
 import {
@@ -152,17 +153,40 @@ const schedulerTaskKinds = Object.keys(
  */
 const schedulerAdmittedImageSchema = z.union([
   schedulerTextSchema,
-  z.strictObject({
-    image: schedulerTextSchema.max(workerImageCharsMax),
-    name: z.string().refine((value) => asWorkerName(value) !== undefined, {
-      message: `is not a worker name of at most ${String(repositoryConfigurationNameCharsMax)} characters`,
-    }),
-    version: z
-      .string()
-      .refine((value) => asWorkerVersion(value) !== undefined, {
-        message: `is not a worker version of at most ${String(workerVersionCharsMax)} characters`,
+  z
+    .strictObject({
+      image: schedulerTextSchema.max(workerImageCharsMax),
+      name: z.string().refine((value) => asWorkerName(value) !== undefined, {
+        message: `is not a worker name of at most ${String(repositoryConfigurationNameCharsMax)} characters`,
       }),
-  }),
+      version: z
+        .string()
+        .refine((value) => asWorkerVersion(value) !== undefined, {
+          message: `is not a worker version of at most ${String(workerVersionCharsMax)} characters`,
+        }),
+      operatingSystem: z.enum(["Linux", "MacOS"]).optional(),
+      architecture: z.enum(["Amd64", "Arm64"]).optional(),
+      capabilities: z
+        .array(z.enum(["Agent:Claude", "Agent:Codex"]))
+        .max(2)
+        .refine((values) => new Set(values).size === values.length, {
+          message: "contains a duplicate capability",
+        })
+        .optional(),
+    })
+    .refine(
+      (entry) =>
+        entry.capabilities !== undefined ||
+        (entry.operatingSystem === undefined &&
+          entry.architecture === undefined),
+      { message: "names a platform without publishing capabilities" },
+    )
+    .refine(
+      (entry) =>
+        (entry.operatingSystem === undefined) ===
+        (entry.architecture === undefined),
+      { message: "must name both operating system and architecture" },
+    ),
 ]);
 
 type SchedulerAdmittedImage = z.infer<typeof schedulerAdmittedImageSchema>;
@@ -170,6 +194,19 @@ type SchedulerAdmittedImage = z.infer<typeof schedulerAdmittedImageSchema>;
 /** The image one entry admits, whichever of the two shapes it was written in. */
 function schedulerAdmittedImage(entry: SchedulerAdmittedImage): string {
   return typeof entry === "string" ? entry : entry.image;
+}
+
+function schedulerRuntime(
+  entry: SchedulerAdmittedImage,
+): string | SuppliedRuntime {
+  if (typeof entry === "string" || entry.capabilities === undefined)
+    return schedulerAdmittedImage(entry);
+  return {
+    image: entry.image,
+    operatingSystem: entry.operatingSystem ?? "Linux",
+    architecture: entry.architecture ?? "Amd64",
+    capabilities: entry.capabilities,
+  };
 }
 
 /**
@@ -341,7 +378,13 @@ function schedulerBounds<Bounds extends Record<keyof Bounds, number>>(
 function schedulerWorkerCatalog(
   admitted: readonly SchedulerAdmittedImage[],
 ): readonly AdmittedWorker[] {
-  return admitted.filter((entry) => typeof entry !== "string");
+  return admitted
+    .filter((entry) => typeof entry !== "string")
+    .map((entry) => ({
+      image: entry.image,
+      name: entry.name,
+      version: entry.version,
+    }));
 }
 
 /** The execution policy this deployment states, one profile and grant per task kind. */
@@ -366,7 +409,7 @@ function schedulerPolicy(
       grant: supplied.grant,
     });
   }
-  return { profiles, imagesAdmitted: admitted.map(schedulerAdmittedImage) };
+  return { profiles, imagesAdmitted: admitted.map(schedulerRuntime) };
 }
 
 /** The site policy a placed pod carries, every value of it read and handed on unread. */

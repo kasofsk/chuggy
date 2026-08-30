@@ -43,7 +43,13 @@ test("ticket configuration cannot replace worker-owned Claude arguments", () => 
   assert.throws(
     () =>
       claudeInvocation({
-        worker: { arguments: ["--mcp-config={}"] },
+        worker: {
+          mode: {
+            type: "SingleAgent",
+            agent: "Claude",
+            arguments: ["--mcp-config={}"],
+          },
+        },
         briefing: { text: "briefing" },
       }),
     /reserves Claude argument --mcp-config=/,

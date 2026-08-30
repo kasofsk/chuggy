@@ -132,7 +132,7 @@ test("the report summary and the diagnostic artifact are scrubbed", async () => 
     calls.find(({ path }) => path === "/v1/report").init.body,
   ).report;
   const diagnostic = calls
-    .find(({ path }) => path.endsWith("claude-result.json"))
+    .find(({ path }) => path.endsWith("agent-result.json"))
     .init.body.toString("utf8");
   assert.ok(!summary.includes(secret));
   assert.ok(summary.includes("[redacted credential]"));
