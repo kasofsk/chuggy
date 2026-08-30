@@ -67,7 +67,10 @@ export const claudeAgent = {
   credential: "claude-code",
   invocation: claudeInvocation,
   result: claudeResult,
-  environment: (token) => ({ CLAUDE_CODE_OAUTH_TOKEN: token }),
+  prepareCredential: (token) => ({
+    environment: { CLAUDE_CODE_OAUTH_TOKEN: token },
+    secrets: [token],
+  }),
   configurationEvent: (event) =>
     event?.type === "system" && event.subtype === "init",
   resultEvent: (event) => event?.type === "result",

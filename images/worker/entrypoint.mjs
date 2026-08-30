@@ -131,7 +131,7 @@ async function runAgent(context) {
     });
   const child = spawn(context.agent.executable, argv, {
     cwd: context.directory,
-    env: { ...process.env, ...context.agent.environment(context.token) },
+    env: { ...process.env, ...context.agentEnvironment },
     stdio: ["ignore", "pipe", "inherit"],
   });
   const exited = new Promise((resolve, reject) => {
@@ -237,15 +237,16 @@ async function workerRun(task, bearer, credentialFiles, agent) {
   if (typeof credentialFile !== "string")
     throw new Error(`worker credential ${agent.credential} is not mounted`);
   const token = (await readFile(credentialFile, "utf8")).trim();
+  const prepared = await agent.prepareCredential(token);
   const scrub = credentialScrub([
-    token,
+    ...prepared.secrets,
     bearer,
     ...(await credentialValues(credentialFiles)),
   ]);
   activeScrub = scrub;
   const evidence = runEvidenceRecorder(task, bearer, scrub);
   activeEvidence = evidence;
-  return { token, scrub, evidence };
+  return { agentEnvironment: prepared.environment, scrub, evidence };
 }
 
 function scrubbed(text) {
@@ -273,7 +274,7 @@ async function main() {
     await readFile(task.workerPlane.capabilityFile, "utf8")
   ).trim();
   activeBearer = bearer;
-  const { token, scrub, evidence } = await workerRun(
+  const { agentEnvironment, scrub, evidence } = await workerRun(
     task,
     bearer,
     credentialFiles,
@@ -296,7 +297,7 @@ async function main() {
     const { output, result } = await runAgent({
       task,
       directory: workspace.directory,
-      token,
+      agentEnvironment,
       scrub,
       evidence,
       agent,

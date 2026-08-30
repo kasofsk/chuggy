@@ -1,4 +1,7 @@
 import { agentResult } from "./result.mjs";
+import { mkdir, writeFile } from "node:fs/promises";
+
+const codexHome = "/tmp/chuggy-codex-home";
 
 const reservedCodexArguments = [
   "exec",
@@ -62,6 +65,29 @@ export function codexResult(events) {
   return { output, result: agentResult(parsed, "Codex") };
 }
 
+export async function prepareCodexCredential(auth, home = codexHome) {
+  let document;
+  try {
+    document = JSON.parse(auth);
+  } catch {
+    throw new Error("Codex OAuth credential is not an auth.json document");
+  }
+  if (document === null || typeof document !== "object")
+    throw new Error("Codex OAuth credential is not an auth.json document");
+  await mkdir(home, { recursive: false });
+  await writeFile(`${home}/auth.json`, `${auth}\n`, {
+    flag: "wx",
+    mode: 0o600,
+  });
+  const tokens = Object.values(document.tokens ?? {}).filter(
+    (value) => typeof value === "string",
+  );
+  return {
+    environment: { CODEX_HOME: home },
+    secrets: [auth, ...tokens],
+  };
+}
+
 function codexObserved(event) {
   if (event?.type !== "turn.completed") return undefined;
   return {
@@ -78,10 +104,10 @@ export const codexAgent = {
   name: "Codex",
   runtime: "Codex",
   executable: "codex",
-  credential: "openai-api-key",
+  credential: "codex-auth",
   invocation: codexInvocation,
   result: codexResult,
-  environment: (token) => ({ OPENAI_API_KEY: token }),
+  prepareCredential: prepareCodexCredential,
   configurationEvent: () => false,
   resultEvent: (event) => codexMessage(event) !== undefined,
   observed: codexObserved,

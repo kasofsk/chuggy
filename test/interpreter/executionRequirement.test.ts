@@ -43,6 +43,30 @@ test("legacy release image materializes the identical Linux container default", 
   );
 });
 
+test("a single-agent mode materializes an agent capability instead of an image choice", () => {
+  assert.deepEqual(
+    materializeExecutionRequirement(
+      {
+        version: 1,
+        image: "legacy-worker:v1",
+        worker: {
+          mode: { type: "SingleAgent", agent: "Codex", arguments: [] },
+          setup: [],
+          files: [],
+        },
+      },
+      1,
+      "Work",
+    ).value,
+    {
+      mode: "ContainerCapability",
+      operatingSystem: "Linux",
+      architecture: "Amd64",
+      capabilities: ["Agent:Codex"],
+    },
+  );
+});
+
 test("task precedence allows two tasks in one ticket to pin different requirements", () => {
   const configuration = {
     version: 1,

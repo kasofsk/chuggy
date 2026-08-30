@@ -21,6 +21,7 @@ import type {
   LogicalExecution,
   ProfileResolved,
 } from "../../interpreter/executionScheduler.ts";
+import type { ExecutionCapability } from "../../interpreter/executionRequirement.ts";
 import { grantTaskAuthority } from "../../interpreter/taskAuthority.ts";
 import type { PolicyAuthorityGrant } from "../../interpreter/taskAuthority.ts";
 import type { RuntimeFactsPort } from "../../interpreter/taskBriefing.ts";
@@ -33,15 +34,22 @@ export interface SuppliedExecutionProfile {
 
 /**
  * The execution policy a deployment states: what each kind of logical task may
- * do, and which images this site will run at all.
- *
- * THE ADMITTED LIST IS POLICY AND NOT PLACEMENT — which image a task runs is
- * the pinned requirement's, so whether this site runs it belongs here rather
- * than inside whichever backend places the pod.
+ * do, and the admitted runtimes used to admit exact images or resolve capabilities.
  */
 export interface SuppliedExecutionPolicyConfig {
   readonly profiles: ReadonlyMap<ExecutionTaskKind, SuppliedExecutionProfile>;
-  readonly imagesAdmitted: readonly string[];
+  readonly imagesAdmitted: readonly (string | SuppliedRuntime)[];
+}
+
+export interface SuppliedRuntime {
+  readonly image: string;
+  readonly capabilities: readonly ExecutionCapability[];
+}
+
+function suppliedRuntime(runtime: string | SuppliedRuntime): SuppliedRuntime {
+  return typeof runtime === "string"
+    ? { image: runtime, capabilities: ["Agent:Claude"] }
+    : runtime;
 }
 
 /** What a deployment states about the workspace its worker image runs in. */
@@ -57,7 +65,12 @@ export function checkedSuppliedExecutionPolicyConfig(
     throw new RangeError("supplied execution policy grants no task kind");
   if (config.imagesAdmitted.length === 0)
     throw new RangeError("supplied execution policy admits no image");
-  if (config.imagesAdmitted.some((image) => image.length === 0))
+  if (
+    config.imagesAdmitted.some(
+      (runtime) =>
+        (typeof runtime === "string" ? runtime : runtime.image).length === 0,
+    )
+  )
     throw new RangeError("supplied execution policy admits an empty image");
   for (const supplied of config.profiles.values()) {
     if (supplied.profile.profile.length === 0)
@@ -80,13 +93,27 @@ export function checkedSuppliedExecutionPolicyConfig(
 function suppliedAdmission(
   config: SuppliedExecutionPolicyConfig,
   execution: LogicalExecution,
-): ProfileResolved | undefined {
+): { readonly denied: ProfileResolved } | { readonly image?: string } {
   const requirement = execution.requirement;
+  const runtimes = config.imagesAdmitted.map(suppliedRuntime);
   if (requirement.mode === "Native")
-    return { resolved: "Denied", reason: "RequiredCapabilityUnavailable" };
-  return config.imagesAdmitted.some((image) => image === requirement.image)
-    ? undefined
-    : { resolved: "Denied", reason: "ExecutionPolicyDenied" };
+    return {
+      denied: { resolved: "Denied", reason: "RequiredCapabilityUnavailable" },
+    };
+  if (requirement.mode === "Container")
+    return runtimes.some((runtime) => runtime.image === requirement.image)
+      ? {}
+      : { denied: { resolved: "Denied", reason: "ExecutionPolicyDenied" } };
+  const runtime = runtimes.find((candidate) =>
+    requirement.capabilities.every((capability) =>
+      candidate.capabilities.includes(capability),
+    ),
+  );
+  return runtime === undefined
+    ? {
+        denied: { resolved: "Denied", reason: "RequiredCapabilityUnavailable" },
+      }
+    : { image: runtime.image };
 }
 
 /** Admits what this site runs, then resolves the profile it states for this kind of logical task. */
@@ -96,8 +123,8 @@ export function suppliedExecutionPolicy(
   const config = checkedSuppliedExecutionPolicyConfig(input);
   return {
     profileFor: (execution: LogicalExecution): Promise<ProfileResolved> => {
-      const refused = suppliedAdmission(config, execution);
-      if (refused !== undefined) return Promise.resolve(refused);
+      const admission = suppliedAdmission(config, execution);
+      if ("denied" in admission) return Promise.resolve(admission.denied);
       const supplied = config.profiles.get(execution.taskKind);
       return Promise.resolve(
         supplied === undefined
@@ -105,6 +132,7 @@ export function suppliedExecutionPolicy(
           : {
               resolved: "Profile",
               profile: supplied.profile,
+              ...admission,
               grant: supplied.grant,
             },
       );

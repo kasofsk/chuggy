@@ -789,6 +789,30 @@ test("the image a pod runs is the requirement's own", async () => {
   assert.equal(pod.spec.containers[0]?.image, "registry.invalid/other:v9");
 });
 
+test("a capability requirement runs the image selected by scheduler policy", async () => {
+  const reached: ClusterReached[] = [];
+  const workers = kubernetesWorkerLaunch(
+    config,
+    recordingCluster(reached, answering(201)),
+  );
+  await workers.place({
+    ...placement,
+    requirement: {
+      mode: "ContainerCapability",
+      operatingSystem: "Linux",
+      architecture: "Amd64",
+      capabilities: ["Agent:Codex"],
+    },
+    image: "registry.invalid/codex:v1",
+  });
+  const pod = JSON.parse(reached[0]?.body ?? "") as {
+    readonly spec: {
+      readonly containers: readonly { readonly image: string }[];
+    };
+  };
+  assert.equal(pod.spec.containers[0]?.image, "registry.invalid/codex:v1");
+});
+
 test("only a refusal of the document is definitive and every other answer holds", async () => {
   const placed = {
     placed: "Placed",

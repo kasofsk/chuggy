@@ -190,7 +190,7 @@ test("a complete environment parses into the plain data the process root takes",
 /** What one admitted-images list parses into: the images admitted and the catalog. */
 interface AdmittedImagesParsed {
   readonly parsed?: {
-    readonly policy: { readonly imagesAdmitted: readonly string[] };
+    readonly policy: { readonly imagesAdmitted: readonly unknown[] };
     readonly workerCatalog: readonly unknown[];
   };
   readonly refused?: string;
@@ -232,6 +232,18 @@ test("both shapes mix, and admission never learns which entry was named", async 
   assert.deepEqual(found.parsed?.policy.imagesAdmitted, [
     workerImage,
     namedWorker.image,
+  ]);
+  assert.deepEqual(found.parsed?.workerCatalog, [namedWorker]);
+});
+
+test("an admitted image publishes the execution capabilities it provides", async () => {
+  const capable = {
+    ...namedWorker,
+    capabilities: ["Agent:Claude", "Agent:Codex"],
+  };
+  const found = await parsedAdmittedImages([capable]);
+  assert.deepEqual(found.parsed?.policy.imagesAdmitted, [
+    { image: capable.image, capabilities: capable.capabilities },
   ]);
   assert.deepEqual(found.parsed?.workerCatalog, [namedWorker]);
 });

@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
-import { codexAgent, codexInvocation, codexResult } from "./codex.mjs";
+import {
+  codexAgent,
+  codexInvocation,
+  codexResult,
+  prepareCodexCredential,
+} from "./codex.mjs";
 
 const task = {
   worker: {
@@ -87,4 +95,23 @@ test("Codex usage is translated into the run evidence vocabulary", () => {
       num_turns: 1,
     },
   );
+});
+
+test("a mounted Codex OAuth document becomes a private writable CODEX_HOME", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "chuggy-codex-test-"));
+  const home = join(parent, "home");
+  const auth = JSON.stringify({
+    tokens: {
+      access_token: "access-token-long-enough",
+      refresh_token: "refresh-token-long-enough",
+    },
+  });
+  const prepared = await prepareCodexCredential(auth, home);
+  assert.deepEqual(prepared.environment, { CODEX_HOME: home });
+  assert.deepEqual(prepared.secrets, [
+    auth,
+    "access-token-long-enough",
+    "refresh-token-long-enough",
+  ]);
+  assert.equal(await readFile(join(home, "auth.json"), "utf8"), `${auth}\n`);
 });

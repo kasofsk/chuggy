@@ -34,6 +34,7 @@ import type { KubernetesWorkerLaunchConfig } from "../adapters/kubernetes/worker
 import type {
   SuppliedExecutionPolicyConfig,
   SuppliedExecutionProfile,
+  SuppliedRuntime,
   SuppliedRuntimeFactsConfig,
 } from "../adapters/supplied/schedulerPorts.ts";
 import {
@@ -162,6 +163,13 @@ const schedulerAdmittedImageSchema = z.union([
       .refine((value) => asWorkerVersion(value) !== undefined, {
         message: `is not a worker version of at most ${String(workerVersionCharsMax)} characters`,
       }),
+    capabilities: z
+      .array(z.enum(["Agent:Claude", "Agent:Codex"]))
+      .max(2)
+      .refine((values) => new Set(values).size === values.length, {
+        message: "contains a duplicate capability",
+      })
+      .optional(),
   }),
 ]);
 
@@ -170,6 +178,17 @@ type SchedulerAdmittedImage = z.infer<typeof schedulerAdmittedImageSchema>;
 /** The image one entry admits, whichever of the two shapes it was written in. */
 function schedulerAdmittedImage(entry: SchedulerAdmittedImage): string {
   return typeof entry === "string" ? entry : entry.image;
+}
+
+function schedulerRuntime(
+  entry: SchedulerAdmittedImage,
+): string | SuppliedRuntime {
+  if (typeof entry === "string" || entry.capabilities === undefined)
+    return schedulerAdmittedImage(entry);
+  return {
+    image: entry.image,
+    capabilities: entry.capabilities,
+  };
 }
 
 /**
@@ -341,7 +360,13 @@ function schedulerBounds<Bounds extends Record<keyof Bounds, number>>(
 function schedulerWorkerCatalog(
   admitted: readonly SchedulerAdmittedImage[],
 ): readonly AdmittedWorker[] {
-  return admitted.filter((entry) => typeof entry !== "string");
+  return admitted
+    .filter((entry) => typeof entry !== "string")
+    .map((entry) => ({
+      image: entry.image,
+      name: entry.name,
+      version: entry.version,
+    }));
 }
 
 /** The execution policy this deployment states, one profile and grant per task kind. */
@@ -366,7 +391,7 @@ function schedulerPolicy(
       grant: supplied.grant,
     });
   }
-  return { profiles, imagesAdmitted: admitted.map(schedulerAdmittedImage) };
+  return { profiles, imagesAdmitted: admitted.map(schedulerRuntime) };
 }
 
 /** The site policy a placed pod carries, every value of it read and handed on unread. */
