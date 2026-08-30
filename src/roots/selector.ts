@@ -5,6 +5,10 @@ import { setTimeout as wait } from "node:timers/promises";
 import { z } from "zod";
 
 import { nativeHttpClient } from "../adapters/http/client.ts";
+import {
+  clientCredentialsTokenSource,
+  type AccessTokenRead,
+} from "../adapters/http/clientCredentials.ts";
 import { selectorContextHttp } from "../adapters/http/selectorContext.ts";
 import {
   trustedSelectorPolicyHttpClient,
@@ -36,6 +40,7 @@ import {
 } from "./controlPlane.ts";
 
 const configurationVariable = "CHUG_SELECTOR_CONFIG";
+const clientSecretVariable = "CHUG_SELECTOR_SOURCE_CLIENT_SECRET";
 const httpUrl = z.url().refine((value) => {
   const protocol = new URL(value).protocol;
   return protocol === "http:" || protocol === "https:";
@@ -47,9 +52,17 @@ const bearerToken = z
 const service = z
   .object({
     baseUrl: httpUrl,
-    bearerToken,
     requestDeadlineMs: positiveInteger,
     responseBytesMax: positiveInteger,
+  })
+  .strict();
+const credential = z
+  .object({
+    tokenUrl: httpUrl,
+    clientId: z.string().min(1).max(256),
+    audience: z.array(z.string().min(1)).max(8),
+    scope: z.array(z.string().min(1)).max(8),
+    refreshMarginMs: positiveInteger,
   })
   .strict();
 const configurationSchema = z
@@ -70,15 +83,29 @@ const configurationSchema = z
         instance: z.string().min(1).max(128),
       })
       .strict(),
-    source: service.extend({ responseReadsMax: positiveInteger }).strict(),
-    policy: service.extend({ controlDeadlineMs: positiveInteger }).strict(),
+    source: service
+      .extend({ responseReadsMax: positiveInteger, credential })
+      .strict(),
+    policy: service
+      .extend({ bearerToken, controlDeadlineMs: positiveInteger })
+      .strict(),
   })
   .strict();
+
+/** The parsed source, whose credential the environment completes with the secret the configuration must not carry. */
+export interface SelectorSourceCommandConfig extends Omit<
+  z.infer<typeof configurationSchema>["source"],
+  "credential"
+> {
+  readonly credential: z.infer<typeof credential> & {
+    readonly clientSecret: string;
+  };
+}
 
 export interface SelectorCommandConfig {
   readonly process: SelectorProcessRootConfig;
   readonly identity: { readonly principal: string; readonly instance: string };
-  readonly source: z.infer<typeof configurationSchema>["source"];
+  readonly source: SelectorSourceCommandConfig;
   readonly policy: z.infer<typeof configurationSchema>["policy"];
 }
 
@@ -105,6 +132,9 @@ export function selectorConfiguration(
     configurationSchema,
     environment,
   );
+  const clientSecret = environment[clientSecretVariable];
+  if (clientSecret === undefined || clientSecret.length === 0)
+    throw new Error(`${clientSecretVariable} is required`);
   return {
     process: {
       database: commandDatabaseConfig(data.database),
@@ -112,7 +142,10 @@ export function selectorConfiguration(
       ...(data.selector === undefined ? {} : { selector: data.selector }),
     },
     identity: data.identity,
-    source: data.source,
+    source: {
+      ...data.source,
+      credential: { ...data.source.credential, clientSecret },
+    },
     policy: data.policy,
   };
 }
@@ -173,18 +206,36 @@ async function nativeSourceReady(
   return response.status === 200;
 }
 
+/** One token source behind both clients of the API, so a replacement is minted once and presented by both. */
+export function selectorSourceAccessToken(
+  source: SelectorSourceCommandConfig,
+): AccessTokenRead {
+  return clientCredentialsTokenSource({
+    tokenUrl: source.credential.tokenUrl,
+    clientId: source.credential.clientId,
+    clientSecret: source.credential.clientSecret,
+    audience: source.credential.audience,
+    scope: source.credential.scope,
+    requestTimeoutMs: source.requestDeadlineMs,
+    responseBytesMax: source.responseBytesMax,
+    responseReadsMax: source.responseReadsMax,
+    refreshMarginMs: source.credential.refreshMarginMs,
+  });
+}
+
 export function selectorCommandRoot(
   config: SelectorCommandConfig,
 ): ServiceRuntime {
+  const accessToken = selectorSourceAccessToken(config.source);
   const native = nativeHttpClient({
     baseUrl: config.source.baseUrl,
-    accessToken: () => Promise.resolve(config.source.bearerToken),
+    accessToken,
     requestTimeoutMs: config.source.requestDeadlineMs,
     responseBytesMax: config.source.responseBytesMax,
   });
   const context = selectorContextHttp({
     baseUrl: config.source.baseUrl,
-    bearerToken: config.source.bearerToken,
+    accessToken,
     requestTimeoutMs: config.source.requestDeadlineMs,
     responseBytesMax: config.source.responseBytesMax,
     responseReadsMax: config.source.responseReadsMax,

@@ -24,7 +24,13 @@ const validConfiguration = {
   identity: { principal: "selector-service", instance: "selector-1" },
   source: {
     baseUrl: "http://127.0.0.1:1/",
-    bearerToken: "source-token",
+    credential: {
+      tokenUrl: "http://127.0.0.1:3/oauth2/token",
+      clientId: "selector-client",
+      audience: ["https://chuggy.example/api"],
+      scope: [],
+      refreshMarginMs: 60_000,
+    },
     requestDeadlineMs: 10,
     responseBytesMax: 10_000,
     responseReadsMax: 100,
@@ -36,6 +42,11 @@ const validConfiguration = {
     responseBytesMax: 10_000,
     controlDeadlineMs: 10,
   },
+};
+const clientSecret = "selector-client-secret";
+const validEnvironment = {
+  CHUG_SELECTOR_CONFIG: JSON.stringify(validConfiguration),
+  CHUG_SELECTOR_SOURCE_CLIENT_SECRET: clientSecret,
 };
 
 interface CommandFailure {
@@ -67,7 +78,7 @@ test("the selector command parses every plain-data dependency", async () => {
     ["--experimental-strip-types", "--input-type=module", "--eval", program],
     {
       cwd: process.cwd(),
-      env: { CHUG_SELECTOR_CONFIG: JSON.stringify(validConfiguration) },
+      env: validEnvironment,
     },
   );
   assert.deepEqual(JSON.parse(found.stdout), {
@@ -77,9 +88,29 @@ test("the selector command parses every plain-data dependency", async () => {
       selector: validConfiguration.selector,
     },
     identity: validConfiguration.identity,
-    source: validConfiguration.source,
+    source: {
+      ...validConfiguration.source,
+      credential: { ...validConfiguration.source.credential, clientSecret },
+    },
     policy: validConfiguration.policy,
   });
+});
+
+test("the client secret is required and never reaches the diagnostic", async () => {
+  const missing = await executeFailure({
+    CHUG_SELECTOR_CONFIG: JSON.stringify(validConfiguration),
+  });
+  assert.equal(missing.code, 2);
+  assert.equal(
+    missing.stderr,
+    "selector configuration: CHUG_SELECTOR_SOURCE_CLIENT_SECRET is required\n",
+  );
+  const empty = await executeFailure({
+    ...validEnvironment,
+    CHUG_SELECTOR_SOURCE_CLIENT_SECRET: "",
+  });
+  assert.equal(empty.code, 2);
+  assert.doesNotMatch(empty.stderr, /selector-client-secret/u);
 });
 
 test("malformed configuration has a stable credential-free diagnostic", async () => {
@@ -143,7 +174,7 @@ test("source and policy readiness have stable named prerequisites", async () => 
     ["--experimental-strip-types", "--input-type=module", "--eval", program],
     {
       cwd: process.cwd(),
-      env: { CHUG_SELECTOR_CONFIG: JSON.stringify(validConfiguration) },
+      env: validEnvironment,
     },
   );
   assert.deepEqual(JSON.parse(found.stdout), [
@@ -234,7 +265,7 @@ test("a failed selector loop exits non-zero with its settled failure", async () 
     ["--experimental-strip-types", "--input-type=module", "--eval", program],
     {
       cwd: process.cwd(),
-      env: { CHUG_SELECTOR_CONFIG: JSON.stringify(validConfiguration) },
+      env: validEnvironment,
     },
   ).catch((failure: unknown) => failure as CommandFailure);
   assert.equal("code" in found ? found.code : 0, 1);

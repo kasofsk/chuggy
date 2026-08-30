@@ -34,7 +34,7 @@ test("selector context client authenticates and strictly parses the response", a
   const source = selectorContextHttp(
     {
       baseUrl: "https://native.example/",
-      bearerToken: "token",
+      accessToken: () => Promise.resolve("token"),
       requestTimeoutMs: 1_000,
       responseBytesMax: 10_000,
       responseReadsMax: 100,
@@ -59,6 +59,31 @@ test("selector context client authenticates and strictly parses the response", a
   assert.equal(authorization, "Bearer token");
 });
 
+test("selector context client asks for a token on every request", async () => {
+  const granted = ["first", "second"];
+  const presented: (string | null)[] = [];
+  const source = selectorContextHttp(
+    {
+      baseUrl: "https://native.example/",
+      accessToken: () => Promise.resolve(granted.shift() ?? "exhausted"),
+      requestTimeoutMs: 1_000,
+      responseBytesMax: 10_000,
+      responseReadsMax: 100,
+    },
+    (_request, init) => {
+      presented.push(new Headers(init?.headers).get("authorization"));
+      return Promise.resolve(Response.json(body));
+    },
+  );
+  const partition = {
+    tenant: asTenantId("tenant"),
+    project: asProjectId("project"),
+  };
+  await source.context(partition);
+  await source.context(partition);
+  assert.deepEqual(presented, ["Bearer first", "Bearer second"]);
+});
+
 test("selector context client refuses oversized responses", async () => {
   let reads = 0;
   let cancelled = false;
@@ -74,7 +99,7 @@ test("selector context client refuses oversized responses", async () => {
   const source = selectorContextHttp(
     {
       baseUrl: "https://native.example/",
-      bearerToken: "token",
+      accessToken: () => Promise.resolve("token"),
       requestTimeoutMs: 1_000,
       responseBytesMax: 1,
       responseReadsMax: 10,
@@ -107,7 +132,7 @@ test("selector context client cancels an endless empty response", async () => {
   const source = selectorContextHttp(
     {
       baseUrl: "https://native.example/",
-      bearerToken: "token",
+      accessToken: () => Promise.resolve("token"),
       requestTimeoutMs: 1_000,
       responseBytesMax: 1_000,
       responseReadsMax: 3,

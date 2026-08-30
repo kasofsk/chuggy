@@ -7,6 +7,8 @@ import {
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { SelectorOperationalContextRead } from "../../interpreter/selectorOperationalContext.ts";
 import { nativeHttpMediaType } from "../../contract/http.ts";
+import type { AccessTokenRead } from "./clientCredentials.ts";
+import { boundedResponseBytes } from "./boundedResponse.ts";
 
 const counter = z.number().int().safe().nonnegative();
 const authoritySchema = z.strictObject({
@@ -55,10 +57,16 @@ export const selectorOperationalContextV2Schema = z.strictObject({
 
 export interface SelectorContextHttpConfig {
   readonly baseUrl: string;
-  readonly bearerToken: string;
+  readonly accessToken: AccessTokenRead;
   readonly requestTimeoutMs: number;
   readonly responseBytesMax: number;
   readonly responseReadsMax: number;
+}
+
+function checkedToken(value: string): string {
+  if (value.length === 0 || /[\r\n]/u.test(value))
+    throw new RangeError("selector context access token is empty or malformed");
+  return value;
 }
 
 function checkedPositive(value: number, name: string): number {
@@ -80,61 +88,11 @@ function contextUrl(baseUrl: string, partition: Partition): URL {
   );
 }
 
-async function boundedResponseBytes(
-  response: Response,
-  bytesMax: number,
-  readsMax: number,
-): Promise<Uint8Array> {
-  const declared = response.headers.get("content-length");
-  if (declared !== null && Number(declared) > bytesMax) {
-    await response.body?.cancel();
-    throw new RangeError("selector context response exceeds its byte bound");
-  }
-  if (response.body === null) return new Uint8Array();
-  const reader: ReadableStreamDefaultReader<Uint8Array> =
-    response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let length = 0;
-  let reads = 0;
-  try {
-    while (true) {
-      reads += 1;
-      if (reads > readsMax) {
-        await reader.cancel();
-        throw new RangeError(
-          "selector context response exceeds its read bound",
-        );
-      }
-      const read = await reader.read();
-      if (read.done) break;
-      length += read.value.byteLength;
-      if (length > bytesMax) {
-        await reader.cancel();
-        throw new RangeError(
-          "selector context response exceeds its byte bound",
-        );
-      }
-      chunks.push(read.value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const bytes = new Uint8Array(length);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return bytes;
-}
-
 /** Reads one strictly parsed selector context through the authenticated native API. */
 export function selectorContextHttp(
   config: SelectorContextHttpConfig,
   transport: typeof fetch = fetch,
 ): SelectorOperationalContextRead {
-  if (config.bearerToken.length === 0)
-    throw new RangeError("selector context bearer token is empty");
   const timeoutMs = checkedPositive(config.requestTimeoutMs, "request timeout");
   const responseBytesMax = checkedPositive(
     config.responseBytesMax,
@@ -146,12 +104,14 @@ export function selectorContextHttp(
   );
   return {
     context: async (partition) => {
+      const signal = AbortSignal.timeout(timeoutMs);
+      const token = checkedToken(await config.accessToken(signal));
       const response = await transport(contextUrl(config.baseUrl, partition), {
         headers: {
           accept: nativeHttpMediaType,
-          authorization: `Bearer ${config.bearerToken}`,
+          authorization: `Bearer ${token}`,
         },
-        signal: AbortSignal.timeout(timeoutMs),
+        signal,
       });
       if (!response.ok)
         throw new Error(
