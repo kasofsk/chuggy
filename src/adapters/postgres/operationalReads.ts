@@ -70,6 +70,7 @@ interface ExecutionViewRow extends ConfigurationVersionRow {
   readonly requirement_value: unknown;
   readonly requirement_digest: string;
   readonly requirement_source: string;
+  readonly source_request: string;
   readonly platform_default_version: string;
   readonly canonical: string;
   readonly status: string;
@@ -150,6 +151,7 @@ function executionSummary(row: ExecutionViewRow): ExecutionSummary {
     requirement: asExecutionRequirement(row.requirement_value),
     requirementDigest: row.requirement_digest,
     requirementSource: asRequirementSource(row.requirement_source),
+    request: row.source_request,
     platformDefaultVersion: projectRowCounter(
       row.platform_default_version,
       "platform default version",
@@ -250,7 +252,7 @@ async function executionRows(
     sql`SELECT e.execution,e.ticket::text AS ticket,e.task::text AS task,
                t.kind AS task_kind,t.stage::text AS stage,e.cluster,
                e.configuration_revision,e.requirement_identity,e.requirement_value,
-               e.requirement_digest,e.requirement_source,
+               e.requirement_digest,e.requirement_source,e.source_request,
                e.platform_default_version::text AS platform_default_version,
                c.canonical,e.status,e.outcome,
                e.retries_spent::text AS retries_spent,
@@ -318,7 +320,7 @@ async function oneExecution(
     sql`SELECT e.execution,e.ticket::text AS ticket,e.task::text AS task,
                t.kind AS task_kind,t.stage::text AS stage,e.cluster,
                e.configuration_revision,e.requirement_identity,e.requirement_value,
-               e.requirement_digest,e.requirement_source,
+               e.requirement_digest,e.requirement_source,e.source_request,
                e.platform_default_version::text AS platform_default_version,
                c.canonical,e.status,e.outcome,
                e.retries_spent::text AS retries_spent,

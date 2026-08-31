@@ -156,6 +156,81 @@ test("an escalated ticket names its wall and an unparked one omits it", () => {
   );
 });
 
+test("a parked ticket names where a resume re-enters it, and no other does", () => {
+  const parked = ticketResponseSchema.parse(
+    ticketResponse({
+      ticket: asTicketId(3),
+      phase: "Escalated",
+      sequence: 9,
+      reason: "ReworkBudgetExhausted",
+      resumeAt: "ResumeEvaluating",
+    }).body,
+  );
+  assert.equal(parked.resumeAt, "ResumeEvaluating");
+  assert.equal(
+    ticketResponseSchema.parse(
+      ticketResponse({ ticket: asTicketId(3), phase: "Working", sequence: 9 })
+        .body,
+    ).resumeAt,
+    undefined,
+  );
+  assert.throws(() =>
+    ticketResponseSchema.parse({
+      ticket: 3,
+      phase: "Escalated",
+      sequence: 9,
+      resumeAt: "NoResume",
+    }),
+  );
+});
+
+test("a ticket carries the accounts it has left, and an unbudgeted one no figure", () => {
+  const accounted = ticketResponseSchema.parse(
+    ticketResponse({
+      ticket: asTicketId(3),
+      phase: "Escalated",
+      sequence: 9,
+      accounts: {
+        gasLeft: 1,
+        gasMax: 3,
+        reworkLeft: 0,
+        finalizationLeft: 1,
+      },
+    }).body,
+  );
+  assert.deepEqual(accounted.accounts, {
+    gasLeft: 1,
+    gasMax: 3,
+    reworkLeft: 0,
+    finalizationLeft: 1,
+  });
+  const deadlinePriced = ticketResponseSchema.parse(
+    ticketResponse({
+      ticket: asTicketId(3),
+      phase: "Working",
+      sequence: 9,
+      accounts: { gasLeft: 2, gasMax: 3, reworkLeft: 1 },
+    }).body,
+  );
+  assert.equal(deadlinePriced.accounts?.finalizationLeft, undefined);
+  assert.equal(deadlinePriced.accounts?.gasMax, 3);
+  assert.equal(
+    ticketResponseSchema.parse(
+      ticketResponse({ ticket: asTicketId(3), phase: "Working", sequence: 9 })
+        .body,
+    ).accounts,
+    undefined,
+  );
+  assert.throws(() =>
+    ticketResponseSchema.parse({
+      ticket: 3,
+      phase: "Working",
+      sequence: 9,
+      accounts: { gasLeft: -1, gasMax: 3, reworkLeft: 1 },
+    }),
+  );
+});
+
 test("a ticket's open actions carry a fence and only answers their kind asks for", () => {
   const listed = ticketNativeActionsResponseSchema.parse(
     ticketNativeActionsResponse([
@@ -334,6 +409,7 @@ test("an execution page and an execution detail parse with their results", () =>
     }).body,
   );
   assert.equal(page.executions[0]?.status, "Terminal");
+  assert.equal(page.executions[0]?.request, "request-one");
   assert.deepEqual(parseExecutionCursor(page.nextCursor ?? "", partition), {
     ticket: 21,
     task: 8,
@@ -345,6 +421,27 @@ test("an execution page and an execution detail parse with their results", () =>
   assert.equal(detail.result?.verdict, "Pass");
   assert.equal(detail.result?.artifacts[0]?.output?.renderer, "Markdown");
   assert.throws(() => executionResponseSchema.parse(page.executions[0]));
+});
+
+/**
+ * Both halves of the field's optionality: the row is `NOT NULL` and the
+ * interpreter type carries it, so every summary this tree encodes names one,
+ * and a bundle reaching a server not yet sending it still reads the page.
+ */
+test("every encoded summary names its request, and a page without one still reads", () => {
+  const body = structuredClone(
+    executionsResponse(partition, {
+      result: "Authorized",
+      value: { executions: [executionSummary] },
+    }).body,
+  ) as { readonly executions: Record<string, unknown>[] };
+  const summary = body.executions[0];
+  assert.ok(summary !== undefined);
+  assert.equal(summary["request"], "request-one");
+  delete summary["request"];
+  const older = executionsResponseSchema.parse(body);
+  assert.equal(older.executions[0]?.request, undefined);
+  assert.equal(older.executions[0]?.status, "Terminal");
 });
 
 test("an execution names what it ran on, in either mode", () => {

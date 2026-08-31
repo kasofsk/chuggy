@@ -46,6 +46,21 @@ export const escalationReasons = [
 ] as const;
 export type EscalationReason = (typeof escalationReasons)[number];
 
+/**
+ * Where an operator resume re-enters a parked ticket, in the order the model
+ * declares them. The model's `NoResume` is not among them: it is that union's
+ * absent value, so the wire omits the field rather than naming a value that
+ * would read as "not resumable" — a stronger claim than the machine makes,
+ * because `retryableIn` wants affordable gas as well as a resume point.
+ */
+export const resumePoints = [
+  "ResumeWorking",
+  "ResumeEvaluating",
+  "ResumeFinalizing",
+  "ResumePublishingHandoff",
+] as const;
+export type ResumePoint = (typeof resumePoints)[number];
+
 export const executionStatuses = [
   "Queued",
   "Admitted",
