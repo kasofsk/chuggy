@@ -420,6 +420,34 @@ test("an escalation offers what it recorded, not what its kind may ask for", asy
   );
 });
 
+test("a handoff hold offers what it recorded, not what its kind may ask for", async () => {
+  const partition = await postgresHarnessProject(
+    subject.harness.store,
+    "native-actions-abandon-only",
+  );
+  await seedOpenAction(partition, "native-actions-unrepublishable", {
+    ticket: 1,
+    sequence: 1,
+    kind: "HandoffBlock",
+    reason: "NoReason",
+    offers: ["AbandonHandoff"],
+  });
+  assert.deepEqual(
+    await postgresNativeReads(subject.pool).ticketNativeActions(
+      partition,
+      id(1),
+    ),
+    [
+      {
+        action: "native-actions-unrepublishable",
+        kind: "HandoffBlock",
+        authorizingSequence: 1,
+        admits: ["AbandonHandoff"],
+      },
+    ],
+  );
+});
+
 test("a resolved action stops listing, and an unknown ticket is not found", async () => {
   const partition = await postgresHarnessProject(
     subject.harness.store,

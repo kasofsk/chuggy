@@ -1,3 +1,26 @@
+/**
+ * Every durable consequence of one pure decision, derived from the journal
+ * entry and the two `Core`s it stands between.
+ *
+ * AN OPEN ACTION ADMITS THE ANSWERS THE ACTOR WILL ACCEPT, not a part of them.
+ * `decisionEventEnabled` puts a resume through `retryableIn`, so an action that
+ * offers a resume the machine refuses hands a person a button whose only
+ * outcome is `NotEnabled` — and by the time they read why, they have already
+ * been told the ticket is resumable. The other answer of each pair is admitted
+ * unconditionally, because each is enabled on the phase alone: revoke on every
+ * non-terminal ticket (`revocableIn`), abandon on every `HandoffBlocked` one.
+ *
+ * THE SET IS DECIDED AT THE RAISE, AND THAT IS ENOUGH BECAUSE A PARKED
+ * TICKET'S ACCOUNTS CANNOT MOVE. `model/domain.qnt` charges gas at the
+ * dispatch, at a rework, at a finalizer's retry and at a resume, and every one
+ * of those steps out of a live phase — none of them is reachable from
+ * `Escalated` or `HandoffBlocked`. The resume is the exception that proves it:
+ * it is the one charge a parked ticket can take, and taking it both leaves the
+ * phase and answers this action. So a set that is right when the action opens
+ * stays right for as long as there is anyone to serve it to, which is why
+ * `nativeActionAdmits` reading the stored row back is sound.
+ */
+
 import type { Entry } from "../actor/journal.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import { effectFromLabel } from "../domain/effect.ts";
@@ -5,7 +28,11 @@ import { ticketAt } from "../domain/core.ts";
 import type { Core, Phase, Task } from "../domain/generated/modelTypes.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import { tasksInIdOrder } from "../domain/task.ts";
-import { reducibleEvalIn, reducibleWorkIn } from "../domain/enablement.ts";
+import {
+  reducibleEvalIn,
+  reducibleWorkIn,
+  retryableIn,
+} from "../domain/enablement.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
 import type { ExecutionSourceObservation } from "./executionSource.ts";
 import {
@@ -158,6 +185,7 @@ function nativeAction(
       "decision plan: a native action requires an escalated ticket",
     );
   }
+  const resumable = retryableIn(post, ticket);
   if (value.phase === "HandoffBlocked") {
     return {
       action: identity(entry, effectPosition, "HandoffBlock"),
@@ -167,13 +195,14 @@ function nativeAction(
       kind: "HandoffBlock",
       reason: "NoReason",
       capability: "ResolveTicket",
-      resolutions: ["RetryHandoff", "AbandonHandoff"],
+      resolutions: resumable
+        ? ["RetryHandoff", "AbandonHandoff"]
+        : ["AbandonHandoff"],
     };
   }
-  const resolutions =
-    value.reason === "DependencyRevoked" || value.resumeAt === "NoResume"
-      ? ["Revoke" as const]
-      : ["Resume" as const, "Revoke" as const];
+  const resolutions = resumable
+    ? ["Resume" as const, "Revoke" as const]
+    : ["Revoke" as const];
   return {
     action: identity(entry, effectPosition, "TicketEscalation"),
     effectPosition,
