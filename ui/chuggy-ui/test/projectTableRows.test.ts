@@ -18,6 +18,7 @@ import {
   projectTableRowsIn,
   projectTableRunsOn,
 } from "../app/core/projectTableRows.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const container: ExecutionSummary = {
   execution: "e1",
@@ -41,7 +42,12 @@ const container: ExecutionSummary = {
   registeredAt: "2026-08-26T10:00:00.000Z",
 };
 
-const working: TicketResponse = { ticket: 1, phase: "Working", sequence: 5 };
+const working: TicketResponse = {
+  ticket: 1,
+  phase: "Working",
+  sequence: 5,
+  ...ticketInstants,
+};
 
 function known(
   execution: ExecutionSummary,
@@ -52,8 +58,14 @@ function known(
 
 const tickets: readonly TicketResponse[] = [
   working,
-  { ticket: 2, phase: "Escalated", sequence: 4, reason: "GasExhausted" },
-  { ticket: 3, phase: "Pending", sequence: 3 },
+  {
+    ticket: 2,
+    phase: "Escalated",
+    sequence: 4,
+    reason: "GasExhausted",
+    ...ticketInstants,
+  },
+  { ticket: 3, phase: "Pending", sequence: 3, ...ticketInstants },
 ];
 
 test("a running ticket's row carries its status, what it runs on and its configuration", () => {
@@ -93,7 +105,7 @@ test("a row names the configuration and the worker the wire named", () => {
 
 test("a ticket running nothing states no execution rather than a blank one", () => {
   const row = projectTableRow(
-    { ticket: 4, phase: "Pending", sequence: 1 },
+    { ticket: 4, phase: "Pending", sequence: 1, ...ticketInstants },
     undefined,
     false,
   );

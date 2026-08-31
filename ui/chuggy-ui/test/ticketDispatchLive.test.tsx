@@ -35,6 +35,7 @@ import {
   ticketPageDependency,
   ticketPageRoutes,
 } from "./ticketPageFixture.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -114,7 +115,12 @@ function unrelatedTicketFrame(): string {
   return frame("Ticket", "7", {
     version: 1,
     resource: "40",
-    representation: { ticket: 40, phase: "Working", sequence: 6 },
+    representation: {
+      ticket: 40,
+      phase: "Working",
+      sequence: 6,
+      ...ticketInstants,
+    },
   });
 }
 

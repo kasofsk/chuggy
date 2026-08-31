@@ -26,6 +26,7 @@ import {
 } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -52,9 +53,15 @@ const escalated = {
   phase: "Escalated",
   sequence: 9,
   reason: "WorkFailed",
+  ...ticketInstants,
 };
 
-const working = { ticket: 4, phase: "Working", sequence: 11 };
+const working = {
+  ticket: 4,
+  phase: "Working",
+  sequence: 11,
+  ...ticketInstants,
+};
 
 /** One escalated ticket, nothing else open, and nothing that has run. */
 function served(url: string): Response {

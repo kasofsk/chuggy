@@ -111,6 +111,8 @@ export interface ExecutionSummary {
   readonly outcome?: ExecutionOutcome;
   readonly retriesSpent: number;
   readonly registeredAt: PublicInstant;
+  /** When the first attempt opened, absent while the execution has none. */
+  readonly startedAt?: PublicInstant;
   readonly terminalAt?: PublicInstant;
   readonly runTotals?: RunTotals;
 }

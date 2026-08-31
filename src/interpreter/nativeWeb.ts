@@ -209,13 +209,18 @@ export interface TicketAccounts {
 
 /**
  * The reason and the resume point are present exactly when the ticket is parked
- * on the desk, the brief exactly when it was authored with one, and the
- * accounts only where the store holds them.
+ * on the desk, the brief exactly when it was authored with one, and the accounts
+ * only where the store holds them. Its two instants are the journal's:
+ * `changedAt` is when the entry `sequence` names committed, and `releasedAt`
+ * when the entry releasing this ticket did — absent when no entry the reader can
+ * parse says it released this ticket.
  */
 export interface TicketResource {
   readonly ticket: TicketId;
   readonly phase: Phase;
   readonly sequence: number;
+  readonly changedAt: PublicInstant;
+  readonly releasedAt?: PublicInstant;
   readonly reason?: EscalationReason;
   readonly resumeAt?: ResumePoint;
   readonly accounts?: TicketAccounts;

@@ -11,6 +11,8 @@ import {
 } from "./harness.ts";
 import { seedOpenAction } from "./nativeActionFixture.ts";
 import { postgresReadHarness } from "./readHarness.ts";
+import type { TicketResource } from "../../src/interpreter/nativeWeb.ts";
+import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { id } from "../domain/fixtures.ts";
 
 const subject = postgresReadHarness();
@@ -19,11 +21,81 @@ async function filterProject() {
   return postgresHarnessProject(subject.harness.store, "native-filter");
 }
 
+async function currentEpoch(): Promise<string> {
+  const found = await subject.harness.query(
+    "SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1",
+  );
+  const epoch = found[0]?.["epoch"];
+  if (typeof epoch !== "string")
+    throw new Error("native read case: the harness established no epoch");
+  return epoch;
+}
+
+/**
+ * When the entry seeded at `seq` committed. A hand-written journal dates itself
+ * rather than taking `now()`, so a case can say what the read will answer
+ * without depending on how the server renders a time.
+ */
+function seededEntryAt(seq: number): number {
+  return Date.UTC(2026, 0, 1, 0, 0, seq);
+}
+
+/** One ticket with its instant as a moment, which is what a case compares. */
+function dated(ticket: TicketResource): Record<string, unknown> {
+  return { ...ticket, changedAt: Date.parse(ticket.changedAt) };
+}
+
+/**
+ * One journal entry at `seq`, seeded through the real chain: an entry decides
+ * an accepted operation, so nothing standing on one here holds because a
+ * constraint was skipped. Every case needs them, because a projection row is
+ * written beside an entry and the read dates the row from it.
+ */
+async function seedEntry(
+  partition: Partition,
+  label: string,
+  seq: number,
+  entry = "{}",
+): Promise<void> {
+  const submission = postgresHarnessSubmission(partition, label);
+  await subject.harness.inbox.accept(submission);
+  const epoch = await currentEpoch();
+  const seeding = await subject.harness.begin();
+  await seeding.query(
+    `UPDATE decision_input SET state='Journaled', decided_seq=$3, terminal_at=now()
+      WHERE tenant=$1 AND project=$2 AND input_kind='Operation' AND input_id=$4`,
+    [partition.tenant, partition.project, seq, submission.operation],
+  );
+  await seeding.query(
+    `INSERT INTO journal_entry
+       (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
+        recovery_epoch,cause_kind,cause_id,committed_at)
+     VALUES ($1,$2,$3,$8,$4,'genesis','owner',1,$5,'Operation',$6,$7)`,
+    [
+      partition.tenant,
+      partition.project,
+      seq,
+      `digest-${label}`,
+      epoch,
+      submission.operation,
+      new Date(seededEntryAt(seq)).toISOString(),
+      entry,
+    ],
+  );
+  await seeding.commit();
+}
+
+/** One entry of `type` naming `ticket`, as the encoder writes an event that has one. */
+function seededEvent(type: string, ticket: number): string {
+  return JSON.stringify({
+    seq: ticket,
+    event: { type, value: { ticket } },
+    rec: {},
+  });
+}
+
 /** One ticket of each terminal shape, and one parked with the wall it hit. */
-async function seedFilterProjection(partition: {
-  tenant: string;
-  project: string;
-}) {
+async function seedFilterProjection(partition: Partition) {
   await subject.harness.query(
     "UPDATE project SET head=4 WHERE tenant=$1 AND project=$2",
     [partition.tenant, partition.project],
@@ -34,6 +106,7 @@ async function seedFilterProjection(partition: {
     [3, "Revoked", "NoReason"],
     [4, "Escalated", "GasExhausted"],
   ] as const) {
+    await seedEntry(partition, `native-filter-${String(ticket)}`, ticket);
     await subject.harness.query(
       `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq,reason)
        VALUES ($1,$2,$3,$4,$3,$5)`,
@@ -111,6 +184,7 @@ test("project reads page by ticket identity and enforce a minimum sequence", asy
     [partition.tenant, partition.project],
   );
   for (const [index, ticket] of [1, 3, 8].entries()) {
+    await seedEntry(partition, `native-page-${String(ticket)}`, index + 1);
     await subject.harness.query(
       `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
        VALUES ($1,$2,$3,'Pending',$4)`,
@@ -135,17 +209,18 @@ test("project reads page by ticket identity and enforce a minimum sequence", asy
   const cursor = first.project.nextAfter;
   assert.equal(cursor, 3);
   assert.ok(cursor !== undefined);
-  assert.deepEqual(
-    await reads.project(partition, { after: cursor, limit: 2 }),
+  const last = await reads.project(partition, { after: cursor, limit: 2 });
+  assert.equal(last.result, "Found");
+  if (last.result !== "Found") return;
+  assert.equal(last.project.sequence, 3);
+  assert.deepEqual(last.project.tickets.map(dated), [
     {
-      result: "Found",
-      project: {
-        partition,
-        sequence: 3,
-        tickets: [{ ticket: 8, phase: "Pending", sequence: 3 }],
-      },
+      ticket: 8,
+      phase: "Pending",
+      sequence: 3,
+      changedAt: seededEntryAt(3),
     },
-  );
+  ]);
 });
 
 test("project reads page newest activity with a stable identity tie-breaker", async () => {
@@ -157,6 +232,8 @@ test("project reads page newest activity with a stable identity tie-breaker", as
     "UPDATE project SET head=9 WHERE tenant=$1 AND project=$2",
     [partition.tenant, partition.project],
   );
+  for (const sequence of [2, 4, 9])
+    await seedEntry(partition, `native-recent-${String(sequence)}`, sequence);
   for (const [ticket, sequence] of [
     [1, 4],
     [2, 9],
@@ -197,6 +274,50 @@ test("project reads page newest activity with a stable identity tie-breaker", as
   );
 });
 
+/**
+ * A journal whose earliest entry naming this ticket is not the one that released
+ * it. The machine cannot currently write that order — a release is the first
+ * entry a ticket has — so nothing else in these suites separates "the earliest
+ * entry naming the ticket" from "the entry that released it", and the read is
+ * specified to be the second.
+ */
+test("an earlier entry naming the ticket is not mistaken for its release", async () => {
+  const partition = await postgresHarnessProject(
+    subject.harness.store,
+    "native-release-kind",
+  );
+  await subject.harness.query(
+    "UPDATE project SET head=2 WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project],
+  );
+  await seedEntry(
+    partition,
+    "native-release-kind-done",
+    1,
+    seededEvent("TaskDone", 5),
+  );
+  await seedEntry(
+    partition,
+    "native-release-kind-release",
+    2,
+    seededEvent("ReleaseTicket", 5),
+  );
+  await subject.harness.query(
+    `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+     VALUES ($1,$2,5,'Pending',2)`,
+    [partition.tenant, partition.project],
+  );
+  const released = await postgresNativeReads(subject.pool).ticket(
+    partition,
+    id(5),
+  );
+  assert.equal(
+    Date.parse(released?.releasedAt ?? ""),
+    seededEntryAt(2),
+    "the release instant is the release entry's, not the earlier entry's",
+  );
+});
+
 test("project reads filter before paging and expose one ticket detail", async () => {
   const partition = await filterProject();
   await seedFilterProjection(partition);
@@ -207,54 +328,45 @@ test("project reads filter before paging and expose one ticket detail", async ()
   });
   assert.equal(nonTerminal.result, "Found");
   if (nonTerminal.result !== "Found") return;
-  assert.deepEqual(nonTerminal.project.tickets, [
-    { ticket: 2, phase: "Pending", sequence: 2 },
+  assert.deepEqual(nonTerminal.project.tickets.map(dated), [
+    { ticket: 2, phase: "Pending", sequence: 2, changedAt: seededEntryAt(2) },
   ]);
   assert.equal(nonTerminal.project.nextAfter, 2);
-  assert.deepEqual(
-    await reads.project(partition, {
-      after: nonTerminal.project.nextAfter,
-      limit: 2,
-      phaseFilter: { selection: "NonTerminal" },
-    }),
+  const parked = await reads.project(partition, {
+    after: nonTerminal.project.nextAfter,
+    limit: 2,
+    phaseFilter: { selection: "NonTerminal" },
+  });
+  assert.equal(parked.result, "Found");
+  if (parked.result !== "Found") return;
+  assert.equal(parked.project.sequence, 4);
+  assert.deepEqual(parked.project.tickets.map(dated), [
     {
-      result: "Found",
-      project: {
-        partition,
-        sequence: 4,
-        tickets: [
-          {
-            ticket: 4,
-            phase: "Escalated",
-            sequence: 4,
-            reason: "GasExhausted",
-          },
-        ],
-      },
+      ticket: 4,
+      phase: "Escalated",
+      sequence: 4,
+      reason: "GasExhausted",
+      changedAt: seededEntryAt(4),
     },
-  );
-  assert.deepEqual(
-    await reads.project(partition, {
-      limit: 10,
-      phaseFilter: { selection: "Selected", phases: ["Done", "Revoked"] },
-    }),
-    {
-      result: "Found",
-      project: {
-        partition,
-        sequence: 4,
-        tickets: [
-          { ticket: 1, phase: "Done", sequence: 1 },
-          { ticket: 3, phase: "Revoked", sequence: 3 },
-        ],
-      },
-    },
-  );
-  assert.deepEqual(await reads.ticket(partition, id(4)), {
+  ]);
+  const terminal = await reads.project(partition, {
+    limit: 10,
+    phaseFilter: { selection: "Selected", phases: ["Done", "Revoked"] },
+  });
+  assert.equal(terminal.result, "Found");
+  if (terminal.result !== "Found") return;
+  assert.deepEqual(terminal.project.tickets.map(dated), [
+    { ticket: 1, phase: "Done", sequence: 1, changedAt: seededEntryAt(1) },
+    { ticket: 3, phase: "Revoked", sequence: 3, changedAt: seededEntryAt(3) },
+  ]);
+  const own = await reads.ticket(partition, id(4));
+  assert.ok(own !== undefined);
+  assert.deepEqual(dated(own), {
     ticket: 4,
     phase: "Escalated",
     sequence: 4,
     reason: "GasExhausted",
+    changedAt: seededEntryAt(4),
   });
   assert.equal(await reads.ticket(partition, id(9)), undefined);
 });

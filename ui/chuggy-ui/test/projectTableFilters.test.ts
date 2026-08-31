@@ -20,6 +20,7 @@ import {
   projectTicketRowsMax,
 } from "../app/core/projectTicketPages.ts";
 import { ticketSectionRoster } from "../app/core/ticketSections.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const partition = { tenant: "acme", project: "atlas" };
 
@@ -102,6 +103,7 @@ test("more is not offered past a bound or without a cursor", () => {
         ticket: at + 1,
         phase: "Pending" as const,
         sequence: 1,
+        ...ticketInstants,
       })),
     }),
   ).toBeUndefined();

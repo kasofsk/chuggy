@@ -26,6 +26,7 @@ import {
 } from "../app/core/projectTicketPages.ts";
 import type { ProjectTicketRows } from "../app/core/projectTicketPages.ts";
 import { ticketSectionOf } from "../app/core/ticketSections.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const partition = { tenant: "acme", project: "atlas" };
 
@@ -47,6 +48,7 @@ function pendingPage(from: number, nextCursor: string): ProjectResponse {
       ticket: from + at,
       phase: "Pending" as const,
       sequence: 1,
+      ...ticketInstants,
     })),
     nextCursor,
   );
@@ -54,8 +56,8 @@ function pendingPage(from: number, nextCursor: string): ProjectResponse {
 
 const firstPage = page(
   [
-    { ticket: 1, phase: "Working", sequence: 4 },
-    { ticket: 2, phase: "Pending", sequence: 3 },
+    { ticket: 1, phase: "Working", sequence: 4, ...ticketInstants },
+    { ticket: 2, phase: "Pending", sequence: 3, ...ticketInstants },
   ],
   "after-one",
 );
@@ -73,8 +75,8 @@ test("a second page appends after the first and repeats no ticket", () => {
   const second = projectTicketRowsAppend(
     first,
     page([
-      { ticket: 2, phase: "Pending", sequence: 3 },
-      { ticket: 3, phase: "Done", sequence: 2 },
+      { ticket: 2, phase: "Pending", sequence: 3, ...ticketInstants },
+      { ticket: 3, phase: "Done", sequence: 2, ...ticketInstants },
     ]),
   );
   expect(second.tickets.map((ticket) => ticket.ticket)).toStrictEqual([
@@ -111,6 +113,7 @@ test("a page carrying more than the cap has room for is cut at the cap", () => {
       ticket: at + 1,
       phase: "Pending" as const,
       sequence: 1,
+      ...ticketInstants,
     })),
     "again",
   );
@@ -123,7 +126,17 @@ test("a page walk stops at the page budget even while a cursor is offered", () =
   for (let read = 0; read < projectTicketPagesMax; read += 1)
     rows = projectTicketRowsAppend(
       rows,
-      page([{ ticket: read + 1, phase: "Pending", sequence: 1 }], "again"),
+      page(
+        [
+          {
+            ticket: read + 1,
+            phase: "Pending",
+            sequence: 1,
+            ...ticketInstants,
+          },
+        ],
+        "again",
+      ),
     );
   expect(rows.nextCursor).toBe("again");
   expect(projectTicketRowsHaveMore(rows)).toBe(false);
@@ -134,7 +147,13 @@ test("a ticket frame moves a row into another section without disturbing the res
   const folded = projectTicketRowsFold(
     rows,
     "1",
-    { ticket: 1, phase: "Escalated", sequence: 7, reason: "WorkFailed" },
+    {
+      ticket: 1,
+      phase: "Escalated",
+      sequence: 7,
+      reason: "WorkFailed",
+      ...ticketInstants,
+    },
     undefined,
   );
   expect(folded?.tickets.map((ticket) => ticket.ticket)).toStrictEqual([1, 2]);
@@ -149,7 +168,7 @@ test("a ticket the list has not got arrives at the top", () => {
   const folded = projectTicketRowsFold(
     rows,
     "9",
-    { ticket: 9, phase: "Working", sequence: 8 },
+    { ticket: 9, phase: "Working", sequence: 8, ...ticketInstants },
     undefined,
   );
   expect(folded?.tickets.map((ticket) => ticket.ticket)).toStrictEqual([
@@ -162,7 +181,7 @@ test("a filtered list drops the ticket that left the filter", () => {
   const folded = projectTicketRowsFold(
     rows,
     "2",
-    { ticket: 2, phase: "Done", sequence: 8 },
+    { ticket: 2, phase: "Done", sequence: 8, ...ticketInstants },
     ["Pending"],
   );
   expect(folded?.tickets.map((ticket) => ticket.ticket)).toStrictEqual([1]);
@@ -186,7 +205,7 @@ test("a list with no page read yet is not invented by a frame", () => {
     projectTicketRowsFold(
       undefined,
       "1",
-      { ticket: 1, phase: "Working", sequence: 1 },
+      { ticket: 1, phase: "Working", sequence: 1, ...ticketInstants },
       undefined,
     ),
   ).toBeUndefined();
@@ -210,7 +229,7 @@ test("a page that reads clears the failure the last one recorded", () => {
   );
   const after = projectTicketRowsAfterPage(failed, {
     outcome: "Ok",
-    value: page([{ ticket: 3, phase: "Done", sequence: 1 }]),
+    value: page([{ ticket: 3, phase: "Done", sequence: 1, ...ticketInstants }]),
   });
   expect(after.failure).toBeUndefined();
   expect(after.tickets.map((ticket) => ticket.ticket)).toStrictEqual([1, 2, 3]);
@@ -255,7 +274,12 @@ test("a first read asks for one page", async () => {
 test("a refetch re-reads the pages the reader had asked for", async () => {
   const held = reading([
     { outcome: "Ok", value: firstPage },
-    { outcome: "Ok", value: page([{ ticket: 3, phase: "Done", sequence: 2 }]) },
+    {
+      outcome: "Ok",
+      value: page([
+        { ticket: 3, phase: "Done", sequence: 2, ...ticketInstants },
+      ]),
+    },
   ]);
   const answered = await projectTicketRowsRead(
     { ...projectTicketRowsEmpty, pagesRead: 2 },
@@ -296,7 +320,14 @@ test("a refetch reads the pages the reader had and no more, however many the wir
     Array.from({ length: projectTicketPagesMax }, (_unused, at) => ({
       outcome: "Ok" as const,
       value: page(
-        [{ ticket: at + 1, phase: "Pending" as const, sequence: 1 }],
+        [
+          {
+            ticket: at + 1,
+            phase: "Pending" as const,
+            sequence: 1,
+            ...ticketInstants,
+          },
+        ],
         "again",
       ),
     })),
@@ -313,7 +344,14 @@ test("a read stops at the page budget however many the reader asked for", async 
     Array.from({ length: projectTicketPagesMax }, (_unused, at) => ({
       outcome: "Ok" as const,
       value: page(
-        [{ ticket: at + 1, phase: "Pending" as const, sequence: 1 }],
+        [
+          {
+            ticket: at + 1,
+            phase: "Pending" as const,
+            sequence: 1,
+            ...ticketInstants,
+          },
+        ],
         "again",
       ),
     })),
@@ -330,7 +368,12 @@ test("a read stops at the page budget however many the reader asked for", async 
 
 test("a read stops early when the wire says there is no next page", async () => {
   const held = reading([
-    { outcome: "Ok", value: page([{ ticket: 1, phase: "Done", sequence: 1 }]) },
+    {
+      outcome: "Ok",
+      value: page([
+        { ticket: 1, phase: "Done", sequence: 1, ...ticketInstants },
+      ]),
+    },
   ]);
   await projectTicketRowsRead(
     { ...projectTicketRowsEmpty, pagesRead: 4 },

@@ -132,7 +132,13 @@ function servedWeb(
     reviseDraft: notFound,
     submit: notFound,
     ticket: (_principal, _partition, ticket) =>
-      Promise.resolve({ ticket, phase: "Working", sequence: 4 }),
+      Promise.resolve({
+        ticket,
+        phase: "Working",
+        sequence: 4,
+        releasedAt: asPublicInstant("2026-01-01T00:00:00Z"),
+        changedAt: asPublicInstant("2026-01-01T00:00:04Z"),
+      }),
     execution: () => Promise.resolve(undefined),
     executions: notFound,
     operationalStatus: notFound,
@@ -366,7 +372,13 @@ test("a live change arrives as the kind's own GET representation", async () => {
   assert.deepEqual(identities(opened).slice(2), ["event: Ticket", "id: 41"]);
   assert.deepEqual(
     projectChangeRepresentationSchemas.Ticket.parse(changeData(opened)),
-    { ticket: 3, phase: "Working", sequence: 4 },
+    {
+      ticket: 3,
+      phase: "Working",
+      sequence: 4,
+      releasedAt: "2026-01-01T00:00:00Z",
+      changedAt: "2026-01-01T00:00:04Z",
+    },
   );
 });
 

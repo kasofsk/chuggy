@@ -23,6 +23,7 @@ import {
   creationPartition,
   creationSummary,
 } from "./ticketCreationFixture.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 interface Answer {
   readonly status: number;
@@ -180,7 +181,9 @@ test("a release that settles as succeeded is the one ticket to navigate to", asy
         : ok({
             partition: creationPartition,
             sequence: 42,
-            tickets: [{ ticket: 12, phase: "Pending", sequence: 42 }],
+            tickets: [
+              { ticket: 12, phase: "Pending", sequence: 42, ...ticketInstants },
+            ],
           }),
     ),
   );

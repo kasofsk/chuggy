@@ -31,10 +31,11 @@ import {
 } from "../app/browser/stream.tsx";
 import { frame, streamServer } from "./streamDouble.ts";
 import type { StreamServer } from "./streamDouble.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 const beta: PartitionIdentity = { tenant: "acme", project: "beta" };
-const ticket = { ticket: 3, phase: "Working", sequence: 9 };
+const ticket = { ticket: 3, phase: "Working", sequence: 9, ...ticketInstants };
 
 function holderDouble(): SessionHolder & { renew: () => void } {
   let generation = 1;

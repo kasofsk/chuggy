@@ -180,6 +180,19 @@ export const ticketResponseSchema = z.object({
   ticket: ticketNumberSchema,
   phase: z.enum(phaseRoster),
   sequence: countSchema,
+  /**
+   * When the entry `sequence` names committed, which is when the ticket entered
+   * the phase and reason reported here. Nothing moves a Done or Revoked ticket
+   * again, so on one of those this is when it completed and there is no second
+   * field for that.
+   */
+  changedAt: instantSchema,
+  /**
+   * When the entry that released this ticket committed. It is optional because
+   * which entry that is has to be read out of an encoded event, and the journal
+   * admits an entry no reader can parse.
+   */
+  releasedAt: instantSchema.optional(),
   reason: z.enum(escalationReasons).optional(),
   resumeAt: z.enum(resumePoints).optional(),
   accounts: ticketAccountsSchema.optional(),
@@ -401,6 +414,12 @@ export const executionSummarySchema = z.object({
   outcome: z.enum(executionOutcomes).optional(),
   retriesSpent: countSchema,
   registeredAt: instantSchema,
+  /**
+   * When this execution's first attempt opened, absent while it has none. It is
+   * the same instant that attempt carries in the detail read, so a row that has
+   * only the summary can still separate the wait from the run.
+   */
+  startedAt: instantSchema.optional(),
   terminalAt: instantSchema.optional(),
   runTotals: runTotalsSchema.optional(),
 });

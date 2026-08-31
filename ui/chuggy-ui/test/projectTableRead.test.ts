@@ -19,6 +19,7 @@ import {
   ticketFilterList,
 } from "../app/core/projectTableFilters.ts";
 import { projectTicketRowsEmpty } from "../app/core/projectTicketPages.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const partition = { tenant: "acme", project: "atlas" };
 
@@ -38,7 +39,12 @@ function recording(): { readonly ports: ApiPorts; readonly urls: string[] } {
                 partition,
                 sequence: 1,
                 tickets: [
-                  { ticket: urls.length, phase: "Pending", sequence: 1 },
+                  {
+                    ticket: urls.length,
+                    phase: "Pending",
+                    sequence: 1,
+                    ...ticketInstants,
+                  },
                 ],
                 nextCursor: `after-${String(urls.length)}`,
               }),
