@@ -16,11 +16,12 @@
  *
  * IT IS TOTAL OVER EVERY PHASE AND REASON THE ROSTERS ADMIT, and answers with
  * nothing for three different reasons. A phase that is not parked has nothing
- * to resume at all; a revoked dependency is the one wall the model itself
- * stamps no point on; and where the model does stamp one but the read is short
- * of what it stamped — a reason the ticket read omits, a set this page does not
- * hold — the console declines rather than guesses, and a read carrying the
- * stamped point is what settles it.
+ * to resume at all; two walls carry no point the model would stamp — a revoked
+ * dependency, and the rework wall on a ticket authored no rework budget, which
+ * declined the economy a refill would sell it back; and where the model does
+ * stamp one but the read is short of what it stamped — a reason the ticket read
+ * omits, a set this page does not hold — the console declines rather than
+ * guesses, and a read carrying the stamped point is what settles it.
  */
 
 import type {
@@ -39,6 +40,7 @@ export interface ResumeSituation {
   readonly reason: EscalationReason | undefined;
   readonly lastSet: ClosedSet | undefined;
   readonly stageCount: number;
+  readonly reworkBudget: number;
   readonly resumePricing: ResumePricing;
   readonly resumeAt: ResumePoint | undefined;
 }
@@ -48,6 +50,7 @@ export interface ResumeConsequence {
   readonly reruns: ResumeRerun;
   readonly fromStage: number | undefined;
   readonly ofStages: number | undefined;
+  readonly refillsReworkTo: number | undefined;
   readonly cost: number;
 }
 
@@ -82,7 +85,7 @@ function walledPoint(
     case "WorkFailed":
       return "ResumeWorking";
     case "ReworkBudgetExhausted":
-      return "ResumeEvaluating";
+      return situation.reworkBudget > 0 ? "ResumeReworking" : undefined;
     case "FinalizationBudgetExhausted":
       return "ResumeFinalizing";
     case "GasExhausted":
@@ -118,6 +121,7 @@ export function ticketResumePoint(
 export function resumeReenters(point: ResumePoint): TicketPhase {
   switch (point) {
     case "ResumeWorking":
+    case "ResumeReworking":
       return "Working";
     case "ResumeEvaluating":
       return "Evaluating";
@@ -132,6 +136,7 @@ export function resumeReenters(point: ResumePoint): TicketPhase {
 export function resumeRerun(point: ResumePoint): ResumeRerun {
   switch (point) {
     case "ResumeWorking":
+    case "ResumeReworking":
       return "work";
     case "ResumeEvaluating":
       return "evaluation";
@@ -143,19 +148,23 @@ export function resumeRerun(point: ResumePoint): ResumeRerun {
 }
 
 /**
- * Re-entering work always meters, because that is the account that makes the
- * graph terminate; every other resume is priced by the ticket's own authoring.
+ * Every entry to work meters, because that is the account that makes the graph
+ * terminate, so both work resumes charge under either pricing; the rest are
+ * priced by the ticket's own authoring.
  */
 export function resumeGasCharge(
   point: ResumePoint,
   pricing: ResumePricing,
 ): number {
-  return point === "ResumeWorking" || pricing === "RetryCharged" ? 1 : 0;
+  if (point === "ResumeWorking" || point === "ResumeReworking") return 1;
+  return pricing === "RetryCharged" ? 1 : 0;
 }
 
 /**
  * What a resume would do, as the facts a page draws it from. An evaluation
- * resume is a fresh fan-out of the lowest stage, never a pick-up mid-sequence.
+ * resume is a fresh fan-out of the lowest stage and never a pick-up
+ * mid-sequence; the rework wall's is a fresh cycle whose rework account the
+ * machine refills to the value the ticket was authored with.
  */
 export function ticketResume(
   situation: ResumeSituation,
@@ -168,6 +177,8 @@ export function ticketResume(
     reruns: resumeRerun(point),
     fromStage: evaluating ? 0 : undefined,
     ofStages: evaluating ? situation.stageCount : undefined,
+    refillsReworkTo:
+      point === "ResumeReworking" ? situation.reworkBudget : undefined,
     cost: resumeGasCharge(point, situation.resumePricing),
   };
 }

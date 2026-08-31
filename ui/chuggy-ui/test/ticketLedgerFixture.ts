@@ -151,10 +151,7 @@ export const ticket21Authoring: TicketAuthoring = {
   finalizer: "ManagedFinalizer",
 };
 
-/**
- * The seven executions the ticket held while it was parked, listed as the route
- * lists them.
- */
+/** The seven executions the ticket held while it was parked. */
 export const ticket21Parked: readonly ExecutionShape[] = [
   {
     execution: "execution-38e5111e-2",

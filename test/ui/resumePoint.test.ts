@@ -3,7 +3,7 @@
  *
  * `ui/chuggy-ui/app/core/resumePoint.ts` restates where each wall said a resume
  * would rejoin the pipeline, because a browser reaches only `src/contract/` and
- * no read carries the point. This drives the deciders that stamp one and the
+ * no read carries that rule. This drives the deciders that stamp one and the
  * console derivation over the same states, and requires them to name the same
  * point; the deciders are the oracle and the table is the claim.
  *
@@ -36,12 +36,14 @@ import type {
 } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { combine } from "../../src/domain/program.ts";
+import { reworkBudget } from "../../src/domain/pricing.ts";
 import { resumePoints } from "../../src/contract/rosters.ts";
 import type { ResumePoint } from "../../src/contract/rosters.ts";
 import type { ResumeSituation } from "../../ui/chuggy-ui/app/core/resumePoint.ts";
 import {
   resumeGasCharge,
   resumeReenters,
+  ticketResume,
   ticketResumePoint,
 } from "../../ui/chuggy-ui/app/core/resumePoint.ts";
 import type { ClosedSet } from "../../ui/chuggy-ui/app/core/ticketLedger.ts";
@@ -148,6 +150,7 @@ function situationOf(before: Ticket, after: Ticket): ResumeSituation {
     reason: after.reason === "NoReason" ? undefined : after.reason,
     lastSet: lastSetOf(before),
     stageCount: before.program.length,
+    reworkBudget: reworkBudget(before.reworkPolicy),
     resumePricing: before.resumePricing,
     resumeAt: undefined,
   };
@@ -344,6 +347,39 @@ test("each point re-enters the phase the console names, at the charge it names",
         resumeGasCharge(point, pricing),
         `charge at ${point} under ${pricing}`,
       );
+      const refilled = ticketResume({
+        ...situationOf(before, before),
+        resumeAt: point,
+        resumePricing: pricing,
+      })?.refillsReworkTo;
+      assert.equal(
+        after.reworkLeft,
+        refilled ?? before.reworkLeft,
+        `rework account at ${point}`,
+      );
     }
+  }
+});
+
+/**
+ * A ticket authored no rework budget declined the rework economy, so the wall
+ * that spends it has no resume to sell back — the model's own exception beside
+ * the revoked dependency.
+ */
+test("the rework wall of a ticket authored no budget parks for good", () => {
+  for (const budget of [2, 0]) {
+    const before = ticketIn({
+      phase: "Evaluating",
+      reworkPolicy: { type: "BudgetedRework", value: budget },
+      reworkLeft: 0,
+      record: taskSet("Work", [1], "Passed"),
+      tasks: new Set(taskSet({ type: "Evaluation", value: 0 }, [2], "Failed")),
+    });
+    const after = ticketAt(
+      decideEvalStageReduce(coreWith(before), id).post,
+      id,
+    );
+    assert.equal(after.reason, "ReworkBudgetExhausted");
+    agrees(before, after, `a rework wall authored with ${String(budget)}`);
   }
 });
