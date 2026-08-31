@@ -9,7 +9,7 @@ import {
   finalizerPass,
   type FinalizerService,
 } from "../interpreter/finalizerRun.ts";
-import type { RecoveryEpoch } from "../interpreter/projectStore.ts";
+import type { Partition, RecoveryEpoch } from "../interpreter/projectStore.ts";
 import type {
   RuntimePrecondition,
   ServiceRuntime,
@@ -208,16 +208,33 @@ export function schedulerProcess(
   );
 }
 
+/**
+ * Holds the discovery cursor and the diagnosis a contained failure would
+ * otherwise leave nowhere. The pass no longer ends the loop on a project it
+ * cannot activate, so this is the only place an operator learns which one.
+ */
 export function ticketServiceProcess(
   service: TicketServiceRuntimeService,
   runtimeConfig: TicketServiceRuntimeConfig,
   requirements: ControlPlaneRequirements,
   config: ServiceRuntimeConfig,
 ): ServiceRuntime {
+  let resumeAfter: Partition | undefined = undefined;
   return serviceRuntime(
     {
-      run: async () =>
-        void (await ticketServiceRunOnce(service, runtimeConfig)),
+      run: async () => {
+        const report = await ticketServiceRunOnce(
+          service,
+          runtimeConfig,
+          resumeAfter,
+        );
+        resumeAfter = report.resumeAfter;
+        for (const failure of report.failures) {
+          process.stderr.write(
+            `ticket service: ${failure.partition.tenant}/${failure.partition.project} ${failure.reason}: ${failure.message}\n`,
+          );
+        }
+      },
     },
     systemPacing,
     processPreconditions(requirements),

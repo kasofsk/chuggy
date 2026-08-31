@@ -114,8 +114,15 @@ export type ReadinessCleared =
  * partitions, and it reads nothing of one but the fact that it has work.
  */
 export interface ProjectDiscovery {
-  /** At most `partitionsMax` projects with work waiting, which is all fleet discovery reads. */
-  ready(partitionsMax: number): Promise<readonly Readiness[]>;
+  /**
+   * At most `partitionsMax` projects with work waiting, ordered, and beginning
+   * after `after` when one is given. A caller that advances that cursor sweeps
+   * the fleet, so no fixed prefix of it can hold the window against the rest.
+   */
+  ready(
+    partitionsMax: number,
+    after?: Partition,
+  ): Promise<readonly Readiness[]>;
 
   /** At most `itemsMax` consumable items in ordinal order, which is what activation verifies the inbox with. */
   next(

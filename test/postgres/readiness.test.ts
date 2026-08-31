@@ -99,6 +99,22 @@ test("readiness clears only when no pending input remains", async () => {
   });
 });
 
+test("ready resumes strictly after the cursor it is given", async () => {
+  for (const label of ["sweep-one", "sweep-two"]) {
+    const partition = await postgresHarnessProject(harness.store, label);
+    await harness.inbox.accept(postgresHarnessSubmission(partition, label));
+  }
+  const swept = await harness.discovery.ready(100);
+  assert.ok(swept.length >= 2);
+  const head = swept[0];
+  assert.ok(head !== undefined);
+  const resumed = await harness.discovery.ready(100, head.partition);
+  assert.deepEqual(
+    resumed.map((item) => item.partition.project),
+    swept.slice(1).map((item) => item.partition.project),
+  );
+});
+
 /**
  * The park a seeded desk task stands on, as a `Core`, at the gas a case hands
  * it. The phase and the wall are the seed's own; the resume point and its
