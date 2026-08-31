@@ -2,12 +2,13 @@
  * What a live `Execution` frame does to the executions a ticket page is
  * holding.
  *
- * The list is the page the route answered with, ordered by execution identity
- * as that route orders it, so a frame replaces the entry it names in place and
- * a new execution is inserted at its own position rather than at an end. A
- * frame for an execution that would sort past a truncated page is left alone:
- * it belongs to a page this screen has not read, and inserting it would claim
- * the page reaches further than it does.
+ * The list is the page the route answered with, ordered by task as that route
+ * orders it, so a frame replaces the entry it names in place and a new
+ * execution is inserted at its own position rather than at an end. Every row
+ * here is one ticket's, so the task alone is the position. A frame for an
+ * execution that would sort past a truncated page is left alone: it belongs to
+ * a page this screen has not read, and inserting it would claim the page
+ * reaches further than it does.
  */
 
 import { executionResponseSchema } from "../../../../src/contract/responses.ts";
@@ -51,12 +52,12 @@ function executionsWith(
     };
   const last = held.at(-1);
   if (
-    previous.nextAfter !== undefined &&
+    previous.nextCursor !== undefined &&
     last !== undefined &&
-    arrived.execution > last.execution
+    arrived.task > last.task
   )
     return previous;
-  const before = held.findIndex((row) => row.execution > arrived.execution);
+  const before = held.findIndex((row) => row.task > arrived.task);
   const listed: ExecutionSummary[] = [...held];
   listed.splice(before < 0 ? listed.length : before, 0, arrived);
   return { ...previous, executions: listed };
