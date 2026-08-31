@@ -153,11 +153,11 @@ interface Submitting {
 
 /**
  * One submission at a time, followed to settlement and merged into the ticket
- * this page reads. The confirmed row goes through `ticketConfirmed` rather than
- * over the entry, because it is a narrower projection than the ticket's own
- * read and a live frame may already have written a later one. The ticket's open
- * actions are invalidated rather than written, because what the follow learned
- * is that the question was answered and not what is open now.
+ * this page reads. The confirmed row goes through `ticketConfirmed` because it
+ * is a narrower projection than the ticket's own read and a live frame may
+ * already have written a later one, and the open actions are invalidated rather
+ * than written because what the follow learned is that the question was
+ * answered and not what is open now.
  */
 function useSubmitting(
   partition: PartitionIdentity,

@@ -2,10 +2,10 @@
  * Every number the wire measured, formatted once: money, tokens, duration, an
  * instant, a span, and the absence of any of them.
  *
- * Total over `figureKinds`. A figure is built here and drawn by `ui/Figure.tsx`,
- * so no component composes one and no two places round the same quantity
- * differently. The summing stays in `runTotals.ts`; what this adds is the
- * reading.
+ * Total over `figureKinds`. A figure is built here and drawn by the `Figure`
+ * primitive, so no component composes one and no two places round the same
+ * quantity differently. The summing stays in `runTotals.ts`; what this adds is
+ * the reading.
  *
  * A DOLLAR NEVER APPEARS WITHOUT ITS BASIS. `costBasis` is the wire's word for
  * what the figure is, and a rollup over runs that disagreed on it says so, so
