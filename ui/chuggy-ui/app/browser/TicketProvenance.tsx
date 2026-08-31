@@ -25,7 +25,7 @@ function Field(props: {
   readonly children: ReactNode;
 }): ReactNode {
   return (
-    <div className="field">
+    <div className="legacy-field">
       <dt>{props.name}</dt>
       <dd>{props.children}</dd>
     </div>
@@ -94,7 +94,7 @@ export function TicketBrief(props: {
           draft.configurationVersion,
         );
         return (
-          <dl className="fields">
+          <dl className="legacy-fields">
             {draft.brief === undefined ? (
               <Field name="intent, links, branch, landing">
                 <span className="panel-absent">
@@ -128,7 +128,7 @@ function pricingLabel(
 function Authoring(props: { readonly draft: DraftResponse }): ReactNode {
   const authoring = props.draft.authoring;
   return (
-    <dl className="fields">
+    <dl className="legacy-fields">
       <Field name="dependencies">
         {authoring.dependencies.length === 0
           ? "none"
@@ -169,7 +169,7 @@ function TicketConfiguration(props: {
     <DataPanel title={`configuration ${label.text}`} state={state}>
       {(configuration) => (
         <div className="configuration">
-          <dl className="fields">
+          <dl className="legacy-fields">
             <Field name="revision">
               <code>{label.title}</code>
             </Field>
