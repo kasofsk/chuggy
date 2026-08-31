@@ -128,7 +128,9 @@ function checkedConfiguration(
   );
   if (refused.length > 0)
     throw new RangeError(
-      `OIDC algorithms must verify with a published key: ${refused.join(",")}`,
+      `OIDC algorithms must verify with a published key: ${refused
+        .map((algorithm) => JSON.stringify(algorithm))
+        .join(",")}`,
     );
   positiveDuration(config.discoveryTimeoutMs, "OIDC discovery timeout");
   positiveDuration(config.jwksTimeoutMs, "OIDC JWKS timeout");

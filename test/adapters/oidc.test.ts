@@ -536,6 +536,10 @@ test("an algorithm this server cannot verify with a published key is refused", a
       /must verify with a published key/u,
     );
   await assert.rejects(
+    oidcAuthentication({ ...config, algorithms: ["RS256", ""] }, discovery),
+    /must verify with a published key: ""/u,
+  );
+  await assert.rejects(
     oidcAuthentication({ ...config, algorithms: [] }, discovery),
     /algorithms are empty/u,
   );

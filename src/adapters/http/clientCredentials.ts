@@ -16,35 +16,39 @@
  * already been replaced. It starts no retry of its own: the refused request
  * fails, and the read after it mints unless the cooldown below says otherwise.
  *
- * `mintCooldownMs` IS THE BOUND ON ALL OF THAT. It is measured from the start
- * of the last attempt, so it bounds grant requests to one per cooldown whether
- * that attempt succeeded or failed and whether or not a token is held: neither
- * a refusal that never stops nor a token endpoint that never answers can turn
- * a loop of reads into a loop of grants. A caller arriving while an attempt is
+ * `mintCooldownMs` IS THE BOUND ON ALL OF THAT, AND IT IS THE OPERATOR'S
+ * NUMBER RATHER THAN THE ISSUER'S. It is measured from the start of the last
+ * attempt, so it bounds grant requests to one per cooldown whether that
+ * attempt succeeded or failed and whether or not a token is held: neither a
+ * refusal that never stops nor a token endpoint that never answers can turn a
+ * loop of reads into a loop of grants. A caller arriving while an attempt is
  * still in flight joins it rather than being turned away, and one arriving
  * inside the cooldown with a token still held is given it, because past a
  * refresh margin is not past an expiry.
  *
- * A COOLDOWN NEVER OUTLIVES THE GRANT THAT STARTED IT. What a configured
- * cooldown can be checked against is the refresh margin, and that check is
- * made — a cooldown as long as the margin could consume the whole window a
- * replacement has to be found in, and a bound that can be configured never to
- * fire is a control that reports success and enforces nothing. But the margin
- * is only the window when the issuer grants a lifetime longer than it; below
- * that a grant is held for half its life and the window is the other half,
- * which no check made before any grant can see. So a successful attempt
- * shortens its own cooldown to the life left in what it granted, and the two
- * together say the whole thing: while a token is held there is no refusal
- * before its expiry, and at its expiry a replacement can always be attempted.
- * A failed attempt shortens nothing, because it granted no lifetime to
- * measure — its cooldown is the configured one, which is what bounds a loop of
- * failures.
+ * A GRANT THAT CANNOT OUTLIVE THAT COOLDOWN IS REFUSED AS UNUSABLE, which is
+ * what keeps the two promises from pulling against each other. Holding such a
+ * token would mean either refusing reads before it expired or letting the
+ * issuer shorten the bound the operator set, and the second is worse than it
+ * sounds: the shortening would be largest exactly when the issuer is slowest
+ * to answer, which points a mint per read at an issuer already struggling. A
+ * grant is measured against the cooldown the way a lifetime of nothing is
+ * measured against zero, and the refusal names both numbers so an operator can
+ * see which to move.
+ *
+ * THE COOLDOWN IS ALSO REFUSED IF IT IS NOT SHORTER THAN THE REFRESH MARGIN,
+ * which is a different guarantee and is made where a process starts rather
+ * than when a grant arrives. The margin is how long a held token goes on
+ * working after a replacement is first sought, so a cooldown shorter than it
+ * is what leaves room for a failed refresh to be tried again before the token
+ * it would have replaced expires.
  *
  * TWO CLOCKS, BECAUSE THEY MEASURE DIFFERENT THINGS. An expiry is the issuer's
  * statement about wall-clock time and is held against one. A cooldown is a
- * duration this process measures for itself, so it is held against a monotonic
- * source, where no correction, snapshot resume or host sync can make elapsed
- * time negative and strand a client that is waiting to recover.
+ * duration this process measures for itself, its start and its length both, so
+ * it is held against a monotonic source, where no correction, snapshot resume
+ * or host sync can make elapsed time negative and strand a client that is
+ * waiting to recover.
  *
  * ONE MINT AT A TIME. Callers arriving while a replacement is in flight join it
  * rather than each starting one, so the issuer sees a request per replacement
@@ -196,6 +200,10 @@ async function clientCredentialsMinted(
   if (grant.token_type.toLowerCase() !== clientCredentialsTokenType)
     throw new Error("client credentials grant is not a bearer token");
   const lifetimeMs = grant.expires_in * millisecondsPerSecond;
+  if (lifetimeMs <= config.mintCooldownMs)
+    throw new RangeError(
+      `client credentials grant lives ${String(lifetimeMs)}ms, which this client cannot operate on while keeping a ${String(config.mintCooldownMs)}ms cooldown between grants`,
+    );
   return {
     token: checkedBearerToken(grant.access_token),
     replaceAtEpochMs:
@@ -225,15 +233,13 @@ export function clientCredentialsTokenSource(
   let held: ClientCredentialsHeld | undefined;
   let minting: Promise<ClientCredentialsHeld> | undefined;
   let attemptedAtMonotonicMs: number | undefined;
-  let attemptCooldownMs = config.mintCooldownMs;
   const cooling = (): boolean =>
     attemptedAtMonotonicMs !== undefined &&
-    monotonicMs() - attemptedAtMonotonicMs < attemptCooldownMs;
+    monotonicMs() - attemptedAtMonotonicMs < config.mintCooldownMs;
   const mint = (): Promise<ClientCredentialsHeld> => {
     const inFlight = minting;
     if (inFlight !== undefined) return inFlight;
     attemptedAtMonotonicMs = monotonicMs();
-    attemptCooldownMs = config.mintCooldownMs;
     return (minting = clientCredentialsMinted(
       config,
       transport,
@@ -241,10 +247,6 @@ export function clientCredentialsTokenSource(
     ).then(
       (granted) => {
         held = granted;
-        attemptCooldownMs = Math.min(
-          config.mintCooldownMs,
-          Math.max(1, granted.expiresAtEpochMs - currentTimeEpochMs()),
-        );
         minting = undefined;
         return granted;
       },

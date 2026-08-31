@@ -607,48 +607,62 @@ test("a source given no clock does not measure its cooldown on the wall clock", 
 });
 
 /**
- * An issuer granting less than the refresh margin puts the hold on its
- * half-life branch, which no check made before a grant can see.
+ * The issuer takes longer to answer than the life it grants, which is the
+ * shape that turns a grant-derived bound into a mint per read.
  */
-test("a cooldown never outlives the grant that started it", async () => {
+test("a grant too short-lived to keep a cooldown around is refused, once per cooldown", async () => {
   const minted: MintedRequest[] = [];
   let nowEpochMs = 1_000_000;
   let elapsedMs = 0;
+  const granting = mintingTransport(minted, () => grantResponse("token", 5));
   const source = clientCredentialsTokenSource({
     tokenUrl,
     clientId: "selector",
     clientSecret: "secret",
     ...noAudienceOrScope,
-    requestTimeoutMs: 1_000,
+    requestTimeoutMs: 10_000,
     responseBytesMax: 10_000,
     responseReadsMax: 100,
     refreshMarginMs: 60_000,
     mintCooldownMs: 59_000,
-    fetch: mintingTransport(minted, (attempt) =>
-      grantResponse(`token-${String(attempt)}`, 30),
-    ),
+    fetch: (input, init) => {
+      nowEpochMs += 6_000;
+      elapsedMs += 6_000;
+      return granting(input, init);
+    },
     currentTimeEpochMs: () => nowEpochMs,
     monotonicMs: () => elapsedMs,
   });
-  const move = (milliseconds: number): void => {
-    nowEpochMs += milliseconds;
-    elapsedMs += milliseconds;
-  };
-  const presented: string[] = [];
-  for (let second = 0; second < 120; second += 1) {
-    presented.push(await source.token(bounded()));
-    move(1_000);
-  }
-  assert.equal(
-    presented.length,
-    120,
-    "no read is refused while the issuer is healthy",
-  );
-  assert.equal(
-    minted.length,
-    4,
-    "one grant per granted lifetime, not per configured cooldown",
-  );
+  const answers: string[] = [];
+  for (let read = 0; read < 100; read += 1)
+    await source.token(bounded()).then(
+      () => answers.push("granted"),
+      (failure: unknown) => {
+        answers.push(failure instanceof Error ? failure.message : "unknown");
+      },
+    );
+  assert.equal(minted.length, 1, "one grant, however many reads");
+  assert.equal(answers.filter((answer) => answer === "granted").length, 0);
+  assert.match(answers[0] ?? "", /lives 5000ms/u);
+  assert.match(answers[0] ?? "", /59000ms cooldown/u);
+  assert.match(answers[99] ?? "", /within its cooldown/u);
+});
+
+/**
+ * The ordering the cooldown is easiest to get wrong in: a grant that succeeded
+ * says nothing about how long to wait after the attempt that did not.
+ */
+test("a failure after a success still waits the whole configured cooldown", async () => {
+  const granted = grantedOnceTokenSource();
+  assert.equal(await granted.source.token(bounded()), "token-1");
+  granted.move(841_000);
+  await assert.rejects(granted.source.token(bounded()), /returned 503/u);
+  granted.move(4_000);
+  assert.equal(await granted.source.token(bounded()), "token-1");
+  assert.equal(granted.minted.length, 2, "the failed attempt is still cooling");
+  granted.move(1_001);
+  await assert.rejects(granted.source.token(bounded()), /returned 503/u);
+  assert.equal(granted.minted.length, 3);
 });
 
 /** A failed attempt has no lifetime to shorten its cooldown by. */
