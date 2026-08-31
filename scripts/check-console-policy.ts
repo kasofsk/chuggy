@@ -31,7 +31,6 @@ import { resolve } from "node:path";
 
 import {
   consoleCascadeFindings,
-  consoleCascadeLayers,
   consoleCascadeNames,
   consolePolicyFindings,
   consolePolicyStylesheetHrefs,
@@ -91,7 +90,8 @@ for (const href of hrefs) {
 }
 
 const cascade = sheets.join("\n");
-if (consoleCascadeNames(cascade).length === 0) {
+const declared = consoleCascadeNames(cascade);
+if (declared.length === 0) {
   process.stdout.write(
     `check-console-policy: LINTER ERROR — ${loaded.join(", ")} declares no layer, so the cascade could not be read\n`,
   );
@@ -106,5 +106,5 @@ for (const finding of consoleCascadeFindings(cascade)) {
 
 if (findings.length > 0) process.exit(1);
 process.stdout.write(
-  `check-console-policy: ${documentPath} loads only same-origin files, and ${loaded.join(", ")} declares ${consoleCascadeLayers.join(", ")} in that order\n`,
+  `check-console-policy: ${documentPath} loads only same-origin files, and ${loaded.join(", ")} declares ${declared.join(", ")} in that order\n`,
 );
