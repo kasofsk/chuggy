@@ -363,6 +363,11 @@ function fakeSelectorSettings(
           result: "Refused",
           refusal: "AutomaticDispatchUnavailable",
         });
+      if (overrides.basePrompt === "contend")
+        return Promise.resolve({
+          result: "Refused",
+          refusal: "SettingsWriteContended",
+        });
       return expectedRevision === 1
         ? Promise.resolve({
             result: "Written",
@@ -485,6 +490,29 @@ test("automatic dispatch with no ready host is a refusal the caller can act on",
   assert.equal(
     refused.json<HttpErrorEnvelope>().error.code,
     "AutomaticDispatchUnavailable",
+  );
+});
+
+test("a settings write that lost a race for its project is retryable", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const refused = await app.inject({
+    method: "PUT",
+    url: selectorSettingsPath,
+    headers: {
+      authorization: "Bearer valid",
+      "content-type": "application/vnd.chuggy.v1+json",
+    },
+    payload: JSON.stringify({
+      expectedRevision: 1,
+      overrides: { basePrompt: "contend" },
+    }),
+  });
+  assert.equal(refused.statusCode, 503);
+  assert.equal(refused.headers["retry-after"], "1");
+  assert.equal(
+    refused.json<HttpErrorEnvelope>().error.code,
+    "SettingsWriteContended",
   );
 });
 

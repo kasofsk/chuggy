@@ -28,10 +28,15 @@ import {
   asAuthorityKind,
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
-import type { Partition } from "../../src/interpreter/projectStore.ts";
+import {
+  asProjectId,
+  asTenantId,
+  type Partition,
+} from "../../src/interpreter/projectStore.ts";
 import type { SelectorProjectSettingsRecord } from "../../src/interpreter/selectorProjectSettings.ts";
 import {
   postgresHarnessDenial,
+  postgresHarnessPartition,
   postgresHarnessOpen,
   postgresHarnessProject,
   postgresHarnessRolePool,
@@ -349,7 +354,7 @@ test("automatic dispatch with no production host is a refusal, not a fault", asy
         { dispatchMode: "Automatic" },
         administrator,
       ),
-      { written: "AutomaticDispatchUnavailable" },
+      { written: "Refused", refusal: "AutomaticDispatchUnavailable" },
     );
     assert.equal(
       (await postgresSelectorProjectSettings(pool).read(partition)).revision,
@@ -690,7 +695,7 @@ test("a stale fence is answered as one whatever the policy host is doing", async
         { dispatchMode: "Automatic" },
         administrator,
       ),
-      { written: "AutomaticDispatchUnavailable" },
+      { written: "Refused", refusal: "AutomaticDispatchUnavailable" },
     );
   } finally {
     await pool.end();
@@ -781,6 +786,84 @@ test("a ready policy host changes what a write may set and not what a fence says
       .setAutomaticReadiness(false)
       .catch(() => undefined);
     await servicePool.end();
+    await pool.end();
+  }
+});
+
+test("two projects whose identities spell the same thing do not share a lock", async () => {
+  const tenant = postgresHarnessPartition("selector-lock-key").tenant;
+  const left = { tenant: asTenantId(`${tenant}/a`), project: asProjectId("b") };
+  const right = { tenant: asTenantId(tenant), project: asProjectId("a/b") };
+  for (const scope of [left, right]) await harness.store.createProject(scope);
+  const pool = postgresHarnessRolePool(apiRole);
+  const holder = await pool.connect();
+  try {
+    await holder.query("BEGIN");
+    assert.equal(
+      writtenSettings(
+        await postgresSelectorProjectSettings(clientPool(holder)).write(
+          left,
+          0,
+          { northStar: "Holding the lock." },
+          administrator,
+        ),
+      ).revision,
+      1,
+    );
+    const other = postgresSelectorProjectSettings(pool).write(
+      right,
+      0,
+      { northStar: "Not the same project." },
+      administrator,
+    );
+    assert.equal(
+      await Promise.race([
+        other.then(() => "answered"),
+        delay(500).then(() => "waiting"),
+      ]),
+      "answered",
+    );
+    assert.equal(writtenSettings(await other).revision, 1);
+  } finally {
+    await holder.query("ROLLBACK").catch(() => undefined);
+    holder.release();
+    await pool.end();
+  }
+});
+
+test("a write that gives up waiting says so rather than reading as a fault", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "selector-contended-write",
+  );
+  const pool = postgresHarnessRolePool(apiRole);
+  const holder = await pool.connect();
+  const impatient = await pool.connect();
+  try {
+    await holder.query("BEGIN");
+    await postgresSelectorProjectSettings(clientPool(holder)).write(
+      partition,
+      0,
+      { northStar: "Holding the lock." },
+      administrator,
+    );
+    await impatient.query("SET statement_timeout='200ms'");
+    assert.deepEqual(
+      await postgresSelectorProjectSettings(clientPool(impatient)).write(
+        partition,
+        0,
+        { northStar: "Waiting behind it." },
+        administrator,
+      ),
+      { written: "Refused", refusal: "SettingsWriteContended" },
+    );
+  } finally {
+    await impatient
+      .query("SET statement_timeout=DEFAULT")
+      .catch(() => undefined);
+    impatient.release();
+    await holder.query("ROLLBACK").catch(() => undefined);
+    holder.release();
     await pool.end();
   }
 });

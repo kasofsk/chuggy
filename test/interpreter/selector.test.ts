@@ -642,6 +642,7 @@ async function sweptProjects(sweep: SweptSweep) {
   const reads = new Map<string, number>();
   const terminated: string[] = [];
   const saved: (typeof partition | undefined)[] = [];
+  let inventoryReads = 0;
   const result = await selectorRunOnce(
     {
       ...stateStore(() => undefined),
@@ -656,11 +657,13 @@ async function sweptProjects(sweep: SweptSweep) {
     },
     {
       ...promptObservationSource(),
-      projects: () =>
-        Promise.resolve({
+      projects: () => {
+        inventoryReads += 1;
+        return Promise.resolve({
           projects: [...projects],
           ...(nextAfter === undefined ? {} : { nextAfter }),
-        }),
+        });
+      },
       dispatchView: (scope) =>
         Promise.resolve(emptyDispatchPage(scope, "f".repeat(64))),
       submit: () => Promise.reject(new Error("no delivery expected")),
@@ -689,7 +692,7 @@ async function sweptProjects(sweep: SweptSweep) {
       reconciliationsMax: 1,
     },
   );
-  return { result, terminated, saved };
+  return { result, terminated, saved, inventoryReads };
 }
 
 test("a project paused mid-decision leaves the rest of the sweep alone", async () => {
@@ -779,6 +782,40 @@ test("the cursor moves over the projects a sweep consumed and no further", async
   const whole = await sweptProjects({ projects: page, nextAfter: beyond });
   assert.equal(whole.result.observed, page.length);
   assert.deepEqual(whole.saved, [beyond]);
+});
+
+test("a paused installation reads no inventory and moves no cursor", async () => {
+  const page = ["kept-one", "kept-two"].map((name) => ({
+    tenant: partition.tenant,
+    project: asProjectId(name),
+  }));
+  const beyond = { tenant: partition.tenant, project: asProjectId("unread") };
+  const swept = await sweptProjects({
+    projects: page,
+    nextAfter: beyond,
+    installation: { ...runtimeSettings, mode: "Paused" },
+  });
+  assert.equal(swept.inventoryReads, 0);
+  assert.deepEqual(swept.saved, []);
+  assert.equal(swept.result.observed, 0);
+  assert.deepEqual(swept.result.failures, []);
+});
+
+test("an installation pause seen before a permit stops the sweep and moves nothing", async () => {
+  const page = ["untried-one", "untried-two"].map((name) => ({
+    tenant: partition.tenant,
+    project: asProjectId(name),
+  }));
+  const beyond = { tenant: partition.tenant, project: asProjectId("beyond") };
+  const swept = await sweptProjects({
+    projects: page,
+    nextAfter: beyond,
+    resolvedAgainst: () => ({ ...runtimeSettings, mode: "Paused" }),
+  });
+  assert.equal(swept.inventoryReads, 1);
+  assert.deepEqual(swept.terminated, []);
+  assert.equal(swept.result.observed, 0);
+  assert.deepEqual(swept.saved, []);
 });
 
 test("an exhausted inventory wraps rather than standing still", async () => {

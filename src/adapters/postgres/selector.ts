@@ -33,11 +33,15 @@ import type {
 import { resolvedSelectorSettings } from "../../interpreter/selector.ts";
 import type {
   SelectorProjectSettingsRecord,
+  SelectorProjectSettingsRefusal,
   SelectorProjectSettingsRevision,
   SelectorProjectSettingsStore,
   SelectorProjectSettingsWriteOutcome,
 } from "../../interpreter/selectorProjectSettings.ts";
-import { selectorAutomaticReadinessErrorCode } from "./schema.ts";
+import {
+  postgresContendedErrorCodes,
+  selectorAutomaticReadinessErrorCode,
+} from "./schema.ts";
 import {
   asProjectId,
   asTenantId,
@@ -734,14 +738,26 @@ async function readProjectSettings(
   return selectorProjectSettingsRecordOf(partition, row);
 }
 
-/** Whether a refusal is the readiness trigger's, which is a condition and not a fault. */
-function selectorAutomaticDispatchRefused(failure: unknown): boolean {
-  return (
-    typeof failure === "object" &&
-    failure !== null &&
-    (failure as { readonly code?: unknown }).code ===
-      selectorAutomaticReadinessErrorCode
-  );
+/** The SQLSTATE a server refused under, for the refusals that are conditions. */
+function postgresFailureCode(failure: unknown): string | undefined {
+  if (typeof failure !== "object" || failure === null) return undefined;
+  const code = (failure as { readonly code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
+
+/**
+ * Which refusal a server's own code names, and undefined for a failure that is
+ * a fault rather than a condition a caller can act on.
+ */
+function selectorWriteRefusal(
+  failure: unknown,
+): SelectorProjectSettingsRefusal | undefined {
+  const code = postgresFailureCode(failure);
+  if (code === selectorAutomaticReadinessErrorCode)
+    return "AutomaticDispatchUnavailable";
+  if (code !== undefined && postgresContendedErrorCodes.includes(code))
+    return "SettingsWriteContended";
+  return undefined;
 }
 
 /**
@@ -782,8 +798,8 @@ async function writeProjectSettings(
            ${administrator.kind},${administrator.subject})`,
     );
   } catch (failure) {
-    if (selectorAutomaticDispatchRefused(failure))
-      return { written: "AutomaticDispatchUnavailable" };
+    const refusal = selectorWriteRefusal(failure);
+    if (refusal !== undefined) return { written: "Refused", refusal };
     throw failure;
   }
   const row = found.rows[0];

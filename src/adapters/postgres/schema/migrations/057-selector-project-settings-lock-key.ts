@@ -35,13 +35,14 @@ const selectorProjectSettingsProjection = `
 // jscpd:ignore-end -- the restatement above ends here
 
 /**
- * Writes for one project take an advisory lock on that project before reading
- * the revision they are fenced against, so that revision is not one another
- * write is in the middle of leaving. The insert needs no conflict arm under
- * that lock: this function is the table's only writer, and it has already read
- * that the row does not exist while holding the project's lock.
+ * The project a write locks is named by the length of its tenant and then both
+ * parts, so one identity's text cannot be another pair's: a separator is only a
+ * separator while no identity contains it, and both halves are opaque. The
+ * insert under that lock needs no conflict arm: this function is the table's
+ * only writer, and it has already read that the row does not exist while
+ * holding the project's lock.
  */
-const selectorProjectSettingsSerialization = [
+const selectorProjectSettingsLockKey = [
   `CREATE OR REPLACE FUNCTION ${selectorProjectSettingsFunction}(
      in_tenant text,in_project text,expected_revision bigint,
      new_north_star text,new_mode text,new_dispatch_mode text,new_base_prompt text,
@@ -55,8 +56,8 @@ const selectorProjectSettingsSerialization = [
      SET search_path=pg_catalog,public,pg_temp AS $$
      DECLARE written bigint; standing bigint;
      BEGIN
-       PERFORM pg_advisory_xact_lock(
-         hashtextextended('selector-settings:'||in_tenant||'/'||in_project,0));
+       PERFORM pg_advisory_xact_lock(hashtextextended(
+         'selector-settings:'||length(in_tenant)||':'||in_tenant||in_project,0));
        SELECT settings.revision INTO standing FROM selector_project_settings settings
          WHERE settings.tenant=in_tenant AND settings.project=in_project;
        IF coalesce(standing,0)<>expected_revision THEN RETURN; END IF;
@@ -113,8 +114,8 @@ const selectorProjectSettingsSerialization = [
      TO ${apiRole},${selectorControlRole}`,
 ];
 
-export const migration056: Migration = {
-  version: 56,
-  name: "selector project settings writes serialise per project",
-  statements: [...selectorProjectSettingsSerialization],
+export const migration057: Migration = {
+  version: 57,
+  name: "selector project settings lock one project and not a spelling of it",
+  statements: [...selectorProjectSettingsLockKey],
 };

@@ -42,18 +42,25 @@ export interface SelectorProjectSettingsRevision {
 }
 
 /**
- * What one durable write answers with: the row it wrote, the fence it lost, or
- * the refusal a project's `Automatic` dispatch meets while no policy host is
- * production-ready. The refusal is a condition an administrator can act on, so
- * it is a variant rather than a fault.
+ * What one durable write answers with: the row it wrote, the fence it lost, or a
+ * refusal — `Automatic` dispatch asked for while no policy host is production
+ * ready, or a write that gave up waiting on another write for this project.
+ * Each is a condition an administrator can act on, so each is a variant rather
+ * than a fault.
  */
+export type SelectorProjectSettingsRefusal =
+  "AutomaticDispatchUnavailable" | "SettingsWriteContended";
+
 export type SelectorProjectSettingsWriteOutcome =
   | {
       readonly written: "Settings";
       readonly settings: SelectorProjectSettingsRecord;
     }
   | { readonly written: "FenceMoved" }
-  | { readonly written: "AutomaticDispatchUnavailable" };
+  | {
+      readonly written: "Refused";
+      readonly refusal: SelectorProjectSettingsRefusal;
+    };
 
 /** The durable per-project settings, whose write reports the row it wrote. */
 export interface SelectorProjectSettingsStore {
@@ -90,7 +97,7 @@ export type SelectorProjectSettingsWritten =
     }
   | {
       readonly result: "Refused";
-      readonly refusal: "AutomaticDispatchUnavailable";
+      readonly refusal: SelectorProjectSettingsRefusal;
     };
 
 export type SelectorProjectSettingsHistoryRead =
@@ -228,11 +235,8 @@ export function selectorProjectSettingsAdministration(
           return { result: "Written", settings: written.settings };
         case "FenceMoved":
           return { result: "Conflict", settings: await store.read(partition) };
-        case "AutomaticDispatchUnavailable":
-          return {
-            result: "Refused",
-            refusal: "AutomaticDispatchUnavailable",
-          };
+        case "Refused":
+          return { result: "Refused", refusal: written.refusal };
         default:
           return assertNever(written);
       }

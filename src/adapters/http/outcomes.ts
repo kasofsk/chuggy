@@ -28,6 +28,7 @@ import type {
   SelectorProjectSettingsHistoryRead,
   SelectorProjectSettingsRead,
   SelectorProjectSettingsRecord,
+  SelectorProjectSettingsRefusal,
   SelectorProjectSettingsWritten,
 } from "../../interpreter/selectorProjectSettings.ts";
 import type {
@@ -347,6 +348,36 @@ export function selectorProjectSettingsResponse(
     : response(200, selectorProjectSettingsBody(result.settings));
 }
 
+/**
+ * A refusal a caller can act on. Contention is the one worth waiting out, so it
+ * carries the retry the caller would otherwise have to guess at.
+ */
+function selectorProjectSettingsRefusal(
+  refusal: SelectorProjectSettingsRefusal,
+): NativeHttpResponse {
+  switch (refusal) {
+    case "AutomaticDispatchUnavailable":
+      return response(
+        409,
+        nativeHttpError(
+          refusal,
+          "Automatic dispatch needs a production-ready selector policy host.",
+        ),
+      );
+    case "SettingsWriteContended":
+      return response(
+        503,
+        nativeHttpError(
+          refusal,
+          "Another write for this project held it. Try again.",
+        ),
+        { "retry-after": "1" },
+      );
+    default:
+      return assertNever(refusal);
+  }
+}
+
 export function selectorProjectSettingsWriteResponse(
   result: SelectorProjectSettingsWritten,
 ): NativeHttpResponse {
@@ -362,13 +393,7 @@ export function selectorProjectSettingsWriteResponse(
         settings: selectorProjectSettingsBody(result.settings),
       });
     case "Refused":
-      return response(
-        409,
-        nativeHttpError(
-          result.refusal,
-          "Automatic dispatch needs a production-ready selector policy host.",
-        ),
-      );
+      return selectorProjectSettingsRefusal(result.refusal);
     case "Written":
       return response(200, selectorProjectSettingsBody(result.settings));
     default:

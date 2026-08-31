@@ -288,12 +288,11 @@ async function observeInventory(
   readonly failures: readonly SelectorRunFailure[];
 }> {
   await store.setAutomaticReadiness(policy.productionReady);
-  const settings = await control.settings();
-  const inventoryCursor = await store.inventoryCursor();
-  const inventory =
-    settings.mode === "Paused"
-      ? { projects: [] }
-      : await source.projects(inventoryCursor, projectsMax);
+  if ((await control.settings()).mode === "Paused") return pausedInventory;
+  const inventory = await source.projects(
+    await store.inventoryCursor(),
+    projectsMax,
+  );
   const progress = await observeProjects(
     inventory.projects,
     store,
@@ -306,13 +305,22 @@ async function observeInventory(
   return progress;
 }
 
+/** A paused installation reads no inventory, so it has no progress to record. */
+const pausedInventory = {
+  observed: 0,
+  proposed: 0,
+  failures: [],
+} as const;
+
 /**
  * Moves the cursor over the projects this sweep consumed and no further: to the
  * last one it consumed, or past the page when it consumed them all — which is
  * `nextAfter`, and `nextAfter` is absent exactly when there is no next page, so
- * an exhausted inventory wraps to the start rather than standing still. A sweep
- * that consumed none of a page it was given leaves the cursor alone, because
- * that page is the page the next sweep is owed.
+ * an exhausted inventory wraps to the start rather than standing still, while a
+ * sweep that consumed none of a page it was given leaves the cursor alone
+ * because that page is the page the next sweep is owed. Every one of those
+ * readings is of a page the inventory produced, so only a caller that read one
+ * calls this.
  */
 async function saveInventoryProgress(
   store: SelectorStateStore,
