@@ -7,11 +7,14 @@
  * would be quietly wrong. Every dollar figure carries the basis the wire gave
  * it, so a list price is never read as a bill.
  *
- * A SUM CARRIES NO BASIS IT DID NOT EARN. `runSpendOf` reports the one basis
- * every measured run agreed on and reports disagreement as disagreement, which
- * is the one thing a single `RunTotals` cannot say about itself; it also reports
- * how many of the executions it was handed carried figures at all, so a caller
- * never reads a sum over a third of a set as a sum over the set.
+ * `runSpendOf` CARRIES NO BASIS IT DID NOT EARN: it reports the one basis every
+ * measured run agreed on and reports disagreement as disagreement, which is the
+ * one thing a single `RunTotals` cannot say about itself, and it reports how
+ * many of the executions it was handed carried figures at all, so a caller
+ * never reads a sum over a third of a set as a sum over the set. `runStageRows`
+ * sums through `runTotalsSummed` and still takes the basis of the first run it
+ * is handed, which holds only while the basis roster has the single member it
+ * has today.
  *
  * TIME IS READ BY A CLOCK, NOT BY A STRING. `instantSchema` promises only a
  * non-empty string, so `runSpanOf` orders by what parses as an instant and

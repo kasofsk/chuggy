@@ -16,8 +16,8 @@
  *
  * Gas has no limit on the wire, so its derived arm carries a spend with no
  * maximum and no remainder rather than a maximum nothing supplied. That spend
- * is a floor twice over: a short page hides charges, and a charged resume into
- * finalizing spends gas without creating an execution for any page to hold.
+ * is a floor twice over: a short page hides charges, and a charged resume that
+ * spawns no task spends gas without creating an execution for any page to hold.
  */
 
 import type { ClosedSet, Ledger, TicketAuthoring } from "./ticketLedger.ts";

@@ -43,6 +43,8 @@ export interface ExecutionShape {
   readonly retriesSpent?: number;
   readonly request?: string;
   readonly totals?: TotalsShape;
+  readonly registeredAt?: string;
+  readonly terminalAt?: string;
 }
 
 const digest = "a".repeat(64);
@@ -51,7 +53,10 @@ const ledgerTaskGapMs = 600_000;
 const ledgerTokensPerTurn = 1_000;
 const ledgerRunMs = 90_000;
 
-/** One task's window, so a set of rows carries a span a clock can order. */
+/**
+ * One task's window, in the one spelling whose text orders the way its clock
+ * does. A case wanting the spellings to disagree states its own instants.
+ */
 function ledgerInstant(offsetMs: number): string {
   return new Date(ledgerEpochMs + offsetMs).toISOString();
 }

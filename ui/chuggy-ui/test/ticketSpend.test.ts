@@ -94,6 +94,102 @@ test("a fan-out one of whose tasks has ended has not ended", () => {
   });
 });
 
+/** One evaluation set of two tasks, each stating the instants a case wants. */
+function spanOfPair(
+  first: Pick<ExecutionShape, "registeredAt" | "terminalAt">,
+  second: Pick<ExecutionShape, "registeredAt" | "terminalAt">,
+): unknown {
+  const paired = ticketLedger(
+    ledgerPage([
+      {
+        execution: "execution-bb-1",
+        task: 1,
+        taskKind: "Evaluation",
+        stage: 0,
+        outcome: "Passed",
+        ...first,
+      },
+      {
+        execution: "execution-bb-2",
+        task: 2,
+        taskKind: "Evaluation",
+        stage: 0,
+        outcome: "Passed",
+        ...second,
+      },
+    ]),
+    {
+      ...ticket21Authoring,
+      program: [{ fanout: 2, combinator: "UnanimousPass" }],
+    },
+  );
+  const row = cycleAt(paired, 0).programRuns[0]?.stages[0];
+  return row?.kind === "Ran" ? row.set.span : undefined;
+}
+
+test("an offset the text sorts after is still the earlier instant", () => {
+  expect(
+    spanOfPair(
+      {
+        registeredAt: "2026-01-01T13:00:00Z",
+        terminalAt: "2026-01-01T21:00:00.500Z",
+      },
+      {
+        registeredAt: "2026-01-01T14:00:00+02:00",
+        terminalAt: "2026-01-01T21:00:00Z",
+      },
+    ),
+  ).toEqual({
+    from: "2026-01-01T14:00:00+02:00",
+    to: "2026-01-01T21:00:00.500Z",
+  });
+});
+
+test("a durable timestamp trimmed of its trailing zeros orders by its clock", () => {
+  expect(
+    spanOfPair(
+      {
+        registeredAt: "2026-08-26 00:10:00.123456+00",
+        terminalAt: "2026-08-26 00:40:00+00",
+      },
+      {
+        registeredAt: "2026-08-26 00:10:00+00",
+        terminalAt: "2026-08-26 00:40:00.5+00",
+      },
+    ),
+  ).toEqual({
+    from: "2026-08-26 00:10:00+00",
+    to: "2026-08-26 00:40:00.5+00",
+  });
+});
+
+test("an instant no clock can read is left out of the span it cannot order", () => {
+  expect(
+    spanOfPair(
+      { registeredAt: "0000-bad", terminalAt: "2026-01-01T05:00:00Z" },
+      {
+        registeredAt: "2026-01-01T01:00:00Z",
+        terminalAt: "2026-01-01T06:00:00Z",
+      },
+    ),
+  ).toEqual({
+    from: "2026-01-01T01:00:00Z",
+    to: "2026-01-01T06:00:00Z",
+  });
+  expect(
+    spanOfPair(
+      {
+        registeredAt: "2026-01-01T01:00:00Z",
+        terminalAt: "2026-01-01T06:00:00Z",
+      },
+      { registeredAt: "2026-01-01T02:00:00Z", terminalAt: "zzzz-bad" },
+    ),
+  ).toEqual({
+    from: "2026-01-01T01:00:00Z",
+    to: "2026-01-01T06:00:00Z",
+  });
+});
+
 test("a cycle's span covers its work run and every evaluation of it", () => {
   const parked = ledgerOf(ticket21Parked);
   expect(cycleAt(parked, 1).span).toEqual({
@@ -302,6 +398,41 @@ test("a page the route has more of is complete nowhere", () => {
     false,
   ]);
   expect(short.complete).toBe(false);
+});
+
+test("one incomplete cycle is enough to make the page incomplete", () => {
+  const cut = ledgerOf([
+    {
+      execution: "execution-bb-1",
+      task: 1,
+      taskKind: "Evaluation",
+      stage: 0,
+      outcome: "Failed",
+    },
+    {
+      execution: "execution-cc-2",
+      task: 2,
+      taskKind: "Work",
+      outcome: "Passed",
+    },
+    {
+      execution: "execution-dd-3",
+      task: 3,
+      taskKind: "Evaluation",
+      stage: 0,
+      outcome: "Passed",
+    },
+    {
+      execution: "execution-ee-4",
+      task: 4,
+      taskKind: "Evaluation",
+      stage: 1,
+      outcome: "Passed",
+    },
+  ]);
+  expect(cut.truncated).toBe(false);
+  expect(cut.cycles.map((cycle) => cycle.complete)).toEqual([false, true]);
+  expect(cut.complete).toBe(false);
 });
 
 test("a cycle whose work run the page does not hold is not complete", () => {

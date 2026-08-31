@@ -11,8 +11,9 @@
  *
  * A FAN-OUT SET IS WHAT ONE SPAWN PRODUCED, and it is named by the request the
  * row carries or by the identity stem every task of one request shares. A row
- * the wire wrote before it named the request has only the stem, so the stem is
- * what answers for one and is never the rule where a request is there to read.
+ * `executionSummarySchema` parsed before it declared the request has only the
+ * stem, so the stem answers for one and is never the rule where a request is
+ * there to read.
  *
  * IT READS THE WIRE'S CURSOR UNDER EITHER OF ITS NAMES. The field that says the
  * route has more of this ticket is being renamed, and this module has to

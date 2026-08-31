@@ -14,11 +14,12 @@
  * not carry one.
  *
  * IT IS TOTAL OVER EVERY PHASE AND REASON THE ROSTERS ADMIT, and answers with
- * nothing in two different situations. Where the model stamps nothing — a
- * revoked dependency, and an escalation whose reason the read omits — nothing
- * is the answer; where the model does stamp a point but this page holds no set
- * for the wall to have interrupted, the console declines rather than guesses,
- * and a read carrying the stamped point is what settles it.
+ * nothing for three different reasons. A phase that is not parked has nothing
+ * to resume at all; a revoked dependency and an escalation whose reason the read
+ * omits are walls the model itself stamps no point on; and where the model does
+ * stamp one but this page holds no set for the wall to have interrupted, the
+ * console declines rather than guesses, which a read carrying the stamped point
+ * is what settles.
  */
 
 import type {
