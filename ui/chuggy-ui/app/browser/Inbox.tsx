@@ -94,8 +94,8 @@ import { actionsFor, ticketActionSentence } from "../core/ticketActions.ts";
 import type { TicketAction } from "../core/ticketActions.ts";
 import { ticketSectionTitles } from "../core/ticketSections.ts";
 import { useApiPorts, usePanelList } from "./api.ts";
+import { DataPanel } from "./DataPanel.tsx";
 import { useProjectExecutionIndex } from "./executionIndex.ts";
-import { Panel } from "./Panel.tsx";
 import { drawBytes } from "./ports.ts";
 import {
   cellAbsent,
@@ -506,12 +506,10 @@ export function InboxScreen(props: {
   return (
     <>
       <InboxNotices executions={executions} index={index} held={inbox} />
-      <Panel title={ticketSectionTitles[inboxSection]} state={inbox.panel}>
+      <DataPanel title={ticketSectionTitles[inboxSection]} state={inbox.panel}>
         {(union) =>
           union.entries.length === 0 ? (
-            <p className="panel-note">
-              nothing needs you here — every ticket is the machine&rsquo;s
-            </p>
+            <p className="panel-note">Inbox is clear</p>
           ) : (
             <InboxTable
               entries={union.entries}
@@ -522,7 +520,7 @@ export function InboxScreen(props: {
             />
           )
         }
-      </Panel>
+      </DataPanel>
       {inbox.readMore === undefined ? null : (
         <button type="button" className="more" onClick={inbox.readMore}>
           more

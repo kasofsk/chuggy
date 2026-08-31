@@ -6,7 +6,15 @@
  * Loading happens after the first render rather than before it, so a slow or
  * missing configuration is a drawn state instead of a blank document. A live
  * frame is what updates a query, so nothing here refetches on a window event.
+ * The theme is read and put on the document before the first paint. The tokens
+ * and the element defaults are imported above everything that draws, because a
+ * bundler emits a sheet where it first reaches it; what holds the emitted
+ * order to the system's is `scripts/console-policy.ts`, over the stylesheet the
+ * build wrote.
  */
+
+import "../styles/tokens.css";
+import "../styles/base.css";
 
 import { QueryClient } from "@tanstack/react-query";
 import { StrictMode } from "react";
@@ -25,6 +33,7 @@ import {
   transientStore,
 } from "./ports.ts";
 import { SessionProvider } from "./session.tsx";
+import { themeChoiceApply, themeChoiceRead } from "./theme.ts";
 import "../styles.css";
 
 const queryClient = new QueryClient({
@@ -55,6 +64,8 @@ async function begin(session: SessionHolder): Promise<void> {
   if (callback.result === "Denied") session.refuse(callback.reason);
   history.replaceState(null, "", "/");
 }
+
+themeChoiceApply(document.documentElement, themeChoiceRead(persistentStore));
 
 const container = document.getElementById("root");
 if (container === null)

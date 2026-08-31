@@ -5,15 +5,22 @@
  * The quoting cases are the point: this is a control whose whole argument is
  * that it reads what a bundler wrote, and which quote style a bundler writes is
  * the bundler's business. A check that saw only one of them would report a
- * console loading its bundle from a content delivery network as clean.
+ * console loading its bundle from a content delivery network as clean. The
+ * cascade cases are the same argument about the stylesheet: the order the
+ * layers are emitted in is the order the browser applies them in, and a build
+ * that inverts it changes no source file.
  */
 
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  consoleCascadeFindings,
+  consoleCascadeLayers,
+  consoleCascadeNames,
   consolePolicyFetchingAttributes,
   consolePolicyFindings,
+  consolePolicyStylesheetHrefs,
 } from "../../scripts/console-policy.ts";
 
 const served = [
@@ -95,5 +102,84 @@ test("the attribute name is reported, so a finding says what to look at", () => 
     consolePolicyFindings('<img poster="https://cdn.example.invalid/x">')[0] ??
       "",
     /^a poster of /u,
+  );
+});
+
+const emitted = (order: readonly string[]): string =>
+  order.map((name) => `@layer ${name}{a{color:red}}`).join("");
+
+test("the order the minifier emits the layers in is the order asserted", () => {
+  assert.deepEqual(consoleCascadeFindings(emitted(consoleCascadeLayers)), []);
+  assert.match(
+    consoleCascadeFindings(emitted(["ui", "page", "tokens", "base"]))[0] ?? "",
+    /layers emitted as ui, page, tokens, base, not tokens, base, ui, page/u,
+  );
+});
+
+test("a layer reopened later keeps the place it first took", () => {
+  assert.deepEqual(
+    consoleCascadeFindings(
+      `${emitted(consoleCascadeLayers)}@layer base{a{color:red}}`,
+    ),
+    [],
+  );
+});
+
+test("a layer the bundle never carried is a finding, not a shorter order", () => {
+  assert.match(
+    consoleCascadeFindings(emitted(["tokens", "base", "ui"]))[0] ?? "",
+    /layers emitted as tokens, base, ui, not tokens, base, ui, page/u,
+  );
+});
+
+test("the layers a build declares are what a document is asked for", () => {
+  assert.deepEqual(consoleCascadeNames(emitted(["ui", "tokens"])), [
+    "ui",
+    "tokens",
+  ]);
+  assert.deepEqual(consoleCascadeNames("@layer tokens, base, ui, page;"), [
+    "tokens",
+    "base",
+    "ui",
+    "page",
+  ]);
+  assert.deepEqual(consoleCascadeNames(".a{color:red}"), []);
+});
+
+test("a layer the system does not order is a finding wherever it sits", () => {
+  assert.match(
+    consoleCascadeFindings(emitted(["tokens", "base", "vendor"]))[0] ?? "",
+    /a layer named vendor/u,
+  );
+});
+
+test("a statement kept by a build must name the order, and lead", () => {
+  assert.deepEqual(
+    consoleCascadeFindings(
+      `@layer tokens, base, ui, page;${emitted(["ui", "tokens"])}`,
+    ),
+    [],
+  );
+  assert.match(
+    consoleCascadeFindings(
+      `@layer base, tokens, ui, page;@layer base{a{b:c}}`,
+    )[0] ?? "",
+    /a layer statement of base, tokens, ui, page/u,
+  );
+  assert.match(
+    consoleCascadeFindings(
+      `@layer ui{a{b:c}}@layer tokens, base, ui, page;`,
+    )[0] ?? "",
+    /a layer opened above the statement/u,
+  );
+});
+
+test("the stylesheets a document loads are the ones read", () => {
+  assert.deepEqual(consolePolicyStylesheetHrefs(served), [
+    "/assets/index-abc.css",
+  ]);
+  assert.deepEqual(
+    consolePolicyStylesheetHrefs('<link rel="icon" href="/favicon.ico">'),
+    [],
   );
 });

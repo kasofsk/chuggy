@@ -500,4 +500,29 @@ printf '%s\n' 'import { decide } from "../core/decide.ts"' 'export const draw = 
 seal
 check "a decision may reach the contract, and what draws may reach it" 0 "$RC" "graph clean"
 
+# A primitive draws and performs nothing, through a relay for the same reason:
+# the helper between the primitive and the port is what a per-import check
+# reads as innocent.
+fixture
+mkdir -p "$R/ui/chuggy-ui/app/browser/ui"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'export const nowMs = () => Date.now()' > "$R/ui/chuggy-ui/app/browser/ports.ts"
+printf '%s\n' 'import { nowMs } from "../ports.ts"' 'export const relay = nowMs' > "$R/ui/chuggy-ui/app/browser/ui/relay.ts"
+printf '%s\n' 'import { relay } from "./relay.ts"' 'export const draw = () => relay()' > "$R/ui/chuggy-ui/app/browser/ui/Pill.ts"
+seal
+check "a primitive may not REACH a port" 1 "$RC" "chuggy-ui-primitives-reach-no-effect:"
+
+# The direction the rule exists to leave open: what draws a page reaches a
+# primitive, and a primitive reaches the decision layer.
+fixture
+mkdir -p "$R/ui/chuggy-ui/app/browser/ui" "$R/ui/chuggy-ui/app/core"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'export const label = () => "Passed"' > "$R/ui/chuggy-ui/app/core/labels.ts"
+printf '%s\n' 'import { label } from "../../core/labels.ts"' 'export const draw = () => label()' > "$R/ui/chuggy-ui/app/browser/ui/Pill.ts"
+printf '%s\n' 'import { draw } from "./ui/Pill.ts"' 'export const page = () => draw()' > "$R/ui/chuggy-ui/app/browser/page.ts"
+seal
+check "a page may reach a primitive, and a primitive the decisions" 0 "$RC" "graph clean"
+
 done_ "check-boundaries.test.sh"

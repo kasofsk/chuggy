@@ -1,0 +1,89 @@
+/* Notice: a rail, a word, a detail line — or one line inside a panel. */
+
+@layer ui {
+  .notice {
+    display: grid;
+    gap: var(--space-1);
+    padding: var(--space-3) var(--space-4);
+    border-left: var(--rail) solid var(--ink-3);
+    background: var(--surface-1);
+    border-radius: 0 var(--radius-2) var(--radius-2) 0;
+    color: var(--ink-2);
+    max-width: var(--measure);
+  }
+
+  .notice-head {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-strong);
+  }
+
+  .notice-info {
+    border-color: var(--edge-strong);
+  }
+
+  .notice-info .notice-head {
+    color: var(--ink-1);
+  }
+
+  .notice-live {
+    border-color: var(--tone-live);
+    background: var(--wash-live);
+  }
+
+  .notice-live .notice-head {
+    color: var(--tone-live);
+  }
+
+  .notice-parked {
+    border-color: var(--tone-parked);
+    background: var(--wash-parked);
+  }
+
+  .notice-parked .notice-head {
+    color: var(--tone-parked);
+  }
+
+  .notice-danger {
+    border-color: var(--tone-fail);
+    background: var(--wash-fail);
+  }
+
+  .notice-danger .notice-head {
+    color: var(--tone-fail);
+  }
+
+  .notice-detail {
+    color: var(--ink-1);
+  }
+
+  .notice-more {
+    color: var(--ink-3);
+  }
+
+  .notice-inline {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    border-radius: 0;
+    max-width: none;
+  }
+
+  .notice-inline.notice-info {
+    color: var(--ink-3);
+  }
+
+  .notice-inline.notice-live {
+    color: var(--tone-live);
+  }
+
+  .notice-inline.notice-parked {
+    color: var(--tone-parked);
+  }
+
+  .notice-inline.notice-danger {
+    color: var(--tone-fail);
+  }
+}

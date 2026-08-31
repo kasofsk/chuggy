@@ -18,7 +18,7 @@ import { apiConfiguration } from "../core/apiRoutes.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { configurationLabel } from "../core/labels.ts";
 import { usePanelResource } from "./api.ts";
-import { Panel } from "./Panel.tsx";
+import { DataPanel } from "./DataPanel.tsx";
 
 function Field(props: {
   readonly name: string;
@@ -87,7 +87,7 @@ export function TicketBrief(props: {
   readonly state: PanelState<DraftResponse>;
 }): ReactNode {
   return (
-    <Panel title="brief" state={props.state}>
+    <DataPanel title="brief" state={props.state}>
       {(draft) => {
         const released = configurationLabel(
           draft.configurationRevision,
@@ -113,7 +113,7 @@ export function TicketBrief(props: {
           </dl>
         );
       }}
-    </Panel>
+    </DataPanel>
   );
 }
 
@@ -166,7 +166,7 @@ function TicketConfiguration(props: {
     (ports) => apiConfiguration(ports, props.partition, props.revision),
   );
   return (
-    <Panel title={`configuration ${label.text}`} state={state}>
+    <DataPanel title={`configuration ${label.text}`} state={state}>
       {(configuration) => (
         <div className="configuration">
           <dl className="fields">
@@ -194,7 +194,7 @@ function TicketConfiguration(props: {
           ) : null}
         </div>
       )}
-    </Panel>
+    </DataPanel>
   );
 }
 
@@ -204,9 +204,9 @@ export function TicketProvenance(props: {
 }): ReactNode {
   return (
     <>
-      <Panel title="provenance" state={props.state}>
+      <DataPanel title="provenance" state={props.state}>
         {(draft) => <Authoring draft={draft} />}
-      </Panel>
+      </DataPanel>
       {props.state.state === "Ready" ? (
         <TicketConfiguration
           partition={props.partition}

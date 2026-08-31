@@ -57,7 +57,7 @@ import type {
   TicketActionContext,
 } from "../core/ticketActions.ts";
 import { useApiPorts } from "./api.ts";
-import { Panel } from "./Panel.tsx";
+import { DataPanel } from "./DataPanel.tsx";
 import { drawBytes } from "./ports.ts";
 
 interface Attempt {
@@ -271,7 +271,7 @@ export function TicketActions(props: {
       ? manualDispatchAction(props.ticket, props.dispatchState.value)
       : undefined;
   return (
-    <Panel title="actions" state={props.state}>
+    <DataPanel title="actions" state={props.state}>
       {(value) => (
         <div className="action-panel">
           <ActionButtons
@@ -312,6 +312,6 @@ export function TicketActions(props: {
           )}
         </div>
       )}
-    </Panel>
+    </DataPanel>
   );
 }

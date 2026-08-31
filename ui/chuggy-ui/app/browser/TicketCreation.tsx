@@ -49,7 +49,7 @@ import type { CreationContext } from "../core/ticketCreationRun.ts";
 import { operationSubmitting } from "../core/operationFollow.ts";
 import type { OperationStep } from "../core/operationFollow.ts";
 import { usePanelList, useApiPorts } from "./api.ts";
-import { Panel } from "./Panel.tsx";
+import { DataPanel } from "./DataPanel.tsx";
 import { drawBytes } from "./ports.ts";
 import { operationIdBytesCount } from "../core/operationFollow.ts";
 import { TicketCreationAdvanced } from "./TicketCreationAdvanced.tsx";
@@ -390,7 +390,7 @@ export function TicketCreation(): ReactNode {
     readCreationContext(readPorts, partition),
   );
   return (
-    <Panel title="new ticket" state={state}>
+    <DataPanel title="new ticket" state={state}>
       {(context) =>
         context.context === "Ready" ? (
           <CreationForm
@@ -409,6 +409,6 @@ export function TicketCreation(): ReactNode {
           <p className="panel-absent">{creationContextSentence(context)}</p>
         )
       }
-    </Panel>
+    </DataPanel>
   );
 }
