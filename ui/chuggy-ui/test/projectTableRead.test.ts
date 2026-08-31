@@ -81,8 +81,8 @@ test("a first read of an entry nothing has written asks for one page", async () 
 });
 
 test("a walk's first page carries no cursor and its next carries the one it was given", () => {
-  expect(projectExecutionPage("All", undefined).after).toBeUndefined();
-  expect(projectExecutionPage("All", "opaque").after).toBe("opaque");
+  expect(projectExecutionPage("All", undefined).cursor).toBeUndefined();
+  expect(projectExecutionPage("All", "opaque").cursor).toBe("opaque");
 });
 
 test("a walk states the size it wants and names only the selection it filters", () => {

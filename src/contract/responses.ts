@@ -400,9 +400,14 @@ export const executionSummarySchema = z.object({
 });
 export type ExecutionSummary = z.infer<typeof executionSummarySchema>;
 
+/**
+ * One page of the project's executions, ordered by `(ticket, task)` ascending.
+ * The cursor is a position in that order, so the `ticket` filter narrows the
+ * same list rather than paging a different one.
+ */
 export const executionsResponseSchema = z.object({
   executions: page(executionSummarySchema),
-  nextAfter: identitySchema.optional(),
+  nextCursor: cursorSchema.optional(),
 });
 export type ExecutionsResponse = z.infer<typeof executionsResponseSchema>;
 

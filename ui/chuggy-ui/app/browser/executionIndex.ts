@@ -34,8 +34,8 @@ export function useProjectExecutionIndex(
         projectExecutionIndexFold(previous, change.representation),
     ),
     (at) =>
-      projectExecutionIndexRead((selection, after) =>
-        apiExecutions(at, partition, projectExecutionPage(selection, after)),
+      projectExecutionIndexRead((selection, cursor) =>
+        apiExecutions(at, partition, projectExecutionPage(selection, cursor)),
       ),
   );
 }
