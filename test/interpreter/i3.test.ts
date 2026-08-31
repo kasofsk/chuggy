@@ -11,7 +11,17 @@ import {
   taskDoneEvent,
   workReduceEvent,
 } from "../../src/actor/decisionEvent.ts";
-import type { DecisionEvent } from "../../src/domain/generated/modelTypes.ts";
+import type { Entry } from "../../src/actor/journal.ts";
+import { retryableIn } from "../../src/domain/enablement.ts";
+import type {
+  DecisionEvent,
+  Phase,
+} from "../../src/domain/generated/modelTypes.ts";
+import {
+  reasonTags,
+  resumeTags,
+  retryPricingTags,
+} from "../../src/domain/generated/modelTypes.ts";
 import { actorInit, journalStep, memoryCore } from "../../src/actor/state.ts";
 import { materializationOf } from "../../src/interpreter/decisionPlan.ts";
 import { inputBundleReferencesOf } from "../../src/interpreter/decisionPlan.ts";
@@ -48,7 +58,7 @@ import {
   plainResult,
   refinementInstance,
 } from "../actor/harness.ts";
-import { id } from "../domain/fixtures.ts";
+import { coreOf, id, ticketOn } from "../domain/fixtures.ts";
 import { populated } from "./roster.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
@@ -358,6 +368,136 @@ test("promotion and an unproven publication materialize a resumable handoff hold
     "RetryHandoff",
     "AbandonHandoff",
   ]);
+});
+
+/** The raise's own record: the transition every park writes, and the task it opens. */
+function parkEntry(
+  phase: Extract<Phase, "Escalated" | "HandoffBlocked">,
+): Entry {
+  return {
+    seq: 4,
+    event: evalReduceEvent(id(1)),
+    rec: {
+      label: "ticket-escalated",
+      transitions: [{ ticket: 1, from: "Evaluating", to: phase }],
+      effects: ["OpenHumanTask"],
+    },
+  };
+}
+
+/** The item a reduce reaches the writer as, which carries no principal's command. */
+function continuationInput(event: DecisionEvent): DecisionInput {
+  return {
+    partition,
+    ordinal: 1,
+    priority: "Ordinary",
+    source: {
+      kind: "Continuation",
+      continuation: "continuation",
+      command: event,
+      expectedTicketVersion: 1,
+      expectedPhase: "Evaluating",
+      taskSetGeneration: 1,
+    },
+  };
+}
+
+test("an open action admits exactly the answers the actor's enablement accepts", () => {
+  const offered = new Set<string>();
+  for (const phase of ["Escalated", "HandoffBlocked"] as const) {
+    for (const reason of reasonTags) {
+      for (const resumeAt of resumeTags) {
+        for (const resumePricing of retryPricingTags) {
+          for (const gasLeft of [0, 1]) {
+            const post = coreOf([
+              ticketOn(refinementInstance, "ManagedFinalizer", {
+                phase,
+                reason,
+                resumeAt,
+                resumePricing,
+                gasLeft,
+              }),
+            ]);
+            const entry = parkEntry(phase);
+            const planned = materializationOf(
+              continuationInput(entry.event),
+              coreOf([]),
+              post,
+              entry,
+            );
+            const answers =
+              phase === "HandoffBlocked"
+                ? (["RetryHandoff", "AbandonHandoff"] as const)
+                : (["Resume", "Revoke"] as const);
+            const expected = retryableIn(post, id(1))
+              ? [answers[0], answers[1]]
+              : [answers[1]];
+            assert.deepEqual(
+              planned.actions[0]?.resolutions,
+              expected,
+              [phase, reason, resumeAt, resumePricing, gasLeft].join("/"),
+            );
+            offered.add(expected.join(","));
+          }
+        }
+      }
+    }
+  }
+  assert.deepEqual([...offered].sort(), [
+    "AbandonHandoff",
+    "Resume,Revoke",
+    "RetryHandoff,AbandonHandoff",
+    "Revoke",
+  ]);
+});
+
+/**
+ * A ticket that spends its gas on a rework and a finalizer retry, and whose
+ * promoted handoff then goes unproven. It reaches the hold with nothing left to
+ * pay for the republication its resume point names.
+ */
+function handoffBlockedWithoutGas(): ReturnType<typeof journalStep> {
+  const steps: readonly DecisionEvent[] = [
+    releaseTicketEvent(id(1), plainAuthoring),
+    dispatchEvent(id(1)),
+    taskDoneEvent(id(1), asTaskId(1), "Pass", plainResult),
+    workReduceEvent(id(1)),
+    taskDoneEvent(id(1), asTaskId(2), "Fail", plainResult),
+    evalReduceEvent(id(1)),
+    taskDoneEvent(id(1), asTaskId(3), "Pass", plainResult),
+    workReduceEvent(id(1)),
+    taskDoneEvent(id(1), asTaskId(4), "Pass", plainResult),
+    evalReduceEvent(id(1)),
+    finalizationResultEvent(id(1), "FinalizationFailed"),
+    taskDoneEvent(id(1), asTaskId(5), "Pass", plainResult),
+    workReduceEvent(id(1)),
+    taskDoneEvent(id(1), asTaskId(6), "Pass", plainResult),
+    evalReduceEvent(id(1)),
+    finalizationResultEvent(id(1), "PromotionAccepted"),
+  ];
+  return steps.reduce(
+    (state, event) => journalStep(refinementInstance, state, event),
+    actorInit(),
+  );
+}
+
+test("a handoff hold with no gas for its republication admits only the abandon", () => {
+  const publishing = handoffBlockedWithoutGas();
+  const unproven = finalizationResultEvent(id(1), "HandoffPublicationUnproven");
+  const blocked = journalStep(refinementInstance, publishing, unproven);
+  const entry = blocked.journal.at(-1);
+  assert.ok(entry !== undefined);
+  const post = memoryCore(blocked);
+  assert.equal(post.tickets.get(id(1))?.gasLeft, 0);
+  assert.equal(post.tickets.get(id(1))?.resumeAt, "ResumePublishingHandoff");
+  assert.equal(retryableIn(post, id(1)), false);
+  const planned = materializationOf(
+    finalizationInput(unproven),
+    memoryCore(publishing),
+    post,
+    entry,
+  );
+  assert.deepEqual(planned.actions[0]?.resolutions, ["AbandonHandoff"]);
 });
 
 test("a decision that leaves a ticket where it found it withdraws nothing", () => {

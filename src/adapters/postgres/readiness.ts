@@ -61,7 +61,9 @@ import type {
 import { parseStoredTicketCommand } from "../../interpreter/wire.ts";
 import {
   isApprovalResolution,
+  type ApprovalResolution,
   type FinalizationSubmission,
+  type NativeActionResolution,
   type TicketCommand,
 } from "../../interpreter/ticketCommand.ts";
 import { parseDraftAuthoring } from "../../interpreter/authoring.ts";
@@ -80,7 +82,9 @@ import { finalizerRowValue } from "./finalizerRows.ts";
 import {
   finalizationResultEvent,
   releaseTicketEvent,
+  type DecisionEvent,
 } from "../../actor/decisionEvent.ts";
+import { assertNever } from "../../domain/assertNever.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import {
   asProjectId,
@@ -337,6 +341,28 @@ async function finalizationAcceptedPromotion(
   };
 }
 
+/**
+ * The domain command one answer names, exhaustive over the answers that name
+ * one. A resolution added to the roster is a compile error here rather than an
+ * answer that silently becomes a revocation.
+ */
+function nativeActionResolvedEvent(
+  resolution: Exclude<NativeActionResolution, ApprovalResolution>,
+  ticket: number,
+): DecisionEvent {
+  switch (resolution) {
+    case "Resume":
+    case "RetryHandoff":
+      return { type: "ResumeTicket", value: ticket };
+    case "AbandonHandoff":
+      return { type: "AbandonHandoff", value: ticket };
+    case "Revoke":
+      return { type: "Revoke", value: ticket };
+    default:
+      return assertNever(resolution);
+  }
+}
+
 async function nativeActionSource(
   pool: pg.Pool,
   partition: Partition,
@@ -368,15 +394,11 @@ async function nativeActionSource(
       open: open.state === "Open",
     },
   };
-  if (isApprovalResolution(command.resolution)) return answered;
+  const resolution = command.resolution;
+  if (isApprovalResolution(resolution)) return answered;
   return {
     ...answered,
-    resolvedEvent:
-      command.resolution === "Resume" || command.resolution === "RetryHandoff"
-        ? { type: "ResumeTicket", value: ticket }
-        : command.resolution === "AbandonHandoff"
-          ? { type: "AbandonHandoff", value: ticket }
-          : { type: "Revoke", value: ticket },
+    resolvedEvent: nativeActionResolvedEvent(resolution, ticket),
   };
 }
 
