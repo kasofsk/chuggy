@@ -188,7 +188,12 @@ async function decisionSettle(
   );
 }
 
-/** Upserts the rows this decision moved, each carrying the sequence that moved it. */
+/**
+ * Upserts the rows this decision moved, each carrying the sequence that moved
+ * it. Every column of a row comes from the one post-state
+ * `projectionChanges` read, in this transaction, so the projection cannot
+ * disagree with the entry beside it.
+ */
 async function decisionProject(
   client: pg.PoolClient,
   partition: Partition,
@@ -199,12 +204,18 @@ async function decisionProject(
   for (const row of projection) {
     await client.query(
       sql`INSERT INTO ticket_projection
-       (tenant, project, ticket, phase, seq, dependable, reason, configuration_revision, configuration_digest)
+       (tenant, project, ticket, phase, seq, dependable, reason, resume_at,
+        gas_left, rework_left, finalization_left,
+        configuration_revision, configuration_digest)
        VALUES (${partition.tenant}, ${partition.project}, ${row.ticket}, ${row.phase}, ${seq}, ${row.dependable},
-               ${row.reason}, ${configuration.configurationRevision}, ${configuration.configurationDigest})
+               ${row.reason}, ${row.resumeAt}, ${row.gasLeft}, ${row.reworkLeft},
+               ${row.finalizationLeft ?? null},
+               ${configuration.configurationRevision}, ${configuration.configurationDigest})
        ON CONFLICT (tenant, project, ticket)
        DO UPDATE SET phase = EXCLUDED.phase, seq = EXCLUDED.seq, dependable = EXCLUDED.dependable,
-                     reason = EXCLUDED.reason`,
+                     reason = EXCLUDED.reason, resume_at = EXCLUDED.resume_at,
+                     gas_left = EXCLUDED.gas_left, rework_left = EXCLUDED.rework_left,
+                     finalization_left = EXCLUDED.finalization_left`,
     );
   }
 }
