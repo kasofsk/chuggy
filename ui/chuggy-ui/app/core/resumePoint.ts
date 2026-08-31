@@ -4,8 +4,9 @@
  *
  * The machine stamps the point at the wall it escalated on and clears it on the
  * way out, so a parked ticket's wall and its last fan-out set name it between
- * them. This restates the model's `escalate` call sites because a browser
- * reaches only `src/contract/`, and `test/ui/resumePoint.test.ts` holds the
+ * them. The points are the contract's own roster; what is restated here is
+ * which one each wall names, because a browser reaches only `src/contract/` and
+ * no read carries that rule. `test/ui/resumePoint.test.ts` holds the
  * restatement against `src/domain/deciders.ts` — the arrangement
  * `no-console-sees-another` names for a value two trees both need.
  *
@@ -24,19 +25,11 @@
 
 import type {
   EscalationReason,
+  ResumePoint,
   ResumePricing,
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
 import type { ClosedSet } from "./ticketLedger.ts";
-
-/** The four points the model can stamp, which is `Resume` without its empty arm. */
-export const resumePoints = [
-  "ResumeWorking",
-  "ResumeEvaluating",
-  "ResumeFinalizing",
-  "ResumePublishingHandoff",
-] as const;
-export type ResumePoint = (typeof resumePoints)[number];
 
 /** Which of the ticket's four asks the resume issues again. */
 export type ResumeRerun = "work" | "evaluation" | "finalization" | "handoff";

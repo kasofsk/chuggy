@@ -36,13 +36,11 @@ import type {
 } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { combine } from "../../src/domain/program.ts";
-import type {
-  ResumePoint,
-  ResumeSituation,
-} from "../../ui/chuggy-ui/app/core/resumePoint.ts";
+import { resumePoints } from "../../src/contract/rosters.ts";
+import type { ResumePoint } from "../../src/contract/rosters.ts";
+import type { ResumeSituation } from "../../ui/chuggy-ui/app/core/resumePoint.ts";
 import {
   resumeGasCharge,
-  resumePoints,
   resumeReenters,
   ticketResumePoint,
 } from "../../ui/chuggy-ui/app/core/resumePoint.ts";

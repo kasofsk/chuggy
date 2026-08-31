@@ -3,25 +3,27 @@
  * holding the work run that produced an artifact and the program runs that
  * evaluated it.
  *
- * NOTHING HERE TRUSTS ARRIVAL ORDER. The ticket-scoped route orders by
- * execution identity and an identity is a UUID with the task ordinal suffixed
- * onto it, so the page arrives in an order unrelated to time; `task` is the
- * ticket-wide ordinal the model issues in sequence, and sorting by it is what
- * makes a cycle recoverable at all.
+ * NOTHING HERE TRUSTS ARRIVAL ORDER. The route answers in `(ticket, task)`
+ * ascending, so a page usually arrives in the order this reads it in — but
+ * `ExecutionsResponse` is a list with no ordering in its type, and a live frame
+ * is folded into a page already read. `task` is the ticket-wide ordinal the
+ * model issues in sequence, and sorting by it is what makes a cycle
+ * recoverable from whatever order the page is in.
  *
  * A FAN-OUT SET IS WHAT ONE SPAWN PRODUCED, and it is named by the request the
  * row carries or by the identity stem every task of one request shares. A row
  * `executionSummarySchema` parsed before it declared the request has only the
  * stem, so the stem answers for one and is never the rule where a request is
- * there to read. `SpawnedExecution` is what lets this compile before that field
- * lands in kasofsk/chuggy#449, and deleting it so that `ExecutionSummary` is
- * read directly is the whole of what that landing costs here.
+ * there to read.
  *
  * IT IS TOTAL OVER THE PAGES THE ROSTERS ADMIT, not only over the pages the
- * machine produces. Identity order means a short page is cut at no point in
- * particular, so a cycle whose work run is missing, a gap between two stages
- * and a stage the authored program does not declare are all inputs, and each
- * has a row of its own rather than being merged into a neighbour.
+ * machine produces or the route can page to. Ordering by `(ticket, task)` makes
+ * a short page a prefix of the ticket's history, so pagination alone no longer
+ * cuts a cycle in half; the shapes are inputs regardless, because the rosters
+ * admit them — `stage` is an unbounded count and the request naming a set is
+ * optional. So a cycle whose work run is missing, a gap between two stages and
+ * a stage the authored program does not declare each get a row of their own
+ * rather than being merged into a neighbour.
  *
  * EVERY LOOP IS BOUNDED BY SOMETHING DECLARED. A run draws one row per stage
  * the authoring declares and one per set the page holds beyond it, which are
@@ -133,14 +135,6 @@ interface CycleSets {
   readonly evaluations: readonly SpawnedSet[];
 }
 
-/**
- * A summary whether or not the wire names the request its set was spawned
- * under, which both contracts this module compiles against satisfy.
- */
-type SpawnedExecution = ExecutionSummary & {
-  readonly request?: string | undefined;
-};
-
 /** Whether the route holds more of this ticket than the page it answered with. */
 function pageTruncated(page: ExecutionsResponse): boolean {
   return page.nextCursor !== undefined;
@@ -155,20 +149,20 @@ function executionStem(execution: string): string {
 
 /**
  * Which spawn this execution belongs to, by the request identity where a row
- * carries one and by the identity stem otherwise. No parsed read carries one
- * yet, so the stem is what answers today.
+ * carries one and by the identity stem otherwise. A row the wire wrote before
+ * it named the request has only the stem to be grouped by.
  */
-function executionRequest(row: SpawnedExecution): string {
+function executionRequest(row: ExecutionSummary): string {
   return row.request ?? executionStem(row.execution);
 }
 
-function executionSetKey(row: SpawnedExecution): string {
+function executionSetKey(row: ExecutionSummary): string {
   return `${executionRequest(row)} ${row.taskKind} ${String(row.stage)}`;
 }
 
 /** The page in task order, cut at every change of spawn, kind or stage. */
 function spawnedSets(page: ExecutionsResponse): readonly SpawnedSet[] {
-  const ordered: readonly SpawnedExecution[] = [...page.executions].sort(
+  const ordered: readonly ExecutionSummary[] = [...page.executions].sort(
     (left, right) => left.task - right.task,
   );
   const sets: SpawnedSet[] = [];
