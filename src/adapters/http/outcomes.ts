@@ -349,8 +349,8 @@ export function selectorProjectSettingsResponse(
 }
 
 /**
- * A refusal a caller can act on. Contention is the one worth waiting out, so it
- * carries the retry the caller would otherwise have to guess at.
+ * A refusal a caller can act on. A write that did not complete is the one worth
+ * waiting out, so it carries the retry the caller would otherwise guess at.
  */
 function selectorProjectSettingsRefusal(
   refusal: SelectorProjectSettingsRefusal,
@@ -365,14 +365,7 @@ function selectorProjectSettingsRefusal(
         ),
       );
     case "SettingsWriteContended":
-      return response(
-        503,
-        nativeHttpError(
-          refusal,
-          "Another write for this project held it. Try again.",
-        ),
-        { "retry-after": "1" },
-      );
+      return retry(503, 1, refusal);
     default:
       return assertNever(refusal);
   }

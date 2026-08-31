@@ -38,10 +38,7 @@ import type {
   SelectorProjectSettingsStore,
   SelectorProjectSettingsWriteOutcome,
 } from "../../interpreter/selectorProjectSettings.ts";
-import {
-  postgresContendedErrorCodes,
-  selectorAutomaticReadinessErrorCode,
-} from "./schema.ts";
+import { selectorAutomaticReadinessErrorCode } from "./schema.ts";
 import {
   asProjectId,
   asTenantId,
@@ -746,6 +743,15 @@ function postgresFailureCode(failure: unknown): string | undefined {
 }
 
 /**
+ * The SQLSTATEs a write did not complete under. `query_canceled` is every
+ * cancellation a statement can meet, its deadline included, and
+ * `deadlock_detected` is the cycle a server broke to let one of its writes
+ * through; neither says whose lock was in the way, and both leave a write that
+ * can be made again.
+ */
+const postgresIncompleteWriteCodes: readonly string[] = ["57014", "40P01"];
+
+/**
  * Which refusal a server's own code names, and undefined for a failure that is
  * a fault rather than a condition a caller can act on.
  */
@@ -755,7 +761,7 @@ function selectorWriteRefusal(
   const code = postgresFailureCode(failure);
   if (code === selectorAutomaticReadinessErrorCode)
     return "AutomaticDispatchUnavailable";
-  if (code !== undefined && postgresContendedErrorCodes.includes(code))
+  if (code !== undefined && postgresIncompleteWriteCodes.includes(code))
     return "SettingsWriteContended";
   return undefined;
 }

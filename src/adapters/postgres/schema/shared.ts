@@ -18,15 +18,6 @@ export const selectorProjectSettingsFunction =
 /** The SQLSTATE the automatic-dispatch readiness trigger refuses under. */
 export const selectorAutomaticReadinessErrorCode = "CHG01";
 
-/**
- * The SQLSTATEs a write gives up under rather than answers wrongly: a statement
- * timeout spent waiting for another write's lock, and a deadlock the server
- * broke. Both say the write contended, and both are worth retrying.
- */
-export const postgresContendedErrorCodes: readonly string[] = [
-  "57014",
-  "40P01",
-];
 export const selectorReviewFunction = "review_selector_proposal";
 export const selectorReconcileClaimFunction =
   "claim_selector_proposal_reconciliation";

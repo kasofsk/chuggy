@@ -44,9 +44,9 @@ export interface SelectorProjectSettingsRevision {
 /**
  * What one durable write answers with: the row it wrote, the fence it lost, or a
  * refusal — `Automatic` dispatch asked for while no policy host is production
- * ready, or a write that gave up waiting on another write for this project.
- * Each is a condition an administrator can act on, so each is a variant rather
- * than a fault.
+ * ready, or a write that did not complete and can be made again. Each is a
+ * condition an administrator can act on, so each is a variant rather than a
+ * fault.
  */
 export type SelectorProjectSettingsRefusal =
   "AutomaticDispatchUnavailable" | "SettingsWriteContended";

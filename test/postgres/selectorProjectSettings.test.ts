@@ -867,3 +867,57 @@ test("a write that gives up waiting says so rather than reading as a fault", asy
     await pool.end();
   }
 });
+
+/**
+ * Two writes that each hold what the other is waiting for. The server breaks
+ * the cycle by refusing one of them, and which one it picks is its own choice.
+ */
+test("a deadlock between two projects' writes is a contention the caller is told about", async () => {
+  const left = await postgresHarnessProject(
+    harness.store,
+    "selector-deadlock-l",
+  );
+  const right = await postgresHarnessProject(
+    harness.store,
+    "selector-deadlock-r",
+  );
+  const pool = postgresHarnessRolePool(apiRole);
+  const holder = await pool.connect();
+  const other = await pool.connect();
+  try {
+    const mine = postgresSelectorProjectSettings(clientPool(holder));
+    const theirs = postgresSelectorProjectSettings(clientPool(other));
+    await holder.query("BEGIN");
+    await other.query("BEGIN");
+    await mine.write(left, 0, { northStar: "Mine." }, administrator);
+    await theirs.write(right, 0, { northStar: "Theirs." }, administrator);
+    const reaching = mine.write(
+      right,
+      0,
+      { northStar: "Reaching across." },
+      administrator,
+    );
+    const reachingBack = theirs.write(
+      left,
+      0,
+      { northStar: "Reaching back." },
+      administrator,
+    );
+    const victim = await Promise.race([
+      reaching.then((outcome) => ({ held: holder, outcome })),
+      reachingBack.then((outcome) => ({ held: other, outcome })),
+    ]);
+    assert.deepEqual(victim.outcome, {
+      written: "Refused",
+      refusal: "SettingsWriteContended",
+    });
+    await victim.held.query("ROLLBACK");
+    await Promise.allSettled([reaching, reachingBack]);
+  } finally {
+    for (const held of [holder, other]) {
+      await held.query("ROLLBACK").catch(() => undefined);
+      held.release();
+    }
+    await pool.end();
+  }
+});

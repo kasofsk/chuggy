@@ -510,10 +510,9 @@ test("a settings write that lost a race for its project is retryable", async () 
   });
   assert.equal(refused.statusCode, 503);
   assert.equal(refused.headers["retry-after"], "1");
-  assert.equal(
-    refused.json<HttpErrorEnvelope>().error.code,
-    "SettingsWriteContended",
-  );
+  const envelope = refused.json<HttpErrorEnvelope>();
+  assert.equal(envelope.error.code, "SettingsWriteContended");
+  assert.equal(envelope.error.message, "The request can be retried.");
 });
 
 test("a settings body naming a field the wire does not is refused", async () => {
