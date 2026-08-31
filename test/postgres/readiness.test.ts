@@ -6,7 +6,10 @@ import {
   taskDoneEvent,
   type DecisionEvent,
 } from "../../src/actor/decisionEvent.ts";
-import type { Core } from "../../src/domain/generated/modelTypes.ts";
+import {
+  decisionEventTags,
+  type Core,
+} from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import {
   allNativeActionResolutions,
@@ -98,9 +101,9 @@ test("readiness clears only when no pending input remains", async () => {
 
 /**
  * The park a seeded desk task stands on, as a `Core`, at the gas a case hands
- * it. The phase and the wall are the seed's own; the resume point is this
- * suite's, because the projection carries none and it is the lever every
- * assertion below turns.
+ * it. The phase and the wall are the seed's own; the resume point and its
+ * pricing are this suite's, because the projection carries neither, and they
+ * are what the two resume answers below turn on.
  */
 function parkedCore(action: SeededAction, gasLeft: number): Core {
   return coreOf([
@@ -110,38 +113,49 @@ function parkedCore(action: SeededAction, gasLeft: number): Core {
       resumeAt:
         action.kind === "HandoffBlock"
           ? "ResumePublishingHandoff"
-          : "ResumeEvaluating",
+          : "ResumeWorking",
+      resumePricing: "RetryCharged",
       gasLeft,
     }),
   ]);
 }
 
 /**
- * What the mapping may not get wrong, asked of the machine rather than of a
- * table this suite would have to keep right: the event is one the park enables,
- * and it is the resume exactly when it is not the answer's own name.
+ * The command one answer names, decided by the answer alone. A settle answer
+ * has a decider of its own — `decideRevoke`, `decideAbandonHandoff` — so its
+ * name is one of the machine's event tags; every other answer routes to
+ * `decideResumeTicket` (`model/domain.qnt`).
+ */
+function answerNames(
+  resolution: Exclude<NativeActionResolution, ApprovalResolution>,
+): DecisionEvent["type"] {
+  return decisionEventTags.find((tag) => tag === resolution) ?? "ResumeTicket";
+}
+
+/**
+ * What the mapping may not get wrong. The expectation is read off the answer
+ * rather than off the event under test, so a settle answer degraded into a
+ * resume cannot pick the branch that would have passed; the two enablement
+ * questions stand behind it, refusing a command the park does not offer and a
+ * resume the gas does not gate.
  */
 function assertAnswerNames(
   resolution: Exclude<NativeActionResolution, ApprovalResolution>,
   action: SeededAction,
   event: DecisionEvent,
 ): void {
+  const named = answerNames(resolution);
   assert.equal(decisionEventSubject(event), action.ticket, resolution);
+  assert.equal(event.type, named, resolution);
   assert.ok(
     decisionEventEnabled(refinementInstance, parkedCore(action, 1), event),
     `${resolution} named ${event.type}, which its park does not enable`,
   );
-  const spent = decisionEventEnabled(
-    refinementInstance,
-    parkedCore(action, 0),
-    event,
+  assert.equal(
+    decisionEventEnabled(refinementInstance, parkedCore(action, 0), event),
+    named !== "ResumeTicket",
+    `${resolution} answered a spent park with ${event.type}`,
   );
-  if (event.type === resolution) {
-    assert.ok(spent, `${resolution} named a command the gas gates`);
-    return;
-  }
-  assert.equal(event.type, "ResumeTicket", resolution);
-  assert.equal(spent, false, `${resolution} named a resume gas does not gate`);
 }
 
 /** Which desk task asks for one answer, read off the contract's own pairing. */

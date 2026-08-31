@@ -147,8 +147,9 @@ export async function seedOpenAction(
 
 /**
  * Refuses a committed action whose kind and whose ticket's phase are a pair the
- * desk cannot raise. It reads the rows back rather than the arguments, so the
- * derivation above is what is under the check and not what performs it.
+ * desk cannot raise, naming the phase each kind stands on rather than calling
+ * `seededPhase` — a check that calls the derivation it is checking verifies
+ * nothing, and the rows it reads are what the seed actually committed.
  */
 async function seededPairing(
   harness: PostgresHarness,
@@ -164,8 +165,9 @@ async function seededPairing(
   const row = found[0];
   if (found.length !== 1 || row === undefined)
     throw new Error(`native action fixture: ${label} stands on no one ticket`);
-  if ((row.kind === "HandoffBlock") !== (row.phase === "HandoffBlocked"))
+  const stands = row.kind === "HandoffBlock" ? "HandoffBlocked" : "Escalated";
+  if (row.phase !== stands)
     throw new Error(
-      `native action fixture: a ${row.kind} cannot stand on a ticket in ${row.phase}`,
+      `native action fixture: a ${row.kind} stands on ${stands}, not on a ticket in ${row.phase}`,
     );
 }
