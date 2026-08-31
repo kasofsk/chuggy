@@ -3,9 +3,10 @@
  *
  * Three cycles, two of them superseded, a stage that passed an artifact the
  * ticket no longer holds, a stage the fabric relaunched its container for, and
- * a resume that re-ran the program from its lowest stage. The list is built in
- * the order the route sends it — by execution identity, which is a UUID — so
- * every suite reading it is reading arrival order rather than time order.
+ * a resume that re-ran the program from its lowest stage. The list is held by
+ * execution identity, which is a UUID and is an order the route no longer
+ * answers in, so every suite reading it proves the derivation recovers a cycle
+ * from whatever order a page reaches it in.
  */
 
 import type {
@@ -89,9 +90,7 @@ function ledgerTotals(shape: TotalsShape): RunTotals {
 }
 
 /** One row, with everything the ledger never reads held constant. */
-export function ledgerExecution(
-  shape: ExecutionShape,
-): ExecutionSummary & { readonly request?: string } {
+export function ledgerExecution(shape: ExecutionShape): ExecutionSummary {
   const { totals, ...wire } = shape;
   const registeredAt = ledgerInstant(shape.task * ledgerTaskGapMs);
   const running =
