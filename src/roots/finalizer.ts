@@ -28,6 +28,7 @@ import {
   type RuntimePrecondition,
   type ServiceRuntime,
 } from "../interpreter/serviceRuntime.ts";
+import { finalizerProcessRoot } from "./controlPlane.ts";
 
 /** One precondition that stopped a start, named beside what it answered. */
 interface RuntimePreconditionUnmet {
@@ -35,7 +36,6 @@ interface RuntimePreconditionUnmet {
   readonly met: "Refused" | "Undecided";
   readonly why: string;
 }
-import { finalizerProcessRoot } from "./controlPlane.ts";
 
 /** What a configuration this cannot parse, or a shutdown that did not drain, leaves with. */
 const finalizerFailedExit = 1;
@@ -68,7 +68,7 @@ async function finalizerUnmet(
 
 function finalizerCouldNotRun(unmet: RuntimePreconditionUnmet): void {
   finalizerReport(
-    `${unmet.precondition} is not met (${unmet.met.toLowerCase()}): ${unmet.why}`,
+    `${unmet.precondition} ${unmet.met.toLowerCase()} — ${unmet.why}`,
   );
   process.exitCode = finalizerCouldNotRunExit;
 }

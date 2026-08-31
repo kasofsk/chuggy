@@ -167,18 +167,24 @@ test("each local prerequisite this deployment lacks is named on the way out", as
   const locked = join(root, "locked");
   mkdirSync(locked);
   chmodSync(locked, 0o500);
-  for (const [precondition, overrides] of [
-    ["git-available", { PATH: empty }],
+  for (const [precondition, verdict, why, overrides] of [
+    ["git-available", "undecided", /git --version/u, { PATH: empty }],
     [
       "git-scratch-writable",
+      "undecided",
+      /EACCES/u,
       { CHUG_FINALIZER_GIT_SCRATCH_ROOT: join(locked, "scratch") },
     ],
     [
       "artifact-root-writable",
+      "undecided",
+      /ENOENT/u,
       { CHUG_FINALIZER_ARTIFACT_ROOT: join(root, "unmounted") },
     ],
     [
       "repository-credentials-available",
+      "refused",
+      /a repository credential this deployment names is not readable/u,
       {
         CHUG_FINALIZER_CREDENTIAL_SOURCES: JSON.stringify([
           {
@@ -191,7 +197,16 @@ test("each local prerequisite this deployment lacks is named on the way out", as
   ] as const) {
     const ran = await finalizerRun({ ...environment, ...overrides });
     assert.equal(ran.code, 2, precondition);
-    assert.match(ran.stderr, new RegExp(`${precondition} is not met`, "u"));
+    const reported = ran.stderr
+      .split("\n")
+      .find((line) => line.startsWith(`finalizer: ${precondition} `));
+    assert.ok(reported !== undefined, `${precondition} was never reported`);
+    const spoken = reported.slice(`finalizer: ${precondition} `.length);
+    assert.ok(
+      spoken.startsWith(`${verdict} — `),
+      `${precondition} answered ${spoken}`,
+    );
+    assert.match(spoken.slice(`${verdict} — `.length), why);
     assert.equal(ran.stderr.includes("ready"), false, precondition);
   }
 });
@@ -200,7 +215,11 @@ test("a database that is not there is a could-not-run and never a readiness", as
   const ran = await finalizerRun(fixture(t).environment);
   assert.equal(ran.code, 2);
   assert.match(ran.stderr, /starting/u);
-  assert.match(ran.stderr, /schema-compatible is not met/u);
+  assert.match(
+    ran.stderr,
+    /^finalizer: schema-compatible undecided — .+$/mu,
+    "the line must carry the verdict and what the check found",
+  );
   assert.match(ran.stderr, /stopped/u);
   assert.equal(ran.stderr.includes("ready"), false);
 });

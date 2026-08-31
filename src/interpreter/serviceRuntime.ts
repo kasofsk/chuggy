@@ -160,13 +160,16 @@ export function schemaCompatibilityPrecondition(
   };
 }
 
-/** What a stored-journal scan reached: the partitions it found illegal, or why it could not finish. */
+/**
+ * What a stored-journal scan reached: the partitions it could not replay, each
+ * named beside the reason its own store gave, or why the scan could not finish.
+ */
 export type RuntimeStoredJournalScan =
-  | { readonly scanned: "Scanned"; readonly illegal: readonly string[] }
+  | { readonly scanned: "Scanned"; readonly unreplayable: readonly string[] }
   | { readonly scanned: "Incomplete"; readonly why: string };
 
 export interface RuntimeStoredJournalSource {
-  /** Replays every stored history it can reach, naming the partitions this image could not have decided. */
+  /** Replays every stored history it can reach, naming each it could not and why. */
   scan(signal: AbortSignal): Promise<RuntimeStoredJournalScan>;
 }
 
@@ -186,8 +189,8 @@ export function journalLegalityPrecondition(
       if (scan.scanned === "Incomplete")
         return { met: "Undecided", why: scan.why };
       return runtimePreconditionAnswer(
-        scan.illegal.length === 0,
-        `stored histories this image could not have decided: ${scan.illegal.join(", ")}`,
+        scan.unreplayable.length === 0,
+        `stored journals this image cannot replay — ${scan.unreplayable.join("; ")}`,
       );
     },
   };

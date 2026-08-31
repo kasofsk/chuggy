@@ -403,7 +403,7 @@ export function postgresJournalLegality(
       const listed = await postgresJournalPartitions(pool);
       if (listed.listed === "Incomplete")
         return { scanned: "Incomplete", why: listed.why };
-      const illegal: string[] = [];
+      const unreplayable: string[] = [];
       for (const partition of listed.partitions) {
         signal.throwIfAborted();
         const stored = await postgresTransaction(pool, (client) =>
@@ -411,13 +411,16 @@ export function postgresJournalLegality(
             postgresJournalStored(partition, rows),
           ),
         );
-        if (
-          stored.parsed === "Refused" ||
-          !storedJournalLegalOn(config, stored.value)
-        )
-          illegal.push(`${partition.tenant}/${partition.project}`);
+        const why =
+          stored.parsed === "Refused"
+            ? stored.why
+            : storedJournalLegalOn(config, stored.value)
+              ? undefined
+              : "the stored history is not one this image could have decided";
+        if (why !== undefined)
+          unreplayable.push(`${partition.tenant}/${partition.project}: ${why}`);
       }
-      return { scanned: "Scanned", illegal };
+      return { scanned: "Scanned", unreplayable };
     },
   };
 }

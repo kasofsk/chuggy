@@ -204,7 +204,10 @@ test("a stored journal this image could not have taken refuses the start, naming
         scan: () =>
           Promise.resolve({
             scanned: "Scanned",
-            illegal: ["acme/rig", "acme/spare"],
+            unreplayable: [
+              "acme/rig: the stored history is not one this image could have decided",
+              "acme/spare: the stored envelope of row 4 failed integrity verification",
+            ],
           }),
       }),
     ],
@@ -215,7 +218,10 @@ test("a stored journal this image could not have taken refuses the start, naming
     started: "CouldNotRun",
     precondition: "journal-legal",
     verdict: "Refused",
-    why: "stored histories this image could not have decided: acme/rig, acme/spare",
+    why:
+      "stored journals this image cannot replay — " +
+      "acme/rig: the stored history is not one this image could have decided; " +
+      "acme/spare: the stored envelope of row 4 failed integrity verification",
   });
   assert.deepEqual(runtime.health(), { live: true, ready: false });
   assert.equal(passes, 0);
@@ -274,7 +280,7 @@ test("a legality scan that names nothing lets the start proceed", async () => {
     pacing,
     [
       journalLegalityPrecondition({
-        scan: () => Promise.resolve({ scanned: "Scanned", illegal: [] }),
+        scan: () => Promise.resolve({ scanned: "Scanned", unreplayable: [] }),
       }),
     ],
     runtimeConfig,

@@ -38,11 +38,17 @@ export function gitAvailablePrecondition(
         timeoutSecsMax: gitAvailableTimeoutSecsMax,
         environment,
       });
-      if (ran.ran !== "Exited" || ran.code !== 0)
+      if (ran.ran !== "Exited")
         return {
           met: "Undecided",
           why: `git --version did not run: ${ran.ran}`,
         };
+      if (ran.code !== 0) {
+        return {
+          met: "Undecided",
+          why: `git --version exited ${String(ran.code)}, so what this git writes is unknown`,
+        };
+      }
       return runtimePreconditionAnswer(
         gitVersionAdmits(ran.stdout),
         `the git on this path is not one that writes merge trees: ${ran.stdout}`,

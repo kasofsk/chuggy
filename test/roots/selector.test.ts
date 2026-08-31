@@ -228,9 +228,8 @@ test("native readiness refuses a healthy inventory over an unready context pool"
       'selector',
       async () => false,
     );
-    const met = (await preconditions[0].check(new AbortController().signal))
-      .met === "Met";
-    process.stdout.write(JSON.stringify({ met, inventoryReads }));
+    const answer = await preconditions[0].check(new AbortController().signal);
+    process.stdout.write(JSON.stringify({ answer, inventoryReads }));
   `;
   const found = await execute(process.execPath, [
     "--experimental-strip-types",
@@ -238,7 +237,13 @@ test("native readiness refuses a healthy inventory over an unready context pool"
     "--eval",
     program,
   ]);
-  assert.deepEqual(JSON.parse(found.stdout), { met: false, inventoryReads: 0 });
+  assert.deepEqual(JSON.parse(found.stdout), {
+    answer: {
+      met: "Refused",
+      why: "the native api did not report itself ready",
+    },
+    inventoryReads: 0,
+  });
 });
 
 test("a running selector reports health until signal-driven shutdown", async () => {
@@ -304,6 +309,37 @@ test("a failed selector loop exits non-zero with its settled failure", async () 
   ).catch((failure: unknown) => failure as CommandFailure);
   assert.equal("code" in found ? found.code : 0, 1);
   assert.equal(found.stderr, "selector failed: policy transport lost\n");
+});
+
+test("an unmet precondition leaves the verdict and what it found on stderr", async () => {
+  const program = `
+    const root = await import('./src/roots/selector.ts');
+    const runtime = {
+      start: () => Promise.resolve({
+        started: 'CouldNotRun',
+        precondition: 'selector-source',
+        verdict: 'Refused',
+        why: 'the native api did not report itself ready',
+      }),
+      health: () => ({ live: true, ready: false }),
+      settled: () => Promise.resolve({ live: true, ready: false }),
+      stop: () => Promise.resolve({ stopped: 'Stopped' }),
+    };
+    const result = await root.selectorMain(process.env, () => runtime);
+    if (result.diagnostic !== undefined) process.stderr.write(result.diagnostic + '\\n');
+    process.exitCode = result.code;
+  `;
+  const found = await execute(
+    process.execPath,
+    ["--experimental-strip-types", "--input-type=module", "--eval", program],
+    { cwd: process.cwd(), env: validEnvironment },
+  ).catch((failure: unknown) => failure as CommandFailure);
+  assert.equal("code" in found ? found.code : 0, 3);
+  assert.equal(
+    found.stderr,
+    "selector could not run: selector-source refused — " +
+      "the native api did not report itself ready\n",
+  );
 });
 
 test("failure and signal overlap share one shutdown", async () => {

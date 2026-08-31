@@ -197,17 +197,21 @@ export function selectorCommandPreconditions(
   sourceReady: (signal: AbortSignal) => Promise<boolean>,
 ): readonly RuntimePrecondition[] {
   return [
-    readyPrecondition(
-      "selector-source",
-      "the native api did not serve a project inventory to this principal",
-      async (signal) => {
+    {
+      name: "selector-source",
+      check: async (signal) => {
         signal.throwIfAborted();
-        if (!(await sourceReady(signal))) return false;
+        if (!(await sourceReady(signal))) {
+          return {
+            met: "Refused",
+            why: "the native api did not report itself ready",
+          };
+        }
         await native.projectInventory(principal, undefined, 1);
         signal.throwIfAborted();
-        return true;
+        return { met: "Met" };
       },
-    ),
+    },
     readyPrecondition(
       "selector-policy",
       "the trusted policy host did not report itself ready",

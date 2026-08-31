@@ -400,7 +400,8 @@ test("the legality scan names a history whose declared machine could not have de
   const legality = postgresJournalLegality(harness.pool, refinementInstance);
 
   const before = await legality.scan(new AbortController().signal);
-  assert.ok(before.scanned === "Scanned" && !before.illegal.includes(named));
+  assert.ok(before.scanned === "Scanned");
+  assert.ok(!before.unreplayable.some((named_) => named_.startsWith(named)));
 
   const rows = (await harness.query(
     `SELECT prev_digest,cause_id,configuration_revision,configuration_digest
@@ -436,5 +437,9 @@ test("the legality scan names a history whose declared machine could not have de
   );
 
   const after = await legality.scan(new AbortController().signal);
-  assert.ok(after.scanned === "Scanned" && after.illegal.includes(named));
+  assert.ok(after.scanned === "Scanned");
+  assert.deepEqual(
+    after.unreplayable.filter((named_) => named_.startsWith(named)),
+    [`${named}: the stored history is not one this image could have decided`],
+  );
 });
