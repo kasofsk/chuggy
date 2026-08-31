@@ -1,0 +1,123 @@
+/* Element defaults and the three utilities, in `@layer base`.
+ *
+ * A control gets `font` and `colour` and nothing else, so a button with no
+ * primitive class is visibly unstyled: that is how a builder learns it needs
+ * one. The cascade order is declared in tokens.css. */
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background: var(--surface-0);
+    color: var(--ink-2);
+    font: var(--weight-regular) var(--text-md) / var(--leading-prose)
+      var(--font-prose);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  p,
+  dl,
+  dd,
+  ul,
+  ol,
+  figure {
+    margin: 0;
+  }
+
+  ul,
+  ol {
+    padding: 0;
+    list-style: none;
+  }
+
+  h1,
+  h2,
+  h3 {
+    color: var(--ink-1);
+    font-weight: var(--weight-strong);
+    line-height: var(--leading-tight);
+  }
+
+  h1 {
+    font-size: var(--text-xl);
+  }
+
+  h2,
+  h3 {
+    font-size: var(--text-md);
+  }
+
+  a {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: var(--edge-control);
+    text-underline-offset: 0.15em;
+    transition: text-decoration-color var(--duration-1) var(--ease-out);
+  }
+
+  a:hover {
+    text-decoration-color: currentColor;
+  }
+
+  code,
+  kbd,
+  pre {
+    font-family: var(--font-mono);
+    font-size: var(--mono-optical);
+  }
+
+  pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--ring-focus);
+    border-radius: var(--radius-1);
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  select {
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge-control);
+    border-radius: var(--radius-2);
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .eyebrow {
+    font: var(--weight-medium) var(--text-xs) / 1 var(--font-mono);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

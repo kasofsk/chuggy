@@ -1,0 +1,97 @@
+/* Button and ButtonLink: one look, four variants, two sizes. */
+
+@layer ui {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    background: var(--surface-1);
+    color: var(--ink-1);
+    border: var(--hairline) solid var(--edge-control);
+    border-radius: var(--radius-2);
+    font: var(--weight-medium) var(--text-md) / var(--leading-dense)
+      var(--font-mono);
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+    transition:
+      background var(--duration-1) var(--ease-out),
+      border-color var(--duration-1) var(--ease-out),
+      color var(--duration-1) var(--ease-out);
+  }
+
+  .btn:hover {
+    background: color-mix(in srgb, var(--ink-1) var(--wash), var(--surface-1));
+    border-color: var(--ink-1);
+  }
+
+  .btn:active {
+    background: color-mix(
+      in srgb,
+      var(--ink-1) calc(var(--wash) * 2),
+      var(--surface-1)
+    );
+  }
+
+  .btn[aria-pressed="true"] {
+    background: var(--surface-inverse);
+    color: var(--ink-inverse);
+    border-color: var(--surface-inverse);
+  }
+
+  .btn[aria-busy="true"] {
+    color: var(--ink-3);
+    cursor: progress;
+  }
+
+  .btn:disabled {
+    color: var(--ink-3);
+    border-color: var(--edge);
+    background: transparent;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background: var(--surface-inverse);
+    color: var(--ink-inverse);
+    border-color: var(--surface-inverse);
+  }
+
+  .btn-primary:hover {
+    background: color-mix(
+      in srgb,
+      var(--surface-inverse) 85%,
+      var(--surface-1)
+    );
+  }
+
+  .btn-danger {
+    color: var(--tone-danger);
+    border-color: var(--tone-danger);
+    background: transparent;
+  }
+
+  .btn-danger:hover,
+  .btn-danger:focus-visible {
+    background: var(--tone-danger);
+    color: var(--tone-on-danger);
+    border-color: var(--tone-danger);
+  }
+
+  .btn-quiet {
+    border-color: transparent;
+    background: transparent;
+    color: var(--ink-2);
+  }
+
+  .btn-quiet:hover {
+    border-color: var(--edge-control);
+    background: transparent;
+  }
+
+  .btn-sm {
+    padding: 0 var(--space-2);
+    font-size: var(--text-sm);
+  }
+}

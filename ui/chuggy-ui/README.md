@@ -19,9 +19,18 @@ builds with.
   drive all of it with no renderer.
 - `ui/chuggy-ui/app/browser/` — the effects and the drawing: the platform
   adapters, the React providers for the session and the stream, the shell with
-  its project switcher and its live/degraded banner, the panel component, and
-  the route tree.
-- `ui/chuggy-ui/app/styles.css` — the whole stylesheet, tokens first.
+  its project switcher, its theme control and its live/degraded banner, the
+  compositions a screen is built from, and the route tree.
+- `ui/chuggy-ui/app/browser/ui/` — the primitives: a component and its
+  stylesheet beside it, drawing values it is handed and reaching nothing else
+  in `browser/`, which is the rule `chuggy-ui-primitives-reach-no-effect`
+  states and is why each mounts in a suite with no provider around it.
+- `ui/chuggy-ui/app/styles/` — `tokens.css`, the one file that states a colour
+  or a size, and `base.css`, the element defaults. Both themes are defined in
+  the same line through `light-dark()`, and the shell's control chooses between
+  them by putting `data-theme` on the document element.
+- `ui/chuggy-ui/app/styles.css` — what the pages that have not moved to the
+  design system still draw with; it shrinks as they move.
 - `ui/chuggy-ui/test/` — the suites, run by the console's own runner.
 - `ui/chuggy-ui/config.example.json` — the shape of the runtime configuration.
 
@@ -47,6 +56,10 @@ npm run lint      --prefix ui/chuggy-ui
 npm run test      --prefix ui/chuggy-ui
 npm run build     --prefix ui/chuggy-ui
 ```
+
+`.chug/tasks/check-console-tokens.sh` reads the sheets beside those runs: its
+header is the rule that nothing outside `app/styles/tokens.css` states a raw
+colour or a raw length, and it names the two files it does not hold to that.
 
 `lint` is this console's own `ui/chuggy-ui/eslint.config.js`: the root's is
 scoped to a tree this directory is not in, and declines it. The root formatter

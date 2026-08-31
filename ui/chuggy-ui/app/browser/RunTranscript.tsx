@@ -30,7 +30,7 @@ import type {
   RunTranscriptStep,
 } from "../core/runTranscript.ts";
 import { useApiPorts } from "./api.ts";
-import { useNowMs } from "./Panel.tsx";
+import { useNowMs } from "./Freshness.tsx";
 
 function Elisions(props: { readonly elided: readonly number[] }): ReactNode {
   return props.elided.length === 0 ? null : (

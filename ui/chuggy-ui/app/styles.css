@@ -1,183 +1,42 @@
-/* The console's whole stylesheet: tokens first, then the shell and the panel.
+/* The classes the pages that have not moved to the design system still draw.
  *
- * Dark is the design, because this is a desk somebody watches; the light block
- * at the end is legibility for a browser that asks for it and is not a second
- * design. No CSS is written from JavaScript, because the policy the web image
- * serves this under admits no inline style. */
-
-:root {
-  color-scheme: dark;
-
-  --ink: #d7dde5;
-  --ink-dim: #8b96a5;
-  --ink-bright: #f2f6fb;
-  --ground: #0d1117;
-  --ground-raised: #151b23;
-  --ground-sunken: #090c11;
-  --edge: #232c38;
-  --accent: #4da3ff;
-  --warn: #e3b341;
-  --bad: #f85149;
-
-  --gap: 0.5rem;
-  --gap-wide: 1rem;
-  --radius: 3px;
-  --text: 13px;
-  --text-small: 11px;
-  --family:
-    ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  background: var(--ground);
-  color: var(--ink);
-  font: var(--text) / 1.45 var(--family);
-}
-
-h1,
-h2 {
-  margin: 0;
-  font-size: var(--text);
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-a {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-a:hover,
-a:focus-visible {
-  text-decoration: underline;
-}
-
-button,
-select {
-  background: var(--ground-raised);
-  color: var(--ink);
-  border: 1px solid var(--edge);
-  border-radius: var(--radius);
-  padding: 0.15rem 0.5rem;
-  font: inherit;
-  cursor: pointer;
-}
-
-button:hover,
-select:hover {
-  border-color: var(--accent);
-}
-
-.shell {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-}
-
-.shell-head {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-wide);
-  padding: var(--gap) var(--gap-wide);
-  background: var(--ground-sunken);
-  border-bottom: 1px solid var(--edge);
-}
-
-.brand {
-  color: var(--ink-bright);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-
-.shell-nav {
-  display: flex;
-  gap: var(--gap-wide);
-  margin-left: auto;
-}
-
-.shell-nav a {
-  color: var(--ink-dim);
-}
-
-.shell-nav a.here {
-  color: var(--ink-bright);
-  border-bottom: 1px solid var(--accent);
-}
-
-.shell-body {
-  flex: 1;
-  min-width: 0;
-  padding: var(--gap-wide);
-  display: grid;
-  gap: var(--gap-wide);
-}
-
-.switcher-note {
-  color: var(--warn);
-  font-size: var(--text-small);
-}
-
-.banner {
-  padding: var(--gap) var(--gap-wide);
-  background: color-mix(in srgb, var(--warn) 14%, var(--ground));
-  border-bottom: 1px solid var(--warn);
-  color: var(--ink-bright);
-}
-
-.banner strong {
-  color: var(--warn);
-}
-
-.panel {
-  border: 1px solid var(--edge);
-  border-radius: var(--radius);
-  background: var(--ground-raised);
-}
-
-.panel-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--gap);
-  padding: var(--gap) var(--gap-wide);
-  border-bottom: 1px solid var(--edge);
-}
+ * Every value here is a token from `app/styles/tokens.css`; what states a
+ * colour or a size of its own is this sheet's own leftovers, which is why
+ * `.chug/tasks/check-console-tokens.sh` names this file as the one it does not
+ * hold to the rule. The sheet is unlayered and so beats every layer, which is
+ * why no class a primitive owns may appear in it, and it is deleted with the
+ * last page that draws from it. */
 
 .panel-note,
 .panel-absent,
 .panel-failed {
   margin: 0;
-  padding: var(--gap) var(--gap-wide);
+  padding: var(--space-2) var(--space-4);
 }
 
 .panel-note {
-  color: var(--ink-dim);
+  color: var(--ink-3);
 }
 
 .panel-absent {
-  color: var(--warn);
+  color: var(--tone-parked);
 }
 
 .panel-failed {
-  color: var(--bad);
+  color: var(--tone-fail);
 }
 
 .freshness {
-  color: var(--ink-dim);
-  font-size: var(--text-small);
+  color: var(--ink-3);
+  font-size: var(--text-xs);
 }
 
 .freshness-stale {
-  color: var(--warn);
+  color: var(--tone-parked);
 }
 
 .placeholder {
-  color: var(--ink-dim);
+  color: var(--ink-3);
 }
 
 /* The project table: dense rows, one line each, and a badge that is read
@@ -186,26 +45,18 @@ select:hover {
 .table-head {
   display: flex;
   align-items: center;
-  gap: var(--gap-wide);
+  gap: var(--space-4);
 }
 
 .filters {
   display: flex;
-  gap: var(--gap);
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 
 .filters .here {
-  border-color: var(--accent);
-  color: var(--ink-bright);
-}
-
-.action {
-  margin-left: auto;
-  padding: 0.15rem 0.5rem;
-  border: 1px solid var(--edge);
-  border-radius: var(--radius);
-  background: var(--ground-raised);
+  border-color: var(--tone-live);
+  color: var(--ink-1);
 }
 
 .more {
@@ -225,22 +76,22 @@ select:hover {
 
 .ticket-table th,
 .ticket-table td {
-  padding: 0.15rem var(--gap-wide);
+  padding: 0.15rem var(--space-4);
   text-align: left;
   white-space: nowrap;
-  border-bottom: 1px solid var(--ground-sunken);
+  border-bottom: 1px solid var(--surface-2);
 }
 
 .ticket-table thead th {
-  color: var(--ink-dim);
-  font-size: var(--text-small);
+  color: var(--ink-3);
+  font-size: var(--text-xs);
   font-weight: 400;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .ticket-table tbody tr:hover {
-  background: var(--ground-sunken);
+  background: var(--surface-2);
 }
 
 .ticket-table tbody th {
@@ -248,12 +99,12 @@ select:hover {
 }
 
 .ticket-table tbody th a:focus-visible {
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--tone-live);
   outline-offset: 2px;
 }
 
 .cell-dim {
-  color: var(--ink-dim);
+  color: var(--ink-3);
 }
 
 /* An inline block, because a `td` clips only under a fixed table layout and
@@ -269,10 +120,10 @@ select:hover {
 
 .badge {
   padding: 0 0.35rem;
-  border: 1px solid var(--warn);
-  border-radius: var(--radius);
-  color: var(--warn);
-  font-size: var(--text-small);
+  border: 1px solid var(--tone-parked);
+  border-radius: var(--radius-2);
+  color: var(--tone-parked);
+  font-size: var(--text-xs);
 }
 
 .ticket-head,
@@ -281,51 +132,51 @@ select:hover {
 .execution-detail,
 .result {
   display: grid;
-  gap: var(--gap);
-  padding: var(--gap) var(--gap-wide);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
 }
 
 .ticket-head {
   grid-auto-flow: column;
   justify-content: start;
   align-items: baseline;
-  gap: var(--gap-wide);
+  gap: var(--space-4);
 }
 
 .phase {
-  color: var(--ink-bright);
+  color: var(--ink-1);
   font-weight: 700;
 }
 
 .phase-escalated,
 .phase-handoffblocked {
-  color: var(--warn);
+  color: var(--tone-parked);
 }
 
 .phase-revoked,
 .phase-abandoned {
-  color: var(--bad);
+  color: var(--tone-fail);
 }
 
 .ticket-sequence,
 .execution-source,
 .artifact-bytes {
-  color: var(--ink-dim);
-  font-size: var(--text-small);
+  color: var(--ink-3);
+  font-size: var(--text-xs);
 }
 
 .ticket-reason {
   grid-column: 1 / -1;
   margin: 0;
-  color: var(--warn);
+  color: var(--tone-parked);
 }
 
 .fields {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 0 var(--gap-wide);
+  gap: 0 var(--space-4);
   margin: 0;
-  padding: var(--gap) var(--gap-wide);
+  padding: var(--space-2) var(--space-4);
 }
 
 .field {
@@ -333,7 +184,7 @@ select:hover {
 }
 
 .fields dt {
-  color: var(--ink-dim);
+  color: var(--ink-3);
 }
 
 .fields dd {
@@ -345,17 +196,17 @@ select:hover {
   max-height: 24rem;
   overflow: auto;
   margin: 0;
-  padding: var(--gap);
-  background: var(--ground-sunken);
+  padding: var(--space-2);
+  background: var(--surface-2);
   border: 1px solid var(--edge);
-  border-radius: var(--radius);
+  border-radius: var(--radius-2);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .actions {
   display: flex;
-  gap: var(--gap);
+  gap: var(--space-2);
 }
 
 .intent {
@@ -373,20 +224,20 @@ select:hover {
 .artifacts {
   list-style: none;
   margin: 0;
-  padding: var(--gap) var(--gap-wide);
+  padding: var(--space-2) var(--space-4);
   display: grid;
-  gap: var(--gap);
+  gap: var(--space-2);
 }
 
 .execution {
   border-top: 1px solid var(--edge);
-  padding-top: var(--gap);
+  padding-top: var(--space-2);
 }
 
 .execution-head {
   display: grid;
   grid-template-columns: 10rem 6rem 6rem 1fr;
-  gap: var(--gap-wide);
+  gap: var(--space-4);
   width: 100%;
   text-align: left;
   background: none;
@@ -396,7 +247,7 @@ select:hover {
 
 .execution-status,
 .execution-outcome {
-  color: var(--ink-dim);
+  color: var(--ink-3);
 }
 
 .execution-source {
@@ -411,25 +262,25 @@ select:hover {
 .attempts th,
 .attempts td {
   text-align: left;
-  padding: 0.1rem var(--gap);
+  padding: 0.1rem var(--space-2);
   border-bottom: 1px solid var(--edge);
   font-weight: 400;
 }
 
 .attempts th {
-  color: var(--ink-dim);
-  font-size: var(--text-small);
+  color: var(--ink-3);
+  font-size: var(--text-xs);
 }
 
 .artifact {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--gap);
+  gap: var(--space-2);
 }
 
 .artifact-role {
-  color: var(--ink-dim);
+  color: var(--ink-3);
 }
 
 .artifact .panel {
@@ -437,80 +288,55 @@ select:hover {
 }
 
 .verdict-pass {
-  color: var(--accent);
+  color: var(--tone-live);
 }
 
 .verdict-fail {
-  color: var(--bad);
+  color: var(--tone-fail);
 }
 
 /* The inbox: a badge on the nav item that leads to it, and answers that sit in
  * the row they are about. */
 
-.nav-count {
-  padding: 0 0.35rem;
-  border-radius: var(--radius);
-  background: var(--warn);
-  color: var(--ground);
-  font-size: var(--text-small);
-  font-variant-numeric: tabular-nums;
-}
-
 .row-actions-inner {
   display: flex;
-  gap: var(--gap);
+  gap: var(--space-2);
   align-items: baseline;
 }
 
 .row-action {
   padding: 0 0.4rem;
   border: 1px solid var(--edge);
-  border-radius: var(--radius);
-  background: var(--ground-raised);
-  color: var(--ink);
-  font-size: var(--text-small);
+  border-radius: var(--radius-2);
+  background: var(--surface-1);
+  color: var(--ink-2);
+  font-size: var(--text-xs);
 }
 
 .row-action:hover:enabled {
-  border-color: var(--accent);
-  color: var(--ink-bright);
+  border-color: var(--tone-live);
+  color: var(--ink-1);
 }
 
 .row-action:disabled {
-  color: var(--ink-dim);
+  color: var(--ink-3);
 }
 
-.notice {
+.session-card {
   max-width: 34rem;
   margin: 12vh auto;
-  padding: var(--gap-wide);
+  padding: var(--space-4);
   border: 1px solid var(--edge);
-  border-radius: var(--radius);
-  background: var(--ground-raised);
+  border-radius: var(--radius-2);
+  background: var(--surface-1);
   display: grid;
-  gap: var(--gap-wide);
-}
-
-input,
-textarea {
-  background: var(--ground-sunken);
-  color: var(--ink);
-  border: 1px solid var(--edge);
-  border-radius: var(--radius);
-  padding: 0.15rem 0.4rem;
-  font: inherit;
-  width: 100%;
-}
-
-input:focus-visible,
-textarea:focus-visible {
-  outline: 1px solid var(--accent);
+  gap: var(--space-4);
 }
 
 .creation {
   display: grid;
-  gap: var(--gap);
-  padding: var(--gap) var(--gap-wide);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
   justify-items: start;
 }
 
@@ -524,18 +350,18 @@ textarea:focus-visible {
 
 .creation-configuration {
   margin: 0;
-  color: var(--ink-dim);
+  color: var(--ink-3);
 }
 
 .creation-row {
   display: grid;
   grid-template-columns: 10rem 1fr auto;
   align-items: baseline;
-  gap: var(--gap);
+  gap: var(--space-2);
 }
 
 .creation-row > span:first-child {
-  color: var(--ink-dim);
+  color: var(--ink-3);
 }
 
 .creation-intent textarea {
@@ -544,28 +370,28 @@ textarea:focus-visible {
 
 .creation-hint {
   grid-column: 2 / -1;
-  color: var(--ink-dim);
-  font-size: var(--text-small);
+  color: var(--ink-3);
+  font-size: var(--text-xs);
 }
 
 .creation-set {
   display: grid;
-  gap: var(--gap);
+  gap: var(--space-2);
   margin: 0;
-  padding: var(--gap) var(--gap-wide);
+  padding: var(--space-2) var(--space-4);
   border: 1px solid var(--edge);
-  border-radius: var(--radius);
+  border-radius: var(--radius-2);
 }
 
 .creation-set legend {
-  color: var(--ink-dim);
-  padding: 0 var(--gap);
+  color: var(--ink-3);
+  padding: 0 var(--space-2);
 }
 
 .creation-check {
   display: flex;
   align-items: baseline;
-  gap: var(--gap);
+  gap: var(--space-2);
 }
 
 .creation-check input {
@@ -575,7 +401,7 @@ textarea:focus-visible {
 .creation-stage {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: var(--gap);
+  gap: var(--space-2);
 }
 
 .creation-set > button,
@@ -585,44 +411,20 @@ textarea:focus-visible {
 
 .creation-advanced {
   border: 1px solid var(--edge);
-  border-radius: var(--radius);
-  padding: var(--gap) var(--gap-wide);
+  border-radius: var(--radius-2);
+  padding: var(--space-2) var(--space-4);
   display: grid;
-  gap: var(--gap);
+  gap: var(--space-2);
 }
 
 .creation-advanced > summary {
   cursor: pointer;
-  color: var(--ink-dim);
+  color: var(--ink-3);
 }
 
 .creation-fault {
   margin: 0;
-  color: var(--bad);
-}
-
-.footer {
-  padding: var(--gap) var(--gap-wide);
-  border-top: 1px solid var(--edge);
-  color: var(--ink-dim);
-  font-size: var(--text-small);
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
-
-    --ink: #1f2429;
-    --ink-dim: #5b6672;
-    --ink-bright: #0b0e12;
-    --ground: #f6f7f9;
-    --ground-raised: #ffffff;
-    --ground-sunken: #eceff3;
-    --edge: #ccd3db;
-    --accent: #0b62c4;
-    --warn: #8a6100;
-    --bad: #b3261e;
-  }
+  color: var(--tone-fail);
 }
 
 /* Run evidence: the stage breakdown above the executions it groups, and the
@@ -632,20 +434,20 @@ textarea:focus-visible {
 .runs {
   list-style: none;
   margin: 0;
-  padding: var(--gap) var(--gap-wide);
+  padding: var(--space-2) var(--space-4);
   display: grid;
-  gap: var(--gap);
+  gap: var(--space-2);
 }
 
 .stage {
   display: grid;
   grid-template-columns: 12rem 1fr;
-  gap: 0 var(--gap-wide);
+  gap: 0 var(--space-4);
   align-items: baseline;
 }
 
 .stage-label {
-  color: var(--ink-bright);
+  color: var(--ink-1);
   font-weight: 600;
 }
 
@@ -658,53 +460,53 @@ textarea:focus-visible {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--gap-wide);
+  gap: var(--space-4);
   margin: 0;
   font-variant-numeric: tabular-nums;
 }
 
 .run-cost {
-  color: var(--ink-bright);
+  color: var(--ink-1);
 }
 
 .run-tokens,
 .run-turns,
 .run-duration {
-  color: var(--ink-dim);
-  font-size: var(--text-small);
+  color: var(--ink-3);
+  font-size: var(--text-xs);
 }
 
 .run {
   border-top: 1px solid var(--edge);
-  padding-top: var(--gap);
+  padding-top: var(--space-2);
   display: grid;
-  gap: var(--gap);
+  gap: var(--space-2);
 }
 
 .run-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--gap-wide);
+  gap: var(--space-4);
   margin: 0;
 }
 
 .run-number {
-  color: var(--ink-bright);
+  color: var(--ink-1);
   font-weight: 600;
 }
 
 .run-state {
-  color: var(--ink-dim);
+  color: var(--ink-3);
 }
 
 .run-report,
 .argv {
   margin: 0;
-  padding: var(--gap);
-  background: var(--ground-sunken);
+  padding: var(--space-2);
+  background: var(--surface-2);
   border: 1px solid var(--edge);
-  border-radius: var(--radius);
+  border-radius: var(--radius-2);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -724,7 +526,7 @@ textarea:focus-visible {
 
 .run-reads {
   display: grid;
-  gap: var(--gap);
+  gap: var(--space-2);
 }
 
 .turns {
@@ -736,21 +538,21 @@ textarea:focus-visible {
 .turns th,
 .turns td {
   text-align: left;
-  padding: 0.1rem var(--gap);
+  padding: 0.1rem var(--space-2);
   border-bottom: 1px solid var(--edge);
   font-weight: 400;
 }
 
 .turns th {
-  color: var(--ink-dim);
-  font-size: var(--text-small);
+  color: var(--ink-3);
+  font-size: var(--text-xs);
 }
 
 .configuration-file {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--gap);
+  gap: var(--space-2);
 }
 
 .configuration-file .preview {
@@ -760,9 +562,9 @@ textarea:focus-visible {
 .steps {
   list-style: none;
   margin: 0;
-  padding: var(--gap) var(--gap-wide);
+  padding: var(--space-2) var(--space-4);
   display: grid;
-  gap: var(--gap);
+  gap: var(--space-2);
   max-height: 32rem;
   overflow: auto;
 }
@@ -770,23 +572,23 @@ textarea:focus-visible {
 .step {
   display: grid;
   grid-template-columns: 7rem 1fr;
-  gap: 0 var(--gap-wide);
+  gap: 0 var(--space-4);
   align-items: baseline;
 }
 
 .step-type {
-  color: var(--ink-dim);
+  color: var(--ink-3);
 }
 
 .step-tools {
-  color: var(--accent);
+  color: var(--tone-live);
 }
 
 .step-capped,
 .step-elided {
   grid-column: 2;
-  color: var(--warn);
-  font-size: var(--text-small);
+  color: var(--tone-parked);
+  font-size: var(--text-xs);
 }
 
 .step-text {

@@ -18,7 +18,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
@@ -52,13 +52,14 @@ import {
 } from "../core/ticketSections.ts";
 import type { TicketSection } from "../core/ticketSections.ts";
 import { useApiPorts, usePanelList } from "./api.ts";
+import { DataPanel } from "./DataPanel.tsx";
 import { useProjectExecutionIndex } from "./executionIndex.ts";
-import { Panel } from "./Panel.tsx";
 import {
   cellAbsent,
   ticketRowExecutionCell,
   TicketNumberCell,
 } from "./TicketCells.tsx";
+import { ButtonLink } from "./ui/Button.tsx";
 
 interface TicketRowsHeld {
   readonly state: PanelState<ProjectTicketRows>;
@@ -194,7 +195,7 @@ function TicketSectionPanel(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   return (
-    <Panel title={ticketSectionTitles[props.section]} state={props.state}>
+    <DataPanel title={ticketSectionTitles[props.section]} state={props.state}>
       {(rows) => {
         const drawn = projectTableRowsIn(
           projectTableRows(rows.tickets, props.index),
@@ -206,7 +207,7 @@ function TicketSectionPanel(props: {
           <TicketTable rows={drawn} partition={props.partition} />
         );
       }}
-    </Panel>
+    </DataPanel>
   );
 }
 
@@ -254,13 +255,9 @@ export function ProjectTable(): ReactNode {
     <>
       <div className="table-head">
         <TicketFilters filter={filter} onChange={setFilter} />
-        <Link
-          className="action"
-          to="/$tenant/$project/tickets/new"
-          params={partition}
-        >
+        <ButtonLink to="/$tenant/$project/tickets/new" params={partition}>
           new ticket
-        </Link>
+        </ButtonLink>
       </div>
       {executions.state === "Failed" ? (
         <p className="panel-failed">

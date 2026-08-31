@@ -38,6 +38,7 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
+  createLink: (component: unknown) => component,
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
@@ -84,7 +85,7 @@ const served = serving({
 
 function badge(): string | undefined {
   return (
-    screen.queryByLabelText("tickets needing you")?.textContent ?? undefined
+    screen.queryByLabelText("Tickets needing you")?.textContent ?? undefined
   );
 }
 
@@ -121,7 +122,7 @@ test("an approval opening puts its ticket in the inbox and its answer takes it o
   const api = held.api;
   const server = held.server;
   await settled();
-  expect(screen.getByText(/nothing needs you here/u)).toBeDefined();
+  expect(screen.getByText("Inbox is clear")).toBeDefined();
   expect(badge()).toBeUndefined();
 
   await turned(() => {
@@ -146,7 +147,7 @@ test("an approval opening puts its ticket in the inbox and its answer takes it o
     server.push(openActions([]));
   });
   expect(screen.queryByRole("button", { name: "approve" })).toBeNull();
-  expect(screen.getByText(/nothing needs you here/u)).toBeDefined();
+  expect(screen.getByText("Inbox is clear")).toBeDefined();
   expect(badge()).toBeUndefined();
 });
 
@@ -170,5 +171,5 @@ test("a phase page that refuses leaves the approval it did not list answerable",
   expect(
     screen.getByText(/the tickets a phase parks could not be read/u),
   ).toBeDefined();
-  expect(screen.queryByText(/nothing needs you here/u)).toBeNull();
+  expect(screen.queryByText("Inbox is clear")).toBeNull();
 });

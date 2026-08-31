@@ -1,0 +1,77 @@
+/* Panel: the frame, the head with its meta slot, and the body. */
+
+@layer ui {
+  .panel {
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+    min-width: 0;
+  }
+
+  .panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
+    border-bottom: var(--hairline) solid var(--edge);
+  }
+
+  .panel-title {
+    font-size: var(--text-md);
+  }
+
+  .panel-meta {
+    color: var(--ink-3);
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+  }
+
+  .panel-body {
+    padding: var(--space-3) var(--space-4);
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .panel-quiet {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .panel-quiet > .panel-head,
+  .panel-quiet > .panel-body {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .panel-quiet > .panel-head {
+    border-bottom-color: var(--edge-strong);
+  }
+
+  .panel-collapsible > summary {
+    list-style: none;
+    cursor: pointer;
+  }
+
+  .panel-collapsible > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .panel-collapsible > summary .panel-title::before {
+    content: "▸";
+    display: inline-block;
+    width: 1.1em;
+    color: var(--ink-3);
+    transition: transform var(--duration-2) var(--ease-out);
+  }
+
+  .panel-collapsible[open] > summary .panel-title::before {
+    transform: rotate(90deg);
+  }
+
+  .panel-collapsible:not([open]) > summary {
+    border-bottom: 0;
+  }
+}

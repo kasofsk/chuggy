@@ -1,0 +1,145 @@
+/* Every value the console draws with, named once and defined for both themes
+ * in the same line. Nothing outside this file states a raw colour or size, and
+ * `.chug/tasks/check-console-tokens.sh` is what holds the rest of the console
+ * to that.
+ *
+ * Breakpoints (a media query cannot read a custom property, so they are stated
+ * here and used verbatim): 40em narrow, 60em two-column, 80em desk.
+ *
+ * The cascade order below is also the order `browser/main.tsx` imports the
+ * sheets in: the production minifier drops a layer statement it can satisfy by
+ * the order it emits the blocks in, so the entry keeps that order true. */
+
+@layer tokens, base, ui, page;
+
+@layer tokens {
+  :root {
+    color-scheme: light dark;
+
+    /* surfaces — levels, not shadows */
+    --surface-0: light-dark(#edf0ea, #0e1210); /* the page */
+    --surface-1: light-dark(#f7f8f5, #151a17); /* a panel */
+    --surface-2: light-dark(#e2e6de, #0a0d0b); /* inset: code, meters */
+    --surface-inverse: light-dark(#151a17, #eef2ee); /* a filled control */
+
+    /* ink */
+    --ink-1: light-dark(#151a17, #eef2ee); /* headings, values, figures */
+    --ink-2: light-dark(#2b332e, #c9d1cb); /* lines */
+    --ink-3: light-dark(#5b665f, #8a948c); /* keys, meta, retired */
+    --ink-inverse: light-dark(#f7f8f5, #0e1210);
+
+    /* edges */
+    --edge: light-dark(#cdd4ca, #262d28); /* hairlines: panels, rows */
+    --edge-strong: light-dark(
+      #9ea89f,
+      #3d463f
+    ); /* a divider a reader must see */
+    --edge-control: light-dark(#6f7a72, #66716a); /* the border of a control */
+
+    /* tones — the machine's states, and nothing else */
+    --tone-pass: light-dark(#1a7443, #5cc687);
+    --tone-fail: light-dark(#b3261e, #f37a70);
+    --tone-live: light-dark(#0a5fb4, #64b5ff);
+    --tone-parked: light-dark(#7f5200, #e0b24e);
+    --tone-queued: var(--ink-3);
+    --tone-retired: var(--ink-3);
+    --tone-danger: var(--tone-fail);
+    --tone-on-danger: light-dark(#ffffff, #0e1210);
+
+    /* washes — a tone at background strength, for notices and meter cells */
+    --wash: 10%;
+    --wash-pass: color-mix(
+      in srgb,
+      var(--tone-pass) var(--wash),
+      var(--surface-1)
+    );
+    --wash-fail: color-mix(
+      in srgb,
+      var(--tone-fail) var(--wash),
+      var(--surface-1)
+    );
+    --wash-live: color-mix(
+      in srgb,
+      var(--tone-live) var(--wash),
+      var(--surface-1)
+    );
+    --wash-parked: color-mix(
+      in srgb,
+      var(--tone-parked) var(--wash),
+      var(--surface-1)
+    );
+
+    --focus: var(--ink-1);
+
+    /* type — the operator's own faces, because the policy admits no font */
+    --font-prose:
+      system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+      sans-serif;
+    --font-mono:
+      ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo,
+      Consolas, "Liberation Mono", monospace;
+    --mono-optical: 0.93em; /* mono set inside prose, matched by x-height */
+    --text-xs: 0.6875rem; /* meta, eyebrows, freshness */
+    --text-sm: 0.75rem; /* pills, table heads, notes */
+    --text-md: 0.875rem; /* body, rows, keys */
+    --text-lg: 1rem; /* a panel title that leads a region */
+    --text-xl: 1.25rem; /* the page title */
+    --text-2xl: 1.625rem; /* one figure a page is about */
+    --weight-regular: 400;
+    --weight-medium: 500;
+    --weight-strong: 600;
+    --leading-tight: 1.25;
+    --leading-dense: 1.4; /* rows, pills, tables */
+    --leading-prose: 1.55;
+    --tracking-label: 0.06em;
+    --measure: 66ch; /* nothing runs wider than this */
+
+    /* space */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.5rem;
+    --space-6: 2rem;
+    --space-7: 3rem;
+
+    /* shape and lines */
+    --radius-1: 2px; /* pills, meter cells */
+    --radius-2: 4px; /* buttons, panels, inputs */
+    --hairline: 1px;
+    --rail: 2px; /* the standing rail of a ledger group and a notice */
+
+    /* rings */
+    --ring-focus: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--focus);
+
+    /* motion */
+    --duration-1: 120ms; /* hover, focus, toggles */
+    --duration-2: 240ms; /* a disclosure opening */
+    --duration-pulse: 1200ms; /* the live mark */
+    --ease-out: cubic-bezier(0.2, 0, 0, 1);
+
+    /* layout */
+    --width-page: 96rem;
+    --width-aside: 22rem;
+    --width-aside-min: 18rem;
+    --col-label: 8.5rem; /* ledger: the row's label */
+    --col-identity: 8rem; /* ledger: the identity chip */
+    --col-pill: 7rem; /* ledger: the verdict */
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --duration-1: 0ms;
+      --duration-2: 0ms;
+      --duration-pulse: 0ms;
+    }
+  }
+}

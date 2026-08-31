@@ -36,7 +36,7 @@ import {
   ticketExecutionsFolded,
 } from "../core/ticketExecutions.ts";
 import { usePanelList, usePanelResource } from "./api.ts";
-import { Panel } from "./Panel.tsx";
+import { DataPanel } from "./DataPanel.tsx";
 import { RunEvidence, RunTotalsLine } from "./RunEvidence.tsx";
 
 type ResultArtifact = NonNullable<
@@ -57,13 +57,13 @@ function ArtifactPreview(props: {
       apiOutputContent(ports, props.partition, props.execution, props.ordinal),
   );
   return (
-    <Panel title={`artifact ${props.ordinal}`} state={state}>
+    <DataPanel title={`artifact ${props.ordinal}`} state={state}>
       {(preview) => (
         <pre className="preview" data-renderer={preview.renderer}>
           {preview.content}
         </pre>
       )}
-    </Panel>
+    </DataPanel>
   );
 }
 
@@ -175,7 +175,7 @@ function ExecutionDetail(props: {
     (ports) => apiExecution(ports, props.partition, props.execution),
   );
   return (
-    <Panel title={`execution ${props.execution}`} state={state}>
+    <DataPanel title={`execution ${props.execution}`} state={state}>
       {(execution) => (
         <div className="execution-detail">
           <ExecutionAttempts execution={execution} />
@@ -183,7 +183,7 @@ function ExecutionDetail(props: {
           <RunEvidence partition={props.partition} execution={execution} />
         </div>
       )}
-    </Panel>
+    </DataPanel>
   );
 }
 
@@ -277,7 +277,7 @@ export function TicketExecutions(props: {
     (ports) => apiExecutions(ports, partition, { ticket }),
   );
   return (
-    <Panel title="executions" state={state}>
+    <DataPanel title="executions" state={state}>
       {(page) =>
         page.executions.length === 0 ? (
           <p className="panel-note">nothing has run for this ticket</p>
@@ -296,6 +296,6 @@ export function TicketExecutions(props: {
           </>
         )
       }
-    </Panel>
+    </DataPanel>
   );
 }

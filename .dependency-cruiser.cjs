@@ -303,6 +303,23 @@ module.exports = {
       },
     },
     {
+      name: "chuggy-ui-primitives-reach-no-effect",
+      comment:
+        "ui/chuggy-ui/app/browser/ui/ draws values and performs nothing: it " +
+        "reaches its own files, the decision layer, the contract and a package, " +
+        "and no other module of browser/ — not the query client, the stream, the " +
+        "router adapters or the ports. What it buys is that every primitive " +
+        "mounts in a suite with render() and no provider, so a state a page can " +
+        "draw is asserted without a scripted API. Reachability, because the " +
+        "shape that breaks it is a hook a primitive grows to read a clock.",
+      severity: "error",
+      from: { path: "^ui/chuggy-ui/app/browser/ui/" },
+      to: {
+        reachable: true,
+        path: "^ui/chuggy-ui/app/browser/(?!ui/)",
+      },
+    },
+    {
       name: "no-circular-dependency",
       comment: "A cycle makes the layer a module belongs to unanswerable.",
       severity: "error",

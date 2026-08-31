@@ -87,7 +87,7 @@ test("an answered row stays until a Ticket frame moves it out of the section", a
     screen.queryByRole("button", { name: "resume" }),
     "the answered row left the inbox before a frame said the ticket had moved",
   ).not.toBeNull();
-  expect(screen.queryByText(/nothing needs you here/u)).toBeNull();
+  expect(screen.queryByText("Inbox is clear")).toBeNull();
 
   await turned(() => {
     server.push(
@@ -99,5 +99,5 @@ test("an answered row stays until a Ticket frame moves it out of the section", a
     );
   });
   expect(screen.queryByRole("button", { name: "resume" })).toBeNull();
-  expect(screen.getByText(/nothing needs you here/u)).toBeDefined();
+  expect(screen.getByText("Inbox is clear")).toBeDefined();
 });
