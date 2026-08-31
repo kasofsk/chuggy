@@ -818,11 +818,12 @@ test("a fan-out's wait is measured from the earliest task to start", async () =>
 
 /** A cancelled run has stopped, so it is not one of the runs still going. */
 test("a cancelled run is counted but is not counted as running", async () => {
-  const cancelled = ticket21Parked.map((shape) =>
-    shape.task === 2
-      ? { ...shape, status: "Cancelled" as const, outcome: undefined }
-      : shape,
-  );
+  const cancelled: readonly ExecutionShape[] = ticket21Parked.map((shape) => {
+    if (shape.task !== 2) return shape;
+    const { outcome, ...running } = shape;
+    expect(outcome).toBe("Failed");
+    return { ...running, status: "Cancelled" };
+  });
   const { container } = await drawTicket({
     shapes: cancelled,
     ticket: parkedTicket,
