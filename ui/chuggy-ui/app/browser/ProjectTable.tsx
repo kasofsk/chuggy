@@ -256,7 +256,7 @@ export function ProjectTable(): ReactNode {
       <div className="table-head">
         <TicketFilters filter={filter} onChange={setFilter} />
         <ButtonLink to="/$tenant/$project/tickets/new" params={partition}>
-          new ticket
+          New ticket
         </ButtonLink>
       </div>
       {executions.state === "Failed" ? (

@@ -93,11 +93,13 @@ function Artifact(props: {
         </button>
       )}
       {shown ? (
-        <ArtifactPreview
-          partition={props.partition}
-          execution={props.execution}
-          ordinal={props.artifact.ordinal}
-        />
+        <div className="artifact-preview">
+          <ArtifactPreview
+            partition={props.partition}
+            execution={props.execution}
+            ordinal={props.artifact.ordinal}
+          />
+        </div>
       ) : null}
     </li>
   );

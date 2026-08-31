@@ -1,14 +1,15 @@
 /* Every value the console draws with, named once and defined for both themes
  * in the same line. Nothing outside this file states a raw colour or size, and
- * `.chug/tasks/check-console-tokens.sh` is what holds the rest of the console
+ * `.chug/tasks/check-console-sheets.sh` is what holds the rest of the console
  * to that.
  *
  * Breakpoints (a media query cannot read a custom property, so they are stated
  * here and used verbatim): 40em narrow, 60em two-column, 80em desk.
  *
- * The cascade order below is also the order `browser/main.tsx` imports the
- * sheets in: the production minifier drops a layer statement it can satisfy by
- * the order it emits the blocks in, so the entry keeps that order true. */
+ * The cascade order below is asserted over the stylesheet the build emits, by
+ * `scripts/console-policy.ts`: the minifier drops a statement whenever the
+ * order it emits the blocks in already satisfies it, so the order is a
+ * property of the build and is read there. */
 
 @layer tokens, base, ui, page;
 

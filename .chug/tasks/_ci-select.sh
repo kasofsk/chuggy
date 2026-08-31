@@ -74,7 +74,7 @@ ci_gate_selected() { # <gate id>
 	check-paths) ci_changed '*.md' '*.ts' '*.tsx' '*.js' '*.sh' .chug/tasks/check-paths.sh ;;
 	check-shell-quoting) ci_changed '*.sh' .githooks/pre-commit .chug/tasks/check-shell-quoting.sh ;;
 	check-duplication) ci_changed '*.ts' '*.tsx' '*.js' '*.sh' '*.qnt' .jscpd.json .chug/tasks/check-duplication.sh || ci_toolchain_changed ;;
-	check-console-tokens) ci_changed 'ui/chuggy-ui/app/*.css' .chug/tasks/check-console-tokens.sh ;;
+	check-console-sheets) ci_changed 'ui/chuggy-ui/app/*.css' .chug/tasks/check-console-sheets.sh ;;
 	check-gates) ci_changed '.chug/tasks/*.sh' .githooks/pre-commit .chug/tasks/check-gates.sh ;;
 	check-comments) ci_changed '*.ts' '*.tsx' .chug/tasks/check-comments.sh ;;
 	check-knowledge) ci_changed '.chug/**' 'docs/design/*.md' CLAUDE.md .chug/tasks/check-knowledge.sh ;;

@@ -83,10 +83,11 @@ test("pressed and busy are attributes, and the default type is not submit", () =
   expect(view.container.querySelector("[style]")).toBeNull();
 });
 
-test("a link is drawn with the button's own look", () => {
+test("a link is drawn with the button's own look, and no style attribute", () => {
   const view = render(<ButtonLink to="/">New ticket</ButtonLink>);
   const drawn = view.container.querySelector("a");
   expect(drawn?.textContent).toBe("New ticket");
   expect(drawn?.classList.contains("btn")).toBe(true);
   expect(drawn?.classList.contains("btn-default")).toBe(true);
+  expect(view.container.querySelector("[style]")).toBeNull();
 });

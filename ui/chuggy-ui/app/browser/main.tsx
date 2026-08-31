@@ -6,10 +6,11 @@
  * Loading happens after the first render rather than before it, so a slow or
  * missing configuration is a drawn state instead of a blank document. A live
  * frame is what updates a query, so nothing here refetches on a window event.
- * The theme is read and put on the document before the first paint, and the
- * tokens and the element defaults are imported above everything that draws,
- * because the bundler emits a sheet where it first reaches it and a cascade
- * layer takes its place in the order from where it first appears.
+ * The theme is read and put on the document before the first paint. The tokens
+ * and the element defaults are imported above everything that draws, because a
+ * bundler emits a sheet where it first reaches it; what holds the emitted
+ * order to the system's is `scripts/console-policy.ts`, over the stylesheet the
+ * build wrote.
  */
 
 import "../styles/tokens.css";

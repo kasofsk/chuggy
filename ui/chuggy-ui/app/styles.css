@@ -1,11 +1,12 @@
 /* The classes the pages that have not moved to the design system still draw.
  *
  * Every value here is a token from `app/styles/tokens.css`; what states a
- * colour or a size of its own is this sheet's own leftovers, which is why
- * `.chug/tasks/check-console-tokens.sh` names this file as the one it does not
- * hold to the rule. The sheet is unlayered and so beats every layer, which is
- * why no class a primitive owns may appear in it, and it is deleted with the
- * last page that draws from it. */
+ * colour or a size of its own is this sheet's own leftovers, and it is
+ * unlayered on purpose while it lives — which is why
+ * `.chug/tasks/check-console-sheets.sh` names it as the one file outside both
+ * of its clauses. An unlayered rule beats every layer, so no class a primitive
+ * owns may appear here, and the file is deleted with the last page that draws
+ * from it. */
 
 .panel-note,
 .panel-absent,
@@ -283,7 +284,7 @@
   color: var(--ink-3);
 }
 
-.artifact .panel {
+.artifact-preview {
   flex-basis: 100%;
 }
 

@@ -57,9 +57,13 @@ npm run test      --prefix ui/chuggy-ui
 npm run build     --prefix ui/chuggy-ui
 ```
 
-`.chug/tasks/check-console-tokens.sh` reads the sheets beside those runs: its
-header is the rule that nothing outside `app/styles/tokens.css` states a raw
-colour or a raw length, and it names the two files it does not hold to that.
+`.chug/tasks/check-console-sheets.sh` reads the sheets beside those runs: its
+header is the rule that a sheet states its values once — nothing outside
+`app/styles/tokens.css` states a raw colour or a raw length — and states its
+rules inside its own `@layer`. The order those layers end up in is asserted
+over the stylesheet the build emits, by `scripts/console-policy.ts` through the
+`build` script above, because the minifier drops the statement that would
+otherwise carry it.
 
 `lint` is this console's own `ui/chuggy-ui/eslint.config.js`: the root's is
 scoped to a tree this directory is not in, and declines it. The root formatter
