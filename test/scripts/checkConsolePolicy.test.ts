@@ -29,6 +29,15 @@ function layer(name: string): string {
   return `@layer ${name}{.a{color:red}}`;
 }
 
+/**
+ * The sheets are named against the order they are linked in, so a fold that
+ * sorted them — or read a directory — would draw a different cascade from the
+ * one the document asks for.
+ */
+function sheetName(at: number, count: number): string {
+  return `${String.fromCharCode("z".charCodeAt(0) - at)}-sheet-${String(count - at)}.css`;
+}
+
 function dist(
   sheets: readonly string[],
   document?: (links: string) => string,
@@ -38,7 +47,7 @@ function dist(
   mkdirSync(join(root, "assets"));
   const links = sheets
     .map((css, at) => {
-      const name = `sheet-${String(at)}.css`;
+      const name = sheetName(at, sheets.length);
       writeFileSync(join(root, "assets", name), css);
       return `<link rel="stylesheet" href="/assets/${name}">`;
     })
@@ -94,6 +103,7 @@ test("the sheets are one text in the order the document loads them", () => {
     ]),
   );
   assert.equal(split.code, 0);
+  assert.match(split.said, /z-sheet-2\.css,.*y-sheet-1\.css/u);
   const inverted = ran(
     dist([
       ["ui", "page"].map(layer).join(""),
