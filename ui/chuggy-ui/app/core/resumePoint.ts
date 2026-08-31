@@ -15,11 +15,11 @@
  *
  * IT IS TOTAL OVER EVERY PHASE AND REASON THE ROSTERS ADMIT, and answers with
  * nothing for three different reasons. A phase that is not parked has nothing
- * to resume at all; a revoked dependency and an escalation whose reason the read
- * omits are walls the model itself stamps no point on; and where the model does
- * stamp one but this page holds no set for the wall to have interrupted, the
- * console declines rather than guesses, which a read carrying the stamped point
- * is what settles.
+ * to resume at all; a revoked dependency is the one wall the model itself
+ * stamps no point on; and where the model does stamp one but the read is short
+ * of what it stamped — a reason the ticket read omits, a set this page does not
+ * hold — the console declines rather than guesses, and a read carrying the
+ * stamped point is what settles it.
  */
 
 import type {
