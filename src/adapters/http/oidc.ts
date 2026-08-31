@@ -1,3 +1,37 @@
+/**
+ * Bearer verification against the issuer's published key set, and the decision
+ * of whose failure it is when that verification does not succeed.
+ *
+ * TWO LISTS GOVERN THIS FILE AND BOTH ARE ALLOW-LISTS, because the direction
+ * that cannot go quietly wrong is refusing what nobody considered.
+ *
+ * `oidcVerifiableAlgorithms` IS WHAT MAY BE CONFIGURED, and membership needs
+ * two things rather than one. An entry must verify with a PUBLISHED key: a
+ * shared-secret algorithm verifies with the key it signs with, and naming one
+ * beside an asymmetric algorithm lets a caller choose it against a key set
+ * that is not a secret. And the installed verifier must actually implement it:
+ * an algorithm it does not — `ES256K`, which this `jose` dropped — passes
+ * configuration, discovery and key-set retrieval, and then refuses every token
+ * on a server that started clean. `ML-DSA-*` satisfies both and is left off
+ * anyway, because the runtime marks it experimental and an authentication path
+ * is not where an experimental primitive earns its place. Every member is
+ * signed with and verified through this module by a test, and the membership
+ * itself is asserted, so an entry can be neither added without being
+ * verifiable nor dropped without being noticed.
+ *
+ * `oidcInvalidTokenCodes` IS WHAT COUNTS AS THE TOKEN'S FAULT, and everything
+ * else — a key set that timed out, answered a non-200, answered something that
+ * is not a key set, or could not be reached — is this server failing to
+ * verify. An unrecognised failure therefore reads as "could not decide", which
+ * answers 503, rather than as an accusation that would tell a caller to
+ * replace a credential that was never the problem.
+ *
+ * WHAT `jose` PROMISES ABOUT CLAIMS IS LESS THAN ITS TYPES SAY. `requiredClaims`
+ * asks whether a claim is present and nothing about what is in it, so the
+ * subject typed `string` is whatever JSON the issuer signed; `oidcUsableSubject`
+ * is where that is narrowed, and it is narrowed before anything encodes it.
+ */
+
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { z } from "zod";
 
@@ -23,13 +57,8 @@ const discoverySchema = z.object({
 
 const millisecondsPerSecond = 1_000;
 
-/**
- * The failures that are the token's, listed rather than derived, so that
- * anything not on the list — a key set that timed out, answered a non-200, or
- * could not be reached at all — reads as this server failing to verify rather
- * than as the caller failing to prove.
- */
-const oidcInvalidTokenCodes = new Set([
+/** The failures that are the token's, which the module header argues the membership of. */
+export const oidcInvalidTokenCodes = new Set([
   "ERR_JOSE_ALG_NOT_ALLOWED",
   "ERR_JWKS_MULTIPLE_MATCHING_KEYS",
   "ERR_JWKS_NO_MATCHING_KEY",
@@ -48,27 +77,18 @@ function oidcInvalidToken(failure: unknown): boolean {
 }
 
 /**
- * Whether a verified claim can name a principal, which restates
- * `oidcPrincipal`'s precondition on purpose: `jose` requires the subject claim
- * to be present and says nothing about what is in it, so a token carrying an
- * empty one verifies here and would refuse there — as a throw this server
- * would report as its own inability to decide rather than as the unusable
- * token it is.
+ * Whether a verified claim can name a principal, narrowing a value `jose` has
+ * only checked the presence of. An array would reach `oidcPrincipal` and
+ * throw, and an object would reach it and stringify.
  */
-function oidcUsableSubject(subject: string | undefined): subject is string {
-  return subject !== undefined && subject !== "";
+function oidcUsableSubject(subject: unknown): subject is string {
+  return typeof subject === "string" && subject !== "";
 }
 
-/**
- * The algorithms whose verification key is public, listed rather than
- * excluded. A shared-secret algorithm verifies with the same key it signs
- * with, so configuring one beside an asymmetric algorithm lets a caller pick
- * it, and the key set this server publishes is not a secret.
- */
-const oidcAsymmetricAlgorithms = new Set([
+/** The algorithms a deployment may name, which the module header argues the membership of. */
+export const oidcVerifiableAlgorithms = new Set([
   "EdDSA",
   "ES256",
-  "ES256K",
   "ES384",
   "ES512",
   "Ed25519",
@@ -104,7 +124,7 @@ function checkedConfiguration(
   if (config.algorithms.length === 0)
     throw new RangeError("OIDC algorithms are empty");
   const refused = config.algorithms.filter(
-    (algorithm) => !oidcAsymmetricAlgorithms.has(algorithm),
+    (algorithm) => !oidcVerifiableAlgorithms.has(algorithm),
   );
   if (refused.length > 0)
     throw new RangeError(

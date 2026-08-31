@@ -3,7 +3,11 @@ import { test } from "node:test";
 
 import { CompactSign, SignJWT, exportJWK, generateKeyPair } from "jose";
 
-import { oidcAuthentication } from "../../src/adapters/http/oidc.ts";
+import {
+  oidcAuthentication,
+  oidcInvalidTokenCodes,
+  oidcVerifiableAlgorithms,
+} from "../../src/adapters/http/oidc.ts";
 
 const config = {
   issuer: "https://accounts.example.test",
@@ -535,4 +539,113 @@ test("an algorithm this server cannot verify with a published key is refused", a
     oidcAuthentication({ ...config, algorithms: [] }, discovery),
     /algorithms are empty/u,
   );
+});
+
+test("a subject that is not text is the caller's to replace, whatever it is", async () => {
+  const subjects: readonly unknown[] = [
+    "",
+    null,
+    [],
+    {},
+    { tenant: "a" },
+    0,
+    123,
+    true,
+  ];
+  for (const sub of subjects) {
+    const found = await decided({ sub });
+    assert.equal(
+      found.authenticated,
+      "InvalidToken",
+      `sub ${JSON.stringify(sub) ?? "undefined"}`,
+    );
+  }
+});
+
+/**
+ * The test below is driven BY the list, so it cannot see an entry going
+ * missing — this is what does, and between them an entry can be neither added
+ * without being verifiable nor dropped without being noticed.
+ */
+test("the algorithms this server admits are exactly these", () => {
+  assert.deepEqual([...oidcVerifiableAlgorithms].sort(), [
+    "ES256",
+    "ES384",
+    "ES512",
+    "Ed25519",
+    "EdDSA",
+    "PS256",
+    "PS384",
+    "PS512",
+    "RS256",
+    "RS384",
+    "RS512",
+  ]);
+});
+
+test("every algorithm this server admits, it can actually verify with", async () => {
+  for (const algorithm of oidcVerifiableAlgorithms) {
+    const keys = await generateKeyPair(algorithm, { extractable: true });
+    const jwk = {
+      ...(await exportJWK(keys.publicKey)),
+      alg: algorithm,
+      kid: "one",
+    };
+    const token = await new SignJWT({ sub: "subject-one" })
+      .setProtectedHeader({ alg: algorithm, kid: "one" })
+      .setIssuer(config.issuer)
+      .setAudience(config.audience)
+      .sign(keys.privateKey);
+    const served = globalThis.fetch;
+    globalThis.fetch = () => Promise.resolve(Response.json({ keys: [jwk] }));
+    try {
+      const authentication = await oidcAuthentication(
+        { ...config, algorithms: [algorithm] },
+        () =>
+          Promise.resolve(
+            Response.json({
+              issuer: config.issuer,
+              jwks_uri: "https://accounts.example.test/jwks",
+            }),
+          ),
+      );
+      const found = await authentication.authenticateBearer(token);
+      assert.equal(found.authenticated, "Bearer", algorithm);
+    } finally {
+      globalThis.fetch = served;
+    }
+  }
+});
+
+/**
+ * Every listed code has a test that drives that failure and reddens when the
+ * code is dropped; nothing drives an unlisted one, so this is what stands
+ * between the list and an addition that would quietly answer a server's own
+ * failure as the caller's.
+ */
+test("the failures counted as the token's are exactly these", () => {
+  assert.deepEqual([...oidcInvalidTokenCodes].sort(), [
+    "ERR_JOSE_ALG_NOT_ALLOWED",
+    "ERR_JWKS_MULTIPLE_MATCHING_KEYS",
+    "ERR_JWKS_NO_MATCHING_KEY",
+    "ERR_JWS_INVALID",
+    "ERR_JWS_SIGNATURE_VERIFICATION_FAILED",
+    "ERR_JWT_CLAIM_VALIDATION_FAILED",
+    "ERR_JWT_EXPIRED",
+    "ERR_JWT_INVALID",
+  ]);
+});
+
+test("a failure this server does not recognise is its own, not the token's", async () => {
+  const keys = await generateKeyPair("RS256", { extractable: true });
+  const token = await new SignJWT({ sub: "subject-one" })
+    .setProtectedHeader({ alg: "RS256", kid: "one" })
+    .setIssuer(config.issuer)
+    .setAudience(config.audience)
+    .sign(keys.privateKey);
+  const found = await verifiedAgainst(
+    [{ kty: "RSA", kid: "one", alg: "RS256", e: "AQAB" }],
+    token,
+  );
+  assert.equal(found.authenticated, "AuthorityUnavailable");
 });
