@@ -2,7 +2,10 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import type { Config } from "../../domain/config.ts";
-import type { RuntimePrecondition } from "../../interpreter/serviceRuntime.ts";
+import {
+  runtimePreconditionAnswer,
+  type RuntimePrecondition,
+} from "../../interpreter/serviceRuntime.ts";
 
 /** Installs the deployment policy once and refuses a writer configured differently. */
 export function postgresDomainConfigurationPrecondition(
@@ -26,7 +29,10 @@ export function postgresDomainConfigurationPrecondition(
           false
         ) AS matches`,
       );
-      return found.rows[0]?.matches === true;
+      return runtimePreconditionAnswer(
+        found.rows[0]?.matches === true,
+        "the installed deployment authoring policy is not the one this image carries",
+      );
     },
   };
 }

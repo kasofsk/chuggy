@@ -80,7 +80,11 @@ test("a deployment is held to its git, its scratch, its storage and its credenti
   );
   const signal = new AbortController().signal;
   for (const precondition of composition.preconditions)
-    assert.equal(await precondition.check(signal), true, precondition.name);
+    assert.equal(
+      (await precondition.check(signal)).met,
+      "Met",
+      precondition.name,
+    );
 });
 
 test("a repository's forge is selected by the host its own address names", (t) => {

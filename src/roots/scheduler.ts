@@ -101,7 +101,7 @@ export async function schedulerMain(
   if (started.started === "Started") return schedulerSettled(runtime, shutdown);
   if (started.started === "Stopped") return;
   process.stderr.write(
-    `execution scheduler: could not run without ${started.precondition}\n`,
+    `execution scheduler: could not run without ${started.precondition} ${started.verdict.toLowerCase()} — ${started.why}\n`,
   );
   process.exitCode = 2;
   await shutdown();

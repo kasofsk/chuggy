@@ -480,11 +480,13 @@ test("an empty staged legacy journal cannot silently acquire an authority", asyn
       /existing journal has no installation authority/u,
     );
     assert.equal(
-      await schemaCompatibilityPrecondition(
-        postgresRuntimeSchema(subject),
-        retainedAfterPublication,
-      ).check(new AbortController().signal),
-      true,
+      (
+        await schemaCompatibilityPrecondition(
+          postgresRuntimeSchema(subject),
+          retainedAfterPublication,
+        ).check(new AbortController().signal)
+      ).met,
+      "Met",
     );
   });
 });
@@ -500,11 +502,13 @@ test("the command applies the declared schema and the run after it applies nothi
       report: "migrate: the schema was already current",
     });
     assert.equal(
-      await schemaCompatibilityPrecondition(
-        postgresRuntimeSchema(subject),
-        currentRuntimeSchemaContract,
-      ).check(new AbortController().signal),
-      true,
+      (
+        await schemaCompatibilityPrecondition(
+          postgresRuntimeSchema(subject),
+          currentRuntimeSchemaContract,
+        ).check(new AbortController().signal)
+      ).met,
+      "Met",
     );
   });
 });

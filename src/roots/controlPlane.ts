@@ -69,7 +69,12 @@ import {
   currentRuntimeSchemaContract,
   postgresRuntimeSchema,
 } from "../adapters/postgres/runtimeSchema.ts";
-import { schemaCompatibilityPrecondition } from "../interpreter/serviceRuntime.ts";
+import {
+  journalLegalityPrecondition,
+  runtimePreconditionAnswer,
+  schemaCompatibilityPrecondition,
+} from "../interpreter/serviceRuntime.ts";
+import { postgresJournalLegality } from "../adapters/postgres/journal.ts";
 import type { Config } from "../domain/config.ts";
 import { asOwnerId } from "../interpreter/projectStore.ts";
 import type {
@@ -136,7 +141,10 @@ export function postgresRolePrecondition(
         "SELECT current_user AS current_role",
       );
       signal.throwIfAborted();
-      return found.rows[0]?.current_role === expected;
+      return runtimePreconditionAnswer(
+        found.rows[0]?.current_role === expected,
+        `this process connected as ${found.rows[0]?.current_role ?? "no role"} rather than ${expected}`,
+      );
     },
   };
 }
@@ -151,7 +159,10 @@ function recoveryEpochPrecondition(
       signal.throwIfAborted();
       const current = await postgresProjectStore(pool).currentRecoveryEpoch();
       signal.throwIfAborted();
-      return current === expected;
+      return runtimePreconditionAnswer(
+        current === expected,
+        `the current recovery epoch is ${current} rather than the ${expected} this process was issued under`,
+      );
     },
   };
 }
@@ -347,6 +358,9 @@ export function ticketServiceProcessRoot(
         additional: [
           postgresRolePrecondition(pool, ticketServiceRole),
           postgresDomainConfigurationPrecondition(pool, config.domain),
+          journalLegalityPrecondition(
+            postgresJournalLegality(pool, config.domain),
+          ),
           gitAvailablePrecondition(config.source.environment),
           gitScratchWritablePrecondition(config.source.scratchDirectory),
           credentialFilesPrecondition(config.source),

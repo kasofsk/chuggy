@@ -36,10 +36,12 @@ async function importerDatabaseReady(
   return (
     found.rows[0]?.current_role === configurationImporterLoginRole &&
     found.rows[0]?.member === true &&
-    (await schemaCompatibilityPrecondition(
-      postgresRuntimeSchema(pool),
-      currentRuntimeSchemaContract,
-    ).check(new AbortController().signal))
+    (
+      await schemaCompatibilityPrecondition(
+        postgresRuntimeSchema(pool),
+        currentRuntimeSchemaContract,
+      ).check(new AbortController().signal)
+    ).met === "Met"
   );
 }
 

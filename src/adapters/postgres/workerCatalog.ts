@@ -61,7 +61,7 @@ export function postgresWorkerCatalogPrecondition(
     name: "worker-catalog-published",
     check: async (signal) => {
       signal.throwIfAborted();
-      if (workers.length === 0) return true;
+      if (workers.length === 0) return { met: "Met" };
       await pool.query(
         sql`INSERT INTO admitted_worker (image,name,version)
             SELECT * FROM unnest(${images}::text[],${names}::text[],${versions}::text[])
@@ -69,7 +69,7 @@ export function postgresWorkerCatalogPrecondition(
               SET name=EXCLUDED.name,version=EXCLUDED.version,published_at=now()`,
       );
       signal.throwIfAborted();
-      return true;
+      return { met: "Met" };
     },
   };
 }

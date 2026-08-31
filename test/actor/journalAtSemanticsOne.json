@@ -1,0 +1,226 @@
+[
+  {
+    "seq": 1,
+    "event": {
+      "type": "ReleaseTicket",
+      "value": {
+        "ticket": 1,
+        "deps": [],
+        "prog": [
+          {
+            "fanout": 1,
+            "combinator": "UnanimousPass"
+          }
+        ],
+        "workFanout": 1,
+        "reworkPolicy": {
+          "type": "BudgetedRework",
+          "value": 1
+        },
+        "finalizationPricing": {
+          "type": "Budgeted",
+          "value": 1
+        },
+        "resumePricing": "RetryCharged",
+        "finalizer": "ManagedFinalizer"
+      }
+    },
+    "rec": {
+      "label": "ticket-released",
+      "transitions": [],
+      "effects": []
+    }
+  },
+  {
+    "seq": 2,
+    "event": {
+      "type": "Dispatch",
+      "value": 1
+    },
+    "rec": {
+      "label": "dispatch",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Pending",
+          "to": "Working"
+        }
+      ],
+      "effects": ["SpawnWorkTasks"]
+    }
+  },
+  {
+    "seq": 3,
+    "event": {
+      "type": "TaskDone",
+      "value": {
+        "ticket": 1,
+        "tid": 1,
+        "verdict": "Pass",
+        "result": {
+          "manifest": 1,
+          "digest": 1,
+          "schema": 1
+        }
+      }
+    },
+    "rec": {
+      "label": "task-done",
+      "transitions": [],
+      "effects": []
+    }
+  },
+  {
+    "seq": 4,
+    "event": {
+      "type": "WorkReduce",
+      "value": 1
+    },
+    "rec": {
+      "label": "work-passed",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Working",
+          "to": "Evaluating"
+        }
+      ],
+      "effects": ["SpawnEvalTasks"]
+    }
+  },
+  {
+    "seq": 5,
+    "event": {
+      "type": "TaskDone",
+      "value": {
+        "ticket": 1,
+        "tid": 2,
+        "verdict": "Fail",
+        "result": {
+          "manifest": 1,
+          "digest": 1,
+          "schema": 1
+        }
+      }
+    },
+    "rec": {
+      "label": "task-done",
+      "transitions": [],
+      "effects": []
+    }
+  },
+  {
+    "seq": 6,
+    "event": {
+      "type": "EvalReduce",
+      "value": 1
+    },
+    "rec": {
+      "label": "rework-started eval_failure",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Evaluating",
+          "to": "Working"
+        }
+      ],
+      "effects": ["SpawnWorkTasks"]
+    }
+  },
+  {
+    "seq": 7,
+    "event": {
+      "type": "TaskDone",
+      "value": {
+        "ticket": 1,
+        "tid": 3,
+        "verdict": "Pass",
+        "result": {
+          "manifest": 1,
+          "digest": 1,
+          "schema": 1
+        }
+      }
+    },
+    "rec": {
+      "label": "task-done",
+      "transitions": [],
+      "effects": []
+    }
+  },
+  {
+    "seq": 8,
+    "event": {
+      "type": "WorkReduce",
+      "value": 1
+    },
+    "rec": {
+      "label": "work-passed",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Working",
+          "to": "Evaluating"
+        }
+      ],
+      "effects": ["SpawnEvalTasks"]
+    }
+  },
+  {
+    "seq": 9,
+    "event": {
+      "type": "TaskDone",
+      "value": {
+        "ticket": 1,
+        "tid": 4,
+        "verdict": "Fail",
+        "result": {
+          "manifest": 1,
+          "digest": 1,
+          "schema": 1
+        }
+      }
+    },
+    "rec": {
+      "label": "task-done",
+      "transitions": [],
+      "effects": []
+    }
+  },
+  {
+    "seq": 10,
+    "event": {
+      "type": "EvalReduce",
+      "value": 1
+    },
+    "rec": {
+      "label": "ticket-escalated rework_budget_exhausted",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Evaluating",
+          "to": "Escalated"
+        }
+      ],
+      "effects": ["OpenHumanTask"]
+    }
+  },
+  {
+    "seq": 11,
+    "event": {
+      "type": "ResumeTicket",
+      "value": 1
+    },
+    "rec": {
+      "label": "ticket-resumed",
+      "transitions": [
+        {
+          "ticket": 1,
+          "from": "Escalated",
+          "to": "Evaluating"
+        }
+      ],
+      "effects": ["SpawnEvalTasks"]
+    }
+  }
+]

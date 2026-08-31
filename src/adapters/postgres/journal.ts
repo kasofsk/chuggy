@@ -32,25 +32,50 @@
  * predecessor of later rows, but cannot retroactively attest to fields it never
  * covered. Turning a verification failure into project-local containment is
  * still I9's responsibility; this boundary refuses to replay the bad record.
+ *
+ * A ROW CARRIES THE MACHINE THAT DECIDED IT, WHERE ITS DIGEST SAYS SO.
+ * `decision_semantics_version` names the deciders the entry's record came from,
+ * and the load hands it back beside the entry so a history spanning a semantics
+ * change is replayed row by row under its own. Only the complete envelope
+ * covers that column, so a pre-envelope row is read at the semantics that
+ * predates the envelope and its column is not consulted at all — reading it
+ * would let an edit no digest attests choose which deciders replay a row. The
+ * version is checked after the envelope for the same reason: on a row whose
+ * digest does cover it, a changed column is tampering rather than an upgrade
+ * signal, and the load says so. A version this image has no deciders for is
+ * refused, because a row it cannot re-derive is a row it cannot replay.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
-import type { Entry } from "../../actor/journal.ts";
+import {
+  storedJournalLegalOn,
+  type Entry,
+  type StoredEntry,
+} from "../../actor/journal.ts";
+import {
+  decisionSemanticsVersionCurrent,
+  isDecisionSemanticsVersion,
+} from "../../actor/decisionSemantics.ts";
+import type { Config } from "../../domain/config.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
 import type {
   ConfigurationPin,
   DecisionCause,
 } from "../../interpreter/projectDecision.ts";
-import type {
-  Lease,
-  Partition,
-  ProjectStanding,
+import {
+  asProjectId,
+  asTenantId,
+  type Lease,
+  type Partition,
+  type ProjectStanding,
 } from "../../interpreter/projectStore.ts";
+import type { RuntimeStoredJournalSource } from "../../interpreter/serviceRuntime.ts";
 import type { DispatchContractPin } from "../../interpreter/dispatchView.ts";
 import {
   encodeEntry,
+  parseEntry,
   parseJournal,
   type Parsed,
 } from "../../interpreter/wire.ts";
@@ -69,6 +94,7 @@ import { postgresTransaction } from "./pool.ts";
 import { projectRowStanding } from "./rows.ts";
 
 interface StoredJournalRow {
+  readonly seq: string;
   readonly entry: string;
   readonly entry_digest: string;
   readonly prev_digest: string;
@@ -93,8 +119,7 @@ function storedJournalRowVerified(
     return journalChainDigest(partition, previous, entry) === row.entry_digest;
   }
   if (row.integrity_version !== 2) return false;
-  if (row.event_schema_version !== 1 || row.decision_semantics_version !== 1)
-    return false;
+  if (row.event_schema_version !== 1) return false;
   const cause: DecisionCause | undefined =
     row.cause_kind === "Operation"
       ? { kind: "Operation", id: asOperationId(row.cause_id) }
@@ -131,7 +156,7 @@ async function storedJournalRows(
   const { tenant, project } = partition;
   return (
     await client.query<StoredJournalRow>(
-      sql`SELECT j.entry,j.entry_digest,j.prev_digest,j.integrity_version,j.cause_kind,j.cause_id,
+      sql`SELECT j.seq,j.entry,j.entry_digest,j.prev_digest,j.integrity_version,j.cause_kind,j.cause_id,
        j.configuration_revision,j.configuration_digest,c.canonical AS configuration_canonical,
        j.event_schema_version,j.decision_semantics_version
        FROM journal_entry j LEFT JOIN configuration_revision c
@@ -228,7 +253,7 @@ export async function postgresJournalWrite(
     cause,
     configuration,
     eventSchemaVersion: 1,
-    decisionSemanticsVersion: 1,
+    decisionSemanticsVersion: decisionSemanticsVersionCurrent,
   };
   await client.query(
     sql`INSERT INTO journal_entry
@@ -251,11 +276,61 @@ export async function postgresJournalWrite(
   );
 }
 
-/** Every stored entry in sequence order, asserted to reach the head the locked row claims. */
+/**
+ * The deciders a verified row was decided by. A pre-envelope row's digest covers
+ * no version column, so its semantics is the one that predates the envelope
+ * rather than whatever the column has since been set to.
+ */
+function storedJournalRowSemantics(row: StoredJournalRow): number {
+  return row.integrity_version === 1 ? 1 : row.decision_semantics_version;
+}
+
+/** Stored rows decoded in sequence order, each paired with the semantics its own row attests. */
+function postgresJournalStored(
+  partition: Partition,
+  rows: readonly StoredJournalRow[],
+): Parsed<readonly StoredEntry[]> {
+  const stored: StoredEntry[] = [];
+  let previous = journalChainGenesis(partition);
+  for (const row of rows) {
+    let parsed: Parsed<Entry>;
+    try {
+      parsed = parseEntry(JSON.parse(row.entry) as unknown);
+    } catch {
+      return {
+        parsed: "Refused",
+        why: `stored row ${row.seq} is not JSON: ${row.entry}`,
+      };
+    }
+    if (parsed.parsed === "Refused")
+      return {
+        parsed: "Refused",
+        why: `stored row ${row.seq}: ${parsed.why}`,
+      };
+    if (!storedJournalRowVerified(row, partition, previous, parsed.value)) {
+      return {
+        parsed: "Refused",
+        why: `the stored envelope of row ${row.seq} failed integrity verification`,
+      };
+    }
+    const semantics = storedJournalRowSemantics(row);
+    if (!isDecisionSemanticsVersion(semantics)) {
+      return {
+        parsed: "Refused",
+        why: `stored row ${row.seq} declares decision semantics ${String(semantics)}, which this image has no deciders for`,
+      };
+    }
+    stored.push({ entry: parsed.value, semantics });
+    previous = row.entry_digest;
+  }
+  return { parsed: "Ok", value: stored };
+}
+
+/** Every stored entry in sequence order with the semantics its row declares, asserted to reach the head the locked row claims. */
 async function postgresJournalEntries(
   client: pg.PoolClient,
   standing: ProjectStanding,
-): Promise<Parsed<readonly Entry[]>> {
+): Promise<Parsed<readonly StoredEntry[]>> {
   const { tenant, project } = standing.partition;
   const rows = await storedJournalRows(client, standing.partition);
   if (rows.length !== standing.head) {
@@ -263,38 +338,14 @@ async function postgresJournalEntries(
       `postgres journal: ${tenant}/${project} claims head ${String(standing.head)} over ${String(rows.length)} stored entries`,
     );
   }
-  const raw: unknown[] = [];
-  let previous = journalChainGenesis(standing.partition);
-  for (const row of rows) {
-    try {
-      const decoded = JSON.parse(row.entry) as unknown;
-      const parsed = parseJournal([decoded]);
-      if (parsed.parsed === "Refused") return parsed;
-      const entry = parsed.value[0];
-      if (entry === undefined) throw new Error("parsed journal row is absent");
-      if (!storedJournalRowVerified(row, standing.partition, previous, entry)) {
-        return {
-          parsed: "Refused",
-          why: "a stored journal envelope failed integrity verification",
-        };
-      }
-      raw.push(decoded);
-      previous = row.entry_digest;
-    } catch {
-      return {
-        parsed: "Refused",
-        why: `a stored row is not JSON: ${row.entry}`,
-      };
-    }
-  }
-  return parseJournal(raw);
+  return postgresJournalStored(standing.partition, rows);
 }
 
 /** Replays the partition under the lease the decision will present, refusing one the row no longer honours. */
 export async function postgresJournalLoad(
   pool: pg.Pool,
   lease: Lease,
-): Promise<Parsed<readonly Entry[]>> {
+): Promise<Parsed<readonly StoredEntry[]>> {
   return postgresTransaction(pool, async (client) => {
     const row = await postgresOwnershipLockKnown(client, lease.partition);
     if (!(await postgresOwnershipHonours(client, row, lease))) {
@@ -306,4 +357,70 @@ export async function postgresJournalLoad(
     }
     return postgresJournalEntries(client, projectRowStanding(row));
   });
+}
+
+/** How many journaled partitions one legality scan reads before it reports that it could not finish. */
+const journalLegalityPartitionsMax = 1024;
+
+type PostgresJournalPartitions =
+  | { readonly listed: "Listed"; readonly partitions: readonly Partition[] }
+  | { readonly listed: "Incomplete"; readonly why: string };
+
+/** The partitions holding a journal, or the reason a scan of them could not be complete. */
+async function postgresJournalPartitions(
+  pool: pg.Pool,
+): Promise<PostgresJournalPartitions> {
+  const found = await pool.query<{ tenant: string; project: string }>(
+    sql`SELECT DISTINCT tenant,project FROM journal_entry
+        ORDER BY tenant,project LIMIT ${journalLegalityPartitionsMax}`,
+  );
+  if (found.rows.length === journalLegalityPartitionsMax) {
+    return {
+      listed: "Incomplete",
+      why: `more journaled partitions than the ${String(journalLegalityPartitionsMax)} one legality scan reads`,
+    };
+  }
+  return {
+    listed: "Listed",
+    partitions: found.rows.map((row) => ({
+      tenant: asTenantId(row.tenant),
+      project: asProjectId(row.project),
+    })),
+  };
+}
+
+/**
+ * Every journaled partition replayed under the semantics each of its rows
+ * declares, naming the ones this image could not have decided. A scan that
+ * cannot reach every partition reports that instead of a clean prefix.
+ */
+export function postgresJournalLegality(
+  pool: pg.Pool,
+  config: Config,
+): RuntimeStoredJournalSource {
+  return {
+    scan: async (signal) => {
+      const listed = await postgresJournalPartitions(pool);
+      if (listed.listed === "Incomplete")
+        return { scanned: "Incomplete", why: listed.why };
+      const unreplayable: string[] = [];
+      for (const partition of listed.partitions) {
+        signal.throwIfAborted();
+        const stored = await postgresTransaction(pool, (client) =>
+          storedJournalRows(client, partition).then((rows) =>
+            postgresJournalStored(partition, rows),
+          ),
+        );
+        const why =
+          stored.parsed === "Refused"
+            ? stored.why
+            : storedJournalLegalOn(config, stored.value)
+              ? undefined
+              : "the stored history is not one this image could have decided";
+        if (why !== undefined)
+          unreplayable.push(`${partition.tenant}/${partition.project}: ${why}`);
+      }
+      return { scanned: "Scanned", unreplayable };
+    },
+  };
 }

@@ -8,7 +8,11 @@
  */
 
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  runtimePreconditionUndecided,
+  type RuntimePreconditionVerdict,
+} from "../../src/interpreter/serviceRuntime.ts";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -29,14 +33,32 @@ function directory(t: TestContext): string {
   return made;
 }
 
-async function unmet(check: Promise<boolean>): Promise<boolean> {
-  return check.catch(() => false);
+async function unmet(
+  check: Promise<RuntimePreconditionVerdict>,
+): Promise<boolean> {
+  return (await check.catch(runtimePreconditionUndecided)).met === "Met";
 }
 
 test("git is available where this suite's own environment finds it", async () => {
   const precondition = gitAvailablePrecondition(process.env);
   assert.equal(precondition.name, "git-available");
   assert.equal(await unmet(precondition.check(signal)), true);
+});
+
+test("a git that ran and failed is undecided about what this git writes", async (t) => {
+  const path = directory(t);
+  writeFileSync(join(path, "git"), "#!/bin/sh\nexit 3\n");
+  chmodSync(join(path, "git"), 0o755);
+  const answer = await gitAvailablePrecondition({ PATH: path }).check(signal);
+  assert.ok(
+    answer.met === "Undecided",
+    "a git that could not answer says nothing about what it writes",
+  );
+  assert.match(
+    answer.why,
+    /git --version exited 3/u,
+    "the reason must name the exit this git actually took",
+  );
 });
 
 test("an environment whose path names no git leaves the precondition unmet", async (t) => {

@@ -3,9 +3,38 @@ export interface ServiceRuntimeConfig {
   readonly shutdownDrainMilliseconds: number;
 }
 
+/**
+ * What one precondition answered, in the three verdicts every gate in this tree
+ * also answers in. Refused and Undecided both stop a start, and a caller that
+ * conflated them would report a control that could not run as a control that
+ * found something.
+ */
+export type RuntimePreconditionVerdict =
+  | { readonly met: "Met" }
+  | { readonly met: "Refused"; readonly why: string }
+  | { readonly met: "Undecided"; readonly why: string };
+
 export interface RuntimePrecondition {
   readonly name: string;
-  check(signal: AbortSignal): Promise<boolean>;
+  check(signal: AbortSignal): Promise<RuntimePreconditionVerdict>;
+}
+
+/** The verdict a check with nothing but a yes or a no to report answers with. */
+export function runtimePreconditionAnswer(
+  met: boolean,
+  why: string,
+): RuntimePreconditionVerdict {
+  return met ? { met: "Met" } : { met: "Refused", why };
+}
+
+/** The verdict a check that raised answers with: it reached no finding at all. */
+export function runtimePreconditionUndecided(
+  error: unknown,
+): RuntimePreconditionVerdict {
+  return {
+    met: "Undecided",
+    why: error instanceof Error ? error.message : "the check raised",
+  };
 }
 
 export interface RuntimeSchemaVersionSource {
@@ -40,7 +69,12 @@ export interface RuntimePacing {
 export type ServiceStartResult =
   | { readonly started: "Started" }
   | { readonly started: "Stopped" }
-  | { readonly started: "CouldNotRun"; readonly precondition: string };
+  | {
+      readonly started: "CouldNotRun";
+      readonly precondition: string;
+      readonly verdict: "Refused" | "Undecided";
+      readonly why: string;
+    };
 
 export interface ServiceHealth {
   readonly live: boolean;
@@ -118,7 +152,46 @@ export function schemaCompatibilityPrecondition(
     name: "schema-compatible",
     check: async (signal) => {
       const applied = await source.applied(signal);
-      return schemaContractAccepts(contract, applied);
+      return runtimePreconditionAnswer(
+        schemaContractAccepts(contract, applied),
+        `the applied migration prefix of ${String(applied.length)} is not one this image accepts`,
+      );
+    },
+  };
+}
+
+/**
+ * What a stored-journal scan reached: the partitions it could not replay, each
+ * named beside the reason its own store gave, or why the scan could not finish.
+ */
+export type RuntimeStoredJournalScan =
+  | { readonly scanned: "Scanned"; readonly unreplayable: readonly string[] }
+  | { readonly scanned: "Incomplete"; readonly why: string };
+
+export interface RuntimeStoredJournalSource {
+  /** Replays every stored history it can reach, naming each it could not and why. */
+  scan(signal: AbortSignal): Promise<RuntimeStoredJournalScan>;
+}
+
+/**
+ * Requires every stored journal to replay under the decision semantics its own
+ * rows declare, naming the partitions that do not. A writer that discovers this
+ * inside its loop reports a dead loop instead, so the start is stopped here and
+ * a scan that could not finish is Undecided rather than a finding.
+ */
+export function journalLegalityPrecondition(
+  source: RuntimeStoredJournalSource,
+): RuntimePrecondition {
+  return {
+    name: "journal-legal",
+    check: async (signal) => {
+      const scan = await source.scan(signal);
+      if (scan.scanned === "Incomplete")
+        return { met: "Undecided", why: scan.why };
+      return runtimePreconditionAnswer(
+        scan.unreplayable.length === 0,
+        `stored journals this image cannot replay — ${scan.unreplayable.join("; ")}`,
+      );
     },
   };
 }
@@ -195,12 +268,19 @@ function serviceStart(
   const signal = own.control.signal;
   own.starting = (async () => {
     for (const precondition of preconditions) {
-      const met = await precondition.check(signal).catch(() => false);
+      const verdict = await precondition
+        .check(signal)
+        .catch(runtimePreconditionUndecided);
       if (signal.aborted) return { started: "Stopped" };
-      if (!met) {
+      if (verdict.met !== "Met") {
         own.state = "Stopped";
         own.control = undefined;
-        return { started: "CouldNotRun", precondition: precondition.name };
+        return {
+          started: "CouldNotRun",
+          precondition: precondition.name,
+          verdict: verdict.met,
+          why: verdict.why,
+        };
       }
     }
     if (signal.aborted) return { started: "Stopped" };

@@ -15,7 +15,10 @@
 import { constants } from "node:fs";
 import { access, mkdir } from "node:fs/promises";
 
-import type { RuntimePrecondition } from "../../interpreter/serviceRuntime.ts";
+import {
+  runtimePreconditionAnswer,
+  type RuntimePrecondition,
+} from "../../interpreter/serviceRuntime.ts";
 import { gitRun, gitVersionAdmits, type GitEnvironment } from "./gitRun.ts";
 
 /** The bound the one call this asks for an answer on is made under. */
@@ -35,8 +38,21 @@ export function gitAvailablePrecondition(
         timeoutSecsMax: gitAvailableTimeoutSecsMax,
         environment,
       });
-      if (ran.ran !== "Exited" || ran.code !== 0) return false;
-      return gitVersionAdmits(ran.stdout);
+      if (ran.ran !== "Exited")
+        return {
+          met: "Undecided",
+          why: `git --version did not run: ${ran.ran}`,
+        };
+      if (ran.code !== 0) {
+        return {
+          met: "Undecided",
+          why: `git --version exited ${String(ran.code)}, so what this git writes is unknown`,
+        };
+      }
+      return runtimePreconditionAnswer(
+        gitVersionAdmits(ran.stdout),
+        `the git on this path is not one that writes merge trees: ${ran.stdout}`,
+      );
     },
   };
 }
@@ -52,7 +68,7 @@ export function gitScratchWritablePrecondition(
       await mkdir(directory, { recursive: true });
       signal.throwIfAborted();
       await access(directory, constants.W_OK | constants.X_OK);
-      return true;
+      return { met: "Met" };
     },
   };
 }

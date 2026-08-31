@@ -140,6 +140,7 @@ export interface PostgresTransaction {
 
 /** One opened subject: the store, the two inbox ports, the pool beneath them, and the way to give it back. */
 export interface PostgresHarness {
+  readonly pool: pg.Pool;
   readonly store: ProjectStore;
   readonly inbox: OperationInbox;
   readonly discovery: ProjectDiscovery;
@@ -165,13 +166,16 @@ export async function postgresHarnessOpen(): Promise<PostgresHarness> {
   const store = postgresProjectStore(pool);
   await postgresHarnessEpoch(store);
   if (
-    !(await postgresDomainConfigurationPrecondition(
-      pool,
-      refinementInstance,
-    ).check(new AbortController().signal))
+    (
+      await postgresDomainConfigurationPrecondition(
+        pool,
+        refinementInstance,
+      ).check(new AbortController().signal)
+    ).met !== "Met"
   )
     throw new Error("postgres harness: domain configuration was refused");
   return {
+    pool,
     store,
     inbox: postgresOperationInbox(pool, postgresHarnessKeying()),
     discovery: postgresProjectDiscovery(pool),

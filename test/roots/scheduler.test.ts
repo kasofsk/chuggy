@@ -529,14 +529,17 @@ test("the scheduler process starts, places one worker, reports health and stops"
 
 test("a cluster that does not answer is a named could-not-run and never readiness", async () => {
   const found = JSON.parse(await schedulerProgram(processProgram(false))) as {
-    readonly started: unknown;
+    readonly started: {
+      readonly started: string;
+      readonly precondition: string;
+      readonly verdict: string;
+    };
     readonly health: { readonly ready: boolean };
     readonly placed: readonly string[];
   };
-  assert.deepEqual(found.started, {
-    started: "CouldNotRun",
-    precondition: "cluster-namespace-reachable",
-  });
+  assert.equal(found.started.started, "CouldNotRun");
+  assert.equal(found.started.precondition, "cluster-namespace-reachable");
+  assert.equal(found.started.verdict, "Undecided");
   assert.equal(found.health.ready, false);
   assert.deepEqual(found.placed, []);
 });
@@ -572,7 +575,10 @@ async function schedulerCommand(
 test("a database that is not there is a named could-not-run and exit two", async () => {
   const ran = await schedulerCommand(environment);
   assert.equal(ran.code, 2);
-  assert.match(ran.stderr, /could not run without schema-compatible/u);
+  assert.match(
+    ran.stderr,
+    /^execution scheduler: could not run without schema-compatible undecided — .+\n$/u,
+  );
 });
 
 test("a signalled command stops within the drain it was given", async () => {
@@ -661,6 +667,33 @@ const orderlyStopProgram = `
   };
   await schedulerMain(process.env, () => runtime);
 `;
+
+/** A precondition this deployment does not meet, put to the command's own run. */
+const refusedPreconditionProgram = `
+  const { schedulerMain } = await import('./src/roots/scheduler.ts');
+  const runtime = {
+    start: () => Promise.resolve({
+      started: 'CouldNotRun',
+      precondition: 'journal-legal',
+      verdict: 'Refused',
+      why: 'stored histories this image could not have decided: acme/rig',
+    }),
+    health: () => ({ live: true, ready: false }),
+    settled: () => Promise.resolve({ live: true, ready: false }),
+    stop: () => Promise.resolve({ stopped: 'Stopped' }),
+  };
+  await schedulerMain(process.env, () => runtime);
+`;
+
+test("an unmet precondition leaves the verdict and what it found on stderr", async () => {
+  const ran = await schedulerProgramRan(refusedPreconditionProgram);
+  assert.equal(ran.code, 2);
+  assert.equal(
+    ran.stderr,
+    "execution scheduler: could not run without journal-legal refused — " +
+      "stored histories this image could not have decided: acme/rig\n",
+  );
+});
 
 test("a loop that dies leaves the failure on stderr and a non-zero status", async () => {
   const ran = await schedulerProgramRan(deadLoopProgram);

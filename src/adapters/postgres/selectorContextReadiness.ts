@@ -27,10 +27,14 @@ export async function postgresSelectorContextReady(
       !row.review_feedback_readable
     )
       return false;
-    return schemaCompatibilityPrecondition(
-      postgresRuntimeSchema(pool),
-      currentRuntimeSchemaContract,
-    ).check(new AbortController().signal);
+    return (
+      (
+        await schemaCompatibilityPrecondition(
+          postgresRuntimeSchema(pool),
+          currentRuntimeSchemaContract,
+        ).check(new AbortController().signal)
+      ).met === "Met"
+    );
   } catch {
     return false;
   }

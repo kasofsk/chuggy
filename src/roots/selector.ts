@@ -19,10 +19,11 @@ import {
   type SelectorNativeApi,
 } from "../interpreter/selectorNativeSource.ts";
 import type { SelectorIdentityFactory } from "../interpreter/selectorRuntime.ts";
-import type {
-  RuntimePrecondition,
-  ServiceRuntime,
-  ServiceStopResult,
+import {
+  runtimePreconditionAnswer,
+  type RuntimePrecondition,
+  type ServiceRuntime,
+  type ServiceStopResult,
 } from "../interpreter/serviceRuntime.ts";
 import { trustedSelectorPolicyHost } from "../interpreter/trustedSelectorPolicyHost.ts";
 import {
@@ -115,7 +116,12 @@ export interface SelectorCommandConfig {
 
 export type SelectorCommandResult =
   | { readonly outcome: "Stopped"; readonly stop: ServiceStopResult }
-  | { readonly outcome: "CouldNotRun"; readonly precondition: string }
+  | {
+      readonly outcome: "CouldNotRun";
+      readonly precondition: string;
+      readonly verdict: "Refused" | "Undecided";
+      readonly why: string;
+    }
   | { readonly outcome: "Failed"; readonly failure: string };
 
 export interface SelectorCommandExit {
@@ -174,9 +180,14 @@ function deadline(milliseconds: number, signal?: AbortSignal): Promise<never> {
 
 function readyPrecondition(
   name: string,
+  unready: string,
   check: (signal: AbortSignal) => Promise<boolean>,
 ): RuntimePrecondition {
-  return { name, check };
+  return {
+    name,
+    check: async (signal) =>
+      runtimePreconditionAnswer(await check(signal), unready),
+  };
 }
 
 export function selectorCommandPreconditions(
@@ -186,14 +197,26 @@ export function selectorCommandPreconditions(
   sourceReady: (signal: AbortSignal) => Promise<boolean>,
 ): readonly RuntimePrecondition[] {
   return [
-    readyPrecondition("selector-source", async (signal) => {
-      signal.throwIfAborted();
-      if (!(await sourceReady(signal))) return false;
-      await native.projectInventory(principal, undefined, 1);
-      signal.throwIfAborted();
-      return true;
-    }),
-    readyPrecondition("selector-policy", (signal) => policy.ready(signal)),
+    {
+      name: "selector-source",
+      check: async (signal) => {
+        signal.throwIfAborted();
+        if (!(await sourceReady(signal))) {
+          return {
+            met: "Refused",
+            why: "the native api did not report itself ready",
+          };
+        }
+        await native.projectInventory(principal, undefined, 1);
+        signal.throwIfAborted();
+        return { met: "Met" };
+      },
+    },
+    readyPrecondition(
+      "selector-policy",
+      "the trusted policy host did not report itself ready",
+      (signal) => policy.ready(signal),
+    ),
   ];
 }
 
@@ -297,7 +320,12 @@ export async function runSelector(
     ]);
     if (started.started === "CouldNotRun") {
       await stopRuntime();
-      return { outcome: "CouldNotRun", precondition: started.precondition };
+      return {
+        outcome: "CouldNotRun",
+        precondition: started.precondition,
+        verdict: started.verdict,
+        why: started.why,
+      };
     }
     if (started.started === "Stopped")
       return { outcome: "Stopped", stop: await stopRuntime() };
@@ -345,7 +373,7 @@ export async function selectorMain(
   if (result.outcome === "CouldNotRun")
     return {
       code: 3,
-      diagnostic: `selector could not run: ${result.precondition}`,
+      diagnostic: `selector could not run: ${result.precondition} ${result.verdict.toLowerCase()} — ${result.why}`,
     };
   if (result.outcome === "Failed")
     return { code: 1, diagnostic: `selector failed: ${result.failure}` };

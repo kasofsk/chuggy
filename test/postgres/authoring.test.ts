@@ -100,18 +100,22 @@ async function repositoryBinding(partition: Partition) {
 
 test("the ticket service refuses policy drift from the installed authority", async () => {
   assert.equal(
-    await postgresDomainConfigurationPrecondition(
-      pool,
-      refinementInstance,
-    ).check(new AbortController().signal),
-    true,
+    (
+      await postgresDomainConfigurationPrecondition(
+        pool,
+        refinementInstance,
+      ).check(new AbortController().signal)
+    ).met,
+    "Met",
   );
   assert.equal(
-    await postgresDomainConfigurationPrecondition(pool, {
-      ...refinementInstance,
-      nTasks: refinementInstance.nTasks + 1,
-    }).check(new AbortController().signal),
-    false,
+    (
+      await postgresDomainConfigurationPrecondition(pool, {
+        ...refinementInstance,
+        nTasks: refinementInstance.nTasks + 1,
+      }).check(new AbortController().signal)
+    ).met,
+    "Refused",
   );
 });
 

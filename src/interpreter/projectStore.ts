@@ -48,7 +48,7 @@
  *
  */
 
-import type { Entry } from "../actor/journal.ts";
+import type { StoredEntry } from "../actor/journal.ts";
 import type { Parsed } from "./wire.ts";
 import type { DispatchContractPin } from "./dispatchView.ts";
 
@@ -207,13 +207,13 @@ export interface ProjectStore {
   release(lease: Lease): Promise<void>;
 
   /**
-   * Every stored entry for the lease's partition in sequence order, replayed
-   * under the lease the decision will present and parsed at this boundary. A
-   * lease the row no longer honours is refused rather than served a prefix,
-   * because entries read outside a tenure say nothing about what that tenure
-   * begins on.
+   * Every stored entry for the lease's partition in sequence order, each with
+   * the decision semantics its row declares, replayed under the lease the
+   * decision will present and parsed at this boundary. A lease the row no
+   * longer honours is refused rather than served a prefix, because entries read
+   * outside a tenure say nothing about what that tenure begins on.
    */
-  load(lease: Lease): Promise<Parsed<readonly Entry[]>>;
+  load(lease: Lease): Promise<Parsed<readonly StoredEntry[]>>;
 
   /** Immutable release-contract pins used when reconstructing the strict dispatch view. */
   loadDispatchContracts?(

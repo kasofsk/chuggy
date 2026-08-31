@@ -31,8 +31,9 @@
  * projection rather than a second authority.
  */
 
-import type { Entry } from "../actor/journal.ts";
-import { genesis, journalLegalOn } from "../actor/journal.ts";
+import type { Entry, StoredEntry } from "../actor/journal.ts";
+import { genesis, storedJournalLegalOn } from "../actor/journal.ts";
+import { execDecisionEventAt } from "../actor/decisionSemantics.ts";
 import { ticketEquals } from "../actor/equality.ts";
 import {
   decisionEventEnabled,
@@ -160,14 +161,14 @@ export function projectionChanges(
 async function projectWriterJournal(
   writer: ProjectTicketWriter,
   lease: Lease,
-): Promise<readonly Entry[]> {
+): Promise<readonly StoredEntry[]> {
   const loaded = await writer.store.load(lease);
   if (loaded.parsed === "Refused") {
     throw new Error(
       `project writer: the journal could not be replayed — ${loaded.why}`,
     );
   }
-  if (!journalLegalOn(writer.config, loaded.value)) {
+  if (!storedJournalLegalOn(writer.config, loaded.value)) {
     throw new Error(
       "project writer: the stored journal is not a history this machine could have taken",
     );
@@ -188,10 +189,15 @@ export async function projectWriterLoad(
   const journal = await projectWriterJournal(writer, lease);
   const ticketVersions = new Map<number, number>();
   let core: Core = genesis;
-  for (const entry of journal) {
-    const post = execDecisionEvent(writer.config, core, entry.event).post;
+  for (const row of journal) {
+    const post = execDecisionEventAt(
+      row.semantics,
+      writer.config,
+      core,
+      row.entry.event,
+    ).post;
     for (const projection of projectionChanges(core, post))
-      ticketVersions.set(projection.ticket, entry.seq);
+      ticketVersions.set(projection.ticket, row.entry.seq);
     core = post;
   }
   const dispatchContracts = await writer.store.loadDispatchContracts?.(lease);

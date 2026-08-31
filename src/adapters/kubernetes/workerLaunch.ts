@@ -41,7 +41,10 @@ import type {
 } from "../../interpreter/executionScheduler.ts";
 import { asPlacementId } from "../../interpreter/schedulerIdentity.ts";
 import type { PlacementId } from "../../interpreter/schedulerIdentity.ts";
-import type { RuntimePrecondition } from "../../interpreter/serviceRuntime.ts";
+import {
+  runtimePreconditionAnswer,
+  type RuntimePrecondition,
+} from "../../interpreter/serviceRuntime.ts";
 import {
   checkedKubernetesWorkerLaunchConfig,
   kubernetesWorkerPodName,
@@ -337,7 +340,16 @@ export function kubernetesNamespacePrecondition(
         path: `/api/v1/namespaces/${config.namespace}`,
         signal,
       });
-      return reached.reached === "Status" && reached.status === 200;
+      if (reached.reached === "Unreachable") {
+        return {
+          met: "Undecided",
+          why: `the cluster did not answer for ${config.namespace}, so whether it admits this deployment is unknown`,
+        };
+      }
+      return runtimePreconditionAnswer(
+        reached.status === 200,
+        `the namespace ${config.namespace} answered ${String(reached.status)} to this deployment's credential`,
+      );
     },
   };
 }
