@@ -20,6 +20,7 @@ import { after, before, test } from "node:test";
 
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
+import { apiRole } from "../../src/adapters/postgres/schema.ts";
 import { asOperationDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
@@ -30,6 +31,7 @@ import {
   postgresHarnessJournal,
   postgresHarnessOpen,
   postgresHarnessProject,
+  postgresHarnessRolePool,
   postgresHarnessSubmission,
   postgresHarnessUrl,
   postgresHarnessWriter,
@@ -208,4 +210,70 @@ test("a ticket carried off the machine is dated by the entry that ended it", asy
   assert.notEqual(ended.changedAt, released.changedAt);
   assert.equal(ended.sequence, moved);
   assert.equal(readAt(ended.changedAt), await committedAt(partition, moved));
+});
+
+/**
+ * A release-shaped entry carrying anything but a number where its ticket goes.
+ * No writer can produce one — `encodeEntry` runs off a typed `Entry` — but the
+ * index and the reads both key on that value, so an expression casting it would
+ * make this row a write the server rejects, exactly as an unguarded
+ * `entry::jsonb` would for a row that is not JSON at all.
+ */
+test("a release naming no number is a row the journal keeps and the read skips", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "instants-unnumbered",
+  );
+  await postgresHarnessHistory(
+    harness,
+    partition,
+    "instants-unnumbered",
+    postgresHarnessJournal().length,
+  );
+  await harness.query(
+    `UPDATE journal_entry
+        SET entry='{"seq":1,"event":{"type":"ReleaseTicket","value":{"ticket":"one"}},"rec":{}}'
+      WHERE tenant=$1 AND project=$2 AND seq=1`,
+    [partition.tenant, partition.project],
+  );
+  const unnumbered = await ticketRead(partition);
+  assert.equal(unnumbered.releasedAt, undefined);
+  assert.equal(readAt(unnumbered.changedAt), await committedAt(partition, 2));
+});
+
+/**
+ * The reads as production runs them, which is as `chuggy_api` rather than as
+ * the owner every other case here connects as. That role reaches the journal
+ * through one column-level grant and nothing else, so a column this change
+ * forgot to grant is every ticket page refused rather than one field missing.
+ */
+test("the API role reads both instants through the grant the migration makes", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "instants-role",
+  );
+  await postgresHarnessHistory(
+    harness,
+    partition,
+    "instants-role",
+    postgresHarnessJournal().length,
+  );
+  const asApi = postgresHarnessRolePool(apiRole);
+  try {
+    const reads = postgresNativeReads(asApi);
+    const own = await reads.ticket(partition, subject);
+    assert.equal(readAt(own?.changedAt ?? ""), await committedAt(partition, 2));
+    assert.equal(
+      readAt(own?.releasedAt ?? ""),
+      await committedAt(partition, 1),
+    );
+    const listed = await reads.project(partition, { limit: 10 });
+    assert.equal(listed.result, "Found");
+    const row =
+      listed.result === "Found" ? listed.project.tickets[0] : undefined;
+    assert.equal(row?.releasedAt, own?.releasedAt);
+    assert.equal(row?.changedAt, own?.changedAt);
+  } finally {
+    await asApi.end();
+  }
 });

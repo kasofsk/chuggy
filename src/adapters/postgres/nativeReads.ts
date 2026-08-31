@@ -370,7 +370,7 @@ async function readProjectTickets(
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->>'type' END)='ReleaseTicket'
                AND (CASE WHEN j.entry IS JSON OBJECT
-                         THEN j.entry::jsonb->'event'->'value'->>'ticket' END)::bigint=t.ticket
+                         THEN j.entry::jsonb->'event'->'value'->'ticket' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
           AND (${query.recentActivityAfter?.sequence ?? null}::bigint IS NULL
@@ -393,7 +393,7 @@ async function readProjectTickets(
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->>'type' END)='ReleaseTicket'
                AND (CASE WHEN j.entry IS JSON OBJECT
-                         THEN j.entry::jsonb->'event'->'value'->>'ticket' END)::bigint=t.ticket
+                         THEN j.entry::jsonb->'event'->'value'->'ticket' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
           AND t.ticket>${query.after ?? 0}
@@ -440,7 +440,7 @@ function nativeReadsResources(
                    AND (CASE WHEN j.entry IS JSON OBJECT
                              THEN j.entry::jsonb->'event'->>'type' END)='ReleaseTicket'
                    AND (CASE WHEN j.entry IS JSON OBJECT
-                             THEN j.entry::jsonb->'event'->'value'->>'ticket' END)::bigint=t.ticket
+                             THEN j.entry::jsonb->'event'->'value'->'ticket' END)=to_jsonb(t.ticket)
                  ORDER BY j.seq LIMIT 1) r ON true
               LEFT JOIN draft_brief b
                 ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket

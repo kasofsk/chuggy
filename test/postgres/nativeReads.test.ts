@@ -64,6 +64,7 @@ async function seedEntry(
   partition: Partition,
   label: string,
   seq: number,
+  entry = "{}",
 ): Promise<void> {
   const submission = postgresHarnessSubmission(partition, label);
   await subject.harness.inbox.accept(submission);
@@ -78,7 +79,7 @@ async function seedEntry(
     `INSERT INTO journal_entry
        (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
         recovery_epoch,cause_kind,cause_id,committed_at)
-     VALUES ($1,$2,$3,'{}',$4,'genesis','owner',1,$5,'Operation',$6,$7)`,
+     VALUES ($1,$2,$3,$8,$4,'genesis','owner',1,$5,'Operation',$6,$7)`,
     [
       partition.tenant,
       partition.project,
@@ -87,9 +88,19 @@ async function seedEntry(
       epoch,
       submission.operation,
       new Date(seededEntryAt(seq)).toISOString(),
+      entry,
     ],
   );
   await seeding.commit();
+}
+
+/** One entry of `type` naming `ticket`, as the encoder writes an event that has one. */
+function seededEvent(type: string, ticket: number): string {
+  return JSON.stringify({
+    seq: ticket,
+    event: { type, value: { ticket } },
+    rec: {},
+  });
 }
 
 /**
@@ -317,6 +328,50 @@ test("project reads page newest activity with a stable identity tie-breaker", as
   assert.deepEqual(
     second.project.tickets.map(({ ticket }) => ticket),
     [1, 4],
+  );
+});
+
+/**
+ * A journal whose earliest entry naming this ticket is not the one that released
+ * it. The machine cannot currently write that order — a release is the first
+ * entry a ticket has — so nothing else in these suites separates "the earliest
+ * entry naming the ticket" from "the entry that released it", and the read is
+ * specified to be the second.
+ */
+test("an earlier entry naming the ticket is not mistaken for its release", async () => {
+  const partition = await postgresHarnessProject(
+    subject.harness.store,
+    "native-release-kind",
+  );
+  await subject.harness.query(
+    "UPDATE project SET head=2 WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project],
+  );
+  await seedEntry(
+    partition,
+    "native-release-kind-done",
+    1,
+    seededEvent("TaskDone", 5),
+  );
+  await seedEntry(
+    partition,
+    "native-release-kind-release",
+    2,
+    seededEvent("ReleaseTicket", 5),
+  );
+  await subject.harness.query(
+    `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+     VALUES ($1,$2,5,'Pending',2)`,
+    [partition.tenant, partition.project],
+  );
+  const released = await postgresNativeReads(subject.pool).ticket(
+    partition,
+    id(5),
+  );
+  assert.equal(
+    Date.parse(released?.releasedAt ?? ""),
+    seededEntryAt(2),
+    "the release instant is the release entry's, not the earlier entry's",
   );
 });
 
