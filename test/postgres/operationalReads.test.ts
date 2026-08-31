@@ -23,7 +23,11 @@ import {
   schedulerRigOpen,
   type SchedulerRig,
 } from "./schedulerHarness.ts";
-import type { ExecutionPageCursor } from "../../src/interpreter/operationsView.ts";
+import type {
+  ExecutionListQuery,
+  ExecutionPageCursor,
+  OperationalReadStore,
+} from "../../src/interpreter/operationsView.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 
 let rig: SchedulerRig;
@@ -185,12 +189,42 @@ async function operationalOrders(
 }
 
 /**
+ * Every page a walk of one read answers with, as the `(ticket, task)` positions
+ * each page carried. A walk that has not ended within its budget is a failure
+ * rather than a shorter answer, because a cursor that never retires reads
+ * exactly like a list that ran out.
+ */
+async function operationalWalked(
+  reads: OperationalReadStore,
+  partition: Partition,
+  query: ExecutionListQuery,
+  pagesMax: number,
+): Promise<number[][][]> {
+  const pages: number[][][] = [];
+  let after: ExecutionPageCursor | undefined;
+  for (let page = 0; page < pagesMax; page += 1) {
+    const answered = await reads.executions(partition, {
+      ...query,
+      ...(after === undefined ? {} : { after }),
+    });
+    pages.push(answered.executions.map((row) => [row.ticket, row.task]));
+    after = answered.nextAfter;
+    if (after === undefined) return pages;
+  }
+  throw new Error(
+    "operational read: the walk did not reach the end of the list",
+  );
+}
+
+/**
  * A registration names each execution `execution-<uuid>-<task>`, so a ticket's
  * identities sort as text and its history does not: the fixture below is a
  * ticket whose two orders differ, which is what makes a read ordered by either
  * one distinguishable from a read ordered by the other. A second ticket is
- * registered beside it, because a project-wide read has to say what it does
- * with more than one.
+ * registered beside it, and both walks use a page smaller than what they walk —
+ * the project-wide one so that a page straddles the boundary between the two
+ * tickets, which is the one thing the cursor does that a ticket-scoped walk
+ * never asks of it.
  */
 test("a ticket's executions are read and paged in task order", async () => {
   const tasks = 11;
@@ -224,32 +258,41 @@ test("a ticket's executions are read and paged in task order", async () => {
   );
   assert.equal(whole.nextAfter, undefined);
 
-  const walked: number[] = [];
-  let after: ExecutionPageCursor | undefined;
-  for (let page = 0; page <= tasks; page += 1) {
-    const answered = await reads.executions(project.partition, {
-      limit: 4,
-      ticket: id(project.ticket),
-      ...(after === undefined ? {} : { after }),
-    });
-    walked.push(...answered.executions.map((row) => row.task));
-    after = answered.nextAfter;
-    if (after === undefined) break;
-  }
-  assert.equal(after, undefined);
-  assert.deepEqual(walked, history);
-
-  const across = await reads.executions(project.partition, {
-    limit: tasks + further.tasks,
-  });
+  const pagesMax = tasks + further.tasks;
+  const walked = await operationalWalked(
+    reads,
+    project.partition,
+    { limit: 4, ticket: id(project.ticket) },
+    pagesMax,
+  );
   assert.deepEqual(
-    across.executions.map((row) => [row.ticket, row.task]),
+    walked.flat().map(([, task]) => task),
+    history,
+  );
+
+  const across = await operationalWalked(
+    reads,
+    project.partition,
+    { limit: 4 },
+    pagesMax,
+  );
+  const positions = [
+    ...history.map((task) => [project.ticket, task]),
+    ...Array.from({ length: further.tasks }, (_unused, at) => [
+      further.ticket,
+      at + 1,
+    ]),
+  ];
+  assert.deepEqual(across.flat(), positions);
+  assert.deepEqual(
+    across.filter((page) => new Set(page.map(([ticket]) => ticket)).size > 1),
     [
-      ...history.map((task) => [project.ticket, task]),
-      ...Array.from({ length: further.tasks }, (_unused, at) => [
-        further.ticket,
-        at + 1,
-      ]),
+      [
+        [project.ticket, tasks - 2],
+        [project.ticket, tasks - 1],
+        [project.ticket, tasks],
+        [further.ticket, 1],
+      ],
     ],
   );
 });

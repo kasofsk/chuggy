@@ -77,8 +77,11 @@ export interface ExecutionPageCursor {
  * `ticket` narrows that one order rather than replacing it, so a cursor means
  * the same position in the ticket-scoped read and the project-wide one and
  * there is no second kind of cursor to confuse it with. A cursor resuming a
- * ticket the query does not select is refused, because answering it would
- * silently restart the selected ticket from its first task.
+ * ticket the query does not select is refused in either direction, because
+ * each direction answers with something a reader would believe: a cursor from
+ * an earlier ticket silently restarts the selected one at its first task, and
+ * a cursor from a later ticket silently answers an empty page for a ticket
+ * that has run.
  */
 export interface ExecutionListQuery {
   readonly after?: ExecutionPageCursor;

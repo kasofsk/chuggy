@@ -242,6 +242,8 @@ test("execution cursors carry the history position, not an identity", () => {
   assert.throws(() => parseExecutionCursor(identity, partition));
 });
 
+/** Both directions, because each answers with something a reader would believe:
+ * an earlier cursor restarts the selected ticket, a later one empties it. */
 test("a query is refused a cursor resuming a ticket it does not select", () => {
   const at = { ticket: id(21), task: asTaskId(8) };
   assert.deepEqual(
@@ -254,6 +256,10 @@ test("a query is refused a cursor resuming a ticket it does not select", () => {
   );
   assert.throws(
     () => checkedExecutionListQuery({ after: at, ticket: id(22), limit: 10 }),
+    RangeError,
+  );
+  assert.throws(
+    () => checkedExecutionListQuery({ after: at, ticket: id(20), limit: 10 }),
     RangeError,
   );
 });
