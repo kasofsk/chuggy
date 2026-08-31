@@ -109,6 +109,7 @@ export function ticketPageFacts(
             stageCount,
             resumePricing: authoring.resumePricing,
             resumeAt: ticket.resumeAt,
+            reworkBudget: authoring.reworkPolicy.value,
           }),
   };
 }

@@ -55,6 +55,7 @@ export type EscalationReason = (typeof escalationReasons)[number];
  */
 export const resumePoints = [
   "ResumeWorking",
+  "ResumeReworking",
   "ResumeEvaluating",
   "ResumeFinalizing",
   "ResumePublishingHandoff",

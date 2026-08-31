@@ -448,6 +448,23 @@ test("a wall whose only exit is revoke offers no resume to press", async () => {
   expect(screen.getByRole("button", { name: "Revoke" })).toBeDefined();
 });
 
+/**
+ * The rework wall's resume buys a work cycle with the account refilled, so the
+ * page must not still offer it as a re-run of the evaluation.
+ */
+test("a rework-wall resume says it reworks rather than re-evaluates", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: { ...parkedTicket, resumeAt: "ResumeReworking" },
+  });
+  expect(screen.getByRole("button", { name: "Resume" })).toBeDefined();
+  expect(
+    screen.getByText(/Reworks · new artifact, rework refilled/u),
+  ).toBeDefined();
+  expect(screen.getByText("Rework returns to 0/2")).toBeDefined();
+  expect(screen.queryByText(/Re-runs evaluation from stage 1/u)).toBeNull();
+});
+
 test("every action the page draws describes itself by an id that resolves", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,

@@ -29,6 +29,7 @@ import {
   ticketActionEffect,
 } from "../app/core/codeLabels.ts";
 import { mutationRefusalCodes } from "../app/core/codeSentences.ts";
+import { resumeGasCharge } from "../app/core/resumePoint.ts";
 import type { TicketActionName } from "../app/core/ticketActions.ts";
 
 const ticketActionNames: readonly TicketActionName[] = [
@@ -107,6 +108,28 @@ test("a resume states what it re-runs, what it costs, and what it keeps", () => 
   expect(effect.effect).toBe("Re-runs evaluation from stage 1");
   expect(effect.cost).toBe("costs 1 gas");
   expect(effect.more).toBe("Keeps the current artifact · rework stays 0/2");
+});
+
+/**
+ * The rework wall buys a work cycle with the account refilled, and entry to
+ * Working always meters — one gas under either pricing (`model/domain.qnt`,
+ * `resumeCharge`).
+ */
+test("a rework-wall resume says it reworks, refills and charges", () => {
+  const effect = ticketActionEffect(
+    "Resume",
+    {
+      point: "ResumeReworking",
+      reruns: "work",
+      fromStage: undefined,
+      ofStages: undefined,
+      cost: resumeGasCharge("ResumeReworking", "RetryFree"),
+    },
+    { left: 0, max: 2 },
+  );
+  expect(effect.effect).toBe("Reworks · new artifact, rework refilled");
+  expect(effect.cost).toBe("costs 1 gas");
+  expect(effect.more).toBe("Rework returns to 0/2");
 });
 
 test("a wall with no resume point offers nothing and says which exit is left", () => {

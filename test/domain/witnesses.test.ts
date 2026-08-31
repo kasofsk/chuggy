@@ -22,6 +22,7 @@ import { boundsOf, type Config } from "../../src/domain/config.ts";
 
 import {
   decideEvalStageReduce,
+  decideExecutionBlocked,
   decideResumeTicket,
   decideRevoke,
 } from "../../src/domain/deciders.ts";
@@ -38,6 +39,7 @@ import { budgetedInstance, retryFreeInstance } from "./configs.ts";
 import {
   coreOf,
   depsOf,
+  evalOutstanding,
   evalTask,
   id,
   ticketOn,
@@ -61,24 +63,32 @@ function stepped(
 }
 
 /**
- * A ticket parked behind a pipeline wall. The resume's price is the ticket's
- * own authored pricing, so that is what the fixture varies.
+ * A ticket parked by an execution block during evaluation, which is the park
+ * whose resume re-enters evaluation: an interruption leaves an intact
+ * judgement to make, where the rework wall's verdict leaves none. The park is
+ * taken from the decider rather than written down, and the resume's price is
+ * the ticket's own, so that is what the fixture varies.
  */
 function parkedAtEvaluation(
   instance: Config,
   resumePricing: RetryPricing,
   gasLeft: number,
 ): Core {
-  return coreOf([
+  const evaluating = coreOf([
     ticketOn(instance, "ManagedFinalizer", {
-      phase: "Escalated",
-      reason: "ReworkBudgetExhausted",
-      resumeAt: "ResumeEvaluating",
+      phase: "Evaluating",
       resumePricing,
-      reworkLeft: 0,
+      record: [workTask(1, "Passed"), workTask(2, "Passed")],
+      tasks: new Set([evalOutstanding(3, 0), evalOutstanding(4, 0)]),
+      spawned: 4,
       gasLeft,
     }),
   ]);
+  return decideExecutionBlocked(
+    evaluating,
+    id(1),
+    "ExecutionProfileUnavailable",
+  ).post;
 }
 
 const twoStage: readonly Stage[] = [

@@ -14,6 +14,13 @@
  * returned as given; the rules below are what answer when a ticket read does
  * not carry one.
  *
+ * THE REWORK WALL BUYS A WORK CYCLE, not a re-run of the evaluation: the model
+ * respawns the work set with the eval-rework account refilled to the authored
+ * budget, and a ticket authored no budget declined that economy and is
+ * revoke-only like the cascade wall. The budget is the one fact a phase and a
+ * reason do not carry, so a page that reads the authoring hands it over and a
+ * page that does not gets the answer for a ticket that has one.
+ *
  * IT IS TOTAL OVER EVERY PHASE AND REASON THE ROSTERS ADMIT, and answers with
  * nothing for three different reasons. A phase that is not parked has nothing
  * to resume at all; a revoked dependency is the one wall the model itself
@@ -41,6 +48,7 @@ export interface ResumeSituation {
   readonly stageCount: number;
   readonly resumePricing: ResumePricing;
   readonly resumeAt: ResumePoint | undefined;
+  readonly reworkBudget?: number | undefined;
 }
 
 export interface ResumeConsequence {
@@ -82,7 +90,7 @@ function walledPoint(
     case "WorkFailed":
       return "ResumeWorking";
     case "ReworkBudgetExhausted":
-      return "ResumeEvaluating";
+      return situation.reworkBudget === 0 ? undefined : "ResumeReworking";
     case "FinalizationBudgetExhausted":
       return "ResumeFinalizing";
     case "GasExhausted":
@@ -118,6 +126,7 @@ export function ticketResumePoint(
 export function resumeReenters(point: ResumePoint): TicketPhase {
   switch (point) {
     case "ResumeWorking":
+    case "ResumeReworking":
       return "Working";
     case "ResumeEvaluating":
       return "Evaluating";
@@ -132,6 +141,7 @@ export function resumeReenters(point: ResumePoint): TicketPhase {
 export function resumeRerun(point: ResumePoint): ResumeRerun {
   switch (point) {
     case "ResumeWorking":
+    case "ResumeReworking":
       return "work";
     case "ResumeEvaluating":
       return "evaluation";
@@ -150,7 +160,8 @@ export function resumeGasCharge(
   point: ResumePoint,
   pricing: ResumePricing,
 ): number {
-  return point === "ResumeWorking" || pricing === "RetryCharged" ? 1 : 0;
+  if (point === "ResumeWorking" || point === "ResumeReworking") return 1;
+  return pricing === "RetryCharged" ? 1 : 0;
 }
 
 /**

@@ -177,6 +177,8 @@ function resumeEffect(resume: ResumeConsequence): string {
   switch (resume.point) {
     case "ResumeWorking":
       return "Re-runs the work · new artifact";
+    case "ResumeReworking":
+      return "Reworks · new artifact, rework refilled";
     case "ResumeEvaluating":
       return "Re-runs evaluation from stage 1";
     case "ResumeFinalizing":
@@ -196,8 +198,10 @@ function resumeMore(
   resume: ResumeConsequence,
   rework: ReworkStanding | undefined,
 ): string | undefined {
-  if (resume.point !== "ResumeEvaluating" || rework === undefined)
-    return undefined;
+  if (rework === undefined) return undefined;
+  if (resume.point === "ResumeReworking")
+    return `Rework returns to 0/${String(rework.max)}`;
+  if (resume.point !== "ResumeEvaluating") return undefined;
   return `Keeps the current artifact · rework stays ${String(rework.left)}/${String(rework.max)}`;
 }
 

@@ -58,7 +58,7 @@ test("every wall the wire can name has a point or names none", () => {
   ]);
   expect(named).toEqual([
     ["WorkFailed", "ResumeWorking"],
-    ["ReworkBudgetExhausted", "ResumeEvaluating"],
+    ["ReworkBudgetExhausted", "ResumeReworking"],
     ["FinalizationBudgetExhausted", "ResumeFinalizing"],
     ["GasExhausted", "ResumeEvaluating"],
     ["DependencyRevoked", undefined],
@@ -151,13 +151,30 @@ test("the machine's own answer wins over every rule here", () => {
 });
 
 test("an evaluation resume re-runs the program from its lowest stage", () => {
-  expect(ticketResume(parked("ReworkBudgetExhausted"))).toEqual({
+  expect(ticketResume(parked("GasExhausted"))).toEqual({
     point: "ResumeEvaluating",
     reruns: "evaluation",
     fromStage: 0,
     ofStages: 2,
     cost: 1,
   });
+});
+
+/**
+ * The rework wall buys a work cycle with the account refilled, and a ticket
+ * that authored no budget declined that economy, so its only exit is revoke.
+ */
+test("the rework wall reworks where a budget was bought, and nothing where none was", () => {
+  expect(ticketResume(parked("ReworkBudgetExhausted"))).toEqual({
+    point: "ResumeReworking",
+    reruns: "work",
+    fromStage: undefined,
+    ofStages: undefined,
+    cost: 1,
+  });
+  expect(
+    ticketResume({ ...parked("ReworkBudgetExhausted"), reworkBudget: 0 }),
+  ).toBeUndefined();
 });
 
 test("re-entering work always costs gas and a free retry costs none", () => {
@@ -175,6 +192,10 @@ test("re-entering work always costs gas and a free retry costs none", () => {
       ...parked("ReworkBudgetExhausted"),
       resumePricing: "RetryFree",
     })?.cost,
+  ).toBe(1);
+  expect(
+    ticketResume({ ...parked("GasExhausted"), resumePricing: "RetryFree" })
+      ?.cost,
   ).toBe(0);
 });
 

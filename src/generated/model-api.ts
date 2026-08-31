@@ -579,6 +579,7 @@ export function decodeTask(value: unknown): Task {
 export const resumeSchema: z.ZodType<Resume> = z.union([
   z.literal("NoResume"),
   z.literal("ResumeWorking"),
+  z.literal("ResumeReworking"),
   z.literal("ResumeEvaluating"),
   z.literal("ResumeFinalizing"),
   z.literal("ResumePublishingHandoff"),
@@ -586,6 +587,7 @@ export const resumeSchema: z.ZodType<Resume> = z.union([
 const resumeSchemaWire: z.ZodType<Resume> = z.union([
   z.literal("NoResume"),
   z.literal("ResumeWorking"),
+  z.literal("ResumeReworking"),
   z.literal("ResumeEvaluating"),
   z.literal("ResumeFinalizing"),
   z.literal("ResumePublishingHandoff"),
