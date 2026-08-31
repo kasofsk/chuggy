@@ -4,7 +4,7 @@
  *
  * THE ENTRIES ARE THE ACTOR'S OWN, not invented rows. A fixture written by
  * hand would prove the adapter stores what it is given; entries produced by
- * `journalStep` and read back through `journalLegalOn` prove the round trip
+ * `journalStep` and read back through `storedJournalLegalOn` prove the round trip
  * preserves a history the machine would accept, which is the property replay
  * actually needs.
  *
@@ -18,11 +18,12 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { journalLegalOn } from "../../src/actor/journal.ts";
+import { storedJournalLegalOn } from "../../src/actor/journal.ts";
 import {
   journalChainGenesis,
   journalEnvelopeDigest,
 } from "../../src/adapters/postgres/digest.ts";
+import { postgresJournalLegality } from "../../src/adapters/postgres/journal.ts";
 import { refinementInstance } from "../actor/harness.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import {
@@ -59,8 +60,11 @@ test("a committed history advances the head and loads back as a legal journal", 
   const loaded = await harness.store.load(memory.lease);
   assert.equal(loaded.parsed, "Ok");
   assert.ok(loaded.parsed === "Ok");
-  assert.deepEqual(loaded.value, journal);
-  assert.ok(journalLegalOn(refinementInstance, loaded.value));
+  assert.deepEqual(
+    loaded.value.map((row) => row.entry),
+    journal,
+  );
+  assert.ok(storedJournalLegalOn(refinementInstance, loaded.value));
 });
 
 test("load refuses a changed complete-envelope digest", async () => {
@@ -111,7 +115,7 @@ test("load refuses unsupported event and decision semantic versions", async () =
       1,
     );
     await harness.query(
-      `UPDATE journal_entry SET ${column}=2 WHERE tenant=$1 AND project=$2 AND seq=1`,
+      `UPDATE journal_entry SET ${column}=3 WHERE tenant=$1 AND project=$2 AND seq=1`,
       [partition.tenant, partition.project],
     );
     const loaded = await harness.store.load(memory.lease);
@@ -174,7 +178,7 @@ test("each stored digest chains onto its predecessor, and the first onto the par
     configuration_revision: string | null;
     configuration_digest: string | null;
     event_schema_version: 1;
-    decision_semantics_version: 1;
+    decision_semantics_version: 2;
   }[];
 
   assert.equal(stored.length, journal.length);
@@ -278,4 +282,62 @@ test("the database rejects a journal that no longer reaches its decision input",
     );
     assert.equal((await harness.store.load(memory.lease)).parsed, "Ok");
   }
+});
+
+test("the legality scan names a history whose declared machine could not have decided it", async () => {
+  const partition = await postgresHarnessProject(harness.store, "scanwalled");
+  const journal = postgresHarnessJournal();
+  await postgresHarnessHistory(
+    harness,
+    partition,
+    "scanwalled",
+    journal.length,
+  );
+  const named = `${partition.tenant}/${partition.project}`;
+  const legality = postgresJournalLegality(harness.pool, refinementInstance);
+
+  assert.ok(
+    !(await legality.illegalPartitions(new AbortController().signal)).includes(
+      named,
+    ),
+  );
+
+  const rows = (await harness.query(
+    `SELECT prev_digest,cause_id,configuration_revision,configuration_digest
+       FROM journal_entry WHERE tenant=$1 AND project=$2 ORDER BY seq`,
+    [partition.tenant, partition.project],
+  )) as readonly {
+    prev_digest: string;
+    cause_id: string;
+    configuration_revision: string;
+    configuration_digest: string;
+  }[];
+  const second = rows[1];
+  const entry = journal[1];
+  assert.ok(second !== undefined && entry !== undefined);
+  await harness.query(
+    `UPDATE journal_entry SET decision_semantics_version=1,entry_digest=$4
+       WHERE tenant=$1 AND project=$2 AND seq=$3`,
+    [
+      partition.tenant,
+      partition.project,
+      2,
+      journalEnvelopeDigest(partition, second.prev_digest, {
+        entry,
+        cause: { kind: "Operation", id: asOperationId(second.cause_id) },
+        configuration: {
+          configurationRevision: second.configuration_revision,
+          configurationDigest: second.configuration_digest,
+        },
+        eventSchemaVersion: 1,
+        decisionSemanticsVersion: 1,
+      }),
+    ],
+  );
+
+  assert.ok(
+    (await legality.illegalPartitions(new AbortController().signal)).includes(
+      named,
+    ),
+  );
 });

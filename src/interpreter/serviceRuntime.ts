@@ -123,6 +123,30 @@ export function schemaCompatibilityPrecondition(
   };
 }
 
+export interface RuntimeStoredJournalSource {
+  /**
+   * The partitions whose stored history this image could not have taken, named
+   * for the operator; a scan that could not reach every partition says so by
+   * naming one it could not clear.
+   */
+  illegalPartitions(signal: AbortSignal): Promise<readonly string[]>;
+}
+
+/**
+ * Requires every stored journal to replay under the decision semantics its own
+ * rows declare. A writer that discovers this inside its loop reports a dead
+ * loop instead, so the start is refused by name.
+ */
+export function journalLegalityPrecondition(
+  source: RuntimeStoredJournalSource,
+): RuntimePrecondition {
+  return {
+    name: "journal-legal",
+    check: async (signal) =>
+      (await source.illegalPartitions(signal)).length === 0,
+  };
+}
+
 export type RuntimeMigrationPlan =
   | {
       readonly planned: "Compatible";

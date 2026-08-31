@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import {
@@ -9,6 +11,10 @@ import {
   workReduceEvent,
 } from "../../src/actor/decisionEvent.ts";
 import { actorInit, journalStep, memoryCore } from "../../src/actor/state.ts";
+import {
+  storedAtCurrentSemantics,
+  type StoredEntry,
+} from "../../src/actor/journal.ts";
 import {
   asOperationId,
   classifyCommand,
@@ -35,9 +41,12 @@ import {
 import {
   projectTicketWriterRun,
   projectWriterDecide,
+  projectWriterLoad,
   type ProjectDecided,
   type ProjectMemory,
+  type ProjectTicketWriter,
 } from "../../src/interpreter/projectWriter.ts";
+import { parseJournal } from "../../src/interpreter/wire.ts";
 import {
   silentTicketServiceMetrics,
   ticketServiceDefaults,
@@ -96,6 +105,37 @@ function releasedMemory(head = 1): ProjectMemory {
     dispatchContracts: contracts,
   };
 }
+
+/** The pinned history the rework wall's older machine wrote, as a store declaring its semantics holds it. */
+function journalAtSemanticsOne(): readonly StoredEntry[] {
+  const raw: unknown = JSON.parse(
+    readFileSync(
+      join(import.meta.dirname, "..", "actor", "journalAtSemanticsOne.json"),
+      "utf8",
+    ),
+  );
+  const parsed = parseJournal(raw);
+  assert.ok(parsed.parsed === "Ok");
+  return parsed.value.map((entry) => ({ entry, semantics: 1 }));
+}
+
+test("a writer rebuilds a history from the machine that decided it, not from its own", async () => {
+  const stored = journalAtSemanticsOne();
+  const memory = await projectWriterLoad(
+    {
+      config: refinementInstance,
+      store: { load: () => Promise.resolve({ parsed: "Ok", value: stored }) },
+    } as unknown as ProjectTicketWriter,
+    {
+      partition,
+      owner: asOwnerId("owner"),
+      fencingEpoch: 1,
+      recoveryEpoch: asRecoveryEpoch("epoch"),
+      head: stored.length,
+    },
+  );
+  assert.equal(ticketAt(memory.core, id(1)).phase, "Evaluating");
+});
 
 function operationInput(command: TicketCommand): DecisionInput {
   return {
@@ -560,7 +600,11 @@ test("a deferred input ends the run it arrived in without clearing readiness", a
     {
       config: refinementInstance,
       store: {
-        load: () => Promise.resolve({ parsed: "Ok", value: journal }),
+        load: () =>
+          Promise.resolve({
+            parsed: "Ok",
+            value: storedAtCurrentSemantics(journal),
+          }),
       } as unknown as ProjectStore,
       decisions: {
         decide: () =>

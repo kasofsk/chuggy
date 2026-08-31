@@ -64,7 +64,7 @@ async function commitFirst(memory: ProjectMemory, label: string) {
 async function entriesOf(lease: Lease): Promise<readonly Entry[]> {
   const loaded = await harness.store.load(lease);
   assert.ok(loaded.parsed === "Ok");
-  return loaded.value;
+  return loaded.value.map((row) => row.entry);
 }
 
 /** How long the neighbouring decision gets while the stall is held, which is what not waiting on the other means in time. */

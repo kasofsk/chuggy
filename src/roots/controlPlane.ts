@@ -69,7 +69,11 @@ import {
   currentRuntimeSchemaContract,
   postgresRuntimeSchema,
 } from "../adapters/postgres/runtimeSchema.ts";
-import { schemaCompatibilityPrecondition } from "../interpreter/serviceRuntime.ts";
+import {
+  journalLegalityPrecondition,
+  schemaCompatibilityPrecondition,
+} from "../interpreter/serviceRuntime.ts";
+import { postgresJournalLegality } from "../adapters/postgres/journal.ts";
 import type { Config } from "../domain/config.ts";
 import { asOwnerId } from "../interpreter/projectStore.ts";
 import type {
@@ -347,6 +351,9 @@ export function ticketServiceProcessRoot(
         additional: [
           postgresRolePrecondition(pool, ticketServiceRole),
           postgresDomainConfigurationPrecondition(pool, config.domain),
+          journalLegalityPrecondition(
+            postgresJournalLegality(pool, config.domain),
+          ),
           gitAvailablePrecondition(config.source.environment),
           gitScratchWritablePrecondition(config.source.scratchDirectory),
           credentialFilesPrecondition(config.source),

@@ -17,7 +17,7 @@
 
 import type pg from "pg";
 
-import type { Entry } from "../../actor/journal.ts";
+import type { StoredEntry } from "../../actor/journal.ts";
 import type {
   Acquired,
   Lease,
@@ -76,7 +76,7 @@ export function postgresProjectStore(pool: pg.Pool): ProjectStore {
     release: (lease: Lease): Promise<void> =>
       postgresOwnershipRelease(pool, lease),
 
-    load: (lease: Lease): Promise<Parsed<readonly Entry[]>> =>
+    load: (lease: Lease): Promise<Parsed<readonly StoredEntry[]>> =>
       postgresJournalLoad(pool, lease),
 
     loadDispatchContracts: (lease) =>

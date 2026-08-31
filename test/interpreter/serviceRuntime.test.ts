@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  journalLegalityPrecondition,
   runtimeMigrationPlan,
   schemaCompatibilityPrecondition,
   serviceRuntime,
@@ -172,6 +173,66 @@ test("a migration ledger with a gap is incompatible", async () => {
     },
   );
   assert.equal(await precondition.check(new AbortController().signal), false);
+});
+
+test("a stored journal this image could not have taken refuses the start by name", async () => {
+  let passes = 0;
+  const runtime = serviceRuntime(
+    { run: () => Promise.resolve(void (passes += 1)) },
+    pacing,
+    [
+      journalLegalityPrecondition({
+        illegalPartitions: () => Promise.resolve(["acme/rig"]),
+      }),
+    ],
+    runtimeConfig,
+  );
+
+  assert.deepEqual(await runtime.start(), {
+    started: "CouldNotRun",
+    precondition: "journal-legal",
+  });
+  assert.deepEqual(runtime.health(), { live: true, ready: false });
+  assert.equal(passes, 0);
+  await runtime.stop();
+});
+
+test("a legality scan that cannot answer refuses the start rather than passing it", async () => {
+  const runtime = serviceRuntime(
+    { run: () => Promise.resolve() },
+    pacing,
+    [
+      journalLegalityPrecondition({
+        illegalPartitions: () =>
+          Promise.reject(
+            new Error("more journaled partitions than one scan reads"),
+          ),
+      }),
+    ],
+    runtimeConfig,
+  );
+
+  assert.deepEqual(await runtime.start(), {
+    started: "CouldNotRun",
+    precondition: "journal-legal",
+  });
+  await runtime.stop();
+});
+
+test("a legality scan that names nothing lets the start proceed", async () => {
+  const runtime = serviceRuntime(
+    { run: () => Promise.resolve() },
+    pacing,
+    [
+      journalLegalityPrecondition({
+        illegalPartitions: () => Promise.resolve([]),
+      }),
+    ],
+    runtimeConfig,
+  );
+
+  assert.deepEqual(await runtime.start(), { started: "Started" });
+  await runtime.stop();
 });
 
 test("stop cancels and awaits startup preconditions", async () => {

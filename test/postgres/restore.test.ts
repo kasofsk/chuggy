@@ -110,7 +110,10 @@ test("a lease taken after the restore carries the new epoch, and commits and rep
 
   const loaded = await harness.store.load(memory.lease);
   assert.ok(loaded.parsed === "Ok");
-  assert.deepEqual(loaded.value, [postgresHarnessJournal()[0]]);
+  assert.deepEqual(
+    loaded.value.map((row) => row.entry),
+    [postgresHarnessJournal()[0]],
+  );
 });
 
 test("the stranded owner's project is acquired afresh under the current epoch", async () => {
