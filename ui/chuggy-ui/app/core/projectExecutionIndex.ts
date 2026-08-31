@@ -143,19 +143,19 @@ interface ProjectExecutionWalk {
 
 export type ProjectExecutionReadPage = (
   selection: ProjectExecutionSelection,
-  after: string | undefined,
+  cursor: string | undefined,
 ) => Promise<ApiResult<ExecutionsResponse>>;
 
 /** The page one step of a walk asks for: the size it wants, the selection it is
  * walking, and the cursor the page before it answered with. */
 export function projectExecutionPage(
   selection: ProjectExecutionSelection,
-  after: string | undefined,
+  cursor: string | undefined,
 ): ExecutionsPage {
   return {
     limit: nativeHttpPageItemsMax,
     ...(selection === "NonTerminal" ? { state: selection } : {}),
-    ...(after === undefined ? {} : { after }),
+    ...(cursor === undefined ? {} : { cursor }),
   };
 }
 
@@ -169,9 +169,9 @@ async function projectExecutionWalk(
   readPage: ProjectExecutionReadPage,
 ): Promise<ProjectExecutionWalk> {
   let latest: Readonly<Record<string, ProjectExecutionKnown>> = {};
-  let after: string | undefined;
+  let cursor: string | undefined;
   for (let page = 0; page < projectExecutionPagesMax; page += 1) {
-    const answered = await readPage(selection, after);
+    const answered = await readPage(selection, cursor);
     if (answered.outcome !== "Ok")
       return { latest, pagesRead: page, finished: false, failure: answered };
     latest = projectExecutionIndexWith(
@@ -179,8 +179,8 @@ async function projectExecutionWalk(
       answered.value.executions,
       false,
     );
-    after = answered.value.nextAfter;
-    if (after === undefined)
+    cursor = answered.value.nextCursor;
+    if (cursor === undefined)
       return {
         latest: projectExecutionIndexCompleted(latest),
         pagesRead: page + 1,

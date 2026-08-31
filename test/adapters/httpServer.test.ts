@@ -25,7 +25,12 @@ import type {
   SelectorProjectSettingsRecord,
 } from "../../src/interpreter/selectorProjectSettings.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
-import { asInstallationId, asTicketId } from "../../src/domain/ids.ts";
+import {
+  asInstallationId,
+  asTaskId,
+  asTicketId,
+} from "../../src/domain/ids.ts";
+import { encodeExecutionCursor } from "../../src/adapters/http/contract.ts";
 
 const authority = {
   installationAuthority: () =>
@@ -161,8 +166,12 @@ function fakeOperations(
       return Promise.resolve({ result: "NotFound" });
     },
     executions: (_principal, _partition, query) => {
+      const after =
+        query.after === undefined
+          ? ""
+          : `${String(query.after.ticket)}.${String(query.after.task)}`;
       calls.push(
-        `executions:${String(query.limit)}:${String(query.ticket ?? "")}`,
+        `executions:${String(query.limit)}:${String(query.ticket ?? "")}:${after}`,
       );
       return Promise.resolve({ result: "NotFound" });
     },
@@ -850,6 +859,13 @@ test("recent activity ordering requires its opaque cursor contract", async () =>
   assert.deepEqual(calls, ["project:50:RecentActivity:"]);
 });
 
+/** A position the server itself would have minted, which is the only value the
+ * route accepts and the only one a client ever holds. */
+const executionsCursor = encodeExecutionCursor(
+  { tenant: asTenantId("tenant"), project: asProjectId("project") },
+  { ticket: asTicketId(3), task: asTaskId(5) },
+);
+
 test("operational routes parse bounded filters and artifact identities", async () => {
   const calls: string[] = [];
   await using app = appOf(calls);
@@ -858,6 +874,10 @@ test("operational routes parse bounded filters and artifact identities", async (
   await app.inject({ url: `${root}/operational-status`, headers });
   await app.inject({
     url: `${root}/executions?state=Queued&state=Running&ticket=3&limit=7`,
+    headers,
+  });
+  await app.inject({
+    url: `${root}/executions?cursor=${executionsCursor}&ticket=3&limit=7`,
     headers,
   });
   await app.inject({ url: `${root}/executions/execution-1`, headers });
@@ -874,9 +894,19 @@ test("operational routes parse bounded filters and artifact identities", async (
     ).statusCode,
     400,
   );
+  assert.equal(
+    (
+      await app.inject({
+        url: `${root}/executions?after=execution-1`,
+        headers,
+      })
+    ).statusCode,
+    400,
+  );
   assert.deepEqual(calls, [
     "operationalStatus",
-    "executions:7:3",
+    "executions:7:3:",
+    "executions:7:3:3.5",
     "execution:execution-1",
     "output:execution-1:2",
   ]);

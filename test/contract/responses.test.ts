@@ -67,7 +67,7 @@ import {
   runModelCharsMax,
   runTranscriptPageBatchesMax,
 } from "../../src/contract/http.ts";
-import { asTicketId } from "../../src/domain/ids.ts";
+import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { resolvedSelectorSettings } from "../../src/interpreter/selector.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
@@ -76,7 +76,7 @@ import {
   asAuthoritySubject,
   asOperationId,
 } from "../../src/interpreter/operationInbox.ts";
-import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
+import { parseExecutionCursor } from "../../src/adapters/http/contract.ts";
 import {
   authoring,
   authoringWireBody,
@@ -152,6 +152,81 @@ test("an escalated ticket names its wall and an unparked one omits it", () => {
       phase: "Escalated",
       sequence: 9,
       reason: "NoReason",
+    }),
+  );
+});
+
+test("a parked ticket names where a resume re-enters it, and no other does", () => {
+  const parked = ticketResponseSchema.parse(
+    ticketResponse({
+      ticket: asTicketId(3),
+      phase: "Escalated",
+      sequence: 9,
+      reason: "ReworkBudgetExhausted",
+      resumeAt: "ResumeEvaluating",
+    }).body,
+  );
+  assert.equal(parked.resumeAt, "ResumeEvaluating");
+  assert.equal(
+    ticketResponseSchema.parse(
+      ticketResponse({ ticket: asTicketId(3), phase: "Working", sequence: 9 })
+        .body,
+    ).resumeAt,
+    undefined,
+  );
+  assert.throws(() =>
+    ticketResponseSchema.parse({
+      ticket: 3,
+      phase: "Escalated",
+      sequence: 9,
+      resumeAt: "NoResume",
+    }),
+  );
+});
+
+test("a ticket carries the accounts it has left, and an unbudgeted one no figure", () => {
+  const accounted = ticketResponseSchema.parse(
+    ticketResponse({
+      ticket: asTicketId(3),
+      phase: "Escalated",
+      sequence: 9,
+      accounts: {
+        gasLeft: 1,
+        gasMax: 3,
+        reworkLeft: 0,
+        finalizationLeft: 1,
+      },
+    }).body,
+  );
+  assert.deepEqual(accounted.accounts, {
+    gasLeft: 1,
+    gasMax: 3,
+    reworkLeft: 0,
+    finalizationLeft: 1,
+  });
+  const deadlinePriced = ticketResponseSchema.parse(
+    ticketResponse({
+      ticket: asTicketId(3),
+      phase: "Working",
+      sequence: 9,
+      accounts: { gasLeft: 2, gasMax: 3, reworkLeft: 1 },
+    }).body,
+  );
+  assert.equal(deadlinePriced.accounts?.finalizationLeft, undefined);
+  assert.equal(deadlinePriced.accounts?.gasMax, 3);
+  assert.equal(
+    ticketResponseSchema.parse(
+      ticketResponse({ ticket: asTicketId(3), phase: "Working", sequence: 9 })
+        .body,
+    ).accounts,
+    undefined,
+  );
+  assert.throws(() =>
+    ticketResponseSchema.parse({
+      ticket: 3,
+      phase: "Working",
+      sequence: 9,
+      accounts: { gasLeft: -1, gasMax: 3, reworkLeft: 1 },
     }),
   );
 });
@@ -325,16 +400,20 @@ test("the operational status parses every count the scheduler claims", () => {
 
 test("an execution page and an execution detail parse with their results", () => {
   const page = executionsResponseSchema.parse(
-    executionsResponse({
+    executionsResponse(partition, {
       result: "Authorized",
       value: {
         executions: [executionSummary],
-        nextAfter: asExecutionId("execution-one"),
+        nextAfter: { ticket: asTicketId(21), task: asTaskId(8) },
       },
     }).body,
   );
   assert.equal(page.executions[0]?.status, "Terminal");
-  assert.equal(page.nextAfter, "execution-one");
+  assert.equal(page.executions[0]?.request, "request-one");
+  assert.deepEqual(parseExecutionCursor(page.nextCursor ?? "", partition), {
+    ticket: 21,
+    task: 8,
+  });
   const detail = executionResponseSchema.parse(
     executionResponse(execution).body,
   );
@@ -344,9 +423,30 @@ test("an execution page and an execution detail parse with their results", () =>
   assert.throws(() => executionResponseSchema.parse(page.executions[0]));
 });
 
+/**
+ * Both halves of the field's optionality: the row is `NOT NULL` and the
+ * interpreter type carries it, so every summary this tree encodes names one,
+ * and a bundle reaching a server not yet sending it still reads the page.
+ */
+test("every encoded summary names its request, and a page without one still reads", () => {
+  const body = structuredClone(
+    executionsResponse(partition, {
+      result: "Authorized",
+      value: { executions: [executionSummary] },
+    }).body,
+  ) as { readonly executions: Record<string, unknown>[] };
+  const summary = body.executions[0];
+  assert.ok(summary !== undefined);
+  assert.equal(summary["request"], "request-one");
+  delete summary["request"];
+  const older = executionsResponseSchema.parse(body);
+  assert.equal(older.executions[0]?.request, undefined);
+  assert.equal(older.executions[0]?.status, "Terminal");
+});
+
 test("an execution names what it ran on, in either mode", () => {
   const page = executionsResponseSchema.parse(
-    executionsResponse({
+    executionsResponse(partition, {
       result: "Authorized",
       value: { executions: [executionSummary] },
     }).body,
@@ -380,7 +480,7 @@ test("an execution names what it ran on, in either mode", () => {
 
 /** The page body one execution carrying this requirement would be sent as. */
 function pageWithRequirement(value: unknown): unknown {
-  return executionsResponse({
+  return executionsResponse(partition, {
     result: "Authorized",
     value: {
       executions: [
@@ -410,7 +510,7 @@ test("a requirement carrying a key its mode does not name is refused", () => {
   );
   assert.throws(() =>
     executionsResponseSchema.parse(
-      executionsResponse({
+      executionsResponse(partition, {
         result: "Authorized",
         value: {
           executions: [{ ...executionSummary, platformDefaultVersion: 0 }],
@@ -555,7 +655,7 @@ test("a configuration version reaches every response that names a revision", () 
   );
   assert.deepEqual(
     executionsResponseSchema.parse(
-      executionsResponse({
+      executionsResponse(partition, {
         result: "Authorized",
         value: { executions: [versionedExecutionSummary] },
       }).body,
@@ -588,7 +688,7 @@ test("a revision with no version carries none of the label's fields", () => {
 test("a worker label rides beside the requirement and the ready image, or is absent", () => {
   const worker = { name: "chuggy-worker", version: "3" };
   const labelled = executionsResponseSchema.parse(
-    executionsResponse({
+    executionsResponse(partition, {
       result: "Authorized",
       value: { executions: [{ ...executionSummary, worker }] },
     }).body,
@@ -596,7 +696,7 @@ test("a worker label rides beside the requirement and the ready image, or is abs
   assert.deepEqual(labelled.executions[0]?.worker, worker);
   assert.equal(
     executionsResponseSchema.parse(
-      executionsResponse({
+      executionsResponse(partition, {
         result: "Authorized",
         value: { executions: [executionSummary] },
       }).body,

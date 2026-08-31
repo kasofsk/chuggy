@@ -188,6 +188,23 @@ function reworkPricedBefore(project: FinalizerProject): Ticket {
   return ticketAt(project.memory.core, asTicketId(project.ticket));
 }
 
+/**
+ * The accounts the projection holds for the ticket, as text. Only a
+ * finalization failure moves the finalization account, so this is where that
+ * column's update path is written rather than its insert.
+ */
+async function reworkAccountsOf(
+  project: FinalizerProject,
+): Promise<Record<string, unknown> | undefined> {
+  const rows = await rig.harness.query(
+    `SELECT gas_left::text AS gas_left, rework_left::text AS rework_left,
+            finalization_left::text AS finalization_left
+       FROM ticket_projection WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  );
+  return rows[0];
+}
+
 /** The spawn registrations this project holds, which is what a rework adds one to. */
 async function reworkSpawnsOf(
   project: FinalizerProject,
@@ -275,6 +292,11 @@ test("a concluded merge conflict returns the ticket to work with a bundle naming
   assert.equal(priced.gasLeft, before.gasLeft - 1, "metered");
   assert.equal(priced.reworkLeft, before.reworkLeft, "the eval account paid");
   assert.equal(await reworkPhaseOf(project), "Working");
+  assert.deepEqual(await reworkAccountsOf(project), {
+    gas_left: String(priced.gasLeft),
+    rework_left: String(priced.reworkLeft),
+    finalization_left: String(priced.finalizationLeft),
+  });
   assert.deepEqual(reworkReference(bundle, "FinalizationAttempt"), {
     reference_kind: "FinalizationAttempt",
     reference_id: attempt.attempt,

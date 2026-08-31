@@ -46,7 +46,7 @@
  */
 
 import type { Entry } from "../actor/journal.ts";
-import type { Phase, Reason } from "../domain/generated/modelTypes.ts";
+import type { Phase, Reason, Resume } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import {
   asAuthorityKind,
@@ -114,12 +114,22 @@ export type DecisionCause =
   | { readonly kind: "Operation"; readonly id: OperationId }
   | { readonly kind: "Continuation"; readonly id: string };
 
-/** One row of the primary projection: where a ticket currently stands. */
+/**
+ * One row of the primary projection: where a ticket currently stands, where a
+ * resume would re-enter it, and what it has left to spend. `finalizationLeft`
+ * is absent under a pricing that budgets no finalization account, whose
+ * standing zero a reader would take for an exhausted budget rather than for the
+ * gas-priced finalizer failure the model prices.
+ */
 export interface TicketProjection {
   readonly ticket: TicketId;
   readonly phase: Phase;
   readonly dependable: boolean;
   readonly reason: Reason;
+  readonly resumeAt: Resume;
+  readonly gasLeft: number;
+  readonly reworkLeft: number;
+  readonly finalizationLeft?: number;
 }
 
 /**

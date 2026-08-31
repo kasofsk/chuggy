@@ -10,9 +10,11 @@ import {
 import {
   encodeConfigurationCursor,
   parseConfigurationCursor,
+  encodeExecutionCursor,
   encodeInventoryCursor,
   encodeNativeActionCursor,
   encodeTicketActivityCursor,
+  parseExecutionCursor,
   parseInventoryCursor,
   parseNativeActionCursor,
   parseTicketActivityCursor,
@@ -23,7 +25,9 @@ import {
   parsePartition,
   parseSubmission,
 } from "../../src/adapters/http/contract.ts";
+import { asTaskId } from "../../src/domain/ids.ts";
 import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
+import { checkedExecutionListQuery } from "../../src/interpreter/operationsView.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { id } from "../domain/fixtures.ts";
 
@@ -215,6 +219,49 @@ test("configuration cursors preserve the stable newest-first key", () => {
     }),
   ).toString("base64url");
   assert.throws(() => parseConfigurationCursor(invalidTimestamp, partition));
+});
+
+test("execution cursors carry the history position, not an identity", () => {
+  const partition = parsePartition("tenant", "project");
+  const position = { ticket: id(21), task: asTaskId(8) };
+  const cursor = encodeExecutionCursor(partition, position);
+  assert.deepEqual(parseExecutionCursor(cursor, partition), position);
+  assert.throws(() =>
+    parseExecutionCursor(cursor, parsePartition("tenant", "other")),
+  );
+  assert.throws(() => parseExecutionCursor(`${cursor}=`, partition));
+  assert.throws(() => parseExecutionCursor("not-json", partition));
+  const identity = Buffer.from(
+    JSON.stringify({
+      version: 1,
+      tenant: "tenant",
+      project: "project",
+      execution: "execution-b0a1-8",
+    }),
+  ).toString("base64url");
+  assert.throws(() => parseExecutionCursor(identity, partition));
+});
+
+/** Both directions, because each answers with something a reader would believe:
+ * an earlier cursor restarts the selected ticket, a later one empties it. */
+test("a query is refused a cursor resuming a ticket it does not select", () => {
+  const at = { ticket: id(21), task: asTaskId(8) };
+  assert.deepEqual(
+    checkedExecutionListQuery({ after: at, ticket: id(21), limit: 10 }).after,
+    at,
+  );
+  assert.deepEqual(
+    checkedExecutionListQuery({ after: at, limit: 10 }).after,
+    at,
+  );
+  assert.throws(
+    () => checkedExecutionListQuery({ after: at, ticket: id(22), limit: 10 }),
+    RangeError,
+  );
+  assert.throws(
+    () => checkedExecutionListQuery({ after: at, ticket: id(20), limit: 10 }),
+    RangeError,
+  );
 });
 
 test("ticket activity cursors bind the composite position to one project", () => {
