@@ -33,6 +33,7 @@ import {
 } from "../../src/adapters/postgres/runtimeSchema.ts";
 import { briefFinalizationModes } from "../../src/contract/rosters.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
+import { resumeTags } from "../../src/domain/generated/modelTypes.ts";
 import { schemaCompatibilityPrecondition } from "../../src/interpreter/serviceRuntime.ts";
 import { postgresHarnessUrl } from "./harness.ts";
 import type pg from "pg";
@@ -1694,5 +1695,53 @@ test("migration 51 admits a mode installed before it existed and refuses one ope
         /draft_brief_finalization_is_whole/u,
         `no pull request ${why}`,
       );
+  });
+});
+
+test("migration 55 widens a resume check installed before that point existed", async () => {
+  await migrationDatabase("resume_reworking", async (subject) => {
+    await migrationSeedApplied(subject, 55);
+    await subject.query(
+      `ALTER TABLE ticket_projection
+         DROP CONSTRAINT ticket_projection_resume_is_known,
+         ADD CONSTRAINT ticket_projection_resume_is_known CHECK (
+           resume_at IS NULL OR resume_at IN (${schemaTextSet(
+             resumeTags.filter((tag) => tag !== "ResumeReworking"),
+           )})
+         )`,
+    );
+    const store = postgresProjectStore(subject);
+    await postgresHarnessEpoch(store);
+    const partition = await postgresHarnessProject(store, "resume-reworking");
+    const park = `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq,resume_at)
+       VALUES ($1,$2,1,'Escalated',1,'ResumeReworking')`;
+    const values = [partition.tenant, partition.project];
+    await assert.rejects(
+      () => subject.query(park, values),
+      /ticket_projection_resume_is_known/u,
+      "the projection installed with 54 refuses a point it was created before",
+    );
+
+    await applyMigration(subject, 55);
+
+    await subject.query(park, values);
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT resume_at FROM ticket_projection ORDER BY ticket",
+        )
+      ).rows,
+      [{ resume_at: "ResumeReworking" }],
+    );
+    await assert.rejects(
+      () =>
+        subject.query(
+          `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq,resume_at)
+             VALUES ($1,$2,2,'Escalated',1,'ResumeNowhere')`,
+          values,
+        ),
+      /ticket_projection_resume_is_known/u,
+      "the widened check is still a check",
+    );
   });
 });

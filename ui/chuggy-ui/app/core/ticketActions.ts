@@ -120,20 +120,38 @@ export function manualDispatchAction(
 }
 
 /**
+ * What a page knows about the ticket beyond its phase, where a sentence needs
+ * it. Each field is absent on a page that does not read it.
+ */
+export interface TicketActionContext {
+  readonly reason?: EscalationReason | undefined;
+  readonly reworkBudget?: number | undefined;
+}
+
+/** What the rework wall's Resume does, naming the refill where the page reads it. */
+function resumeSentence(context: TicketActionContext): string {
+  if (context.reason !== "ReworkBudgetExhausted")
+    return "rejoin the pipeline at the point this ticket was parked at";
+  const budget =
+    context.reworkBudget === undefined
+      ? "a fresh rework budget"
+      : `a fresh rework budget of ${String(context.reworkBudget)}`;
+  return `rework this ticket with ${budget}, which costs one gas`;
+}
+
+/**
  * What the button says, and what answering it does to the ticket. Resume is
- * the one answer whose effect the wall decides, so it reads the reason.
+ * the one answer whose effect the wall decides, so it reads the context.
  */
 export function ticketActionSentence(
   action: TicketActionName,
-  reason?: EscalationReason,
+  context: TicketActionContext = {},
 ): string {
   switch (action) {
     case "Dispatch":
       return "dispatch this ticket from the version the console observed";
     case "Resume":
-      return reason === "ReworkBudgetExhausted"
-        ? "rework this ticket with its rework budget refilled, which costs one gas"
-        : "rejoin the pipeline at the point this ticket was parked at";
+      return resumeSentence(context);
     case "Revoke":
       return "revoke this ticket, and park every ticket that depends on it";
     case "Retry":

@@ -69,15 +69,34 @@ test("an escalation offers the same two answers whatever wall it hit", () => {
 
 test("resume says what its own wall does, and one wall reworks", () => {
   const said = new Set(
-    escalationReasons.map((reason) => ticketActionSentence("Resume", reason)),
+    escalationReasons.map((reason) =>
+      ticketActionSentence("Resume", { reason }),
+    ),
   );
   expect(said.size).toBe(2);
-  expect(ticketActionSentence("Resume", "ReworkBudgetExhausted")).toContain(
-    "rework budget refilled",
-  );
-  expect(ticketActionSentence("Resume", "WorkFailed")).toBe(
+  expect(
+    ticketActionSentence("Resume", { reason: "ReworkBudgetExhausted" }),
+  ).toContain("a fresh rework budget,");
+  expect(ticketActionSentence("Resume", { reason: "WorkFailed" })).toBe(
     ticketActionSentence("Resume"),
   );
+});
+
+test("the rework wall's resume names the budget where the page read it", () => {
+  expect(
+    ticketActionSentence("Resume", {
+      reason: "ReworkBudgetExhausted",
+      reworkBudget: 2,
+    }),
+  ).toBe(
+    "rework this ticket with a fresh rework budget of 2, which costs one gas",
+  );
+  expect(
+    ticketActionSentence("Resume", {
+      reason: "WorkFailed",
+      reworkBudget: 2,
+    }),
+  ).toBe(ticketActionSentence("Resume"));
 });
 
 test("manual dispatch echoes only the candidate version the view supplied", () => {
