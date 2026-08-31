@@ -21,6 +21,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import type { EscalationReason } from "../../../../src/contract/rosters.ts";
 import type {
   TicketNativeActionsResponse,
   TicketResponse,
@@ -117,6 +118,7 @@ async function cancelOperation(
 
 function ActionButtons(props: {
   readonly actions: readonly TicketAction[];
+  readonly reason: EscalationReason | undefined;
   readonly busy: boolean;
   readonly onChoose: (action: TicketAction) => void;
 }): ReactNode {
@@ -133,7 +135,7 @@ function ActionButtons(props: {
           key={action.action}
           type="button"
           disabled={props.busy}
-          title={ticketActionSentence(action.action)}
+          title={ticketActionSentence(action.action, props.reason)}
           onClick={() => {
             props.onChoose(action);
           }}
@@ -267,6 +269,7 @@ export function TicketActions(props: {
                   ]
                 : nativeActionsAnswers(open)
             }
+            reason={value.reason}
             busy={busy}
             onChoose={submitting.submit}
           />

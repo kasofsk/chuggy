@@ -14,7 +14,11 @@ import {
   phaseRoster,
 } from "../../../src/contract/rosters.ts";
 import type { TicketPhase } from "../../../src/contract/rosters.ts";
-import { actionsFor, manualDispatchAction } from "../app/core/ticketActions.ts";
+import {
+  actionsFor,
+  manualDispatchAction,
+  ticketActionSentence,
+} from "../app/core/ticketActions.ts";
 
 const offeredBy: Readonly<Record<TicketPhase, readonly string[]>> = {
   Pending: ["Revoke"],
@@ -61,6 +65,19 @@ test("an escalation offers the same two answers whatever wall it hit", () => {
         (offer) => offer.action,
       ),
     ).toEqual(["Resume", "Revoke"]);
+});
+
+test("resume says what its own wall does, and one wall reworks", () => {
+  const said = new Set(
+    escalationReasons.map((reason) => ticketActionSentence("Resume", reason)),
+  );
+  expect(said.size).toBe(2);
+  expect(ticketActionSentence("Resume", "ReworkBudgetExhausted")).toContain(
+    "rework budget refilled",
+  );
+  expect(ticketActionSentence("Resume", "WorkFailed")).toBe(
+    ticketActionSentence("Resume"),
+  );
 });
 
 test("manual dispatch echoes only the candidate version the view supplied", () => {

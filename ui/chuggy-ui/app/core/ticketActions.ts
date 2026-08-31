@@ -12,7 +12,10 @@
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type { TicketPhase } from "../../../../src/contract/rosters.ts";
+import type {
+  EscalationReason,
+  TicketPhase,
+} from "../../../../src/contract/rosters.ts";
 import type { PublicMutation } from "../../../../src/contract/requests.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import type { DispatchViewResponse } from "../../../../src/contract/responses.ts";
@@ -116,13 +119,21 @@ export function manualDispatchAction(
       };
 }
 
-/** What the button says, and what answering it does to the ticket. */
-export function ticketActionSentence(action: TicketActionName): string {
+/**
+ * What the button says, and what answering it does to the ticket. Resume is
+ * the one answer whose effect the wall decides, so it reads the reason.
+ */
+export function ticketActionSentence(
+  action: TicketActionName,
+  reason?: EscalationReason,
+): string {
   switch (action) {
     case "Dispatch":
       return "dispatch this ticket from the version the console observed";
     case "Resume":
-      return "rejoin the pipeline at the point this ticket was parked at";
+      return reason === "ReworkBudgetExhausted"
+        ? "rework this ticket with its rework budget refilled, which costs one gas"
+        : "rejoin the pipeline at the point this ticket was parked at";
     case "Revoke":
       return "revoke this ticket, and park every ticket that depends on it";
     case "Retry":
