@@ -51,16 +51,18 @@ import type {
   OperationStep,
 } from "../core/operationFollow.ts";
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
-import type { ProjectQueryKey } from "../core/projectQueryKeys.ts";
 import {
   manualDispatchAction,
-  ticketAttemptHeldMsMax,
-  ticketAttemptKey,
   ticketDispatchList,
 } from "../core/ticketActions.ts";
 import type { TicketAction, TicketAttempt } from "../core/ticketActions.ts";
 import { ticketOffers } from "../core/ticketOffers.ts";
 import { useApiPorts } from "./api.ts";
+import {
+  ticketAttemptDropped,
+  ticketAttemptHeld,
+  ticketAttemptRead,
+} from "./ticketAttemptHeld.ts";
 import { DataPanel, PanelUnready } from "./DataPanel.tsx";
 import { drawBytes } from "./ports.ts";
 import { ActionWithCost } from "./ui/ActionWithCost.tsx";
@@ -119,7 +121,9 @@ const attemptCancelledReason = "this attempt was cancelled";
  * `apiSend` answers most transport failures as an `Unreachable` outcome, but
  * the wait it takes between a server's retries is outside that, so both a
  * follow and a cancellation can reject — and a rejection nobody reads is a
- * panel left busy with nothing said.
+ * panel left busy with nothing said. What comes back is half a line: the reason
+ * is a thrown message and is somebody else's words, so every caller puts the
+ * console's own subject in front of it.
  */
 function faultReason(thrown: unknown): string {
   return thrown instanceof Error ? thrown.message : "the request failed";
@@ -144,31 +148,6 @@ function followWrittenBack(
     projectResourceKey(partition, "Ticket", String(ticket)),
     (held: TicketResponse | undefined) => ticketConfirmed(held, confirmed),
   );
-}
-
-/**
- * What a step does to the record a remount picks the attempt back up from: a
- * `Following` step names the operation the API accepted, and a finished follow
- * leaves nothing to pick up. The entry is read by no query of its own, so how
- * long it survives is set here rather than left to a default this console never
- * chose.
- */
-function attemptRecorded(
-  client: QueryClient,
-  key: ProjectQueryKey,
-  action: TicketAction,
-  step: OperationStep,
-): void {
-  if (step.step === "Following") {
-    client.setQueryDefaults(key, { gcTime: ticketAttemptHeldMsMax });
-    client.setQueryData<TicketAttempt>(key, {
-      action,
-      operation: step.operation,
-    });
-    return;
-  }
-  if (operationFinished(step))
-    client.removeQueries({ queryKey: key, exact: true });
 }
 
 /** Where a follow reports to: the panel's own step, and the caches the page
@@ -218,7 +197,7 @@ async function followInto(
     if (!controller.signal.aborted)
       writer.drawStep(action, {
         step: "Abandoned",
-        reason: faultReason(thrown),
+        reason: `Failed · ${faultReason(thrown)}`,
       });
   }
 }
@@ -286,14 +265,16 @@ function useAbandonOnUnmount(): RefObject<AbortController | undefined> {
 /**
  * An accepted cancellation ends the attempt, so it is drawn as the attempt's
  * own last step rather than as a line beside a follow still saying it is
- * waiting. A refused one is not: the operation is still the actor's, and the
- * follow goes on watching it.
+ * waiting — unless the follow reached an end of its own while the cancellation
+ * was in flight, which is the truer answer and stands. A refused cancellation
+ * ends nothing: the operation is still the actor's, and the follow goes on
+ * watching it.
  */
 function attemptCancelled(
   operation: string,
 ): (held: Attempt | undefined) => Attempt | undefined {
   return (held) =>
-    held === undefined
+    held === undefined || operationFinished(held.step)
       ? held
       : {
           action: held.action,
@@ -333,12 +314,14 @@ interface Submitting {
  * than written because what the follow learned is that the question was
  * answered and not what is open now.
  *
- * AN ATTEMPT OUTLIVES THE PANEL THAT MADE IT. The accepted operation is written
- * to the cache as the follow reaches it, so a panel that unmounts mid-follow —
- * which this page does whenever the situation column has read enough to change
- * shape — is picked up again on mount rather than replaced by a fresh button
- * offering the same submission a second time. The record is dropped where the
- * follow finishes, which is the only state there is nothing left to pick up.
+ * AN ATTEMPT OUTLIVES THE PANEL THAT MADE IT. The identity is held before the
+ * submission is made and not after it is accepted, because a panel that
+ * unmounts with the submission in flight — which this page does whenever the
+ * situation column has read enough to change shape — abandons the request
+ * without unmaking whatever the API did with it. So the record is what a mount
+ * picks up, rather than a fresh button drawing a second identity for a
+ * submission the machine may already hold; and the pick-up polls, because only
+ * the API can say whether the identity it names ever arrived.
  */
 function useSubmitting(
   partition: PartitionIdentity,
@@ -347,16 +330,16 @@ function useSubmitting(
   const ports = useApiPorts();
   const client = useQueryClient();
   const runningRef = useAbandonOnUnmount();
-  const attemptKey = ticketAttemptKey(partition, ticket);
   const [attempt, setAttempt] = useState<Attempt | undefined>(() =>
-    attemptHeld(client.getQueryData<TicketAttempt>(attemptKey)),
+    attemptHeld(ticketAttemptRead(client, partition, ticket)),
   );
   const [refused, setRefused] = useState<string | undefined>(undefined);
 
   const drawStep = (action: TicketAction, step: OperationStep): void => {
     setAttempt({ action, step });
-    if (operationFinished(step)) setRefused(undefined);
-    attemptRecorded(client, attemptKey, action, step);
+    if (!operationFinished(step)) return;
+    setRefused(undefined);
+    ticketAttemptDropped(client, partition, ticket);
   };
 
   const follow = (held: TicketAttempt, startedFrom: OperationStep): void => {
@@ -394,11 +377,11 @@ function useSubmitting(
     runningRef.current?.abort(new Error(attemptCancelledReason));
     setAttempt(attemptCancelled(operation));
     setRefused(undefined);
-    client.removeQueries({ queryKey: attemptKey, exact: true });
+    ticketAttemptDropped(client, partition, ticket);
   };
 
   useEffect(() => {
-    const held = client.getQueryData<TicketAttempt>(attemptKey);
+    const held = ticketAttemptRead(client, partition, ticket);
     if (held !== undefined) follow(held, operationFollowing(held.operation));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the pick-up is this mount's, and a later render must not follow the same operation twice
   }, []);
@@ -408,8 +391,12 @@ function useSubmitting(
     refused,
     submit: (action) => {
       setRefused(undefined);
-      const operation = base64urlFromBytes(drawBytes(operationIdBytesCount));
-      follow({ action, operation }, operationSubmitting());
+      const held = {
+        action,
+        operation: base64urlFromBytes(drawBytes(operationIdBytesCount)),
+      };
+      ticketAttemptHeld(client, partition, ticket, held);
+      follow(held, operationSubmitting());
     },
     cancel: (operation) => {
       void cancel(operation);

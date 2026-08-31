@@ -20,10 +20,6 @@ import type { PublicMutation } from "../../../../src/contract/requests.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import type { DispatchViewResponse } from "../../../../src/contract/responses.ts";
 
-import {
-  operationAttemptsMax,
-  operationPollIntervalMs,
-} from "./operationFollow.ts";
 import { projectHeldKey, projectListReread } from "./projectQueryKeys.ts";
 import type { ProjectList, ProjectQueryKey } from "./projectQueryKeys.ts";
 
@@ -105,7 +101,12 @@ export function ticketDispatchList(
   );
 }
 
-/** A submission the console accepted and is still following. */
+/**
+ * A submission a panel is still following, and the identity it was drawn under.
+ * Whether the API took it is not a field: the identity is drawn before the
+ * submission is made, so a record can name one the API never heard of, and only
+ * the API can say which — which is what a pick-up's first poll asks.
+ */
 export interface TicketAttempt {
   readonly action: TicketAction;
   readonly operation: string;
@@ -124,15 +125,6 @@ export function ticketAttemptKey(
 ): ProjectQueryKey {
   return projectHeldKey(partition, `attempt:${String(ticket)}`);
 }
-
-/**
- * How long a held attempt is worth picking up, which nothing else would bound:
- * the entry has no reader of its own, so the cache would evict it on a default
- * this file never chose. A follow polls to its own budget and then abandons, so
- * a record older than that budget names an attempt no follow is still watching.
- */
-export const ticketAttemptHeldMsMax =
-  operationAttemptsMax * operationPollIntervalMs;
 
 export function manualDispatchAction(
   ticket: number,

@@ -14,10 +14,14 @@
  *
  * NOT EVERY ENTRY IS A READ. `projectHeldKey` is what a screen keeps for itself
  * — the cache being the only thing under a partition that outlives the screen
- * that wrote it — and its marker is outside the kinds, so no frame's write,
- * drop or list refresh can reach it and it carries none of their types. It is
- * still under the partition prefix, so a project switch takes it with
- * everything else.
+ * that wrote it. Its marker is outside the kinds, so nothing addressed by kind
+ * reaches it: neither a frame's write or drop, which name a resource under one,
+ * nor a list refresh, which names a list under one. What does reach it is
+ * everything addressed by the partition prefix — the reset's invalidation and
+ * the fallback's — and that is safe rather than accidental: an invalidation
+ * refetches the queries a reader is watching, and a held entry is watched by no
+ * reader and has no fetch to run, so being marked stale is the whole of what
+ * happens to it. Being under that prefix is also what a project switch needs.
  *
  * A resource key and a list key are refreshed by different halves of the
  * stream, which is why only one of them is a bare function here. The stream
@@ -61,12 +65,20 @@ export function projectResourceKey(
   return [...projectPartitionKey(partition), kind, resource];
 }
 
+/** Every held entry of one partition, which is what an option registered for
+ * all of them at once is registered against. */
+export function projectHeldScope(
+  partition: PartitionIdentity,
+): ProjectQueryKey {
+  return [...projectPartitionKey(partition), projectHeldMarker];
+}
+
 /** One partition's own working state, named by the screen that keeps it. */
 export function projectHeldKey(
   partition: PartitionIdentity,
   name: string,
 ): ProjectQueryKey {
-  return [...projectPartitionKey(partition), projectHeldMarker, name];
+  return [...projectHeldScope(partition), name];
 }
 
 function projectListKey(

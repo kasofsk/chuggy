@@ -77,6 +77,7 @@ export type OperationEvent =
       readonly retryAfterSeconds: number;
     }
   | { readonly event: "Polled"; readonly operation: OperationResponse }
+  | { readonly event: "Unaccepted" }
   | { readonly event: "Confirmed" }
   | { readonly event: "Behind" }
   | { readonly event: "Faulted"; readonly reason: string };
@@ -89,11 +90,11 @@ export function operationSubmitting(): OperationStep {
 }
 
 /**
- * Where a follow begins when the submission was already accepted: a screen
- * before this one made it, so this one polls rather than submits. Resubmitting
- * the same identity would answer `IdempotencyConflict` and disclose no
- * operation, which is why picking the accepted one back up is the only way to
- * follow it.
+ * Where a follow begins when a screen before this one submitted it: at the
+ * poll, because resubmitting an accepted identity answers `IdempotencyConflict`
+ * and discloses no operation, so asking is the only way to learn what became of
+ * it. A submission the API never took answers no such operation, and `Unaccepted`
+ * is what carries that back to the submission it was drawn for.
  */
 export function operationFollowing(operation: string): OperationStep {
   return { step: "Following", operation, attempts: 0 };
@@ -197,6 +198,25 @@ function operationPolled(
   );
 }
 
+/**
+ * A poll the API has no operation for. The identity is the console's own draw
+ * and the route's idempotency key both, so the one thing it can mean is that
+ * the submission never arrived — and the answer is to make it, under the same
+ * identity, so that an acceptance this screen missed is refused as a conflict
+ * rather than taken as a second attempt.
+ */
+function operationUnaccepted(step: OperationStep): OperationStep {
+  if (step.step !== "Following")
+    return operationAbandoned(
+      "an operation was looked for before it was named",
+    );
+  return operationSpent(
+    step,
+    "the API never accepted this submission within the attempt budget",
+    (attempts) => ({ step: "Submitting", attempts }),
+  );
+}
+
 function operationBehind(step: OperationStep): OperationStep {
   if (step.step !== "Confirming")
     return operationAbandoned(
@@ -243,6 +263,8 @@ export function operationAdvanced(
       return operationDeferred(step, event);
     case "Polled":
       return operationPolled(step, event.operation);
+    case "Unaccepted":
+      return operationUnaccepted(step);
     case "Confirmed":
       return operationConfirmed(step);
     case "Behind":
@@ -374,6 +396,8 @@ async function operationTurn(
       step.operation,
       signal,
     );
+    if (answered.outcome === "Absent")
+      return { event: { event: "Unaccepted" } };
     return {
       event: operationEventOf(answered, (value) => ({
         event: "Polled",
@@ -410,7 +434,8 @@ function operationWaitMs(step: OperationStep): number {
  * report every step it passed through so a screen can say where it is. It
  * begins at the submission unless the caller names a step it already reached,
  * and the budget is that step's, so a picked-up follow is bounded like any
- * other.
+ * other — including one that goes back to submitting because the API had never
+ * heard of the identity it was handed.
  */
 export async function followOperation(
   ports: ApiPorts,
