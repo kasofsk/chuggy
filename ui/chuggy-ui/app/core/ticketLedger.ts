@@ -9,16 +9,23 @@
  * ticket-wide ordinal the model issues in sequence, and sorting by it is what
  * makes a cycle recoverable at all.
  *
- * A FAN-OUT SET IS WHAT ONE SPAWN PRODUCED, and the wire names it two ways: a
- * request identity where the read carries one, and otherwise the identity stem
- * every task of one request shares. The stem is a naming convention of one
- * adapter, so it is the fallback rather than the rule.
+ * A FAN-OUT SET IS WHAT ONE SPAWN PRODUCED, and today the identity stem every
+ * task of one request shares is the whole of what names it: `executionSummary`
+ * is parsed by a schema that strips a key it does not declare, so the request
+ * identity read first here is typed for a field no parsed read carries yet and
+ * is inert until one does.
  *
  * IT IS TOTAL OVER THE PAGES THE ROSTERS ADMIT, not only over the pages the
  * machine produces. Identity order means a short page is cut at no point in
  * particular, so a cycle whose work run is missing, a gap between two stages
  * and a stage the authored program does not declare are all inputs, and each
  * has a row of its own rather than being merged into a neighbour.
+ *
+ * EVERY LOOP IS BOUNDED BY SOMETHING DECLARED. A run draws one row per stage
+ * the authoring declares and one per set the page holds beyond it, which are
+ * bounded by `nativeHttpDraftStagesMax` and by the page; the wire's `stage` is
+ * an unbounded count and is never a loop bound, because one row naming a stage
+ * in the millions would otherwise build that many rows.
  *
  * WHAT IT EMITS IS FACTS, and the three labels at the end are the only strings
  * in it: each names a row the ledger numbered, and every word a reader is given
@@ -118,8 +125,9 @@ function executionStem(execution: string): string {
 }
 
 /**
- * Which spawn this execution belongs to. The wire's request identity answers
- * it where a read carries one; the stem is what answers it otherwise.
+ * Which spawn this execution belongs to, by the request identity where a row
+ * carries one and by the identity stem otherwise. No parsed read carries one
+ * yet, so the stem is what answers today.
  */
 function executionRequest(row: SpawnedExecution): string {
   return row.request ?? executionStem(row.execution);
@@ -262,9 +270,25 @@ function stageStopped(verdict: SetVerdict): boolean {
   );
 }
 
+/** What a stage the authoring declares holds: a set, a gap, or a reason nothing ran. */
+function programStageRow(
+  stage: number,
+  ran: ReadonlyMap<number, TaskSet>,
+  highest: number,
+): StageRow {
+  const set = ran.get(stage);
+  if (set !== undefined) return { kind: "Ran", stage, set };
+  const last = ran.get(highest);
+  if (stage < highest || last === undefined) return { kind: "Missing", stage };
+  return stageStopped(last.verdict)
+    ? { kind: "Skipped", stage, after: highest }
+    : { kind: "Queued", stage, after: highest };
+}
+
 /**
- * One row per stage the program declares and per stage this run holds a set
- * for, so a stage outside the authored program is drawn rather than dropped.
+ * One row per stage the authoring declares and one per set this run holds
+ * beyond it, so a stage outside the program is drawn without the wire's own
+ * stage number ever becoming a count of rows.
  */
 function stageRowsOf(
   run: readonly SpawnedSet[],
@@ -273,25 +297,12 @@ function stageRowsOf(
   const ran = new Map<number, TaskSet>();
   for (const set of run) ran.set(set.stage ?? 0, taskSetOf(set, authoring));
   const highest = Math.max(...ran.keys());
-  const drawn = Math.max(authoring.program.length, highest + 1);
+  const declared = authoring.program.length;
   const rows: StageRow[] = [];
-  for (let stage = 0; stage < drawn; stage++) {
-    const set = ran.get(stage);
-    if (set !== undefined) {
-      rows.push({ kind: "Ran", stage, set });
-      continue;
-    }
-    const last = ran.get(highest);
-    if (stage < highest || last === undefined) {
-      rows.push({ kind: "Missing", stage });
-      continue;
-    }
-    rows.push(
-      stageStopped(last.verdict)
-        ? { kind: "Skipped", stage, after: highest }
-        : { kind: "Queued", stage, after: highest },
-    );
-  }
+  for (let stage = 0; stage < declared; stage++)
+    rows.push(programStageRow(stage, ran, highest));
+  for (const [stage, set] of [...ran].sort((left, right) => left[0] - right[0]))
+    if (stage >= declared) rows.push({ kind: "Ran", stage, set });
   return rows;
 }
 

@@ -112,6 +112,35 @@ test("a work run after the program passed spends the finalization account, not r
   expect(accounts.rework.spent).toBe(0);
 });
 
+test("a work run after a stage the program does not end on spends neither account", () => {
+  const accounts = accountsOf(
+    [
+      {
+        execution: "execution-a-1",
+        task: 1,
+        taskKind: "Work",
+        outcome: "Passed",
+      },
+      {
+        execution: "execution-b-2",
+        task: 2,
+        taskKind: "Evaluation",
+        stage: 0,
+        outcome: "Passed",
+      },
+      {
+        execution: "execution-c-3",
+        task: 3,
+        taskKind: "Work",
+        outcome: "Passed",
+      },
+    ],
+    budgetedFinalization,
+  );
+  expect(accounts.finalization.spent).toBe(0);
+  expect(accounts.rework.spent).toBe(0);
+});
+
 test("a work run after a failed work run is a resume and spends neither account", () => {
   const accounts = accountsOf(
     [

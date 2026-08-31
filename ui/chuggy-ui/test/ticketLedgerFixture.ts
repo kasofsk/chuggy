@@ -27,12 +27,15 @@ export interface ExecutionShape {
   readonly status?: ExecutionStatus;
   readonly outcome?: ExecutionOutcome;
   readonly retriesSpent?: number;
+  readonly request?: string;
 }
 
 const digest = "a".repeat(64);
 
 /** One row, with everything the ledger never reads held constant. */
-export function ledgerExecution(shape: ExecutionShape): ExecutionSummary {
+export function ledgerExecution(
+  shape: ExecutionShape,
+): ExecutionSummary & { readonly request?: string } {
   return {
     ticket: 21,
     cluster: "rig",

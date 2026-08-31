@@ -8,14 +8,16 @@
  * that may be short is a floor and a reader has to be told which they are
  * looking at.
  *
- * WHAT EACH ONE COUNTS. The model charges rework at every evaluation failure
- * that re-enters work, gas at every entry to work and at every charged resume,
- * and the finalization account at every finalizer failure a budgeted ticket
- * reworks from. Each of those is a work set with a particular set before it, so
- * the ledger's cycle boundaries are where they are counted.
+ * WHAT EACH ONE COUNTS. Rework and finalization are both charged at an entry to
+ * work, which the ledger holds as a cycle boundary, and the set settled before
+ * that boundary is what tells the two apart. Gas is charged there too, and
+ * again at every charged resume, which is a program run after the first inside
+ * one cycle rather than a boundary between two.
  *
  * Gas has no limit on the wire, so its derived arm carries a spend with no
- * maximum and no remainder rather than a maximum nothing supplied.
+ * maximum and no remainder rather than a maximum nothing supplied. That spend
+ * is a floor twice over: a short page hides charges, and a charged resume into
+ * finalizing spends gas without creating an execution for any page to hold.
  */
 
 import type { ClosedSet, Ledger, TicketAuthoring } from "./ticketLedger.ts";

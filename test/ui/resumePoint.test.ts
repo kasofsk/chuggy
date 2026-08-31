@@ -229,6 +229,50 @@ test("the two finalization walls park where the machine says they park", () => {
   }
 });
 
+test("a program of one stage parks where the machine says it parks", () => {
+  const evaluating = ticketIn({
+    phase: "Evaluating",
+    program: [stage],
+    reworkLeft: 1,
+    gasLeft: 0,
+    record: taskSet("Work", [1], "Passed"),
+    tasks: new Set(taskSet({ type: "Evaluation", value: 0 }, [2], "Failed")),
+  });
+  agrees(
+    evaluating,
+    ticketAt(decideEvalStageReduce(coreWith(evaluating), id).post, id),
+    "a one-stage evaluation wall",
+  );
+  for (const priced of [
+    { finalizationPricing: "DeadlineOnly" as const, gasLeft: 0 },
+    {
+      finalizationPricing: { type: "Budgeted", value: 1 } as const,
+      gasLeft: 4,
+    },
+  ]) {
+    const before = ticketIn({
+      phase: "Finalizing",
+      program: [stage],
+      finalizationLeft: 0,
+      ...priced,
+      record: [
+        ...taskSet("Work", [1], "Passed"),
+        ...taskSet({ type: "Evaluation", value: 0 }, [2], "Passed"),
+      ],
+    });
+    const after = ticketAt(
+      decideFinalizationResult(coreWith(before), id, "FinalizationFailed").post,
+      id,
+    );
+    assert.equal(after.phase, "Escalated");
+    agrees(
+      before,
+      after,
+      `a one-stage finalization wall at ${String(after.reason)}`,
+    );
+  }
+});
+
 test("a blocked execution parks where the machine says it parks, in both phases", () => {
   for (const reason of executionBlockedReasons) {
     for (const held of [

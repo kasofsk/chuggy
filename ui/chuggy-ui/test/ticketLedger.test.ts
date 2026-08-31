@@ -232,6 +232,114 @@ test("a cancelled set and a blocked one are each their own verdict", () => {
   expect(stagesOf(blocked.cycles[0]?.programRuns[0])).toEqual(["0 Blocked 2"]);
 });
 
+test("a stage that was blocked skips the stages after it, as a failed one does", () => {
+  const ledger = ticketLedger(
+    ledgerPage([
+      {
+        execution: "execution-bb-1",
+        task: 1,
+        taskKind: "Evaluation",
+        stage: 0,
+        outcome: "Blocked",
+      },
+    ]),
+    ticket21Authoring,
+  );
+  expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual([
+    "0 Blocked 1",
+    "1 Skipped",
+  ]);
+});
+
+test("a stage that was cancelled skips the stages after it, as a failed one does", () => {
+  const ledger = ticketLedger(
+    ledgerPage([
+      {
+        execution: "execution-bb-1",
+        task: 1,
+        taskKind: "Evaluation",
+        stage: 0,
+        status: "Cancelled",
+      },
+    ]),
+    ticket21Authoring,
+  );
+  expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual([
+    "0 Cancelled 1",
+    "1 Skipped",
+  ]);
+});
+
+test("a stage that is still running leaves the stages after it queued", () => {
+  const ledger = ticketLedger(
+    ledgerPage([
+      {
+        execution: "execution-bb-1",
+        task: 1,
+        taskKind: "Evaluation",
+        stage: 0,
+        status: "Running",
+      },
+    ]),
+    ticket21Authoring,
+  );
+  expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual([
+    "0 Running 1",
+    "1 Queued",
+  ]);
+});
+
+test("two stages of one spawn stem are two sets, not one merged set", () => {
+  const ledger = ticketLedger(
+    ledgerPage([
+      {
+        execution: "execution-bb-1",
+        task: 1,
+        taskKind: "Evaluation",
+        stage: 0,
+        outcome: "Passed",
+      },
+      {
+        execution: "execution-bb-2",
+        task: 2,
+        taskKind: "Evaluation",
+        stage: 1,
+        outcome: "Failed",
+      },
+    ]),
+    ticket21Authoring,
+  );
+  expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual([
+    "0 Passed 1",
+    "1 Failed 2",
+  ]);
+});
+
+test("a request the wire names groups a set over stems that disagree", () => {
+  const ledger = ticketLedger(
+    ledgerPage([
+      {
+        execution: "execution-aa-1",
+        task: 1,
+        taskKind: "Evaluation",
+        stage: 0,
+        outcome: "Passed",
+        request: "one-spawn",
+      },
+      {
+        execution: "execution-zz-2",
+        task: 2,
+        taskKind: "Evaluation",
+        stage: 0,
+        outcome: "Failed",
+        request: "one-spawn",
+      },
+    ]),
+    { ...singleStage, program: [{ fanout: 2, combinator: "UnanimousPass" }] },
+  );
+  expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual(["0 Failed 1,2"]);
+});
+
 test("a set is drawn against the fan-out its stage was authored with", () => {
   const cycle = cycleAt(ticket21Parked, 0);
   expect(cycle.work?.expected).toBe(1);
@@ -326,6 +434,27 @@ test("a cycle is labelled by its own ordinal", () => {
 test("a container the fabric relaunched is labelled, and one it did not is not", () => {
   expect(retriesLabel(3)).toBe("Relaunched 3×");
   expect(retriesLabel(0)).toBeUndefined();
+});
+
+test("a stage number in the millions draws rows, not that many rows", () => {
+  const beyond = 5_000_000;
+  const ledger = ticketLedger(
+    ledgerPage([
+      {
+        execution: "execution-bb-1",
+        task: 1,
+        taskKind: "Evaluation",
+        stage: beyond,
+        outcome: "Failed",
+      },
+    ]),
+    ticket21Authoring,
+  );
+  expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual([
+    "0 Missing",
+    "1 Missing",
+    `${String(beyond)} Failed 1`,
+  ]);
 });
 
 test("a stage past the authored program is still given a row", () => {

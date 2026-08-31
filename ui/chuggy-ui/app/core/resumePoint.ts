@@ -14,9 +14,11 @@
  * not carry one.
  *
  * IT IS TOTAL OVER EVERY PHASE AND REASON THE ROSTERS ADMIT, and answers with
- * nothing wherever the model stamps nothing: a revoked dependency, an
- * escalation whose reason the read omits, and a blocked execution whose
- * interrupted set this page does not hold.
+ * nothing in two different situations. Where the model stamps nothing — a
+ * revoked dependency, and an escalation whose reason the read omits — nothing
+ * is the answer; where the model does stamp a point but this page holds no set
+ * for the wall to have interrupted, the console declines rather than guesses,
+ * and a read carrying the stamped point is what settles it.
  */
 
 import type {

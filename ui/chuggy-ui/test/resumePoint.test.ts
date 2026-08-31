@@ -79,6 +79,32 @@ test("the gas wall is the finalization's where the program had already passed", 
   );
 });
 
+test("the gas wall reads the program's own last stage, not any stage past it", () => {
+  const beyond: ClosedSet = {
+    taskKind: "Evaluation",
+    stage: 5,
+    verdict: "Passed",
+  };
+  expect(ticketResumePoint(parked("GasExhausted", beyond))).toBe(
+    "ResumeEvaluating",
+  );
+});
+
+test("the gas wall is the finalization's only where the final stage passed", () => {
+  for (const verdict of [
+    "Running",
+    "Cancelled",
+    "Blocked",
+    "Failed",
+  ] as const) {
+    expect(
+      ticketResumePoint(
+        parked("GasExhausted", { ...passedFinalStage, verdict }),
+      ),
+    ).toBe("ResumeEvaluating");
+  }
+});
+
 test("a blocked execution resumes into the phase that held the set it stopped", () => {
   expect(
     ticketResumePoint(parked("ExecutionPolicyDenied", cancelledWork)),
