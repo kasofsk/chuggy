@@ -21,9 +21,9 @@ import type { ReactNode } from "react";
 import { apiProjectInventoryAll } from "../core/apiRoutes.ts";
 import { lastProjectOrFirst, lastProjectRead } from "../core/lastProject.ts";
 import { usePanelInventory } from "./api.ts";
+import { DataPanel } from "./DataPanel.tsx";
 import { Footer } from "./Footer.tsx";
 import { Inbox } from "./Inbox.tsx";
-import { Panel } from "./Panel.tsx";
 import { persistentStore } from "./ports.ts";
 import { ProjectTable } from "./ProjectTable.tsx";
 import { Shell } from "./Shell.tsx";
@@ -49,7 +49,7 @@ export function Landing(): ReactNode {
   return (
     <div className="shell">
       <main className="shell-body">
-        <Panel title="projects" state={state}>
+        <DataPanel title="projects" state={state}>
           {(projects) =>
             projects.length === 0 ? (
               <p className="panel-absent">
@@ -61,7 +61,7 @@ export function Landing(): ReactNode {
               </p>
             )
           }
-        </Panel>
+        </DataPanel>
       </main>
       <Footer />
     </div>

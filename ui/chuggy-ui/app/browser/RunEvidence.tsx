@@ -35,8 +35,8 @@ import {
   runDurationLabel,
 } from "../core/runTotals.ts";
 import { usePanelResource } from "./api.ts";
+import { DataPanel } from "./DataPanel.tsx";
 import { MarkdownReport } from "./MarkdownReport.tsx";
-import { Panel } from "./Panel.tsx";
 import { RunTranscript } from "./RunTranscript.tsx";
 
 /** The most turn pages one reader may walk through in one sitting. */
@@ -131,7 +131,7 @@ function RunTurns(props: {
       }),
   );
   return (
-    <Panel title="turns" state={state}>
+    <DataPanel title="turns" state={state}>
       {(page) => (
         <div className="run-turn-pages">
           {page.turns.length === 0 ? (
@@ -164,7 +164,7 @@ function RunTurns(props: {
           </div>
         </div>
       )}
-    </Panel>
+    </DataPanel>
   );
 }
 
@@ -267,9 +267,9 @@ function RunConfiguration(props: {
       ),
   );
   return (
-    <Panel title="configuration" state={state}>
+    <DataPanel title="configuration" state={state}>
       {(read) => <RunConfigurationBody content={read.content} />}
-    </Panel>
+    </DataPanel>
   );
 }
 

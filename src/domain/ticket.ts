@@ -8,8 +8,15 @@
  * carried so a golden state compares field for field.
  */
 
-import type { Task, TaskKind, Ticket } from "./generated/modelTypes.ts";
+import type {
+  Resume,
+  ReworkPolicy,
+  Task,
+  TaskKind,
+  Ticket,
+} from "./generated/modelTypes.ts";
 import { isSettled } from "./phase.ts";
+import { reworkBudget } from "./pricing.ts";
 import { evalStage, nextTaskId, retiredInIdOrder, spawnTasks } from "./task.ts";
 
 /**
@@ -19,6 +26,28 @@ import { evalStage, nextTaskId, retiredInIdOrder, spawnTasks } from "./task.ts";
  */
 export function hasOpenHumanTask(ticket: Ticket): boolean {
   return ticket.phase === "Escalated" || ticket.phase === "HandoffBlocked";
+}
+
+/**
+ * The rework wall's resume exists only where the author bought one: a ticket
+ * authored no rework budget declined the economy, so its park is revoke-only.
+ */
+export function reworkWallResume(policy: ReworkPolicy): Resume {
+  return reworkBudget(policy) > 0 ? "ResumeReworking" : "NoResume";
+}
+
+/**
+ * Which parked tickets have a modeled resume at all. Two walls have none: a
+ * revoked dependency always, and an exhausted rework budget never granted.
+ */
+export function modeledResumeExists(ticket: Ticket): boolean {
+  return (
+    ticket.reason !== "DependencyRevoked" &&
+    !(
+      ticket.reason === "ReworkBudgetExhausted" &&
+      reworkBudget(ticket.reworkPolicy) === 0
+    )
+  );
 }
 
 /**

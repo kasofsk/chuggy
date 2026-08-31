@@ -18,14 +18,15 @@ import {
   useSessionSnapshot,
   useSilentRefresh,
 } from "./session.tsx";
+import { Button } from "./ui/Button.tsx";
 
-function Notice(props: {
+function SessionCard(props: {
   readonly title: string;
   readonly detail: string;
   readonly action?: ReactNode;
 }): ReactNode {
   return (
-    <div className="notice">
+    <div className="session-card">
       <h1>{props.title}</h1>
       <p>{props.detail}</p>
       {props.action}
@@ -39,32 +40,32 @@ export function App(props: { readonly queryClient: QueryClient }): ReactNode {
   useSilentRefresh();
   if (snapshot.phase === "Loading")
     return (
-      <Notice
+      <SessionCard
         title="chuggy"
         detail="reading this deployment's configuration…"
       />
     );
   if (snapshot.phase === "Unconfigured")
     return (
-      <Notice
+      <SessionCard
         title="not configured"
         detail={`${consoleConfigurationPath} could not be read: ${snapshot.reason ?? "no reason was given"}`}
       />
     );
   if (snapshot.phase === "SignedOut")
     return (
-      <Notice
+      <SessionCard
         title="chuggy"
         detail={snapshot.reason ?? "this browser holds no session."}
         action={
-          <button
-            type="button"
+          <Button
+            variant="primary"
             onClick={() => {
               void holder.signIn();
             }}
           >
             sign in
-          </button>
+          </Button>
         }
       />
     );

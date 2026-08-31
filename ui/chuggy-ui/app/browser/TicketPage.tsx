@@ -29,7 +29,7 @@ import { escalationReasonSentence } from "../core/codeSentences.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { ticketDispatchList } from "../core/ticketActions.ts";
 import { usePanelList, usePanelResource } from "./api.ts";
-import { Panel } from "./Panel.tsx";
+import { DataPanel } from "./DataPanel.tsx";
 import { RunTotalsLine } from "./RunEvidence.tsx";
 import { TicketActions } from "./TicketActions.tsx";
 import { TicketExecutions } from "./TicketExecutions.tsx";
@@ -67,14 +67,15 @@ function TicketBody(props: {
 }): ReactNode {
   return (
     <>
-      <Panel title={`ticket ${props.ticket}`} state={props.ticketState}>
+      <DataPanel title={`ticket ${props.ticket}`} state={props.ticketState}>
         {(value) => <TicketHeadline ticket={value} />}
-      </Panel>
+      </DataPanel>
       <TicketBrief state={props.draftState} />
       <TicketActions
         partition={props.partition}
         ticket={props.ticket}
         state={props.ticketState}
+        draftState={props.draftState}
         openState={props.openState}
         dispatchState={props.dispatchState}
       />

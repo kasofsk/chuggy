@@ -8,7 +8,7 @@
  * project actor nor owns a database transaction.
  */
 
-import type { EscalationReason } from "../contract/rosters.ts";
+import type { EscalationReason, ResumePoint } from "../contract/rosters.ts";
 import { phaseTags, type Phase } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type {
@@ -196,14 +196,29 @@ export type OperationResource =
   | (OperationResourceBase & { readonly state: "Cancelled" });
 
 /**
- * The reason is present exactly when the ticket is parked on the desk, and the
- * brief exactly when the ticket was authored with one.
+ * What a ticket has left to spend. `finalizationLeft` is absent under a pricing
+ * that budgets no finalization account, which is not the same fact as an
+ * account standing at zero.
+ */
+export interface TicketAccounts {
+  readonly gasLeft: number;
+  readonly gasMax: number;
+  readonly reworkLeft: number;
+  readonly finalizationLeft?: number;
+}
+
+/**
+ * The reason and the resume point are present exactly when the ticket is parked
+ * on the desk, the brief exactly when it was authored with one, and the
+ * accounts only where the store holds them.
  */
 export interface TicketResource {
   readonly ticket: TicketId;
   readonly phase: Phase;
   readonly sequence: number;
   readonly reason?: EscalationReason;
+  readonly resumeAt?: ResumePoint;
+  readonly accounts?: TicketAccounts;
   readonly brief?: DraftBrief;
   readonly runTotals?: RunTotals;
 }

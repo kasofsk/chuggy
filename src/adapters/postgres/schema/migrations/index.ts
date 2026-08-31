@@ -51,6 +51,8 @@ import { migration050 } from "./050-brief-finalization-target.ts";
 import { migration051 } from "./051-brief-pull-request-finalization.ts";
 import { migration052 } from "./052-finalization-change-proposal.ts";
 import { migration053 } from "./053-selector-project-settings.ts";
+import { migration054 } from "./054-ticket-resume-and-accounts-projection.ts";
+import { migration055 } from "./055-ticket-resume-reworking.ts";
 import type { Migration } from "../shared.ts";
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -108,4 +110,6 @@ export const migrations: readonly Migration[] = [
   migration051,
   migration052,
   migration053,
+  migration054,
+  migration055,
 ];

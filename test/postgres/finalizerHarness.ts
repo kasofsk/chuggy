@@ -121,13 +121,11 @@ import {
   type Lifecycle,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
-import {
-  projectWriterDecide,
-  type ProjectMemory,
-} from "../../src/interpreter/projectWriter.ts";
+import { type ProjectMemory } from "../../src/interpreter/projectWriter.ts";
 import { plainResult } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 import {
+  postgresHarnessDrain,
   postgresHarnessHistory,
   postgresHarnessJournal,
   postgresHarnessOpen,
@@ -135,8 +133,8 @@ import {
   postgresHarnessCompletion,
   postgresHarnessSubmission,
   postgresHarnessUrl,
-  postgresHarnessWriter,
   type PostgresHarness,
+  type PostgresHarnessDrained,
 } from "./harness.ts";
 
 /** What a deployment binding no forge answers with, which is what every pushing case needs. */
@@ -395,9 +393,6 @@ export async function finalizerSubject(
   return { project, remote, work };
 }
 
-/** The most decisions one fixture drains, which is what bounds the loop draining them. */
-const finalizerDecisionsMax = 16;
-
 /** One case's finalizing project: the request awaiting a finalizer and the rows it is bound to. */
 export interface FinalizerProject {
   readonly partition: Partition;
@@ -412,36 +407,15 @@ export interface FinalizerProject {
   readonly memory: ProjectMemory;
 }
 
-/** What draining the queue left: the state the last decision installed, and what each one was. */
-export interface FinalizerDrained {
-  readonly memory: ProjectMemory;
-  readonly decided: readonly string[];
-}
+export type FinalizerDrained = PostgresHarnessDrained;
 
-/**
- * Decides everything the project's queue currently holds, which is how a
- * continuation the last commit emitted reaches the writer that must consume it.
- * A refusal is one of the answers a writer gives, so a fenced input drains and
- * is reported rather than raising.
- */
-export async function finalizerDrain(
+/** Decides everything the project's queue currently holds, which every fixture step ends with. */
+export function finalizerDrain(
   harness: PostgresHarness,
   partition: Partition,
   memory: ProjectMemory,
 ): Promise<FinalizerDrained> {
-  const writer = postgresHarnessWriter(harness);
-  let carried = memory;
-  const decided: string[] = [];
-  for (let drained = 0; drained < finalizerDecisionsMax; drained++) {
-    const input = await harness.discovery.next(partition, 300);
-    if (input === undefined) return { memory: carried, decided };
-    const step = await projectWriterDecide(writer, carried, input);
-    decided.push(step.decided.decided);
-    carried = step.memory;
-  }
-  throw new Error(
-    "finalizer harness: the project queue did not drain within its bound",
-  );
+  return postgresHarnessDrain(harness, partition, memory);
 }
 
 /** Offers one decision command the way a person or a fabric does, and answers what acceptance said. */

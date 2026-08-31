@@ -1,12 +1,14 @@
 /**
  * The shell every screen is drawn inside: the partition it is looking at, the
- * switcher that changes it, the stream's own state, and the session.
+ * switcher that changes it, the primary nav, the theme, the session, and the
+ * stream's own state.
  *
  * The banner is not decoration — it is the only place a reader learns that what
  * the screens below are showing is no longer arriving live.
  */
 
 import { Link, Outlet, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -26,6 +28,17 @@ import {
   useProjectFallbackExhausted,
   useProjectStreamStatus,
 } from "./stream.tsx";
+import {
+  themeChoiceApply,
+  themeChoiceRead,
+  themeChoiceWrite,
+  themeChoices,
+} from "./theme.ts";
+import type { ThemeChoice } from "./theme.ts";
+import { Button } from "./ui/Button.tsx";
+import { Notice } from "./ui/Notice.tsx";
+import { Pill } from "./ui/Pill.tsx";
+import "./shell.css";
 
 /**
  * What the reader is told, which is the other half of what `useStreamFallback`
@@ -41,14 +54,14 @@ export function StreamBanner(): ReactNode {
     return null;
   const detail =
     status.reason ??
-    (status.source === "degraded"
-      ? "the change log behind the stream is degraded"
-      : "the stream is not open");
+    (status.source === "degraded" ? "Change log degraded" : "Stream not open");
   return (
-    <div className="banner" role="status">
-      <strong>not live</strong> — {detail}
-      {exhausted ? " — the fallback refetches have run out" : ""}
-    </div>
+    <Notice
+      tone="parked"
+      role="status"
+      heading="Not live"
+      detail={exhausted ? "Stream closed · fallback exhausted" : detail}
+    />
   );
 }
 
@@ -58,11 +71,10 @@ function ProjectSwitcher(props: {
   const navigate = useNavigate();
   const state = usePanelInventory((ports) => apiProjectInventoryAll(ports));
   if (state.state !== "Ready")
-    return <span className="switcher-note">projects unavailable</span>;
+    return <Notice tone="parked" inline detail="Projects unavailable" />;
   return (
     <select
-      className="switcher"
-      aria-label="project"
+      aria-label="Project"
       value={`${props.partition.tenant}/${props.partition.project}`}
       onChange={(event) => {
         const chosen = state.value.find(
@@ -95,8 +107,34 @@ function InboxCount(props: {
 }): ReactNode {
   const label = inboxCountLabel(useInboxRows(props.partition).union);
   return label === undefined ? null : (
-    <span className="nav-count" aria-label="tickets needing you">
-      {label}
+    <span aria-label="Tickets needing you">
+      <Pill tone="parked">{label}</Pill>
+    </span>
+  );
+}
+
+/** The choice is applied before it is stored, so a store a browser refuses
+ * still leaves the operator looking at the theme they asked for. */
+export function ThemeControl(): ReactNode {
+  const [chosen, setChosen] = useState<ThemeChoice>(() =>
+    themeChoiceRead(persistentStore),
+  );
+  return (
+    <span className="shell-theme" role="group" aria-label="Theme">
+      {themeChoices.map((candidate) => (
+        <Button
+          key={candidate}
+          size="sm"
+          pressed={candidate === chosen}
+          onClick={() => {
+            themeChoiceApply(document.documentElement, candidate);
+            themeChoiceWrite(persistentStore, candidate);
+            setChosen(candidate);
+          }}
+        >
+          {candidate}
+        </Button>
+      ))}
     </span>
   );
 }
@@ -116,51 +154,55 @@ export function ShellFrame(props: { readonly children: ReactNode }): ReactNode {
   );
 }
 
-export function Shell(props: {
-  readonly partition: PartitionIdentity;
-}): ReactNode {
-  const holder = useSessionHolder();
+function ShellNav(props: { readonly partition: PartitionIdentity }): ReactNode {
   const params = {
     tenant: props.partition.tenant,
     project: props.partition.project,
   };
+  const here = { className: "here" };
+  return (
+    <nav className="shell-nav" aria-label="Primary">
+      <Link to="/$tenant/$project" params={params} activeProps={here}>
+        Project
+      </Link>
+      <Link to="/$tenant/$project/inbox" params={params} activeProps={here}>
+        Inbox <InboxCount partition={props.partition} />
+      </Link>
+      <Link
+        to="/$tenant/$project/tickets/new"
+        params={params}
+        activeProps={here}
+      >
+        New ticket
+      </Link>
+    </nav>
+  );
+}
+
+export function Shell(props: {
+  readonly partition: PartitionIdentity;
+}): ReactNode {
+  const holder = useSessionHolder();
   return (
     <ShellFrame>
       <header className="shell-head">
-        <span className="brand">chuggy</span>
+        <Link className="brand" to="/">
+          chuggy
+        </Link>
         <ProjectSwitcher partition={props.partition} />
-        <nav className="shell-nav">
-          <Link
-            to="/$tenant/$project"
-            params={params}
-            activeProps={{ className: "here" }}
+        <ShellNav partition={props.partition} />
+        <div className="shell-tools">
+          <ThemeControl />
+          <Button
+            variant="quiet"
+            size="sm"
+            onClick={() => {
+              void holder.signOut();
+            }}
           >
-            project
-          </Link>
-          <Link
-            to="/$tenant/$project/inbox"
-            params={params}
-            activeProps={{ className: "here" }}
-          >
-            inbox <InboxCount partition={props.partition} />
-          </Link>
-          <Link
-            to="/$tenant/$project/tickets/new"
-            params={params}
-            activeProps={{ className: "here" }}
-          >
-            new ticket
-          </Link>
-        </nav>
-        <button
-          type="button"
-          className="sign-out"
-          onClick={() => {
-            void holder.signOut();
-          }}
-        >
-          sign out
-        </button>
+            Sign out
+          </Button>
+        </div>
       </header>
       <StreamBanner />
       <main className="shell-body">
