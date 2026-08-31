@@ -26,7 +26,7 @@ import type { z } from "zod";
 
 import { apiOperation, apiProject, apiSubmitOperation } from "./apiRoutes.ts";
 import type { ProjectPage } from "./apiRoutes.ts";
-import type { ApiPorts, ApiResult } from "./apiRequest.ts";
+import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
 import { operationFailureSentence } from "./codeSentences.ts";
 
 /** How much entropy an operation identity is drawn with. It is also the
@@ -67,7 +67,17 @@ export type OperationStep =
       readonly state: OperationState;
       readonly refusalCode: OperationRefusalCode | undefined;
     }
-  | { readonly step: "Abandoned"; readonly reason: string };
+  | {
+      readonly step: "Abandoned";
+      readonly reason: string;
+      /**
+       * The API answered, and the answer was no. A screen holding the identity
+       * this submission was drawn under can let go of it here and nowhere else
+       * among the abandonments, because every other one is the console not
+       * finding out rather than the API declining.
+       */
+      readonly refused: boolean;
+    };
 
 export type OperationEvent =
   | { readonly event: "Accepted"; readonly operation: string }
@@ -80,7 +90,8 @@ export type OperationEvent =
   | { readonly event: "Unaccepted" }
   | { readonly event: "Confirmed" }
   | { readonly event: "Behind" }
-  | { readonly event: "Faulted"; readonly reason: string };
+  | { readonly event: "Faulted"; readonly reason: string }
+  | { readonly event: "Refused"; readonly reason: string };
 
 /** What the caller does next for this step, and nothing about how. */
 export type OperationRequest = "Submit" | "Poll" | "Confirm";
@@ -130,7 +141,45 @@ function operationAttempts(step: OperationStep): number {
 }
 
 function operationAbandoned(reason: string): OperationStep {
-  return { step: "Abandoned", reason };
+  return { step: "Abandoned", reason, refused: false };
+}
+
+/** The API declined the submission, so the identity it names will never exist. */
+function operationRefused(reason: string): OperationStep {
+  return { step: "Abandoned", reason, refused: true };
+}
+
+/**
+ * Whether the API answered the request or the answer never arrived. A refusal,
+ * a fault and a request it would not authorize are all the API speaking; a
+ * network that never reached it is not, and neither is a body it sent that
+ * cannot be read — an unreadable answer to a submission is an answer that may
+ * have accepted it.
+ */
+function failureAnswered(failure: ApiFailure): boolean {
+  switch (failure.outcome) {
+    case "Unauthenticated":
+    case "Absent":
+    case "Conflict":
+    case "Rejected":
+    case "Fault":
+      return true;
+    case "Retryable":
+    case "Unreachable":
+    case "Unreadable":
+      return false;
+  }
+}
+
+/**
+ * Whether the fate of the submission is known. `Settled` is the API answering
+ * about the operation and a refusal is the API declining to make one; every
+ * other ending is the console giving up on finding out, and an identity whose
+ * fate nobody knows is one a screen must keep rather than drop.
+ */
+export function operationAnswered(step: OperationStep): boolean {
+  if (step.step === "Settled") return true;
+  return step.step === "Abandoned" && step.refused;
 }
 
 function operationSettled(
@@ -272,6 +321,8 @@ export function operationAdvanced(
       return operationBehind(step);
     case "Faulted":
       return operationAbandoned(event.reason);
+    case "Refused":
+      return operationRefused(event.reason);
   }
 }
 
@@ -292,7 +343,10 @@ function operationEventOf<T>(
       code: result.code,
       retryAfterSeconds: result.retryAfterSeconds,
     };
-  return { event: "Faulted", reason: operationFailureSentence(result) };
+  return {
+    event: failureAnswered(result) ? "Refused" : "Faulted",
+    reason: operationFailureSentence(result),
+  };
 }
 
 /**

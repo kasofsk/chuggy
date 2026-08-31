@@ -11,13 +11,19 @@
  * whatever `retry-after` the server names, up to the contract's cap, on every
  * one of its attempts.
  *
- * WHAT BOUNDS IT INSTEAD IS THAT EVERY FOLLOW ENDS. `held` is written once per
- * submission and `dropped` on the step that finishes it, whichever way it
- * finishes; a follow abandoned by its screen leaves its record standing, and
- * the next panel for that ticket picks it up and polls it to an end, which
- * drops it. So a tab holds at most one record per ticket it has submitted on
- * and has not since reopened, and none of them is waiting on a timer to be
- * true.
+ * WHAT ENDS A RECORD IS THE API ANSWERING, AND NOTHING ELSE DOES. `held` is
+ * written once per submission and `dropped` where the answer arrives — an
+ * operation settled, or a submission the API declined to make — and every other
+ * ending keeps it, because a browser that lost the answer has learnt nothing
+ * about what the machine did. A record that stands is resolved by asking again:
+ * a mount picks it up, and so does a press, and each poll either brings the
+ * answer that drops it or leaves it for the next.
+ *
+ * SO A RECORD OUTLIVES A FOLLOW BY DESIGN, AND A TAB HOLDS AT MOST ONE PER
+ * TICKET whose submission the API has not yet answered for. One that is never
+ * answered — an API that stays unreachable — is held for as long as the tab
+ * lives, which is the point: an identity nobody knows the fate of is the one
+ * thing that must not be forgotten and drawn again.
  */
 
 import type { QueryClient } from "@tanstack/react-query";

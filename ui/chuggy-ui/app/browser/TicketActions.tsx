@@ -40,6 +40,7 @@ import type { ResumeOffer, ReworkStanding } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import {
   followOperation,
+  operationAnswered,
   operationFinished,
   operationFollowing,
   operationIdBytesCount,
@@ -227,6 +228,7 @@ async function followInto(
       writer.drawStep(action, {
         step: "Abandoned",
         reason: `Failed · ${faultReason(thrown)}`,
+        refused: false,
       });
   }
 }
@@ -377,10 +379,10 @@ function useSubmitting(
   const [refused, setRefused] = useState<string | undefined>(undefined);
 
   /**
-   * A record goes when the API has said what became of the operation, and stays
-   * when it has not. `Settled` is the one arm built from an answer about this
-   * operation; every `Abandoned` is a way of not finding out — a budget spent
-   * on an operation still pending, a submission whose response was lost — and a
+   * A record goes when the API has said what became of the submission and stays
+   * when it has not, which `operationAnswered` is: an operation the API settled,
+   * or one it declined to make at all. What stays is a budget spent on an
+   * operation still pending and a submission whose response was lost — and a
    * submission the browser made and lost the answer to is still a submission,
    * so what the record is for is the panel that comes back and asks again under
    * the same identity.
@@ -389,11 +391,16 @@ function useSubmitting(
     setAttempt({ action, step });
     if (!operationFinished(step)) return;
     setRefused(undefined);
-    if (step.step === "Settled")
+    if (operationAnswered(step))
       ticketAttemptDropped(client, partition, ticket);
   };
 
+  /** Whatever was running is abandoned before this replaces it, so that no
+   * caller can leave two follows reporting to one panel. */
   const follow = (held: TicketAttempt, startedFrom: OperationStep): void => {
+    runningRef.current?.controller.abort(
+      new Error("another attempt took this panel"),
+    );
     const controller = new AbortController();
     runningRef.current = { controller, operation: held.operation };
     void followInto(

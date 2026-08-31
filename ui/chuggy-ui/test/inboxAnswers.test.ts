@@ -30,6 +30,7 @@ const settled: OperationStep = {
 const abandoned: OperationStep = {
   step: "Abandoned",
   reason: "the follow took more steps than it is allowed to take",
+  refused: false,
 };
 
 const following: OperationStep = {

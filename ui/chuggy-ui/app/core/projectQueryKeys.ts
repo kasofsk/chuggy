@@ -21,7 +21,9 @@
  * the fallback's — and that is safe rather than accidental: an invalidation
  * refetches the queries a reader is watching, and a held entry is watched by no
  * reader and has no fetch to run, so being marked stale is the whole of what
- * happens to it. Being under that prefix is also what a project switch needs.
+ * happens to it. Being under that prefix is what scopes it: one partition's
+ * held state is named apart from another's, and a reader who leaves a project
+ * leaves what a screen there was holding behind rather than carrying it over.
  *
  * A resource key and a list key are refreshed by different halves of the
  * stream, which is why only one of them is a bare function here. The stream

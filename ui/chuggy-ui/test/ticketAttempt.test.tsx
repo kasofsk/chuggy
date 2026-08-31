@@ -618,3 +618,48 @@ test("a press naming another action still resolves the attempt that is held", as
   expect(screen.getByText("Resume answered")).toBeDefined();
   expect(screen.queryByText("Revoke answered")).toBeNull();
 });
+
+/** A submission the API declines outright: the identity it names will never be
+ * an operation, so nothing is left to ask about. */
+function refusing(): Served {
+  return served({
+    submission: () => answer({ error: { code: "TicketVersionStale" } }, 409),
+    openActions: () => answer({ actions: [] }),
+  });
+}
+
+test("a submission the API refuses leaves no record to ask about again", async () => {
+  const api = refusing();
+  vi.stubGlobal("fetch", api.fetch);
+  const client = new QueryClient();
+  mounted(client);
+  await settled();
+  await turned(() => {
+    screen.getByRole("button", { name: "Resume" }).click();
+  });
+  await settled();
+
+  expect(api.identities()).toHaveLength(1);
+  expect(
+    client.getQueryData<TicketAttempt>(ticketAttemptKey(atlas, 11)),
+  ).toBeUndefined();
+});
+
+test("a refusal leaves the next press free to mean a new intent", async () => {
+  const api = refusing();
+  vi.stubGlobal("fetch", api.fetch);
+  mounted(new QueryClient());
+  await settled();
+  await turned(() => {
+    screen.getByRole("button", { name: "Resume" }).click();
+  });
+  await settled();
+
+  await turned(() => {
+    screen.getByRole("button", { name: "Resume" }).click();
+  });
+  await settled();
+
+  expect(api.identities()).toHaveLength(2);
+  expect(api.posts()).toBe(2);
+});
