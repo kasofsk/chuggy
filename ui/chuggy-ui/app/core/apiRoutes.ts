@@ -248,12 +248,13 @@ export function apiOperationalStatus(
 }
 
 export interface ExecutionsPage {
-  readonly after?: string | undefined;
+  readonly cursor?: string | undefined;
   readonly limit?: number | undefined;
   readonly ticket?: number | undefined;
   readonly state?: string | undefined;
 }
 
+/** The list is `(ticket, task)` ascending, and the cursor is a position in it. */
 export function apiExecutions(
   ports: ApiPorts,
   partition: PartitionIdentity,
@@ -262,7 +263,7 @@ export function apiExecutions(
   return apiGet(
     ports,
     apiPath(apiSegments(partition, "executions"), {
-      after: page.after,
+      cursor: page.cursor,
       limit: page.limit,
       ticket: page.ticket,
       state: page.state,

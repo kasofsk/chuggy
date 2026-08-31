@@ -60,8 +60,28 @@ export type ExecutionSelection =
       readonly states: readonly ExecutionStatus[];
     };
 
+/**
+ * Where a page of executions resumes.
+ *
+ * The list has one order, `(ticket, task)` ascending, which is the machine's
+ * own history: a ticket's tasks are numbered across its whole history, so
+ * ascending task is the sequence they were authorized in. The position is
+ * total because a ticket numbers each task once.
+ */
+export interface ExecutionPageCursor {
+  readonly ticket: TicketId;
+  readonly task: TaskId;
+}
+
+/**
+ * `ticket` narrows that one order rather than replacing it, so a cursor means
+ * the same position in the ticket-scoped read and the project-wide one and
+ * there is no second kind of cursor to confuse it with. A cursor resuming a
+ * ticket the query does not select is refused, because answering it would
+ * silently restart the selected ticket from its first task.
+ */
 export interface ExecutionListQuery {
-  readonly after?: ExecutionId;
+  readonly after?: ExecutionPageCursor;
   readonly ticket?: TicketId;
   readonly limit: number;
   readonly selection?: ExecutionSelection;
@@ -183,7 +203,7 @@ export interface ExecutionResource extends ExecutionSummary {
 
 export interface ExecutionPage {
   readonly executions: readonly ExecutionSummary[];
-  readonly nextAfter?: ExecutionId;
+  readonly nextAfter?: ExecutionPageCursor;
 }
 
 export interface OperationalReadStore {
@@ -235,6 +255,12 @@ export function checkedExecutionListQuery(
     )
       throw new RangeError("execution state selection is invalid");
   }
+  if (
+    query.after !== undefined &&
+    query.ticket !== undefined &&
+    query.after.ticket !== query.ticket
+  )
+    throw new RangeError("execution cursor resumes another ticket");
   return query;
 }
 

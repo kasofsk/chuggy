@@ -67,7 +67,10 @@ import {
   asResultManifestId,
   type CanonicalManifest,
 } from "../../src/interpreter/resultManifest.ts";
-import { asOperationDecisionEvent } from "../../src/interpreter/operationInbox.ts";
+import {
+  asOperationDecisionEvent,
+  type Submission,
+} from "../../src/interpreter/operationInbox.ts";
 import type {
   Partition,
   RecoveryEpoch,
@@ -81,6 +84,7 @@ import {
   postgresHarnessJournal,
   postgresHarnessOpen,
   postgresHarnessProject,
+  postgresHarnessReleaseSubmission,
   postgresHarnessRolePool,
   postgresHarnessSubmission,
   postgresHarnessUrl,
@@ -242,6 +246,111 @@ export async function schedulerProject(
     ),
     epoch: await rig.harness.store.currentRecoveryEpoch(),
     memory,
+  };
+}
+
+/** Accepts one submission and decides it through the real writer. */
+async function schedulerDecided(
+  rig: SchedulerRig,
+  partition: Partition,
+  memory: ProjectMemory,
+  submission: Submission,
+): Promise<ProjectMemory> {
+  const accepted = await rig.harness.inbox.accept(submission);
+  if (accepted.accepted !== "Accepted") {
+    throw new Error(
+      `scheduler harness: the acceptance was ${accepted.accepted}`,
+    );
+  }
+  const input = await rig.harness.discovery.next(partition, 300);
+  if (input === undefined) {
+    throw new Error("scheduler harness: accepted input was not discoverable");
+  }
+  const decided = await projectWriterDecide(
+    postgresHarnessWriter(rig.harness),
+    memory,
+    input,
+  );
+  if (decided.decided.decided !== "Committed") {
+    throw new Error(
+      `scheduler harness: the decision was ${decided.decided.decided}`,
+    );
+  }
+  return decided.memory;
+}
+
+/** A further ticket in the same project: what it left to register, and the state after it. */
+export interface SchedulerFurtherTicket {
+  readonly request: string;
+  readonly ticket: number;
+  readonly tasks: number;
+  readonly memory: ProjectMemory;
+}
+
+/**
+ * Releases and dispatches another ticket in the project through the real
+ * writer, so it leaves a spawn request of its own. The fixture journal releases
+ * one ticket, and a case about how one project's executions order across
+ * tickets needs more than one.
+ */
+export async function schedulerFurtherTicket(
+  rig: SchedulerRig,
+  project: SchedulerProject,
+  memory: ProjectMemory,
+  label: string,
+  tasks: number,
+): Promise<SchedulerFurtherTicket> {
+  const release = await postgresHarnessReleaseSubmission(
+    rig.harness,
+    project.partition,
+    label,
+  );
+  if (release.command.command !== "ReleaseDraft") {
+    throw new Error("scheduler harness: that submission releases no draft");
+  }
+  const ticket = release.command.ticket;
+  const released = await schedulerDecided(
+    rig,
+    project.partition,
+    memory,
+    release,
+  );
+  const version = released.ticketVersions.get(ticket);
+  if (version === undefined) {
+    throw new Error(
+      `scheduler harness: the release left ticket ${String(ticket)} no version`,
+    );
+  }
+  const dispatched = await schedulerDecided(rig, project.partition, released, {
+    ...postgresHarnessSubmission(project.partition, `${label}-dispatch`),
+    command: {
+      version: 1,
+      command: "ManualDispatch",
+      ticket,
+      expectedTicketVersion: version,
+    },
+  });
+  const found = (await rig.harness.query(
+    `SELECT request FROM execution_request
+      WHERE tenant=$1 AND project=$2 AND kind='SpawnWork' AND ticket=$3`,
+    [project.partition.tenant, project.partition.project, ticket],
+  )) as readonly { request: string }[];
+  const row = found[0];
+  if (row === undefined) {
+    throw new Error(
+      `scheduler harness: ticket ${String(ticket)} left no spawn request`,
+    );
+  }
+  return {
+    request: row.request,
+    ticket,
+    tasks: await schedulerWidenTasks(
+      rig,
+      project.partition,
+      row.request,
+      tasks,
+    ),
+    memory: dispatched,
   };
 }
 
