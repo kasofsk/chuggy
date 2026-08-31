@@ -10,7 +10,12 @@
 
 import { expect, test } from "vitest";
 
-import type { Cycle, ProgramRun, TaskSet } from "../app/core/ticketLedger.ts";
+import type {
+  Cycle,
+  ExecutionsPage,
+  ProgramRun,
+  TaskSet,
+} from "../app/core/ticketLedger.ts";
 import {
   cycleLabel,
   retriesLabel,
@@ -377,6 +382,14 @@ test("a page the route has more of says so", () => {
   expect(short.cycles).toEqual([]);
   expect(short.truncated).toBe(true);
   expect(ticketLedger(ledgerPage([]), ticket21Authoring).truncated).toBe(false);
+});
+
+test("the cursor is read under either name the wire has given it", () => {
+  const named = (page: ExecutionsPage): boolean =>
+    ticketLedger(page, ticket21Authoring).truncated;
+  expect(named({ executions: [], nextAfter: "execution-zz-9" })).toBe(true);
+  expect(named({ executions: [], nextCursor: "execution-zz-9" })).toBe(true);
+  expect(named({ executions: [] })).toBe(false);
 });
 
 test("a page cut before a cycle's work run says the artifact is unknown", () => {
