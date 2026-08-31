@@ -88,13 +88,13 @@ test("execution continuation retains earlier rows and remains ticket scoped", ()
   const initial = ticketDetailInitial("token", partition, 7, 1);
   const first = ticketDetailExecutionsReceived(initial.state, {
     outcome: "Ok",
-    body: { executions: [execution("first")], nextAfter: "cursor" },
+    body: { executions: [execution("first")], nextCursor: "cursor" },
   });
   const next = ticketDetailExecutionsNext(first, "token", partition, 1);
   assert.ok(next);
   assert.equal(
     next.request.url,
-    "/api/v1/tenants/acme/projects/atlas/executions?after=cursor&limit=1&ticket=7",
+    "/api/v1/tenants/acme/projects/atlas/executions?cursor=cursor&limit=1&ticket=7",
   );
   const complete = ticketDetailExecutionsReceived(next.state, {
     outcome: "Ok",

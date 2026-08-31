@@ -687,7 +687,7 @@ export function parseExecutionsPage(value) {
     executions: list(fields["executions"], "executions", itemsPerPageMax).map(
       executionSummary,
     ),
-    nextAfter: optionalText(fields, "nextAfter", "executions page"),
+    nextCursor: optionalText(fields, "nextCursor", "executions page"),
   };
 }
 

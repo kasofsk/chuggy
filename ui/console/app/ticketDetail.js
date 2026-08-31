@@ -147,7 +147,7 @@ export function ticketDetailExecutionsReceived(state, outcome) {
       state: /** @type {const} */ ("Data"),
       value: {
         executions: [...prior.executions, ...page.value.executions],
-        nextAfter: page.value.nextAfter,
+        nextCursor: page.value.nextCursor,
       },
     },
   };
@@ -161,11 +161,11 @@ export function ticketDetailExecutionsNext(
   limit = pageLimitDefault,
 ) {
   const page = ticketDetailHeld(state.executions);
-  if (page === undefined || page.nextAfter === undefined) return undefined;
+  if (page === undefined || page.nextCursor === undefined) return undefined;
   return {
     state: { ...state, executions: loading(state.executions) },
     request: executionsRequest(accessToken, partition, {
-      after: page.nextAfter,
+      cursor: page.nextCursor,
       limit,
       ticket: state.ticket,
     }),
