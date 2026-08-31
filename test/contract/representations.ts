@@ -155,6 +155,7 @@ export const executionSummary: ExecutionSummary = {
   requirement,
   requirementDigest: digest,
   requirementSource: "PlatformDefault",
+  request: "request-one",
   platformDefaultVersion: 1,
   status: "Terminal",
   outcome: "Passed",

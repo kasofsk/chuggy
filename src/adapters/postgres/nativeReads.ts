@@ -6,7 +6,9 @@ import type pg from "pg";
 import {
   escalationReasons,
   operationRefusalCodes,
+  resumePoints,
   type EscalationReason,
+  type ResumePoint,
 } from "../../contract/rosters.ts";
 import { phaseTags, type Phase } from "../../domain/generated/modelTypes.ts";
 import { nonTerminalPhaseTags } from "../../domain/phase.ts";
@@ -20,6 +22,7 @@ import {
   type ProjectRead,
   type ProjectReadQuery,
   type ProjectResource,
+  type TicketAccounts,
   type TicketNativeAction,
   type TicketPhaseFilter,
   type TicketResource,
@@ -50,11 +53,23 @@ interface PublicOperationRow {
   readonly refused_lifecycle_generation: string | null;
 }
 
+/**
+ * One projection row, joined to the deployment gas every ticket is released
+ * with. The account columns are null together on a row no decision has moved
+ * since the projection began carrying them; the joined gas belongs to the
+ * deployment rather than to the row, and is null only where no domain
+ * configuration is installed at all.
+ */
 interface TicketProjectionRow {
   readonly ticket: string;
   readonly phase: string;
   readonly seq: string;
   readonly reason: string;
+  readonly resume_at: string | null;
+  readonly gas_left: string | null;
+  readonly rework_left: string | null;
+  readonly finalization_left: string | null;
+  readonly gas_max: string | null;
 }
 
 /** One open action, or a ticket that has none: every column is then null. */
@@ -205,13 +220,55 @@ function projectionReason(value: string): EscalationReason | undefined {
   return reason;
 }
 
+/** The stored `NoResume` is the machine's absent value, which the wire omits. */
+function projectionResume(value: string | null): ResumePoint | undefined {
+  if (value === null || value === "NoResume") return undefined;
+  const point = resumePoints.find((candidate) => candidate === value);
+  if (point === undefined)
+    throw new Error(`native read: ${value} is not a resume point`);
+  return point;
+}
+
+/**
+ * What a ticket has left to spend, or nothing when the row predates the
+ * projection carrying it. A null finalization account is the `DeadlineOnly`
+ * pricing that budgets none, which a non-null `gas_left` tells apart from a row
+ * holding no accounts at all.
+ */
+function projectionAccounts(
+  row: TicketProjectionRow,
+): TicketAccounts | undefined {
+  if (row.gas_left === null || row.rework_left === null) return undefined;
+  if (row.gas_max === null)
+    throw new Error(
+      "native read: a ticket holds accounts but the deployment declares no gas",
+    );
+  return {
+    gasLeft: projectRowCounter(row.gas_left, "ticket gas left"),
+    gasMax: projectRowCounter(row.gas_max, "deployment gas"),
+    reworkLeft: projectRowCounter(row.rework_left, "ticket rework left"),
+    ...(row.finalization_left === null
+      ? {}
+      : {
+          finalizationLeft: projectRowCounter(
+            row.finalization_left,
+            "ticket finalization left",
+          ),
+        }),
+  };
+}
+
 function ticketResource(row: TicketProjectionRow): TicketResource {
   const reason = projectionReason(row.reason);
+  const resumeAt = projectionResume(row.resume_at);
+  const accounts = projectionAccounts(row);
   return {
     ticket: asTicketId(projectRowCounter(row.ticket, "ticket identity")),
     phase: projectionPhase(row.phase),
     sequence: projectRowCounter(row.seq, "ticket projection sequence"),
     ...(reason === undefined ? {} : { reason }),
+    ...(resumeAt === undefined ? {} : { resumeAt }),
+    ...(accounts === undefined ? {} : { accounts }),
   };
 }
 
@@ -335,21 +392,29 @@ async function readProjectTickets(
 ): Promise<readonly TicketProjectionRow[]> {
   if (query.order === "RecentActivity") {
     const found = await client.query<TicketProjectionRow>(
-      sql`SELECT ticket,phase,seq,reason FROM ticket_projection
-        WHERE tenant=${partition.tenant} AND project=${partition.project}
+      sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,t.gas_left,
+                 t.rework_left,t.finalization_left,
+                 d.domain_configuration::jsonb->>'gas' AS gas_max
+          FROM ticket_projection t
+          LEFT JOIN deployment_authoring_policy d ON d.singleton=true
+        WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
           AND (${query.recentActivityAfter?.sequence ?? null}::bigint IS NULL
-            OR (seq,ticket) < (${query.recentActivityAfter?.sequence ?? null},${query.recentActivityAfter?.ticket ?? null}))
-          AND phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
-        ORDER BY seq DESC,ticket DESC LIMIT ${query.limit + 1}`,
+            OR (t.seq,t.ticket) < (${query.recentActivityAfter?.sequence ?? null},${query.recentActivityAfter?.ticket ?? null}))
+          AND t.phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
+        ORDER BY t.seq DESC,t.ticket DESC LIMIT ${query.limit + 1}`,
     );
     return found.rows;
   }
   const found = await client.query<TicketProjectionRow>(
-    sql`SELECT ticket,phase,seq,reason FROM ticket_projection
-        WHERE tenant=${partition.tenant} AND project=${partition.project}
-          AND ticket>${query.after ?? 0}
-          AND phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
-        ORDER BY ticket LIMIT ${query.limit + 1}`,
+    sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,t.gas_left,
+               t.rework_left,t.finalization_left,
+               d.domain_configuration::jsonb->>'gas' AS gas_max
+          FROM ticket_projection t
+          LEFT JOIN deployment_authoring_policy d ON d.singleton=true
+        WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
+          AND t.ticket>${query.after ?? 0}
+          AND t.phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
+        ORDER BY t.ticket LIMIT ${query.limit + 1}`,
   );
   return found.rows;
 }
@@ -376,11 +441,15 @@ function nativeReadsResources(
     project: (partition, query) => readProject(pool, partition, query),
     ticket: async (partition, ticket) => {
       const found = await pool.query<TicketProjectionRow & DraftBriefRow>(
-        sql`SELECT t.ticket,t.phase,t.seq,t.reason,b.intent,b.branch,
+        sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,t.gas_left,
+                   t.rework_left,t.finalization_left,
+                   d.domain_configuration::jsonb->>'gas' AS gas_max,
+                   b.intent,b.branch,
                    b.finalization_mode,b.finalization_target,
                    (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
                      WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS links
               FROM ticket_projection t
+              LEFT JOIN deployment_authoring_policy d ON d.singleton=true
               LEFT JOIN draft_brief b
                 ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
              WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
