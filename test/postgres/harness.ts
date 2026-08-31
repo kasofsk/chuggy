@@ -738,6 +738,41 @@ export async function postgresHarnessHistory(
   return memory;
 }
 
+/** The most decisions one drained queue may hold, which no fixture reaches. */
+const postgresHarnessDecisionsMax = 16;
+
+/** What draining the queue left: the state the last decision installed, and what each one was. */
+export interface PostgresHarnessDrained {
+  readonly memory: ProjectMemory;
+  readonly decided: readonly string[];
+}
+
+/**
+ * Decides everything the project's queue currently holds, which is how a
+ * continuation the last commit emitted reaches the writer that must consume it.
+ * A refusal is one of the answers a writer gives, so a fenced input drains and
+ * is reported rather than raising.
+ */
+export async function postgresHarnessDrain(
+  harness: PostgresHarness,
+  partition: Partition,
+  memory: ProjectMemory,
+): Promise<PostgresHarnessDrained> {
+  const writer = postgresHarnessWriter(harness);
+  let carried = memory;
+  const decided: string[] = [];
+  for (let drained = 0; drained < postgresHarnessDecisionsMax; drained++) {
+    const input = await harness.discovery.next(partition, 300);
+    if (input === undefined) return { memory: carried, decided };
+    const step = await projectWriterDecide(writer, carried, input);
+    decided.push(step.decided.decided);
+    carried = step.memory;
+  }
+  throw new Error(
+    "postgres harness: the project queue did not drain within its bound",
+  );
+}
+
 /** The operational context a selector case supplies, which no case is about. */
 export const postgresHarnessSelectorContext = {
   version: 2,

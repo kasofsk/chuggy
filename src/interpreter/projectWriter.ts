@@ -111,15 +111,28 @@ export interface ProjectDecided {
   readonly decided: InputDecided;
 }
 
-/** Every ticket's current phase, which is the whole projection and the rebuild of it. */
+/**
+ * Every ticket's current standing, which is the whole projection and the
+ * rebuild of it. Every field is read off the same `Core` this decision left
+ * behind, so no two of them can be at different journal positions.
+ */
 export function projectionOf(core: Core): readonly TicketProjection[] {
   const dependable = new Set(dependableIn(core));
-  return ticketIds(core).map((ticket) => ({
-    ticket,
-    phase: ticketAt(core, ticket).phase,
-    dependable: dependable.has(ticket),
-    reason: ticketAt(core, ticket).reason,
-  }));
+  return ticketIds(core).map((ticket) => {
+    const value = ticketAt(core, ticket);
+    return {
+      ticket,
+      phase: value.phase,
+      dependable: dependable.has(ticket),
+      reason: value.reason,
+      resumeAt: value.resumeAt,
+      gasLeft: value.gasLeft,
+      reworkLeft: value.reworkLeft,
+      ...(value.finalizationPricing === "DeadlineOnly"
+        ? {}
+        : { finalizationLeft: value.finalizationLeft }),
+    };
+  });
 }
 
 /**

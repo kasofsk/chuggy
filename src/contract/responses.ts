@@ -64,6 +64,7 @@ import {
   repositoryConfigurationFaults,
   requirementSources,
   resultVerdicts,
+  resumePoints,
   runCostBases,
   schedulerFreshnesses,
   selectorDispatchModes,
@@ -157,6 +158,20 @@ export const executionRunSchema = z.object({
 export type ExecutionRun = z.infer<typeof executionRunSchema>;
 
 /**
+ * What a ticket has left to spend, optional as a whole because a projection row
+ * written before the machine's accounts reached it carries none of them.
+ * `finalizationLeft` is present exactly when the ticket's pricing budgets a
+ * finalization account at all — under `DeadlineOnly` a finalizer failure prices
+ * from gas alone, so a zero would say "exhausted" of an account that never was.
+ */
+const ticketAccountsSchema = z.object({
+  gasLeft: countSchema,
+  gasMax: countSchema,
+  reworkLeft: countSchema,
+  finalizationLeft: countSchema.optional(),
+});
+
+/**
  * A ticket as the project table and its own read both carry it. The brief is
  * the ticket's own read alone: an intent is a paragraph, and a page of them is
  * a page of documents rather than a table.
@@ -166,6 +181,8 @@ export const ticketResponseSchema = z.object({
   phase: z.enum(phaseRoster),
   sequence: countSchema,
   reason: z.enum(escalationReasons).optional(),
+  resumeAt: z.enum(resumePoints).optional(),
+  accounts: ticketAccountsSchema.optional(),
   brief: briefResponseSchema.optional(),
   runTotals: runTotalsSchema.optional(),
 });
@@ -370,6 +387,8 @@ export const executionSummarySchema = z.object({
   requirement: executionRequirementSchema,
   requirementDigest: digestSchema,
   requirementSource: z.enum(requirementSources),
+  /** The spawn request that made this execution, which is its fan-out set's identity. */
+  request: identitySchema.optional(),
   worker: workerSchema.optional(),
   platformDefaultVersion: ticketNumberSchema,
   status: z.enum(executionStatuses),

@@ -22,19 +22,24 @@ import { test } from "node:test";
 
 import {
   dispatchEvent,
+  evalReduceEvent,
   execDecisionEvent,
   releaseTicketEvent,
+  resumeTicketEvent,
   taskDoneEvent,
+  workReduceEvent,
   type DecisionEvent,
 } from "../../src/actor/decisionEvent.ts";
 import { genesis, replayCore, type Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
-import type { Core } from "../../src/domain/generated/modelTypes.ts";
+import { ticketAt } from "../../src/domain/core.ts";
+import type { Core, Ticket } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import {
   projectionChanges,
   projectionOf,
 } from "../../src/interpreter/projectWriter.ts";
+import type { TicketProjection } from "../../src/interpreter/projectDecision.ts";
 import {
   plainAuthoring,
   plainResult,
@@ -58,13 +63,13 @@ function journalOf(): readonly Entry[] {
 }
 
 /** The table the per-decision changes build, applied one decision at a time. */
-function folded(): ReadonlyMap<number, string> {
-  const table = new Map<number, string>();
+function folded(): ReadonlyMap<number, TicketProjection> {
+  const table = new Map<number, TicketProjection>();
   let core: Core = genesis;
   for (const event of history) {
     const post = execDecisionEvent(refinementInstance, core, event).post;
     for (const row of projectionChanges(core, post)) {
-      table.set(row.ticket, row.phase);
+      table.set(row.ticket, row);
     }
     core = post;
   }
@@ -75,11 +80,11 @@ test("folding what each decision changed reaches the table a rebuild reads", () 
   const rebuilt = new Map(
     projectionOf(replayCore(refinementInstance, journalOf())).map((row) => [
       row.ticket,
-      row.phase,
+      row,
     ]),
   );
   assert.deepEqual(folded(), rebuilt);
-  assert.equal(rebuilt.get(id(1)), "Working");
+  assert.equal(rebuilt.get(id(1))?.phase, "Working");
 });
 
 test("a decision reports exactly the tickets whose complete state changed", () => {
@@ -95,7 +100,18 @@ test("a decision reports exactly the tickets whose complete state changed", () =
   );
   assert.deepEqual(
     projectionChanges(released.view.post, dispatched.view.post),
-    [{ ticket: id(1), phase: "Working", dependable: true, reason: "NoReason" }],
+    [
+      {
+        ticket: id(1),
+        phase: "Working",
+        dependable: true,
+        reason: "NoReason",
+        resumeAt: "NoResume",
+        gasLeft: refinementInstance.gas - 1,
+        reworkLeft: 1,
+        finalizationLeft: 1,
+      },
+    ],
   );
   assert.deepEqual(
     projectionChanges(dispatched.view.post, dispatched.view.post),
@@ -108,7 +124,18 @@ test("a decision reports exactly the tickets whose complete state changed", () =
   );
   assert.deepEqual(
     projectionChanges(dispatched.view.post, completed.view.post),
-    [{ ticket: id(1), phase: "Working", dependable: true, reason: "NoReason" }],
+    [
+      {
+        ticket: id(1),
+        phase: "Working",
+        dependable: true,
+        reason: "NoReason",
+        resumeAt: "NoResume",
+        gasLeft: refinementInstance.gas - 1,
+        reworkLeft: 1,
+        finalizationLeft: 1,
+      },
+    ],
   );
 });
 
@@ -120,7 +147,16 @@ test("a release is a change although it transitions nothing", () => {
   );
   assert.deepEqual(released.journal.at(-1)?.rec.transitions, []);
   assert.deepEqual(projectionChanges(genesis, released.view.post), [
-    { ticket: id(1), phase: "Pending", dependable: true, reason: "NoReason" },
+    {
+      ticket: id(1),
+      phase: "Pending",
+      dependable: true,
+      reason: "NoReason",
+      resumeAt: "NoResume",
+      gasLeft: refinementInstance.gas,
+      reworkLeft: 1,
+      finalizationLeft: 1,
+    },
   ]);
 });
 
@@ -142,4 +178,104 @@ test("dependency eligibility distinguishes the two escalated reasons", () => {
     false,
   );
   assert.equal(projectionOf(escalated("GasExhausted"))[0]?.dependable, true);
+});
+
+/** The one outstanding task of a single-width ticket, which is what a completion names. */
+function outstandingTask(core: Core): number {
+  const task = [...ticketAt(core, id(1)).tasks].find(
+    (candidate) => candidate.state === "Outstanding",
+  );
+  if (task === undefined)
+    throw new Error("projection case: the ticket has no outstanding task");
+  return task.id;
+}
+
+/**
+ * A ticket driven to the rework wall and resumed off it: the two states whose
+ * resume point and accounts the projection exists to carry, and the only ones
+ * where `resumeAt` is anything but the absent value.
+ */
+function walledHistory(): readonly DecisionEvent[] {
+  const events: DecisionEvent[] = [
+    releaseTicketEvent(id(1), plainAuthoring),
+    dispatchEvent(id(1)),
+  ];
+  let core = events.reduce(
+    (state, event) => execDecisionEvent(refinementInstance, state, event).post,
+    genesis,
+  );
+  const step = (event: DecisionEvent) => {
+    events.push(event);
+    core = execDecisionEvent(refinementInstance, core, event).post;
+  };
+  for (const cycle of [0, 1]) {
+    step(
+      taskDoneEvent(
+        id(1),
+        asTaskId(outstandingTask(core)),
+        "Pass",
+        plainResult,
+      ),
+    );
+    step(workReduceEvent(id(1)));
+    step(
+      taskDoneEvent(
+        id(1),
+        asTaskId(outstandingTask(core)),
+        "Fail",
+        plainResult,
+      ),
+    );
+    step(evalReduceEvent(id(1)));
+    if (cycle === 1) step(resumeTicketEvent(id(1)));
+  }
+  return events;
+}
+
+/** Every account and the resume point, read off the ticket the row claims to project. */
+function ticketFacts(ticket: Ticket) {
+  return {
+    phase: ticket.phase,
+    reason: ticket.reason,
+    resumeAt: ticket.resumeAt,
+    gasLeft: ticket.gasLeft,
+    reworkLeft: ticket.reworkLeft,
+    finalizationLeft: ticket.finalizationLeft,
+  };
+}
+
+test("every projected row is the core the step it names left behind", () => {
+  let core: Core = genesis;
+  const seen: string[] = [];
+  for (const event of walledHistory()) {
+    core = execDecisionEvent(refinementInstance, core, event).post;
+    const row = projectionOf(core).find((each) => each.ticket === id(1));
+    assert.ok(row !== undefined);
+    assert.deepEqual(ticketFacts(ticketAt(core, id(1))), {
+      phase: row.phase,
+      reason: row.reason,
+      resumeAt: row.resumeAt,
+      gasLeft: row.gasLeft,
+      reworkLeft: row.reworkLeft,
+      finalizationLeft: row.finalizationLeft,
+    });
+    seen.push(`${row.phase}/${row.resumeAt}`);
+  }
+  assert.ok(seen.includes("Escalated/ResumeEvaluating"));
+  assert.equal(seen.at(-1), "Evaluating/NoResume");
+});
+
+/** A pricing that budgets no finalization account projects no figure for one. */
+test("a deadline-priced ticket projects no finalization account", () => {
+  const priced = execDecisionEvent(
+    refinementInstance,
+    genesis,
+    releaseTicketEvent(id(1), {
+      ...plainAuthoring,
+      finalizationPricing: "DeadlineOnly",
+    }),
+  ).post;
+  const row = projectionOf(priced)[0];
+  assert.equal(row?.finalizationLeft, undefined);
+  assert.equal(ticketAt(priced, id(1)).finalizationLeft, 0);
 });
