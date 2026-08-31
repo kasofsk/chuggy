@@ -54,6 +54,7 @@ import type { RepositoryConfigurationImportOutcome } from "../../interpreter/rep
 import { nativeHttpError, nativeHttpMediaType } from "../../contract/http.ts";
 import {
   encodeConfigurationCursor,
+  encodeExecutionCursor,
   encodeInventoryCursor,
   encodeNativeActionCursor,
   encodeTicketActivityCursor,
@@ -403,11 +404,22 @@ export function selectorSettingsHistoryResponse(
 }
 
 export function executionsResponse(
+  partition: Partition,
   result: AuthorizedResult<ExecutionPage>,
 ): NativeHttpResponse {
   return result.result === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : response(200, result.value);
+    : response(200, {
+        executions: result.value.executions,
+        ...(result.value.nextAfter === undefined
+          ? {}
+          : {
+              nextCursor: encodeExecutionCursor(
+                partition,
+                result.value.nextAfter,
+              ),
+            }),
+      });
 }
 
 export function executionResponse(

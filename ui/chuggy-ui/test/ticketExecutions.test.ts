@@ -25,12 +25,13 @@ const digest = "a".repeat(64);
 
 function execution(
   execution: string,
+  task: number,
   over: Partial<ExecutionResponse> = {},
 ): ExecutionResponse {
   return {
     execution,
     ticket: 7,
-    task: 1,
+    task,
     taskKind: "Work",
     cluster: "rig",
     configurationRevision: "r1",
@@ -54,14 +55,18 @@ function execution(
 
 function page(
   executions: ExecutionResponse[],
-  nextAfter?: string,
+  nextCursor?: string,
 ): ExecutionsResponse {
-  return { executions, ...(nextAfter === undefined ? {} : { nextAfter }) };
+  return { executions, ...(nextCursor === undefined ? {} : { nextCursor }) };
 }
 
 test("a frame for a listed execution replaces it where it stands", () => {
-  const held = page([execution("e1"), execution("e2"), execution("e3")]);
-  const arrived = execution("e2", { status: "Terminal", outcome: "Passed" });
+  const held = page([
+    execution("e1", 1),
+    execution("e2", 2),
+    execution("e3", 3),
+  ]);
+  const arrived = execution("e2", 2, { status: "Terminal", outcome: "Passed" });
   const folded = ticketExecutionsFolded(7, held, {
     resource: "e2",
     representation: arrived,
@@ -74,40 +79,42 @@ test("a frame for a listed execution replaces it where it stands", () => {
   expect(folded?.executions[1]?.status).toBe("Terminal");
 });
 
-test("a frame for an execution nobody listed lands in identity order", () => {
-  const held = page([execution("e1"), execution("e3")]);
+/** The identities sort against the tasks here, so a fold in either order is
+ * distinguishable from a fold in the other. */
+test("a frame for an execution nobody listed lands in task order", () => {
+  const held = page([execution("e1", 1), execution("e10", 10)]);
   const folded = ticketExecutionsFolded(7, held, {
     resource: "e2",
-    representation: execution("e2"),
+    representation: execution("e2", 2),
   });
   expect(folded?.executions.map((row) => row.execution)).toEqual([
     "e1",
     "e2",
-    "e3",
+    "e10",
   ]);
 });
 
 test("a frame past the end of a truncated page is left for that page", () => {
-  const held = page([execution("e1"), execution("e2")], "e2");
+  const held = page([execution("e1", 1), execution("e9", 9)], "opaque-cursor");
   expect(
     ticketExecutionsFolded(7, held, {
-      resource: "e9",
-      representation: execution("e9"),
+      resource: "e10",
+      representation: execution("e10", 10),
     }),
   ).toBe(held);
 });
 
 test("a frame past the end of a complete page is listed", () => {
-  const held = page([execution("e1")]);
+  const held = page([execution("e1", 1)]);
   const folded = ticketExecutionsFolded(7, held, {
     resource: "e9",
-    representation: execution("e9"),
+    representation: execution("e9", 9),
   });
   expect(folded?.executions.map((row) => row.execution)).toEqual(["e1", "e9"]);
 });
 
 test("a tombstone drops the execution rather than leaving it on the screen", () => {
-  const held = page([execution("e1"), execution("e2")]);
+  const held = page([execution("e1", 1), execution("e2", 2)]);
   const folded = ticketExecutionsFolded(7, held, {
     resource: "e1",
     representation: null,
@@ -116,11 +123,11 @@ test("a tombstone drops the execution rather than leaving it on the screen", () 
 });
 
 test("another ticket's execution is not folded into this ticket's page", () => {
-  const held = page([execution("e1")]);
+  const held = page([execution("e1", 1)]);
   expect(
     ticketExecutionsFolded(7, held, {
       resource: "e5",
-      representation: execution("e5", { ticket: 8 }),
+      representation: execution("e5", 5, { ticket: 8 }),
     }),
   ).toBe(held);
 });
@@ -129,7 +136,7 @@ test("a page nothing has read stays unread rather than being invented", () => {
   expect(
     ticketExecutionsFolded(7, undefined, {
       resource: "e1",
-      representation: execution("e1"),
+      representation: execution("e1", 1),
     }),
   ).toBeUndefined();
 });
@@ -137,7 +144,7 @@ test("a page nothing has read stays unread rather than being invented", () => {
 /** The row names this ticket, so the schema is the only thing left that can
  * reject it. */
 test("a representation this console cannot read leaves the page alone", () => {
-  const held = page([execution("e1")]);
+  const held = page([execution("e1", 1)]);
   expect(
     ticketExecutionsFolded(7, held, {
       resource: "e2",
@@ -147,7 +154,7 @@ test("a representation this console cannot read leaves the page alone", () => {
 });
 
 test("a listed row this console cannot read is not written over the good one", () => {
-  const held = page([execution("e1", { status: "Running" })]);
+  const held = page([execution("e1", 1, { status: "Running" })]);
   const folded = ticketExecutionsFolded(7, held, {
     resource: "e1",
     representation: { execution: "e1", ticket: 7, status: "Terminal" },
@@ -175,15 +182,15 @@ test("the page's executions group into the stages that ran them", () => {
   };
   const stages = ticketExecutionStages(
     page([
-      execution("e1", { taskKind: "Work", stage: 1, runTotals: totals }),
-      execution("e2", {
+      execution("e1", 1, { taskKind: "Work", stage: 1, runTotals: totals }),
+      execution("e2", 2, {
         taskKind: "Evaluation",
         stage: 1,
         status: "Terminal",
         outcome: "Failed",
         runTotals: totals,
       }),
-      execution("e3", { taskKind: "Work", stage: 1, runTotals: totals }),
+      execution("e3", 3, { taskKind: "Work", stage: 1, runTotals: totals }),
     ]),
   );
   expect(stages.map((row) => runStageLabel(row))).toEqual([

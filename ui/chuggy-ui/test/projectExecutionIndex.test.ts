@@ -119,7 +119,7 @@ test("a frame that will not read changes nothing, and no read invents an index",
 
 interface WalkAsked {
   readonly selection: ProjectExecutionSelection;
-  readonly after: string | undefined;
+  readonly cursor: string | undefined;
 }
 
 function walking(
@@ -128,15 +128,15 @@ function walking(
 ): {
   readonly readPage: (
     selection: ProjectExecutionSelection,
-    after: string | undefined,
+    cursor: string | undefined,
   ) => Promise<ApiResult<ExecutionsResponse>>;
   readonly asked: WalkAsked[];
 } {
   const asked: WalkAsked[] = [];
   return {
     asked,
-    readPage: (selection, after) => {
-      asked.push({ selection, after });
+    readPage: (selection, cursor) => {
+      asked.push({ selection, cursor });
       if (asked.length === failAt)
         return Promise.resolve({
           outcome: "Unreachable",
@@ -149,7 +149,7 @@ function walking(
         outcome: "Ok",
         value: {
           executions: [execution({ execution: identity, ticket: at })],
-          ...(last ? {} : { nextAfter: identity }),
+          ...(last ? {} : { nextCursor: identity }),
         },
       });
     },
@@ -160,7 +160,7 @@ test("a walk that the wire ends is complete and says so", async () => {
   const held = walking(() => 2);
   const answered = await projectExecutionIndexRead(held.readPage);
   expect(held.asked.map((one) => one.selection)).toStrictEqual(["All", "All"]);
-  expect(held.asked[1]?.after).toBe("All-1");
+  expect(held.asked[1]?.cursor).toBe("All-1");
   expect(answered.outcome === "Ok" && answered.value.truncated).toBe(false);
   expect(
     answered.outcome === "Ok" && projectExecutionIndexAt(answered.value, 1),
@@ -282,7 +282,7 @@ test("the running walk does not replace a newer entry with an older one", () => 
                 status: "Queued",
               }),
         ],
-        ...(selection === "All" ? { nextAfter: "e-later" } : {}),
+        ...(selection === "All" ? { nextCursor: "e-later" } : {}),
       },
     });
   return projectExecutionIndexRead(answering).then((answered) => {

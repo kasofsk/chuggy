@@ -29,7 +29,7 @@ import type {
   SelectorProjectLimitOverrides,
   SelectorProjectOverrides,
 } from "../../interpreter/selector.ts";
-import { asTicketId } from "../../domain/ids.ts";
+import { asTaskId, asTicketId } from "../../domain/ids.ts";
 import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
@@ -43,6 +43,7 @@ import type {
   TicketActivityPosition,
 } from "../../interpreter/nativeWeb.ts";
 import { checkedSelectorDecisionReference } from "../../interpreter/dispatchView.ts";
+import type { ExecutionPageCursor } from "../../interpreter/operationsView.ts";
 import {
   asIdempotencyKey,
   asOperationDecisionEvent,
@@ -91,6 +92,14 @@ const ticketActivityCursorSchema = z.strictObject({
   project: z.string(),
   sequence: z.number().int().safe().nonnegative(),
   ticket: z.number().int().safe().positive(),
+});
+
+const executionCursorSchema = z.strictObject({
+  version: z.literal(nativeHttpVersion),
+  tenant: z.string(),
+  project: z.string(),
+  ticket: z.number().int().safe().positive(),
+  task: z.number().int().safe().positive(),
 });
 
 const nativeActionCursorSchema = z.strictObject({
@@ -281,6 +290,42 @@ export function parseTicketActivityCursor(
   };
   if (encodeTicketActivityCursor(partition, parsed) !== value)
     throw new RangeError("ticket activity cursor is not canonically encoded");
+  return parsed;
+}
+
+export function encodeExecutionCursor(
+  partition: Partition,
+  cursor: ExecutionPageCursor,
+): string {
+  return Buffer.from(
+    JSON.stringify({
+      version: nativeHttpVersion,
+      tenant: partition.tenant,
+      project: partition.project,
+      ticket: cursor.ticket,
+      task: cursor.task,
+    }),
+  ).toString("base64url");
+}
+
+export function parseExecutionCursor(
+  value: string,
+  expected: Partition,
+): ExecutionPageCursor {
+  const decoded: unknown = decodedCursor(value, "execution");
+  const cursor = executionCursorSchema.parse(decoded);
+  const partition = parsePartition(cursor.tenant, cursor.project);
+  if (
+    partition.tenant !== expected.tenant ||
+    partition.project !== expected.project
+  )
+    throw new RangeError("execution cursor belongs to another project");
+  const parsed = {
+    ticket: asTicketId(cursor.ticket),
+    task: asTaskId(cursor.task),
+  };
+  if (encodeExecutionCursor(partition, parsed) !== value)
+    throw new RangeError("execution cursor is not canonically encoded");
   return parsed;
 }
 

@@ -383,11 +383,11 @@ test("an execution carries the scheduler's status and the retries it spent", () 
         registeredAt: "2026-08-22T00:00:00Z",
       },
     ],
-    nextAfter: "x1",
+    nextCursor: "cursor-at-ticket-3-task-1",
   });
   assert.equal(page.executions[0]?.status, "Running");
   assert.equal(page.executions[0]?.retriesSpent, 2);
-  assert.equal(page.nextAfter, "x1");
+  assert.equal(page.nextCursor, "cursor-at-ticket-3-task-1");
 });
 
 test("an execution detail carries attempts, and a result when one exists", () => {

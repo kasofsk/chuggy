@@ -12,6 +12,8 @@ import {
   type ExecutionStatus,
 } from "../../interpreter/executionScheduler.ts";
 import type { Principal } from "../../interpreter/nativeWeb.ts";
+import type { ExecutionListQuery } from "../../interpreter/operationsView.ts";
+import type { Partition } from "../../interpreter/projectStore.ts";
 import type { NativeWeb } from "../../interpreter/nativeWeb.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
 import {
@@ -35,6 +37,7 @@ import {
 } from "../../contract/http.ts";
 import {
   parseConfigurationCursor,
+  parseExecutionCursor,
   parseInventoryCursor,
   parseNativeActionCursor,
   parseTicketActivityCursor,
@@ -571,26 +574,16 @@ function registerOperationalRoutes(
     );
   });
   app.get(`${root}/executions`, async (request, reply) => {
-    const query = fieldsOnly(request.query, [
-      "after",
-      "limit",
-      "state",
-      "ticket",
-    ]);
-    const after = query["after"];
+    const partition = partitionOf(request);
     send(
       reply,
       executionsResponse(
-        await web.executions(principalOf(request), partitionOf(request), {
-          ...(after === undefined
-            ? {}
-            : { after: asExecutionId(textField(query, "after")) }),
-          limit: integerField(query, "limit", 50),
-          ...(query["ticket"] === undefined
-            ? {}
-            : { ticket: asTicketIdField(query, "ticket") }),
-          ...executionSelection(query["state"]),
-        }),
+        partition,
+        await web.executions(
+          principalOf(request),
+          partition,
+          executionListQuery(request.query, partition),
+        ),
       ),
     );
   });
@@ -696,6 +689,26 @@ function registerSelectorSettings(
       ),
     );
   });
+}
+
+/** The executions read's own parameters: its cursor, its size and what it narrows to. */
+function executionListQuery(
+  value: unknown,
+  partition: Partition,
+): ExecutionListQuery {
+  const query = fieldsOnly(value, ["cursor", "limit", "state", "ticket"]);
+  return {
+    ...(query["cursor"] === undefined
+      ? {}
+      : {
+          after: parseExecutionCursor(textField(query, "cursor"), partition),
+        }),
+    limit: integerField(query, "limit", 50),
+    ...(query["ticket"] === undefined
+      ? {}
+      : { ticket: asTicketIdField(query, "ticket") }),
+    ...executionSelection(query["state"]),
+  };
 }
 
 function executionSelection(value: unknown): {

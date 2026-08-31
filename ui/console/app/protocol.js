@@ -380,14 +380,16 @@ export function executionStateQuery(filter) {
 }
 
 /**
+ * The list is `(ticket, task)` ascending, and `cursor` is a position in it.
+ *
  * @param {string} accessToken
  * @param {Partition} partition
- * @param {{ after?: string, limit: number, states?: QueryFields,
+ * @param {{ cursor?: string, limit: number, states?: QueryFields,
  *   ticket?: number }} query
  */
 export function executionsRequest(accessToken, partition, query) {
   return readRequest(accessToken, `${partitionPath(partition)}/executions`, [
-    ...optionalField("after", query.after),
+    ...optionalField("cursor", query.cursor),
     ["limit", checkedLimit(query.limit)],
     ...optionalField("ticket", query.ticket),
     ...(query.states ?? []),
