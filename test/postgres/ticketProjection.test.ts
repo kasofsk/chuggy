@@ -323,3 +323,51 @@ test("a budgeted account at zero is served, and an unbudgeted one is absent", as
     reworkLeft: 1,
   });
 });
+
+/**
+ * Each constraint migration 054 adds, against a row carrying the defect it
+ * names. The header claims the wholeness CHECK is what keeps `gas_left` able to
+ * tell the two `finalization_left` absences apart, and a claim about a
+ * constraint is worth what the constraint is worth.
+ */
+test("the projection refuses a resume, a negative account and a half-written pair", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "projection-constraints",
+  );
+  const columns = (rest: string) =>
+    `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq,${rest}`;
+  const refused: readonly [string, readonly unknown[], RegExp][] = [
+    [
+      columns("resume_at) VALUES ($1,$2,$3,'Escalated',1,'ResumeNowhere')"),
+      [partition.tenant, partition.project, 1],
+      /ticket_projection_resume_is_known/u,
+    ],
+    [
+      columns("gas_left,rework_left) VALUES ($1,$2,$3,'Working',1,-1,0)"),
+      [partition.tenant, partition.project, 2],
+      /ticket_projection_accounts_are_not_negative/u,
+    ],
+    [
+      columns("rework_left) VALUES ($1,$2,$3,'Working',1,0)"),
+      [partition.tenant, partition.project, 3],
+      /ticket_projection_accounts_are_whole/u,
+    ],
+    [
+      columns("finalization_left) VALUES ($1,$2,$3,'Working',1,0)"),
+      [partition.tenant, partition.project, 4],
+      /ticket_projection_accounts_are_whole/u,
+    ],
+  ];
+  for (const [statement, values, refusal] of refused)
+    await assert.rejects(harness.query(statement, values), refusal);
+  await assert.doesNotReject(
+    harness.query(
+      columns(
+        "resume_at,gas_left,rework_left,finalization_left) VALUES ($1,$2,$3,'Escalated',1,'NoResume',0,0,NULL)",
+      ),
+      [partition.tenant, partition.project, 5],
+    ),
+    "the shape a deadline-priced ticket is projected in",
+  );
+});
