@@ -1,0 +1,46 @@
+/* ActionWithCost: the button, what it does, and what it charges. */
+
+@layer ui {
+  .act {
+    display: grid;
+    gap: var(--space-1);
+    padding-bottom: var(--space-3);
+    border-bottom: var(--hairline) solid var(--edge);
+    max-width: var(--measure);
+  }
+
+  .act:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .act-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .act-effect {
+    color: var(--ink-2);
+  }
+
+  .act-cost {
+    color: var(--ink-1);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .act-more {
+    color: var(--ink-3);
+  }
+
+  .act-refused {
+    color: var(--tone-parked);
+  }
+
+  .act-compact {
+    padding: 0;
+    border: 0;
+    display: inline;
+  }
+}

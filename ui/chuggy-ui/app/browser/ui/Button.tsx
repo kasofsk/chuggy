@@ -47,6 +47,7 @@ export function Button(
     readonly pressed?: boolean;
     readonly busy?: boolean;
     readonly disabled?: boolean;
+    readonly describedBy?: string;
   },
 ): ReactNode {
   return (
@@ -57,6 +58,7 @@ export function Button(
       disabled={props.disabled ?? false}
       aria-pressed={props.pressed}
       aria-busy={props.busy}
+      aria-describedby={props.describedBy}
     >
       {props.children}
     </button>

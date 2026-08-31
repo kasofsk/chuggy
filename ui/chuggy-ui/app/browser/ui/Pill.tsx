@@ -1,26 +1,22 @@
 /**
  * One status word with a mark and a tone: a verdict, a phase, a standing.
  *
- * Total over `pillTones`. The mark is decorative and the word is the signal,
- * which is what lets colour carry the meaning without being the only thing
- * that does, and the face is monospace so a column of pills aligns.
+ * Total over `pillTones`. The tone is chosen by `core/tones.ts` from the wire's
+ * own words, so a roster the wire grows stops compiling there and never reaches
+ * this as `neutral`. The mark is decorative and the word is the signal, which
+ * is what lets colour carry the meaning without being the only thing that does,
+ * and the face is monospace so a column of pills aligns.
  */
 
 import type { ReactNode } from "react";
 
+import { pillTones } from "../../core/tones.ts";
+import type { Tone } from "../../core/tones.ts";
+
 import "./Pill.css";
 
-export const pillTones = [
-  "pass",
-  "fail",
-  "live",
-  "queued",
-  "parked",
-  "retired",
-  "neutral",
-] as const;
-
-export type Tone = (typeof pillTones)[number];
+export { pillTones };
+export type { Tone };
 
 export function Pill(props: {
   readonly tone: Tone;

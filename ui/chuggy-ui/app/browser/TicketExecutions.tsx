@@ -1,43 +1,23 @@
 /**
- * Everything that has run for this ticket: what each stage spent, then each
- * execution, what it ran on, the runs it took, the verdict it recorded and the
- * artifacts it left.
+ * One execution opened out: what it ran on, the attempts it took, the verdict
+ * it recorded and the artifacts it left.
  *
- * The stage rows are a grouping of the summaries this screen already holds, so
- * the breakdown is live for the same reason the list is and costs no further
- * read; the ticket's own total is the server's figure and is drawn beside the
- * ticket, because a sum over a page that may be short would be quietly wrong.
- * The list is a page of summaries and an expanded execution is its own read, so
- * a live `Execution` frame lands in both without either being refetched.
+ * An expanded execution is its own read, so a live `Execution` frame lands in
+ * it and in the page of summaries the ledger holds without either being
+ * refetched. What the ticket ran, in the structure the machine ran it in, is
+ * `ticket/TicketLedger.tsx`; this is what a row opens.
  */
 
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type {
-  ExecutionResponse,
-  ExecutionSummary,
-  ExecutionsResponse,
-} from "../../../../src/contract/responses.ts";
-import {
-  apiExecution,
-  apiExecutions,
-  apiOutputContent,
-} from "../core/apiRoutes.ts";
+import type { ExecutionResponse } from "../../../../src/contract/responses.ts";
+import { apiExecution, apiOutputContent } from "../core/apiRoutes.ts";
 import { artifactPreviewOffer } from "../core/artifactPreview.ts";
-import { executionRequirementLabel } from "../core/labels.ts";
-import { projectListFolded } from "../core/projectQueryKeys.ts";
-import type { ProjectListChange } from "../core/projectQueryKeys.ts";
-import { runStageCoverageSentence, runStageLabel } from "../core/runTotals.ts";
-import type { RunStageRow } from "../core/runTotals.ts";
-import {
-  ticketExecutionStages,
-  ticketExecutionsFolded,
-} from "../core/ticketExecutions.ts";
-import { usePanelList, usePanelResource } from "./api.ts";
+import { usePanelResource } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
-import { RunEvidence, RunTotalsLine } from "./RunEvidence.tsx";
+import { RunEvidence } from "./RunEvidence.tsx";
 
 type ResultArtifact = NonNullable<
   ExecutionResponse["result"]
@@ -166,7 +146,7 @@ function ExecutionResult(props: {
   );
 }
 
-function ExecutionDetail(props: {
+export function ExecutionDetail(props: {
   readonly partition: PartitionIdentity;
   readonly execution: string;
 }): ReactNode {
@@ -185,119 +165,6 @@ function ExecutionDetail(props: {
           <RunEvidence partition={props.partition} execution={execution} />
         </div>
       )}
-    </DataPanel>
-  );
-}
-
-function ExecutionRow(props: {
-  readonly partition: PartitionIdentity;
-  readonly summary: ExecutionSummary;
-}): ReactNode {
-  const [open, setOpen] = useState(false);
-  const summary = props.summary;
-  const requirement = executionRequirementLabel(summary);
-  return (
-    <li className="execution">
-      <button
-        type="button"
-        className="execution-head"
-        aria-expanded={open}
-        onClick={() => {
-          setOpen(!open);
-        }}
-      >
-        <span className="execution-kind">
-          {summary.taskKind}
-          {summary.stage === undefined ? "" : ` stage ${String(summary.stage)}`}
-        </span>
-        <span className="execution-status">{summary.status}</span>
-        <span className="execution-outcome">{summary.outcome ?? "—"}</span>
-        <span className="execution-ran-on" title={requirement.title}>
-          {requirement.text}
-        </span>
-      </button>
-      <p className="execution-source">
-        {summary.requirementSource}, platform default{" "}
-        {summary.platformDefaultVersion}, cluster {summary.cluster},{" "}
-        {summary.retriesSpent} retries spent
-      </p>
-      {summary.runTotals === undefined ? (
-        <p className="panel-note">no run evidence was recorded</p>
-      ) : (
-        <RunTotalsLine totals={summary.runTotals} />
-      )}
-      {open ? (
-        <ExecutionDetail
-          partition={props.partition}
-          execution={summary.execution}
-        />
-      ) : null}
-    </li>
-  );
-}
-
-function StageRow(props: { readonly row: RunStageRow }): ReactNode {
-  const row = props.row;
-  return (
-    <li className="stage">
-      <span className="stage-label">{runStageLabel(row)}</span>
-      <span className="execution-source">{runStageCoverageSentence(row)}</span>
-      {row.totals === undefined ? (
-        <span className="panel-note">no run evidence was recorded</span>
-      ) : (
-        <RunTotalsLine totals={row.totals} />
-      )}
-    </li>
-  );
-}
-
-/** The breakdown above the rows it is a breakdown of, which is the order a cost
- * is read in. */
-function TicketStages(props: { readonly page: ExecutionsResponse }): ReactNode {
-  const rows = ticketExecutionStages(props.page);
-  return (
-    <ul className="stages">
-      {rows.map((row) => (
-        <StageRow key={runStageLabel(row)} row={row} />
-      ))}
-    </ul>
-  );
-}
-
-export function TicketExecutions(props: {
-  readonly partition: PartitionIdentity;
-  readonly ticket: number;
-}): ReactNode {
-  const { partition, ticket } = props;
-  const fold = useCallback(
-    (previous: ExecutionsResponse | undefined, change: ProjectListChange) =>
-      ticketExecutionsFolded(ticket, previous, change),
-    [ticket],
-  );
-  const state = usePanelList(
-    projectListFolded(partition, "Execution", `ticket:${String(ticket)}`, fold),
-    (ports) => apiExecutions(ports, partition, { ticket }),
-  );
-  return (
-    <DataPanel title="executions" state={state}>
-      {(page) =>
-        page.executions.length === 0 ? (
-          <p className="panel-note">nothing has run for this ticket</p>
-        ) : (
-          <>
-            <TicketStages page={page} />
-            <ul className="executions">
-              {page.executions.map((summary) => (
-                <ExecutionRow
-                  key={summary.execution}
-                  partition={partition}
-                  summary={summary}
-                />
-              ))}
-            </ul>
-          </>
-        )
-      }
     </DataPanel>
   );
 }

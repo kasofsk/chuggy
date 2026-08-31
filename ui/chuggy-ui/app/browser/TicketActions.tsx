@@ -30,11 +30,12 @@ import { apiCancelOperation } from "../core/apiRoutes.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import {
-  mutationDeferralSentence,
-  operationFailureSentence,
-  operationRefusalSentence,
-  operationStateSentence,
-} from "../core/codeSentences.ts";
+  operationFailureLabel,
+  operationStepLabel,
+  ticketActionEffect,
+} from "../core/codeLabels.ts";
+import type { ReworkStanding } from "../core/codeLabels.ts";
+import type { ResumeConsequence } from "../core/resumePoint.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { nativeActionsAnswers } from "../core/nativeActionAnswers.ts";
 import {
@@ -47,55 +48,28 @@ import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import {
   actionsFor,
   manualDispatchAction,
-  ticketActionSentence,
   ticketDispatchList,
 } from "../core/ticketActions.ts";
 import type { TicketAction } from "../core/ticketActions.ts";
 import { useApiPorts } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { drawBytes } from "./ports.ts";
+import { ActionWithCost } from "./ui/ActionWithCost.tsx";
+import { Button } from "./ui/Button.tsx";
+import { Notice } from "./ui/Notice.tsx";
 
 interface Attempt {
   readonly action: TicketAction;
   readonly step: OperationStep;
 }
 
-function StepNote(props: { readonly step: OperationStep }): ReactNode {
-  const step = props.step;
-  switch (step.step) {
-    case "Submitting":
-      return <p className="panel-note">submitting…</p>;
-    case "Backlogged":
-      return (
-        <p className="panel-absent">
-          {mutationDeferralSentence(step.code)}; trying again in{" "}
-          {step.retryAfterSeconds}s
-        </p>
-      );
-    case "Following":
-      return (
-        <p className="panel-note">waiting on operation {step.operation}…</p>
-      );
-    case "Confirming":
-      return (
-        <p className="panel-note">
-          waiting for the project to reach sequence {step.minimumSequence}…
-        </p>
-      );
-    case "Settled":
-      return (
-        <p
-          className={step.state === "Succeeded" ? "panel-note" : "panel-absent"}
-        >
-          {operationStateSentence(step.state)}
-          {step.refusalCode === undefined
-            ? ""
-            : ` — ${operationRefusalSentence(step.refusalCode)}`}
-        </p>
-      );
-    case "Abandoned":
-      return <p className="panel-failed">{step.reason}</p>;
-  }
+function StepNote(props: {
+  readonly step: OperationStep;
+  readonly action: TicketAction;
+}): ReactNode {
+  const drawn = operationStepLabel(props.step, props.action.action);
+  const tone = drawn.wrong ? "danger" : drawn.settled ? "info" : "live";
+  return <Notice tone={tone} inline role="status" detail={drawn.text} />;
 }
 
 async function cancelOperation(
@@ -111,36 +85,43 @@ async function cancelOperation(
     signal,
   );
   return answered.outcome === "Ok"
-    ? "the cancellation was accepted"
-    : operationFailureSentence(answered);
+    ? "Cancellation accepted"
+    : operationFailureLabel(answered);
 }
 
+/** What the machine charges for and what it undoes, said before it is pressed. */
 function ActionButtons(props: {
   readonly actions: readonly TicketAction[];
   readonly busy: boolean;
+  readonly resume: ResumeConsequence | undefined;
+  readonly rework: ReworkStanding | undefined;
   readonly onChoose: (action: TicketAction) => void;
 }): ReactNode {
   if (props.actions.length === 0)
-    return (
-      <p className="panel-note">
-        no mutation this console can submit is enabled in this phase
-      </p>
-    );
+    return <p className="empty">No action in this phase</p>;
   return (
     <div className="actions">
-      {props.actions.map((action) => (
-        <button
-          key={action.action}
-          type="button"
-          disabled={props.busy}
-          title={ticketActionSentence(action.action)}
-          onClick={() => {
-            props.onChoose(action);
-          }}
-        >
-          {action.action.toLowerCase()}
-        </button>
-      ))}
+      {props.actions.map((action) => {
+        const effect = ticketActionEffect(
+          action.action,
+          props.resume,
+          props.rework,
+        );
+        return (
+          <ActionWithCost
+            key={action.action}
+            action={action.action}
+            effect={effect.effect}
+            cost={effect.cost}
+            {...(effect.more === undefined ? {} : { more: effect.more })}
+            busy={props.busy}
+            danger={action.action === "Revoke" || action.action === "Abandon"}
+            onChoose={() => {
+              props.onChoose(action);
+            }}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -242,6 +223,8 @@ export function TicketActions(props: {
   readonly state: PanelState<TicketResponse>;
   readonly openState: PanelState<TicketNativeActionsResponse>;
   readonly dispatchState: PanelState<DispatchViewResponse>;
+  readonly resume?: ResumeConsequence;
+  readonly rework?: ReworkStanding;
 }): ReactNode {
   const submitting = useSubmitting(props.partition, props.ticket);
   const step = submitting.attempt?.step;
@@ -255,7 +238,7 @@ export function TicketActions(props: {
       ? manualDispatchAction(props.ticket, props.dispatchState.value)
       : undefined;
   return (
-    <DataPanel title="actions" state={props.state}>
+    <DataPanel title="Actions" state={props.state}>
       {(value) => (
         <div className="action-panel">
           <ActionButtons
@@ -268,27 +251,33 @@ export function TicketActions(props: {
                 : nativeActionsAnswers(open)
             }
             busy={busy}
+            resume={props.resume}
+            rework={props.rework}
             onChoose={submitting.submit}
           />
           {props.dispatchState.state === "Failed" ? (
-            <p className="panel-failed">
-              dispatch availability could not be read —{" "}
-              {props.dispatchState.reason}
-            </p>
+            <Notice
+              tone="parked"
+              inline
+              detail={`Dispatch unavailable · ${props.dispatchState.reason}`}
+            />
           ) : null}
-          {step === undefined ? null : <StepNote step={step} />}
+          {step === undefined || submitting.attempt === undefined ? null : (
+            <StepNote step={step} action={submitting.attempt.action} />
+          )}
           {pending === undefined ? null : (
-            <button
-              type="button"
+            <Button
+              variant="quiet"
+              size="sm"
               onClick={() => {
                 submitting.cancel(pending);
               }}
             >
-              cancel operation
-            </button>
+              Cancel
+            </Button>
           )}
           {submitting.cancelled === undefined ? null : (
-            <p className="panel-note">{submitting.cancelled}</p>
+            <Notice tone="info" inline detail={submitting.cancelled} />
           )}
         </div>
       )}

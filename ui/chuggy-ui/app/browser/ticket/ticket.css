@@ -1,0 +1,92 @@
+/* The ticket page: the two columns, the sticky situation, and the anchors. */
+
+@layer page {
+  .ticket-head {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .ticket-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-4);
+  }
+
+  .ticket-title h1 {
+    font-family: var(--font-mono);
+  }
+
+  .ticket-intent {
+    color: var(--ink-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: var(--measure);
+  }
+
+  .ticket-state {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .ticket-figures {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
+    align-items: baseline;
+  }
+
+  .ticket-grid {
+    display: grid;
+    gap: var(--space-4);
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .situation {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+
+  .situation-budgets {
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .ticket-main {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+
+  .ticket-main > section {
+    scroll-margin-top: var(--space-4);
+  }
+
+  .ticket-usage {
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .ledger-partial {
+    color: var(--tone-parked);
+    font-size: var(--text-xs);
+  }
+
+  @media (min-width: 60em) {
+    .ticket-grid {
+      grid-template-columns:
+        minmax(var(--width-aside-min), var(--width-aside))
+        minmax(0, 1fr);
+    }
+
+    .situation {
+      position: sticky;
+      top: var(--space-4);
+    }
+  }
+}

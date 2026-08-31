@@ -1,0 +1,154 @@
+/* Ledger: the journal in its own structure — groups, blocks and ruled rows. */
+
+@layer ui {
+  .ledger {
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .ledger-truncated {
+    color: var(--tone-parked);
+  }
+
+  .ledger-group {
+    display: grid;
+    gap: var(--space-3);
+    padding-left: var(--space-4);
+    border-left: var(--rail) dashed var(--edge-strong);
+  }
+
+  .ledger-group-current {
+    border-left-style: solid;
+    border-left-color: var(--tone-live);
+  }
+
+  .ledger-group-superseded {
+    color: var(--ink-3);
+  }
+
+  .ledger-group > summary {
+    list-style: none;
+    cursor: pointer;
+  }
+
+  .ledger-group > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .ledger-group-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-3);
+  }
+
+  .ledger-group-head h3 {
+    font-family: var(--font-mono);
+  }
+
+  .ledger-group-superseded .ledger-group-head h3 {
+    color: var(--ink-3);
+  }
+
+  .ledger-group-summary {
+    color: var(--ink-3);
+  }
+
+  .ledger-group-rollup {
+    display: block;
+    margin-top: var(--space-1);
+  }
+
+  .ledger-block {
+    display: grid;
+  }
+
+  .ledger-eyebrow {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    padding: var(--space-1) 0;
+  }
+
+  .ledger-rows {
+    display: grid;
+  }
+
+  .ledger-row {
+    display: grid;
+    grid-template-columns:
+      var(--col-label) var(--col-identity) var(--col-pill) var(--col-when)
+      var(--col-spent) minmax(0, 1fr) auto;
+    gap: var(--space-3);
+    align-items: baseline;
+    padding: var(--space-1) 0;
+    border-top: var(--hairline) solid var(--edge);
+    line-height: var(--leading-dense);
+  }
+
+  .ledger-label {
+    color: var(--ink-1);
+    font-family: var(--font-mono);
+    font-size: var(--mono-optical);
+  }
+
+  .ledger-group-superseded .ledger-label {
+    color: var(--ink-3);
+  }
+
+  .ledger-when,
+  .ledger-spent {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ledger-note {
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+    min-width: 0;
+  }
+
+  .ledger-note strong {
+    color: var(--ink-1);
+    font-weight: var(--weight-strong);
+  }
+
+  .ledger-row-ghost .ledger-label {
+    color: var(--ink-3);
+    font-style: italic;
+  }
+
+  .ledger-row-changed {
+    box-shadow: inset var(--rail) 0 0 var(--tone-live);
+    padding-left: var(--space-2);
+    animation: ledger-settle var(--duration-2) var(--ease-out);
+  }
+
+  .ledger-detail {
+    grid-column: 1 / -1;
+    padding: var(--space-2) 0 var(--space-3);
+  }
+
+  @keyframes ledger-settle {
+    from {
+      background: var(--wash-live);
+    }
+
+    to {
+      background: transparent;
+    }
+  }
+
+  @media (max-width: 60em) {
+    .ledger-row {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .ledger-note,
+    .ledger-when,
+    .ledger-spent {
+      grid-column: 1 / -1;
+    }
+  }
+}

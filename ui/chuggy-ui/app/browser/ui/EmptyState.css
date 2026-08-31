@@ -1,0 +1,20 @@
+/* EmptyState: a list with no members, said in a few words. */
+
+@layer ui {
+  .empty {
+    color: var(--ink-3);
+  }
+
+  .empty-page {
+    display: grid;
+    gap: var(--space-4);
+    max-width: var(--measure);
+    margin: 12vh auto;
+    padding: var(--space-5);
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+    color: var(--ink-2);
+    justify-items: start;
+  }
+}
