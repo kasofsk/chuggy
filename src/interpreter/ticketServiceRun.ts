@@ -80,12 +80,12 @@ function ticketServiceRunOnceFailure(
   return {
     partition,
     reason,
-    message: error instanceof Error ? error.message : "unknown failure",
+    message: error instanceof Error ? error.message : String(error),
   };
 }
 
 /** What one project's turn spent and raised, every fault of it a value. */
-interface TicketServiceRunOnceTurn {
+interface TicketServiceTurnOutcome {
   readonly activated: boolean;
   readonly failures: readonly TicketServiceProjectFailure[];
 }
@@ -101,7 +101,7 @@ async function ticketServiceRunOnceTurn(
   config: TicketServiceRuntimeConfig,
   ready: Readiness,
   metrics: TicketServiceMetrics,
-): Promise<TicketServiceRunOnceTurn> {
+): Promise<TicketServiceTurnOutcome> {
   let acquired;
   try {
     acquired = await service.projects.acquire(

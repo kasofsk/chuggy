@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
+import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   decisionEventEnabled,
   decisionEventSubject,
@@ -97,6 +99,21 @@ test("readiness clears only when no pending input remains", async () => {
   assert.deepEqual(await harness.discovery.clearReadiness(readiness), {
     cleared: "WorkRemains",
   });
+});
+
+test("ready breaks the cursor on the project when one tenant holds both", async () => {
+  const tenant = asTenantId(`tenant-shared-${randomUUID()}`);
+  const first = { tenant, project: asProjectId("project-shared-a") };
+  const second = { tenant, project: asProjectId("project-shared-b") };
+  for (const partition of [first, second]) {
+    await harness.store.createProject(partition);
+    await harness.inbox.accept(postgresHarnessSubmission(partition, "shared"));
+  }
+  const resumed = (await harness.discovery.ready(100, first)).map(
+    (item) => item.partition.project,
+  );
+  assert.ok(!resumed.includes(first.project));
+  assert.ok(resumed.includes(second.project));
 });
 
 test("ready resumes strictly after the cursor it is given", async () => {

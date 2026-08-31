@@ -77,6 +77,60 @@ function passService(
   };
 }
 
+/** A per-partition fault a port raises, absent for the partitions it spares. */
+type FleetFault = (partition: Partition) => Error | undefined;
+
+/**
+ * The two-project fleet the containment cases draw, recording every call it is
+ * asked so a case can say which ports a failing project did and did not reach.
+ */
+function recordingFleet(
+  calls: string[],
+  faults: { readonly acquire?: FleetFault; readonly load?: FleetFault },
+): { projects: ProjectStore; discovery: ProjectDiscovery } {
+  const projects = {
+    acquire: (held: Partition) => {
+      calls.push(`acquire:${held.project}`);
+      const fault = faults.acquire?.(held);
+      return fault === undefined
+        ? Promise.resolve({
+            acquired: "Granted",
+            lease: { ...lease, partition: held },
+          })
+        : Promise.reject(fault);
+    },
+    release: (held: Lease) => {
+      calls.push(`release:${held.partition.project}`);
+      return Promise.resolve();
+    },
+    load: (held: Lease) => {
+      const fault = faults.load?.(held.partition);
+      return fault === undefined
+        ? Promise.resolve({ parsed: "Ok", value: [] })
+        : Promise.reject(fault);
+    },
+  } as unknown as ProjectStore;
+  const discovery = {
+    ready: () =>
+      Promise.resolve([
+        { partition: poisoned, generation: 1 },
+        { partition: healthy, generation: 1 },
+      ]),
+    next: () => Promise.resolve(undefined),
+    clearReadiness: (readiness: Readiness) => {
+      calls.push(`clear:${readiness.partition.project}`);
+      return Promise.resolve({ cleared: "Cleared" });
+    },
+  } as unknown as ProjectDiscovery;
+  return { projects, discovery };
+}
+
+/** The fault that poisons one partition and spares every other. */
+function poisonedBy(message: string): FleetFault {
+  return (candidate) =>
+    candidate.project === poisoned.project ? new Error(message) : undefined;
+}
+
 test("one pass leases each discovered project and releases it after idle", async () => {
   const calls: string[] = [];
   const projects: ProjectStore = {
@@ -143,38 +197,12 @@ test("a project held by another writer is discovered but not activated", async (
 
 test("a project whose journal cannot be loaded is counted failed and the next is still activated", async () => {
   const calls: string[] = [];
-  const projects = {
-    acquire: (held: Partition) => {
-      calls.push(`acquire:${held.project}`);
-      return Promise.resolve({
-        acquired: "Granted",
-        lease: { ...lease, partition: held },
-      });
-    },
-    release: (held: Lease) => {
-      calls.push(`release:${held.partition.project}`);
-      return Promise.resolve();
-    },
-    load: (held: Lease) =>
-      held.partition.project === poisoned.project
-        ? Promise.reject(new Error("journal is illegal to replay"))
-        : Promise.resolve({ parsed: "Ok", value: [] }),
-  } as unknown as ProjectStore;
-  const discovery = {
-    ready: () =>
-      Promise.resolve([
-        { partition: poisoned, generation: 1 },
-        { partition: healthy, generation: 1 },
-      ]),
-    next: () => Promise.resolve(undefined),
-    clearReadiness: (readiness: Readiness) => {
-      calls.push(`clear:${readiness.partition.project}`);
-      return Promise.resolve({ cleared: "Cleared" });
-    },
-  } as unknown as ProjectDiscovery;
+  const fleet = recordingFleet(calls, {
+    load: poisonedBy("journal is illegal to replay"),
+  });
 
   assert.deepEqual(
-    await ticketServiceRunOnce(passService(projects, discovery), {
+    await ticketServiceRunOnce(passService(fleet.projects, fleet.discovery), {
       projectsPerPassMax: 4,
       projectLeaseSeconds: 10,
     }),
@@ -194,6 +222,38 @@ test("a project whose journal cannot be loaded is counted failed and the next is
   assert.deepEqual(calls, [
     "acquire:poisoned",
     "release:poisoned",
+    "acquire:healthy",
+    "clear:healthy",
+    "release:healthy",
+  ]);
+});
+
+test("a project whose lease cannot be acquired is counted failed and never released", async () => {
+  const calls: string[] = [];
+  const fleet = recordingFleet(calls, {
+    acquire: poisonedBy("lease table is unreachable"),
+  });
+
+  assert.deepEqual(
+    await ticketServiceRunOnce(passService(fleet.projects, fleet.discovery), {
+      projectsPerPassMax: 4,
+      projectLeaseSeconds: 10,
+    }),
+    {
+      discovered: 2,
+      activated: 1,
+      failed: 1,
+      failures: [
+        {
+          partition: poisoned,
+          reason: "AcquisitionFailed",
+          message: "lease table is unreachable",
+        },
+      ],
+    },
+  );
+  assert.deepEqual(calls, [
+    "acquire:poisoned",
     "acquire:healthy",
     "clear:healthy",
     "release:healthy",

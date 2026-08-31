@@ -165,3 +165,124 @@ test("every control-plane responsibility starts, passes and stops against its po
   );
   assert.ok(found.selectorPasses > 0);
 });
+
+const ticketServiceFleetPreamble = `
+    const roots = await import('./src/roots/controlPlane.ts');
+    const schema = await import('./src/adapters/postgres/runtimeSchema.ts');
+    const requirements = {
+      pool: { query: async () => ({ rows: schema.currentRuntimeSchemaContract.required }) },
+    };
+    const config = { idleIntervalMilliseconds: 1, shutdownDrainMilliseconds: 1000 };
+    const idleWriter = {
+      next: async () => undefined,
+      clearReadiness: async () => ({ cleared: 'Cleared' }),
+    };
+  `;
+
+const cursorSweepProgram = `
+    ${ticketServiceFleetPreamble}
+    const fleet = ['alpha', 'beta', 'gamma'].map(
+      (project) => ({ tenant: 'tenant', project }),
+    );
+    const cursors = [];
+    const service = {
+      domain: {},
+      discovery: {
+        ...idleWriter,
+        ready: async (partitionsMax, after) => {
+          cursors.push(after === undefined ? null : after.project);
+          return fleet
+            .filter((one) => after === undefined || one.project > after.project)
+            .slice(0, partitionsMax)
+            .map((partition) => ({ partition, generation: 1 }));
+        },
+      },
+      decisions: {},
+      projects: {
+        acquire: async (partition) => ({ acquired: 'Granted', lease: { partition } }),
+        release: async () => undefined,
+        load: async () => ({ parsed: 'Ok', value: [] }),
+      },
+      owner: 'owner',
+      monotonicNow: () => 0,
+    };
+    const runtime = roots.ticketServiceProcess(
+      service,
+      { projectsPerPassMax: 1, projectLeaseSeconds: 1 },
+      requirements,
+      config,
+    );
+    await runtime.start();
+    const deadline = Date.now() + 10000;
+    while (cursors.length < 5 && Date.now() < deadline)
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    await runtime.stop();
+    process.stdout.write(JSON.stringify(cursors.slice(0, 5)));
+  `;
+
+test("the ticket-service loop sweeps the fleet by cursor and wraps at its end", async () => {
+  const result = await execute(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--input-type=module",
+      "--eval",
+      cursorSweepProgram,
+    ],
+    { cwd: process.cwd() },
+  );
+  assert.deepEqual(JSON.parse(result.stdout), [
+    null,
+    "alpha",
+    "beta",
+    "gamma",
+    null,
+  ]);
+});
+
+const containedFaultProgram = `
+    ${ticketServiceFleetPreamble}
+    const partition = { tenant: 'acme', project: 'web' };
+    const service = {
+      domain: {},
+      discovery: { ...idleWriter, ready: async () => [{ partition, generation: 1 }] },
+      decisions: {},
+      projects: {
+        acquire: async () => ({ acquired: 'Granted', lease: { partition } }),
+        release: async () => undefined,
+        load: async () => { throw new Error('journal is illegal to replay'); },
+      },
+      owner: 'owner',
+      monotonicNow: () => 0,
+    };
+    const runtime = roots.ticketServiceProcess(
+      service,
+      { projectsPerPassMax: 1, projectLeaseSeconds: 1 },
+      requirements,
+      config,
+    );
+    await runtime.start();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const health = runtime.health();
+    await runtime.stop();
+    process.stdout.write(JSON.stringify(health));
+  `;
+
+test("a contained fault reaches an operator on stderr and leaves the loop live", async () => {
+  const result = await execute(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--input-type=module",
+      "--eval",
+      containedFaultProgram,
+    ],
+    { cwd: process.cwd() },
+  );
+  assert.deepEqual(JSON.parse(result.stdout), { live: true, ready: true });
+  assert.ok(
+    result.stderr.includes(
+      "ticket service: acme/web ActivationFailed: journal is illegal to replay",
+    ),
+  );
+});
