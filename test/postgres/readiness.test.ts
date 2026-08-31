@@ -117,18 +117,21 @@ test("ready breaks the cursor on the project when one tenant holds both", async 
 });
 
 test("ready resumes strictly after the cursor it is given", async () => {
-  for (const label of ["sweep-one", "sweep-two"]) {
-    const partition = await postgresHarnessProject(harness.store, label);
-    await harness.inbox.accept(postgresHarnessSubmission(partition, label));
+  const tenant = asTenantId(`tenant-sweep-${randomUUID()}`);
+  const swept = ["a", "b", "c"].map((suffix) => ({
+    tenant,
+    project: asProjectId(`project-sweep-${suffix}`),
+  }));
+  for (const partition of swept) {
+    await harness.store.createProject(partition);
+    await harness.inbox.accept(postgresHarnessSubmission(partition, "sweep"));
   }
-  const swept = await harness.discovery.ready(100);
-  assert.ok(swept.length >= 2);
   const head = swept[0];
   assert.ok(head !== undefined);
-  const resumed = await harness.discovery.ready(100, head.partition);
+  const resumed = await harness.discovery.ready(2, head);
   assert.deepEqual(
-    resumed.map((item) => item.partition.project),
-    swept.slice(1).map((item) => item.partition.project),
+    resumed.map((item) => item.partition),
+    swept.slice(1),
   );
 });
 
