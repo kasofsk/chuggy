@@ -314,6 +314,19 @@ test("the usage panel names the basis once and breaks the spend down twice", asy
   expect(screen.getByRole("rowheader", { name: "Work" })).toBeDefined();
 });
 
+test("every dollar the page draws carries the basis it was priced on", async () => {
+  const { container } = await drawTicket({
+    shapes: ticket21Parked,
+    ticket: parkedTicket,
+  });
+  const dollars = [...container.querySelectorAll(".fig")].filter((cell) =>
+    (cell.textContent ?? "").includes("$"),
+  );
+  expect(dollars.length).toBeGreaterThan(0);
+  for (const cell of dollars)
+    expect(cell.querySelector(".fig-basis")?.textContent).toBe("list");
+});
+
 test("after a resume the current cycle gains a run and a running stage", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Resumed,
