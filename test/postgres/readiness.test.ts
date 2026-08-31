@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import {
+  decisionEventEnabled,
+  decisionEventSubject,
   taskDoneEvent,
   type DecisionEvent,
 } from "../../src/actor/decisionEvent.ts";
+import type { Core } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import {
   allNativeActionResolutions,
@@ -12,8 +15,8 @@ import {
   type ApprovalResolution,
   type NativeActionResolution,
 } from "../../src/interpreter/ticketCommand.ts";
-import { id } from "../domain/fixtures.ts";
-import { plainResult } from "../actor/harness.ts";
+import { coreOf, id, ticketOn } from "../domain/fixtures.ts";
+import { plainResult, refinementInstance } from "../actor/harness.ts";
 import {
   postgresHarnessOpen,
   postgresHarnessProject,
@@ -21,7 +24,11 @@ import {
   postgresHarnessSubmission,
   type PostgresHarness,
 } from "./harness.ts";
-import { seedOpenAction, type SeededAction } from "./nativeActionFixture.ts";
+import {
+  seedOpenAction,
+  seededPhase,
+  type SeededAction,
+} from "./nativeActionFixture.ts";
 
 let harness: PostgresHarness;
 before(async () => {
@@ -90,19 +97,52 @@ test("readiness clears only when no pending input remains", async () => {
 });
 
 /**
- * The event each answer becomes, keyed by the exact union the mapping covers,
- * so a resolution added to the roster is a compile error here as well as at the
- * mapping. The approvals name no domain command and this type excludes them.
+ * The park a seeded desk task stands on, as a `Core`, at the gas a case hands
+ * it. The phase and the wall are the seed's own; the resume point is this
+ * suite's, because the projection carries none and it is the lever every
+ * assertion below turns.
  */
-const resolutionEvents: Record<
-  Exclude<NativeActionResolution, ApprovalResolution>,
-  DecisionEvent["type"]
-> = {
-  Resume: "ResumeTicket",
-  RetryHandoff: "ResumeTicket",
-  Revoke: "Revoke",
-  AbandonHandoff: "AbandonHandoff",
-};
+function parkedCore(action: SeededAction, gasLeft: number): Core {
+  return coreOf([
+    ticketOn(refinementInstance, "ManagedFinalizer", {
+      phase: seededPhase(action.kind),
+      reason: action.reason,
+      resumeAt:
+        action.kind === "HandoffBlock"
+          ? "ResumePublishingHandoff"
+          : "ResumeEvaluating",
+      gasLeft,
+    }),
+  ]);
+}
+
+/**
+ * What the mapping may not get wrong, asked of the machine rather than of a
+ * table this suite would have to keep right: the event is one the park enables,
+ * and it is the resume exactly when it is not the answer's own name.
+ */
+function assertAnswerNames(
+  resolution: Exclude<NativeActionResolution, ApprovalResolution>,
+  action: SeededAction,
+  event: DecisionEvent,
+): void {
+  assert.equal(decisionEventSubject(event), action.ticket, resolution);
+  assert.ok(
+    decisionEventEnabled(refinementInstance, parkedCore(action, 1), event),
+    `${resolution} named ${event.type}, which its park does not enable`,
+  );
+  const spent = decisionEventEnabled(
+    refinementInstance,
+    parkedCore(action, 0),
+    event,
+  );
+  if (event.type === resolution) {
+    assert.ok(spent, `${resolution} named a command the gas gates`);
+    return;
+  }
+  assert.equal(event.type, "ResumeTicket", resolution);
+  assert.equal(spent, false, `${resolution} named a resume gas does not gate`);
+}
 
 /** Which desk task asks for one answer, read off the contract's own pairing. */
 function resolutionKind(
@@ -133,38 +173,39 @@ test("every answer a desk task admits becomes the domain command it names", asyn
     ): resolution is Exclude<NativeActionResolution, ApprovalResolution> =>
       !isApprovalResolution(resolution),
   );
-  assert.deepEqual(
-    [...answerable].sort(),
-    Object.keys(resolutionEvents).sort(),
-    "the roster's answerable resolutions are not the ones this case pins",
-  );
+  const asked = new Set<string>();
   for (const resolution of answerable) {
     const label = `resolution-${resolution}`;
     const partition = await postgresHarnessProject(harness.store, label);
-    const action = `${label}-action`;
+    const actionId = `${label}-action`;
     const kind = resolutionKind(resolution);
-    await seedOpenAction(harness, partition, action, {
+    const seeded: SeededAction = {
       ticket: 1,
       sequence: 1,
       kind,
       reason: kind === "HandoffBlock" ? "NoReason" : "WorkFailed",
       offers: [resolution],
-    });
+    };
+    await seedOpenAction(harness, partition, actionId, seeded);
     const accepted = await harness.inbox.accept({
       ...postgresHarnessSubmission(partition, label),
       command: {
         version: 1,
         command: "ResolveNativeAction",
-        action,
-        authorizingSeq: 1,
+        action: actionId,
+        authorizingSeq: seeded.sequence,
         resolution,
       },
     });
     assert.equal(accepted.accepted, "Accepted", resolution);
-    assert.deepEqual(
-      await resolvedAnswer(partition),
-      { type: resolutionEvents[resolution], value: 1 },
-      resolution,
-    );
+    const event = await resolvedAnswer(partition);
+    assert.ok(event !== undefined, resolution);
+    assertAnswerNames(resolution, seeded, event);
+    asked.add(kind);
   }
+  assert.deepEqual(
+    [...asked].sort(),
+    ["HandoffBlock", "TicketEscalation"],
+    "the answers this case drove did not reach both parked desk tasks",
+  );
 });
