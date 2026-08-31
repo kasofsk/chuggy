@@ -465,6 +465,28 @@ test("a rework-wall resume says it reworks rather than re-evaluates", async () =
   expect(screen.queryByText(/Re-runs evaluation from stage 1/u)).toBeNull();
 });
 
+/**
+ * A ticket that authored no rework budget declined the rework economy, so its
+ * rework wall is revoke-only. The wire carries no resume point on this read, so
+ * the page must reach that answer from the authoring it holds.
+ */
+test("a rework wall on a ticket that bought no budget offers no resume", async () => {
+  const { resumeAt, ...withoutPoint } = parkedTicket;
+  expect(resumeAt).toBe("ResumeEvaluating");
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: withoutPoint,
+    authoring: {
+      ...ticket21Authoring,
+      reworkPolicy: { type: "BudgetedRework", value: 0 },
+    },
+  });
+  expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+  expect(
+    screen.getByText("Nothing to resume · only Revoke exits this wall"),
+  ).toBeDefined();
+});
+
 test("every action the page draws describes itself by an id that resolves", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
