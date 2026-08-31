@@ -55,6 +55,36 @@ cite 'See `.chug/tasks/missing.sh` for the details.'
 run_in "$R"
 check "a missing path under a tracked root is a finding" 1 "$RC" "notes.md:1: .chug/tasks/missing.sh"
 
+# R1b: a `./` token resolves against the file that writes it, and the shape
+# that needs it is a module naming its neighbour under a directory whose name
+# is also a tracked top level.
+seeded_repo
+mkdir -p "$R/.chug/tasks/ui"
+printf 'export const x = 1\n' > "$R/.chug/tasks/ui/Pill.tsx"
+printf '%s\n' 'import { x } from "./ui/Pill.tsx"' > "$R/.chug/tasks/draw.tsx"
+git -C "$R" add -A
+run_in "$R"
+check "a relative token resolves beside the file that writes it" 0 "$RC" "0 finding(s)"
+
+# The root-relative reading is still open, which is what the sequencer calling
+# a gate is: the caller sits in a directory holding no gate directory of its
+# own, and names one from the root it changed to.
+seeded_repo
+printf '%s\n' '# it runs ./.chug/tasks/real.sh' > "$R/.chug/tasks/caller.sh"
+git -C "$R" add -A
+run_in "$R"
+check "a relative token still resolves against the root" 0 "$RC" "0 finding(s)"
+
+# Neither reading, and it is a finding like any other. The tracked top level
+# is what puts the token under R1 in the first place.
+seeded_repo
+mkdir -p "$R/ui"
+printf 'a console\n' > "$R/ui/README.md"
+printf '%s\n' 'import { x } from "./ui/Missing.tsx"' > "$R/.chug/tasks/draw.tsx"
+git -C "$R" add -A
+run_in "$R"
+check "a relative token that resolves nowhere is a finding" 1 "$RC" "ui/Missing.tsx"
+
 # A directory claim is satisfied by anything tracked beneath it.
 seeded_repo
 cite 'Gate scripts live in `.chug/tasks/`.'

@@ -26,7 +26,9 @@ fail=0
 
 check() { # <name> <expected-rc> <actual-rc> <must-contain>
 	_name="$1"; _want="$2"; _got="$3"; _needle="$4"
-	if [ "$_got" = "$_want" ] && grep -qF "$_needle" "$OUT"; then
+	# `--` because a needle may start with a dash, and a finding about a
+	# negative length reads as an option to grep.
+	if [ "$_got" = "$_want" ] && grep -qF -- "$_needle" "$OUT"; then
 		echo "ok   - $_name (rc=$_got)"
 		pass=$((pass + 1))
 	else

@@ -352,6 +352,14 @@ module chuggy_test {
     phase: Evaluating, reworkLeft: 0, gasLeft: 2, tasks: oneFailedE0, spawned: 2 }) }
   pure val dReworkWall = DB::decideEvalStageReduce(cReworkWall, 1)
 
+  /// The same wall on a ticket authored NO rework budget: it declined the
+  /// rework economy, so the park offers no resume at all and revoke is its
+  /// only exit — the cascade wall's arrangement, reached by authoring.
+  pure val cReworkWallNoBudget: Core = { tickets: Map(1 ->
+    { ...freshB(Set(), progU2, ManagedFinalizer), reworkPolicy: BudgetedRework(0),
+      phase: Evaluating, reworkLeft: 0, gasLeft: 2, tasks: oneFailedE0, spawned: 2 }) }
+  pure val dReworkWallNoBudget = DB::decideEvalStageReduce(cReworkWallNoBudget, 1)
+
   /// Deadline wall: budget remains but the gas is gone.
   pure val cEvalGasWall: Core = { tickets: Map(1 -> { ...freshB(Set(), progU2, ManagedFinalizer),
     phase: Evaluating, reworkLeft: 1, gasLeft: 0, tasks: oneFailedE0, spawned: 2 }) }
@@ -360,8 +368,15 @@ module chuggy_test {
   run evalWallsNamedTest = assert(and {
     dReworkWall.rec.label == "ticket-escalated rework_budget_exhausted",
     dReworkWall.post.tickets.get(1).reason == ReworkBudgetExhausted,
-    dReworkWall.post.tickets.get(1).resumeAt == ResumeEvaluating,
+    dReworkWall.post.tickets.get(1).resumeAt == ResumeReworking,
     mB(dReworkWall.post) < mB(cReworkWall),
+    // Same wall, no authored budget: no resume, and the desk may only revoke.
+    dReworkWallNoBudget.rec.label == "ticket-escalated rework_budget_exhausted",
+    dReworkWallNoBudget.post.tickets.get(1).reason == ReworkBudgetExhausted,
+    dReworkWallNoBudget.post.tickets.get(1).resumeAt == NoResume,
+    not(DB::retryableIn(dReworkWallNoBudget.post, 1)),
+    DB::revocableIn(dReworkWallNoBudget.post, 1),
+    mB(dReworkWallNoBudget.post) < mB(cReworkWallNoBudget),
     dEvalGasWall.rec.label == "ticket-escalated gas_exhausted",
     dEvalGasWall.post.tickets.get(1).reason == GasExhausted,
     mB(dEvalGasWall.post) < mB(cEvalGasWall)
@@ -481,7 +496,7 @@ module chuggy_test {
   run stagedShortCircuitEscalatesTest = assert(and {
     dStagedWall.rec.label == "ticket-escalated rework_budget_exhausted",
     dStagedWall.post.tickets.get(1).phase == Escalated,
-    dStagedWall.post.tickets.get(1).resumeAt == ResumeEvaluating,
+    dStagedWall.post.tickets.get(1).resumeAt == ResumeReworking,
     dStagedWall.post.tickets.get(1).record ==
       [wt(1, Passed), wt(2, Passed), et(3, 0, Failed)],
     dStagedWall.post.tickets.get(1).record.indices().forall(i =>
@@ -691,26 +706,48 @@ module chuggy_test {
     mB(dRetryChargedWork.post) < mB({ tickets: Map(1 -> escWorking) })
   })
 
-  /// The Evaluating resume is A FRESH FAN-OUT OF THE LOWEST STAGE
-  /// — re-enter evaluation with a fresh eval fan-out, stages never resumed
-  /// mid-sequence — new task ids, the failed history untouched in the
-  /// record.
-  pure val escEval: Ticket = { ...freshB(Set(), progStaged, ManagedFinalizer),
-    phase: Escalated, resumeAt: ResumeEvaluating, reason: ReworkBudgetExhausted,
+  /// THE REWORK WALL'S RESUME: refill the eval-rework account to the
+  /// AUTHORED budget and respawn WORK. That wall is reached by a verdict,
+  /// which has no re-judge to offer, so it buys a new artifact instead of
+  /// a second opinion on the old one; the lowest-stage fresh fan-out an
+  /// Evaluating resume gives is pinned from the execution-blocked park
+  /// above, where an interruption and not a verdict did the parking.
+  pure val escRework: Ticket = { ...freshB(Set(), progStaged, ManagedFinalizer),
+    phase: Escalated, resumeAt: ResumeReworking, reason: ReworkBudgetExhausted,
     gasLeft: 2, reworkLeft: 0,
     record: [wt(1, Passed), wt(2, Passed), et(3, 0, Failed)], spawned: 3 }
-  pure val dRetryEval = DB::decideResumeTicket({ tickets: Map(1 -> escEval) }, 1)
+  pure val cEscRework: Core = { tickets: Map(1 -> escRework) }
+  pure val dRetryRework = DB::decideResumeTicket(cEscRework, 1)
 
-  run resumeTicketEvalFreshFanoutTest = assert(and {
-    dRetryEval.rec.label == "ticket-resumed",
-    dRetryEval.rec.effects == ["SpawnEvalTasks"],
-    dRetryEval.post.tickets.get(1).phase == Evaluating,
-    dRetryEval.post.tickets.get(1).gasLeft == 1,   // charged
-    // Lowest stage, fresh id 4; the retired stage-0 failure stays on record.
-    dRetryEval.post.tickets.get(1).tasks == Set(er(4, 0)),
-    dRetryEval.post.tickets.get(1).record ==
+  /// The same wall on a ticket priced FREE: it still pays, because it
+  /// enters Working (standing rule 2), so it descends and joins no CHURN.
+  pure val escReworkFree: Ticket = { ...escRework, resumePricing: RetryFree }
+  pure val cEscReworkFree: Core = { tickets: Map(1 -> escReworkFree) }
+  pure val dRetryReworkFree = DF::decideResumeTicket(cEscReworkFree, 1)
+
+  run resumeTicketReworkRefillsTest = assert(and {
+    dRetryRework.rec.label == "ticket-resumed",
+    dRetryRework.rec.effects == ["SpawnWorkTasks"],
+    dRetryRework.rec.transitions == [{ ticket: 1, from: Escalated, to: Working }],
+    dRetryRework.post.tickets.get(1).reworkLeft == 1,  // refilled to the authored budget
+    dRetryRework.post.tickets.get(1).gasLeft == 1,     // charged
+    dRetryRework.post.tickets.get(1).reason == NoReason,
+    dRetryRework.post.tickets.get(1).resumeAt == NoResume,
+    // Fresh work ids above an INTACT record: the failed stage stays retired.
+    dRetryRework.post.tickets.get(1).tasks == Set(wr(4), wr(5)),
+    dRetryRework.post.tickets.get(1).record ==
       [wt(1, Passed), wt(2, Passed), et(3, 0, Failed)],
-    mB(dRetryEval.post) < mB({ tickets: Map(1 -> escEval) })
+    mB(dRetryRework.post) < mB(cEscRework),
+    // RetryFree changes nothing at this wall.
+    dRetryReworkFree.post.tickets.get(1).phase == Working,
+    dRetryReworkFree.post.tickets.get(1).gasLeft == 1,
+    dRetryReworkFree.post.tickets.get(1).reworkLeft == 1,
+    mB(dRetryReworkFree.post) < mB(cEscReworkFree),
+    // Gas is what the desk needs here, under BOTH pricings: a ticket that
+    // reached this wall with both accounts empty is parked for good.
+    DB::retryableIn(cEscRework, 1), DF::retryableIn(cEscReworkFree, 1),
+    not(DB::retryableIn({ tickets: Map(1 -> { ...escRework, gasLeft: 0 }) }, 1)),
+    not(DF::retryableIn({ tickets: Map(1 -> { ...escReworkFree, gasLeft: 0 }) }, 1))
   })
 
   /// Free retry metering: a resume into Finalizer charges nothing and the
@@ -795,7 +832,7 @@ module chuggy_test {
   /// no cleanup step anywhere).
   pure val jGated: Ticket = { ...jBase, phase: Finalizing }
   pure val jEsc: Ticket = { ...jBase, phase: Escalated,
-    resumeAt: ResumeEvaluating, reason: ReworkBudgetExhausted }
+    resumeAt: ResumeReworking, reason: ReworkBudgetExhausted }
   pure val jParkPre: Ticket = { ...jBase, phase: Escalated,
     resumeAt: ResumeWorking, reason: TicketConfigIncompatible }
   pure val jParkDep: Ticket = { ...jBase, phase: Escalated,
@@ -1048,7 +1085,7 @@ module chuggy_test {
   /// repeat the mistake quietly.
   run handBuiltFixturesAccountedTest = assert(and {
     accounted(cWorkFail), accounted(cEvalFail),
-    accounted(cReworkWall), accounted(cEvalGasWall),
+    accounted(cReworkWall), accounted(cReworkWallNoBudget), accounted(cEvalGasWall),
     accounted(cStagedWork), accounted(cStagedNoBudget),
     accounted(cMixedAny), accounted(cMixedUna),
     accounted(cFlatWork), accounted(cFailAny),
@@ -1057,7 +1094,7 @@ module chuggy_test {
     accounted(cChain), accounted(cGateOcc),
     accounted(cXDepPre), accounted(cXDepDone),
     accountedTicket(escFinalizer), accountedTicket(escWorking),
-    accountedTicket(escEval),
+    accountedTicket(escRework), accountedTicket(escReworkFree),
     accountedTicket(jBase), accountedTicket(jPend), accountedTicket(jWork),
     accountedTicket(jEval), accountedTicket(jFinalizer), accountedTicket(jGated),
     accountedTicket(jEsc), accountedTicket(jParkPre), accountedTicket(jParkDep)

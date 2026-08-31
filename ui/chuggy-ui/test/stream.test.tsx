@@ -323,7 +323,7 @@ async function banner(
     </Harness>,
   );
   await settled();
-  return view.container.querySelector(".banner");
+  return view.container.querySelector(".notice-parked");
 }
 
 /** What the shell's own element says about the stream, which is not what the
@@ -423,7 +423,7 @@ test("a reopen after a token renewal is not read as a first open", async () => {
     </Harness>,
   );
   await settled();
-  expect(view.container.querySelector(".banner")).toBeNull();
+  expect(view.container.querySelector(".notice-parked")).toBeNull();
 
   await act(async () => {
     holder.renew();
@@ -431,7 +431,7 @@ test("a reopen after a token renewal is not read as a first open", async () => {
   });
   await settled();
 
-  expect(view.container.querySelector(".banner")).not.toBeNull();
+  expect(view.container.querySelector(".notice-parked")).not.toBeNull();
 });
 
 /**
@@ -465,7 +465,7 @@ test("a project change is a first open again rather than a reopen", async () => 
     </Harness>,
   );
   await settled();
-  expect(view.container.querySelector(".banner")).toBeNull();
+  expect(view.container.querySelector(".notice-parked")).toBeNull();
 
   view.rerender(
     <Harness
@@ -479,5 +479,5 @@ test("a project change is a first open again rather than a reopen", async () => 
   );
   await settled();
 
-  expect(view.container.querySelector(".banner")).toBeNull();
+  expect(view.container.querySelector(".notice-parked")).toBeNull();
 });

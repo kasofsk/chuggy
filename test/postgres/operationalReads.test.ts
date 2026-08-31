@@ -87,6 +87,41 @@ test("operational reads page scheduler-owned execution state", async () => {
   assert.equal(status.schedulerFreshness, "Unknown");
 });
 
+/**
+ * The identity that says which executions were spawned together. Without it the
+ * only thing joining a fan-out on the wire is the shape of an adapter's
+ * generated execution ids.
+ */
+test("every execution of one fan-out names the request that spawned it", async () => {
+  const project = await schedulerProject(rig, "operational-request", {
+    tasks: 2,
+  });
+  await rig.store.registerSpawn(
+    await schedulerClaimFor(
+      rig,
+      project.partition,
+      project.request,
+      schedulerOwner("operational-request"),
+    ),
+    executionSchedulerDefaults.nTasks,
+  );
+  const reads = postgresOperationalReads(ingress);
+  const page = await reads.executions(project.partition, {
+    limit: 10,
+    ticket: id(project.ticket),
+  });
+  assert.equal(page.executions.length, 2);
+  assert.deepEqual(
+    [...new Set(page.executions.map((each) => each.request))],
+    [project.request],
+  );
+  const detail = await reads.execution(
+    project.partition,
+    page.executions[0]?.execution ?? asExecutionId("absent"),
+  );
+  assert.equal(detail?.request, project.request);
+});
+
 test("an execution reads back empty until its run writes evidence", async () => {
   const project = await schedulerProject(rig, "operational-run");
   await rig.store.registerSpawn(

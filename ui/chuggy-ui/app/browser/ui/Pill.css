@@ -1,0 +1,97 @@
+/* Pill: one word, one mark, one tone. */
+
+@layer ui {
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0 var(--space-2);
+    border: var(--hairline) solid currentColor;
+    border-radius: var(--radius-1);
+    font: var(--weight-medium) var(--text-sm) / var(--leading-dense)
+      var(--font-mono);
+    color: var(--ink-2);
+    white-space: nowrap;
+    vertical-align: baseline;
+  }
+
+  .pill-emphasis {
+    font-size: var(--text-md);
+    font-weight: var(--weight-strong);
+    padding: var(--space-1) var(--space-3);
+  }
+
+  .pill-pass {
+    color: var(--tone-pass);
+  }
+
+  .pill-fail {
+    color: var(--tone-fail);
+  }
+
+  .pill-live {
+    color: var(--tone-live);
+  }
+
+  .pill-queued {
+    color: var(--tone-queued);
+  }
+
+  .pill-parked {
+    color: var(--tone-parked);
+  }
+
+  .pill-retired {
+    color: var(--tone-retired);
+    border-style: dashed;
+  }
+
+  .pill-neutral {
+    color: var(--ink-1);
+    border-color: var(--edge-strong);
+  }
+
+  .pill-mark {
+    display: inline-block;
+    width: 0.5em;
+    height: 0.5em;
+    border-radius: 50%;
+    background: currentColor;
+    flex: none;
+  }
+
+  .pill-fail .pill-mark {
+    border-radius: 0;
+  }
+
+  .pill-queued .pill-mark {
+    background: transparent;
+    box-shadow: inset 0 0 0 var(--hairline) currentColor;
+  }
+
+  .pill-parked .pill-mark {
+    width: 0.22em;
+    height: 0.85em;
+    border-radius: 0;
+  }
+
+  .pill-live .pill-mark {
+    animation: pill-pulse var(--duration-pulse) var(--ease-out) infinite;
+  }
+
+  .pill-retired .pill-mark,
+  .pill-neutral .pill-mark {
+    display: none;
+  }
+
+  @keyframes pill-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+
+    50% {
+      opacity: 0.3;
+    }
+  }
+}

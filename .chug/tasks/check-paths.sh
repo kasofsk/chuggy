@@ -11,6 +11,11 @@
 #   R1  Its first segment is a tracked top-level entry of this repo, so the
 #       token is claiming a path here and the path must resolve — as a tracked
 #       file, or as a directory with any tracked file beneath it.
+#   R1b A token written with a leading `./` is relative to something, and which
+#       is not decidable from the text: a module names its neighbour, a script
+#       that has cd'd to the root names the root. So it resolves against the
+#       directory of the file that writes it OR against the root, and is a
+#       finding only when it resolves against neither.
 #   R2  Its first segment is NOT tracked now, but the token or that segment was
 #       tracked at some point in this history. The tree deleted it and the
 #       sentence did not notice. Asking git what it ever had separates some
@@ -121,7 +126,16 @@ FNR == 1 {
 		# A glob or a template immediately after the match means the match is
 		# the leading literal of a pattern, not a path.
 		if (index("*?{[<$", after) > 0 && after != "") continue
-		sub(/^\.\//, "", t)
+		# A leading `./` says the token is relative to something, and which is
+		# not lexical: a module names its neighbour, a script that has changed
+		# to the root names the root. The directory holding the file goes out
+		# beside the token so the resolver can try both.
+		here = ""
+		if (substr(t, 1, 2) == "./") {
+			here = FILENAME
+			if (!sub(/\/[^\/]*$/, "", here)) here = "."
+			sub(/^\.\//, "", t)
+		}
 		while (length(t) > 0 && index(".,;:)", substr(t, length(t), 1)) > 0) {
 			t = substr(t, 1, length(t) - 1)
 		}
@@ -129,7 +143,7 @@ FNR == 1 {
 		if (junk(t)) continue
 		# The verdict still runs on a marked line; only its severity changes.
 		marked = (design && $0 ~ /<!-- *(intent|runtime|absent) *-->/)
-		print FILENAME ":" FNR ":" t ":" (marked ? "MARKED" : "PLAIN")
+		print FILENAME ":" FNR ":" t ":" (marked ? "MARKED" : "PLAIN") ":" here
 	}
 }
 ' "$@" > "$work/candidates"
@@ -165,10 +179,15 @@ FILENAME == tf {
 	loc = $1 ":" $2
 	tok = $3
 	marked = ($4 == "MARKED")
+	here = $5
 	first = tok
 	sub(/\/.*$/, "", first)
 	bare = tok
 	sub(/\/$/, "", bare)
+	if (here != "" && here != ".") {
+		near = here "/" bare
+		if (near in path || (near "/") in dir) { print "OK"; next }
+	}
 	if (!(first in top)) {
 		if (!(first in gonetop)) next
 		print (bare in gone ? "GONE" : "UNDER") "\t" loc "\t" tok "\t" first

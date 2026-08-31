@@ -33,6 +33,7 @@ import {
 } from "../../src/adapters/postgres/runtimeSchema.ts";
 import { briefFinalizationModes } from "../../src/contract/rosters.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
+import { resumeTags } from "../../src/domain/generated/modelTypes.ts";
 import { schemaCompatibilityPrecondition } from "../../src/interpreter/serviceRuntime.ts";
 import { postgresHarnessUrl } from "./harness.ts";
 import type pg from "pg";
@@ -1436,38 +1437,44 @@ test("migration 42 opens the brief's doors to the roles that reach it and no oth
   });
 });
 
+/** The five columns the reads need, which is what the grant may open and no more. */
+const journalInstantsColumns = [
+  "tenant",
+  "project",
+  "seq",
+  "entry",
+  "committed_at",
+];
+
 /**
  * The grant is column-level, so `has_table_privilege` answers false for the
- * table even where it is held — the question has to be asked of each column, and
- * of columns the API has no business reading, because a grant one column too
- * wide reads exactly like a grant that is right.
+ * table even where it is held, and the question has to be asked of each column.
+ * It is asked of every column the table has rather than of a list written here,
+ * because a grant one column too wide reads exactly like a grant that is right
+ * and a list would not be asking about the column that was added.
  */
-test("migration 55 opens five journal columns to the API and leaves the rest shut", async () => {
+test("migration 56 opens five journal columns to the API and leaves the rest shut", async () => {
   await migrationDatabase("journal_instants_grants", async (subject) => {
-    await migrationSeedApplied(subject, 55);
-    await applyMigration(subject, 55);
-    for (const [column, granted] of [
-      ["tenant", true],
-      ["project", true],
-      ["seq", true],
-      ["entry", true],
-      ["committed_at", true],
-      ["entry_digest", false],
-      ["prev_digest", false],
-      ["owner", false],
-      ["fencing_epoch", false],
-      ["recovery_epoch", false],
-    ] as const)
-      assert.equal(
-        (
-          await subject.query<{ granted: boolean }>(
-            "SELECT has_column_privilege($1,'journal_entry',$2,'SELECT') AS granted",
-            [apiRole, column],
-          )
-        ).rows[0]?.granted,
-        granted,
-        `${apiRole} reads journal_entry.${column}`,
-      );
+    await migrationSeedApplied(subject, 56);
+    await applyMigration(subject, 56);
+    const columns = await subject.query<{ column: string; granted: boolean }>(
+      `SELECT a.attname AS column,
+              has_column_privilege($1,'journal_entry',a.attname,'SELECT') AS granted
+         FROM pg_attribute a
+        WHERE a.attrelid='journal_entry'::regclass
+          AND a.attnum > 0 AND NOT a.attisdropped
+        ORDER BY a.attnum`,
+      [apiRole],
+    );
+    assert.ok(
+      columns.rows.length > journalInstantsColumns.length,
+      "the journal has columns beyond the ones this grant opens",
+    );
+    assert.deepEqual(
+      columns.rows.filter((each) => each.granted).map((each) => each.column),
+      journalInstantsColumns,
+      `what ${apiRole} may read of journal_entry`,
+    );
     for (const privilege of ["INSERT", "UPDATE", "DELETE"] as const)
       assert.equal(
         (
@@ -1485,6 +1492,19 @@ test("migration 55 opens five journal columns to the API and leaves the rest shu
 /** How many tickets the index case releases, which is what gives a scan something to cost. */
 const journalInstantsReleases = 400;
 
+/**
+ * The event types the fixture writes per ticket, the release first. The other
+ * two also name their ticket in `event.value.ticket`, which is what makes the
+ * index's partial predicate load-bearing: a predicate widened past the release
+ * event indexes them too, and the release lookup then reads three entries where
+ * it should read one.
+ */
+const journalInstantsEvents = [
+  "ReleaseTicket",
+  "TaskDone",
+  "FinalizationResult",
+];
+
 /** Every listed ticket's release instant, which is what a page read is asked for here. */
 function releasedPage(read: ProjectRead): readonly (string | undefined)[] {
   if (read.result !== "Found")
@@ -1492,29 +1512,42 @@ function releasedPage(read: ProjectRead): readonly (string | undefined)[] {
   return read.project.tickets.map((ticket) => ticket.releasedAt);
 }
 
-/** Releases that many tickets into one project, each with the entry that released it. */
+/**
+ * Releases that many tickets into one project, each with the entry that released
+ * it and the later entries that name it again. Both directions of the
+ * entry/input pair are deferred foreign keys, so the inserts commit together or
+ * not at all, and the ANALYZE is what lets the planner cost the rows the table
+ * now holds.
+ */
 async function seedReleasedTickets(
   subject: pg.Pool,
   partition: { readonly tenant: string; readonly project: string },
   epoch: string,
 ): Promise<void> {
+  const kinds = journalInstantsEvents
+    .map((type, step) => `(${String(step)},'${type}')`)
+    .join(",");
+  const entries = journalInstantsReleases * journalInstantsEvents.length;
   await subject.query("BEGIN");
   await subject.query(
     `INSERT INTO decision_input
        (tenant,project,ordinal,input_kind,input_id,base_priority,
         lifecycle_generation,state,decided_seq,terminal_at)
-     SELECT $1,$2,n,'Continuation','released-'||n,'Continuation',1,'Journaled',n,now()
-       FROM generate_series(1,$3::bigint) n`,
+     SELECT $1,$2,k.step*$3+n,'Continuation','entry-'||(k.step*$3+n),
+            'Continuation',1,'Journaled',k.step*$3+n,now()
+       FROM generate_series(1,$3::bigint) n, (VALUES ${kinds}) AS k(step,type)`,
     [partition.tenant, partition.project, journalInstantsReleases],
   );
   await subject.query(
     `INSERT INTO journal_entry
        (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
         recovery_epoch,cause_kind,cause_id)
-     SELECT $1,$2,n,
-       format('{"seq":%s,"event":{"type":"ReleaseTicket","value":{"ticket":%s}},"rec":{}}',n,n),
-       'digest-'||n,'previous-'||n,'owner',1,$4,'Continuation','released-'||n
-       FROM generate_series(1,$3::bigint) n`,
+     SELECT $1,$2,k.step*$3+n,
+       format('{"seq":%s,"event":{"type":"%s","value":{"ticket":%s}},"rec":{}}',
+              k.step*$3+n,k.type,n),
+       'digest-'||(k.step*$3+n),'previous-'||(k.step*$3+n),'owner',1,$4,
+       'Continuation','entry-'||(k.step*$3+n)
+       FROM generate_series(1,$3::bigint) n, (VALUES ${kinds}) AS k(step,type)`,
     [partition.tenant, partition.project, journalInstantsReleases, epoch],
   );
   await subject.query(
@@ -1524,7 +1557,7 @@ async function seedReleasedTickets(
   );
   await subject.query(
     "UPDATE project SET head=$3 WHERE tenant=$1 AND project=$2",
-    [partition.tenant, partition.project, journalInstantsReleases],
+    [partition.tenant, partition.project, entries],
   );
   await subject.query("COMMIT");
   await subject.query("ANALYZE journal_entry");
@@ -1552,14 +1585,15 @@ async function releaseIndexUse(
  * implies a read's is one the planner cannot enter, which is what the scan count
  * catches, and it is asked of all three reads because a copy left behind by an
  * edit to the others is what asking one of them would miss. The tuple count is
- * asked of the ticket's own read alone, where a key that stopped matching the
- * index costs every release the project holds instead of one, and not of the
- * pages, which are free to answer the whole lateral in a single indexed pass.
+ * asked of the ticket's own read alone, where one entry is what a lookup costs
+ * and anything more is a key that stopped matching the index or a predicate that
+ * stopped excluding the other entries naming the ticket — not of the pages,
+ * which are free to answer the whole lateral in a single indexed pass.
  */
-test("migration 55's index is what answers every read of a ticket's release", async () => {
+test("migration 56's index is what answers every read of a ticket's release", async () => {
   await migrationDatabase("journal_instants_index", async (subject, url) => {
-    await migrationSeedApplied(subject, 55);
-    await applyMigration(subject, 55);
+    await migrationSeedApplied(subject, 56);
+    await applyMigration(subject, 56);
     const store = postgresProjectStore(subject);
     const epoch = await postgresHarnessEpoch(store);
     const partition = await postgresHarnessProject(store, "journal-instants");
@@ -1881,5 +1915,53 @@ test("migration 51 admits a mode installed before it existed and refuses one ope
         /draft_brief_finalization_is_whole/u,
         `no pull request ${why}`,
       );
+  });
+});
+
+test("migration 55 widens a resume check installed before that point existed", async () => {
+  await migrationDatabase("resume_reworking", async (subject) => {
+    await migrationSeedApplied(subject, 55);
+    await subject.query(
+      `ALTER TABLE ticket_projection
+         DROP CONSTRAINT ticket_projection_resume_is_known,
+         ADD CONSTRAINT ticket_projection_resume_is_known CHECK (
+           resume_at IS NULL OR resume_at IN (${schemaTextSet(
+             resumeTags.filter((tag) => tag !== "ResumeReworking"),
+           )})
+         )`,
+    );
+    const store = postgresProjectStore(subject);
+    await postgresHarnessEpoch(store);
+    const partition = await postgresHarnessProject(store, "resume-reworking");
+    const park = `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq,resume_at)
+       VALUES ($1,$2,1,'Escalated',1,'ResumeReworking')`;
+    const values = [partition.tenant, partition.project];
+    await assert.rejects(
+      () => subject.query(park, values),
+      /ticket_projection_resume_is_known/u,
+      "the projection installed with 54 refuses a point it was created before",
+    );
+
+    await applyMigration(subject, 55);
+
+    await subject.query(park, values);
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT resume_at FROM ticket_projection ORDER BY ticket",
+        )
+      ).rows,
+      [{ resume_at: "ResumeReworking" }],
+    );
+    await assert.rejects(
+      () =>
+        subject.query(
+          `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq,resume_at)
+             VALUES ($1,$2,2,'Escalated',1,'ResumeNowhere')`,
+          values,
+        ),
+      /ticket_projection_resume_is_known/u,
+      "the widened check is still a check",
+    );
   });
 });

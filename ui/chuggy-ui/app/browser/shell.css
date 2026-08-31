@@ -1,0 +1,87 @@
+/* The app shell: one head row, the banner under it, the page, the footer. */
+
+@layer page {
+  .shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  .shell-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-2) var(--space-4);
+    background: var(--surface-1);
+    border-bottom: var(--hairline) solid var(--edge);
+  }
+
+  .brand {
+    color: var(--ink-1);
+    font: var(--weight-strong) var(--text-md) / 1 var(--font-mono);
+    letter-spacing: var(--tracking-label);
+    text-decoration: none;
+  }
+
+  .shell-nav {
+    display: flex;
+    gap: var(--space-4);
+    margin-left: auto;
+  }
+
+  .shell-nav a {
+    color: var(--ink-3);
+    text-decoration: none;
+    padding: var(--space-1) 0;
+    border-bottom: var(--rail) solid transparent;
+  }
+
+  .shell-nav a.here {
+    color: var(--ink-1);
+    border-bottom-color: var(--ink-1);
+  }
+
+  .shell-tools {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .shell-theme {
+    display: inline-flex;
+    gap: var(--space-1);
+  }
+
+  .shell-body {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    max-width: var(--width-page);
+    margin: 0 auto;
+    padding: var(--space-4);
+    display: grid;
+    gap: var(--space-4);
+    align-content: start;
+  }
+
+  /* The banner is the width of the shell rather than of a reading measure. */
+  .shell > .notice {
+    max-width: none;
+    border-radius: 0;
+  }
+
+  .footer {
+    padding: var(--space-2) var(--space-4);
+    border-top: var(--hairline) solid var(--edge);
+    color: var(--ink-3);
+    font-size: var(--text-xs);
+  }
+
+  @media (max-width: 40em) {
+    .shell-nav {
+      margin-left: 0;
+      width: 100%;
+    }
+  }
+}

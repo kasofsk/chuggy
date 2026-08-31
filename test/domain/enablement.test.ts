@@ -293,6 +293,12 @@ test("entry to Working always meters, and every other resume is priced by the ti
     1,
     "the account that makes the graph valid is charged under both pricings",
   );
+  assert.equal(resumeCharge(charged, "ResumeReworking"), 1);
+  assert.equal(
+    resumeCharge(free, "ResumeReworking"),
+    1,
+    "the rework wall's resume enters Working, so it meters under both too",
+  );
   assert.equal(resumeCharge(charged, "ResumeEvaluating"), 1);
   assert.equal(resumeCharge(free, "ResumeEvaluating"), 0);
   assert.equal(resumeCharge(charged, "ResumeFinalizing"), 1);

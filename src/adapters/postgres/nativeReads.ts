@@ -6,7 +6,9 @@ import type pg from "pg";
 import {
   escalationReasons,
   operationRefusalCodes,
+  resumePoints,
   type EscalationReason,
+  type ResumePoint,
 } from "../../contract/rosters.ts";
 import { phaseTags, type Phase } from "../../domain/generated/modelTypes.ts";
 import { nonTerminalPhaseTags } from "../../domain/phase.ts";
@@ -20,6 +22,7 @@ import {
   type ProjectRead,
   type ProjectReadQuery,
   type ProjectResource,
+  type TicketAccounts,
   type TicketNativeAction,
   type TicketPhaseFilter,
   type TicketResource,
@@ -51,10 +54,11 @@ interface PublicOperationRow {
 }
 
 /**
- * One projection row, joined to the two journal entries that date it: the one
- * its `seq` names, and the one that released its ticket. Both are outer joins,
- * so a page keeps a row neither entry is found for and the mapper decides what
- * that absence means for each.
+ * One projection row, joined to the deployment gas every ticket is released
+ * with and to the two journal entries that date it. The account columns are null
+ * together on a row no decision has moved since the projection began carrying
+ * them, the joined gas is null only where no domain configuration is installed,
+ * and the two entries are outer joins so a page keeps a row neither is found for.
  */
 interface TicketProjectionRow {
   readonly ticket: string;
@@ -63,6 +67,11 @@ interface TicketProjectionRow {
   readonly reason: string;
   readonly released_at: string | null;
   readonly changed_at: string | null;
+  readonly resume_at: string | null;
+  readonly gas_left: string | null;
+  readonly rework_left: string | null;
+  readonly finalization_left: string | null;
+  readonly gas_max: string | null;
 }
 
 /** One open action, or a ticket that has none: every column is then null. */
@@ -224,8 +233,48 @@ function ticketResourceChangedAt(
   return nativeReadInstant(value);
 }
 
+/** The stored `NoResume` is the machine's absent value, which the wire omits. */
+function projectionResume(value: string | null): ResumePoint | undefined {
+  if (value === null || value === "NoResume") return undefined;
+  const point = resumePoints.find((candidate) => candidate === value);
+  if (point === undefined)
+    throw new Error(`native read: ${value} is not a resume point`);
+  return point;
+}
+
+/**
+ * What a ticket has left to spend, or nothing when the row predates the
+ * projection carrying it. A null finalization account is the `DeadlineOnly`
+ * pricing that budgets none, which a non-null `gas_left` tells apart from a row
+ * holding no accounts at all.
+ */
+function projectionAccounts(
+  row: TicketProjectionRow,
+): TicketAccounts | undefined {
+  if (row.gas_left === null || row.rework_left === null) return undefined;
+  if (row.gas_max === null)
+    throw new Error(
+      "native read: a ticket holds accounts but the deployment declares no gas",
+    );
+  return {
+    gasLeft: projectRowCounter(row.gas_left, "ticket gas left"),
+    gasMax: projectRowCounter(row.gas_max, "deployment gas"),
+    reworkLeft: projectRowCounter(row.rework_left, "ticket rework left"),
+    ...(row.finalization_left === null
+      ? {}
+      : {
+          finalizationLeft: projectRowCounter(
+            row.finalization_left,
+            "ticket finalization left",
+          ),
+        }),
+  };
+}
+
 function ticketResource(row: TicketProjectionRow): TicketResource {
   const reason = projectionReason(row.reason);
+  const resumeAt = projectionResume(row.resume_at);
+  const accounts = projectionAccounts(row);
   return {
     ticket: asTicketId(projectRowCounter(row.ticket, "ticket identity")),
     phase: projectionPhase(row.phase),
@@ -235,6 +284,8 @@ function ticketResource(row: TicketProjectionRow): TicketResource {
       ? {}
       : { releasedAt: nativeReadInstant(row.released_at) }),
     ...(reason === undefined ? {} : { reason }),
+    ...(resumeAt === undefined ? {} : { resumeAt }),
+    ...(accounts === undefined ? {} : { accounts }),
   };
 }
 
@@ -358,10 +409,13 @@ async function readProjectTickets(
 ): Promise<readonly TicketProjectionRow[]> {
   if (query.order === "RecentActivity") {
     const found = await client.query<TicketProjectionRow>(
-      sql`SELECT t.ticket,t.phase,t.seq,t.reason,
+      sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,t.gas_left,
+                 t.rework_left,t.finalization_left,
+                 d.domain_configuration::jsonb->>'gas' AS gas_max,
                  r.committed_at::text AS released_at,
                  c.committed_at::text AS changed_at
           FROM ticket_projection t
+          LEFT JOIN deployment_authoring_policy d ON d.singleton=true
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
           LEFT JOIN LATERAL (
@@ -381,10 +435,13 @@ async function readProjectTickets(
     return found.rows;
   }
   const found = await client.query<TicketProjectionRow>(
-    sql`SELECT t.ticket,t.phase,t.seq,t.reason,
+    sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,t.gas_left,
+               t.rework_left,t.finalization_left,
+               d.domain_configuration::jsonb->>'gas' AS gas_max,
                r.committed_at::text AS released_at,
                c.committed_at::text AS changed_at
           FROM ticket_projection t
+          LEFT JOIN deployment_authoring_policy d ON d.singleton=true
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
           LEFT JOIN LATERAL (
@@ -425,13 +482,17 @@ function nativeReadsResources(
     project: (partition, query) => readProject(pool, partition, query),
     ticket: async (partition, ticket) => {
       const found = await pool.query<TicketProjectionRow & DraftBriefRow>(
-        sql`SELECT t.ticket,t.phase,t.seq,t.reason,b.intent,b.branch,
+        sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,t.gas_left,
+                   t.rework_left,t.finalization_left,
+                   d.domain_configuration::jsonb->>'gas' AS gas_max,
+                   b.intent,b.branch,
                    b.finalization_mode,b.finalization_target,
                    r.committed_at::text AS released_at,
                    c.committed_at::text AS changed_at,
                    (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
                      WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS links
               FROM ticket_projection t
+              LEFT JOIN deployment_authoring_policy d ON d.singleton=true
               LEFT JOIN journal_entry c
                 ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
               LEFT JOIN LATERAL (

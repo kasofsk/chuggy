@@ -214,10 +214,10 @@ test("a ticket carried off the machine is dated by the entry that ended it", asy
 
 /**
  * A release-shaped entry carrying anything but a number where its ticket goes.
- * No writer can produce one — `encodeEntry` runs off a typed `Entry` — but the
- * index and the reads both key on that value, so an expression casting it would
- * make this row a write the server rejects, exactly as an unguarded
- * `entry::jsonb` would for a row that is not JSON at all.
+ * No writer can produce one — `encodeEntry` runs off a typed `Entry` — but all
+ * three reads key on that value, so an expression casting it would raise on a
+ * row the journal is specified to keep, which is why all three are asked and not
+ * only the one whose instant goes missing.
  */
 test("a release naming no number is a row the journal keeps and the read skips", async () => {
   const partition = await postgresHarnessProject(
@@ -239,6 +239,17 @@ test("a release naming no number is a row the journal keeps and the read skips",
   const unnumbered = await ticketRead(partition);
   assert.equal(unnumbered.releasedAt, undefined);
   assert.equal(readAt(unnumbered.changedAt), await committedAt(partition, 2));
+  const reads = postgresNativeReads(pool);
+  for (const order of ["Identity", "RecentActivity"] as const) {
+    const listed = await reads.project(partition, { limit: 10, order });
+    assert.equal(listed.result, "Found", `the page in ${order} order`);
+    if (listed.result !== "Found") continue;
+    assert.deepEqual(
+      listed.project.tickets.map((each) => each.releasedAt),
+      [undefined],
+      `the page in ${order} order dates no release either`,
+    );
+  }
 });
 
 /**

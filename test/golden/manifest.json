@@ -83,7 +83,7 @@
       "maxSamples": 20000,
       "maxSteps": 60,
       "invariant": "lastStep.label != \"ticket-escalated finalization_budget_exhausted\"",
-      "steps": 15,
+      "steps": 21,
       "quintVersion": "0.32.0",
       "purpose": "The finalization account runs out before gas does, so the wall names that account rather than gas."
     },
@@ -99,7 +99,21 @@
       "invariant": "lastStep.label != \"ticket-escalated rework_budget_exhausted\"",
       "steps": 32,
       "quintVersion": "0.32.0",
-      "purpose": "The rework budget spent out while gas remains, which is the branch gas_exhausted is not."
+      "purpose": "The rework budget spent out while gas remains, which is the branch gas_exhausted is not. The ticket it happens to catch was authored no budget at all, so its park is the revoke-only one."
+    },
+    {
+      "name": "budgeted-rework-wall-refillable",
+      "instance": "mc_chuggy_budgeted",
+      "module": "mc_chuggy_directed_budgeted",
+      "source": "model/mc/mc_chuggy_directed.qnt",
+      "step": "gateLoopStep",
+      "seed": "0x1",
+      "maxSamples": 20000,
+      "maxSteps": 60,
+      "invariant": "not(lastStep.label == \"ticket-escalated rework_budget_exhausted\" and lastStep.transitions.foldl(false, (b, t) => b or tickets.get(t.ticket).resumeAt == ResumeReworking))",
+      "steps": 23,
+      "quintVersion": "0.32.0",
+      "purpose": "The same wall on a ticket whose author bought a rework budget: it stamps the resume that refills that account and re-enters work. The pair is the whole of the wall — which exit a park offers is read off the authored policy, not off the wall."
     },
     {
       "name": "budgeted-handoff-retry",
@@ -111,7 +125,7 @@
       "maxSamples": 60000,
       "maxSteps": 60,
       "invariant": "not(lastStep.label == \"ticket-resumed\" and lastStep.transitions.foldl(false, (b, t) => b or t.to == PublishingHandoff))",
-      "steps": 20,
+      "steps": 17,
       "quintVersion": "0.32.0",
       "purpose": "An accepted promotion whose publication cannot be proven enters the hold and an operator retry returns only to publication."
     },
@@ -125,7 +139,7 @@
       "maxSamples": 60000,
       "maxSteps": 60,
       "invariant": "lastStep.label != \"ticket-done\"",
-      "steps": 57,
+      "steps": 16,
       "quintVersion": "0.32.0",
       "purpose": "A managed finalizer without a post-promotion handoff retains its direct successful completion route."
     },
@@ -139,7 +153,7 @@
       "maxSamples": 60000,
       "maxSteps": 60,
       "invariant": "lastStep.label != \"ticket-done handoff_succeeded\"",
-      "steps": 47,
+      "steps": 30,
       "quintVersion": "0.32.0",
       "purpose": "A publication success completes the ticket only after the accepted promotion."
     },
@@ -153,7 +167,7 @@
       "maxSamples": 60000,
       "maxSteps": 60,
       "invariant": "not(lastStep.label == \"handoff-abandoned\" and lastStep.transitions.length() > 1)",
-      "steps": 22,
+      "steps": 19,
       "quintVersion": "0.32.0",
       "purpose": "An operator terminally abandons a blocked handoff and its transitive pending dependents without recording successful completion."
     },
@@ -181,7 +195,7 @@
       "maxSamples": 20000,
       "maxSteps": 60,
       "invariant": "lastStep.label != \"ticket-escalated gas_exhausted\"",
-      "steps": 17,
+      "steps": 38,
       "quintVersion": "0.32.0",
       "purpose": "The gas account emptied by the uncapped gate loop DeadlineOnly allows. Under Budgeted the finalization budget runs out first, so this is the branch that reaches it."
     },
@@ -209,7 +223,7 @@
       "maxSamples": 20000,
       "maxSteps": 60,
       "invariant": "not(lastStep.label == \"ticket-resumed\" and lastStep.transitions.foldl(false, (b, t) => b or (Set(Evaluating, Finalizing).contains(t.to) and tickets.get(t.ticket).resumePricing == RetryFree)))",
-      "steps": 9,
+      "steps": 22,
       "quintVersion": "0.32.0",
       "purpose": "The RetryFree CHURN arm: a pipeline resume that costs nothing. It is the arm freeClimbNever is violated by, and the reason a ticket may be authored RetryFree at all."
     }

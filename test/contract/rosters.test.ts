@@ -40,6 +40,7 @@ import {
   repositoryConfigurationFaults,
   requirementSources,
   resultVerdicts,
+  resumePoints,
   resumePricings,
   runCostBases,
   schedulerFreshnesses,
@@ -62,6 +63,7 @@ import { projectChangeKinds } from "../../src/contract/events.ts";
 import {
   phaseTags,
   reasonTags,
+  resumeTags,
 } from "../../src/domain/generated/modelTypes.ts";
 import type {
   Combinator,
@@ -126,6 +128,13 @@ test("the escalation reasons are the model's, less the absent one", () => {
   assert.deepEqual(
     [...escalationReasons],
     reasonTags.filter((tag) => tag !== "NoReason"),
+  );
+});
+
+test("the resume points are the model's, less the absent one", () => {
+  assert.deepEqual(
+    [...resumePoints],
+    resumeTags.filter((tag) => tag !== "NoResume"),
   );
 });
 

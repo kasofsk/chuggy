@@ -103,6 +103,8 @@ export interface ExecutionSummary {
   readonly requirement: ExecutionRequirement;
   readonly requirementDigest: string;
   readonly requirementSource: RequirementSource;
+  /** The spawn request that made this execution, which is its fan-out set's identity. */
+  readonly request: string;
   readonly worker?: Worker;
   readonly platformDefaultVersion: number;
   readonly status: ExecutionStatus;

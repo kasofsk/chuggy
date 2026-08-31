@@ -30,12 +30,15 @@ import { apiRole, type Migration } from "../shared.ts";
  * where its ticket goes matches nothing rather than raising.
  *
  * THE READ REPEATS THESE EXPRESSIONS because that is what lets this index
- * answer it, and `test/postgres/ticketInstants.test.ts` is what holds the two
- * to each other: it asserts the release read is answered by this index by name,
- * which fails if either side is edited alone.
+ * answer it, and `test/postgres/migration.test.ts` is where that is asserted of
+ * the index by name. Its scan count fails for any of the three reads whose
+ * predicate stops implying this index's, and its tuple count fails for the
+ * ticket's own read whose key stops matching this index's — a page read whose
+ * key alone drifts is not covered, and kasofsk/chuggy#463 carries what it would
+ * take to see one.
  */
-export const migration055: Migration = {
-  version: 55,
+export const migration056: Migration = {
+  version: 56,
   name: "api journal instants",
   statements: [
     `GRANT SELECT (tenant, project, seq, entry, committed_at)
