@@ -9,11 +9,17 @@
  * ticket-wide ordinal the model issues in sequence, and sorting by it is what
  * makes a cycle recoverable at all.
  *
- * A FAN-OUT SET IS WHAT ONE SPAWN PRODUCED, and today the identity stem every
- * task of one request shares is the whole of what names it: `executionSummary`
- * is parsed by a schema that strips a key it does not declare, so the request
- * identity read first here is typed for a field no parsed read carries yet and
- * is inert until one does.
+ * A FAN-OUT SET IS WHAT ONE SPAWN PRODUCED, and it is named by the request the
+ * row carries or by the identity stem every task of one request shares. A row
+ * the wire wrote before it named the request has only the stem, so the stem is
+ * what answers for one and is never the rule where a request is there to read.
+ *
+ * IT READS THE WIRE'S CURSOR UNDER EITHER OF ITS NAMES. The field that says the
+ * route has more of this ticket is being renamed, and this module has to
+ * compile against the contract before and after: `ExecutionsPage` is what both
+ * shapes satisfy and `pageTruncated` is the only thing that looks, so the
+ * rename reaches one function rather than the file. Both names go when the
+ * older one does.
  *
  * IT IS TOTAL OVER THE PAGES THE ROSTERS ADMIT, not only over the pages the
  * machine produces. Identity order means a short page is cut at no point in
@@ -131,8 +137,29 @@ interface CycleSets {
   readonly evaluations: readonly SpawnedSet[];
 }
 
-/** A summary as it reads once the wire names the request each set was spawned under. */
-type SpawnedExecution = ExecutionSummary & { readonly request?: string };
+/**
+ * A summary whether or not the wire names the request its set was spawned
+ * under, which both contracts this module compiles against satisfy.
+ */
+type SpawnedExecution = ExecutionSummary & {
+  readonly request?: string | undefined;
+};
+
+/**
+ * A page under either name its cursor has had. Nothing outside `pageTruncated`
+ * reads one, so the wire's rename lands in one function.
+ */
+export type ExecutionsPage = {
+  readonly executions: ExecutionsResponse["executions"];
+  readonly nextAfter?: string | undefined;
+  readonly nextCursor?: string | undefined;
+};
+
+/** Whether the route holds more of this ticket than the page it answered with. */
+function pageTruncated(page: ExecutionsResponse): boolean {
+  const held: ExecutionsPage = page;
+  return (held.nextAfter ?? held.nextCursor) !== undefined;
+}
 
 const executionTaskSuffix = /-\d+$/;
 
@@ -390,13 +417,13 @@ function cycleOf(
     standing,
     span: runSpanOf(held),
     spend: runSpendOf(held),
-    complete: cycleComplete(work, programRuns, page.nextAfter !== undefined),
+    complete: cycleComplete(work, programRuns, pageTruncated(page)),
   };
 }
 
 /**
  * The page's executions as the cycles that produced them, newest last. A page
- * `nextAfter` names more of is truncated, and the counts drawn from it are low
+ * cursor names more of is truncated, and the counts drawn from it are low
  * rather than wrong.
  */
 export function ticketLedger(
@@ -404,7 +431,7 @@ export function ticketLedger(
   authoring: TicketAuthoring,
 ): Ledger {
   const grouped = cycleSetsOf(spawnedSets(page));
-  const truncated = page.nextAfter !== undefined;
+  const truncated = pageTruncated(page);
   const cycles: readonly Cycle[] = grouped.map((cycle, index) => ({
     ordinal: index + 1,
     ...cycleOf(
@@ -464,5 +491,7 @@ export function cycleLabel(ordinal: number): string {
 
 /** The fabric's own relaunches of a container, which are below the cycle and are not rework. */
 export function retriesLabel(retriesSpent: number): string | undefined {
-  return retriesSpent < 1 ? undefined : `Relaunched ${String(retriesSpent)}×`;
+  return retriesSpent < 1
+    ? undefined
+    : `Relaunched ${String(retriesSpent)}× by fabric`;
 }

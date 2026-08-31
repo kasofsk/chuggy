@@ -432,7 +432,7 @@ test("a cycle is labelled by its own ordinal", () => {
 });
 
 test("a container the fabric relaunched is labelled, and one it did not is not", () => {
-  expect(retriesLabel(3)).toBe("Relaunched 3×");
+  expect(retriesLabel(3)).toBe("Relaunched 3× by fabric");
   expect(retriesLabel(0)).toBeUndefined();
 });
 

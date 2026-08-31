@@ -19,7 +19,10 @@ import type {
   ExecutionTaskKind,
   RunCostBasis,
 } from "../../../src/contract/rosters.ts";
-import type { TicketAuthoring } from "../app/core/ticketLedger.ts";
+import type {
+  ExecutionsPage,
+  TicketAuthoring,
+} from "../app/core/ticketLedger.ts";
 
 /** What a case wants of a run's figures; everything else about them is filled in. */
 export interface TotalsShape {
@@ -122,13 +125,23 @@ export function ledgerExecution(
   };
 }
 
-/** A page of the given rows, `nextAfter` naming more where a case wants a short one. */
+/**
+ * A page of the given rows, its cursor naming more where a case wants a short
+ * one. Both names the wire has had for that cursor are set, so a case reads as
+ * a short page under either contract and the parser keeps whichever is real.
+ */
 export function ledgerPage(
   shapes: readonly ExecutionShape[],
-  nextAfter?: string,
+  cursor?: string,
 ): ExecutionsResponse {
   const executions = shapes.map(ledgerExecution);
-  return nextAfter === undefined ? { executions } : { executions, nextAfter };
+  if (cursor === undefined) return { executions };
+  const short: ExecutionsPage = {
+    executions,
+    nextAfter: cursor,
+    nextCursor: cursor,
+  };
+  return short;
 }
 
 /** Two evaluation stages, one work task each, two reworks, a charged retry. */
