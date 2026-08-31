@@ -566,3 +566,55 @@ test("a submission whose answer was lost keeps the identity it was made under", 
     client.getQueryData<TicketAttempt>(ticketAttemptKey(atlas, 11))?.operation,
   ).toBe(drawn);
 });
+
+/** A submission whose answer never came back, which is the one ending that
+ * leaves a record standing and the buttons able to be pressed again. */
+async function unanswered(api: Served, client: QueryClient): Promise<void> {
+  vi.stubGlobal("fetch", api.fetch);
+  mounted(client);
+  await settled();
+  await turned(() => {
+    screen.getByRole("button", { name: "Resume" }).click();
+  });
+  await settled();
+  expect(api.identities()).toHaveLength(1);
+  expect(button("Resume")?.hasAttribute("disabled")).toBe(false);
+}
+
+function losing(): Served {
+  return served({
+    submission: () => Promise.reject(new Error("the connection went")),
+    openActions: () => answer({ actions: [] }),
+  });
+}
+
+test("pressing again reaches the held attempt rather than drawing a second", async () => {
+  const api = losing();
+  await unanswered(api, new QueryClient());
+
+  await turned(() => {
+    screen.getByRole("button", { name: "Resume" }).click();
+  });
+  await settled();
+
+  expect(api.identities()).toHaveLength(1);
+  expect(api.urls.filter(polling)).not.toEqual([]);
+  expect(screen.getByText("Waiting for actor…")).toBeDefined();
+});
+
+test("a press naming another action still resolves the attempt that is held", async () => {
+  waiting.mode = "step";
+  const api = losing();
+  await unanswered(api, new QueryClient());
+
+  await turned(() => {
+    screen.getByRole("button", { name: "Revoke" }).click();
+  });
+  await settled();
+  standing.state = "Answered";
+  await stepped();
+
+  expect(api.identities()).toHaveLength(1);
+  expect(screen.getByText("Resume answered")).toBeDefined();
+  expect(screen.queryByText("Revoke answered")).toBeNull();
+});

@@ -150,6 +150,35 @@ function followWrittenBack(
   );
 }
 
+/**
+ * ONE INTENT IS ONE IDENTITY: a press draws one only where nothing is held, and
+ * reaches what is held by the path a mount takes otherwise. A follow the API
+ * never answered leaves its record standing and the buttons come back, and what
+ * stands is a submission the machine may be working on — so it is polled to an
+ * end rather than replaced, even where the press names another action, and the
+ * reader's new intent waits for the buttons that come back when this one
+ * settles.
+ */
+function attemptPressed(
+  client: QueryClient,
+  partition: PartitionIdentity,
+  ticket: number,
+  action: TicketAction,
+): { readonly held: TicketAttempt; readonly startedFrom: OperationStep } {
+  const standing = ticketAttemptRead(client, partition, ticket);
+  if (standing !== undefined)
+    return {
+      held: standing,
+      startedFrom: operationFollowing(standing.operation),
+    };
+  const held = {
+    action,
+    operation: base64urlFromBytes(drawBytes(operationIdBytesCount)),
+  };
+  ticketAttemptHeld(client, partition, ticket, held);
+  return { held, startedFrom: operationSubmitting() };
+}
+
 /** Where a follow reports to: the panel's own step, and the caches the page
  * reads the ticket back out of. Gathered so the runner below is a function of
  * its arguments rather than of a hook's scope. */
@@ -330,9 +359,10 @@ interface Submitting {
  * unmounts with the submission in flight — which this page does whenever the
  * situation column has read enough to change shape — abandons the request
  * without unmaking whatever the API did with it. So the record is what a mount
- * picks up, rather than a fresh button drawing a second identity for a
- * submission the machine may already hold; and the pick-up polls, because only
- * the API can say whether the identity it names ever arrived.
+ * picks up, and the pick-up polls, because only the API can say whether the
+ * identity it names ever arrived.
+ *
+ * A press reaches a held record by the same path, which `attemptPressed` is.
  */
 function useSubmitting(
   partition: PartitionIdentity,
@@ -420,12 +450,8 @@ function useSubmitting(
     refused,
     submit: (action) => {
       setRefused(undefined);
-      const held = {
-        action,
-        operation: base64urlFromBytes(drawBytes(operationIdBytesCount)),
-      };
-      ticketAttemptHeld(client, partition, ticket, held);
-      follow(held, operationSubmitting());
+      const pressed = attemptPressed(client, partition, ticket, action);
+      follow(pressed.held, pressed.startedFrom);
     },
     cancel: (operation) => {
       void cancel(operation);
@@ -507,9 +533,10 @@ function TicketActionsPanel(props: TicketActionsProps): ReactNode {
 /**
  * The panel, keyed by the ticket it is about, which is what makes the pick-up
  * above per ticket rather than per mount and is why its effect names no
- * dependency. `ticketRoute` carries no key of its own, so a reader moving
- * between tickets is drawn by one instance, and everything the panel holds is
- * about the ticket it started on.
+ * dependency. THE KEY IS HERE AND NOT AT THE CALL SITE, which is where the
+ * idiom would put it, because a caller who left it off would get a panel
+ * drawing the last ticket's attempt over this one rather than an error, and a
+ * component that cannot be mounted wrongly is worth more here than the idiom.
  */
 export function TicketActions(props: TicketActionsProps): ReactNode {
   const { tenant, project } = props.partition;
