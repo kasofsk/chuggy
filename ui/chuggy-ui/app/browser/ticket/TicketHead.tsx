@@ -4,9 +4,9 @@
  *
  * The cost and the token count are the ticket read's own roll-up rather than a
  * sum over the executions this screen holds, because a page that is short would
- * understate them; the run count and the span are the page's and say so on
- * hover. The wall is a pill beside the phase rather than a sentence under it,
- * so where the ticket is and why are read in one glance.
+ * understate them. The run count and the span are this page's, and say so where
+ * the page is short. The wall is a pill beside the phase rather than a sentence
+ * under it, so where the ticket is and why are read in one glance.
  */
 
 import type { ReactNode } from "react";
@@ -23,23 +23,10 @@ import { phaseTone } from "../../core/tones.ts";
 import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import { runsLabel } from "./ticketPageFacts.ts";
 
-/** How many of the page's executions are still running, which the count names. */
-export function runsLabel(
-  page: ExecutionsResponse | undefined,
-  ledger: Ledger | undefined,
-): string {
-  const held = String(page?.executions.length ?? 0);
-  if (ledger === undefined) return held;
-  const running = ledger.cycles.flatMap((cycle) =>
-    cycle.programRuns.flatMap((run) =>
-      run.stages.flatMap((row) =>
-        row.kind === "Ran" && row.set.verdict === "Running" ? [row] : [],
-      ),
-    ),
-  ).length;
-  return running === 0 ? held : `${held} · ${String(running)} running`;
-}
+/** What the page holds is not what the ticket has, where the route said so. */
+export const headShortPageNote = "on this page";
 
 function TicketFigures(props: {
   readonly ticket: TicketResponse;
@@ -48,6 +35,7 @@ function TicketFigures(props: {
   readonly nowMs: number;
 }): ReactNode {
   const totals = props.ticket.runTotals;
+  const short = props.ledger?.truncated === true;
   return (
     <Fields variant="inline">
       <Field name="Sequence">
@@ -68,7 +56,8 @@ function TicketFigures(props: {
         )}
       </Field>
       <Field name="Runs">
-        <span className="num">{runsLabel(props.page, props.ledger)}</span>
+        <span className="num">{runsLabel(props.page)}</span>
+        {short ? <span className="fig-dim"> {headShortPageNote}</span> : null}
       </Field>
       <Field name="Span">
         <Figure
@@ -77,6 +66,7 @@ function TicketFigures(props: {
             props.nowMs,
           )}
         />
+        {short ? <span className="fig-dim"> {headShortPageNote}</span> : null}
       </Field>
     </Fields>
   );

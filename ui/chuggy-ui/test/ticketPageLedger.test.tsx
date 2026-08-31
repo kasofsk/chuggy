@@ -20,6 +20,7 @@ import {
   ticket21Resumed,
 } from "./ticketLedgerFixture.ts";
 import type { ExecutionShape } from "./ticketLedgerFixture.ts";
+import type { TicketAuthoring } from "../app/core/ticketLedger.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 const atlas: PartitionIdentity = { tenant: "vteng", project: "chuggy" };
@@ -90,6 +91,7 @@ async function drawTicket(served: {
   readonly ticket: Record<string, unknown>;
   readonly cursor?: string;
   readonly withDraft?: boolean;
+  readonly authoring?: TicketAuthoring;
 }): Promise<Drawn> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
@@ -114,7 +116,7 @@ async function drawTicket(served: {
               authoringVersion: 1,
               state: "Released",
               configurationRevision: "r1",
-              authoring: ticket21Authoring,
+              authoring: served.authoring ?? ticket21Authoring,
               brief: { intent: "Give the console a footer", links: [] },
             });
       return answer(served.ticket);
@@ -252,13 +254,13 @@ test("a superseded cycle says which cycle replaced its artifact", async () => {
 test("the budgets draw the machine's own figures, and the rework top-up is refused", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
   expect(
-    screen.getByRole("group", { name: "Rework 2/2 used · Exhausted" }),
+    screen.getByRole("group", { name: "Rework 2 of 2 used, exhausted" }),
   ).toBeDefined();
   expect(
-    screen.getByRole("group", { name: "Gas 7/8 used · 1 left" }),
+    screen.getByRole("group", { name: "Gas 7 of 8 used, 1 left" }),
   ).toBeDefined();
   expect(
-    screen.getByRole("group", { name: "Finalization Not budgeted" }),
+    screen.getByRole("group", { name: "Finalization not budgeted" }),
   ).toBeDefined();
   const topUp = screen.getByRole("button", { name: "Add rework" });
   expect(topUp.hasAttribute("disabled")).toBe(true);
@@ -271,7 +273,7 @@ test("the gas limit on the wire replaces the console's own floor", async () => {
     ticket: { ...parkedTicket, accounts: undefined },
   });
   expect(
-    screen.getByRole("group", { name: "Gas 3+ used · limit unknown" }),
+    screen.getByRole("group", { name: "Gas 3 or more used, limit unknown" }),
   ).toBeDefined();
 });
 
@@ -408,16 +410,166 @@ function isDrawnValue(node: Node): boolean {
   );
 }
 
-test("no string the page composes but the brief runs past the copy budget", async () => {
-  const { container } = await drawTicket({
-    shapes: ticket21Parked,
-    ticket: parkedTicket,
-  });
+/** Every string the page composed that a reader would have to parse whole. */
+function drawnStringsOver(container: HTMLElement): readonly string[] {
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
   const over: string[] = [];
   for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
     const text = (node.textContent ?? "").trim();
     if (text.length > copyBudgetChars && !isDrawnValue(node)) over.push(text);
   }
+  return over;
+}
+
+test("no string the page composes but the brief runs past the copy budget", async () => {
+  const { container } = await drawTicket({
+    shapes: ticket21Parked,
+    ticket: parkedTicket,
+  });
+  expect(drawnStringsOver(container)).toEqual([]);
+});
+
+/** A wall the model stamps no resume point on, whose only modelled exit is revoke. */
+const revokedTicket = {
+  ticket: 21,
+  phase: "Escalated",
+  sequence: 171,
+  reason: "DependencyRevoked",
+  accounts: { gasLeft: 4, gasMax: 8, reworkLeft: 0 },
+  runTotals: ticketTotals,
+};
+
+test("a wall whose only exit is revoke offers no resume to press", async () => {
+  await drawTicket({ shapes: ticket21Parked, ticket: revokedTicket });
+  expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+  expect(
+    screen.getByText("Nothing to resume · only Revoke exits this wall"),
+  ).toBeDefined();
+  expect(screen.getByRole("button", { name: "Revoke" })).toBeDefined();
+});
+
+test("every action the page draws describes itself by an id that resolves", async () => {
+  const { container } = await drawTicket({
+    shapes: ticket21Parked,
+    ticket: parkedTicket,
+  });
+  const described = [...container.querySelectorAll("button[aria-describedby]")];
+  expect(described.length).toBeGreaterThan(0);
+  for (const button of described) {
+    const reference = button.getAttribute("aria-describedby") ?? "";
+    expect(reference).not.toContain(" ");
+    expect(container.querySelector(`[id="${reference}"]`)).not.toBeNull();
+  }
+});
+
+test("the rework top-up draws its effect where a reader can see it", async () => {
+  await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
+  const effect = screen.getByText(/Adds one rework cycle/u);
+  expect(effect.classList.contains("visually-hidden")).toBe(false);
+});
+
+test("the usage panel counts the runs, and says which are still going", async () => {
+  const { container } = await drawTicket({
+    shapes: ticket21Parked,
+    ticket: parkedTicket,
+  });
+  expect(container.querySelector("#usage")?.textContent).toContain("Runs7");
+  cleanup();
+  vi.unstubAllGlobals();
+  const resumed = await drawTicket({
+    shapes: ticket21Resumed,
+    ticket: resumedTicket,
+  });
+  expect(resumed.container.querySelector("#usage")?.textContent).toContain(
+    "Runs8 · 1 running · 1 unmeasured",
+  );
+});
+
+test("the by-stage table is work first and then the program's own order", async () => {
+  const { container } = await drawTicket({
+    shapes: ticket21Parked,
+    ticket: parkedTicket,
+  });
+  const table = screen.getByRole("table", { name: "Usage by stage" });
+  expect(
+    [...table.querySelectorAll("tbody th")].map((cell) => cell.textContent),
+  ).toEqual(["Work", "Stage 1", "Stage 2"]);
+  expect(container.querySelector("#usage")).not.toBeNull();
+});
+
+/** Three tasks authored, two on the page, one of them relaunched, all superseded. */
+const fanoutAuthoring = {
+  ...ticket21Authoring,
+  workFanout: 3,
+};
+
+const fanoutShapes: readonly ExecutionShape[] = [
+  {
+    execution: "execution-aaaa-1",
+    task: 1,
+    taskKind: "Work",
+    request: "spawn-one",
+    outcome: "Passed",
+    retriesSpent: 1,
+    totals: { turns: 10, durationMs: 120_000, costUsdMicros: 400_000 },
+  },
+  {
+    execution: "execution-aaaa-2",
+    task: 2,
+    taskKind: "Work",
+    request: "spawn-one",
+    outcome: "Passed",
+    retriesSpent: 2,
+    totals: { turns: 20, durationMs: 300_000, costUsdMicros: 600_000 },
+  },
+  {
+    execution: "execution-bbbb-3",
+    task: 3,
+    taskKind: "Evaluation",
+    stage: 0,
+    request: "spawn-two",
+    outcome: "Failed",
+    totals: { turns: 5, durationMs: 60_000, costUsdMicros: 100_000 },
+  },
+  {
+    execution: "execution-cccc-4",
+    task: 4,
+    taskKind: "Work",
+    request: "spawn-three",
+    outcome: "Passed",
+    totals: { turns: 8, durationMs: 90_000, costUsdMicros: 200_000 },
+  },
+];
+
+async function drawFanout(): Promise<Drawn> {
+  return drawTicket({
+    shapes: fanoutShapes,
+    ticket: parkedTicket,
+    authoring: fanoutAuthoring,
+  });
+}
+
+test("a fan-out row is priced and timed over the whole set, not its first task", async () => {
+  const { container } = await drawFanout();
+  const work = groups(container).at(-1)?.querySelector(".ledger-row");
+  expect(work).toBeDefined();
+  expect(work?.querySelector(".ledger-spent")?.textContent).toContain("$1.00");
+  const when = work?.querySelector(".ledger-when")?.textContent ?? "";
+  expect(when).toContain("15m");
+  expect(when).not.toContain("2m");
+  expect(work?.textContent).toContain("Relaunched 3× by fabric");
+  expect(work?.textContent).toContain("2 of 3 tasks here");
+});
+
+/**
+ * The state no other fixture reaches: one row that is superseded, relaunched
+ * and short of its fan-out at once, which is where three joined fragments would
+ * run past the copy budget.
+ */
+test("a row that is superseded, relaunched and short still fits the copy budget", async () => {
+  const { container } = await drawFanout();
+  const superseded = groups(container).at(-1);
+  expect(superseded?.classList.contains("ledger-group-superseded")).toBe(true);
+  const over = drawnStringsOver(container);
   expect(over).toEqual([]);
 });

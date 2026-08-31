@@ -36,11 +36,56 @@ const base = {
 };
 
 test("the state is read from the props, over the whole roster", () => {
-  expect(actionStateOf({ ...base })).toBe("ready");
-  expect(actionStateOf({ ...base, busy: true })).toBe("busy");
-  expect(actionStateOf({ ...base, refusedBecause: "No" })).toBe("refused");
-  expect(actionStates).toContain("absent");
+  const drawn = [
+    actionStateOf({ ...base }),
+    actionStateOf({ ...base, busy: true }),
+    actionStateOf({ ...base, refusedBecause: "No" }),
+    actionStateOf({ ...base, offered: false }),
+  ];
+  expect(drawn).toEqual(["ready", "busy", "refused", "absent"]);
+  expect([...drawn].sort()).toEqual([...actionStates].sort());
   expect(actionForms).toEqual(["full", "compact"]);
+});
+
+/**
+ * The state the model needs: a wall whose only exit is revoke must not be
+ * given a control that submits a resume into it.
+ */
+test("an answer the machine does not admit draws no button at all", () => {
+  for (const variant of actionForms) {
+    const chosen = vi.fn();
+    render(
+      <ActionWithCost
+        action="Resume"
+        effect="Nothing to resume"
+        more="only Revoke exits this wall"
+        offered={false}
+        variant={variant}
+        onChoose={chosen}
+      />,
+    );
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(
+      screen.getByText("Nothing to resume · only Revoke exits this wall"),
+    ).toBeDefined();
+    expect(chosen).not.toHaveBeenCalled();
+    cleanup();
+  }
+});
+
+test("an absent action outranks busy and refused, which name a button there is", () => {
+  render(
+    <ActionWithCost
+      action="Resume"
+      effect="Nothing to resume"
+      offered={false}
+      busy
+      refusedBecause="Not allowed in this phase"
+      onChoose={() => undefined}
+    />,
+  );
+  expect(screen.queryByRole("button")).toBeNull();
+  expect(screen.queryByText("Not allowed in this phase")).toBeNull();
 });
 
 test("a ready action draws its effect and its cost and fires once", () => {
@@ -101,6 +146,46 @@ test("a destructive action is drawn as one", () => {
   ).toBe(true);
 });
 
+/**
+ * `aria-describedby` is an id-reference list, so an action whose word carries a
+ * space would split into two references naming nothing.
+ */
+test("the effect's reference resolves however the action is spelled", () => {
+  for (const action of ["Resume", "Add rework"]) {
+    const { container } = render(
+      <ActionWithCost
+        action={action}
+        effect="Adds one rework cycle"
+        variant="compact"
+        onChoose={() => undefined}
+      />,
+    );
+    const described = screen
+      .getByRole("button", { name: action })
+      .getAttribute("aria-describedby");
+    expect(described).not.toBeNull();
+    expect(described ?? "").not.toContain(" ");
+    expect(
+      container.querySelector(`[id="${String(described)}"]`)?.textContent,
+    ).toContain("Adds one rework cycle");
+    cleanup();
+  }
+});
+
+test("two actions on one page describe themselves by different ids", () => {
+  const { container } = render(
+    <>
+      <ActionWithCost {...base} variant="compact" />
+      <ActionWithCost {...base} action="Revoke" variant="compact" />
+    </>,
+  );
+  const ids = [...container.querySelectorAll("button")].map((button) =>
+    button.getAttribute("aria-describedby"),
+  );
+  expect(ids).toHaveLength(2);
+  expect(new Set(ids).size).toBe(2);
+});
+
 test("the compact form keeps the effect for a reader who cannot see it", () => {
   const { container } = render(
     <ActionWithCost {...base} variant="compact" more="Not drawn here" />,
@@ -108,13 +193,8 @@ test("the compact form keeps the effect for a reader who cannot see it", () => {
   const button = screen.getByRole("button", { name: "Resume" });
   const described = button.getAttribute("aria-describedby");
   expect(described).not.toBeNull();
-  expect(
-    container.querySelector(`#${String(described)}`)?.textContent,
-  ).toContain("Re-runs evaluation from stage 1");
-  expect(
-    container
-      .querySelector(`#${String(described)}`)
-      ?.classList.contains("visually-hidden"),
-  ).toBe(true);
+  const effect = container.querySelector(`[id="${String(described)}"]`);
+  expect(effect?.textContent).toContain("Re-runs evaluation from stage 1");
+  expect(effect?.classList.contains("visually-hidden")).toBe(true);
   expect(screen.queryByText("Not drawn here")).toBeNull();
 });

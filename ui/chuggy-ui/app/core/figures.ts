@@ -122,6 +122,20 @@ function scaled(value: number, unit: number, suffix: string): string {
     : `${String(Math.round(scaledValue))}${suffix}`;
 }
 
+/**
+ * Which unit a count is read in, after the rounding rather than before it. A
+ * count that rounds up out of its own bucket takes the next one, so nothing is
+ * ever drawn as a thousand of a unit that has a name of its own.
+ */
+function scaledUnit(
+  count: number,
+): { unit: number; suffix: string } | undefined {
+  if (count >= million || Math.round(count / thousand) >= thousand)
+    return { unit: million, suffix: "M" };
+  if (count >= thousand) return { unit: thousand, suffix: "k" };
+  return undefined;
+}
+
 /** The four counts a token figure adds, which is every kind the wire reports. */
 export type TokenCounts = Pick<
   RunTotals,
@@ -131,6 +145,19 @@ export type TokenCounts = Pick<
 /** What a spend figure needs of a run or of a rollup over runs. */
 export type SpentTotals = TokenCounts & Pick<RunTotals, "costUsdMicros">;
 
+/** One count on its own scale, which is what a column of one kind is read in. */
+export function tokenCountText(count: number): string {
+  const held = scaledUnit(count);
+  return held === undefined
+    ? String(Math.trunc(count))
+    : scaled(count, held.unit, held.suffix);
+}
+
+/** One kind of token, for a table whose columns are the kinds. */
+export function tokenCountFigure(count: number): Figure {
+  return { kind: "Tokens", text: tokenCountText(count) };
+}
+
 /** One number over every kind of token, because a row is read at a glance. */
 export function tokensFigure(totals: TokenCounts): Figure {
   const count =
@@ -138,11 +165,7 @@ export function tokensFigure(totals: TokenCounts): Figure {
     totals.tokensOutput +
     totals.tokensCacheCreation +
     totals.tokensCacheRead;
-  if (count >= million)
-    return { kind: "Tokens", text: `${scaled(count, million, "M")} tok` };
-  if (count >= thousand)
-    return { kind: "Tokens", text: `${scaled(count, thousand, "k")} tok` };
-  return { kind: "Tokens", text: `${String(Math.trunc(count))} tok` };
+  return { kind: "Tokens", text: `${tokenCountText(count)} tok` };
 }
 
 /** Below this a sexagesimal or calendar field is written with its leading zero. */

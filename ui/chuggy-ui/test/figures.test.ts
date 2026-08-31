@@ -17,6 +17,7 @@ import {
   instantText,
   spanFigure,
   spendFigures,
+  tokenCountText,
   tokensFigure,
   whenFigure,
 } from "../app/core/figures.ts";
@@ -55,6 +56,35 @@ test("a cost is cents, is finer below a cent, and always carries its basis", () 
   expect(textOf(costFigure(0, "List"))).toBe("$0.00");
   expect(textOf(costFigure(12_800_000, "List"))).toBe("$12.80");
   expect(basisOf(costFigure(420_000, "Mixed"))).toBe("mixed");
+});
+
+/**
+ * A cent is the boundary the rule is written about: cents can state exactly a
+ * cent, so exactly a cent is drawn in cents and only what is below it is finer.
+ */
+test("a cost of exactly one cent is drawn in cents, and one below it is not", () => {
+  expect(textOf(costFigure(10_000, "List"))).toBe("$0.01");
+  expect(textOf(costFigure(9_999, "List"))).toBe("$0.0100");
+  expect(textOf(costFigure(10_001, "List"))).toBe("$0.01");
+});
+
+/**
+ * Each scale boundary twice: the last count in the smaller unit and the first
+ * in the larger, including the one that rounds up out of its own bucket.
+ */
+test("a token count changes unit at the boundary, and never reads as a thousand of one", () => {
+  expect(textOf(tokensFigure(tokens({ input: 999 })))).toBe("999 tok");
+  expect(textOf(tokensFigure(tokens({ input: 1_000 })))).toBe("1.0k tok");
+  expect(textOf(tokensFigure(tokens({ input: 999_499 })))).toBe("999k tok");
+  expect(textOf(tokensFigure(tokens({ input: 999_500 })))).toBe("1.0M tok");
+  expect(textOf(tokensFigure(tokens({ input: 999_999 })))).toBe("1.0M tok");
+  expect(textOf(tokensFigure(tokens({ input: 1_000_000 })))).toBe("1.0M tok");
+});
+
+test("one kind of token is the same scale without the unit word", () => {
+  expect(tokenCountText(41_000)).toBe("41k");
+  expect(tokenCountText(999)).toBe("999");
+  expect(tokenCountText(1_200_000)).toBe("1.2M");
 });
 
 test("a token figure is every kind added, scaled with one decimal below ten", () => {

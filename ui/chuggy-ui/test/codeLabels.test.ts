@@ -29,6 +29,17 @@ import {
   ticketActionEffect,
 } from "../app/core/codeLabels.ts";
 import { mutationRefusalCodes } from "../app/core/codeSentences.ts";
+import type { TicketActionName } from "../app/core/ticketActions.ts";
+
+const ticketActionNames: readonly TicketActionName[] = [
+  "Dispatch",
+  "Resume",
+  "Revoke",
+  "Retry",
+  "Abandon",
+  "Approve",
+  "Decline",
+];
 
 /** §1.1 rule 7: no string the console draws runs past this, except the brief. */
 const copyBudgetChars = 60;
@@ -101,8 +112,29 @@ test("a resume states what it re-runs, what it costs, and what it keeps", () => 
 test("a wall with no resume point offers nothing and says which exit is left", () => {
   const effect = ticketActionEffect("Resume", undefined, undefined);
   expect(effect.effect).toBe("Nothing to resume");
-  expect(effect.more).toBe("Only Revoke exits this wall");
+  expect(effect.more).toBe("only Revoke exits this wall");
+  expect(effect.offered).toBe(false);
   expect(ticketActionEffect("Revoke", undefined, undefined).cost).toBe("free");
+});
+
+/**
+ * `DependencyRevoked` is the wall the model stamps no resume point on, and a
+ * resume is the one answer that must not be offered into it.
+ */
+test("every action the phase enables is offered, except a resume with no point", () => {
+  const resume = {
+    point: "ResumeEvaluating",
+    reruns: "evaluation",
+    fromStage: 0,
+    ofStages: 2,
+    cost: 1,
+  } as const;
+  for (const action of ticketActionNames)
+    expect(ticketActionEffect(action, resume, undefined).offered).toBe(true);
+  for (const action of ticketActionNames)
+    expect(ticketActionEffect(action, undefined, undefined).offered).toBe(
+      action !== "Resume",
+    );
 });
 
 test("a deferral and a failure this console does not know name themselves", () => {

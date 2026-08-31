@@ -59,18 +59,47 @@ function setSpend(set: TaskSet): Spend {
   return spendFigures(spend.totals, spend.totals?.costBasis);
 }
 
-/** Every note a set's row carries: its standing, the fabric's relaunches, a short set. */
+/**
+ * What the fabric did below this set, which is every relaunch of every task in
+ * it and not the first task's alone.
+ */
+function setRelaunches(set: TaskSet): string | undefined {
+  return retriesLabel(
+    set.executions.reduce((held, row) => held + row.retriesSpent, 0),
+  );
+}
+
+/**
+ * How much of a set this page holds, kept out of the note so that a row which
+ * is superseded, relaunched and short at once still draws two strings a reader
+ * can scan rather than one past the copy budget.
+ */
+function setShortfall(set: TaskSet): string | undefined {
+  return set.executions.length < set.expected
+    ? `${String(set.executions.length)} of ${String(set.expected)} tasks here`
+    : undefined;
+}
+
+/** A set's row note: where its artifact stands, and what the fabric did to it. */
 function setNotes(set: TaskSet, standing: string | undefined): string {
-  const first = set.executions[0];
-  const relaunched =
-    first === undefined ? undefined : retriesLabel(first.retriesSpent);
-  const short =
-    set.executions.length < set.expected
-      ? `${String(set.executions.length)} of ${String(set.expected)} tasks on this page`
-      : undefined;
-  return [standing, relaunched, short]
+  return [standing, setRelaunches(set)]
     .flatMap((note) => (note === undefined ? [] : [note]))
     .join(" · ");
+}
+
+function SetRowNote(props: {
+  readonly set: TaskSet;
+  readonly standing: string | undefined;
+}): ReactNode {
+  const shortfall = setShortfall(props.set);
+  return (
+    <>
+      {setNotes(props.set, props.standing)}
+      {shortfall === undefined ? null : (
+        <span className="ledger-partial"> {shortfall}</span>
+      )}
+    </>
+  );
 }
 
 interface RowChrome {
@@ -100,12 +129,12 @@ function SetRow(props: {
       identity={executionRequirementLabel(first)}
       pill={pill}
       when={whenFigure(
-        first.registeredAt,
-        first.terminalAt,
+        props.set.span.from ?? first.registeredAt,
+        props.set.span.to,
         props.chrome.nowMs,
       )}
       spent={setSpend(props.set)}
-      note={setNotes(props.set, props.standing)}
+      note={<SetRowNote set={props.set} standing={props.standing} />}
       expand={{
         open,
         onToggle: () => {

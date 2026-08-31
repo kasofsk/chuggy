@@ -111,7 +111,6 @@ export function SituationBudgets(props: {
             action="Add rework"
             effect="Adds one rework cycle"
             refusedBecause={reworkTopUpRefusal}
-            variant="compact"
             onChoose={props.onTopUp}
           />
         }

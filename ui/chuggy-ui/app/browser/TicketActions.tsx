@@ -55,6 +55,7 @@ import { useApiPorts } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { drawBytes } from "./ports.ts";
 import { ActionWithCost } from "./ui/ActionWithCost.tsx";
+import { EmptyState } from "./ui/EmptyState.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
 
@@ -98,7 +99,7 @@ function ActionButtons(props: {
   readonly onChoose: (action: TicketAction) => void;
 }): ReactNode {
   if (props.actions.length === 0)
-    return <p className="empty">No action in this phase</p>;
+    return <EmptyState label="No action in this phase" />;
   return (
     <div className="actions">
       {props.actions.map((action) => {
@@ -114,6 +115,7 @@ function ActionButtons(props: {
             effect={effect.effect}
             cost={effect.cost}
             {...(effect.more === undefined ? {} : { more: effect.more })}
+            offered={effect.offered}
             busy={props.busy}
             danger={action.action === "Revoke" || action.action === "Abandon"}
             onChoose={() => {

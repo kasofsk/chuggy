@@ -15,6 +15,7 @@ import {
   BudgetMeter,
   meterCellsMax,
   meterFigureText,
+  meterSpokenText,
   meterStateOf,
   meterStates,
 } from "../app/browser/ui/BudgetMeter.tsx";
@@ -83,10 +84,20 @@ test("every state draws its own figure, its own class and no style attribute", (
 });
 
 test("the group's accessible name spells the figure the cells only show", () => {
-  render(<BudgetMeter name="Rework" account={budgeted(2, 2)} />);
-  expect(
-    screen.getByRole("group", { name: "Rework 2/2 used · Exhausted" }),
-  ).toBeDefined();
+  const spoken: readonly [Account, string][] = [
+    [budgeted(1, 2), "Rework 1 of 2 used, 1 left"],
+    [budgeted(2, 2), "Rework 2 of 2 used, exhausted"],
+    [{ ...budgeted(3, 2), left: -1 }, "Rework 3 of 2 used, count is wrong"],
+    [unbounded, "Rework 3 or more used, limit unknown"],
+    [notBudgeted, "Rework not budgeted"],
+  ];
+  for (const [account, name] of spoken) {
+    expect(meterSpokenText("Rework", account)).toBe(name);
+    render(<BudgetMeter name="Rework" account={account} />);
+    expect(screen.getByRole("group", { name })).toBeDefined();
+    expect(name).not.toMatch(/[/·+]/u);
+    cleanup();
+  }
 });
 
 test("a budget is a cell per unit, and a large one is a native meter instead", () => {

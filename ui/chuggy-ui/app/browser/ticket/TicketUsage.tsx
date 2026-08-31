@@ -21,43 +21,65 @@ import {
   costFigure,
   durationFigure,
   spendFigures,
+  tokenCountFigure,
   tokensFigure,
 } from "../../core/figures.ts";
 import { runSpendOf } from "../../core/runTotals.ts";
+import { runsLabel } from "./ticketPageFacts.ts";
 import type { RunSpend } from "../../core/runTotals.ts";
 import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
+import { EmptyState } from "../ui/EmptyState.tsx";
 import { Table } from "../ui/Table.tsx";
 
 /** One row of the by-stage table: what the program ran, and what it cost. */
 export interface StageSpendRow {
   readonly label: string;
+  readonly stage: number;
   readonly spend: RunSpend;
 }
 
-function stageRowLabel(summary: ExecutionSummary): string {
+/** Work comes before every stage, which is the order the program runs them in. */
+const stageOrdinalWork = -1;
+
+function stageOrdinalOf(summary: ExecutionSummary): number {
   return summary.taskKind === "Work" || summary.stage === undefined
-    ? "Work"
-    : `Stage ${String(summary.stage + 1)}`;
+    ? stageOrdinalWork
+    : summary.stage;
 }
 
-/** The page's executions grouped on the stage that ran them, in program order. */
+function stageRowLabel(stage: number): string {
+  return stage === stageOrdinalWork ? "Work" : `Stage ${String(stage + 1)}`;
+}
+
+/**
+ * The page's executions grouped on the stage that ran them, work first and then
+ * the program's own order. The order is the stage ordinal and never the drawn
+ * label, which would sort `Stage 10` between `Stage 1` and `Stage 2`.
+ */
 export function stageSpendRows(
   page: ExecutionsResponse,
 ): readonly StageSpendRow[] {
-  const grouped = new Map<string, ExecutionSummary[]>();
+  const grouped = new Map<number, ExecutionSummary[]>();
   for (const summary of page.executions) {
-    const label = stageRowLabel(summary);
-    const held = grouped.get(label);
-    if (held === undefined) grouped.set(label, [summary]);
+    const stage = stageOrdinalOf(summary);
+    const held = grouped.get(stage);
+    if (held === undefined) grouped.set(stage, [summary]);
     else held.push(summary);
   }
   return [...grouped]
-    .map(([label, executions]) => ({ label, spend: runSpendOf(executions) }))
-    .sort((left, right) => left.label.localeCompare(right.label));
+    .map(([stage, executions]) => ({
+      label: stageRowLabel(stage),
+      stage,
+      spend: runSpendOf(executions),
+    }))
+    .sort((left, right) => left.stage - right.stage);
 }
 
-function UsageTotals(props: { readonly totals: RunTotals }): ReactNode {
+function UsageTotals(props: {
+  readonly totals: RunTotals;
+  readonly page: ExecutionsResponse | undefined;
+}): ReactNode {
   const totals = props.totals;
   return (
     <Fields variant="inline">
@@ -75,6 +97,9 @@ function UsageTotals(props: { readonly totals: RunTotals }): ReactNode {
       </Field>
       <Field name="API">
         <Figure figure={durationFigure(totals.durationApiMs)} />
+      </Field>
+      <Field name="Runs">
+        <span className="num">{runsLabel(props.page)}</span>
       </Field>
       <Field name="Denials">
         <span className="num">{totals.permissionDenials}</span>
@@ -110,10 +135,18 @@ function UsageByModel(props: { readonly totals: RunTotals }): ReactNode {
         {props.totals.models.map((usage) => (
           <tr key={usage.model}>
             <th scope="row">{usage.model}</th>
-            <td className="num">{usage.tokensInput}</td>
-            <td className="num">{usage.tokensOutput}</td>
-            <td className="num">{usage.tokensCacheCreation}</td>
-            <td className="num">{usage.tokensCacheRead}</td>
+            <td className="num">
+              <Figure figure={tokenCountFigure(usage.tokensInput)} />
+            </td>
+            <td className="num">
+              <Figure figure={tokenCountFigure(usage.tokensOutput)} />
+            </td>
+            <td className="num">
+              <Figure figure={tokenCountFigure(usage.tokensCacheCreation)} />
+            </td>
+            <td className="num">
+              <Figure figure={tokenCountFigure(usage.tokensCacheRead)} />
+            </td>
             <td className="num">
               <Figure
                 figure={costFigure(usage.costUsdMicros, props.totals.costBasis)}
@@ -193,10 +226,10 @@ export function TicketUsage(props: {
   return (
     <div className="ticket-usage">
       {props.totals === undefined ? (
-        <p className="empty">No run figures yet</p>
+        <EmptyState label="No run figures yet" />
       ) : (
         <>
-          <UsageTotals totals={props.totals} />
+          <UsageTotals totals={props.totals} page={props.page} />
           <UsageByModel totals={props.totals} />
         </>
       )}

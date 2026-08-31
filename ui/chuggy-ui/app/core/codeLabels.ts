@@ -11,7 +11,8 @@
  * the console's older voice, and the pages still drawing that voice read it
  * unchanged; this one is the ledger page's, where a label is a noun and a
  * status is one or two words. The two are a migration in progress and not a
- * pair to keep: when the last page leaves the sentences, the sentences go.
+ * pair to keep: when the last page leaves the sentences, the sentences go, and
+ * the one path that still reaches a reader through them is kasofsk/chuggy#460.
  */
 
 import {
@@ -160,11 +161,16 @@ export function phaseLabel(phase: TicketPhase): string {
   }
 }
 
-/** What a mutation does, what it costs, and at most one consequence that matters. */
+/**
+ * What a mutation does, what it costs, and at most one consequence that
+ * matters. `offered` is false where the machine admits no such answer at all,
+ * which is a wall the console must not draw a button into.
+ */
 export interface ActionEffect {
   readonly effect: string;
   readonly cost: string;
   readonly more?: string;
+  readonly offered: boolean;
 }
 
 function resumeEffect(resume: ResumeConsequence): string {
@@ -199,6 +205,11 @@ function actionCost(charge: number): string {
   return charge > 0 ? `costs ${String(charge)} gas` : "free";
 }
 
+/** An answer the machine admits, which is every one but a resume with no point. */
+function offered(effect: string, cost: string): ActionEffect {
+  return { effect, cost, offered: true };
+}
+
 /**
  * What answering the action does to the ticket. A resume is priced and named by
  * the point the machine stamped, which is why it takes the consequence rather
@@ -211,31 +222,33 @@ export function ticketActionEffect(
 ): ActionEffect {
   switch (action) {
     case "Dispatch":
-      return { effect: "Dispatches the observed version", cost: "free" };
+      return offered("Dispatches the observed version", "free");
     case "Resume": {
       if (resume === undefined)
         return {
           effect: "Nothing to resume",
           cost: "free",
-          more: "Only Revoke exits this wall",
+          more: "only Revoke exits this wall",
+          offered: false,
         };
       const more = resumeMore(resume, rework);
       return {
         effect: resumeEffect(resume),
         cost: actionCost(resume.cost),
         ...(more === undefined ? {} : { more }),
+        offered: true,
       };
     }
     case "Revoke":
-      return { effect: "Parks every dependent ticket", cost: "free" };
+      return offered("Parks every dependent ticket", "free");
     case "Retry":
-      return { effect: "Republishes the handoff", cost: "free" };
+      return offered("Republishes the handoff", "free");
     case "Abandon":
-      return { effect: "Abandons dependents too", cost: "free" };
+      return offered("Abandons dependents too", "free");
     case "Approve":
-      return { effect: "Lets finalization proceed", cost: "free" };
+      return offered("Lets finalization proceed", "free");
     case "Decline":
-      return { effect: "Holds finalization back", cost: "free" };
+      return offered("Holds finalization back", "free");
   }
 }
 

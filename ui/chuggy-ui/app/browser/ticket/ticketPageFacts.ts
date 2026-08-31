@@ -27,6 +27,24 @@ import type {
   TicketAuthoring,
 } from "../../core/ticketLedger.ts";
 
+/**
+ * How many executions this page holds, and what is true of them that a count
+ * alone would not say: how many are still running, and how many carry no
+ * figures for the spend to be summed from.
+ */
+export function runsLabel(page: ExecutionsResponse | undefined): string {
+  const held = page?.executions ?? [];
+  const running = held.filter(
+    (row) => row.status !== "Terminal" && row.status !== "Cancelled",
+  ).length;
+  const unmeasured = held.filter((row) => row.runTotals === undefined).length;
+  return [
+    String(held.length),
+    ...(running === 0 ? [] : [`${String(running)} running`]),
+    ...(unmeasured === 0 ? [] : [`${String(unmeasured)} unmeasured`]),
+  ].join(" · ");
+}
+
 export interface TicketPageFacts {
   readonly authoring: TicketAuthoring | undefined;
   readonly stageCount: number;

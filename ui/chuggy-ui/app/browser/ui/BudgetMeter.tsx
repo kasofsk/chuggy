@@ -54,6 +54,23 @@ export function meterFigureText(account: Account): string {
   return `${spent}/${max} used · ${String(account.left ?? 0)} left`;
 }
 
+/**
+ * The same figure in words, which is what the group is named by. `2/2` and `·`
+ * are read unpredictably aloud, so the cells stay decorative and the name
+ * spells what they show.
+ */
+export function meterSpokenText(name: string, account: Account): string {
+  const spent = String(account.spent);
+  if (account.policy === "NotBudgeted") return `${name} not budgeted`;
+  if (account.policy === "LimitNotOnWire")
+    return `${name} ${spent} or more used, limit unknown`;
+  const used = `${name} ${spent} of ${String(account.max ?? 0)} used`;
+  const state = meterStateOf(account);
+  if (state === "over") return `${used}, count is wrong`;
+  if (state === "exhausted") return `${used}, exhausted`;
+  return `${used}, ${String(account.left ?? 0)} left`;
+}
+
 function meterCells(account: Account): ReactNode {
   const max = account.max ?? 0;
   if (max > meterCellsMax)
@@ -97,7 +114,7 @@ export function BudgetMeter(props: {
     <div
       className={`meter meter-${meterStateOf(account)}`}
       role="group"
-      aria-label={`${props.name} ${figure}`}
+      aria-label={meterSpokenText(props.name, props.account)}
     >
       <p className="meter-line">
         <span className="meter-name">{props.name}</span>
