@@ -31,7 +31,7 @@ function raceOutcome(url: string, continuation = false) {
   if (url.includes("/executions?"))
     return {
       outcome: "Ok" as const,
-      body: { executions: [], ...(continuation ? { nextAfter: "next" } : {}) },
+      body: { executions: [], ...(continuation ? { nextCursor: "next" } : {}) },
     };
   if (url.includes("/configurations/"))
     return {
