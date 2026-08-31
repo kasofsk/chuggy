@@ -234,11 +234,20 @@ function selectedStatuses(
     : query.selection.states;
 }
 
+/**
+ * One page of the project's executions in `(ticket, task)` ascending order,
+ * which is the order the machine authorized them in. Execution identity is a
+ * random stem with the task appended, so ordering by it would order a ticket's
+ * history arbitrarily; the cursor is the position in this order rather than
+ * that identity, and the row comparison keeps it total.
+ */
 async function executionRows(
   pool: pg.Pool,
   partition: Partition,
   query: ExecutionListQuery,
 ): Promise<readonly ExecutionViewRow[]> {
+  const afterTicket = query.after?.ticket ?? null;
+  const afterTask = query.after?.task ?? null;
   const found = await pool.query<ExecutionViewRow>(
     sql`SELECT e.execution,e.ticket::text AS ticket,e.task::text AS task,
                t.kind AS task_kind,t.stage::text AS stage,e.cluster,
@@ -262,10 +271,11 @@ async function executionRows(
             ON v.tenant=e.tenant AND v.project=e.project
            AND v.name=p.name AND v.digest=p.digest
          WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
-           AND e.execution>${query.after ?? ""}
+           AND (${afterTicket}::bigint IS NULL
+                OR (e.ticket,e.task)>(${afterTicket}::bigint,${afterTask}::bigint))
            AND (${query.ticket ?? null}::bigint IS NULL OR e.ticket=${query.ticket ?? null})
            AND e.status=ANY(${[...selectedStatuses(query)]}::text[])
-         ORDER BY e.execution LIMIT ${query.limit + 1}`,
+         ORDER BY e.ticket,e.task LIMIT ${query.limit + 1}`,
   );
   return found.rows;
 }
@@ -277,8 +287,8 @@ async function executionPage(
 ): Promise<ExecutionPage> {
   const rows = await executionRows(pool, partition, query);
   const page = rows.slice(0, query.limit);
-  const next = rows.length > query.limit ? page.at(-1) : undefined;
   const summaries = page.map(executionSummary);
+  const next = rows.length > query.limit ? summaries.at(-1) : undefined;
   const workers = await postgresWorkerCatalog(
     pool,
     executionSummaryImages(summaries),
@@ -295,7 +305,9 @@ async function executionPage(
         totals,
       ),
     ),
-    ...(next === undefined ? {} : { nextAfter: asExecutionId(next.execution) }),
+    ...(next === undefined
+      ? {}
+      : { nextAfter: { ticket: next.ticket, task: next.task } }),
   };
 }
 

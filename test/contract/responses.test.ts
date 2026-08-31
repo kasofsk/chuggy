@@ -67,7 +67,7 @@ import {
   runModelCharsMax,
   runTranscriptPageBatchesMax,
 } from "../../src/contract/http.ts";
-import { asTicketId } from "../../src/domain/ids.ts";
+import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { resolvedSelectorSettings } from "../../src/interpreter/selector.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
@@ -76,7 +76,7 @@ import {
   asAuthoritySubject,
   asOperationId,
 } from "../../src/interpreter/operationInbox.ts";
-import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
+import { parseExecutionCursor } from "../../src/adapters/http/contract.ts";
 import {
   authoring,
   authoringWireBody,
@@ -400,17 +400,20 @@ test("the operational status parses every count the scheduler claims", () => {
 
 test("an execution page and an execution detail parse with their results", () => {
   const page = executionsResponseSchema.parse(
-    executionsResponse({
+    executionsResponse(partition, {
       result: "Authorized",
       value: {
         executions: [executionSummary],
-        nextAfter: asExecutionId("execution-one"),
+        nextAfter: { ticket: asTicketId(21), task: asTaskId(8) },
       },
     }).body,
   );
   assert.equal(page.executions[0]?.status, "Terminal");
   assert.equal(page.executions[0]?.request, "request-one");
-  assert.equal(page.nextAfter, "execution-one");
+  assert.deepEqual(parseExecutionCursor(page.nextCursor ?? "", partition), {
+    ticket: 21,
+    task: 8,
+  });
   const detail = executionResponseSchema.parse(
     executionResponse(execution).body,
   );
@@ -427,7 +430,7 @@ test("an execution page and an execution detail parse with their results", () =>
  */
 test("every encoded summary names its request, and a page without one still reads", () => {
   const body = structuredClone(
-    executionsResponse({
+    executionsResponse(partition, {
       result: "Authorized",
       value: { executions: [executionSummary] },
     }).body,
@@ -443,7 +446,7 @@ test("every encoded summary names its request, and a page without one still read
 
 test("an execution names what it ran on, in either mode", () => {
   const page = executionsResponseSchema.parse(
-    executionsResponse({
+    executionsResponse(partition, {
       result: "Authorized",
       value: { executions: [executionSummary] },
     }).body,
@@ -477,7 +480,7 @@ test("an execution names what it ran on, in either mode", () => {
 
 /** The page body one execution carrying this requirement would be sent as. */
 function pageWithRequirement(value: unknown): unknown {
-  return executionsResponse({
+  return executionsResponse(partition, {
     result: "Authorized",
     value: {
       executions: [
@@ -507,7 +510,7 @@ test("a requirement carrying a key its mode does not name is refused", () => {
   );
   assert.throws(() =>
     executionsResponseSchema.parse(
-      executionsResponse({
+      executionsResponse(partition, {
         result: "Authorized",
         value: {
           executions: [{ ...executionSummary, platformDefaultVersion: 0 }],
@@ -652,7 +655,7 @@ test("a configuration version reaches every response that names a revision", () 
   );
   assert.deepEqual(
     executionsResponseSchema.parse(
-      executionsResponse({
+      executionsResponse(partition, {
         result: "Authorized",
         value: { executions: [versionedExecutionSummary] },
       }).body,
@@ -685,7 +688,7 @@ test("a revision with no version carries none of the label's fields", () => {
 test("a worker label rides beside the requirement and the ready image, or is absent", () => {
   const worker = { name: "chuggy-worker", version: "3" };
   const labelled = executionsResponseSchema.parse(
-    executionsResponse({
+    executionsResponse(partition, {
       result: "Authorized",
       value: { executions: [{ ...executionSummary, worker }] },
     }).body,
@@ -693,7 +696,7 @@ test("a worker label rides beside the requirement and the ready image, or is abs
   assert.deepEqual(labelled.executions[0]?.worker, worker);
   assert.equal(
     executionsResponseSchema.parse(
-      executionsResponse({
+      executionsResponse(partition, {
         result: "Authorized",
         value: { executions: [executionSummary] },
       }).body,
