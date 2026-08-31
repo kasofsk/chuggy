@@ -210,8 +210,8 @@ export function schedulerProcess(
 
 /**
  * Holds the discovery cursor and the diagnosis a contained failure would
- * otherwise leave nowhere. The pass no longer ends the loop on a project it
- * cannot activate, so this is the only place an operator learns which one.
+ * otherwise leave nowhere. The pass contains a project it cannot activate, so
+ * this is the only place an operator learns which one.
  */
 export function ticketServiceProcess(
   service: TicketServiceRuntimeService,

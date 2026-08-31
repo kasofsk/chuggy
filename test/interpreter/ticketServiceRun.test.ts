@@ -321,6 +321,37 @@ test("a lease the pass cannot release is reported without unsaying the activatio
   );
 });
 
+test("a turn that fails and then cannot release reports both, neither masking the other", async () => {
+  const projects = {
+    acquire: () => Promise.resolve({ acquired: "Granted", lease }),
+    release: () => Promise.reject(new Error("lease row is gone")),
+    load: () => Promise.reject(new Error("journal is illegal to replay")),
+  } as unknown as ProjectStore;
+  const discovery = {
+    ready: () => Promise.resolve([{ partition, generation: 1 }]),
+  } as unknown as ProjectDiscovery;
+
+  assert.deepEqual(
+    await ticketServiceRunOnce(passService(projects, discovery), {
+      projectsPerPassMax: 4,
+      projectLeaseSeconds: 10,
+    }),
+    {
+      discovered: 1,
+      activated: 0,
+      failed: 1,
+      failures: [
+        {
+          partition,
+          reason: "ActivationFailed",
+          message: "journal is illegal to replay",
+        },
+        { partition, reason: "ReleaseFailed", message: "lease row is gone" },
+      ],
+    },
+  );
+});
+
 test("projects that fail every pass cannot hold the discovery window against a healthy one", async () => {
   const fleet = [
     { tenant: asTenantId("tenant"), project: asProjectId("a-poisoned") },
