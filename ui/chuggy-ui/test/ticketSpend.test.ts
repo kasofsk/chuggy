@@ -22,11 +22,8 @@ import {
   type ExecutionShape,
 } from "./ticketLedgerFixture.ts";
 
-function ledgerOf(
-  shapes: readonly ExecutionShape[],
-  nextAfter?: string,
-): Ledger {
-  return ticketLedger(ledgerPage(shapes, nextAfter), ticket21Authoring);
+function ledgerOf(shapes: readonly ExecutionShape[], cursor?: string): Ledger {
+  return ticketLedger(ledgerPage(shapes, cursor), ticket21Authoring);
 }
 
 function cycleAt(ledger: Ledger, at: number): Cycle {

@@ -24,10 +24,10 @@ import {
 function accountsOf(
   shapes: readonly ExecutionShape[],
   authoring: TicketAuthoring = ticket21Authoring,
-  nextAfter?: string,
+  cursor?: string,
 ) {
   return ticketAccounts(
-    ticketLedger(ledgerPage(shapes, nextAfter), authoring),
+    ticketLedger(ledgerPage(shapes, cursor), authoring),
     authoring,
   );
 }

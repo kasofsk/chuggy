@@ -13,14 +13,9 @@
  * row carries or by the identity stem every task of one request shares. A row
  * `executionSummarySchema` parsed before it declared the request has only the
  * stem, so the stem answers for one and is never the rule where a request is
- * there to read.
- *
- * IT READS THE WIRE'S CURSOR UNDER EITHER OF ITS NAMES. The field that says the
- * route has more of this ticket is being renamed, and this module has to
- * compile against the contract before and after: `ExecutionsPage` is what both
- * shapes satisfy and `pageTruncated` is the only thing that looks, so the
- * rename reaches one function rather than the file. Both names go when the
- * older one does.
+ * there to read. `SpawnedExecution` is what lets this compile before that field
+ * lands in kasofsk/chuggy#449, and deleting it so that `ExecutionSummary` is
+ * read directly is the whole of what that landing costs here.
  *
  * IT IS TOTAL OVER THE PAGES THE ROSTERS ADMIT, not only over the pages the
  * machine produces. Identity order means a short page is cut at no point in
@@ -146,20 +141,9 @@ type SpawnedExecution = ExecutionSummary & {
   readonly request?: string | undefined;
 };
 
-/**
- * A page under either name its cursor has had. Nothing outside `pageTruncated`
- * reads one, so the wire's rename lands in one function.
- */
-export type ExecutionsPage = {
-  readonly executions: ExecutionsResponse["executions"];
-  readonly nextAfter?: string | undefined;
-  readonly nextCursor?: string | undefined;
-};
-
 /** Whether the route holds more of this ticket than the page it answered with. */
 function pageTruncated(page: ExecutionsResponse): boolean {
-  const held: ExecutionsPage = page;
-  return (held.nextAfter ?? held.nextCursor) !== undefined;
+  return page.nextCursor !== undefined;
 }
 
 const executionTaskSuffix = /-\d+$/;

@@ -10,12 +10,7 @@
 
 import { expect, test } from "vitest";
 
-import type {
-  Cycle,
-  ExecutionsPage,
-  ProgramRun,
-  TaskSet,
-} from "../app/core/ticketLedger.ts";
+import type { Cycle, ProgramRun, TaskSet } from "../app/core/ticketLedger.ts";
 import {
   cycleLabel,
   retriesLabel,
@@ -384,12 +379,22 @@ test("a page the route has more of says so", () => {
   expect(ticketLedger(ledgerPage([]), ticket21Authoring).truncated).toBe(false);
 });
 
-test("the cursor is read under either name the wire has given it", () => {
-  const named = (page: ExecutionsPage): boolean =>
-    ticketLedger(page, ticket21Authoring).truncated;
-  expect(named({ executions: [], nextAfter: "execution-zz-9" })).toBe(true);
-  expect(named({ executions: [], nextCursor: "execution-zz-9" })).toBe(true);
-  expect(named({ executions: [] })).toBe(false);
+test("the page's cursor reaches the ledger and every cycle under it", () => {
+  const rows: readonly ExecutionShape[] = [
+    {
+      execution: "execution-aa-1",
+      task: 1,
+      taskKind: "Work",
+      outcome: "Passed",
+    },
+  ];
+  const whole = ticketLedger(ledgerPage(rows), ticket21Authoring);
+  expect([whole.truncated, whole.cycles[0]?.complete]).toEqual([false, true]);
+  const short = ticketLedger(
+    ledgerPage(rows, "execution-zz-9"),
+    ticket21Authoring,
+  );
+  expect([short.truncated, short.cycles[0]?.complete]).toEqual([true, false]);
 });
 
 test("a page cut before a cycle's work run says the artifact is unknown", () => {
