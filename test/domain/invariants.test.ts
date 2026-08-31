@@ -84,7 +84,11 @@ import {
   type StepView,
 } from "../../src/domain/invariants.ts";
 import { sysMeasure } from "../../src/domain/measure.ts";
-import { deadlineOnly, reworkBudget } from "../../src/domain/pricing.ts";
+import {
+  deadlineOnly,
+  reworkBudget,
+  reworkBudgetOf,
+} from "../../src/domain/pricing.ts";
 
 import { hasOpenHumanTask } from "../../src/domain/ticket.ts";
 import { budgetedInstance } from "./configs.ts";
@@ -294,6 +298,52 @@ test("deskConsistent rejects a wall without a park, a park without a wall and a 
       config,
       stateView(coreOf([ticketOn(config, "ManagedFinalizer", cascadeWall)])),
     ),
+  );
+});
+
+test("deskConsistent rejects a rework refill promised to a ticket that bought none", () => {
+  const declinedReworkWall = {
+    phase: "Escalated" as const,
+    reason: "ReworkBudgetExhausted" as const,
+    reworkPolicy: reworkBudgetOf(0),
+    reworkLeft: 0,
+  };
+  assert.ok(
+    !deskConsistent(
+      config,
+      stateView(
+        coreOf([
+          ticketOn(config, "ManagedFinalizer", {
+            ...declinedReworkWall,
+            resumeAt: "ResumeReworking",
+          }),
+        ]),
+      ),
+    ),
+    "the wall has no modeled resume where the author granted no budget",
+  );
+  assert.ok(
+    deskConsistent(
+      config,
+      stateView(
+        coreOf([ticketOn(config, "ManagedFinalizer", declinedReworkWall)]),
+      ),
+    ),
+  );
+  assert.ok(
+    deskConsistent(
+      config,
+      stateView(
+        coreOf([
+          ticketOn(config, "ManagedFinalizer", {
+            ...declinedReworkWall,
+            reworkPolicy: reworkBudgetOf(1),
+            resumeAt: "ResumeReworking",
+          }),
+        ]),
+      ),
+    ),
+    "with a budget the same wall must stamp the refill it will grant",
   );
 });
 

@@ -13,7 +13,11 @@
  * than in the record a golden compares.
  */
 
-import type { Core, Stage } from "../../src/domain/generated/modelTypes.ts";
+import type {
+  Core,
+  Stage,
+  Ticket,
+} from "../../src/domain/generated/modelTypes.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -33,9 +37,14 @@ import {
   freshTicket,
   settledRecord,
 } from "../../src/domain/deciders.ts";
+import { retryableIn } from "../../src/domain/enablement.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { sysMeasure } from "../../src/domain/measure.ts";
-import { budgeted, reworkBudgetOf } from "../../src/domain/pricing.ts";
+import {
+  budgeted,
+  reworkBudget,
+  reworkBudgetOf,
+} from "../../src/domain/pricing.ts";
 import { tasksInIdOrder } from "../../src/domain/task.ts";
 import {
   budgetedInstance,
@@ -275,7 +284,7 @@ test("a ticket authored without a finalizer completes out of evaluation, holding
 });
 
 test("a rework cycle spends both the rework account and gas, and each wall names itself", () => {
-  const failing = (overrides: { reworkLeft: number; gasLeft: number }) =>
+  const failing = (overrides: Partial<Ticket>) =>
     coreOf([
       ticketOn(config, "ManagedFinalizer", {
         phase: "Evaluating",
@@ -305,7 +314,20 @@ test("a rework cycle spends both the rework account and gas, and each wall names
     ticketAt(budgetWall.post, id(1)).reason,
     "ReworkBudgetExhausted",
   );
-  assert.equal(ticketAt(budgetWall.post, id(1)).resumeAt, "ResumeEvaluating");
+  assert.equal(ticketAt(budgetWall.post, id(1)).resumeAt, "ResumeReworking");
+
+  const declined = failing({
+    reworkLeft: 0,
+    gasLeft: 2,
+    reworkPolicy: reworkBudgetOf(0),
+  });
+  const declinedWall = decideEvalStageReduce(declined, id(1));
+  assert.equal(
+    ticketAt(declinedWall.post, id(1)).resumeAt,
+    "NoResume",
+    "an author who bought no rework budget gets a revoke-only park",
+  );
+  assert.equal(retryableIn(declinedWall.post, id(1)), false);
 
   const dry = failing({ reworkLeft: 1, gasLeft: 0 });
   const gasWall = decideEvalStageReduce(dry, id(1));
@@ -591,6 +613,48 @@ test("every resume re-enters where its wall said, priced by the ticket's own pol
     measure(finalize.post) > measure(freePipeline),
     "a free pipeline resume is the churn arm the descent argument exempts",
   );
+});
+
+test("the rework wall's resume refills the account and buys a work cycle", () => {
+  const walled = (resumePricing: "RetryCharged" | "RetryFree"): Core =>
+    coreOf([
+      ticketOn(config, "ManagedFinalizer", {
+        phase: "Escalated",
+        resumeAt: "ResumeReworking",
+        reason: "ReworkBudgetExhausted",
+        resumePricing,
+        record: [workTask(1, "Passed"), evalTask(2, 0, "Failed")],
+        spawned: 2,
+        reworkLeft: 0,
+        gasLeft: 2,
+      }),
+    ]);
+  for (const pricing of ["RetryCharged", "RetryFree"] as const) {
+    const pre = walled(pricing);
+    const resumed = decideResumeTicket(pre, id(1));
+    assert.equal(resumed.rec.label, "ticket-resumed");
+    assert.deepEqual(resumed.rec.transitions, [
+      { ticket: id(1), from: "Escalated", to: "Working" },
+    ]);
+    assert.deepEqual(resumed.rec.effects, ["SpawnWorkTasks"]);
+    const post = ticketAt(resumed.post, id(1));
+    assert.equal(post.reworkLeft, reworkBudget(post.reworkPolicy));
+    assert.equal(
+      post.gasLeft,
+      1,
+      "entry to Working meters even where retries are free",
+    );
+    assert.deepEqual(
+      tasksInIdOrder(post.tasks).map((t) => t.id),
+      [asTaskId(3), asTaskId(4)],
+      "fresh work ids above an intact record",
+    );
+    assert.deepEqual(post.record, ticketAt(pre, id(1)).record);
+    assert.ok(
+      measure(resumed.post) < measure(pre),
+      "a refill bought with gas descends; it is in no churn set",
+    );
+  }
 });
 
 test("a park with no modeled resume is the guarded no-op its enablement refuses", () => {
