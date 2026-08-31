@@ -20,10 +20,11 @@ export function artifactRootPrecondition(root: string): RuntimePrecondition {
     check: async (signal) => {
       signal.throwIfAborted();
       const found = await stat(root);
-      if (!found.isDirectory()) return false;
+      if (!found.isDirectory())
+        return { met: "Refused", why: `${root} is not a directory` };
       signal.throwIfAborted();
       await access(root, constants.W_OK | constants.X_OK);
-      return true;
+      return { met: "Met" };
     },
   };
 }

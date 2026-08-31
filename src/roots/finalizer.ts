@@ -23,10 +23,18 @@ import { pathToFileURL } from "node:url";
 import { assertNever } from "../domain/assertNever.ts";
 import { composeFinalizerRuntime } from "../compose.ts";
 import { finalizerSettingsOf } from "../interpreter/finalizerSettings.ts";
-import type {
-  RuntimePrecondition,
-  ServiceRuntime,
+import {
+  runtimePreconditionUndecided,
+  type RuntimePrecondition,
+  type ServiceRuntime,
 } from "../interpreter/serviceRuntime.ts";
+
+/** One precondition that stopped a start, named beside what it answered. */
+interface RuntimePreconditionUnmet {
+  readonly precondition: string;
+  readonly met: "Refused" | "Undecided";
+  readonly why: string;
+}
 import { finalizerProcessRoot } from "./controlPlane.ts";
 
 /** What a configuration this cannot parse, or a shutdown that did not drain, leaves with. */
@@ -43,20 +51,25 @@ function finalizerMessageOf(failure: unknown): string {
   return failure instanceof Error ? failure.message : "unknown failure";
 }
 
-/** The first precondition this deployment does not meet, a throwing check counting as unmet. */
+/** The first precondition this deployment does not meet, a throwing check counting as undecided. */
 async function finalizerUnmet(
   preconditions: readonly RuntimePrecondition[],
-): Promise<string | undefined> {
+): Promise<RuntimePreconditionUnmet | undefined> {
   const signal = new AbortController().signal;
   for (const precondition of preconditions) {
-    const met = await precondition.check(signal).catch(() => false);
-    if (!met) return precondition.name;
+    const verdict = await precondition
+      .check(signal)
+      .catch(runtimePreconditionUndecided);
+    if (verdict.met !== "Met")
+      return { precondition: precondition.name, ...verdict };
   }
   return undefined;
 }
 
-function finalizerCouldNotRun(precondition: string): void {
-  finalizerReport(`${precondition} is not met`);
+function finalizerCouldNotRun(unmet: RuntimePreconditionUnmet): void {
+  finalizerReport(
+    `${unmet.precondition} is not met (${unmet.met.toLowerCase()}): ${unmet.why}`,
+  );
   process.exitCode = finalizerCouldNotRunExit;
 }
 
@@ -116,7 +129,11 @@ export async function finalizerRun(runtime: ServiceRuntime): Promise<void> {
     case "Stopped":
       return stop();
     case "CouldNotRun":
-      finalizerCouldNotRun(started.precondition);
+      finalizerCouldNotRun({
+        precondition: started.precondition,
+        met: started.verdict,
+        why: started.why,
+      });
       return stop();
     default:
       return assertNever(started);

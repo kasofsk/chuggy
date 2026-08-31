@@ -76,7 +76,12 @@ const configurationSchema = z
 
 export type TicketServiceCommandResult =
   | { readonly outcome: "Stopped"; readonly stop: ServiceStopResult }
-  | { readonly outcome: "CouldNotRun"; readonly precondition: string }
+  | {
+      readonly outcome: "CouldNotRun";
+      readonly precondition: string;
+      readonly verdict: "Refused" | "Undecided";
+      readonly why: string;
+    }
   | { readonly outcome: "Failed"; readonly failure: string };
 
 export interface TicketServiceCommandExit {
@@ -161,7 +166,12 @@ export async function runTicketService(
     ]);
     if (started.started === "CouldNotRun") {
       await runtime.stop();
-      return { outcome: "CouldNotRun", precondition: started.precondition };
+      return {
+        outcome: "CouldNotRun",
+        precondition: started.precondition,
+        verdict: started.verdict,
+        why: started.why,
+      };
     }
     if (started.started === "Stopped")
       return { outcome: "Stopped", stop: await (stop ?? runtime.stop()) };
@@ -214,7 +224,7 @@ export async function ticketServiceMain(
   if (result.outcome === "CouldNotRun") {
     return {
       code: 3,
-      diagnostic: `ticket service could not run: ${result.precondition}`,
+      diagnostic: `ticket service could not run: ${result.precondition} ${result.verdict.toLowerCase()} — ${result.why}`,
     };
   }
   if (result.outcome === "Failed") {

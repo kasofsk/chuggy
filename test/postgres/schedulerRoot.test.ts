@@ -117,8 +117,8 @@ function schedulerRootProgram(): string {
     const ports = await import('./test/postgres/schedulerRootPorts.ts');
     const called = { met: 0, unmet: 0 };
     const supplied = [
-      { name: 'cluster-namespace-reachable', check: async () => { called.met += 1; return true; } },
-      { name: 'cluster-quota-available', check: async () => { called.unmet += 1; return false; } },
+      { name: 'cluster-namespace-reachable', check: async () => { called.met += 1; return { met: 'Met' }; } },
+      { name: 'cluster-quota-available', check: async () => { called.unmet += 1; return { met: 'Refused', why: 'the cluster quota is spent' }; } },
     ];
     const runtime = roots.schedulerProcessRoot({
       database: { url: ${JSON.stringify(schedulerRootUrl())} },
@@ -153,6 +153,8 @@ test("a precondition the deployment supplies is reached past the database ones a
     started: {
       started: "CouldNotRun",
       precondition: "cluster-quota-available",
+      verdict: "Refused",
+      why: "the cluster quota is spent",
     },
     called: { met: 1, unmet: 1 },
   });

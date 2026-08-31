@@ -529,14 +529,17 @@ test("the scheduler process starts, places one worker, reports health and stops"
 
 test("a cluster that does not answer is a named could-not-run and never readiness", async () => {
   const found = JSON.parse(await schedulerProgram(processProgram(false))) as {
-    readonly started: unknown;
+    readonly started: {
+      readonly started: string;
+      readonly precondition: string;
+      readonly verdict: string;
+    };
     readonly health: { readonly ready: boolean };
     readonly placed: readonly string[];
   };
-  assert.deepEqual(found.started, {
-    started: "CouldNotRun",
-    precondition: "cluster-namespace-reachable",
-  });
+  assert.equal(found.started.started, "CouldNotRun");
+  assert.equal(found.started.precondition, "cluster-namespace-reachable");
+  assert.equal(found.started.verdict, "Refused");
   assert.equal(found.health.ready, false);
   assert.deepEqual(found.placed, []);
 });

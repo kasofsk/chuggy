@@ -166,10 +166,12 @@ export async function postgresHarnessOpen(): Promise<PostgresHarness> {
   const store = postgresProjectStore(pool);
   await postgresHarnessEpoch(store);
   if (
-    !(await postgresDomainConfigurationPrecondition(
-      pool,
-      refinementInstance,
-    ).check(new AbortController().signal))
+    (
+      await postgresDomainConfigurationPrecondition(
+        pool,
+        refinementInstance,
+      ).check(new AbortController().signal)
+    ).met !== "Met"
   )
     throw new Error("postgres harness: domain configuration was refused");
   return {

@@ -11,6 +11,14 @@
  * A SUPERSEDED SEMANTICS IS FROZEN. What it decided is already durable, so
  * revising one would turn a legal history illegal, which is the failure this
  * module exists to prevent.
+ *
+ * A REPLAYED STATE IS NOT A STATE THE CURRENT DOMAIN INVARIANTS DESCRIBE. The
+ * first semantics granted the rework wall an eval resume even where the ticket
+ * bought no rework, and `deskConsistent` in `src/domain/invariants.ts` now says
+ * a wall with no modeled resume carries none — so a correct replay of that
+ * history reaches a state the current bundle rejects. The bundle describes the
+ * machine the model proves; history is not required to satisfy it, and nothing
+ * in `src/` evaluates it over a replayed core.
  */
 
 import type { Config } from "../domain/config.ts";
@@ -68,6 +76,10 @@ export function execDecisionEventAt(
   event: DecisionEvent,
 ): Decision {
   const decision = execDecisionEvent(config, core, event);
-  if (semantics === decisionSemanticsVersionCurrent) return decision;
-  return decisionAtReworkWallParkedEvaluating(event, decision);
+  switch (semantics) {
+    case 1:
+      return decisionAtReworkWallParkedEvaluating(event, decision);
+    case 2:
+      return decision;
+  }
 }

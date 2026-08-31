@@ -199,7 +199,7 @@ test("source and policy readiness have stable named prerequisites", async () => 
     const signal = new AbortController().signal;
     process.stdout.write(JSON.stringify(await Promise.all(preconditions.map(async (value) => ({
       name: value.name,
-      met: await value.check(signal).catch(() => false),
+      met: (await value.check(signal).catch(() => ({ met: 'Undecided' }))).met === 'Met',
     })))));
   `;
   const found = await execute(
@@ -228,7 +228,8 @@ test("native readiness refuses a healthy inventory over an unready context pool"
       'selector',
       async () => false,
     );
-    const met = await preconditions[0].check(new AbortController().signal);
+    const met = (await preconditions[0].check(new AbortController().signal))
+      .met === "Met";
     process.stdout.write(JSON.stringify({ met, inventoryReads }));
   `;
   const found = await execute(process.execPath, [

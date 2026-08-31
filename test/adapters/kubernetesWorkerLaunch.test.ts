@@ -874,9 +874,9 @@ test("a credential that cannot be read is a hold like an unreachable cluster", a
 
 test("the namespace is a precondition met only by a namespace that answers", async () => {
   const answers = new Map([
-    [200, true],
-    [403, false],
-    [404, false],
+    [200, "Met"],
+    [403, "Refused"],
+    [404, "Refused"],
   ]);
   for (const [status, met] of answers) {
     const precondition = kubernetesNamespacePrecondition(
@@ -885,7 +885,7 @@ test("the namespace is a precondition met only by a namespace that answers", asy
     );
     assert.equal(precondition.name, "cluster-namespace-reachable");
     assert.equal(
-      await precondition.check(new AbortController().signal),
+      (await precondition.check(new AbortController().signal)).met,
       met,
       `status ${String(status)}`,
     );
@@ -893,7 +893,10 @@ test("the namespace is a precondition met only by a namespace that answers", asy
   const unreachable = kubernetesNamespacePrecondition(config, () =>
     Promise.reject(new Error("connection refused")),
   );
-  assert.equal(await unreachable.check(new AbortController().signal), false);
+  assert.equal(
+    (await unreachable.check(new AbortController().signal)).met,
+    "Refused",
+  );
 });
 
 test("the namespace probe reads the namespace and nothing under it", async () => {

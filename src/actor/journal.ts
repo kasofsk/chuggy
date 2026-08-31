@@ -12,16 +12,22 @@
  * journal is a sufficient basis for the state because nothing else ever
  * entered a decision.
  *
- * A ROW IS RE-DERIVED BY THE MACHINE THAT DECIDED IT. A store keeps the
- * decision semantics beside each entry, so a history spanning a semantics
- * change replays row by row under its own — `journalLegalOn` and `replayCore`
- * are the same folds over a history this image decided whole, which is every
- * journal `model/` describes.
+ * A ROW'S DECIDERS ARE RE-DERIVED BY THE MACHINE THAT DECIDED IT — its
+ * deciders, and not its guards. A store keeps the decision semantics beside
+ * each entry, so a history spanning a semantics change replays row by row under
+ * its own; `decisionEventEnabled` below is this image's, because the change
+ * these versions exist for altered no guard, and a change that alters one has
+ * to version enablement here too. `journalLegalOn` and `replayCore` are the
+ * same folds over a history this image decided whole, which is every journal
+ * `model/` describes.
  *
- * DESCENDING SEMANTICS IS REFUSED, for the same reason it cannot occur: an
- * image writes one version, so a row decided under an older machine than the
- * row before it is a history no deployment took, and replaying it would offer
- * an older decider a state only a newer one can reach.
+ * DESCENDING SEMANTICS IS REFUSED: a row decided under an older machine than
+ * the row before it would offer an older decider a state only a newer one can
+ * reach. Nothing stops one being written — during a rolling deploy the older
+ * image refuses on read what the newer image wrote, which held for the first
+ * bump because that image demanded version one and will not hold for the next,
+ * so this refusal is what keeps replay total rather than a restatement of a
+ * guarantee elsewhere.
  */
 
 import type { Config } from "../domain/config.ts";

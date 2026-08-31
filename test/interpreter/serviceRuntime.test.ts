@@ -40,7 +40,12 @@ test("a service starts, reports readiness, runs bounded quanta and stops", async
   const runtime = serviceRuntime(
     { run: () => Promise.resolve(void (passes += 1)) },
     pacing,
-    [{ name: "schema-compatible", check: () => Promise.resolve(true) }],
+    [
+      {
+        name: "schema-compatible",
+        check: () => Promise.resolve({ met: "Met" as const }),
+      },
+    ],
     runtimeConfig,
   );
 
@@ -57,13 +62,24 @@ test("a missing precondition is could-not-run and never becomes ready", async ()
   const runtime = serviceRuntime(
     { run: () => Promise.resolve(void (passes += 1)) },
     pacing,
-    [{ name: "schema-compatible", check: () => Promise.resolve(false) }],
+    [
+      {
+        name: "schema-compatible",
+        check: () =>
+          Promise.resolve({
+            met: "Refused" as const,
+            why: "the applied prefix is not one this image accepts",
+          }),
+      },
+    ],
     runtimeConfig,
   );
 
   assert.deepEqual(await runtime.start(), {
     started: "CouldNotRun",
     precondition: "schema-compatible",
+    verdict: "Refused",
+    why: "the applied prefix is not one this image accepts",
   });
   assert.deepEqual(runtime.health(), { live: true, ready: false });
   assert.equal(passes, 0);
@@ -172,17 +188,24 @@ test("a migration ledger with a gap is incompatible", async () => {
       compatible: [migrationOne, migrationTwo],
     },
   );
-  assert.equal(await precondition.check(new AbortController().signal), false);
+  assert.equal(
+    (await precondition.check(new AbortController().signal)).met,
+    "Refused",
+  );
 });
 
-test("a stored journal this image could not have taken refuses the start by name", async () => {
+test("a stored journal this image could not have taken refuses the start, naming it", async () => {
   let passes = 0;
   const runtime = serviceRuntime(
     { run: () => Promise.resolve(void (passes += 1)) },
     pacing,
     [
       journalLegalityPrecondition({
-        illegalPartitions: () => Promise.resolve(["acme/rig"]),
+        scan: () =>
+          Promise.resolve({
+            scanned: "Scanned",
+            illegal: ["acme/rig", "acme/spare"],
+          }),
       }),
     ],
     runtimeConfig,
@@ -191,22 +214,25 @@ test("a stored journal this image could not have taken refuses the start by name
   assert.deepEqual(await runtime.start(), {
     started: "CouldNotRun",
     precondition: "journal-legal",
+    verdict: "Refused",
+    why: "stored histories this image could not have decided: acme/rig, acme/spare",
   });
   assert.deepEqual(runtime.health(), { live: true, ready: false });
   assert.equal(passes, 0);
   await runtime.stop();
 });
 
-test("a legality scan that cannot answer refuses the start rather than passing it", async () => {
+test("a legality scan that could not finish is undecided, not a finding", async () => {
   const runtime = serviceRuntime(
     { run: () => Promise.resolve() },
     pacing,
     [
       journalLegalityPrecondition({
-        illegalPartitions: () =>
-          Promise.reject(
-            new Error("more journaled partitions than one scan reads"),
-          ),
+        scan: () =>
+          Promise.resolve({
+            scanned: "Incomplete",
+            why: "more journaled partitions than one legality scan reads",
+          }),
       }),
     ],
     runtimeConfig,
@@ -215,6 +241,29 @@ test("a legality scan that cannot answer refuses the start rather than passing i
   assert.deepEqual(await runtime.start(), {
     started: "CouldNotRun",
     precondition: "journal-legal",
+    verdict: "Undecided",
+    why: "more journaled partitions than one legality scan reads",
+  });
+  await runtime.stop();
+});
+
+test("a scan that raises is undecided rather than a journal this image refuses", async () => {
+  const runtime = serviceRuntime(
+    { run: () => Promise.resolve() },
+    pacing,
+    [
+      journalLegalityPrecondition({
+        scan: () => Promise.reject(new Error("the database is unreachable")),
+      }),
+    ],
+    runtimeConfig,
+  );
+
+  assert.deepEqual(await runtime.start(), {
+    started: "CouldNotRun",
+    precondition: "journal-legal",
+    verdict: "Undecided",
+    why: "the database is unreachable",
   });
   await runtime.stop();
 });
@@ -225,7 +274,7 @@ test("a legality scan that names nothing lets the start proceed", async () => {
     pacing,
     [
       journalLegalityPrecondition({
-        illegalPartitions: () => Promise.resolve([]),
+        scan: () => Promise.resolve({ scanned: "Scanned", illegal: [] }),
       }),
     ],
     runtimeConfig,
@@ -254,7 +303,7 @@ test("stop cancels and awaits startup preconditions", async () => {
             signal.addEventListener(
               "abort",
               () => {
-                resolve(false);
+                resolve({ met: "Refused", why: "the start was cancelled" });
               },
               { once: true },
             );

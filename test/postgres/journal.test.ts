@@ -18,7 +18,8 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { storedJournalLegalOn } from "../../src/actor/journal.ts";
+import { storedJournalLegalOn, type Entry } from "../../src/actor/journal.ts";
+import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   journalChainGenesis,
   journalEnvelopeDigest,
@@ -99,14 +100,72 @@ test("load refuses a v2 row whose format discriminator is downgraded", async () 
   assert.match(loaded.why, /integrity verification/);
 });
 
+/**
+ * Restates one stored row's envelope at the versions given, digest and all, so
+ * a case reaches the version guards rather than stopping at the broken digest a
+ * bare column edit would leave.
+ */
+async function restateEnvelope(
+  partition: Partition,
+  seq: number,
+  entry: Entry,
+  previous: string,
+  versions: {
+    readonly eventSchemaVersion: number;
+    readonly decisionSemanticsVersion: number;
+  },
+): Promise<void> {
+  const rows = (await harness.query(
+    `SELECT cause_id,configuration_revision,configuration_digest
+       FROM journal_entry WHERE tenant=$1 AND project=$2 AND seq=$3`,
+    [partition.tenant, partition.project, seq],
+  )) as readonly {
+    cause_id: string;
+    configuration_revision: string;
+    configuration_digest: string;
+  }[];
+  const row = rows[0];
+  assert.ok(row !== undefined);
+  await harness.query(
+    `UPDATE journal_entry
+       SET event_schema_version=$4,decision_semantics_version=$5,entry_digest=$6
+       WHERE tenant=$1 AND project=$2 AND seq=$3`,
+    [
+      partition.tenant,
+      partition.project,
+      seq,
+      versions.eventSchemaVersion,
+      versions.decisionSemanticsVersion,
+      journalEnvelopeDigest(partition, previous, {
+        entry,
+        cause: { kind: "Operation", id: asOperationId(row.cause_id) },
+        configuration: {
+          configurationRevision: row.configuration_revision,
+          configurationDigest: row.configuration_digest,
+        },
+        ...versions,
+      }),
+    ],
+  );
+}
+
 test("load refuses unsupported event and decision semantic versions", async () => {
-  for (const column of [
-    "event_schema_version",
-    "decision_semantics_version",
-  ] as const) {
+  const cases = [
+    {
+      column: "event_schema_version",
+      versions: { eventSchemaVersion: 3, decisionSemanticsVersion: 2 },
+      why: /integrity verification/,
+    },
+    {
+      column: "decision_semantics_version",
+      versions: { eventSchemaVersion: 1, decisionSemanticsVersion: 3 },
+      why: /declares decision semantics 3, which this image has no deciders for/,
+    },
+  ] as const;
+  for (const unsupported of cases) {
     const partition = await postgresHarnessProject(
       harness.store,
-      `unsupported-${column}`,
+      `unsupported-${unsupported.column}`,
     );
     const memory = await postgresHarnessHistory(
       harness,
@@ -114,15 +173,32 @@ test("load refuses unsupported event and decision semantic versions", async () =
       "writer",
       1,
     );
-    await harness.query(
-      `UPDATE journal_entry SET ${column}=3 WHERE tenant=$1 AND project=$2 AND seq=1`,
-      [partition.tenant, partition.project],
+    const entry = postgresHarnessJournal()[0];
+    assert.ok(entry !== undefined);
+    await restateEnvelope(
+      partition,
+      1,
+      entry,
+      journalChainGenesis(partition),
+      unsupported.versions,
     );
     const loaded = await harness.store.load(memory.lease);
     assert.equal(loaded.parsed, "Refused");
     assert.ok(loaded.parsed === "Refused");
-    assert.match(loaded.why, /integrity verification/);
+    assert.match(loaded.why, unsupported.why);
   }
+});
+
+test("a restated envelope at the versions this image writes still loads", async () => {
+  const partition = await postgresHarnessProject(harness.store, "restated");
+  const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
+  const entry = postgresHarnessJournal()[0];
+  assert.ok(entry !== undefined);
+  await restateEnvelope(partition, 1, entry, journalChainGenesis(partition), {
+    eventSchemaVersion: 1,
+    decisionSemanticsVersion: 2,
+  });
+  assert.equal((await harness.store.load(memory.lease)).parsed, "Ok");
 });
 
 test("load re-verifies the retained configuration content", async () => {
@@ -296,11 +372,8 @@ test("the legality scan names a history whose declared machine could not have de
   const named = `${partition.tenant}/${partition.project}`;
   const legality = postgresJournalLegality(harness.pool, refinementInstance);
 
-  assert.ok(
-    !(await legality.illegalPartitions(new AbortController().signal)).includes(
-      named,
-    ),
-  );
+  const before = await legality.scan(new AbortController().signal);
+  assert.ok(before.scanned === "Scanned" && !before.illegal.includes(named));
 
   const rows = (await harness.query(
     `SELECT prev_digest,cause_id,configuration_revision,configuration_digest
@@ -335,9 +408,6 @@ test("the legality scan names a history whose declared machine could not have de
     ],
   );
 
-  assert.ok(
-    (await legality.illegalPartitions(new AbortController().signal)).includes(
-      named,
-    ),
-  );
+  const after = await legality.scan(new AbortController().signal);
+  assert.ok(after.scanned === "Scanned" && after.illegal.includes(named));
 });

@@ -180,9 +180,9 @@ test("an unavailable database is could-not-run rather than a crash", async () =>
     CHUG_TICKET_SERVICE_CONFIG: JSON.stringify(validConfiguration),
   });
   assert.equal(found.code, 3);
-  assert.equal(
+  assert.match(
     found.stderr,
-    "ticket service could not run: schema-compatible\n",
+    /^ticket service could not run: schema-compatible undecided — /u,
   );
 });
 

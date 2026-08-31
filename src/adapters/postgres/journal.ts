@@ -43,8 +43,11 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
-import type { Entry, StoredEntry } from "../../actor/journal.ts";
-import { storedJournalLegalOn } from "../../actor/journal.ts";
+import {
+  storedJournalLegalOn,
+  type Entry,
+  type StoredEntry,
+} from "../../actor/journal.ts";
 import {
   decisionSemanticsVersionCurrent,
   isDecisionSemanticsVersion,
@@ -66,6 +69,7 @@ import type { RuntimeStoredJournalSource } from "../../interpreter/serviceRuntim
 import type { DispatchContractPin } from "../../interpreter/dispatchView.ts";
 import {
   encodeEntry,
+  parseEntry,
   parseJournal,
   type Parsed,
 } from "../../interpreter/wire.ts";
@@ -84,6 +88,7 @@ import { postgresTransaction } from "./pool.ts";
 import { projectRowStanding } from "./rows.ts";
 
 interface StoredJournalRow {
+  readonly seq: string;
   readonly entry: string;
   readonly entry_digest: string;
   readonly prev_digest: string;
@@ -145,7 +150,7 @@ async function storedJournalRows(
   const { tenant, project } = partition;
   return (
     await client.query<StoredJournalRow>(
-      sql`SELECT j.entry,j.entry_digest,j.prev_digest,j.integrity_version,j.cause_kind,j.cause_id,
+      sql`SELECT j.seq,j.entry,j.entry_digest,j.prev_digest,j.integrity_version,j.cause_kind,j.cause_id,
        j.configuration_revision,j.configuration_digest,c.canonical AS configuration_canonical,
        j.event_schema_version,j.decision_semantics_version
        FROM journal_entry j LEFT JOIN configuration_revision c
@@ -273,29 +278,36 @@ function postgresJournalStored(
   const stored: StoredEntry[] = [];
   let previous = journalChainGenesis(partition);
   for (const row of rows) {
-    let parsed: Parsed<readonly Entry[]>;
+    let parsed: Parsed<Entry>;
     try {
-      parsed = parseJournal([JSON.parse(row.entry) as unknown]);
+      parsed = parseEntry(JSON.parse(row.entry) as unknown);
     } catch {
       return {
         parsed: "Refused",
-        why: `a stored row is not JSON: ${row.entry}`,
+        why: `stored row ${row.seq} is not JSON: ${row.entry}`,
       };
     }
-    if (parsed.parsed === "Refused") return parsed;
-    const entry = parsed.value[0];
-    if (entry === undefined)
-      return { parsed: "Refused", why: "a parsed journal row is absent" };
-    if (
-      !isDecisionSemanticsVersion(row.decision_semantics_version) ||
-      !storedJournalRowVerified(row, partition, previous, entry)
-    ) {
+    if (parsed.parsed === "Refused")
       return {
         parsed: "Refused",
-        why: "a stored journal envelope failed integrity verification",
+        why: `stored row ${row.seq}: ${parsed.why}`,
+      };
+    if (!isDecisionSemanticsVersion(row.decision_semantics_version)) {
+      return {
+        parsed: "Refused",
+        why: `stored row ${row.seq} declares decision semantics ${String(row.decision_semantics_version)}, which this image has no deciders for`,
       };
     }
-    stored.push({ entry, semantics: row.decision_semantics_version });
+    if (!storedJournalRowVerified(row, partition, previous, parsed.value)) {
+      return {
+        parsed: "Refused",
+        why: `the stored envelope of row ${row.seq} failed integrity verification`,
+      };
+    }
+    stored.push({
+      entry: parsed.value,
+      semantics: row.decision_semantics_version,
+    });
     previous = row.entry_digest;
   }
   return { parsed: "Ok", value: stored };
@@ -337,37 +349,49 @@ export async function postgresJournalLoad(
 /** How many journaled partitions one legality scan reads before it reports that it could not finish. */
 const journalLegalityPartitionsMax = 1024;
 
-/** The partitions holding a journal, bounded, so the scan over them is too. */
+type PostgresJournalPartitions =
+  | { readonly listed: "Listed"; readonly partitions: readonly Partition[] }
+  | { readonly listed: "Incomplete"; readonly why: string };
+
+/** The partitions holding a journal, or the reason a scan of them could not be complete. */
 async function postgresJournalPartitions(
   pool: pg.Pool,
-): Promise<readonly Partition[]> {
+): Promise<PostgresJournalPartitions> {
   const found = await pool.query<{ tenant: string; project: string }>(
     sql`SELECT DISTINCT tenant,project FROM journal_entry
         ORDER BY tenant,project LIMIT ${journalLegalityPartitionsMax}`,
   );
-  if (found.rows.length === journalLegalityPartitionsMax)
-    throw new Error(
-      "postgres journal: more journaled partitions than one legality scan reads",
-    );
-  return found.rows.map((row) => ({
-    tenant: asTenantId(row.tenant),
-    project: asProjectId(row.project),
-  }));
+  if (found.rows.length === journalLegalityPartitionsMax) {
+    return {
+      listed: "Incomplete",
+      why: `more journaled partitions than the ${String(journalLegalityPartitionsMax)} one legality scan reads`,
+    };
+  }
+  return {
+    listed: "Listed",
+    partitions: found.rows.map((row) => ({
+      tenant: asTenantId(row.tenant),
+      project: asProjectId(row.project),
+    })),
+  };
 }
 
 /**
  * Every journaled partition replayed under the semantics each of its rows
  * declares, naming the ones this image could not have decided. A scan that
- * cannot reach every partition throws rather than report a clean prefix.
+ * cannot reach every partition reports that instead of a clean prefix.
  */
 export function postgresJournalLegality(
   pool: pg.Pool,
   config: Config,
 ): RuntimeStoredJournalSource {
   return {
-    illegalPartitions: async (signal) => {
+    scan: async (signal) => {
+      const listed = await postgresJournalPartitions(pool);
+      if (listed.listed === "Incomplete")
+        return { scanned: "Incomplete", why: listed.why };
       const illegal: string[] = [];
-      for (const partition of await postgresJournalPartitions(pool)) {
+      for (const partition of listed.partitions) {
         signal.throwIfAborted();
         const stored = await postgresTransaction(pool, (client) =>
           storedJournalRows(client, partition).then((rows) =>
@@ -380,7 +404,7 @@ export function postgresJournalLegality(
         )
           illegal.push(`${partition.tenant}/${partition.project}`);
       }
-      return illegal;
+      return { scanned: "Scanned", illegal };
     },
   };
 }

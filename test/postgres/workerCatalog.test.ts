@@ -87,10 +87,12 @@ async function publishedAt(image: string): Promise<Date> {
 /** Publishes one catalog as a scheduler boot does, refusing to pass a failure off as met. */
 async function publish(workers: readonly AdmittedWorker[]): Promise<void> {
   assert.equal(
-    await postgresWorkerCatalogPrecondition(scheduler, workers).check(
-      new AbortController().signal,
-    ),
-    true,
+    (
+      await postgresWorkerCatalogPrecondition(scheduler, workers).check(
+        new AbortController().signal,
+      )
+    ).met,
+    "Met",
   );
 }
 

@@ -9,6 +9,10 @@
 
 import assert from "node:assert/strict";
 import {
+  runtimePreconditionUndecided,
+  type RuntimePreconditionVerdict,
+} from "../../src/interpreter/serviceRuntime.ts";
+import {
   chmodSync,
   existsSync,
   mkdtempSync,
@@ -32,8 +36,10 @@ function directory(t: TestContext): string {
   return made;
 }
 
-async function unmet(check: Promise<boolean>): Promise<boolean> {
-  return check.catch(() => false);
+async function unmet(
+  check: Promise<RuntimePreconditionVerdict>,
+): Promise<boolean> {
+  return (await check.catch(runtimePreconditionUndecided)).met === "Met";
 }
 
 test("a writable directory meets the precondition and nothing else does", async (t) => {

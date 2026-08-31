@@ -133,10 +133,14 @@ async function apiDatabaseReady(
     );
     const row = found.rows[0];
     if (row?.current_role !== apiRole || !row.authorized) return false;
-    return schemaCompatibilityPrecondition(
-      postgresRuntimeSchema(pool),
-      currentRuntimeSchemaContract,
-    ).check(new AbortController().signal);
+    return (
+      (
+        await schemaCompatibilityPrecondition(
+          postgresRuntimeSchema(pool),
+          currentRuntimeSchemaContract,
+        ).check(new AbortController().signal)
+      ).met === "Met"
+    );
   } catch {
     return false;
   }

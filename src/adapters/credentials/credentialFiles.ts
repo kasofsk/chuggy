@@ -43,7 +43,10 @@ import type {
   ForgeBindingFile,
   RepositoryCredentialFile,
 } from "../../interpreter/finalizerSettings.ts";
-import type { RuntimePrecondition } from "../../interpreter/serviceRuntime.ts";
+import {
+  runtimePreconditionAnswer,
+  type RuntimePrecondition,
+} from "../../interpreter/serviceRuntime.ts";
 
 /** Everything this source is composed with, the files being the only place a value lives. */
 export interface CredentialFilesOptions {
@@ -212,7 +215,11 @@ export function credentialFilesPrecondition(
   const own = credentialFilesState(options);
   return {
     name: "repository-credentials-available",
-    check: (signal) => credentialFilesReadable(own, signal),
+    check: async (signal) =>
+      runtimePreconditionAnswer(
+        await credentialFilesReadable(own, signal),
+        "a repository credential this deployment names is not readable",
+      ),
   };
 }
 
@@ -223,6 +230,10 @@ export function forgeCredentialFilesPrecondition(
   const own = forgeCredentialFilesState(options);
   return {
     name: "forge-credentials-available",
-    check: (signal) => credentialFilesReadable(own, signal),
+    check: async (signal) =>
+      runtimePreconditionAnswer(
+        await credentialFilesReadable(own, signal),
+        "a forge credential this deployment names is not readable",
+      ),
   };
 }

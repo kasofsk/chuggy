@@ -8,6 +8,10 @@
  */
 
 import assert from "node:assert/strict";
+import {
+  runtimePreconditionUndecided,
+  type RuntimePreconditionVerdict,
+} from "../../src/interpreter/serviceRuntime.ts";
 import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -29,8 +33,10 @@ function directory(t: TestContext): string {
   return made;
 }
 
-async function unmet(check: Promise<boolean>): Promise<boolean> {
-  return check.catch(() => false);
+async function unmet(
+  check: Promise<RuntimePreconditionVerdict>,
+): Promise<boolean> {
+  return (await check.catch(runtimePreconditionUndecided)).met === "Met";
 }
 
 test("git is available where this suite's own environment finds it", async () => {

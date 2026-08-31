@@ -260,12 +260,13 @@ test("a forge credential file the port would refuse fails the precondition too",
     bindings: [forgeBinding(path)],
   });
   assert.equal(precondition.name, "forge-credentials-available");
-  assert.equal(await precondition.check(signal), false);
+  assert.equal((await precondition.check(signal)).met, "Refused");
   writeFileSync(path, "forge-secret");
-  assert.equal(await precondition.check(signal), true);
+  assert.equal((await precondition.check(signal)).met, "Met");
   assert.equal(
-    await forgeCredentialFilesPrecondition({ bindings: [] }).check(signal),
-    true,
+    (await forgeCredentialFilesPrecondition({ bindings: [] }).check(signal))
+      .met,
+    "Met",
     "a deployment binding no forge meets the precondition it has nothing to fail",
   );
 });
@@ -306,10 +307,12 @@ test("the precondition is met only when every named credential reads", async (t)
   writeFileSync(present, "secret-a1b2c3");
   const signal = new AbortController().signal;
   assert.equal(
-    await credentialFilesPrecondition({
-      sources: [{ repository: one, path: present }],
-    }).check(signal),
-    true,
+    (
+      await credentialFilesPrecondition({
+        sources: [{ repository: one, path: present }],
+      }).check(signal)
+    ).met,
+    "Met",
   );
   const partial = credentialFilesPrecondition({
     sources: [
@@ -318,5 +321,5 @@ test("the precondition is met only when every named credential reads", async (t)
     ],
   });
   assert.equal(partial.name, "repository-credentials-available");
-  assert.equal(await partial.check(signal), false);
+  assert.equal((await partial.check(signal)).met, "Refused");
 });

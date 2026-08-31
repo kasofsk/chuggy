@@ -17,7 +17,12 @@ test("a process database role must match its responsibility", async () => {
       'chuggy_selector_service',
     );
     const signal = new AbortController().signal;
-    process.stdout.write(JSON.stringify([await matching.check(signal), await rival.check(signal)]));
+    process.stdout.write(
+      JSON.stringify([
+        (await matching.check(signal)).met === "Met",
+        (await rival.check(signal)).met === "Met",
+      ]),
+    );
   `;
   const result = await execute(
     process.execPath,
@@ -60,12 +65,24 @@ test("every control-plane root reports an absent schema as could-not-run", async
     ["--experimental-strip-types", "--input-type=module", "--eval", program],
     { cwd: process.cwd() },
   );
-  assert.deepEqual(JSON.parse(result.stdout), [
-    { started: "CouldNotRun", precondition: "schema-compatible" },
-    { started: "CouldNotRun", precondition: "schema-compatible" },
-    { started: "CouldNotRun", precondition: "schema-compatible" },
-    { started: "CouldNotRun", precondition: "schema-compatible" },
-  ]);
+  assert.deepEqual(
+    (
+      JSON.parse(result.stdout) as readonly {
+        started: string;
+        precondition: string;
+        verdict: string;
+      }[]
+    ).map((outcome) => [
+      outcome.started,
+      outcome.precondition,
+      outcome.verdict,
+    ]),
+    Array.from({ length: 4 }, () => [
+      "CouldNotRun",
+      "schema-compatible",
+      "Refused",
+    ]),
+  );
 });
 
 const successfulProcessProgram = `
