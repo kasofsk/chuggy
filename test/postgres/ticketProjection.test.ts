@@ -264,6 +264,46 @@ test("a resume clears the point it re-entered at, pays for itself and refills", 
 });
 
 /**
+ * One journal entry, so a hand-written projection row stands where the writer
+ * would have left it: the row and the entry its sequence names are written in
+ * one transaction, and the ticket read dates the row from that entry.
+ */
+async function seedEntryAt(partition: Partition, seq: number): Promise<void> {
+  const submission = postgresHarnessSubmission(
+    partition,
+    `projection-${String(seq)}`,
+  );
+  await harness.inbox.accept(submission);
+  const found = await harness.query(
+    "SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1",
+  );
+  const epoch = found[0]?.["epoch"];
+  if (typeof epoch !== "string")
+    throw new Error("ticket projection case: the harness established no epoch");
+  const seeding = await harness.begin();
+  await seeding.query(
+    `UPDATE decision_input SET state='Journaled', decided_seq=$3, terminal_at=now()
+      WHERE tenant=$1 AND project=$2 AND input_kind='Operation' AND input_id=$4`,
+    [partition.tenant, partition.project, seq, submission.operation],
+  );
+  await seeding.query(
+    `INSERT INTO journal_entry
+       (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
+        recovery_epoch,cause_kind,cause_id)
+     VALUES ($1,$2,$3,'{}',$4,'genesis','owner',1,$5,'Operation',$6)`,
+    [
+      partition.tenant,
+      partition.project,
+      seq,
+      `digest-projection-${String(seq)}`,
+      epoch,
+      submission.operation,
+    ],
+  );
+  await seeding.commit();
+}
+
+/**
  * A row no decision has moved since the projection grew these columns. It reads
  * as a ticket whose accounts are not known rather than as one whose accounts
  * are empty, which is the whole reason none of them is defaulted.
@@ -273,6 +313,7 @@ test("a row written before the accounts existed serves none of them", async () =
     harness.store,
     "projection-older",
   );
+  await seedEntryAt(partition, 1);
   await harness.query(
     `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
      VALUES ($1,$2,$3,'Escalated',1)`,
