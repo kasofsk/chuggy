@@ -66,7 +66,13 @@ type ServedNativeWeb = Pick<
 function fakeTicket(calls: string[]): NativeWeb["ticket"] {
   return (_principal, _partition, ticket) => {
     calls.push(`ticket:${String(ticket)}`);
-    return Promise.resolve({ ticket, phase: "Working", sequence: 4 });
+    return Promise.resolve({
+      ticket,
+      phase: "Working",
+      sequence: 4,
+      releasedAt: asPublicInstant("2026-01-01T00:00:00Z"),
+      changedAt: asPublicInstant("2026-01-01T00:00:04Z"),
+    });
   };
 }
 
@@ -700,7 +706,13 @@ test("ticket phase filters and detail are parsed before NativeWeb", async () => 
   );
   const detail = await app.inject({ url: `${root}/3`, headers });
   assert.equal(detail.statusCode, 200);
-  assert.deepEqual(detail.json(), { ticket: 3, phase: "Working", sequence: 4 });
+  assert.deepEqual(detail.json(), {
+    ticket: 3,
+    phase: "Working",
+    sequence: 4,
+    releasedAt: "2026-01-01T00:00:00Z",
+    changedAt: "2026-01-01T00:00:04Z",
+  });
   assert.equal(
     (await app.inject({ url: `${root}?phase=Unknown`, headers })).statusCode,
     400,

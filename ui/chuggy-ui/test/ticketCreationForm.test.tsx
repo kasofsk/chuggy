@@ -27,6 +27,7 @@ import {
   creationInitialization,
   creationPartition,
 } from "./ticketCreationFixture.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 /** The runner has no globals, so each case tears down the tree it rendered. */
 afterEach(cleanup);
@@ -52,7 +53,14 @@ const operationBody = (state: string): unknown => ({
 const projectBody = {
   partition: creationPartition,
   sequence: 42,
-  tickets: [{ ticket: creationDraft.ticket, phase: "Pending", sequence: 42 }],
+  tickets: [
+    {
+      ticket: creationDraft.ticket,
+      phase: "Pending",
+      sequence: 42,
+      ...ticketInstants,
+    },
+  ],
 };
 
 /**

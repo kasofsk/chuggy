@@ -96,6 +96,7 @@ import {
   selectorDefaults,
   selectorProjectSettings,
   revision,
+  ticketInstants,
   versionedConfiguration,
   versionedDispatchViewPage,
   versionedDraft,
@@ -108,7 +109,14 @@ test("a project read and a ticket read parse as the contract names them", () => 
     project: {
       partition,
       sequence: 9,
-      tickets: [{ ticket: asTicketId(3), phase: "Working", sequence: 9 }],
+      tickets: [
+        {
+          ticket: asTicketId(3),
+          phase: "Working",
+          sequence: 9,
+          ...ticketInstants,
+        },
+      ],
       nextAfter: asTicketId(4),
     },
   });
@@ -119,13 +127,51 @@ test("a project read and a ticket read parse as the contract names them", () => 
     ticket: 3,
     phase: "Working",
     sequence: 9,
+    releasedAt: ticketInstants.releasedAt,
+    changedAt: ticketInstants.changedAt,
   });
   assert.equal(
     ticketResponseSchema.parse(
-      ticketResponse({ ticket: asTicketId(3), phase: "Done", sequence: 4 })
-        .body,
+      ticketResponse({
+        ticket: asTicketId(3),
+        phase: "Done",
+        sequence: 4,
+        ...ticketInstants,
+      }).body,
     ).phase,
     "Done",
+  );
+});
+
+test("a ticket is always dated by its change and may be undated by its release", () => {
+  const parsed = ticketResponseSchema.parse(
+    ticketResponse({
+      ticket: asTicketId(3),
+      phase: "Done",
+      sequence: 4,
+      ...ticketInstants,
+    }).body,
+  );
+  assert.equal(parsed.releasedAt, ticketInstants.releasedAt);
+  assert.equal(parsed.changedAt, ticketInstants.changedAt);
+  assert.equal(
+    ticketResponseSchema.parse(
+      ticketResponse({
+        ticket: asTicketId(3),
+        phase: "Done",
+        sequence: 4,
+        changedAt: ticketInstants.changedAt,
+      }).body,
+    ).releasedAt,
+    undefined,
+  );
+  assert.throws(() =>
+    ticketResponseSchema.parse({
+      ticket: 3,
+      phase: "Done",
+      sequence: 4,
+      releasedAt: ticketInstants.releasedAt,
+    }),
   );
 });
 
@@ -136,13 +182,18 @@ test("an escalated ticket names its wall and an unparked one omits it", () => {
       phase: "Escalated",
       sequence: 9,
       reason: "GasExhausted",
+      ...ticketInstants,
     }).body,
   );
   assert.equal(escalated.reason, "GasExhausted");
   assert.equal(
     ticketResponseSchema.parse(
-      ticketResponse({ ticket: asTicketId(3), phase: "Working", sequence: 9 })
-        .body,
+      ticketResponse({
+        ticket: asTicketId(3),
+        phase: "Working",
+        sequence: 9,
+        ...ticketInstants,
+      }).body,
     ).reason,
     undefined,
   );
@@ -152,6 +203,7 @@ test("an escalated ticket names its wall and an unparked one omits it", () => {
       phase: "Escalated",
       sequence: 9,
       reason: "NoReason",
+      ...ticketInstants,
     }),
   );
 });
@@ -758,6 +810,7 @@ test("a briefed draft and ticket read carry the brief, and an older one omits it
       phase: "Working",
       sequence: 9,
       brief,
+      ...ticketInstants,
     }).body,
   );
   assert.deepEqual(ticket.brief?.links, ["https://example.test/issues/340"]);
@@ -767,8 +820,12 @@ test("a briefed draft and ticket read carry the brief, and an older one omits it
   });
   assert.equal(
     ticketResponseSchema.parse(
-      ticketResponse({ ticket: asTicketId(3), phase: "Working", sequence: 9 })
-        .body,
+      ticketResponse({
+        ticket: asTicketId(3),
+        phase: "Working",
+        sequence: 9,
+        ...ticketInstants,
+      }).body,
     ).brief,
     undefined,
   );
@@ -816,13 +873,18 @@ test("a ticket read carries the rollup and an untouched ticket omits it", () => 
       phase: "Done",
       sequence: 4,
       runTotals,
+      ...ticketInstants,
     }).body,
   );
   assert.equal(rolled.runTotals?.turns, runTotals.turns);
   assert.equal(
     ticketResponseSchema.parse(
-      ticketResponse({ ticket: asTicketId(3), phase: "Done", sequence: 4 })
-        .body,
+      ticketResponse({
+        ticket: asTicketId(3),
+        phase: "Done",
+        sequence: 4,
+        ...ticketInstants,
+      }).body,
     ).runTotals,
     undefined,
   );

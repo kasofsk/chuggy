@@ -39,6 +39,7 @@ import {
   projectTicketRowsAppend,
   projectTicketRowsEmpty,
 } from "../app/core/projectTicketPages.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const partition = { tenant: "acme", project: "atlas" };
 
@@ -47,12 +48,14 @@ const escalated: TicketResponse = {
   phase: "Escalated",
   sequence: 9,
   reason: "WorkFailed",
+  ...ticketInstants,
 };
 
 const blocked: TicketResponse = {
   ticket: 2,
   phase: "HandoffBlocked",
   sequence: 8,
+  ...ticketInstants,
 };
 
 function ticketPage(

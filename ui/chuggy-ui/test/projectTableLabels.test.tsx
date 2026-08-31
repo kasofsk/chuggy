@@ -14,6 +14,7 @@ import {
   settled,
 } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -52,7 +53,7 @@ const revision = "repository:cfaca0a0f14ec03845a4e01458ac6c3a56d52a23:chuggy";
 const image =
   "registry.chuggy.internal/chuggy/worker@sha256:9949c442a2f0a5cd0f0a5b1c8b6e0a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f";
 
-const ticket = { ticket: 11, phase: "Working", sequence: 7 };
+const ticket = { ticket: 11, phase: "Working", sequence: 7, ...ticketInstants };
 
 const execution = {
   execution: "e1",

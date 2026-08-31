@@ -21,6 +21,7 @@ import {
 } from "../app/core/projectStream.ts";
 import type { ProjectStreamStatus } from "../app/core/projectStream.ts";
 import { frame, streamServer } from "./streamDouble.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const partition = { tenant: "acme", project: "atlas" };
 
@@ -73,7 +74,12 @@ test("a reopen replays from the last sequence the stream delivered", async () =>
         frame("Ticket", "41", {
           version: 1,
           resource: "3",
-          representation: { ticket: 3, phase: "Working", sequence: 9 },
+          representation: {
+            ticket: 3,
+            phase: "Working",
+            sequence: 9,
+            ...ticketInstants,
+          },
         }),
       ],
     },
@@ -153,7 +159,12 @@ test("a frame the contract rejects ends the connection rather than being skipped
         frame("Ticket", "10", {
           version: 1,
           resource: "4",
-          representation: { ticket: 4, phase: "Working", sequence: 1 },
+          representation: {
+            ticket: 4,
+            phase: "Working",
+            sequence: 1,
+            ...ticketInstants,
+          },
         }),
       ],
     },

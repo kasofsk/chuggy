@@ -197,12 +197,17 @@ export type OperationResource =
 
 /**
  * The reason is present exactly when the ticket is parked on the desk, and the
- * brief exactly when the ticket was authored with one.
+ * brief exactly when the ticket was authored with one. The two instants are the
+ * journal's: `changedAt` is when the entry `sequence` names committed, and
+ * `releasedAt` when the entry releasing this ticket did — absent when no entry
+ * the reader can parse says it released this ticket.
  */
 export interface TicketResource {
   readonly ticket: TicketId;
   readonly phase: Phase;
   readonly sequence: number;
+  readonly changedAt: PublicInstant;
+  readonly releasedAt?: PublicInstant;
   readonly reason?: EscalationReason;
   readonly brief?: DraftBrief;
   readonly runTotals?: RunTotals;

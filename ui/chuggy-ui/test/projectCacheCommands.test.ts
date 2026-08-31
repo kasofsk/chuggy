@@ -17,9 +17,10 @@ import {
   projectPartitionKey,
   projectResourceKey,
 } from "../app/core/projectQueryKeys.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const partition = { tenant: "acme", project: "atlas" };
-const ticket = { ticket: 3, phase: "Working", sequence: 9 };
+const ticket = { ticket: 3, phase: "Working", sequence: 9, ...ticketInstants };
 
 function decoded(
   frame: ProjectStreamFrame,

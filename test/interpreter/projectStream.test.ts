@@ -32,6 +32,7 @@ import {
   settled,
   otherStreamPrincipal,
   streamPrincipal,
+  streamTicketInstants,
   type FakeDoorbell,
   type FakeLog,
   type FakeReader,
@@ -111,7 +112,12 @@ test("a fresh stream is told it is ready and then hears live changes", async () 
   assert.deepEqual(socket.frames.at(-1)?.data, {
     version: 1,
     resource: "7",
-    representation: { ticket: 7, phase: "Working", sequence: 1 },
+    representation: {
+      ticket: 7,
+      phase: "Working",
+      sequence: 1,
+      ...streamTicketInstants,
+    },
   });
 });
 
@@ -424,7 +430,12 @@ test("one stream losing its access tombstones nothing for the others", async () 
   assert.deepEqual(theirs.frames.at(-1)?.data, {
     version: 1,
     resource: "7",
-    representation: { ticket: 7, phase: "Working", sequence: 1 },
+    representation: {
+      ticket: 7,
+      phase: "Working",
+      sequence: 1,
+      ...streamTicketInstants,
+    },
   });
 });
 

@@ -34,6 +34,7 @@ import {
 } from "../app/core/projectTicketPages.ts";
 import type { ProjectTicketRows } from "../app/core/projectTicketPages.ts";
 import { actionsFor } from "../app/core/ticketActions.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const partition = { tenant: "acme", project: "atlas" };
 
@@ -58,8 +59,14 @@ function page(
 }
 
 const parked = page([
-  { ticket: 4, phase: "Escalated", sequence: 9, reason: "WorkFailed" },
-  { ticket: 2, phase: "HandoffBlocked", sequence: 8 },
+  {
+    ticket: 4,
+    phase: "Escalated",
+    sequence: 9,
+    reason: "WorkFailed",
+    ...ticketInstants,
+  },
+  { ticket: 2, phase: "HandoffBlocked", sequence: 8, ...ticketInstants },
 ]);
 
 test("the inbox holds exactly the phases that are an open human task", () => {
@@ -72,7 +79,7 @@ test("a frame for any other phase takes its row out of the inbox", () => {
     const folded = projectTicketRowsFold(
       held,
       "4",
-      { ticket: 4, phase, sequence: 11 },
+      { ticket: 4, phase, sequence: 11, ...ticketInstants },
       inboxPhases,
     );
     const holds = folded?.tickets.some((ticket) => ticket.ticket === 4);
@@ -89,23 +96,34 @@ test("a row offers what the phase enables, and a blocked handoff no revoke", () 
       phase: "Escalated",
       sequence: 9,
       reason: "WorkFailed",
+      ...ticketInstants,
     }),
   ).toStrictEqual(["Resume", "Revoke"]);
   expect(
-    offered({ ticket: 2, phase: "HandoffBlocked", sequence: 8 }),
+    offered({
+      ticket: 2,
+      phase: "HandoffBlocked",
+      sequence: 8,
+      ...ticketInstants,
+    }),
   ).toStrictEqual(["Resume"]);
   for (const phase of phaseRoster)
     if (!inboxPhases.includes(phase))
       expect(
-        offered({ ticket: 1, phase, sequence: 1 }).includes("Resume"),
+        offered({ ticket: 1, phase, sequence: 1, ...ticketInstants }).includes(
+          "Resume",
+        ),
       ).toBe(false);
 });
 
 test("a row's answer is the mutation the wire carries for that ticket", () => {
   expect(
-    actionsFor({ ticket: 4, phase: "Escalated", sequence: 9 }).map(
-      (action) => action.mutation,
-    ),
+    actionsFor({
+      ticket: 4,
+      phase: "Escalated",
+      sequence: 9,
+      ...ticketInstants,
+    }).map((action) => action.mutation),
   ).toStrictEqual([
     { mutation: "ResumeTicket", ticket: 4 },
     { mutation: "RevokeTicket", ticket: 4 },
@@ -147,14 +165,20 @@ test("the count is the rows a page gave, and follows a frame that moves one", ()
   const resumed = projectTicketRowsFold(
     held,
     "4",
-    { ticket: 4, phase: "Working", sequence: 13 },
+    { ticket: 4, phase: "Working", sequence: 13, ...ticketInstants },
     inboxPhases,
   );
   expect(phaseCountLabel(resumed)).toBe("1");
   const arriving = projectTicketRowsFold(
     resumed,
     "9",
-    { ticket: 9, phase: "Escalated", sequence: 14, reason: "GasExhausted" },
+    {
+      ticket: 9,
+      phase: "Escalated",
+      sequence: 14,
+      reason: "GasExhausted",
+      ...ticketInstants,
+    },
     inboxPhases,
   );
   expect(phaseCountLabel(arriving)).toBe("2");
@@ -167,6 +191,7 @@ test("folding one frame twice counts the same as folding it once", () => {
     phase: "Escalated" as const,
     sequence: 14,
     reason: "GasExhausted" as const,
+    ...ticketInstants,
   };
   const once = projectTicketRowsFold(held, "9", arriving, inboxPhases);
   const twice = projectTicketRowsFold(once, "9", arriving, inboxPhases);
@@ -188,14 +213,27 @@ test("an empty inbox is counted as nothing rather than as a zero", () => {
 test("a count with a further page unread says so, at the page cap too", () => {
   const held = projectTicketRowsAppend(
     projectTicketRowsEmpty,
-    page([{ ticket: 4, phase: "Escalated", sequence: 9 }], "after-four"),
+    page(
+      [{ ticket: 4, phase: "Escalated", sequence: 9, ...ticketInstants }],
+      "after-four",
+    ),
   );
   expect(phaseCountLabel(held)).toBe("1+");
   let walked: ProjectTicketRows = projectTicketRowsEmpty;
   for (let read = 0; read < projectTicketPagesMax; read += 1)
     walked = projectTicketRowsAppend(
       walked,
-      page([{ ticket: read + 1, phase: "Escalated", sequence: 1 }], "again"),
+      page(
+        [
+          {
+            ticket: read + 1,
+            phase: "Escalated",
+            sequence: 1,
+            ...ticketInstants,
+          },
+        ],
+        "again",
+      ),
     );
   expect(walked.nextCursor).toBe("again");
   expect(phaseCountLabel(walked)).toBe(`${String(projectTicketPagesMax)}+`);
@@ -203,7 +241,9 @@ test("a count with a further page unread says so, at the page cap too", () => {
     phaseCountLabel(
       projectTicketRowsAppend(
         projectTicketRowsEmpty,
-        page([{ ticket: 4, phase: "Escalated", sequence: 9 }]),
+        page([
+          { ticket: 4, phase: "Escalated", sequence: 9, ...ticketInstants },
+        ]),
       ),
     ),
   ).toBe("1");

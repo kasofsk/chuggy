@@ -14,6 +14,7 @@ import {
   settled,
 } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -128,7 +129,12 @@ async function drawTicket(named: Named): Promise<void> {
             ? {}
             : { configurationVersion: named.version }),
         });
-      return answer({ ticket: 11, phase: "Working", sequence: 7 });
+      return answer({
+        ticket: 11,
+        phase: "Working",
+        sequence: 7,
+        ...ticketInstants,
+      });
     },
   });
   vi.stubGlobal("fetch", api.fetch);

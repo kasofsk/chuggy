@@ -76,6 +76,7 @@ interface ExecutionViewRow extends ConfigurationVersionRow {
   readonly outcome: string | null;
   readonly retries_spent: string;
   readonly registered_at: string;
+  readonly started_at: string | null;
   readonly terminal_at: string | null;
   readonly result_manifest: string | null;
 }
@@ -166,6 +167,9 @@ function executionSummary(row: ExecutionViewRow): ExecutionSummary {
         }),
     retriesSpent: projectRowCounter(row.retries_spent, "execution retries"),
     registeredAt: asPublicInstant(row.registered_at),
+    ...(row.started_at === null
+      ? {}
+      : { startedAt: asPublicInstant(row.started_at) }),
     ...(row.terminal_at === null
       ? {}
       : { terminalAt: asPublicInstant(row.terminal_at) }),
@@ -246,6 +250,10 @@ async function executionRows(
                c.canonical,e.status,e.outcome,
                e.retries_spent::text AS retries_spent,
                e.registered_at::text AS registered_at,e.terminal_at::text AS terminal_at,
+               (SELECT a.opened_at::text FROM execution_attempt a
+                 WHERE a.tenant=e.tenant AND a.project=e.project
+                   AND a.execution=e.execution
+                 ORDER BY a.attempt_number LIMIT 1) AS started_at,
                e.result_manifest,
                v.name AS version_name,v.number::text AS version_number
           FROM execution e JOIN configuration_revision c
@@ -311,6 +319,10 @@ async function oneExecution(
                c.canonical,e.status,e.outcome,
                e.retries_spent::text AS retries_spent,
                e.registered_at::text AS registered_at,e.terminal_at::text AS terminal_at,
+               (SELECT a.opened_at::text FROM execution_attempt a
+                 WHERE a.tenant=e.tenant AND a.project=e.project
+                   AND a.execution=e.execution
+                 ORDER BY a.attempt_number LIMIT 1) AS started_at,
                e.result_manifest,
                v.name AS version_name,v.number::text AS version_number
           FROM execution e JOIN configuration_revision c

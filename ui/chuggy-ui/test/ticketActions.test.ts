@@ -15,6 +15,7 @@ import {
 } from "../../../src/contract/rosters.ts";
 import type { TicketPhase } from "../../../src/contract/rosters.ts";
 import { actionsFor, manualDispatchAction } from "../app/core/ticketActions.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const offeredBy: Readonly<Record<TicketPhase, readonly string[]>> = {
   Pending: ["Revoke"],
@@ -30,7 +31,7 @@ const offeredBy: Readonly<Record<TicketPhase, readonly string[]>> = {
 };
 
 function offers(phase: TicketPhase): readonly string[] {
-  return actionsFor({ ticket: 7, phase, sequence: 3 }).map(
+  return actionsFor({ ticket: 7, phase, sequence: 3, ...ticketInstants }).map(
     (offer) => offer.action,
   );
 }
@@ -47,7 +48,12 @@ test("resume is offered before revoke, so the destructive answer is second", () 
 
 test("every mutation names the ticket it was built for", () => {
   for (const phase of phaseRoster)
-    for (const offer of actionsFor({ ticket: 41, phase, sequence: 1 }))
+    for (const offer of actionsFor({
+      ticket: 41,
+      phase,
+      sequence: 1,
+      ...ticketInstants,
+    }))
       expect(offer.mutation).toEqual({
         mutation: offer.action === "Resume" ? "ResumeTicket" : "RevokeTicket",
         ticket: 41,
@@ -57,9 +63,13 @@ test("every mutation names the ticket it was built for", () => {
 test("an escalation offers the same two answers whatever wall it hit", () => {
   for (const reason of escalationReasons)
     expect(
-      actionsFor({ ticket: 7, phase: "Escalated", sequence: 3, reason }).map(
-        (offer) => offer.action,
-      ),
+      actionsFor({
+        ticket: 7,
+        phase: "Escalated",
+        sequence: 3,
+        reason,
+        ...ticketInstants,
+      }).map((offer) => offer.action),
     ).toEqual(["Resume", "Revoke"]);
 });
 

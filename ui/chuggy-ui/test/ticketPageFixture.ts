@@ -8,8 +8,14 @@
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { answer } from "./screenHarness.tsx";
+import { ticketInstants } from "./ticketInstants.ts";
 
-export const ticketPageTicket = { ticket: 11, phase: "Pending", sequence: 7 };
+export const ticketPageTicket = {
+  ticket: 11,
+  phase: "Pending",
+  sequence: 7,
+  ...ticketInstants,
+};
 
 /** The ticket the one above waits on, as the frame reporting it Done carries
  * it: the transition that makes the page's ticket a candidate. */
@@ -17,6 +23,7 @@ export const ticketPageDependency = {
   ticket: 10,
   phase: "Done",
   sequence: 8,
+  ...ticketInstants,
 };
 
 export const ticketPageCandidate = {

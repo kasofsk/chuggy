@@ -251,9 +251,20 @@ function representation(
   if (kind === "Project")
     return { tenant: partition.tenant, project: partition.project };
   if (kind === "Ticket")
-    return { ticket: Number(resource), phase: "Working", sequence: 1 };
+    return {
+      ticket: Number(resource),
+      phase: "Working",
+      sequence: 1,
+      ...streamTicketInstants,
+    };
   throw new Error(`the stream harness has no ${kind} representation`);
 }
+
+/** The journal instants a ticket body carries, which no case here is about. */
+export const streamTicketInstants = {
+  releasedAt: "2026-01-01T00:00:00Z",
+  changedAt: "2026-01-01T00:00:01Z",
+};
 
 export function fakeReader(): FakeReader {
   const reads: string[] = [];

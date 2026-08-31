@@ -187,3 +187,72 @@ test("an execution's attempts are read in the order they were opened", async () 
     Array.from({ length: opened }, (_unused, index) => index + 1),
   );
 });
+
+/**
+ * Where the wait ends and the run begins, on the summary a row is drawn from.
+ * It is the first attempt's opening and not the latest one's, so a retry does
+ * not move it and a row can subtract it from `registeredAt` and be right.
+ */
+test("an execution's summary starts at its first attempt and stays there", async () => {
+  const project = await schedulerProject(rig, "operational-started");
+  await rig.store.registerSpawn(
+    await schedulerClaimFor(
+      rig,
+      project.partition,
+      project.request,
+      schedulerOwner("operational-started"),
+    ),
+    executionSchedulerDefaults.nTasks,
+  );
+  const reads = postgresOperationalReads(ingress);
+  const summaryOf = async (execution: string) =>
+    (
+      await reads.executions(project.partition, {
+        limit: 10,
+        ticket: id(project.ticket),
+      })
+    ).executions.find((each) => each.execution === execution);
+  const queued = await reads.executions(project.partition, {
+    limit: 10,
+    ticket: id(project.ticket),
+  });
+  assert.ok(queued.executions.length >= 1);
+  assert.deepEqual(
+    queued.executions.map((each) => each.startedAt),
+    queued.executions.map(() => undefined),
+  );
+  const placed = await schedulerPlacedAttempt(
+    rig,
+    project,
+    "operational-started",
+  );
+  const opened = await reads.execution(project.partition, placed.execution);
+  assert.ok(opened?.startedAt !== undefined);
+  assert.equal(opened.startedAt, opened.attempts[0]?.openedAt);
+  assert.equal(
+    (await summaryOf(placed.execution))?.startedAt,
+    opened.startedAt,
+  );
+  assert.equal(
+    await rig.store.attemptEnded(placed.attempt, "Lost", "Vanished"),
+    true,
+  );
+  await rig.harness.query(
+    `UPDATE execution SET placement_backoff_from=NULL
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [project.partition.tenant, project.partition.project, placed.execution],
+  );
+  const retried = await rig.store.openAttempt({
+    partition: project.partition,
+    execution: placed.execution,
+    epoch: project.epoch,
+    leaseSecs: 300,
+    retriesMax: 3,
+    placementBackoffSecs: 1,
+  });
+  assert.equal(retried.opened, "Opened");
+  assert.equal(
+    (await summaryOf(placed.execution))?.startedAt,
+    opened.startedAt,
+  );
+});

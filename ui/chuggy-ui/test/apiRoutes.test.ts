@@ -22,6 +22,7 @@ import {
   projectInventoryPagesMax,
 } from "../app/core/apiRoutes.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const partition = { tenant: "acme", project: "at las" };
 
@@ -82,7 +83,12 @@ test("a project read omits the page fields it was not asked for", async () => {
 });
 
 test("each resource hangs from its partition under its own segment", async () => {
-  const held = recording(() => ({ ticket: 1, phase: "Working", sequence: 1 }));
+  const held = recording(() => ({
+    ticket: 1,
+    phase: "Working",
+    sequence: 1,
+    ...ticketInstants,
+  }));
   await apiTicket(held.ports, partition, 12);
   expect(held.urls[0]).toBe(
     `${nativeHttpBasePath}/tenants/acme/projects/at%20las/tickets/12`,

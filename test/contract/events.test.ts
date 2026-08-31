@@ -36,6 +36,7 @@ import {
   draft as draftResource,
   operation,
   partition,
+  ticketInstants,
   versionedConfiguration,
 } from "./representations.ts";
 
@@ -43,6 +44,7 @@ const ticketRepresentation = ticketResponse({
   ticket: asTicketId(3),
   phase: "Working",
   sequence: 9,
+  ...ticketInstants,
 }).body;
 
 const nativeActionRepresentation = ticketNativeActionsResponse([

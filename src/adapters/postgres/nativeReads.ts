@@ -50,11 +50,19 @@ interface PublicOperationRow {
   readonly refused_lifecycle_generation: string | null;
 }
 
+/**
+ * One projection row, joined to the two journal entries that date it: the one
+ * its `seq` names, and the one that released its ticket. Both are outer joins,
+ * so a page keeps a row neither entry is found for and the mapper decides what
+ * that absence means for each.
+ */
 interface TicketProjectionRow {
   readonly ticket: string;
   readonly phase: string;
   readonly seq: string;
   readonly reason: string;
+  readonly released_at: string | null;
+  readonly changed_at: string | null;
 }
 
 /** One open action, or a ticket that has none: every column is then null. */
@@ -94,16 +102,14 @@ function requiredCounter(value: string | null, what: string): number {
   return projectRowCounter(value, what);
 }
 
-function publicOperationInstant(
-  value: string,
-): ReturnType<typeof asPublicInstant> {
+function nativeReadInstant(value: string): ReturnType<typeof asPublicInstant> {
   const parsed =
     /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?)([+-]\d{2})(?::?(\d{2}))?$/u.exec(
       value,
     );
   if (parsed === null)
     throw new TypeError(
-      "native read: accepted instant is not PostgreSQL timestamptz text",
+      "native read: an instant is not PostgreSQL timestamptz text",
     );
   return asPublicInstant(
     `${parsed[1]}T${parsed[2]}${parsed[3]}:${parsed[4] ?? "00"}`,
@@ -114,7 +120,7 @@ function publicOperationInstant(
 export function publicOperation(row: PublicOperationRow): OperationResource {
   const base = {
     operation: asOperationId(row.operation),
-    acceptedAt: publicOperationInstant(row.accepted_at),
+    acceptedAt: nativeReadInstant(row.accepted_at),
   };
   const state = operationState(row.state);
   switch (state) {
@@ -205,12 +211,29 @@ function projectionReason(value: string): EscalationReason | undefined {
   return reason;
 }
 
+/**
+ * When the ticket last moved. The row and the entry its sequence names are
+ * written in one transaction, so an absent one is a journal this read cannot
+ * believe rather than a ticket that has no such time.
+ */
+function ticketResourceChangedAt(
+  value: string | null,
+): ReturnType<typeof asPublicInstant> {
+  if (value === null)
+    throw new Error("native read: the journal dates no change for a ticket");
+  return nativeReadInstant(value);
+}
+
 function ticketResource(row: TicketProjectionRow): TicketResource {
   const reason = projectionReason(row.reason);
   return {
     ticket: asTicketId(projectRowCounter(row.ticket, "ticket identity")),
     phase: projectionPhase(row.phase),
     sequence: projectRowCounter(row.seq, "ticket projection sequence"),
+    changedAt: ticketResourceChangedAt(row.changed_at),
+    ...(row.released_at === null
+      ? {}
+      : { releasedAt: nativeReadInstant(row.released_at) }),
     ...(reason === undefined ? {} : { reason }),
   };
 }
@@ -335,21 +358,47 @@ async function readProjectTickets(
 ): Promise<readonly TicketProjectionRow[]> {
   if (query.order === "RecentActivity") {
     const found = await client.query<TicketProjectionRow>(
-      sql`SELECT ticket,phase,seq,reason FROM ticket_projection
-        WHERE tenant=${partition.tenant} AND project=${partition.project}
+      sql`SELECT t.ticket,t.phase,t.seq,t.reason,
+                 r.committed_at::text AS released_at,
+                 c.committed_at::text AS changed_at
+          FROM ticket_projection t
+          LEFT JOIN journal_entry c
+            ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
+          LEFT JOIN LATERAL (
+            SELECT j.committed_at FROM journal_entry j
+             WHERE j.tenant=t.tenant AND j.project=t.project
+               AND (CASE WHEN j.entry IS JSON OBJECT
+                         THEN j.entry::jsonb->'event'->>'type' END)='ReleaseTicket'
+               AND (CASE WHEN j.entry IS JSON OBJECT
+                         THEN j.entry::jsonb->'event'->'value'->>'ticket' END)::bigint=t.ticket
+             ORDER BY j.seq LIMIT 1) r ON true
+        WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
           AND (${query.recentActivityAfter?.sequence ?? null}::bigint IS NULL
-            OR (seq,ticket) < (${query.recentActivityAfter?.sequence ?? null},${query.recentActivityAfter?.ticket ?? null}))
-          AND phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
-        ORDER BY seq DESC,ticket DESC LIMIT ${query.limit + 1}`,
+            OR (t.seq,t.ticket) < (${query.recentActivityAfter?.sequence ?? null},${query.recentActivityAfter?.ticket ?? null}))
+          AND t.phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
+        ORDER BY t.seq DESC,t.ticket DESC LIMIT ${query.limit + 1}`,
     );
     return found.rows;
   }
   const found = await client.query<TicketProjectionRow>(
-    sql`SELECT ticket,phase,seq,reason FROM ticket_projection
-        WHERE tenant=${partition.tenant} AND project=${partition.project}
-          AND ticket>${query.after ?? 0}
-          AND phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
-        ORDER BY ticket LIMIT ${query.limit + 1}`,
+    sql`SELECT t.ticket,t.phase,t.seq,t.reason,
+               r.committed_at::text AS released_at,
+               c.committed_at::text AS changed_at
+          FROM ticket_projection t
+          LEFT JOIN journal_entry c
+            ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
+          LEFT JOIN LATERAL (
+            SELECT j.committed_at FROM journal_entry j
+             WHERE j.tenant=t.tenant AND j.project=t.project
+               AND (CASE WHEN j.entry IS JSON OBJECT
+                         THEN j.entry::jsonb->'event'->>'type' END)='ReleaseTicket'
+               AND (CASE WHEN j.entry IS JSON OBJECT
+                         THEN j.entry::jsonb->'event'->'value'->>'ticket' END)::bigint=t.ticket
+             ORDER BY j.seq LIMIT 1) r ON true
+        WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
+          AND t.ticket>${query.after ?? 0}
+          AND t.phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
+        ORDER BY t.ticket LIMIT ${query.limit + 1}`,
   );
   return found.rows;
 }
@@ -378,9 +427,21 @@ function nativeReadsResources(
       const found = await pool.query<TicketProjectionRow & DraftBriefRow>(
         sql`SELECT t.ticket,t.phase,t.seq,t.reason,b.intent,b.branch,
                    b.finalization_mode,b.finalization_target,
+                   r.committed_at::text AS released_at,
+                   c.committed_at::text AS changed_at,
                    (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
                      WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS links
               FROM ticket_projection t
+              LEFT JOIN journal_entry c
+                ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
+              LEFT JOIN LATERAL (
+                SELECT j.committed_at FROM journal_entry j
+                 WHERE j.tenant=t.tenant AND j.project=t.project
+                   AND (CASE WHEN j.entry IS JSON OBJECT
+                             THEN j.entry::jsonb->'event'->>'type' END)='ReleaseTicket'
+                   AND (CASE WHEN j.entry IS JSON OBJECT
+                             THEN j.entry::jsonb->'event'->'value'->>'ticket' END)::bigint=t.ticket
+                 ORDER BY j.seq LIMIT 1) r ON true
               LEFT JOIN draft_brief b
                 ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
              WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}

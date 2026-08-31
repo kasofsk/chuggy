@@ -16,6 +16,7 @@ import {
 } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -188,6 +189,7 @@ const ticket = {
   phase: "Pending",
   sequence: 7,
   runTotals: totals(9_990_000),
+  ...ticketInstants,
 };
 
 /** The high-water mark rides the frame the browser already receives; a pane
@@ -380,7 +382,7 @@ test("a reported run draws its markdown and keeps its line breaks", async () => 
  * rather than a blank one. */
 test("a run from a worker that wrote no evidence says so", async () => {
   const rendered = await ticketPage({
-    ticket: { ticket: 11, phase: "Pending", sequence: 7 },
+    ticket: { ticket: 11, phase: "Pending", sequence: 7, ...ticketInstants },
     executions: [summary({ runTotals: undefined })],
     execution: {
       ...summary({ runTotals: undefined }),
