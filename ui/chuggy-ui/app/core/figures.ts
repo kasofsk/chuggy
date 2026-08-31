@@ -114,11 +114,17 @@ export function costFigure(
   };
 }
 
-/** Whole above ten of a unit, one decimal below it, so two figures never read alike. */
+/**
+ * Whole above ten of a unit, one decimal below it, so two figures never read
+ * alike. The bucket is chosen from the rounded figure rather than the raw one,
+ * or a count a hair under ten would round up and still be drawn with the
+ * decimal that only belongs below it.
+ */
 function scaled(value: number, unit: number, suffix: string): string {
   const scaledValue = value / unit;
-  return scaledValue < scaledDecimalBelow
-    ? `${scaledValue.toFixed(1)}${suffix}`
+  const oneDecimal = Number(scaledValue.toFixed(1));
+  return oneDecimal < scaledDecimalBelow
+    ? `${oneDecimal.toFixed(1)}${suffix}`
     : `${String(Math.round(scaledValue))}${suffix}`;
 }
 

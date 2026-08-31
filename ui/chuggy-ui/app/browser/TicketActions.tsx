@@ -34,8 +34,7 @@ import {
   operationStepLabel,
   ticketActionEffect,
 } from "../core/codeLabels.ts";
-import type { ReworkStanding } from "../core/codeLabels.ts";
-import type { ResumeConsequence } from "../core/resumePoint.ts";
+import type { ResumeOffer, ReworkStanding } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { nativeActionsAnswers } from "../core/nativeActionAnswers.ts";
 import {
@@ -94,7 +93,7 @@ async function cancelOperation(
 function ActionButtons(props: {
   readonly actions: readonly TicketAction[];
   readonly busy: boolean;
-  readonly resume: ResumeConsequence | undefined;
+  readonly resume: ResumeOffer;
   readonly rework: ReworkStanding | undefined;
   readonly onChoose: (action: TicketAction) => void;
 }): ReactNode {
@@ -115,6 +114,9 @@ function ActionButtons(props: {
             effect={effect.effect}
             cost={effect.cost}
             {...(effect.more === undefined ? {} : { more: effect.more })}
+            {...(effect.refusedBecause === undefined
+              ? {}
+              : { refusedBecause: effect.refusedBecause })}
             offered={effect.offered}
             busy={props.busy}
             danger={action.action === "Revoke" || action.action === "Abandon"}
@@ -225,7 +227,7 @@ export function TicketActions(props: {
   readonly state: PanelState<TicketResponse>;
   readonly openState: PanelState<TicketNativeActionsResponse>;
   readonly dispatchState: PanelState<DispatchViewResponse>;
-  readonly resume?: ResumeConsequence;
+  readonly resume: ResumeOffer;
   readonly rework?: ReworkStanding;
 }): ReactNode {
   const submitting = useSubmitting(props.partition, props.ticket);

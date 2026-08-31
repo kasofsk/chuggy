@@ -76,7 +76,7 @@ function setRelaunches(set: TaskSet): string | undefined {
  */
 function setShortfall(set: TaskSet): string | undefined {
   return set.executions.length < set.expected
-    ? `${String(set.executions.length)} of ${String(set.expected)} tasks here`
+    ? `${String(set.executions.length)} of ${String(set.expected)} tasks on this page`
     : undefined;
 }
 
@@ -319,7 +319,7 @@ export function TicketCycles(props: {
     <Ledger
       truncated={
         props.facts.truncated
-          ? `Showing the first ${String(props.facts.spend.executions)} executions`
+          ? `Showing first ${String(props.facts.spend.executions)} executions`
           : undefined
       }
     >

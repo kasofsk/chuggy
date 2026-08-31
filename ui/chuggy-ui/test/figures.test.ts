@@ -87,6 +87,17 @@ test("one kind of token is the same scale without the unit word", () => {
   expect(tokenCountText(1_200_000)).toBe("1.2M");
 });
 
+/**
+ * The decimal belongs below ten of a unit, and a count that rounds up to ten is
+ * not below it — the same bucket error as `1000k`, one unit down.
+ */
+test("a count that rounds up to ten of a unit is drawn whole, not with a decimal", () => {
+  expect(tokenCountText(9_949)).toBe("9.9k");
+  expect(tokenCountText(9_999)).toBe("10k");
+  expect(tokenCountText(10_000)).toBe("10k");
+  expect(tokenCountText(9_999_999)).toBe("10M");
+});
+
 test("a token figure is every kind added, scaled with one decimal below ten", () => {
   expect(textOf(tokensFigure(tokens({ input: 800, output: 12 })))).toBe(
     "812 tok",

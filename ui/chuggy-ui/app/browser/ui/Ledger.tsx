@@ -18,6 +18,7 @@ import type { Tone } from "../../core/tones.ts";
 import { Button } from "./Button.tsx";
 import { Figure } from "./Figure.tsx";
 import { Identity } from "./Identity.tsx";
+import { Notice } from "./Notice.tsx";
 import { Pill } from "./Pill.tsx";
 
 import "./Ledger.css";
@@ -38,7 +39,7 @@ export function Ledger(props: {
   return (
     <div className="ledger">
       {props.truncated === undefined ? null : (
-        <p className="ledger-truncated">{props.truncated}</p>
+        <Notice tone="parked" inline detail={props.truncated} />
       )}
       {props.children}
     </div>
@@ -123,7 +124,7 @@ function LedgerRowExpand(props: {
     <Button
       variant="quiet"
       size="sm"
-      pressed={props.expand.open}
+      expanded={props.expand.open}
       onClick={props.expand.onToggle}
     >
       {props.expand.open ? "Hide" : "Details"}

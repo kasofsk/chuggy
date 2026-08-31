@@ -124,7 +124,7 @@ function TicketBody(props: {
       state={props.reads.ticketState}
       openState={props.reads.openState}
       dispatchState={props.reads.dispatchState}
-      {...(facts.resume === undefined ? {} : { resume: facts.resume })}
+      resume={facts.resume}
       {...(rework?.max === undefined
         ? {}
         : { rework: { left: rework.left ?? 0, max: rework.max } })}
@@ -137,7 +137,7 @@ function TicketBody(props: {
           ticket={ticket}
           intent={draft?.brief?.intent}
           page={page}
-          ledger={facts.ledger}
+          truncated={facts.truncated}
           nowMs={props.nowMs}
         />
       )}

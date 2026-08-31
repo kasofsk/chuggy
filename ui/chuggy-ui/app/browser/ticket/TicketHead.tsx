@@ -18,7 +18,6 @@ import type {
 import { escalationReasonLabel, phaseLabel } from "../../core/codeLabels.ts";
 import { costFigure, spanFigure, tokensFigure } from "../../core/figures.ts";
 import { runSpanOf } from "../../core/runTotals.ts";
-import type { Ledger } from "../../core/ticketLedger.ts";
 import { phaseTone } from "../../core/tones.ts";
 import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
@@ -31,11 +30,11 @@ export const headShortPageNote = "on this page";
 function TicketFigures(props: {
   readonly ticket: TicketResponse;
   readonly page: ExecutionsResponse | undefined;
-  readonly ledger: Ledger | undefined;
+  readonly truncated: boolean;
   readonly nowMs: number;
 }): ReactNode {
   const totals = props.ticket.runTotals;
-  const short = props.ledger?.truncated === true;
+  const short = props.truncated;
   return (
     <Fields variant="inline">
       <Field name="Sequence">
@@ -76,7 +75,7 @@ export function TicketHead(props: {
   readonly ticket: TicketResponse;
   readonly intent: string | undefined;
   readonly page: ExecutionsResponse | undefined;
-  readonly ledger: Ledger | undefined;
+  readonly truncated: boolean;
   readonly nowMs: number;
 }): ReactNode {
   const reason = props.ticket.reason;
@@ -100,7 +99,7 @@ export function TicketHead(props: {
         <TicketFigures
           ticket={props.ticket}
           page={props.page}
-          ledger={props.ledger}
+          truncated={props.truncated}
           nowMs={props.nowMs}
         />
       </div>

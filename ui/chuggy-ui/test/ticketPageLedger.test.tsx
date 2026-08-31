@@ -141,7 +141,7 @@ const parkedTicket = {
   phase: "Escalated",
   sequence: 167,
   reason: "ReworkBudgetExhausted",
-  resumeAt: "ResumeEvaluating",
+  resumeAt: "ResumeReworking",
   accounts: { gasLeft: 1, gasMax: 8, reworkLeft: 0 },
   runTotals: ticketTotals,
 };
@@ -280,11 +280,11 @@ test("the gas limit on the wire replaces the console's own floor", async () => {
 test("the resume states what it re-runs, what it costs and what it keeps", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
   expect(screen.getByRole("button", { name: "Resume" })).toBeDefined();
-  expect(screen.getByText(/Re-runs evaluation from stage 1/u)).toBeDefined();
-  expect(screen.getByText(/costs 1 gas/u)).toBeDefined();
   expect(
-    screen.getByText("Keeps the current artifact · rework stays 0/2"),
+    screen.getByText(/Reworks · new artifact, rework refilled/u),
   ).toBeDefined();
+  expect(screen.getByText(/costs 1 gas/u)).toBeDefined();
+  expect(screen.getByText("Rework returns to 0/2")).toBeDefined();
 });
 
 test("every section of the main body has an anchor pointing at it", async () => {
@@ -366,7 +366,9 @@ test("a short page says so, and no cycle on it claims to be whole", async () => 
     ticket: parkedTicket,
     cursor: "more",
   });
-  expect(screen.getByText(/Showing the first 4 executions/u)).toBeDefined();
+  const short = screen.getByText(/Showing first 4 executions/u);
+  expect(short.classList.contains("notice-inline")).toBe(true);
+  expect(short.classList.contains("notice-parked")).toBe(true);
   const partial = container.querySelectorAll(".ledger-partial");
   expect(partial.length).toBeGreaterThan(0);
   expect(partial[0]?.textContent).toContain("Cycle partly on this page");
@@ -453,10 +455,7 @@ test("a wall whose only exit is revoke offers no resume to press", async () => {
  * page must not still offer it as a re-run of the evaluation.
  */
 test("a rework-wall resume says it reworks rather than re-evaluates", async () => {
-  await drawTicket({
-    shapes: ticket21Parked,
-    ticket: { ...parkedTicket, resumeAt: "ResumeReworking" },
-  });
+  await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
   expect(screen.getByRole("button", { name: "Resume" })).toBeDefined();
   expect(
     screen.getByText(/Reworks · new artifact, rework refilled/u),
@@ -472,7 +471,7 @@ test("a rework-wall resume says it reworks rather than re-evaluates", async () =
  */
 test("a rework wall on a ticket that bought no budget offers no resume", async () => {
   const { resumeAt, ...withoutPoint } = parkedTicket;
-  expect(resumeAt).toBe("ResumeEvaluating");
+  expect(resumeAt).toBe("ResumeReworking");
   await drawTicket({
     shapes: ticket21Parked,
     ticket: withoutPoint,
@@ -485,6 +484,145 @@ test("a rework wall on a ticket that bought no budget offers no resume", async (
   expect(
     screen.getByText("Nothing to resume · only Revoke exits this wall"),
   ).toBeDefined();
+});
+
+/**
+ * `retryableIn` wants gas enough to pay the point's charge as well as a stamped
+ * point. The gas wall escalates with `gasLeft` at zero by construction, so the
+ * page must not draw a control that submits into it.
+ */
+test("a gas wall offers no resume, and says it is the gas that is gone", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: {
+      ...parkedTicket,
+      reason: "GasExhausted",
+      resumeAt: "ResumeEvaluating",
+      accounts: { gasLeft: 0, gasMax: 8, reworkLeft: 1 },
+    },
+  });
+  expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+  expect(
+    screen.getByText("No gas left · only Revoke exits this wall"),
+  ).toBeDefined();
+  expect(screen.queryByText(/costs 1 gas/u)).toBeNull();
+});
+
+/**
+ * The rework wall's own decider: a ticket out of gas there is parked for good
+ * under both pricings, and revoke is its only exit.
+ */
+test("a rework wall with no gas is parked for good, whatever the pricing", async () => {
+  for (const resumePricing of ["RetryCharged", "RetryFree"]) {
+    await drawTicket({
+      shapes: ticket21Parked,
+      ticket: {
+        ...parkedTicket,
+        accounts: { gasLeft: 0, gasMax: 8, reworkLeft: 0 },
+      },
+      authoring: { ...ticket21Authoring, resumePricing },
+    });
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+    expect(
+      screen.getByText("No gas left · only Revoke exits this wall"),
+    ).toBeDefined();
+    cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+test("a wall the ticket can still pay for keeps its resume", async () => {
+  for (const gasLeft of [1, 2]) {
+    await drawTicket({
+      shapes: ticket21Parked,
+      ticket: {
+        ...parkedTicket,
+        accounts: { gasLeft, gasMax: 8, reworkLeft: 0 },
+      },
+    });
+    expect(screen.getByRole("button", { name: "Resume" })).toBeDefined();
+    expect(screen.queryByText(/No gas left/u)).toBeNull();
+    cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+test("a ticket read carrying no accounts keeps its resume, absence being no claim", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: { ...parkedTicket, accounts: undefined },
+  });
+  expect(screen.getByRole("button", { name: "Resume" })).toBeDefined();
+  expect(screen.queryByText(/No gas left/u)).toBeNull();
+});
+
+/**
+ * The three reads land independently, so the ticket's own answer must not wait
+ * on the draft: a stamped point is the machine's, and "nothing to resume" is a
+ * claim only a page that has read enough may make.
+ */
+test("a work resume out of gas is refused before the draft arrives", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: {
+      ...parkedTicket,
+      accounts: { gasLeft: 0, gasMax: 8, reworkLeft: 0 },
+    },
+    withDraft: false,
+  });
+  expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+  expect(
+    screen.getByText("No gas left · only Revoke exits this wall"),
+  ).toBeDefined();
+});
+
+test("a resume the wire stamped is offered before the draft arrives", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: parkedTicket,
+    withDraft: false,
+  });
+  expect(screen.getByRole("button", { name: "Resume" })).toBeDefined();
+  expect(
+    screen.getByText(/Reworks · new artifact, rework refilled/u),
+  ).toBeDefined();
+  expect(screen.getByText(/costs 1 gas/u)).toBeDefined();
+  expect(screen.queryByText(/only Revoke exits this wall/u)).toBeNull();
+  expect(screen.queryByText(/Rework returns to/u)).toBeNull();
+});
+
+test("a page that has read nothing of the wall refuses the resume rather than denying it", async () => {
+  const { resumeAt, reason, ...unstamped } = parkedTicket;
+  expect(resumeAt).toBe("ResumeReworking");
+  expect(reason).toBe("ReworkBudgetExhausted");
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: { ...unstamped, phase: "Escalated" },
+    withDraft: false,
+  });
+  const resume = screen.getByRole("button", { name: "Resume" });
+  expect(resume.hasAttribute("disabled")).toBe(true);
+  expect(screen.getByText("Not read yet")).toBeDefined();
+  expect(screen.queryByText(/only Revoke exits this wall/u)).toBeNull();
+});
+
+/**
+ * Truncation is the executions read's own fact and does not wait on the draft,
+ * which is what the head's own header claims of it.
+ */
+test("a short page marks the head's own counts, draft or no draft", async () => {
+  for (const withDraft of [true, false]) {
+    const { container } = await drawTicket({
+      shapes: ticket21Parked.slice(0, 4),
+      ticket: parkedTicket,
+      cursor: "more",
+      withDraft,
+    });
+    const head = container.querySelector(".ticket-figures");
+    expect(head?.textContent).toContain("on this page");
+    cleanup();
+    vi.unstubAllGlobals();
+  }
 });
 
 test("every action the page draws describes itself by an id that resolves", async () => {
@@ -597,7 +735,7 @@ test("a fan-out row is priced and timed over the whole set, not its first task",
   expect(when).toContain("15m");
   expect(when).not.toContain("2m");
   expect(work?.textContent).toContain("Relaunched 3× by fabric");
-  expect(work?.textContent).toContain("2 of 3 tasks here");
+  expect(work?.textContent).toContain("2 of 3 tasks on this page");
 });
 
 /**

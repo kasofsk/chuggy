@@ -126,7 +126,8 @@ test("an expander says whether it is open and swaps its own word", () => {
     </LedgerBlock>,
   );
   const button = screen.getByRole("button", { name: "Details" });
-  expect(button.getAttribute("aria-pressed")).toBe("false");
+  expect(button.getAttribute("aria-expanded")).toBe("false");
+  expect(button.getAttribute("aria-pressed")).toBeNull();
   expect(screen.queryByText("detail")).toBeNull();
   fireEvent.click(button);
   expect(toggled).toHaveBeenCalledTimes(1);
@@ -140,7 +141,7 @@ test("an expander says whether it is open and swaps its own word", () => {
     </LedgerBlock>,
   );
   expect(
-    screen.getByRole("button", { name: "Hide" }).getAttribute("aria-pressed"),
+    screen.getByRole("button", { name: "Hide" }).getAttribute("aria-expanded"),
   ).toBe("true");
   expect(screen.getByText("detail")).toBeDefined();
 });

@@ -163,15 +163,35 @@ export function phaseLabel(phase: TicketPhase): string {
 
 /**
  * What a mutation does, what it costs, and at most one consequence that
- * matters. `offered` is false where the machine admits no such answer at all,
- * which is a wall the console must not draw a button into.
+ * matters. `offered` is false only where the machine admits no such answer at
+ * all, because a button drawn there submits into a state `retryableIn`
+ * refuses; `refusedBecause` is the other shape, an answer that exists beside a
+ * screen that cannot offer it yet.
  */
 export interface ActionEffect {
   readonly effect: string;
   readonly cost: string;
   readonly more?: string;
   readonly offered: boolean;
+  readonly refusedBecause?: string;
 }
+
+/**
+ * What a resume would do, as much of it as the page has read: `retryableIn`
+ * (`model/domain.qnt`) wants a parked phase, a stamped point and gas enough to
+ * pay the point's charge, and the last two of those are these arms. `NoGas` is
+ * a park the model calls revoke-only as surely as `NoPoint` is, so both draw no
+ * button, while `NotRead` draws a disabled one because a screen that has not
+ * finished reading knows neither.
+ */
+export type ResumeOffer =
+  | { readonly kind: "Offered"; readonly consequence: ResumeConsequence }
+  | { readonly kind: "NoPoint" }
+  | { readonly kind: "NoGas" }
+  | { readonly kind: "NotRead" };
+
+/** What the console says about a resume it cannot yet offer. */
+export const resumeNotReadReason = "Not read yet";
 
 function resumeEffect(resume: ResumeConsequence): string {
   switch (resume.point) {
@@ -214,35 +234,60 @@ function offered(effect: string, cost: string): ActionEffect {
   return { effect, cost, offered: true };
 }
 
+/** The wall's own exit, said the way §1.2 joins it to what cannot be done. */
+function resumeRefused(effect: string): ActionEffect {
+  return {
+    effect,
+    cost: "free",
+    more: "only Revoke exits this wall",
+    offered: false,
+  };
+}
+
+/** What a resume would do, as far as the page has read enough to say. */
+export function resumeActionEffect(
+  offer: ResumeOffer,
+  rework: ReworkStanding | undefined,
+): ActionEffect {
+  switch (offer.kind) {
+    case "NoPoint":
+      return resumeRefused("Nothing to resume");
+    case "NoGas":
+      return resumeRefused("No gas left");
+    case "NotRead":
+      return {
+        effect: "Rejoins where the ticket parked",
+        cost: "free",
+        offered: true,
+        refusedBecause: resumeNotReadReason,
+      };
+    case "Offered": {
+      const more = resumeMore(offer.consequence, rework);
+      return {
+        effect: resumeEffect(offer.consequence),
+        cost: actionCost(offer.consequence.cost),
+        ...(more === undefined ? {} : { more }),
+        offered: true,
+      };
+    }
+  }
+}
+
 /**
  * What answering the action does to the ticket. A resume is priced and named by
- * the point the machine stamped, which is why it takes the consequence rather
- * than the word alone.
+ * the point the machine stamped, which is why it takes the offer rather than
+ * the word alone.
  */
 export function ticketActionEffect(
   action: TicketActionName,
-  resume: ResumeConsequence | undefined,
+  resume: ResumeOffer,
   rework: ReworkStanding | undefined,
 ): ActionEffect {
   switch (action) {
     case "Dispatch":
       return offered("Dispatches the observed version", "free");
-    case "Resume": {
-      if (resume === undefined)
-        return {
-          effect: "Nothing to resume",
-          cost: "free",
-          more: "only Revoke exits this wall",
-          offered: false,
-        };
-      const more = resumeMore(resume, rework);
-      return {
-        effect: resumeEffect(resume),
-        cost: actionCost(resume.cost),
-        ...(more === undefined ? {} : { more }),
-        offered: true,
-      };
-    }
+    case "Resume":
+      return resumeActionEffect(resume, rework);
     case "Revoke":
       return offered("Parks every dependent ticket", "free");
     case "Retry":
