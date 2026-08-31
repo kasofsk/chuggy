@@ -16,10 +16,9 @@
  */
 
 import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
+import { test } from "node:test";
 
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
-import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { apiRole } from "../../src/adapters/postgres/schema.ts";
 import { asOperationDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
@@ -29,25 +28,14 @@ import { id } from "../domain/fixtures.ts";
 import {
   postgresHarnessHistory,
   postgresHarnessJournal,
-  postgresHarnessOpen,
   postgresHarnessProject,
   postgresHarnessRolePool,
   postgresHarnessSubmission,
-  postgresHarnessUrl,
   postgresHarnessWriter,
-  type PostgresHarness,
 } from "./harness.ts";
+import { postgresReadHarness } from "./readHarness.ts";
 
-let harness: PostgresHarness;
-let pool: ReturnType<typeof postgresPool>;
-before(async () => {
-  harness = await postgresHarnessOpen();
-  pool = postgresPool(postgresHarnessUrl());
-});
-after(async () => {
-  await pool.end();
-  await harness.close();
-});
+const rig = postgresReadHarness();
 
 /** The ticket every case here drives, which is the only one its project mints. */
 const subject = id(1);
@@ -60,7 +48,7 @@ const followingDecisionsMax = 8;
  * driver reconstructs it, so the comparison is against the stored value.
  */
 async function committedAt(partition: Partition, seq: number): Promise<number> {
-  const found = await harness.query(
+  const found = await rig.harness.query(
     `SELECT to_char(committed_at AT TIME ZONE 'UTC',
               'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS at
        FROM journal_entry WHERE tenant=$1 AND project=$2 AND seq=$3`,
@@ -83,7 +71,7 @@ function readAt(value: string): number {
 
 /** The ticket as its own read serves it, refusing the absence no case here drives to. */
 async function ticketRead(partition: Partition) {
-  const found = await postgresNativeReads(pool).ticket(partition, subject);
+  const found = await postgresNativeReads(rig.pool).ticket(partition, subject);
   if (found === undefined)
     throw new Error("ticket instants case: the ticket has no read");
   return found;
@@ -97,10 +85,10 @@ async function answered(
   partition: Partition,
   memory: ProjectMemory,
 ): Promise<ProjectMemory> {
-  const writer = postgresHarnessWriter(harness);
+  const writer = postgresHarnessWriter(rig.harness);
   let carried = memory;
   for (let decided = 0; decided < followingDecisionsMax; decided++) {
-    const input = await harness.discovery.next(partition, 300);
+    const input = await rig.harness.discovery.next(partition, 300);
     if (input === undefined) return carried;
     const step = await projectWriterDecide(writer, carried, input);
     assert.equal(step.decided.decided, "Committed");
@@ -115,7 +103,7 @@ async function revoked(
   label: string,
   memory: ProjectMemory,
 ): Promise<ProjectMemory> {
-  const accepted = await harness.inbox.accept({
+  const accepted = await rig.harness.inbox.accept({
     ...postgresHarnessSubmission(partition, label),
     command: {
       version: 1,
@@ -128,9 +116,12 @@ async function revoked(
 }
 
 test("a ticket is dated by its release and by the entry that last moved it", async () => {
-  const partition = await postgresHarnessProject(harness.store, "instants-two");
+  const partition = await postgresHarnessProject(
+    rig.harness.store,
+    "instants-two",
+  );
   await postgresHarnessHistory(
-    harness,
+    rig.harness,
     partition,
     "instants-two",
     postgresHarnessJournal().length,
@@ -145,16 +136,16 @@ test("a ticket is dated by its release and by the entry that last moved it", asy
 
 test("the page a project is listed by carries the same two instants", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    rig.harness.store,
     "instants-page",
   );
   await postgresHarnessHistory(
-    harness,
+    rig.harness,
     partition,
     "instants-page",
     postgresHarnessJournal().length,
   );
-  const listed = await postgresNativeReads(pool).project(partition, {
+  const listed = await postgresNativeReads(rig.pool).project(partition, {
     limit: 10,
   });
   assert.equal(listed.result, "Found");
@@ -173,16 +164,16 @@ test("the page a project is listed by carries the same two instants", async () =
  */
 test("a journal entry no reader can parse leaves the release undated", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    rig.harness.store,
     "instants-torn",
   );
   await postgresHarnessHistory(
-    harness,
+    rig.harness,
     partition,
     "instants-torn",
     postgresHarnessJournal().length,
   );
-  await harness.query(
+  await rig.harness.query(
     `UPDATE journal_entry SET entry='not json'
       WHERE tenant=$1 AND project=$2 AND seq=1`,
     [partition.tenant, partition.project],
@@ -193,9 +184,12 @@ test("a journal entry no reader can parse leaves the release undated", async () 
 });
 
 test("a ticket carried off the machine is dated by the entry that ended it", async () => {
-  const partition = await postgresHarnessProject(harness.store, "instants-end");
+  const partition = await postgresHarnessProject(
+    rig.harness.store,
+    "instants-end",
+  );
   const dispatched = await postgresHarnessHistory(
-    harness,
+    rig.harness,
     partition,
     "instants-end",
     postgresHarnessJournal().length,
@@ -221,16 +215,16 @@ test("a ticket carried off the machine is dated by the entry that ended it", asy
  */
 test("a release naming no number is a row the journal keeps and the read skips", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    rig.harness.store,
     "instants-unnumbered",
   );
   await postgresHarnessHistory(
-    harness,
+    rig.harness,
     partition,
     "instants-unnumbered",
     postgresHarnessJournal().length,
   );
-  await harness.query(
+  await rig.harness.query(
     `UPDATE journal_entry
         SET entry='{"seq":1,"event":{"type":"ReleaseTicket","value":{"ticket":"one"}},"rec":{}}'
       WHERE tenant=$1 AND project=$2 AND seq=1`,
@@ -239,7 +233,7 @@ test("a release naming no number is a row the journal keeps and the read skips",
   const unnumbered = await ticketRead(partition);
   assert.equal(unnumbered.releasedAt, undefined);
   assert.equal(readAt(unnumbered.changedAt), await committedAt(partition, 2));
-  const reads = postgresNativeReads(pool);
+  const reads = postgresNativeReads(rig.pool);
   for (const order of ["Identity", "RecentActivity"] as const) {
     const listed = await reads.project(partition, { limit: 10, order });
     assert.equal(listed.result, "Found", `the page in ${order} order`);
@@ -260,11 +254,11 @@ test("a release naming no number is a row the journal keeps and the read skips",
  */
 test("the API role reads both instants through the grant the migration makes", async () => {
   const partition = await postgresHarnessProject(
-    harness.store,
+    rig.harness.store,
     "instants-role",
   );
   await postgresHarnessHistory(
-    harness,
+    rig.harness,
     partition,
     "instants-role",
     postgresHarnessJournal().length,
