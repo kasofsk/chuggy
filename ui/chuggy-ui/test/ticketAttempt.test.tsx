@@ -132,7 +132,7 @@ interface Served {
 function served(scripted: {
   readonly submission: (operation: string) => Response | Promise<Response>;
   readonly openActions: () => Response;
-  readonly cancellation?: () => Response | Promise<Response>;
+  readonly cancellation?: (operation: string) => Response | Promise<Response>;
 }): Served {
   const urls: string[] = [];
   const identities = new Set<string>();
@@ -149,7 +149,13 @@ function served(scripted: {
       identities.add(operation);
       return scripted.submission(operation);
     }
-    if (method === "DELETE") return (scripted.cancellation ?? deferred)();
+    if (method === "DELETE") {
+      const operation = operationAsked(url);
+      identities.add(operation);
+      return scripted.cancellation === undefined
+        ? deferred()
+        : scripted.cancellation(operation);
+    }
     if (url.includes("/operations/")) {
       identities.add(operationAsked(url));
       if (!standing.known) return answer({ error: { code: "Absent" } }, 404);
@@ -314,7 +320,9 @@ test("an unread action list offers nothing the phase alone would allow", async (
 
 /** An API that accepts the submission and leaves the operation pending, which
  * is the standing every case below drives a follow over. */
-function accepting(cancellation?: () => Response | Promise<Response>): Served {
+function accepting(
+  cancellation?: (operation: string) => Response | Promise<Response>,
+): Served {
   return served({
     submission: (operation) => answer({ operation, state: "Pending" }, 202),
     openActions: () => answer({ actions: [] }),
@@ -353,7 +361,7 @@ test("a cancellation that throws is said rather than swallowed", async () => {
 
 test("an accepted cancellation ends the attempt it was asked about", async () => {
   await following(
-    accepting(() => answer({ operation: "op-two", state: "Cancelled" })),
+    accepting((operation) => answer({ operation, state: "Cancelled" })),
     new QueryClient(),
   );
 
@@ -484,10 +492,8 @@ test("a submission the API never took is made again under the same identity", as
 test("a cancellation does not overwrite a follow that ended while it was asked", async () => {
   const cancelling = held();
   waiting.mode = "step";
-  await following(
-    accepting(() => cancelling.answering),
-    new QueryClient(),
-  );
+  const api = accepting(() => cancelling.answering);
+  await following(api, new QueryClient());
 
   await turned(() => {
     screen.getByRole("button", { name: "Cancel" }).click();
@@ -496,9 +502,67 @@ test("a cancellation does not overwrite a follow that ended while it was asked",
   await stepped();
   expect(screen.getByText("Resume answered")).toBeDefined();
 
-  cancelling.answer(answer({ operation: "op-held", state: "Cancelled" }));
+  cancelling.answer(
+    answer({ operation: api.identities()[0] ?? "none", state: "Cancelled" }),
+  );
   await settled();
 
   expect(screen.getByText("Resume answered")).toBeDefined();
   expect(screen.queryByText("Resume cancelled")).toBeNull();
+});
+
+test("a cancellation is applied to the operation it asked about and no other", async () => {
+  const cancelling = held();
+  waiting.mode = "step";
+  const api = accepting(() => cancelling.answering);
+  const client = new QueryClient();
+  await following(api, client);
+
+  await turned(() => {
+    screen.getByRole("button", { name: "Cancel" }).click();
+  });
+  standing.state = "Answered";
+  await stepped();
+  expect(screen.getByText("Resume answered")).toBeDefined();
+
+  standing.state = "Pending";
+  await turned(() => {
+    screen.getByRole("button", { name: "Resume" }).click();
+  });
+  await settled();
+  const second = api.identities()[1];
+  expect(second).toBeDefined();
+
+  cancelling.answer(
+    answer({ operation: api.identities()[0] ?? "none", state: "Cancelled" }),
+  );
+  await settled();
+
+  expect(screen.getByText("Waiting for actor…")).toBeDefined();
+  expect(screen.queryByText("Resume cancelled")).toBeNull();
+  expect(
+    client.getQueryData<TicketAttempt>(ticketAttemptKey(atlas, 11))?.operation,
+  ).toBe(second);
+});
+
+test("a submission whose answer was lost keeps the identity it was made under", async () => {
+  const api = served({
+    submission: () => Promise.reject(new Error("the connection went")),
+    openActions: () => answer({ actions: [] }),
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  const client = new QueryClient();
+  mounted(client);
+  await settled();
+  await turned(() => {
+    screen.getByRole("button", { name: "Resume" }).click();
+  });
+  await settled();
+
+  const drawn = api.identities()[0];
+  expect(drawn).toBeDefined();
+  expect(button("Resume")?.hasAttribute("disabled")).toBe(false);
+  expect(
+    client.getQueryData<TicketAttempt>(ticketAttemptKey(atlas, 11))?.operation,
+  ).toBe(drawn);
 });

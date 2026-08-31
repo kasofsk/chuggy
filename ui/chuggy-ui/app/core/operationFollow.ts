@@ -91,10 +91,10 @@ export function operationSubmitting(): OperationStep {
 
 /**
  * Where a follow begins when a screen before this one submitted it: at the
- * poll, because resubmitting an accepted identity answers `IdempotencyConflict`
- * and discloses no operation, so asking is the only way to learn what became of
- * it. A submission the API never took answers no such operation, and `Unaccepted`
- * is what carries that back to the submission it was drawn for.
+ * poll, because a read is what says whether the API ever took the identity and
+ * it asks the API to write nothing to find out. A submission the API never took
+ * answers no such operation, and `Unaccepted` is what carries that back to the
+ * submission it was drawn for.
  */
 export function operationFollowing(operation: string): OperationStep {
   return { step: "Following", operation, attempts: 0 };
@@ -199,11 +199,12 @@ function operationPolled(
 }
 
 /**
- * A poll the API has no operation for. The identity is the console's own draw
- * and the route's idempotency key both, so the one thing it can mean is that
- * the submission never arrived — and the answer is to make it, under the same
- * identity, so that an acceptance this screen missed is refused as a conflict
- * rather than taken as a second attempt.
+ * A poll the API has no operation for, which the identity being the console's
+ * own draw and the route's idempotency key both makes one thing: the submission
+ * never arrived, and the answer is to make it under that same identity.
+ * `src/interpreter/operationInbox.ts` answers that key offered with the same
+ * command as `Original`, carrying the operation, so an acceptance this screen
+ * missed comes back as the operation to follow rather than as a second attempt.
  */
 function operationUnaccepted(step: OperationStep): OperationStep {
   if (step.step !== "Following")
@@ -467,9 +468,11 @@ export async function followOperation(
       return { step, ticket: confirmed };
     try {
       await ports.sleepMs(operationWaitMs(step), signal);
-    } catch {
+    } catch (failure: unknown) {
       const abandoned = operationAbandoned(
-        "the screen that asked for this is gone",
+        failure instanceof Error
+          ? failure.message
+          : "the wait between attempts did not finish",
       );
       onStep(abandoned);
       return { step: abandoned, ticket: confirmed };

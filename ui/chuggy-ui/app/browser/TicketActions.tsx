@@ -245,15 +245,26 @@ function ActionButtons(props: {
 }
 
 /**
+ * The follow this panel is running, named by the operation it is about. The
+ * name is half of it: an answer to a request made about one operation can
+ * arrive after the panel has moved on to another, and a controller alone cannot
+ * tell those apart.
+ */
+interface Running {
+  readonly controller: AbortController;
+  readonly operation: string;
+}
+
+/**
  * A follow is abandoned with the screen that asked for it: the controller this
  * holds aborts the requests still in flight and the waits between them, and its
  * signal is what stops anything being reported afterwards.
  */
-function useAbandonOnUnmount(): RefObject<AbortController | undefined> {
-  const runningRef = useRef<AbortController | undefined>(undefined);
+function useAbandonOnUnmount(): RefObject<Running | undefined> {
+  const runningRef = useRef<Running | undefined>(undefined);
   useEffect(
     () => () => {
-      runningRef.current?.abort(
+      runningRef.current?.controller.abort(
         new Error("the screen that asked for this is gone"),
       );
     },
@@ -335,16 +346,26 @@ function useSubmitting(
   );
   const [refused, setRefused] = useState<string | undefined>(undefined);
 
+  /**
+   * A record goes when the API has said what became of the operation, and stays
+   * when it has not. `Settled` is the one arm built from an answer about this
+   * operation; every `Abandoned` is a way of not finding out — a budget spent
+   * on an operation still pending, a submission whose response was lost — and a
+   * submission the browser made and lost the answer to is still a submission,
+   * so what the record is for is the panel that comes back and asks again under
+   * the same identity.
+   */
   const drawStep = (action: TicketAction, step: OperationStep): void => {
     setAttempt({ action, step });
     if (!operationFinished(step)) return;
     setRefused(undefined);
-    ticketAttemptDropped(client, partition, ticket);
+    if (step.step === "Settled")
+      ticketAttemptDropped(client, partition, ticket);
   };
 
   const follow = (held: TicketAttempt, startedFrom: OperationStep): void => {
     const controller = new AbortController();
-    runningRef.current = controller;
+    runningRef.current = { controller, operation: held.operation };
     void followInto(
       { ports, partition, ticket, client, drawStep },
       held,
@@ -354,27 +375,35 @@ function useSubmitting(
   };
 
   /**
-   * What it aborts is whatever is running when the answer arrives, and not what
-   * was running when the button was pressed: the seeded attempt is drawn before
-   * the pick-up has made its controller, so a Cancel in that first paint has
-   * none to carry, and aborting the one it found would abort nothing while the
-   * pick-up polled on. The abort precedes the removal so that the follow cannot
-   * write the record back between them.
+   * WHAT A CANCELLATION ANSWERS ABOUT IS ONE OPERATION, AND WHAT IT IS APPLIED
+   * TO IS WHAT THE PANEL IS RUNNING WHEN THE ANSWER ARRIVES — so it is applied
+   * only where those are the same operation. A cancelled attempt that settles
+   * on its own before the answer comes, and a second attempt started after it,
+   * are the case that reads as one panel and is two: the answer names the
+   * first, and applying it to the second would abort a live follow, name the
+   * wrong operation on screen, and drop the record that is the only thing
+   * holding the second one's identity.
+   *
+   * The signal is taken when the request is made and the abort is aimed when it
+   * answers, which is also what a Cancel pressed in a picked-up attempt's first
+   * paint needs: there is no controller yet to carry, and the follow that comes
+   * a moment later is the one to stop.
    */
   const cancel = async (operation: string): Promise<void> => {
-    const asked = runningRef.current;
     const answered = await cancelOperation(
       ports,
       partition,
       operation,
-      asked?.signal,
+      runningRef.current?.controller.signal,
     );
-    if (asked?.signal.aborted === true) return;
+    const standing = runningRef.current;
+    if (standing === undefined || standing.operation !== operation) return;
+    if (standing.controller.signal.aborted) return;
     if (!answered.accepted) {
       setRefused(answered.said);
       return;
     }
-    runningRef.current?.abort(new Error(attemptCancelledReason));
+    standing.controller.abort(new Error(attemptCancelledReason));
     setAttempt(attemptCancelled(operation));
     setRefused(undefined);
     ticketAttemptDropped(client, partition, ticket);
