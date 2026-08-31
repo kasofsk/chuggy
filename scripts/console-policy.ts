@@ -15,10 +15,17 @@
  * the order the entry imports the sheets in, and nothing about that order is
  * visible in a source file. A layer out of place is silent: the element
  * defaults win over the primitives, every button-shaped link gains an
- * underline, and no source file has changed. So the emitted sheet is read and
- * the layers it declares must appear in the system's own order, with a
- * statement — where a build keeps one — naming exactly that order ahead of
- * every block.
+ * underline, and no source file has changed.
+ *
+ * SO THE DECISION IS OVER WHAT THE DOCUMENT LOADS, IN THE ORDER IT LOADS IT.
+ * Layers are the document's and not a file's, so the sheets are read as one
+ * text in href order — which is the order a browser applies them in — and
+ * decided once. With no statement the blocks must be ALL FOUR LAYERS IN THE
+ * SYSTEM'S ORDER: a missing one is a sheet that did not reach the bundle, and
+ * a layer the appearance order never establishes is one nothing can say a
+ * place for. With a statement, that statement must name exactly the order and
+ * lead every block; block order is then the statement's business, and a layer
+ * with no rules in it is nothing to report.
  *
  * WHAT IT CANNOT SEE, said plainly so nobody trusts it further than it goes: a
  * URL a script builds at run time is invisible here, and the policy itself is
@@ -106,32 +113,44 @@ function consoleCascadeBlocks(stylesheet: string): readonly string[] {
   return seen;
 }
 
+function consoleCascadeStatement(stylesheet: string): readonly string[] {
+  const stated = layerStatement.exec(stylesheet);
+  if (stated === null) return [];
+  return (stated[1] ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name !== "");
+}
+
+/** Every layer the sheets declare, so a build that declares none says so. */
+export function consoleCascadeNames(stylesheet: string): readonly string[] {
+  const stated = consoleCascadeStatement(stylesheet);
+  const blocks = consoleCascadeBlocks(stylesheet);
+  return [...stated, ...blocks.filter((name) => !stated.includes(name))];
+}
+
 export function consoleCascadeFindings(stylesheet: string): readonly string[] {
   const findings: string[] = [];
   const blocks = consoleCascadeBlocks(stylesheet);
   for (const name of blocks)
     if (!consoleCascadeOrders(name))
       findings.push(`a layer named ${name}, which the system does not order`);
-  const stated = layerStatement.exec(stylesheet);
-  if (stated !== null) {
-    const named = (stated[1] ?? "")
-      .split(",")
-      .map((name) => name.trim())
-      .filter((name) => name !== "");
-    if (named.join(", ") !== consoleCascadeLayers.join(", "))
+  const stated = consoleCascadeStatement(stylesheet);
+  if (stated.length > 0) {
+    if (stated.join(", ") !== consoleCascadeLayers.join(", "))
       findings.push(
-        `a layer statement of ${named.join(", ")}, not ${consoleCascadeLayers.join(", ")}`,
+        `a layer statement of ${stated.join(", ")}, not ${consoleCascadeLayers.join(", ")}`,
       );
     const opened = stylesheet.search(layerBlock);
-    if (opened !== -1 && opened < stated.index)
+    const at = layerStatement.exec(stylesheet)?.index ?? 0;
+    if (opened !== -1 && opened < at)
       findings.push("a layer opened above the statement that orders them");
     return findings;
   }
-  const wanted = consoleCascadeLayers.filter((name) => blocks.includes(name));
   const drawn = blocks.filter(consoleCascadeOrders);
-  if (drawn.join(", ") !== wanted.join(", "))
+  if (drawn.join(", ") !== consoleCascadeLayers.join(", "))
     findings.push(
-      `layers emitted as ${drawn.join(", ")}, not ${wanted.join(", ")}`,
+      `layers emitted as ${drawn.join(", ")}, not ${consoleCascadeLayers.join(", ")}`,
     );
   return findings;
 }

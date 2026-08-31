@@ -22,9 +22,11 @@
 #
 #   A RAW LENGTH is a number written in `px` or `rem` — the units the type and
 #   space scales are stated in, and so the units a page can be a hair off the
-#   scale in — with or without a sign. `0` and `1px` are the exceptions,
-#   because a zero names no step of any scale and a hairline is the one length
-#   a browser rounds for you. NO OTHER UNIT IS JUDGED, and each is skipped in
+#   scale in — with or without a sign. Two exceptions: A ZERO IS EXEMPT IN ANY
+#   UNIT, `0` and `0px` and `0rem` alike, because a zero names no step of any
+#   scale and writing the unit changes nothing about that; and `1px` is exempt
+#   because a hairline is the one length a browser rounds for you. A negative
+#   hairline is not the hairline. NO OTHER UNIT IS JUDGED, and each is skipped in
 #   silence: `em`, `ch` and `%` are ratios to something the element already has
 #   — its own type, its parent — so they cannot be a step that is a hair off
 #   another step; `vh`, `vw` and `fr` are ratios to the viewport and the grid;
@@ -243,6 +245,9 @@ FNR == 1 {
 		if (after != "" && index(ident, after) > 0) continue
 		if (before == "-") tok = "-" tok
 		if (tok == "1px") continue
+		size = tok
+		sub(/(px|rem)$/, "", size)
+		if (size + 0 == 0) continue
 		print "ERROR " FILENAME ":" FNR ": " tok " — a raw length, and a length is stated once in tokens.css"
 	}
 

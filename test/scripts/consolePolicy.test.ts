@@ -17,6 +17,7 @@ import test from "node:test";
 import {
   consoleCascadeFindings,
   consoleCascadeLayers,
+  consoleCascadeNames,
   consolePolicyFetchingAttributes,
   consolePolicyFindings,
   consolePolicyStylesheetHrefs,
@@ -118,18 +119,31 @@ test("the order the minifier emits the layers in is the order asserted", () => {
 test("a layer reopened later keeps the place it first took", () => {
   assert.deepEqual(
     consoleCascadeFindings(
-      "@layer tokens{a{color:red}}@layer base{a{color:red}}@layer ui{a{color:red}}@layer base{a{color:red}}",
+      `${emitted(consoleCascadeLayers)}@layer base{a{color:red}}`,
     ),
     [],
   );
 });
 
-test("a build with no page sheet orders the layers it does carry", () => {
-  assert.deepEqual(consoleCascadeFindings(emitted(["tokens", "base"])), []);
+test("a layer the bundle never carried is a finding, not a shorter order", () => {
   assert.match(
-    consoleCascadeFindings(emitted(["base", "tokens"]))[0] ?? "",
-    /not tokens, base/u,
+    consoleCascadeFindings(emitted(["tokens", "base", "ui"]))[0] ?? "",
+    /layers emitted as tokens, base, ui, not tokens, base, ui, page/u,
   );
+});
+
+test("the layers a build declares are what a document is asked for", () => {
+  assert.deepEqual(consoleCascadeNames(emitted(["ui", "tokens"])), [
+    "ui",
+    "tokens",
+  ]);
+  assert.deepEqual(consoleCascadeNames("@layer tokens, base, ui, page;"), [
+    "tokens",
+    "base",
+    "ui",
+    "page",
+  ]);
+  assert.deepEqual(consoleCascadeNames(".a{color:red}"), []);
 });
 
 test("a layer the system does not order is a finding wherever it sits", () => {
