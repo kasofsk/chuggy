@@ -13,7 +13,9 @@
 ///                   and on metered operator retries. Never refunded.
 ///   2. finalizationLeft   the wrap-up account, non-zero only under Budgeted
 ///                   pricing.
-///   3. reworkLeft   the eval-rework account, granted by the rework policy.
+///   3. reworkLeft   the eval-rework account, granted by the rework policy
+///                   and refilled to that grant — never above it — by the
+///                   operator's resume at its own wall, against a gas unit.
 ///   4. micro        within-cycle progress: phase rank, then stagesLeft,
 ///                   then the outstanding-task count.
 ///
@@ -169,6 +171,28 @@
 ///                                         which gas outweighs; ResumeFinalizing
 ///                                         re-ENQUEUES — resumes to
 ///                                         Finalizing, never into the gate)
+///   ticket-resumed, ResumeReworking     gas -1 ALWAYS (a Working entry —
+///     (the rework wall's resume:          standing rule 2 — under BOTH
+///      refill the eval-rework account     pricings, so no CHURN arm covers
+///      to the authored budget B and       it and it must strictly descend.
+///      respawn work)                      With Rf = radix(finalizationBudget),
+///                                         Rr = radix(reworkBudget) and
+///                                         M = microBound, the wall's
+///                                         pre-state has rework = 0 (the wall
+///                                         fires at reworkLeft == 0) and
+///                                         micro = 0 (settled rank, no live
+///                                         tasks, no stage digit), so
+///                                           d = -Rf*Rr*M + B*M + micro'
+///                                            <= -Rf*Rr*M + (Rr-1)*M + (M-1)
+///                                             = -Rf*Rr*M + Rr*M - 1 < 0,
+///                                         since B <= Rr - 1 —
+///                                         reworkPolicyChoices caps an
+///                                         authored budget at the instance's
+///                                         — and Rf >= 1. It is the
+///                                         rework-started eval_failure row
+///                                         with the account delta's sign
+///                                         reversed, dominated by the same
+///                                         gas unit)
 ///
 /// NAMED NON-DESCENDING SETS — everything else, isolated by name:
 ///
@@ -192,6 +216,10 @@
 ///       (+<= rankEvaluating*rankWeight + maxStages*stageWeight + nTasks —
 ///        the Evaluating resume respawns the LOWEST stage's fan-out with
 ///        the full stage digit — a fresh eval fan-out)
+///   ResumeWorking and ResumeReworking are NOT members under either
+///   pricing: they enter Working, which standing rule 2 meters
+///   unconditionally, so the refilled rework account is bought and the step
+///   descends (its row above).
 ///   Under the DEFAULT metering (RetryCharged) the churn set is empty.
 ///   RetryFree deliberately reproduces a known operator-churn livelock as a
 ///   configuration, so the model can generate escalation traces under both
@@ -387,7 +415,10 @@ module chuggy_measure {
   /// ONLY branch for now: the triage row keeps the bound in the model
   /// because removing it entirely would make per-ticket liveness conditional
   /// on middleware behavior — an unbounded (or gas-only) branch is exactly
-  /// the removal that was rejected. If evidence ever argues for another
+  /// the removal that was rejected. The rework wall's refill does not
+  /// reopen it: a refill is capped at this grant and bought with a gas
+  /// unit, so gas still bounds how many rework cycles a ticket ever gets.
+  /// If evidence ever argues for another
   /// pricing, it lands as a new constructor here, instantiated alongside
   /// (the FinalizationPricing method). The per-ticket ACCOUNT the policy meters
   /// (Ticket.reworkLeft) is policy state the middleware owns in the
@@ -402,9 +433,16 @@ module chuggy_measure {
   /// or parked with NO modeled resume: the dependency_revoked wall's only
   /// modeled exit is revoke (domain.qnt retryableIn), and stamping a
   /// resume point on it would be a lie to the desk.
+  ///
+  /// ResumeReworking is the rework wall's, and the one flavor that moves an
+  /// account: it re-enters Working with reworkLeft refilled to the ticket's
+  /// authored budget. That wall is reached by a VERDICT, and a verdict has
+  /// no re-judge to offer — the fabric already relaunched the container
+  /// below the cycle grain — so the only honest continuation is a new
+  /// artifact, which is a work cycle.
   type Resume =
-    NoResume | ResumeWorking | ResumeEvaluating | ResumeFinalizing |
-    ResumePublishingHandoff
+    NoResume | ResumeWorking | ResumeReworking | ResumeEvaluating |
+    ResumeFinalizing | ResumePublishingHandoff
 
   /// Why a ticket sits on the human desk. The termination requirement
   /// names no individual wall; the reason is
@@ -522,8 +560,10 @@ module chuggy_measure {
     // in the very next state.
     spawned: int,
     // POLICY STATE: the eval-rework account REMAINING, granted
-    // by ReworkPolicy (BudgetedRework(n) grants n; counts down — the measure
-    // wants remaining, not spent). In the IMPLEMENTATION this account
+    // by ReworkPolicy (BudgetedRework(n) grants n; counts down at each eval
+    // failure — the measure wants remaining, not spent — and is refilled to
+    // the grant, never above it, by the rework wall's ResumeReworking).
+    // In the IMPLEMENTATION this account
     // belongs to the middleware, not to the core ticket entity — the note's
     // demand — and it stays on the model's Ticket record for the same reason
     // the ghost fields do their tickets: the termination measure needs its
