@@ -370,12 +370,12 @@ test("a single-stage program draws one row per run and no stage after it", () =>
 });
 
 test("a page the route has more of says so", () => {
-  expect(
-    ticketLedger(ledgerPage([], "execution-zz-9"), ticket21Authoring),
-  ).toEqual({
-    cycles: [],
-    truncated: true,
-  });
+  const short = ticketLedger(
+    ledgerPage([], "execution-zz-9"),
+    ticket21Authoring,
+  );
+  expect(short.cycles).toEqual([]);
+  expect(short.truncated).toBe(true);
   expect(ticketLedger(ledgerPage([]), ticket21Authoring).truncated).toBe(false);
 });
 

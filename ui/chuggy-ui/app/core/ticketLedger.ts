@@ -29,7 +29,15 @@
  *
  * WHAT IT EMITS IS FACTS, and the three labels at the end are the only strings
  * in it: each names a row the ledger numbered, and every word a reader is given
- * about what those facts mean belongs to whatever draws them.
+ * about what those facts mean belongs to whatever draws them. Time and money
+ * are facts like any other, so a set and a cycle each carry the span they ran
+ * over and a cycle and the page each carry what the executions under them
+ * spent, unrounded, unformatted and in the units the wire sends.
+ *
+ * A ROLLUP SAYS HOW MUCH OF ITSELF IT COULD SEE. `complete` is false wherever
+ * the page cannot have held every execution of a cycle — a short page, a work
+ * run cut off it, a stage row with no set, a fan-out holding fewer tasks than
+ * its stage was authored with — so a sum is never read as the ticket's own.
  */
 
 import type {
@@ -41,6 +49,8 @@ import type {
   EvaluationCombinator,
   ExecutionTaskKind,
 } from "../../../../src/contract/rosters.ts";
+import { runSpanOf, runSpendOf } from "./runTotals.ts";
+import type { RunSpan, RunSpend } from "./runTotals.ts";
 
 /** The authoring the ledger reads, which is the draft read's own record. */
 export type TicketAuthoring = DraftResponse["authoring"];
@@ -59,6 +69,7 @@ export interface TaskSet {
   readonly executions: readonly ExecutionSummary[];
   readonly expected: number;
   readonly verdict: SetVerdict;
+  readonly span: RunSpan;
 }
 
 export interface RanStage {
@@ -89,11 +100,17 @@ export interface Cycle {
   readonly artifact: CycleArtifact;
   readonly programRuns: readonly ProgramRun[];
   readonly standing: CycleStanding;
+  readonly span: RunSpan;
+  readonly spend: RunSpend;
+  readonly complete: boolean;
 }
 
 export interface Ledger {
   readonly cycles: readonly Cycle[];
   readonly truncated: boolean;
+  readonly span: RunSpan;
+  readonly spend: RunSpend;
+  readonly complete: boolean;
 }
 
 /** A settled set named by what it was for, which is all a wall reader needs of it. */
@@ -218,6 +235,7 @@ function taskSetOf(set: SpawnedSet, authoring: TicketAuthoring): TaskSet {
     executions: set.executions,
     expected,
     verdict: setVerdict(set.executions, combinator),
+    span: runSpanOf(set.executions),
   };
 }
 
@@ -324,6 +342,58 @@ function cycleArtifactOf(work: TaskSet | undefined): CycleArtifact {
   return work.verdict === "Passed" ? "Produced" : "None";
 }
 
+/** Every set a cycle holds, which is its work run and each stage that ran. */
+function cycleSetsHeld(
+  work: TaskSet | undefined,
+  runs: readonly ProgramRun[],
+): readonly TaskSet[] {
+  const ran = runs.flatMap((run) =>
+    run.stages.flatMap((row) => (row.kind === "Ran" ? [row.set] : [])),
+  );
+  return work === undefined ? ran : [work, ...ran];
+}
+
+/**
+ * Whether the page can have held every execution of this cycle: its work run
+ * is on the page, no stage row is missing one, and no set is short of the
+ * fan-out its stage was authored with.
+ */
+function cycleComplete(
+  work: TaskSet | undefined,
+  runs: readonly ProgramRun[],
+  truncated: boolean,
+): boolean {
+  if (truncated || work === undefined) return false;
+  if (runs.some((run) => run.stages.some((row) => row.kind === "Missing")))
+    return false;
+  return cycleSetsHeld(work, runs).every(
+    (set) => set.executions.length >= set.expected,
+  );
+}
+
+function cycleOf(
+  cycle: CycleSets,
+  authoring: TicketAuthoring,
+  standing: CycleStanding,
+  page: ExecutionsResponse,
+): Omit<Cycle, "ordinal"> {
+  const work =
+    cycle.work === undefined ? undefined : taskSetOf(cycle.work, authoring);
+  const programRuns = programRunsOf(cycle, authoring);
+  const held = cycleSetsHeld(work, programRuns).flatMap(
+    (set) => set.executions,
+  );
+  return {
+    work,
+    artifact: cycleArtifactOf(work),
+    programRuns,
+    standing,
+    span: runSpanOf(held),
+    spend: runSpendOf(held),
+    complete: cycleComplete(work, programRuns, page.nextAfter !== undefined),
+  };
+}
+
 /**
  * The page's executions as the cycles that produced them, newest last. A page
  * `nextAfter` names more of is truncated, and the counts drawn from it are low
@@ -334,18 +404,23 @@ export function ticketLedger(
   authoring: TicketAuthoring,
 ): Ledger {
   const grouped = cycleSetsOf(spawnedSets(page));
-  const cycles: readonly Cycle[] = grouped.map((cycle, index) => {
-    const work =
-      cycle.work === undefined ? undefined : taskSetOf(cycle.work, authoring);
-    return {
-      ordinal: index + 1,
-      work,
-      artifact: cycleArtifactOf(work),
-      programRuns: programRunsOf(cycle, authoring),
-      standing: index === grouped.length - 1 ? "Current" : "Superseded",
-    };
-  });
-  return { cycles, truncated: page.nextAfter !== undefined };
+  const truncated = page.nextAfter !== undefined;
+  const cycles: readonly Cycle[] = grouped.map((cycle, index) => ({
+    ordinal: index + 1,
+    ...cycleOf(
+      cycle,
+      authoring,
+      index === grouped.length - 1 ? "Current" : "Superseded",
+      page,
+    ),
+  }));
+  return {
+    cycles,
+    truncated,
+    span: runSpanOf(page.executions),
+    spend: runSpendOf(page.executions),
+    complete: !truncated && cycles.every((cycle) => cycle.complete),
+  };
 }
 
 /** The last set this cycle holds, which is the one the machine priced its exit from. */
