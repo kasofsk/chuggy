@@ -51,8 +51,10 @@ import type {
   OperationStep,
 } from "../core/operationFollow.ts";
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
+import type { ProjectQueryKey } from "../core/projectQueryKeys.ts";
 import {
   manualDispatchAction,
+  ticketAttemptHeldMsMax,
   ticketAttemptKey,
   ticketDispatchList,
 } from "../core/ticketActions.ts";
@@ -142,6 +144,31 @@ function followWrittenBack(
     projectResourceKey(partition, "Ticket", String(ticket)),
     (held: TicketResponse | undefined) => ticketConfirmed(held, confirmed),
   );
+}
+
+/**
+ * What a step does to the record a remount picks the attempt back up from: a
+ * `Following` step names the operation the API accepted, and a finished follow
+ * leaves nothing to pick up. The entry is read by no query of its own, so how
+ * long it survives is set here rather than left to a default this console never
+ * chose.
+ */
+function attemptRecorded(
+  client: QueryClient,
+  key: ProjectQueryKey,
+  action: TicketAction,
+  step: OperationStep,
+): void {
+  if (step.step === "Following") {
+    client.setQueryDefaults(key, { gcTime: ticketAttemptHeldMsMax });
+    client.setQueryData<TicketAttempt>(key, {
+      action,
+      operation: step.operation,
+    });
+    return;
+  }
+  if (operationFinished(step))
+    client.removeQueries({ queryKey: key, exact: true });
 }
 
 /** Where a follow reports to: the panel's own step, and the caches the page
@@ -328,13 +355,8 @@ function useSubmitting(
 
   const drawStep = (action: TicketAction, step: OperationStep): void => {
     setAttempt({ action, step });
-    if (step.step === "Following")
-      client.setQueryData<TicketAttempt>(attemptKey, {
-        action,
-        operation: step.operation,
-      });
-    else if (operationFinished(step))
-      client.removeQueries({ queryKey: attemptKey, exact: true });
+    if (operationFinished(step)) setRefused(undefined);
+    attemptRecorded(client, attemptKey, action, step);
   };
 
   const follow = (held: TicketAttempt, startedFrom: OperationStep): void => {
@@ -348,22 +370,31 @@ function useSubmitting(
     );
   };
 
+  /**
+   * What it aborts is whatever is running when the answer arrives, and not what
+   * was running when the button was pressed: the seeded attempt is drawn before
+   * the pick-up has made its controller, so a Cancel in that first paint has
+   * none to carry, and aborting the one it found would abort nothing while the
+   * pick-up polled on. The abort precedes the removal so that the follow cannot
+   * write the record back between them.
+   */
   const cancel = async (operation: string): Promise<void> => {
-    const controller = runningRef.current;
+    const asked = runningRef.current;
     const answered = await cancelOperation(
       ports,
       partition,
       operation,
-      controller?.signal,
+      asked?.signal,
     );
-    if (controller?.signal.aborted === true) return;
+    if (asked?.signal.aborted === true) return;
     if (!answered.accepted) {
       setRefused(answered.said);
       return;
     }
+    runningRef.current?.abort(new Error(attemptCancelledReason));
     setAttempt(attemptCancelled(operation));
+    setRefused(undefined);
     client.removeQueries({ queryKey: attemptKey, exact: true });
-    controller?.abort(new Error(attemptCancelledReason));
   };
 
   useEffect(() => {
@@ -386,7 +417,7 @@ function useSubmitting(
   };
 }
 
-export function TicketActions(props: {
+export interface TicketActionsProps {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
   readonly state: PanelState<TicketResponse>;
@@ -394,7 +425,9 @@ export function TicketActions(props: {
   readonly dispatchState: PanelState<DispatchViewResponse>;
   readonly resume: ResumeOffer;
   readonly rework?: ReworkStanding;
-}): ReactNode {
+}
+
+function TicketActionsPanel(props: TicketActionsProps): ReactNode {
   const submitting = useSubmitting(props.partition, props.ticket);
   const step = submitting.attempt?.step;
   const pending = step?.step === "Following" ? step.operation : undefined;
@@ -452,5 +485,22 @@ export function TicketActions(props: {
         );
       }}
     </DataPanel>
+  );
+}
+
+/**
+ * The panel, keyed by the ticket it is about, which is what makes the pick-up
+ * above per ticket rather than per mount and is why its effect names no
+ * dependency. `ticketRoute` carries no key of its own, so a reader moving
+ * between tickets is drawn by one instance, and everything the panel holds is
+ * about the ticket it started on.
+ */
+export function TicketActions(props: TicketActionsProps): ReactNode {
+  const { tenant, project } = props.partition;
+  return (
+    <TicketActionsPanel
+      key={`${tenant}/${project}/${String(props.ticket)}`}
+      {...props}
+    />
   );
 }

@@ -12,6 +12,13 @@
  * id, an operation id, a configuration revision, and the project's own identity
  * for `Project`.
  *
+ * NOT EVERY ENTRY IS A READ. `projectHeldKey` is what a screen keeps for itself
+ * — the cache being the only thing under a partition that outlives the screen
+ * that wrote it — and its marker is outside the kinds, so no frame's write,
+ * drop or list refresh can reach it and it carries none of their types. It is
+ * still under the partition prefix, so a project switch takes it with
+ * everything else.
+ *
  * A resource key and a list key are refreshed by different halves of the
  * stream, which is why only one of them is a bare function here. The stream
  * writes a resource key itself, from the frame that carries that resource; a
@@ -29,6 +36,10 @@ import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
 export const projectQueryScope = "project";
 export const projectsQueryScope = "projects";
 export const projectListMarker = "list";
+
+/** Neither a kind nor a list of one, which is what keeps a held entry out of
+ * the reach of everything the stream applies. */
+export const projectHeldMarker = "held";
 
 export type ProjectQueryKey = readonly unknown[];
 
@@ -48,6 +59,14 @@ export function projectResourceKey(
   resource: string,
 ): ProjectQueryKey {
   return [...projectPartitionKey(partition), kind, resource];
+}
+
+/** One partition's own working state, named by the screen that keeps it. */
+export function projectHeldKey(
+  partition: PartitionIdentity,
+  name: string,
+): ProjectQueryKey {
+  return [...projectPartitionKey(partition), projectHeldMarker, name];
 }
 
 function projectListKey(

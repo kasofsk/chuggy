@@ -20,7 +20,11 @@ import type { PublicMutation } from "../../../../src/contract/requests.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import type { DispatchViewResponse } from "../../../../src/contract/responses.ts";
 
-import { projectListReread, projectResourceKey } from "./projectQueryKeys.ts";
+import {
+  operationAttemptsMax,
+  operationPollIntervalMs,
+} from "./operationFollow.ts";
+import { projectHeldKey, projectListReread } from "./projectQueryKeys.ts";
 import type { ProjectList, ProjectQueryKey } from "./projectQueryKeys.ts";
 
 /** Settled, or past the point of no return: the complement of `revocableIn`. */
@@ -110,16 +114,25 @@ export interface TicketAttempt {
 /**
  * Where an attempt in flight is held, so that the panel unmounting does not
  * take the record of it with it. It is the cache and not component state
- * because the cache outlives the panel; `attempt:` is a resource no frame
- * carries, so the stream — which writes `Ticket` resources by ticket number
- * alone — never writes over it.
+ * because the cache outlives the panel, and it is a held key rather than a
+ * resource one because it is the console's own working state and not a read of
+ * anything the stream carries.
  */
 export function ticketAttemptKey(
   partition: PartitionIdentity,
   ticket: number,
 ): ProjectQueryKey {
-  return projectResourceKey(partition, "Ticket", `attempt:${String(ticket)}`);
+  return projectHeldKey(partition, `attempt:${String(ticket)}`);
 }
+
+/**
+ * How long a held attempt is worth picking up, which nothing else would bound:
+ * the entry has no reader of its own, so the cache would evict it on a default
+ * this file never chose. A follow polls to its own budget and then abandons, so
+ * a record older than that budget names an attempt no follow is still watching.
+ */
+export const ticketAttemptHeldMsMax =
+  operationAttemptsMax * operationPollIntervalMs;
 
 export function manualDispatchAction(
   ticket: number,

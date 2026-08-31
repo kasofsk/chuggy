@@ -68,8 +68,7 @@ test("a read that has not answered offers nothing, whatever the phase enables", 
     { state: "Failed", reason: "the API failed with Fault" },
     { state: "Absent", reason: "the API has no such resource" },
   ];
-  for (const open of unread) {
-    expect(ticketOffers(open, parked, dispatch).offers).toBe("Unread");
-    expect(offered(open)).toEqual([]);
-  }
+  expect(offered(ready([]))).not.toEqual([]);
+  for (const open of unread)
+    expect(ticketOffers(open, parked, dispatch)).toEqual({ offers: "Unread" });
 });
