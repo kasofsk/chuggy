@@ -31,6 +31,7 @@ import {
 import {
   dispatchEvent,
   releaseTicketEvent,
+  type ReleaseAuthoring,
 } from "../../src/actor/decisionEvent.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
@@ -576,11 +577,16 @@ export function postgresHarnessDecisionSubmission(
   };
 }
 
-/** Creates native authoring state and returns its only valid public release command. */
+/**
+ * Creates native authoring state and returns its only valid public release
+ * command. The authoring may be named, for a case about a ticket the fixture's
+ * own pricing does not produce.
+ */
 export async function postgresHarnessReleaseSubmission(
   harness: PostgresHarness,
   partition: Partition,
   label: string,
+  authoring: ReleaseAuthoring = plainAuthoring,
 ): Promise<Submission> {
   const revision = asConfigurationRevisionId(`config-${label}-${randomUUID()}`);
   const base = postgresHarnessSubmission(partition, label);
@@ -604,7 +610,7 @@ export async function postgresHarnessReleaseSubmission(
     configurationRevision: revision,
     configurationDigest: initialized.configuration.digest,
     expectedProjectSequence: initialized.projectSequence,
-    authoring: plainAuthoring,
+    authoring,
     brief: postgresHarnessBrief,
   });
   if (created.created !== "Created")
@@ -663,11 +669,17 @@ export function postgresHarnessAccepted(
   partition: Partition,
   label: string,
   index: number,
+  authoring: ReleaseAuthoring = plainAuthoring,
 ): Promise<DecisionInput> {
   return (async () => {
     const submission =
       index === 0
-        ? await postgresHarnessReleaseSubmission(harness, partition, label)
+        ? await postgresHarnessReleaseSubmission(
+            harness,
+            partition,
+            label,
+            authoring,
+          )
         : postgresHarnessDecisionSubmission(partition, label, index);
     const accepted = await harness.inbox.accept(submission);
     if (accepted.accepted !== "Accepted")
@@ -714,6 +726,7 @@ export async function postgresHarnessHistory(
   partition: Partition,
   label: string,
   count: number,
+  authoring: ReleaseAuthoring = plainAuthoring,
 ): Promise<ProjectMemory> {
   const writer = postgresHarnessWriter(harness);
   let memory = await projectWriterLoad(
@@ -726,6 +739,7 @@ export async function postgresHarnessHistory(
       partition,
       `${label}-${String(index)}`,
       index,
+      authoring,
     );
     const step = await projectWriterDecide(writer, memory, item);
     if (step.decided.decided !== "Committed") {

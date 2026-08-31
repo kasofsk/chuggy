@@ -387,7 +387,13 @@ export const executionSummarySchema = z.object({
   requirement: executionRequirementSchema,
   requirementDigest: digestSchema,
   requirementSource: z.enum(requirementSources),
-  /** The spawn request that made this execution, which is its fan-out set's identity. */
+  /**
+   * The spawn request that made this execution, which is its fan-out set's
+   * identity. Optional for the deployment window and not because a summary can
+   * lack one: the console is its own artifact, so a bundle that already reads
+   * this field can reach a server not yet sending it, and a required field
+   * would fail the whole page rather than one cell.
+   */
   request: identitySchema.optional(),
   worker: workerSchema.optional(),
   platformDefaultVersion: ticketNumberSchema,

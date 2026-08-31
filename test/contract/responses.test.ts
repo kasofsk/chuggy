@@ -420,6 +420,27 @@ test("an execution page and an execution detail parse with their results", () =>
   assert.throws(() => executionResponseSchema.parse(page.executions[0]));
 });
 
+/**
+ * Both halves of the field's optionality: the row is `NOT NULL` and the
+ * interpreter type carries it, so every summary this tree encodes names one,
+ * and a bundle reaching a server not yet sending it still reads the page.
+ */
+test("every encoded summary names its request, and a page without one still reads", () => {
+  const body = structuredClone(
+    executionsResponse({
+      result: "Authorized",
+      value: { executions: [executionSummary] },
+    }).body,
+  ) as { readonly executions: Record<string, unknown>[] };
+  const summary = body.executions[0];
+  assert.ok(summary !== undefined);
+  assert.equal(summary["request"], "request-one");
+  delete summary["request"];
+  const older = executionsResponseSchema.parse(body);
+  assert.equal(older.executions[0]?.request, undefined);
+  assert.equal(older.executions[0]?.status, "Terminal");
+});
+
 test("an execution names what it ran on, in either mode", () => {
   const page = executionsResponseSchema.parse(
     executionsResponse({

@@ -196,10 +196,6 @@ export type OperationResource =
   | (OperationResourceBase & { readonly state: "Cancelled" });
 
 /**
- * The reason is present exactly when the ticket is parked on the desk, and the
- * brief exactly when the ticket was authored with one.
- */
-/**
  * What a ticket has left to spend. `finalizationLeft` is absent under a pricing
  * that budgets no finalization account, which is not the same fact as an
  * account standing at zero.
@@ -211,6 +207,11 @@ export interface TicketAccounts {
   readonly finalizationLeft?: number;
 }
 
+/**
+ * The reason and the resume point are present exactly when the ticket is parked
+ * on the desk, the brief exactly when it was authored with one, and the
+ * accounts only where the store holds them.
+ */
 export interface TicketResource {
   readonly ticket: TicketId;
   readonly phase: Phase;

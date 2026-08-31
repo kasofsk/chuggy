@@ -24,6 +24,7 @@ import {
   dispatchEvent,
   evalReduceEvent,
   execDecisionEvent,
+  finalizationResultEvent,
   releaseTicketEvent,
   resumeTicketEvent,
   taskDoneEvent,
@@ -263,6 +264,37 @@ test("every projected row is the core the step it names left behind", () => {
   }
   assert.ok(seen.includes("Escalated/ResumeEvaluating"));
   assert.equal(seen.at(-1), "Evaluating/NoResume");
+});
+
+/**
+ * The account the `finalizationLeft` rule turns on: a budgeted one spent to
+ * nothing. The figure is what says the budget ran out, so it stays on the row,
+ * and only the pricing decides whether a row carries one at all.
+ */
+test("a budgeted finalization account spent to zero is still projected", () => {
+  let core: Core = genesis;
+  const step = (event: DecisionEvent) => {
+    core = execDecisionEvent(refinementInstance, core, event).post;
+  };
+  step(releaseTicketEvent(id(1), plainAuthoring));
+  step(dispatchEvent(id(1)));
+  step(
+    taskDoneEvent(id(1), asTaskId(outstandingTask(core)), "Pass", plainResult),
+  );
+  step(workReduceEvent(id(1)));
+  step(
+    taskDoneEvent(id(1), asTaskId(outstandingTask(core)), "Pass", plainResult),
+  );
+  step(evalReduceEvent(id(1)));
+  assert.equal(ticketAt(core, id(1)).phase, "Finalizing");
+  step(finalizationResultEvent(id(1), "FinalizationFailed"));
+  const spent = ticketAt(core, id(1));
+  assert.equal(spent.finalizationLeft, 0);
+  assert.notEqual(spent.finalizationPricing, "DeadlineOnly");
+  assert.equal(
+    projectionOf(core).find((row) => row.ticket === id(1))?.finalizationLeft,
+    0,
+  );
 });
 
 /** A pricing that budgets no finalization account projects no figure for one. */

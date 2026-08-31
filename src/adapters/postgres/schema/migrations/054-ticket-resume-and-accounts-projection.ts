@@ -17,11 +17,12 @@ import {
  * a row can be at a journal position another column is not.
  *
  * EVERY COLUMN IS NULLABLE AND NONE IS BACKFILLED, because there is nowhere
- * honest to backfill from — the accounts and the resume point live only in the
- * journaled core, and the desk task migration 039 recovered `reason` from
- * records no equivalent of. So a row keeps NULL until its ticket's next
- * journaled decision, and the read omits what it does not hold rather than
- * naming a default that would read as a figure.
+ * honest to backfill from: the accounts and the resume point live only in the
+ * journaled core. Migration 039 could recover `reason` because an open desk
+ * task carries a copy of it, and nothing carries a copy of these. So a row
+ * keeps NULL until its ticket's next journaled decision, and the read omits
+ * what it does not hold rather than naming a default that would read as a
+ * figure.
  *
  * `finalization_left` CARRIES A SECOND ABSENCE: a ticket priced `DeadlineOnly`
  * budgets no finalization account, and the writer leaves the column NULL for

@@ -22,11 +22,17 @@ import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { ticketAt } from "../../src/domain/core.ts";
+import { budgeted } from "../../src/domain/pricing.ts";
 import type { Verdict } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
+import type { TicketResource } from "../../src/interpreter/nativeWeb.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
-import { plainResult, refinementInstance } from "../actor/harness.ts";
+import {
+  plainAuthoring,
+  plainResult,
+  refinementInstance,
+} from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   postgresHarnessCompletion,
@@ -88,8 +94,28 @@ function carried(memory: ProjectMemory): ProjectedRow {
     resume_at: ticket.resumeAt,
     gas_left: String(ticket.gasLeft),
     rework_left: String(ticket.reworkLeft),
-    finalization_left: String(ticket.finalizationLeft),
+    finalization_left:
+      ticket.finalizationPricing === "DeadlineOnly"
+        ? null
+        : String(ticket.finalizationLeft),
   };
+}
+
+/** The subject as the project table lists it, in the order the case names. */
+async function listed(
+  partition: Partition,
+  order: "Identity" | "RecentActivity",
+): Promise<TicketResource> {
+  const found = await postgresNativeReads(pool).project(partition, {
+    limit: 10,
+    order,
+  });
+  if (found.result !== "Found")
+    throw new Error("ticket projection case: the project has no read");
+  const row = found.project.tickets.find((each) => each.ticket === subject);
+  if (row === undefined)
+    throw new Error("ticket projection case: the list omits the ticket");
+  return row;
 }
 
 /** Reports one task and decides it with everything the commit enqueued behind it. */
@@ -182,12 +208,18 @@ test("the public read serves the resume point and the accounts the row holds", a
   const parked = await reads.ticket(partition, subject);
   assert.equal(parked?.phase, "Escalated");
   assert.equal(parked?.resumeAt, "ResumeEvaluating");
-  assert.deepEqual(parked?.accounts, {
+  const accounts = {
     gasLeft: 1,
     gasMax: refinementInstance.gas,
     reworkLeft: 0,
     finalizationLeft: 1,
-  });
+  };
+  assert.deepEqual(parked?.accounts, accounts);
+  for (const order of ["Identity", "RecentActivity"] as const) {
+    const row = await listed(partition, order);
+    assert.equal(row.resumeAt, "ResumeEvaluating");
+    assert.deepEqual(row.accounts, accounts);
+  }
 });
 
 test("a resume clears the point it re-entered at and pays for itself", async () => {
@@ -245,4 +277,49 @@ test("a row written before the accounts existed serves none of them", async () =
   assert.equal(older?.phase, "Escalated");
   assert.equal(older?.resumeAt, undefined);
   assert.equal(older?.accounts, undefined);
+});
+
+/**
+ * The two things a null `finalization_left` could mean, driven apart. A
+ * `Budgeted` account standing at zero is a figure the wire owes its reader, and
+ * only the pricing says whether an account was ever budgeted at all.
+ */
+test("a budgeted account at zero is served, and an unbudgeted one is absent", async () => {
+  const reads = postgresNativeReads(pool);
+  const spent = await postgresHarnessProject(
+    harness.store,
+    "projection-budgeted",
+  );
+  const spentMemory = await postgresHarnessHistory(
+    harness,
+    spent,
+    "projection-budgeted",
+    1,
+    { ...plainAuthoring, finalizationPricing: budgeted(0) },
+  );
+  assert.equal((await projected(spent)).finalization_left, "0");
+  assert.deepEqual(await projected(spent), carried(spentMemory));
+  assert.equal(
+    (await reads.ticket(spent, subject))?.accounts?.finalizationLeft,
+    0,
+  );
+
+  const unpriced = await postgresHarnessProject(
+    harness.store,
+    "projection-deadline",
+  );
+  const unpricedMemory = await postgresHarnessHistory(
+    harness,
+    unpriced,
+    "projection-deadline",
+    1,
+    { ...plainAuthoring, finalizationPricing: "DeadlineOnly" },
+  );
+  assert.equal((await projected(unpriced)).finalization_left, null);
+  assert.deepEqual(await projected(unpriced), carried(unpricedMemory));
+  assert.deepEqual((await reads.ticket(unpriced, subject))?.accounts, {
+    gasLeft: refinementInstance.gas,
+    gasMax: refinementInstance.gas,
+    reworkLeft: 1,
+  });
 });
