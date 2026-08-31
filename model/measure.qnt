@@ -188,8 +188,9 @@
 ///                                         since B <= Rr - 1 —
 ///                                         reworkPolicyChoices caps an
 ///                                         authored budget at the instance's
-///                                         — and Rf >= 1. It is the
-///                                         rework-started eval_failure row
+///                                         OWN grant, which the radix above
+///                                         makes Rr - 1 — and Rf >= 1. It is
+///                                         the rework-started eval_failure row
 ///                                         with the account delta's sign
 ///                                         reversed, dominated by the same
 ///                                         gas unit. B >= 1 here: the wall
