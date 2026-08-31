@@ -149,17 +149,58 @@ test("a closed span names both ends and an open one says it is still running", (
 test("a row's window is its start and how long, and a running one says how long so far", () => {
   const nowMs = Date.parse("2026-08-27T11:07:00Z");
   const ended = whenFigure(
-    "2026-08-27T10:31:00Z",
-    "2026-08-27T10:48:40Z",
+    {
+      registeredAt: "2026-08-27T10:31:00Z",
+      terminalAt: "2026-08-27T10:48:40Z",
+    },
     nowMs,
   );
   if (ended.kind !== "Span") throw new Error("not a span");
   expect(ended.length).toBe("17m 40s");
   expect(ended.end).toBe(undefined);
-  const running = whenFigure("2026-08-27T11:03:20Z", undefined, nowMs);
+  const running = whenFigure({ registeredAt: "2026-08-27T11:03:20Z" }, nowMs);
   if (running.kind !== "Span") throw new Error("not a span");
   expect(running.length).toBe("running 3m 40s");
   expect(running.open).toBe(true);
+});
+
+/**
+ * §5.2's waiting reading: where the wire carries the first attempt's opening,
+ * the queue and the run are two figures rather than one, and where it does not
+ * the row reads as it did before the field existed.
+ */
+test("a row separates the wait from the run where the wire carries the start", () => {
+  const nowMs = Date.parse("2026-08-27T11:07:00Z");
+  const ran = whenFigure(
+    {
+      registeredAt: "2026-08-27T10:31:00Z",
+      startedAt: "2026-08-27T10:31:12Z",
+      terminalAt: "2026-08-27T10:48:40Z",
+    },
+    nowMs,
+  );
+  if (ran.kind !== "Span") throw new Error("not a span");
+  expect(ran.length).toBe("waited 12s · ran 17m 28s");
+  const running = whenFigure(
+    {
+      registeredAt: "2026-08-27T11:03:20Z",
+      startedAt: "2026-08-27T11:03:32Z",
+    },
+    nowMs,
+  );
+  if (running.kind !== "Span") throw new Error("not a span");
+  expect(running.length).toBe("waited 12s · running 3m 28s");
+  expect(running.open).toBe(true);
+});
+
+/** A ticket's span begins where the journal dated its release, not at its first run. */
+test("a span begins at the instant it is given, over the set's own first", () => {
+  const nowMs = Date.parse("2026-08-27T11:07:00Z");
+  const span = { from: "2026-08-27T10:19:00Z", to: "2026-08-27T10:49:00Z" };
+  const released = spanFigure(span, nowMs, "2026-08-27T09:49:00Z");
+  if (released.kind !== "Span") throw new Error("not a span");
+  expect(released.length).toBe("1h");
+  expect(spanFigure(span, nowMs, undefined)).toEqual(spanFigure(span, nowMs));
 });
 
 test("a span with no readable start, and a spend with no totals, are absences", () => {

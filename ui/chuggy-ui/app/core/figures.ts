@@ -267,10 +267,16 @@ function spanStart(
 
 /**
  * A cycle's or a ticket's window: where it started, where it ended or that it
- * has not, and how long that is. An open end ticks with the clock it is handed.
+ * has not, and how long that is. `from` overrides the set's own first
+ * registration for a span the journal dates itself — the ticket's, which begins
+ * at its release and not at whatever ran first.
  */
-export function spanFigure(span: RunSpan, nowMs: number): Figure {
-  const opened = spanStart(span.from, nowMs);
+export function spanFigure(
+  span: RunSpan,
+  nowMs: number,
+  from?: string,
+): Figure {
+  const opened = spanStart(from ?? span.from, nowMs);
   if (opened === undefined)
     return { kind: "Absent", why: "No run figures yet" };
   const ended = spanStart(span.to, nowMs);
@@ -293,30 +299,55 @@ export function spanFigure(span: RunSpan, nowMs: number): Figure {
   };
 }
 
+/** When a row began, ended, and — where the wire says so — first ran. */
+export interface RunWindow {
+  readonly registeredAt: string;
+  readonly startedAt?: string | undefined;
+  readonly terminalAt?: string | undefined;
+}
+
 /**
- * One row's window, which is where it started and how long it has taken. A row
+ * The elapsed half of a row's window: how long it has been waiting where it has
+ * not started, and how long it has been running where it has. A row whose start
+ * the wire does not carry is timed from its registration, which is what it was
+ * before the field existed.
+ */
+function whenElapsed(
+  window: RunWindow,
+  openedMs: number,
+  nowMs: number,
+): string {
+  const started = spanStart(window.startedAt, nowMs);
+  if (started === undefined) return `running ${durationText(nowMs - openedMs)}`;
+  return `waited ${durationText(started.startMs - openedMs)} · running ${durationText(nowMs - started.startMs)}`;
+}
+
+/**
+ * One row's window: where it started, how long it has taken, and where the wire
+ * carries the first attempt's opening, how much of that was the queue. A row
  * the wire has reported no end for is still running and says how long for.
  */
-export function whenFigure(
-  registeredAt: string,
-  terminalAt: string | undefined,
-  nowMs: number,
-): Figure {
-  const opened = spanStart(registeredAt, nowMs);
+export function whenFigure(window: RunWindow, nowMs: number): Figure {
+  const opened = spanStart(window.registeredAt, nowMs);
   if (opened === undefined) return { kind: "Absent", why: "No instant" };
-  const ended = spanStart(terminalAt, nowMs);
+  const ended = spanStart(window.terminalAt, nowMs);
   if (ended === undefined)
     return {
       kind: "Span",
       start: opened.start,
-      length: `running ${durationText(nowMs - opened.startMs)}`,
+      length: whenElapsed(window, opened.startMs, nowMs),
       open: true,
       title: `${opened.startIso} → running`,
     };
+  const started = spanStart(window.startedAt, nowMs);
+  const ran =
+    started === undefined
+      ? durationText(ended.startMs - opened.startMs)
+      : `waited ${durationText(started.startMs - opened.startMs)} · ran ${durationText(ended.startMs - started.startMs)}`;
   return {
     kind: "Span",
     start: opened.start,
-    length: durationText(ended.startMs - opened.startMs),
+    length: ran,
     open: false,
     title: `${opened.startIso} → ${ended.startIso}`,
   };

@@ -88,6 +88,7 @@ function TicketAside(props: {
   readonly ticket: TicketResponse | undefined;
   readonly facts: TicketPageFacts;
   readonly actions: ReactNode;
+  readonly nowMs: number;
 }): ReactNode {
   const ticket = props.ticket;
   const ledger = props.facts.ledger;
@@ -102,6 +103,7 @@ function TicketAside(props: {
       stageCount={props.facts.stageCount}
       sections={ticketSections(ticket, props.facts)}
       actions={props.actions}
+      nowMs={props.nowMs}
     />
   );
 }
@@ -142,7 +144,12 @@ function TicketBody(props: {
         />
       )}
       <div className="ticket-grid">
-        <TicketAside ticket={ticket} facts={facts} actions={actions} />
+        <TicketAside
+          ticket={ticket}
+          facts={facts}
+          actions={actions}
+          nowMs={props.nowMs}
+        />
         <TicketMain
           partition={props.partition}
           draftState={props.reads.draftState}

@@ -20,6 +20,7 @@ import {
   ticket21Resumed,
 } from "./ticketLedgerFixture.ts";
 import type { ExecutionShape } from "./ticketLedgerFixture.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 import type { TicketAuthoring } from "../app/core/ticketLedger.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
@@ -140,6 +141,7 @@ const parkedTicket = {
   ticket: 21,
   phase: "Escalated",
   sequence: 167,
+  ...ticketInstants,
   reason: "ReworkBudgetExhausted",
   resumeAt: "ResumeReworking",
   accounts: { gasLeft: 1, gasMax: 8, reworkLeft: 0 },
@@ -150,6 +152,7 @@ const resumedTicket = {
   ticket: 21,
   phase: "Evaluating",
   sequence: 169,
+  ...ticketInstants,
   accounts: { gasLeft: 0, gasMax: 8, reworkLeft: 0 },
   runTotals: ticketTotals,
 };
@@ -436,6 +439,7 @@ const revokedTicket = {
   ticket: 21,
   phase: "Escalated",
   sequence: 171,
+  ...ticketInstants,
   reason: "DependencyRevoked",
   accounts: { gasLeft: 4, gasMax: 8, reworkLeft: 0 },
   runTotals: ticketTotals,
@@ -513,7 +517,7 @@ test("a gas wall offers no resume, and says it is the gas that is gone", async (
  * under both pricings, and revoke is its only exit.
  */
 test("a rework wall with no gas is parked for good, whatever the pricing", async () => {
-  for (const resumePricing of ["RetryCharged", "RetryFree"]) {
+  for (const resumePricing of ["RetryCharged", "RetryFree"] as const) {
     await drawTicket({
       shapes: ticket21Parked,
       ticket: {
@@ -625,6 +629,70 @@ test("a short page marks the head's own counts, draft or no draft", async () => 
   }
 });
 
+/**
+ * The wall is dated by when the ticket entered it, which is the journal's own
+ * instant and not the failing row's end — those differ whenever anything ran
+ * after the wall, and the fixture makes them differ.
+ */
+test("the wall says when the ticket entered it, from the journal's own instant", async () => {
+  const { container } = await drawTicket({
+    shapes: ticket21Parked,
+    ticket: parkedTicket,
+  });
+  const when = container.querySelector(".notice-parked .notice-when .fig");
+  expect(when?.getAttribute("title")).toBe(
+    new Date(ticketInstants.changedAt).toISOString(),
+  );
+  expect(when?.textContent).not.toBe("");
+});
+
+test("a live phase is dated the same way", async () => {
+  const { container } = await drawTicket({
+    shapes: ticket21Resumed,
+    ticket: resumedTicket,
+  });
+  expect(
+    container
+      .querySelector(".notice-live .notice-when .fig")
+      ?.getAttribute("title"),
+  ).toBe(new Date(ticketInstants.changedAt).toISOString());
+});
+
+/**
+ * The ticket's span begins at the release the journal dates, not at whatever
+ * ran first — the fixture releases well before its first execution, so the two
+ * give different lengths.
+ */
+test("the head's span begins at the release and not at the first run", async () => {
+  const { container } = await drawTicket({
+    shapes: ticket21Parked,
+    ticket: parkedTicket,
+  });
+  const span = container.querySelector(".ticket-figures .fig[title*='→']");
+  expect(span?.getAttribute("title")).toContain(
+    new Date(ticketInstants.releasedAt).toISOString(),
+  );
+});
+
+/**
+ * §5.2's waiting reading: a row whose first attempt the wire dates says how
+ * much of its window was the queue, and one it does not reads as before.
+ */
+test("a row separates its wait from its run where the wire dates the start", async () => {
+  const started: readonly ExecutionShape[] = ticket21Parked.map((shape) =>
+    shape.task === 1 ? { ...shape, startedAt: "2026-08-26T00:11:00Z" } : shape,
+  );
+  const { container } = await drawTicket({
+    shapes: started,
+    ticket: parkedTicket,
+  });
+  const rows = [...container.querySelectorAll(".ledger-row")].map(
+    (row) => row.querySelector(".ledger-when")?.textContent ?? "",
+  );
+  expect(rows.some((row) => row.includes("waited 1m · ran"))).toBe(true);
+  expect(rows.some((row) => row.includes("waited") === false)).toBe(true);
+});
+
 test("every action the page draws describes itself by an id that resolves", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
@@ -725,6 +793,25 @@ async function drawFanout(): Promise<Drawn> {
     authoring: fanoutAuthoring,
   });
 }
+
+/**
+ * A queue time over part of a fan-out would be a figure about no whole thing,
+ * so a set the wire dates only some of reads as one it dates none of.
+ */
+test("a fan-out set the wire half-dates draws no wait at all", async () => {
+  const half = fanoutShapes.map((shape) =>
+    shape.task === 1 ? { ...shape, startedAt: "2026-08-26T00:11:00Z" } : shape,
+  );
+  const { container } = await drawTicket({
+    shapes: half,
+    ticket: parkedTicket,
+    authoring: fanoutAuthoring,
+  });
+  const work = groups(container).at(-1)?.querySelector(".ledger-row");
+  const when = work?.querySelector(".ledger-when")?.textContent ?? "";
+  expect(when).toContain("15m");
+  expect(when).not.toContain("waited");
+});
 
 test("a fan-out row is priced and timed over the whole set, not its first task", async () => {
   const { container } = await drawFanout();

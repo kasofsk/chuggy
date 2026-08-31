@@ -18,12 +18,13 @@ import {
   phaseLabel,
 } from "../../core/codeLabels.ts";
 import type { WallFacts } from "../../core/codeLabels.ts";
-import { costFigure } from "../../core/figures.ts";
+import { costFigure, instantFigure } from "../../core/figures.ts";
 import type { TicketAccounts } from "../../core/ticketAccounts.ts";
 import type { Cycle, Ledger as LedgerFacts } from "../../core/ticketLedger.ts";
 import { cycleLabel, ledgerLastSet } from "../../core/ticketLedger.ts";
 import { ActionWithCost } from "../ui/ActionWithCost.tsx";
 import { BudgetMeter } from "../ui/BudgetMeter.tsx";
+import { Figure } from "../ui/Figure.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { SectionList } from "../ui/SectionList.tsx";
@@ -62,6 +63,7 @@ export function SituationNotice(props: {
   readonly facts: LedgerFacts;
   readonly accounts: TicketAccounts;
   readonly stageCount: number;
+  readonly nowMs: number;
 }): ReactNode {
   const reason = props.ticket.reason;
   if (reason !== undefined) {
@@ -69,6 +71,7 @@ export function SituationNotice(props: {
       reason,
       wallFacts(props.facts, props.accounts, props.stageCount),
     );
+    const at = instantFigure(props.ticket.changedAt, props.nowMs);
     return (
       <Notice
         tone="parked"
@@ -76,9 +79,14 @@ export function SituationNotice(props: {
         heading="Parked"
         detail={escalationReasonLabel(reason)}
         {...(more === undefined ? {} : { more })}
-      />
+      >
+        <p className="notice-when">
+          <Figure figure={at} />
+        </p>
+      </Notice>
     );
   }
+  const at = instantFigure(props.ticket.changedAt, props.nowMs);
   const resumed = resumedFrom(props.facts);
   const rework = props.accounts.rework;
   const exhausted =
@@ -92,7 +100,11 @@ export function SituationNotice(props: {
       heading={phaseLabel(props.ticket.phase)}
       {...(resumed === undefined ? {} : { detail: resumed })}
       {...(exhausted === undefined ? {} : { more: exhausted })}
-    />
+    >
+      <p className="notice-when">
+        <Figure figure={at} />
+      </p>
+    </Notice>
   );
 }
 
@@ -136,6 +148,7 @@ export function TicketSituation(props: {
   readonly stageCount: number;
   readonly sections: readonly SectionEntry[];
   readonly actions: ReactNode;
+  readonly nowMs: number;
 }): ReactNode {
   return (
     <aside className="situation">
@@ -144,6 +157,7 @@ export function TicketSituation(props: {
         facts={props.facts}
         accounts={props.accounts}
         stageCount={props.stageCount}
+        nowMs={props.nowMs}
       />
       {props.actions}
       <Panel title="Budgets" level={2}>

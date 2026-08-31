@@ -72,6 +72,10 @@
     gap: var(--space-4);
   }
 
+  .notice-when {
+    padding-top: var(--space-1);
+  }
+
   .ledger-partial {
     color: var(--tone-parked);
     font-size: var(--text-xs);

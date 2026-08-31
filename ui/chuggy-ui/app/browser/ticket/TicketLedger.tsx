@@ -53,6 +53,20 @@ import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Ledger, LedgerBlock, LedgerGroup, LedgerRow } from "../ui/Ledger.tsx";
 
+/**
+ * When the earliest task of a set first ran, which is what separates the wait
+ * from the run. A set holding one task the wire carries no start for has none:
+ * a queue time over part of a fan-out would be a figure about no whole thing.
+ */
+function setStartedAt(set: TaskSet): string | undefined {
+  const started = set.executions.map((row) => row.startedAt);
+  if (started.some((at) => at === undefined)) return undefined;
+  return started
+    .flatMap((at) => (at === undefined ? [] : [at]))
+    .sort()
+    .at(0);
+}
+
 /** What a set spent, over however many of its tasks carry figures at all. */
 function setSpend(set: TaskSet): Spend {
   const spend = runSpendOf(set.executions);
@@ -129,8 +143,11 @@ function SetRow(props: {
       identity={executionRequirementLabel(first)}
       pill={pill}
       when={whenFigure(
-        props.set.span.from ?? first.registeredAt,
-        props.set.span.to,
+        {
+          registeredAt: props.set.span.from ?? first.registeredAt,
+          startedAt: setStartedAt(props.set),
+          terminalAt: props.set.span.to,
+        },
         props.chrome.nowMs,
       )}
       spent={setSpend(props.set)}

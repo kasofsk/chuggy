@@ -4,8 +4,9 @@
  *
  * The cost and the token count are the ticket read's own roll-up rather than a
  * sum over the executions this screen holds, because a page that is short would
- * understate them. The run count and the span are this page's, and say so where
- * the page is short. The wall is a pill beside the phase rather than a sentence
+ * understate them. The span begins at the release the journal dates and ends at
+ * the last run this page holds; the run count is this page's, and both say so
+ * where the page is short. The wall is a pill beside the phase rather than a sentence
  * under it, so where the ticket is and why are read in one glance.
  */
 
@@ -63,6 +64,7 @@ function TicketFigures(props: {
           figure={spanFigure(
             runSpanOf(props.page?.executions ?? []),
             props.nowMs,
+            props.ticket.releasedAt,
           )}
         />
         {short ? <span className="fig-dim"> {headShortPageNote}</span> : null}
