@@ -26,6 +26,7 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
+  createLink: (component: unknown) => component,
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
@@ -172,7 +173,7 @@ async function ticketPage(served: {
   );
   await settled();
   await turned(() => {
-    screen.getAllByRole("button", { name: /Work stage 1/ })[0]?.click();
+    screen.getAllByRole("button", { name: "Details" })[0]?.click();
   });
   await settled();
   return { container: view.container, reads, push: server.push };
@@ -342,11 +343,11 @@ test("the ticket's total is the figure the ticket read answered with", async () 
     transcripts: [transcript([1, 2], true)],
   });
   expect(
-    rendered.container.querySelector(".ticket-head .run-cost")?.textContent,
-  ).toBe("$9.99 (list price)");
+    rendered.container.querySelector(".ticket-figures")?.textContent,
+  ).toContain("$9.99");
   expect(
-    rendered.container.querySelector(".stage .run-cost")?.textContent,
-  ).toBe("$0.30 (list price)");
+    rendered.container.querySelector(".ticket-usage")?.textContent,
+  ).toContain("$0.30");
 });
 
 /** A report the worker wrote as markdown must draw as markdown, and the
@@ -394,7 +395,7 @@ test("a run from a worker that wrote no evidence says so", async () => {
     rendered.container.querySelector('.run[data-attempt="a1"]')?.textContent,
   ).toContain("recorded no run evidence");
   expect(
-    rendered.container.querySelector(".ticket-head")?.textContent,
-  ).toContain("no run has recorded evidence for this ticket");
+    rendered.container.querySelector(".ticket-figures")?.textContent,
+  ).toContain("—");
   expect(transcriptReads(rendered.reads)).toEqual([]);
 });

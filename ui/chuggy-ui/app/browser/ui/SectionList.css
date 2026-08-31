@@ -1,0 +1,34 @@
+/* SectionList: the aside's table of contents, one line per main-body section. */
+
+@layer ui {
+  .sections {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  .sections a {
+    color: var(--ink-2);
+    text-decoration: none;
+    padding: var(--space-1) 0;
+    border-bottom: var(--hairline) solid var(--edge);
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+
+  .sections a:last-child {
+    border-bottom: 0;
+  }
+
+  .sections a:hover {
+    color: var(--ink-1);
+  }
+
+  .sections .fig,
+  .sections-note {
+    color: var(--ink-3);
+    font-family: var(--font-mono);
+    font-size: var(--mono-optical);
+    white-space: nowrap;
+  }
+}

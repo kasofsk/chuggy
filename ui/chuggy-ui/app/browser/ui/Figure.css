@@ -1,0 +1,32 @@
+/* Figure: one measured number, monospaced and tabular so a column lines up. */
+
+@layer ui {
+  .fig {
+    font-family: var(--font-mono);
+    font-size: var(--mono-optical);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--ink-2);
+  }
+
+  .fig-dim {
+    color: var(--ink-3);
+  }
+
+  .fig-live {
+    color: var(--tone-live);
+  }
+
+  .fig-basis {
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+    margin-left: var(--space-1);
+    font-style: normal;
+  }
+
+  .fig-sep {
+    color: var(--edge-strong);
+    margin: 0 var(--space-1);
+    font-style: normal;
+  }
+}

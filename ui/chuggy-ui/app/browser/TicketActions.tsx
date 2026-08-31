@@ -21,9 +21,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-
 import type {
-  DraftResponse,
   TicketNativeActionsResponse,
   TicketResponse,
   DispatchViewResponse,
@@ -32,11 +30,11 @@ import { apiCancelOperation } from "../core/apiRoutes.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import {
-  mutationDeferralSentence,
-  operationFailureSentence,
-  operationRefusalSentence,
-  operationStateSentence,
-} from "../core/codeSentences.ts";
+  operationFailureLabel,
+  operationStepLabel,
+  ticketActionEffect,
+} from "../core/codeLabels.ts";
+import type { ResumeOffer, ReworkStanding } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { nativeActionsAnswers } from "../core/nativeActionAnswers.ts";
 import {
@@ -49,58 +47,29 @@ import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import {
   actionsFor,
   manualDispatchAction,
-  ticketActionSentence,
   ticketDispatchList,
 } from "../core/ticketActions.ts";
-import type {
-  TicketAction,
-  TicketActionContext,
-} from "../core/ticketActions.ts";
+import type { TicketAction } from "../core/ticketActions.ts";
 import { useApiPorts } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { drawBytes } from "./ports.ts";
+import { ActionWithCost } from "./ui/ActionWithCost.tsx";
+import { EmptyState } from "./ui/EmptyState.tsx";
+import { Button } from "./ui/Button.tsx";
+import { Notice } from "./ui/Notice.tsx";
 
 interface Attempt {
   readonly action: TicketAction;
   readonly step: OperationStep;
 }
 
-function StepNote(props: { readonly step: OperationStep }): ReactNode {
-  const step = props.step;
-  switch (step.step) {
-    case "Submitting":
-      return <p className="panel-note">submitting…</p>;
-    case "Backlogged":
-      return (
-        <p className="panel-absent">
-          {mutationDeferralSentence(step.code)}; trying again in{" "}
-          {step.retryAfterSeconds}s
-        </p>
-      );
-    case "Following":
-      return (
-        <p className="panel-note">waiting on operation {step.operation}…</p>
-      );
-    case "Confirming":
-      return (
-        <p className="panel-note">
-          waiting for the project to reach sequence {step.minimumSequence}…
-        </p>
-      );
-    case "Settled":
-      return (
-        <p
-          className={step.state === "Succeeded" ? "panel-note" : "panel-absent"}
-        >
-          {operationStateSentence(step.state)}
-          {step.refusalCode === undefined
-            ? ""
-            : ` — ${operationRefusalSentence(step.refusalCode)}`}
-        </p>
-      );
-    case "Abandoned":
-      return <p className="panel-failed">{step.reason}</p>;
-  }
+function StepNote(props: {
+  readonly step: OperationStep;
+  readonly action: TicketAction;
+}): ReactNode {
+  const drawn = operationStepLabel(props.step, props.action.action);
+  const tone = drawn.wrong ? "danger" : drawn.settled ? "info" : "live";
+  return <Notice tone={tone} inline role="status" detail={drawn.text} />;
 }
 
 async function cancelOperation(
@@ -116,37 +85,48 @@ async function cancelOperation(
     signal,
   );
   return answered.outcome === "Ok"
-    ? "the cancellation was accepted"
-    : operationFailureSentence(answered);
+    ? "Cancellation accepted"
+    : operationFailureLabel(answered);
 }
 
+/** What the machine charges for and what it undoes, said before it is pressed. */
 function ActionButtons(props: {
   readonly actions: readonly TicketAction[];
-  readonly context: TicketActionContext;
   readonly busy: boolean;
+  readonly resume: ResumeOffer;
+  readonly rework: ReworkStanding | undefined;
   readonly onChoose: (action: TicketAction) => void;
 }): ReactNode {
   if (props.actions.length === 0)
-    return (
-      <p className="panel-note">
-        no mutation this console can submit is enabled in this phase
-      </p>
-    );
+    return <EmptyState label="No action in this phase" />;
   return (
     <div className="actions">
-      {props.actions.map((action) => (
-        <button
-          key={action.action}
-          type="button"
-          disabled={props.busy}
-          title={ticketActionSentence(action.action, props.context)}
-          onClick={() => {
-            props.onChoose(action);
-          }}
-        >
-          {action.action.toLowerCase()}
-        </button>
-      ))}
+      {props.actions.map((action) => {
+        const effect = ticketActionEffect(
+          action.action,
+          props.resume,
+          props.rework,
+          props.actions.map((offered) => offered.action),
+        );
+        return (
+          <ActionWithCost
+            key={action.action}
+            action={action.action}
+            effect={effect.effect}
+            {...(effect.cost === undefined ? {} : { cost: effect.cost })}
+            {...(effect.more === undefined ? {} : { more: effect.more })}
+            {...(effect.refusedBecause === undefined
+              ? {}
+              : { refusedBecause: effect.refusedBecause })}
+            offered={effect.offered}
+            busy={props.busy}
+            danger={action.action === "Revoke" || action.action === "Abandon"}
+            onChoose={() => {
+              props.onChoose(action);
+            }}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -178,11 +158,11 @@ interface Submitting {
 
 /**
  * One submission at a time, followed to settlement and merged into the ticket
- * this page reads. The confirmed row goes through `ticketConfirmed` rather than
- * over the entry, because it is a narrower projection than the ticket's own
- * read and a live frame may already have written a later one. The ticket's open
- * actions are invalidated rather than written, because what the follow learned
- * is that the question was answered and not what is open now.
+ * this page reads. The confirmed row goes through `ticketConfirmed` because it
+ * is a narrower projection than the ticket's own read and a live frame may
+ * already have written a later one, and the open actions are invalidated rather
+ * than written because what the follow learned is that the question was
+ * answered and not what is open now.
  */
 function useSubmitting(
   partition: PartitionIdentity,
@@ -242,22 +222,14 @@ function useSubmitting(
   };
 }
 
-/** The budget a rework-wall resume refills to, where the draft has been read. */
-function reworkBudgetOf(
-  draftState: PanelState<DraftResponse>,
-): number | undefined {
-  return draftState.state === "Ready"
-    ? draftState.value.authoring.reworkPolicy.value
-    : undefined;
-}
-
 export function TicketActions(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
   readonly state: PanelState<TicketResponse>;
-  readonly draftState: PanelState<DraftResponse>;
   readonly openState: PanelState<TicketNativeActionsResponse>;
   readonly dispatchState: PanelState<DispatchViewResponse>;
+  readonly resume: ResumeOffer;
+  readonly rework?: ReworkStanding;
 }): ReactNode {
   const submitting = useSubmitting(props.partition, props.ticket);
   const step = submitting.attempt?.step;
@@ -271,7 +243,7 @@ export function TicketActions(props: {
       ? manualDispatchAction(props.ticket, props.dispatchState.value)
       : undefined;
   return (
-    <DataPanel title="actions" state={props.state}>
+    <DataPanel title="Actions" state={props.state}>
       {(value) => (
         <div className="action-panel">
           <ActionButtons
@@ -283,32 +255,34 @@ export function TicketActions(props: {
                   ]
                 : nativeActionsAnswers(open)
             }
-            context={{
-              reason: value.reason,
-              reworkBudget: reworkBudgetOf(props.draftState),
-            }}
             busy={busy}
+            resume={props.resume}
+            rework={props.rework}
             onChoose={submitting.submit}
           />
           {props.dispatchState.state === "Failed" ? (
-            <p className="panel-failed">
-              dispatch availability could not be read —{" "}
-              {props.dispatchState.reason}
-            </p>
+            <Notice
+              tone="parked"
+              inline
+              detail={`Dispatch unavailable · ${props.dispatchState.reason}`}
+            />
           ) : null}
-          {step === undefined ? null : <StepNote step={step} />}
+          {step === undefined || submitting.attempt === undefined ? null : (
+            <StepNote step={step} action={submitting.attempt.action} />
+          )}
           {pending === undefined ? null : (
-            <button
-              type="button"
+            <Button
+              variant="quiet"
+              size="sm"
               onClick={() => {
                 submitting.cancel(pending);
               }}
             >
-              cancel operation
-            </button>
+              Cancel
+            </Button>
           )}
           {submitting.cancelled === undefined ? null : (
-            <p className="panel-note">{submitting.cancelled}</p>
+            <Notice tone="info" inline detail={submitting.cancelled} />
           )}
         </div>
       )}

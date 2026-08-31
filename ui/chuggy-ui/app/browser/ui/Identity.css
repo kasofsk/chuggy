@@ -1,0 +1,21 @@
+/* Identity: what the wire minted, shortened, with the whole of it on hover. */
+
+@layer ui {
+  .identity {
+    font-family: var(--font-mono);
+    font-size: var(--mono-optical);
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+
+  .identity-block {
+    display: block;
+    white-space: pre-wrap;
+    word-break: break-all;
+    user-select: all;
+    color: var(--ink-2);
+    background: var(--surface-2);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-1);
+  }
+}

@@ -28,6 +28,7 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
+  createLink: (component: unknown) => component,
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
@@ -66,7 +67,7 @@ test("a dispatchable ticket submits the version from the strict view", async () 
   await settled();
 
   await turned(() => {
-    screen.getByRole("button", { name: "dispatch" }).click();
+    screen.getByRole("button", { name: "Dispatch" }).click();
   });
 
   expect(api.submitted()).toMatchObject({

@@ -29,6 +29,11 @@ builds with.
   or a size, and `base.css`, the element defaults. Both themes are defined in
   the same line through `light-dark()`, and the shell's control chooses between
   them by putting `data-theme` on the document element.
+- `ui/chuggy-ui/app/browser/ticket/` — the ticket page's own compositions and
+  its one `@layer page` sheet: the head, the situation column, the ledger, the
+  usage panel and the main body. `ticketPageFacts.ts` derives what the page
+  draws from the reads it already holds, so each part is handed facts rather
+  than a query.
 - `ui/chuggy-ui/app/styles.css` — what the pages that have not moved to the
   design system still draw with; it shrinks as they move.
 - `ui/chuggy-ui/test/` — the suites, run by the console's own runner.
@@ -114,3 +119,24 @@ token ever being written down. The renewal happens before expiry, on a budget:
 an issuer that keeps declining ends the session once rather than being asked
 forever. Signing out clears both and revokes the refresh token where the issuer
 publishes an endpoint for it.
+
+## The ticket page
+
+A ledger, not a dashboard. The cycles are the machine's own: every `work-passed`
+opens one with a new artifact, and each is judged by a fresh run of the program
+against that artifact, so the page groups by cycle and the current one is railed
+and open while the superseded ones are dimmed and closed. A stage the program
+short-circuited is a row saying so, which is what tells "not reached" from "not
+on this page".
+
+Every row, cycle and ticket carries what it spent and how long it took, and
+every dollar carries the basis the wire gave it, so a list price is never read as
+a bill. The situation column holds exactly the wall, the actions with their
+costs, the three budgets and a list of anchors; the brief, the provenance and the
+configuration are in the main body under the ledger, reached by those anchors
+rather than by tabs.
+
+`core/figures.ts` formats every measured number, `core/tones.ts` maps the wire's
+own words to the tones a pill draws, and `core/codeLabels.ts` turns a code into
+the short label the page shows. The theme control belongs to the shell and never
+to a page.

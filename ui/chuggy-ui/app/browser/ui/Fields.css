@@ -1,0 +1,48 @@
+/* Fields: facts about one thing, keys left and values right. */
+
+@layer ui {
+  .fields {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    column-gap: var(--space-4);
+    row-gap: var(--space-1);
+  }
+
+  .field {
+    display: contents;
+  }
+
+  .fields dt {
+    color: var(--ink-3);
+  }
+
+  .fields dd {
+    color: var(--ink-2);
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .field-absent {
+    color: var(--ink-3);
+  }
+
+  .fields-inline {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: var(--space-2);
+    row-gap: 0;
+    align-items: baseline;
+  }
+
+  .fields-inline .field {
+    display: inline-flex;
+    gap: var(--space-1);
+    align-items: baseline;
+  }
+
+  .fields-inline .field + .field::before {
+    content: "·";
+    color: var(--edge-strong);
+    margin-right: var(--space-1);
+  }
+}

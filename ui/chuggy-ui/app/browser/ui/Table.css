@@ -1,0 +1,44 @@
+/* Table: rows compared column by column, scrolling itself and not the page. */
+
+@layer ui {
+  .table-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .table th,
+  .table td {
+    text-align: left;
+    padding: var(--space-1) var(--space-3);
+    white-space: nowrap;
+    border-bottom: var(--hairline) solid var(--edge);
+  }
+
+  .table thead th {
+    font: var(--weight-medium) var(--text-xs) / var(--leading-dense)
+      var(--font-mono);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .table tbody th {
+    font-weight: var(--weight-regular);
+    font-family: var(--font-mono);
+    font-size: var(--mono-optical);
+  }
+
+  .table tbody tr:hover {
+    background: var(--surface-2);
+  }
+
+  .table .num {
+    text-align: right;
+  }
+}

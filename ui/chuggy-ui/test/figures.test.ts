@@ -1,0 +1,214 @@
+/**
+ * The formatters every figure on the console is drawn from.
+ *
+ * A dollar is checked for its basis tag as well as its digits, because the tag
+ * is the half that stops a list price being read as a bill; a duration and a
+ * token count are checked at the boundaries their scales change at, because a
+ * figure that is right in the middle of a range and wrong at its edge reads as
+ * a working formatter.
+ */
+
+import { expect, test } from "vitest";
+
+import type { Figure } from "../app/core/figures.ts";
+import {
+  costFigure,
+  durationText,
+  instantText,
+  spanFigure,
+  spendFigures,
+  tokenCountText,
+  tokensFigure,
+  whenFigure,
+} from "../app/core/figures.ts";
+
+/** The drawn text of a figure, which every kind but an absence carries. */
+function textOf(figure: Figure): string {
+  if (figure.kind === "Absent" || figure.kind === "Span")
+    throw new Error(`no plain text on a ${figure.kind} figure`);
+  return figure.text;
+}
+
+/** The basis a cost figure carries, which is the half a bill would not have. */
+function basisOf(figure: Figure): string | undefined {
+  if (figure.kind !== "Cost") throw new Error("not a cost figure");
+  return figure.basis;
+}
+
+function tokens(counts: {
+  input?: number;
+  output?: number;
+  cacheCreation?: number;
+  cacheRead?: number;
+}) {
+  return {
+    tokensInput: counts.input ?? 0,
+    tokensOutput: counts.output ?? 0,
+    tokensCacheCreation: counts.cacheCreation ?? 0,
+    tokensCacheRead: counts.cacheRead ?? 0,
+  };
+}
+
+test("a cost is cents, is finer below a cent, and always carries its basis", () => {
+  const listed = costFigure(420_000, "List");
+  expect(listed).toEqual({ kind: "Cost", text: "$0.42", basis: "list" });
+  expect(textOf(costFigure(3_100, "List"))).toBe("$0.0031");
+  expect(textOf(costFigure(0, "List"))).toBe("$0.00");
+  expect(textOf(costFigure(12_800_000, "List"))).toBe("$12.80");
+  expect(basisOf(costFigure(420_000, "Mixed"))).toBe("mixed");
+});
+
+/**
+ * A cent is the boundary the rule is written about: cents can state exactly a
+ * cent, so exactly a cent is drawn in cents and only what is below it is finer.
+ */
+test("a cost of exactly one cent is drawn in cents, and one below it is not", () => {
+  expect(textOf(costFigure(10_000, "List"))).toBe("$0.01");
+  expect(textOf(costFigure(9_999, "List"))).toBe("$0.0100");
+  expect(textOf(costFigure(10_001, "List"))).toBe("$0.01");
+});
+
+/**
+ * Each scale boundary twice: the last count in the smaller unit and the first
+ * in the larger, including the one that rounds up out of its own bucket.
+ */
+test("a token count changes unit at the boundary, and never reads as a thousand of one", () => {
+  expect(textOf(tokensFigure(tokens({ input: 999 })))).toBe("999 tok");
+  expect(textOf(tokensFigure(tokens({ input: 1_000 })))).toBe("1.0k tok");
+  expect(textOf(tokensFigure(tokens({ input: 999_499 })))).toBe("999k tok");
+  expect(textOf(tokensFigure(tokens({ input: 999_500 })))).toBe("1.0M tok");
+  expect(textOf(tokensFigure(tokens({ input: 999_999 })))).toBe("1.0M tok");
+  expect(textOf(tokensFigure(tokens({ input: 1_000_000 })))).toBe("1.0M tok");
+});
+
+test("one kind of token is the same scale without the unit word", () => {
+  expect(tokenCountText(41_000)).toBe("41k");
+  expect(tokenCountText(999)).toBe("999");
+  expect(tokenCountText(1_200_000)).toBe("1.2M");
+});
+
+/**
+ * The decimal belongs below ten of a unit, and a count that rounds up to ten is
+ * not below it — the same bucket error as `1000k`, one unit down.
+ */
+test("a count that rounds up to ten of a unit is drawn whole, not with a decimal", () => {
+  expect(tokenCountText(9_949)).toBe("9.9k");
+  expect(tokenCountText(9_999)).toBe("10k");
+  expect(tokenCountText(10_000)).toBe("10k");
+  expect(tokenCountText(9_999_999)).toBe("10M");
+});
+
+test("a token figure is every kind added, scaled with one decimal below ten", () => {
+  expect(textOf(tokensFigure(tokens({ input: 800, output: 12 })))).toBe(
+    "812 tok",
+  );
+  expect(textOf(tokensFigure(tokens({ input: 9_100 })))).toBe("9.1k tok");
+  expect(textOf(tokensFigure(tokens({ input: 38_000 })))).toBe("38k tok");
+  expect(textOf(tokensFigure(tokens({ input: 1_200_000 })))).toBe("1.2M tok");
+  expect(
+    textOf(
+      tokensFigure(
+        tokens({ input: 10, output: 10, cacheCreation: 10, cacheRead: 10 }),
+      ),
+    ),
+  ).toBe("40 tok");
+});
+
+test("a duration is the largest two units, whole, and says when it is under a second", () => {
+  expect(durationText(400)).toBe("<1s");
+  expect(durationText(48_000)).toBe("48s");
+  expect(durationText(252_000)).toBe("4m 12s");
+  expect(durationText(3_960_000)).toBe("1h 06m");
+  expect(durationText(183_600_000)).toBe("2d 3h");
+});
+
+test("an instant is the clock today, the date within the year, and the year before it", () => {
+  const now = new Date(2026, 7, 27, 11, 7);
+  expect(instantText(new Date(2026, 7, 27, 10, 12), now)).toBe("10:12");
+  expect(instantText(new Date(2026, 7, 26, 18, 40), now)).toBe("Aug 26 18:40");
+  expect(instantText(new Date(2025, 10, 2, 9, 0), now)).toBe(
+    "2025-11-02 09:00",
+  );
+});
+
+test("a closed span names both ends and an open one says it is still running", () => {
+  const from = "2026-08-27T10:19:00Z";
+  const nowMs = Date.parse("2026-08-27T11:07:00Z");
+  const closed = spanFigure({ from, to: "2026-08-27T10:49:00Z" }, nowMs);
+  expect(closed.kind).toBe("Span");
+  if (closed.kind !== "Span") throw new Error("not a span");
+  expect(closed.length).toBe("30m");
+  expect(closed.open).toBe(false);
+  const open = spanFigure({ from, to: undefined }, nowMs);
+  if (open.kind !== "Span") throw new Error("not a span");
+  expect(open.end).toBe("running");
+  expect(open.length).toBe("48m so far");
+  expect(open.open).toBe(true);
+});
+
+test("a row's window is its start and how long, and a running one says how long so far", () => {
+  const nowMs = Date.parse("2026-08-27T11:07:00Z");
+  const ended = whenFigure(
+    {
+      registeredAt: "2026-08-27T10:31:00Z",
+      terminalAt: "2026-08-27T10:48:40Z",
+    },
+    nowMs,
+  );
+  if (ended.kind !== "Span") throw new Error("not a span");
+  expect(ended.length).toBe("17m 40s");
+  expect(ended.end).toBe(undefined);
+  const running = whenFigure({ registeredAt: "2026-08-27T11:03:20Z" }, nowMs);
+  if (running.kind !== "Span") throw new Error("not a span");
+  expect(running.length).toBe("running 3m 40s");
+  expect(running.open).toBe(true);
+});
+
+/**
+ * §5.2's waiting reading: where the wire carries the first attempt's opening,
+ * the queue and the run are two figures rather than one, and where it does not
+ * the row reads as it did before the field existed.
+ */
+test("a row separates the wait from the run where the wire carries the start", () => {
+  const nowMs = Date.parse("2026-08-27T11:07:00Z");
+  const ran = whenFigure(
+    {
+      registeredAt: "2026-08-27T10:31:00Z",
+      startedAt: "2026-08-27T10:31:12Z",
+      terminalAt: "2026-08-27T10:48:40Z",
+    },
+    nowMs,
+  );
+  if (ran.kind !== "Span") throw new Error("not a span");
+  expect(ran.length).toBe("waited 12s · ran 17m 28s");
+  const running = whenFigure(
+    {
+      registeredAt: "2026-08-27T11:03:20Z",
+      startedAt: "2026-08-27T11:03:32Z",
+    },
+    nowMs,
+  );
+  if (running.kind !== "Span") throw new Error("not a span");
+  expect(running.length).toBe("waited 12s · running 3m 28s");
+  expect(running.open).toBe(true);
+});
+
+/** A ticket's span begins where the journal dated its release, not at its first run. */
+test("a span begins at the instant it is given, over the set's own first", () => {
+  const nowMs = Date.parse("2026-08-27T11:07:00Z");
+  const span = { from: "2026-08-27T10:19:00Z", to: "2026-08-27T10:49:00Z" };
+  const released = spanFigure(span, nowMs, "2026-08-27T09:49:00Z");
+  if (released.kind !== "Span") throw new Error("not a span");
+  expect(released.length).toBe("1h");
+  expect(spanFigure(span, nowMs, undefined)).toEqual(spanFigure(span, nowMs));
+});
+
+test("a span with no readable start, and a spend with no totals, are absences", () => {
+  expect(spanFigure({ from: undefined, to: undefined }, 0).kind).toBe("Absent");
+  expect(spanFigure({ from: "not an instant", to: undefined }, 0).kind).toBe(
+    "Absent",
+  );
+  const absent = spendFigures(undefined, undefined);
+  expect(absent.cost.kind).toBe("Absent");
+  expect(absent.tokens.kind).toBe("Absent");
+});

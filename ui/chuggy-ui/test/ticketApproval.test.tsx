@@ -39,6 +39,7 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
+  createLink: (component: unknown) => component,
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
@@ -108,11 +109,11 @@ function mounted(): {
 test("an open approval is offered as approve and decline, and answered once", async () => {
   const held = mounted();
   await settled();
-  expect(screen.getByRole("button", { name: "approve" })).toBeDefined();
-  expect(screen.getByRole("button", { name: "decline" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "Approve" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "Decline" })).toBeDefined();
 
   await turned(() => {
-    screen.getByRole("button", { name: "approve" }).click();
+    screen.getByRole("button", { name: "Approve" }).click();
   });
   expect(held.api.submitted()).toMatchObject({
     mutation: {
@@ -124,11 +125,9 @@ test("an open approval is offered as approve and decline, and answered once", as
   });
 
   await settled();
-  expect(screen.queryByRole("button", { name: "approve" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "decline" })).toBeNull();
-  expect(
-    screen.getByText(/no mutation this console can submit is enabled/u),
-  ).toBeDefined();
+  expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
+  expect(screen.getByText(/No action in this phase/u)).toBeDefined();
 });
 
 /** The frame carries the per-ticket read's own body, so the page's query has to
@@ -136,7 +135,7 @@ test("an open approval is offered as approve and decline, and answered once", as
 test("a frame moves what the page offers without the page reading again", async () => {
   const held = mounted();
   await settled();
-  expect(screen.getByRole("button", { name: "approve" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "Approve" })).toBeDefined();
 
   await turned(() => {
     held.server.push(
@@ -148,7 +147,7 @@ test("a frame moves what the page offers without the page reading again", async 
     );
   });
   await settled();
-  expect(screen.queryByRole("button", { name: "approve" })).toBeNull();
-  expect(screen.getByRole("button", { name: "abandon" })).toBeDefined();
+  expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Abandon" })).toBeDefined();
   expect(held.api.submitted()).toBeUndefined();
 });

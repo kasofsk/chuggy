@@ -126,6 +126,10 @@
     --col-label: 8.5rem; /* ledger: the row's label */
     --col-identity: 8rem; /* ledger: the identity chip */
     --col-pill: 7rem; /* ledger: the verdict */
+    --col-when: 10rem; /* ledger: the row's start and how long it took */
+    --col-spent: 11rem; /* ledger: the row's cost and tokens */
+    --col-meter-name: 6.5rem; /* budgets: the account's name */
+    --width-meter: 14rem; /* budgets: the track a meter draws in */
   }
 
   :root[data-theme="light"] {
