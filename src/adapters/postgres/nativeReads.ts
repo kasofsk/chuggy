@@ -55,8 +55,10 @@ interface PublicOperationRow {
 
 /**
  * One projection row, joined to the deployment gas every ticket is released
- * with. The account columns and that gas are null together on a row no decision
- * has moved since the projection began carrying them.
+ * with. The account columns are null together on a row no decision has moved
+ * since the projection began carrying them; the joined gas belongs to the
+ * deployment rather than to the row, and is null only where no domain
+ * configuration is installed at all.
  */
 interface TicketProjectionRow {
   readonly ticket: string;
@@ -230,7 +232,7 @@ function projectionResume(value: string | null): ResumePoint | undefined {
 /**
  * What a ticket has left to spend, or nothing when the row predates the
  * projection carrying it. A null finalization account is the `DeadlineOnly`
- * pricing that budgets none, which the row's own gas tells apart from a row
+ * pricing that budgets none, which a non-null `gas_left` tells apart from a row
  * holding no accounts at all.
  */
 function projectionAccounts(
