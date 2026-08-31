@@ -96,6 +96,7 @@
     color: var(--ink-3);
   }
 
+  .ledger-identity,
   .ledger-when,
   .ledger-spent {
     min-width: 0;
