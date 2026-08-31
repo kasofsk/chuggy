@@ -83,7 +83,7 @@ test("the same history read as this image's own decisions is not legal", () => {
   assert.ok(!journalLegalOn(config, budgetedWall));
 });
 
-test("replay under the first semantics parks the wall at the eval resume", () => {
+test("replay under the first semantics resumes the walled ticket into evaluation", () => {
   const replayed = storedReplayCore(config, storedAt(budgetedWall, 1));
   assert.equal(ticketAt(replayed, id(1)).phase, "Evaluating");
   assert.equal(ticketAt(replayed, id(1)).resumeAt, "NoResume");

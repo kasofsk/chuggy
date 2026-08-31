@@ -180,12 +180,13 @@ function deadline(milliseconds: number, signal?: AbortSignal): Promise<never> {
 
 function readyPrecondition(
   name: string,
+  unready: string,
   check: (signal: AbortSignal) => Promise<boolean>,
 ): RuntimePrecondition {
   return {
     name,
     check: async (signal) =>
-      runtimePreconditionAnswer(await check(signal), `${name} is not ready`),
+      runtimePreconditionAnswer(await check(signal), unready),
   };
 }
 
@@ -196,14 +197,22 @@ export function selectorCommandPreconditions(
   sourceReady: (signal: AbortSignal) => Promise<boolean>,
 ): readonly RuntimePrecondition[] {
   return [
-    readyPrecondition("selector-source", async (signal) => {
-      signal.throwIfAborted();
-      if (!(await sourceReady(signal))) return false;
-      await native.projectInventory(principal, undefined, 1);
-      signal.throwIfAborted();
-      return true;
-    }),
-    readyPrecondition("selector-policy", (signal) => policy.ready(signal)),
+    readyPrecondition(
+      "selector-source",
+      "the native api did not serve a project inventory to this principal",
+      async (signal) => {
+        signal.throwIfAborted();
+        if (!(await sourceReady(signal))) return false;
+        await native.projectInventory(principal, undefined, 1);
+        signal.throwIfAborted();
+        return true;
+      },
+    ),
+    readyPrecondition(
+      "selector-policy",
+      "the trusted policy host did not report itself ready",
+      (signal) => policy.ready(signal),
+    ),
   ];
 }
 

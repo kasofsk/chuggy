@@ -13,12 +13,12 @@
  * module exists to prevent.
  *
  * A REPLAYED STATE IS NOT A STATE THE CURRENT DOMAIN INVARIANTS DESCRIBE. The
- * first semantics granted the rework wall an eval resume even where the ticket
- * bought no rework, and `deskConsistent` in `src/domain/invariants.ts` now says
- * a wall with no modeled resume carries none — so a correct replay of that
- * history reaches a state the current bundle rejects. The bundle describes the
- * machine the model proves; history is not required to satisfy it, and nothing
- * in `src/` evaluates it over a replayed core.
+ * first semantics grants the rework wall an eval resume even where the ticket
+ * bought no rework, while `deskConsistent` in `src/domain/invariants.ts` holds
+ * that a wall with no modeled resume carries none — so a correct replay of such
+ * a history reaches a state the current bundle rejects. The bundle describes
+ * the machine the model proves; history is not required to satisfy it, and
+ * nothing in `src/` evaluates it over a replayed core.
  */
 
 import type { Config } from "../domain/config.ts";

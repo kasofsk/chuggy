@@ -893,10 +893,12 @@ test("the namespace is a precondition met only by a namespace that answers", asy
   const unreachable = kubernetesNamespacePrecondition(config, () =>
     Promise.reject(new Error("connection refused")),
   );
-  assert.equal(
-    (await unreachable.check(new AbortController().signal)).met,
-    "Refused",
+  const answer = await unreachable.check(new AbortController().signal);
+  assert.ok(
+    answer.met === "Undecided",
+    "a cluster that never answered says nothing about what it admits",
   );
+  assert.match(answer.why, /the cluster did not answer for chuggy-workers/u);
 });
 
 test("the namespace probe reads the namespace and nothing under it", async () => {

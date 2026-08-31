@@ -340,9 +340,15 @@ export function kubernetesNamespacePrecondition(
         path: `/api/v1/namespaces/${config.namespace}`,
         signal,
       });
+      if (reached.reached === "Unreachable") {
+        return {
+          met: "Undecided",
+          why: `the cluster did not answer for ${config.namespace}, so whether it admits this deployment is unknown`,
+        };
+      }
       return runtimePreconditionAnswer(
-        reached.reached === "Status" && reached.status === 200,
-        `the namespace ${config.namespace} did not answer this deployment's credential: ${reached.reached}`,
+        reached.status === 200,
+        `the namespace ${config.namespace} answered ${String(reached.status)} to this deployment's credential`,
       );
     },
   };

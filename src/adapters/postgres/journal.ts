@@ -33,11 +33,17 @@
  * covered. Turning a verification failure into project-local containment is
  * still I9's responsibility; this boundary refuses to replay the bad record.
  *
- * A ROW CARRIES THE MACHINE THAT DECIDED IT. `decision_semantics_version` names
- * the deciders the entry's record came from, and the load hands it back beside
- * the entry so a history spanning a semantics change is replayed row by row
- * under its own. The load refuses a version this image cannot replay, because a
- * row decided by a machine it does not have is a row it cannot re-derive.
+ * A ROW CARRIES THE MACHINE THAT DECIDED IT, WHERE ITS DIGEST SAYS SO.
+ * `decision_semantics_version` names the deciders the entry's record came from,
+ * and the load hands it back beside the entry so a history spanning a semantics
+ * change is replayed row by row under its own. Only the complete envelope
+ * covers that column, so a pre-envelope row is read at the semantics that
+ * predates the envelope and its column is not consulted at all — reading it
+ * would let an edit no digest attests choose which deciders replay a row. The
+ * version is checked after the envelope for the same reason: on a row whose
+ * digest does cover it, a changed column is tampering rather than an upgrade
+ * signal, and the load says so. A version this image has no deciders for is
+ * refused, because a row it cannot re-derive is a row it cannot replay.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -270,7 +276,16 @@ export async function postgresJournalWrite(
   );
 }
 
-/** Stored rows decoded in sequence order, each paired with the semantics its own row declares. */
+/**
+ * The deciders a verified row was decided by. A pre-envelope row's digest covers
+ * no version column, so its semantics is the one that predates the envelope
+ * rather than whatever the column has since been set to.
+ */
+function storedJournalRowSemantics(row: StoredJournalRow): number {
+  return row.integrity_version === 1 ? 1 : row.decision_semantics_version;
+}
+
+/** Stored rows decoded in sequence order, each paired with the semantics its own row attests. */
 function postgresJournalStored(
   partition: Partition,
   rows: readonly StoredJournalRow[],
@@ -292,22 +307,20 @@ function postgresJournalStored(
         parsed: "Refused",
         why: `stored row ${row.seq}: ${parsed.why}`,
       };
-    if (!isDecisionSemanticsVersion(row.decision_semantics_version)) {
-      return {
-        parsed: "Refused",
-        why: `stored row ${row.seq} declares decision semantics ${String(row.decision_semantics_version)}, which this image has no deciders for`,
-      };
-    }
     if (!storedJournalRowVerified(row, partition, previous, parsed.value)) {
       return {
         parsed: "Refused",
         why: `the stored envelope of row ${row.seq} failed integrity verification`,
       };
     }
-    stored.push({
-      entry: parsed.value,
-      semantics: row.decision_semantics_version,
-    });
+    const semantics = storedJournalRowSemantics(row);
+    if (!isDecisionSemanticsVersion(semantics)) {
+      return {
+        parsed: "Refused",
+        why: `stored row ${row.seq} declares decision semantics ${String(semantics)}, which this image has no deciders for`,
+      };
+    }
+    stored.push({ entry: parsed.value, semantics });
     previous = row.entry_digest;
   }
   return { parsed: "Ok", value: stored };

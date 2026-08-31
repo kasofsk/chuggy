@@ -21,6 +21,7 @@ import { after, before, test } from "node:test";
 import { storedJournalLegalOn, type Entry } from "../../src/actor/journal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
+  journalChainDigest,
   journalChainGenesis,
   journalEnvelopeDigest,
 } from "../../src/adapters/postgres/digest.ts";
@@ -199,6 +200,32 @@ test("a restated envelope at the versions this image writes still loads", async 
     decisionSemanticsVersion: 2,
   });
   assert.equal((await harness.store.load(memory.lease)).parsed, "Ok");
+});
+
+test("a pre-envelope row replays at the semantics its digest attests, not its column", async () => {
+  const partition = await postgresHarnessProject(harness.store, "preenvelope");
+  const memory = await postgresHarnessHistory(harness, partition, "writer", 1);
+  const entry = postgresHarnessJournal()[0];
+  assert.ok(entry !== undefined);
+  const previous = journalChainGenesis(partition);
+  await harness.query(
+    `UPDATE journal_entry
+       SET integrity_version=1,decision_semantics_version=2,entry_digest=$4
+       WHERE tenant=$1 AND project=$2 AND seq=$3`,
+    [
+      partition.tenant,
+      partition.project,
+      1,
+      journalChainDigest(partition, previous, entry),
+    ],
+  );
+
+  const loaded = await harness.store.load(memory.lease);
+  assert.ok(loaded.parsed === "Ok");
+  assert.deepEqual(
+    loaded.value.map((row) => row.semantics),
+    [1],
+  );
 });
 
 test("load re-verifies the retained configuration content", async () => {

@@ -23,11 +23,11 @@
  *
  * DESCENDING SEMANTICS IS REFUSED: a row decided under an older machine than
  * the row before it would offer an older decider a state only a newer one can
- * reach. Nothing stops one being written — during a rolling deploy the older
- * image refuses on read what the newer image wrote, which held for the first
- * bump because that image demanded version one and will not hold for the next,
- * so this refusal is what keeps replay total rather than a restatement of a
- * guarantee elsewhere.
+ * reach. Nothing outside this check stops one being written. A rolling deploy
+ * runs two images at once, and the older refuses the newer's rows on read only
+ * while it demands a single version; an image that accepts a range accepts
+ * whatever the range holds, and interleaves. So this refusal is where totality
+ * comes from, not a restatement of a guarantee held elsewhere.
  */
 
 import type { Config } from "../domain/config.ts";
