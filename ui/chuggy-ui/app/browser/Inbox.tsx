@@ -275,7 +275,9 @@ function InboxActions(props: {
           type="button"
           className="row-action"
           disabled={inboxAnswerInFlight(props.step)}
-          title={ticketActionSentence(action.action)}
+          title={ticketActionSentence(action.action, {
+            reason: props.entry.held?.reason,
+          })}
           onClick={() => {
             props.onAnswer(action);
           }}

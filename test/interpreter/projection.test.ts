@@ -262,8 +262,8 @@ test("every projected row is the core the step it names left behind", () => {
     });
     seen.push(`${row.phase}/${row.resumeAt}`);
   }
-  assert.ok(seen.includes("Escalated/ResumeEvaluating"));
-  assert.equal(seen.at(-1), "Evaluating/NoResume");
+  assert.ok(seen.includes("Escalated/ResumeReworking"));
+  assert.equal(seen.at(-1), "Working/NoResume");
 });
 
 /**

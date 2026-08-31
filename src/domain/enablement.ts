@@ -59,7 +59,7 @@ export function revocableIn(core: Core, id: TicketId): boolean {
  * the ticket's own authored policy.
  */
 export function resumeCharge(ticket: Ticket, at: Resume): number {
-  if (at === "ResumeWorking") return 1;
+  if (at === "ResumeWorking" || at === "ResumeReworking") return 1;
   return ticket.resumePricing === "RetryCharged" ? 1 : 0;
 }
 

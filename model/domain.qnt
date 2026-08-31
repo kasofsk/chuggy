@@ -24,7 +24,9 @@
 ///
 /// THE ACCOUNTS. Gas meters every entry to Working. The rework account meters
 /// eval failures, the wrap-up account meters wrap-up failures, and every wall
-/// is a park on the human desk with a name. Nothing refunds. These are what
+/// is a park on the human desk with a name. Nothing refunds: the rework
+/// account is the only one that ever climbs, refilled to its authored grant
+/// by the operator's resume at its own wall, which pays gas for it. These are what
 /// make the termination measure descend, and measure.qnt is written first and
 /// reworked first whenever this file changes.
 ///
@@ -326,8 +328,8 @@ module chuggy_domain {
 
   /// What one operator resume costs by flavor. One decider —
   /// decideResumeTicket — carries every resume and this table prices it:
-  ///   ResumeWorking    — 1 always: entry to Working always meters (standing
-  ///                 rule 2), even under RetryFree.
+  ///   ResumeWorking/ResumeReworking — 1 always: entry to Working always
+  ///                 meters (standing rule 2), even under RetryFree.
   ///   ResumeEvaluating/ResumeFinalizing — per ticket-local resumePricing (default
   ///                 charge); RetryFree makes these the reproducible
   ///                 livelock.
@@ -336,13 +338,31 @@ module chuggy_domain {
   pure def resumeCharge(ticket: Ticket, at: Resume): int =
     match at {
       | ResumeWorking => 1
+      | ResumeReworking => 1
       | _ => match ticket.resumePricing { | RetryCharged => 1 | RetryFree => 0 }
     }
 
+  /// THE REWORK WALL'S RESUME EXISTS ONLY WHERE THE AUTHOR BOUGHT ONE: a
+  /// ticket authored no rework budget declined the rework economy, and
+  /// refilling zero would sell it a cycle it said it did not want, so that
+  /// park is revoke-only like the cascade wall. Every ticket with a budget
+  /// gets ResumeReworking.
+  pure def reworkWallResume(rw: ReworkPolicy): Resume =
+    if (reworkBudget(rw) > 0) ResumeReworking else NoResume
+
+  /// Does this parked ticket have a modeled resume at all? Read by
+  /// deskConsistent, which cannot ask the deciders. TWO walls have none:
+  /// dependency_revoked always (below), and rework_budget_exhausted on a
+  /// zero-budget ticket (reworkWallResume above).
+  pure def modeledResumeExists(jb: Ticket): bool = and {
+    jb.reason != DependencyRevoked,
+    not(jb.reason == ReworkBudgetExhausted and reworkBudget(jb.reworkPolicy) == 0)
+  }
+
   /// May the operator retry this ticket's open human action? A resume must
   /// EXIST (resumeAt != NoResume) and be
-  /// AFFORDABLE (a charging resume needs gas). The one wall with no
-  /// modeled resume is dependency_revoked (resumeAt NoResume) — a DELIBERATE
+  /// AFFORDABLE (a charging resume needs gas). The always-resumeless wall
+  /// is dependency_revoked (resumeAt NoResume) — a DELIBERATE
   /// RESTRICTION: deps are immutable in this model (no re-authoring
   /// machinery yet), so a retry
   /// could only re-enter Pending still doomed behind the same revoked dep
@@ -618,7 +638,7 @@ module chuggy_domain {
           gasLeft: jb.gasLeft - 1 }),
         j, Working, "rework-started eval_failure", ["SpawnWorkTasks"])
     else if (jb.reworkLeft == 0)
-      escalate(c, j, ResumeEvaluating, ReworkBudgetExhausted,
+      escalate(c, j, reworkWallResume(jb.reworkPolicy), ReworkBudgetExhausted,
         "ticket-escalated rework_budget_exhausted")
     else
       escalate(c, j, ResumeEvaluating, GasExhausted,
@@ -727,6 +747,9 @@ module chuggy_domain {
   /// Infrastructure cannot execute the current logical task set. Retire its
   /// outstanding tasks as Cancelled, preserve the source phase as the resume
   /// target, and open the native human action without claiming failed work.
+  /// The source phase is the honest target because an interruption is NOT a
+  /// verdict: unlike the rework wall, an Evaluating park here still has an
+  /// intact judgement to make, so it re-enters evaluation.
   pure def decideExecutionBlocked(c: Core, j: int, why: Reason): Decision =
     val at = match c.tickets.get(j).phase {
       | Working => ResumeWorking
@@ -741,6 +764,15 @@ module chuggy_domain {
   /// one trace label ("ticket-resumed"; the flavor is visible in the
   /// transition's target):
   ///   ResumeWorking: respawn the work set; always pays gas.
+  ///   ResumeReworking: THE REWORK WALL'S — respawn the work set with the
+  ///     eval-rework account refilled to the ticket's AUTHORED budget. To
+  ///     the budget and not one below it: the resumed cycle is bought by
+  ///     the resume's own gas exactly as on ResumeWorking, and a rework
+  ///     unit is spent only at an eval-failure edge, so the refilled
+  ///     account meters the UNATTENDED failures that follow. Stamped only
+  ///     where the author bought a budget (reworkWallResume). Also always
+  ///     pays gas, so at this wall a ticket out of gas is parked for good
+  ///     under BOTH pricings and revoke is its only exit.
   ///   ResumeEvaluating: A FRESH FAN-OUT OF THE LOWEST STAGE — re-enter
   ///     evaluation against the intact artifact with a fresh eval fan-out;
   ///     stages are never resumed mid-sequence. New ids: the retried tasks
@@ -757,6 +789,12 @@ module chuggy_domain {
       | ResumeWorking =>
         move(withTicket(c, j, spawnOn(resumed, Work, resumed.workFanout)),
           j, Working, "ticket-resumed", ["SpawnWorkTasks"])
+      | ResumeReworking =>
+        move(
+          withTicket(c, j, spawnOn(
+            { ...resumed, reworkLeft: reworkBudget(jb.reworkPolicy) },
+            Work, resumed.workFanout)),
+          j, Working, "ticket-resumed", ["SpawnWorkTasks"])
       | ResumeEvaluating =>
         move(withTicket(c, j, spawnOn(resumed, Evaluation(0), jb.program[0].fanout)),
           j, Evaluating, "ticket-resumed", ["SpawnEvalTasks"])
@@ -767,7 +805,8 @@ module chuggy_domain {
           "ticket-resumed", ["PublishHandoff"])
       | NoResume =>
         // Unreachable: retryableIn refuses a ticket with no modeled resume
-        // (the dependency_revoked wall — its only exit is revoke).
+        // (the dependency_revoked wall, and the rework wall on a ticket
+        // authored no budget — revoke is the only exit from either).
         { rec: { label: "ticket-resume-refused", transitions: [], effects: []}, post: c }
     }
 
@@ -1147,9 +1186,10 @@ module chuggy_domain {
   /// The human desk is consistent. The reason-iff-parked half is a named
   /// wall iff parked — and parked just IS Escalated. The resumeAt half is
   /// the sharper one: a resume point iff a MODELED RESUME
-  /// EXISTS — every retryable wall stamps one. DependencyRevoked is the
-  /// exception: its resumeAt stays NoResume because its only
-  /// modeled exit is revoke (retryableIn). (The open-task flag needs no
+  /// EXISTS — every retryable wall stamps one, and modeledResumeExists is
+  /// the single definition of which do (DependencyRevoked, and the rework
+  /// wall on a ticket authored no budget, stay NoResume because revoke is
+  /// their only modeled exit). (The open-task flag needs no
   /// conjunct — it is DERIVED from the phase, standing rule 3.)
   /// note: Revoked passes both iffs with NoReason/NoResume — "Revoked runs
   /// nothing" is this invariant plus tasksWellFormed doing their existing
@@ -1158,7 +1198,7 @@ module chuggy_domain {
     (tickets.get(j).phase == Escalated) iff (tickets.get(j).reason != NoReason),
     (tickets.get(j).resumeAt != NoResume) iff
       ((tickets.get(j).phase == Escalated and
-        tickets.get(j).reason != DependencyRevoked) or
+        modeledResumeExists(tickets.get(j))) or
        tickets.get(j).phase == HandoffBlocked)
   })
 
@@ -1171,7 +1211,8 @@ module chuggy_domain {
     })
 
   /// Every account stays a resource: bounded below by 0 (nothing
-  /// overdraws) and above by its grant (nothing refunds). revoke and
+  /// overdraws) and above by its grant — the rework wall's refill goes TO
+  /// the grant and never past it, and no other account ever climbs. revoke and
   /// the cascade move through here untouched — no gas charged, no budget
   /// spent, no refund (the no-budget-leakage half of the gate; the exact
   /// account-by-account equality is pinned in tests/chuggy_test.qnt).
