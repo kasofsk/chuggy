@@ -75,6 +75,7 @@ function TicketBody(props: {
         partition={props.partition}
         ticket={props.ticket}
         state={props.ticketState}
+        draftState={props.draftState}
         openState={props.openState}
         dispatchState={props.dispatchState}
       />

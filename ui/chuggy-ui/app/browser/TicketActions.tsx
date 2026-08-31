@@ -21,7 +21,9 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+
 import type {
+  DraftResponse,
   TicketNativeActionsResponse,
   TicketResponse,
   DispatchViewResponse,
@@ -50,7 +52,10 @@ import {
   ticketActionSentence,
   ticketDispatchList,
 } from "../core/ticketActions.ts";
-import type { TicketAction } from "../core/ticketActions.ts";
+import type {
+  TicketAction,
+  TicketActionContext,
+} from "../core/ticketActions.ts";
 import { useApiPorts } from "./api.ts";
 import { Panel } from "./Panel.tsx";
 import { drawBytes } from "./ports.ts";
@@ -117,6 +122,7 @@ async function cancelOperation(
 
 function ActionButtons(props: {
   readonly actions: readonly TicketAction[];
+  readonly context: TicketActionContext;
   readonly busy: boolean;
   readonly onChoose: (action: TicketAction) => void;
 }): ReactNode {
@@ -133,7 +139,7 @@ function ActionButtons(props: {
           key={action.action}
           type="button"
           disabled={props.busy}
-          title={ticketActionSentence(action.action)}
+          title={ticketActionSentence(action.action, props.context)}
           onClick={() => {
             props.onChoose(action);
           }}
@@ -236,10 +242,20 @@ function useSubmitting(
   };
 }
 
+/** The budget a rework-wall resume refills to, where the draft has been read. */
+function reworkBudgetOf(
+  draftState: PanelState<DraftResponse>,
+): number | undefined {
+  return draftState.state === "Ready"
+    ? draftState.value.authoring.reworkPolicy.value
+    : undefined;
+}
+
 export function TicketActions(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
   readonly state: PanelState<TicketResponse>;
+  readonly draftState: PanelState<DraftResponse>;
   readonly openState: PanelState<TicketNativeActionsResponse>;
   readonly dispatchState: PanelState<DispatchViewResponse>;
 }): ReactNode {
@@ -267,6 +283,10 @@ export function TicketActions(props: {
                   ]
                 : nativeActionsAnswers(open)
             }
+            context={{
+              reason: value.reason,
+              reworkBudget: reworkBudgetOf(props.draftState),
+            }}
             busy={busy}
             onChoose={submitting.submit}
           />

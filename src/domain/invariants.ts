@@ -28,7 +28,7 @@ import { sysMeasure } from "./measure.ts";
 import { phaseRank, rankSettled } from "./phase.ts";
 import { finalizationBudget, reworkBudget } from "./pricing.ts";
 import { evalStage, tasksInIdOrder, taskEquals } from "./task.ts";
-import { hasOpenHumanTask } from "./ticket.ts";
+import { hasOpenHumanTask, modeledResumeExists } from "./ticket.ts";
 
 /** What one invariant is evaluated against: the last decision, and the states either side of it. */
 export interface StepView {
@@ -100,17 +100,15 @@ export const terminalsAbsorbing: Invariant = (_config, view) =>
 
 /**
  * The desk's two equivalences. A ticket carries a reason exactly while it is
- * parked, and carries a resume point exactly while it is parked for something
- * other than a revoked dependency — that wall has no modeled resume, and
- * saying so structurally is what stops a desk task promising one.
+ * parked, and a resume point exactly while its wall has a modeled resume —
+ * saying so structurally is what stops a desk task promising one it lacks.
  */
 export const deskConsistent: Invariant = (_config, view) =>
   everyLiveTicket(view.post, (t) => {
     const parked = t.phase === "Escalated";
     const named = t.reason !== "NoReason";
     const resumable =
-      (parked && t.reason !== "DependencyRevoked") ||
-      t.phase === "HandoffBlocked";
+      (parked && modeledResumeExists(t)) || t.phase === "HandoffBlocked";
     return parked === named && (t.resumeAt !== "NoResume") === resumable;
   });
 

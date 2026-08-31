@@ -187,12 +187,14 @@ export type Task = {
 export type Resume =
   | "NoResume"
   | "ResumeWorking"
+  | "ResumeReworking"
   | "ResumeEvaluating"
   | "ResumeFinalizing"
   | "ResumePublishingHandoff";
 export const resumeTags = [
   "NoResume",
   "ResumeWorking",
+  "ResumeReworking",
   "ResumeEvaluating",
   "ResumeFinalizing",
   "ResumePublishingHandoff",

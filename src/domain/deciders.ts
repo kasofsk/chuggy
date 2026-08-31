@@ -40,7 +40,7 @@ import { finalizationBudget, reworkBudget } from "./pricing.ts";
 import { combine } from "./program.ts";
 import { resumeCharge } from "./enablement.ts";
 import { evalStage, resolveTask, tkEval, tkWork } from "./task.ts";
-import { retireLive, spawnOn } from "./ticket.ts";
+import { retireLive, reworkWallResume, spawnOn } from "./ticket.ts";
 
 /** One phase change and the record that reports it — the shape most deciders return. */
 function move(
@@ -332,7 +332,7 @@ export function decideEvalStageReduce(core: Core, id: TicketId): Decision {
     return escalate(
       core,
       id,
-      "ResumeEvaluating",
+      reworkWallResume(ticket.reworkPolicy),
       "ReworkBudgetExhausted",
       "ticket-escalated rework_budget_exhausted",
     );
@@ -529,6 +529,22 @@ export function decideResumeTicket(core: Core, id: TicketId): Decision {
     case "ResumeWorking":
       return move(
         withTicket(core, id, spawnOn(resumed, tkWork, resumed.workFanout)),
+        id,
+        "Working",
+        "ticket-resumed",
+        ["SpawnWorkTasks"],
+      );
+    case "ResumeReworking":
+      return move(
+        withTicket(
+          core,
+          id,
+          spawnOn(
+            { ...resumed, reworkLeft: reworkBudget(ticket.reworkPolicy) },
+            tkWork,
+            resumed.workFanout,
+          ),
+        ),
         id,
         "Working",
         "ticket-resumed",

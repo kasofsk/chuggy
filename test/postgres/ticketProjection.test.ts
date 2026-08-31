@@ -22,7 +22,7 @@ import { taskDoneEvent } from "../../src/actor/decisionEvent.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { ticketAt } from "../../src/domain/core.ts";
-import { budgeted } from "../../src/domain/pricing.ts";
+import { budgeted, reworkBudget } from "../../src/domain/pricing.ts";
 import type { Verdict } from "../../src/domain/generated/modelTypes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import type { TicketResource } from "../../src/interpreter/nativeWeb.ts";
@@ -33,6 +33,7 @@ import {
   plainResult,
   refinementInstance,
 } from "../actor/harness.ts";
+import { resumePoints } from "../../src/contract/rosters.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   postgresHarnessCompletion,
@@ -190,7 +191,7 @@ test("the projection carries the wall's resume point and the accounts behind it"
   assert.deepEqual(await projected(partition), {
     phase: "Escalated",
     reason: "ReworkBudgetExhausted",
-    resume_at: "ResumeEvaluating",
+    resume_at: "ResumeReworking",
     gas_left: "1",
     rework_left: "0",
     finalization_left: "1",
@@ -207,7 +208,7 @@ test("the public read serves the resume point and the accounts the row holds", a
   const reads = postgresNativeReads(pool);
   const parked = await reads.ticket(partition, subject);
   assert.equal(parked?.phase, "Escalated");
-  assert.equal(parked?.resumeAt, "ResumeEvaluating");
+  assert.equal(parked?.resumeAt, "ResumeReworking");
   const accounts = {
     gasLeft: 1,
     gasMax: refinementInstance.gas,
@@ -217,12 +218,12 @@ test("the public read serves the resume point and the accounts the row holds", a
   assert.deepEqual(parked?.accounts, accounts);
   for (const order of ["Identity", "RecentActivity"] as const) {
     const row = await listed(partition, order);
-    assert.equal(row.resumeAt, "ResumeEvaluating");
+    assert.equal(row.resumeAt, "ResumeReworking");
     assert.deepEqual(row.accounts, accounts);
   }
 });
 
-test("a resume clears the point it re-entered at and pays for itself", async () => {
+test("a resume clears the point it re-entered at, pays for itself and refills", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "projection-resume",
@@ -243,11 +244,11 @@ test("a resume clears the point it re-entered at and pays for itself", async () 
   const drained = await postgresHarnessDrain(harness, partition, memory);
   assert.deepEqual(drained.decided, ["Committed"]);
   assert.deepEqual(await projected(partition), {
-    phase: "Evaluating",
+    phase: "Working",
     reason: "NoReason",
     resume_at: "NoResume",
     gas_left: "0",
-    rework_left: "0",
+    rework_left: String(reworkBudget(plainAuthoring.reworkPolicy)),
     finalization_left: "1",
   });
   assert.deepEqual(await projected(partition), carried(drained.memory));
@@ -255,6 +256,11 @@ test("a resume clears the point it re-entered at and pays for itself", async () 
   const resumed = await reads.ticket(partition, subject);
   assert.equal(resumed?.resumeAt, undefined);
   assert.equal(resumed?.accounts?.gasLeft, 0);
+  assert.equal(
+    resumed?.accounts?.reworkLeft,
+    reworkBudget(plainAuthoring.reworkPolicy),
+    "the account the wall emptied is served refilled to what the release authored",
+  );
 });
 
 /**
@@ -370,4 +376,18 @@ test("the projection refuses a resume, a negative account and a half-written pai
     ),
     "the shape a deadline-priced ticket is projected in",
   );
+  for (const point of resumePoints)
+    await assert.doesNotReject(
+      harness.query(
+        columns(
+          `resume_at,gas_left,rework_left) VALUES ($1,$2,$3,'Escalated',1,'${point}',0,0)`,
+        ),
+        [
+          partition.tenant,
+          partition.project,
+          5 + resumePoints.indexOf(point) + 1,
+        ],
+      ),
+      `the check admits ${point}, which is a point the machine stamps`,
+    );
 });

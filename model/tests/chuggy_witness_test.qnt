@@ -48,6 +48,59 @@ module chuggy_witness_free_test {
       not(freeClimbNever), allInvariants })
 }
 
+/// The rework wall's two exits, reached through the machine rather than
+/// hand-built. Priced FREE throughout, because the sharper claim is that
+/// this resume pays anyway: it enters Working, so standing rule 2 meters it
+/// under either pricing and freeClimbNever survives the step.
+module chuggy_witness_rework_test {
+  import chuggy_measure.* from "../measure"
+  import chuggy_domain(N_TICKETS=2, N_TASKS=1, REWORK_POLICY=BudgetedRework(1), GAS=3,
+    FINALIZATION_PRICING=DeadlineOnly, MAX_STAGES=1).* from "../domain"
+  pure val p = [{ fanout: 1, combinator: UnanimousPass }]
+  action release(j: int, rw: ReworkPolicy): bool = all {
+    releasableIds.contains(j), validPrograms.contains(p),
+    apply(decideReleaseTicket(core, j, Set(), p, 1, rw, DeadlineOnly, RetryFree, NoFinalizer)) }
+  action doDispatch(j: int): bool = all { dispatchableIn(core,j), apply(decideDispatch(core,j)) }
+  action done(j: int, tid: int, v: Verdict): bool = all {
+    deliverableTaskIds(core,j).contains(tid), apply(decideTaskDone(core,j,tid,v)) }
+  action reduceWork(j: int): bool = all { reducibleWork.contains(j), apply(decideWorkReduce(core,j)) }
+  action reduceEval(j: int): bool = all { reducibleEval.contains(j), apply(decideEvalStageReduce(core,j)) }
+  action resume(j: int): bool = all { retryableEscalated.contains(j), apply(decideResumeTicket(core,j)) }
+
+  /// A budget spent, then the wall: Retry buys a WORK cycle with the
+  /// eval-rework account refilled to the authored budget, and DESCENDS.
+  run reworkWallResumeWitness = init
+    .then(release(4, BudgetedRework(1))).expect(allInvariants)
+    .then(doDispatch(4)).expect(allInvariants)
+    .then(done(4, 1, Pass)).then(reduceWork(4)).expect(and {
+      tickets.get(4).phase == Evaluating, allInvariants })
+    .then(done(4, 2, Fail)).then(reduceEval(4)).expect(and {
+      tickets.get(4).phase == Working, tickets.get(4).reworkLeft == 0, allInvariants })
+    .then(done(4, 3, Pass)).then(reduceWork(4)).expect(allInvariants)
+    .then(done(4, 4, Fail)).then(reduceEval(4)).expect(and {
+      tickets.get(4).phase == Escalated,
+      tickets.get(4).reason == ReworkBudgetExhausted,
+      tickets.get(4).resumeAt == ResumeReworking, allInvariants })
+    .then(resume(4)).expect(and {
+      tickets.get(4).phase == Working,
+      tickets.get(4).reworkLeft == reworkBudget(tickets.get(4).reworkPolicy),
+      tickets.get(4).gasLeft == 0,
+      currentMeasure < prevMeasure, freeClimbNever, allInvariants })
+
+  /// A ticket authored NO budget reaches the same wall on its first eval
+  /// failure and gets no resume: the desk may only revoke.
+  run reworkWallNoBudgetRevokeOnlyWitness = init
+    .then(release(4, BudgetedRework(0))).expect(allInvariants)
+    .then(doDispatch(4)).expect(allInvariants)
+    .then(done(4, 1, Pass)).then(reduceWork(4)).expect(allInvariants)
+    .then(done(4, 2, Fail)).then(reduceEval(4)).expect(and {
+      tickets.get(4).phase == Escalated,
+      tickets.get(4).reason == ReworkBudgetExhausted,
+      tickets.get(4).resumeAt == NoResume,
+      not(retryableEscalated.contains(4)),
+      revocableTickets.contains(4), allInvariants })
+}
+
 module chuggy_witness_cascade_test {
   import chuggy_measure.* from "../measure"
   import chuggy_domain(N_TICKETS=3, N_TASKS=1, REWORK_POLICY=BudgetedRework(1), GAS=3,
