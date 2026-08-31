@@ -106,6 +106,11 @@ check "a negative rem is a finding" 1 "$RC" "-1.5rem — a raw length"
 sheet_saying '.pill { margin-bottom: -1px; }'
 check "a negative hairline is not the hairline" 1 "$RC" "-1px — a raw length"
 
+# A ZERO IS A ZERO IN ANY UNIT, and the header says so: a reader who writes
+# `margin: 0px` expecting it to pass is reading the rule correctly.
+sheet_saying '.pill { margin: 0px; padding: 0rem; top: -0px; }'
+check "a zero is exempt whatever unit it is written in" 0 "$RC" "0 finding(s)"
+
 sheet_saying '@media (min-width: 52em) { .pill { padding: 0; } }'
 check "a width no token names is a finding" 1 "$RC" "52em — a fourth breakpoint"
 
@@ -150,6 +155,22 @@ check "a sheet with no layer at all is a finding" 1 "$RC" ".pill — a rule outs
 # A media query at the top level is unlayered too, and reads as ordinary CSS.
 sheet_verbatim '@media (min-width: 60em) {' '  .pill {' '    padding: 0;' '  }' '}'
 check "an at-rule that is not a layer is a finding" 1 "$RC" "@media (min-width: 60em) — a rule outside the layer"
+
+# THE ALLOWLIST IS PINNED BY CASE, NOT BY READING. Every at-rule below wraps
+# rules, so a fifth name added to the allowlist takes a whole block outside
+# every layer — and a suite whose only negative was the media query would let
+# that through.
+sheet_verbatim '@supports (display: grid) {' '  .pill {' '    padding: 0;' '  }' '}'
+check "a supports block outside a layer is a finding" 1 "$RC" "@supports (display: grid) — a rule outside the layer"
+
+sheet_verbatim '@container (min-width: 60em) {' '  .pill {' '    padding: 0;' '  }' '}'
+check "a container query outside a layer is a finding" 1 "$RC" "@container (min-width: 60em) — a rule outside the layer"
+
+sheet_verbatim '@keyframes pill-pulse {' '  0% {' '    opacity: 1;' '  }' '}'
+check "keyframes outside a layer is a finding" 1 "$RC" "@keyframes pill-pulse — a rule outside the layer"
+
+sheet_verbatim '@font-face {' '  font-family: Chuggy;' '}'
+check "a font face outside a layer is a finding" 1 "$RC" "@font-face — a rule outside the layer"
 
 # The at-rules that may lead a sheet, and the statement that orders the layers.
 sheet_verbatim '@charset "utf-8";' '@layer tokens, base, ui, page;' \

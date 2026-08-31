@@ -7,10 +7,18 @@
  * inline script this is really about is one a bundler injects and the layer
  * order this is really about is one a minifier decides.
  * `scripts/console-policy.ts` is what decides; this reads the files, reports
- * and exits, and `test/scripts/consolePolicy.test.ts` is what holds the
- * decision to each finding it names. A document that loads no stylesheet is a
- * could-not-run: the cascade would be reported clean having been asked
- * nothing.
+ * and exits, `test/scripts/consolePolicy.test.ts` is what holds the decision to
+ * each finding it names, and `test/scripts/checkConsolePolicy.test.ts` runs
+ * this script over built documents so the wiring between them is a control
+ * rather than a claim.
+ *
+ * THE STYLESHEETS ARE ONE TEXT, IN THE ORDER THE DOCUMENT LOADS THEM, because
+ * a cascade layer belongs to the document rather than to a file: two sheets
+ * each ordered correctly can still hand a browser `ui` before `tokens`. Two
+ * ways of being asked nothing are could-not-runs rather than a clean line: a
+ * document that loads no stylesheet, and stylesheets that declare no layer at
+ * all. Either would print the strongest sentence this can print over a build
+ * whose cascade it never read.
  *
  * Usage:
  *   node scripts/check-console-policy.ts <document-root>
@@ -23,6 +31,8 @@ import { resolve } from "node:path";
 
 import {
   consoleCascadeFindings,
+  consoleCascadeLayers,
+  consoleCascadeNames,
   consolePolicyFindings,
   consolePolicyStylesheetHrefs,
 } from "./console-policy.ts";
@@ -65,29 +75,36 @@ if (hrefs.length === 0) {
   );
   process.exit(2);
 }
-const layered: string[] = [];
+const loaded: string[] = [];
+const sheets: string[] = [];
 for (const href of hrefs) {
   const sheetPath = resolve(root, href.replace(/^\//u, ""));
-  let sheet = "";
   try {
-    sheet = readFileSync(sheetPath, "utf8");
+    sheets.push(readFileSync(sheetPath, "utf8"));
   } catch {
     process.stdout.write(
       `check-console-policy: LINTER ERROR — ${sheetPath} could not be read\n`,
     );
     process.exit(2);
   }
-  const cascade = consoleCascadeFindings(sheet);
-  for (const finding of cascade) {
-    process.stdout.write(
-      `check-console-policy: ${sheetPath} carries ${finding}\n`,
-    );
-    findings.push(finding);
-  }
-  layered.push(sheetPath);
+  loaded.push(sheetPath);
+}
+
+const cascade = sheets.join("\n");
+if (consoleCascadeNames(cascade).length === 0) {
+  process.stdout.write(
+    `check-console-policy: LINTER ERROR — ${loaded.join(", ")} declares no layer, so the cascade could not be read\n`,
+  );
+  process.exit(2);
+}
+for (const finding of consoleCascadeFindings(cascade)) {
+  process.stdout.write(
+    `check-console-policy: ${loaded.join(", ")} carries ${finding}\n`,
+  );
+  findings.push(finding);
 }
 
 if (findings.length > 0) process.exit(1);
 process.stdout.write(
-  `check-console-policy: ${documentPath} loads only same-origin files, and ${layered.join(", ")} declares its layers in the system's order\n`,
+  `check-console-policy: ${documentPath} loads only same-origin files, and ${loaded.join(", ")} declares ${consoleCascadeLayers.join(", ")} in that order\n`,
 );
