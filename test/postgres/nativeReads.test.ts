@@ -9,109 +9,14 @@ import {
   postgresHarnessProject,
   postgresHarnessSubmission,
 } from "./harness.ts";
+import { seedOpenAction } from "./nativeActionFixture.ts";
 import { postgresReadHarness } from "./readHarness.ts";
-import type { Partition } from "../../src/interpreter/projectStore.ts";
-import type { NativeActionResolution } from "../../src/interpreter/ticketCommand.ts";
 import { id } from "../domain/fixtures.ts";
 
 const subject = postgresReadHarness();
 
 async function filterProject() {
   return postgresHarnessProject(subject.harness.store, "native-filter");
-}
-
-/** One desk task to seed, at the journal sequence its answer has to name. */
-interface SeededAction {
-  readonly ticket: number;
-  readonly sequence: number;
-  readonly kind: "TicketEscalation" | "HandoffBlock";
-  readonly reason: string;
-  readonly offers: readonly NativeActionResolution[];
-}
-
-async function currentEpoch(): Promise<string> {
-  const found = await subject.harness.query(
-    "SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1",
-  );
-  const epoch = found[0]?.["epoch"];
-  if (typeof epoch !== "string")
-    throw new Error("native read case: the harness established no epoch");
-  return epoch;
-}
-
-/**
- * A desk task and the journal entry that authorized it, seeded through the real
- * chain: the action's fence is an entry, and that entry decided an accepted
- * operation, so nothing here holds because a constraint was skipped.
- */
-async function seedOpenAction(
-  partition: Partition,
-  label: string,
-  action: SeededAction,
-): Promise<string> {
-  const submission = postgresHarnessSubmission(partition, label);
-  await subject.harness.inbox.accept(submission);
-  const epoch = await currentEpoch();
-  const seeding = await subject.harness.begin();
-  await seeding.query(
-    `UPDATE decision_input SET state='Journaled', decided_seq=$3, terminal_at=now()
-      WHERE tenant=$1 AND project=$2 AND input_kind='Operation' AND input_id=$4`,
-    [
-      partition.tenant,
-      partition.project,
-      action.sequence,
-      submission.operation,
-    ],
-  );
-  await seeding.query(
-    `INSERT INTO journal_entry
-       (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
-        recovery_epoch,cause_kind,cause_id)
-     VALUES ($1,$2,$3,'{}',$4,'genesis','owner',1,$5,'Operation',$6)`,
-    [
-      partition.tenant,
-      partition.project,
-      action.sequence,
-      `digest-${label}`,
-      epoch,
-      submission.operation,
-    ],
-  );
-  await seeding.query(
-    `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq,reason)
-     VALUES ($1,$2,$3,$4,$5,$6)`,
-    [
-      partition.tenant,
-      partition.project,
-      action.ticket,
-      action.kind === "HandoffBlock" ? "HandoffBlocked" : "Escalated",
-      action.sequence,
-      action.reason,
-    ],
-  );
-  await seeding.query(
-    `INSERT INTO native_action
-       (tenant,project,action,authorizing_seq,effect_position,ticket,
-        action_version,kind,reason,required_capability)
-     VALUES ($1,$2,$3,$4,0,$5,$4,$6,$7,'ResolveTicket')`,
-    [
-      partition.tenant,
-      partition.project,
-      label,
-      action.sequence,
-      action.ticket,
-      action.kind,
-      action.reason,
-    ],
-  );
-  for (const offered of action.offers)
-    await seeding.query(
-      `INSERT INTO native_action_resolution (tenant,project,action,resolution)
-       VALUES ($1,$2,$3,$4)`,
-      [partition.tenant, partition.project, label, offered],
-    );
-  await seeding.commit();
-  return label;
 }
 
 /** One ticket of each terminal shape, and one parked with the wall it hit. */
@@ -359,14 +264,19 @@ test("a ticket's open action carries its kind, its fence, and what it offered", 
     subject.harness.store,
     "native-actions",
   );
-  await seedOpenAction(partition, "native-actions-escalation", {
-    ticket: 1,
-    sequence: 1,
-    kind: "TicketEscalation",
-    reason: "WorkFailed",
-    offers: ["Resume", "Revoke"],
-  });
-  await seedOpenAction(partition, "native-actions-handoff", {
+  await seedOpenAction(
+    subject.harness,
+    partition,
+    "native-actions-escalation",
+    {
+      ticket: 1,
+      sequence: 1,
+      kind: "TicketEscalation",
+      reason: "WorkFailed",
+      offers: ["Resume", "Revoke"],
+    },
+  );
+  await seedOpenAction(subject.harness, partition, "native-actions-handoff", {
     ticket: 2,
     sequence: 2,
     kind: "HandoffBlock",
@@ -397,13 +307,18 @@ test("an escalation offers what it recorded, not what its kind may ask for", asy
     subject.harness.store,
     "native-actions-revoke-only",
   );
-  await seedOpenAction(partition, "native-actions-unresumable", {
-    ticket: 1,
-    sequence: 1,
-    kind: "TicketEscalation",
-    reason: "DependencyRevoked",
-    offers: ["Revoke"],
-  });
+  await seedOpenAction(
+    subject.harness,
+    partition,
+    "native-actions-unresumable",
+    {
+      ticket: 1,
+      sequence: 1,
+      kind: "TicketEscalation",
+      reason: "DependencyRevoked",
+      offers: ["Revoke"],
+    },
+  );
   assert.deepEqual(
     await postgresNativeReads(subject.pool).ticketNativeActions(
       partition,
@@ -420,18 +335,56 @@ test("an escalation offers what it recorded, not what its kind may ask for", asy
   );
 });
 
+test("a handoff hold offers what it recorded, not what its kind may ask for", async () => {
+  const partition = await postgresHarnessProject(
+    subject.harness.store,
+    "native-actions-abandon-only",
+  );
+  await seedOpenAction(
+    subject.harness,
+    partition,
+    "native-actions-unrepublishable",
+    {
+      ticket: 1,
+      sequence: 1,
+      kind: "HandoffBlock",
+      reason: "NoReason",
+      offers: ["AbandonHandoff"],
+    },
+  );
+  assert.deepEqual(
+    await postgresNativeReads(subject.pool).ticketNativeActions(
+      partition,
+      id(1),
+    ),
+    [
+      {
+        action: "native-actions-unrepublishable",
+        kind: "HandoffBlock",
+        authorizingSequence: 1,
+        admits: ["AbandonHandoff"],
+      },
+    ],
+  );
+});
+
 test("a resolved action stops listing, and an unknown ticket is not found", async () => {
   const partition = await postgresHarnessProject(
     subject.harness.store,
     "native-actions-settled",
   );
-  const action = await seedOpenAction(partition, "native-actions-answered", {
-    ticket: 1,
-    sequence: 1,
-    kind: "TicketEscalation",
-    reason: "WorkFailed",
-    offers: ["Resume", "Revoke"],
-  });
+  const action = await seedOpenAction(
+    subject.harness,
+    partition,
+    "native-actions-answered",
+    {
+      ticket: 1,
+      sequence: 1,
+      kind: "TicketEscalation",
+      reason: "WorkFailed",
+      offers: ["Resume", "Revoke"],
+    },
+  );
   await subject.harness.query(
     `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
      VALUES ($1,$2,2,'Working',1)`,
@@ -454,16 +407,21 @@ test("a project's open actions list newest first and page behind their bound", a
     "native-actions-project",
   );
   for (const ticket of [1, 2, 3])
-    await seedOpenAction(partition, `native-actions-project-${ticket}`, {
-      ticket,
-      sequence: ticket,
-      kind: ticket === 2 ? "HandoffBlock" : "TicketEscalation",
-      reason: ticket === 2 ? "NoReason" : "WorkFailed",
-      offers:
-        ticket === 2
-          ? ["RetryHandoff", "AbandonHandoff"]
-          : ["Resume", "Revoke"],
-    });
+    await seedOpenAction(
+      subject.harness,
+      partition,
+      `native-actions-project-${ticket}`,
+      {
+        ticket,
+        sequence: ticket,
+        kind: ticket === 2 ? "HandoffBlock" : "TicketEscalation",
+        reason: ticket === 2 ? "NoReason" : "WorkFailed",
+        offers:
+          ticket === 2
+            ? ["RetryHandoff", "AbandonHandoff"]
+            : ["Resume", "Revoke"],
+      },
+    );
   const reads = postgresNativeReads(subject.pool);
   const first = await reads.nativeActions(partition, { limit: 2 });
   assert.deepEqual(
@@ -513,7 +471,7 @@ test("a project's open actions are its own, and an empty project lists none", as
     subject.harness.store,
     "native-actions-other",
   );
-  await seedOpenAction(mine, "native-actions-mine-one", {
+  await seedOpenAction(subject.harness, mine, "native-actions-mine-one", {
     ticket: 1,
     sequence: 1,
     kind: "TicketEscalation",
@@ -537,13 +495,18 @@ test("a stored answer the kind cannot ask for stops both reads", async () => {
     subject.harness.store,
     "native-actions-pairing",
   );
-  const action = await seedOpenAction(partition, "native-actions-paired", {
-    ticket: 1,
-    sequence: 1,
-    kind: "TicketEscalation",
-    reason: "WorkFailed",
-    offers: ["Resume", "Revoke"],
-  });
+  const action = await seedOpenAction(
+    subject.harness,
+    partition,
+    "native-actions-paired",
+    {
+      ticket: 1,
+      sequence: 1,
+      kind: "TicketEscalation",
+      reason: "WorkFailed",
+      offers: ["Resume", "Revoke"],
+    },
+  );
   /**
    * Migration 013's trigger is what makes an escalation offering `Approve`
    * unwritable, so planting one means standing it down for the insert. The
@@ -576,7 +539,7 @@ test("the fence the read publishes is the one acceptance admits", async () => {
     subject.harness.store,
     "native-actions-fence",
   );
-  await seedOpenAction(partition, "native-actions-fenced", {
+  await seedOpenAction(subject.harness, partition, "native-actions-fenced", {
     ticket: 1,
     sequence: 1,
     kind: "TicketEscalation",
