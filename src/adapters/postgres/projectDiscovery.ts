@@ -38,8 +38,11 @@ export function postgresProjectDiscovery(
   metrics: TicketServiceMetrics = silentTicketServiceMetrics,
 ): ProjectDiscovery {
   return {
-    ready: (partitionsMax: number): Promise<readonly Readiness[]> =>
-      postgresReadinessReady(pool, partitionsMax),
+    ready: (
+      partitionsMax: number,
+      after?: Partition,
+    ): Promise<readonly Readiness[]> =>
+      postgresReadinessReady(pool, partitionsMax, after),
 
     next: (
       partition: Partition,

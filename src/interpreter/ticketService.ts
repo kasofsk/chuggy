@@ -58,6 +58,14 @@ export type DecisionMetricOutcome =
   | "StaleHead"
   | "AlreadyTerminal";
 
+/**
+ * Why one project's turn did not complete. A pass counts its contained faults
+ * and cannot say what any one of them was, so the count and this closed set are
+ * emitted together for the same reason `FinalizerHoldReason` is.
+ */
+export type TicketServiceFailureReason =
+  "AcquisitionFailed" | "ActivationFailed" | "ReleaseFailed";
+
 /** Closed, identifier-free observations emitted by the ticket service. */
 export interface TicketServiceMetrics {
   mailbox(priority: PriorityClass, depth: number, oldestSeconds: number): void;
@@ -78,6 +86,12 @@ export interface TicketServiceMetrics {
    * unreadable, which is the one landing of that fault leaving no durable row.
    */
   executionSourceDeferred(): void;
+
+  /**
+   * A fault one project's turn raised and the pass carried rather than ended
+   * on, which is the only observation a quarantined partition leaves here.
+   */
+  projectFailed(reason: TicketServiceFailureReason): void;
 }
 
 export const silentTicketServiceMetrics: TicketServiceMetrics = {
@@ -89,6 +103,7 @@ export const silentTicketServiceMetrics: TicketServiceMetrics = {
   focusedRequest: () => undefined,
   nativeAction: () => undefined,
   executionSourceDeferred: () => undefined,
+  projectFailed: () => undefined,
 };
 
 /** Runs best-effort telemetry outside the correctness transaction. */

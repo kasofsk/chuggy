@@ -487,16 +487,29 @@ function readinessBounded(limit: number, what: string): number {
   return limit;
 }
 
-/** At most `partitionsMax` projects with work waiting, in a deterministic order that is not a priority. */
+/**
+ * At most `partitionsMax` projects with work waiting, in a deterministic order
+ * that is not a priority, beginning after `after` when a caller resumes there.
+ */
 export async function postgresReadinessReady(
   pool: pg.Pool,
   partitionsMax: number,
+  after?: Partition,
 ): Promise<readonly Readiness[]> {
-  const found = await pool.query<ReadinessRow>(
-    sql`SELECT tenant, project, generation FROM project_readiness
-      WHERE ready ORDER BY tenant, project
-      LIMIT ${readinessBounded(partitionsMax, "ready partitions")}`,
-  );
+  const limit = readinessBounded(partitionsMax, "ready partitions");
+  const found =
+    after === undefined
+      ? await pool.query<ReadinessRow>(
+          sql`SELECT tenant, project, generation FROM project_readiness
+            WHERE ready ORDER BY tenant, project
+            LIMIT ${limit}`,
+        )
+      : await pool.query<ReadinessRow>(
+          sql`SELECT tenant, project, generation FROM project_readiness
+            WHERE ready AND (tenant, project) > (${after.tenant}, ${after.project})
+            ORDER BY tenant, project
+            LIMIT ${limit}`,
+        );
   return found.rows.map((row) => ({
     partition: {
       tenant: asTenantId(row.tenant),
