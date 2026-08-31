@@ -15,6 +15,7 @@ import { id } from "../domain/fixtures.ts";
 import {
   schedulerClaimFor,
   schedulerExecutions,
+  schedulerFurtherTicket,
   schedulerIngressPool,
   schedulerOwner,
   schedulerPlacedAttempt,
@@ -22,6 +23,12 @@ import {
   schedulerRigOpen,
   type SchedulerRig,
 } from "./schedulerHarness.ts";
+import type {
+  ExecutionListQuery,
+  ExecutionPageCursor,
+  OperationalReadStore,
+} from "../../src/interpreter/operationsView.ts";
+import type { Partition } from "../../src/interpreter/projectStore.ts";
 
 let rig: SchedulerRig;
 let ingress: ReturnType<typeof schedulerIngressPool>;
@@ -141,6 +148,153 @@ test("an execution reads back empty until its run writes evidence", async () => 
   assert.equal(run?.totals?.stopReason, "end_turn");
   assert.equal(run?.configuration, undefined);
   assert.equal(run?.turnsRecorded, 0);
+});
+
+/** Registers every task one spawn request declares, refusing anything less. */
+async function operationalRegistered(
+  project: { readonly partition: Partition },
+  request: string,
+  label: string,
+): Promise<void> {
+  const claim = await schedulerClaimFor(
+    rig,
+    project.partition,
+    request,
+    schedulerOwner(label),
+  );
+  assert.equal(
+    (await rig.store.registerSpawn(claim, executionSchedulerDefaults.nTasks))
+      .registered,
+    "Registered",
+  );
+}
+
+/** One ticket's executions as the two orders in question see them. */
+async function operationalOrders(
+  partition: Partition,
+  ticket: number,
+): Promise<{
+  readonly byIdentity: readonly string[];
+  readonly byTask: readonly string[];
+}> {
+  const of = async (order: string): Promise<readonly string[]> =>
+    (
+      (await rig.harness.query(
+        `SELECT execution FROM execution
+          WHERE tenant=$1 AND project=$2 AND ticket=$3 ORDER BY ${order}`,
+        [partition.tenant, partition.project, ticket],
+      )) as readonly { execution: string }[]
+    ).map((row) => row.execution);
+  return { byIdentity: await of("execution"), byTask: await of("task") };
+}
+
+/**
+ * Every page a walk of one read answers with, as the `(ticket, task)` positions
+ * each page carried. A walk that has not ended within its budget is a failure
+ * rather than a shorter answer, because a cursor that never retires reads
+ * exactly like a list that ran out.
+ */
+async function operationalWalked(
+  reads: OperationalReadStore,
+  partition: Partition,
+  query: ExecutionListQuery,
+  pagesMax: number,
+): Promise<number[][][]> {
+  const pages: number[][][] = [];
+  let after: ExecutionPageCursor | undefined;
+  for (let page = 0; page < pagesMax; page += 1) {
+    const answered = await reads.executions(partition, {
+      ...query,
+      ...(after === undefined ? {} : { after }),
+    });
+    pages.push(answered.executions.map((row) => [row.ticket, row.task]));
+    after = answered.nextAfter;
+    if (after === undefined) return pages;
+  }
+  throw new Error(
+    "operational read: the walk did not reach the end of the list",
+  );
+}
+
+/**
+ * A registration names each execution `execution-<uuid>-<task>`, so a ticket's
+ * identities sort as text and its history does not: the fixture below is a
+ * ticket whose two orders differ, which is what makes a read ordered by either
+ * one distinguishable from a read ordered by the other. A second ticket is
+ * registered beside it, and both walks use a page smaller than what they walk —
+ * the project-wide one so that a page straddles the boundary between the two
+ * tickets, which is the one thing the cursor does that a ticket-scoped walk
+ * never asks of it.
+ */
+test("a ticket's executions are read and paged in task order", async () => {
+  const tasks = 11;
+  const project = await schedulerProject(rig, "operational-history", { tasks });
+  await operationalRegistered(project, project.request, "operational-history");
+  const further = await schedulerFurtherTicket(
+    rig,
+    project,
+    project.memory,
+    "operational-history-next",
+    3,
+  );
+  await operationalRegistered(
+    project,
+    further.request,
+    "operational-history-next",
+  );
+  const orders = await operationalOrders(project.partition, project.ticket);
+  assert.equal(orders.byTask.length, tasks);
+  assert.notDeepEqual(orders.byIdentity, orders.byTask);
+
+  const reads = postgresOperationalReads(ingress);
+  const whole = await reads.executions(project.partition, {
+    limit: tasks,
+    ticket: id(project.ticket),
+  });
+  const history = Array.from({ length: tasks }, (_unused, at) => at + 1);
+  assert.deepEqual(
+    whole.executions.map((row) => row.task),
+    history,
+  );
+  assert.equal(whole.nextAfter, undefined);
+
+  const pagesMax = tasks + further.tasks;
+  const walked = await operationalWalked(
+    reads,
+    project.partition,
+    { limit: 4, ticket: id(project.ticket) },
+    pagesMax,
+  );
+  assert.deepEqual(
+    walked.flat().map(([, task]) => task),
+    history,
+  );
+
+  const across = await operationalWalked(
+    reads,
+    project.partition,
+    { limit: 4 },
+    pagesMax,
+  );
+  const positions = [
+    ...history.map((task) => [project.ticket, task]),
+    ...Array.from({ length: further.tasks }, (_unused, at) => [
+      further.ticket,
+      at + 1,
+    ]),
+  ];
+  assert.deepEqual(across.flat(), positions);
+  assert.deepEqual(
+    across.filter((page) => new Set(page.map(([ticket]) => ticket)).size > 1),
+    [
+      [
+        [project.ticket, tasks - 2],
+        [project.ticket, tasks - 1],
+        [project.ticket, tasks],
+        [further.ticket, 1],
+      ],
+    ],
+  );
 });
 
 test("an execution's attempts are read in the order they were opened", async () => {

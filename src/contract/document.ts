@@ -50,6 +50,11 @@ export function nativeHttpContractDocument(): unknown {
       operation: "percent-encoded opaque UTF-8 path segment",
       cursor: "opaque canonical base64url",
     },
+    executionOrder: {
+      order: "ticket then task, ascending",
+      cursor: "a position in that order; the ticket filter narrows it",
+      mismatch: "a cursor resuming an unselected ticket is refused",
+    },
     briefFinalization:
       "a PullRequest finalization requires the brief to name a branch, and a target that is not it",
     selectorProjectSettings:

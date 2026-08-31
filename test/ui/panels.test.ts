@@ -183,7 +183,7 @@ test("an execution row says whether the scheduler still holds it in flight", () 
         terminalAt: "2026-08-22T00:02:00Z",
       },
     ],
-    nextAfter: undefined,
+    nextCursor: undefined,
   });
   assert.equal(rows[0]?.active, true);
   assert.equal(rows[1]?.active, false);
