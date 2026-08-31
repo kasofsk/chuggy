@@ -181,12 +181,15 @@ async function served(
         Promise.resolve(
           token === "valid"
             ? {
-                principal: asPrincipal("issuer\u0000subject"),
-                ...(options.expiresInMs === undefined
-                  ? {}
-                  : { expiresAtMs: Date.now() + options.expiresInMs }),
+                authenticated: "Bearer" as const,
+                bearer: {
+                  principal: asPrincipal("issuer\u0000subject"),
+                  ...(options.expiresInMs === undefined
+                    ? {}
+                    : { expiresAtMs: Date.now() + options.expiresInMs }),
+                },
               }
-            : undefined,
+            : { authenticated: "InvalidToken" as const },
         ),
     },
     { ready: () => Promise.resolve(true) },

@@ -105,7 +105,9 @@ function oidcConfig(): OidcAuthenticationConfig {
   return {
     issuer: requiredEnvironment(oidcIssuerVariable),
     audience: requiredEnvironment(oidcAudienceVariable),
-    algorithms: requiredEnvironment(oidcAlgorithmsVariable).split(","),
+    algorithms: requiredEnvironment(oidcAlgorithmsVariable)
+      .split(",")
+      .map((algorithm) => algorithm.trim()),
     discoveryTimeoutMs: positiveEnvironment(
       "CHUG_API_OIDC_DISCOVERY_TIMEOUT_MS",
       5_000,

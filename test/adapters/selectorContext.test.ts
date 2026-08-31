@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import type { AccessTokenSource } from "../../src/adapters/http/accessToken.ts";
 import { selectorContextHttp } from "../../src/adapters/http/selectorContext.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+
+function constantAccessToken(value: string): AccessTokenSource {
+  return { token: () => Promise.resolve(value), invalidate: () => undefined };
+}
 
 const body = Object.freeze({
   version: 2,
@@ -34,7 +39,7 @@ test("selector context client authenticates and strictly parses the response", a
   const source = selectorContextHttp(
     {
       baseUrl: "https://native.example/",
-      bearerToken: "token",
+      accessToken: constantAccessToken("token"),
       requestTimeoutMs: 1_000,
       responseBytesMax: 10_000,
       responseReadsMax: 100,
@@ -59,6 +64,34 @@ test("selector context client authenticates and strictly parses the response", a
   assert.equal(authorization, "Bearer token");
 });
 
+test("selector context client asks for a token on every request", async () => {
+  const granted = ["first", "second"];
+  const presented: (string | null)[] = [];
+  const source = selectorContextHttp(
+    {
+      baseUrl: "https://native.example/",
+      accessToken: {
+        token: () => Promise.resolve(granted.shift() ?? "exhausted"),
+        invalidate: () => undefined,
+      },
+      requestTimeoutMs: 1_000,
+      responseBytesMax: 10_000,
+      responseReadsMax: 100,
+    },
+    (_request, init) => {
+      presented.push(new Headers(init?.headers).get("authorization"));
+      return Promise.resolve(Response.json(body));
+    },
+  );
+  const partition = {
+    tenant: asTenantId("tenant"),
+    project: asProjectId("project"),
+  };
+  await source.context(partition);
+  await source.context(partition);
+  assert.deepEqual(presented, ["Bearer first", "Bearer second"]);
+});
+
 test("selector context client refuses oversized responses", async () => {
   let reads = 0;
   let cancelled = false;
@@ -74,7 +107,7 @@ test("selector context client refuses oversized responses", async () => {
   const source = selectorContextHttp(
     {
       baseUrl: "https://native.example/",
-      bearerToken: "token",
+      accessToken: constantAccessToken("token"),
       requestTimeoutMs: 1_000,
       responseBytesMax: 1,
       responseReadsMax: 10,
@@ -107,7 +140,7 @@ test("selector context client cancels an endless empty response", async () => {
   const source = selectorContextHttp(
     {
       baseUrl: "https://native.example/",
-      bearerToken: "token",
+      accessToken: constantAccessToken("token"),
       requestTimeoutMs: 1_000,
       responseBytesMax: 1_000,
       responseReadsMax: 3,
@@ -120,6 +153,147 @@ test("selector context client cancels an endless empty response", async () => {
       project: asProjectId("project"),
     }),
     /read bound/u,
+  );
+  assert.equal(cancelled, true);
+});
+
+test("selector context refusal tells the source which token it refused", async () => {
+  const invalidated: string[] = [];
+  const source = selectorContextHttp(
+    {
+      baseUrl: "https://native.example/",
+      accessToken: {
+        token: () => Promise.resolve("stale"),
+        invalidate: (refused) => invalidated.push(refused),
+      },
+      requestTimeoutMs: 1_000,
+      responseBytesMax: 10_000,
+      responseReadsMax: 100,
+    },
+    () => Promise.resolve(new Response("{}", { status: 401 })),
+  );
+  await assert.rejects(
+    source.context({
+      tenant: asTenantId("tenant"),
+      project: asProjectId("project"),
+    }),
+    /returned 401/u,
+  );
+  assert.deepEqual(invalidated, ["stale"]);
+});
+
+test("selector context refuses a token that could not be a header", async () => {
+  let fetched = false;
+  const source = selectorContextHttp(
+    {
+      baseUrl: "https://native.example/",
+      accessToken: constantAccessToken("token\r\nx-injected: yes"),
+      requestTimeoutMs: 1_000,
+      responseBytesMax: 10_000,
+      responseReadsMax: 100,
+    },
+    () => {
+      fetched = true;
+      return Promise.resolve(Response.json(body));
+    },
+  );
+  await assert.rejects(
+    source.context({
+      tenant: asTenantId("tenant"),
+      project: asProjectId("project"),
+    }),
+    /bearer token is empty or malformed/u,
+  );
+  assert.equal(fetched, false);
+});
+
+test(
+  "the selector context deadline also bounds its token read",
+  { timeout: 5_000 },
+  async () => {
+    let fetched = false;
+    const source = selectorContextHttp(
+      {
+        baseUrl: "https://native.example/",
+        accessToken: {
+          token: () => new Promise<string>(() => undefined),
+          invalidate: () => undefined,
+        },
+        requestTimeoutMs: 5,
+        responseBytesMax: 10_000,
+        responseReadsMax: 100,
+      },
+      () => {
+        fetched = true;
+        return Promise.resolve(Response.json(body));
+      },
+    );
+    await assert.rejects(
+      source.context({
+        tenant: asTenantId("tenant"),
+        project: asProjectId("project"),
+      }),
+      { name: "TimeoutError" },
+    );
+    assert.equal(fetched, false);
+  },
+);
+
+test("a body arriving in exactly its read bound is read, not refused", async () => {
+  const encoded = new TextEncoder().encode(JSON.stringify(body));
+  const chunks = [encoded.subarray(0, 1), encoded.subarray(1)];
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      const chunk = chunks.shift();
+      if (chunk === undefined) controller.close();
+      else controller.enqueue(chunk);
+    },
+  });
+  const source = selectorContextHttp(
+    {
+      baseUrl: "https://native.example/",
+      accessToken: constantAccessToken("token"),
+      requestTimeoutMs: 1_000,
+      responseBytesMax: 10_000,
+      responseReadsMax: 2,
+    },
+    () => Promise.resolve(new Response(stream)),
+  );
+  assert.deepEqual(
+    await source.context({
+      tenant: asTenantId("tenant"),
+      project: asProjectId("project"),
+    }),
+    body,
+  );
+});
+
+test("a refused selector context read disposes of the body it will not parse", async () => {
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      controller.enqueue(new Uint8Array([1]));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const source = selectorContextHttp(
+    {
+      baseUrl: "https://native.example/",
+      accessToken: constantAccessToken("token"),
+      requestTimeoutMs: 1_000,
+      responseBytesMax: 10_000,
+      responseReadsMax: 100,
+    },
+    () => Promise.resolve(new Response(stream, { status: 401 })),
+  );
+  await assert.rejects(
+    source.context({
+      tenant: asTenantId("tenant"),
+      project: asProjectId("project"),
+    }),
+    /returned 401/u,
   );
   assert.equal(cancelled, true);
 });

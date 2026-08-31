@@ -325,3 +325,45 @@ test("the client aborts calls at its deadline", async () => {
   await assert.rejects(client.ready(), /deadline exceeded/);
   assert.equal(observed?.aborted, true);
 });
+
+test("a refused policy response disposes of the body it will not read", async () => {
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      controller.enqueue(new Uint8Array([1]));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const client = trustedSelectorPolicyHttpClient(config, () =>
+    Promise.resolve(new Response(stream, { status: 500 })),
+  );
+  await assert.rejects(
+    client.ready(AbortSignal.timeout(1_000)),
+    /returned HTTP 500/u,
+  );
+  assert.equal(cancelled, true);
+});
+
+test("a policy response of the wrong media type disposes of its body too", async () => {
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      controller.enqueue(new Uint8Array([1]));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const client = trustedSelectorPolicyHttpClient(config, () =>
+    Promise.resolve(
+      new Response(stream, { headers: { "content-type": "text/html" } }),
+    ),
+  );
+  await assert.rejects(
+    client.ready(AbortSignal.timeout(1_000)),
+    /wrong media type/u,
+  );
+  assert.equal(cancelled, true);
+});

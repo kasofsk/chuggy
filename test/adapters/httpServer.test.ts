@@ -306,8 +306,11 @@ function appOf(
       authenticateBearer: (token) =>
         Promise.resolve(
           authenticated && token === "valid"
-            ? { principal: asPrincipal("issuer\u0000subject") }
-            : undefined,
+            ? {
+                authenticated: "Bearer" as const,
+                bearer: { principal: asPrincipal("issuer\u0000subject") },
+              }
+            : { authenticated: "InvalidToken" as const },
         ),
     },
     { ready: () => Promise.resolve(true) },
@@ -798,7 +801,10 @@ test("a failing NativeWeb call is a server fault, not a client fault", async () 
     failing,
     {
       authenticateBearer: () =>
-        Promise.resolve({ principal: asPrincipal("issuer subject") }),
+        Promise.resolve({
+          authenticated: "Bearer" as const,
+          bearer: { principal: asPrincipal("issuer subject") },
+        }),
     },
     { ready: () => Promise.resolve(true) },
     authority,
@@ -825,7 +831,10 @@ test("a corrupt stored document is a server fault, not a malformed request", asy
     failing,
     {
       authenticateBearer: () =>
-        Promise.resolve({ principal: asPrincipal("issuer subject") }),
+        Promise.resolve({
+          authenticated: "Bearer" as const,
+          bearer: { principal: asPrincipal("issuer subject") },
+        }),
     },
     { ready: () => Promise.resolve(true) },
     authority,
@@ -889,4 +898,64 @@ test("an aborted request returns the capacity slot it took", async () => {
     "the aborted request should have returned its slot",
   );
   assert.deepEqual(calls, []);
+});
+
+test("a verification this server could not carry out is its own failure", async () => {
+  const calls: string[] = [];
+  await using app = createNativeHttpApp(
+    fakeWeb(calls),
+    {
+      authenticateBearer: () =>
+        Promise.resolve({ authenticated: "AuthorityUnavailable" as const }),
+    },
+    { ready: () => Promise.resolve(true) },
+    authority,
+  );
+  const found = await app.inject({
+    url: "/api/v1/projects",
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(found.statusCode, 503);
+  assert.equal(
+    found.json<HttpErrorEnvelope>().error.code,
+    "AuthorityUnavailable",
+  );
+  assert.equal(found.headers["retry-after"], "1");
+  assert.equal(found.headers["www-authenticate"], undefined);
+});
+
+test("a port that throws is unavailable rather than a refusal of the token", async () => {
+  const calls: string[] = [];
+  await using app = createNativeHttpApp(
+    fakeWeb(calls),
+    {
+      authenticateBearer: () =>
+        Promise.reject(new Error("the key set is unreachable")),
+    },
+    { ready: () => Promise.resolve(true) },
+    authority,
+  );
+  const found = await app.inject({
+    url: "/api/v1/projects",
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(found.statusCode, 503);
+  assert.ok(!found.body.includes("key set"));
+});
+
+test("only a token this server rejected carries the invalid-token challenge", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const refused = await app.inject({
+    url: "/api/v1/projects",
+    headers: { authorization: "Bearer stale" },
+  });
+  assert.equal(refused.statusCode, 401);
+  assert.equal(
+    refused.headers["www-authenticate"],
+    'Bearer error="invalid_token"',
+  );
+  const offered = await app.inject({ url: "/api/v1/projects" });
+  assert.equal(offered.statusCode, 401);
+  assert.equal(offered.headers["www-authenticate"], "Bearer");
 });

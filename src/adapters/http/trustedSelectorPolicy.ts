@@ -6,6 +6,7 @@ import type {
 } from "../../interpreter/selector.ts";
 import type { TrustedSelectorPolicy } from "../../interpreter/trustedSelectorPolicyHost.ts";
 import { selectorOperationalContextV2Schema } from "./selectorContext.ts";
+import { checkedPositiveBound } from "./bounds.ts";
 
 export const trustedSelectorPolicyProtocolVersion = 1;
 export const trustedSelectorPolicyMediaType =
@@ -221,12 +222,6 @@ interface CheckedConfig {
   readonly responseBytesMax: number;
 }
 
-function checkedPositiveInteger(value: number, what: string): number {
-  if (!Number.isSafeInteger(value) || value < 1)
-    throw new RangeError(`${what} must be a positive safe integer`);
-  return value;
-}
-
 function checkedConfig(
   config: TrustedSelectorPolicyClientConfig,
 ): CheckedConfig {
@@ -249,11 +244,11 @@ function checkedConfig(
   return {
     baseUrl,
     authorization: `Bearer ${config.bearerToken}`,
-    requestDeadlineMs: checkedPositiveInteger(
+    requestDeadlineMs: checkedPositiveBound(
       config.requestDeadlineMs,
       "selector policy request deadline",
     ),
-    responseBytesMax: checkedPositiveInteger(
+    responseBytesMax: checkedPositiveBound(
       config.responseBytesMax,
       "selector policy response bound",
     ),
@@ -303,13 +298,17 @@ async function responseJson(
   response: Response,
   bytesMax: number,
 ): Promise<unknown> {
-  if (!response.ok)
+  if (!response.ok) {
+    await response.body?.cancel();
     throw new Error(
       `selector policy service returned HTTP ${String(response.status)}`,
     );
+  }
   const contentType = response.headers.get("content-type")?.split(";", 1)[0];
-  if (contentType !== trustedSelectorPolicyMediaType)
+  if (contentType !== trustedSelectorPolicyMediaType) {
+    await response.body?.cancel();
     throw new TypeError("selector policy response has the wrong media type");
+  }
   const bytes = await boundedResponseBytes(response, bytesMax);
   try {
     return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));

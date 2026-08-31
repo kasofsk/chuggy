@@ -102,7 +102,7 @@ to start without the required ones.
 | `CHUG_API_IDEMPOTENCY_KEYING` | required | JSON: a `current` version and the `versions` that may still be verified |
 | `CHUG_API_OIDC_ISSUER` | required | an HTTPS URL with no credentials, query or fragment |
 | `CHUG_API_OIDC_AUDIENCE` | required | |
-| `CHUG_API_OIDC_ALGORITHMS` | required | comma-separated, and `none` is refused |
+| `CHUG_API_OIDC_ALGORITHMS` | required | comma-separated, surrounding spaces trimmed; every entry must be one `oidcVerifiableAlgorithms` in `src/adapters/http/oidc.ts` admits, and anything else — a shared-secret algorithm, `none`, an empty entry, a name with a typo — refuses to start, naming what it refused |
 | `CHUG_API_ARTIFACT_ROOT` | required | see below |
 | `CHUG_API_GIT_SCRATCH_ROOT` | required | writable scratch for exact-commit configuration reads |
 | `CHUG_API_REPOSITORY_CREDENTIAL_SOURCES` | required | JSON repository-to-credential-file mappings |

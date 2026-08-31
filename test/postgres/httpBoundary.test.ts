@@ -112,7 +112,13 @@ test("real HTTP ingress accepts once and observes the separate writer", async ()
   );
   const app = createNativeHttpApp(
     web,
-    { authenticateBearer: () => Promise.resolve({ principal }) },
+    {
+      authenticateBearer: () =>
+        Promise.resolve({
+          authenticated: "Bearer" as const,
+          bearer: { principal },
+        }),
+    },
     { ready: () => Promise.resolve(true) },
     postgresInstallationAuthority(pool),
   );

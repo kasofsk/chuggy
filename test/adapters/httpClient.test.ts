@@ -9,6 +9,7 @@ import {
   projectInventoryResponseSchema,
   proposalSubmissionResponseSchema,
 } from "../../src/adapters/http/codecs.ts";
+import type { AccessTokenSource } from "../../src/adapters/http/accessToken.ts";
 import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import {
   asIdempotencyKey,
@@ -18,6 +19,10 @@ import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { id } from "../domain/fixtures.ts";
 
 const principal = asPrincipal("selector");
+
+function constantAccessToken(value: string): AccessTokenSource {
+  return { token: () => Promise.resolve(value), invalidate: () => undefined };
+}
 const partition = {
   tenant: asTenantId("tenant/one"),
   project: asProjectId("project two"),
@@ -64,7 +69,7 @@ test("the client authenticates and decodes inventory through its V1 codec", asyn
   let request: Request | undefined;
   const client = nativeHttpClient({
     baseUrl: "https://ticket.example/",
-    accessToken: () => Promise.resolve("token"),
+    accessToken: constantAccessToken("token"),
     requestTimeoutMs: 1_000,
     responseBytesMax: 1_000,
     fetch: (input, init) => {
@@ -87,7 +92,7 @@ test("proposal acceptance remains narrower than private operation standing", asy
   let request: Request | undefined;
   const client = nativeHttpClient({
     baseUrl: "https://ticket.example/",
-    accessToken: () => Promise.resolve("token"),
+    accessToken: constantAccessToken("token"),
     requestTimeoutMs: 1_000,
     responseBytesMax: 1_000,
     fetch: (input, init) => {
@@ -150,7 +155,7 @@ test("inventory continuation uses the server cursor query", async () => {
   let request: Request | undefined;
   const client = nativeHttpClient({
     baseUrl: "https://ticket.example/",
-    accessToken: () => Promise.resolve("token"),
+    accessToken: constantAccessToken("token"),
     requestTimeoutMs: 1_000,
     responseBytesMax: 1_000,
     fetch: (input, init) => {
@@ -177,7 +182,7 @@ test("response overflow cancels the stream before retaining more bytes", async (
   });
   const client = nativeHttpClient({
     baseUrl: "https://ticket.example/",
-    accessToken: () => Promise.resolve("token"),
+    accessToken: constantAccessToken("token"),
     requestTimeoutMs: 1_000,
     responseBytesMax: 16,
     fetch: () => Promise.resolve(new Response(body)),
@@ -201,7 +206,7 @@ test("an endless zero-byte response is bounded and cancelled", async () => {
   });
   const client = nativeHttpClient({
     baseUrl: "https://ticket.example/",
-    accessToken: () => Promise.resolve("token"),
+    accessToken: constantAccessToken("token"),
     requestTimeoutMs: 1_000,
     responseBytesMax: 4,
     fetch: () => Promise.resolve(new Response(body)),
@@ -216,7 +221,7 @@ test("an endless zero-byte response is bounded and cancelled", async () => {
 test("the request deadline aborts an unresponsive transport", async () => {
   const client = nativeHttpClient({
     baseUrl: "https://ticket.example/",
-    accessToken: () => Promise.resolve("token"),
+    accessToken: constantAccessToken("token"),
     requestTimeoutMs: 5,
     responseBytesMax: 1_000,
     fetch: (_input, init) =>
@@ -235,20 +240,76 @@ test("the request deadline aborts an unresponsive transport", async () => {
   });
 });
 
-test("the request deadline also bounds authentication", async () => {
+test(
+  "the request deadline also bounds authentication",
+  { timeout: 5_000 },
+  async () => {
+    let fetched = false;
+    const client = nativeHttpClient({
+      baseUrl: "https://ticket.example/",
+      accessToken: {
+        token: () => new Promise<string>(() => undefined),
+        invalidate: () => undefined,
+      },
+      requestTimeoutMs: 5,
+      responseBytesMax: 1_000,
+      fetch: () => {
+        fetched = true;
+        return Promise.resolve(jsonResponse({ projects: [] }));
+      },
+    });
+    await assert.rejects(client.projectInventory(principal, undefined, 10), {
+      name: "TimeoutError",
+    });
+    assert.equal(fetched, false);
+  },
+);
+
+test("a refused request tells the source which token it refused", async () => {
+  const invalidated: string[] = [];
+  const granted = ["first", "second"];
+  const presented: (string | null)[] = [];
+  const client = nativeHttpClient({
+    baseUrl: "https://ticket.example/",
+    accessToken: {
+      token: () => Promise.resolve(granted[0] ?? "exhausted"),
+      invalidate: (refused) => {
+        invalidated.push(refused);
+        granted.shift();
+      },
+    },
+    requestTimeoutMs: 1_000,
+    responseBytesMax: 1_000,
+    fetch: (_input, init) => {
+      presented.push(new Headers(init?.headers).get("authorization"));
+      return Promise.resolve(
+        presented.length === 1
+          ? jsonResponse({ error: { code: "Unauthenticated" } }, 401)
+          : jsonResponse({ projects: [] }),
+      );
+    },
+  });
+  await assert.rejects(client.projectInventory(principal, undefined, 10));
+  await client.projectInventory(principal, undefined, 10);
+  assert.deepEqual(invalidated, ["first"]);
+  assert.deepEqual(presented, ["Bearer first", "Bearer second"]);
+});
+
+test("a token that could not be a header is refused before the request", async () => {
   let fetched = false;
   const client = nativeHttpClient({
     baseUrl: "https://ticket.example/",
-    accessToken: () => new Promise(() => undefined),
-    requestTimeoutMs: 5,
+    accessToken: constantAccessToken("first\r\nx-injected: yes"),
+    requestTimeoutMs: 1_000,
     responseBytesMax: 1_000,
     fetch: () => {
       fetched = true;
       return Promise.resolve(jsonResponse({ projects: [] }));
     },
   });
-  await assert.rejects(client.projectInventory(principal, undefined, 10), {
-    name: "TimeoutError",
-  });
+  await assert.rejects(
+    client.projectInventory(principal, undefined, 10),
+    /bearer token is empty or malformed/u,
+  );
   assert.equal(fetched, false);
 });

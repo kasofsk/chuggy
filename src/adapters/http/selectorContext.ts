@@ -7,6 +7,9 @@ import {
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { SelectorOperationalContextRead } from "../../interpreter/selectorOperationalContext.ts";
 import { nativeHttpMediaType } from "../../contract/http.ts";
+import { presentedAccessToken, type AccessTokenSource } from "./accessToken.ts";
+import { boundedResponseBytes } from "./boundedResponse.ts";
+import { checkedPositiveBound } from "./bounds.ts";
 
 const counter = z.number().int().safe().nonnegative();
 const authoritySchema = z.strictObject({
@@ -55,16 +58,10 @@ export const selectorOperationalContextV2Schema = z.strictObject({
 
 export interface SelectorContextHttpConfig {
   readonly baseUrl: string;
-  readonly bearerToken: string;
+  readonly accessToken: AccessTokenSource;
   readonly requestTimeoutMs: number;
   readonly responseBytesMax: number;
   readonly responseReadsMax: number;
-}
-
-function checkedPositive(value: number, name: string): number {
-  if (!Number.isSafeInteger(value) || value < 1)
-    throw new RangeError(`${name} must be a positive safe integer`);
-  return value;
 }
 
 function contextUrl(baseUrl: string, partition: Partition): URL {
@@ -80,83 +77,41 @@ function contextUrl(baseUrl: string, partition: Partition): URL {
   );
 }
 
-async function boundedResponseBytes(
-  response: Response,
-  bytesMax: number,
-  readsMax: number,
-): Promise<Uint8Array> {
-  const declared = response.headers.get("content-length");
-  if (declared !== null && Number(declared) > bytesMax) {
-    await response.body?.cancel();
-    throw new RangeError("selector context response exceeds its byte bound");
-  }
-  if (response.body === null) return new Uint8Array();
-  const reader: ReadableStreamDefaultReader<Uint8Array> =
-    response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let length = 0;
-  let reads = 0;
-  try {
-    while (true) {
-      reads += 1;
-      if (reads > readsMax) {
-        await reader.cancel();
-        throw new RangeError(
-          "selector context response exceeds its read bound",
-        );
-      }
-      const read = await reader.read();
-      if (read.done) break;
-      length += read.value.byteLength;
-      if (length > bytesMax) {
-        await reader.cancel();
-        throw new RangeError(
-          "selector context response exceeds its byte bound",
-        );
-      }
-      chunks.push(read.value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const bytes = new Uint8Array(length);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return bytes;
-}
-
 /** Reads one strictly parsed selector context through the authenticated native API. */
 export function selectorContextHttp(
   config: SelectorContextHttpConfig,
   transport: typeof fetch = fetch,
 ): SelectorOperationalContextRead {
-  if (config.bearerToken.length === 0)
-    throw new RangeError("selector context bearer token is empty");
-  const timeoutMs = checkedPositive(config.requestTimeoutMs, "request timeout");
-  const responseBytesMax = checkedPositive(
+  const timeoutMs = checkedPositiveBound(
+    config.requestTimeoutMs,
+    "request timeout",
+  );
+  const responseBytesMax = checkedPositiveBound(
     config.responseBytesMax,
     "response byte bound",
   );
-  const responseReadsMax = checkedPositive(
+  const responseReadsMax = checkedPositiveBound(
     config.responseReadsMax,
     "response read bound",
   );
   return {
     context: async (partition) => {
+      const signal = AbortSignal.timeout(timeoutMs);
+      const token = await presentedAccessToken(config.accessToken, signal);
       const response = await transport(contextUrl(config.baseUrl, partition), {
         headers: {
           accept: nativeHttpMediaType,
-          authorization: `Bearer ${config.bearerToken}`,
+          authorization: `Bearer ${token}`,
         },
-        signal: AbortSignal.timeout(timeoutMs),
+        signal,
       });
-      if (!response.ok)
+      if (!response.ok) {
+        await response.body?.cancel();
+        if (response.status === 401) config.accessToken.invalidate(token);
         throw new Error(
           `selector context source returned ${String(response.status)}`,
         );
+      }
       const bytes = await boundedResponseBytes(
         response,
         responseBytesMax,

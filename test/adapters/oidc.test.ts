@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { SignJWT, exportJWK, generateKeyPair } from "jose";
+import { CompactSign, SignJWT, exportJWK, generateKeyPair } from "jose";
 
-import { oidcAuthentication } from "../../src/adapters/http/oidc.ts";
+import {
+  oidcAuthentication,
+  oidcInvalidTokenCodes,
+  oidcVerifiableAlgorithms,
+} from "../../src/adapters/http/oidc.ts";
 
 const config = {
   issuer: "https://accounts.example.test",
@@ -264,13 +268,20 @@ async function signingProvider(claims: Readonly<Record<string, unknown>>) {
 }
 
 /** What one bearer resolves to, with the platform's `fetch` restored either way. */
-async function verified(claims: Readonly<Record<string, unknown>>) {
+async function decided(claims: Readonly<Record<string, unknown>>) {
   const provider = await signingProvider(claims);
   try {
     return await provider.authentication.authenticateBearer(provider.token);
   } finally {
     provider.restore();
   }
+}
+
+/** The bearer a verification names, and an assertion failure when it named none. */
+async function verified(claims: Readonly<Record<string, unknown>>) {
+  const found = await decided(claims);
+  assert.equal(found.authenticated, "Bearer");
+  return found.authenticated === "Bearer" ? found.bearer : undefined;
 }
 
 const expirySeconds = Math.floor(Date.now() / 1_000) + 600;
@@ -292,4 +303,353 @@ test("a bearer claiming no expiry names none rather than one at the epoch", asyn
   const bearer = await verified({ sub: "subject-one" });
   assert.equal(bearer?.expiresAtMs, undefined);
   assert.ok(bearer?.principal !== undefined);
+});
+
+/** A provider whose discovery answers and whose key set does not. */
+async function unreachableKeySet(
+  jwks: () => Promise<Response>,
+): Promise<{ token: string; found: Awaited<ReturnType<typeof decided>> }> {
+  const keys = await generateKeyPair("RS256", { extractable: true });
+  const token = await new SignJWT({ sub: "subject-one" })
+    .setProtectedHeader({ alg: "RS256", kid: "one" })
+    .setIssuer(config.issuer)
+    .setAudience(config.audience)
+    .sign(keys.privateKey);
+  const served = globalThis.fetch;
+  globalThis.fetch = jwks;
+  try {
+    const authentication = await oidcAuthentication(config, () =>
+      Promise.resolve(
+        Response.json({
+          issuer: config.issuer,
+          jwks_uri: "https://accounts.example.test/jwks",
+        }),
+      ),
+    );
+    return { token, found: await authentication.authenticateBearer(token) };
+  } finally {
+    globalThis.fetch = served;
+  }
+}
+
+test("a key set that cannot be reached is unavailable, not an invalid token", async () => {
+  const refused = await unreachableKeySet(() =>
+    Promise.reject(new TypeError("fetch failed")),
+  );
+  assert.equal(refused.found.authenticated, "AuthorityUnavailable");
+});
+
+test("a key set answering anything but a key set is unavailable too", async () => {
+  for (const jwks of [
+    () => Promise.resolve(new Response("gateway timeout", { status: 504 })),
+    () => Promise.resolve(Response.json({ keys: "not a list" })),
+  ]) {
+    const refused = await unreachableKeySet(jwks);
+    assert.equal(refused.found.authenticated, "AuthorityUnavailable");
+  }
+});
+
+interface RefusedToken {
+  readonly what: string;
+  readonly signingAlgorithm?: string;
+  readonly publishedKid?: string;
+  readonly audience?: string;
+  readonly token?: string;
+}
+
+/**
+ * One bearer this server can say is bad, published against a key set that
+ * answers, so that every refusal below is the caller's and not the issuer's.
+ */
+async function refusedToken(refused: RefusedToken) {
+  const algorithm = refused.signingAlgorithm ?? "RS256";
+  const keys = await generateKeyPair(algorithm, { extractable: true });
+  const jwk = {
+    ...(await exportJWK(keys.publicKey)),
+    alg: algorithm,
+    kid: refused.publishedKid ?? "one",
+  };
+  const token =
+    refused.token ??
+    (await new SignJWT({ sub: "subject-one" })
+      .setProtectedHeader({ alg: algorithm, kid: "one" })
+      .setIssuer(config.issuer)
+      .setAudience(refused.audience ?? config.audience)
+      .sign(keys.privateKey));
+  const served = globalThis.fetch;
+  globalThis.fetch = () => Promise.resolve(Response.json({ keys: [jwk] }));
+  try {
+    const authentication = await oidcAuthentication(config, () =>
+      Promise.resolve(
+        Response.json({
+          issuer: config.issuer,
+          jwks_uri: "https://accounts.example.test/jwks",
+        }),
+      ),
+    );
+    return await authentication.authenticateBearer(token);
+  } finally {
+    globalThis.fetch = served;
+  }
+}
+
+test("every way a token can be bad is the caller's to replace", async () => {
+  const refusals: readonly RefusedToken[] = [
+    { what: "no published key carries its kid", publishedKid: "another" },
+    { what: "its audience is another service", audience: "somebody-else" },
+    { what: "it is not a token at all", token: "not.a.token" },
+    { what: "its algorithm is not allowed", signingAlgorithm: "ES256" },
+  ];
+  for (const refused of refusals) {
+    const found = await refusedToken(refused);
+    assert.equal(found.authenticated, "InvalidToken", refused.what);
+  }
+});
+
+/** One bearer verified against a key set the test composes itself. */
+async function verifiedAgainst(keys: readonly unknown[], token: string) {
+  const served = globalThis.fetch;
+  globalThis.fetch = () => Promise.resolve(Response.json({ keys }));
+  try {
+    const authentication = await oidcAuthentication(config, () =>
+      Promise.resolve(
+        Response.json({
+          issuer: config.issuer,
+          jwks_uri: "https://accounts.example.test/jwks",
+        }),
+      ),
+    );
+    return await authentication.authenticateBearer(token);
+  } finally {
+    globalThis.fetch = served;
+  }
+}
+
+test("a kid the key set answers twice is the caller's to replace", async () => {
+  const first = await generateKeyPair("RS256", { extractable: true });
+  const second = await generateKeyPair("RS256", { extractable: true });
+  const published = await Promise.all(
+    [first, second].map(async (pair) => ({
+      ...(await exportJWK(pair.publicKey)),
+      alg: "RS256",
+      kid: "one",
+    })),
+  );
+  const token = await new SignJWT({ sub: "subject-one" })
+    .setProtectedHeader({ alg: "RS256", kid: "one" })
+    .setIssuer(config.issuer)
+    .setAudience(config.audience)
+    .sign(first.privateKey);
+  const found = await verifiedAgainst(published, token);
+  assert.equal(found.authenticated, "InvalidToken");
+});
+
+test("a signature over something that is not a claim set is the caller's to replace", async () => {
+  const keys = await generateKeyPair("RS256", { extractable: true });
+  const published = {
+    ...(await exportJWK(keys.publicKey)),
+    alg: "RS256",
+    kid: "one",
+  };
+  const signed = await new CompactSign(
+    new TextEncoder().encode('"a string, and not a claim set"'),
+  )
+    .setProtectedHeader({ alg: "RS256", kid: "one" })
+    .sign(keys.privateKey);
+  const found = await verifiedAgainst([published], signed);
+  assert.equal(found.authenticated, "InvalidToken");
+});
+
+test("a token the key set does not vouch for is the caller's to replace", async () => {
+  const other = await generateKeyPair("RS256", { extractable: true });
+  const jwk = {
+    ...(await exportJWK(other.publicKey)),
+    alg: "RS256",
+    kid: "one",
+  };
+  const refused = await unreachableKeySet(() =>
+    Promise.resolve(Response.json({ keys: [jwk] })),
+  );
+  assert.equal(refused.found.authenticated, "InvalidToken");
+});
+
+test("an expired token is the caller's to replace", async () => {
+  const found = await decided({
+    sub: "subject-one",
+    exp: Math.floor(Date.now() / 1_000) - 60,
+  });
+  assert.equal(found.authenticated, "InvalidToken");
+});
+
+test("a subject that cannot name a principal is the caller's to replace", async () => {
+  const found = await decided({ sub: "" });
+  assert.equal(found.authenticated, "InvalidToken");
+});
+
+test("a key set that never answers is unavailable, not an invalid token", async () => {
+  const keys = await generateKeyPair("RS256", { extractable: true });
+  const token = await new SignJWT({ sub: "subject-one" })
+    .setProtectedHeader({ alg: "RS256", kid: "one" })
+    .setIssuer(config.issuer)
+    .setAudience(config.audience)
+    .sign(keys.privateKey);
+  const served = globalThis.fetch;
+  globalThis.fetch = (_input, init) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener(
+        "abort",
+        () => {
+          reject(new DOMException("The operation was aborted", "TimeoutError"));
+        },
+        { once: true },
+      );
+    });
+  try {
+    const authentication = await oidcAuthentication(
+      { ...config, jwksTimeoutMs: 20 },
+      () =>
+        Promise.resolve(
+          Response.json({
+            issuer: config.issuer,
+            jwks_uri: "https://accounts.example.test/jwks",
+          }),
+        ),
+    );
+    const found = await authentication.authenticateBearer(token);
+    assert.equal(found.authenticated, "AuthorityUnavailable");
+  } finally {
+    globalThis.fetch = served;
+  }
+});
+
+test("an algorithm this server cannot verify with a published key is refused", async () => {
+  const discovery = () =>
+    Promise.resolve(
+      Response.json({
+        issuer: config.issuer,
+        jwks_uri: "https://accounts.example.test/jwks",
+      }),
+    );
+  for (const algorithms of [["RS256", "HS256"], ["HS256"], ["none"], ["RS255"]])
+    await assert.rejects(
+      oidcAuthentication({ ...config, algorithms }, discovery),
+      /must verify with a published key/u,
+    );
+  await assert.rejects(
+    oidcAuthentication({ ...config, algorithms: ["RS256", ""] }, discovery),
+    /must verify with a published key: ""/u,
+  );
+  await assert.rejects(
+    oidcAuthentication({ ...config, algorithms: [] }, discovery),
+    /algorithms are empty/u,
+  );
+});
+
+test("a subject that is not text is the caller's to replace, whatever it is", async () => {
+  const subjects: readonly unknown[] = [
+    "",
+    null,
+    [],
+    {},
+    { tenant: "a" },
+    0,
+    123,
+    true,
+  ];
+  for (const sub of subjects) {
+    const found = await decided({ sub });
+    assert.equal(
+      found.authenticated,
+      "InvalidToken",
+      `sub ${JSON.stringify(sub) ?? "undefined"}`,
+    );
+  }
+});
+
+/**
+ * The test below is driven BY the list, so it cannot see an entry going
+ * missing — this is what does, and between them an entry can be neither added
+ * without being verifiable nor dropped without being noticed.
+ */
+test("the algorithms this server admits are exactly these", () => {
+  assert.deepEqual([...oidcVerifiableAlgorithms].sort(), [
+    "ES256",
+    "ES384",
+    "ES512",
+    "Ed25519",
+    "EdDSA",
+    "PS256",
+    "PS384",
+    "PS512",
+    "RS256",
+    "RS384",
+    "RS512",
+  ]);
+});
+
+test("every algorithm this server admits, it can actually verify with", async () => {
+  for (const algorithm of oidcVerifiableAlgorithms) {
+    const keys = await generateKeyPair(algorithm, { extractable: true });
+    const jwk = {
+      ...(await exportJWK(keys.publicKey)),
+      alg: algorithm,
+      kid: "one",
+    };
+    const token = await new SignJWT({ sub: "subject-one" })
+      .setProtectedHeader({ alg: algorithm, kid: "one" })
+      .setIssuer(config.issuer)
+      .setAudience(config.audience)
+      .sign(keys.privateKey);
+    const served = globalThis.fetch;
+    globalThis.fetch = () => Promise.resolve(Response.json({ keys: [jwk] }));
+    try {
+      const authentication = await oidcAuthentication(
+        { ...config, algorithms: [algorithm] },
+        () =>
+          Promise.resolve(
+            Response.json({
+              issuer: config.issuer,
+              jwks_uri: "https://accounts.example.test/jwks",
+            }),
+          ),
+      );
+      const found = await authentication.authenticateBearer(token);
+      assert.equal(found.authenticated, "Bearer", algorithm);
+    } finally {
+      globalThis.fetch = served;
+    }
+  }
+});
+
+/**
+ * Every listed code has a test that drives that failure and reddens when the
+ * code is dropped; nothing drives an unlisted one, so this is what stands
+ * between the list and an addition that would quietly answer a server's own
+ * failure as the caller's.
+ */
+test("the failures counted as the token's are exactly these", () => {
+  assert.deepEqual([...oidcInvalidTokenCodes].sort(), [
+    "ERR_JOSE_ALG_NOT_ALLOWED",
+    "ERR_JWKS_MULTIPLE_MATCHING_KEYS",
+    "ERR_JWKS_NO_MATCHING_KEY",
+    "ERR_JWS_INVALID",
+    "ERR_JWS_SIGNATURE_VERIFICATION_FAILED",
+    "ERR_JWT_CLAIM_VALIDATION_FAILED",
+    "ERR_JWT_EXPIRED",
+    "ERR_JWT_INVALID",
+  ]);
+});
+
+test("a failure this server does not recognise is its own, not the token's", async () => {
+  const keys = await generateKeyPair("RS256", { extractable: true });
+  const token = await new SignJWT({ sub: "subject-one" })
+    .setProtectedHeader({ alg: "RS256", kid: "one" })
+    .setIssuer(config.issuer)
+    .setAudience(config.audience)
+    .sign(keys.privateKey);
+  const found = await verifiedAgainst(
+    [{ kty: "RSA", kid: "one", alg: "RS256", e: "AQAB" }],
+    token,
+  );
+  assert.equal(found.authenticated, "AuthorityUnavailable");
 });
