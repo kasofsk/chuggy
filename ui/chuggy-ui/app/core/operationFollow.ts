@@ -88,6 +88,17 @@ export function operationSubmitting(): OperationStep {
   return { step: "Submitting", attempts: 0 };
 }
 
+/**
+ * Where a follow begins when the submission was already accepted: a screen
+ * before this one made it, so this one polls rather than submits. Resubmitting
+ * the same identity would answer `IdempotencyConflict` and disclose no
+ * operation, which is why picking the accepted one back up is the only way to
+ * follow it.
+ */
+export function operationFollowing(operation: string): OperationStep {
+  return { step: "Following", operation, attempts: 0 };
+}
+
 export function operationRequest(
   step: OperationStep,
 ): OperationRequest | undefined {
@@ -105,11 +116,16 @@ export function operationRequest(
   }
 }
 
+/** A follow with nothing left to do, whichever of the two ways it ended. */
+export function operationFinished(
+  step: OperationStep,
+): step is Extract<OperationStep, { readonly step: "Settled" | "Abandoned" }> {
+  return step.step === "Settled" || step.step === "Abandoned";
+}
+
 /** The budget a step has spent; a finished follow has none left to spend. */
 function operationAttempts(step: OperationStep): number {
-  return step.step === "Settled" || step.step === "Abandoned"
-    ? 0
-    : step.attempts;
+  return operationFinished(step) ? 0 : step.attempts;
 }
 
 function operationAbandoned(reason: string): OperationStep {
@@ -391,7 +407,10 @@ function operationWaitMs(step: OperationStep): number {
 
 /**
  * The whole follow: submit, poll to settlement, confirm the projection, and
- * report every step it passed through so a screen can say where it is.
+ * report every step it passed through so a screen can say where it is. It
+ * begins at the submission unless the caller names a step it already reached,
+ * and the budget is that step's, so a picked-up follow is bounded like any
+ * other.
  */
 export async function followOperation(
   ports: ApiPorts,
@@ -400,8 +419,9 @@ export async function followOperation(
   ticket: number,
   onStep: (step: OperationStep) => void,
   signal?: AbortSignal,
+  startedFrom: OperationStep = operationSubmitting(),
 ): Promise<OperationFollowed> {
-  let step = operationSubmitting();
+  let step = startedFrom;
   let confirmed: TicketResponse | undefined;
   onStep(step);
   for (let taken = 0; taken < operationStepsMax; taken += 1) {

@@ -14,6 +14,39 @@ import { Freshness } from "./Freshness.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Panel } from "./ui/Panel.tsx";
 
+/**
+ * A read that is not ready, as the one line it is drawn as. Said here once
+ * because a panel is not the only place a read is waited on: a part of a ready
+ * panel may be waiting on a read of its own, and it says so in these words.
+ */
+export function PanelUnready<T>(props: {
+  readonly state: PanelState<T>;
+}): ReactNode {
+  const state = props.state;
+  switch (state.state) {
+    case "Pending":
+      return <Notice tone="info" inline detail="Loading…" />;
+    case "Absent":
+      return (
+        <Notice
+          tone="parked"
+          inline
+          detail={`Not available · ${state.reason}`}
+        />
+      );
+    case "Failed":
+      return (
+        <Notice
+          tone="danger"
+          inline
+          detail={`Failed to load · ${state.reason}`}
+        />
+      );
+    case "Ready":
+      return null;
+  }
+}
+
 export function DataPanel<T>(props: {
   readonly title: string;
   readonly state: PanelState<T>;
@@ -29,23 +62,7 @@ export function DataPanel<T>(props: {
         ) : undefined
       }
     >
-      {state.state === "Pending" ? (
-        <Notice tone="info" inline detail="Loading…" />
-      ) : null}
-      {state.state === "Absent" ? (
-        <Notice
-          tone="parked"
-          inline
-          detail={`Not available · ${state.reason}`}
-        />
-      ) : null}
-      {state.state === "Failed" ? (
-        <Notice
-          tone="danger"
-          inline
-          detail={`Failed to load · ${state.reason}`}
-        />
-      ) : null}
+      <PanelUnready state={state} />
       {state.state === "Ready" ? props.children(state.value) : null}
     </Panel>
   );

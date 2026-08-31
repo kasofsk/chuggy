@@ -2,13 +2,14 @@
  * The mutations this ticket's phase enables, submitted and followed to
  * settlement.
  *
- * Which buttons exist is a decision the core makes twice over: an open native
- * action offers exactly the answers it admits, and where the ticket has none
- * the phase alone says what `actionsFor` enables. What happens after the click
- * is `followOperation`'s, and every step it passes through is drawn as it
- * arrives, so a submission the API is deferring reads as that rather than as a
- * screen doing nothing. The confirmed ticket is written into the cache the page
- * reads, which is what makes it read its own write.
+ * Which buttons exist is `ticketOffers`', and a read that has not answered
+ * draws its own state where they would be. What happens after the click is
+ * `followOperation`'s, and every step it passes through is drawn as it arrives
+ * — including the ones it reaches by throwing — so a submission the API is
+ * deferring reads as that rather than as a screen doing nothing, and one that
+ * fell over reads as that rather than as a panel busy for ever. The confirmed
+ * ticket is written into the cache the page reads, which is what makes it read
+ * its own write.
  *
  * AN ANSWERED QUESTION IS RE-READ RATHER THAN ASSUMED GONE. Answering an
  * approval settles without journalling anything, so no `Ticket` frame follows
@@ -17,6 +18,7 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
@@ -36,22 +38,28 @@ import {
 } from "../core/codeLabels.ts";
 import type { ResumeOffer, ReworkStanding } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
-import { nativeActionsAnswers } from "../core/nativeActionAnswers.ts";
 import {
   followOperation,
+  operationFinished,
+  operationFollowing,
   operationIdBytesCount,
+  operationSubmitting,
   ticketConfirmed,
 } from "../core/operationFollow.ts";
-import type { OperationStep } from "../core/operationFollow.ts";
+import type {
+  OperationFollowed,
+  OperationStep,
+} from "../core/operationFollow.ts";
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import {
-  actionsFor,
   manualDispatchAction,
+  ticketAttemptKey,
   ticketDispatchList,
 } from "../core/ticketActions.ts";
-import type { TicketAction } from "../core/ticketActions.ts";
+import type { TicketAction, TicketAttempt } from "../core/ticketActions.ts";
+import { ticketOffers } from "../core/ticketOffers.ts";
 import { useApiPorts } from "./api.ts";
-import { DataPanel } from "./DataPanel.tsx";
+import { DataPanel, PanelUnready } from "./DataPanel.tsx";
 import { drawBytes } from "./ports.ts";
 import { ActionWithCost } from "./ui/ActionWithCost.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
@@ -72,21 +80,120 @@ function StepNote(props: {
   return <Notice tone={tone} inline role="status" detail={drawn.text} />;
 }
 
+/** What the cancellation answered: the attempt is over, or it is not and this
+ * is what said so. */
+type Cancellation =
+  | { readonly accepted: true }
+  | { readonly accepted: false; readonly said: string };
+
+/** It answers rather than rejects, so that the one caller has one thing to
+ * read whichever way the request ended. */
 async function cancelOperation(
   ports: ApiPorts,
   partition: PartitionIdentity,
   operation: string,
   signal: AbortSignal | undefined,
-): Promise<string> {
-  const answered = await apiCancelOperation(
-    ports,
-    partition,
-    operation,
-    signal,
+): Promise<Cancellation> {
+  try {
+    const answered = await apiCancelOperation(
+      ports,
+      partition,
+      operation,
+      signal,
+    );
+    return answered.outcome === "Ok"
+      ? { accepted: true }
+      : { accepted: false, said: operationFailureLabel(answered) };
+  } catch (thrown: unknown) {
+    return { accepted: false, said: faultReason(thrown) };
+  }
+}
+
+/** The reason a request carries when the reader is the one who stopped it. */
+const attemptCancelledReason = "this attempt was cancelled";
+
+/**
+ * Why a request threw, so that a throw is drawn where a returned failure is.
+ * `apiSend` answers most transport failures as an `Unreachable` outcome, but
+ * the wait it takes between a server's retries is outside that, so both a
+ * follow and a cancellation can reject — and a rejection nobody reads is a
+ * panel left busy with nothing said.
+ */
+function faultReason(thrown: unknown): string {
+  return thrown instanceof Error ? thrown.message : "the request failed";
+}
+
+/** What the follow learned, written into the caches this page reads from. */
+function followWrittenBack(
+  client: QueryClient,
+  partition: PartitionIdentity,
+  ticket: number,
+  followed: OperationFollowed,
+): void {
+  const openKey = projectResourceKey(partition, "NativeAction", String(ticket));
+  void client.invalidateQueries({ queryKey: openKey, exact: true });
+  void client.invalidateQueries({
+    queryKey: ticketDispatchList(partition, ticket).key,
+    exact: true,
+  });
+  const confirmed = followed.ticket;
+  if (confirmed === undefined) return;
+  client.setQueryData(
+    projectResourceKey(partition, "Ticket", String(ticket)),
+    (held: TicketResponse | undefined) => ticketConfirmed(held, confirmed),
   );
-  return answered.outcome === "Ok"
-    ? "Cancellation accepted"
-    : operationFailureLabel(answered);
+}
+
+/** Where a follow reports to: the panel's own step, and the caches the page
+ * reads the ticket back out of. Gathered so the runner below is a function of
+ * its arguments rather than of a hook's scope. */
+interface AttemptWriter {
+  readonly ports: ApiPorts;
+  readonly partition: PartitionIdentity;
+  readonly ticket: number;
+  readonly client: QueryClient;
+  readonly drawStep: (action: TicketAction, step: OperationStep) => void;
+}
+
+/**
+ * One follow, run to whichever end it reaches. A throw ends it as abandoned,
+ * because a screen told nothing is a screen that stays busy; a controller
+ * already aborted is told nothing, because the screen that asked has gone or
+ * the reader has cancelled and either has said its own last word.
+ */
+async function followInto(
+  writer: AttemptWriter,
+  held: TicketAttempt,
+  startedFrom: OperationStep,
+  controller: AbortController,
+): Promise<void> {
+  const action = held.action;
+  try {
+    const followed = await followOperation(
+      writer.ports,
+      writer.partition,
+      { operation: held.operation, mutation: action.mutation },
+      writer.ticket,
+      (step) => {
+        if (!controller.signal.aborted) writer.drawStep(action, step);
+      },
+      controller.signal,
+      startedFrom,
+    );
+    if (!controller.signal.aborted)
+      followWrittenBack(
+        writer.client,
+        writer.partition,
+        writer.ticket,
+        followed,
+      );
+  } catch (thrown: unknown) {
+    if (!controller.signal.aborted)
+      writer.drawStep(action, {
+        step: "Abandoned",
+        reason: faultReason(thrown),
+      });
+  }
 }
 
 /** What the machine charges for and what it undoes, said before it is pressed. */
@@ -149,9 +256,44 @@ function useAbandonOnUnmount(): RefObject<AbortController | undefined> {
   return runningRef;
 }
 
+/**
+ * An accepted cancellation ends the attempt, so it is drawn as the attempt's
+ * own last step rather than as a line beside a follow still saying it is
+ * waiting. A refused one is not: the operation is still the actor's, and the
+ * follow goes on watching it.
+ */
+function attemptCancelled(
+  operation: string,
+): (held: Attempt | undefined) => Attempt | undefined {
+  return (held) =>
+    held === undefined
+      ? held
+      : {
+          action: held.action,
+          step: {
+            step: "Settled",
+            operation,
+            state: "Cancelled",
+            refusalCode: undefined,
+          },
+        };
+}
+
+/**
+ * An attempt this page left running, drawn from the first render rather than
+ * after one: the pick-up below re-reads the operation, and a screen that drew
+ * the button that started it in the meantime would offer the same submission a
+ * second time.
+ */
+function attemptHeld(held: TicketAttempt | undefined): Attempt | undefined {
+  return held === undefined
+    ? undefined
+    : { action: held.action, step: operationFollowing(held.operation) };
+}
+
 interface Submitting {
   readonly attempt: Attempt | undefined;
-  readonly cancelled: string | undefined;
+  readonly refused: string | undefined;
   readonly submit: (action: TicketAction) => void;
   readonly cancel: (operation: string) => void;
 }
@@ -163,6 +305,13 @@ interface Submitting {
  * already have written a later one, and the open actions are invalidated rather
  * than written because what the follow learned is that the question was
  * answered and not what is open now.
+ *
+ * AN ATTEMPT OUTLIVES THE PANEL THAT MADE IT. The accepted operation is written
+ * to the cache as the follow reaches it, so a panel that unmounts mid-follow —
+ * which this page does whenever the situation column has read enough to change
+ * shape — is picked up again on mount rather than replaced by a fresh button
+ * offering the same submission a second time. The record is dropped where the
+ * follow finishes, which is the only state there is nothing left to pick up.
  */
 function useSubmitting(
   partition: PartitionIdentity,
@@ -171,53 +320,68 @@ function useSubmitting(
   const ports = useApiPorts();
   const client = useQueryClient();
   const runningRef = useAbandonOnUnmount();
-  const [attempt, setAttempt] = useState<Attempt | undefined>(undefined);
-  const [cancelled, setCancelled] = useState<string | undefined>(undefined);
-  const key = projectResourceKey(partition, "Ticket", String(ticket));
-  const openKey = projectResourceKey(partition, "NativeAction", String(ticket));
-  const dispatchKey = ticketDispatchList(partition, ticket).key;
+  const attemptKey = ticketAttemptKey(partition, ticket);
+  const [attempt, setAttempt] = useState<Attempt | undefined>(() =>
+    attemptHeld(client.getQueryData<TicketAttempt>(attemptKey)),
+  );
+  const [refused, setRefused] = useState<string | undefined>(undefined);
 
-  const follow = async (action: TicketAction): Promise<void> => {
-    setCancelled(undefined);
+  const drawStep = (action: TicketAction, step: OperationStep): void => {
+    setAttempt({ action, step });
+    if (step.step === "Following")
+      client.setQueryData<TicketAttempt>(attemptKey, {
+        action,
+        operation: step.operation,
+      });
+    else if (operationFinished(step))
+      client.removeQueries({ queryKey: attemptKey, exact: true });
+  };
+
+  const follow = (held: TicketAttempt, startedFrom: OperationStep): void => {
     const controller = new AbortController();
     runningRef.current = controller;
-    const operation = base64urlFromBytes(drawBytes(operationIdBytesCount));
-    const followed = await followOperation(
-      ports,
-      partition,
-      { operation, mutation: action.mutation },
-      ticket,
-      (step) => {
-        if (!controller.signal.aborted) setAttempt({ action, step });
-      },
-      controller.signal,
-    );
-    if (controller.signal.aborted) return;
-    void client.invalidateQueries({ queryKey: openKey, exact: true });
-    void client.invalidateQueries({ queryKey: dispatchKey, exact: true });
-    const confirmed = followed.ticket;
-    if (confirmed === undefined) return;
-    client.setQueryData(key, (held: TicketResponse | undefined) =>
-      ticketConfirmed(held, confirmed),
+    void followInto(
+      { ports, partition, ticket, client, drawStep },
+      held,
+      startedFrom,
+      controller,
     );
   };
 
+  const cancel = async (operation: string): Promise<void> => {
+    const controller = runningRef.current;
+    const answered = await cancelOperation(
+      ports,
+      partition,
+      operation,
+      controller?.signal,
+    );
+    if (controller?.signal.aborted === true) return;
+    if (!answered.accepted) {
+      setRefused(answered.said);
+      return;
+    }
+    setAttempt(attemptCancelled(operation));
+    client.removeQueries({ queryKey: attemptKey, exact: true });
+    controller?.abort(new Error(attemptCancelledReason));
+  };
+
+  useEffect(() => {
+    const held = client.getQueryData<TicketAttempt>(attemptKey);
+    if (held !== undefined) follow(held, operationFollowing(held.operation));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the pick-up is this mount's, and a later render must not follow the same operation twice
+  }, []);
+
   return {
     attempt,
-    cancelled,
+    refused,
     submit: (action) => {
-      void follow(action);
+      setRefused(undefined);
+      const operation = base64urlFromBytes(drawBytes(operationIdBytesCount));
+      follow({ action, operation }, operationSubmitting());
     },
     cancel: (operation) => {
-      const controller = runningRef.current;
-      void cancelOperation(
-        ports,
-        partition,
-        operation,
-        controller?.signal,
-      ).then((said) => {
-        if (controller?.signal.aborted !== true) setCancelled(said);
-      });
+      void cancel(operation);
     },
   };
 }
@@ -234,58 +398,59 @@ export function TicketActions(props: {
   const submitting = useSubmitting(props.partition, props.ticket);
   const step = submitting.attempt?.step;
   const pending = step?.step === "Following" ? step.operation : undefined;
-  const busy =
-    step !== undefined && step.step !== "Settled" && step.step !== "Abandoned";
-  const open =
-    props.openState.state === "Ready" ? props.openState.value.actions : [];
+  const busy = step !== undefined && !operationFinished(step);
   const dispatch =
     props.dispatchState.state === "Ready"
       ? manualDispatchAction(props.ticket, props.dispatchState.value)
       : undefined;
   return (
     <DataPanel title="Actions" state={props.state}>
-      {(value) => (
-        <div className="action-panel">
-          <ActionButtons
-            actions={
-              open.length === 0
-                ? [
-                    ...(dispatch === undefined ? [] : [dispatch]),
-                    ...actionsFor(value),
-                  ]
-                : nativeActionsAnswers(open)
-            }
-            busy={busy}
-            resume={props.resume}
-            rework={props.rework}
-            onChoose={submitting.submit}
-          />
-          {props.dispatchState.state === "Failed" ? (
-            <Notice
-              tone="parked"
-              inline
-              detail={`Dispatch unavailable · ${props.dispatchState.reason}`}
-            />
-          ) : null}
-          {step === undefined || submitting.attempt === undefined ? null : (
-            <StepNote step={step} action={submitting.attempt.action} />
-          )}
-          {pending === undefined ? null : (
-            <Button
-              variant="quiet"
-              size="sm"
-              onClick={() => {
-                submitting.cancel(pending);
-              }}
-            >
-              Cancel
-            </Button>
-          )}
-          {submitting.cancelled === undefined ? null : (
-            <Notice tone="info" inline detail={submitting.cancelled} />
-          )}
-        </div>
-      )}
+      {(value) => {
+        const offers = ticketOffers(props.openState, value, dispatch);
+        return (
+          <div className="action-panel">
+            {offers.offers === "Unread" ? (
+              <PanelUnready state={props.openState} />
+            ) : (
+              <ActionButtons
+                actions={offers.actions}
+                busy={busy}
+                resume={props.resume}
+                rework={props.rework}
+                onChoose={submitting.submit}
+              />
+            )}
+            {props.dispatchState.state === "Failed" ? (
+              <Notice
+                tone="parked"
+                inline
+                detail={`Dispatch unavailable · ${props.dispatchState.reason}`}
+              />
+            ) : null}
+            {step === undefined || submitting.attempt === undefined ? null : (
+              <StepNote step={step} action={submitting.attempt.action} />
+            )}
+            {pending === undefined ? null : (
+              <Button
+                variant="quiet"
+                size="sm"
+                onClick={() => {
+                  submitting.cancel(pending);
+                }}
+              >
+                Cancel
+              </Button>
+            )}
+            {submitting.refused === undefined ? null : (
+              <Notice
+                tone="danger"
+                inline
+                detail={`Cancel refused · ${submitting.refused}`}
+              />
+            )}
+          </div>
+        );
+      }}
     </DataPanel>
   );
 }

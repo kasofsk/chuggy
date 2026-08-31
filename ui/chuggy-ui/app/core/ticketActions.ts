@@ -20,8 +20,8 @@ import type { PublicMutation } from "../../../../src/contract/requests.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import type { DispatchViewResponse } from "../../../../src/contract/responses.ts";
 
-import { projectListReread } from "./projectQueryKeys.ts";
-import type { ProjectList } from "./projectQueryKeys.ts";
+import { projectListReread, projectResourceKey } from "./projectQueryKeys.ts";
+import type { ProjectList, ProjectQueryKey } from "./projectQueryKeys.ts";
 
 /** Settled, or past the point of no return: the complement of `revocableIn`. */
 export const ticketUnrevocablePhases: readonly TicketPhase[] = [
@@ -99,6 +99,26 @@ export function ticketDispatchList(
     "Ticket",
     `dispatch:${String(ticket)}`,
   );
+}
+
+/** A submission the console accepted and is still following. */
+export interface TicketAttempt {
+  readonly action: TicketAction;
+  readonly operation: string;
+}
+
+/**
+ * Where an attempt in flight is held, so that the panel unmounting does not
+ * take the record of it with it. It is the cache and not component state
+ * because the cache outlives the panel; `attempt:` is a resource no frame
+ * carries, so the stream — which writes `Ticket` resources by ticket number
+ * alone — never writes over it.
+ */
+export function ticketAttemptKey(
+  partition: PartitionIdentity,
+  ticket: number,
+): ProjectQueryKey {
+  return projectResourceKey(partition, "Ticket", `attempt:${String(ticket)}`);
 }
 
 export function manualDispatchAction(
