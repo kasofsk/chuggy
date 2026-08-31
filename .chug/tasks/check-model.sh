@@ -123,7 +123,7 @@ run_suite "model/tests/execution_requirement_test.qnt" model/tests/execution_req
 # They name their runs for what they are, so the selection is named here too:
 # quint's default takes `Test` and would take none of them.
 echo "--- witnesses"
-for w in free cascade stage sparse gate gate_deadline dependency wrapup_none; do
+for w in free rework cascade stage sparse gate gate_deadline dependency wrapup_none; do
 	run_suite "witness $w" --match 'Witness$' \
 		--main="chuggy_witness_${w}_test" \
 		model/tests/chuggy_witness_test.qnt

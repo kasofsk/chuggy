@@ -409,7 +409,7 @@ module chuggy_refinement {
   // What the world DOES with an emission is trusted fabric; what the
   // theorems need is arithmetic over which DECISIONS reached it. A
   // "spawn" emission runs a paid task fan-out (the SpawnWorkTasks
-  // effect — dispatch, both rework arms, the ResumeWorking resume: every one
+  // effect — dispatch, both rework arms, the Working resumes: every one
   // rides a charged account per the domain's descent table); a "completion"
   // emission merges the ticket's diff (the ticket-done success step).
   // Attribution is transitions[0].ticket: every effect-bearing record's

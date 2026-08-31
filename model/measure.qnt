@@ -192,7 +192,12 @@
 ///                                         rework-started eval_failure row
 ///                                         with the account delta's sign
 ///                                         reversed, dominated by the same
-///                                         gas unit)
+///                                         gas unit. B >= 1 here: the wall
+///                                         stamps this flavor only where the
+///                                         author bought a budget, and a
+///                                         zero-budget park is revoke-only,
+///                                         so it contributes no step to
+///                                         price)
 ///
 /// NAMED NON-DESCENDING SETS — everything else, isolated by name:
 ///
@@ -417,7 +422,9 @@ module chuggy_measure {
   /// on middleware behavior — an unbounded (or gas-only) branch is exactly
   /// the removal that was rejected. The rework wall's refill does not
   /// reopen it: a refill is capped at this grant and bought with a gas
-  /// unit, so gas still bounds how many rework cycles a ticket ever gets.
+  /// unit, so gas still bounds how many rework cycles a ticket ever gets —
+  /// and BudgetedRework(0) buys none, so that wall offers it no resume at
+  /// all (domain.qnt reworkWallResume).
   /// If evidence ever argues for another
   /// pricing, it lands as a new constructor here, instantiated alongside
   /// (the FinalizationPricing method). The per-ticket ACCOUNT the policy meters
@@ -430,9 +437,10 @@ module chuggy_measure {
   type RetryPricing = RetryCharged | RetryFree
 
   /// Where an operator Retry resumes a parked ticket. NoResume when not parked —
-  /// or parked with NO modeled resume: the dependency_revoked wall's only
-  /// modeled exit is revoke (domain.qnt retryableIn), and stamping a
-  /// resume point on it would be a lie to the desk.
+  /// or parked with NO modeled resume: revoke is the only modeled exit from
+  /// the dependency_revoked wall and from the rework wall on a ticket
+  /// authored no budget (domain.qnt modeledResumeExists), and stamping a
+  /// resume point on either would be a lie to the desk.
   ///
   /// ResumeReworking is the rework wall's, and the one flavor that moves an
   /// account: it re-enters Working with reworkLeft refilled to the ticket's
