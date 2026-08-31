@@ -8,7 +8,7 @@
  * outcome is `NotEnabled` — and by the time they read why, they have already
  * been told the ticket is resumable. The other answer of each pair is admitted
  * unconditionally, because each is enabled on the phase alone: revoke on every
- * non-terminal ticket (`revocableIn`), abandon on every `HandoffBlocked` one.
+ * `Escalated` ticket (`revocableIn`), abandon on every `HandoffBlocked` one.
  *
  * THE SET IS DECIDED AT THE RAISE, AND THAT IS ENOUGH BECAUSE A PARKED
  * TICKET'S ACCOUNTS CANNOT MOVE. `model/domain.qnt` charges gas at the
