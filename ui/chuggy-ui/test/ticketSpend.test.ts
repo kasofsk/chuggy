@@ -2,10 +2,10 @@
  * That the ledger carries what a ticket's work took and what it cost, and says
  * how much of that it could see.
  *
- * The failure this catches is a sum a reader trusts: the route pages in
- * identity order, so a page short of the ticket's executions produces a total
- * that looks like the ticket's own and is not. Every rollup here is checked
- * against its own rows and against whether the page could have held them all.
+ * The failure this catches is a sum a reader trusts: a page short of the
+ * ticket's executions produces a total that looks like the ticket's own and is
+ * not. Every rollup here is checked against its own rows and against whether
+ * the page could have held them all.
  */
 
 import { expect, test } from "vitest";
