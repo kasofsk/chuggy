@@ -5,8 +5,8 @@
  * a superseded artifact drawn beside a stage-0 failure of the current one, with
  * nothing saying they judged different things. Every case below drives the page
  * in an order the route no longer answers in — by execution identity, which is
- * a UUID — so a passing case is one the derivation recovered rather than one
- * the page arrived sorted for.
+ * a random stem with the task appended — so a passing case is one the
+ * derivation recovered rather than one the page arrived sorted for.
  */
 
 import { expect, test } from "vitest";

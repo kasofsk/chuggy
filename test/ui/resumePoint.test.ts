@@ -338,6 +338,7 @@ test("each point re-enters the phase the console names, at the charge it names",
         resumeAt: point,
         resumePricing: pricing,
         reason: "GasExhausted",
+        reworkLeft: 1,
         record: taskSet("Work", [1], "Passed"),
       });
       const after = ticketAt(decideResumeTicket(coreWith(before), id).post, id);
@@ -367,7 +368,7 @@ test("each point re-enters the phase the console names, at the charge it names",
  * the revoked dependency.
  */
 test("the rework wall of a ticket authored no budget parks for good", () => {
-  for (const budget of [2, 0]) {
+  for (const budget of [2, 1, 0]) {
     const before = ticketIn({
       phase: "Evaluating",
       reworkPolicy: { type: "BudgetedRework", value: budget },

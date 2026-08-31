@@ -4,9 +4,9 @@
  * Three cycles, two of them superseded, a stage that passed an artifact the
  * ticket no longer holds, a stage the fabric relaunched its container for, and
  * a resume that re-ran the program from its lowest stage. The list is held by
- * execution identity, which is a UUID and is an order the route no longer
- * answers in, so every suite reading it proves the derivation recovers a cycle
- * from whatever order a page reaches it in.
+ * execution identity, which is a random stem with the task appended and is an
+ * order the route no longer answers in, so every suite reading it proves the
+ * derivation recovers a cycle from whatever order a page reaches it in.
  */
 
 import type {

@@ -51,7 +51,7 @@ function parked(
     reason,
     lastSet,
     stageCount: 2,
-    reworkBudget: 2,
+    reworkBudget: 3,
     resumePricing: "RetryCharged",
     resumeAt: undefined,
   };
@@ -173,7 +173,7 @@ test("the rework wall's resume re-runs the work with the account refilled", () =
     reruns: "work",
     fromStage: undefined,
     ofStages: undefined,
-    refillsReworkTo: 2,
+    refillsReworkTo: 3,
     cost: 1,
   });
 });
