@@ -20,6 +20,7 @@ import {
   type EscalationReason,
   type OperationRefusalCode,
   type OperationState,
+  type ResumePoint,
   type TicketPhase,
 } from "../../../../src/contract/rosters.ts";
 import type { ApiFailure } from "./apiRequest.ts";
@@ -30,7 +31,6 @@ import {
   type MutationRefusalCode,
 } from "./codeSentences.ts";
 import type { OperationStep } from "./operationFollow.ts";
-import type { ResumeConsequence } from "./resumePoint.ts";
 import type { ClosedSet } from "./ticketLedger.ts";
 import { stageLabel } from "./ticketLedger.ts";
 import type { TicketActionName } from "./ticketActions.ts";
@@ -163,29 +163,43 @@ export function phaseLabel(phase: TicketPhase): string {
 
 /**
  * What a mutation does, what it costs, and at most one consequence that
- * matters. `offered` is false only where the machine admits no such answer at
- * all, because a button drawn there submits into a state `retryableIn`
- * refuses; `refusedBecause` is the other shape, an answer that exists beside a
+ * matters. `cost` is absent where the page has not read what the machine would
+ * charge, because a price is a figure like any other and a wrong one is worse
+ * than none; `offered` is false only where the machine admits no such answer at
+ * all, and `refusedBecause` is the other shape, an answer that exists beside a
  * screen that cannot offer it yet.
  */
 export interface ActionEffect {
   readonly effect: string;
-  readonly cost: string;
+  readonly cost?: string;
   readonly more?: string;
   readonly offered: boolean;
   readonly refusedBecause?: string;
 }
 
 /**
+ * A resume as the page draws it: where it would put the ticket back, what the
+ * machine would refill, and what it would charge where the page has read enough
+ * to know. `charge` is absent rather than assumed, because the two evaluation
+ * resumes are free under `RetryFree` and priced under `RetryCharged` and only
+ * the ticket's own authoring says which.
+ */
+export interface ResumeDrawn {
+  readonly point: ResumePoint;
+  readonly refillsReworkTo: number | undefined;
+  readonly charge: number | undefined;
+}
+
+/**
  * What a resume would do, as much of it as the page has read: `retryableIn`
  * (`model/domain.qnt`) wants a parked phase, a stamped point and gas enough to
  * pay the point's charge, and the last two of those are these arms. `NoGas` is
- * a park the model calls revoke-only as surely as `NoPoint` is, so both draw no
- * button, while `NotRead` draws a disabled one because a screen that has not
- * finished reading knows neither.
+ * a park with no answer left just as `NoPoint` is, so both draw no button,
+ * while `NotRead` draws a disabled one because a screen that has not finished
+ * reading knows neither.
  */
 export type ResumeOffer =
-  | { readonly kind: "Offered"; readonly consequence: ResumeConsequence }
+  | { readonly kind: "Offered"; readonly drawn: ResumeDrawn }
   | { readonly kind: "NoPoint" }
   | { readonly kind: "NoGas" }
   | { readonly kind: "NotRead" };
@@ -193,7 +207,10 @@ export type ResumeOffer =
 /** What the console says about a resume it cannot yet offer. */
 export const resumeNotReadReason = "Not read yet";
 
-function resumeEffect(resume: ResumeConsequence): string {
+/** The answers a wall leaves when the resume is not one of them. */
+export type WallExits = readonly TicketActionName[];
+
+function resumeEffect(resume: ResumeDrawn): string {
   switch (resume.point) {
     case "ResumeWorking":
       return "Re-runs the work · new artifact";
@@ -215,7 +232,7 @@ export interface ReworkStanding {
 }
 
 function resumeMore(
-  resume: ResumeConsequence,
+  resume: ResumeDrawn,
   rework: ReworkStanding | undefined,
 ): string | undefined {
   const refill = resume.refillsReworkTo;
@@ -234,12 +251,27 @@ function offered(effect: string, cost: string): ActionEffect {
   return { effect, cost, offered: true };
 }
 
+/**
+ * What is left at a wall the resume is not an answer to, named from the answers
+ * the page is drawing beside it rather than from the wall. Revoke is the exit
+ * from an escalation and Abandon from a blocked handoff, which `revocableIn`
+ * separates, so naming one of them for both would name a button that is not
+ * there.
+ */
+export function wallExitLine(exits: WallExits): string | undefined {
+  const left = exits.filter((action) => action !== "Resume");
+  if (left.length === 1) return `only ${String(left[0])} exits this wall`;
+  if (left.length === 2)
+    return `only ${String(left[0])} or ${String(left[1])} exit this wall`;
+  return undefined;
+}
+
 /** The wall's own exit, said the way §1.2 joins it to what cannot be done. */
-function resumeRefused(effect: string): ActionEffect {
+function resumeRefused(effect: string, exits: WallExits): ActionEffect {
+  const more = wallExitLine(exits);
   return {
     effect,
-    cost: "free",
-    more: "only Revoke exits this wall",
+    ...(more === undefined ? {} : { more }),
     offered: false,
   };
 }
@@ -248,24 +280,25 @@ function resumeRefused(effect: string): ActionEffect {
 export function resumeActionEffect(
   offer: ResumeOffer,
   rework: ReworkStanding | undefined,
+  exits: WallExits,
 ): ActionEffect {
   switch (offer.kind) {
     case "NoPoint":
-      return resumeRefused("Nothing to resume");
+      return resumeRefused("Nothing to resume", exits);
     case "NoGas":
-      return resumeRefused("No gas left");
+      return resumeRefused("No gas left", exits);
     case "NotRead":
       return {
         effect: "Rejoins where the ticket parked",
-        cost: "free",
         offered: true,
         refusedBecause: resumeNotReadReason,
       };
     case "Offered": {
-      const more = resumeMore(offer.consequence, rework);
+      const more = resumeMore(offer.drawn, rework);
+      const charge = offer.drawn.charge;
       return {
-        effect: resumeEffect(offer.consequence),
-        cost: actionCost(offer.consequence.cost),
+        effect: resumeEffect(offer.drawn),
+        ...(charge === undefined ? {} : { cost: actionCost(charge) }),
         ...(more === undefined ? {} : { more }),
         offered: true,
       };
@@ -282,12 +315,13 @@ export function ticketActionEffect(
   action: TicketActionName,
   resume: ResumeOffer,
   rework: ReworkStanding | undefined,
+  exits: WallExits = [],
 ): ActionEffect {
   switch (action) {
     case "Dispatch":
       return offered("Dispatches the observed version", "free");
     case "Resume":
-      return resumeActionEffect(resume, rework);
+      return resumeActionEffect(resume, rework, exits);
     case "Revoke":
       return offered("Parks every dependent ticket", "free");
     case "Retry":

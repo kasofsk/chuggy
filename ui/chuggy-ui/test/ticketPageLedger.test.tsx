@@ -693,6 +693,145 @@ test("a row separates its wait from its run where the wire dates the start", asy
   expect(rows.some((row) => row.includes("waited") === false)).toBe(true);
 });
 
+/**
+ * A price is a figure like any other. The page that has read nothing of the
+ * wall has read nothing of what a resume would cost either, and `free` is the
+ * one answer the machine almost never gives.
+ */
+test("a resume this page has not read draws no price at all", async () => {
+  const { resumeAt, reason, ...unstamped } = parkedTicket;
+  expect(resumeAt).toBe("ResumeReworking");
+  expect(reason).toBe("ReworkBudgetExhausted");
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: { ...unstamped, phase: "Escalated" },
+    withDraft: false,
+  });
+  const act = screen.getByText("Not read yet").closest(".act");
+  expect(act?.textContent).toContain("Not read yet");
+  expect(act?.textContent).not.toContain("free");
+  expect(act?.textContent).not.toContain("gas");
+});
+
+/**
+ * The two evaluation resumes are free under `RetryFree` and priced under
+ * `RetryCharged`, and only the ticket's own authoring says which — so a cold
+ * load prices neither rather than stating one and withdrawing it.
+ */
+test("a resume the pricing decides is unpriced until the pricing is read", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: {
+      ...parkedTicket,
+      reason: "GasExhausted",
+      resumeAt: "ResumeEvaluating",
+      accounts: { gasLeft: 4, gasMax: 8, reworkLeft: 1 },
+    },
+    withDraft: false,
+  });
+  const act = screen.getByRole("button", { name: "Resume" }).closest(".act");
+  expect(act?.textContent).toContain("Re-runs evaluation from stage 1");
+  expect(act?.textContent).not.toContain("gas");
+  expect(act?.textContent).not.toContain("free");
+});
+
+test("a work resume is priced without the draft, its charge not depending on one", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: parkedTicket,
+    withDraft: false,
+  });
+  const act = screen.getByRole("button", { name: "Resume" }).closest(".act");
+  expect(act?.textContent).toContain("costs 1 gas");
+});
+
+/**
+ * Only a running ticket has no end. A settled one whose runs this page has not
+ * read is over, and drawing it as still going contradicts its own phase pill.
+ */
+test("a settled ticket is not drawn as still running when its runs are unread", async () => {
+  for (const phase of ["Done", "Revoked", "Escalated"]) {
+    await drawTicket({
+      shapes: [],
+      ticket: { ...parkedTicket, phase },
+    });
+    const head = document.querySelector(".ticket-figures");
+    expect(head?.textContent).not.toContain("running");
+    expect(head?.textContent).not.toContain("so far");
+    cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+test("a ticket the machine is working on now keeps its open span", async () => {
+  await drawTicket({
+    shapes: [],
+    ticket: { ...resumedTicket, phase: "Evaluating" },
+  });
+  const head = document.querySelector(".ticket-figures");
+  expect(head?.textContent).toContain("running");
+});
+
+/**
+ * `revocableIn` excludes a blocked handoff, so the wall's line must not name a
+ * Revoke the page is not drawing.
+ */
+test("a blocked handoff is not told that revoke is its exit", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: {
+      ...parkedTicket,
+      phase: "HandoffBlocked",
+      reason: undefined,
+      resumeAt: "ResumePublishingHandoff",
+      accounts: { gasLeft: 0, gasMax: 8, reworkLeft: 0 },
+    },
+  });
+  expect(screen.queryByRole("button", { name: "Revoke" })).toBeNull();
+  expect(screen.getByText("No gas left")).toBeDefined();
+  expect(screen.queryByText(/only Revoke exits this wall/u)).toBeNull();
+});
+
+/**
+ * A set holds its tasks in the wire's order, not by instant, so the wait is
+ * measured from the earliest start and not from the first-listed one.
+ */
+test("a fan-out's wait is measured from the earliest task to start", async () => {
+  const dated = fanoutShapes.map((shape) => {
+    if (shape.task === 1)
+      return { ...shape, startedAt: "2026-08-26T00:25:00Z" };
+    if (shape.task === 2)
+      return { ...shape, startedAt: "2026-08-26T00:15:00Z" };
+    return shape;
+  });
+  const { container } = await drawTicket({
+    shapes: dated,
+    ticket: parkedTicket,
+    authoring: fanoutAuthoring,
+  });
+  const when =
+    groups(container).at(-1)?.querySelector(".ledger-row .ledger-when")
+      ?.textContent ?? "";
+  expect(when).toContain("waited 5m");
+  expect(when).not.toContain("waited 15m");
+});
+
+/** A cancelled run has stopped, so it is not one of the runs still going. */
+test("a cancelled run is counted but is not counted as running", async () => {
+  const cancelled = ticket21Parked.map((shape) =>
+    shape.task === 2
+      ? { ...shape, status: "Cancelled" as const, outcome: undefined }
+      : shape,
+  );
+  const { container } = await drawTicket({
+    shapes: cancelled,
+    ticket: parkedTicket,
+  });
+  const usage = container.querySelector("#usage")?.textContent ?? "";
+  expect(usage).toContain("Runs7");
+  expect(usage).not.toContain("running");
+});
+
 test("every action the page draws describes itself by an id that resolves", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,

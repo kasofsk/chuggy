@@ -30,12 +30,8 @@ import type {
   ExecutionsResponse,
   TicketResponse,
 } from "../../../../../src/contract/responses.ts";
-import type { ResumeOffer } from "../../core/codeLabels.ts";
-import {
-  resumeGasCharge,
-  resumeRerun,
-  ticketResume,
-} from "../../core/resumePoint.ts";
+import type { ResumeDrawn, ResumeOffer } from "../../core/codeLabels.ts";
+import { resumeGasCharge, ticketResume } from "../../core/resumePoint.ts";
 import type { ResumeConsequence } from "../../core/resumePoint.ts";
 import type { ResumePoint } from "../../../../../src/contract/rosters.ts";
 import { ticketAccounts } from "../../core/ticketAccounts.ts";
@@ -65,6 +61,28 @@ export function runsLabel(page: ExecutionsResponse | undefined): string {
     ...(running === 0 ? [] : [`${String(running)} running`]),
     ...(unmeasured === 0 ? [] : [`${String(unmeasured)} unmeasured`]),
   ].join(" · ");
+}
+
+/**
+ * Whether the machine is working on this ticket right now, which is the only
+ * state whose span has no end. A parked, pending or settled ticket is not
+ * running, so a page holding none of its runs must not draw one still going.
+ */
+export function phaseIsRunning(phase: TicketResponse["phase"]): boolean {
+  switch (phase) {
+    case "Working":
+    case "Evaluating":
+    case "Finalizing":
+    case "PublishingHandoff":
+      return true;
+    case "Pending":
+    case "HandoffBlocked":
+    case "Done":
+    case "Abandoned":
+    case "Escalated":
+    case "Revoked":
+      return false;
+  }
 }
 
 export interface TicketPageFacts {
@@ -98,25 +116,11 @@ function machineAccountsOf(
 }
 
 /**
- * What the wire alone says a resume would do. The size of what it re-runs is
- * the authoring's and is absent here, so nothing downstream draws a figure this
- * page has not read.
- */
-function resumeFromWire(point: ResumePoint): ResumeConsequence {
-  return {
-    point,
-    reruns: resumeRerun(point),
-    fromStage: point === "ResumeEvaluating" ? 0 : undefined,
-    ofStages: undefined,
-    refillsReworkTo: undefined,
-    cost: resumeGasCharge(point, "RetryCharged"),
-  };
-}
-
-/**
  * The gas the point is certainly charged. Both work resumes meter under either
  * pricing, so their charge is known without the draft; the rest are the
- * ticket's own pricing and are not priced until it arrives.
+ * ticket's own pricing and are not priced at all until it arrives — a
+ * `RetryFree` ticket is charged nothing for them, so assuming the default would
+ * state a price the machine does not make and then withdraw it.
  */
 function resumeChargeKnown(
   point: ResumePoint,
@@ -128,35 +132,74 @@ function resumeChargeKnown(
 
 /** `retryableIn`'s third term, asked only where this page holds both halves. */
 function resumeAfforded(
-  consequence: ResumeConsequence,
+  charge: number | undefined,
   ticket: TicketResponse,
-  pricing: TicketAuthoring["resumePricing"] | undefined,
 ): boolean {
   const gasLeft = ticket.accounts?.gasLeft;
-  const charge = resumeChargeKnown(consequence.point, pricing);
   if (gasLeft === undefined || charge === undefined) return true;
   return charge <= gasLeft;
 }
 
 function resumeOfferOf(
-  consequence: ResumeConsequence | undefined,
+  drawn: ResumeDrawn | undefined,
   ticket: TicketResponse,
-  pricing: TicketAuthoring["resumePricing"] | undefined,
 ): ResumeOffer {
-  if (consequence === undefined) return { kind: "NoPoint" };
-  return resumeAfforded(consequence, ticket, pricing)
-    ? { kind: "Offered", consequence }
+  if (drawn === undefined) return { kind: "NoPoint" };
+  return resumeAfforded(drawn.charge, ticket)
+    ? { kind: "Offered", drawn }
     : { kind: "NoGas" };
 }
 
+/** A resume the whole of whose authoring this page has read. */
+function resumeDrawnOf(
+  consequence: ResumeConsequence,
+  pricing: TicketAuthoring["resumePricing"],
+): ResumeDrawn {
+  return {
+    point: consequence.point,
+    refillsReworkTo: consequence.refillsReworkTo,
+    charge: resumeChargeKnown(consequence.point, pricing),
+  };
+}
+
 /**
- * What a resume would do before the draft and the executions have arrived. A
- * point the wire stamped is answered; without one this page cannot tell a wall
- * with no exit from a read it has not finished.
+ * What a resume would do before the draft and the executions have arrived: a
+ * point the wire stamped is answered, and without one this page cannot tell a
+ * wall with no exit from a read it has not finished. What the draft would have
+ * added — the refill's size, and the price of a resume the ticket's own pricing
+ * decides — is absent rather than guessed.
  */
 function resumeBeforeDraft(ticket: TicketResponse | undefined): ResumeOffer {
-  if (ticket?.resumeAt === undefined) return { kind: "NotRead" };
-  return resumeOfferOf(resumeFromWire(ticket.resumeAt), ticket, undefined);
+  const point = ticket?.resumeAt;
+  if (ticket === undefined || point === undefined) return { kind: "NotRead" };
+  return resumeOfferOf(
+    {
+      point,
+      refillsReworkTo: undefined,
+      charge: resumeChargeKnown(point, undefined),
+    },
+    ticket,
+  );
+}
+
+/** The whole resume, from a page that holds the ticket, its draft and its runs. */
+function resumeDrawnRead(
+  ticket: TicketResponse,
+  authoring: TicketAuthoring,
+  ledger: LedgerFacts,
+): ResumeDrawn | undefined {
+  const consequence = ticketResume({
+    phase: ticket.phase,
+    reason: ticket.reason,
+    lastSet: ledgerLastSet(ledger),
+    stageCount: authoring.program.length,
+    resumePricing: authoring.resumePricing,
+    resumeAt: ticket.resumeAt,
+    reworkBudget: authoring.reworkPolicy.value,
+  });
+  return consequence === undefined
+    ? undefined
+    : resumeDrawnOf(consequence, authoring.resumePricing);
 }
 
 export function ticketPageFacts(
@@ -186,19 +229,7 @@ export function ticketPageFacts(
       authoring,
       machineAccountsOf(ticket.accounts),
     ),
-    resume: resumeOfferOf(
-      ticketResume({
-        phase: ticket.phase,
-        reason: ticket.reason,
-        lastSet: ledgerLastSet(ledger),
-        stageCount,
-        resumePricing: authoring.resumePricing,
-        resumeAt: ticket.resumeAt,
-        reworkBudget: authoring.reworkPolicy.value,
-      }),
-      ticket,
-      authoring.resumePricing,
-    ),
+    resume: resumeOfferOf(resumeDrawnRead(ticket, authoring, ledger), ticket),
     truncated,
   };
 }

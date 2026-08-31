@@ -5,8 +5,9 @@
  * The cost and the token count are the ticket read's own roll-up rather than a
  * sum over the executions this screen holds, because a page that is short would
  * understate them. The span begins at the release the journal dates and ends at
- * the last run this page holds; the run count is this page's, and both say so
- * where the page is short. The wall is a pill beside the phase rather than a sentence
+ * the last run this page holds, or — where the machine is not working on the
+ * ticket now — at the instant the journal last moved it; the run count is this
+ * page's, and both say so where the page is short. The wall is a pill beside the phase rather than a sentence
  * under it, so where the ticket is and why are read in one glance.
  */
 
@@ -19,14 +20,30 @@ import type {
 import { escalationReasonLabel, phaseLabel } from "../../core/codeLabels.ts";
 import { costFigure, spanFigure, tokensFigure } from "../../core/figures.ts";
 import { runSpanOf } from "../../core/runTotals.ts";
+import type { RunSpan } from "../../core/runTotals.ts";
 import { phaseTone } from "../../core/tones.ts";
 import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { runsLabel } from "./ticketPageFacts.ts";
+import { phaseIsRunning, runsLabel } from "./ticketPageFacts.ts";
 
 /** What the page holds is not what the ticket has, where the route said so. */
 export const headShortPageNote = "on this page";
+
+/**
+ * The ticket's window: the runs this page holds, ended at the instant the
+ * journal last moved it where the machine is not working on it now. Only a
+ * running ticket has no end, so a settled or parked one whose runs this page
+ * has not read is drawn as over rather than as still going.
+ */
+export function ticketSpanOf(
+  ticket: TicketResponse,
+  page: ExecutionsResponse | undefined,
+): RunSpan {
+  const span = runSpanOf(page?.executions ?? []);
+  if (phaseIsRunning(ticket.phase)) return span;
+  return { from: span.from, to: span.to ?? ticket.changedAt };
+}
 
 function TicketFigures(props: {
   readonly ticket: TicketResponse;
@@ -62,7 +79,7 @@ function TicketFigures(props: {
       <Field name="Span">
         <Figure
           figure={spanFigure(
-            runSpanOf(props.page?.executions ?? []),
+            ticketSpanOf(props.ticket, props.page),
             props.nowMs,
             props.ticket.releasedAt,
           )}

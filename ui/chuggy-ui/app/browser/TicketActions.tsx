@@ -106,13 +106,14 @@ function ActionButtons(props: {
           action.action,
           props.resume,
           props.rework,
+          props.actions.map((offered) => offered.action),
         );
         return (
           <ActionWithCost
             key={action.action}
             action={action.action}
             effect={effect.effect}
-            cost={effect.cost}
+            {...(effect.cost === undefined ? {} : { cost: effect.cost })}
             {...(effect.more === undefined ? {} : { more: effect.more })}
             {...(effect.refusedBecause === undefined
               ? {}
