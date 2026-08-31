@@ -101,6 +101,7 @@ test("a resume states what it re-runs, what it costs, and what it keeps", () => 
       reruns: "evaluation",
       fromStage: 0,
       ofStages: 2,
+      refillsReworkTo: undefined,
       cost: 1,
     },
     { left: 0, max: 2 },
@@ -123,9 +124,10 @@ test("a rework-wall resume says it reworks, refills and charges", () => {
       reruns: "work",
       fromStage: undefined,
       ofStages: undefined,
+      refillsReworkTo: 2,
       cost: resumeGasCharge("ResumeReworking", "RetryFree"),
     },
-    { left: 0, max: 2 },
+    undefined,
   );
   expect(effect.effect).toBe("Reworks · new artifact, rework refilled");
   expect(effect.cost).toBe("costs 1 gas");
@@ -150,6 +152,7 @@ test("every action the phase enables is offered, except a resume with no point",
     reruns: "evaluation",
     fromStage: 0,
     ofStages: 2,
+    refillsReworkTo: undefined,
     cost: 1,
   } as const;
   for (const action of ticketActionNames)

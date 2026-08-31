@@ -13,10 +13,15 @@ import { expect, test } from "vitest";
 import {
   escalationReasons,
   phaseRoster,
+  resumePoints,
 } from "../../../src/contract/rosters.ts";
 import type { EscalationReason } from "../../../src/contract/rosters.ts";
 import type { ResumeSituation } from "../app/core/resumePoint.ts";
-import { ticketResume, ticketResumePoint } from "../app/core/resumePoint.ts";
+import {
+  resumeRerun,
+  ticketResume,
+  ticketResumePoint,
+} from "../app/core/resumePoint.ts";
 import type { ClosedSet } from "../app/core/ticketLedger.ts";
 
 const failedFinalStage: ClosedSet = {
@@ -46,6 +51,7 @@ function parked(
     reason,
     lastSet,
     stageCount: 2,
+    reworkBudget: 3,
     resumePricing: "RetryCharged",
     resumeAt: undefined,
   };
@@ -156,22 +162,26 @@ test("an evaluation resume re-runs the program from its lowest stage", () => {
     reruns: "evaluation",
     fromStage: 0,
     ofStages: 2,
+    refillsReworkTo: undefined,
     cost: 1,
   });
 });
 
-/**
- * The rework wall buys a work cycle with the account refilled, and a ticket
- * that authored no budget declined that economy, so its only exit is revoke.
- */
-test("the rework wall reworks where a budget was bought, and nothing where none was", () => {
+test("the rework wall's resume re-runs the work with the account refilled", () => {
   expect(ticketResume(parked("ReworkBudgetExhausted"))).toEqual({
     point: "ResumeReworking",
     reruns: "work",
     fromStage: undefined,
     ofStages: undefined,
+    refillsReworkTo: 3,
     cost: 1,
   });
+});
+
+test("a ticket authored no rework budget is offered no refill to buy", () => {
+  expect(
+    ticketResumePoint({ ...parked("ReworkBudgetExhausted"), reworkBudget: 0 }),
+  ).toBeUndefined();
   expect(
     ticketResume({ ...parked("ReworkBudgetExhausted"), reworkBudget: 0 }),
   ).toBeUndefined();
@@ -185,6 +195,7 @@ test("re-entering work always costs gas and a free retry costs none", () => {
     reruns: "work",
     fromStage: undefined,
     ofStages: undefined,
+    refillsReworkTo: undefined,
     cost: 1,
   });
   expect(
@@ -197,6 +208,20 @@ test("re-entering work always costs gas and a free retry costs none", () => {
     ticketResume({ ...parked("GasExhausted"), resumePricing: "RetryFree" })
       ?.cost,
   ).toBe(0);
+});
+
+test("each point is re-run in the ticket's own word for it", () => {
+  const said = ([...resumePoints] as const).map((point) => [
+    point,
+    resumeRerun(point),
+  ]);
+  expect(said).toEqual([
+    ["ResumeWorking", "work"],
+    ["ResumeReworking", "work"],
+    ["ResumeEvaluating", "evaluation"],
+    ["ResumeFinalizing", "finalization"],
+    ["ResumePublishingHandoff", "handoff"],
+  ]);
 });
 
 test("a wall with no resumption offers nothing at all", () => {

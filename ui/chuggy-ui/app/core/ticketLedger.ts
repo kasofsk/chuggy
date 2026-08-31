@@ -20,9 +20,10 @@
  * machine produces or the route can page to. Ordering by `(ticket, task)` makes
  * a short page a prefix of the ticket's history, so pagination alone no longer
  * cuts a cycle in half; the shapes are inputs regardless, because the rosters
- * admit them — `stage` is an unbounded count and the request naming a set is
- * optional. So a cycle whose work run is missing, a gap between two stages and
- * a stage the authored program does not declare each get a row of their own
+ * admit them — `executions` is a list whose type promises neither an order nor
+ * a whole ticket, `stage` is an unbounded count, and the request naming a set
+ * is optional. So a cycle whose work run is missing, a gap between two stages
+ * and a stage the authored program does not declare each get a row of their own
  * rather than being merged into a neighbour.
  *
  * EVERY LOOP IS BOUNDED BY SOMETHING DECLARED. A run draws one row per stage

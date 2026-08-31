@@ -4,8 +4,9 @@
  * The failure this catches is the one a real operator hit: a stage-0 pass from
  * a superseded artifact drawn beside a stage-0 failure of the current one, with
  * nothing saying they judged different things. Every case below drives the page
- * in the order the route sends it, which is by identity and so unrelated to
- * time.
+ * in an order the route no longer answers in — by execution identity, which is
+ * a random stem with the task appended — so a passing case is one the
+ * derivation recovered rather than one the page arrived sorted for.
  */
 
 import { expect, test } from "vitest";
@@ -60,7 +61,7 @@ test("a ticket's page becomes one cycle per work run, newest last", () => {
   ]);
 });
 
-test("the work runs are ordered by task and not by the identity the route sorts on", () => {
+test("the work runs are ordered by task and not by the identity they are held in", () => {
   const ledger = ticketLedger(ledgerPage(ticket21Parked), ticket21Authoring);
   const evaluated = ledger.cycles.flatMap((cycle) =>
     cycle.programRuns.flatMap((run) => stagesOf(run)),
@@ -338,6 +339,53 @@ test("a request the wire names groups a set over stems that disagree", () => {
     { ...singleStage, program: [{ fanout: 2, combinator: "UnanimousPass" }] },
   );
   expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual(["0 Failed 1,2"]);
+});
+
+test("a spawn of two-digit task ordinals is one set, not one set per digit", () => {
+  const ledger = ticketLedger(
+    ledgerPage([
+      {
+        execution: "execution-bb-10",
+        task: 10,
+        taskKind: "Evaluation",
+        stage: 0,
+        outcome: "Passed",
+      },
+      {
+        execution: "execution-bb-11",
+        task: 11,
+        taskKind: "Evaluation",
+        stage: 0,
+        outcome: "Failed",
+      },
+    ]),
+    { ...singleStage, program: [{ fanout: 2, combinator: "UnanimousPass" }] },
+  );
+  expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual([
+    "0 Failed 10,11",
+  ]);
+});
+
+test("a work task and an evaluation task of one stem are two sets", () => {
+  const ledger = ticketLedger(
+    ledgerPage([
+      {
+        execution: "execution-bb-1",
+        task: 1,
+        taskKind: "Work",
+        outcome: "Passed",
+      },
+      {
+        execution: "execution-bb-2",
+        task: 2,
+        taskKind: "Evaluation",
+        outcome: "Passed",
+      },
+    ]),
+    singleStage,
+  );
+  expect(tasksOf(ledger.cycles[0]?.work)).toEqual([1]);
+  expect(stagesOf(ledger.cycles[0]?.programRuns[0])).toEqual(["0 Passed 2"]);
 });
 
 test("a set is drawn against the fan-out its stage was authored with", () => {

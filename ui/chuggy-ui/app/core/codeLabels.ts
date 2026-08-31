@@ -198,10 +198,10 @@ function resumeMore(
   resume: ResumeConsequence,
   rework: ReworkStanding | undefined,
 ): string | undefined {
-  if (rework === undefined) return undefined;
-  if (resume.point === "ResumeReworking")
-    return `Rework returns to 0/${String(rework.max)}`;
-  if (resume.point !== "ResumeEvaluating") return undefined;
+  const refill = resume.refillsReworkTo;
+  if (refill !== undefined) return `Rework returns to 0/${String(refill)}`;
+  if (resume.point !== "ResumeEvaluating" || rework === undefined)
+    return undefined;
   return `Keeps the current artifact · rework stays ${String(rework.left)}/${String(rework.max)}`;
 }
 
