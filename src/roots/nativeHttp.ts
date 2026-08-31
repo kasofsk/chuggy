@@ -26,7 +26,10 @@ import {
   oidcAuthentication,
   type OidcAuthenticationConfig,
 } from "../adapters/http/oidc.ts";
-import { composeNativeWeb } from "../compose.ts";
+import {
+  composeNativeWeb,
+  composeSelectorProjectSettings,
+} from "../compose.ts";
 import type { IdempotencyKeying } from "../adapters/postgres/keying.ts";
 import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
 import {
@@ -342,10 +345,11 @@ async function main(): Promise<void> {
       throw failure;
     },
   );
+  const access = postgresProjectAccess(pool);
   const web = composeNativeWeb(
     pool,
     keying,
-    postgresProjectAccess(pool),
+    access,
     postgresExecutionBacklogGuard(pool),
     undefined,
     undefined,
@@ -362,6 +366,7 @@ async function main(): Promise<void> {
     postgresInstallationAuthority(pool),
     nativeHttpLimitsDefault,
     hub,
+    composeSelectorProjectSettings(pool, access),
   );
   app.addHook("onClose", async () => {
     await hub.close();

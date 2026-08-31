@@ -9,7 +9,9 @@ import {
   type SelectorPolicyHost,
   type SelectorProjectState,
   type SelectorProposal,
-  type SelectorRuntimeSettings,
+  selectorSettingsFence,
+  selectorSettingsFenceHolds,
+  type SelectorResolvedSettings,
   type SelectorRuntimeSettingsSource,
   type SelectorStateStore,
   type SelectorTicketService,
@@ -127,13 +129,14 @@ async function observeProject(
   identities: SelectorIdentityFactory,
   control: SelectorRuntimeSettingsSource,
 ): Promise<ProjectObservationResult> {
-  let settings: SelectorRuntimeSettings;
+  let settings: SelectorResolvedSettings;
   try {
-    settings = await control.settings();
+    settings = await control.projectSettings(partition);
   } catch {
     return projectObservationFailure("Settings", partition);
   }
-  if (settings.mode === "Paused") return stoppedProjectObservation;
+  if (settings.installationMode === "Paused") return stoppedProjectObservation;
+  if (settings.mode === "Paused") return emptyProjectObservation;
   const identity = identities.next(partition);
   let allocated: boolean;
   try {
@@ -176,9 +179,54 @@ function projectObservationFailure(
   return { ...emptyProjectObservation, failures: [{ phase, partition }] };
 }
 
+/** Runs one decision under settings the fence has just been re-read against. */
+async function observeFencedProject(
+  partition: Partition,
+  settings: SelectorResolvedSettings,
+  store: SelectorStateStore,
+  source: SelectorRuntimeSource,
+  policy: SelectorPolicyHost,
+  identity: SelectorCycleIdentity,
+): Promise<SelectorProposal | undefined> {
+  const state = (await store.project(partition)) ?? initialState(partition);
+  const observation = await observeSelectorProject(
+    state,
+    source,
+    100,
+    Math.floor(settings.limits.inputBytesPerDecision / 2),
+  );
+  if (observation === undefined) {
+    await store.terminateAttempt(
+      identity.selectorDecisionReference,
+      "no current observation",
+    );
+    return undefined;
+  }
+  await store.runningAttempt(
+    identity.selectorDecisionReference,
+    observation,
+    selectorSettingsFence(settings),
+  );
+  return runObservedSelectorCycle(
+    state,
+    observation,
+    source,
+    store,
+    policy,
+    identity,
+    settings,
+  );
+}
+
+/**
+ * Runs one permitted decision, re-reading the settings the permit was taken
+ * under. Only an installation pause stops the sweep: a project's own pause and
+ * either half of the fence moving are that project's events, so the attempt is
+ * terminated and the sweep goes on to the next project.
+ */
 async function observePermittedProject(
   partition: Partition,
-  expectedSettings: SelectorRuntimeSettings,
+  expectedSettings: SelectorResolvedSettings,
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
@@ -190,47 +238,28 @@ async function observePermittedProject(
   let observed = false;
   let stop = false;
   try {
-    const settings = await control.settings();
+    const settings = await control.projectSettings(partition);
     if (
       settings.mode === "Paused" ||
-      settings.revision !== expectedSettings.revision
+      !selectorSettingsFenceHolds(
+        selectorSettingsFence(expectedSettings),
+        settings,
+      )
     ) {
-      stop = true;
+      stop = settings.installationMode === "Paused";
       await store.terminateAttempt(
         identity.selectorDecisionReference,
         "settings changed before policy execution",
       );
     } else {
-      const state = (await store.project(partition)) ?? initialState(partition);
-      const observation = await observeSelectorProject(
-        state,
+      proposal = await observeFencedProject(
+        partition,
+        settings,
+        store,
         source,
-        100,
-        Math.floor(settings.limits.inputBytesPerDecision / 2),
+        policy,
+        identity,
       );
-      if (observation !== undefined)
-        await store.runningAttempt(
-          identity.selectorDecisionReference,
-          observation,
-          settings.revision,
-        );
-      proposal =
-        observation === undefined
-          ? undefined
-          : await runObservedSelectorCycle(
-              state,
-              observation,
-              source,
-              store,
-              policy,
-              identity,
-              settings,
-            );
-      if (observation === undefined)
-        await store.terminateAttempt(
-          identity.selectorDecisionReference,
-          "no current observation",
-        );
       observed = true;
     }
   } catch (error) {
@@ -259,12 +288,11 @@ async function observeInventory(
   readonly failures: readonly SelectorRunFailure[];
 }> {
   await store.setAutomaticReadiness(policy.productionReady);
-  const settings = await control.settings();
-  const inventoryCursor = await store.inventoryCursor();
-  const inventory =
-    settings.mode === "Paused"
-      ? { projects: [] }
-      : await source.projects(inventoryCursor, projectsMax);
+  if ((await control.settings()).mode === "Paused") return pausedInventory;
+  const inventory = await source.projects(
+    await store.inventoryCursor(),
+    projectsMax,
+  );
   const progress = await observeProjects(
     inventory.projects,
     store,
@@ -273,13 +301,38 @@ async function observeInventory(
     identities,
     control,
   );
-  if (progress.scanned > 0 || inventory.nextAfter !== undefined)
-    await store.saveInventoryCursor(
-      progress.scanned === inventory.projects.length
-        ? inventory.nextAfter
-        : inventory.projects.at(progress.scanned - 1),
-    );
+  await saveInventoryProgress(store, inventory, progress.scanned);
   return progress;
+}
+
+/** A paused installation reads no inventory, so it has no progress to record. */
+const pausedInventory = {
+  observed: 0,
+  proposed: 0,
+  failures: [],
+} as const;
+
+/**
+ * Moves the cursor over the projects this sweep consumed and no further: to the
+ * last one it consumed, or past the page when it consumed them all — which is
+ * `nextAfter`, and `nextAfter` is absent exactly when there is no next page, so
+ * an exhausted inventory wraps to the start rather than standing still, while a
+ * sweep that consumed none of a page it was given leaves the cursor alone
+ * because that page is the page the next sweep is owed. Every one of those
+ * readings is of a page the inventory produced, so only a caller that read one
+ * calls this.
+ */
+async function saveInventoryProgress(
+  store: SelectorStateStore,
+  inventory: ProjectInventoryPage,
+  scanned: number,
+): Promise<void> {
+  if (scanned === 0 && inventory.projects.length > 0) return;
+  await store.saveInventoryCursor(
+    scanned === inventory.projects.length
+      ? inventory.nextAfter
+      : inventory.projects.at(scanned - 1),
+  );
 }
 
 /** Performs one bounded poll, policy, delivery, and reconciliation quantum. */

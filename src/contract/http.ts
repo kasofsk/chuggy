@@ -50,6 +50,15 @@ export const runOutcomeLabelCharsMax = 64;
 /** The longest model identity a usage row names. */
 export const runModelCharsMax = 128;
 
+/** The longest selector prompt or North Star the wire carries, which is what its column holds. */
+export const selectorSettingsTextCharsMax = 65_536;
+
+/** The most names one selector allowlist carries. */
+export const selectorAllowlistNamesMax = 64;
+
+/** The longest name one selector allowlist entry carries. */
+export const selectorAllowlistNameCharsMax = 256;
+
 /** The longest summary a result carries, restating what the manifest reader accepts. */
 export const resultReportCharsMax = 8_192;
 
@@ -70,6 +79,8 @@ export const nativeHttpRoutes = {
   nativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/native-actions`,
   operationalStatus: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operational-status`,
   selectorContext: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-context`,
+  selectorSettings: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-settings`,
+  selectorSettingsHistory: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-settings/history`,
   executions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions`,
   execution: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution`,
   outputContent: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/artifacts/:ordinal`,

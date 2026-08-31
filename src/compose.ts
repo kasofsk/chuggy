@@ -36,6 +36,7 @@ import { postgresNotifications } from "./adapters/postgres/notifications.ts";
 import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
 import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
 import {
+  postgresSelectorProjectSettings,
   postgresSelectorProposalReviews,
   postgresSelectorRuntimeControl,
   postgresSelectorState,
@@ -62,6 +63,10 @@ import {
   type SelectorAdministrationAccess,
   type SelectorRuntimeAdministration,
 } from "./interpreter/selectorAdmin.ts";
+import {
+  selectorProjectSettingsAdministration,
+  type SelectorProjectSettingsAdministration,
+} from "./interpreter/selectorProjectSettings.ts";
 import {
   selectorProposalReviews,
   type SelectorProposalReviews,
@@ -182,6 +187,22 @@ export function composeSelectorService(
     ),
     planning: selectorPlanning(access, state),
   };
+}
+
+/**
+ * Wires a project's own selector settings to API-role credentials and the
+ * project membership that bounds them. The installation defaults stay the
+ * selector control role's, so a project administrator overrides for their own
+ * project and cannot move what every other project inherits.
+ */
+export function composeSelectorProjectSettings(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+): SelectorProjectSettingsAdministration {
+  return selectorProjectSettingsAdministration(
+    access,
+    postgresSelectorProjectSettings(apiPool),
+  );
 }
 
 /** What a finalizer deployment answers its own ports with, none of it read from an environment. */

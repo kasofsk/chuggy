@@ -25,6 +25,13 @@ import type {
 } from "../../interpreter/nativeWeb.ts";
 import type { SelectorOperationalContext } from "../../interpreter/selector.ts";
 import type {
+  SelectorProjectSettingsHistoryRead,
+  SelectorProjectSettingsRead,
+  SelectorProjectSettingsRecord,
+  SelectorProjectSettingsRefusal,
+  SelectorProjectSettingsWritten,
+} from "../../interpreter/selectorProjectSettings.ts";
+import type {
   ExecutionPage,
   ExecutionResource,
   ProjectOperationalStatus,
@@ -304,6 +311,95 @@ export function selectorOperationalContextResponse(
   return result.result === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
     : response(200, result.value);
+}
+
+/** The record on the wire, whose effective half names no partition twice. */
+function selectorProjectSettingsBody(
+  settings: SelectorProjectSettingsRecord,
+): unknown {
+  const effective = settings.effective;
+  return {
+    partition: settings.partition,
+    revision: settings.revision,
+    overrides: settings.overrides,
+    effective: {
+      revision: effective.revision,
+      projectRevision: effective.projectRevision,
+      mode: effective.mode,
+      installationMode: effective.installationMode,
+      dispatchMode: effective.dispatchMode,
+      basePrompt: effective.basePrompt,
+      ...(effective.northStar === undefined
+        ? {}
+        : { northStar: effective.northStar }),
+      modelAllowlist: effective.modelAllowlist,
+      toolAllowlist: effective.toolAllowlist,
+      limits: effective.limits,
+      operationalContextMaxAgeMs: effective.operationalContextMaxAgeMs,
+    },
+  };
+}
+
+export function selectorProjectSettingsResponse(
+  result: SelectorProjectSettingsRead,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, selectorProjectSettingsBody(result.settings));
+}
+
+/**
+ * A refusal a caller can act on. A write that did not complete is the one worth
+ * waiting out, so it carries the retry the caller would otherwise guess at.
+ */
+function selectorProjectSettingsRefusal(
+  refusal: SelectorProjectSettingsRefusal,
+): NativeHttpResponse {
+  switch (refusal) {
+    case "AutomaticDispatchUnavailable":
+      return response(
+        409,
+        nativeHttpError(
+          refusal,
+          "Automatic dispatch needs a production-ready selector policy host.",
+        ),
+      );
+    case "SettingsWriteContended":
+      return retry(503, 1, refusal);
+    default:
+      return assertNever(refusal);
+  }
+}
+
+export function selectorProjectSettingsWriteResponse(
+  result: SelectorProjectSettingsWritten,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Conflict":
+      return response(409, {
+        ...nativeHttpError(
+          "SettingsRevisionConflict",
+          "The selector settings moved under this write.",
+        ),
+        settings: selectorProjectSettingsBody(result.settings),
+      });
+    case "Refused":
+      return selectorProjectSettingsRefusal(result.refusal);
+    case "Written":
+      return response(200, selectorProjectSettingsBody(result.settings));
+    default:
+      return assertNever(result);
+  }
+}
+
+export function selectorSettingsHistoryResponse(
+  result: SelectorProjectSettingsHistoryRead,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, { revisions: result.revisions });
 }
 
 export function executionsResponse(

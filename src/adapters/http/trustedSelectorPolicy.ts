@@ -154,7 +154,11 @@ const policyRequest = z.strictObject({
     nextCandidateScan: candidateScan,
     resourceLimit: z.literal("CandidateTooLarge").optional(),
   }),
-  instructions: z.strictObject({ revision: integer, content: boundedText }),
+  instructions: z.strictObject({
+    revision: identity,
+    content: boundedText,
+    northStar: boundedText.optional(),
+  }),
   constraints: z.strictObject({
     models: z.array(identity).max(trustedSelectorPolicyCollectionMembersMax),
     tools: z.array(identity).max(trustedSelectorPolicyCollectionMembersMax),

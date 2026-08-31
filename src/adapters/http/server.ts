@@ -23,6 +23,7 @@ import type {
   ProjectStream,
   ProjectStreamHub,
 } from "../../interpreter/projectStream.ts";
+import type { SelectorProjectSettingsAdministration } from "../../interpreter/selectorProjectSettings.ts";
 import { projectStreamSocket } from "./eventStream.ts";
 import { nativeHttpContractDocument } from "../../contract/document.ts";
 import {
@@ -42,6 +43,7 @@ import {
   parseDraftCreation,
   parseDraftRevision,
   parsePartition,
+  parseSelectorProjectSettings,
   parseSubmission,
 } from "./contract.ts";
 import {
@@ -69,6 +71,9 @@ import {
   executionsResponse,
   operationalStatusResponse,
   selectorOperationalContextResponse,
+  selectorProjectSettingsResponse,
+  selectorProjectSettingsWriteResponse,
+  selectorSettingsHistoryResponse,
   outputContentResponse,
   runConfigurationResponse,
   runTranscriptResponse,
@@ -641,6 +646,58 @@ function registerSelectorContext(
   );
 }
 
+/**
+ * A project's own selector settings, read and written whole under the
+ * `ManageProjectSelector` access the administration itself checks. The history
+ * is beside them because a rollback is a write of a revision this read named.
+ */
+function registerSelectorSettings(
+  app: FastifyInstance,
+  settings: SelectorProjectSettingsAdministration,
+): void {
+  const root = "/api/v1/tenants/:tenant/projects/:project/selector-settings";
+  app.get(root, async (request, reply) => {
+    send(
+      reply,
+      selectorProjectSettingsResponse(
+        await settings.read(principalOf(request), partitionOf(request)),
+      ),
+    );
+  });
+  app.put(
+    root,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const written = parseSelectorProjectSettings(request.body);
+      send(
+        reply,
+        selectorProjectSettingsWriteResponse(
+          await settings.write(
+            principalOf(request),
+            partitionOf(request),
+            written.expectedRevision,
+            written.overrides,
+          ),
+        ),
+      );
+    },
+  );
+  app.get(`${root}/history`, async (request, reply) => {
+    const query = fieldsOnly(request.query, ["after", "limit"]);
+    send(
+      reply,
+      selectorSettingsHistoryResponse(
+        await settings.history(
+          principalOf(request),
+          partitionOf(request),
+          integerField(query, "after", 0),
+          integerField(query, "limit", 50),
+        ),
+      ),
+    );
+  });
+}
+
 function executionSelection(value: unknown): {
   readonly selection?:
     | { readonly selection: "NonTerminal" }
@@ -987,6 +1044,7 @@ export function createNativeHttpApp(
   authority: InstallationAuthorityRead,
   limits: NativeHttpLimits = nativeHttpLimitsDefault,
   hub?: ProjectStreamHub,
+  selectorSettings?: SelectorProjectSettingsAdministration,
 ): FastifyInstance {
   const app = fastify({
     bodyLimit: nativeHttpBodyBytesMax,
@@ -1014,6 +1072,8 @@ export function createNativeHttpApp(
   registerInventory(app, web);
   registerProject(app, web);
   registerSelectorContext(app, web);
+  if (selectorSettings !== undefined)
+    registerSelectorSettings(app, selectorSettings);
   registerOperations(app, web);
   registerNotifications(app, web);
   if (hub !== undefined) registerProjectEvents(app, web, hub);

@@ -176,7 +176,8 @@ CHUG_PROVISION_ACTION=grant npm run provision:project-access
 ```
 
 `CHUG_PROVISION_ACCESS` names the kinds `authorize_project_access` knows —
-`Read`, `Mutate`, `DispatchTicket`, `ProposeDispatch` — and a grant naming none
+`Read`, `Mutate`, `DispatchTicket`, `ProposeDispatch`, `ManageProjectSelector` —
+and a grant naming none
 is refused before the row is. Re-running a grant is not an error: it replaces
 whatever that principal held on that project, so narrowing access is the same
 command with a shorter list.

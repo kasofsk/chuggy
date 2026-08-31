@@ -30,6 +30,9 @@ import {
   runTranscriptResponse,
   runTurnsResponse,
   repositoryConfigurationImportResponse,
+  selectorProjectSettingsResponse,
+  selectorProjectSettingsWriteResponse,
+  selectorSettingsHistoryResponse,
   submissionResponse,
   ticketNativeActionsResponse,
   ticketResponse,
@@ -53,6 +56,8 @@ import {
   runConfigurationResponseSchema,
   runTranscriptResponseSchema,
   runTurnsResponseSchema,
+  selectorProjectSettingsResponseSchema,
+  selectorSettingsHistoryResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
 } from "../../src/contract/responses.ts";
@@ -63,10 +68,12 @@ import {
   runTranscriptPageBatchesMax,
 } from "../../src/contract/http.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { resolvedSelectorSettings } from "../../src/interpreter/selector.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
 import {
   asAuthorityKind,
+  asAuthoritySubject,
   asOperationId,
 } from "../../src/interpreter/operationInbox.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
@@ -86,6 +93,8 @@ import {
   requirement,
   instant,
   partition,
+  selectorDefaults,
+  selectorProjectSettings,
   revision,
   versionedConfiguration,
   versionedDispatchViewPage,
@@ -196,6 +205,91 @@ test("a ticket's open actions carry a fence and only answers their kind asks for
       ],
     }),
   );
+});
+
+test("a project's selector settings parse as its overrides beside what they resolve to", () => {
+  const parsed = selectorProjectSettingsResponseSchema.parse(
+    selectorProjectSettingsResponse({
+      result: "Found",
+      settings: selectorProjectSettings,
+    }).body,
+  );
+  assert.deepEqual(parsed.partition, { tenant: "acme", project: "atlas" });
+  assert.equal(parsed.revision, 2);
+  assert.equal(parsed.overrides.northStar, "Ship the console.");
+  assert.equal(parsed.effective.northStar, "Ship the console.");
+  assert.equal(parsed.effective.basePrompt, selectorDefaults.basePrompt);
+  assert.equal(parsed.effective.projectRevision, 2);
+  assert.equal(
+    parsed.effective.limits.concurrentDecisions,
+    selectorDefaults.limits.concurrentDecisions,
+  );
+});
+
+test("a project pause and an installation pause are not the same body", () => {
+  const body = (installation: "Running" | "Paused") =>
+    selectorProjectSettingsResponse({
+      result: "Found",
+      settings: {
+        partition,
+        revision: 2,
+        overrides: { mode: "Paused" },
+        effective: resolvedSelectorSettings(
+          partition,
+          { ...selectorDefaults, mode: installation },
+          2,
+          { mode: "Paused" },
+        ),
+      },
+    }).body;
+  const stopped = selectorProjectSettingsResponseSchema.parse(body("Paused"));
+  const theirs = selectorProjectSettingsResponseSchema.parse(body("Running"));
+  assert.equal(stopped.effective.mode, "Paused");
+  assert.equal(theirs.effective.mode, "Paused");
+  assert.equal(stopped.effective.installationMode, "Paused");
+  assert.equal(theirs.effective.installationMode, "Running");
+  assert.notDeepEqual(body("Paused"), body("Running"));
+});
+
+test("a settings write that lost its fence answers a conflict carrying the current row", () => {
+  const conflict = selectorProjectSettingsWriteResponse({
+    result: "Conflict",
+    settings: selectorProjectSettings,
+  });
+  assert.equal(conflict.status, 409);
+  const body = conflict.body as { settings: unknown };
+  assert.equal(
+    selectorProjectSettingsResponseSchema.parse(body.settings).revision,
+    2,
+  );
+  assert.equal(
+    selectorProjectSettingsWriteResponse({
+      result: "Written",
+      settings: selectorProjectSettings,
+    }).status,
+    200,
+  );
+});
+
+test("the settings history parses every retained override and its administrator", () => {
+  const parsed = selectorSettingsHistoryResponseSchema.parse(
+    selectorSettingsHistoryResponse({
+      result: "Found",
+      revisions: [
+        {
+          revision: 2,
+          overrides: { northStar: "Ship the console." },
+          administrator: {
+            kind: asAuthorityKind("User"),
+            subject: asAuthoritySubject("selector-admin"),
+          },
+          recordedAt: instant,
+        },
+      ],
+    }).body,
+  );
+  assert.equal(parsed.revisions[0]?.administrator.subject, "selector-admin");
+  assert.equal(parsed.revisions[0]?.overrides.northStar, "Ship the console.");
 });
 
 test("a project inventory page parses with the cursor the server encoded", () => {

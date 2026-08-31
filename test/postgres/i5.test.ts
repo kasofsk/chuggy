@@ -30,6 +30,7 @@ import {
   postgresHarnessHistory,
   postgresHarnessOpen,
   postgresHarnessProject,
+  postgresHarnessSelectorContext,
   postgresHarnessSubmission,
   postgresHarnessUrl,
   postgresHarnessWriter,
@@ -46,25 +47,7 @@ after(async () => {
 
 const selectorInteractionContext = {
   workingMemory: {},
-  operationalContext: {
-    version: 2,
-    observedAt: "2026-08-20T12:00:00.000Z",
-    observedAtEpochMs: 1_777_000_000_000,
-    reviewFeedback: [],
-    activeWork: { queued: 0, admitted: 0, launching: 0, running: 0 },
-    capacity: {
-      account: "project",
-      accountMaximum: 1,
-      accountActive: 0,
-      accountReservationDeficit: 0,
-      clusterSlotsMax: 1,
-      clusterActive: 0,
-    },
-    backlog: {
-      project: { queued: 0, ceiling: 10 },
-      installation: { queued: 0, ceiling: 100 },
-    },
-  },
+  operationalContext: postgresHarnessSelectorContext,
 } as const;
 
 const selectorAdministrator = {
@@ -106,9 +89,16 @@ function selectorTestInteraction(partition: Partition, decision: string) {
   } as const;
 }
 
+/** The revisions a case's decision ran under, which no case here is about. */
+const selectorTestFence = {
+  settingsRevision: 1,
+  projectSettingsRevision: 0,
+} as const;
+
 function selectorTestProposal(partition: Partition, decision: string) {
   return {
     interaction: selectorTestInteraction(partition, decision),
+    fence: selectorTestFence,
     operation: asOperationId(`operation-${decision}`),
     deliveryMode: "ApprovalRequired",
     command: {
@@ -341,16 +331,17 @@ test("selector provenance and its observed cursor roll back together", async () 
   const decision = `selector-atomic-${crypto.randomUUID()}`;
   const interaction = selectorTestInteraction(partition, decision);
   try {
+    const first = selectorTestState(partition, 0, 17);
+    const later = {
+      ...selectorTestState(partition, 1, 99),
+      attention: "Attention",
+      workingMemory: { conflicting: true },
+    } as const;
     await assert.rejects(
       state.recordInteraction(
         interaction,
-        {
-          partition,
-          notificationCursor: 17,
-          revision: 0,
-          attention: "Monitoring",
-          workingMemory: {},
-        },
+        first,
+        selectorTestFence,
         "x".repeat(65_537),
       ),
       /selector_planning_intent.*check|violates check constraint/,
@@ -358,33 +349,16 @@ test("selector provenance and its observed cursor roll back together", async () 
     assert.equal(await state.project(partition), undefined);
     assert.deepEqual(await state.history(partition, undefined, 10), []);
 
-    await state.recordInteraction(interaction, {
-      partition,
-      notificationCursor: 17,
-      revision: 0,
-      attention: "Monitoring",
-      workingMemory: {},
-    });
+    await state.recordInteraction(interaction, first, selectorTestFence);
     assert.equal((await state.project(partition))?.notificationCursor, 17);
     assert.equal((await state.history(partition, undefined, 10)).length, 1);
-    await state.recordInteraction(interaction, {
-      partition,
-      notificationCursor: 99,
-      revision: 1,
-      attention: "Attention",
-      workingMemory: { conflicting: true },
-    });
+    await state.recordInteraction(interaction, later, selectorTestFence);
     assert.equal((await state.project(partition))?.notificationCursor, 17);
     await assert.rejects(
       state.recordInteraction(
         { ...interaction, instructions: "different semantic interaction" },
-        {
-          partition,
-          notificationCursor: 99,
-          revision: 1,
-          attention: "Attention",
-          workingMemory: { conflicting: true },
-        },
+        later,
+        selectorTestFence,
       ),
       /identity conflicts/,
     );
@@ -415,6 +389,7 @@ test("selector provenance round-trips resources larger than one audit column", a
       await state.recordInteraction(
         interaction,
         selectorTestState(partition, 0),
+        selectorTestFence,
       ),
       true,
     );
@@ -446,6 +421,7 @@ test("selector state fencing and audit ordinals survive out-of-order identities"
       await state.recordInteraction(
         laterSorting,
         selectorTestState(partition, 0),
+        selectorTestFence,
       ),
       true,
     );
@@ -453,6 +429,7 @@ test("selector state fencing and audit ordinals survive out-of-order identities"
       await state.recordInteraction(
         earlierSorting,
         selectorTestState(partition, 1),
+        selectorTestFence,
       ),
       true,
     );
@@ -460,6 +437,7 @@ test("selector state fencing and audit ordinals survive out-of-order identities"
       await state.recordInteraction(
         selectorTestInteraction(partition, `stale-${crypto.randomUUID()}`),
         selectorTestState(partition, 1, 99),
+        selectorTestFence,
       ),
       false,
     );
@@ -795,7 +773,7 @@ test("attempt reconciliation cannot claim another runtime's active attempt", asy
         workingMemory: {},
         nextCandidateScan: { state: "Exhausted", token },
       },
-      1,
+      { settingsRevision: 1, projectSettingsRevision: 0 },
     );
     assert.deepEqual(await state.quarantinedAttempts(100), []);
     const administration = postgresPool(postgresHarnessUrl());
@@ -827,6 +805,7 @@ test("a selector interaction atomically replaces or clears current planning", as
       await state.recordInteraction(
         selectorTestInteraction(partition, planned),
         selectorTestState(partition, 0),
+        selectorTestFence,
         { tickets: [2, 4] },
       ),
       true,
@@ -841,6 +820,7 @@ test("a selector interaction atomically replaces or clears current planning", as
           `planning-clear-${crypto.randomUUID()}`,
         ),
         selectorTestState(partition, 1),
+        selectorTestFence,
       ),
       true,
     );

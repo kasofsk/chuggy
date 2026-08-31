@@ -55,6 +55,8 @@ test("the golden is the document and not an empty stand-in", () => {
     "runTranscript",
     "runTurns",
     "selectorContext",
+    "selectorSettings",
+    "selectorSettingsHistory",
     "ticket",
     "ticketNativeActions",
     "tickets",
@@ -65,5 +67,6 @@ test("the golden is the document and not an empty stand-in", () => {
     "draftRevision",
     "publicMutation",
     "repositoryConfigurationImport",
+    "selectorProjectSettings",
   ]);
 });

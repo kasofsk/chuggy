@@ -737,3 +737,24 @@ export async function postgresHarnessHistory(
   }
   return memory;
 }
+
+/** The operational context a selector case supplies, which no case is about. */
+export const postgresHarnessSelectorContext = {
+  version: 2,
+  observedAt: "2026-08-20T12:00:00.000Z",
+  observedAtEpochMs: 1_777_000_000_000,
+  reviewFeedback: [],
+  activeWork: { queued: 0, admitted: 0, launching: 0, running: 0 },
+  capacity: {
+    account: "project",
+    accountMaximum: 1,
+    accountActive: 0,
+    accountReservationDeficit: 0,
+    clusterSlotsMax: 1,
+    clusterActive: 0,
+  },
+  backlog: {
+    project: { queued: 0, ceiling: 10 },
+    installation: { queued: 0, ceiling: 100 },
+  },
+} as const;
