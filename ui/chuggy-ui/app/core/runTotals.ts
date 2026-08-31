@@ -6,6 +6,20 @@
  * screen holds may be short of the executions the ticket has and a sum over it
  * would be quietly wrong. Every dollar figure carries the basis the wire gave
  * it, so a list price is never read as a bill.
+ *
+ * `runSpendOf` CARRIES NO BASIS IT DID NOT EARN: it reports the one basis every
+ * measured run agreed on and reports disagreement as disagreement, which is the
+ * one thing a single `RunTotals` cannot say about itself, and it reports how
+ * many of the executions it was handed carried figures at all, so a caller
+ * never reads a sum over a third of a set as a sum over the set. `runStageRows`
+ * sums through `runTotalsSummed` and still takes the basis of the first run it
+ * is handed, which holds only while the basis roster has the single member it
+ * has today.
+ *
+ * TIME IS READ BY A CLOCK, NOT BY A STRING. `instantSchema` promises only a
+ * non-empty string, so `runSpanOf` orders by what parses as an instant and
+ * leaves out what does not, and it ends a span only once nothing in it is still
+ * open.
  */
 
 import { nativeHttpPageItemsMax } from "../../../../src/contract/http.ts";
@@ -136,6 +150,83 @@ export function runTotalsSummed(
     models: [],
   });
   return { ...summed, models: runModelsMerged(totals) };
+}
+
+/** The basis every measured run agreed on, or that they did not agree. */
+export type RunRollupBasis = RunCostBasis | "Mixed";
+
+/** A sum of runs, which claims a single run's basis only where every run shared it. */
+export type RunRollup = Omit<RunTotals, "costBasis"> & {
+  readonly costBasis: RunRollupBasis;
+};
+
+/** What a set of executions spent, and how much of that set could be measured. */
+export interface RunSpend {
+  readonly executions: number;
+  readonly measured: number;
+  readonly totals: RunRollup | undefined;
+}
+
+/** When a set of executions started, and when it ended if nothing in it is open. */
+export interface RunSpan {
+  readonly from: string | undefined;
+  readonly to: string | undefined;
+}
+
+function runRollupBasis(
+  totals: readonly RunTotals[],
+): RunRollupBasis | undefined {
+  const first = totals[0];
+  if (first === undefined) return undefined;
+  return totals.every((each) => each.costBasis === first.costBasis)
+    ? first.costBasis
+    : "Mixed";
+}
+
+/**
+ * The executions' own figures added, over however many of them carry any. A set
+ * nothing measured has no totals rather than totals of zero.
+ */
+export function runSpendOf(summaries: readonly ExecutionSummary[]): RunSpend {
+  const measured = summaries.flatMap((row) =>
+    row.runTotals === undefined ? [] : [row.runTotals],
+  );
+  const summed = runTotalsSummed(measured);
+  const basis = runRollupBasis(measured);
+  return {
+    executions: summaries.length,
+    measured: measured.length,
+    totals:
+      summed === undefined || basis === undefined
+        ? undefined
+        : { ...summed, costBasis: basis },
+  };
+}
+
+/** The instants a clock can read, earliest first; the rest are not ordered at all. */
+function runInstantsOrdered(instants: readonly string[]): readonly string[] {
+  return instants
+    .flatMap((stated) => {
+      const at = Date.parse(stated);
+      return Number.isFinite(at) ? [{ stated, at }] : [];
+    })
+    .sort((left, right) => left.at - right.at)
+    .map((held) => held.stated);
+}
+
+/**
+ * From the earliest registration to the latest end. A set still holding an
+ * execution the wire has reported no end for has not ended.
+ */
+export function runSpanOf(summaries: readonly ExecutionSummary[]): RunSpan {
+  const started = runInstantsOrdered(summaries.map((row) => row.registeredAt));
+  const ended = runInstantsOrdered(
+    summaries.flatMap((row) =>
+      row.terminalAt === undefined ? [] : [row.terminalAt],
+    ),
+  );
+  const open = summaries.some((row) => row.terminalAt === undefined);
+  return { from: started[0], to: open ? undefined : ended.at(-1) };
 }
 
 /** One stage of one kind, and what the executions grouped under it spent. */
