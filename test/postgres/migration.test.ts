@@ -44,7 +44,9 @@ import {
 import { postgresHarnessEntry } from "./harness.ts";
 import { postgresHarnessEpoch, postgresHarnessProject } from "./harness.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
-import { asInstallationId } from "../../src/domain/ids.ts";
+import { asInstallationId, asTicketId } from "../../src/domain/ids.ts";
+import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
+import type { ProjectRead } from "../../src/interpreter/nativeWeb.ts";
 
 const retainedImageRequired = [
   { version: 1, name: "the project foundation" },
@@ -1432,6 +1434,224 @@ test("migration 42 opens the brief's doors to the roles that reach it and no oth
         granted,
         `${role} holds ${privilege} on ${relation}`,
       );
+  });
+});
+
+/** The five columns the reads need, which is what the grant may open and no more. */
+const journalInstantsColumns = [
+  "tenant",
+  "project",
+  "seq",
+  "entry",
+  "committed_at",
+];
+
+/**
+ * The grant is column-level, so `has_table_privilege` answers false for the
+ * table even where it is held, and the question has to be asked of each column.
+ * It is asked of every column the table has rather than of a list written here,
+ * because a grant one column too wide reads exactly like a grant that is right
+ * and a list would not be asking about the column that was added.
+ */
+test("migration 56 opens five journal columns to the API and leaves the rest shut", async () => {
+  await migrationDatabase("journal_instants_grants", async (subject) => {
+    await migrationSeedApplied(subject, 56);
+    await applyMigration(subject, 56);
+    const columns = await subject.query<{ column: string; granted: boolean }>(
+      `SELECT a.attname AS column,
+              has_column_privilege($1,'journal_entry',a.attname,'SELECT') AS granted
+         FROM pg_attribute a
+        WHERE a.attrelid='journal_entry'::regclass
+          AND a.attnum > 0 AND NOT a.attisdropped
+        ORDER BY a.attnum`,
+      [apiRole],
+    );
+    assert.ok(
+      columns.rows.length > journalInstantsColumns.length,
+      "the journal has columns beyond the ones this grant opens",
+    );
+    assert.deepEqual(
+      columns.rows.filter((each) => each.granted).map((each) => each.column),
+      journalInstantsColumns,
+      `what ${apiRole} may read of journal_entry`,
+    );
+    for (const privilege of ["INSERT", "UPDATE", "DELETE"] as const)
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_table_privilege($1,'journal_entry',$2) AS granted",
+            [apiRole, privilege],
+          )
+        ).rows[0]?.granted,
+        false,
+        `${apiRole} holds ${privilege} on journal_entry`,
+      );
+  });
+});
+
+/** How many tickets the index case releases, which is what gives a scan something to cost. */
+const journalInstantsReleases = 400;
+
+/**
+ * The event types the fixture writes per ticket, the release first. The other
+ * two also name their ticket in `event.value.ticket`, which is what makes the
+ * index's partial predicate load-bearing: a predicate widened past the release
+ * event indexes them too, and the release lookup then reads three entries where
+ * it should read one.
+ */
+const journalInstantsEvents = [
+  "ReleaseTicket",
+  "TaskDone",
+  "FinalizationResult",
+];
+
+/** Every listed ticket's release instant, which is what a page read is asked for here. */
+function releasedPage(read: ProjectRead): readonly (string | undefined)[] {
+  if (read.result !== "Found")
+    throw new Error("migration case: the project has no page");
+  return read.project.tickets.map((ticket) => ticket.releasedAt);
+}
+
+/**
+ * Releases that many tickets into one project, each with the entry that released
+ * it and the later entries that name it again. Both directions of the
+ * entry/input pair are deferred foreign keys, so the inserts commit together or
+ * not at all, and the ANALYZE is what lets the planner cost the rows the table
+ * now holds.
+ */
+async function seedReleasedTickets(
+  subject: pg.Pool,
+  partition: { readonly tenant: string; readonly project: string },
+  epoch: string,
+): Promise<void> {
+  const kinds = journalInstantsEvents
+    .map((type, step) => `(${String(step)},'${type}')`)
+    .join(",");
+  const entries = journalInstantsReleases * journalInstantsEvents.length;
+  await subject.query("BEGIN");
+  await subject.query(
+    `INSERT INTO decision_input
+       (tenant,project,ordinal,input_kind,input_id,base_priority,
+        lifecycle_generation,state,decided_seq,terminal_at)
+     SELECT $1,$2,k.step*$3+n,'Continuation','entry-'||(k.step*$3+n),
+            'Continuation',1,'Journaled',k.step*$3+n,now()
+       FROM generate_series(1,$3::bigint) n, (VALUES ${kinds}) AS k(step,type)`,
+    [partition.tenant, partition.project, journalInstantsReleases],
+  );
+  await subject.query(
+    `INSERT INTO journal_entry
+       (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
+        recovery_epoch,cause_kind,cause_id)
+     SELECT $1,$2,k.step*$3+n,
+       format('{"seq":%s,"event":{"type":"%s","value":{"ticket":%s}},"rec":{}}',
+              k.step*$3+n,k.type,n),
+       'digest-'||(k.step*$3+n),'previous-'||(k.step*$3+n),'owner',1,$4,
+       'Continuation','entry-'||(k.step*$3+n)
+       FROM generate_series(1,$3::bigint) n, (VALUES ${kinds}) AS k(step,type)`,
+    [partition.tenant, partition.project, journalInstantsReleases, epoch],
+  );
+  await subject.query(
+    `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+     SELECT $1,$2,n,'Pending',n FROM generate_series(1,$3::bigint) n`,
+    [partition.tenant, partition.project, journalInstantsReleases],
+  );
+  await subject.query(
+    "UPDATE project SET head=$3 WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project, entries],
+  );
+  await subject.query("COMMIT");
+  await subject.query("ANALYZE journal_entry");
+}
+
+/** The release index's own counters: how often it answered, and how many rows it gave up. */
+async function releaseIndexUse(
+  subject: pg.Pool,
+): Promise<{ scans: number; tuples: number }> {
+  const found = await subject.query<{ scans: string; tuples: string }>(
+    `SELECT idx_scan::text AS scans, idx_tup_read::text AS tuples
+       FROM pg_stat_all_indexes
+      WHERE relname='journal_entry'
+        AND indexrelname='journal_entry_release_ticket'`,
+  );
+  const row = found.rows[0];
+  if (row === undefined)
+    throw new Error("migration case: there is no release index to use");
+  return { scans: Number(row.scans), tuples: Number(row.tuples) };
+}
+
+/**
+ * The index's own counters either side of each real read, rather than a plan
+ * asserted against a copy of the query: an index whose predicate no longer
+ * implies a read's is one the planner cannot enter, which is what the scan count
+ * catches, and it is asked of all three reads because a copy left behind by an
+ * edit to the others is what asking one of them would miss. The tuple count is
+ * asked of the ticket's own read alone, where one entry is what a lookup costs
+ * and anything more is a key that stopped matching the index or a predicate that
+ * stopped excluding the other entries naming the ticket — not of the pages,
+ * which are free to answer the whole lateral in a single indexed pass.
+ */
+test("migration 56's index is what answers every read of a ticket's release", async () => {
+  await migrationDatabase("journal_instants_index", async (subject, url) => {
+    await migrationSeedApplied(subject, 56);
+    await applyMigration(subject, 56);
+    const store = postgresProjectStore(subject);
+    const epoch = await postgresHarnessEpoch(store);
+    const partition = await postgresHarnessProject(store, "journal-instants");
+    await seedReleasedTickets(subject, partition, epoch);
+    const single = postgresPool(url, {
+      connectionsMax: 1,
+      connectionWaitMs: 5_000,
+      statementTimeoutMs: 10_000,
+    });
+    const reads = postgresNativeReads(single);
+    try {
+      for (const [what, read] of [
+        [
+          "the ticket's own read",
+          async () => [(await reads.ticket(partition, asTicketId(1)))?.phase],
+        ],
+        [
+          "the page in identity order",
+          async () =>
+            releasedPage(await reads.project(partition, { limit: 10 })),
+        ],
+        [
+          "the page in recent-activity order",
+          async () =>
+            releasedPage(
+              await reads.project(partition, {
+                limit: 10,
+                order: "RecentActivity",
+              }),
+            ),
+        ],
+      ] as const) {
+        const before = await releaseIndexUse(subject);
+        const listed = await read();
+        assert.ok(listed.length >= 1, `${what} listed no ticket`);
+        for (const each of listed)
+          assert.ok(each !== undefined, `${what} left a ticket unread`);
+        await single.query("SELECT pg_stat_force_next_flush()");
+        assert.ok(
+          (await releaseIndexUse(subject)).scans > before.scans,
+          `${what} was answered without the index that exists for it`,
+        );
+      }
+      const before = await releaseIndexUse(subject);
+      assert.ok(
+        (await reads.ticket(partition, asTicketId(1)))?.releasedAt !==
+          undefined,
+        "the ticket read carries the release instant",
+      );
+      await single.query("SELECT pg_stat_force_next_flush()");
+      const after = await releaseIndexUse(subject);
+      assert.ok(
+        after.tuples - before.tuples <= 1,
+        `one ticket's release cost ${String(after.tuples - before.tuples)} entries out of the index, so it was scanned for rather than looked up`,
+      );
+    } finally {
+      await single.end();
+    }
   });
 });
 

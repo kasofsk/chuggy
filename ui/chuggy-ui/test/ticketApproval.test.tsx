@@ -29,6 +29,7 @@ import {
 } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -74,7 +75,12 @@ function serving(asked: () => unknown): (url: string) => Response {
       return answer({ actions: asked() === undefined ? [approval] : [] });
     if (url.includes("/executions")) return answer({ executions: [] });
     if (url.includes("/drafts/")) return answer({}, 404);
-    return answer({ ticket: 11, phase: "Finalizing", sequence: 51 });
+    return answer({
+      ticket: 11,
+      phase: "Finalizing",
+      sequence: 51,
+      ...ticketInstants,
+    });
   };
 }
 

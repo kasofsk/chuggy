@@ -90,7 +90,13 @@ test("ticket ordering cursors cannot cross ordering contracts", () => {
 function ticketRead(calls: string[]): NativeReadStore["ticket"] {
   return (_partition, ticket) => {
     calls.push(`read:ticket:${String(ticket)}`);
-    return Promise.resolve({ ticket, phase: "Pending", sequence: 1 });
+    return Promise.resolve({
+      ticket,
+      phase: "Pending",
+      sequence: 1,
+      releasedAt: asPublicInstant("2026-01-01T00:00:00Z"),
+      changedAt: asPublicInstant("2026-01-01T00:00:01Z"),
+    });
   };
 }
 

@@ -58,6 +58,15 @@ export const revision = asConfigurationRevisionId("revision-one");
 export const digest = "a".repeat(64);
 export const instant = asPublicInstant("2026-08-26T00:00:00Z");
 
+/**
+ * The journal instants every ticket resource carries, distinct from each other
+ * so a body that swapped them would not still pass.
+ */
+export const ticketInstants = {
+  releasedAt: instant,
+  changedAt: asPublicInstant("2026-08-27T00:00:00Z"),
+};
+
 export const authoring = {
   deps: new Set([asTicketId(1)]),
   prog: [{ fanout: 1, combinator: "UnanimousPass" }],

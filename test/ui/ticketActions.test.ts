@@ -79,7 +79,13 @@ test("what the console offers is what the two predicates enable", () => {
   for (const phase of phaseRoster) {
     const core = coreWith(ticketIn(phase));
     const offered = new Set(
-      actionsFor({ ticket: 7, phase, sequence: 1 }).map((one) => one.action),
+      actionsFor({
+        ticket: 7,
+        phase,
+        sequence: 1,
+        releasedAt: "2026-08-26T00:00:00Z",
+        changedAt: "2026-08-27T00:00:00Z",
+      }).map((one) => one.action),
     );
     assert.equal(offered.has("Revoke"), revocableIn(core, id), phase);
     assert.equal(offered.has("Resume"), retryableIn(core, id), phase);

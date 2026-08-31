@@ -21,6 +21,7 @@ import type {
   OperationStep,
   OperationSubmission,
 } from "../app/core/operationFollow.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const partition = { tenant: "acme", project: "atlas" };
 const acceptedAt = "2026-08-26T00:00:00Z";
@@ -103,7 +104,7 @@ function project(ticket: number): Answer {
     body: {
       partition,
       sequence: 91,
-      tickets: [{ ticket, phase: "Revoked", sequence: 91 }],
+      tickets: [{ ticket, phase: "Revoked", sequence: 91, ...ticketInstants }],
     },
   };
 }
@@ -150,6 +151,7 @@ test("the follow confirms the first ticket without an exclusive cursor", async (
     ticket: 1,
     phase: "Revoked",
     sequence: 91,
+    ...ticketInstants,
   });
   const confirmation = server.calls.at(-1) ?? "";
   expect(confirmation).toContain("minimumSequence=91");

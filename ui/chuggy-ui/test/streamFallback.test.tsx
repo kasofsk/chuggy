@@ -22,6 +22,7 @@ import { useProjectFallbackExhausted } from "../app/browser/stream.tsx";
 import { openedStream, ScreenHarness, settled } from "./screenHarness.tsx";
 import type { StreamTransport } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -46,7 +47,12 @@ async function heldEntryAfter(
   transport: StreamTransport,
 ): Promise<QueryClient> {
   const client = new QueryClient();
-  client.setQueryData(held, { ticket: 3, phase: "Working", sequence: 9 });
+  client.setQueryData(held, {
+    ticket: 3,
+    phase: "Working",
+    sequence: 9,
+    ...ticketInstants,
+  });
   render(
     <ScreenHarness partition={atlas} client={client} transport={transport}>
       <Spent />

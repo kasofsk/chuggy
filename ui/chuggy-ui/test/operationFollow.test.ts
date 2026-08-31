@@ -23,6 +23,7 @@ import type {
   OperationEvent,
   OperationStep,
 } from "../app/core/operationFollow.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const acceptedAt = "2026-08-26T00:00:00Z";
 
@@ -193,39 +194,66 @@ test("a confirmation keeps the fields the project row does not carry", () => {
   const brief = { intent: "ship it", links: [] };
   expect(
     ticketConfirmed(
-      { ticket: 7, phase: "Escalated", sequence: 4, brief },
-      { ticket: 7, phase: "Working", sequence: 9 },
+      { ticket: 7, phase: "Escalated", sequence: 4, brief, ...ticketInstants },
+      { ticket: 7, phase: "Working", sequence: 9, ...ticketInstants },
     ),
-  ).toEqual({ ticket: 7, phase: "Working", sequence: 9, brief });
+  ).toEqual({
+    ticket: 7,
+    phase: "Working",
+    sequence: 9,
+    brief,
+    ...ticketInstants,
+  });
 });
 
 test("a confirmation drops the fields the project row supersedes", () => {
   expect(
     ticketConfirmed(
-      { ticket: 7, phase: "Escalated", sequence: 4, reason: "WorkFailed" },
-      { ticket: 7, phase: "Working", sequence: 9 },
+      {
+        ticket: 7,
+        phase: "Escalated",
+        sequence: 4,
+        reason: "WorkFailed",
+        ...ticketInstants,
+      },
+      { ticket: 7, phase: "Working", sequence: 9, ...ticketInstants },
     ).reason,
   ).toBeUndefined();
 });
 
 test("a confirmation older than what is held does not put it back", () => {
-  const newer = { ticket: 7, phase: "Done", sequence: 12 } as const;
+  const newer = {
+    ticket: 7,
+    phase: "Done",
+    sequence: 12,
+    ...ticketInstants,
+  } as const;
   expect(
-    ticketConfirmed(newer, { ticket: 7, phase: "Working", sequence: 9 }),
+    ticketConfirmed(newer, {
+      ticket: 7,
+      phase: "Working",
+      sequence: 9,
+      ...ticketInstants,
+    }),
   ).toBe(newer);
 });
 
 test("a confirmation at the same sequence is written, not dropped", () => {
   expect(
     ticketConfirmed(
-      { ticket: 7, phase: "Working", sequence: 9 },
-      { ticket: 7, phase: "Done", sequence: 9 },
+      { ticket: 7, phase: "Working", sequence: 9, ...ticketInstants },
+      { ticket: 7, phase: "Done", sequence: 9, ...ticketInstants },
     ).phase,
   ).toBe("Done");
 });
 
 test("a confirmation with nothing held is what the page reads", () => {
-  const confirmed = { ticket: 7, phase: "Done", sequence: 9 } as const;
+  const confirmed = {
+    ticket: 7,
+    phase: "Done",
+    sequence: 9,
+    ...ticketInstants,
+  } as const;
   expect(ticketConfirmed(undefined, confirmed)).toBe(confirmed);
 });
 
