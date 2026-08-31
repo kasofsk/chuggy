@@ -127,7 +127,6 @@
   font-size: var(--text-xs);
 }
 
-.ticket-head,
 .action-panel,
 .configuration,
 .execution-detail,
@@ -135,13 +134,6 @@
   display: grid;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
-}
-
-.ticket-head {
-  grid-auto-flow: column;
-  justify-content: start;
-  align-items: baseline;
-  gap: var(--space-4);
 }
 
 .phase {
@@ -172,7 +164,11 @@
   color: var(--tone-parked);
 }
 
-.fields {
+/* Named apart from the `fields` primitive because an unlayered rule would beat
+ * it. The values here are digests, paths and command lines, so the value
+ * column is told it may be narrower than them and that they may break. */
+
+.legacy-fields {
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: 0 var(--space-4);
@@ -180,16 +176,18 @@
   padding: var(--space-2) var(--space-4);
 }
 
-.field {
+.legacy-field {
   display: contents;
 }
 
-.fields dt {
+.legacy-fields dt {
   color: var(--ink-3);
 }
 
-.fields dd {
+.legacy-fields dd {
   margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .canonical,

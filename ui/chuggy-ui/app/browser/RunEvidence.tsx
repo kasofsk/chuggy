@@ -212,24 +212,24 @@ function RunConfigurationBody(props: { readonly content: string }): ReactNode {
   const omitted = runConfigurationOmittedSentence(snapshot);
   return (
     <div className="configuration">
-      <dl className="fields">
-        <div className="field">
+      <dl className="legacy-fields">
+        <div className="legacy-field">
           <dt>model</dt>
           <dd>{head.model ?? "none was reported"}</dd>
         </div>
-        <div className="field">
+        <div className="legacy-field">
           <dt>permission mode</dt>
           <dd>{head.permissionMode ?? "none was reported"}</dd>
         </div>
-        <div className="field">
+        <div className="legacy-field">
           <dt>working directory</dt>
           <dd>{head.cwd ?? "none was reported"}</dd>
         </div>
-        <div className="field">
+        <div className="legacy-field">
           <dt>tools and skills</dt>
           <dd>{runConfigurationCapabilitiesSentence(head)}</dd>
         </div>
-        <div className="field">
+        <div className="legacy-field">
           <dt>command line</dt>
           <dd>
             {argv ?? <code className="argv">{snapshot.argv.join(" ")}</code>}
