@@ -25,11 +25,20 @@
  * inside the cooldown with a token still held is given it, because past a
  * refresh margin is not past an expiry.
  *
- * IT MUST BE SHORTER THAN THE REFRESH MARGIN, and that is refused rather than
- * documented. The margin is the window a replacement has to be obtained in
- * before the token really expires; a cooldown as long as the window can
- * consume all of it, and a bound that can be configured never to fire is a
- * control that reports success and enforces nothing.
+ * A COOLDOWN NEVER OUTLIVES THE GRANT THAT STARTED IT. What a configured
+ * cooldown can be checked against is the refresh margin, and that check is
+ * made — a cooldown as long as the margin could consume the whole window a
+ * replacement has to be found in, and a bound that can be configured never to
+ * fire is a control that reports success and enforces nothing. But the margin
+ * is only the window when the issuer grants a lifetime longer than it; below
+ * that a grant is held for half its life and the window is the other half,
+ * which no check made before any grant can see. So a successful attempt
+ * shortens its own cooldown to the life left in what it granted, and the two
+ * together say the whole thing: while a token is held there is no refusal
+ * before its expiry, and at its expiry a replacement can always be attempted.
+ * A failed attempt shortens nothing, because it granted no lifetime to
+ * measure — its cooldown is the configured one, which is what bounds a loop of
+ * failures.
  *
  * TWO CLOCKS, BECAUSE THEY MEASURE DIFFERENT THINGS. An expiry is the issuer's
  * statement about wall-clock time and is held against one. A cooldown is a
@@ -216,13 +225,15 @@ export function clientCredentialsTokenSource(
   let held: ClientCredentialsHeld | undefined;
   let minting: Promise<ClientCredentialsHeld> | undefined;
   let attemptedAtMonotonicMs: number | undefined;
+  let attemptCooldownMs = config.mintCooldownMs;
   const cooling = (): boolean =>
     attemptedAtMonotonicMs !== undefined &&
-    monotonicMs() - attemptedAtMonotonicMs < config.mintCooldownMs;
+    monotonicMs() - attemptedAtMonotonicMs < attemptCooldownMs;
   const mint = (): Promise<ClientCredentialsHeld> => {
     const inFlight = minting;
     if (inFlight !== undefined) return inFlight;
     attemptedAtMonotonicMs = monotonicMs();
+    attemptCooldownMs = config.mintCooldownMs;
     return (minting = clientCredentialsMinted(
       config,
       transport,
@@ -230,6 +241,10 @@ export function clientCredentialsTokenSource(
     ).then(
       (granted) => {
         held = granted;
+        attemptCooldownMs = Math.min(
+          config.mintCooldownMs,
+          Math.max(1, granted.expiresAtEpochMs - currentTimeEpochMs()),
+        );
         minting = undefined;
         return granted;
       },

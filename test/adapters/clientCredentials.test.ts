@@ -570,3 +570,109 @@ test("a held token past its expiry is not presented through a cooldown", async (
   await assert.rejects(granted.source.token(bounded()), /within its cooldown/u);
   assert.equal(granted.minted.length, 2);
 });
+
+/**
+ * The binding and not the function: a source given no clock must reach for the
+ * monotonic one, which a wall clock stepping backwards is what distinguishes.
+ */
+test("a source given no clock does not measure its cooldown on the wall clock", async () => {
+  const minted: MintedRequest[] = [];
+  const served = Date.now;
+  let wallOffsetMs = 0;
+  Date.now = (): number => served() + wallOffsetMs;
+  try {
+    const source = clientCredentialsTokenSource({
+      tokenUrl,
+      clientId: "selector",
+      clientSecret: "secret",
+      ...noAudienceOrScope,
+      requestTimeoutMs: 1_000,
+      responseBytesMax: 10_000,
+      responseReadsMax: 100,
+      refreshMarginMs: 400,
+      mintCooldownMs: 200,
+      fetch: mintingTransport(
+        minted,
+        () => new Response("{}", { status: 503 }),
+      ),
+    });
+    await assert.rejects(source.token(bounded()), /returned 503/u);
+    wallOffsetMs = -3_600_000;
+    await wait(250);
+    await assert.rejects(source.token(bounded()), /returned 503/u);
+    assert.equal(minted.length, 2);
+  } finally {
+    Date.now = served;
+  }
+});
+
+/**
+ * An issuer granting less than the refresh margin puts the hold on its
+ * half-life branch, which no check made before a grant can see.
+ */
+test("a cooldown never outlives the grant that started it", async () => {
+  const minted: MintedRequest[] = [];
+  let nowEpochMs = 1_000_000;
+  let elapsedMs = 0;
+  const source = clientCredentialsTokenSource({
+    tokenUrl,
+    clientId: "selector",
+    clientSecret: "secret",
+    ...noAudienceOrScope,
+    requestTimeoutMs: 1_000,
+    responseBytesMax: 10_000,
+    responseReadsMax: 100,
+    refreshMarginMs: 60_000,
+    mintCooldownMs: 59_000,
+    fetch: mintingTransport(minted, (attempt) =>
+      grantResponse(`token-${String(attempt)}`, 30),
+    ),
+    currentTimeEpochMs: () => nowEpochMs,
+    monotonicMs: () => elapsedMs,
+  });
+  const move = (milliseconds: number): void => {
+    nowEpochMs += milliseconds;
+    elapsedMs += milliseconds;
+  };
+  const presented: string[] = [];
+  for (let second = 0; second < 120; second += 1) {
+    presented.push(await source.token(bounded()));
+    move(1_000);
+  }
+  assert.equal(
+    presented.length,
+    120,
+    "no read is refused while the issuer is healthy",
+  );
+  assert.equal(
+    minted.length,
+    4,
+    "one grant per granted lifetime, not per configured cooldown",
+  );
+});
+
+/** A failed attempt has no lifetime to shorten its cooldown by. */
+test("a failed attempt still waits the whole configured cooldown", async () => {
+  const minted: MintedRequest[] = [];
+  let elapsedMs = 0;
+  const source = clientCredentialsTokenSource({
+    tokenUrl,
+    clientId: "selector",
+    clientSecret: "secret",
+    ...noAudienceOrScope,
+    requestTimeoutMs: 1_000,
+    responseBytesMax: 10_000,
+    responseReadsMax: 100,
+    refreshMarginMs: 60_000,
+    mintCooldownMs: 59_000,
+    fetch: mintingTransport(minted, () => new Response("{}", { status: 503 })),
+    monotonicMs: () => elapsedMs,
+  });
+  await assert.rejects(source.token(bounded()), /returned 503/u);
+  elapsedMs += 58_000;
+  await assert.rejects(source.token(bounded()), /within its cooldown/u);
+  assert.equal(minted.length, 1);
+  elapsedMs += 1_000;
+  await assert.rejects(source.token(bounded()), /returned 503/u);
+  assert.equal(minted.length, 2);
+});
