@@ -11,7 +11,8 @@
  * THE TICKET IS DRIVEN PAST AN AFFORDABLE PARK INTO AN UNAFFORDABLE ONE,
  * because a case that only ever saw the second would pass just as well against
  * a plan that offers the revoke and nothing else. The resume answered in
- * between is also the charge that empties the account.
+ * between is also the charge that empties the account, and the rework it
+ * re-enters is what walls the ticket a second time with nothing left to spend.
  *
  * THE HANDOFF HOLD IS NOT REACHED HERE. A publication request is materialized
  * only for a project whose configuration carries a whole handoff shape, so
@@ -151,7 +152,7 @@ test("a park offers the resume only while the ticket can pay for it", async () =
   const parked = ticketAt(memory.core, id(1));
   assert.equal(parked.phase, "Escalated");
   assert.equal(parked.reason, "ReworkBudgetExhausted");
-  assert.equal(parked.resumeAt, "ResumeEvaluating");
+  assert.equal(parked.resumeAt, "ResumeReworking");
   assert.ok(parked.gasLeft > 0);
   assert.deepEqual(await admitsOffered(partition), [["Resume", "Revoke"]]);
 
@@ -160,8 +161,8 @@ test("a park offers the resume only while the ticket can pay for it", async () =
 
   const spent = ticketAt(memory.core, id(1));
   assert.equal(spent.phase, "Escalated");
-  assert.equal(spent.reason, "ReworkBudgetExhausted");
-  assert.equal(spent.resumeAt, "ResumeEvaluating");
+  assert.equal(spent.reason, "WorkFailed");
+  assert.equal(spent.resumeAt, "ResumeWorking");
   assert.equal(spent.gasLeft, 0);
   assert.deepEqual(await admitsOffered(partition), [["Revoke"]]);
 });

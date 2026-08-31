@@ -135,9 +135,9 @@ function answerNames(
 /**
  * What the mapping may not get wrong. The expectation is read off the answer
  * rather than off the event under test, so a settle answer degraded into a
- * resume cannot pick the branch that would have passed; the two enablement
- * questions stand behind it, refusing a command the park does not offer and a
- * resume the gas does not gate.
+ * resume is compared against the command it should have named; the two
+ * enablement questions stand behind it, refusing a command the park does not
+ * offer and a resume the gas does not gate.
  */
 function assertAnswerNames(
   resolution: Exclude<NativeActionResolution, ApprovalResolution>,
