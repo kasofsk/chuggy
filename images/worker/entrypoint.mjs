@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { createInterface } from "node:readline";
 
 import { workerAgent } from "./agent.mjs";
+import { runChecks, workerCheckCommands } from "./checks.mjs";
 import { keepWorkerLease } from "./lease.mjs";
 import { scopedDatabase } from "./postgres.mjs";
 import { workerRepositories, workerRepository } from "./repository.mjs";
@@ -19,6 +20,8 @@ import { agentResultSchema } from "./result.mjs";
 
 const executeFile = promisify(execFile);
 const agentResultSchemaFile = "/tmp/chuggy-agent-result-schema.json";
+const agentDiagnosticPath = ".chuggy/agent-result.json";
+const checkDiagnosticPath = ".chuggy/check-output.json";
 const workerCredentialFilesMax = 64;
 let activeTask;
 let activeBearer;
@@ -151,7 +154,10 @@ async function runAgent(context) {
     throw new Error(
       `${context.agent.runtime} exited ${code ?? `after signal ${signal ?? "unknown"}`}`,
     );
-  return context.agent.result([resultEvent]);
+  return {
+    ...context.agent.result([resultEvent]),
+    diagnosticPath: agentDiagnosticPath,
+  };
 }
 
 function artifact(path, content) {
@@ -196,17 +202,11 @@ async function workerWorkspace(task, repositories, credentialFiles, bearer) {
   return { repositoryId, repository, base, directory, environment };
 }
 
-async function diagnostic(context, result) {
+async function diagnostic(context, path, result) {
   const content = Buffer.from(
     context.scrub(`${JSON.stringify(result, null, 2)}\n`),
   );
-  return upload(
-    context.task,
-    context.bearer,
-    ".chuggy/agent-result.json",
-    content,
-    context.request,
-  );
+  return upload(context.task, context.bearer, path, content, context.request);
 }
 
 async function report(context, manifest) {
@@ -237,12 +237,19 @@ async function credentialValues(credentialFiles) {
   return values;
 }
 
-async function workerRun(task, bearer, credentialFiles, agent) {
+async function agentCredential(credentialFiles, agent) {
   const credentialFile = credentialFiles[agent.credential];
   if (typeof credentialFile !== "string")
     throw new Error(`worker credential ${agent.credential} is not mounted`);
   const token = (await readFile(credentialFile, "utf8")).trim();
-  const prepared = await agent.prepareCredential(token);
+  return agent.prepareCredential(token);
+}
+
+async function workerRun(task, bearer, credentialFiles, agent) {
+  const prepared =
+    agent === undefined
+      ? { environment: {}, secrets: [] }
+      : await agentCredential(credentialFiles, agent);
   const scrub = credentialScrub([
     ...prepared.secrets,
     bearer,
@@ -258,23 +265,38 @@ function scrubbed(text) {
   return activeScrub === undefined ? text : activeScrub(text);
 }
 
-async function main() {
-  const task = parsed("CHUG_WORKER_TASK");
-  activeTask = task;
-  const agent = workerAgent(task);
-  if (!task.authority.credentials.includes(agent.credential))
-    throw new Error(`worker authority does not grant ${agent.credential}`);
+/** What the task must grant before it runs, and what an agent-run task needs on disk. */
+async function admitWorkerTask(task, agent) {
+  if (agent !== undefined) {
+    if (!task.authority.credentials.includes(agent.credential))
+      throw new Error(`worker authority does not grant ${agent.credential}`);
+    await writeFile(agentResultSchemaFile, JSON.stringify(agentResultSchema), {
+      flag: "wx",
+    });
+  }
   if (!task.authority.network || task.authority.filesystem !== "WriteWorkspace")
     throw new Error(
       "development worker requires network and workspace write authority",
     );
+}
+
+/** What ran and what it found: one agent's result, or one check stage's. */
+export async function runWorkerTask(context, commands) {
+  if (commands === undefined) return runAgent(context);
+  const run = await runChecks({ directory: context.directory }, commands);
+  return { ...run, diagnosticPath: checkDiagnosticPath };
+}
+
+async function main() {
+  const task = parsed("CHUG_WORKER_TASK");
+  activeTask = task;
+  const commands = workerCheckCommands(task);
+  const agent = commands === undefined ? workerAgent(task) : undefined;
+  await admitWorkerTask(task, agent);
   const repositories = workerRepositories(required("CHUG_WORKER_REPOSITORIES"));
   const credentialFiles = workerRepositories(
     required("CHUG_WORKER_CREDENTIAL_FILES"),
   );
-  await writeFile(agentResultSchemaFile, JSON.stringify(agentResultSchema), {
-    flag: "wx",
-  });
   const bearer = (
     await readFile(task.workerPlane.capabilityFile, "utf8")
   ).trim();
@@ -299,18 +321,21 @@ async function main() {
       required("CHUG_WORKER_DATABASE_SCOPE"),
     );
     await prepareWorker(task, workspace.directory);
-    const { output, result } = await runAgent({
-      task,
-      directory: workspace.directory,
-      agentEnvironment,
-      scrub,
-      evidence,
-      agent,
-    });
+    const run = await runWorkerTask(
+      {
+        task,
+        directory: workspace.directory,
+        agentEnvironment,
+        scrub,
+        evidence,
+        agent,
+      },
+      commands,
+    );
     await publishWorkerResult(
       { task, bearer, evidence, scrub, stopLease, request: workerRequest },
       workspace,
-      { output, result },
+      run,
     );
   } finally {
     evidence.stop();
@@ -330,11 +355,11 @@ async function main() {
 export async function publishWorkerResult(
   context,
   workspace,
-  { output, result },
+  { output, result, diagnosticPath },
 ) {
   await context.evidence.finish();
   const source = await workSource(context.task, workspace, result.verdict);
-  const diagnostics = [await diagnostic(context, output)];
+  const diagnostics = [await diagnostic(context, diagnosticPath, output)];
   await context.stopLease();
   await report(context, {
     verdict: result.verdict,

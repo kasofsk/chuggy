@@ -32,6 +32,7 @@ import {
   blessedPracticeCatalog,
   briefingLineCharsMax,
   briefingLinesMax,
+  evaluationChecksMax,
   authoredTaskConfigurationReadiness,
   composeTaskInvocation,
   priorWorkReportsMax,
@@ -616,6 +617,172 @@ test("each evaluation stage selects its own block, practices, and authority", ()
   assert.deepEqual(second.provenance.practices, ["AcceptanceCriteria"]);
   assert.deepEqual(taskAuthorityGrant(first.authority).tools, ["editor"]);
   assert.deepEqual(taskAuthorityGrant(second.authority).tools, ["shell"]);
+});
+
+/** The evaluation stages a check-stage case is composed against. */
+const checkEvaluations: readonly EvaluationBlock[] = [
+  {
+    purpose: "Review",
+    instructions: ["Review the change."],
+    practices: ["ChangedCallPaths"],
+  },
+  { purpose: "Check", checks: [".chug/tasks/ci.sh", "just check-full"] },
+];
+
+/** The lines one composed briefing renders for a section, or nothing when it has none. */
+function sectionLines(
+  view: BriefingView,
+  section: BriefingSectionId,
+): readonly string[] | undefined {
+  return composed(view).briefing.sections.find(
+    (each) => each.section === section,
+  )?.lines;
+}
+
+test("a check stage that names commands hands the worker that resolved list", () => {
+  const worker: WorkerConfiguration = {
+    mode: { type: "SingleAgent", agent: "Claude", arguments: ["--model"] },
+    setup: ["npm ci"],
+    files: [{ path: ".env", content: "" }],
+  };
+  const invocation = composed(
+    viewOf({
+      purpose: "Check",
+      stage: 1,
+      evaluations: checkEvaluations,
+      worker,
+    }),
+  );
+  assert.deepEqual(invocation.worker, {
+    mode: {
+      type: "Commands",
+      commands: [".chug/tasks/ci.sh", "just check-full"],
+    },
+    setup: ["npm ci"],
+    files: [{ path: ".env", content: "" }],
+  });
+});
+
+test("a check stage that names commands is composed even where no worker was authored", () => {
+  const invocation = composed(
+    viewOf({ purpose: "Check", stage: 1, evaluations: checkEvaluations }),
+  );
+  assert.deepEqual(invocation.worker, {
+    mode: {
+      type: "Commands",
+      commands: [".chug/tasks/ci.sh", "just check-full"],
+    },
+    setup: [],
+    files: [],
+  });
+});
+
+test("a check stage that names commands briefs no agent", () => {
+  const view = viewOf({
+    purpose: "Check",
+    stage: 1,
+    evaluations: checkEvaluations,
+    practices: [...allPracticeIds],
+  });
+  const invocation = composed(view);
+  assert.deepEqual(sectionLines(view, "CheckCommands"), [
+    "- .chug/tasks/ci.sh",
+    "- just check-full",
+  ]);
+  assert.equal(sectionLines(view, "PurposeInstructions"), undefined);
+  assert.equal(sectionLines(view, "Practices"), undefined);
+  assert.deepEqual(invocation.provenance.practices, []);
+  for (const line of invocation.briefing.sections.flatMap(
+    (section) => section.lines,
+  )) {
+    assert.ok(!line.startsWith("You are"), line);
+  }
+});
+
+test("a check stage briefed with instructions keeps the agent it always had", () => {
+  const evaluations: readonly EvaluationBlock[] = [
+    {
+      purpose: "Check",
+      instructions: ["Run .chug/tasks/ci.sh and pass only when it exits 0."],
+      practices: ["AcceptanceCriteria"],
+    },
+  ];
+  const view = viewOf({ purpose: "Check", stage: 0, evaluations });
+  assert.deepEqual(sectionLines(view, "PurposeInstructions"), [
+    "Run .chug/tasks/ci.sh and pass only when it exits 0.",
+  ]);
+  assert.equal(sectionLines(view, "CheckCommands"), undefined);
+  assert.equal(composed(view).worker, undefined);
+  assert.deepEqual(composed(view).provenance.practices, ["AcceptanceCriteria"]);
+  assert.deepEqual(sectionLines(view, "RoleInstructions"), [
+    "You are running the separate executable check stage for this ticket.",
+    "Run only the commands named below and judge their actual exit status.",
+    "Exit 2 means the check could not run and is not a pass.",
+  ]);
+});
+
+test("an evaluation stage names its commands or briefs an agent, never both or neither", () => {
+  const evaluationsOf = (evaluations: unknown): unknown => ({
+    ...authoredConfiguration,
+    evaluations,
+  });
+  for (const entry of [
+    { purpose: "Check", checks: ["./ci.sh"], instructions: [] },
+    { purpose: "Check", checks: ["./ci.sh"], practices: [] },
+    { purpose: "Check" },
+    { purpose: "Review", checks: ["./ci.sh"] },
+    { checks: ["./ci.sh"] },
+  ]) {
+    assert.deepEqual(
+      authoredTaskConfigurationReadiness(evaluationsOf([entry])),
+      { readiness: "Incomplete", fault: "EvaluationKindAmbiguous" },
+      JSON.stringify(entry),
+    );
+  }
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness(
+      evaluationsOf([{ purpose: "Check", checks: [".chug/tasks/ci.sh"] }]),
+    ),
+    {
+      readiness: "Ready",
+      configuration: {
+        ...authoredConfiguration,
+        evaluations: [{ purpose: "Check", checks: [".chug/tasks/ci.sh"] }],
+      },
+    },
+  );
+});
+
+test("a stage's command list is bounded and made of readable lines", () => {
+  const checksOf = (checks: unknown): unknown => ({
+    ...authoredConfiguration,
+    evaluations: [{ purpose: "Check", checks }],
+  });
+  for (const checks of [
+    [],
+    "./ci.sh",
+    [1],
+    Array.from({ length: evaluationChecksMax + 1 }, () => "./ci.sh"),
+  ]) {
+    assert.deepEqual(authoredTaskConfigurationReadiness(checksOf(checks)), {
+      readiness: "Incomplete",
+      fault: "ChecksInvalid",
+    });
+  }
+  assert.deepEqual(authoredTaskConfigurationReadiness(checksOf([""])), {
+    readiness: "Incomplete",
+    fault: "EmptyLine",
+  });
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness(
+      checksOf(["x".repeat(briefingLineCharsMax + 1)]),
+    ),
+    { readiness: "Incomplete", fault: "TextTooLong" },
+  );
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness(checksOf(["./ci.sh\nrm -rf /"])),
+    { readiness: "Incomplete", fault: "TextUnreadable" },
+  );
 });
 
 test("a fault in one role's block does not refuse the other role's briefing", () => {

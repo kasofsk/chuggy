@@ -21,6 +21,16 @@ test("an immutable worker configuration from before modes remains Claude", () =>
   );
 });
 
+test("no agent adapter is selected for a check stage", () => {
+  assert.throws(
+    () =>
+      workerAgent({
+        worker: { mode: { type: "Commands", commands: ["./ci.sh"] } },
+      }),
+    /a check stage runs its commands and no agent/u,
+  );
+});
+
 test("an unknown worker mode is refused", () => {
   assert.throws(
     () => workerAgent({ worker: { mode: { type: "ParallelAgents" } } }),

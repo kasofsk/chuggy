@@ -14,6 +14,7 @@ import { createHash } from "node:crypto";
 import { test } from "node:test";
 
 import {
+  allBriefingCarriers,
   allTaskPurposes,
   briefingHeading,
   briefingLabels,
@@ -35,13 +36,16 @@ function templateWording(): readonly string[] {
   }
   for (const purpose of allTaskPurposes) {
     wording.push(purpose);
-    for (const section of briefingSectionOrder) {
-      wording.push(briefingHeading(section, purpose));
+    for (const carrier of allBriefingCarriers) {
+      wording.push(carrier);
+      for (const section of briefingSectionOrder) {
+        wording.push(briefingHeading(section, purpose, carrier));
+      }
+      wording.push(
+        ...briefingRoleInstructions(purpose, carrier),
+        ...briefingRequiredResult(purpose, carrier),
+      );
     }
-    wording.push(
-      ...briefingRoleInstructions(purpose),
-      ...briefingRequiredResult(purpose),
-    );
   }
   return wording;
 }
@@ -57,7 +61,7 @@ function templateDigest(): string {
 test("the template version moves with the wording it names", () => {
   assert.deepEqual(
     [briefingTemplateVersion, templateDigest()],
-    [3, "0a7cdf9183c5e845c0c7964ad1fe3dd37b3b2a5cece934edac79703751d1a704"],
+    [4, "e09439604a55846ee74f5508b07a5fa00cdabeef67707721040124ef515cf0bc"],
     "the template wording changed: move briefingTemplateVersion and repin this digest",
   );
 });
@@ -65,17 +69,19 @@ test("the template version moves with the wording it names", () => {
 test("the digest reads every string the template states", () => {
   const wording = templateWording();
   for (const purpose of allTaskPurposes) {
-    for (const line of briefingRoleInstructions(purpose)) {
-      assert.ok(wording.includes(line), `${line} is outside the pin`);
-    }
-    for (const line of briefingRequiredResult(purpose)) {
-      assert.ok(wording.includes(line), `${line} is outside the pin`);
-    }
-    for (const section of briefingSectionOrder) {
-      assert.ok(
-        wording.includes(briefingHeading(section, purpose)),
-        `${section} has a heading outside the pin`,
-      );
+    for (const carrier of allBriefingCarriers) {
+      for (const line of [
+        ...briefingRoleInstructions(purpose, carrier),
+        ...briefingRequiredResult(purpose, carrier),
+      ]) {
+        assert.ok(wording.includes(line), `${line} is outside the pin`);
+      }
+      for (const section of briefingSectionOrder) {
+        assert.ok(
+          wording.includes(briefingHeading(section, purpose, carrier)),
+          `${section} has a heading outside the pin`,
+        );
+      }
     }
   }
   for (const text of Object.values(briefingLabels)) {
