@@ -11,9 +11,9 @@
 # apt's peer verification would have kept the slim base and traded the transport
 # away for it, which is a weakening nothing here needs.
 #
-# The digest is the multi-architecture index's, read on 2026-08-31 with
-#   docker buildx imagetools inspect node:24.8.0-alpine
-FROM node:24.8.0-alpine@sha256:3e843c608bb5232f39ecb2b25e41214b958b0795914707374c8acc28487dea17
+# The digest is the multi-architecture index's, read on 2026-08-27 with
+#   docker buildx imagetools inspect node:26.7.0-bookworm
+FROM node:26.7.0-bookworm@sha256:e929171d35b9df7773a3ec5b068e387fa109441dc90f91e6560af5d39b7e9bf1
 
 ARG CLAUDE_CODE_VERSION=2.1.251
 ARG CODEX_VERSION=0.151.0
