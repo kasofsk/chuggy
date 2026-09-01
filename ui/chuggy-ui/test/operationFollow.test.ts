@@ -13,6 +13,7 @@ import type { OperationState } from "../../../src/contract/rosters.ts";
 import type { OperationResponse } from "../../../src/contract/responses.ts";
 import {
   operationAdvanced,
+  operationAnswered,
   operationAttemptsMax,
   operationConfirmationPage,
   operationRequest,
@@ -331,6 +332,25 @@ test("a fault carries its own reason and asks for nothing further", () => {
   expect(step).toEqual({
     step: "Abandoned",
     reason: "the API could not be reached",
+    refused: false,
   });
   expect(operationRequest(step)).toBeUndefined();
+  expect(operationAnswered(step)).toBe(false);
+});
+
+/** The two ways a follow ends without an operation to show for it, which a
+ * screen holding the identity must tell apart: the API declining to make one,
+ * and the console never learning whether it did. */
+test("only a refusal says the identity will never be an operation", () => {
+  const refused = operationAdvanced(operationSubmitting(), {
+    event: "Refused",
+    reason: "the ticket has moved on",
+  });
+  expect(refused).toEqual({
+    step: "Abandoned",
+    reason: "the ticket has moved on",
+    refused: true,
+  });
+  expect(operationAnswered(refused)).toBe(true);
+  expect(operationRequest(refused)).toBeUndefined();
 });

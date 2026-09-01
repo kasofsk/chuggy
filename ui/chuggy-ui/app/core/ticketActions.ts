@@ -20,8 +20,8 @@ import type { PublicMutation } from "../../../../src/contract/requests.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import type { DispatchViewResponse } from "../../../../src/contract/responses.ts";
 
-import { projectListReread } from "./projectQueryKeys.ts";
-import type { ProjectList } from "./projectQueryKeys.ts";
+import { projectHeldKey, projectListReread } from "./projectQueryKeys.ts";
+import type { ProjectList, ProjectQueryKey } from "./projectQueryKeys.ts";
 
 /** Settled, or past the point of no return: the complement of `revocableIn`. */
 export const ticketUnrevocablePhases: readonly TicketPhase[] = [
@@ -99,6 +99,31 @@ export function ticketDispatchList(
     "Ticket",
     `dispatch:${String(ticket)}`,
   );
+}
+
+/**
+ * A submission a panel is still following, and the identity it was drawn under.
+ * Whether the API took it is not a field: the identity is drawn before the
+ * submission is made, so a record can name one the API never heard of, and only
+ * the API can say which — which is what a pick-up's first poll asks.
+ */
+export interface TicketAttempt {
+  readonly action: TicketAction;
+  readonly operation: string;
+}
+
+/**
+ * Where an attempt in flight is held, so that the panel unmounting does not
+ * take the record of it with it. It is the cache and not component state
+ * because the cache outlives the panel, and it is a held key rather than a
+ * resource one because it is the console's own working state and not a read of
+ * anything the stream carries.
+ */
+export function ticketAttemptKey(
+  partition: PartitionIdentity,
+  ticket: number,
+): ProjectQueryKey {
+  return projectHeldKey(partition, `attempt:${String(ticket)}`);
 }
 
 export function manualDispatchAction(

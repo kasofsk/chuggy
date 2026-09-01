@@ -26,7 +26,7 @@ import type { z } from "zod";
 
 import { apiOperation, apiProject, apiSubmitOperation } from "./apiRoutes.ts";
 import type { ProjectPage } from "./apiRoutes.ts";
-import type { ApiPorts, ApiResult } from "./apiRequest.ts";
+import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
 import { operationFailureSentence } from "./codeSentences.ts";
 
 /** How much entropy an operation identity is drawn with. It is also the
@@ -67,7 +67,17 @@ export type OperationStep =
       readonly state: OperationState;
       readonly refusalCode: OperationRefusalCode | undefined;
     }
-  | { readonly step: "Abandoned"; readonly reason: string };
+  | {
+      readonly step: "Abandoned";
+      readonly reason: string;
+      /**
+       * The API refused the submission before acting on it, so the identity it
+       * was drawn under names nothing and never will. It is the one abandonment
+       * a screen holding that identity may let go of: every other one leaves
+       * open what the machine did, a fault included.
+       */
+      readonly refused: boolean;
+    };
 
 export type OperationEvent =
   | { readonly event: "Accepted"; readonly operation: string }
@@ -77,15 +87,28 @@ export type OperationEvent =
       readonly retryAfterSeconds: number;
     }
   | { readonly event: "Polled"; readonly operation: OperationResponse }
+  | { readonly event: "Unaccepted" }
   | { readonly event: "Confirmed" }
   | { readonly event: "Behind" }
-  | { readonly event: "Faulted"; readonly reason: string };
+  | { readonly event: "Faulted"; readonly reason: string }
+  | { readonly event: "Refused"; readonly reason: string };
 
 /** What the caller does next for this step, and nothing about how. */
 export type OperationRequest = "Submit" | "Poll" | "Confirm";
 
 export function operationSubmitting(): OperationStep {
   return { step: "Submitting", attempts: 0 };
+}
+
+/**
+ * Where a follow begins when a screen before this one submitted it: at the
+ * poll, because a read is what says whether the API ever took the identity and
+ * it asks the API to write nothing to find out. A submission the API never took
+ * answers no such operation, and `Unaccepted` is what carries that back to the
+ * submission it was drawn for.
+ */
+export function operationFollowing(operation: string): OperationStep {
+  return { step: "Following", operation, attempts: 0 };
 }
 
 export function operationRequest(
@@ -105,15 +128,61 @@ export function operationRequest(
   }
 }
 
+/** A follow with nothing left to do, whichever of the two ways it ended. */
+export function operationFinished(
+  step: OperationStep,
+): step is Extract<OperationStep, { readonly step: "Settled" | "Abandoned" }> {
+  return step.step === "Settled" || step.step === "Abandoned";
+}
+
 /** The budget a step has spent; a finished follow has none left to spend. */
 function operationAttempts(step: OperationStep): number {
-  return step.step === "Settled" || step.step === "Abandoned"
-    ? 0
-    : step.attempts;
+  return operationFinished(step) ? 0 : step.attempts;
 }
 
 function operationAbandoned(reason: string): OperationStep {
-  return { step: "Abandoned", reason };
+  return { step: "Abandoned", reason, refused: false };
+}
+
+/** The API declined the submission before acting, so the identity it was drawn
+ * under names nothing and never will. */
+function operationRefused(reason: string): OperationStep {
+  return { step: "Abandoned", reason, refused: true };
+}
+
+/**
+ * Whether the API answered before it acted, which is the only answer that says
+ * a submission was never made: every arm below that returns true is a refusal
+ * the contract classifies from a 4xx, decided ahead of any write. A fault is
+ * not one of them — it is any 5xx, and a handler that committed the acceptance
+ * and then fell over on the way to reporting it answers exactly like one that
+ * did nothing — and neither is a request that never arrived or an answer that
+ * cannot be read, which may be an acceptance this console could not parse.
+ */
+function failureAnswered(failure: ApiFailure): boolean {
+  switch (failure.outcome) {
+    case "Unauthenticated":
+    case "Absent":
+    case "Conflict":
+    case "Rejected":
+      return true;
+    case "Fault":
+    case "Retryable":
+    case "Unreachable":
+    case "Unreadable":
+      return false;
+  }
+}
+
+/**
+ * Whether the fate of the submission is known. `Settled` is the API answering
+ * about the operation and a refusal is the API declining to make one; every
+ * other ending is the console giving up on finding out, and an identity whose
+ * fate nobody knows is one a screen must keep rather than drop.
+ */
+export function operationAnswered(step: OperationStep): boolean {
+  if (step.step === "Settled") return true;
+  return step.step === "Abandoned" && step.refused;
 }
 
 function operationSettled(
@@ -181,6 +250,26 @@ function operationPolled(
   );
 }
 
+/**
+ * A poll the API has no operation for, which the identity being the console's
+ * own draw and the route's idempotency key both makes one thing: the submission
+ * never arrived, and the answer is to make it under that same identity.
+ * `src/interpreter/operationInbox.ts` answers that key offered with the same
+ * command as `Original`, carrying the operation, so an acceptance this screen
+ * missed comes back as the operation to follow rather than as a second attempt.
+ */
+function operationUnaccepted(step: OperationStep): OperationStep {
+  if (step.step !== "Following")
+    return operationAbandoned(
+      "an operation was looked for before it was named",
+    );
+  return operationSpent(
+    step,
+    "the API never accepted this submission within the attempt budget",
+    (attempts) => ({ step: "Submitting", attempts }),
+  );
+}
+
 function operationBehind(step: OperationStep): OperationStep {
   if (step.step !== "Confirming")
     return operationAbandoned(
@@ -227,12 +316,16 @@ export function operationAdvanced(
       return operationDeferred(step, event);
     case "Polled":
       return operationPolled(step, event.operation);
+    case "Unaccepted":
+      return operationUnaccepted(step);
     case "Confirmed":
       return operationConfirmed(step);
     case "Behind":
       return operationBehind(step);
     case "Faulted":
       return operationAbandoned(event.reason);
+    case "Refused":
+      return operationRefused(event.reason);
   }
 }
 
@@ -253,7 +346,10 @@ function operationEventOf<T>(
       code: result.code,
       retryAfterSeconds: result.retryAfterSeconds,
     };
-  return { event: "Faulted", reason: operationFailureSentence(result) };
+  return {
+    event: failureAnswered(result) ? "Refused" : "Faulted",
+    reason: operationFailureSentence(result),
+  };
 }
 
 /**
@@ -358,6 +454,8 @@ async function operationTurn(
       step.operation,
       signal,
     );
+    if (answered.outcome === "Absent")
+      return { event: { event: "Unaccepted" } };
     return {
       event: operationEventOf(answered, (value) => ({
         event: "Polled",
@@ -391,7 +489,11 @@ function operationWaitMs(step: OperationStep): number {
 
 /**
  * The whole follow: submit, poll to settlement, confirm the projection, and
- * report every step it passed through so a screen can say where it is.
+ * report every step it passed through so a screen can say where it is. It
+ * begins at the submission unless the caller names a step it already reached,
+ * and the budget is that step's, so a picked-up follow is bounded like any
+ * other — including one that goes back to submitting because the API had never
+ * heard of the identity it was handed.
  */
 export async function followOperation(
   ports: ApiPorts,
@@ -400,8 +502,9 @@ export async function followOperation(
   ticket: number,
   onStep: (step: OperationStep) => void,
   signal?: AbortSignal,
+  startedFrom: OperationStep = operationSubmitting(),
 ): Promise<OperationFollowed> {
-  let step = operationSubmitting();
+  let step = startedFrom;
   let confirmed: TicketResponse | undefined;
   onStep(step);
   for (let taken = 0; taken < operationStepsMax; taken += 1) {
@@ -422,9 +525,11 @@ export async function followOperation(
       return { step, ticket: confirmed };
     try {
       await ports.sleepMs(operationWaitMs(step), signal);
-    } catch {
+    } catch (failure: unknown) {
       const abandoned = operationAbandoned(
-        "the screen that asked for this is gone",
+        failure instanceof Error
+          ? failure.message
+          : "the wait between attempts did not finish",
       );
       onStep(abandoned);
       return { step: abandoned, ticket: confirmed };
