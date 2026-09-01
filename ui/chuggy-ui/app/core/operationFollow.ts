@@ -71,10 +71,10 @@ export type OperationStep =
       readonly step: "Abandoned";
       readonly reason: string;
       /**
-       * The API answered, and the answer was no. A screen holding the identity
-       * this submission was drawn under can let go of it here and nowhere else
-       * among the abandonments, because every other one is the console not
-       * finding out rather than the API declining.
+       * The API refused the submission before acting on it, so the identity it
+       * was drawn under names nothing and never will. It is the one abandonment
+       * a screen holding that identity may let go of: every other one leaves
+       * open what the machine did, a fault included.
        */
       readonly refused: boolean;
     };
@@ -144,17 +144,20 @@ function operationAbandoned(reason: string): OperationStep {
   return { step: "Abandoned", reason, refused: false };
 }
 
-/** The API declined the submission, so the identity it names will never exist. */
+/** The API declined the submission before acting, so the identity it was drawn
+ * under names nothing and never will. */
 function operationRefused(reason: string): OperationStep {
   return { step: "Abandoned", reason, refused: true };
 }
 
 /**
- * Whether the API answered the request or the answer never arrived. A refusal,
- * a fault and a request it would not authorize are all the API speaking; a
- * network that never reached it is not, and neither is a body it sent that
- * cannot be read — an unreadable answer to a submission is an answer that may
- * have accepted it.
+ * Whether the API answered before it acted, which is the only answer that says
+ * a submission was never made: every arm below that returns true is a refusal
+ * the contract classifies from a 4xx, decided ahead of any write. A fault is
+ * not one of them — it is any 5xx, and a handler that committed the acceptance
+ * and then fell over on the way to reporting it answers exactly like one that
+ * did nothing — and neither is a request that never arrived or an answer that
+ * cannot be read, which may be an acceptance this console could not parse.
  */
 function failureAnswered(failure: ApiFailure): boolean {
   switch (failure.outcome) {
@@ -162,8 +165,8 @@ function failureAnswered(failure: ApiFailure): boolean {
     case "Absent":
     case "Conflict":
     case "Rejected":
-    case "Fault":
       return true;
+    case "Fault":
     case "Retryable":
     case "Unreachable":
     case "Unreadable":

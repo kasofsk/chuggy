@@ -588,10 +588,9 @@ function losing(): Served {
   });
 }
 
-test("pressing again reaches the held attempt rather than drawing a second", async () => {
-  const api = losing();
-  await unanswered(api, new QueryClient());
-
+/** Pressing where a record stands: the press reaches what is held and polls
+ * it, rather than drawing a second identity for the same intent. */
+async function pressedAgain(api: Served): Promise<void> {
   await turned(() => {
     screen.getByRole("button", { name: "Resume" }).click();
   });
@@ -600,6 +599,12 @@ test("pressing again reaches the held attempt rather than drawing a second", asy
   expect(api.identities()).toHaveLength(1);
   expect(api.urls.filter(polling)).not.toEqual([]);
   expect(screen.getByText("Waiting for actor…")).toBeDefined();
+}
+
+test("pressing again reaches the held attempt rather than drawing a second", async () => {
+  const api = losing();
+  await unanswered(api, new QueryClient());
+  await pressedAgain(api);
 });
 
 test("a press naming another action still resolves the attempt that is held", async () => {
@@ -662,4 +667,32 @@ test("a refusal leaves the next press free to mean a new intent", async () => {
 
   expect(api.identities()).toHaveLength(2);
   expect(api.posts()).toBe(2);
+});
+
+/** A submission the API faults on, which says nothing about whether it acted:
+ * a handler that committed the acceptance and fell over on the way to reporting
+ * it answers exactly like one that did nothing. */
+function faulting(): Served {
+  return served({
+    submission: () => answer({ error: { code: "Fault" } }, 500),
+    openActions: () => answer({ actions: [] }),
+  });
+}
+
+test("a faulted submission may have been taken, so its identity is kept", async () => {
+  const api = faulting();
+  vi.stubGlobal("fetch", api.fetch);
+  const client = new QueryClient();
+  mounted(client);
+  await settled();
+  await turned(() => {
+    screen.getByRole("button", { name: "Resume" }).click();
+  });
+  await settled();
+
+  expect(
+    client.getQueryData<TicketAttempt>(ticketAttemptKey(atlas, 11))?.operation,
+  ).toBe(api.identities()[0]);
+
+  await pressedAgain(api);
 });
