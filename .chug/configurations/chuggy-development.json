@@ -58,11 +58,8 @@
       },
       {
         "purpose": "Check",
-        "instructions": [
-          "Run .chug/tasks/ci.sh and pass only when it exits cleanly; exit 2 means the evaluation could not run and is not a pass."
-        ],
-        "practices": [
-          "AcceptanceCriteria"
+        "checks": [
+          ".chug/tasks/ci.sh"
         ]
       }
     ]

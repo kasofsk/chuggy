@@ -7,6 +7,10 @@
  * enumerate for both roles, and each case asserts the rendered identities are
  * the fixed order with members removed rather than merely the right set.
  *
+ * THE CHECKED-IN CONFIGURATIONS ARE READ FROM DISK, because a configuration
+ * this tree ships is refused by the importer rather than by a suite, and a
+ * refusal found there is found on a rig.
+ *
  * THE AUTHORITY CLAIM IS `./taskAuthority.test.ts`'s. What is checked here is
  * the one thing composition adds to it: the template's own narrowing leads the
  * fold, so no grant and no authored block leaves a briefed worker able to
@@ -14,6 +18,7 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -783,6 +788,22 @@ test("a stage's command list is bounded and made of readable lines", () => {
     authoredTaskConfigurationReadiness(checksOf(["./ci.sh\nrm -rf /"])),
     { readiness: "Incomplete", fault: "TextUnreadable" },
   );
+});
+
+test("this tree's own configurations name a check stage the worker runs itself", () => {
+  for (const name of ["chuggy-development", "basic-coding"]) {
+    const document: unknown = JSON.parse(
+      readFileSync(`.chug/configurations/${name}.json`, "utf8"),
+    );
+    const parsed = authoredTaskConfigurationReadiness(
+      (document as { readonly configuration: unknown }).configuration,
+    );
+    if (parsed.readiness !== "Ready") assert.fail(`${name}: ${parsed.fault}`);
+    assert.deepEqual(parsed.configuration.evaluations?.at(-1), {
+      purpose: "Check",
+      checks: [".chug/tasks/ci.sh"],
+    });
+  }
 });
 
 test("a fault in one role's block does not refuse the other role's briefing", () => {
