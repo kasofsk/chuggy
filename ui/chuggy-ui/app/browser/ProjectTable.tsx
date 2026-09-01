@@ -56,6 +56,7 @@ import { DataPanel } from "./DataPanel.tsx";
 import { useProjectExecutionIndex } from "./executionIndex.ts";
 import {
   cellAbsent,
+  cellExecutionUnread,
   ticketRowExecutionCell,
   TicketNumberCell,
 } from "./TicketCells.tsx";
@@ -124,6 +125,21 @@ function useTicketRows(
   };
 }
 
+/** No ticket carries this title, so nothing is invented in its place. */
+const ticketTitleUnset = "Unset";
+
+/**
+ * What the first column says for a ticket that named no title of its own: the
+ * configuration its execution ran from where the index reached one, "not
+ * read" where a truncated walk has not, and otherwise that no title was ever
+ * stated — a fact distinct enough from "never ran" that it earns its own word
+ * rather than the dash the other columns share.
+ */
+function ticketAboutCell(row: ProjectTableRow): string {
+  if (row.executionRead === "IndexTruncated") return cellExecutionUnread;
+  return row.configuration?.text ?? ticketTitleUnset;
+}
+
 function TicketRow(props: {
   readonly row: ProjectTableRow;
   readonly partition: PartitionIdentity;
@@ -134,8 +150,11 @@ function TicketRow(props: {
     <tr>
       <TicketNumberCell partition={props.partition} ticket={row.ticket} />
       <td className="cell-dim">
-        <span className="clipped" title={row.configuration?.title}>
-          {ticketRowExecutionCell(row, row.configuration?.text)}
+        <span
+          className="clipped"
+          title={row.title?.title ?? row.configuration?.title}
+        >
+          {row.title?.text ?? ticketAboutCell(row)}
         </span>
       </td>
       <td>{row.phase}</td>
@@ -170,7 +189,7 @@ function TicketTable(props: {
         <thead>
           <tr>
             <th scope="col">ticket</th>
-            <th scope="col">configuration</th>
+            <th scope="col">about</th>
             <th scope="col">phase</th>
             <th scope="col">why</th>
             <th scope="col">execution</th>

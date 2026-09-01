@@ -39,6 +39,7 @@ import {
   type OperationState,
 } from "../../interpreter/operationInbox.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
+import { asBriefIntent, briefTitle } from "../../interpreter/ticketBrief.ts";
 import { projectRowCounter } from "./rows.ts";
 import { postgresTicketRunTotals } from "./runEvidence.ts";
 import { draftBriefOf, type DraftBriefRow } from "./ticketBrief.ts";
@@ -55,10 +56,12 @@ interface PublicOperationRow {
 
 /**
  * One projection row, joined to the deployment gas every ticket is released
- * with and to the two journal entries that date it. The account columns are null
- * together on a row no decision has moved since the projection began carrying
- * them, the joined gas is null only where no domain configuration is installed,
- * and the two entries are outer joins so a page keeps a row neither is found for.
+ * with and to the two journal entries that date it, all outer joins so a page
+ * keeps a row none of them is found for — `intent` the same way, null for a
+ * ticket authored before a brief was ever required of one. The account
+ * columns are null together on a row no decision has moved since the
+ * projection began carrying them, and the joined gas is null only where no
+ * domain configuration is installed.
  */
 interface TicketProjectionRow {
   readonly ticket: string;
@@ -72,6 +75,7 @@ interface TicketProjectionRow {
   readonly rework_left: string | null;
   readonly finalization_left: string | null;
   readonly gas_max: string | null;
+  readonly intent: string | null;
 }
 
 /** One open action, or a ticket that has none: every column is then null. */
@@ -271,14 +275,21 @@ function projectionAccounts(
   };
 }
 
+/** The ticket's own title, or none for a row whose brief joined no intent. */
+function projectionTitle(intent: string | null): string | undefined {
+  return intent === null ? undefined : briefTitle(asBriefIntent(intent));
+}
+
 function ticketResource(row: TicketProjectionRow): TicketResource {
   const reason = projectionReason(row.reason);
   const resumeAt = projectionResume(row.resume_at);
   const accounts = projectionAccounts(row);
+  const title = projectionTitle(row.intent);
   return {
     ticket: asTicketId(projectRowCounter(row.ticket, "ticket identity")),
     phase: projectionPhase(row.phase),
     sequence: projectRowCounter(row.seq, "ticket projection sequence"),
+    ...(title === undefined ? {} : { title }),
     changedAt: ticketResourceChangedAt(row.changed_at),
     ...(row.released_at === null
       ? {}
@@ -412,12 +423,15 @@ async function readProjectTickets(
       sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,t.gas_left,
                  t.rework_left,t.finalization_left,
                  d.domain_configuration::jsonb->>'gas' AS gas_max,
+                 b.intent,
                  r.committed_at::text AS released_at,
                  c.committed_at::text AS changed_at
           FROM ticket_projection t
           LEFT JOIN deployment_authoring_policy d ON d.singleton=true
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
+          LEFT JOIN draft_brief b
+            ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
           LEFT JOIN LATERAL (
             SELECT j.committed_at FROM journal_entry j
              WHERE j.tenant=t.tenant AND j.project=t.project
@@ -438,12 +452,15 @@ async function readProjectTickets(
     sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,t.gas_left,
                t.rework_left,t.finalization_left,
                d.domain_configuration::jsonb->>'gas' AS gas_max,
+               b.intent,
                r.committed_at::text AS released_at,
                c.committed_at::text AS changed_at
           FROM ticket_projection t
           LEFT JOIN deployment_authoring_policy d ON d.singleton=true
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
+          LEFT JOIN draft_brief b
+            ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
           LEFT JOIN LATERAL (
             SELECT j.committed_at FROM journal_entry j
              WHERE j.tenant=t.tenant AND j.project=t.project

@@ -37,7 +37,7 @@ import {
   reworkPolicySchema,
   reworkPolicyResponseSchema,
 } from "./authoring.ts";
-import { briefResponseSchema } from "./brief.ts";
+import { briefLineCharsMax, briefResponseSchema } from "./brief.ts";
 import { selectorProjectOverridesSchema } from "./requests.ts";
 import {
   architectures,
@@ -173,13 +173,16 @@ const ticketAccountsSchema = z.object({
 
 /**
  * A ticket as the project table and its own read both carry it. The brief is
- * the ticket's own read alone: an intent is a paragraph, and a page of them is
- * a page of documents rather than a table.
+ * the ticket's own read alone — an intent is a paragraph, and a page of them
+ * is a page of documents rather than a table — but `title`, the first line of
+ * it and already bounded to a briefing line, travels with both, absent only
+ * for a ticket authored before a brief was ever required of one.
  */
 export const ticketResponseSchema = z.object({
   ticket: ticketNumberSchema,
   phase: z.enum(phaseRoster),
   sequence: countSchema,
+  title: z.string().min(1).max(briefLineCharsMax).optional(),
   /**
    * When the entry `sequence` names committed, which is when the ticket entered
    * the phase and reason reported here. Nothing moves a Done or Revoked ticket

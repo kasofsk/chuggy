@@ -5,12 +5,15 @@
  * reads behind it — the ticket page and the index of what each ticket ran —
  * stay separate cache entries that separate frames fold into.
  *
- * THE FIRST COLUMN IS A SLOT. A ticket resource carries no intent, so what the
- * slot shows is the configuration the ticket's execution ran from, named where
- * the wire names it, which is the only thing on the wire that says what a
- * ticket is made of. When
- * a ticket states its own intent, this is where it goes and the row's other
- * columns do not move.
+ * THE FIRST COLUMN IS A SLOT. A ticket's own title — the first line of the
+ * intent it was briefed with — is what it is made of, and takes the slot
+ * whenever the ticket carries one; unlike the columns after it, it does not
+ * depend on the execution join at all, so an index a walk has not finished
+ * does not hide it. A ticket authored before a brief was ever required of one
+ * carries no title, and the slot falls back to the configuration its execution
+ * ran from, named where the wire names it, so the column still says something
+ * about a ticket the join otherwise says nothing about. Either way the row's
+ * other columns do not move.
  *
  * A row therefore says which of three things is true of its execution columns:
  * they are joined, this ticket has never run, or what the index holds for it is
@@ -59,6 +62,7 @@ export interface ProjectTableRow {
   readonly section: TicketSection;
   readonly badge: string | undefined;
   readonly executionRead: ProjectTableExecutionRead;
+  readonly title: Label | undefined;
   readonly configuration: Label | undefined;
   readonly executionStatus: ExecutionStatus | undefined;
   readonly executionOutcome: ExecutionOutcome | undefined;
@@ -90,6 +94,12 @@ export function projectTableExecutionRead(
   return indexTruncated ? "IndexTruncated" : "NoneRegistered";
 }
 
+/** A ticket's own title, drawn like any other label: shown as it is, and in
+ * full on hover, since a title is already one printable line. */
+function ticketTitleLabel(title: string | undefined): Label | undefined {
+  return title === undefined ? undefined : { text: title, title };
+}
+
 /** The ticket's own last activity is its sequence; an instant is the execution's,
  * because that is where the wire states one. */
 export function projectTableRow(
@@ -105,6 +115,7 @@ export function projectTableRow(
     section: ticketSectionOf(ticket.phase),
     badge: ticketBadgeLabel(ticket.phase, ticket.reason),
     executionRead: read,
+    title: ticketTitleLabel(ticket.title),
     configuration:
       execution === undefined
         ? undefined

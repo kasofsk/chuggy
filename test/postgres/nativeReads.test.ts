@@ -371,6 +371,72 @@ test("project reads filter before paging and expose one ticket detail", async ()
   assert.equal(await reads.ticket(partition, id(9)), undefined);
 });
 
+/** A draft carrying a brief, seeded directly so a read case needs no writer. */
+async function seedBriefedDraft(
+  partition: Partition,
+  ticket: number,
+  intent: string,
+): Promise<void> {
+  const revision = `native-title-revision-${String(ticket)}`;
+  await subject.harness.query(
+    `INSERT INTO configuration_revision
+       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+     VALUES ($1,$2,$3,'{}',$4,'Human','native-title-tester')`,
+    [partition.tenant, partition.project, revision, `digest-${revision}`],
+  );
+  await subject.harness.query(
+    `INSERT INTO draft (tenant,project,ticket,authoring_version,state,configuration_revision)
+     VALUES ($1,$2,$3,1,'Released',$4)`,
+    [partition.tenant, partition.project, ticket, revision],
+  );
+  await subject.harness.query(
+    `INSERT INTO draft_brief (tenant,project,ticket,intent) VALUES ($1,$2,$3,$4)`,
+    [partition.tenant, partition.project, ticket, intent],
+  );
+}
+
+test("a ticket's title is the first line of its own brief, and one authored before a brief was required carries none", async () => {
+  const partition = await postgresHarnessProject(
+    subject.harness.store,
+    "native-title",
+  );
+  await subject.harness.query(
+    "UPDATE project SET head=2 WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project],
+  );
+  await seedBriefedDraft(
+    partition,
+    1,
+    "Fix the retry backoff.\nA second line the title leaves behind.",
+  );
+  for (const [ticket, sequence] of [
+    [1, 1],
+    [2, 2],
+  ] as const) {
+    await seedEntry(partition, `native-title-${String(ticket)}`, sequence);
+    await subject.harness.query(
+      `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+       VALUES ($1,$2,$3,'Pending',$4)`,
+      [partition.tenant, partition.project, ticket, sequence],
+    );
+  }
+  const reads = postgresNativeReads(subject.pool);
+  const listed = await reads.project(partition, { limit: 10 });
+  assert.equal(listed.result, "Found");
+  if (listed.result !== "Found") return;
+  assert.deepEqual(
+    listed.project.tickets.map((row) => [row.ticket, row.title]),
+    [
+      [1, "Fix the retry backoff."],
+      [2, undefined],
+    ],
+  );
+  const briefed = await reads.ticket(partition, id(1));
+  assert.equal(briefed?.title, "Fix the retry backoff.");
+  const unbriefed = await reads.ticket(partition, id(2));
+  assert.equal(unbriefed?.title, undefined);
+});
+
 test("a ticket's open action carries its kind, its fence, and what it offered", async () => {
   const partition = await postgresHarnessProject(
     subject.harness.store,

@@ -116,3 +116,62 @@ test("the runs-on cell keeps the image reference, and keeps clipping it", async 
   expect(cell.getAttribute("title")).toBe(image);
   expect(cell.className).toContain("clipped");
 });
+
+test("a ticket's own title takes the about column over the configuration it ran from", async () => {
+  const api = apiDouble({
+    operation: { operation: "op-title", state: "Pending" },
+    route: (url) => {
+      if (url.includes("/executions"))
+        return answer({ executions: [execution] });
+      return answer({
+        partition: atlas,
+        sequence: 8,
+        tickets: [{ ...ticket, title: "Fix the retry backoff" }],
+      });
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  render(
+    <ScreenHarness
+      partition={atlas}
+      client={new QueryClient()}
+      transport={openedStream().ports.fetch}
+    >
+      <ProjectTable />
+    </ScreenHarness>,
+  );
+  await settled();
+  const cell = screen.getByText("Fix the retry backoff");
+  expect(cell.getAttribute("title")).toBe("Fix the retry backoff");
+  expect(cell.className).toContain("clipped");
+  expect(screen.queryByText("chuggy #12")).toBeNull();
+});
+
+test("a ticket naming no title and running nothing reads as unset, not blank", async () => {
+  const api = apiDouble({
+    operation: { operation: "op-unset", state: "Pending" },
+    route: (url) => {
+      if (url.includes("/executions")) return answer({ executions: [] });
+      return answer({
+        partition: atlas,
+        sequence: 1,
+        tickets: [
+          { ticket: 12, phase: "Pending", sequence: 1, ...ticketInstants },
+        ],
+      });
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  render(
+    <ScreenHarness
+      partition={atlas}
+      client={new QueryClient()}
+      transport={openedStream().ports.fetch}
+    >
+      <ProjectTable />
+    </ScreenHarness>,
+  );
+  await settled();
+  const cell = screen.getByText("Unset");
+  expect(cell.className).toContain("clipped");
+});

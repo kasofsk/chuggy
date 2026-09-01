@@ -152,6 +152,34 @@ test("an execution a truncated walk left may be superseded, so the row is not jo
   expect(row.executionRead).toBe("IndexTruncated");
 });
 
+test("a ticket's own title is its row's title, apart from any execution", () => {
+  const titled: TicketResponse = { ...working, title: "Fix the retry backoff" };
+  expect(projectTableRow(titled, known(container), false).title).toEqual({
+    text: "Fix the retry backoff",
+    title: "Fix the retry backoff",
+  });
+  expect(projectTableRow(titled, undefined, false).title).toEqual({
+    text: "Fix the retry backoff",
+    title: "Fix the retry backoff",
+  });
+});
+
+test("a ticket's title survives a truncated execution index, unlike its configuration", () => {
+  const titled: TicketResponse = { ...working, title: "Fix the retry backoff" };
+  const row = projectTableRow(titled, undefined, true);
+  expect(row.executionRead).toBe("IndexTruncated");
+  expect(row.title).toEqual({
+    text: "Fix the retry backoff",
+    title: "Fix the retry backoff",
+  });
+});
+
+test("a ticket authored before a brief was required carries no title", () => {
+  expect(
+    projectTableRow(working, known(container), false).title,
+  ).toBeUndefined();
+});
+
 test("a row that is not joined draws none of the execution it holds", () => {
   const row = projectTableRow(working, known(failedOlder, false), true);
   expect(row.executionOutcome).toBeUndefined();
