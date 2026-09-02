@@ -47,9 +47,11 @@ export interface SuppliedExecutionPolicyConfig {
 }
 
 /**
- * One image a deployment admits. An entry that declares no capabilities is one
- * admitted before a deployment said what its workers provide, and what it
- * provides is unknown rather than nothing.
+ * One image a deployment admits, where omitting the capabilities says nothing
+ * about what its worker provides — admitted before a deployment published
+ * any — and leaves that unknown rather than nothing. An empty list is the
+ * opposite statement, which no deployment means, so it is refused where the
+ * policy is composed.
  */
 export interface SuppliedRuntime {
   readonly image: string;
@@ -94,6 +96,15 @@ export function checkedSuppliedExecutionPolicyConfig(
     )
   )
     throw new RangeError("supplied execution policy admits an empty image");
+  if (
+    config.imagesAdmitted.some(
+      (runtime) =>
+        typeof runtime !== "string" && runtime.capabilities?.length === 0,
+    )
+  )
+    throw new RangeError(
+      "supplied execution policy publishes an empty capability list",
+    );
   for (const supplied of config.profiles.values()) {
     if (supplied.profile.profile.length === 0)
       throw new RangeError("supplied execution policy names an empty profile");

@@ -342,6 +342,24 @@ test("a policy admitting no image at all is refused where it is composed", () =>
   );
 });
 
+test("an entry publishing an empty capability list is refused where it is composed", () => {
+  assert.throws(
+    () =>
+      suppliedExecutionPolicy({
+        profiles: new Map([["Work", work]]),
+        imagesAdmitted: [
+          {
+            image: "registry.invalid/worker:v1",
+            operatingSystem: "Linux",
+            architecture: "Amd64",
+            capabilities: [],
+          },
+        ],
+      }),
+    /empty capability list/u,
+  );
+});
+
 test("a policy that grants nothing, or grants a reach nothing names, is refused", () => {
   assert.throws(
     () =>
