@@ -39,8 +39,6 @@ import {
   sessionIdentityCharsMax,
   sessionStoreStreamCharsMax,
 } from "../contract/http.ts";
-
-export { sessionIdentityCharsMax };
 import { asBoundedText, isBoundedText } from "./boundedText.ts";
 import type { Principal } from "./principal.ts";
 import type { Partition } from "./projectStore.ts";
@@ -78,6 +76,13 @@ export type SessionBearerSecret = string & {
 export type SessionStoreStream = string & {
   readonly [sessionStoreStreamBrand]: true;
 };
+
+/**
+ * The longest opaque session identity a stored row carries, surfaced where
+ * every branding reads it. It is the contract's because the change resource's
+ * bound is derived from it, and the contract may not look here.
+ */
+export { sessionIdentityCharsMax };
 
 /** Refuses text a bounded column cannot hold, and text no digest can separate. */
 function asSessionText(value: string, what: string): string {

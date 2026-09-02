@@ -15,10 +15,12 @@ import { randomUUID } from "node:crypto";
 
 import {
   leadTurnsAnsweredMax,
+  nativeHttpPathSegmentCharsMax as partitionIdentityCharsMax,
   projectChangeResourceCharsMax,
   selectorHistoryLimitMax,
   sessionStorePageBatchesMax,
   sessionStoreStreamsAnswered,
+  sessionTurnModelCharsMax,
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
 } from "../../src/contract/http.ts";
@@ -28,6 +30,7 @@ import {
   asSessionTurnId,
   sessionIdentityCharsMax,
   type SessionId,
+  type SessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import { projectChangeDataSchemas } from "../../src/contract/events.ts";
@@ -832,11 +835,12 @@ test("a tools array holding nothing where a name should be is refused", async ()
 /** A character JSON may not carry as itself, which is what widens a resource. */
 const escapedCharacter = "\u0001";
 
+/** What that character weighs escaped, which is the widest any character is. */
+const jsonEscapedCharCharsMax = 6;
+
 test("the widest session change a legal identity can make is a frame that parses", async () => {
   const partition = await leadRigProject(rig, "widest");
-  const session = asSessionId(
-    `w${randomUUID()}`.padEnd(sessionIdentityCharsMax, escapedCharacter),
-  );
+  const session = asSessionId(escapedCharacter.repeat(sessionIdentityCharsMax));
   await rig.sessions.sessions.open({
     partition,
     session,
@@ -846,7 +850,7 @@ test("the widest session change a legal identity can make is a frame that parses
     credentialSlot: "claude-code",
   });
   const turn = asSessionTurnId(
-    `w${randomUUID()}`.padEnd(sessionIdentityCharsMax, escapedCharacter),
+    escapedCharacter.repeat(sessionIdentityCharsMax),
   );
   const log = postgresProjectChangeLog(rig.sessions.harness.pool);
   const before = await log.latest();
@@ -859,12 +863,13 @@ test("the widest session change a legal identity can make is a frame that parses
   const change = (await log.after(partition, before, 10))[0];
   assert.ok(change !== undefined, "the trigger appended nothing");
   assert.ok(
-    change.resource.length > sessionIdentityCharsMax * 2,
-    "every escapable character is escaped, so the resource is not its inputs",
-  );
-  assert.ok(
     change.resource.length <= projectChangeResourceCharsMax,
     `the widest legal resource is ${String(change.resource.length)} characters`,
+  );
+  assert.ok(
+    change.resource.length >=
+      sessionIdentityCharsMax * jsonEscapedCharCharsMax * 2,
+    "two whole identities are escaped character by character in this one",
   );
   assert.doesNotThrow(() =>
     projectChangeDataSchemas.Session.parse({
@@ -872,5 +877,126 @@ test("the widest session change a legal identity can make is a frame that parses
       resource: change.resource,
       representation: null,
     }),
+  );
+});
+
+/**
+ * One refusal row written straight at the relation, so the constraint under
+ * test is what refuses it rather than the door that normally would.
+ */
+async function refusalRow(
+  partition: Partition,
+  decision: string,
+  columns: Readonly<Record<string, unknown>> = {},
+): Promise<void> {
+  const written = {
+    tenant: partition.tenant,
+    project: partition.project,
+    ticket: 1,
+    event: "Refused",
+    ticket_version: 1,
+    reason: "a reason",
+    selector_decision: decision,
+    ...columns,
+  };
+  const names = Object.keys(written);
+  await rig.sessions.harness.query(
+    `INSERT INTO selector_agentic_refusal (${names.join(",")})
+       VALUES (${names.map((_unused, at) => `$${String(at + 1)}`).join(",")})`,
+    Object.values(written),
+  );
+}
+
+test("one decision refuses one ticket once, whatever writes the row", async () => {
+  const partition = await leadRigProject(rig, "refusal-unique");
+  const decision = await leadRigDecision(rig, partition, "refusal-unique");
+  await refusalRow(partition, decision);
+  await assert.rejects(
+    refusalRow(partition, decision, { event: "Lifted" }),
+    /selector_refusal_is_one_per_decision/u,
+    "a decision that said two things about one ticket said one of them twice",
+  );
+});
+
+test("a refusal names a decision the log actually holds", async () => {
+  const partition = await leadRigProject(rig, "refusal-fk");
+  await assert.rejects(
+    refusalRow(partition, "selector-decision-nobody-recorded"),
+    /selector_refusal_has_its_decision/u,
+    "a reason with no decision behind it is a reason nobody gave",
+  );
+  const elsewhere = await leadRigProject(rig, "refusal-fk-elsewhere");
+  const decision = await leadRigDecision(rig, elsewhere, "refusal-fk");
+  await assert.rejects(
+    refusalRow(partition, decision),
+    /selector_refusal_has_its_decision/u,
+    "a refusal may not borrow another project's decision",
+  );
+});
+
+test("the relation refuses what no door of it would have written", async () => {
+  const partition = await leadRigProject(rig, "refusal-columns");
+  const decision = await leadRigDecision(rig, partition, "refusal-columns");
+  for (const [columns, constraint] of [
+    [{ event: "Reconsidered" }, "selector_refusal_event_is_known"],
+    [{ ticket: 0 }, "selector_refusal_counters_are_positive"],
+    [{ ticket_version: 0 }, "selector_refusal_counters_are_positive"],
+    [{ reason: "" }, "selector_refusal_reason_is_bounded"],
+    [
+      { tenant: "t".repeat(partitionIdentityCharsMax + 1) },
+      "selector_refusal_identity_is_bounded",
+    ],
+    [
+      { project: "p".repeat(partitionIdentityCharsMax + 1) },
+      "selector_refusal_identity_is_bounded",
+    ],
+  ] as const)
+    await assert.rejects(
+      refusalRow(partition, decision, columns),
+      new RegExp(constraint, "u"),
+      `${constraint} is what refuses it`,
+    );
+});
+
+test("a turn identity past what a stored row holds is refused", async () => {
+  const { partition } = await leadProject("turn-identity");
+  await assert.rejects(
+    rig.mailbox.offer({
+      partition,
+      turn: `t-${randomUUID()}`.padEnd(
+        sessionIdentityCharsMax + 1,
+        "t",
+      ) as SessionTurnId,
+      input: anObservation,
+    }),
+    /session_turn_identity_is_bounded/u,
+    "a turn nothing can read back is a lead page poisoned by one row",
+  );
+});
+
+test("a model name past what the measure column holds is refused", async () => {
+  const { partition, session } = await leadProject("model-bound");
+  const turn = sessionRigTurnId("model-bound");
+  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  const attempt = await leadPod(partition, session, "model-bound");
+  await rig.sessions.plane.claim({
+    secret: attempt.secret,
+    generation: attempt.attempt.generation,
+  });
+  await assert.rejects(
+    rig.sessions.plane.answer({
+      secret: attempt.secret,
+      generation: attempt.attempt.generation,
+      turn,
+      result: "{}",
+      measured: {
+        model: "m".repeat(sessionTurnModelCharsMax + 1),
+        tokens: 1,
+        costMicros: 1,
+        durationMs: 1,
+        tools: [],
+      },
+    }),
+    /session_turn_measure_is_bounded/u,
   );
 });

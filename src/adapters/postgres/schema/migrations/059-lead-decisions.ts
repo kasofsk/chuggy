@@ -245,14 +245,22 @@ const sessionChange = [
      FOR EACH ROW EXECUTE FUNCTION ${projectChangeSessionStoreFunction}()`,
 ];
 
-/** The kind roster and the failure roster, each replaced where it was last written. */
+/**
+ * The ceiling a turn identity was branded against and the durable side never
+ * held, which is the premise the resource bound is derived from. Every writer
+ * in this tree brands through `asSessionTurnId`, so no standing row is past it.
+ */
+const boundedTurnIdentity = [
+  `ALTER TABLE session_turn ADD CONSTRAINT session_turn_identity_is_bounded
+     CHECK (length(turn) BETWEEN 1 AND ${sessionIdentityCharsMax})`,
+];
+
+/** The three generated checks replaced where each was last written. */
 const replacedRosters = [
   `ALTER TABLE project_change
      DROP CONSTRAINT project_change_kind_is_known,
      ADD CONSTRAINT project_change_kind_is_known CHECK
        (kind IN (${schemaTextSet([...allProjectChangeKinds])}))`,
-  `ALTER TABLE session_turn ADD CONSTRAINT session_turn_identity_is_bounded
-     CHECK (length(turn) BETWEEN 1 AND ${sessionIdentityCharsMax})`,
   `ALTER TABLE project_change
      DROP CONSTRAINT project_change_resource_is_bounded,
      ADD CONSTRAINT project_change_resource_is_bounded CHECK
@@ -782,6 +790,7 @@ export const migration059: Migration = {
     ...refusalRelation,
     ...boundaryOwnerReads,
     ...sessionChange,
+    ...boundedTurnIdentity,
     ...replacedRosters,
     ...renamedHandoffNote,
     ...measureColumns,

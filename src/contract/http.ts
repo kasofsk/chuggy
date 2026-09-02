@@ -215,7 +215,11 @@ function jsonStringChars(chars: number): number {
   return chars * jsonEscapedCharChars + 2;
 }
 
-/** What one JSON object weighs: its braces, its quoted keys, its separators and its values. */
+/**
+ * What one JSON object weighs as `jsonb::text` renders it, which is the only
+ * renderer that writes these: its braces, its quoted keys, the space after each
+ * key and each comma, and its values.
+ */
 function jsonObjectChars(
   members: readonly (readonly [string, number])[],
 ): number {

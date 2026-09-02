@@ -63,6 +63,7 @@ import {
   resultReportCharsMax,
   resultReportSchemaVersionMin,
   runConfigurationBytesMax,
+  sessionKindCharsMax,
   sessionTurnInputCharsMax,
   sessionTurnModelCharsMax,
   sessionTurnResultCharsMax,
@@ -79,6 +80,7 @@ import { allAgenticRefusalEvents } from "../../src/interpreter/agenticRefusal.ts
 import {
   allAgentReportedTurnFailures,
   allPlatformTurnFailures,
+  allSessionKinds,
   allSessionStates,
   allSessionTurnFailures,
   allSessionTurnInputKinds,
@@ -476,4 +478,17 @@ test("a page of refusals fits the body and the observation it is sized against",
     agenticRefusalsAnsweredMax * agenticRefusalReasonCharsMax <=
       leadObservationBytesMax / 2,
   );
+});
+
+/**
+ * The change resource's bound is derived from a ceiling on a kind label, and
+ * the contract may not read the roster that ceiling is meant to contain — so
+ * this is the only place the two can be held together.
+ */
+test("every session kind fits the ceiling the resource bound allows it", () => {
+  for (const kind of allSessionKinds)
+    assert.ok(
+      kind.length <= sessionKindCharsMax,
+      `${kind} is longer than a session change's resource makes room for`,
+    );
 });
