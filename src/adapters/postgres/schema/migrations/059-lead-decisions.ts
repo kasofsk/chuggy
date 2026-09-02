@@ -33,6 +33,12 @@
  * a repeated answer on its result and its batches, exactly as it did, and not
  * on what the pod measured: a retry that re-derived a duration is the same
  * answer, and refusing it would strand a turn the runtime has already taken.
+ *
+ * WHAT MAKES A REFUSAL RECORDING IDEMPOTENT IS ITS OWN ROWS. A decision that
+ * refused and lifted nothing writes none and is therefore not distinguishable
+ * from one never recorded — which costs nothing while the only re-send is a
+ * replay of the same empty input, and is why an empty recording reaches no
+ * relation at all.
  */
 
 import {
@@ -96,9 +102,6 @@ const refusalLedgerCeiling = agenticRefusalLedgerAnsweredMax + 1;
 
 /** The bound one project's identity columns are held to wherever this file writes them. */
 const partitionCharsMax = 256;
-
-/** What a session change puts between the session, its kind and what moved. */
-const sessionChangeSeparator = "|";
 
 /** The states a turn may still be withdrawn out of, which is the mailbox's live set. */
 const liveTurnStates = "('Queued','Claimed')";
@@ -186,8 +189,10 @@ const boundaryOwnerReads = [
 
 /**
  * A session's own moves on the change log, so a page watching a lead learns a
- * turn moved without polling for it. The resource names the session first, so
- * a console filters on it, then what the session is and what moved.
+ * turn moved without polling for it. The resource is a JSON object rather than
+ * a delimited string, because a session, a turn and a stream identity may each
+ * hold whatever a delimiter would be and a console must not mis-attribute a
+ * change to another session.
  */
 const sessionChange = [
   `CREATE FUNCTION ${projectChangeSessionTurnFunction}() RETURNS trigger
@@ -198,8 +203,8 @@ const sessionChange = [
         WHERE s.tenant=NEW.tenant AND s.project=NEW.project
           AND s.session=NEW.session;
        PERFORM ${projectChangeAppendFunction}(NEW.tenant,NEW.project,'Session',
-         NEW.session||'${sessionChangeSeparator}'||named
-           ||'${sessionChangeSeparator}turn${sessionChangeSeparator}'||NEW.turn);
+         jsonb_build_object('session',NEW.session,'kind',named,
+                           'turn',NEW.turn)::text);
        RETURN NULL;
      END $$`,
   `ALTER FUNCTION ${projectChangeSessionTurnFunction}() OWNER TO ${boundaryOwnerRole}`,
@@ -219,9 +224,8 @@ const sessionChange = [
         WHERE s.tenant=NEW.tenant AND s.project=NEW.project
           AND s.session=NEW.session;
        PERFORM ${projectChangeAppendFunction}(NEW.tenant,NEW.project,'Session',
-         NEW.session||'${sessionChangeSeparator}'||named
-           ||'${sessionChangeSeparator}batch${sessionChangeSeparator}'||NEW.stream
-           ||'${sessionChangeSeparator}'||NEW.batch::text);
+         jsonb_build_object('session',NEW.session,'kind',named,
+                           'stream',NEW.stream,'batch',NEW.batch)::text);
        RETURN NULL;
      END $$`,
   `ALTER FUNCTION ${projectChangeSessionStoreFunction}() OWNER TO ${boundaryOwnerRole}`,
@@ -302,7 +306,10 @@ const measuredAnswer = [
           OR (in_batch_first IS NULL)<>(in_batch_last IS NULL)
           OR coalesce(in_batch_first,1)>coalesce(in_batch_last,1)
           OR coalesce(in_batch_first,1) NOT BETWEEN 1 AND ${sessionStoreBatchesMax}
-          OR coalesce(in_batch_last,1) NOT BETWEEN 1 AND ${sessionStoreBatchesMax} THEN
+          OR coalesce(in_batch_last,1) NOT BETWEEN 1 AND ${sessionStoreBatchesMax}
+          OR EXISTS(SELECT 1 FROM unnest(coalesce(in_tools,'{}'::text[])) named
+                     WHERE length(named) NOT BETWEEN 1
+                           AND ${sessionTurnToolNameCharsMax}) THEN
          RETURN 'Conflict';
        END IF;
        SELECT t.state,t.attempt,t.claim_generation,t.result,t.batch_first,t.batch_last
@@ -407,6 +414,10 @@ const selectorDoors = [
      LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
      DECLARE entry jsonb; standing record;
      BEGIN
+       IF coalesce(jsonb_array_length(in_refusals),0)=0
+          AND coalesce(jsonb_array_length(in_lifts),0)=0 THEN
+         RETURN 'Recorded';
+       END IF;
        PERFORM 1 FROM selector_interaction i
         WHERE i.selector_decision=in_decision
           AND i.tenant=in_tenant AND i.project=in_project;
@@ -500,7 +511,7 @@ const selectorDoors = [
      LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
      DECLARE held record;
      BEGIN
-       SELECT t.state INTO held FROM session_turn t
+       SELECT t.state,t.tenant,t.project,t.session INTO held FROM session_turn t
          JOIN agent_session s ON s.tenant=t.tenant AND s.project=t.project
                              AND s.session=t.session
         WHERE s.kind='Lead' AND t.turn=in_turn FOR UPDATE OF t;
@@ -509,7 +520,8 @@ const selectorDoors = [
        UPDATE session_turn t
           SET state='Abandoned',failure='TurnWithdrawn',ended_at=now(),
               attempt=NULL,claim_generation=NULL,claimed_at=NULL
-        WHERE t.turn=in_turn;
+        WHERE t.tenant=held.tenant AND t.project=held.project
+          AND t.session=held.session AND t.turn=in_turn;
        RETURN 'Withdrawn';
      END $$`,
 ];

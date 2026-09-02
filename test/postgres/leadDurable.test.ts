@@ -18,6 +18,7 @@ import {
   selectorHistoryLimitMax,
   sessionStorePageBatchesMax,
   sessionStoreStreamsAnswered,
+  sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
 } from "../../src/contract/http.ts";
 import {
@@ -564,9 +565,9 @@ test("a turn answer and a batch record each append one session change", async ()
   assert.deepEqual(
     (await log.after(partition, beforeBatch, 10)).map((row) => [
       row.kind,
-      row.resource,
+      JSON.parse(row.resource) as unknown,
     ]),
-    [["Session", `${session}|Lead|batch|${stream}|1`]],
+    [["Session", { session, kind: "Lead", stream, batch: 1 }]],
     "one batch is one session change naming the stream and batch that moved",
   );
 
@@ -580,9 +581,9 @@ test("a turn answer and a batch record each append one session change", async ()
   assert.deepEqual(
     (await log.after(partition, beforeAnswer, 10)).map((row) => [
       row.kind,
-      row.resource,
+      JSON.parse(row.resource) as unknown,
     ]),
-    [["Session", `${session}|Lead|turn|${turn}`]],
+    [["Session", { session, kind: "Lead", turn }]],
     "one state move is one session change naming the turn that moved",
   );
 });
@@ -606,9 +607,129 @@ test("a thread's session changes are keyed to its own session", async () => {
   assert.deepEqual(
     (await log.after(partition, before, 10)).map((row) => [
       row.kind,
-      row.resource,
+      JSON.parse(row.resource) as unknown,
     ]),
-    [["Session", `${thread}|Thread|turn|${turn}`]],
+    [["Session", { session: thread, kind: "Thread", turn }]],
     "a console filters a session's own changes on the session it names first",
+  );
+});
+
+test("neither mailbox door reaches a turn that is not a lead's", async () => {
+  const partition = await leadRigProject(rig, "thread-fence");
+  const thread = await sessionRigSession(
+    rig.sessions,
+    partition,
+    "thread-fence",
+    { kind: "Thread", principal: "member-thread-fence" },
+  );
+  const turn = await sessionRigTurn(
+    rig.sessions,
+    partition,
+    thread,
+    "thread-fence",
+  );
+
+  assert.equal(
+    await rig.mailbox.turn(partition, turn),
+    undefined,
+    "the selector may not read a member's own conversation",
+  );
+  assert.equal(
+    await rig.mailbox.withdraw(partition, turn),
+    "NoTurn",
+    "the selector may not abandon a member's in-flight chat turn",
+  );
+  assert.deepEqual(
+    await sessionRigTurnState(rig.sessions, partition, thread, turn),
+    {
+      state: "Queued",
+      attempt: null,
+      claim_generation: null,
+      attempts_spent: "0",
+      result: null,
+      failure: null,
+      batch_first: null,
+      batch_last: null,
+    },
+    "the refused withdrawal left the thread's turn exactly as it was",
+  );
+});
+
+test("an answer retried with a re-derived measurement is the same answer", async () => {
+  const { partition, session } = await leadProject("answer-retry");
+  const turn = sessionRigTurnId("answer-retry");
+  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  const attempt = await leadPod(partition, session, "answer-retry");
+  await rig.sessions.plane.claim({
+    secret: attempt.secret,
+    generation: attempt.attempt.generation,
+  });
+  const answering = {
+    secret: attempt.secret,
+    generation: attempt.attempt.generation,
+    turn,
+    result: '{"version":1,"dispatches":[]}',
+  } as const;
+  const measured = {
+    model: "claude-model",
+    tokens: 10,
+    costMicros: 20,
+    durationMs: 30,
+    tools: ["Read"],
+  } as const;
+  assert.equal(
+    await rig.sessions.plane.answer({ ...answering, measured }),
+    "Answered",
+  );
+
+  assert.equal(
+    await rig.sessions.plane.answer({
+      ...answering,
+      measured: { ...measured, durationMs: measured.durationMs + 41 },
+    }),
+    "AlreadyAnswered",
+    "a duration is wall clock and is re-derived on every retry by construction",
+  );
+  assert.equal(
+    await rig.sessions.plane.answer(answering),
+    "AlreadyAnswered",
+    "a pod that lost its meter across a restart still holds a committed answer",
+  );
+  assert.equal(
+    await rig.sessions.plane.answer({ ...answering, result: "{}" }),
+    "Conflict",
+    "the result is the identity, and a different one is a different answer",
+  );
+  assert.deepEqual(
+    (await rig.mailbox.turn(partition, turn))?.measured,
+    measured,
+  );
+});
+
+test("a tool name longer than one may be reported is refused at the door", async () => {
+  const { partition, session } = await leadProject("tool-name");
+  const turn = sessionRigTurnId("tool-name");
+  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  const attempt = await leadPod(partition, session, "tool-name");
+  await rig.sessions.plane.claim({
+    secret: attempt.secret,
+    generation: attempt.attempt.generation,
+  });
+  assert.equal(
+    await rig.sessions.plane.answer({
+      secret: attempt.secret,
+      generation: attempt.attempt.generation,
+      turn,
+      result: "{}",
+      measured: {
+        model: "claude-model",
+        tokens: 1,
+        costMicros: 1,
+        durationMs: 1,
+        tools: ["n".repeat(sessionTurnToolNameCharsMax + 1)],
+      },
+    }),
+    "Conflict",
+    "a name the response schema refuses is a row no reader could serialize",
   );
 });

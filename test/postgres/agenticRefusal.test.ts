@@ -277,3 +277,17 @@ test("a reason longer than the bound is refused by the column", async () => {
     /selector_refusal_reason_is_bounded/u,
   );
 });
+
+test("a decision that refused and lifted nothing writes nothing", async () => {
+  const partition = await leadRigProject(rig, "empty");
+  const decision = await leadRigDecision(rig, partition, "empty");
+  assert.equal(
+    await rig.writes.record({ partition, decision, refusals: [], lifts: [] }),
+    "Recorded",
+  );
+  assert.deepEqual(
+    await rig.selectorStanding.standing(partition, refusalsBoundless),
+    [],
+    "the rows are the marker, so a decision with none leaves none",
+  );
+});
