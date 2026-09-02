@@ -44,7 +44,7 @@ test("every control-plane root reports an absent schema as could-not-run", async
     const identity = { owner: 'owner', recoveryEpoch: 'epoch', cluster: 'cluster' };
     const runtimes = [
       roots.selectorProcess({}, requirements, config),
-      roots.schedulerProcess({}, identity, requirements, config),
+      roots.schedulerProcess({}, {}, identity, requirements, config),
       roots.ticketServiceProcess(
         {},
         { projectsPerPassMax: 1, projectLeaseSeconds: 1 },
@@ -92,12 +92,14 @@ const successfulProcessProgram = `
     const finalizer = await import('./src/interpreter/finalizer.ts');
     const finalizerTelemetry = await import('./src/interpreter/finalizerTelemetry.ts');
     const tickets = await import('./src/interpreter/ticketService.ts');
+    const sessions = await import('./src/interpreter/sessionScheduler.ts');
     const rows = schema.currentRuntimeSchemaContract.required;
     const pool = { query: async () => ({ rows }) };
     const requirements = { pool };
     const config = { idleIntervalMilliseconds: 1000, shutdownDrainMilliseconds: 1000 };
     const identity = { owner: 'owner', recoveryEpoch: 'epoch', cluster: 'cluster' };
     let selectorPasses = 0;
+    let sessionPasses = 0;
     const selectorService = { runOnce: async () => { selectorPasses += 1; return {}; } };
     const schedulerService = {
       store: {
@@ -122,6 +124,20 @@ const successfulProcessProgram = `
       owner: 'owner',
       monotonicNow: () => 0,
     };
+    const sessionService = {
+      store: {
+        fenceOldEpochAttempts: async () => 0,
+        attemptsAwaitingCleanup: async () => [],
+        attemptCleanupCompleted: async () => true,
+        reapLapsedAttempts: async () => 0,
+        reapIdleAttempts: async () => 0,
+        awaitingPlacement: async () => { sessionPasses += 1; return []; },
+      },
+      placement: {},
+      bearers: { mint: () => { throw new Error('no session waits for a pod'); } },
+      policy: {},
+      config: sessions.sessionSchedulerDefaults,
+    };
     const finalizerService = {
       store: {
         reclaimStaleEpoch: async () => 0,
@@ -134,7 +150,7 @@ const successfulProcessProgram = `
     };
     const runtimes = [
       roots.selectorProcess(selectorService, requirements, config),
-      roots.schedulerProcess(schedulerService, identity, requirements, config),
+      roots.schedulerProcess(schedulerService, sessionService, identity, requirements, config),
       roots.ticketServiceProcess(
         ticketService,
         { projectsPerPassMax: 1, projectLeaseSeconds: 1 },
@@ -148,7 +164,7 @@ const successfulProcessProgram = `
     await new Promise((resolve) => setTimeout(resolve, 10));
     const health = runtimes.map((runtime) => runtime.health());
     for (const runtime of runtimes) await runtime.stop();
-    process.stdout.write(JSON.stringify({ outcomes, health, selectorPasses }));
+    process.stdout.write(JSON.stringify({ outcomes, health, selectorPasses, sessionPasses }));
   `;
 
 test("every control-plane responsibility starts, passes and stops against its ports", async () => {
@@ -166,6 +182,7 @@ test("every control-plane responsibility starts, passes and stops against its po
     readonly outcomes: readonly unknown[];
     readonly health: readonly unknown[];
     readonly selectorPasses: number;
+    readonly sessionPasses: number;
   };
   assert.deepEqual(
     found.outcomes,
@@ -181,6 +198,10 @@ test("every control-plane responsibility starts, passes and stops against its po
     })),
   );
   assert.ok(found.selectorPasses > 0);
+  assert.ok(
+    found.sessionPasses > 0,
+    "the scheduler process took a tick without a session pass in it",
+  );
 });
 
 const ticketServiceFleetPreamble = `

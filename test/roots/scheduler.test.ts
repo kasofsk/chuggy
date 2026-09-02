@@ -579,8 +579,8 @@ test("a stated bound is taken and the rest stay the published defaults", async (
   });
 });
 
-/** The cluster a case answers for, and the durable rows one pass is given to move. */
-function processFakes(reachable: boolean): string {
+/** The cluster a case answers for, reachable or not, and the site each half stands on. */
+function processCluster(reachable: boolean): string {
   return `
     const cluster = {
       apiBaseUrl: 'https://cluster.invalid:6443',
@@ -624,6 +624,12 @@ function processFakes(reachable: boolean): string {
       return Promise.resolve(new Response(null, { status: init && init.method === 'POST' ? 201 : 200 }));
     };
 
+  `;
+}
+
+/** The durable rows the execution half of one pass is given to move. */
+function processExecutionFakes(): string {
+  return `
     const partition = { tenant: 'tenant', project: 'project' };
     const execution = {
       partition, execution: 'execution-one', ticket: 1, task: 1, taskKind: 'Work',
@@ -654,6 +660,13 @@ function processFakes(reachable: boolean): string {
       attemptPlaced: async (_attempt, placement) => { placed.push(placement); return true; },
       attemptEnded: async () => true,
     };
+    const configuration = ${JSON.stringify(configuration)};
+  `;
+}
+
+/** The durable rows the session half of the same pass is given to move. */
+function processSessionFakes(): string {
+  return `
     const sessionGrant = { ...${JSON.stringify(grant)}, credentials: ['claude-code'] };
     const agentSession = {
       partition, session: 'session-one', kind: 'Lead',
@@ -675,7 +688,15 @@ function processFakes(reachable: boolean): string {
       attemptPlaced: async (_attempt, placement) => { sessionPlaced.push(placement); return true; },
       attemptEnded: async () => true,
     };
-    const configuration = ${JSON.stringify(configuration)};
+  `;
+}
+
+/** Everything one driven pass calls out through, cluster and rows alike. */
+function processFakes(reachable: boolean): string {
+  return `
+    ${processCluster(reachable)}
+    ${processExecutionFakes()}
+    ${processSessionFakes()}
   `;
 }
 

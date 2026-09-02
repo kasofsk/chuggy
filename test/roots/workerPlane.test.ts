@@ -41,7 +41,9 @@ async function freePort(): Promise<number> {
   const port =
     typeof listening === "object" && listening !== null ? listening.port : 0;
   await new Promise<void>((resolve) => {
-    server.close(() => resolve());
+    server.close(() => {
+      resolve();
+    });
   });
   assert.notEqual(port, 0, "no ephemeral port was offered");
   return port;

@@ -44,7 +44,7 @@ import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { asPlacementId } from "../../src/interpreter/schedulerIdentity.ts";
 import { sessionStoreBatchBytesMax } from "../../src/contract/http.ts";
 import { postgresHarnessUrl } from "./harness.ts";
-import { inertRunEvidence } from "../adapters/workerPlaneFixtures.ts";
+import { inertWorkerPlane } from "../adapters/workerPlaneFixtures.ts";
 import {
   sessionRigAttempt,
   sessionRigOpen,
@@ -109,17 +109,7 @@ async function provisionedSession(
 /** The plane a pod actually talks to: the session ports over the plane role, and a real store. */
 function resumePlane(rig: SessionRig): FastifyInstance {
   return createWorkerPlaneApp({
-    authority: { authenticate: () => Promise.resolve(undefined) },
-    heartbeats: { heartbeat: () => Promise.resolve(true) },
-    heartbeatLeaseSecs: 300,
-    artifacts: { store: () => Promise.resolve({ stored: "Stored" as const }) },
-    reservations: {
-      reserve: () => Promise.resolve({ reserved: "Reserved" as const }),
-    },
-    reports: { report: () => Promise.resolve({ ingested: "Fenced" as const }) },
-    runEvidence: inertRunEvidence,
-    ready: () => Promise.resolve(true),
-    uploadBytesMax: sessionStoreBatchBytesMax,
+    ...inertWorkerPlane(sessionStoreBatchBytesMax),
     sessions: {
       authority: rig.plane,
       heartbeats: rig.plane,
