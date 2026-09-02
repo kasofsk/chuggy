@@ -32,6 +32,10 @@ import {
   postgresRuntimeSchema,
   runtimeSchemaContract,
 } from "../../src/adapters/postgres/runtimeSchema.ts";
+import {
+  nativeHttpPathSegmentCharsMax,
+  projectChangeResourceCharsMax,
+} from "../../src/contract/http.ts";
 import { briefFinalizationModes } from "../../src/contract/rosters.ts";
 import {
   leadMillisecondsPerDecision,
@@ -2242,5 +2246,45 @@ test("migration 59 moves a floor and never a value somebody raised", async () =>
       tokens: String(held),
       duration: String(leadMillisecondsPerDecision),
     });
+  });
+});
+
+test("migration 59 widens a resource check installed before a session named three things", async () => {
+  await migrationDatabase("lead_resource_bound", async (subject) => {
+    await migrationSeedApplied(subject, 59);
+    await migrationNarrowedRoster(
+      subject,
+      "project_change",
+      "project_change_resource_is_bounded",
+      `length(resource) BETWEEN 1 AND ${nativeHttpPathSegmentCharsMax}`,
+    );
+    const resource = "r".repeat(nativeHttpPathSegmentCharsMax + 1);
+    const append = () =>
+      subject.query(
+        `SELECT ${projectChangeAppendFunction}('tenant','project','Session',$1)`,
+        [resource],
+      );
+    await assert.rejects(
+      append,
+      /project_change_resource_is_bounded/u,
+      "the log installed with 38 refuses a resource naming three identities",
+    );
+
+    await applyMigration(subject, 59);
+
+    await append();
+    assert.deepEqual(
+      (await subject.query("SELECT kind FROM project_change")).rows,
+      [{ kind: "Session" }],
+    );
+    await assert.rejects(
+      () =>
+        subject.query(
+          `SELECT ${projectChangeAppendFunction}('tenant','project','Session',$1)`,
+          ["r".repeat(projectChangeResourceCharsMax + 1)],
+        ),
+      /project_change_resource_is_bounded/u,
+      "the widened check is still a check",
+    );
   });
 });

@@ -201,6 +201,19 @@ export const identitySchema = z
   .min(1)
   .max(nativeHttpPathSegmentCharsMax);
 
+/**
+ * How long a resource identity a change row may name. It is not a path
+ * segment: a session change names the session, its kind and the turn or store
+ * batch that moved, and three identities do not fit the bound one of them does.
+ */
+export const projectChangeResourceCharsMax = 1_024;
+
+/** The key a change row names, which the durable log is bounded by. */
+export const changeResourceSchema = z
+  .string()
+  .min(1)
+  .max(projectChangeResourceCharsMax);
+
 export const countSchema = z.number().int().safe().nonnegative();
 export const ticketNumberSchema = z.number().int().safe().positive();
 export const digestSchema = z.string().regex(/^[0-9a-f]{64}$/u);

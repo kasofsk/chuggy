@@ -22,9 +22,14 @@ import {
   sessionTurnToolsMax,
 } from "../../src/contract/http.ts";
 import {
+  asSessionId,
   asSessionStoreStream,
+  asSessionTurnId,
+  sessionIdentityCharsMax,
   type SessionId,
 } from "../../src/interpreter/agentSession.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
+import { projectChangeDataSchemas } from "../../src/contract/events.ts";
 import { postgresProjectChangeLog } from "../../src/adapters/postgres/projectChangeLog.ts";
 import { selectorServiceRole } from "../../src/adapters/postgres/schema.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
@@ -731,5 +736,52 @@ test("a tool name longer than one may be reported is refused at the door", async
     }),
     "Conflict",
     "a name the response schema refuses is a row no reader could serialize",
+  );
+});
+
+test("a session at its identity bound still makes a frame the stream can build", async () => {
+  const partition = await leadRigProject(rig, "long-identity");
+  const session = asSessionId(
+    `s-${randomUUID()}`.padEnd(sessionIdentityCharsMax, "s"),
+  );
+  assert.equal(
+    await rig.sessions.sessions.open({
+      partition,
+      session,
+      kind: "Lead",
+      principal: asPrincipal("principal-long-identity"),
+      capabilities: [],
+      credentialSlot: "claude-code",
+    }),
+    "Opened",
+  );
+  const turn = asSessionTurnId(
+    `t-${randomUUID()}`.padEnd(sessionIdentityCharsMax, "t"),
+  );
+  const log = postgresProjectChangeLog(rig.sessions.harness.pool);
+  const before = await log.latest();
+  assert.equal(
+    (await rig.mailbox.offer({ partition, turn, input: anObservation }))
+      .offered,
+    "Enqueued",
+  );
+
+  const rows = await log.after(partition, before, 10);
+  const change = rows[0];
+  assert.ok(change !== undefined, "the trigger appended nothing");
+  assert.equal(change.kind, "Session");
+  assert.deepEqual(JSON.parse(change.resource) as unknown, {
+    session,
+    kind: "Lead",
+    turn,
+  });
+  assert.doesNotThrow(
+    () =>
+      projectChangeDataSchemas.Session.parse({
+        version: 1,
+        resource: change.resource,
+        representation: null,
+      }),
+    "a resource the durable log holds is one the stream frame must carry",
   );
 });

@@ -446,8 +446,9 @@ export function selectorInteractionResource<T>(
 
 /**
  * One resource's chunks in the order they were written, over the selector's
- * own grant on the relation. Each row repeats the manifest it belongs to, and
- * a row whose repeat disagrees is a row this decision did not write.
+ * own grant on the relation. A gap in the ordinals is a resource the reader
+ * cannot reassemble, and what the reassembly itself answers for is the
+ * manifest's count, length and digest.
  */
 async function readInteractionChunks(
   pool: pg.Pool,

@@ -34,6 +34,20 @@
  * on what the pod measured: a retry that re-derived a duration is the same
  * answer, and refusing it would strand a turn the runtime has already taken.
  *
+ * A SESSION CHANGE'S RESOURCE IS A JSON OBJECT, not a delimited string: a
+ * session, a turn and a stream identity may each hold whatever a delimiter
+ * would be, and a console must not attribute a change to the wrong session.
+ * It is therefore longer than a path segment, which is why
+ * `projectChangeResourceCharsMax` is the contract's own bound and the frame
+ * that carries it is parsed against the same one.
+ *
+ * EVERY SESSION APPENDS ONE, NOT ONLY THE LEAD, and that is deliberate: a
+ * thread is a session too and its own page needs the same liveness, so a
+ * trigger fenced on `kind='Lead'` would have to be written twice. What a
+ * watcher of the project learns is that a session moved and which one, never a
+ * word of what was said — the representation this kind carries is answered as
+ * a tombstone — and narrowing who is told is the stream's filter to make.
+ *
  * WHAT MAKES A REFUSAL RECORDING IDEMPOTENT IS ITS OWN ROWS. A decision that
  * refused and lifted nothing writes none and is therefore not distinguishable
  * from one never recorded — which costs nothing while the only re-send is a
@@ -46,6 +60,7 @@ import {
   agenticRefusalReasonCharsMax,
   agenticRefusalsAnsweredMax,
   leadTurnsAnsweredMax,
+  projectChangeResourceCharsMax,
   selectorHistoryLimitMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
@@ -58,10 +73,7 @@ import {
 import { allAgentReportedTurnFailures } from "../../../../interpreter/agentSession.ts";
 import { allSessionTurnFailures } from "../../../../interpreter/agentSession.ts";
 import { allAgenticRefusalEvents } from "../../../../interpreter/agenticRefusal.ts";
-import {
-  allProjectChangeKinds,
-  projectChangeResourceCharsMax,
-} from "../../../../interpreter/projectChange.ts";
+import { allProjectChangeKinds } from "../../../../interpreter/projectChange.ts";
 import {
   agenticRefusalImmutableFunction,
   agenticRefusalLedgerReadFunction,
@@ -188,11 +200,8 @@ const boundaryOwnerReads = [
 ];
 
 /**
- * A session's own moves on the change log, so a page watching a lead learns a
- * turn moved without polling for it. The resource is a JSON object rather than
- * a delimited string, because a session, a turn and a stream identity may each
- * hold whatever a delimiter would be and a console must not mis-attribute a
- * change to another session.
+ * A session's own moves on the change log, so a page watching one learns a
+ * turn moved without polling for it.
  */
 const sessionChange = [
   `CREATE FUNCTION ${projectChangeSessionTurnFunction}() RETURNS trigger
@@ -307,6 +316,7 @@ const measuredAnswer = [
           OR coalesce(in_batch_first,1)>coalesce(in_batch_last,1)
           OR coalesce(in_batch_first,1) NOT BETWEEN 1 AND ${sessionStoreBatchesMax}
           OR coalesce(in_batch_last,1) NOT BETWEEN 1 AND ${sessionStoreBatchesMax}
+          OR array_position(in_tools,NULL) IS NOT NULL
           OR EXISTS(SELECT 1 FROM unnest(coalesce(in_tools,'{}'::text[])) named
                      WHERE length(named) NOT BETWEEN 1
                            AND ${sessionTurnToolNameCharsMax}) THEN

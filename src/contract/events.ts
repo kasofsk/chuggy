@@ -26,7 +26,7 @@
 
 import { z } from "zod";
 
-import { countSchema, identitySchema, partitionSchema } from "./http.ts";
+import { changeResourceSchema, countSchema, partitionSchema } from "./http.ts";
 import {
   configurationResponseSchema,
   draftResponseSchema,
@@ -88,7 +88,7 @@ const changeDataSchema = <Representation extends z.ZodType>(
 ) =>
   z.strictObject({
     version: versionSchema,
-    resource: identitySchema,
+    resource: changeResourceSchema,
     representation: representation.nullable(),
   });
 
