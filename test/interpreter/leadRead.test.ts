@@ -19,6 +19,7 @@ import {
   checkedLeadTranscriptQuery,
   handoffNotePreview,
   leadTranscriptPage,
+  sessionHeldWalk,
 } from "../../src/interpreter/leadRead.ts";
 import { asSessionStoreStream } from "../../src/interpreter/agentSession.ts";
 import type { SessionStoreRead } from "../../src/interpreter/sessionStore.ts";
@@ -113,6 +114,39 @@ test("a walk that could not decide what is held truncates the page", () => {
   });
   assert.deepEqual(decided.held, ["entry-1"]);
   assert.equal(decided.truncated, false);
+});
+
+test("the cut is the batch the stream's boundary was written in", () => {
+  const said = (uuid: string, parentUuid: string) =>
+    JSON.stringify({
+      type: "user",
+      uuid,
+      parentUuid,
+      message: { role: "user", content: uuid },
+    });
+  const boundary = (uuid: string, from: string) =>
+    JSON.stringify({
+      type: "system",
+      subtype: "compact_boundary",
+      uuid,
+      parentUuid: null,
+      logicalParentUuid: from,
+      compactMetadata: {
+        preservedMessages: { anchorUuid: `${uuid}-summary`, uuids: [] },
+      },
+    });
+  const walked = sessionHeldWalk([
+    { batch: 4, content: chainText(2) },
+    { batch: 5, content: boundary("cut-one", "entry-1") },
+    { batch: 6, content: said("cut-one-summary", "cut-one") },
+  ]);
+  assert.equal(walked.cut, 5);
+  assert.deepEqual([...walked.held], ["cut-one-summary"]);
+  assert.equal(
+    sessionHeldWalk([{ batch: 1, content: chainText(2) }]).cut,
+    undefined,
+    "a stream that never compacted names no cut",
+  );
 });
 
 test("a page names the held entries it carries, and no others", () => {

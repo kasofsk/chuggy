@@ -1029,7 +1029,7 @@ function nativeLeadStream(
  * of those: the page's own batches drew, so the page is answered, and only what
  * the walk was for goes unanswered.
  */
-async function nativeLeadHeldUuids(
+async function nativeLeadHeldWalk(
   ports: NativeLeadPorts,
   partition: Partition,
   standing: LeadStanding,
@@ -1065,9 +1065,10 @@ async function nativeLeadHeldUuids(
 }
 
 /**
- * One page of a stream, drawn batch by batch. Only an outage refuses it; a
- * batch that is gone or fails its digest is elided and counted, the same answer
- * `nativeRunTranscriptBatches` gives the same situation.
+ * One page of a stream, drawn batch by batch. An outage on a batch of the page
+ * refuses it, because that is a page nobody can answer; an outage the walk meets
+ * beyond the page answers the page with no held set and `truncated`, and a batch
+ * that is gone or fails its digest is elided and counted.
  */
 async function nativeLeadTranscriptBatches(
   ports: NativeLeadPorts,
@@ -1094,7 +1095,7 @@ async function nativeLeadTranscriptBatches(
     if (read.read === "Unavailable") return read;
     drawn.push(read);
   }
-  const held = await nativeLeadHeldUuids(ports, partition, standing, stream);
+  const held = await nativeLeadHeldWalk(ports, partition, standing, stream);
   const last = rows.at(-1)?.batch;
   return {
     read: "Page",
