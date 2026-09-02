@@ -17,12 +17,18 @@
  * ceiling is bytes and a stream of small entries reaches the entry bound first.
  * A page that had to drop entries says so rather than shortening in silence.
  *
- * `held` IS ABSENT ON A PAGE THAT CARRIES NO COMPACTION BOUNDARY, because such a
- * page cannot decide it: a later page may hold a cut that dropped everything
- * here, and answering the whole chain would mark the oldest entries held at
- * exactly the moment they are not. Absent means "this page does not know", and a
- * reader that has paged a whole stream and seen no `held` has seen a stream
- * nothing was ever dropped from.
+ * WHAT IS HELD IS A FACT ABOUT THE STREAM, NOT ABOUT THE PAGE. It is decided by
+ * the last compaction in the whole stream, so the walk that finds it reads the
+ * stream's own batches rather than the page's: a page carrying an older cut, or
+ * no cut at all, would otherwise answer a set the lead does not hold. Every page
+ * then names the subset of its own entries that stream-scoped set contains,
+ * which is empty on a page the last cut dropped entirely.
+ *
+ * THE WALK IS BOUNDED AND SAYS SO WHEN IT ENDS SHORT. A stream longer than
+ * `sessionTranscriptHeldBatchesMax`, or one holding a batch nobody can draw, is
+ * one this read cannot decide what is held from; the page then names no held set
+ * and reports itself truncated, because a held set answered off a partial walk
+ * is the very thing this rule exists to stop.
  */
 
 import {
@@ -35,6 +41,7 @@ import {
 import {
   sessionStorePageBatchesMax,
   sessionTranscriptEntriesMax,
+  sessionTranscriptHeldBatchesMax,
   selectorHandoffNotePreviewCharsMax,
 } from "../contract/http.ts";
 import type {
@@ -122,8 +129,8 @@ export interface LeadTranscriptQuery {
 }
 
 /**
- * One page of one stream, with `held` naming the entries the lead still holds
- * and absent where this page carries no boundary to decide them by.
+ * One page of one stream, with `held` naming the entries of this page the lead
+ * still holds and absent only where the stream-scoped walk could not decide it.
  */
 export interface LeadTranscriptPage {
   readonly stream: SessionStoreStream;
@@ -166,14 +173,41 @@ export function checkedLeadTranscriptQuery(
   return query;
 }
 
+/** The uuids one whole stream's entries say the session still holds. */
+export function sessionHeldUuids(
+  stored: readonly SessionStoreEntry[],
+): ReadonlySet<string> {
+  return new Set(
+    sessionTranscriptHeld(stored).flatMap((entry) =>
+      entry.uuid === undefined ? [] : [entry.uuid],
+    ),
+  );
+}
+
 /**
- * The page one stream's drawn batches make. The batches arrive in the order
- * they were appended, so their texts concatenate into the stream the walk
- * expects, and a batch nobody could draw contributes nothing but a count.
+ * How many batches a held walk may ask for next, having read `batchesRead`, and
+ * zero once it has passed its bound. It allows one past the bound so a stream
+ * standing exactly at the bound is read to its end rather than called undecided.
+ */
+export function sessionHeldWalkAsks(batchesRead: number): number {
+  return Math.max(
+    0,
+    Math.min(
+      sessionStorePageBatchesMax,
+      sessionTranscriptHeldBatchesMax + 1 - batchesRead,
+    ),
+  );
+}
+
+/**
+ * The page one stream's drawn batches make, against what the whole stream says
+ * is held. `held` is absent exactly where that walk could not reach the stream's
+ * end, and the page then reports itself truncated.
  */
 export function leadTranscriptPage(input: {
   readonly stream: SessionStoreStream;
   readonly drawn: readonly SessionStoreRead[];
+  readonly held?: ReadonlySet<string>;
   readonly nextAfter?: number;
 }): LeadTranscriptPage {
   let elided = 0;
@@ -187,15 +221,11 @@ export function leadTranscriptPage(input: {
   const entries = chain.slice(0, sessionTranscriptEntriesMax);
   const compaction = sessionTranscriptCompaction(stored);
   const boundary = compaction?.boundary.uuid;
-  const held = new Set(
-    sessionTranscriptHeld(stored).flatMap((entry) =>
-      entry.uuid === undefined ? [] : [entry.uuid],
-    ),
-  );
+  const held = input.held;
   return {
     stream: input.stream,
     entries,
-    ...(compaction === undefined
+    ...(held === undefined
       ? {}
       : {
           held: entries.flatMap((entry) =>
@@ -215,7 +245,7 @@ export function leadTranscriptPage(input: {
           },
         }),
     elided,
-    truncated: chain.length > entries.length,
+    truncated: chain.length > entries.length || held === undefined,
     ...(input.nextAfter === undefined ? {} : { nextAfter: input.nextAfter }),
   };
 }

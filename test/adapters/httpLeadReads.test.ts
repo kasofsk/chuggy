@@ -50,6 +50,7 @@ import { asTicketId } from "../../src/domain/ids.ts";
 import {
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalsAnsweredMax,
+  sessionTranscriptHeldBatchesMax,
 } from "../../src/contract/http.ts";
 import {
   asAuthorityKind,
@@ -241,13 +242,16 @@ function leadPorts(shape: LeadCase): NativeLeadPorts {
       standing: () =>
         Promise.resolve("standing" in shape ? shape.standing : leadStanding),
       streams: () => Promise.resolve([{ stream, batches: 14 }]),
-      batches: () =>
+      batches: ({ after, limit }) =>
         Promise.resolve(
-          draws.map((_draw, index) => ({
-            batch: index + 1,
-            digest: "a".repeat(64),
-            bytes: 1,
-          })),
+          draws
+            .map((_draw, index) => ({
+              batch: index + 1,
+              digest: "a".repeat(64),
+              bytes: 1,
+            }))
+            .filter((row) => row.batch > after)
+            .slice(0, limit),
         ),
     },
     store: {
@@ -400,6 +404,138 @@ test("the transcript answers the chain over its batches and marks what is held",
     sent.entries.every((entry) => !Object.hasOwn(entry, "parentUuid")),
     "the wire says what the chain is, not how it was found",
   );
+});
+
+/**
+ * A stream that compacted twice, one entry per batch, so a page can be asked for
+ * that carries the first cut and not the second. Held is a fact about the
+ * stream, so the answer must be the second cut's however the stream is paged.
+ */
+function twiceCompactedBatches(): readonly SessionStoreRead[] {
+  const line = (entry: Record<string, unknown>): SessionStoreRead => ({
+    read: "Content",
+    content: JSON.stringify(entry),
+  });
+  const said = (uuid: string, parentUuid: string | undefined) =>
+    line({
+      type: "user",
+      uuid,
+      ...(parentUuid === undefined ? {} : { parentUuid }),
+      message: { role: "user", content: uuid },
+    });
+  const cut = (uuid: string, from: string, preserved: readonly string[]) =>
+    line({
+      type: "system",
+      subtype: "compact_boundary",
+      uuid,
+      parentUuid: null,
+      logicalParentUuid: from,
+      compactMetadata: {
+        preservedMessages: { anchorUuid: `${uuid}-summary`, uuids: preserved },
+      },
+    });
+  return [
+    said("u1", undefined),
+    said("a1", "u1"),
+    cut("b1", "a1", ["a1"]),
+    said("b1-summary", "b1"),
+    said("u2", "b1-summary"),
+    cut("b2", "u2", []),
+    said("b2-summary", "b2"),
+  ];
+}
+
+test("held is the stream's last cut, whichever page is asked for", async () => {
+  await using app = appOf({ draws: twiceCompactedBatches() });
+  const older = leadTranscriptResponseSchema.parse(
+    (
+      await app.inject({
+        url: `${root}/lead/transcript?after=0&limit=4`,
+        headers: authorized,
+      })
+    ).json(),
+  );
+  assert.equal(
+    older.compaction?.boundary,
+    "b1",
+    "this page carries the first cut",
+  );
+  assert.deepEqual(
+    older.held,
+    [],
+    "the second cut dropped every entry on this page",
+  );
+  const newer = leadTranscriptResponseSchema.parse(
+    (
+      await app.inject({
+        url: `${root}/lead/transcript?after=4&limit=4`,
+        headers: authorized,
+      })
+    ).json(),
+  );
+  assert.deepEqual(
+    newer.held,
+    ["b2-summary"],
+    "what the second cut left is held wherever it is paged",
+  );
+});
+
+test("a page ending on a compaction boundary still answers its chain", async () => {
+  await using app = appOf({ draws: twiceCompactedBatches() });
+  const page = leadTranscriptResponseSchema.parse(
+    (
+      await app.inject({
+        url: `${root}/lead/transcript?after=4&limit=2`,
+        headers: authorized,
+      })
+    ).json(),
+  );
+  assert.equal(page.compaction?.boundary, "b2");
+  assert.ok(
+    page.entries.length > 0,
+    "a boundary carries no parent, so the walk must follow its logical one",
+  );
+  assert.ok(page.entries.some((entry) => entry.uuid === "u2"));
+});
+
+test("a stream longer than the held walk leaves the page undecided", async () => {
+  const line = (index: number): SessionStoreRead => ({
+    read: "Content",
+    content: JSON.stringify({
+      type: "user",
+      uuid: `e${String(index)}`,
+      ...(index === 0 ? {} : { parentUuid: `e${String(index - 1)}` }),
+      message: { role: "user", content: "one" },
+    }),
+  });
+  const walkable = Array.from(
+    { length: sessionTranscriptHeldBatchesMax },
+    (_unused, index) => line(index),
+  );
+  await using inside = appOf({ draws: walkable });
+  const decided = leadTranscriptResponseSchema.parse(
+    (
+      await inside.inject({
+        url: `${root}/lead/transcript?limit=2`,
+        headers: authorized,
+      })
+    ).json(),
+  );
+  assert.ok(decided.held !== undefined, "a stream at the bound is still read");
+  assert.equal(decided.truncated, false);
+  await using beyond = appOf({
+    draws: [...walkable, line(sessionTranscriptHeldBatchesMax)],
+  });
+  const undecided = leadTranscriptResponseSchema.parse(
+    (
+      await beyond.inject({
+        url: `${root}/lead/transcript?limit=2`,
+        headers: authorized,
+      })
+    ).json(),
+  );
+  assert.equal(undecided.held, undefined, "past the bound nothing is decided");
+  assert.equal(undecided.truncated, true, "and the page says it falls short");
 });
 
 test("a batch that cannot be drawn is elided, and the page is still answered", async () => {

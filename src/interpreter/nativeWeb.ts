@@ -112,6 +112,8 @@ import {
 import {
   checkedLeadTranscriptQuery,
   leadTranscriptPage,
+  sessionHeldUuids,
+  sessionHeldWalkAsks,
   type LeadRead,
   type LeadReadStore,
   type LeadStanding,
@@ -123,6 +125,7 @@ import {
   type SelectorHistoryRead,
   type SelectorHistoryStore,
 } from "./selectorHistory.ts";
+import { sessionStoreEntries } from "./sessionTranscript.ts";
 import type { SessionStoreReadPort, SessionStoreRead } from "./sessionStore.ts";
 import {
   agenticRefusalLedgerAnsweredMax,
@@ -1020,6 +1023,54 @@ function nativeLeadStream(
     : undefined;
 }
 
+/** What a stream-scoped held walk found: the set, an outage, or no answer. */
+type LeadHeldWalk =
+  | ReadonlySet<string>
+  | "Undecided"
+  | Extract<SessionStoreRead, { readonly read: "Unavailable" }>;
+
+/**
+ * What the whole stream says the session holds, or nothing where the walk could
+ * not reach the stream's end. A batch nobody can draw ends it undecided: the cut
+ * may have been in exactly that batch.
+ */
+async function nativeLeadHeldUuids(
+  ports: NativeLeadPorts,
+  partition: Partition,
+  standing: LeadStanding,
+  stream: SessionStoreStream,
+): Promise<LeadHeldWalk> {
+  const texts: string[] = [];
+  let after = 0;
+  let batchesRead = 0;
+  for (;;) {
+    const asks = sessionHeldWalkAsks(batchesRead);
+    if (asks === 0) return "Undecided";
+    const rows = await ports.leads.batches({
+      partition,
+      stream,
+      after,
+      limit: asks,
+    });
+    for (const row of rows) {
+      const read = await ports.store.readBatch({
+        partition,
+        session: standing.session,
+        stream,
+        batch: row.batch,
+      });
+      if (read.read === "Unavailable") return read;
+      if (read.read !== "Content") return "Undecided";
+      texts.push(read.content);
+    }
+    batchesRead += rows.length;
+    const last = rows.at(-1)?.batch;
+    if (rows.length < asks || last === undefined)
+      return sessionHeldUuids(sessionStoreEntries(texts.join("\n")));
+    after = last;
+  }
+}
+
 /**
  * One page of a stream, drawn batch by batch. Only an outage refuses it; a
  * batch that is gone or fails its digest is elided and counted, the same answer
@@ -1050,12 +1101,15 @@ async function nativeLeadTranscriptBatches(
     if (read.read === "Unavailable") return read;
     drawn.push(read);
   }
+  const held = await nativeLeadHeldUuids(ports, partition, standing, stream);
+  if (typeof held === "object" && "read" in held) return held;
   const last = rows.at(-1)?.batch;
   return {
     read: "Page",
     page: leadTranscriptPage({
       stream,
       drawn,
+      ...(held === "Undecided" ? {} : { held }),
       ...(rows.length < query.limit || last === undefined
         ? {}
         : { nextAfter: last }),

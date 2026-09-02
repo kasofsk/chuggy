@@ -63,6 +63,14 @@ export const sessionStorePageBatchesMax = 8;
 export const sessionTranscriptEntriesMax = 512;
 
 /**
+ * How many of a stream's batches the walk that decides what a session holds may
+ * read. What is held is a fact about the whole stream rather than about the page
+ * being read, so the walk is stream-scoped and this is what stops it being
+ * unbounded; past it a page says it is truncated and names no held set.
+ */
+export const sessionTranscriptHeldBatchesMax = 64;
+
+/**
  * How many streams one listing answers with: one past the page above, so a
  * store holding more than a page of them is distinguishable from one holding
  * exactly a page. A listing capped at the page itself would be silently short

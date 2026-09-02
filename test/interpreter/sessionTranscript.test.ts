@@ -64,7 +64,8 @@ test("the chain is the store's parent links, not its file order", () => {
     while (current !== undefined && !seen.has(current)) {
       if (current === target) return true;
       seen.add(current);
-      current = byUuid.get(current)?.parentUuid;
+      const at = byUuid.get(current);
+      current = at?.parentUuid ?? at?.logicalParentUuid;
     }
     return false;
   };
@@ -129,6 +130,7 @@ function twiceCompacted(): readonly SessionStoreEntry[] {
   const boundary: SessionStoreEntry = {
     ...first.boundary,
     uuid: "second-boundary",
+    logicalParentUuid: tip?.uuid ?? "",
     compactMetadata: {
       preservedMessages: {
         anchorUuid: "second-summary",

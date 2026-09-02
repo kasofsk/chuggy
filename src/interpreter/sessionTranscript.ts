@@ -16,7 +16,10 @@
  * claiming a source this tree has no reader for.
  *
  * A LEAF IS THE LAST ENTRY APPENDED. The store is append-only, so the newest
- * uuid-bearing entry is the tip of the chain that is still being written.
+ * uuid-bearing entry is the tip of the chain that is still being written. A
+ * compaction boundary carries no parent and hangs from a logical one instead, so
+ * the walk follows that where there is no parent; without it a page ending on a
+ * boundary walks to the boundary and stops.
  *
  * TWO LIVE BRANCHES SURVIVE A COMPACTION and both are walked. A compaction's
  * summary hangs off the boundary rather than off the entry the next turn
@@ -37,6 +40,8 @@ import type { JsonValue } from "./selector.ts";
 export interface SessionStoreEntry {
   readonly uuid?: string;
   readonly parentUuid?: string;
+  /** What a compaction boundary hangs from, which is the only link it carries. */
+  readonly logicalParentUuid?: string;
   readonly type: string;
   readonly subtype?: string;
   readonly timestamp?: string;
@@ -76,12 +81,14 @@ function entryOf(value: unknown): SessionStoreEntry | undefined {
   if (type === undefined) return undefined;
   const uuid = optionalText(fields["uuid"]);
   const parentUuid = optionalText(fields["parentUuid"]);
+  const logicalParentUuid = optionalText(fields["logicalParentUuid"]);
   const subtype = optionalText(fields["subtype"]);
   const timestamp = optionalText(fields["timestamp"]);
   return {
     type,
     ...(uuid === undefined ? {} : { uuid }),
     ...(parentUuid === undefined ? {} : { parentUuid }),
+    ...(logicalParentUuid === undefined ? {} : { logicalParentUuid }),
     ...(subtype === undefined ? {} : { subtype }),
     ...(timestamp === undefined ? {} : { timestamp }),
     ...(fields["message"] === undefined
@@ -147,10 +154,8 @@ function walkAncestry(
   while (current?.uuid !== undefined && !seen.has(current.uuid)) {
     seen.add(current.uuid);
     walked.add(current);
-    current =
-      current.parentUuid === undefined
-        ? undefined
-        : byUuid.get(current.parentUuid);
+    const link = current.parentUuid ?? current.logicalParentUuid;
+    current = link === undefined ? undefined : byUuid.get(link);
   }
 }
 

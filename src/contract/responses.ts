@@ -918,10 +918,11 @@ export const leadTranscriptEntryResponseSchema = z.object({
 });
 
 /**
- * The chain over the batches read, with the subset the lead still holds named
- * rather than sent twice and absent where the page carries no boundary to
- * decide it by. An elided batch is one whose row exists and whose object cannot
- * be drawn, which is what a run that died leaves behind.
+ * The chain over the batches read, with `held` naming the entries of this page
+ * the lead still holds, decided by the last compaction in the whole stream and
+ * absent only where that walk could not reach the stream's end. An elided batch
+ * is one whose row exists and whose object cannot be drawn, which is what a run
+ * that died leaves behind.
  */
 export const leadTranscriptResponseSchema = z.object({
   stream: z.string().min(1).max(sessionStoreStreamCharsMax),
@@ -933,7 +934,7 @@ export const leadTranscriptResponseSchema = z.object({
     .object({ boundary: identitySchema, at: instantSchema.optional() })
     .optional(),
   elided: countSchema,
-  /** Whether the chain over these batches was longer than a page of entries. */
+  /** Whether this page falls short: its entries were cut, or `held` is undecided. */
   truncated: z.boolean(),
   nextAfter: countSchema.optional(),
 });

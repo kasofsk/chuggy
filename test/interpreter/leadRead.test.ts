@@ -82,33 +82,67 @@ test("a transcript query outside its bounds is refused rather than clamped", () 
 });
 
 test("a page longer than the entry bound is cut and says so", () => {
+  const held = new Set<string>();
   const page = leadTranscriptPage({
     stream,
+    held,
     drawn: [drawn(chainText(sessionTranscriptEntriesMax + 4))],
   });
   assert.equal(page.entries.length, sessionTranscriptEntriesMax);
   assert.equal(page.truncated, true);
   const whole = leadTranscriptPage({
     stream,
+    held,
     drawn: [drawn(chainText(sessionTranscriptEntriesMax))],
   });
   assert.equal(whole.entries.length, sessionTranscriptEntriesMax);
   assert.equal(whole.truncated, false);
 });
 
-test("a page carrying no compaction cannot say what is held", () => {
-  const plain = leadTranscriptPage({ stream, drawn: [drawn(chainText(3))] });
-  assert.equal(plain.compaction, undefined);
-  assert.equal(
-    plain.held,
-    undefined,
-    "a page with no boundary answers no held set rather than the whole chain",
+test("a walk that could not decide what is held truncates the page", () => {
+  const undecided = leadTranscriptPage({
+    stream,
+    drawn: [drawn(chainText(2))],
+  });
+  assert.equal(undecided.held, undefined);
+  assert.equal(undecided.truncated, true);
+  const decided = leadTranscriptPage({
+    stream,
+    held: new Set(["entry-1"]),
+    drawn: [drawn(chainText(2))],
+  });
+  assert.deepEqual(decided.held, ["entry-1"]);
+  assert.equal(decided.truncated, false);
+});
+
+test("a page names the held entries it carries, and no others", () => {
+  const page = leadTranscriptPage({
+    stream,
+    held: new Set(["entry-2", "elsewhere"]),
+    drawn: [drawn(chainText(3))],
+  });
+  assert.equal(page.compaction, undefined);
+  assert.deepEqual(
+    page.held,
+    ["entry-2"],
+    "held is the subset of this page's entries, never a uuid it did not send",
+  );
+  const dropped = leadTranscriptPage({
+    stream,
+    held: new Set(["elsewhere"]),
+    drawn: [drawn(chainText(3))],
+  });
+  assert.deepEqual(
+    dropped.held,
+    [],
+    "a page the last cut dropped entirely holds none of its own entries",
   );
 });
 
 test("a batch nobody could draw is counted and the page still stands", () => {
   const page = leadTranscriptPage({
     stream,
+    held: new Set(["entry-0", "entry-1"]),
     drawn: [drawn(chainText(2)), { read: "Corrupt" }, { read: "NotFound" }],
     nextAfter: 3,
   });
@@ -116,4 +150,5 @@ test("a batch nobody could draw is counted and the page still stands", () => {
   assert.equal(page.entries.length, 2);
   assert.equal(page.nextAfter, 3);
   assert.equal(page.compaction, undefined);
+  assert.deepEqual(page.held, ["entry-0", "entry-1"]);
 });

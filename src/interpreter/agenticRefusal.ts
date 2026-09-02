@@ -54,6 +54,11 @@ export interface AgenticRefusalRecord {
   readonly recordedAt: string;
 }
 
+/**
+ * The reads the API has onto the ledger. A caller may ask for one past the bound
+ * it answers and read the extra row as "there is more", so an adapter answers
+ * the limit it is given rather than clamping to the answered bound.
+ */
 export interface AgenticRefusalRead {
   /** Every ticket in the project whose latest entry is a refusal. */
   standing(
