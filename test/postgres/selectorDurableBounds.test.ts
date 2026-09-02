@@ -24,11 +24,11 @@ test("the handoff note's wire bound is the ceiling its own column checks", async
        FROM pg_constraint c
       WHERE c.conrelid = 'selector_project_state'::regclass
         AND c.contype = 'c'
-        AND pg_get_constraintdef(c.oid) LIKE '%working_memory%'`,
+        AND pg_get_constraintdef(c.oid) LIKE '%handoff_note%'`,
   );
   const definition = constraint.rows[0]?.definition;
   assert.ok(definition !== undefined, "the handoff-note ceiling was not found");
-  const checked = /length\(working_memory\) <= (\d+)/u.exec(definition);
+  const checked = /length\(handoff_note\) <= (\d+)/u.exec(definition);
   assert.ok(checked !== null, "the ceiling is not a length check");
   assert.equal(Number(checked[1]), selectorHandoffNoteBytesMax);
 });
