@@ -199,9 +199,12 @@ export function selectorProcess(
 }
 
 /**
- * Drives both schedulers, execution first, in one tick of one pacing loop; the
- * session half is not optional, because a pass nobody runs would leave a queued
- * turn waiting while the process reported itself healthy.
+ * Drives both schedulers in one tick of one pacing loop, execution first: either
+ * cleanup raises on a cluster answering `Unavailable` to a cancel and
+ * `../interpreter/serviceRuntime.ts` ends the loop on a raise out of `run`, so
+ * the order decides only which half has finished its pass when the other stops
+ * the tick, and this slice's newest infrastructure does not get to deny the
+ * proved execution machine a dispatch on its way out.
  */
 export function schedulerProcess(
   service: ExecutionSchedulerService,

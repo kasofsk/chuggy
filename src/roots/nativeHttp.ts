@@ -200,7 +200,13 @@ function nativeReadiness(
   };
 }
 
-function nativePools() {
+/** The two pools this process owns, each proved to connect as a different role. */
+export interface NativePools {
+  readonly pool: ReturnType<typeof postgresPool>;
+  readonly selectorReviewPool: ReturnType<typeof postgresPool>;
+}
+
+function nativePools(): NativePools {
   return {
     pool: postgresPool(requiredEnvironment(databaseUrlVariable)),
     selectorReviewPool: postgresPool(
@@ -332,15 +338,21 @@ function nativeShutdown(
 
 /**
  * The two bearer kinds this API accepts: the issuer's, and the session bearers
- * its own pool is the authority on. The prefix is what routes a token to one of
- * them, so neither ever sees the other's, and `../adapters/http/sessionBearer.ts`
- * argues why that is not an implementation detail.
+ * the API pool is the authority on — the one pool holding `EXECUTE` on
+ * `authenticate_session_bearer`, where the review pool would raise permission
+ * denied and every session bearer would read on the wire as this server's
+ * outage rather than as a deployment that bound the wrong credential. It takes
+ * both pools and chooses, rather than being handed one, so a case can observe
+ * which was reached.
  */
 export function nativeAuthentication(
   oidc: PrincipalAuthentication,
-  pool: ReturnType<typeof postgresPool>,
+  pools: NativePools,
 ): PrincipalAuthentication {
-  return twoBearerAuthentication(oidc, postgresSessionBearerAuthority(pool));
+  return twoBearerAuthentication(
+    oidc,
+    postgresSessionBearerAuthority(pools.pool),
+  );
 }
 
 /**
@@ -368,7 +380,8 @@ async function nativeDatabasesReady(
 async function main(): Promise<void> {
   const keying = idempotencyKeying();
   const authenticationConfig = oidcConfig();
-  const { pool, selectorReviewPool } = nativePools();
+  const pools = nativePools();
+  const { pool, selectorReviewPool } = pools;
   await nativeDatabasesReady(pool, selectorReviewPool);
   const authentication = nativeAuthentication(
     await oidcAuthentication(authenticationConfig).catch(
@@ -377,7 +390,7 @@ async function main(): Promise<void> {
         throw failure;
       },
     ),
-    pool,
+    pools,
   );
   const access = postgresProjectAccess(pool);
   const web = composeNativeWeb(

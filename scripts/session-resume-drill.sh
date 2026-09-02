@@ -23,13 +23,16 @@
 # credential file.
 #
 # THE AGENT SDK IS NOT A DEPENDENCY OF THIS TREE — the image installs it — so
-# where it is not already resolvable this fetches the version the image pins
-# into a scratch directory and links it in beside the pod, then unlinks it. The
-# tree is left as it was found.
+# where it is not already resolvable this fetches the version the image pins into
+# a scratch directory and links that one name in beside the pod. Cleanup removes
+# the link it made and the directory only if it made that too, because a
+# developer who keeps their own install there must not have it deleted; the tree
+# is left as it was found either way.
 #
 # Env:
 #   CHUG_DRILL_PG_PORT     host port for this drill's own server
 #   CHUG_DRILL_PLANE_PORT  host port for the worker plane it starts
+#   CHUG_PG_IMAGE          the PostgreSQL image that server is started from
 #   CHUG_SESSION_MODEL     the model each turn runs against
 #   CHUG_DRILL_KEEP        keep the container and the scratch tree afterwards
 #
@@ -61,11 +64,13 @@ scratch=""
 plane_pid=""
 pod_pid=""
 linked=""
+made_modules=""
 
 drill_clean() {
 	[ -z "$pod_pid" ] || kill -9 "$pod_pid" 2>/dev/null || true
 	[ -z "$plane_pid" ] || kill "$plane_pid" 2>/dev/null || true
-	[ -z "$linked" ] || rm -rf "$linked"
+	[ -z "$linked" ] || rm -f "$linked"
+	[ -z "$made_modules" ] || rmdir "$made_modules" 2>/dev/null || true
 	if [ -n "${CHUG_DRILL_KEEP:-}" ]; then
 		echo "session-resume-drill: kept $container and $scratch"
 		return
@@ -125,9 +130,15 @@ if ! node -e "require.resolve('$sdk/package.json')" >/dev/null 2>&1; then
 	npm install --silent --no-audit --no-fund --prefix "$scratch/sdk" \
 		"$sdk@$sdk_version" >/dev/null 2>&1 ||
 		fail "could not fetch $sdk@$sdk_version"
-	linked="$root/images/worker/node_modules"
-	mkdir -p "$linked"
-	ln -sfn "$scratch/sdk/node_modules/@anthropic-ai" "$linked/@anthropic-ai"
+	modules="$root/images/worker/node_modules"
+	[ -d "$modules" ] || made_modules="$modules"
+	mkdir -p "$modules"
+	scoped="$modules/@anthropic-ai"
+	if [ -e "$scoped" ] || [ -L "$scoped" ]; then
+		fail "$scoped is already there; the drill will not stand on or remove it"
+	fi
+	ln -s "$scratch/sdk/node_modules/@anthropic-ai" "$scoped"
+	linked="$scoped"
 fi
 
 # --- the worker plane -------------------------------------------------------
@@ -312,7 +323,10 @@ printf '%s\n' "$store_one" | while IFS= read -r batch; do
 done || kept=no
 contiguous="$(printf '%s\n' "$store_two" | awk '{print $1}' | uniq -c |
 	awk '{print $1}' | tr '\n' ' ')"
-numbering="$(printf '%s\n' "$store_two" | awk '{print $1" "$2}' | sort -u |
+# Sorted by stream and then by batch AS A NUMBER: the default collation orders
+# a batch as text, so a tenth batch sorts between the first and the second and a
+# contiguous store reads as a gapped one.
+numbering="$(printf '%s\n' "$store_two" | awk '{print $1" "$2}' | sort -u -k1,1 -k2,2n |
 	awk '{if ($2 != ++seen[$1]) bad = 1} END {print bad ? "gapped" : "contiguous"}')"
 [ "$grew" -gt "$was" ] && [ "$kept" = yes ] && [ "$numbering" = contiguous ] &&
 	three=yes || three=no

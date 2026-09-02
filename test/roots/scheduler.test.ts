@@ -579,7 +579,12 @@ test("a stated bound is taken and the rest stay the published defaults", async (
   });
 });
 
-/** The cluster a case answers for, reachable or not, and the site each half stands on. */
+/**
+ * The cluster a case answers for, reachable or not, and the site each half
+ * stands on. Both halves place against that one site, so what is recorded is
+ * the pod or Secret name, which carries the prefix its own launcher was
+ * configured with and is therefore the only thing that says which half asked.
+ */
 function processCluster(reachable: boolean): string {
   return `
     const cluster = {
@@ -612,8 +617,14 @@ function processCluster(reachable: boolean): string {
       model: 'claude-haiku-4-5',
     };
     const asked = [];
+    const half = (init) => {
+      const named = init && init.body ? JSON.parse(init.body).metadata.name : '';
+      if (named.startsWith(cluster.podNamePrefix)) return ' worker';
+      if (named.startsWith(sessionSite.podNamePrefix)) return ' session';
+      return '';
+    };
     const fetcher = (input, init) => {
-      asked.push(((init && init.method) || 'GET') + ' ' + String(input));
+      asked.push(((init && init.method) || 'GET') + ' ' + String(input) + half(init));
       if (!${String(reachable)}) return Promise.reject(new Error('connection refused'));
       if (init && init.method === 'POST' && String(input).endsWith('/pods')) {
         const submitted = JSON.parse(init.body);
@@ -798,16 +809,16 @@ test("the scheduler process starts, places one worker, reports health and stops"
   assert.equal(found.placed.length, 1);
   assert.deepEqual(found.asked.slice(0, 3), [
     `GET ${namespaceUrl}`,
-    `POST ${namespaceUrl}/pods`,
-    `POST ${namespaceUrl}/secrets`,
+    `POST ${namespaceUrl}/pods worker`,
+    `POST ${namespaceUrl}/secrets worker`,
   ]);
 });
 
 /**
- * The session half of the same tick. A pass nobody calls would leave every
- * assertion below untouched while the process reported itself healthy, which is
- * exactly the unverified control this repository refuses — so the cluster is
- * asked for the pod, not merely the store told a placement happened.
+ * The session half of the same tick, and the order of the two. A pass nobody
+ * calls would leave this untouched while the process reported itself healthy,
+ * so the cluster is asked for the pod rather than the store merely told a
+ * placement happened, and each request says which half named it.
  */
 test("the same tick places the session waiting for a pod, after the worker", async () => {
   const found = JSON.parse(
@@ -816,10 +827,10 @@ test("the same tick places the session waiting for a pod, after the worker", asy
   assert.equal(found.sessionPlaced.length, 1);
   assert.deepEqual(found.asked, [
     `GET ${namespaceUrl}`,
-    `POST ${namespaceUrl}/pods`,
-    `POST ${namespaceUrl}/secrets`,
-    `POST ${namespaceUrl}/pods`,
-    `POST ${namespaceUrl}/secrets`,
+    `POST ${namespaceUrl}/pods worker`,
+    `POST ${namespaceUrl}/secrets worker`,
+    `POST ${namespaceUrl}/pods session`,
+    `POST ${namespaceUrl}/secrets session`,
   ]);
 });
 

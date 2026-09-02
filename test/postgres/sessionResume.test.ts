@@ -394,7 +394,7 @@ test("the store grew across the attempts and lost nothing it already held", asyn
   }
 });
 
-test("the lost attempt's bearer is refused every route, and its generation is fenced", async () => {
+test("the lost attempt is refused every route, and a generation the live one is not at is fenced", async () => {
   const drive = await resumeDrive();
   try {
     for (const [method, url] of [

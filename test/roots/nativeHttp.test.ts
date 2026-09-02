@@ -11,9 +11,12 @@
  * composition that named only the issuer would answer a live session bearer
  * `InvalidToken` and look exactly like a bad token.
  *
- * THE POOL IS A DOUBLE AND THE ISSUER IS A DOUBLE. Each records that it was
- * asked, so the case can require that neither authority is ever offered the
- * other's token.
+ * EVERY DOUBLE RECORDS THAT IT WAS ASKED, and the two pools are told apart, so
+ * a case can require both that neither authority is offered the other's token
+ * and that the session authority stands on the API pool. Only that pool holds
+ * `EXECUTE` on `authenticate_session_bearer`; over the selector review pool
+ * every session bearer would be a 503 on a healthy deployment, and a double
+ * that answered both pools alike could not see the difference.
  */
 
 import assert from "node:assert/strict";
@@ -40,15 +43,19 @@ const issuerToken = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJsZWFkIn0.c2ln";
 function authenticationProgram(token: string): string {
   return `
     const root = await import('./src/roots/nativeHttp.ts');
-    const asked = { pool: [], oidc: [] };
-    const pool = {
+    const asked = { pool: [], selectorReviewPool: [], oidc: [] };
+    const pooled = (named, principal) => ({
       query: async (statement) => {
-        asked.pool.push(statement.values);
+        asked[named].push(statement.values);
         return { rows: [{
-          tenant: 'tenant', project: 'project', session: 'session-one',
-          kind: 'Lead', principal: ${JSON.stringify(principal)},
+          tenant: 'tenant', project: 'project', session: 'session-' + named,
+          kind: 'Lead', principal,
         }] };
       },
+    });
+    const pools = {
+      pool: pooled('pool', ${JSON.stringify(principal)}),
+      selectorReviewPool: pooled('selectorReviewPool', 'a review-pool principal'),
     };
     const oidc = {
       authenticateBearer: async (offered) => {
@@ -57,7 +64,7 @@ function authenticationProgram(token: string): string {
       },
     };
     const authenticated = await root
-      .nativeAuthentication(oidc, pool)
+      .nativeAuthentication(oidc, pools)
       .authenticateBearer(${JSON.stringify(token)});
     process.stdout.write(JSON.stringify({ authenticated, asked }));
   `;
@@ -74,6 +81,7 @@ interface Authenticated {
   };
   readonly asked: {
     readonly pool: readonly (readonly string[])[];
+    readonly selectorReviewPool: readonly (readonly string[])[];
     readonly oidc: readonly string[];
   };
 }
@@ -96,10 +104,21 @@ test("a session bearer is answered by this deployment's own session authority", 
   const found = await authenticating(sessionToken);
   assert.deepEqual(found.authenticated, {
     authenticated: "Bearer",
-    bearer: { principal, viaSession: "session-one" },
+    bearer: { principal, viaSession: "session-pool" },
   });
   assert.equal(found.asked.pool.length, 1);
   assert.deepEqual(found.asked.oidc, []);
+});
+
+test("the session authority stands on the API pool and never the review pool", async () => {
+  const found = await authenticating(sessionToken);
+  assert.deepEqual(found.asked.selectorReviewPool, []);
+  assert.equal(found.asked.pool.length, 1);
+  assert.equal(
+    found.authenticated.bearer?.viaSession,
+    "session-pool",
+    "the session bearer was answered by a pool that is not the API's",
+  );
 });
 
 test("the session authority is asked for a digest and never for the secret", async () => {
@@ -117,4 +136,5 @@ test("a token of the issuer's language never reaches the session authority", asy
   });
   assert.deepEqual(found.asked.oidc, [issuerToken]);
   assert.deepEqual(found.asked.pool, []);
+  assert.deepEqual(found.asked.selectorReviewPool, []);
 });
