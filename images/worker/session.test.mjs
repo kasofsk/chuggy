@@ -727,6 +727,40 @@ test("one turn's staging never reaches the next turn's answer", async () => {
   assert.equal(answers[1].body.result, "done");
 });
 
+/**
+ * The two arms this branch and the decision tools each added meet here, and the
+ * order they meet in is the property: a turn whose account was refused is a turn
+ * the session never got, so the choices its tools staged are not an answer to
+ * post. The result below is a *success* carrying text, which is what makes the
+ * ordering load-bearing rather than incidental.
+ */
+test("a held turn posts no answer, so the decision its tools staged is never settled", async () => {
+  const plane = planeOf([observationTurn], leadFacts);
+  const { query } = queryOf((_asked, _index, options) => [
+    async () => {
+      const tools = options.mcpServers.chuggy.tools;
+      await tools
+        .find((tool) => tool.name === "dispatch")
+        .handler({ ticket: 4, expectedTicketVersion: 2 });
+    },
+    rejection,
+    result("success", { result: "I dispatched ticket 4." }),
+  ]);
+
+  const code = await run({ request: plane.request, query });
+
+  assert.equal(code, 0);
+  assert.deepEqual(
+    plane.calls.filter(({ path }) => path === "/v1/session/held").length,
+    1,
+  );
+  assert.deepEqual(
+    plane.calls.filter(({ path }) => path.startsWith("/v1/session/turn/")),
+    [],
+    "a held turn was settled",
+  );
+});
+
 test("a composed decision is scrubbed of what the pod was handed, exactly as prose is", async () => {
   const plane = planeOf([observationTurn], leadFacts);
   const { query } = queryOf((_asked, _index, options) => [
