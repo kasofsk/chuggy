@@ -653,11 +653,24 @@ test("a ledger carrying a version this image does not declare is refused untouch
   await migrationForeignLedgerRefused("rolledback", declaredLatest + 1);
 });
 
+/**
+ * The rename below breaks a migration only where the server resolves the
+ * function's name as it applies it, which a `plpgsql` body does not: one names
+ * its own dependencies when it runs.
+ */
 test("a statement that fails is a failure and not a could-not-run, and takes its ledger row with it", async () => {
   const sabotaged = migrations.findLast(({ statements }) =>
-    statements.some((statement) => statement.includes(accountIdentityFunction)),
+    statements.some(
+      (statement) =>
+        statement.includes(accountIdentityFunction) &&
+        !statement.includes("plpgsql"),
+    ),
   )?.version;
-  assert.notEqual(sabotaged, undefined, "no migration names the function");
+  assert.notEqual(
+    sabotaged,
+    undefined,
+    "no migration resolves the function as it applies",
+  );
   const version = sabotaged ?? 0;
   await migrationDatabase("failing", async (subject, url) => {
     await migrationSeedApplied(subject, version);

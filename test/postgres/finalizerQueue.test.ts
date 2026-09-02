@@ -460,7 +460,7 @@ test("no principal may offer a finalization result as an ordinary command", asyn
   assert.deepEqual(
     await rig.harness.query(
       `SELECT result FROM accept_operation($1,$2,$3,'UserMutation','subject',
-         'v1',$4,$5,ARRAY[$4]::text[],ARRAY[$5]::text[],$6,1000,2000)`,
+         'v1',$4,$5,ARRAY[$4]::text[],ARRAY[$5]::text[],$6,1000,2000,NULL)`,
       [
         project.partition.tenant,
         project.partition.project,

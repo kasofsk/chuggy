@@ -871,7 +871,7 @@ test("dispatch acceptance refuses every command the wire parser cannot read", as
     for (const [index, command] of commands.entries()) {
       const found = await pool.query<{ result: string }>(
         `SELECT result FROM ${dispatchAcceptanceFunction}(
-          $1,$2,$3,'User','subject','v1',$4,$5,ARRAY[]::text[],ARRAY[]::text[],$6,10,100)`,
+          $1,$2,$3,'User','subject','v1',$4,$5,ARRAY[]::text[],ARRAY[]::text[],$6,10,100,NULL)`,
         [
           partition.tenant,
           partition.project,

@@ -19,7 +19,8 @@ import {
   ticketServiceRole,
   type Migration,
 } from "../shared.ts";
-const acceptanceOrdinaryResolutions = allNativeActionResolutions.filter(
+/** Every resolution but the safety one, which is the only one that reduces correctness. */
+export const acceptanceOrdinaryResolutions = allNativeActionResolutions.filter(
   (resolution) => resolution !== safetyResolution,
 );
 

@@ -221,3 +221,53 @@ AN ANSWERED OPERATION IS TERMINAL WITH NO ENTRY BEHIND IT. `Approve` and
 `Decline` name no domain command, so the input that carried one settles
 `Answered`: the state a decision input reaches without a decided sequence, and
 the one public operation state that carries no sequence for a client to read.
+
+`agent_session` — one agent session: what it is for, whose authorization it
+acts under, what it may do and whether it still takes turns. Owned by the
+boundary owner alone, which is what `open_agent_session`, `close_agent_session`
+and `enqueue_session_turn` run as; no runtime role holds a privilege on it,
+because a role that could open one could mint an authority to act as a
+principal. Its composite key is `(tenant, project)` and its identity is
+`(tenant, project, session)`, with the opaque session unique globally so a
+reused one cannot answer another project's mailbox. It is changed by those
+three doors, by the scheduler taking an attempt number and by the worker plane
+binding the runtime's session id once; a trigger refuses every other change,
+which is what makes the transcript the row points at singular. Unfinished work
+is found by selecting open sessions with a queued turn and no live attempt,
+which is exactly what `sessions_awaiting_placement` answers.
+
+`session_attempt` — one physical run of a session, its lease, its bearer digest
+and how it ended. It is a sibling of `execution_attempt` rather than a widening
+of it: that relation's key and every function over it hang off `execution`,
+whose pins are `NOT NULL` and whose uniqueness the proved capacity ledger rests
+on, and a session has none of them. Owned by the boundary owner, which is what the
+scheduler's boundaries and the worker plane's run as; its composite key is
+`(tenant, project, session)` and its identity `(tenant, project, session,
+attempt_number)`, with the attempt, the bearer and the bearer's digest each
+unique globally. It is changed by opening, placing, ending, the two reapers and
+the epoch fence, and `session_attempt_is_fenced` refuses a finished attempt any
+change but its cleanup acknowledgement. Unfinished work is found by selecting
+live attempts whose lease has expired by database time, whose epoch is not the
+current one, or which have been idle longer than the window the caller names.
+
+`session_turn` — one exchange in a session's mailbox: what was asked, which
+attempt is holding it, what came back and which store batches it produced.
+Owned by the boundary owner; its composite key is `(tenant, project, session)`
+and its identity `(tenant, project, session, ordinal)`, the ordinal allocated
+from the session's own counter and the turn identity unique globally. It is
+changed by enqueuing, by a claim, by an answer or a failure, by an ending
+attempt returning it, and by a close abandoning it; a partial unique index
+admits one claimed turn per session, which is what makes the claim a lease
+rather than a convention. Unfinished work is found by selecting queued turns
+for a session in ordinal order, which is what a claim takes the lowest of.
+
+`session_store_batch` — one batch of one stream of a session's transcript,
+pointing at bytes that live on the artifacts volume. Owned by the boundary
+owner and written only through `record_session_store_batch`; its composite key
+is `(tenant, project, session)` and its identity `(tenant, project, session,
+stream, batch)`, batch numbers per stream contiguous from one. It is changed by
+nothing: `session_store_batch_is_written_once` refuses both later verbs,
+because a transcript that could be edited is not a memory. It has no unfinished
+work — a batch is committed or it was rolled back — and it carries no path,
+because a store object's path is a total function of the key above and a stored
+one would be a duplicate of a derivable fact.
