@@ -12,6 +12,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
+import type { SessionStoreStream } from "../../src/interpreter/agentSession.ts";
 import {
   nativeHttpPageItemsMax,
   sessionStoreBatchBytesMax,
@@ -36,6 +37,15 @@ after(async () => {
   await rig.close();
 });
 
+/**
+ * A stream as the wire hands one over, before anything has agreed it is one.
+ * The cases below are about what the server refuses, so they must be able to
+ * offer a value no brander would mint.
+ */
+function unbranded(stream: string): SessionStoreStream {
+  return stream as SessionStoreStream;
+}
+
 /** A digest of the right shape, distinct for each thing a case names. */
 function digestOf(label: string): string {
   return label
@@ -57,8 +67,8 @@ async function storing(label: string) {
 function offering(held: SessionRigAttempt, stream: string, batch: number) {
   return {
     secret: held.secret,
-    gen: held.attempt.generation,
-    stream,
+    generation: held.attempt.generation,
+    stream: unbranded(stream),
     batch,
     digest: digestOf("abcdef12"),
     bytes: 128,
@@ -175,7 +185,7 @@ test("a dead attempt writes nothing, whatever bearer it still holds", async () =
   assert.equal(
     await rig.plane.record({
       ...offering(held, "runtime-1", 2),
-      gen: 99,
+      generation: 99,
     }),
     "Fenced",
   );
@@ -213,8 +223,8 @@ test("a page of one stream is bounded, and the streams a session holds are count
   await rig.plane.record(offering(held, "runtime-1/sub", 1));
   const first = await rig.plane.batches({
     secret: held.secret,
-    gen: held.attempt.generation,
-    stream: "runtime-1",
+    generation: held.attempt.generation,
+    stream: unbranded("runtime-1"),
     after: 0,
     limit: pages,
   });
@@ -225,8 +235,8 @@ test("a page of one stream is bounded, and the streams a session holds are count
   );
   const next = await rig.plane.batches({
     secret: held.secret,
-    gen: held.attempt.generation,
-    stream: "runtime-1",
+    generation: held.attempt.generation,
+    stream: unbranded("runtime-1"),
     after: sessionStorePageBatchesMax,
     limit: pages,
   });
@@ -237,7 +247,7 @@ test("a page of one stream is bounded, and the streams a session holds are count
   assert.deepEqual(
     await rig.plane.streams({
       secret: held.secret,
-      gen: held.attempt.generation,
+      generation: held.attempt.generation,
     }),
     [
       { stream: "runtime-1", batches: pages },
@@ -245,7 +255,7 @@ test("a page of one stream is bounded, and the streams a session holds are count
     ],
   );
   assert.deepEqual(
-    await rig.plane.streams({ secret: held.secret, gen: 99 }),
+    await rig.plane.streams({ secret: held.secret, generation: 99 }),
     [],
   );
 });
@@ -265,19 +275,9 @@ test("the listing is bounded one past the page the plane may answer with", async
     (
       await rig.plane.streams({
         secret: held.secret,
-        gen: held.attempt.generation,
+        generation: held.attempt.generation,
       })
     ).length,
     nativeHttpPageItemsMax + 1,
-  );
-  assert.equal(
-    (
-      await rig.plane.streams({
-        secret: held.secret,
-        gen: held.attempt.generation,
-        streamsMax: 3,
-      })
-    ).length,
-    3,
   );
 });

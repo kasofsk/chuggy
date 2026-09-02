@@ -326,7 +326,10 @@ test("the server itself admits one live attempt and one claimed turn per session
     ),
     /session_attempt_one_live/u,
   );
-  await rig.plane.claim({ secret: held.secret, gen: held.attempt.generation });
+  await rig.plane.claim({
+    secret: held.secret,
+    generation: held.attempt.generation,
+  });
   await sessionRigTurn(rig, partition, session, "indexed-second");
   await assert.rejects(
     rig.harness.query(
@@ -348,7 +351,7 @@ test("an attempt holding a claimed turn is never reaped as idle, however long it
   );
   const claimed = await rig.plane.claim({
     secret: held.secret,
-    gen: held.attempt.generation,
+    generation: held.attempt.generation,
   });
   assert.notEqual(claimed, undefined);
   assert.equal(
@@ -374,7 +377,7 @@ test("an attempt holding a claimed turn is never reaped as idle, however long it
   assert.equal(
     await rig.plane.answer({
       secret: held.secret,
-      gen: held.attempt.generation,
+      generation: held.attempt.generation,
       turn: claimed?.turn ?? sessionRigTurnId("absent"),
       result: "answered at last",
     }),

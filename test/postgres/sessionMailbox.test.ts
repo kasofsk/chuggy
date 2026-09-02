@@ -51,14 +51,14 @@ test("a claim takes the lowest queued turn, and takes the same one again", async
   const { first, held } = await mailbox("claim");
   const claimed = await rig.plane.claim({
     secret: held.secret,
-    gen: held.attempt.generation,
+    generation: held.attempt.generation,
   });
   assert.equal(claimed?.turn, first);
   assert.equal(claimed?.ordinal, 1);
   assert.equal(claimed?.inputKind, "UserMessage");
   const again = await rig.plane.claim({
     secret: held.secret,
-    gen: held.attempt.generation,
+    generation: held.attempt.generation,
   });
   assert.equal(again?.turn, first);
 });
@@ -68,23 +68,26 @@ test("a claim under a generation the durable side has moved past takes nothing",
   assert.equal(
     await rig.plane.claim({
       secret: held.secret,
-      gen: held.attempt.generation + 1,
+      generation: held.attempt.generation + 1,
     }),
     undefined,
   );
   const claimed = await rig.plane.claim({
     secret: held.secret,
-    gen: held.attempt.generation,
+    generation: held.attempt.generation,
   });
   assert.notEqual(claimed, undefined);
 });
 
 test("answering is idempotent, a different answer conflicts, and a stale one is fenced", async () => {
   const { partition, session, first, held } = await mailbox("answer");
-  await rig.plane.claim({ secret: held.secret, gen: held.attempt.generation });
+  await rig.plane.claim({
+    secret: held.secret,
+    generation: held.attempt.generation,
+  });
   const answer = {
     secret: held.secret,
-    gen: held.attempt.generation,
+    generation: held.attempt.generation,
     turn: first,
     result: "the answer",
     batchFirst: 1,
@@ -96,7 +99,7 @@ test("answering is idempotent, a different answer conflicts, and a stale one is 
     await rig.plane.answer({ ...answer, result: "a different answer" }),
     "Conflict",
   );
-  assert.equal(await rig.plane.answer({ ...answer, gen: 99 }), "Fenced");
+  assert.equal(await rig.plane.answer({ ...answer, generation: 99 }), "Fenced");
   const stored = await sessionRigTurnState(rig, partition, session, first);
   assert.equal(stored["state"], "Answered");
   assert.equal(stored["result"], "the answer");
@@ -106,11 +109,14 @@ test("answering is idempotent, a different answer conflicts, and a stale one is 
 
 test("failing a turn is idempotent, and a failure outside the roster is refused", async () => {
   const { partition, session, first, held } = await mailbox("failing");
-  await rig.plane.claim({ secret: held.secret, gen: held.attempt.generation });
+  await rig.plane.claim({
+    secret: held.secret,
+    generation: held.attempt.generation,
+  });
   assert.equal(
     await rig.plane.fail({
       secret: held.secret,
-      gen: held.attempt.generation,
+      generation: held.attempt.generation,
       turn: first,
       failure: "StoreRefused",
     }),
@@ -119,7 +125,7 @@ test("failing a turn is idempotent, and a failure outside the roster is refused"
   assert.equal(
     await rig.plane.fail({
       secret: held.secret,
-      gen: held.attempt.generation,
+      generation: held.attempt.generation,
       turn: first,
       failure: "StoreRefused",
     }),
@@ -128,7 +134,7 @@ test("failing a turn is idempotent, and a failure outside the roster is refused"
   assert.equal(
     await rig.plane.fail({
       secret: held.secret,
-      gen: held.attempt.generation,
+      generation: held.attempt.generation,
       turn: first,
       failure: "AgentFailed",
     }),
@@ -142,7 +148,10 @@ test("failing a turn is idempotent, and a failure outside the roster is refused"
 
 test("an ending attempt returns the turn it held and spends one of its attempts", async () => {
   const { partition, session, first, held } = await mailbox("returned");
-  await rig.plane.claim({ secret: held.secret, gen: held.attempt.generation });
+  await rig.plane.claim({
+    secret: held.secret,
+    generation: held.attempt.generation,
+  });
   await rig.scheduler.attemptEnded(held.attempt, "Vanished");
   const returned = await sessionRigTurnState(rig, partition, session, first);
   assert.equal(returned["state"], "Queued");
@@ -158,7 +167,7 @@ test("the attempt that exhausts a turn's budget fails it, and the mailbox moves 
   for (let spent = 0; spent < sessionTurnAttemptsMax; spent++) {
     const claimed = await rig.plane.claim({
       secret: attempt.secret,
-      gen: attempt.attempt.generation,
+      generation: attempt.attempt.generation,
     });
     assert.equal(claimed?.turn, first);
     await rig.scheduler.attemptEnded(attempt.attempt, "Vanished");
@@ -184,7 +193,7 @@ test("the attempt that exhausts a turn's budget fails it, and the mailbox moves 
     (
       await rig.plane.claim({
         secret: next.secret,
-        gen: next.attempt.generation,
+        generation: next.attempt.generation,
       })
     )?.turn,
     second,
@@ -218,7 +227,7 @@ test("the runtime's session id is bound once, and a second one is a conflict", a
   assert.equal(
     await rig.plane.bind({
       secret: held.secret,
-      gen: held.attempt.generation,
+      generation: held.attempt.generation,
       reference: "runtime-1",
     }),
     "Bound",
@@ -226,7 +235,7 @@ test("the runtime's session id is bound once, and a second one is a conflict", a
   assert.equal(
     await rig.plane.bind({
       secret: held.secret,
-      gen: held.attempt.generation,
+      generation: held.attempt.generation,
       reference: "runtime-1",
     }),
     "AlreadyBound",
@@ -234,7 +243,7 @@ test("the runtime's session id is bound once, and a second one is a conflict", a
   assert.equal(
     await rig.plane.bind({
       secret: held.secret,
-      gen: held.attempt.generation,
+      generation: held.attempt.generation,
       reference: "runtime-2",
     }),
     "Conflict",
@@ -242,7 +251,7 @@ test("the runtime's session id is bound once, and a second one is a conflict", a
   assert.equal(
     await rig.plane.bind({
       secret: held.secret,
-      gen: 99,
+      generation: 99,
       reference: "runtime-3",
     }),
     "Fenced",
@@ -261,14 +270,14 @@ test("the bearer resolves to the partition, session and principal it was minted 
   );
   const bound = await rig.plane.binding({
     secret: held.secret,
-    gen: held.attempt.generation,
+    generation: held.attempt.generation,
   });
   assert.deepEqual(bound?.partition, partition);
   assert.equal(bound?.session, session);
   assert.equal(bound?.kind, "Lead");
   assert.equal(bound?.principal, "principal-binding");
   assert.equal(
-    await rig.plane.binding({ secret: held.secret, gen: 99 }),
+    await rig.plane.binding({ secret: held.secret, generation: 99 }),
     undefined,
   );
 });
