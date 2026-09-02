@@ -80,19 +80,20 @@ export const kubernetesSessionBoundsDefaults: KubernetesSessionBounds = {
 };
 
 /**
- * The least a dollar cap may be. A budget below the smallest unit a model is
- * billed in cannot pay for a turn at any price, so a site naming one has named
- * a session that fails every turn it is handed rather than a cap on spending —
- * and a cap that can only ever be breached is not a cap.
+ * The least a dollar cap may be, which is the smallest amount the currency is
+ * denominated in. A cap below what a site can name in its own money is a cap
+ * nobody can act on: whether it binds is a fact about the model of the day
+ * rather than about the deployment, and a site that meant to spend nothing
+ * closes the session instead of budgeting it to a rounding error.
  */
 export const kubernetesSessionBudgetUsdMin = 0.01;
 
-/** A dollar cap: a fraction the image can spend, and never one too small to buy a turn. */
+/** A dollar cap: a fraction the image can spend, and never one below the currency's own unit. */
 function kubernetesSessionBudget(value: number, what: string): number {
   kubernetesPositiveNumber(value, what);
   if (value < kubernetesSessionBudgetUsdMin)
     throw new RangeError(
-      `${what} must be at least ${String(kubernetesSessionBudgetUsdMin)} to buy a turn at all`,
+      `${what} must be at least ${String(kubernetesSessionBudgetUsdMin)}, the smallest cap a site can name`,
     );
   return value;
 }

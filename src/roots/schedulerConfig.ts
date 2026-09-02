@@ -378,9 +378,9 @@ function schedulerJsonOr<Parsed>(
 /**
  * A published set of bounds with this deployment's overrides applied, refusing
  * an unknown one. A bound is a positive whole number unless `kinds` gives it
- * another schema: a bound the launcher accepts and this parse refuses is a
- * bound with two readings, and the deployment meets the stricter one as a
- * refusal to boot on a value the tree's own documentation invited.
+ * another schema, because a bound one tier accepts and another refuses is a
+ * bound with two readings and a deployment meets the stricter one as a refusal
+ * to boot.
  */
 function schedulerBounds<Bounds extends Record<keyof Bounds, number>>(
   environment: SchedulerEnvironment,
@@ -415,13 +415,20 @@ function schedulerBounds<Bounds extends Record<keyof Bounds, number>>(
 }
 
 /**
- * The session bounds that are not whole numbers, which is the dollar cap alone.
- * Its floor is the launcher's own, so the two tiers admit exactly one set of
- * values rather than agreeing by coincidence.
+ * What each session bound is parsed as, keyed over the bounds themselves the
+ * way the launcher's own checks are, so a bound added there and forgotten here
+ * does not compile rather than falling quietly to the whole-number default.
+ * The dollar cap reads its floor from the launcher's constant, so the two tiers
+ * admit one set of values rather than agreeing by coincidence.
  */
-const schedulerSessionBoundKinds: Readonly<
-  Partial<Record<keyof KubernetesSessionBounds, z.ZodType<number>>>
-> = {
+const schedulerSessionBoundKinds: {
+  readonly [Bound in keyof KubernetesSessionBounds]: z.ZodType<number>;
+} = {
+  mailboxPollMs: schedulerBoundSchema,
+  idleMs: schedulerBoundSchema,
+  resultDrainMs: schedulerBoundSchema,
+  loadTimeoutMs: schedulerBoundSchema,
+  turnsMax: schedulerBoundSchema,
   budgetUsd: z.number().finite().min(kubernetesSessionBudgetUsdMin),
 };
 
