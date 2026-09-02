@@ -21,6 +21,7 @@ import {
   projectResourceKey,
 } from "../app/core/projectQueryKeys.ts";
 import { ticketAttemptKey } from "../app/core/ticketActions.ts";
+import { leadBody, leadSession } from "./leadFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
 const partition = { tenant: "acme", project: "atlas" };
@@ -154,4 +155,64 @@ test("a key a screen holds is inside the partition and outside every kind", () =
   expect(held.slice(0, prefix.length)).toEqual(prefix);
   for (const kind of projectChangeKinds)
     expect(held[prefix.length]).not.toBe(kind);
+});
+
+/**
+ * The two kinds slice 2 adds. The refusal names its ticket, so a page already
+ * showing that ticket takes one more refusal as a re-read of a row it holds;
+ * the session names itself, which is what makes the lead page's head and its
+ * transcript move without a poll behind them.
+ */
+test("a refusal names its ticket and a session names itself", () => {
+  const ledger = { ticket: 42, entries: [], more: false };
+  const refusal = projectCacheCommands(
+    partition,
+    decoded({
+      event: "AgenticRefusal",
+      id: "30",
+      data: { version: 1, resource: "42", representation: ledger },
+    }),
+  );
+  expect(refusal[0]).toEqual({
+    command: "WriteResource",
+    key: projectResourceKey(partition, "AgenticRefusal", "42"),
+    representation: ledger,
+  });
+  expect(refusal[1]).toEqual({
+    command: "FoldLists",
+    kind: "AgenticRefusal",
+    resource: "42",
+    representation: ledger,
+  });
+  const lead = leadBody(2, 1);
+  const session = projectCacheCommands(
+    partition,
+    decoded({
+      event: "Session",
+      id: "31",
+      data: { version: 1, resource: leadSession, representation: lead },
+    }),
+  );
+  expect(session[1]).toEqual({
+    command: "FoldLists",
+    kind: "Session",
+    resource: leadSession,
+    representation: lead,
+  });
+});
+
+/** The wire refuses a body its kind's schema rejects, so no cache decision is
+ * taken over one. */
+test("a lead body the wire would not send never becomes an event", () => {
+  expect(() =>
+    decoded({
+      event: "Session",
+      id: "32",
+      data: {
+        version: 1,
+        resource: leadSession,
+        representation: { session: leadSession, state: "Wandering" },
+      },
+    }),
+  ).toThrow();
 });

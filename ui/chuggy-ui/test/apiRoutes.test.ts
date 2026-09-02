@@ -10,15 +10,23 @@ import { expect, test } from "vitest";
 
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import {
+  apiAgenticRefusals,
   apiConfiguration,
   apiDispatchView,
   apiExecutions,
+  apiLead,
+  apiLeadTranscript,
   apiNativeActions,
   apiProject,
   apiProjectInventory,
   apiProjectInventoryAll,
+  apiSelectorHistory,
+  apiSelectorSettings,
+  apiSelectorSettingsHistory,
   apiTicket,
+  apiTicketAgenticRefusals,
   apiTicketNativeActions,
+  apiWriteSelectorSettings,
   projectInventoryPagesMax,
 } from "../app/core/apiRoutes.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
@@ -211,4 +219,96 @@ test("a page read on its own asks for exactly the cursor it was given", async ()
   const held = recording(() => ({ projects: [] }));
   await apiProjectInventory(held.ports, { cursor: "opaque" });
   expect(held.urls[0]).toBe(`${nativeHttpBasePath}/projects?cursor=opaque`);
+});
+
+const partitionPath = `${nativeHttpBasePath}/tenants/acme/projects/at%20las`;
+
+test("the lead and its transcript hang from one segment, the store from two", async () => {
+  const held = recording((url) =>
+    url.includes("/transcript")
+      ? { stream: "1a2b", entries: [], held: [], elided: 0 }
+      : {
+          session: "lead-atlas",
+          state: "Open",
+          attention: "Monitoring",
+          notificationCursor: 0,
+          handoffNote: {},
+          turns: [],
+          streams: [],
+        },
+  );
+  await apiLead(held.ports, partition);
+  expect(held.urls[0]).toBe(`${partitionPath}/lead`);
+  await apiLeadTranscript(held.ports, partition, {
+    stream: "1a2b",
+    after: 4,
+    limit: 8,
+  });
+  expect(held.urls[1]).toBe(
+    `${partitionPath}/lead/transcript?stream=1a2b&after=4&limit=8`,
+  );
+});
+
+test("the refusals are read across the project and under one ticket", async () => {
+  const held = recording((url) =>
+    url.includes("/tickets/")
+      ? { ticket: 42, entries: [], more: false }
+      : { refusals: [], more: false },
+  );
+  await apiAgenticRefusals(held.ports, partition, { limit: 32 });
+  expect(held.urls[0]).toBe(`${partitionPath}/agentic-refusals?limit=32`);
+  await apiTicketAgenticRefusals(held.ports, partition, 42);
+  expect(held.urls[1]).toBe(`${partitionPath}/tickets/42/agentic-refusals`);
+});
+
+test("the decision log is resumed after the ordinal already held", async () => {
+  const held = recording(() => ({ decisions: [] }));
+  await apiSelectorHistory(held.ports, partition, { after: 1201, limit: 50 });
+  expect(held.urls[0]).toBe(
+    `${partitionPath}/selector-history?after=1201&limit=50`,
+  );
+});
+
+/** The write is a PUT of the whole override set under the revision it was read
+ * at, which is what makes a concurrent write a conflict rather than a clobber. */
+test("the settings are read, written whole and paged for their revisions", async () => {
+  const settings = {
+    partition: { tenant: "acme", project: "at las" },
+    revision: 12,
+    overrides: {},
+    effective: {
+      revision: 12,
+      projectRevision: 12,
+      mode: "Running",
+      installationMode: "Running",
+      dispatchMode: "Automatic",
+      basePrompt: "choose",
+      modelAllowlist: [],
+      toolAllowlist: [],
+      limits: {
+        tokensPerDecision: 1,
+        millisecondsPerDecision: 1,
+        toolCallsPerDecision: 1,
+        inputBytesPerDecision: 1,
+        candidatePagesPerDecision: 1,
+        concurrentDecisions: 1,
+        selectionsPerMinute: 1,
+      },
+      operationalContextMaxAgeMs: 1,
+    },
+  };
+  const held = recording((url) =>
+    url.includes("/history") ? { revisions: [] } : settings,
+  );
+  await apiSelectorSettings(held.ports, partition);
+  expect(held.urls[0]).toBe(`${partitionPath}/selector-settings`);
+  await apiWriteSelectorSettings(held.ports, partition, {
+    expectedRevision: 12,
+    overrides: { northStar: "ship the console" },
+  });
+  expect(held.urls[1]).toBe(`${partitionPath}/selector-settings`);
+  await apiSelectorSettingsHistory(held.ports, partition, { after: 3 });
+  expect(held.urls[2]).toBe(
+    `${partitionPath}/selector-settings/history?after=3`,
+  );
 });

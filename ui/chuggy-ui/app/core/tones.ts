@@ -10,7 +10,13 @@
  * link, a button or a focus ring.
  */
 
-import type { TicketPhase } from "../../../../src/contract/rosters.ts";
+import type {
+  SelectorAttention,
+  SessionState,
+  SessionTurnState,
+  TicketPhase,
+} from "../../../../src/contract/rosters.ts";
+import type { AgenticRefusalStanding } from "./leadTranscript.ts";
 import type { CycleStanding, SetVerdict, StageRow } from "./ticketLedger.ts";
 
 export const pillTones = [
@@ -91,5 +97,55 @@ export function stageArm(row: StageRow): StageArm {
       return { word: "Queued", tone: "queued" };
     case "Missing":
       return { word: "Missing", tone: "parked" };
+  }
+}
+
+/** Whether the lead's session still takes turns. */
+export function sessionStateTone(state: SessionState): Tone {
+  switch (state) {
+    case "Open":
+      return "live";
+    case "Closed":
+      return "retired";
+  }
+}
+
+/** How closely the lead says the project needs watching. */
+export function selectorAttentionTone(attention: SelectorAttention): Tone {
+  switch (attention) {
+    case "Monitoring":
+      return "live";
+    case "Attention":
+      return "parked";
+    case "Stopped":
+      return "fail";
+  }
+}
+
+/** Where one turn of the lead's mailbox stands. */
+export function sessionTurnStateTone(state: SessionTurnState): Tone {
+  switch (state) {
+    case "Queued":
+      return "queued";
+    case "Claimed":
+      return "live";
+    case "Answered":
+      return "pass";
+    case "Failed":
+      return "fail";
+    case "Abandoned":
+      return "retired";
+  }
+}
+
+/** Whether a refusal still binds, or a later authoring has overtaken it. */
+export function agenticRefusalStandingTone(
+  standing: AgenticRefusalStanding,
+): Tone {
+  switch (standing) {
+    case "Standing":
+      return "parked";
+    case "Superseded":
+      return "retired";
   }
 }
