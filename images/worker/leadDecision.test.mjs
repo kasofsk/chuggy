@@ -7,6 +7,7 @@ import { z } from "zod";
 import { chuggyToolHandler } from "./chuggyTools.mjs";
 import {
   agenticRefusalReasonCharsMax,
+  leadDecisionBytesMax,
   leadDecisionStaging,
   leadDispatchesMax,
   leadRefusalsPerDecisionMax,
@@ -97,12 +98,60 @@ test("a turn that sets the note replaces it, and the last call wins", async () =
   assert.equal(staging.document().attention, "Monitoring");
 });
 
-test("a decision that names no attention is monitoring", async () => {
+test("a decision that names no attention, on a project that named none, is monitoring", async () => {
   const { staging, call } = stagingOn();
 
   await call("dispatch", { ticket: 4, expectedTicketVersion: 2 });
 
   assert.equal(staging.document().attention, "Monitoring");
+});
+
+test("a decision that names no attention keeps the one the observation seeded", async () => {
+  const seeded = observationOf({
+    seeding: {
+      handoffNote: null,
+      notificationCursor: 0,
+      refusals: [],
+      decisions: [
+        { ordinal: 1, decision: "d1", completedAt: "t", attention: "Stopped" },
+        {
+          ordinal: 2,
+          decision: "d2",
+          completedAt: "t",
+          attention: "Attention",
+        },
+      ],
+    },
+  });
+  const { staging, call } = stagingOn(seeded);
+
+  await call("dispatch", { ticket: 4, expectedTicketVersion: 2 });
+
+  assert.equal(
+    staging.document().attention,
+    "Attention",
+    "a turn that said nothing cleared the flag a human is watching",
+  );
+});
+
+test("the attention one turn set outlives every later turn that names none", async () => {
+  const held = stagingOn();
+
+  await held.call("set_attention", { attention: "Attention" });
+  held.reset(observationOf());
+  await held.call("dispatch", { ticket: 4, expectedTicketVersion: 2 });
+
+  assert.equal(held.staging.document().attention, "Attention");
+
+  await held.call("set_attention", { attention: "Monitoring" });
+  held.reset(observationOf());
+  await held.call("dispatch", { ticket: 4, expectedTicketVersion: 2 });
+
+  assert.equal(
+    held.staging.document().attention,
+    "Monitoring",
+    "a lead that stated a new attention was not believed",
+  );
 });
 
 test("a second dispatch is an error the model sees, not a silent drop", async () => {
@@ -220,7 +269,14 @@ test("a reason past its bound never reaches the ledger", async () => {
   assert.equal(staging.staged(), false);
 });
 
-test("a note past its column is refused and the staged note is unmoved", async () => {
+test("the document's bound is the only size bound, and it is the tighter one", () => {
+  assert.ok(
+    leadDecisionBytesMax <= selectorHandoffNoteBytesMax,
+    "one field's column is narrower than the whole document's row, so a per-field bound is reachable and this module has none",
+  );
+});
+
+test("a note the row cannot hold is refused and the staged note is unmoved", async () => {
   const { staging, call } = stagingOn();
 
   await call("set_handoff_note", { note: { kept: "small" } });
@@ -229,6 +285,7 @@ test("a note past its column is refused and the staged note is unmoved", async (
   });
 
   assert.ok(errored(answer));
+  assert.match(textOf(answer), /the turn's answer holds/);
   assert.deepEqual(staging.document().handoffNote, { kept: "small" });
 });
 
@@ -243,6 +300,11 @@ test("a staging that would outgrow the mailbox row is refused rather than trunca
   assert.ok(errored(answer));
   assert.match(textOf(answer), /the turn's answer holds/);
   assert.equal(staging.document().planningIntent, undefined);
+  assert.deepEqual(
+    staging.document().handoffNote,
+    { a: "x".repeat(60_000) },
+    "a refused change moved what it did not stage",
+  );
   assert.ok(
     Buffer.byteLength(JSON.stringify(staging.document())) <= 65_536,
     "the composed document would be truncated by the pod",

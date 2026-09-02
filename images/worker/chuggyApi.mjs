@@ -6,13 +6,15 @@
  * project membership exactly as it authorizes a console user's, so a tool call
  * is a command the session's own membership admits and nothing more.
  *
- * A READ IS RETRIED AND A WRITE IS NOT. A retry is for a condition; a write that
- * was answered is a decision, and asking again would either duplicate it or
- * hide the refusal from the model the answer is for. Only a transport failure
- * before any answer is retried, and only for a read. The writes this client
- * makes are each fenced by the API on something the caller had to supply — a
- * project sequence, a draft version, an idempotency key — so a duplicate that
- * did escape is refused rather than applied twice.
+ * A READ IS RETRIED AND A WRITE IS NOT, and a read is exactly `GET` and `HEAD`.
+ * A retry is for a condition; a write that was answered is a decision, and
+ * asking again would either duplicate it or hide the refusal from the model the
+ * answer is for. A read is asked again on a thrown transport AND on a server
+ * error, because both are conditions and neither is an answer the caller can
+ * act on; a write gets one attempt and whatever came back. The writes this
+ * client makes are each fenced by the API on something the caller had to
+ * supply — a project sequence, a draft version, an idempotency key — so a
+ * duplicate that did escape would be refused rather than applied twice.
  *
  * THE RETRY BOUND IS UNDER THE TOOL TIMEOUT ON PURPOSE. A tool call is cut off
  * at `chuggyToolTimeoutMs`; a client that spent longer than that retrying would
@@ -65,12 +67,16 @@ export async function chuggyRequest(
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     try {
       const response = await transport.fetch(new URL(path, origin), {
-        redirect: "manual",
         ...init,
+        // After the spread, not before it: the bearer and the refusal to follow
+        // a redirect are this client's properties and not each caller's to
+        // choose. A caller reaching either would be the one thing an `init` may
+        // not do.
+        redirect: "manual",
         headers: {
+          ...init.headers,
           authorization: `Bearer ${bearer}`,
           accept: chuggyMediaType,
-          ...init.headers,
         },
       });
       if (response.status < serverErrorStatusMin) return response;

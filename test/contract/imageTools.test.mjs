@@ -43,7 +43,7 @@ import {
   chuggyToolPagesMax,
   chuggyToolPrefix,
   chuggyToolResponseBytesMax,
-  chuggyToolServer,
+  chuggyToolServerName,
   chuggyToolTimeoutMs,
   dependentRelationsAdmitted,
 } from "../../src/interpreter/leadTools.ts";
@@ -56,7 +56,7 @@ import * as decision from "../../images/worker/leadDecision.mjs";
 
 test("the image offers exactly the tools the roster declares, in the same order", () => {
   assert.deepEqual(image.allChuggyTools, [...allChuggyTools]);
-  assert.equal(image.chuggyToolServerName, chuggyToolServer);
+  assert.equal(image.chuggyToolServerName, chuggyToolServerName);
   assert.equal(image.chuggyToolPrefix, chuggyToolPrefix);
 });
 

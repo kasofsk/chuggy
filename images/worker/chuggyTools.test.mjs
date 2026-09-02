@@ -6,11 +6,13 @@ import { z } from "zod";
 import {
   allChuggyTools,
   chuggyOperationIdentity,
+  chuggyProjectTools,
   chuggyToolContext,
   chuggyToolDefinitions,
   chuggyToolHandler,
   chuggyToolPrefix,
   chuggyToolServer,
+  chuggyToolsNotYetServed,
   chuggyToolTimeoutMs,
   sessionAllowedTools,
   sessionBuiltInTools,
@@ -146,10 +148,27 @@ test("a read cut at the bound says so rather than answering a broken body", asyn
   assert.match(textOf(answer), /\[cut at 65536 bytes\]$/);
 });
 
+/** One tool's route, driven past the unserved table so every path is covered. */
+function routeOf(name, args, api) {
+  const definition = chuggyProjectTools.find((held) => held.name === name);
+  return chuggyToolHandler(
+    {
+      ...definition,
+      call: (called) =>
+        definition.call(
+          chuggyToolContext(task, bearer, { request: api.request }),
+          called,
+        ),
+    },
+    z,
+  )(args);
+}
+
 test("each read reaches the route its roster names, and only it", async () => {
   const cases = [
     [["read_ticket", { ticket: 7 }], "/tickets/7"],
     [["read_draft", { ticket: 7 }], "/drafts/7"],
+    [["list_drafts", { limit: 5 }], "/drafts?limit=5"],
     [["list_configurations", { limit: 5 }], "/configurations?limit=5"],
     [["read_configuration", { revision: "r/1" }], "/configurations/r%2F1"],
     [
@@ -176,9 +195,9 @@ test("each read reaches the route its roster names, and only it", async () => {
     [["initialize_draft", { revision: "r1" }], "/draft-initializations/r1"],
   ];
   for (const [[name, args], suffix] of cases) {
-    const { api, call } = toolsOf();
+    const api = apiOf();
 
-    await call(name, args);
+    await routeOf(name, args, api);
 
     assert.equal(
       api.calls[0].path,
@@ -189,9 +208,9 @@ test("each read reaches the route its roster names, and only it", async () => {
 });
 
 test("the project inventory is read outside the project's own path", async () => {
-  const { api, call } = toolsOf();
+  const api = apiOf();
 
-  await call("read_projects", { limit: 3 });
+  await routeOf("read_projects", { limit: 3 }, api);
 
   assert.equal(api.calls[0].path, "/api/v1/projects?limit=3");
 });
@@ -339,13 +358,54 @@ test("releasing a draft submits one operation and answers its id, not an outcome
     authoringVersion: 3,
     configurationRevision: "r1",
   });
-  assert.equal(
-    body.operation,
-    chuggyOperationIdentity("turn-1", body.mutation),
-    "the operation id is not derived from the turn and the command",
-  );
   assert.equal(api.calls[0].init.headers["idempotency-key"], body.operation);
   assert.equal(textOf(answer), `HTTP 202\n${accepted}`);
+});
+
+test("two releases in one turn are two operations, and one repeated is one", async () => {
+  const { api, call } = toolsOf({}, () => ({ status: 202, body: "{}" }));
+  const release = (ticket) =>
+    call("release_draft", {
+      ticket,
+      authoringVersion: 3,
+      configurationRevision: "r1",
+    });
+
+  await release(4);
+  await release(9);
+  await release(4);
+
+  const ids = api.calls.map(({ init }) => JSON.parse(init.body).operation);
+  const keys = api.calls.map(({ init }) => init.headers["idempotency-key"]);
+  assert.notEqual(
+    ids[0],
+    ids[1],
+    "two releases of different drafts in one turn collide on one operation, and the second is an idempotency conflict naming nothing the lead can act on",
+  );
+  assert.equal(ids[0], ids[2], "one call repeated minted a second operation");
+  assert.deepEqual(keys, ids, "the key and the operation are not the same");
+});
+
+test("a command's identity is a value the caller cannot have guessed", () => {
+  const mutation = {
+    mutation: "ReleaseDraft",
+    ticket: 4,
+    authoringVersion: 3,
+    configurationRevision: "r1",
+  };
+
+  assert.notEqual(
+    chuggyOperationIdentity("turn-1", mutation),
+    chuggyOperationIdentity("turn-1", { ...mutation, ticket: 9 }),
+  );
+  assert.notEqual(
+    chuggyOperationIdentity("turn-1", mutation),
+    chuggyOperationIdentity("turn-1", { ...mutation, authoringVersion: 4 }),
+  );
+  assert.notEqual(
+    chuggyOperationIdentity("turn-1", mutation),
+    chuggyOperationIdentity("turn-2", mutation),
+  );
 });
 
 test("the same release repeated in one turn is the same operation, and a new turn is a new one", async () => {
@@ -380,14 +440,62 @@ test("a command submitted with no turn claimed is refused rather than minted", a
   assert.equal(api.calls.length, 0);
 });
 
-test("listing drafts says which of the two is missing until the route is served", async () => {
-  const { api, call } = toolsOf();
+/**
+ * The six reads whose route `src/adapters/http/server.ts` does not register.
+ * Written here rather than read off the table under test, so a table that lost
+ * an entry is a failure rather than a change of expectation.
+ */
+const unservedOnThisInstallation = [
+  "list_drafts",
+  "read_decision_log",
+  "read_refusals",
+  "read_ticket_refusals",
+  "read_lead",
+  "read_lead_transcript",
+];
 
-  const answer = await call("list_drafts", {});
+test("the table names exactly the reads this installation does not serve", () => {
+  assert.deepEqual(
+    Object.keys(chuggyToolsNotYetServed).sort(),
+    [...unservedOnThisInstallation].sort(),
+  );
+});
 
-  assert.equal(answer.isError, true);
-  assert.match(textOf(answer), /not served/);
-  assert.equal(api.calls.length, 0);
+test("every tool whose route is unserved refuses before it asks, and no other does", async () => {
+  const arguments_ = {
+    list_drafts: {},
+    read_decision_log: {},
+    read_refusals: {},
+    read_ticket_refusals: { ticket: 4 },
+    read_lead: {},
+    read_lead_transcript: {},
+    read_ticket: { ticket: 4 },
+    list_tickets: {},
+    read_operation: { operation: "o-1" },
+  };
+  for (const [name, args] of Object.entries(arguments_)) {
+    const unserved = unservedOnThisInstallation.includes(name);
+    const { api, call } = toolsOf();
+
+    const answer = await call(name, args);
+
+    assert.equal(answer.isError, unserved ? true : undefined, name);
+    assert.equal(api.calls.length, unserved ? 0 : 1, name);
+    if (unserved) {
+      assert.ok(textOf(answer).length > 0, name);
+      assert.equal(textOf(answer), chuggyToolsNotYetServed[name], name);
+    }
+  }
+});
+
+test("every tool the unserved table names is one the roster carries", () => {
+  for (const name of unservedOnThisInstallation) {
+    assert.ok(allChuggyTools.includes(name), name);
+    assert.ok(
+      (chuggyToolsNotYetServed[name] ?? "").length > 0,
+      `${name} refuses with nothing`,
+    );
+  }
 });
 
 test("every subset of the capabilities admits its tools and disallows the rest", () => {

@@ -5,8 +5,9 @@ import test from "node:test";
 import {
   chuggyBoundedBody,
   chuggyMediaType,
-  chuggyRequestAttemptsMax,
   chuggyRequest,
+  chuggyRequestAttemptsMax,
+  chuggyRequestIsRead,
 } from "./chuggyApi.mjs";
 
 const task = { api: { url: "https://api.test:8443" } };
@@ -87,6 +88,55 @@ test("a read is asked again after a server error and a write never is", async ()
     "a write that was answered was asked again",
   );
   assert.equal(write.calls.length, 1);
+});
+
+test("no write method is retried, however many times the API answers 5xx", async () => {
+  for (const method of ["POST", "PUT", "DELETE", "PATCH", "delete"]) {
+    const { calls, waits, transport } = transportOf([
+      { status: 503 },
+      { status: 200 },
+    ]);
+
+    const answer = await chuggyRequest(
+      task,
+      bearer,
+      "/p",
+      { method },
+      transport,
+    );
+
+    assert.equal(calls.length, 1, `${method} was asked again`);
+    assert.equal(answer.status, 503, method);
+    assert.deepEqual(waits, [], `${method} waited to ask again`);
+  }
+});
+
+test("only GET and HEAD are the methods this client may ask twice", () => {
+  assert.equal(chuggyRequestIsRead({ method: "GET" }), true);
+  assert.equal(chuggyRequestIsRead({ method: "head" }), true);
+  assert.equal(chuggyRequestIsRead({}), true);
+  for (const method of ["POST", "PUT", "DELETE", "PATCH"])
+    assert.equal(chuggyRequestIsRead({ method }), false, method);
+});
+
+test("no init may take the bearer off a call or make it follow a redirect", async () => {
+  const { calls, transport } = transportOf([{ status: 200 }]);
+
+  await chuggyRequest(
+    task,
+    bearer,
+    "/p",
+    {
+      method: "POST",
+      redirect: "follow",
+      headers: { authorization: "Bearer someone-else", accept: "text/html" },
+    },
+    transport,
+  );
+
+  assert.equal(calls[0].init.redirect, "manual");
+  assert.equal(calls[0].init.headers.authorization, `Bearer ${bearer}`);
+  assert.equal(calls[0].init.headers.accept, chuggyMediaType);
 });
 
 test("a write whose transport threw is not retried into a second command", async () => {

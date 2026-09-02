@@ -25,7 +25,7 @@ import {
   chuggyToolPagesMax,
   chuggyToolPrefix,
   chuggyToolResponseBytesMax,
-  chuggyToolServer,
+  chuggyToolServerName,
   chuggyToolTimeoutMs,
   dependentRelationsAdmitted,
   dependentRelationsRefused,
@@ -180,7 +180,7 @@ test("the qualified names are the roster's own, prefixed, and never repeated", (
     ...chuggyToolNames(["ProjectRead"]),
     ...chuggyToolNames(["LeadDecision"]),
   ]);
-  assert.equal(chuggyToolPrefix, `mcp__${chuggyToolServer}__`);
+  assert.equal(chuggyToolPrefix, `mcp__${chuggyToolServerName}__`);
 });
 
 test("every bound a tool call is held to is named, an unnamed one being unbounded", () => {

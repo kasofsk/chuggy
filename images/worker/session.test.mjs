@@ -673,6 +673,38 @@ test("one turn's staging never reaches the next turn's answer", async () => {
   assert.equal(answers[1].body.result, "done");
 });
 
+test("a composed decision is scrubbed of what the pod was handed, exactly as prose is", async () => {
+  const plane = planeOf([observationTurn], leadFacts);
+  const { query } = queryOf((_asked, _index, options) => [
+    async () => {
+      const tools = options.mcpServers.chuggy.tools;
+      const staged = (name, args) =>
+        tools.find((tool) => tool.name === name).handler(args);
+      await staged("refuse", {
+        ticket: 4,
+        ticketVersion: 2,
+        reason: `the run logged ${token} and ${bearer}`,
+      });
+      await staged("set_handoff_note", { note: { seen: bearer } });
+    },
+    result("success", { result: "refused" }),
+  ]);
+
+  await run({ request: plane.request, query });
+
+  const answered = plane.calls.find(
+    ({ path }) => path === "/v1/session/turn/answer",
+  ).body.result;
+  assert.ok(!answered.includes(token), "the credential reached the mailbox");
+  assert.ok(!answered.includes(bearer), "the bearer reached the mailbox");
+  assert.ok(answered.includes("[redacted credential]"));
+  assert.equal(
+    JSON.parse(answered).refusals.length,
+    1,
+    "the scrub broke the document",
+  );
+});
+
 test("a project tool reaches the API under the session's own bearer", async () => {
   const plane = planeOf([observationTurn], leadFacts);
   const seenApi = [];

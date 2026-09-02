@@ -10,6 +10,14 @@
  * construction, and a staging that would outgrow the mailbox row is refused
  * where the lead can still see the refusal rather than at settling time.
  *
+ * THE DOCUMENT'S BOUND IS THE ONLY SIZE BOUND, and it is the tighter one by
+ * construction: `selectorHandoffNoteBytesMax` weighs one field and
+ * `leadDecisionBytesMax` weighs that field inside the whole document, so a note
+ * its own column would refuse has already been refused here. A second check
+ * against the wider bound could never fire, and a control that cannot fire is
+ * worse than none. `leadDecision.test.mjs` asserts the ordering that makes this
+ * true, so a future bound that inverted it would be caught rather than assumed.
+ *
  * A BOUND REFUSED IS AN ERROR THE MODEL SEES. A lead that believes it refused
  * two tickets and refused one is a lead whose record is wrong, so nothing here
  * drops a call silently: past a bound, outside the observed view, or naming one
@@ -22,8 +30,18 @@
  * WHAT IS NOT SET IS NOT INVENTED. A turn that stages a choice and says nothing
  * about the handoff note keeps the note it was shown, because the note is a
  * successor's only context and a decision that silently cleared it would be a
- * lead erasing its own memory. Attention has no observed value to keep, so a
- * turn that does not name one is monitoring.
+ * lead erasing its own memory.
+ *
+ * ATTENTION IS THE SAME, AND HARDER, BECAUSE THE OBSERVATION DOES NOT CARRY IT.
+ * The runtime writes a decision's attention onto the project, so a turn that
+ * refuses one ticket and says nothing would move a project from `Attention` to
+ * `Monitoring` — a lead quietly clearing the flag a human is watching. So the
+ * standing value outlives the turn: it is seeded from the most recent seeded
+ * decision where the observation carries one, moved only by `set_attention`,
+ * and carried across every turn this pod takes. `Monitoring` is used only where
+ * this pod has never been told an attention at all, which is a resumed session
+ * whose observation carried no seeding — the residual, and the reason to put
+ * the standing attention in the observation document itself.
  */
 
 import { Buffer } from "node:buffer";
@@ -73,7 +91,12 @@ function seededState(observation) {
  * to a decision tool called on a user's message.
  */
 export function leadObservationOffered(input) {
-  const empty = { candidates: [], standing: [], handoffNote: null };
+  const empty = {
+    candidates: [],
+    standing: [],
+    handoffNote: null,
+    seededAttention: undefined,
+  };
   if (typeof input !== "string") return empty;
   let parsed;
   try {
@@ -92,16 +115,25 @@ export function leadObservationOffered(input) {
       .filter((refusal) => Number.isSafeInteger(refusal?.ticket))
       .map(({ ticket }) => ticket),
     handoffNote: "handoffNote" in parsed ? parsed.handoffNote : null,
+    // The seeded tail goes oldest first, so the newest decision that named an
+    // attention is the one the project settled on.
+    seededAttention: (Array.isArray(parsed.seeding?.decisions)
+      ? parsed.seeding.decisions
+      : []
+    )
+      .map((decision) => decision?.attention)
+      .filter((attention) => leadAttentions.includes(attention))
+      .at(-1),
   };
 }
 
-function documentOf(state) {
+function documentOf(state, standingAttention) {
   return {
     version: leadTurnDocumentVersion,
     dispatches: state.dispatches,
     refusals: state.refusals,
     lifts: state.lifts,
-    attention: state.attention ?? "Monitoring",
+    attention: state.attention ?? standingAttention ?? "Monitoring",
     handoffNote: state.handoffNote,
     ...(state.planningIntent === undefined
       ? {}
@@ -114,7 +146,7 @@ function documentOf(state) {
  * the mailbox row. Reverting rather than posting a document the row refuses is
  * what makes the answer well-formed by construction.
  */
-function stage(state, change) {
+function stage(state, change, standingAttention) {
   const kept = {
     dispatches: state.dispatches,
     refusals: state.refusals,
@@ -124,7 +156,9 @@ function stage(state, change) {
     planningIntent: state.planningIntent,
   };
   Object.assign(state, change);
-  const bytes = Buffer.byteLength(JSON.stringify(documentOf(state)));
+  const bytes = Buffer.byteLength(
+    JSON.stringify(documentOf(state, standingAttention)),
+  );
   if (bytes > leadDecisionBytesMax) {
     Object.assign(state, kept);
     throw new RangeError(
@@ -154,17 +188,6 @@ function notAlreadyEntered(state, ticket) {
     );
 }
 
-function jsonBytes(value, what) {
-  const text = JSON.stringify(value);
-  if (text === undefined) throw new TypeError(`${what} is not a JSON value`);
-  const bytes = Buffer.byteLength(text);
-  if (bytes > selectorHandoffNoteBytesMax)
-    throw new RangeError(
-      `${what} weighs ${String(bytes)} bytes and its column holds ${String(selectorHandoffNoteBytesMax)}`,
-    );
-  return value;
-}
-
 /**
  * The six decision tools, each written over the staging buffer its turn owns. It
  * is a value rather than a closure because it is a roster, and one read twice
@@ -179,7 +202,7 @@ const decisionTools = [
       ticket: z.number().int().min(1),
       expectedTicketVersion: z.number().int().min(0),
     }),
-    call: (state, { ticket, expectedTicketVersion }) => {
+    call: (state, { ticket, expectedTicketVersion }, standingAttention) => {
       const candidate = offeredCandidate(state, ticket, "dispatch");
       if (candidate.ticketVersion !== expectedTicketVersion)
         throw new RangeError(
@@ -193,9 +216,13 @@ const decisionTools = [
         throw new RangeError(
           `ticket ${String(ticket)} is already refused by this decision`,
         );
-      stage(state, {
-        dispatches: [...state.dispatches, { ticket, expectedTicketVersion }],
-      });
+      stage(
+        state,
+        {
+          dispatches: [...state.dispatches, { ticket, expectedTicketVersion }],
+        },
+        standingAttention,
+      );
       return `dispatch staged for ticket ${String(ticket)}`;
     },
   },
@@ -208,7 +235,7 @@ const decisionTools = [
       ticketVersion: z.number().int().min(0),
       reason: z.string().min(1).max(agenticRefusalReasonCharsMax),
     }),
-    call: (state, { ticket, ticketVersion, reason }) => {
+    call: (state, { ticket, ticketVersion, reason }, standingAttention) => {
       const candidate = offeredCandidate(state, ticket, "refuse");
       if (candidate.ticketVersion !== ticketVersion)
         throw new RangeError(
@@ -223,9 +250,13 @@ const decisionTools = [
         throw new RangeError(
           `one decision refuses at most ${String(leadRefusalsPerDecisionMax)} tickets`,
         );
-      stage(state, {
-        refusals: [...state.refusals, { ticket, ticketVersion, reason }],
-      });
+      stage(
+        state,
+        {
+          refusals: [...state.refusals, { ticket, ticketVersion, reason }],
+        },
+        standingAttention,
+      );
       return `refusal staged for ticket ${String(ticket)}`;
     },
   },
@@ -234,7 +265,7 @@ const decisionTools = [
     description:
       "Stages the clearing of a standing refusal on one ticket, which returns it to the candidates a later decision sees.",
     shape: (z) => ({ ticket: z.number().int().min(1) }),
-    call: (state, { ticket }) => {
+    call: (state, { ticket }, standingAttention) => {
       if (!state.standing.includes(ticket))
         throw new RangeError(
           `ticket ${String(ticket)} carries no standing refusal in this turn's observation`,
@@ -244,7 +275,7 @@ const decisionTools = [
         throw new RangeError(
           `one decision lifts at most ${String(leadRefusalsPerDecisionMax)} refusals`,
         );
-      stage(state, { lifts: [...state.lifts, { ticket }] });
+      stage(state, { lifts: [...state.lifts, { ticket }] }, standingAttention);
       return `lift staged for ticket ${String(ticket)}`;
     },
   },
@@ -253,8 +284,8 @@ const decisionTools = [
     description:
       "Sets what this project's state says to a human: monitoring, wanting attention, or stopped. Last call wins.",
     shape: (z) => ({ attention: z.enum(leadAttentions) }),
-    call: (state, { attention }) => {
-      stage(state, { attention });
+    call: (state, { attention }, standingAttention) => {
+      stage(state, { attention }, standingAttention);
       return `attention set to ${attention}`;
     },
   },
@@ -263,8 +294,8 @@ const decisionTools = [
     description:
       "Sets the note a successor lead with no transcript reads. Last call wins; omitting it keeps the note this turn was shown.",
     shape: (z) => ({ note: z.looseObject({}) }),
-    call: (state, { note }) => {
-      stage(state, { handoffNote: jsonBytes(note ?? null, "handoff note") });
+    call: (state, { note }, standingAttention) => {
+      stage(state, { handoffNote: note }, standingAttention);
       return "handoff note set";
     },
   },
@@ -273,10 +304,8 @@ const decisionTools = [
     description:
       "Sets this project's standing planning intent, which outlives one decision. Last call wins.",
     shape: (z) => ({ intent: z.looseObject({}) }),
-    call: (state, { intent }) => {
-      stage(state, {
-        planningIntent: jsonBytes(intent ?? null, "planning intent"),
-      });
+    call: (state, { intent }, standingAttention) => {
+      stage(state, { planningIntent: intent }, standingAttention);
       return "planning intent set";
     },
   },
@@ -288,17 +317,30 @@ const decisionTools = [
  */
 export function leadDecisionStaging() {
   const held = {
-    state: seededState({ candidates: [], standing: [], handoffNote: null }),
+    state: seededState(leadObservationOffered(undefined)),
+    /** The attention this pod last knew the project to be in, across every turn. */
+    attention: undefined,
   };
   return {
     definitions: decisionTools.map((definition) => ({
       ...definition,
-      call: (args) => definition.call(held.state, args),
+      call: (args) => {
+        const answer = definition.call(held.state, args, held.attention);
+        if (held.state.attention !== undefined)
+          held.attention = held.state.attention;
+        return answer;
+      },
     })),
 
-    /** Called as a turn is claimed, seeding what that turn's input offers. */
+    /**
+     * Called as a turn is claimed, seeding what that turn's input offers. The
+     * standing attention is not reset with the rest: it is the project's, not
+     * the turn's, and a turn that names none must not clear it.
+     */
     reset(input) {
-      held.state = seededState(leadObservationOffered(input));
+      const observation = leadObservationOffered(input);
+      held.state = seededState(observation);
+      held.attention ??= observation.seededAttention;
     },
 
     /** Whether this turn called a decision tool at all. */
@@ -308,7 +350,9 @@ export function leadDecisionStaging() {
 
     /** The document this turn's calls compose, or nothing where it called none. */
     document() {
-      return held.state.touched ? documentOf(held.state) : undefined;
+      return held.state.touched
+        ? documentOf(held.state, held.attention)
+        : undefined;
     },
   };
 }
