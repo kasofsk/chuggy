@@ -35,7 +35,12 @@
  *      with `SessionClosed`.
  */
 
-import { sessionStoreStreamCharsMax } from "../contract/http.ts";
+import {
+  sessionIdentityCharsMax,
+  sessionStoreStreamCharsMax,
+} from "../contract/http.ts";
+
+export { sessionIdentityCharsMax };
 import { asBoundedText, isBoundedText } from "./boundedText.ts";
 import type { Principal } from "./principal.ts";
 import type { Partition } from "./projectStore.ts";
@@ -73,9 +78,6 @@ export type SessionBearerSecret = string & {
 export type SessionStoreStream = string & {
   readonly [sessionStoreStreamBrand]: true;
 };
-
-/** The longest opaque session identity a stored row carries. */
-export const sessionIdentityCharsMax = 256;
 
 /** Refuses text a bounded column cannot hold, and text no digest can separate. */
 function asSessionText(value: string, what: string): string {

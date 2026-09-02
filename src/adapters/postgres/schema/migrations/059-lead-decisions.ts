@@ -62,6 +62,7 @@ import {
   leadTurnsAnsweredMax,
   projectChangeResourceCharsMax,
   selectorHistoryLimitMax,
+  sessionIdentityCharsMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
   sessionStoreStreamsAnswered,
@@ -250,6 +251,8 @@ const replacedRosters = [
      DROP CONSTRAINT project_change_kind_is_known,
      ADD CONSTRAINT project_change_kind_is_known CHECK
        (kind IN (${schemaTextSet([...allProjectChangeKinds])}))`,
+  `ALTER TABLE session_turn ADD CONSTRAINT session_turn_identity_is_bounded
+     CHECK (length(turn) BETWEEN 1 AND ${sessionIdentityCharsMax})`,
   `ALTER TABLE project_change
      DROP CONSTRAINT project_change_resource_is_bounded,
      ADD CONSTRAINT project_change_resource_is_bounded CHECK

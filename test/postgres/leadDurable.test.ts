@@ -15,6 +15,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   leadTurnsAnsweredMax,
+  projectChangeResourceCharsMax,
   selectorHistoryLimitMax,
   sessionStorePageBatchesMax,
   sessionStoreStreamsAnswered,
@@ -31,7 +32,10 @@ import {
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import { projectChangeDataSchemas } from "../../src/contract/events.ts";
 import { postgresProjectChangeLog } from "../../src/adapters/postgres/projectChangeLog.ts";
-import { selectorServiceRole } from "../../src/adapters/postgres/schema.ts";
+import {
+  selectorServiceRole,
+  workerPlaneRole,
+} from "../../src/adapters/postgres/schema.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { postgresHarnessRolePool } from "./harness.ts";
 import { leadRigDecision, leadRigOpen, leadRigProject } from "./leadHarness.ts";
@@ -783,5 +787,90 @@ test("a session at its identity bound still makes a frame the stream can build",
         representation: null,
       }),
     "a resource the durable log holds is one the stream frame must carry",
+  );
+});
+
+test("a tools array holding nothing where a name should be is refused", async () => {
+  const { partition, session } = await leadProject("tool-null");
+  const turn = sessionRigTurnId("tool-null");
+  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  const attempt = await leadPod(partition, session, "tool-null");
+  await rig.sessions.plane.claim({
+    secret: attempt.secret,
+    generation: attempt.attempt.generation,
+  });
+
+  const plane = postgresHarnessRolePool(workerPlaneRole);
+  try {
+    assert.equal(
+      (
+        await plane.query<{ answered: string }>(
+          `SELECT answer_session_turn($1,$2,$3,$4,NULL,NULL,$5,$6,$7,$8,$9)::text
+             AS answered`,
+          [
+            attempt.digest,
+            attempt.attempt.generation,
+            turn,
+            "{}",
+            "claude-model",
+            1,
+            1,
+            1,
+            ["Read", null],
+          ],
+        )
+      ).rows[0]?.answered,
+      "Conflict",
+      "a name-shaped hole is a row no reader could serialize",
+    );
+  } finally {
+    await plane.end();
+  }
+  assert.equal((await rig.mailbox.turn(partition, turn))?.state, "Claimed");
+});
+
+/** A character JSON may not carry as itself, which is what widens a resource. */
+const escapedCharacter = "\u0001";
+
+test("the widest session change a legal identity can make is a frame that parses", async () => {
+  const partition = await leadRigProject(rig, "widest");
+  const session = asSessionId(
+    `w${randomUUID()}`.padEnd(sessionIdentityCharsMax, escapedCharacter),
+  );
+  await rig.sessions.sessions.open({
+    partition,
+    session,
+    kind: "Lead",
+    principal: asPrincipal("principal-widest"),
+    capabilities: [],
+    credentialSlot: "claude-code",
+  });
+  const turn = asSessionTurnId(
+    `w${randomUUID()}`.padEnd(sessionIdentityCharsMax, escapedCharacter),
+  );
+  const log = postgresProjectChangeLog(rig.sessions.harness.pool);
+  const before = await log.latest();
+  assert.equal(
+    (await rig.mailbox.offer({ partition, turn, input: anObservation }))
+      .offered,
+    "Enqueued",
+  );
+
+  const change = (await log.after(partition, before, 10))[0];
+  assert.ok(change !== undefined, "the trigger appended nothing");
+  assert.ok(
+    change.resource.length > sessionIdentityCharsMax * 2,
+    "every escapable character is escaped, so the resource is not its inputs",
+  );
+  assert.ok(
+    change.resource.length <= projectChangeResourceCharsMax,
+    `the widest legal resource is ${String(change.resource.length)} characters`,
+  );
+  assert.doesNotThrow(() =>
+    projectChangeDataSchemas.Session.parse({
+      version: 1,
+      resource: change.resource,
+      representation: null,
+    }),
   );
 });

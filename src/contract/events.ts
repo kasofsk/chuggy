@@ -82,7 +82,7 @@ export const projectChangeRepresentationSchemas = {
 export type ProjectChangeRepresentation<Kind extends ProjectChangeKind> =
   z.infer<(typeof projectChangeRepresentationSchemas)[Kind]>;
 
-/** The identity the changed kind's GET route takes, as its own path segment. */
+/** What the changed kind names: a route's own identity, or a session's whole key. */
 const changeDataSchema = <Representation extends z.ZodType>(
   representation: Representation,
 ) =>

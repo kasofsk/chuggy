@@ -201,12 +201,50 @@ export const identitySchema = z
   .min(1)
   .max(nativeHttpPathSegmentCharsMax);
 
+/** The longest opaque session identity a stored row carries. */
+export const sessionIdentityCharsMax = 256;
+
+/** The longest label a session kind may be, which its own roster is inside. */
+export const sessionKindCharsMax = 16;
+
+/** What one character weighs once JSON escapes it, which a control character does. */
+const jsonEscapedCharChars = 6;
+
+/** What a JSON string of this many characters weighs: its quotes, every character escaped. */
+function jsonStringChars(chars: number): number {
+  return chars * jsonEscapedCharChars + 2;
+}
+
+/** What one JSON object weighs: its braces, its quoted keys, its separators and its values. */
+function jsonObjectChars(
+  members: readonly (readonly [string, number])[],
+): number {
+  return (
+    2 +
+    members.reduce((total, [key, value]) => total + key.length + 4 + value, 0) +
+    Math.max(members.length - 1, 0) * 2
+  );
+}
+
 /**
- * How long a resource identity a change row may name. It is not a path
- * segment: a session change names the session, its kind and the turn or store
- * batch that moved, and three identities do not fit the bound one of them does.
+ * How long a resource identity a change row may name, which the widest session
+ * change decides rather than a path segment: an object naming the session,
+ * what the session is, and either the turn or the stream and the batch that
+ * moved, with every character of every identity escaped.
  */
-export const projectChangeResourceCharsMax = 1_024;
+export const projectChangeResourceCharsMax = Math.max(
+  jsonObjectChars([
+    ["session", jsonStringChars(sessionIdentityCharsMax)],
+    ["kind", jsonStringChars(sessionKindCharsMax)],
+    ["turn", jsonStringChars(sessionIdentityCharsMax)],
+  ]),
+  jsonObjectChars([
+    ["session", jsonStringChars(sessionIdentityCharsMax)],
+    ["kind", jsonStringChars(sessionKindCharsMax)],
+    ["stream", jsonStringChars(sessionStoreStreamCharsMax)],
+    ["batch", String(sessionStoreBatchesMax).length],
+  ]),
+);
 
 /** The key a change row names, which the durable log is bounded by. */
 export const changeResourceSchema = z

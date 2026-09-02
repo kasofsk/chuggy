@@ -2267,7 +2267,7 @@ test("migration 59 widens a resource check installed before a session named thre
     await assert.rejects(
       append,
       /project_change_resource_is_bounded/u,
-      "the log installed with 38 refuses a resource naming three identities",
+      "a log installed before a session named three things refuses one that does",
     );
 
     await applyMigration(subject, 59);
