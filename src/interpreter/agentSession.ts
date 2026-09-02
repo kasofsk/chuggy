@@ -166,8 +166,10 @@ export type SessionState = (typeof allSessionStates)[number];
 
 /**
  * What a session may do, mapped to the agent runtime's own tool names by the
- * worker image. Every member is enforced, because a member that mapped to
- * nothing would be an unverified control.
+ * worker image. A member that maps to nothing is an unverified control, so the
+ * first three are mapped in `images/worker/sessionStore.mjs` today and the
+ * three below them map to the chuggy tool server's own names once that server
+ * reaches the image; until it does, they admit nothing a session is given.
  */
 export const allSessionCapabilities = [
   "RepositoryRead",
