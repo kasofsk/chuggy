@@ -22,6 +22,7 @@ import {
   dispatchViewResults,
   escalationReasons,
   evaluationCombinators,
+  executionCapabilities,
   executionOutcomes,
   executionStatuses,
   executionTaskKinds,
@@ -79,10 +80,16 @@ import {
 import type { ExecutionTaskKind } from "../../src/interpreter/executionScheduler.ts";
 import type {
   Architecture as RequiredArchitecture,
+  CapabilityExecutionRequirement,
+  ContainerExecutionRequirement,
+  ExecutionCapability as RequiredExecutionCapability,
+  ExecutionRequirement,
   NativeDriver as RequiredNativeDriver,
+  NativeExecutionRequirement,
   OperatingSystem as RequiredOperatingSystem,
   RequirementSource as MaterializedRequirementSource,
 } from "../../src/interpreter/executionRequirement.ts";
+import { executionRequirementSchema } from "../../src/contract/responses.ts";
 import { allArtifactRoles } from "../../src/interpreter/resultManifest.ts";
 import {
   allNativeActionKinds,
@@ -180,10 +187,58 @@ test("the requirement rosters are exhaustive over the interpreter's unions", () 
     TicketDefault: true,
     PlatformDefault: true,
   };
+  const capabilities: Record<RequiredExecutionCapability, true> = {
+    "Agent:Claude": true,
+    "Agent:Codex": true,
+  };
   assert.deepEqual(sorted(operatingSystems), keysOf(systems));
   assert.deepEqual(sorted(architectures), keysOf(widths));
   assert.deepEqual(sorted(nativeDrivers), keysOf(drivers));
   assert.deepEqual(sorted(requirementSources), keysOf(sources));
+  assert.deepEqual(sorted(executionCapabilities), keysOf(capabilities));
+});
+
+/**
+ * Held over the schema's own arms rather than a roster, because the arms are
+ * the wire's list of modes and of what each mode carries. A mode or a field
+ * the interpreter materializes and the wire has no key for is a response the
+ * console parses as nothing at all.
+ */
+test("the wire has an arm, and its keys, for every requirement the interpreter materializes", () => {
+  const modes: Record<ExecutionRequirement["mode"], true> = {
+    Container: true,
+    ContainerCapability: true,
+    Native: true,
+  };
+  const container: Record<keyof ContainerExecutionRequirement, true> = {
+    mode: true,
+    operatingSystem: true,
+    architecture: true,
+    image: true,
+  };
+  const capability: Record<keyof CapabilityExecutionRequirement, true> = {
+    mode: true,
+    operatingSystem: true,
+    architecture: true,
+    capabilities: true,
+  };
+  const native: Record<keyof NativeExecutionRequirement, true> = {
+    mode: true,
+    architecture: true,
+    driver: true,
+    xcodeVersionMin: true,
+    sdkVersionMin: true,
+  };
+  const arms = new Map<string, readonly string[]>(
+    executionRequirementSchema.options.map((arm) => [
+      arm.shape.mode.value,
+      sorted(Object.keys(arm.shape)),
+    ]),
+  );
+  assert.deepEqual(sorted([...arms.keys()]), keysOf(modes));
+  assert.deepEqual(arms.get("Container"), keysOf(container));
+  assert.deepEqual(arms.get("ContainerCapability"), keysOf(capability));
+  assert.deepEqual(arms.get("Native"), keysOf(native));
 });
 
 test("the wire's evidence labels are the interpreter's own list", () => {

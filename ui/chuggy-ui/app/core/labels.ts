@@ -77,6 +77,16 @@ export function imageShortened(image: string): string {
 }
 
 /**
+ * The capabilities a requirement asks for, without the namespace each carries
+ * on the wire. The wire's own spelling is what hovering reveals.
+ */
+export function capabilitiesShortened(capabilities: readonly string[]): string {
+  return capabilities
+    .map((capability) => capability.slice(capability.indexOf(":") + 1))
+    .join(", ");
+}
+
+/**
  * The worker's name and version where the catalog holds an entry for the image,
  * and the image itself, shortened, where it holds none.
  */
@@ -92,8 +102,9 @@ export function workerLabel(worker: Worker | undefined, image: string): Label {
 
 /**
  * What an execution was placed on, with the platform it was placed on it for.
- * A native task names no image, so its label is the toolchain floor it asked
- * for and there is nothing further to reveal.
+ * A capability task names what the site had to offer rather than an image, and
+ * a native task names no image either, so its label is the toolchain floor it
+ * asked for and there is nothing further to reveal.
  */
 export function executionRequirementLabel(execution: ExecutionSummary): Label {
   const requirement = execution.requirement;
@@ -103,6 +114,13 @@ export function executionRequirementLabel(execution: ExecutionSummary): Label {
       return {
         text: `${requirement.operatingSystem}/${requirement.architecture} ${worker.text}`,
         title: worker.title,
+      };
+    }
+    case "ContainerCapability": {
+      const capabilities = requirement.capabilities;
+      return {
+        text: `${requirement.operatingSystem}/${requirement.architecture} ${capabilitiesShortened(capabilities)}`,
+        title: capabilities.join(", "),
       };
     }
     case "Native": {

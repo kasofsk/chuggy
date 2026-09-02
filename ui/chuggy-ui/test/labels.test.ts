@@ -127,6 +127,20 @@ test("a container execution names its platform and its worker, and keeps the ima
   });
 });
 
+test("a capability execution names its platform and what it asked the site for", () => {
+  const drawn = executionRequirementLabel({
+    ...containerExecution,
+    requirement: {
+      mode: "ContainerCapability",
+      operatingSystem: "Linux",
+      architecture: "Amd64",
+      capabilities: ["Agent:Claude", "Agent:Codex"],
+    },
+  });
+  expect(drawn.text).toBe("Linux/Amd64 Claude, Codex");
+  expect(drawn.title).toBe("Agent:Claude, Agent:Codex");
+});
+
 test("a native execution names the toolchain floor it asked for", () => {
   const drawn = executionRequirementLabel({
     ...containerExecution,

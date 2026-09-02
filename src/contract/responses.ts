@@ -46,6 +46,7 @@ import {
   attemptStates,
   draftStates,
   escalationReasons,
+  executionCapabilities,
   executionOutcomes,
   executionStatuses,
   executionTaskKinds,
@@ -348,16 +349,24 @@ export type SelectorSettingsHistoryResponse = z.infer<
 >;
 
 /**
- * What a task was required to run on, as the scheduler materialized it. The
- * arms are strict because the interpreter refuses a requirement carrying a key
- * outside the mode it names.
+ * What a task was required to run on, as the scheduler materialized it: an
+ * exact image, the capabilities a site must offer, or a native toolchain
+ * floor. The arms are strict because the interpreter refuses a requirement
+ * carrying a key outside the mode it names, and `test/contract/rosters.test.ts`
+ * holds the modes against the interpreter's own union.
  */
-const executionRequirementSchema = z.discriminatedUnion("mode", [
+export const executionRequirementSchema = z.discriminatedUnion("mode", [
   z.strictObject({
     mode: z.literal("Container"),
     operatingSystem: z.enum(operatingSystems),
     architecture: z.enum(architectures),
     image: z.string().min(1),
+  }),
+  z.strictObject({
+    mode: z.literal("ContainerCapability"),
+    operatingSystem: z.enum(operatingSystems),
+    architecture: z.enum(architectures),
+    capabilities: z.array(z.enum(executionCapabilities)).min(1),
   }),
   z.strictObject({
     mode: z.literal("Native"),

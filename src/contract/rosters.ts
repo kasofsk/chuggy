@@ -92,6 +92,13 @@ export const nativeDrivers = [
 ] as const;
 export type NativeDriver = (typeof nativeDrivers)[number];
 
+/**
+ * What a capability requirement asks a site for in place of an exact image.
+ * The site resolves it to a runtime that offers every capability named.
+ */
+export const executionCapabilities = ["Agent:Claude", "Agent:Codex"] as const;
+export type ExecutionCapability = (typeof executionCapabilities)[number];
+
 /** Which default a materialized requirement came from, narrowest first. */
 export const requirementSources = [
   "ExplicitTask",
