@@ -28,8 +28,10 @@ export function nativeHttpContractDocument(): unknown {
     mediaType: nativeHttpMediaType,
     authentication: {
       scheme: "Bearer",
-      format: "OIDC JWT",
+      formats: ["OIDC JWT", "session bearer"],
       principal: "length-prefixed issuer and subject",
+      session:
+        "a session bearer authorizes as the session's principal and is recorded on the operation",
     },
     notifications: "bounded-polling",
     events: "sse",

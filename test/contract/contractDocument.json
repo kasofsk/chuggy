@@ -4,8 +4,9 @@
   "mediaType": "application/vnd.chuggy.v1+json",
   "authentication": {
     "scheme": "Bearer",
-    "format": "OIDC JWT",
-    "principal": "length-prefixed issuer and subject"
+    "formats": ["OIDC JWT", "session bearer"],
+    "principal": "length-prefixed issuer and subject",
+    "session": "a session bearer authorizes as the session's principal and is recorded on the operation"
   },
   "notifications": "bounded-polling",
   "events": "sse",
