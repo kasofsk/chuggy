@@ -10,6 +10,10 @@
  * nothing and decides nothing, with no error anywhere. It was a `z.record` that
  * did it the first time.
  *
+ * IT RESOLVES THE RUNTIME THE WAY THE POD DOES, through `sessionSdk`, so what
+ * is proved is the resolution a turn will make and not a second one written
+ * beside it. That is what turns a missing peer dependency into a build failure.
+ *
  * THE TRANSPORT IS WRITTEN HERE RATHER THAN IMPORTED. The runtime's server
  * speaks JSON-RPC over an object with `start`, `send` and `close`; supplying one
  * needs no client library, so the probe does not turn a second peer dependency
@@ -25,6 +29,7 @@ import {
   chuggyToolServer,
 } from "./chuggyTools.mjs";
 import { leadDecisionStaging } from "./leadDecision.mjs";
+import { sessionSdk } from "./session.mjs";
 
 const capabilities = [
   "RepositoryRead",
@@ -33,9 +38,7 @@ const capabilities = [
   "LeadDecision",
 ];
 
-const { tool, createSdkMcpServer } =
-  await import("@anthropic-ai/claude-agent-sdk");
-const { z } = await import("zod");
+const { tool, createSdkMcpServer, z } = await sessionSdk();
 
 const context = chuggyToolContext(
   { tenant: "probe", project: "probe", api: { url: "http://127.0.0.1:1" } },

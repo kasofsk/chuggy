@@ -60,7 +60,7 @@ function unreffed(milliseconds) {
  * because the SDK declares it a PEER dependency and does not re-export it; the
  * image's build probe is what proves the peer resolved beside the SDK.
  */
-async function sessionSdk() {
+export async function sessionSdk() {
   const { query, tool, createSdkMcpServer } = await import(agentSdkModule);
   const { z } = await import(zodModule);
   return { query, tool, createSdkMcpServer, z };
