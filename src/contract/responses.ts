@@ -736,6 +736,20 @@ export const draftResponseSchema = z.object({
 });
 export type DraftResponse = z.infer<typeof draftResponseSchema>;
 
+/**
+ * One page of the drafts a project still holds open, ascending by ticket, and a
+ * released or deleted draft is neither: the first is a ticket and is read as
+ * one, and the second is gone.
+ * `nextCursor` is where the next page resumes and is absent exactly where
+ * `more` is false, so a client reads one field or the other and never both.
+ */
+export const draftsResponseSchema = z.object({
+  drafts: page(draftResponseSchema),
+  nextCursor: cursorSchema.optional(),
+  more: z.boolean(),
+});
+export type DraftsResponse = z.infer<typeof draftsResponseSchema>;
+
 export const draftInitializationResponseSchema = z.object({
   configuration: configurationResponseSchema,
   fence: z.object({

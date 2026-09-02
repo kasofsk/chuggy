@@ -5,6 +5,10 @@ import {
   releaseTicketEvent,
   type ReleaseAuthoring,
 } from "../actor/decisionEvent.ts";
+import {
+  nativeHttpPageItemsDefault,
+  nativeHttpPageItemsMax,
+} from "../contract/http.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import {
   defaultProgram,
@@ -333,6 +337,42 @@ export function checkedConfigurationPageQuery(
   )
     throw new RangeError(
       `configuration page limit must be between 1 and ${String(configurationPageLimitMax)}`,
+    );
+  return query;
+}
+
+/**
+ * Where a page of drafts resumes, which is the last ticket the page before it
+ * answered. A draft's ticket is allocated ascending and never reused, so it
+ * orders the collection and positions a cursor in it at once.
+ */
+export type DraftPageCursor = TicketId;
+
+/** One page of a project's drafts, ascending by ticket, `more` saying whether the page ends them. */
+export interface DraftPage {
+  readonly drafts: readonly DraftResource[];
+  readonly nextCursor?: DraftPageCursor;
+  readonly more: boolean;
+}
+
+/** What one page of drafts is asked for: where to resume, and how many to answer. */
+export interface DraftPageQuery {
+  readonly cursor?: DraftPageCursor;
+  readonly limit: number;
+}
+
+/** What a page of drafts answers where the caller named no limit. */
+export const draftPageLimitDefault = nativeHttpPageItemsDefault;
+
+/** Refuses a page limit outside what one wire body carries. */
+export function checkedDraftPageQuery(query: DraftPageQuery): DraftPageQuery {
+  if (
+    !Number.isSafeInteger(query.limit) ||
+    query.limit < 1 ||
+    query.limit > nativeHttpPageItemsMax
+  )
+    throw new RangeError(
+      `draft page limit must be between 1 and ${String(nativeHttpPageItemsMax)}`,
     );
   return query;
 }

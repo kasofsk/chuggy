@@ -166,13 +166,21 @@ export type SessionState = (typeof allSessionStates)[number];
 
 /**
  * What a session may do, mapped to the agent runtime's own tool names by the
- * worker image. Every member is enforced, because a member that mapped to
- * nothing would be an unverified control.
+ * worker image. A member that maps to nothing is an unverified control, so the
+ * first three are mapped in `images/worker/sessionStore.mjs` today and the
+ * three below them map to the chuggy tool server's own names once that server
+ * reaches the image; until it does, they admit nothing a session is given.
  */
 export const allSessionCapabilities = [
   "RepositoryRead",
   "RepositoryWrite",
   "RunCommands",
+  /** The chuggy server's reads: what a session may see of the project through the API. */
+  "ProjectRead",
+  /** The chuggy server's authorship: drafts, and releasing one. */
+  "DraftAuthor",
+  /** The decision tools, which write nothing and compose the turn's answer. */
+  "LeadDecision",
 ] as const;
 export type SessionCapability = (typeof allSessionCapabilities)[number];
 

@@ -87,6 +87,7 @@ const config: KubernetesSessionLaunchConfig = {
     budgetUsd: 5,
   },
   model: "claude-opus-4-5",
+  apiUrl: "https://api.invalid",
 };
 
 const placement: SessionPlacement = {

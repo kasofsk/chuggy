@@ -19,7 +19,8 @@
  * are bounded by this module's bounds alone.
  */
 
-import type { AttemptState } from "./executionScheduler.ts";
+import { assertNever } from "../domain/assertNever.ts";
+import type { AttemptLoss, AttemptState } from "./executionScheduler.ts";
 import type { AttemptCapabilitySecret } from "./executionScheduler.ts";
 import type { Partition } from "./projectStore.ts";
 import type { PublicInstant } from "./publicResource.ts";
@@ -187,6 +188,26 @@ export const runEndedEvidences = [
   "RunUploadRefused",
 ] as const;
 export type RunEndedEvidence = (typeof runEndedEvidences)[number];
+
+/**
+ * Whether an ended run spent the retry budget, which a rate limit does not
+ * because a hold on the account is not a failure of the work.
+ * It is derived from the label the pod already sent rather than sent beside
+ * it, because a pod naming its own loss arm would be the thing being
+ * controlled choosing its own charge.
+ */
+export function runEndedLoss(evidence: RunEndedEvidence): AttemptLoss {
+  switch (evidence) {
+    case "RunRateLimited":
+      return "Withdrawn";
+    case "RunFailed":
+    case "RunTurnsExhausted":
+    case "RunUploadRefused":
+      return "Lost";
+    default:
+      return assertNever(evidence);
+  }
+}
 
 /** One page of a run's per-turn series, resumed after the ordinal it names. */
 export interface RunTurnsQuery {

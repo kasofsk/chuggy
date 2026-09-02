@@ -584,7 +584,8 @@ function schedulerWorkers(
  * a second set of variables for those would be a second answer to what the site
  * is and the first deployment to change one would leave the other placing pods
  * the site no longer describes. What a session names for itself is what makes
- * it a session: its own pod name, budget, deadline, labels, bounds and model.
+ * it a session: its own pod name, budget, deadline, labels, bounds, model, and
+ * the origin its tools reach this installation's own API at.
  */
 function schedulerSessions(
   environment: SchedulerEnvironment,
@@ -630,6 +631,7 @@ function schedulerSessions(
       schedulerSessionBoundKinds,
     ),
     model: schedulerRequired(environment, "SESSION_MODEL"),
+    apiUrl: schedulerRequired(environment, "SESSION_API_URL"),
   };
 }
 

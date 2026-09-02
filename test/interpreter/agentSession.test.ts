@@ -212,6 +212,9 @@ test("every roster holds its members in the order the schema iterates", () => {
     "RepositoryRead",
     "RepositoryWrite",
     "RunCommands",
+    "ProjectRead",
+    "DraftAuthor",
+    "LeadDecision",
   ]);
   assert.deepEqual(allSessionTurnInputKinds, [
     "Observation",

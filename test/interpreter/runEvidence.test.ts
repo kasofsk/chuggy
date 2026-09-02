@@ -21,6 +21,8 @@ import {
   checkedRunTranscriptAfter,
   checkedRunTurnsQuery,
   runConfigurationPath,
+  runEndedEvidences,
+  runEndedLoss,
   runIsComplete,
   runTranscriptBatchPath,
 } from "../../src/interpreter/runEvidence.ts";
@@ -74,4 +76,18 @@ test("a transcript cursor is refused outside the run's own batch bound", () => {
   );
   for (const after of [-1, 1.5, runTranscriptBatchesMax + 1])
     assert.throws(() => checkedRunTranscriptAfter(after), RangeError);
+});
+
+test("a rate-limited run is withdrawn and every other ending is a loss", () => {
+  assert.equal(runEndedLoss("RunRateLimited"), "Withdrawn");
+  for (const evidence of runEndedEvidences)
+    assert.equal(
+      runEndedLoss(evidence),
+      evidence === "RunRateLimited" ? "Withdrawn" : "Lost",
+      `${evidence} spends the retry budget`,
+    );
+  assert.deepEqual(
+    new Set(runEndedEvidences.map(runEndedLoss)),
+    new Set(["Lost", "Withdrawn"]),
+  );
 });
