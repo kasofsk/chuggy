@@ -12,6 +12,7 @@
 import { z } from "zod";
 
 import {
+  agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
   agenticRefusalsAnsweredMax,
   countSchema,
@@ -32,6 +33,7 @@ import {
   sessionStoreStreamCharsMax,
   sessionStoreStreamsAnswered,
   sessionTranscriptEntriesMax,
+  sessionTurnModelCharsMax,
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
   ticketNumberSchema,
@@ -787,15 +789,17 @@ export type AgenticRefusalEntryResponse = z.infer<
 >;
 
 /**
- * One ticket's whole refusal ledger, oldest first. `standing` is present
- * exactly where the latest entry is a refusal, which is what standing means and
- * is why no entry carries it.
+ * One page of one ticket's refusal ledger, oldest first, `more` saying whether
+ * the page ends the ledger. `standing` is present exactly where the latest
+ * entry is a refusal, which is what standing means and is why no entry carries
+ * it.
  */
 export const ticketAgenticRefusalsResponseSchema = z.object({
   ticket: ticketNumberSchema,
   entries: z
     .array(agenticRefusalEntryResponseSchema)
-    .max(agenticRefusalsAnsweredMax),
+    .max(agenticRefusalLedgerAnsweredMax),
+  more: z.boolean(),
   standing: z
     .object({
       ticketVersion: countSchema,
@@ -844,7 +848,7 @@ export const leadTurnResponseSchema = z.object({
   state: z.enum(sessionTurnStates),
   decision: identitySchema.optional(),
   failure: z.enum(sessionTurnFailures).optional(),
-  model: z.string().min(1).max(runModelCharsMax).optional(),
+  model: z.string().min(1).max(sessionTurnModelCharsMax).optional(),
   tokens: countSchema.optional(),
   costMicros: countSchema.optional(),
   durationMs: countSchema.optional(),

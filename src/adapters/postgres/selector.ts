@@ -130,52 +130,66 @@ const dispatchCandidateSchema = z
     configurationCanonical: z.string(),
   })
   .readonly();
-const selectorContextSchema = z
-  .object({
-    operationalContext: z.union([
-      legacyOperationalContextSchema,
-      z
-        .object({
-          version: z.literal(2),
-          observedAt: z.iso.datetime(),
-          observedAtEpochMs: z.number().int().safe().nonnegative(),
-          reviewFeedback: z.array(reviewFeedbackSchema).readonly(),
-          activeWork: z.object({
-            queued: z.number().int().safe().nonnegative(),
-            admitted: z.number().int().safe().nonnegative(),
-            launching: z.number().int().safe().nonnegative(),
-            running: z.number().int().safe().nonnegative(),
-          }),
-          capacity: z.object({
-            account: z.string(),
-            accountMaximum: z.number().int().safe().nonnegative(),
-            accountActive: z.number().int().safe().nonnegative(),
-            accountReservationDeficit: z.number().int().safe().nonnegative(),
-            clusterSlotsMax: z.number().int().safe().nonnegative(),
-            clusterActive: z.number().int().safe().nonnegative(),
-          }),
-          backlog: z.object({
-            project: z.object({
-              queued: z.number().int().safe().nonnegative(),
-              ceiling: z.number().int().safe().positive(),
-            }),
-            installation: z.object({
-              queued: z.number().int().safe().nonnegative(),
-              ceiling: z.number().int().safe().positive(),
-            }),
-          }),
-        })
-        .readonly(),
-    ]),
-    handoffNote: jsonValueSchema.optional(),
-    /** The pre-slice-2 spelling, which the rows already written say. */
-    workingMemory: jsonValueSchema.optional(),
-  })
-  .readonly()
-  .transform((value) => ({
-    operationalContext: value.operationalContext,
-    handoffNote: value.handoffNote ?? value.workingMemory ?? null,
-  }));
+const selectorOperationalContextSchema = z.union([
+  legacyOperationalContextSchema,
+  z
+    .object({
+      version: z.literal(2),
+      observedAt: z.iso.datetime(),
+      observedAtEpochMs: z.number().int().safe().nonnegative(),
+      reviewFeedback: z.array(reviewFeedbackSchema).readonly(),
+      activeWork: z.object({
+        queued: z.number().int().safe().nonnegative(),
+        admitted: z.number().int().safe().nonnegative(),
+        launching: z.number().int().safe().nonnegative(),
+        running: z.number().int().safe().nonnegative(),
+      }),
+      capacity: z.object({
+        account: z.string(),
+        accountMaximum: z.number().int().safe().nonnegative(),
+        accountActive: z.number().int().safe().nonnegative(),
+        accountReservationDeficit: z.number().int().safe().nonnegative(),
+        clusterSlotsMax: z.number().int().safe().nonnegative(),
+        clusterActive: z.number().int().safe().nonnegative(),
+      }),
+      backlog: z.object({
+        project: z.object({
+          queued: z.number().int().safe().nonnegative(),
+          ceiling: z.number().int().safe().positive(),
+        }),
+        installation: z.object({
+          queued: z.number().int().safe().nonnegative(),
+          ceiling: z.number().int().safe().positive(),
+        }),
+      }),
+    })
+    .readonly(),
+]);
+
+/**
+ * A retained policy input under either spelling of the note, and under neither
+ * only if a row lost it. A union of two required alternatives is what says the
+ * third case is a row that is not intact, which is the whole of what this
+ * parser is relied on to say.
+ */
+const selectorContextSchema = z.union([
+  z
+    .object({
+      operationalContext: selectorOperationalContextSchema,
+      handoffNote: jsonValueSchema,
+    })
+    .readonly(),
+  z
+    .object({
+      operationalContext: selectorOperationalContextSchema,
+      workingMemory: jsonValueSchema,
+    })
+    .readonly()
+    .transform((value) => ({
+      operationalContext: value.operationalContext,
+      handoffNote: value.workingMemory,
+    })),
+]);
 
 /** Parses current and retained historical selector policy inputs. */
 export function parseSelectorInteractionContext(

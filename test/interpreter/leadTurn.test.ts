@@ -20,11 +20,14 @@ import {
   parseLeadObservation,
   type LeadObservationDocument,
 } from "../../src/interpreter/leadTurn.ts";
+import { dispatchViewPageLimitMax } from "../../src/interpreter/dispatchView.ts";
+import { notificationPageLimitMax } from "../../src/interpreter/notifications.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   leadDecisionBytesMax,
   leadDispatchesMax,
   leadObservationBytesMax,
+  leadRefusalsObservedMax,
   leadRefusalsPerDecisionMax,
   leadInputBytesMax,
   resolvedSelectorSettings,
@@ -90,15 +93,24 @@ const observation: SelectorObservation = {
   nextCandidateScan: { state: "Exhausted", token },
 };
 
-const standing: readonly AgenticRefusalRecord[] = [
-  {
-    ticket: asTicketId(40),
-    ticketVersion: 2,
-    reason: "its dependency has not passed",
-    decision: "selector-decision-one",
-    recordedAt: "2026-09-02T11:00:00.000Z",
-  },
-];
+const standingRefusal: AgenticRefusalRecord = {
+  ticket: asTicketId(40),
+  ticketVersion: 2,
+  reason: "its dependency has not passed",
+  decision: "selector-decision-one",
+  recordedAt: "2026-09-02T11:00:00.000Z",
+};
+
+const standing: readonly AgenticRefusalRecord[] = [standingRefusal];
+
+/** The same view with ticket 40 in it, so a decision may name 40 and 41 alike. */
+const parcelledObservation: SelectorObservation = {
+  ...observation,
+  candidates: [
+    candidate,
+    { ...candidate, ticket: asTicketId(40), ticketVersion: 2 },
+  ],
+};
 
 const document: LeadObservationDocument = {
   version: 1,
@@ -185,21 +197,21 @@ test("a decision names what it chose, refused and lifted", () => {
   const parsed = parseLeadDecision(
     decision({
       dispatches: [{ ticket: 41, expectedTicketVersion: 3 }],
-      refusals: [{ ticket: 41, ticketVersion: 3, reason: "not yet" }],
-      lifts: [{ ticket: 40 }],
+      refusals: [{ ticket: 40, ticketVersion: 2, reason: "not yet" }],
+      lifts: [{ ticket: 39 }],
       attention: "Attention",
       handoffNote: { watching: "41" },
     }),
-    observation,
-    standing,
+    parcelledObservation,
+    [...standing, { ...standingRefusal, ticket: asTicketId(39) }],
   );
   assert.deepEqual(parsed.dispatches, [
     { ticket: candidate.ticket, expectedTicketVersion: 3 },
   ]);
   assert.deepEqual(parsed.refusals, [
-    { ticket: candidate.ticket, ticketVersion: 3, reason: "not yet" },
+    { ticket: asTicketId(40), ticketVersion: 2, reason: "not yet" },
   ]);
-  assert.deepEqual(parsed.lifts, [{ ticket: asTicketId(40) }]);
+  assert.deepEqual(parsed.lifts, [{ ticket: asTicketId(39) }]);
   assert.equal(parsed.attention, "Attention");
 });
 
@@ -315,6 +327,83 @@ test("a refusal reason longer than its bound, or empty, is refused", () => {
         ),
       TypeError,
     );
+});
+
+test("a decision that names one ticket twice is refused at the door", () => {
+  const refusal = { ticket: 41, ticketVersion: 3, reason: "not yet" };
+  assert.throws(
+    () =>
+      parseLeadDecision(
+        decision({ refusals: [refusal, refusal] }),
+        observation,
+        standing,
+      ),
+    TypeError,
+  );
+  assert.throws(
+    () =>
+      parseLeadDecision(
+        decision({ lifts: [{ ticket: 40 }, { ticket: 40 }] }),
+        observation,
+        standing,
+      ),
+    TypeError,
+  );
+  assert.throws(
+    () =>
+      parseLeadDecision(
+        decision({
+          refusals: [{ ...refusal, ticket: 40, ticketVersion: 2 }],
+          lifts: [{ ticket: 40 }],
+        }),
+        parcelledObservation,
+        standing,
+      ),
+    TypeError,
+  );
+  assert.throws(
+    () =>
+      parseLeadDecision(
+        decision({
+          dispatches: [{ ticket: 41, expectedTicketVersion: 3 }],
+          refusals: [refusal],
+        }),
+        observation,
+        standing,
+      ),
+    TypeError,
+  );
+});
+
+test("a dispatch that names no version the observation showed is refused", () => {
+  assert.throws(
+    () =>
+      parseLeadDecision(
+        decision({ dispatches: [{ ticket: 41 }] }),
+        observation,
+        standing,
+      ),
+    TypeError,
+  );
+});
+
+test("an observation carrying more than one turn is shown is refused", () => {
+  const over = (field: string, member: unknown, countMax: number) => {
+    assert.throws(
+      () =>
+        parseLeadObservation(
+          JSON.stringify({
+            ...document,
+            [field]: Array.from({ length: countMax + 1 }, () => member),
+          }),
+        ),
+      RangeError,
+      field,
+    );
+  };
+  over("candidates", candidate, dispatchViewPageLimitMax);
+  over("changes", observation.changes[0], notificationPageLimitMax);
+  over("refusals", document.refusals[0], leadRefusalsObservedMax);
 });
 
 test("a lift of a refusal that is not standing is refused", () => {

@@ -825,6 +825,8 @@ function policyResult(value: unknown): SelectorPolicyResult {
   if (!("handoffNote" in found))
     throw new TypeError("selector handoff note is absent");
   const selectedTicket = found["selectedTicket"];
+  if (selectedTicket !== undefined && found["dispatches"] !== undefined)
+    throw new TypeError("selector result names its dispatch two ways");
   const dispatches =
     selectedTicket === undefined
       ? policyChoices(

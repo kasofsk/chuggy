@@ -89,7 +89,12 @@ async function ticketKeyedRead(
   }
 }
 
-/** Every kind's read, through the builder its own route answers with. */
+/**
+ * Every kind's read, through the builder its own route answers with. The two
+ * kinds no route answers yet are read as tombstones: a frame carrying none of
+ * the resource is what the contract already means by a cache entry to drop, and
+ * a read that raised would reset every open stream on the project instead.
+ */
 export function projectResourceReader(
   web: StreamedNativeWeb,
 ): ProjectResourceReader {
@@ -148,7 +153,7 @@ export function projectResourceReader(
           );
         case "AgenticRefusal":
         case "Session":
-          throw new RangeError(`no read is registered for a ${kind} change`);
+          return null;
         default:
           return assertNever(kind);
       }

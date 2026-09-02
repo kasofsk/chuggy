@@ -51,6 +51,7 @@ const ticketRepresentation = ticketResponse({
 /** One ticket's refusal ledger with the standing the latest entry induces. */
 const ticketAgenticRefusalsRepresentation = {
   ticket: 42,
+  more: false,
   entries: [
     {
       ordinal: 91,

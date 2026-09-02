@@ -26,7 +26,7 @@ import {
 } from "../../contract/responses.ts";
 import { isBoundedText } from "../../interpreter/boundedText.ts";
 import {
-  allSessionTurnFailures,
+  allAgentReportedTurnFailures,
   asSessionBearerSecret,
   asSessionStoreStream,
   asSessionTurnId,
@@ -750,7 +750,7 @@ const sessionTurnAnswerSchema = z
 
 const sessionTurnFailureSchema = z.strictObject({
   turn: sessionIdentitySchema,
-  failure: z.enum(allSessionTurnFailures),
+  failure: z.enum(allAgentReportedTurnFailures),
 });
 
 /** What a refused settlement answers with, a conflict and a fence read alike by the pod. */

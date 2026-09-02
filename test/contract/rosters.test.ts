@@ -45,6 +45,7 @@ import {
   resumePricings,
   runCostBases,
   schedulerFreshnesses,
+  selectorAttentions,
   selectorDispatchModes,
   selectorModes,
   agenticRefusalEvents,
@@ -54,10 +55,15 @@ import {
   sessionTurnStates,
 } from "../../src/contract/rosters.ts";
 import {
+  agenticRefusalsAnsweredMax,
   nativeHttpPageItemsMax,
   resultReportCharsMax,
   resultReportSchemaVersionMin,
   runConfigurationBytesMax,
+  selectorHandoffNoteBytesMax,
+  sessionTurnInputCharsMax,
+  sessionTurnModelCharsMax,
+  sessionTurnResultCharsMax,
 } from "../../src/contract/http.ts";
 import {
   resultReportCharsMax as interpretedReportCharsMax,
@@ -69,11 +75,21 @@ import { projectChangeKinds } from "../../src/contract/events.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import { allAgenticRefusalEvents } from "../../src/interpreter/agenticRefusal.ts";
 import {
+  allAgentReportedTurnFailures,
+  allPlatformTurnFailures,
   allSessionStates,
   allSessionTurnFailures,
   allSessionTurnInputKinds,
   allSessionTurnStates,
+  sessionIdentityCharsMax,
 } from "../../src/interpreter/agentSession.ts";
+import type { SelectorProjectState } from "../../src/interpreter/selector.ts";
+import {
+  leadDecisionBytesMax,
+  leadObservationBytesMax,
+  leadRefusalsObservedMax,
+} from "../../src/interpreter/selector.ts";
+import { migration010 } from "../../src/adapters/postgres/schema/migrations/010-selector-controls.ts";
 import {
   phaseTags,
   reasonTags,
@@ -419,4 +435,44 @@ test("every session and refusal roster restates the interpreter's own", () => {
   assert.deepEqual(sessionTurnInputKinds, allSessionTurnInputKinds);
   assert.deepEqual(sessionTurnStates, allSessionTurnStates);
   assert.deepEqual(sessionTurnFailures, allSessionTurnFailures);
+  assert.deepEqual(sessionTurnFailures, [
+    ...allAgentReportedTurnFailures,
+    ...allPlatformTurnFailures,
+  ]);
+});
+
+/**
+ * The attention roster has no runtime list behind it, so this record is what
+ * the compiler rejects when the union gains or loses a member.
+ */
+const attention: Readonly<Record<SelectorProjectState["attention"], true>> = {
+  Monitoring: true,
+  Attention: true,
+  Stopped: true,
+};
+
+test("the attention roster is the union the selector's own state carries", () => {
+  assert.deepEqual(sorted(selectorAttentions), keysOf(attention));
+});
+
+test("every bound the wire restates holds the value its source does", () => {
+  assert.equal(sessionTurnModelCharsMax, sessionIdentityCharsMax);
+  assert.equal(leadRefusalsObservedMax, agenticRefusalsAnsweredMax);
+  assert.equal(leadObservationBytesMax, sessionTurnInputCharsMax);
+  assert.equal(leadDecisionBytesMax, sessionTurnResultCharsMax);
+});
+
+/**
+ * The handoff-note bound restates a durable ceiling rather than naming one, so
+ * it is read out of the migration that writes that ceiling rather than copied
+ * beside it.
+ */
+test("the handoff-note bound is the ceiling its own column checks", () => {
+  const statement = migration010.statements
+    .map((each) => String(each))
+    .find((each) => each.includes("working_memory"));
+  assert.ok(statement !== undefined, "010 writes the handoff-note column");
+  const checked = /length\(working_memory\) <= (\d+)/u.exec(statement);
+  assert.ok(checked !== null, "010 bounds the handoff-note column");
+  assert.equal(Number(checked[1]), selectorHandoffNoteBytesMax);
 });

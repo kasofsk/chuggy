@@ -82,6 +82,14 @@ export const sessionTurnAttemptsMax = 3;
 export const sessionTurnInputCharsMax = 65_536;
 export const sessionTurnResultCharsMax = 65_536;
 
+/**
+ * The longest model identity one turn's measurement names. It is the session
+ * identity bound rather than a run's, because a turn's measure is stored beside
+ * the session's own opaque identities and `test/contract/rosters.test.ts` holds
+ * it against that one.
+ */
+export const sessionTurnModelCharsMax = 256;
+
 /** The most tool names one turn's measurement reports, distinct and in no order. */
 export const sessionTurnToolsMax = 64;
 
@@ -131,6 +139,13 @@ export const agenticRefusalsAnsweredMax = 32;
 
 /** How many of a lead's turns one read of the lead answers with, newest last. */
 export const leadTurnsAnsweredMax = 32;
+
+/**
+ * How many entries one page of one ticket's refusal ledger answers with. It is
+ * its own bound rather than the standing page's, because a ledger appends a row
+ * for every refusal and every lift and grows past what any one turn observes.
+ */
+export const agenticRefusalLedgerAnsweredMax = 100;
 
 /** The longest summary a result carries, restating what the manifest reader accepts. */
 export const resultReportCharsMax = 8_192;

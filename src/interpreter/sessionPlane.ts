@@ -28,8 +28,8 @@ import type {
   SessionTurnFailure,
   SessionTurnId,
   SessionTurnInputKind,
+  SessionTurnMeasured,
 } from "./agentSession.ts";
-import type { LeadTurnMeasured } from "./leadMailbox.ts";
 import type { Partition } from "./projectStore.ts";
 import type { SessionAttemptEvidence } from "./sessionScheduler.ts";
 import type { SessionStoreRecorded } from "./sessionStore.ts";
@@ -133,7 +133,7 @@ export interface SessionTurnSettlePort {
     readonly batchFirst?: number;
     readonly batchLast?: number;
     /** What the runtime spent, absent where the pod could not read it. */
-    readonly measured?: LeadTurnMeasured;
+    readonly measured?: SessionTurnMeasured;
   }): Promise<SessionTurnAnswered>;
   fail(input: {
     readonly secret: SessionBearerSecret;

@@ -203,6 +203,27 @@ export const allSessionTurnStates = [
 ] as const;
 export type SessionTurnState = (typeof allSessionTurnStates)[number];
 
+/** Why one turn a pod held ended without an answer, which is what the pod itself reports. */
+export const allAgentReportedTurnFailures = [
+  "AgentFailed",
+  "AgentRateLimited",
+  "AgentTurnsExhausted",
+  "AgentBudgetExhausted",
+  "StoreRefused",
+  "AttemptLost",
+  "SessionClosed",
+] as const;
+export type AgentReportedTurnFailure =
+  (typeof allAgentReportedTurnFailures)[number];
+
+/**
+ * Why one turn ended without an answer by the platform's own act rather than
+ * the pod's. A pod may not name one of these: a withdrawal is the selector
+ * giving up a decision, and a pod claiming it would be provenance nobody wrote.
+ */
+export const allPlatformTurnFailures = ["TurnWithdrawn"] as const;
+export type PlatformTurnFailure = (typeof allPlatformTurnFailures)[number];
+
 /**
  * Why one turn ended without an answer, a closed vocabulary so a label is never
  * a payload. The durable check on it is generated from this list at the
@@ -211,16 +232,20 @@ export type SessionTurnState = (typeof allSessionTurnStates)[number];
  * further migration replaces the constraint.
  */
 export const allSessionTurnFailures = [
-  "AgentFailed",
-  "AgentRateLimited",
-  "AgentTurnsExhausted",
-  "AgentBudgetExhausted",
-  "StoreRefused",
-  "AttemptLost",
-  "SessionClosed",
-  "TurnWithdrawn",
+  ...allAgentReportedTurnFailures,
+  ...allPlatformTurnFailures,
 ] as const;
 export type SessionTurnFailure = (typeof allSessionTurnFailures)[number];
+
+/** What the runtime spent on one turn, measured by the pod from the runtime's own messages. */
+export interface SessionTurnMeasured {
+  readonly model: string;
+  readonly tokens: number;
+  /** Integer micros, because a float in a durable column is a comparison nobody can reproduce. */
+  readonly costMicros: number;
+  readonly durationMs: number;
+  readonly tools: readonly string[];
+}
 
 /** What opening a session answers: it is open now, it already was, or it is not this one. */
 export type AgentSessionOpened = "Opened" | "AlreadyOpen" | "Conflict";

@@ -13,8 +13,9 @@
  * posts it, and a truncated JSON document is exactly the input a lenient parser
  * would half-accept: a document over its bound, of the wrong version, naming a
  * ticket the observation did not carry, fencing on a version it did not show,
- * or lifting a refusal that is not standing each raise, and `policyFailureCode`
- * already turns those into `InvalidResult`.
+ * lifting a refusal that is not standing, entering one ticket in the refusal
+ * ledger twice, or dispatching a ticket it also refuses each raise, and
+ * `policyFailureCode` already turns those into `InvalidResult`.
  *
  * SUPERSESSION IS COMPUTED HERE RATHER THAN JOINED IN SQL. The selector's
  * tables and the ticket service's are owned by different roles, and a refusal
@@ -27,8 +28,15 @@ import {
   agenticRefusalIsSuperseded,
   type AgenticRefusalRecord,
 } from "./agenticRefusal.ts";
-import type { DispatchCandidate, DispatchViewToken } from "./dispatchView.ts";
-import type { ProjectNotification } from "./notifications.ts";
+import {
+  dispatchViewPageLimitMax,
+  type DispatchCandidate,
+  type DispatchViewToken,
+} from "./dispatchView.ts";
+import {
+  notificationPageLimitMax,
+  type ProjectNotification,
+} from "./notifications.ts";
 import type { Partition } from "./projectStore.ts";
 import {
   leadDecisionBytesMax,
@@ -127,8 +135,11 @@ function leadTurnDocument(
 function leadObservationArray(
   value: unknown,
   what: string,
+  countMax: number,
 ): readonly unknown[] {
   if (!Array.isArray(value)) throw new TypeError(`${what} must be an array`);
+  if (value.length > countMax)
+    throw new RangeError(`${what} carries more than one turn is shown`);
   return value;
 }
 
@@ -147,9 +158,21 @@ export function parseLeadObservation(text: string): LeadObservationDocument {
   leadTurnRecord(found["instructions"], "lead observation instructions");
   leadTurnRecord(found["token"], "lead observation token");
   leadTurnRecord(found["operationalContext"], "lead observation context");
-  leadObservationArray(found["candidates"], "lead observation candidates");
-  leadObservationArray(found["changes"], "lead observation changes");
-  leadObservationArray(found["refusals"], "lead observation refusals");
+  leadObservationArray(
+    found["candidates"],
+    "lead observation candidates",
+    dispatchViewPageLimitMax,
+  );
+  leadObservationArray(
+    found["changes"],
+    "lead observation changes",
+    notificationPageLimitMax,
+  );
+  leadObservationArray(
+    found["refusals"],
+    "lead observation refusals",
+    leadRefusalsObservedMax,
+  );
   if (typeof found["decision"] !== "string")
     throw new TypeError("lead observation names no decision");
   if (!("handoffNote" in found))
@@ -300,6 +323,26 @@ function leadDecisionLifts(
 }
 
 /**
+ * Refuses a decision that names one ticket twice. The ledger holds one row per
+ * decision per ticket, so a second entry for one ticket is a decision the
+ * database cannot commit, and the whole turn is lost rather than the extra one.
+ */
+function leadDecisionNamesEachTicketOnce(
+  result: SelectorPolicyResult,
+): SelectorPolicyResult {
+  const entered = [
+    ...result.refusals.map((refusal) => refusal.ticket),
+    ...result.lifts.map((lift) => lift.ticket),
+  ];
+  if (new Set(entered).size !== entered.length)
+    throw new TypeError("lead decision enters one ticket in its ledger twice");
+  for (const dispatch of result.dispatches)
+    if (result.refusals.some((refusal) => refusal.ticket === dispatch.ticket))
+      throw new TypeError("lead decision dispatches a ticket it also refuses");
+  return result;
+}
+
+/**
  * The decision a turn's result text carries, checked against the view it was
  * taken on. Everything it names must be in that view, which is what stops a
  * decision built on a page the lead was never shown.
@@ -319,7 +362,7 @@ export function parseLeadDecision(
     throw new TypeError("lead decision names no attention this tree knows");
   if (!("handoffNote" in found))
     throw new TypeError("lead decision carries no handoff note");
-  return {
+  return leadDecisionNamesEachTicketOnce({
     dispatches: leadDecisionDispatches(found["dispatches"], observation),
     refusals: leadDecisionRefusals(found["refusals"], observation),
     lifts: leadDecisionLifts(found["lifts"], refusals),
@@ -328,5 +371,5 @@ export function parseLeadDecision(
     ...(found["planningIntent"] === undefined
       ? {}
       : { planningIntent: found["planningIntent"] as JsonValue }),
-  };
+  });
 }

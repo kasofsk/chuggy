@@ -1783,6 +1783,61 @@ test("the trusted policy host starts once and bounds cancellation evidence", asy
   assert.equal(aborted, true);
 });
 
+async function policyAnswer(result: unknown) {
+  return dryRunSelectorPolicy(
+    policyHost(() =>
+      Promise.resolve({
+        result,
+        implementationRevision: "implementation-1",
+        modelRevision: "model-1",
+        policyRevision: "policy-1",
+        toolActivity: [],
+        accounting: { tokens: 1, durationMs: 1 },
+        startedAt: "2026-09-02T12:00:00.000Z",
+        completedAt: "2026-09-02T12:00:01.000Z",
+      }),
+    ),
+    { decisionDeadline: () => new Promise<never>(() => undefined) },
+    exhaustedObservation(),
+    resolved(),
+  );
+}
+
+test("the grown result's refusals and lifts reach the runtime intact", async () => {
+  const result = await policyAnswer({
+    attention: "Attention",
+    handoffNote: { watching: "41" },
+    dispatches: [{ ticket: 41, expectedTicketVersion: 3 }],
+    refusals: [
+      { ticket: 42, ticketVersion: 2, reason: "its dependency failed" },
+    ],
+    lifts: [{ ticket: 40 }],
+  });
+  assert.deepEqual(result.dispatches, [
+    { ticket: asTicketId(41), expectedTicketVersion: 3 },
+  ]);
+  assert.deepEqual(result.refusals, [
+    {
+      ticket: asTicketId(42),
+      ticketVersion: 2,
+      reason: "its dependency failed",
+    },
+  ]);
+  assert.deepEqual(result.lifts, [{ ticket: asTicketId(40) }]);
+  assert.equal(result.attention, "Attention");
+});
+
+test("a result naming its dispatch two ways is refused rather than half-read", async () => {
+  await assert.rejects(() =>
+    policyAnswer({
+      attention: "Monitoring",
+      handoffNote: {},
+      selectedTicket: 7,
+      dispatches: [{ ticket: 41, expectedTicketVersion: 3 }],
+    }),
+  );
+});
+
 test("a host answering the pre-slice-2 spelling still names one dispatch", async () => {
   const observation = exhaustedObservation();
   const result = await dryRunSelectorPolicy(

@@ -383,12 +383,8 @@ test("a live change arrives as the kind's own GET representation", async () => {
   );
 });
 
-/**
- * The resource each kind's read is driven with. Two are absent because the API
- * holds no read for them yet, and the test below is what says so rather than
- * leaving them quietly unexercised.
- */
-const kindResources: Readonly<Record<ProjectChangeKind, string | undefined>> = {
+/** The resource each kind's read is driven with. */
+const kindResources: Readonly<Record<ProjectChangeKind, string>> = {
   Operation: "operation-one",
   Ticket: "3",
   Draft: "3",
@@ -396,21 +392,40 @@ const kindResources: Readonly<Record<ProjectChangeKind, string | undefined>> = {
   Project: "project",
   Execution: "execution-one",
   NativeAction: "3",
-  AgenticRefusal: undefined,
-  Session: undefined,
+  AgenticRefusal: "3",
+  Session: "lead-atlas",
 };
 
-test("a kind whose read the API does not hold is refused, not guessed at", async () => {
+/**
+ * The kinds no route answers yet. They must read as tombstones rather than
+ * raise, because `framesForRow` turns a read that keeps raising into a stream
+ * reset and 059's triggers append one of these on every lead turn.
+ */
+const kindsWithoutReads = ["AgenticRefusal", "Session"] as const;
+
+test("a kind whose read the API does not hold is a tombstone, not a raise", async () => {
   const reader = projectResourceReader(servedWeb(true, () => []));
-  const absent = projectChangeKinds.filter(
-    (kind) => kindResources[kind] === undefined,
-  );
-  assert.deepEqual(absent, ["AgenticRefusal", "Session"]);
-  for (const kind of absent)
-    await assert.rejects(
+  for (const kind of projectChangeKinds)
+    await assert.doesNotReject(
       () =>
-        reader.read(asPrincipal("issuer\u0000subject"), partition, kind, "3"),
-      RangeError,
+        reader.read(
+          asPrincipal("issuer\u0000subject"),
+          partition,
+          kind,
+          kindResources[kind],
+        ),
+      kind,
+    );
+  for (const kind of kindsWithoutReads)
+    assert.equal(
+      await reader.read(
+        asPrincipal("issuer\u0000subject"),
+        partition,
+        kind,
+        kindResources[kind],
+      ),
+      null,
+      kind,
     );
 });
 
@@ -421,7 +436,6 @@ test("every kind the log can name reaches the stream as its own schema", async (
   let sequence = 100;
   for (const kind of projectChangeKinds) {
     const resource = kindResources[kind];
-    if (resource === undefined) continue;
     rig.log.append(changeRow(sequence, partition, kind, resource));
     sequence += 1;
     rig.doorbell.ring();
