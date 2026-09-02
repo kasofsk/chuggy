@@ -1,4 +1,7 @@
-import { allSessionAttemptEvidences } from "../../../../interpreter/sessionScheduler.ts";
+import {
+  allSessionAttemptEvidences,
+  type SessionAttemptEvidence,
+} from "../../../../interpreter/sessionScheduler.ts";
 import {
   boundaryOwnerRole,
   schemaTextSet,
@@ -8,20 +11,16 @@ import {
   type Migration,
 } from "../shared.ts";
 
-/**
- * This ledger entry is 60 because 59 is taken by the lead's decisions, which is
- * open rather than merged; the lead's tools take 61. The ledger is append-only,
- * so a number claimed by an open branch is a number this file does not reuse.
- */
-
 /** The states an attempt is still live in, as every fence in 058 reads them. */
 const liveStates = "('Placing','Running')";
 
 /**
  * The one condition a pod may end its own attempt on, because it is the only one
- * a pod is the sole witness to.
+ * a pod is the sole witness to. It is typed by the roster the CHECK below is
+ * generated from, so a rename there is a compile error rather than an insert
+ * that violates its own constraint.
  */
-const holdEvidence = "AgentRateLimited";
+const holdEvidence: SessionAttemptEvidence = "AgentRateLimited";
 
 /**
  * A hold on a work attempt: the attempt ends, the execution keeps its retry

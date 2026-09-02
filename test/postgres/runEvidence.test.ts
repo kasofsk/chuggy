@@ -689,6 +689,46 @@ test("a rate-limited run is withdrawn and charges no retry; a failed one is lost
   });
 });
 
+/**
+ * The worker mirror of `sessionMailbox.test.ts`'s stale-generation case. A
+ * boundary that takes a fence argument and does not read it is a control the
+ * caller believes in and the server does not.
+ */
+test("an ending under a generation the durable side has moved past ends nothing, on either arm", async () => {
+  for (const evidence of ["RunRateLimited", "RunFailed"] as const) {
+    const { attempt } = await placedAttempt(`run-fenced-${evidence}`);
+    assert.equal(
+      await endings.end({
+        secret: attempt.capability.secret,
+        generation: attempt.generation + 1,
+        evidence,
+      }),
+      false,
+      evidence,
+    );
+    assert.deepEqual(
+      await rig.harness.query(
+        `SELECT a.state,a.evidence,e.retries_spent::text AS retries_spent,
+                (e.placement_backoff_from IS NULL) AS unpaced
+           FROM execution_attempt a
+           JOIN execution e ON e.tenant=a.tenant AND e.project=a.project
+                           AND e.execution=a.execution
+          WHERE a.attempt=$1`,
+        [attempt.attempt],
+      ),
+      [
+        {
+          state: "Running",
+          evidence: null,
+          retries_spent: "0",
+          unpaced: true,
+        },
+      ],
+      evidence,
+    );
+  }
+});
+
 test("a withdrawn attempt is ended once, so a redelivered ending moves nothing", async () => {
   const { attempt } = await placedAttempt("run-withdrawn-twice");
   const ending = {

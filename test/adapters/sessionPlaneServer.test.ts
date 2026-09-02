@@ -109,6 +109,7 @@ const sessionCalls = [
     { turn: "turn-1", failure: "StoreRefused" },
     {},
   ],
+  ["POST", "/v1/session/held", {}, {}],
   ["PUT", "/v1/session/store/1a2b/1", Buffer.from("{}\n"), octets],
   ["GET", "/v1/session/store/1a2b", undefined, {}],
   ["GET", "/v1/session/store", undefined, {}],
@@ -182,6 +183,12 @@ test("no session route answers a bearer that is not a live session", async () =>
       turns: { claim: counted },
       heartbeats: {
         heartbeat: () => {
+          reached += 1;
+          return Promise.resolve(true);
+        },
+      },
+      holds: {
+        hold: () => {
           reached += 1;
           return Promise.resolve(true);
         },
@@ -548,6 +555,39 @@ test("a failed turn names a failure the pod itself witnessed and nothing else", 
     assert.equal(refused.statusCode, 400, JSON.stringify(payload));
   }
   assert.equal(failed.length, 1);
+  await app.close();
+});
+
+/**
+ * The hold names no turn and carries no body, so the fence and the bearer are
+ * the whole of what the route has to get right.
+ */
+test("a hold reaches the boundary under its own generation, and a fenced one is told to stop", async () => {
+  const holds: unknown[] = [];
+  const app = sessionPlane({
+    holds: {
+      hold: (offered, generation) => {
+        holds.push({ offered, generation });
+        return Promise.resolve(holds.length === 1);
+      },
+    },
+  });
+  const held0 = await app.inject({
+    method: "POST",
+    url: "/v1/session/held",
+    headers: held,
+    payload: {},
+  });
+  assert.equal(held0.statusCode, 204);
+  assert.deepEqual(holds, [{ offered: secret, generation: 3 }]);
+  const fenced = await app.inject({
+    method: "POST",
+    url: "/v1/session/held",
+    headers: held,
+    payload: {},
+  });
+  assert.equal(fenced.statusCode, 409);
+  assert.deepEqual(fenced.json(), { action: "stop", reason: "Fenced" });
   await app.close();
 });
 
