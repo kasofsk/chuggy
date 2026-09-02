@@ -120,6 +120,29 @@ test("a ticket a phase already parks carries its refusal on the same row", () =>
   expect(forty2?.refusals).toStrictEqual(refused.refusals);
 });
 
+/**
+ * The overlap the other two cases do not reach: a ticket an open question waits
+ * on that the lead has ALSO refused. The action loop and the refusal loop both
+ * name it, so a dedupe that tested the phase page rather than what had already
+ * been listed would push it twice — two rows under one React key, and a badge
+ * saying two things need a person when one does.
+ */
+test("a ticket both an action and a refusal name is one row and one count", () => {
+  const union = inboxUnion(
+    projectTicketRowsEmpty,
+    projectNativeActionRowsAppend(
+      projectNativeActionRowsEmpty,
+      actionPage([{ ...escalation, ticket: 42 }]),
+    ),
+    refused,
+  );
+  expect(union.entries.map((entry) => entry.ticket)).toStrictEqual([42]);
+  expect(inboxCountLabel(union)).toBe("1");
+  const only = union.entries[0];
+  expect(only?.actions.length).toBe(1);
+  expect(only?.refusals).toStrictEqual(refused.refusals);
+});
+
 test("a further page of refusals makes the count say it is short", () => {
   expect(
     inboxCountLabel(inboxUnion(parked, open, { ...refused, more: true })),

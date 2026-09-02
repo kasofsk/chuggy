@@ -23,7 +23,11 @@ import {
   tokenCountFigure,
 } from "../core/figures.ts";
 import type { PanelState } from "../core/freshness.ts";
-import { leadFolded, leadStreamBatches } from "../core/leadTranscript.ts";
+import {
+  leadFolded,
+  leadStreamBatches,
+  leadStreamListed,
+} from "../core/leadTranscript.ts";
 import { projectListFolded } from "../core/projectQueryKeys.ts";
 import {
   selectorAttentionTone,
@@ -180,7 +184,11 @@ function LeadBody(props: {
         {(value) => <LeadTurns lead={value} />}
       </DataPanel>
       <LeadHolding held={held} note={lead?.handoffNote} nowMs={props.nowMs} />
-      <LeadLog held={held} stream={lead?.agentReference} />
+      <LeadLog
+        held={held}
+        stream={lead?.agentReference}
+        listed={lead !== undefined && leadStreamListed(lead)}
+      />
       <LeadDecisions partition={props.partition} nowMs={props.nowMs} />
       <LeadRefusals partition={props.partition} nowMs={props.nowMs} />
     </>

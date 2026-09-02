@@ -38,7 +38,6 @@ import {
   selectorHistoryResponseSchema,
   selectorProjectSettingsResponseSchema,
   selectorSettingsHistoryResponseSchema,
-  ticketAgenticRefusalsResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
 } from "../../../../src/contract/responses.ts";
@@ -68,7 +67,6 @@ import type {
   SelectorHistoryResponse,
   SelectorProjectSettingsResponse,
   SelectorSettingsHistoryResponse,
-  TicketAgenticRefusalsResponse,
   TicketNativeActionsResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
@@ -499,25 +497,24 @@ export function apiAgenticRefusals(
   );
 }
 
-/** One ticket's whole refusal ledger, which is the `AgenticRefusal` frame's own body. */
-export function apiTicketAgenticRefusals(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  ticket: number,
-): Promise<ApiResult<TicketAgenticRefusalsResponse>> {
-  return apiGet(
-    ports,
-    apiSegments(partition, "tickets", ticket, "agentic-refusals"),
-    (value) => ticketAgenticRefusalsResponseSchema.parse(value),
-  );
-}
+/**
+ * Which end of the decision log a read starts at: `oldest` is the route's own
+ * default and pages forward with `after`, while `newest` answers the last
+ * `limit` decisions as one bounded page with no cursor and is refused beside
+ * `after`. The roster moves to `src/contract/rosters.ts` with the closing
+ * commit of kasofsk/chuggy#507 and is stated here until it does.
+ */
+export const selectorHistoryOrders = ["oldest", "newest"] as const;
+
+export type SelectorHistoryOrder = (typeof selectorHistoryOrders)[number];
 
 export interface SelectorHistoryPage {
   readonly after?: number | undefined;
   readonly limit?: number | undefined;
+  readonly order?: SelectorHistoryOrder | undefined;
 }
 
-/** What the lead decided, ordinal ascending, resumed after the one held. */
+/** What the lead decided, from whichever end of the log the caller named. */
 export function apiSelectorHistory(
   ports: ApiPorts,
   partition: PartitionIdentity,
@@ -528,6 +525,7 @@ export function apiSelectorHistory(
     apiPath(apiSegments(partition, "selector-history"), {
       after: page.after,
       limit: page.limit,
+      order: page.order,
     }),
     (value) => selectorHistoryResponseSchema.parse(value),
   );

@@ -7,6 +7,12 @@
  * omission here and the effective value beside it is what the project then
  * runs under.
  *
+ * THE WRITE REPLACES THE WHOLE OVERRIDE SET, so an override the form draws no
+ * box for is carried through it unchanged. The fields this form owns are named
+ * once below and everything else the read returned rides along, which is what
+ * keeps an allowlist nobody can see here from being deleted by an edit to the
+ * North Star.
+ *
  * The wire's own parser decides what is writable. A field it rejects is named
  * by its path rather than judged again here, because a second account of what
  * the route accepts is the account that drifts.
@@ -42,7 +48,21 @@ export type SelectorSettingsLimitDraft = Readonly<
   Record<SelectorSettingsLimitName, string>
 >;
 
-/** What the form holds, under the revision it was read at. */
+/**
+ * The override fields this form draws a box for. Everything else the read
+ * returned is carried, so a field the wire grows is preserved by a console that
+ * has never heard of it.
+ */
+export const selectorSettingsEditedNames = [
+  "northStar",
+  "basePrompt",
+  "mode",
+  "dispatchMode",
+  "limits",
+] as const;
+
+/** What the form holds, under the revision it was read at, beside the overrides
+ * it does not draw and must not drop. */
 export interface SelectorSettingsDraft {
   readonly revision: number;
   readonly northStar: string;
@@ -50,6 +70,7 @@ export interface SelectorSettingsDraft {
   readonly mode: string;
   readonly dispatchMode: string;
   readonly limits: SelectorSettingsLimitDraft;
+  readonly carried: SelectorProjectOverrides;
 }
 
 function selectorSettingsLimitDraft(
@@ -68,6 +89,15 @@ function selectorSettingsLimitDraft(
   };
 }
 
+/** Everything the read returned that this form draws no box for. */
+function selectorSettingsCarried(
+  overrides: SelectorProjectOverrides,
+): SelectorProjectOverrides {
+  const carried = { ...overrides };
+  for (const name of selectorSettingsEditedNames) delete carried[name];
+  return carried;
+}
+
 /** The settings as the form holds them, an absent override being an empty box. */
 export function selectorSettingsDraft(
   settings: SelectorProjectSettingsResponse,
@@ -80,6 +110,20 @@ export function selectorSettingsDraft(
     mode: overrides.mode ?? "",
     dispatchMode: overrides.dispatchMode ?? "",
     limits: selectorSettingsLimitDraft(overrides.limits),
+    carried: selectorSettingsCarried(overrides),
+  };
+}
+
+/** The draft under a revision the route has since answered with, keeping what
+ * the reader has typed and taking everything they did not. */
+export function selectorSettingsRebased(
+  draft: SelectorSettingsDraft,
+  settings: SelectorProjectSettingsResponse,
+): SelectorSettingsDraft {
+  return {
+    ...draft,
+    revision: settings.revision,
+    carried: selectorSettingsCarried(settings.overrides),
   };
 }
 
@@ -114,6 +158,7 @@ export function selectorSettingsWrite(
 ): SelectorSettingsWrite {
   const limits = selectorSettingsLimits(draft.limits);
   const built = {
+    ...draft.carried,
     ...(draft.northStar.trim() === "" ? {} : { northStar: draft.northStar }),
     ...(draft.basePrompt.trim() === "" ? {} : { basePrompt: draft.basePrompt }),
     ...(draft.mode === "" ? {} : { mode: draft.mode }),
@@ -146,12 +191,25 @@ export function selectorSettingsLimitLabel(
   }
 }
 
-/** Where the last write stands, which is the one line the form says. */
+/**
+ * Where the last write stands, which is the one line the form says. Both
+ * answers that moved the revision carry the settings behind it, because the
+ * read the page holds is now stale and the next write has to be made against
+ * what the route just said is there.
+ */
 export type SelectorSettingsSaved =
   | { readonly saved: "Idle" }
   | { readonly saved: "Writing" }
-  | { readonly saved: "Written"; readonly revision: number }
-  | { readonly saved: "Conflict"; readonly revision: number }
+  | {
+      readonly saved: "Written";
+      readonly revision: number;
+      readonly settings: SelectorProjectSettingsResponse;
+    }
+  | {
+      readonly saved: "Conflict";
+      readonly revision: number;
+      readonly settings: SelectorProjectSettingsResponse;
+    }
   | { readonly saved: "Failed"; readonly reason: string };
 
 /** What a revision conflict carries beside its code: the settings that moved. */
@@ -167,11 +225,19 @@ export function selectorSettingsAnswered(
   result: ApiResult<SelectorProjectSettingsResponse>,
 ): SelectorSettingsSaved {
   if (result.outcome === "Ok")
-    return { saved: "Written", revision: result.value.revision };
+    return {
+      saved: "Written",
+      revision: result.value.revision,
+      settings: result.value,
+    };
   if (result.outcome === "Conflict") {
     const read = selectorSettingsConflictSchema.safeParse(result.body);
     if (read.success)
-      return { saved: "Conflict", revision: read.data.settings.revision };
+      return {
+        saved: "Conflict",
+        revision: read.data.settings.revision,
+        settings: read.data.settings,
+      };
   }
   return { saved: "Failed", reason: panelReason(result) };
 }

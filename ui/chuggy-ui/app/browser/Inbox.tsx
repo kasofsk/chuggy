@@ -2,9 +2,10 @@
  * The escalation inbox: every ticket that needs a human, newest activity first,
  * each answerable where it stands.
  *
- * Two reads make the list — the phase page and the project's open native
- * actions — and `inboxUnion` is where they become one row per ticket. The shell
- * badge and this panel both take those two reads through `useInboxRows`, so the
+ * Three reads make the list — the phase page, the project's open native
+ * actions and the lead's standing refusals — and `inboxUnion` is where they
+ * become one row per ticket. The shell badge and this panel both take those
+ * three reads through `useInboxRows`, so the
  * count and the rows are one value: a read that refused becomes a notice beside
  * the rows the other one supplied rather than an empty panel under a badge that
  * still counts them. What a row ran is the project table's own index under the
@@ -226,9 +227,10 @@ function useInboxPhaseRows(partition: PartitionIdentity): {
 }
 
 /**
- * Both reads, the union they make and the one state that draws it. The badge
- * and the panel take the same two values through the same two functions, which
- * is what makes the header's claim above true rather than merely intended.
+ * All three reads, the union they make and the one state that draws it. The
+ * badge and the panel take the same three values through the same two
+ * functions, which is what makes the header's claim above true rather than
+ * merely intended.
  */
 export function useInboxRows(partition: PartitionIdentity): InboxRowsHeld {
   const phase = useInboxPhaseRows(partition);

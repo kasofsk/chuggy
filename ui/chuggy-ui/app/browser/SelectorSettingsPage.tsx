@@ -10,6 +10,7 @@
  * value stands in the box as what the project runs under instead.
  */
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -29,11 +30,13 @@ import {
   apiWriteSelectorSettings,
 } from "../core/apiRoutes.ts";
 import { instantFigure } from "../core/figures.ts";
+import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import {
   selectorSettingsAnswered,
   selectorSettingsDraft,
   selectorSettingsLimitLabel,
   selectorSettingsLimitNames,
+  selectorSettingsRebased,
   selectorSettingsWrite,
 } from "../core/selectorSettingsForm.ts";
 import type {
@@ -143,7 +146,7 @@ function SelectorModeField(props: {
           props.onChange(event.target.value);
         }}
       >
-        <option value="">{props.effective}</option>
+        <option value="">{`Inherit · ${props.effective}`}</option>
         {props.choices.map((choice) => (
           <option key={choice} value={choice}>
             {choice}
@@ -221,9 +224,11 @@ function SelectorLimitFields(props: {
 }
 
 /**
- * The draft, seeded from the read and reseeded when the revision moves. It is
- * adjusted during the render that sees the new revision, so no edit is made
- * against a revision the form is no longer holding.
+ * The draft, seeded from the read and reseeded when THE READ moves — not when
+ * the draft and the read merely differ. A conflict moves the draft's own
+ * revision ahead of the read's so the reader's next Save is made against what
+ * the route says stands, and a reseed on any difference would take their typed
+ * text back off the screen at exactly that point.
  */
 function useSelectorSettingsDraft(settings: SelectorProjectSettingsResponse): {
   readonly draft: SelectorSettingsDraft;
@@ -232,7 +237,9 @@ function useSelectorSettingsDraft(settings: SelectorProjectSettingsResponse): {
   const [draft, setDraft] = useState<SelectorSettingsDraft>(() =>
     selectorSettingsDraft(settings),
   );
-  if (draft.revision !== settings.revision) {
+  const [seen, setSeen] = useState(settings.revision);
+  if (seen !== settings.revision) {
+    setSeen(settings.revision);
     const seeded = selectorSettingsDraft(settings);
     setDraft(seeded);
     return { draft: seeded, setDraft };
@@ -240,11 +247,44 @@ function useSelectorSettingsDraft(settings: SelectorProjectSettingsResponse): {
   return { draft, setDraft };
 }
 
+/**
+ * What a write's own answer does to the page: a write that landed IS the newest
+ * read, so it is written into the settings key rather than left for a refetch
+ * nothing schedules — the route raises no `Project` frame, and the console
+ * would otherwise resend the revision it has just moved and be told by itself
+ * that somebody else wrote. A conflict moves the draft instead, keeping what
+ * the reader typed and taking the revision and the untouched overrides the
+ * route says stand, so the next Save is a decision they make once rather than a
+ * button that can only refuse.
+ */
+function selectorSettingsApply(
+  answered: SelectorSettingsSaved,
+  held: {
+    readonly draft: SelectorSettingsDraft;
+    readonly setDraft: (draft: SelectorSettingsDraft) => void;
+  },
+  wrote: (settings: SelectorProjectSettingsResponse) => void,
+): void {
+  switch (answered.saved) {
+    case "Written":
+      wrote(answered.settings);
+      return;
+    case "Conflict":
+      held.setDraft(selectorSettingsRebased(held.draft, answered.settings));
+      return;
+    case "Idle":
+    case "Writing":
+    case "Failed":
+      return;
+  }
+}
+
 function SelectorSettingsForm(props: {
   readonly partition: PartitionIdentity;
   readonly settings: SelectorProjectSettingsResponse;
 }): ReactNode {
   const ports = useApiPorts();
+  const client = useQueryClient();
   const held = useSelectorSettingsDraft(props.settings);
   const [saved, setSaved] = useState<SelectorSettingsSaved>({ saved: "Idle" });
   const write = selectorSettingsWrite(held.draft);
@@ -259,14 +299,23 @@ function SelectorSettingsForm(props: {
     if (overrides === undefined) return;
     setSaved({ saved: "Writing" });
     void (async () => {
-      setSaved(
-        selectorSettingsAnswered(
-          await apiWriteSelectorSettings(ports, props.partition, {
-            expectedRevision: held.draft.revision,
-            overrides,
-          }),
-        ),
+      const answered = selectorSettingsAnswered(
+        await apiWriteSelectorSettings(ports, props.partition, {
+          expectedRevision: held.draft.revision,
+          overrides,
+        }),
       );
+      setSaved(answered);
+      selectorSettingsApply(answered, held, (settings) => {
+        client.setQueryData(
+          projectResourceKey(
+            props.partition,
+            "Project",
+            selectorSettingsResource,
+          ),
+          settings,
+        );
+      });
     })();
   };
   return (

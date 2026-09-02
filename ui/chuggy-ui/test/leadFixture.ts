@@ -154,41 +154,51 @@ export const leadDecisionIdle: SelectorHistoryResponse["decisions"][number] = {
   completedAt: "2026-09-01T08:01:00Z",
 };
 
+/** The decision that refused a ticket, which is the older of the two. */
+export const leadDecisionRefusing: SelectorHistoryResponse["decisions"][number] =
+  {
+    ordinal: 1_201,
+    decision: "selector-decision-1",
+    instructionsVersion: "12.3",
+    dispatched: [],
+    refused: [42],
+    lifted: [],
+    attention: "Attention",
+    modelRevision: "m1",
+    policyRevision: "p1",
+    tokens: 30_000,
+    costMicros: 120_000,
+    durationMs: 41_000,
+    startedAt: "2026-09-01T09:00:00Z",
+    completedAt: "2026-09-01T09:01:00Z",
+  };
+
+/** The decision that ran last, which is the one the panel opens on. */
+export const leadDecisionDispatching: SelectorHistoryResponse["decisions"][number] =
+  {
+    ordinal: 1_202,
+    decision: "selector-decision-2",
+    instructionsVersion: "12.4",
+    dispatched: [41],
+    refused: [],
+    lifted: [40],
+    attention: "Monitoring",
+    modelRevision: "m1",
+    policyRevision: "p1",
+    tokens: 41_234,
+    costMicros: 182_000,
+    durationMs: 74_210,
+    startedAt: "2026-09-01T10:00:00Z",
+    completedAt: "2026-09-01T10:01:00Z",
+  };
+
+/**
+ * The newest arm's own answer: descending ordinal, one bounded page, no cursor.
+ * A panel that reordered it would draw the oldest decision it holds as the one
+ * that just ran.
+ */
 export const leadHistory: SelectorHistoryResponse = {
-  decisions: [
-    {
-      ordinal: 1_201,
-      decision: "selector-decision-1",
-      instructionsVersion: "12.3",
-      dispatched: [],
-      refused: [42],
-      lifted: [],
-      attention: "Attention",
-      modelRevision: "m1",
-      policyRevision: "p1",
-      tokens: 30_000,
-      costMicros: 120_000,
-      durationMs: 41_000,
-      startedAt: "2026-09-01T09:00:00Z",
-      completedAt: "2026-09-01T09:01:00Z",
-    },
-    {
-      ordinal: 1_202,
-      decision: "selector-decision-2",
-      instructionsVersion: "12.4",
-      dispatched: [41],
-      refused: [],
-      lifted: [40],
-      attention: "Monitoring",
-      modelRevision: "m1",
-      policyRevision: "p1",
-      tokens: 41_234,
-      costMicros: 182_000,
-      durationMs: 74_210,
-      startedAt: "2026-09-01T10:00:00Z",
-      completedAt: "2026-09-01T10:01:00Z",
-    },
-  ],
+  decisions: [leadDecisionDispatching, leadDecisionRefusing],
 };
 
 export function leadRefusals(

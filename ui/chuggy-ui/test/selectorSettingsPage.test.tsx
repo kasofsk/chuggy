@@ -78,6 +78,7 @@ function settingsBody(revision: number, overrides: unknown): unknown {
 
 interface SettingsServer {
   readonly written: () => unknown;
+  readonly writes: () => readonly unknown[];
 }
 
 interface SettingsInit {
@@ -85,22 +86,22 @@ interface SettingsInit {
   readonly body?: string;
 }
 
-/** The page over a server whose answer to the write the case decides. */
+/** The page over a server whose answer to the write the case decides, and whose
+ * read the case may make carry overrides the form draws no box for. */
 async function drawSettings(
   answering: () => { readonly body: unknown; readonly status: number },
+  read: unknown = settingsBody(12, { northStar: "ship the console" }),
 ): Promise<SettingsServer> {
-  let written: unknown;
+  const writes: unknown[] = [];
   const fetching = ((url: string, init?: SettingsInit) => {
     if (init?.method === "PUT") {
-      written = JSON.parse(init.body ?? "null");
+      writes.push(JSON.parse(init.body ?? "null"));
       const found = answering();
       return Promise.resolve(answer(found.body, found.status));
     }
     if (url.includes("/history"))
       return Promise.resolve(answer({ revisions: [] }));
-    return Promise.resolve(
-      answer(settingsBody(12, { northStar: "ship the console" })),
-    );
+    return Promise.resolve(answer(read));
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", fetching);
   render(
@@ -113,7 +114,7 @@ async function drawSettings(
     </ScreenHarness>,
   );
   await settled();
-  return { written: () => written };
+  return { written: () => writes[writes.length - 1], writes: () => writes };
 }
 
 function save(): void {
@@ -186,4 +187,129 @@ test("a limit the wire will not take marks its own box and blocks the save", asy
   expect(
     screen.getByRole("button", { name: "Save" }).hasAttribute("disabled"),
   ).toBe(true);
+});
+
+/**
+ * The route replaces the whole override set, so an override this form draws no
+ * box for is deleted by any save that does not carry it. Nothing on the page
+ * shows an allowlist, so nothing on the page would show it going.
+ */
+test("an override the form draws no box for survives a save that edits another", async () => {
+  const server = await drawSettings(
+    () => ({ body: settingsBody(13, {}), status: 200 }),
+    settingsBody(12, {
+      northStar: "ship the console",
+      modelAllowlist: ["claude-opus-4"],
+      toolAllowlist: ["Read", "Grep"],
+      operationalContextMaxAgeMs: 30_000,
+    }),
+  );
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("North Star"), {
+      target: { value: "ship the lead page" },
+    });
+  });
+  await turned(save);
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 12,
+    overrides: {
+      modelAllowlist: ["claude-opus-4"],
+      toolAllowlist: ["Read", "Grep"],
+      operationalContextMaxAgeMs: 30_000,
+      northStar: "ship the lead page",
+    },
+  });
+});
+
+/** Each box edits its own field. A handler naming another writes the typed text
+ * into a setting nobody looked at and clears the one they were editing. */
+test("typing in each box changes that box and no other", async () => {
+  await drawSettings(() => ({ body: settingsBody(13, {}), status: 200 }));
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("Base prompt"), {
+      target: { value: "choose the oldest" },
+    });
+  });
+  expect(screen.getByLabelText<HTMLTextAreaElement>("Base prompt").value).toBe(
+    "choose the oldest",
+  );
+  expect(screen.getByLabelText<HTMLTextAreaElement>("North Star").value).toBe(
+    "ship the console",
+  );
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("North Star"), {
+      target: { value: "ship the lead page" },
+    });
+  });
+  expect(screen.getByLabelText<HTMLTextAreaElement>("Base prompt").value).toBe(
+    "choose the oldest",
+  );
+  expect(screen.getByLabelText<HTMLTextAreaElement>("North Star").value).toBe(
+    "ship the lead page",
+  );
+});
+
+/**
+ * A write that landed is the newest read, and nothing else will tell the page
+ * so: the route raises no frame and nothing refetches. A second save that
+ * resent the revision the first one moved would be told by this same tab that
+ * somebody else wrote — a dead end reachable by pressing Save twice.
+ */
+test("a second save is made against the revision the first one produced", async () => {
+  let revision = 12;
+  const server = await drawSettings(() => {
+    revision += 1;
+    return { body: settingsBody(revision, {}), status: 200 };
+  });
+  await turned(save);
+  await settled();
+  await turned(save);
+  await settled();
+  expect(
+    server
+      .writes()
+      .map((body) => (body as { expectedRevision: number }).expectedRevision),
+  ).toStrictEqual([12, 13]);
+  expect(screen.getByText("Written · 14")).toBeDefined();
+});
+
+/** A conflict is not a dead end: the reader keeps what they typed and the next
+ * save is made against the revision the route says stands. */
+test("a save after a conflict is made against the revision that moved", async () => {
+  let conflicting = true;
+  const server = await drawSettings(() => {
+    if (conflicting) {
+      conflicting = false;
+      return {
+        body: {
+          error: { code: "SettingsRevisionConflict", message: "moved" },
+          settings: settingsBody(14, { toolAllowlist: ["Read"] }),
+        },
+        status: 409,
+      };
+    }
+    return { body: settingsBody(15, {}), status: 200 };
+  });
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("North Star"), {
+      target: { value: "ship the lead page" },
+    });
+  });
+  await turned(save);
+  await settled();
+  expect(screen.getByText("Conflict · 14")).toBeDefined();
+  expect(screen.getByLabelText<HTMLTextAreaElement>("North Star").value).toBe(
+    "ship the lead page",
+  );
+  await turned(save);
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 14,
+    overrides: {
+      toolAllowlist: ["Read"],
+      northStar: "ship the lead page",
+    },
+  });
+  expect(screen.getByText("Written · 15")).toBeDefined();
 });

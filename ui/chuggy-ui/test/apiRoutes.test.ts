@@ -24,7 +24,6 @@ import {
   apiSelectorSettings,
   apiSelectorSettingsHistory,
   apiTicket,
-  apiTicketAgenticRefusals,
   apiTicketNativeActions,
   apiWriteSelectorSettings,
   projectInventoryPagesMax,
@@ -249,23 +248,26 @@ test("the lead and its transcript hang from one segment, the store from two", as
   );
 });
 
-test("the refusals are read across the project and under one ticket", async () => {
-  const held = recording((url) =>
-    url.includes("/tickets/")
-      ? { ticket: 42, entries: [], more: false }
-      : { refusals: [], more: false },
-  );
+test("the standing refusals are read across the project", async () => {
+  const held = recording(() => ({ refusals: [], more: false }));
   await apiAgenticRefusals(held.ports, partition, { limit: 32 });
   expect(held.urls[0]).toBe(`${partitionPath}/agentic-refusals?limit=32`);
-  await apiTicketAgenticRefusals(held.ports, partition, 42);
-  expect(held.urls[1]).toBe(`${partitionPath}/tickets/42/agentic-refusals`);
 });
 
-test("the decision log is resumed after the ordinal already held", async () => {
+/** The two arms are one route: the ascending one is resumed after the ordinal
+ * already held, and the newest is a bounded page with no cursor at all. */
+test("the decision log is read from whichever end the caller named", async () => {
   const held = recording(() => ({ decisions: [] }));
   await apiSelectorHistory(held.ports, partition, { after: 1201, limit: 50 });
   expect(held.urls[0]).toBe(
     `${partitionPath}/selector-history?after=1201&limit=50`,
+  );
+  await apiSelectorHistory(held.ports, partition, {
+    limit: 50,
+    order: "newest",
+  });
+  expect(held.urls[1]).toBe(
+    `${partitionPath}/selector-history?limit=50&order=newest`,
   );
 });
 

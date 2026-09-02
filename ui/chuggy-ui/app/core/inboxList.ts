@@ -1,17 +1,18 @@
 /**
- * Which tickets the inbox holds, the two pages it asks the wire for, and what
+ * Which tickets the inbox holds, the three pages it asks the wire for, and what
  * the shell's badge counts.
  *
  * Phase membership is the project table's "needs you" section rather than a
  * second definition of it, so a phase that changes section changes what the
  * inbox holds in the same edit and neither screen can disagree with the other
  * about whether a ticket needs a human. A ticket with an open native action
- * needs one too, and `inboxUnion.ts` is where the two reads become one list.
+ * needs one too, and so does one the lead is refusing to dispatch;
+ * `inboxUnion.ts` is where the three reads become one list.
  * Each page size is asked for rather than left to the route's default, so the
  * rows drawn are a number this console chose.
  *
  * THE BADGE COUNTS THE UNION HELD, AND SAYS SO WHEN THE WIRE HAS MORE. The
- * question it asks is whether a further page is unread on either read, which is
+ * question it asks is whether a further page is unread on any read, which is
  * the cursor the last page answered with; whether the reader may ask for that
  * page is a different question, bounded by the accumulations' own caps, and
  * answering the first with the second would print a bare number at exactly the

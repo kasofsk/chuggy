@@ -25,6 +25,7 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
+import { leadTranscriptReadsMax } from "../app/core/leadTranscript.ts";
 import {
   leadBody,
   leadHandoffNote,
@@ -55,18 +56,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** The page over a server whose batch count and turn count the case moves. */
-async function drawLead(
-  holding: () => LeadServed,
-): Promise<ReturnType<typeof openedStream>> {
-  const api = apiDouble({
-    operation: { operation: "op-one", state: "Pending" },
-    route: (url) => {
-      const found = leadRouteAnswer(url, holding());
-      return answer(found.body, found.status);
-    },
-  });
-  vi.stubGlobal("fetch", api.fetch);
+/** The page under its providers, over whatever fetch the case has stubbed. */
+async function mountLead(): Promise<ReturnType<typeof openedStream>> {
   const server = openedStream();
   render(
     <ScreenHarness
@@ -79,6 +70,21 @@ async function drawLead(
   );
   await settled();
   return server;
+}
+
+/** The page over a server answering every route from one held state. */
+async function drawLead(
+  holding: () => LeadServed,
+): Promise<ReturnType<typeof openedStream>> {
+  const api = apiDouble({
+    operation: { operation: "op-one", state: "Pending" },
+    route: (url) => {
+      const found = leadRouteAnswer(url, holding());
+      return answer(found.body, found.status);
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  return mountLead();
 }
 
 const opening: LeadServed = {
@@ -153,16 +159,7 @@ test("a project with no lead is a page saying so, not five empty panels", async 
         : answer({ partition: leadPartition, sequence: 1, tickets: [] }),
   });
   vi.stubGlobal("fetch", api.fetch);
-  render(
-    <ScreenHarness
-      partition={leadPartition}
-      client={new QueryClient()}
-      transport={openedStream().ports.fetch}
-    >
-      <LeadPage />
-    </ScreenHarness>,
-  );
-  await settled();
+  await mountLead();
   expect(screen.getByRole("heading", { name: "No lead" })).toBeDefined();
 });
 
@@ -220,4 +217,97 @@ test("a lead that has left no note draws no note at all", async () => {
     note: { bytes: 0, preview: "", truncated: false },
   }));
   expect(screen.queryByText("Handoff note")).toBeNull();
+});
+
+/** A store that never says it is finished, so the walk's own budget is the only
+ * thing that stops it. */
+function endlessStore(): { readonly reads: () => number } {
+  let reads = 0;
+  const api = apiDouble({
+    operation: { operation: "op-one", state: "Pending" },
+    route: (url) => {
+      if (url.includes("/lead/transcript")) {
+        const asked = Number(
+          new URL(url, "https://console").searchParams.get("after") ?? "0",
+        );
+        reads += 1;
+        return answer({
+          stream: "1a2b3c",
+          entries: [
+            {
+              uuid: `uuid-${String(asked)}`,
+              type: "assistant",
+              message: { content: [] },
+            },
+          ],
+          held: [],
+          elided: 0,
+          truncated: false,
+          nextAfter: asked + 1,
+        });
+      }
+      const found = leadRouteAnswer(url, { ...opening, batches: 9_999 });
+      return answer(found.body, found.status);
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  return { reads: () => reads };
+}
+
+/**
+ * The read budget is the only thing between a lead whose store keeps answering
+ * and a tab that walks it forever. A page mounted against a store that never
+ * ends must stop at the bound and not one page later.
+ */
+test("the walk stops at its own read budget however much the store offers", async () => {
+  const store = endlessStore();
+  await mountLead();
+  expect(store.reads()).toBe(leadTranscriptReadsMax);
+});
+
+/** A transcript that will not read is said as itself; a Log drawn as empty
+ * beside a lead that has plainly been deciding is the reading a reader would
+ * take from silence. */
+test("a transcript read that failed says so rather than drawing an empty log", async () => {
+  const api = apiDouble({
+    operation: { operation: "op-one", state: "Pending" },
+    route: (url) => {
+      if (url.includes("/lead/transcript"))
+        return answer({ error: { code: "InternalError", message: "no" } }, 500);
+      const found = leadRouteAnswer(url, opening);
+      return answer(found.body, found.status);
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  await mountLead();
+  expect(
+    screen.getByText(/^Failed · /u),
+    "a transcript that could not be read was drawn as a log with nothing in it",
+  ).toBeDefined();
+});
+
+/** A reference the bounded stream listing does not carry has nothing to walk,
+ * and saying "No entries" would report that as a lead that has said nothing. */
+test("a stream the store's listing does not carry is named, not drawn as empty", async () => {
+  const api = apiDouble({
+    operation: { operation: "op-one", state: "Pending" },
+    route: (url) => {
+      if (url.includes("/lead/transcript"))
+        return answer({
+          stream: "1a2b3c",
+          entries: [],
+          held: [],
+          elided: 0,
+          truncated: false,
+        });
+      if (url.includes("/lead"))
+        return answer({ ...leadBody(0, 1), streams: [] });
+      const found = leadRouteAnswer(url, opening);
+      return answer(found.body, found.status);
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  await mountLead();
+  expect(screen.getByText("Stream unlisted")).toBeDefined();
+  expect(screen.queryByText("No entries")).toBeNull();
 });

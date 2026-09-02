@@ -2,6 +2,13 @@
  * The decision log: what the lead decided, newest first, each group holding the
  * tickets it dispatched, refused and lifted.
  *
+ * THE READ IS THE LOG'S NEWEST END AND NOT ITS FIRST PAGE. `order=newest`
+ * answers the last `limit` decisions in descending ordinal as one bounded page
+ * with no cursor, so the panel is one read and the row at the top is the
+ * decision that just ran. Asking for the default ascending arm and dropping its
+ * cursor would show a months-old decision as the current one on any project
+ * that has decided more than a page.
+ *
  * The log has no change kind of its own, so it is re-read on the partition
  * invalidation the stream's fallback already performs; what a decision saw is
  * not drawn here, because the observation is a page of candidates and this is
@@ -15,6 +22,7 @@ import type {
   SelectorDecisionResponse,
   SelectorHistoryResponse,
 } from "../../../../../src/contract/responses.ts";
+import { selectorHistoryLimitMax } from "../../../../../src/contract/http.ts";
 import { apiSelectorHistory } from "../../core/apiRoutes.ts";
 import {
   costFigure,
@@ -30,8 +38,8 @@ import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Ledger, LedgerBlock, LedgerGroup, LedgerRow } from "../ui/Ledger.tsx";
 
-/** Neither a kind nor a resource a frame carries, so the partition's own
- * refetch is what reaches it. */
+/** A resource name no frame carries, so nothing writes this entry and the
+ * partition's own refetch is what reaches it. */
 export const leadDecisionsResource = "selector-history";
 
 /** What one decision cost and how long it took, as the group's own roll-up. */
@@ -145,11 +153,13 @@ function LeadDecisionGroup(props: {
   );
 }
 
+/** The page arrives newest first, so the row the panel opens on is the one at
+ * the top of it and nothing here reorders anything. */
 function LeadDecisionList(props: {
   readonly history: SelectorHistoryResponse;
   readonly nowMs: number;
 }): ReactNode {
-  const decisions = [...props.history.decisions].reverse();
+  const decisions = props.history.decisions;
   const newest = decisions[0]?.ordinal;
   if (decisions.length === 0) return <EmptyState label="No decisions" />;
   return (
@@ -175,7 +185,11 @@ export function LeadDecisions(props: {
     partition,
     "Session",
     leadDecisionsResource,
-    (ports) => apiSelectorHistory(ports, partition),
+    (ports) =>
+      apiSelectorHistory(ports, partition, {
+        order: "newest",
+        limit: selectorHistoryLimitMax,
+      }),
   );
   return (
     <DataPanel title="Decisions" state={state}>

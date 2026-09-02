@@ -17,6 +17,8 @@ import {
   leadEntryTools,
   leadFolded,
   leadStreamBatches,
+  leadStreamListed,
+  leadTranscriptEntriesHeldMax,
   leadTranscriptHeldEmpty,
   leadTranscriptHolding,
   leadTranscriptLines,
@@ -25,27 +27,19 @@ import {
   leadTranscriptReadsMax,
 } from "../app/core/leadTranscript.ts";
 import type { LeadTranscriptHeld } from "../app/core/leadTranscript.ts";
-import type {
-  AgenticRefusalResponse,
-  SelectorDecisionResponse,
-} from "../../../src/contract/responses.ts";
+import type { AgenticRefusalResponse } from "../../../src/contract/responses.ts";
 import {
   leadBody,
   leadBoundaryUuid,
+  leadDecisionDispatching,
   leadDecisionIdle,
-  leadHistory,
+  leadDecisionRefusing,
   leadRefusals,
   leadSession,
   leadStream,
   leadTranscriptPage,
   leadUnstarted,
 } from "./leadFixture.ts";
-
-function decisionAt(at: number): SelectorDecisionResponse {
-  const held = leadHistory.decisions[at];
-  if (held === undefined) throw new Error("the fixture has no such decision");
-  return held;
-}
 
 function refusalAt(superseded: boolean): AgenticRefusalResponse {
   const held = leadRefusals(superseded).refusals[0];
@@ -197,8 +191,50 @@ test("an entry is its text and the tools it named, and never a reference", () =>
 test("the transcript reads the stream the session's own reference names", () => {
   const lead = leadBody(2, 1);
   expect(leadStreamBatches(lead)).toBe(2);
+  expect(leadStreamListed(lead)).toBe(true);
   expect(leadStreamBatches({ ...lead, streams: [] })).toBe(0);
   expect(leadStreamBatches(leadUnstarted())).toBe(0);
+});
+
+/** A reference the bounded listing does not carry reads as nothing to walk,
+ * which is a different thing from a store with nothing in it. */
+test("a reference the store's listing does not carry is not a listed stream", () => {
+  const lead = leadBody(2, 1);
+  expect(leadStreamListed({ ...lead, streams: [] })).toBe(false);
+  expect(
+    leadStreamListed({
+      ...lead,
+      streams: [{ stream: "another-stream", batches: 9 }],
+    }),
+  ).toBe(false);
+  expect(leadStreamListed(leadUnstarted())).toBe(false);
+});
+
+/**
+ * The pane's own ceiling. A lead's store has no retention, so a pane that kept
+ * every entry it ever read would grow without a bound; the oldest leave and the
+ * count of them is what stops the log reading as the whole of it.
+ */
+test("the oldest entries leave at the cap, and the pane counts them going", () => {
+  const overflowing = leadTranscriptEntriesHeldMax + 3;
+  const held = leadTranscriptMerged(
+    leadTranscriptHeldEmpty,
+    {
+      stream: "1a2b3c",
+      entries: Array.from({ length: overflowing }, (_unused, at) => ({
+        uuid: `uuid-${String(at)}`,
+        type: "assistant",
+        message: { content: [] },
+      })),
+      held: [],
+      elided: 0,
+      truncated: false,
+    },
+    1,
+  );
+  expect(held.entries.length).toBe(leadTranscriptEntriesHeldMax);
+  expect(held.entriesDropped).toBe(3);
+  expect(leadTranscriptLines(held)[0]?.uuid).toBe("uuid-3");
 });
 
 test("a Session frame replaces the lead it names and leaves another alone", () => {
@@ -213,8 +249,10 @@ test("a Session frame replaces the lead it names and leaves another alone", () =
 });
 
 test("a decision says what it did, and says so when it did nothing", () => {
-  expect(leadDecisionSummary(decisionAt(0))).toBe("Attention · 1 refused");
-  expect(leadDecisionSummary(decisionAt(1))).toBe(
+  expect(leadDecisionSummary(leadDecisionRefusing)).toBe(
+    "Attention · 1 refused",
+  );
+  expect(leadDecisionSummary(leadDecisionDispatching)).toBe(
     "Monitoring · 1 dispatched · 1 lifted",
   );
   expect(leadDecisionSummary(leadDecisionIdle)).toBe("None");

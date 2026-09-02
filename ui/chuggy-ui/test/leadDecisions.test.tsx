@@ -20,7 +20,13 @@ import {
   ScreenHarness,
   settled,
 } from "./screenHarness.tsx";
-import { leadPartition, leadRefusals, leadRouteAnswer } from "./leadFixture.ts";
+import {
+  leadDecisionDispatching,
+  leadDecisionRefusing,
+  leadPartition,
+  leadRefusals,
+  leadRouteAnswer,
+} from "./leadFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
@@ -42,12 +48,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function drawDecisions(history?: unknown): Promise<void> {
+async function drawDecisions(history?: unknown): Promise<readonly string[]> {
+  const asked: string[] = [];
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
-      if (history !== undefined && url.includes("/selector-history"))
-        return answer(history);
+      if (url.includes("/selector-history")) {
+        asked.push(url);
+        if (history !== undefined) return answer(history);
+      }
       const found = leadRouteAnswer(url, {
         batches: 2,
         turns: 1,
@@ -70,6 +79,7 @@ async function drawDecisions(history?: unknown): Promise<void> {
     </ScreenHarness>,
   );
   await settled();
+  return asked;
 }
 
 function groups(): readonly HTMLElement[] {
@@ -108,4 +118,33 @@ test("what a decision cost is drawn where the clock cannot move it", async () =>
 test("a project that has decided nothing says so rather than drawing a table", async () => {
   await drawDecisions({ decisions: [] });
   expect(screen.getByText("No decisions")).toBeDefined();
+});
+
+/**
+ * The panel reads the log's newest end, which is the whole reason it can call
+ * its top row current. The ascending arm is paged from the beginning, so a
+ * panel asking for it and dropping the cursor would show a project's first
+ * decisions forever and draw a months-old one as the one that just ran.
+ */
+test("the decisions are read from the newest end, bounded, with no cursor", async () => {
+  const asked = await drawDecisions();
+  expect(asked.length).toBeGreaterThan(0);
+  for (const url of asked) {
+    const query = new URL(url, "https://console").searchParams;
+    expect(query.get("order")).toBe("newest");
+    expect(query.get("after"), "the panel paged a bounded read").toBeNull();
+    expect(Number(query.get("limit"))).toBeGreaterThan(0);
+  }
+});
+
+/** The page arrives descending, so a panel that reordered it would put the
+ * oldest decision it holds at the top and mark that one current. */
+test("the page is drawn in the order the route gave it", async () => {
+  await drawDecisions({
+    decisions: [leadDecisionRefusing, leadDecisionDispatching],
+  });
+  const drawn = groups();
+  expect(drawn[0]?.textContent).toContain("Decision 1201");
+  expect(drawn[0]?.hasAttribute("open")).toBe(true);
+  expect(drawn[1]?.textContent).toContain("Decision 1202");
 });

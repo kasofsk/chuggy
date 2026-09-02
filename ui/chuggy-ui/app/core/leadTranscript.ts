@@ -230,6 +230,18 @@ export function leadStreamBatches(lead: LeadResponse): number {
 }
 
 /**
+ * Whether the store's own listing carries the stream the session names. The
+ * listing is bounded, so a lead with many streams can name one that is not on
+ * it, and a reader shown an empty log would read that as a lead that has said
+ * nothing.
+ */
+export function leadStreamListed(lead: LeadResponse): boolean {
+  const named = lead.agentReference;
+  if (named === undefined) return false;
+  return lead.streams.some((held) => held.stream === named);
+}
+
+/**
  * A `Session` frame folded into the lead read. A frame naming another session
  * leaves the entry alone, because one project's page draws one lead.
  */

@@ -123,6 +123,13 @@ function LeadTranscriptNotes(props: {
   );
 }
 
+/** What an open row is remembered by. The ordinal is a position in what the
+ * pane holds, so once the oldest entries leave at the cap it names a different
+ * entry; the uuid is the entry itself wherever the store gave one. */
+function leadLineKey(line: LeadTranscriptLine): string {
+  return line.uuid ?? `ordinal-${String(line.ordinal)}`;
+}
+
 function LeadEntryRow(props: {
   readonly line: LeadTranscriptLine;
   readonly nowMs: number;
@@ -130,10 +137,10 @@ function LeadEntryRow(props: {
   readonly onToggle: (line: LeadTranscriptLine) => void;
 }): ReactNode {
   const line = props.line;
-  const named = String(line.ordinal);
+  const named = leadLineKey(line);
   return (
     <LedgerRow
-      label={`Entry ${named}`}
+      label={`Entry ${String(line.ordinal)}`}
       pill={{ tone: "neutral", text: line.type }}
       {...(line.at === undefined
         ? {}
@@ -180,7 +187,6 @@ export function LeadHolding(props: {
   const lines = leadTranscriptHolding(props.held);
   return (
     <Panel title="Holding">
-      <LeadTranscriptNotes held={props.held} />
       <LeadNote note={props.note} />
       {lines.length === 0 ? (
         <EmptyState label="Nothing held" />
@@ -193,7 +199,7 @@ export function LeadHolding(props: {
                 nowMs={props.nowMs}
                 open={open}
                 onToggle={(chosen) => {
-                  const named = String(chosen.ordinal);
+                  const named = leadLineKey(chosen);
                   setOpen(open === named ? undefined : named);
                 }}
               />
@@ -229,11 +235,16 @@ function LeadLogLine(props: { readonly line: LeadTranscriptLine }): ReactNode {
   );
 }
 
-/** The whole chain this page holds, oldest first, the raw log beside what the
- * lead kept of it. */
+/**
+ * The whole chain this page holds, oldest first, the raw log beside what the
+ * lead kept of it. A reference the store's own listing does not carry is said
+ * as itself: nothing can be read for it, and drawing that as an empty log would
+ * be indistinguishable from a lead that has recorded nothing.
+ */
 export function LeadLog(props: {
   readonly held: LeadTranscriptHeld;
   readonly stream: string | undefined;
+  readonly listed: boolean;
 }): ReactNode {
   const lines = leadTranscriptLines(props.held);
   if (props.stream === undefined)
@@ -245,7 +256,9 @@ export function LeadLog(props: {
   return (
     <Panel title="Log">
       <LeadTranscriptNotes held={props.held} />
-      {lines.length === 0 ? (
+      {!props.listed ? (
+        <EmptyState label="Stream unlisted" />
+      ) : lines.length === 0 ? (
         <EmptyState label="No entries" />
       ) : (
         <ol className="lead-log">
