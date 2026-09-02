@@ -44,6 +44,9 @@ export const runTranscriptPageBatchesMax = 8;
 /** The largest configuration snapshot, which is what one read answers whole. */
 export const runConfigurationBytesMax = 1_048_576;
 
+/** The largest body one worker-plane upload carries, which an artifact is written against. */
+export const workerPlaneUploadBytesMax = 4_194_304;
+
 /** The longest label the agent runtime names its own outcome with. */
 export const runOutcomeLabelCharsMax = 64;
 
