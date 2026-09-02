@@ -34,9 +34,14 @@ export type SessionStoreStored =
   | { readonly stored: "Conflict" }
   | { readonly stored: "Unavailable"; readonly retryAfterSeconds: number };
 
-/** Where a session's batches are written, behind a store-neutral port. */
+/**
+ * Where a session's batches are written, behind a store-neutral port. The verb
+ * names the batch because one store answers this port beside the attempt
+ * upload's, and two ports spelling one verb over one object are an overload
+ * nobody reading a call site can resolve.
+ */
 export interface SessionStoreWritePort {
-  store(
+  storeBatch(
     input: SessionStoreObject & { readonly content: Uint8Array },
   ): Promise<SessionStoreStored>;
 }

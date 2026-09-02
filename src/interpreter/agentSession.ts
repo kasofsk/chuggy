@@ -36,7 +36,7 @@
  */
 
 import { sessionStoreStreamCharsMax } from "../contract/http.ts";
-import { asBoundedText } from "./boundedText.ts";
+import { asBoundedText, isBoundedText } from "./boundedText.ts";
 import type { Principal } from "./principal.ts";
 import type { Partition } from "./projectStore.ts";
 import type { CapacityAccountId, ClusterId } from "./schedulerIdentity.ts";
@@ -102,6 +102,21 @@ export function asSessionBearerId(value: string): SessionBearerId {
   return asSessionText(value, "session bearer id") as SessionBearerId;
 }
 
+/** What neither a directory name nor a stored key holds, refused by both of the two below. */
+const sessionStoreStreamRefused = /[\p{Cc}\s]/u;
+
+/**
+ * Whether one stream name is one a stored row holds. A route reading a stream
+ * out of a path must refuse before it brands, because a caller's bad segment is
+ * a status to answer with rather than a raise to catch.
+ */
+export function isSessionStoreStream(value: string): boolean {
+  return (
+    isBoundedText(value, sessionStoreStreamCharsMax) &&
+    !sessionStoreStreamRefused.test(value)
+  );
+}
+
 /**
  * Brands a store stream, which becomes a directory name and a stored key. It
  * refuses control and whitespace characters as well as the bound, because the
@@ -116,7 +131,7 @@ export function asSessionStoreStream(value: string): SessionStoreStream {
     "store stream",
     sessionStoreStreamCharsMax,
   );
-  if (/[\p{Cc}\s]/u.test(bounded)) {
+  if (sessionStoreStreamRefused.test(bounded)) {
     throw new RangeError(
       "store stream: a control or whitespace character is not a value a directory name and a stored key agree on",
     );

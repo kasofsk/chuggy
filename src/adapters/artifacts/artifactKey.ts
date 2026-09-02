@@ -23,6 +23,7 @@
 import { createHash } from "node:crypto";
 import { resolve, sep } from "node:path";
 
+import { sessionStoreBatchesMax } from "../../contract/http.ts";
 import {
   artifactPathRejection,
   type ArtifactPath,
@@ -33,6 +34,14 @@ const artifactAttemptDirectory = "attempt";
 
 /** The directory a project's own finalization evidence stands in. */
 const artifactOwnedDirectory = "artifact";
+
+/**
+ * The directory one session's own transcript stands in. It is keyed by the
+ * session and never by the attempt that wrote it: an attempt-keyed object is
+ * gone the moment its pod is reaped, which is the one thing a resumable session
+ * exists to prevent.
+ */
+const artifactSessionDirectory = "session";
 
 /** The digest an opaque identity is given before it becomes a directory. */
 export function artifactKeyOf(value: string): string {
@@ -90,6 +99,43 @@ export function artifactAttemptFile(
     path,
   );
   return artifactWithinProject(projectDirectory, file) ? file : undefined;
+}
+
+/**
+ * The directory holding every batch of one stream of one session's store. A
+ * session and a stream are both opaque text, so both become digests before they
+ * are directories, for the reason this module's header gives.
+ */
+export function artifactSessionRoot(
+  projectDirectory: string,
+  session: string,
+  stream: string,
+): string {
+  return resolve(
+    projectDirectory,
+    artifactSessionDirectory,
+    artifactKeyOf(session),
+    artifactKeyOf(stream),
+  );
+}
+
+/** The file one batch of one stream is stored as, refusing a number outside the store's bound. */
+export function artifactSessionFile(
+  projectDirectory: string,
+  session: string,
+  stream: string,
+  batch: number,
+): string {
+  if (
+    !Number.isSafeInteger(batch) ||
+    batch < 1 ||
+    batch > sessionStoreBatchesMax
+  )
+    throw new RangeError("a store batch is outside the session's bound");
+  return resolve(
+    artifactSessionRoot(projectDirectory, session, stream),
+    `${String(batch)}.jsonl`,
+  );
 }
 
 /** The directory containing every immutable output written by one attempt. */

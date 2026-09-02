@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import fastify, {
   type FastifyInstance,
   type FastifyReply,
@@ -14,11 +15,44 @@ import {
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
   runTurnSeriesMax,
+  sessionStoreBatchBytesMax,
+  sessionStoreBatchesMax,
+  sessionStorePageBatchesMax,
+  sessionTurnResultCharsMax,
 } from "../../contract/http.ts";
 import {
   runModelUsageSchema,
   runTotalsSchema,
 } from "../../contract/responses.ts";
+import { isBoundedText } from "../../interpreter/boundedText.ts";
+import {
+  allSessionTurnFailures,
+  asSessionBearerSecret,
+  asSessionStoreStream,
+  asSessionTurnId,
+  isSessionStoreStream,
+  sessionBearerPattern,
+  sessionIdentityCharsMax,
+  type SessionBearerSecret,
+  type SessionStoreStream,
+} from "../../interpreter/agentSession.ts";
+import type {
+  SessionHeartbeatPort,
+  SessionPlaneAuthority,
+  SessionPlaneIdentity,
+  SessionReferenceBound,
+  SessionReferencePort,
+  SessionStoreQueryPort,
+  SessionStoreRecordPort,
+  SessionTurnAnswered,
+  SessionTurnClaimPort,
+  SessionTurnFailed,
+  SessionTurnSettlePort,
+} from "../../interpreter/sessionPlane.ts";
+import type {
+  SessionStoreReadPort,
+  SessionStoreWritePort,
+} from "../../interpreter/sessionStore.ts";
 import {
   asAttemptCapabilitySecret,
   type AttemptCapabilitySecret,
@@ -66,7 +100,21 @@ export const workerPlaneRoutes = [
   "/v1/run/turns",
   "/v1/run/totals",
   "/v1/run/ended",
+  "/v1/session",
+  "/v1/session/heartbeat",
+  "/v1/session/reference",
+  "/v1/session/turn",
+  "/v1/session/turn/answer",
+  "/v1/session/turn/failure",
+  "/v1/session/store",
+  "/v1/session/store/*",
 ] as const;
+
+/** What marks a route as one only a composed session plane answers. */
+const sessionRoutePrefix = "/v1/session";
+
+/** Where a store route's own segments begin, which is what the raw url is cut at. */
+const sessionStorePrefix = "/v1/session/store/";
 
 /** The ports a run's own evidence is written through, all five attempt-fenced. */
 export interface WorkerRunEvidencePorts {
@@ -77,6 +125,29 @@ export interface WorkerRunEvidencePorts {
   readonly endings: WorkerRunEndedPort;
 }
 
+/**
+ * Everything one session pod is answered through: the durable ports, the store
+ * its bytes land in, and the bounds its mailbox waits under. It is one value
+ * because it is one composition — a plane holding some of these and not others
+ * could only answer a session wrongly.
+ */
+export interface SessionPlaneService {
+  readonly authority: SessionPlaneAuthority;
+  readonly heartbeats: SessionHeartbeatPort;
+  readonly heartbeatLeaseSecs: number;
+  readonly references: SessionReferencePort;
+  readonly turns: SessionTurnClaimPort;
+  readonly settlements: SessionTurnSettlePort;
+  readonly records: SessionStoreRecordPort;
+  readonly queries: SessionStoreQueryPort;
+  readonly store: SessionStoreWritePort & SessionStoreReadPort;
+  /** How often a waiting mailbox asks again, and for how long one request waits. */
+  readonly turnPollIntervalMs: number;
+  readonly turnPollSecsMax: number;
+  /** How many mailbox waits are held at once, above which a caller is answered empty. */
+  readonly pollsMax: number;
+}
+
 export interface WorkerPlaneServerService {
   readonly authority: WorkerPlaneAuthority;
   readonly heartbeats: WorkerAttemptHeartbeatPort;
@@ -85,8 +156,24 @@ export interface WorkerPlaneServerService {
   readonly reservations: WorkerArtifactReservationPort;
   readonly reports: WorkerReportPort;
   readonly runEvidence: WorkerRunEvidencePorts;
+  /**
+   * The session plane, where a deployment has composed one. A plane without it
+   * serves no session route at all: an absent route is an answer a pod's
+   * transport can act on, where a route standing in front of ports that are not
+   * there could only answer wrongly.
+   */
+  readonly sessions?: SessionPlaneService;
   readonly ready: () => Promise<boolean>;
   readonly uploadBytesMax: number;
+}
+
+/** Which of this plane's routes a service composed like this one serves. */
+export function workerPlaneServed(
+  service: WorkerPlaneServerService,
+): readonly string[] {
+  return service.sessions === undefined
+    ? workerPlaneRoutes.filter((route) => !route.startsWith(sessionRoutePrefix))
+    : workerPlaneRoutes;
 }
 
 /** One turn as a worker offers it; the server is what dates the stored row. */
@@ -187,18 +274,25 @@ async function workerAuthority(
   service: WorkerPlaneServerService,
   request: FastifyRequest,
 ): Promise<WorkerAttemptAuthority | undefined> {
-  const header = request.headers.authorization;
-  if (header === undefined || !header.startsWith("Bearer ")) return undefined;
-  const token = header.slice("Bearer ".length);
-  if (token.length === 0 || token.length > 256) return undefined;
-  return service.authority.authenticate(asAttemptCapabilitySecret(token));
+  const secret = workerBearer(request);
+  return secret === undefined
+    ? undefined
+    : service.authority.authenticate(secret);
 }
 
+/**
+ * One attempt bearer as this plane reads it. A token written in the session
+ * language is not offered here at all: the two languages are disjoint by
+ * construction, and a token handed to the wrong authority is a token that
+ * authority now has.
+ */
 function workerBearer(request: FastifyRequest) {
   const header = request.headers.authorization;
   if (header === undefined || !header.startsWith("Bearer ")) return undefined;
   const token = header.slice("Bearer ".length);
-  return token.length > 0 && token.length <= 256
+  return token.length > 0 &&
+    token.length <= 256 &&
+    !sessionBearerPattern.test(token)
     ? asAttemptCapabilitySecret(token)
     : undefined;
 }
@@ -286,8 +380,13 @@ async function workerRunWriter(
     : { authority, secret };
 }
 
-/** What one refused write answers with, decided before any of it is sent. */
-interface WorkerRunRefusal {
+/**
+ * What one refused write answers with, decided before any of it is sent. It is
+ * the plane's and not a run's: a status, a body and a retry interval are what
+ * every route here refuses with, and a second copy under a session name would
+ * be a second renderer to keep true.
+ */
+interface WorkerPlaneRefusal {
   readonly status: number;
   readonly body: Readonly<Record<string, string>>;
   readonly retryAfterSeconds?: number;
@@ -296,7 +395,7 @@ interface WorkerRunRefusal {
 /** The refusal storing one object earned, or nothing where its bytes are kept. */
 function workerRunObjectRefusal(
   kept: WorkerArtifactStored,
-): WorkerRunRefusal | undefined {
+): WorkerPlaneRefusal | undefined {
   switch (kept.stored) {
     case "Stored":
       return undefined;
@@ -326,15 +425,15 @@ async function workerRunObjectKept(
   authority: WorkerAttemptAuthority,
   path: ArtifactPath,
   content: Uint8Array,
-): Promise<WorkerRunRefusal | undefined> {
+): Promise<WorkerPlaneRefusal | undefined> {
   return workerRunObjectRefusal(
     await service.artifacts.store({ authority, path, content }),
   );
 }
 
-function workerRunRefused(
+function workerPlaneRefused(
   reply: FastifyReply,
-  refusal: WorkerRunRefusal,
+  refusal: WorkerPlaneRefusal,
 ): FastifyReply {
   return refusal.retryAfterSeconds === undefined
     ? reply.code(refusal.status).send(refusal.body)
@@ -366,7 +465,7 @@ function workerRunConfigurationRoute(
       runConfigurationPath(),
       request.body,
     );
-    if (refusal !== undefined) return workerRunRefused(reply, refusal);
+    if (refusal !== undefined) return workerPlaneRefused(reply, refusal);
     const stored = await service.runEvidence.configurations.record({
       secret: writer.secret,
       generation: writer.authority.generation,
@@ -402,7 +501,7 @@ function workerRunTranscriptRoute(
       runTranscriptBatchPath(batch),
       request.body,
     );
-    if (refusal !== undefined) return workerRunRefused(reply, refusal);
+    if (refusal !== undefined) return workerPlaneRefused(reply, refusal);
     const stored = await service.runEvidence.transcripts.record({
       secret: writer.secret,
       generation: writer.authority.generation,
@@ -535,6 +634,469 @@ function workerReportRoute(
   });
 }
 
+/** One session bearer as this plane reads it, or nothing where the token is not one. */
+function sessionBearer(
+  request: FastifyRequest,
+): SessionBearerSecret | undefined {
+  const header = request.headers.authorization;
+  if (header === undefined || !header.startsWith("Bearer ")) return undefined;
+  const token = header.slice("Bearer ".length);
+  return sessionBearerPattern.test(token)
+    ? asSessionBearerSecret(token)
+    : undefined;
+}
+
+/**
+ * The live session one route acts for. A bearer written in the attempt's
+ * language never reaches the session authority and a session bearer never
+ * reaches the attempt's, so neither authority is ever handed the other's token.
+ */
+async function sessionCaller(
+  sessions: SessionPlaneService,
+  request: FastifyRequest,
+): Promise<
+  | {
+      readonly identity: SessionPlaneIdentity;
+      readonly secret: SessionBearerSecret;
+    }
+  | undefined
+> {
+  const secret = sessionBearer(request);
+  if (secret === undefined) return undefined;
+  const identity = await sessions.authority.authenticate(secret);
+  return identity === undefined || !identity.live
+    ? undefined
+    : { identity, secret };
+}
+
+/**
+ * The segments one store route was called with, read off the raw url rather
+ * than a routed parameter: a stream is one percent-encoded segment, and a
+ * parameter the router has already decoded has lost the boundary between the
+ * stream and whatever followed it.
+ */
+function sessionStoreSegments(
+  request: FastifyRequest,
+): readonly string[] | undefined {
+  const path = request.url.split("?")[0] ?? "";
+  if (!path.startsWith(sessionStorePrefix)) return undefined;
+  const segments = path.slice(sessionStorePrefix.length).split("/");
+  try {
+    return segments.map((segment) => decodeURIComponent(segment));
+  } catch {
+    return undefined;
+  }
+}
+
+/** One query figure as a canonical decimal, or nothing where it is not one this route holds. */
+function sessionQueryCount(
+  value: unknown,
+  fallback: number,
+  least: number,
+  most: number,
+): number | undefined {
+  if (value === undefined) return fallback;
+  if (typeof value !== "string" || !/^(0|[1-9][0-9]*)$/u.test(value))
+    return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= least && parsed <= most
+    ? parsed
+    : undefined;
+}
+
+/**
+ * One opaque identity a session body carries, refused here rather than by the
+ * brand it is about to become. `asBoundedText`'s rule is wider than a length:
+ * a NUL and an unpaired surrogate are values no stored row holds, and a brand
+ * raising on one inside a handler is a five-hundred with an internal message in
+ * it where the route's own status map names four-hundred.
+ */
+const sessionIdentitySchema = z
+  .string()
+  .refine((value) => isBoundedText(value, sessionIdentityCharsMax));
+
+const sessionReferenceSchema = z.strictObject({
+  reference: sessionIdentitySchema,
+});
+
+/**
+ * One answered turn as a pod offers it. A batch range is both of its ends or
+ * neither, because the row it is written into says so and a half range is a
+ * refusal a caller should read here rather than out of a failed cast.
+ */
+const sessionTurnAnswerSchema = z
+  .strictObject({
+    turn: sessionIdentitySchema,
+    result: z.string().max(sessionTurnResultCharsMax),
+    batchFirst: z
+      .number()
+      .int()
+      .positive()
+      .max(sessionStoreBatchesMax)
+      .optional(),
+    batchLast: z
+      .number()
+      .int()
+      .positive()
+      .max(sessionStoreBatchesMax)
+      .optional(),
+  })
+  .refine(
+    (offered) =>
+      (offered.batchFirst === undefined) ===
+        (offered.batchLast === undefined) &&
+      (offered.batchFirst ?? 0) <= (offered.batchLast ?? 0),
+  );
+
+const sessionTurnFailureSchema = z.strictObject({
+  turn: sessionIdentitySchema,
+  failure: z.enum(allSessionTurnFailures),
+});
+
+/** What a refused settlement answers with, a conflict and a fence read alike by the pod. */
+function sessionSettled(
+  reply: FastifyReply,
+  settled: SessionReferenceBound | SessionTurnAnswered | SessionTurnFailed,
+): FastifyReply {
+  return settled === "Conflict" || settled === "Fenced"
+    ? reply.code(409).send({ action: "stop", reason: settled })
+    : reply.code(204).send();
+}
+
+function sessionFactsRoute(
+  app: FastifyInstance,
+  sessions: SessionPlaneService,
+): void {
+  app.get(workerPlaneRoutes[11], async (request, reply) => {
+    const caller = await sessionCaller(sessions, request);
+    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+    const identity = caller.identity;
+    return {
+      tenant: identity.partition.tenant,
+      project: identity.partition.project,
+      session: identity.session,
+      kind: identity.kind,
+      capabilities: identity.capabilities,
+      credentialSlot: identity.credentialSlot,
+      ...(identity.agentReference === undefined
+        ? {}
+        : { agentReference: identity.agentReference }),
+    };
+  });
+}
+
+function sessionHeartbeatRoute(
+  app: FastifyInstance,
+  sessions: SessionPlaneService,
+): void {
+  app.post(workerPlaneRoutes[12], async (request, reply) => {
+    const caller = await sessionCaller(sessions, request);
+    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+    return (await sessions.heartbeats.heartbeat(
+      caller.secret,
+      caller.identity.generation,
+      sessions.heartbeatLeaseSecs,
+    ))
+      ? reply.code(204).send()
+      : reply.code(409).send({ action: "stop" });
+  });
+}
+
+function sessionReferenceRoute(
+  app: FastifyInstance,
+  sessions: SessionPlaneService,
+): void {
+  app.put(workerPlaneRoutes[13], async (request, reply) => {
+    const caller = await sessionCaller(sessions, request);
+    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+    const offered = sessionReferenceSchema.safeParse(request.body);
+    if (!offered.success) return reply.code(400).send({ action: "stop" });
+    return sessionSettled(
+      reply,
+      await sessions.references.bind({
+        secret: caller.secret,
+        generation: caller.identity.generation,
+        reference: offered.data.reference,
+      }),
+    );
+  });
+}
+
+/**
+ * The mailbox. One request asks for a turn until the poll window is spent and
+ * then answers empty, and only so many requests wait at once: over that a
+ * caller is answered empty at once rather than queued, so a burst of pods
+ * cannot hold every connection this plane has.
+ */
+function sessionTurnRoute(
+  app: FastifyInstance,
+  sessions: SessionPlaneService,
+): void {
+  const polls = Math.max(
+    1,
+    Math.ceil((sessions.turnPollSecsMax * 1_000) / sessions.turnPollIntervalMs),
+  );
+  let waiting = 0;
+  app.get(workerPlaneRoutes[14], async (request, reply) => {
+    const caller = await sessionCaller(sessions, request);
+    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+    if (waiting >= sessions.pollsMax) return reply.code(204).send();
+    waiting += 1;
+    try {
+      for (let poll = 0; poll < polls; poll += 1) {
+        if (poll > 0) await delay(sessions.turnPollIntervalMs);
+        const claimed = await sessions.turns.claim({
+          secret: caller.secret,
+          generation: caller.identity.generation,
+        });
+        if (claimed !== undefined) return reply.code(200).send(claimed);
+      }
+    } finally {
+      waiting -= 1;
+    }
+    return reply.code(204).send();
+  });
+}
+
+function sessionSettleRoutes(
+  app: FastifyInstance,
+  sessions: SessionPlaneService,
+): void {
+  app.post(workerPlaneRoutes[15], async (request, reply) => {
+    const caller = await sessionCaller(sessions, request);
+    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+    const offered = sessionTurnAnswerSchema.safeParse(request.body);
+    if (!offered.success) return reply.code(400).send({ action: "stop" });
+    const { turn, result, batchFirst, batchLast } = offered.data;
+    return sessionSettled(
+      reply,
+      await sessions.settlements.answer({
+        secret: caller.secret,
+        generation: caller.identity.generation,
+        turn: asSessionTurnId(turn),
+        result,
+        ...(batchFirst === undefined ? {} : { batchFirst }),
+        ...(batchLast === undefined ? {} : { batchLast }),
+      }),
+    );
+  });
+  app.post(workerPlaneRoutes[16], async (request, reply) => {
+    const caller = await sessionCaller(sessions, request);
+    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+    const offered = sessionTurnFailureSchema.safeParse(request.body);
+    if (!offered.success) return reply.code(400).send({ action: "stop" });
+    return sessionSettled(
+      reply,
+      await sessions.settlements.fail({
+        secret: caller.secret,
+        generation: caller.identity.generation,
+        turn: asSessionTurnId(offered.data.turn),
+        failure: offered.data.failure,
+      }),
+    );
+  });
+}
+
+/** The refusal keeping one batch's bytes earned, or nothing where they are kept. */
+function sessionStoreObjectRefusal(
+  kept: Awaited<ReturnType<SessionStoreWritePort["storeBatch"]>>,
+): WorkerPlaneRefusal | undefined {
+  switch (kept.stored) {
+    case "Stored":
+      return undefined;
+    case "Conflict":
+      return { status: 409, body: { action: "stop", reason: "Conflict" } };
+    case "Refused":
+      return { status: 413, body: { action: "stop", reason: kept.reason } };
+    case "Unavailable":
+      return {
+        status: 503,
+        body: { action: "retry" },
+        retryAfterSeconds: kept.retryAfterSeconds,
+      };
+  }
+}
+
+function sessionStoreWriteRoute(
+  app: FastifyInstance,
+  sessions: SessionPlaneService,
+): void {
+  app.put(workerPlaneRoutes[18], async (request, reply) => {
+    const caller = await sessionCaller(sessions, request);
+    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+    if (!(request.body instanceof Uint8Array))
+      return reply.code(415).send({ action: "stop" });
+    const segments = sessionStoreSegments(request);
+    if (segments === undefined || segments.length !== 2)
+      return reply.code(400).send({ action: "stop", reason: "InvalidPath" });
+    const named = segments[0] ?? "";
+    if (!isSessionStoreStream(named))
+      return reply.code(400).send({ action: "stop", reason: "InvalidStream" });
+    const numbered = segments[1] ?? "";
+    const batch = /^[1-9][0-9]*$/u.test(numbered) ? Number(numbered) : 0;
+    if (batch < 1 || batch > sessionStoreBatchesMax)
+      return reply.code(400).send({ action: "stop", reason: "InvalidBatch" });
+    if (request.body.byteLength > sessionStoreBatchBytesMax)
+      return reply.code(413).send({ action: "stop", reason: "QuotaExceeded" });
+    const stream = asSessionStoreStream(named);
+    const refusal = sessionStoreObjectRefusal(
+      await sessions.store.storeBatch({
+        partition: caller.identity.partition,
+        session: caller.identity.session,
+        stream,
+        batch,
+        content: request.body,
+      }),
+    );
+    if (refusal !== undefined) return workerPlaneRefused(reply, refusal);
+    const recorded = await sessions.records.record({
+      secret: caller.secret,
+      generation: caller.identity.generation,
+      stream,
+      batch,
+      digest: createHash("sha256").update(request.body).digest("hex"),
+      bytes: request.body.byteLength,
+      events: workerRunEvents(request.body),
+    });
+    if (recorded === "Stored" || recorded === "AlreadyStored")
+      return reply.code(204).send();
+    if (recorded === "Fenced") return reply.code(401).send({ action: "stop" });
+    return reply
+      .code(recorded === "QuotaExceeded" ? 413 : 409)
+      .send({ action: "stop", reason: recorded });
+  });
+}
+
+/**
+ * One page of a stream read back. Only an outage refuses the page: a batch
+ * whose object is gone or is not one this store can speak for is marked
+ * missing, because a reader of either has the same nothing and the same one
+ * thing to do about it, and the batches beside it are what the caller came for.
+ */
+function sessionStoreReadRoute(
+  app: FastifyInstance,
+  sessions: SessionPlaneService,
+): void {
+  app.get(workerPlaneRoutes[18], async (request, reply) => {
+    const caller = await sessionCaller(sessions, request);
+    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+    const segments = sessionStoreSegments(request);
+    if (segments === undefined || segments.length !== 1)
+      return reply.code(400).send({ action: "stop", reason: "InvalidPath" });
+    const named = segments[0] ?? "";
+    if (!isSessionStoreStream(named))
+      return reply.code(400).send({ action: "stop", reason: "InvalidStream" });
+    const asked = request.query as Record<string, unknown>;
+    const after = sessionQueryCount(
+      asked["after"],
+      0,
+      0,
+      sessionStoreBatchesMax,
+    );
+    const limit = sessionQueryCount(
+      asked["limit"],
+      sessionStorePageBatchesMax,
+      1,
+      sessionStorePageBatchesMax,
+    );
+    if (after === undefined || limit === undefined)
+      return reply.code(400).send({ action: "stop", reason: "InvalidQuery" });
+    const stream = asSessionStoreStream(named);
+    const rows = await sessions.queries.batches({
+      secret: caller.secret,
+      generation: caller.identity.generation,
+      stream,
+      after,
+      limit,
+    });
+    const batches: unknown[] = [];
+    for (const row of rows) {
+      const drawn = await sessions.store.readBatch({
+        partition: caller.identity.partition,
+        session: caller.identity.session,
+        stream,
+        batch: row.batch,
+      });
+      if (drawn.read === "Unavailable")
+        return workerPlaneRefused(reply, {
+          status: 503,
+          body: { action: "retry" },
+          retryAfterSeconds: drawn.retryAfterSeconds,
+        });
+      batches.push(
+        drawn.read === "Content"
+          ? { batch: row.batch, content: drawn.content }
+          : { batch: row.batch, read: "Missing" },
+      );
+    }
+    const last = rows.at(-1);
+    return reply.code(200).send({
+      batches,
+      ...(last === undefined || rows.length < limit
+        ? {}
+        : { nextAfter: last.batch }),
+    });
+  });
+}
+
+/**
+ * The streams one session's store holds, narrowed here by the prefix the
+ * resuming adapter asks under, because the durable side keys them by session
+ * alone and a prefix is a question about the name rather than about what the
+ * stream holds.
+ *
+ * AN ANSWER PAST THE BOUND IS REFUSED AND NEVER CUT, there being no cursor to
+ * page by: a cut list is a resume that materialises some of a lead's subagent
+ * history and reports success, which is the silent wrongness this store exists
+ * to prevent.
+ */
+function sessionStoreStreamsRoute(
+  app: FastifyInstance,
+  sessions: SessionPlaneService,
+): void {
+  app.get(workerPlaneRoutes[17], async (request, reply) => {
+    const caller = await sessionCaller(sessions, request);
+    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+    const asked = (request.query as Record<string, unknown>)["stream"];
+    if (asked !== undefined && typeof asked !== "string")
+      return reply.code(400).send({ action: "stop", reason: "InvalidQuery" });
+    const rows = await sessions.queries.streams({
+      secret: caller.secret,
+      generation: caller.identity.generation,
+    });
+    const streams = rows.filter(
+      (row: { readonly stream: SessionStoreStream }) =>
+        asked === undefined || row.stream.startsWith(asked),
+    );
+    return streams.length > nativeHttpPageItemsMax
+      ? reply.code(413).send({ action: "stop", reason: "TooManyStreams" })
+      : reply.code(200).send({ streams });
+  });
+}
+
+/**
+ * Refuses at construction what no later call could work around, the way
+ * `artifactStore` refuses its own options: a poll interval of zero derives an
+ * unbounded loop with no wait in it, and a ceiling of zero is a mailbox that
+ * answers empty for the life of the process. None of them has a default,
+ * because a default here is a bound nobody chose standing in for one nobody
+ * supplied.
+ */
+function sessionBoundsChecked(sessions: SessionPlaneService): void {
+  for (const [name, bound] of [
+    ["heartbeatLeaseSecs", sessions.heartbeatLeaseSecs],
+    ["turnPollIntervalMs", sessions.turnPollIntervalMs],
+    ["turnPollSecsMax", sessions.turnPollSecsMax],
+    ["pollsMax", sessions.pollsMax],
+  ] as const) {
+    if (!Number.isSafeInteger(bound) || bound <= 0) {
+      throw new RangeError(
+        `worker plane: session ${name} must be a positive safe integer`,
+      );
+    }
+  }
+}
+
 export function createWorkerPlaneApp(
   service: WorkerPlaneServerService,
 ): FastifyInstance {
@@ -554,5 +1116,17 @@ export function createWorkerPlaneApp(
   workerRunConfigurationRoute(app, service);
   workerRunTranscriptRoute(app, service);
   workerRunFigureRoutes(app, service);
+  const sessions = service.sessions;
+  if (sessions !== undefined) {
+    sessionBoundsChecked(sessions);
+    sessionFactsRoute(app, sessions);
+    sessionHeartbeatRoute(app, sessions);
+    sessionReferenceRoute(app, sessions);
+    sessionTurnRoute(app, sessions);
+    sessionSettleRoutes(app, sessions);
+    sessionStoreWriteRoute(app, sessions);
+    sessionStoreReadRoute(app, sessions);
+    sessionStoreStreamsRoute(app, sessions);
+  }
   return app;
 }

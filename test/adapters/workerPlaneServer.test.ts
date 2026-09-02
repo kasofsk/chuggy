@@ -22,6 +22,7 @@ import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import type { ReportIngested } from "../../src/interpreter/executionSchedulerReport.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
+import { inertRunEvidence } from "./workerPlaneFixtures.ts";
 
 const authority = {
   live: true,
@@ -43,18 +44,7 @@ const heartbeatService = {
 } as const;
 
 /** The evidence ports a case about something else never reaches. */
-const runEvidenceService = {
-  runEvidence: {
-    configurations: { record: () => Promise.resolve("Stored" as const) },
-    transcripts: { record: () => Promise.resolve("Stored" as const) },
-    turns: {
-      record: () =>
-        Promise.resolve({ recorded: "Recorded" as const, turnsRecorded: 0 }),
-    },
-    totals: { record: () => Promise.resolve("Stored" as const) },
-    endings: { end: () => Promise.resolve(true) },
-  },
-} as const;
+const runEvidenceService = { runEvidence: inertRunEvidence } as const;
 
 test("the worker plane has no tenant-shaped or project-shaped route", () => {
   for (const route of workerPlaneRoutes) {
@@ -152,6 +142,45 @@ test("an unknown or oversized bearer reaches no attempt act", async () => {
     assert.equal(response.statusCode, 401);
   }
   assert.equal(acts, 0);
+  await app.close();
+});
+
+test("a bearer written in the session language is never offered to the attempt authority", async () => {
+  const offered: string[] = [];
+  const app = createWorkerPlaneApp({
+    ...heartbeatService,
+    ...runEvidenceService,
+    authority: {
+      authenticate: (secret) => {
+        offered.push(secret);
+        return Promise.resolve(authority);
+      },
+    },
+    reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
+    artifacts: { store: () => Promise.resolve({ stored: "Stored" }) },
+    reports: { report: () => Promise.resolve({ ingested: "Fenced" }) },
+    ready: () => Promise.resolve(true),
+    uploadBytesMax: 64,
+  });
+  const session = { authorization: `Bearer chgs_${"a".repeat(32)}` };
+  for (const [method, url, body, kind] of [
+    ["GET", "/v1/input", undefined, {}],
+    ["POST", "/v1/heartbeat", undefined, {}],
+    ["PUT", "/v1/artifacts/out.txt", Buffer.from("x"), octets],
+    ["POST", "/v1/report", "{}", { "content-type": "text/plain" }],
+    ["PUT", "/v1/run/configuration", Buffer.from("{}\n"), octets],
+    ["PUT", "/v1/run/transcript/1", Buffer.from("{}\n"), octets],
+    ["POST", "/v1/run/totals", {}, {}],
+  ] as const) {
+    const response = await app.inject({
+      method,
+      url,
+      headers: { ...session, ...kind },
+      ...(body === undefined ? {} : { payload: body }),
+    });
+    assert.equal(response.statusCode, 401, url);
+  }
+  assert.deepEqual(offered, []);
   await app.close();
 });
 
