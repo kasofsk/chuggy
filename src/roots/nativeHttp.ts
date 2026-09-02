@@ -6,6 +6,7 @@ import { postgresExecutionBacklogGuard } from "../adapters/postgres/schedulerCon
 import {
   createNativeHttpApp,
   nativeHttpLimitsDefault,
+  type PrincipalAuthentication,
 } from "../adapters/http/server.ts";
 import { projectResourceReader } from "../adapters/http/eventStream.ts";
 import {
@@ -26,6 +27,8 @@ import {
   oidcAuthentication,
   type OidcAuthenticationConfig,
 } from "../adapters/http/oidc.ts";
+import { twoBearerAuthentication } from "../adapters/http/sessionBearer.ts";
+import { postgresSessionBearerAuthority } from "../adapters/postgres/sessionPlane.ts";
 import {
   composeNativeWeb,
   composeSelectorProjectSettings,
@@ -327,27 +330,54 @@ function nativeShutdown(
   };
 }
 
-async function main(): Promise<void> {
-  const keying = idempotencyKeying();
-  const authenticationConfig = oidcConfig();
-  const { pool, selectorReviewPool } = nativePools();
+/**
+ * The two bearer kinds this API accepts: the issuer's, and the session bearers
+ * its own pool is the authority on. The prefix is what routes a token to one of
+ * them, so neither ever sees the other's, and `../adapters/http/sessionBearer.ts`
+ * argues why that is not an implementation detail.
+ */
+export function nativeAuthentication(
+  oidc: PrincipalAuthentication,
+  pool: ReturnType<typeof postgresPool>,
+): PrincipalAuthentication {
+  return twoBearerAuthentication(oidc, postgresSessionBearerAuthority(pool));
+}
+
+/**
+ * Refuses to start on either pool this process must have, naming which one, and
+ * leaves neither open behind the refusal.
+ */
+async function nativeDatabasesReady(
+  pool: ReturnType<typeof postgresPool>,
+  selectorReviewPool: ReturnType<typeof postgresPool>,
+): Promise<void> {
   if (!(await apiDatabaseReady(pool))) {
-    await Promise.all([pool.end(), selectorReviewPool.end()]);
+    await closePools(pool, selectorReviewPool);
     throw new Error(
       `the native HTTP database must be migrated and connect as ${apiRole}`,
     );
   }
   if (!(await postgresSelectorContextReady(selectorReviewPool))) {
-    await Promise.all([pool.end(), selectorReviewPool.end()]);
+    await closePools(pool, selectorReviewPool);
     throw new Error(
       `the selector review database must connect as ${selectorReviewRole}`,
     );
   }
-  const authentication = await oidcAuthentication(authenticationConfig).catch(
-    async (failure: unknown) => {
-      await Promise.all([pool.end(), selectorReviewPool.end()]);
-      throw failure;
-    },
+}
+
+async function main(): Promise<void> {
+  const keying = idempotencyKeying();
+  const authenticationConfig = oidcConfig();
+  const { pool, selectorReviewPool } = nativePools();
+  await nativeDatabasesReady(pool, selectorReviewPool);
+  const authentication = nativeAuthentication(
+    await oidcAuthentication(authenticationConfig).catch(
+      async (failure: unknown) => {
+        await closePools(pool, selectorReviewPool);
+        throw failure;
+      },
+    ),
+    pool,
   );
   const access = postgresProjectAccess(pool);
   const web = composeNativeWeb(

@@ -10,6 +10,10 @@ import {
   type FinalizerService,
 } from "../interpreter/finalizerRun.ts";
 import type { Partition, RecoveryEpoch } from "../interpreter/projectStore.ts";
+import {
+  sessionSchedulerPass,
+  type SessionSchedulerService,
+} from "../interpreter/sessionSchedulerRun.ts";
 import type {
   RuntimePrecondition,
   ServiceRuntime,
@@ -53,6 +57,7 @@ import {
   gitScratchWritablePrecondition,
 } from "../adapters/git/gitPrerequisites.ts";
 import { postgresExecutionScheduler } from "../adapters/postgres/scheduler.ts";
+import { postgresSessionScheduler } from "../adapters/postgres/sessionScheduler.ts";
 import { postgresPriorWorkReports } from "../adapters/postgres/evaluationReports.ts";
 import { postgresTicketBrief } from "../adapters/postgres/ticketBrief.ts";
 import { postgresPinnedConfigurations } from "../adapters/postgres/pinnedConfigurations.ts";
@@ -193,8 +198,14 @@ export function selectorProcess(
   );
 }
 
+/**
+ * Drives both schedulers, execution first, in one tick of one pacing loop; the
+ * session half is not optional, because a pass nobody runs would leave a queued
+ * turn waiting while the process reported itself healthy.
+ */
 export function schedulerProcess(
   service: ExecutionSchedulerService,
+  sessions: SessionSchedulerService,
   identity: {
     readonly owner: SchedulerOwnerId;
     readonly recoveryEpoch: RecoveryEpoch;
@@ -205,13 +216,15 @@ export function schedulerProcess(
 ): ServiceRuntime {
   return serviceRuntime(
     {
-      run: async () =>
-        void (await executionSchedulerPass(
+      run: async () => {
+        await executionSchedulerPass(
           service,
           identity.owner,
           identity.recoveryEpoch,
           identity.cluster,
-        )),
+        );
+        await sessionSchedulerPass(sessions, identity.recoveryEpoch);
+      },
     },
     systemPacing,
     processPreconditions(requirements),
@@ -383,6 +396,8 @@ export interface SchedulerProcessRootConfig {
     ExecutionSchedulerService,
     "store" | "configurations" | "priorWorkReports" | "ticketBriefs"
   >;
+  /** The session half of the same process; its own store comes from the same pool. */
+  readonly sessions: Omit<SessionSchedulerService, "store">;
   readonly workerCatalog: readonly AdmittedWorker[];
   readonly additional?: readonly RuntimePrecondition[];
 }
@@ -411,6 +426,7 @@ export function schedulerProcessRoot(
     pool,
     schedulerProcess(
       service,
+      { ...config.sessions, store: postgresSessionScheduler(pool) },
       config.identity,
       {
         pool,

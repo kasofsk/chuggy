@@ -1,10 +1,17 @@
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
-import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
-import { createWorkerPlaneApp } from "../adapters/http/workerPlaneServer.ts";
+import {
+  artifactStore,
+  type ArtifactStore,
+} from "../adapters/artifacts/artifactStore.ts";
+import {
+  createWorkerPlaneApp,
+  type SessionPlaneService,
+} from "../adapters/http/workerPlaneServer.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
 import { workerPlaneRole } from "../adapters/postgres/schema.ts";
+import { postgresSessionPlane } from "../adapters/postgres/sessionPlane.ts";
 import {
   postgresWorkerPlaneAuthority,
   postgresWorkerAttemptHeartbeats,
@@ -19,6 +26,7 @@ import {
 import { workerPlaneUploadBytesMax } from "../contract/http.ts";
 import { silentSchedulerTelemetry } from "../interpreter/executionScheduler.ts";
 import { executionSchedulerIngest } from "../interpreter/executionSchedulerReport.ts";
+import { sessionSchedulerDefaults } from "../interpreter/sessionScheduler.ts";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -34,6 +42,47 @@ function positive(name: string, fallback: number): number {
   if (!/^[1-9][0-9]*$/u.test(value) || !Number.isSafeInteger(parsed))
     throw new Error(`${name} must be a positive integer`);
   return parsed;
+}
+
+/**
+ * The session half of this plane, over the same pool and the same artifact
+ * store the run half already holds. The ports are one adapter because they are
+ * one bearer: a plane holding some of them and not others could only answer a
+ * session wrongly, so the composition is whole or the field is absent.
+ *
+ * THE LEASE DEFAULTS TO WHAT OPENS IT. The scheduler opens a session attempt's
+ * lease under `sessionSchedulerDefaults.attemptLeaseSecs` and this plane renews
+ * it, so taking that same value is the two tiers agreeing by construction; a
+ * deployment that moves one moves both, by naming each.
+ */
+function planeSessions(
+  pool: ReturnType<typeof postgresPool>,
+  artifacts: ArtifactStore,
+): SessionPlaneService {
+  const sessions = postgresSessionPlane(pool);
+  return {
+    authority: sessions,
+    heartbeats: sessions,
+    references: sessions,
+    turns: sessions,
+    settlements: sessions,
+    records: sessions,
+    queries: sessions,
+    store: artifacts,
+    heartbeatLeaseSecs: positive(
+      "CHUG_WORKER_PLANE_SESSION_HEARTBEAT_LEASE_SECS",
+      sessionSchedulerDefaults.attemptLeaseSecs,
+    ),
+    turnPollIntervalMs: positive(
+      "CHUG_WORKER_PLANE_SESSION_TURN_POLL_INTERVAL_MS",
+      1_000,
+    ),
+    turnPollSecsMax: positive(
+      "CHUG_WORKER_PLANE_SESSION_TURN_POLL_SECS_MAX",
+      25,
+    ),
+    pollsMax: positive("CHUG_WORKER_PLANE_SESSION_POLLS_MAX", 64),
+  };
 }
 
 async function main(): Promise<void> {
@@ -72,6 +121,7 @@ async function main(): Promise<void> {
           submission,
         ),
     },
+    sessions: planeSessions(pool, artifacts),
     uploadBytesMax,
     ready: async () => {
       try {
