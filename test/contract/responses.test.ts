@@ -509,7 +509,7 @@ test("every encoded summary names its request, and a page without one still read
   assert.equal(older.executions[0]?.status, "Terminal");
 });
 
-test("an execution names what it ran on, in every mode", () => {
+test("an execution names the image or the toolchain floor it ran on", () => {
   const page = executionsResponseSchema.parse(
     executionsResponse(partition, {
       result: "Authorized",
@@ -593,6 +593,9 @@ test("a requirement naming a mode the wire does not is refused", () => {
       }),
     ),
   );
+});
+
+test("a capability requirement asking for nothing is refused", () => {
   assert.throws(() =>
     executionsResponseSchema.parse(
       pageWithRequirement({
@@ -603,6 +606,9 @@ test("a requirement naming a mode the wire does not is refused", () => {
       }),
     ),
   );
+});
+
+test("a capability outside the vocabulary the wire names is refused", () => {
   assert.throws(() =>
     executionsResponseSchema.parse(
       pageWithRequirement({

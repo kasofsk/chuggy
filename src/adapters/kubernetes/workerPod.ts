@@ -7,10 +7,12 @@
  * namespace, the service account, the node selector, the two security contexts
  * and the resource budget all arrive as plain data on the configuration, so a
  * site that changes one of them changes its deployment rather than this
- * adapter. Which image an attempt runs is its requirement's, and whether this
+ * adapter. Which image an attempt runs is its requirement's where that pins
+ * one and its placement's where policy resolved a capability, and whether this
  * site runs that image was `ExecutionPolicy`'s answer before the attempt was
- * placed; what is left here is the one contract a container backend cannot
- * serve whatever policy said, which is a native requirement.
+ * placed; what is left here is what a container backend cannot serve whatever
+ * policy said, which is a native requirement or a capability policy resolved
+ * no image for.
  *
  * A POD IS NAMED FOR ITS ATTEMPT AND FOR NOTHING ELSE. `AttemptPlacementPort`
  * places and cancels the same fenced attempt, so the name has to be derivable
