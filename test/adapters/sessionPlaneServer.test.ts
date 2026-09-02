@@ -19,6 +19,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 
 import {
   createWorkerPlaneApp,
@@ -349,12 +350,8 @@ test("the mailbox answers the turn it claimed, and answers empty when none arriv
 test("a mailbox already holding its most waiters answers at once rather than queueing", async () => {
   let claims = 0;
   let arrived = () => undefined as void;
-  let release = () => undefined as void;
   const entered = new Promise<void>((resolve) => {
     arrived = resolve;
-  });
-  const holding = new Promise<void>((resolve) => {
-    release = resolve;
   });
   const app = sessionPlane({
     pollsMax: 1,
@@ -364,7 +361,7 @@ test("a mailbox already holding its most waiters answers at once rather than que
       claim: async () => {
         claims += 1;
         arrived();
-        await holding;
+        await delay(50);
         return undefined;
       },
     },
@@ -382,7 +379,6 @@ test("a mailbox already holding its most waiters answers at once rather than que
   });
   assert.equal(turned.statusCode, 204);
   assert.equal(claims, 1);
-  release();
   assert.equal((await waiting).statusCode, 204);
   await app.close();
 });
