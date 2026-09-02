@@ -75,9 +75,18 @@ function leadEntry(
   };
 }
 
-/** The store, a batch at a time, the compaction summary ending the first. */
+/**
+ * The store, a batch at a time. The first batch is wholly below the cut and the
+ * second ends on the compaction summary, so a walk over this store meets a page
+ * holding none of its entries, a page holding some of them, and pages holding
+ * all of them.
+ */
 const leadBatchEntries: readonly (readonly LeadTranscriptResponse["entries"][number][])[] =
   [
+    [
+      leadEntry("uuid-p", "user", "an observation before the cut"),
+      leadEntry("uuid-q", "assistant", "a decision before the cut"),
+    ],
     [
       leadEntry("uuid-a", "user", "first observation"),
       leadEntry("uuid-b", "assistant", "first decision"),
@@ -92,14 +101,15 @@ const leadBatchEntries: readonly (readonly LeadTranscriptResponse["entries"][num
  * whole stream and not by what this page happens to carry: none of them below
  * the boundary batch, and all of them from the boundary on.
  */
+/** The batch the stream's one compaction falls in, which every page decided
+ * against answers with. */
+const leadCutBatch = 2;
+
 function leadHeldOf(
   after: number,
   entries: readonly LeadTranscriptResponse["entries"][number][],
 ): readonly string[] {
-  const boundaryBatch = leadBatchEntries.findIndex((batch) =>
-    batch.some((entry) => entry.uuid === leadBoundaryUuid),
-  );
-  if (after < boundaryBatch) return [];
+  if (after < leadCutBatch - 1) return [];
   const at = entries.findIndex((entry) => entry.uuid === leadBoundaryUuid);
   return entries
     .slice(at < 0 ? 0 : at)
@@ -122,6 +132,7 @@ export function leadTranscriptPage(
     stream: leadStream,
     entries: [...entries],
     held: [...leadHeldOf(after, entries)],
+    cut: leadCutBatch,
     ...(at < 0
       ? {}
       : {

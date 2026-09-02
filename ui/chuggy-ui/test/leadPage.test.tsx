@@ -91,7 +91,7 @@ async function drawLead(
 }
 
 const opening: LeadServed = {
-  batches: 2,
+  batches: 3,
   turns: 1,
   refusals: leadRefusals(false),
 };
@@ -136,8 +136,8 @@ test("the mailbox tail draws what the pod measured of each turn", async () => {
  */
 test("what the lead holds is a marked subset of the log and not the whole of it", async () => {
   await drawLead(() => opening);
-  expect(holdingEntries()).toStrictEqual(["Entry 3", "Entry 4"]);
-  expect(logLines().length).toBe(5);
+  expect(holdingEntries()).toStrictEqual(["Entry 5", "Entry 6"]);
+  expect(logLines().length).toBe(7);
 });
 
 /** The seam sits above the entry the compaction cut at, so the entries below it
@@ -148,9 +148,10 @@ test("the seam is drawn once, above the boundary entry and nowhere else", async 
   const seams = lines.flatMap((line, at) =>
     line.className === "lead-seam" ? [at] : [],
   );
-  expect(seams).toStrictEqual([2]);
-  expect(lines[3]?.dataset["holding"]).toBe("true");
+  expect(seams).toStrictEqual([4]);
+  expect(lines[5]?.dataset["holding"]).toBe("true");
   expect(lines[0]?.dataset["holding"]).toBeUndefined();
+  expect(lines[3]?.dataset["holding"]).toBeUndefined();
 });
 
 /** One state, one word. A lead with no store yet is the same fact in both
@@ -217,21 +218,21 @@ test("a project with no lead is a page saying so, not five empty panels", async 
 test("a Session frame moves the turn tail and walks the transcript on", async () => {
   let served: LeadServed = opening;
   const server = await drawLead(() => served);
-  expect(logLines().length).toBe(5);
-  served = { ...opening, batches: 3, turns: 2 };
+  expect(logLines().length).toBe(7);
+  served = { ...opening, batches: 4, turns: 2 };
   await turned(() => {
     server.push(
       frame("Session", "40", {
         version: 1,
         resource: leadSession,
-        representation: leadBody(3, 2),
+        representation: leadBody(4, 2),
       }),
     );
   });
   await settled();
   expect(screen.getByText("third decision")).toBeDefined();
-  expect(logLines().length).toBe(6);
-  expect(holdingEntries()).toStrictEqual(["Entry 3", "Entry 4", "Entry 5"]);
+  expect(logLines().length).toBe(8);
+  expect(holdingEntries()).toStrictEqual(["Entry 5", "Entry 6", "Entry 7"]);
 });
 
 /**

@@ -10,9 +10,17 @@
  *
  * `held` IS A FACT ABOUT THE STREAM, ANSWERED PER PAGE. The route decides it
  * from the last compaction in the whole stream and names the entries of that
- * page the lead holds, which may be none of them. So a page's answer is final
- * for its own entries and no page can correct or contradict another: what a
- * pane holds is those answers gathered, and nothing here guesses.
+ * page the lead holds, which may be none of them. So two pages read under one
+ * cut cannot contradict each other, and what a pane holds is their answers
+ * gathered — nothing here guesses.
+ *
+ * A CUT THAT MOVES INVALIDATES EVERYTHING GATHERED UNDER THE OLD ONE. A pane
+ * walks a stream that is being written and compacted beneath it, so answers it
+ * gathered pages ago were decided against a cut that no longer exists. Keeping
+ * them would leave the lead marked as holding entries it dropped, and would
+ * draw them above the seam the same page moved. So a page naming a different
+ * cut takes the pane back to the start of the stream, keeping only its own
+ * answer.
  *
  * `held` ABSENT IS UNKNOWN AND NEVER EMPTY. It is absent only where the route
  * could not reach the stream's end to decide it, and it says so with
@@ -52,10 +60,18 @@ export interface LeadTranscriptHeld {
   readonly entries: readonly LeadTranscriptEntry[];
   readonly holding: readonly string[];
   readonly compaction: LeadTranscriptCompaction;
+  /** The batch the compaction the gathered answers were decided against fell
+   * in, so a page answered under a different one can be told from one answered
+   * under this. */
+  readonly cut: number | undefined;
   readonly elided: number;
   readonly truncated: boolean;
-  /** Whether a page has answered no `held`, which is the route saying it could
-   * not decide what the lead holds rather than that it holds nothing. */
+  /**
+   * Whether a page has answered no `held`, which is the route saying it could
+   * not decide what the lead holds rather than that it holds nothing. It stands
+   * until the cut moves, because a later page deciding for its own entries says
+   * nothing about the page that could not.
+   */
   readonly holdingUnknown: boolean;
   readonly entriesDropped: number;
   readonly readTo: number | undefined;
@@ -69,6 +85,7 @@ export const leadTranscriptHeldEmpty: LeadTranscriptHeld = {
   entries: [],
   holding: [],
   compaction: undefined,
+  cut: undefined,
   elided: 0,
   truncated: false,
   holdingUnknown: false,
@@ -94,10 +111,10 @@ export function leadTranscriptNextAfter(
 }
 
 /**
- * Whether the walk asks again. A page with no entries ends the chain whatever
- * cursor it carries, and so does one whose cursor did not move: either would
- * otherwise be asked for again until the read budget ran out, and neither can
- * have filled a limit.
+ * Whether the walk asks again on the strength of the page's own cursor. Neither
+ * a page with no entries nor one whose cursor did not move can have filled a
+ * limit, so neither is asked past on that basis; the store growing above the
+ * cursor is what reaches them, and the read budget is what bounds that.
  */
 function leadTranscriptMore(
   held: LeadTranscriptHeld,
@@ -142,25 +159,59 @@ function leadTranscriptReadTo(
   return page.nextAfter ?? highWaterBatch;
 }
 
+/**
+ * Whether a page's answers were decided against a different compaction from the
+ * ones already gathered. A page that decided nothing says nothing about the cut,
+ * and a first page has nothing to differ from; everything else — including a
+ * stream compacted for the first time under an open pane, where the cut goes
+ * from absent to a batch — is answers that cannot be gathered together.
+ */
+function leadTranscriptCutMoved(
+  held: LeadTranscriptHeld,
+  page: LeadTranscriptResponse,
+): boolean {
+  if (page.held === undefined) return false;
+  return held.readTo !== undefined && page.cut !== held.cut;
+}
+
+/** The uuids still worth holding: what is gathered, less any whose entry has
+ * left at the cap, so the set is bounded by the entries and not by the walk. */
+function leadTranscriptHoldingPruned(
+  holding: Iterable<string>,
+  entries: readonly LeadTranscriptEntry[],
+): readonly string[] {
+  const present = new Set(
+    entries.flatMap((entry) => (entry.uuid === undefined ? [] : [entry.uuid])),
+  );
+  return [...new Set(holding)].filter((uuid) => present.has(uuid));
+}
+
 /** One page folded in, with the walk's cursor advanced to what it read to. */
 export function leadTranscriptMerged(
   held: LeadTranscriptHeld,
   page: LeadTranscriptResponse,
   highWaterBatch: number,
 ): LeadTranscriptHeld {
+  const moved = leadTranscriptCutMoved(held, page);
   const merged = leadTranscriptEntriesMerged(held.entries, page.entries);
   const kept = merged.slice(-leadTranscriptEntriesHeldMax);
   return {
     stream: page.stream,
     entries: kept,
-    holding: [...new Set([...held.holding, ...(page.held ?? [])])],
+    holding: leadTranscriptHoldingPruned(
+      moved ? (page.held ?? []) : [...held.holding, ...(page.held ?? [])],
+      kept,
+    ),
+    cut: page.held === undefined ? held.cut : page.cut,
     compaction: page.compaction ?? held.compaction,
     elided: held.elided + page.elided,
     truncated: held.truncated || page.truncated,
-    holdingUnknown: held.holdingUnknown || page.held === undefined,
+    holdingUnknown: moved
+      ? page.held === undefined
+      : held.holdingUnknown || page.held === undefined,
     entriesDropped: held.entriesDropped + (merged.length - kept.length),
-    readTo: leadTranscriptReadTo(page, highWaterBatch),
-    more: leadTranscriptMore(held, page),
+    readTo: moved ? 0 : leadTranscriptReadTo(page, highWaterBatch),
+    more: moved ? false : leadTranscriptMore(held, page),
     failure: undefined,
   };
 }

@@ -28,7 +28,10 @@ import {
   leadTranscriptReadsMax,
 } from "../app/core/leadTranscript.ts";
 import type { LeadTranscriptHeld } from "../app/core/leadTranscript.ts";
-import type { AgenticRefusalResponse } from "../../../src/contract/responses.ts";
+import type {
+  AgenticRefusalResponse,
+  LeadTranscriptResponse,
+} from "../../../src/contract/responses.ts";
 import {
   leadBody,
   leadBoundaryUuid,
@@ -97,8 +100,8 @@ test("a full page is asked past, and the empty page after it ends the walk", () 
 
 /** A page with nothing on it cannot have filled a limit, and neither can one
  * whose cursor did not move; neither is asked past on the strength of its own
- * cursor. */
-test("an empty page and a cursor that stood still both end the walk", () => {
+ * cursor, and the store growing above it is what reaches it instead. */
+test("neither an empty page nor a standing cursor is asked past on its own", () => {
   const stuck = {
     stream: "1a2b3c",
     entries: [],
@@ -134,10 +137,11 @@ test("a truncated page is remembered once the walk has moved past it", () => {
 
 test("each entry lands once, oldest first, over as many pages as it took", () => {
   expect(leadTranscriptLines(walkedTwice()).map((line) => line.uuid)).toEqual([
+    "uuid-p",
+    "uuid-q",
     "uuid-a",
     "uuid-b",
     leadBoundaryUuid,
-    "uuid-d",
   ]);
 });
 
@@ -151,7 +155,6 @@ test("what the lead holds is the chain from the seam on and nothing above it", (
   const held = walkedTwice();
   expect(leadTranscriptHolding(held).map((line) => line.uuid)).toEqual([
     leadBoundaryUuid,
-    "uuid-d",
   ]);
   expect(
     leadTranscriptLines(held)
@@ -168,13 +171,144 @@ test("what the lead holds is the chain from the seam on and nothing above it", (
  * page's answer would drop entries the lead is holding.
  */
 test("each page answers for its own entries and none overrides another", () => {
-  const below = leadTranscriptPage(0, 3);
-  expect(below.held).toStrictEqual([leadBoundaryUuid]);
   const held = leadTranscriptMerged(walkedTwice(), leadTranscriptPage(2, 3), 3);
   expect(leadTranscriptHolding(held).map((line) => line.uuid)).toEqual([
     leadBoundaryUuid,
     "uuid-d",
-    "uuid-e",
+  ]);
+});
+
+/**
+ * A PAGE WHOLLY BELOW THE CUT ANSWERS NONE OF ITS ENTRIES, and an empty answer
+ * is an answer. A pane falling back to the page's own entries there — the rule
+ * that was right when only one page could answer — would mark the whole of a
+ * lead's dropped context as the context it is working from.
+ */
+test("a page that holds none of its entries is drawn holding none of them", () => {
+  const below = leadTranscriptPage(0, 3);
+  expect(below.entries.length).toBeGreaterThan(0);
+  expect(below.held).toStrictEqual([]);
+  const held = leadTranscriptMerged(leadTranscriptHeldEmpty, below, 3);
+  expect(held.holdingUnknown).toBe(false);
+  expect(
+    leadTranscriptHolding(held),
+    "a page answering no entries was read as a page answering all of them",
+  ).toStrictEqual([]);
+});
+
+/** One page of a stream whose last cut fell in `cut`, answering `held` over its
+ * own entries. */
+function cutPage(
+  cut: number | undefined,
+  entries: readonly string[],
+  held: readonly string[],
+  nextAfter?: number,
+): LeadTranscriptResponse {
+  return {
+    stream: leadStream,
+    entries: entries.map((uuid) => ({
+      uuid,
+      type: "assistant",
+      message: { content: [] },
+    })),
+    held: [...held],
+    ...(cut === undefined ? {} : { cut }),
+    ...(held.length === 0 ? {} : { compaction: { boundary: held[0] ?? "" } }),
+    elided: 0,
+    truncated: false,
+    ...(nextAfter === undefined ? {} : { nextAfter }),
+  };
+}
+
+/**
+ * A CUT THAT MOVES INVALIDATES WHAT WAS GATHERED UNDER THE OLD ONE. The pane
+ * walks a stream that is compacted beneath it, so answers from pages ago were
+ * decided against a cut that no longer exists; keeping them leaves the lead
+ * marked as holding entries it has dropped, drawn above the seam the same page
+ * moved.
+ */
+test("a page naming a different cut drops what was gathered under the old one", () => {
+  const first = leadTranscriptMerged(
+    leadTranscriptHeldEmpty,
+    cutPage(1, ["uuid-a", "uuid-b"], ["uuid-a", "uuid-b"], 1),
+    1,
+  );
+  expect(first.cut).toBe(1);
+  expect(first.holding).toStrictEqual(["uuid-a", "uuid-b"]);
+  const compacted = leadTranscriptMerged(
+    first,
+    cutPage(3, ["uuid-c", "uuid-d"], ["uuid-d"]),
+    2,
+  );
+  expect(compacted.cut).toBe(3);
+  expect(
+    leadTranscriptHolding(compacted).map((line) => line.uuid),
+    "entries below a new cut stayed marked held",
+  ).toStrictEqual(["uuid-d"]);
+  const lines = leadTranscriptLines(compacted);
+  expect(lines.map((line) => line.uuid)).toStrictEqual([
+    "uuid-a",
+    "uuid-b",
+    "uuid-c",
+    "uuid-d",
+  ]);
+  expect(lines.filter((line) => line.seam).map((line) => line.uuid)).toEqual([
+    "uuid-d",
+  ]);
+  expect(compacted.readTo, "the pane did not re-walk the moved stream").toBe(0);
+});
+
+/**
+ * A STREAM COMPACTED FOR THE FIRST TIME UNDER AN OPEN PANE moves its cut from
+ * absent to a batch, and the answers gathered before it — every entry, because
+ * nothing had been dropped — are exactly the ones that are now stale.
+ */
+test("a first compaction invalidates as surely as a later one", () => {
+  const uncut = leadTranscriptMerged(
+    leadTranscriptHeldEmpty,
+    cutPage(undefined, ["uuid-a", "uuid-b"], ["uuid-a", "uuid-b"], 1),
+    1,
+  );
+  expect(uncut.cut).toBeUndefined();
+  const compacted = leadTranscriptMerged(
+    uncut,
+    cutPage(2, ["uuid-c"], ["uuid-c"]),
+    2,
+  );
+  expect(
+    leadTranscriptHolding(compacted).map((line) => line.uuid),
+    "a stream compacted for the first time kept its pre-cut answers",
+  ).toStrictEqual(["uuid-c"]);
+  expect(compacted.readTo).toBe(0);
+});
+
+/**
+ * A WALK OUTAGE SAYS NOTHING ABOUT THE CUT. The route answers `200` with `held`
+ * and `cut` both absent, which is undecided; reading that as a cut that moved
+ * would throw away every answer the pane holds and re-walk the whole stream
+ * every time the route could not reach its end.
+ */
+test("a page that decided nothing does not move the cut or the walk", () => {
+  const first = leadTranscriptMerged(
+    leadTranscriptHeldEmpty,
+    cutPage(1, ["uuid-a"], ["uuid-a"], 1),
+    2,
+  );
+  const outage = leadTranscriptMerged(
+    first,
+    {
+      stream: leadStream,
+      entries: [{ uuid: "uuid-b", type: "user", message: { content: [] } }],
+      elided: 0,
+      truncated: true,
+    },
+    2,
+  );
+  expect(outage.cut).toBe(1);
+  expect(outage.holdingUnknown).toBe(true);
+  expect(outage.readTo, "an undecided page re-walked the stream").toBe(2);
+  expect(leadTranscriptHolding(outage).map((line) => line.uuid)).toStrictEqual([
+    "uuid-a",
   ]);
 });
 
@@ -229,6 +363,10 @@ test("the oldest entries leave at the cap, and the pane counts them going", () =
         type: "assistant",
         message: { content: [] },
       })),
+      held: Array.from(
+        { length: overflowing },
+        (_unused, at) => `uuid-${String(at)}`,
+      ),
       elided: 0,
       truncated: false,
     },
@@ -237,6 +375,11 @@ test("the oldest entries leave at the cap, and the pane counts them going", () =
   expect(held.entries.length).toBe(leadTranscriptEntriesHeldMax);
   expect(held.entriesDropped).toBe(3);
   expect(leadTranscriptLines(held)[0]?.uuid).toBe("uuid-3");
+  expect(
+    held.holding.length,
+    "the holding set outlived the entries it names",
+  ).toBe(leadTranscriptEntriesHeldMax);
+  expect(held.holding).not.toContain("uuid-0");
 });
 
 test("a Session frame replaces the lead it names and leaves another alone", () => {
