@@ -351,7 +351,7 @@ export type DraftPageCursor = TicketId;
 /** One page of a project's drafts, ascending by ticket, `more` saying whether the page ends them. */
 export interface DraftPage {
   readonly drafts: readonly DraftResource[];
-  readonly cursor?: DraftPageCursor;
+  readonly nextCursor?: DraftPageCursor;
   readonly more: boolean;
 }
 

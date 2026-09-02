@@ -1268,12 +1268,20 @@ test("a refusal ledger refuses a reason longer than its column holds", () => {
 test("a drafts page carries whole drafts, its cursor and whether it ends them", () => {
   const body = draftResponseSchema.parse(draftResponse(draftResource).body);
   assert.deepEqual(
-    draftsResponseSchema.parse({ drafts: [body], cursor: "Nw", more: true }),
-    { drafts: [body], cursor: "Nw", more: true },
+    draftsResponseSchema.parse({
+      drafts: [body],
+      nextCursor: "Nw",
+      more: true,
+    }),
+    { drafts: [body], nextCursor: "Nw", more: true },
   );
   assert.equal(
-    draftsResponseSchema.parse({ drafts: [], more: false }).cursor,
+    draftsResponseSchema.parse({ drafts: [], more: false }).nextCursor,
     undefined,
+  );
+  assert.ok(
+    Object.hasOwn(configurationsResponseSchema.shape, "nextCursor") &&
+      Object.hasOwn(draftsResponseSchema.shape, "nextCursor"),
   );
   assert.throws(() => draftsResponseSchema.parse({ drafts: [body] }));
   assert.throws(() =>

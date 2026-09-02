@@ -737,14 +737,14 @@ export const draftResponseSchema = z.object({
 export type DraftResponse = z.infer<typeof draftResponseSchema>;
 
 /**
- * One page of the drafts a project still holds open, ascending by ticket. The
- * cursor is where the next page resumes and is absent where `more` is false,
- * and a released or deleted draft is not among them: the first is a ticket and
- * is read as one, and the second is gone.
+ * One page of the drafts a project still holds open, ascending by ticket.
+ * `nextCursor` is where the next page resumes, spelled as every other paged
+ * read on this wire spells it, and a released or deleted draft is not among
+ * them: the first is a ticket and is read as one, and the second is gone.
  */
 export const draftsResponseSchema = z.object({
   drafts: page(draftResponseSchema),
-  cursor: cursorSchema.optional(),
+  nextCursor: cursorSchema.optional(),
   more: z.boolean(),
 });
 export type DraftsResponse = z.infer<typeof draftsResponseSchema>;
