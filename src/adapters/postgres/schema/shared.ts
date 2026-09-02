@@ -73,6 +73,37 @@ export const runEvidenceImmutableFunction =
 export const runConfigurationImmutableFunction =
   "execution_run_is_written_once";
 export const projectChangeRunFunction = "execution_run_appends_a_change";
+export const sessionOpenFunction = "open_agent_session";
+export const sessionCloseFunction = "close_agent_session";
+export const sessionTurnEnqueueFunction = "enqueue_session_turn";
+export const sessionsAwaitingPlacementFunction = "sessions_awaiting_placement";
+export const sessionAttemptOpenFunction = "open_session_attempt";
+export const sessionAttemptPlaceFunction = "place_session_attempt";
+export const sessionAttemptEndFunction = "end_session_attempt";
+export const sessionAttemptReapLapsedFunction = "reap_lapsed_session_attempts";
+export const sessionAttemptReapIdleFunction = "reap_idle_session_attempts";
+export const sessionAttemptFenceFunction = "fence_old_epoch_session_attempts";
+export const sessionAttemptCleanupFunction =
+  "session_attempts_awaiting_cleanup";
+export const sessionAttemptCleanupCompletedFunction =
+  "session_attempt_cleanup_completed";
+export const sessionAttemptBindingFunction = "session_attempt_binding";
+export const sessionAttemptReadFunction = "read_session_attempt";
+export const sessionAttemptHeartbeatFunction = "heartbeat_session_attempt";
+export const sessionAttemptLoseFunction = "lose_session_attempt";
+export const sessionReferenceBindFunction = "bind_session_reference";
+export const sessionTurnClaimFunction = "claim_session_turn";
+export const sessionTurnAnswerFunction = "answer_session_turn";
+export const sessionTurnFailFunction = "fail_session_turn";
+export const sessionStoreBatchRecordFunction = "record_session_store_batch";
+export const sessionStoreReadFunction = "read_session_store";
+export const sessionStreamListFunction = "list_session_streams";
+export const sessionBearerAuthenticateFunction = "authenticate_session_bearer";
+export const sessionAttemptFencedFunction = "session_attempt_is_fenced";
+export const sessionTurnReleaseFunction = "release_session_attempt_turns";
+export const sessionStoreImmutableFunction = "session_store_is_immutable";
+export const sessionReferenceWrittenOnceFunction =
+  "agent_session_is_written_once";
 export const finalizerRole = "chuggy_finalizer";
 export const completionFunction = "submit_task_completion";
 export const finalizationFunction = "submit_finalization_result";

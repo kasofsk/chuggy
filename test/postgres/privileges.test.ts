@@ -215,7 +215,7 @@ test("the API acceptance boundary rejects malformed command bytes", async () => 
       `SELECT * FROM ${acceptanceFunction}(
         '${partition.tenant}', '${partition.project}', '${operation}', 'User', 'subject',
         'v1', 'key-${operation}', 'payload', ARRAY['key-${operation}'], ARRAY['payload'],
-        '${command}', 10, 20)`,
+        '${command}', 10, 20, NULL)`,
     );
     assert.equal(failure, undefined);
   }
@@ -253,7 +253,7 @@ test("a well-formed completion is refused whatever authority it claims", async (
         `SELECT * FROM ${acceptanceFunction}(
           '${partition.tenant}', '${partition.project}', '${operation}', '${kind}', 'subject',
           'v1', 'key-${operation}', 'payload', ARRAY['key-${operation}'], ARRAY['payload'],
-          '${command}', 10, 20)`,
+          '${command}', 10, 20, NULL)`,
       );
       assert.equal(failure, undefined);
     }
@@ -686,7 +686,7 @@ test("the scheduler reaches the decision mailbox through one function and no oth
     ["UPDATE project_readiness SET ready=true", "project_readiness"],
     [
       `SELECT ${acceptanceFunction}('t','p','o','User','s','v1','k','p',
-       ARRAY['k'],ARRAY['p'],'{}',10,20)`,
+       ARRAY['k'],ARRAY['p'],'{}',10,20,NULL)`,
       acceptanceFunction,
     ],
     [
