@@ -15,8 +15,15 @@
 #   docker buildx imagetools inspect node:26.7.0-bookworm
 FROM node:26.7.0-bookworm@sha256:e929171d35b9df7773a3ec5b068e387fa109441dc90f91e6560af5d39b7e9bf1
 
-ARG CLAUDE_CODE_VERSION=2.1.251
+# THE IMAGE RUNS TWO CLAUDE CODES AND THEY MUST BE THE SAME ONE. A work attempt
+# spawns the global `claude`; a session's Agent SDK spawns a copy of its own,
+# shipped inside the SDK as `@anthropic-ai/claude-agent-sdk-linux-x64` and named
+# by the SDK's `manifest.json`. Nothing makes those two agree, so the probe
+# below reads both versions off the built image and fails the build when they
+# differ. Bump the two ARGs together.
+ARG CLAUDE_CODE_VERSION=2.1.258
 ARG CODEX_VERSION=0.151.0
+ARG AGENT_SDK_VERSION=0.3.258
 
 RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
     /etc/apt/sources.list.d/debian.sources \
@@ -28,6 +35,7 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
     | bash -s -- --to /usr/local/bin \
   && npm install --global \
     "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+    "@anthropic-ai/claude-agent-sdk@${AGENT_SDK_VERSION}" \
     "@openai/codex@${CODEX_VERSION}" \
   && claude --version \
   && codex --version \
@@ -37,6 +45,7 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
 
 ENV DISABLE_AUTOUPDATER=1 \
     CHUG_WORKER_WORKSPACE=/workspace \
+    NODE_PATH=/usr/local/lib/node_modules \
     TMPDIR=/tmp
 
 COPY images/worker/entrypoint.mjs /usr/local/lib/chuggy/worker.mjs
@@ -53,6 +62,23 @@ COPY images/worker/snapshot.mjs /usr/local/lib/chuggy/snapshot.mjs
 COPY images/worker/source.mjs /usr/local/lib/chuggy/source.mjs
 COPY images/worker/transport.mjs /usr/local/lib/chuggy/transport.mjs
 COPY --chmod=0555 images/worker/git-askpass.sh /usr/local/lib/chuggy/git-askpass.sh
+
+# What the session mode needs, read off the image rather than off this file. The
+# import runs from the directory the scripts live in, because that is what
+# decides whether it resolves: `NODE_PATH` above is honoured by `require` and
+# ignored by `import`, and what actually finds the SDK is the node_modules walk
+# up from `/usr/local/lib/chuggy/`. The second half holds the two Claude Codes
+# to the same version.
+RUN cd /usr/local/lib/chuggy \
+  && echo "const { query } = await import('@anthropic-ai/claude-agent-sdk'); if (typeof query !== 'function') throw new Error('the Agent SDK exports no query');" > sdk-probe.mjs \
+  && node sdk-probe.mjs \
+  && rm sdk-probe.mjs \
+  && bundled="$(node -e "console.log(require('/usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk/manifest.json').version)")" \
+  && global="$(claude --version)" \
+  && if [ "${global% (Claude Code)}" != "$bundled" ]; then \
+       echo "the SDK spawns Claude Code $bundled while the image installs $global"; \
+       exit 1; \
+     fi
 
 USER 1000:1000
 WORKDIR /workspace
