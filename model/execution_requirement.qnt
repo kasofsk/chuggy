@@ -14,17 +14,26 @@ module execution_requirement {
     platformDefault: ExecutionRequirement,
     platformDefaultVersion: int
   }
+  /// The agent an execution's authored worker mode named, which the site has
+  /// to provide for the execution to run. It travels beside the value rather
+  /// than inside it, so it takes no part in the digest.
+  type AgentConstraint = NoAgent | RequiredAgent(ExecutionCapability)
   type MaterializedExecutionRequirement = {
     execution: int,
     value: ExecutionRequirement,
     identity: int,
     digest: int,
     source: RequirementSource,
+    agent: AgentConstraint,
     platformDefaultVersion: int
   }
   type MaterializationResult = Materialized(MaterializedExecutionRequirement) | RequirementRefused
   type PinResult = Pinned(MaterializedExecutionRequirement) | PinRefused
   type WorkerMode = LegacyWorker | SingleAgentWorker(ExecutionCapability)
+  /// What a site publishes about one image it admits. A site that admitted an
+  /// image before it published capabilities at all declares none, which is not
+  /// the same statement as declaring an empty set.
+  type ImageCapabilities = CapabilitiesUndeclared | CapabilitiesDeclared(Set[ExecutionCapability])
 
   pure def candidate(m: int -> ExecutionRequirement, key: int): RequirementCandidate =
     if (m.keys().contains(key)) Requested(m.get(key)) else NoRequirement
@@ -80,25 +89,48 @@ module execution_requirement {
         }
     }
 
-  /// The authored worker mode names its primary agent concern. Materialization
-  /// translates that concern into the scheduler's capability vocabulary while
-  /// retaining the selected container platform. Legacy workers remain pinned
-  /// to their selected exact image.
+  /// The authored worker mode names its primary agent concern, and an image a
+  /// configuration selected is what runs. A container selection is therefore
+  /// materialized as it stands and the agent constrains the site's entry for
+  /// that image; only a selection stated as capabilities names workers rather
+  /// than an image, so only that one takes the agent among its own. A single
+  /// agent has no reading on a native selection.
   pure def requirementForWorker(
     selected: ExecutionRequirement, workerMode: WorkerMode
   ): RequirementCandidate = match workerMode {
     | LegacyWorker => Requested(selected)
     | SingleAgentWorker(agent) => match selected {
-        | ContainerRequirement(container) => Requested(CapabilityRequirement({
-            operatingSystem: container.operatingSystem,
-            architecture: container.architecture,
-            capabilities: Set(agent)
-          }))
+        | ContainerRequirement(_) => Requested(selected)
         | CapabilityRequirement(capability) => Requested(CapabilityRequirement({
             ...capability,
             capabilities: capability.capabilities.union(Set(agent))
           }))
         | NativeRequirement(_) => NoRequirement
+      }
+  }
+
+  pure def agentConstraint(workerMode: WorkerMode): AgentConstraint = match workerMode {
+    | LegacyWorker => NoAgent
+    | SingleAgentWorker(agent) => RequiredAgent(agent)
+  }
+
+  /// Whether a site runs the pinned value for the execution's agent. A site
+  /// that publishes what an image provides refuses an agent that is not among
+  /// them; a site that publishes nothing about it has not said the image fails
+  /// to provide one, so the selection stands. A selection stated as
+  /// capabilities carries the agent among its own and is admitted against a
+  /// session's inventory instead, and no site provides an agent natively.
+  pure def siteAdmits(
+    value: ExecutionRequirement, agent: AgentConstraint, published: ImageCapabilities
+  ): bool = match agent {
+    | NoAgent => true
+    | RequiredAgent(required) => match value {
+        | ContainerRequirement(_) => match published {
+            | CapabilitiesUndeclared => true
+            | CapabilitiesDeclared(provided) => provided.contains(required)
+          }
+        | CapabilityRequirement(capability) => capability.capabilities.contains(required)
+        | NativeRequirement(_) => false
       }
   }
 
@@ -141,6 +173,7 @@ module execution_requirement {
             identity: execution,
             digest: requirementDigest(value),
             source: selected.source,
+            agent: agentConstraint(workerMode),
             platformDefaultVersion: defaults.platformDefaultVersion
           })
           else RequirementRefused

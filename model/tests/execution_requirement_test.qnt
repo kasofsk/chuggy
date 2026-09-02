@@ -57,12 +57,45 @@ module execution_requirement_test {
       | RequirementRefused => assert(false)
     }
 
-  run singleAgentWorkerMaterializesItsAgentCapabilityTest =
+  run singleAgentWorkerKeepsThePinnedImageAndConstrainsItTest =
     val migrated = defaultsFromLegacyReleaseImage(42, 1)
     match materialize(101, 11, 2, 3, migrated, SingleAgentWorker(AgentCodex)) {
-      | Materialized(pinned) => assert(pinned.value == CapabilityRequirement({
-          operatingSystem: Linux, architecture: Amd64,
-          capabilities: Set(AgentCodex) }))
+      | Materialized(pinned) => assert(and {
+          pinned.value == container(42),
+          pinned.agent == RequiredAgent(AgentCodex),
+          pinned.digest == requirementDigest(container(42))
+        })
+      | RequirementRefused => assert(false)
+    }
+
+  run siteRefusesAPinnedImageItDeclaresWithoutTheAgentTest =
+    val migrated = defaultsFromLegacyReleaseImage(42, 1)
+    match materialize(101, 11, 2, 3, migrated, SingleAgentWorker(AgentCodex)) {
+      | Materialized(pinned) => assert(and {
+          not(siteAdmits(pinned.value, pinned.agent,
+            CapabilitiesDeclared(Set(AgentClaude)))),
+          siteAdmits(pinned.value, pinned.agent,
+            CapabilitiesDeclared(Set(AgentClaude, AgentCodex)))
+        })
+      | RequirementRefused => assert(false)
+    }
+
+  run siteAdmitsAPinnedImageItDeclaresNoCapabilitiesForTest =
+    val migrated = defaultsFromLegacyReleaseImage(42, 1)
+    match materialize(101, 11, 2, 3, migrated, SingleAgentWorker(AgentCodex)) {
+      | Materialized(pinned) =>
+          assert(siteAdmits(pinned.value, pinned.agent, CapabilitiesUndeclared))
+      | RequirementRefused => assert(false)
+    }
+
+  run aWorkerNamingNoAgentConstrainsNoSiteEntryTest =
+    val migrated = defaultsFromLegacyReleaseImage(42, 1)
+    match materialize(101, 11, 2, 3, migrated, LegacyWorker) {
+      | Materialized(pinned) => assert(and {
+          pinned.agent == NoAgent,
+          siteAdmits(pinned.value, pinned.agent,
+            CapabilitiesDeclared(Set(AgentClaude)))
+        })
       | RequirementRefused => assert(false)
     }
 
@@ -75,9 +108,12 @@ module execution_requirement_test {
       platformDefault: capability, platformDefaultVersion: 1
     }
     match materialize(101, 11, 2, 3, configured, SingleAgentWorker(AgentCodex)) {
-      | Materialized(pinned) => assert(pinned.value == CapabilityRequirement({
-          operatingSystem: Linux, architecture: Amd64,
-          capabilities: Set(AgentClaude, AgentCodex) }))
+      | Materialized(pinned) => assert(and {
+          pinned.value == CapabilityRequirement({
+            operatingSystem: Linux, architecture: Amd64,
+            capabilities: Set(AgentClaude, AgentCodex) }),
+          siteAdmits(pinned.value, pinned.agent, CapabilitiesUndeclared)
+        })
       | RequirementRefused => assert(false)
     }
 
