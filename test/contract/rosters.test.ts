@@ -58,6 +58,7 @@ import {
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
   agenticRefusalsAnsweredMax,
+  leadObjectivesFixedCharsMax,
   nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
   resultReportCharsMax,
@@ -75,6 +76,7 @@ import {
 import { runTurnsPageLimitMax } from "../../src/interpreter/runEvidence.ts";
 import type { RunTotals } from "../../src/interpreter/runEvidence.ts";
 import { projectChangeKinds } from "../../src/contract/events.ts";
+import { leadObjectivesFixedChars } from "../../src/interpreter/leadTools.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import { allAgenticRefusalEvents } from "../../src/interpreter/agenticRefusal.ts";
 import {
@@ -491,4 +493,16 @@ test("every session kind fits the ceiling the resource bound allows it", () => {
       kind.length <= sessionKindCharsMax,
       `${kind} is longer than a session change's resource makes room for`,
     );
+});
+
+/**
+ * The observation bound derives from a ceiling on what the objectives add
+ * beyond the two texts a project sets, and the contract may not read the
+ * prefix that ceiling is meant to contain.
+ */
+test("a lead's own objectives fit the room the observation bound leaves them", () => {
+  assert.ok(
+    leadObjectivesFixedChars <= leadObjectivesFixedCharsMax,
+    "the standing instructions outgrew what a turn's input makes room for",
+  );
 });

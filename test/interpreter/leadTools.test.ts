@@ -29,6 +29,7 @@ import {
   chuggyToolTimeoutMs,
   dependentRelationsAdmitted,
   dependentRelationsRefused,
+  leadObjectivesFixedChars,
   leadSystemPrompt,
   sessionSystemPromptCharsMax,
 } from "../../src/interpreter/leadTools.ts";
@@ -227,11 +228,20 @@ test("the objectives carry the project's prompt, its north star and the standing
 
 test("the largest objectives a project may legally set are ones the session row holds", () => {
   const legal = "x".repeat(selectorSettingsTextCharsMax);
-  assert.equal(
-    leadSystemPrompt(settings(legal, legal)).length,
-    sessionSystemPromptCharsMax,
+  const composed = leadSystemPrompt(settings(legal, legal)).length;
+  assert.ok(
+    composed > selectorSettingsTextCharsMax * 2,
+    "both texts and what this module adds are in one prompt",
   );
-  assert.ok(sessionSystemPromptCharsMax > selectorSettingsTextCharsMax * 2);
+  assert.ok(
+    composed <= sessionSystemPromptCharsMax,
+    "the widest prompt a project may set is one the observation bound allows",
+  );
+  assert.equal(
+    composed - selectorSettingsTextCharsMax * 2,
+    leadObjectivesFixedChars,
+    "what the prompt adds beyond the two texts is what this module contributes",
+  );
 });
 
 test("objectives longer than any project could have set are refused where they are composed", () => {

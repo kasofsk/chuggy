@@ -1,6 +1,7 @@
 import {
   agenticRefusalReasonCharsMax,
   agenticRefusalsAnsweredMax,
+  leadSeedingDecisionsMax,
   selectorHandoffNoteBytesMax,
   selectorSettingsTextCharsMax,
   sessionTurnInputCharsMax,
@@ -300,7 +301,7 @@ export const leadRefusalsPerDecisionMax = 16;
 export const leadRefusalsObservedMax = agenticRefusalsAnsweredMax;
 
 /** How many past decisions a seeding turn carries, newest last. */
-export const leadSeedingDecisionsMax = 16;
+export { leadSeedingDecisionsMax };
 
 /** What one lead turn's observation may weigh, which is what its mailbox row holds. */
 export const leadObservationBytesMax = sessionTurnInputCharsMax;

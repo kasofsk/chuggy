@@ -66,6 +66,7 @@ import {
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
   sessionStoreStreamsAnswered,
+  sessionTurnInputCharsMax,
   sessionTurnModelCharsMax,
   sessionTurnResultCharsMax,
   sessionTurnToolNameCharsMax,
@@ -255,7 +256,7 @@ const boundedTurnIdentity = [
      CHECK (length(turn) BETWEEN 1 AND ${sessionIdentityCharsMax})`,
 ];
 
-/** The three generated checks replaced where each was last written. */
+/** The four generated checks replaced where each was last written. */
 const replacedRosters = [
   `ALTER TABLE project_change
      DROP CONSTRAINT project_change_kind_is_known,
@@ -265,6 +266,11 @@ const replacedRosters = [
      DROP CONSTRAINT project_change_resource_is_bounded,
      ADD CONSTRAINT project_change_resource_is_bounded CHECK
        (length(resource) BETWEEN 1 AND ${projectChangeResourceCharsMax})`,
+  `ALTER TABLE session_turn
+     DROP CONSTRAINT session_turn_text_is_bounded,
+     ADD CONSTRAINT session_turn_text_is_bounded CHECK (
+       length(input) BETWEEN 1 AND ${sessionTurnInputCharsMax}
+       AND coalesce(length(result), 0) <= ${sessionTurnResultCharsMax})`,
   `ALTER TABLE session_turn
      DROP CONSTRAINT session_turn_failure_is_known,
      ADD CONSTRAINT session_turn_failure_is_known CHECK

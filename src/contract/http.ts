@@ -79,7 +79,6 @@ export const sessionTurnBacklogMax = 256;
 /** How many attempts one turn may be handed before it is failed. */
 export const sessionTurnAttemptsMax = 3;
 
-export const sessionTurnInputCharsMax = 65_536;
 export const sessionTurnResultCharsMax = 65_536;
 
 /**
@@ -249,6 +248,128 @@ export const projectChangeResourceCharsMax = Math.max(
     ["batch", String(sessionStoreBatchesMax).length],
   ]),
 );
+
+/** How many of a project's notifications one page carries. */
+export const notificationPageLimitMax = 100;
+
+/** How many candidates one page of the dispatch view carries. */
+export const dispatchViewPageLimitMax = 100;
+
+/** How many of its own past decisions a fresh lead is seeded with. */
+export const leadSeedingDecisionsMax = 16;
+
+/** The most a lead's objectives weigh beyond the two texts a project sets. */
+export const leadObjectivesFixedCharsMax = 4_096;
+
+/**
+ * The longest composed set of objectives one session row holds: what the
+ * installation asks of a lead, what the project wants, and what its tools mean.
+ * A ceiling below the two texts' sum would refuse a base prompt the settings
+ * route had already accepted, on every pass, long after the write that caused it.
+ */
+export const sessionSystemPromptCharsMax =
+  selectorSettingsTextCharsMax * 2 + leadObjectivesFixedCharsMax;
+
+/** The most digits a cursor the observation carries may be written with. */
+export const cursorDigitsCharsMax = 20;
+
+/**
+ * What one refusal the observation shows weighs beyond its reason: the ticket,
+ * the version it was made against, the instant, whether it is superseded, and
+ * the keys naming each.
+ */
+export const leadObservedRefusalEnvelopeCharsMax = 512;
+
+/** What one seeded decision summary weighs: what it dispatched, refused and left. */
+export const leadSeededDecisionCharsMax = 4_096;
+
+/** What one notification in the observation's window weighs: an ordinal, a kind, a resource. */
+export const leadObservedChangeCharsMax = 1_024;
+
+/** What one dispatch candidate weighs, its program and its dependencies included. */
+export const leadObservedCandidateCharsMax = 8_192;
+
+/**
+ * What one observation carries that is neither a text a project set nor a page
+ * of something: its version, its decision reference, its partition, its view
+ * token and its operational context.
+ */
+export const leadObservationFixedCharsMax = 16_384;
+
+/**
+ * What one JSON object weighs as `JSON.stringify` writes it, which is what
+ * composes an observation: its braces, its quoted keys, its colons and its
+ * commas. It is not `jsonb`'s renderer and emits none of its spaces.
+ */
+function stringifiedObjectChars(
+  members: readonly (readonly [string, number])[],
+): number {
+  return (
+    2 +
+    members.reduce((total, [key, value]) => total + key.length + 3 + value, 0) +
+    Math.max(members.length - 1, 0)
+  );
+}
+
+/** What one JSON array of that many members weighs beyond them: its brackets and its commas. */
+function stringifiedArrayChars(members: number, memberChars: number): number {
+  return 2 + members * memberChars + Math.max(members - 1, 0);
+}
+
+/** What one refusal weighs where an observation shows it, its reason escaped. */
+const leadObservedRefusalChars =
+  leadObservedRefusalEnvelopeCharsMax +
+  jsonStringChars(agenticRefusalReasonCharsMax);
+
+/** Every standing refusal one observation carries, as one array. */
+const leadObservedRefusalsChars = stringifiedArrayChars(
+  agenticRefusalsAnsweredMax,
+  leadObservedRefusalChars,
+);
+
+/**
+ * The longest observation one lead turn may be given, which is what its mailbox
+ * row must hold. Every part of it is bounded somewhere else, and a ceiling
+ * below their sum is a document the runtime composes and the database refuses.
+ */
+export const sessionTurnInputCharsMax = stringifiedObjectChars([
+  [
+    "instructions",
+    stringifiedObjectChars([
+      ["revision", jsonStringChars(nativeHttpPathSegmentCharsMax)],
+      ["content", jsonStringChars(sessionSystemPromptCharsMax)],
+    ]),
+  ],
+  ["handoffNote", selectorHandoffNoteBytesMax],
+  ["refusals", leadObservedRefusalsChars],
+  [
+    "seeding",
+    stringifiedObjectChars([
+      ["handoffNote", selectorHandoffNoteBytesMax],
+      [
+        "decisions",
+        stringifiedArrayChars(
+          leadSeedingDecisionsMax,
+          leadSeededDecisionCharsMax,
+        ),
+      ],
+      ["refusals", leadObservedRefusalsChars],
+      ["notificationCursor", cursorDigitsCharsMax],
+    ]),
+  ],
+  [
+    "changes",
+    stringifiedArrayChars(notificationPageLimitMax, leadObservedChangeCharsMax),
+  ],
+  [
+    "candidates",
+    stringifiedArrayChars(
+      dispatchViewPageLimitMax,
+      leadObservedCandidateCharsMax,
+    ),
+  ],
+  ["observation", leadObservationFixedCharsMax],
+]);
 
 /** The key a change row names, which the durable log is bounded by. */
 export const changeResourceSchema = z

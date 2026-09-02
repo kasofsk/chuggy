@@ -15,8 +15,21 @@ import { randomUUID } from "node:crypto";
 
 import {
   leadTurnsAnsweredMax,
+  agenticRefusalReasonCharsMax,
+  agenticRefusalsAnsweredMax,
+  dispatchViewPageLimitMax,
+  leadObservedCandidateCharsMax,
+  leadObservationFixedCharsMax,
+  leadObservedChangeCharsMax,
+  leadSeededDecisionCharsMax,
+  leadSeedingDecisionsMax,
+  nativeHttpPathSegmentCharsMax,
   nativeHttpPathSegmentCharsMax as partitionIdentityCharsMax,
+  notificationPageLimitMax,
   projectChangeResourceCharsMax,
+  selectorHandoffNoteBytesMax,
+  sessionSystemPromptCharsMax,
+  sessionTurnInputCharsMax,
   selectorHistoryLimitMax,
   sessionStorePageBatchesMax,
   sessionStoreStreamsAnswered,
@@ -998,5 +1011,91 @@ test("a model name past what the measure column holds is refused", async () => {
       },
     }),
     /session_turn_measure_is_bounded/u,
+  );
+});
+
+/** A text of that many characters, every one of which JSON must escape. */
+function escapedText(chars: number): string {
+  return escapedCharacter.repeat(chars);
+}
+
+/**
+ * The widest observation the parts' own bounds admit, built from each of them
+ * at its ceiling. It is what the mailbox row must hold, so a derivation that
+ * drops a part is a document the runtime composes and the database refuses.
+ */
+function widestObservation(partition: Partition, decision: string): string {
+  const refusals = Array.from(
+    { length: agenticRefusalsAnsweredMax },
+    (_unused, at) => ({
+      ticket: at + 1,
+      ticketVersion: 1,
+      reason: escapedText(agenticRefusalReasonCharsMax),
+      recordedAt: "2026-09-02T12:00:00.000Z",
+      superseded: false,
+    }),
+  );
+  const parts = {
+    version: 1,
+    decision,
+    partition,
+    instructions: {
+      revision: escapedText(nativeHttpPathSegmentCharsMax),
+      content: escapedText(sessionSystemPromptCharsMax),
+    },
+    seeding: {
+      handoffNote: escapedText(selectorHandoffNoteBytesMax / 6),
+      decisions: Array.from({ length: leadSeedingDecisionsMax }, () =>
+        escapedText(leadSeededDecisionCharsMax / 6),
+      ),
+      refusals,
+      notificationCursor: Number.MAX_SAFE_INTEGER,
+    },
+    changes: Array.from({ length: notificationPageLimitMax }, () =>
+      escapedText(leadObservedChangeCharsMax / 6),
+    ),
+    candidates: Array.from({ length: dispatchViewPageLimitMax }, () =>
+      escapedText(leadObservedCandidateCharsMax / 6),
+    ),
+    handoffNote: escapedText(selectorHandoffNoteBytesMax / 6),
+    refusals,
+    operationalContext: { version: 2 },
+  };
+  const measured = JSON.stringify({ ...parts, token: "" }).length;
+  return JSON.stringify({
+    ...parts,
+    token: escapedText(
+      Math.min(
+        Math.floor(
+          (sessionTurnInputCharsMax - measured) / jsonEscapedCharCharsMax,
+        ),
+        Math.floor(leadObservationFixedCharsMax / jsonEscapedCharCharsMax),
+      ),
+    ),
+  });
+}
+
+test("the widest observation the parts admit is one the mailbox row holds", async () => {
+  const { partition } = await leadProject("widest-observation");
+  const turn = sessionRigTurnId("widest-observation");
+  const input = widestObservation(partition, turn);
+  assert.ok(
+    input.length > sessionTurnInputCharsMax / 2,
+    `the widest observation is ${String(input.length)} characters, against a bound of ${String(sessionTurnInputCharsMax)}`,
+  );
+  assert.deepEqual(
+    await rig.mailbox.offer({ partition, turn, input }),
+    { offered: "Enqueued", ordinal: 1 },
+    "a document every bound admits is one the column must hold",
+  );
+  assert.equal(
+    (
+      await rig.sessions.harness.query(
+        "SELECT length(input)::text AS held FROM session_turn WHERE turn=$1",
+        [turn],
+      )
+    )[0]?.["held"],
+    String(input.length),
+    "the row holds what was offered, whole",
   );
 });

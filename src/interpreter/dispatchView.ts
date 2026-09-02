@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 
-import { dispatchViewSchemaVersion } from "../contract/http.ts";
+import {
+  dispatchViewPageLimitMax,
+  dispatchViewSchemaVersion,
+} from "../contract/http.ts";
 
 import { decisionEventEnabled } from "../actor/decisionEvent.ts";
 import type { Config } from "../domain/config.ts";
@@ -18,7 +21,8 @@ import {
   type ModelJson,
 } from "../generated/model-api.ts";
 
-export const dispatchViewPageLimitMax = 100;
+/** How many candidates one page carries, surfaced where every reader of it looks. */
+export { dispatchViewPageLimitMax };
 export const selectorDecisionReferenceCharsMax = 256;
 
 export interface DispatchCandidate {

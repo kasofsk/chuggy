@@ -35,6 +35,9 @@ import {
 import {
   nativeHttpPathSegmentCharsMax,
   projectChangeResourceCharsMax,
+  selectorHandoffNoteBytesMax,
+  sessionTurnInputCharsMax,
+  sessionTurnResultCharsMax,
 } from "../../src/contract/http.ts";
 import { briefFinalizationModes } from "../../src/contract/rosters.ts";
 import {
@@ -2284,6 +2287,35 @@ test("migration 59 widens a resource check installed before a session named thre
           ["r".repeat(projectChangeResourceCharsMax + 1)],
         ),
       /project_change_resource_is_bounded/u,
+      "the widened check is still a check",
+    );
+  });
+});
+
+test("migration 59 widens a turn's input check installed before an observation grew", async () => {
+  await migrationDatabase("lead_turn_input", async (subject) => {
+    await migrationSeedApplied(subject, 59);
+    await migrationNarrowedRoster(
+      subject,
+      "session_turn",
+      "session_turn_text_is_bounded",
+      `length(input) BETWEEN 1 AND ${selectorHandoffNoteBytesMax}
+         AND coalesce(length(result), 0) <= ${sessionTurnResultCharsMax}`,
+    );
+    await migrationLeadTurn(subject);
+    const widen = `UPDATE session_turn SET input=repeat('o',$1) WHERE turn='turn-59'`;
+    await assert.rejects(
+      () => subject.query(widen, [selectorHandoffNoteBytesMax + 1]),
+      /session_turn_text_is_bounded/u,
+      "a mailbox installed before an observation named its parts refuses one",
+    );
+
+    await applyMigration(subject, 59);
+
+    await subject.query(widen, [selectorHandoffNoteBytesMax + 1]);
+    await assert.rejects(
+      () => subject.query(widen, [sessionTurnInputCharsMax + 1]),
+      /session_turn_text_is_bounded/u,
       "the widened check is still a check",
     );
   });
