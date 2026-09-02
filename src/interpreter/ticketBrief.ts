@@ -1,17 +1,23 @@
 /**
  * The brief one ticket carries: the intent a human stated, the links they
- * pointed at, the branch the work happens on, and where a finalization lands
- * it.
+ * pointed at, the check lines they added, the branch the work happens on, and
+ * where a finalization lands it.
  *
  * IT IS NOT AUTHORING. Authoring is the model's release event, and every value
  * of it decides how the machine runs the ticket. None of these do: they are
  * read by the agent, by the observation that names a target and by the
  * finalizer that lands the work, and no value of them is priced, metered or
- * decided on. The release reads one of them once, to refuse the pairing a
- * configuration that hands off and a finalization that proposes make, which is
- * a refusal to release and not a way for a brief to run the ticket. So they
- * live beside the draft rather than inside the event, and nothing here reaches
- * the domain.
+ * decided on. The release reads two of them once, to refuse the pairings a
+ * configuration makes with a finalization that proposes and with check lines it
+ * commands no stage for, which are refusals to release and not ways for a brief
+ * to run the ticket. So they live beside the draft rather than inside the
+ * event, and nothing here reaches the domain.
+ *
+ * A CHECK LINE IS APPENDED AND NEVER SUBSTITUTED. The configuration's own check
+ * commands run whatever a ticket says; a brief adds lines after them, at the
+ * first stage the configuration runs as commands, and can neither remove nor
+ * reorder what the configuration named. So a ticket widens what its work is
+ * held to and cannot narrow it.
  *
  * AN INTENT IS STORED AS IT RENDERS. Every value that gets this far has
  * already been split into the lines a briefing would print and refused unless
@@ -49,6 +55,7 @@
 
 import {
   briefBranchCharsMax,
+  briefChecksMax,
   briefIntentCharsMax,
   briefIntentLinesMax,
   briefLandingIsWhole,
@@ -66,9 +73,11 @@ import { taskConfigurationLineFault } from "./taskConfiguration.ts";
 
 declare const briefIntentBrand: unique symbol;
 declare const briefLinkUrlBrand: unique symbol;
+declare const briefCheckLineBrand: unique symbol;
 
 export type BriefIntent = string & { readonly [briefIntentBrand]: true };
 export type BriefLinkUrl = string & { readonly [briefLinkUrlBrand]: true };
+export type BriefCheckLine = string & { readonly [briefCheckLineBrand]: true };
 
 /** Landing by advancing the reference itself, which is where a brief naming none lands. */
 export interface BriefPushFinalization {
@@ -93,9 +102,18 @@ export const briefFinalizationDefault: BriefFinalization = { mode: "Push" };
 export interface DraftBrief {
   readonly intent: BriefIntent;
   readonly links: readonly BriefLinkUrl[];
+  readonly checks: readonly BriefCheckLine[];
   readonly branch?: GitRefName;
   readonly finalization?: BriefFinalization;
 }
+
+/**
+ * What release reads of a brief: the two halves a pinned configuration can
+ * contradict. A brief that proposes a change contradicts a configuration that
+ * hands off, and a brief that appends check lines contradicts one that commands
+ * no check stage for them to join.
+ */
+export type ReleaseBrief = Pick<DraftBrief, "finalization" | "checks">;
 
 /** The lines one intent renders as, which is the form it is bounded and stored in. */
 export function briefIntentLines(intent: BriefIntent): readonly string[] {
@@ -138,6 +156,17 @@ export function asBriefLinkUrl(value: string): BriefLinkUrl {
   )
     throw new RangeError("ticket link: the URL is not a printable https URL");
   return value as BriefLinkUrl;
+}
+
+/**
+ * Brands one appended check line. It renders as one briefing line and is run as
+ * one shell command line, so the line rule is the whole of what bounds it and
+ * there is no second bound here to disagree with the wire.
+ */
+export function asBriefCheckLine(value: string): BriefCheckLine {
+  if (taskConfigurationLineFault(value) !== undefined)
+    throw new RangeError("ticket check: the line is not a printable command");
+  return value as BriefCheckLine;
 }
 
 /** Brands a branch through the one reference-name grammar this tree states. */
@@ -184,14 +213,19 @@ export function asBriefFinalization(value: {
 export function asDraftBrief(value: {
   readonly intent: string;
   readonly links: readonly string[];
+  readonly checks?: readonly string[];
   readonly branch?: string;
   readonly finalization?: { readonly mode: string; readonly target?: string };
 }): DraftBrief {
   if (value.links.length > briefLinksMax)
     throw new RangeError("ticket brief: more links than one brief carries");
+  const checks = value.checks ?? [];
+  if (checks.length > briefChecksMax)
+    throw new RangeError("ticket brief: more checks than one brief appends");
   const brief: DraftBrief = {
     intent: asBriefIntent(value.intent),
     links: value.links.map(asBriefLinkUrl),
+    checks: checks.map(asBriefCheckLine),
     ...(value.branch === undefined
       ? {}
       : { branch: asBriefBranch(value.branch) }),

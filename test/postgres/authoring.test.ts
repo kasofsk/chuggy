@@ -36,7 +36,11 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
-import { briefLinksMax } from "../../src/contract/brief.ts";
+import {
+  briefChecksMax,
+  briefLineCharsMax,
+  briefLinksMax,
+} from "../../src/contract/brief.ts";
 import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import { handoffFixture } from "../interpreter/handoffFixture.ts";
@@ -153,7 +157,10 @@ function repositoryDeclarations(
   return ready.declarations;
 }
 
-async function draftFixture(canonical = postgresHarnessConfiguration) {
+async function draftFixture(
+  canonical = postgresHarnessConfiguration,
+  brief = postgresHarnessBrief,
+) {
   const partition = await postgresHarnessProject(
     harness.store,
     "authoring-draft",
@@ -176,7 +183,7 @@ async function draftFixture(canonical = postgresHarnessConfiguration) {
     configurationDigest: initialized.configuration.digest,
     expectedProjectSequence: initialized.projectSequence,
     authoring: plainAuthoring,
-    brief: postgresHarnessBrief,
+    brief,
   });
   if (created.created !== "Created")
     throw new Error("draft fixture was not created");
@@ -891,6 +898,11 @@ const handoffConfiguration = canonicalConfigurationOf({
   finalizationHandoff: handoffFixture(),
 });
 
+const commandedCheckConfiguration = canonicalConfigurationOf({
+  ...(JSON.parse(postgresHarnessConfiguration) as Record<string, unknown>),
+  evaluations: [{ purpose: "Check", checks: [".chug/tasks/ci.sh"] }],
+});
+
 /** Accepts one release and decides it, which is the whole of what a release case drives. */
 async function releaseDecision(
   fixture: Awaited<ReturnType<typeof draftFixture>>,
@@ -914,20 +926,15 @@ async function releaseDecision(
   return { submission, result };
 }
 
-test("a brief that proposes a change refuses release against a handing-off configuration", async () => {
-  const fixture = await draftFixture(handoffConfiguration);
-  await harness.query(
-    `UPDATE draft_brief
-        SET finalization_mode='PullRequest',finalization_target='refs/heads/rt/landing'
-      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
-    [fixture.partition.tenant, fixture.partition.project, fixture.draft.ticket],
-  );
-
-  const { submission, result } = await releaseDecision(
-    fixture,
-    "handoff-proposes",
-  );
-
+/**
+ * Drives one release the fence refuses, and holds the draft where a refusal
+ * leaves it, which is editable.
+ */
+async function assertReleaseRefused(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+  label: string,
+): Promise<void> {
+  const { submission, result } = await releaseDecision(fixture, label);
   assert.equal(result.decided.decided, "Refused");
   assert.deepEqual(
     await harness.query(
@@ -944,6 +951,43 @@ test("a brief that proposes a change refuses release against a handing-off confi
     [{ state: "Draft" }],
     "the draft is still editable, which is the point of refusing here",
   );
+}
+
+/** Appends one check line to a fixture's brief, as a ticket carrying one has. */
+async function appendFixtureCheck(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+): Promise<void> {
+  await harness.query(
+    `INSERT INTO draft_brief_check (tenant,project,ticket,ordinal,command)
+     VALUES ($1,$2,$3,1,'npm test')`,
+    [fixture.partition.tenant, fixture.partition.project, fixture.draft.ticket],
+  );
+}
+
+test("a brief that proposes a change refuses release against a handing-off configuration", async () => {
+  const fixture = await draftFixture(handoffConfiguration);
+  await harness.query(
+    `UPDATE draft_brief
+        SET finalization_mode='PullRequest',finalization_target='refs/heads/rt/landing'
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [fixture.partition.tenant, fixture.partition.project, fixture.draft.ticket],
+  );
+  await assertReleaseRefused(fixture, "handoff-proposes");
+});
+
+test("a brief that appends check lines refuses release against a configuration commanding none", async () => {
+  const fixture = await draftFixture();
+  await appendFixtureCheck(fixture);
+  await assertReleaseRefused(fixture, "checks-uncommanded");
+});
+
+test("a configuration commanding a check stage releases a brief that appends to it", async () => {
+  const fixture = await draftFixture(commandedCheckConfiguration);
+  await appendFixtureCheck(fixture);
+
+  const { result } = await releaseDecision(fixture, "checks-commanded");
+
+  assert.equal(result.decided.decided, "Committed");
 });
 
 test("the same handing-off configuration releases a brief that pushes", async () => {
@@ -1131,10 +1175,103 @@ test("where a brief lands is written, replaced and read back apart from where it
   );
 });
 
+const appendingBrief = asDraftBrief({
+  intent: "Hold this ticket to one more gate.",
+  links: [],
+  checks: ["npm run lint", "npm test"],
+});
+
+test("a draft is created with the check lines its brief appends", async () => {
+  const { partition, draft } = await draftFixture(
+    postgresHarnessConfiguration,
+    appendingBrief,
+  );
+  assert.deepEqual(draft.brief, appendingBrief);
+  assert.deepEqual(
+    await postgresTicketBrief(pool).brief(partition, draft.ticket),
+    appendingBrief,
+    "the scheduler's own read carries the lines in the order they were created",
+  );
+});
+
+test("the check lines a brief appends are written, ordered, replaced and read back", async () => {
+  const { partition, store, revision, draft } = await draftFixture();
+  assert.deepEqual(draft.brief?.checks, []);
+  const appending = appendingBrief;
+  const revised = await store.reviseDraft({
+    partition,
+    authority,
+    ticket: draft.ticket,
+    expectedVersion: 1,
+    configurationRevision: revision,
+    authoring: plainAuthoring,
+    brief: appending,
+  });
+  assert.deepEqual(
+    revised.revised === "Revised" ? revised.draft.brief : undefined,
+    appending,
+  );
+  assert.deepEqual(
+    (await store.draft(partition, draft.ticket))?.brief,
+    appending,
+  );
+  assert.deepEqual(
+    await postgresTicketBrief(pool).brief(partition, draft.ticket),
+    appending,
+    "the scheduler's own read carries the lines in the order they were written",
+  );
+
+  const cleared = await store.reviseDraft({
+    partition,
+    authority,
+    ticket: draft.ticket,
+    expectedVersion: 2,
+    configurationRevision: revision,
+    authoring: plainAuthoring,
+    brief: postgresHarnessBrief,
+  });
+  assert.deepEqual(
+    cleared.revised === "Revised" ? cleared.draft.brief?.checks : undefined,
+    [],
+    "a revision appending nothing removes the lines an earlier one appended",
+  );
+  assert.deepEqual(
+    await postgresTicketBrief(pool).brief(partition, draft.ticket),
+    postgresHarnessBrief,
+  );
+});
+
+test("the server refuses a check line that reached it around the interpreter's rules", async () => {
+  const { partition, draft } = await draftFixture();
+  const inserting = (ordinal: number, command: string) =>
+    harness.query(
+      `INSERT INTO draft_brief_check (tenant,project,ticket,ordinal,command)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [partition.tenant, partition.project, draft.ticket, ordinal, command],
+    );
+  await assert.rejects(inserting(1, ""), "an empty command line");
+  await assert.rejects(
+    inserting(1, "npm test\nrm -rf /"),
+    "a control character",
+  );
+  await assert.rejects(
+    inserting(1, "a".repeat(briefLineCharsMax + 1)),
+    "a line past the bound one briefing line has",
+  );
+  await assert.rejects(
+    inserting(briefChecksMax + 1, "npm test"),
+    "an ordinal past the bound one brief appends",
+  );
+});
+
 test("a draft authored before a brief existed reads back without one", async () => {
   const { partition, store, draft } = await draftFixture();
   await harness.query(
     "DELETE FROM draft_brief_link WHERE tenant=$1 AND project=$2 AND ticket=$3",
+    [partition.tenant, partition.project, draft.ticket],
+  );
+  await harness.query(
+    "DELETE FROM draft_brief_check WHERE tenant=$1 AND project=$2 AND ticket=$3",
     [partition.tenant, partition.project, draft.ticket],
   );
   await harness.query(

@@ -303,3 +303,29 @@ test("the advanced disclosure holds the authoring, and offers what is chosen", (
     "2",
   ]);
 });
+
+test("the checks editor is drawn only where the configuration commands a stage for them", async () => {
+  const commanding = { ...creationInitialization, commandedCheckStage: 1 };
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, [], commanding);
+  typeIntent("ship it");
+  fireEvent.click(screen.getByText("add check"));
+  fireEvent.change(screen.getByPlaceholderText("a command line"), {
+    target: { value: "npm test" },
+  });
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  const body = drafts(held.sent)[0]?.body;
+  expect(
+    body !== null && typeof body === "object" && "brief" in body
+      ? (body.brief as { readonly checks?: readonly string[] }).checks
+      : undefined,
+  ).toStrictEqual(["npm test"]);
+});
+
+test("a configuration commanding no check stage offers no checks editor", () => {
+  draw(api({ state: "Succeeded" }).ports, []);
+  expect(screen.queryByText("add check")).toBeNull();
+});

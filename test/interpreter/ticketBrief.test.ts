@@ -14,6 +14,7 @@ import test from "node:test";
 
 import {
   briefBranchCharsMax,
+  briefChecksMax,
   briefIntentCharsMax,
   briefIntentLinesMax,
   briefLineCharsMax,
@@ -21,6 +22,7 @@ import {
 } from "../../src/contract/brief.ts";
 import {
   asBriefBranch,
+  asBriefCheckLine,
   asBriefIntent,
   asBriefLinkUrl,
   asBriefFinalization,
@@ -110,7 +112,11 @@ test("a whole brief brands each of its parts and omits the branch it has none of
       intent: "Fix the importer.",
       links: ["https://example.test/one"],
     }),
-    { intent: "Fix the importer.", links: ["https://example.test/one"] },
+    {
+      intent: "Fix the importer.",
+      links: ["https://example.test/one"],
+      checks: [],
+    },
   );
   assert.throws(
     () =>
@@ -118,6 +124,41 @@ test("a whole brief brands each of its parts and omits the branch it has none of
         intent: "Fix the importer.",
         links: ["https://example.test/one"],
         branch: "not-a-ref",
+      }),
+    RangeError,
+  );
+});
+
+test("a check line is branded by the rule one briefing line is, and bounded in number", () => {
+  assert.equal(
+    asBriefCheckLine(".chug/tasks/ci.sh --full"),
+    ".chug/tasks/ci.sh --full",
+  );
+  for (const value of [
+    "",
+    "npm test\nrm -rf /",
+    "a".repeat(briefLineCharsMax + 1),
+  ])
+    assert.throws(
+      () => asBriefCheckLine(value),
+      RangeError,
+      `refused: ${JSON.stringify(value)}`,
+    );
+  assert.deepEqual(
+    asDraftBrief({
+      intent: "Fix the importer.",
+      links: [],
+      checks: ["npm run lint", "npm test"],
+    }).checks,
+    ["npm run lint", "npm test"],
+    "the order a brief appends in is the order it is branded in",
+  );
+  assert.throws(
+    () =>
+      asDraftBrief({
+        intent: "Fix the importer.",
+        links: [],
+        checks: Array.from({ length: briefChecksMax + 1 }, () => "npm test"),
       }),
     RangeError,
   );
@@ -173,6 +214,7 @@ test("a whole brief brands where it lands apart from where its work happens", ()
     {
       intent: "Fix the importer.",
       links: [],
+      checks: [],
       branch: "refs/heads/rt/work",
       finalization: { mode: "Push", target: "refs/heads/rt/landing" },
     },
@@ -200,6 +242,7 @@ test("a brief that proposes brands a branch of its own and not the one it opens 
   assert.deepEqual(proposing("refs/heads/rt/work"), {
     intent: "Fix the importer.",
     links: [],
+    checks: [],
     branch: "refs/heads/rt/work",
     finalization: { mode: "PullRequest", target: "refs/heads/rt/landing" },
   });

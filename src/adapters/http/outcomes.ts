@@ -767,6 +767,9 @@ export function draftInitializationResponse(
     choices: value.choices,
     dependencyCandidates: value.dependencyCandidates,
     dependencyCandidatesTruncated: value.dependencyCandidatesTruncated,
+    ...(value.commandedCheckStage === undefined
+      ? {}
+      : { commandedCheckStage: value.commandedCheckStage }),
   });
 }
 

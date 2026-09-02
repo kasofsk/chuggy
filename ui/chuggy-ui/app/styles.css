@@ -213,7 +213,8 @@
   white-space: pre-wrap;
 }
 
-.links {
+.links,
+.checks {
   list-style: none;
   margin: 0;
   padding: 0;

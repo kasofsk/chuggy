@@ -18,6 +18,7 @@
 import {
   briefBranchCharsMax,
   briefBranchPrefix,
+  briefChecksMax,
   briefIntentCharsMax,
   briefIntentLinesMax,
   briefLineCharsMax,
@@ -52,12 +53,13 @@ export type CreationStage = CreationAuthoring["program"][number];
 export interface TicketCreationForm extends CreationAuthoring {
   readonly intent: string;
   readonly links: readonly string[];
+  readonly checks: readonly string[];
   readonly branchName: string;
   readonly targetBranchName: string;
 }
 
 export type CreationField =
-  "intent" | "links" | "branch" | "target" | "authoring" | "fence";
+  "intent" | "links" | "checks" | "branch" | "target" | "authoring" | "fence";
 
 export interface CreationFault {
   readonly field: CreationField;
@@ -109,6 +111,7 @@ export function creationFormFrom(
     ...initialization.defaults,
     intent: "",
     links: [],
+    checks: [],
     branchName: "",
     targetBranchName: "",
   };
@@ -166,6 +169,8 @@ export function creationFaultSentence(field: CreationField): string {
       return `state what this ticket is for: at least one line, at most ${String(briefIntentLinesMax)} printed lines and ${String(briefIntentCharsMax)} characters`;
     case "links":
       return `each link is an ${briefLinkScheme} URL of at most ${String(briefLineCharsMax)} characters, and one ticket carries at most ${String(briefLinksMax)}`;
+    case "checks":
+      return `each check is one command line of at most ${String(briefLineCharsMax)} characters, and one ticket adds at most ${String(briefChecksMax)}`;
     case "branch":
     case "target":
       return `a branch is named here without its ${briefBranchPrefix} prefix, and the whole reference is at most ${String(briefBranchCharsMax)} characters`;
@@ -181,6 +186,7 @@ function creationFieldOf(path: readonly PropertyKey[]): CreationField {
   if (path[0] !== "brief") return "fence";
   if (path[1] === "intent") return "intent";
   if (path[1] === "branch") return "branch";
+  if (path[1] === "checks") return "checks";
   return path[1] === "finalization" ? "target" : "links";
 }
 
@@ -236,15 +242,20 @@ const creationFinalizationMode: BriefFinalizationMode = "Push";
 
 /**
  * The brief a form becomes. A finalization is what naming a target means, so a
- * form that names none sends none rather than a target repeating the branch.
+ * form that names none sends none rather than a target repeating the branch,
+ * and a form adding no check lines sends none rather than an empty list.
  */
 function creationBriefOf(
   form: TicketCreationForm,
   branches: CreationBranches,
 ): unknown {
+  const checks = form.checks
+    .map((check) => check.trim())
+    .filter((check) => check !== "");
   return {
     intent: creationIntentNormalized(form.intent).trim(),
     links: form.links.map((link) => link.trim()).filter((link) => link !== ""),
+    ...(checks.length === 0 ? {} : { checks }),
     ...(branches.branch.named === "Ref" ? { branch: branches.branch.ref } : {}),
     ...(branches.target.named === "Ref"
       ? {

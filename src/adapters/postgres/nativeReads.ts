@@ -490,7 +490,9 @@ function nativeReadsResources(
                    r.committed_at::text AS released_at,
                    c.committed_at::text AS changed_at,
                    (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
-                     WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS links
+                     WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS links,
+                   (SELECT array_agg(k.command ORDER BY k.ordinal) FROM draft_brief_check k
+                     WHERE k.tenant=t.tenant AND k.project=t.project AND k.ticket=t.ticket) AS checks
               FROM ticket_projection t
               LEFT JOIN deployment_authoring_policy d ON d.singleton=true
               LEFT JOIN journal_entry c

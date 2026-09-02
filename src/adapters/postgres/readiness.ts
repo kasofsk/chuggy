@@ -67,7 +67,7 @@ import {
   type TicketCommand,
 } from "../../interpreter/ticketCommand.ts";
 import { parseDraftAuthoring } from "../../interpreter/authoring.ts";
-import { draftBriefFinalizationOf } from "./ticketBrief.ts";
+import { draftReleaseBriefOf } from "./ticketBrief.ts";
 import {
   allInputBundleReferenceKinds,
   asFinalizationAttemptId,
@@ -139,9 +139,12 @@ async function releaseDraftSource(
     canonical: string;
     finalization_mode: string | null;
     finalization_target: string | null;
+    checks: string[] | null;
   }>(
     sql`SELECT r.authoring,c.digest,c.canonical,
-           b.finalization_mode,b.finalization_target
+           b.finalization_mode,b.finalization_target,
+           (SELECT array_agg(k.command ORDER BY k.ordinal) FROM draft_brief_check k
+             WHERE k.tenant=r.tenant AND k.project=r.project AND k.ticket=r.ticket) AS checks
       FROM draft_revision r
        JOIN configuration_revision c
          ON c.tenant=r.tenant AND c.project=r.project
@@ -158,7 +161,7 @@ async function releaseDraftSource(
     throw new Error(
       `release draft ${String(command.ticket)} has no retained revision`,
     );
-  const briefFinalization = draftBriefFinalizationOf(found);
+  const brief = draftReleaseBriefOf(found);
   return {
     kind: "Operation",
     operation: asOperationId(operation),
@@ -173,7 +176,7 @@ async function releaseDraftSource(
       configurationRevision: command.configurationRevision,
       configurationDigest: found.digest,
       configurationCanonical: found.canonical,
-      ...(briefFinalization === undefined ? {} : { briefFinalization }),
+      ...(brief === undefined ? {} : { brief }),
     },
   };
 }

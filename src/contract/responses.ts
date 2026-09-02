@@ -727,6 +727,7 @@ export const draftInitializationResponseSchema = z.object({
   }),
   dependencyCandidates: page(ticketNumberSchema),
   dependencyCandidatesTruncated: z.boolean(),
+  commandedCheckStage: countSchema.optional(),
 });
 export type DraftInitializationResponse = z.infer<
   typeof draftInitializationResponseSchema

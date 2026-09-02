@@ -46,6 +46,7 @@ import {
   draftInitializationPolicy,
   releaseConfigurationReadiness,
 } from "./authoring.ts";
+import { firstCommandedCheckStage } from "./taskConfiguration.ts";
 import type { ReleaseAuthoring } from "../actor/decisionEvent.ts";
 import type { DraftBrief } from "./ticketBrief.ts";
 import {
@@ -628,6 +629,9 @@ function nativeDraftInitializationMethod(
           result: "Authorized",
           value: { initialized: "ConfigurationIncomplete" },
         };
+      const commandedCheckStage = firstCommandedCheckStage(
+        readiness.configuration,
+      );
       return {
         result: "Authorized",
         value: {
@@ -638,6 +642,9 @@ function nativeDraftInitializationMethod(
             dependencyCandidates: snapshot.dependencyCandidates,
             dependencyCandidatesTruncated:
               snapshot.dependencyCandidatesTruncated,
+            ...(commandedCheckStage === undefined
+              ? {}
+              : { commandedCheckStage }),
             ...draftInitializationPolicy(
               snapshot.domain,
               readiness.configuration,

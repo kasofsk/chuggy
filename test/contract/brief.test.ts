@@ -14,6 +14,8 @@ import test from "node:test";
 import {
   briefBranchCharsMax,
   briefBranchPrefix,
+  briefCheckSchema,
+  briefChecksMax,
   briefFinalizationSchema,
   briefIntentCharsMax,
   briefIntentLinesMax,
@@ -33,6 +35,7 @@ import {
   briefingLineCharsMax,
   briefingLinesMax,
 } from "../../src/interpreter/taskConfiguration.ts";
+import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
 import { authoringWireBody } from "./representations.ts";
 
 test("every wire bound on a brief is the interpreter bound it was taken from", () => {
@@ -75,6 +78,38 @@ test("a brief states an intent and bounds what it points at", () => {
     },
   );
   assert.ok(briefSchema.safeParse({ intent: "Do it.", links: [] }).success);
+});
+
+test("a brief appends bounded command lines or appends none at all", () => {
+  const appending = (checks: unknown) =>
+    briefSchema.safeParse({ intent: "Do it.", links: [], checks });
+  assert.ok(appending(["npm test"]).success);
+  assert.ok(
+    appending(Array.from({ length: briefChecksMax }, () => "npm test")).success,
+  );
+  assert.equal(
+    appending(Array.from({ length: briefChecksMax + 1 }, () => "npm test"))
+      .success,
+    false,
+  );
+  assert.equal(appending([""]).success, false);
+  assert.equal(appending(["x".repeat(briefLineCharsMax + 1)]).success, false);
+  assert.equal(
+    briefSchema.parse({ intent: "Do it.", links: [] }).checks,
+    undefined,
+    "a brief appending nothing carries no list",
+  );
+});
+
+test("the longest check the wire accepts is the longest one the server brands", () => {
+  const lineOf = (chars: number) => "a".repeat(chars);
+  assert.ok(briefCheckSchema.safeParse(lineOf(briefLineCharsMax)).success);
+  assert.doesNotThrow(() => asBriefCheckLine(lineOf(briefLineCharsMax)));
+  assert.equal(
+    briefCheckSchema.safeParse(lineOf(briefLineCharsMax + 1)).success,
+    false,
+  );
+  assert.throws(() => asBriefCheckLine(lineOf(briefLineCharsMax + 1)));
 });
 
 test("a brief lands where its work happened unless its finalization says otherwise", () => {

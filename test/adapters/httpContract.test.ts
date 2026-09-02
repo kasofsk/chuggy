@@ -144,6 +144,7 @@ test("authoring DTOs translate into existing application types", () => {
       brief: {
         intent: "Serve the brief on the ticket resource.",
         links: ["https://example.test/issues/340"],
+        checks: [],
         branch: "refs/heads/rt/ticket-brief",
         finalization: { mode: "PullRequest", target: "refs/heads/main" },
       },
@@ -350,6 +351,8 @@ test("a brief the interpreter would refuse never reaches a draft", () => {
     { intent: "Fix it.", links: [], branch: "rt/ticket-brief" },
     { intent: "Fix it.", links: [], branch: "refs/heads/one..two" },
     { intent: "Fix it.", links: [], branch: "refs/heads/one.lock" },
+    { intent: "Fix it.", links: [], checks: [""] },
+    { intent: "Fix it.", links: [], checks: ["npm test\u0007"] },
     {
       intent: "Fix it.",
       links: [],
@@ -365,6 +368,14 @@ test("a brief the interpreter would refuse never reaches a draft", () => {
       ...creation,
       brief: { intent: "Fix it.", links: [] },
     }).brief,
-    { intent: "Fix it.", links: [] },
+    { intent: "Fix it.", links: [], checks: [] },
+  );
+  assert.deepEqual(
+    parseDraftCreation({
+      ...creation,
+      brief: { intent: "Fix it.", links: [], checks: ["npm test"] },
+    }).brief.checks,
+    ["npm test"],
+    "the lines a brief appends reach the interpreter branded and in order",
   );
 });

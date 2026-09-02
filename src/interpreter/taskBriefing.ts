@@ -27,6 +27,12 @@
  * and never reads the configuration, so a later source of check lines is folded
  * in here rather than by a second path into the worker.
  *
+ * THE TICKET'S OWN CHECK LINES ARE THE SECOND SOURCE, AND THEY FOLLOW. They are
+ * appended to the first stage the configuration commands, so the configuration's
+ * list runs whatever the ticket says and a ticket can only widen what its work
+ * is held to. The brief is frozen at release and this fold reads nothing else,
+ * so a retry of the same stage runs the same list in the same order.
+ *
  * AUTHORITY IS NEVER COMPOSED FROM PROSE. `./taskAuthority.ts` holds the whole
  * of it, the requests folded into it are structured data, and a rendered
  * briefing has no authority field for a later block to raise. The template's
@@ -77,7 +83,11 @@
  * explained without widening what `Core` understands.
  */
 
-import { briefIntentLinesMax, briefLinksMax } from "../contract/brief.ts";
+import {
+  briefChecksMax,
+  briefIntentLinesMax,
+  briefLinksMax,
+} from "../contract/brief.ts";
 import type { ConfigurationPin } from "./projectDecision.ts";
 import {
   resultReportCharsMax,
@@ -92,7 +102,9 @@ import {
   authoredTaskConfigurationReadiness,
   allPracticeIds,
   briefingLinesMax,
+  commandedEvaluationBlock,
   evaluationChecksMax,
+  firstCommandedCheckStage,
   taskConfigurationLineFault,
   type AuthoredTaskConfiguration,
   type CommandEvaluationBlock,
@@ -108,7 +120,9 @@ export {
   allPracticeIds,
   briefingLineCharsMax,
   briefingLinesMax,
+  commandedEvaluationBlock,
   evaluationChecksMax,
+  firstCommandedCheckStage,
   type AgentEvaluationBlock,
   type AuthoredTaskConfiguration,
   type CommandEvaluationBlock,
@@ -426,23 +440,50 @@ function purposeBlock(
   return stage === undefined ? undefined : configuration.evaluations[stage];
 }
 
-/** Whether this stage is the kind the worker runs itself rather than briefing an agent. */
-function commandedStage(
-  block: PurposeBlock | EvaluationBlock,
-): block is CommandEvaluationBlock {
-  return "checks" in block && block.checks !== undefined;
-}
-
 /** The carrier one view renders under, which is the only thing the wording turns on. */
 function briefingCarrier(view: BriefingView): BriefingCarrier {
   const block = purposeBlock(view.configuration, view.purpose, view.stage);
-  return block !== undefined && commandedStage(block) ? "Commands" : "Agent";
+  return block !== undefined && commandedEvaluationBlock(block)
+    ? "Commands"
+    : "Agent";
+}
+
+/**
+ * The most command lines one stage is handed: the configuration's, and the
+ * ticket's appended after them. It is the sum because a ticket only ever adds,
+ * so a stage at both bounds is the longest list a worker ever runs.
+ */
+export const stageCommandsMax = evaluationChecksMax + briefChecksMax;
+
+/**
+ * The lines this ticket adds to the stage it is being composed for, which are
+ * its own and only at the stage the configuration commands first. Every later
+ * commanded stage runs the configuration's list alone, so one ticket's lines
+ * run once however many stages the configuration commands.
+ */
+function briefingTicketChecks(view: BriefingView): readonly string[] {
+  const stage = firstCommandedCheckStage(view.configuration);
+  return stage !== undefined && view.stage === stage
+    ? (view.brief?.checks ?? [])
+    : [];
+}
+
+/**
+ * The whole list one commanded stage runs, the configuration's first. The order
+ * is the rule: a ticket appends, so nothing it says can displace or precede a
+ * line the configuration named.
+ */
+function briefingStageCommands(
+  view: BriefingView,
+  block: CommandEvaluationBlock,
+): readonly string[] {
+  return [...block.checks, ...briefingTicketChecks(view)];
 }
 
 function purposePractices(view: BriefingView): readonly string[] | undefined {
   const block = purposeBlock(view.configuration, view.purpose, view.stage);
   if (block === undefined) return undefined;
-  if (commandedStage(block)) return [];
+  if (commandedEvaluationBlock(block)) return [];
   return "practices" in block ? block.practices : view.configuration.practices;
 }
 
@@ -475,8 +516,8 @@ function briefingConfigurationFault(
     [brief.motivation, briefingLinesMax],
     [brief.acceptanceCriteria, briefingLinesMax],
     [brief.constraints, briefingLinesMax],
-    commandedStage(block)
-      ? [block.checks, evaluationChecksMax]
+    commandedEvaluationBlock(block)
+      ? [briefingStageCommands(view, block), stageCommandsMax]
       : [block.instructions, briefingLinesMax],
   ]);
 }
@@ -523,6 +564,7 @@ function briefingTicketBriefFault(
     : briefingListsFault([
         [briefIntentLines(brief.intent), briefIntentLinesMax],
         [brief.links, briefLinksMax],
+        [brief.checks, briefChecksMax],
       ]);
 }
 
@@ -567,7 +609,7 @@ function briefingBodies(
   practices: readonly BlessedPractice[],
 ): Record<BriefingSectionId, readonly string[]> {
   const block = purposeBlock(view.configuration, view.purpose, view.stage);
-  const commanded = block !== undefined && commandedStage(block);
+  const commanded = block !== undefined && commandedEvaluationBlock(block);
   const carrier = briefingCarrier(view);
   return {
     RoleInstructions: briefingRoleInstructions(view.purpose, carrier),
@@ -585,7 +627,9 @@ function briefingBodies(
           )
         : [],
     PurposeInstructions: commanded ? [] : (block?.instructions ?? []),
-    CheckCommands: commanded ? block.checks.map(briefingBullet) : [],
+    CheckCommands: commanded
+      ? briefingStageCommands(view, block).map(briefingBullet)
+      : [],
     Practices: practices.map((practice) =>
       briefingBullet(practice.instruction),
     ),
@@ -662,10 +706,17 @@ export function renderBriefing(
   };
 }
 
-/** One rendered section as the provenance row records it, which is its identity and its size. */
+/**
+ * One rendered section as the provenance row records it, which is its identity
+ * and its size. A section composed from more than one source also records how
+ * many of its lines the ticket's own brief supplied, so a reader can tell what
+ * a stage ran because of the configuration from what it ran because of the
+ * ticket; a section with one source records none.
+ */
 export interface BriefingProvenanceSection {
   readonly section: BriefingSectionId;
   readonly chars: number;
+  readonly ticketLines?: number;
 }
 
 /**
@@ -679,11 +730,15 @@ export interface BriefingProvenance extends ConfigurationPin {
   readonly sections: readonly BriefingProvenanceSection[];
 }
 
+/** The one section a ticket adds lines to, whose split of sources is recorded. */
+const briefingTicketSourcedSection: BriefingSectionId = "CheckCommands";
+
 /** The provenance of one rendered briefing, which is what obligation 14 asks be kept. */
 function briefingProvenance(
   briefing: RenderedBriefing,
   pin: ConfigurationPin,
   practices: readonly BlessedPractice[],
+  ticketLines: number,
 ): BriefingProvenance {
   return {
     configurationRevision: pin.configurationRevision,
@@ -694,6 +749,9 @@ function briefingProvenance(
     sections: briefing.sections.map((section) => ({
       section: section.section,
       chars: briefingSectionText(section).length,
+      ...(section.section === briefingTicketSourcedSection
+        ? { ticketLines }
+        : {}),
     })),
   };
 }
@@ -722,18 +780,19 @@ function briefingAuthorityRequests(
 
 /**
  * The worker configuration this stage runs under, which for a commanded check
- * stage is the resolved command list rather than the authored agent mode. The
- * authored setup and files are kept, because a stage prepares its workspace the
- * same way whatever runs in it.
+ * stage is the resolved command list — the configuration's, and the ticket's
+ * after it — rather than the authored agent mode. The authored setup and files
+ * are kept, because a stage prepares its workspace the same way whatever runs
+ * in it.
  */
 function briefingWorker(
   view: BriefingView,
 ): AuthoredTaskConfiguration["worker"] {
   const block = purposeBlock(view.configuration, view.purpose, view.stage);
   const worker = view.configuration.worker;
-  if (block === undefined || !commandedStage(block)) return worker;
+  if (block === undefined || !commandedEvaluationBlock(block)) return worker;
   return {
-    mode: { type: "Commands", commands: block.checks },
+    mode: { type: "Commands", commands: briefingStageCommands(view, block) },
     setup: worker?.setup ?? [],
     files: worker?.files ?? [],
   };
@@ -798,7 +857,12 @@ export function composeTaskInvocation(
       view.grant,
       briefingAuthorityRequests(view),
     ),
-    provenance: briefingProvenance(briefing, view.pin, resolved.practices),
+    provenance: briefingProvenance(
+      briefing,
+      view.pin,
+      resolved.practices,
+      briefingTicketChecks(view).length,
+    ),
     ...(worker === undefined ? {} : { worker }),
   };
   return taskInvocationBytes(invocation) > taskInvocationBytesMax

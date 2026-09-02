@@ -77,6 +77,29 @@ test("a link this console did not write cannot reach back through what it opens"
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
 });
 
+test("the check lines a brief appends are drawn one per line, in order", () => {
+  render(
+    <TicketBrief
+      state={draft({
+        intent: "an intent",
+        links: [],
+        checks: ["npm run lint", "npm test"],
+      })}
+    />,
+  );
+  const lines = screen.getByText("checks").nextElementSibling;
+  expect(
+    [...(lines?.querySelectorAll("li") ?? [])].map((li) => li.textContent),
+  ).toEqual(["npm run lint", "npm test"]);
+});
+
+test("a brief appending no check lines says so rather than drawing an empty list", () => {
+  render(<TicketBrief state={draft({ intent: "an intent", links: [] })} />);
+  expect(screen.getByText("checks").nextElementSibling?.textContent).toBe(
+    "none",
+  );
+});
+
 test("a brief with no branch says so rather than drawing an empty field", () => {
   render(<TicketBrief state={draft({ intent: "an intent", links: [] })} />);
   expect(screen.queryAllByRole("link")).toEqual([]);

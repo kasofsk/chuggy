@@ -1,7 +1,7 @@
 /**
  * The brief a ticket carries beside its authoring: what a human asked for,
- * what to read first, the branch the work happens on, and where a finalization
- * lands it.
+ * what to read first, the check lines it adds, the branch the work happens on,
+ * and where a finalization lands it.
  *
  * A brief is not authoring. `authoringSchema` is the model's own release event
  * and every value of it decides how the machine runs the ticket; none of these
@@ -29,6 +29,13 @@ export const briefIntentLinesMax = briefIntentCharsMax / briefLineCharsMax;
 /** The most links one brief carries, a link list being a briefing list like any other. */
 export const briefLinksMax = 8;
 
+/**
+ * The most command lines one brief appends to its check stage. A ticket only
+ * ever adds to the configuration's list, so this and the configuration's own
+ * bound add up to the longest list a stage is ever handed.
+ */
+export const briefChecksMax = 8;
+
 /** The longest branch one brief names, a branch being a stored reference name. */
 export const briefBranchCharsMax = 256;
 
@@ -47,6 +54,13 @@ export const briefBranchSchema = z
   .string()
   .max(briefBranchCharsMax)
   .startsWith(briefBranchPrefix);
+
+/**
+ * One command line a ticket appends to its check stage. It renders as one
+ * briefing line and runs as one shell command, so the line bound is the whole
+ * of what the wire says about it and the server decides the rest.
+ */
+export const briefCheckSchema = z.string().min(1).max(briefLineCharsMax);
 
 /**
  * How and where a finalization lands the work, as one variant per mode: a push
@@ -85,16 +99,17 @@ export function briefLandingIsWhole(value: {
 }
 
 /**
- * The brief as a write states it, its finalization omitted where the work
- * lands where it happened. The intent cannot be empty, because a ticket nobody
- * stated a purpose for is the one thing an agent cannot be briefed on, and the
- * pairing above is refused here so that a brief the finalizer could not open a
- * proposal for is never a brief at all.
+ * The brief as a write states it, its finalization omitted where the work lands
+ * where it happened and its checks where a ticket appends none. The intent
+ * cannot be empty, because a ticket nobody stated a purpose for is the one thing
+ * an agent cannot be briefed on, and the pairing above is refused here so that a
+ * brief the finalizer could not open a proposal for is never a brief at all.
  */
 export const briefSchema = z
   .strictObject({
     intent: z.string().min(1).max(briefIntentCharsMax),
     links: z.array(briefLinkSchema).max(briefLinksMax),
+    checks: z.array(briefCheckSchema).max(briefChecksMax).optional(),
     branch: briefBranchSchema.optional(),
     finalization: briefFinalizationSchema.optional(),
   })

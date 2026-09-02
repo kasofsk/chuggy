@@ -787,6 +787,19 @@ async function applyMigration(
   for (const statement of migration.statements) await subject.query(statement);
 }
 
+/**
+ * Applies every migration above one, so a case pinned at that migration still
+ * offers a current adapter the relations it selects.
+ */
+async function applyMigrationsAbove(
+  subject: pg.Pool,
+  version: number,
+): Promise<void> {
+  for (const migration of migrations.filter((one) => one.version > version))
+    for (const statement of migration.statements)
+      await subject.query(statement);
+}
+
 async function seedEscalatedProjections(subject: pg.Pool): Promise<void> {
   const store = postgresProjectStore(subject);
   const epoch = await postgresHarnessEpoch(store);
@@ -1598,6 +1611,7 @@ test("migration 56's index is what answers every read of a ticket's release", as
   await migrationDatabase("journal_instants_index", async (subject, url) => {
     await migrationSeedApplied(subject, 56);
     await applyMigration(subject, 56);
+    await applyMigrationsAbove(subject, 56);
     const store = postgresProjectStore(subject);
     const epoch = await postgresHarnessEpoch(store);
     const partition = await postgresHarnessProject(store, "journal-instants");
