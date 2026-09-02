@@ -11,6 +11,13 @@
  * carrying them would be a placement carrying a cluster fact this port is not
  * supposed to know.
  *
+ * ITS REPOSITORY IS PLACEMENT DATA WHERE ITS MAILBOX IS NOT. Which repository a
+ * session reads is the project's own binding, resolved when the attempt is
+ * placed and different for every project the scheduler serves, so it belongs on
+ * the placement exactly as the mailbox endpoint does not. It carries no commit:
+ * a session has no ticket, so it has no decision to freeze one, and a standing
+ * reader wants the tree as it is rather than as it was.
+ *
  * ITS EVIDENCE IS ITS OWN ROSTER rather than the execution scheduler's widened.
  * A session has no manifest, no verdict and no retry budget, so widening the
  * execution roster with `SessionIdle` would put a label on an execution attempt
@@ -38,6 +45,7 @@ import type {
   AttemptPlacementOutcome,
   ExecutionProfile,
 } from "./executionScheduler.ts";
+import type { RepositoryId } from "./finalizer.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import type { PlacementId } from "./schedulerIdentity.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
@@ -66,6 +74,12 @@ export interface SessionPlacement extends FencedSessionAttempt {
   readonly image: string;
   readonly authority: PolicyAuthorityGrant;
   readonly bearer: SessionBearer;
+  /**
+   * The repository the session reads, from the project's binding. A project
+   * that binds none places a session with no checkout, which is the honest arm:
+   * the session reads the project through the API and has no tree.
+   */
+  readonly repository?: RepositoryId;
 }
 
 /** The three arms an execution placement already has, reused unchanged. */

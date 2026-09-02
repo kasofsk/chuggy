@@ -45,6 +45,7 @@ import {
   asSessionBearerSecret,
   asSessionId,
 } from "../../src/interpreter/agentSession.ts";
+import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import type { SessionPlacement } from "../../src/interpreter/sessionScheduler.ts";
 import type { PolicyAuthorityGrant } from "../../src/interpreter/taskAuthority.ts";
@@ -105,6 +106,7 @@ const config: KubernetesSessionLaunchConfig = {
     budgetUsd: 5,
   },
   model: "claude-opus-4-5",
+  apiUrl: "https://api.invalid",
 };
 
 const grant: PolicyAuthorityGrant = {
@@ -224,8 +226,22 @@ test("a session is handed its fence, what it may do and where its mailbox is, an
       url: config.workerPlaneUrl,
       capabilityFile: config.capabilityFile,
     },
+    api: { url: config.apiUrl },
     bounds: config.bounds,
   });
+});
+
+test("a session bound to a repository is handed its reference, and one bound to none is handed nothing", () => {
+  assert.ok(
+    !Object.hasOwn(kubernetesSessionTask(config, placement), "repository"),
+  );
+  assert.deepEqual(
+    kubernetesSessionTask(config, {
+      ...placement,
+      repository: asRepositoryId("chuggy"),
+    }).repository,
+    { reference: "chuggy" },
+  );
 });
 
 test("a session that has never run is handed no runtime reference to resume", () => {
@@ -424,6 +440,10 @@ test("a configuration that cannot address a cluster or bound a pod is refused", 
     { podNamePrefix: "s".repeat(kubernetesNameCharsMax) },
     { tokenFile: "" },
     { workerPlaneUrl: "http://user:secret@plane.invalid:3001" },
+    { apiUrl: "https://user:secret@api.invalid" },
+    { apiUrl: "https://api.invalid/api/v1" },
+    { apiUrl: "https://api.invalid/?tenant=vteng" },
+    { apiUrl: "https://api.invalid/#top" },
     { capabilityFile: "run/chuggy/bearer" },
     { workspacePath: "workspace" },
     { model: "" },
@@ -441,5 +461,9 @@ test("a configuration that cannot address a cluster or bound a pod is refused", 
       JSON.stringify(refused),
     );
   }
+  assert.throws(
+    () => checkedKubernetesSessionLaunchConfig({ ...config, apiUrl: "" }),
+    TypeError,
+  );
   assert.deepEqual(checkedKubernetesSessionLaunchConfig(config), config);
 });

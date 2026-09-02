@@ -7,13 +7,16 @@
  * pinned configuration and no briefing, so nothing here reads a policy, a
  * revision or a catalog: the image, the profile and the grant arrive on the
  * placement, resolved once for the site, and the briefing machinery is never
- * entered. What is left is the fenced identity, what the session may do, and
- * where its mailbox is.
+ * entered. What is left is the fenced identity, what the session may do, where
+ * its mailbox is, and which repository it reads.
  *
- * THE MAILBOX ENDPOINT IS SITE DATA, NOT PLACEMENT DATA. The worker plane URL,
- * the capability file and the workspace path are on the launch configuration
- * exactly as they are for a worker; a placement carrying them would be a
- * placement carrying a cluster fact the port is not supposed to know.
+ * THE TWO ENDPOINTS ARE SITE DATA, NOT PLACEMENT DATA. The worker plane URL,
+ * this installation's own API origin, the capability file and the workspace
+ * path are on the launch configuration exactly as they are for a worker; a
+ * placement carrying them would be a placement carrying a cluster fact the port
+ * is not supposed to know. The repository is the other way round: it is the
+ * project's binding rather than the site's, so it arrives on the placement and
+ * is absent for a project that binds none.
  *
  * THE POD IS NAMED FOR ITS ATTEMPT ALONE, by the same digest a worker pod is
  * named by and for the same reason: a repeated placement of one attempt names
@@ -138,6 +141,12 @@ export interface KubernetesSessionLaunchConfig extends KubernetesPodSite {
   readonly bounds: KubernetesSessionBounds;
   /** Which model every session of this site speaks to, which is a site choice and not a session's. */
   readonly model: string;
+  /**
+   * Where this installation's own API answers, as an origin and never a path:
+   * the versioned base path is the client's to build. A site that names a path
+   * here sends every call the pod makes to somewhere that does not exist.
+   */
+  readonly apiUrl: string;
 }
 
 /** The one container name a placed session carries, so a reader of the cluster needs no lookup. */
@@ -186,6 +195,14 @@ export interface KubernetesSessionTask {
     readonly url: string;
     readonly capabilityFile: string;
   };
+  /** Where the pod's own tools reach the API, an origin the client appends the versioned path to. */
+  readonly api: {
+    readonly url: string;
+  };
+  /** The repository reference the pod resolves against the site's own map, absent where the project binds none. */
+  readonly repository?: {
+    readonly reference: string;
+  };
   readonly bounds: KubernetesSessionBounds;
 }
 
@@ -201,6 +218,13 @@ export function checkedKubernetesSessionLaunchConfig(
     "session environment",
   );
   if (config.model.length === 0) throw new RangeError("session model is empty");
+  const api = new URL(config.apiUrl);
+  if (api.username !== "" || api.password !== "")
+    throw new RangeError("session API URL must carry no credentials");
+  if (api.pathname !== "/" || api.search !== "" || api.hash !== "")
+    throw new RangeError(
+      "session API URL must be an origin, because the pod's client builds the versioned path onto it",
+    );
   kubernetesPositive(config.activeDeadlineSecs, "session active deadline");
   for (const bound of kubernetesSessionBoundNames)
     kubernetesSessionBoundChecks[bound](
@@ -280,6 +304,10 @@ export function kubernetesSessionTask(
       url: config.workerPlaneUrl,
       capabilityFile: config.capabilityFile,
     },
+    api: { url: config.apiUrl },
+    ...(placement.repository === undefined
+      ? {}
+      : { repository: { reference: placement.repository } }),
     bounds: config.bounds,
   };
 }

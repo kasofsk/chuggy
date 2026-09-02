@@ -114,6 +114,7 @@ const environment: Readonly<Record<string, string>> = {
   CHUG_SCHEDULER_SESSION_RESOURCES: JSON.stringify(resources),
   CHUG_SCHEDULER_SESSION_POLICY: JSON.stringify(sessionPolicy),
   CHUG_SCHEDULER_SESSION_MODEL: "claude-opus-4-5",
+  CHUG_SCHEDULER_SESSION_API_URL: "http://chuggy-api.invalid:3000",
 };
 
 /** Every variable the command refuses to start without. */
@@ -217,6 +218,7 @@ const parsed = {
     activeDeadlineSecs: 86_400,
     bounds: kubernetesSessionBoundsDefaults,
     model: "claude-opus-4-5",
+    apiUrl: "http://chuggy-api.invalid:3000",
   },
   sessionScheduler: sessionSchedulerDefaults,
   sessionPolicy: {
@@ -615,6 +617,7 @@ function processCluster(reachable: boolean): string {
       activeDeadlineSecs: 86400,
       bounds: ${JSON.stringify(kubernetesSessionBoundsDefaults)},
       model: 'claude-haiku-4-5',
+      apiUrl: 'https://chuggy-api.invalid',
     };
     const asked = [];
     const half = (init) => {
