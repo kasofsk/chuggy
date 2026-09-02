@@ -45,8 +45,6 @@
  * a second placement of one attempt names what the first created.
  */
 
-import { basename, dirname } from "node:path";
-
 import type {
   AttemptPlacement,
   BlockedReason,
@@ -58,14 +56,21 @@ import { taskAuthorityGrant } from "../../interpreter/taskAuthority.ts";
 import type { PolicyAuthorityGrant } from "../../interpreter/taskAuthority.ts";
 import {
   checkedKubernetesPodSite,
+  kubernetesAnnotationPrefix,
   kubernetesAttemptDigest,
+  kubernetesContainerResources,
+  kubernetesCredentials,
   kubernetesDigestChars,
   kubernetesName,
   kubernetesPodNamePrefix,
   kubernetesPositive,
   kubernetesReservedVariables,
+  kubernetesSessionTaskVariable,
+  kubernetesWorkerCredentialFilesVariable,
+  kubernetesWorkerTaskVariable,
   type KubernetesContainer,
   type KubernetesContainerVariable,
+  type KubernetesCredentialSelection,
   type KubernetesPod,
   type KubernetesPodRequested,
   type KubernetesPodSite,
@@ -78,9 +83,6 @@ export interface KubernetesWorkerDatabase {
   readonly secretName: string;
   readonly key: string;
 }
-
-export const kubernetesWorkerCredentialFilesVariable =
-  "CHUG_WORKER_CREDENTIAL_FILES";
 
 /**
  * Everything a deployment supplies the worker-launch adapter beyond the site
@@ -99,9 +101,6 @@ export interface KubernetesWorkerLaunchConfig extends KubernetesPodSite {
 /** The one container name a placed pod carries, so a reader of the cluster needs no lookup. */
 export const kubernetesWorkerContainerName = "worker";
 
-/** The environment variable a placed worker reads its whole task from. */
-export const kubernetesWorkerTaskVariable = "CHUG_WORKER_TASK";
-
 /** The environment variable a placed worker reaches the site's shared PostgreSQL by. */
 export const kubernetesWorkerDatabaseUrlVariable = "CHUG_WORKER_DATABASE_URL";
 
@@ -112,13 +111,11 @@ export const kubernetesWorkerDatabaseScopeVariable =
 /** The names this adapter writes itself, which a site's own environment may not take. */
 const kubernetesWorkerReservedVariables = [
   kubernetesWorkerTaskVariable,
+  kubernetesSessionTaskVariable,
   kubernetesWorkerCredentialFilesVariable,
   kubernetesWorkerDatabaseUrlVariable,
   kubernetesWorkerDatabaseScopeVariable,
 ] as const;
-
-/** The annotation namespace every identity this adapter writes is qualified by. */
-const kubernetesWorkerAnnotationPrefix = "chuggy.internal/";
 
 /** How much of that digest a scoped database name carries, which a PostgreSQL name bounds. */
 const kubernetesWorkerScopeDigestChars = kubernetesDigestChars / 2;
@@ -293,7 +290,7 @@ function kubernetesWorkerAnnotations(
     ...config.podAnnotations,
     ...Object.fromEntries(
       Object.entries(identity).map(([name, value]) => [
-        `${kubernetesWorkerAnnotationPrefix}${name}`,
+        `${kubernetesAnnotationPrefix}${name}`,
         value,
       ]),
     ),
@@ -362,64 +359,6 @@ function kubernetesWorkerCapabilityVolumes(
   ];
 }
 
-interface KubernetesWorkerCredentialSelection {
-  readonly volumes: KubernetesPod["spec"]["volumes"];
-  readonly mounts: KubernetesContainer["volumeMounts"];
-  readonly files: Readonly<Record<string, string>>;
-}
-
-/** Resolves only credentials the authority granted, refusing an unserved name. */
-function kubernetesWorkerCredentials(
-  config: KubernetesWorkerLaunchConfig,
-  authority: PolicyAuthorityGrant,
-): KubernetesWorkerCredentialSelection | undefined {
-  const directories = new Map<
-    string,
-    {
-      readonly name: string;
-      readonly sources: {
-        readonly secret: {
-          readonly name: string;
-          readonly items: readonly {
-            readonly key: string;
-            readonly path: string;
-          }[];
-        };
-      }[];
-    }
-  >();
-  const files: Record<string, string> = {};
-  for (const credential of authority.credentials) {
-    const supplied = config.credentialMounts[credential];
-    if (supplied === undefined) return undefined;
-    const directory = dirname(supplied.mountPath);
-    const selected = directories.get(directory) ?? {
-      name: `worker-credential-${String(directories.size)}`,
-      sources: [],
-    };
-    selected.sources.push({
-      secret: {
-        name: supplied.secretName,
-        items: [{ key: supplied.key, path: basename(supplied.mountPath) }],
-      },
-    });
-    directories.set(directory, selected);
-    files[credential] = supplied.mountPath;
-  }
-  return {
-    volumes: [...directories.values()].map(({ name, sources }) => ({
-      name,
-      projected: { defaultMode: 0o400, sources },
-    })),
-    mounts: [...directories.entries()].map(([mountPath, { name }]) => ({
-      name,
-      mountPath,
-      readOnly: true,
-    })),
-    files,
-  };
-}
-
 /**
  * The shared server a worker reaches and the database on it that is the
  * attempt's, or nothing where the site runs no such server: work that then
@@ -456,7 +395,7 @@ function kubernetesWorkerContainer(
   config: KubernetesWorkerLaunchConfig,
   placement: AttemptPlacement,
   image: string,
-  credentials: KubernetesWorkerCredentialSelection,
+  credentials: KubernetesCredentialSelection,
 ): KubernetesContainer {
   return {
     name: kubernetesWorkerContainerName,
@@ -476,18 +415,7 @@ function kubernetesWorkerContainer(
         value,
       })),
     ],
-    resources: {
-      requests: {
-        cpu: config.resources.cpuRequest,
-        memory: config.resources.memoryRequest,
-        "ephemeral-storage": config.resources.ephemeralStorageLimit,
-      },
-      limits: {
-        cpu: config.resources.cpuLimit,
-        memory: config.resources.memoryLimit,
-        "ephemeral-storage": config.resources.ephemeralStorageLimit,
-      },
-    },
+    resources: kubernetesContainerResources(config.resources),
     securityContext: config.containerSecurityContext,
     volumeMounts: [
       {
@@ -514,9 +442,10 @@ export function kubernetesWorkerPodRequest(
   const admitted = kubernetesWorkerImage(placement);
   if ("reason" in admitted)
     return { requested: "Denied", reason: admitted.reason };
-  const credentials = kubernetesWorkerCredentials(
+  const credentials = kubernetesCredentials(
     config,
     taskAuthorityGrant(placement.invocation.authority),
+    kubernetesWorkerContainerName,
   );
   if (credentials === undefined)
     return { requested: "Denied", reason: "RequiredCapabilityUnavailable" };

@@ -27,10 +27,11 @@
  */
 
 import { createHash } from "node:crypto";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { basename, dirname, isAbsolute, resolve } from "node:path";
 
 import type { BlockedReason } from "../../interpreter/executionScheduler.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
+import type { PolicyAuthorityGrant } from "../../interpreter/taskAuthority.ts";
 
 /** What one container may request and may not exceed. */
 export interface KubernetesResourceBudget {
@@ -173,6 +174,24 @@ export type KubernetesPodRequested =
   | { readonly requested: "Pod"; readonly pod: KubernetesPod }
   | { readonly requested: "Denied"; readonly reason: BlockedReason };
 
+/**
+ * The two variables the image selects its mode by. Exactly one must be set, so
+ * each launcher writes its own and reserves both: a site environment naming the
+ * other would place a pod that refuses before it runs anything.
+ */
+export const kubernetesWorkerTaskVariable = "CHUG_WORKER_TASK";
+export const kubernetesSessionTaskVariable = "CHUG_SESSION_TASK";
+
+/** Where each credential the grant named was mounted, which both pods read alike. */
+export const kubernetesWorkerCredentialFilesVariable =
+  "CHUG_WORKER_CREDENTIAL_FILES";
+
+/** The writable directory a pod does its work in. */
+export const kubernetesWorkerWorkspaceVariable = "CHUG_WORKER_WORKSPACE";
+
+/** The annotation namespace every identity a launcher writes is qualified by. */
+export const kubernetesAnnotationPrefix = "chuggy.internal/";
+
 /** The object-name alphabet a namespace, a service account and a name prefix are held to. */
 export const kubernetesNamePattern = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/u;
 
@@ -288,4 +307,87 @@ export function checkedKubernetesPodSite<Site extends KubernetesPodSite>(
   kubernetesPositive(site.requestTimeoutSecsMax, "cluster request timeout");
   kubernetesPositive(site.unavailableRetryAfterSecs, "cluster retry interval");
   return site;
+}
+
+/** The requests and limits one container is held to, which both pods spell alike. */
+export function kubernetesContainerResources(
+  resources: KubernetesResourceBudget,
+): KubernetesContainer["resources"] {
+  return {
+    requests: {
+      cpu: resources.cpuRequest,
+      memory: resources.memoryRequest,
+      "ephemeral-storage": resources.ephemeralStorageLimit,
+    },
+    limits: {
+      cpu: resources.cpuLimit,
+      memory: resources.memoryLimit,
+      "ephemeral-storage": resources.ephemeralStorageLimit,
+    },
+  };
+}
+
+/** What resolving a grant's named credentials against a site's mounts produced. */
+export interface KubernetesCredentialSelection {
+  readonly volumes: KubernetesPod["spec"]["volumes"];
+  readonly mounts: KubernetesContainer["volumeMounts"];
+  readonly files: Readonly<Record<string, string>>;
+}
+
+/**
+ * Resolves only credentials the authority granted, refusing an unserved name.
+ * Credentials sharing a directory share one projected volume, because a volume
+ * mounts a directory and two volumes at one path is a mount the kubelet
+ * resolves by order rather than by the configuration.
+ */
+export function kubernetesCredentials(
+  site: KubernetesPodSite,
+  authority: PolicyAuthorityGrant,
+  namePrefix: string,
+): KubernetesCredentialSelection | undefined {
+  const directories = new Map<
+    string,
+    {
+      readonly name: string;
+      readonly sources: {
+        readonly secret: {
+          readonly name: string;
+          readonly items: readonly {
+            readonly key: string;
+            readonly path: string;
+          }[];
+        };
+      }[];
+    }
+  >();
+  const files: Record<string, string> = {};
+  for (const credential of authority.credentials) {
+    const supplied = site.credentialMounts[credential];
+    if (supplied === undefined) return undefined;
+    const directory = dirname(supplied.mountPath);
+    const selected = directories.get(directory) ?? {
+      name: `${namePrefix}-credential-${String(directories.size)}`,
+      sources: [],
+    };
+    selected.sources.push({
+      secret: {
+        name: supplied.secretName,
+        items: [{ key: supplied.key, path: basename(supplied.mountPath) }],
+      },
+    });
+    directories.set(directory, selected);
+    files[credential] = supplied.mountPath;
+  }
+  return {
+    volumes: [...directories.values()].map(({ name, sources }) => ({
+      name,
+      projected: { defaultMode: 0o400, sources },
+    })),
+    mounts: [...directories.entries()].map(([mountPath, { name }]) => ({
+      name,
+      mountPath,
+      readOnly: true,
+    })),
+    files,
+  };
 }

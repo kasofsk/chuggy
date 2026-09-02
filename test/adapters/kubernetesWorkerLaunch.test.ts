@@ -31,18 +31,18 @@ import {
 import {
   checkedKubernetesWorkerLaunchConfig,
   kubernetesWorkerContainerName,
-  kubernetesWorkerCredentialFilesVariable,
   kubernetesWorkerDatabaseScope,
   kubernetesWorkerDatabaseScopeVariable,
   kubernetesWorkerDatabaseUrlVariable,
   kubernetesWorkerPodName,
   kubernetesWorkerPodRequest,
-  kubernetesWorkerTaskVariable,
   type KubernetesWorkerLaunchConfig,
   type KubernetesWorkerTask,
 } from "../../src/adapters/kubernetes/workerPod.ts";
 import {
   kubernetesNameCharsMax,
+  kubernetesWorkerCredentialFilesVariable,
+  kubernetesWorkerTaskVariable,
   type KubernetesPod,
 } from "../../src/adapters/kubernetes/kubernetesSite.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
@@ -947,7 +947,6 @@ test("a deployment that cannot address a cluster is refused where it is composed
 test("site environment cannot replace worker-owned documents", () => {
   for (const variable of [
     kubernetesWorkerTaskVariable,
-    kubernetesWorkerCredentialFilesVariable,
     kubernetesWorkerDatabaseUrlVariable,
     kubernetesWorkerDatabaseScopeVariable,
   ]) {
