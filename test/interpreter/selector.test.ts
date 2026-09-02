@@ -17,6 +17,7 @@ import {
   type SelectorPolicyHost,
   type SelectorPolicyRequest,
   type SelectorObservation,
+  type SelectorProjectState,
   type JsonValue,
 } from "../../src/interpreter/selector.ts";
 import {
@@ -36,7 +37,7 @@ import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import { selectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
 import { selectorRuntimeAdministration } from "../../src/interpreter/selectorAdmin.ts";
 import { selectorPlanning } from "../../src/interpreter/selectorPlanning.ts";
-import { trustedSelectorPolicyHost } from "../../src/interpreter/trustedSelectorPolicyHost.ts";
+import { selectorPolicyHost } from "../../src/interpreter/selectorPolicyHost.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -205,11 +206,13 @@ function policyHost(
   };
 }
 
+const movedPage = { result: "Events", cursor: 1, events: [] } as const;
+
 function promptObservationSource() {
   return {
     decisionDeadline: () => new Promise<never>(() => undefined),
-    notifications: () =>
-      Promise.resolve({ result: "Events", cursor: 1, events: [] } as const),
+    notifications: () => Promise.resolve(movedPage),
+    moved: () => Promise.resolve(movedPage),
     currentTimeEpochMs: () =>
       Promise.resolve(operationalContext.observedAtEpochMs),
     currentInstant: () => Promise.resolve(operationalContext.observedAt),
@@ -293,11 +296,6 @@ test("selector observation resumes from a reset cursor and pins every view page"
       handoffNote: {},
     },
     {
-      notifications: () => Promise.resolve({ result: "Reset", cursor: 12 }),
-      decisionDeadline: () => new Promise<never>(() => undefined),
-      currentTimeEpochMs: () =>
-        Promise.resolve(operationalContext.observedAtEpochMs),
-      currentInstant: () => Promise.resolve(operationalContext.observedAt),
       operationalContext: () => Promise.resolve(operationalContext),
       dispatchView: (_partition, query) => {
         watermarks.push(query.watermark);
@@ -315,6 +313,7 @@ test("selector observation resumes from a reset cursor and pins every view page"
         } as const);
       },
     },
+    { result: "Reset", cursor: 12 },
   );
   assert.equal(observed?.notificationCursor, 12);
   assert.deepEqual(watermarks, [undefined]);
@@ -334,11 +333,8 @@ test("an observation carries the notification page that triggered it", async () 
       attention: "Monitoring",
       handoffNote: {},
     },
-    {
-      ...promptObservationSource(),
-      notifications: () =>
-        Promise.resolve({ result: "Events", cursor: 5, events } as const),
-    },
+    promptObservationSource(),
+    { result: "Events", cursor: 5, events },
   );
   assert.deepEqual(observed?.changes, events);
   assert.equal(observed?.notificationCursor, 5);
@@ -366,12 +362,6 @@ test("selector observation restarts a continued scan when its view resets", asyn
       },
     },
     {
-      notifications: () =>
-        Promise.resolve({ result: "Events", cursor: 0, events: [] } as const),
-      decisionDeadline: () => new Promise<never>(() => undefined),
-      currentTimeEpochMs: () =>
-        Promise.resolve(operationalContext.observedAtEpochMs),
-      currentInstant: () => Promise.resolve(operationalContext.observedAt),
       operationalContext: () => Promise.resolve(operationalContext),
       dispatchView: () => {
         page += 1;
@@ -390,6 +380,7 @@ test("selector observation restarts a continued scan when its view resets", asyn
         } as const);
       },
     },
+    movedPage,
   );
   assert.equal(observed?.token.watermark, 2);
   assert.equal(page, 2);
@@ -436,6 +427,7 @@ test("an oversized final candidate advances the scan to Exhausted", async () => 
       candidateScan: { state: "Unstarted" },
     },
     source,
+    movedPage,
     10,
     100,
   );
@@ -453,6 +445,7 @@ test("an oversized final candidate advances the scan to Exhausted", async () => 
         candidateScan: observation?.nextCandidateScan,
       },
       source,
+      { result: "Events", cursor: 2, events: [] },
       10,
       100,
     ),
@@ -532,6 +525,8 @@ test("a paused runtime creates no new observations but still drains durable work
         Promise.reject(new Error("paused runtime listed projects")),
       notifications: () =>
         Promise.reject(new Error("paused runtime observed a project")),
+      moved: () =>
+        Promise.reject(new Error("paused runtime observed a project")),
       decisionDeadline: () =>
         Promise.reject(new Error("paused runtime created a deadline")),
       currentTimeEpochMs: () =>
@@ -585,8 +580,8 @@ test("inventory progress follows scanned projects when a permit is unavailable",
     {
       projects: () =>
         Promise.resolve({ projects: [first, second], nextAfter: second }),
-      notifications: () =>
-        Promise.resolve({ result: "Events", cursor: 1, events: [] } as const),
+      notifications: () => Promise.resolve(movedPage),
+      moved: () => Promise.resolve(movedPage),
       decisionDeadline: () => new Promise<never>(() => undefined),
       currentTimeEpochMs: () =>
         Promise.resolve(operationalContext.observedAtEpochMs),
@@ -948,6 +943,7 @@ test("a stale persisted observation releases its permit without starting policy"
       handoffNote: {},
     },
     promptObservationSource(),
+    movedPage,
   );
   assert.ok(observation !== undefined);
   await runObservedSelectorCycle(
@@ -1545,7 +1541,11 @@ test("one project failure does not block later projects or durable delivery", as
       notifications: (scope) =>
         scope === broken
           ? Promise.reject(new Error("broken project feed"))
-          : Promise.resolve({ result: "Events", cursor: 1, events: [] }),
+          : Promise.resolve(movedPage),
+      moved: (scope: typeof partition) =>
+        scope === broken
+          ? Promise.reject(new Error("broken project feed"))
+          : Promise.resolve(movedPage),
       decisionDeadline: () => new Promise<never>(() => undefined),
       currentTimeEpochMs: () =>
         Promise.resolve(operationalContext.observedAtEpochMs),
@@ -1598,6 +1598,7 @@ test("one reconciliation failure does not abandon the rest of its claim", async 
       projects: () =>
         Promise.reject(new Error("paused selector listed projects")),
       notifications: () => Promise.reject(new Error("no observation")),
+      moved: () => Promise.reject(new Error("no observation")),
       decisionDeadline: () => new Promise<never>(() => undefined),
       currentTimeEpochMs: () => Promise.resolve(0),
       currentInstant: () => Promise.resolve(operationalContext.observedAt),
@@ -1738,10 +1739,10 @@ test("selector configuration changes require platform administration", async () 
   assert.equal(mutations, 1);
 });
 
-test("the trusted policy host starts once and bounds cancellation evidence", async () => {
+test("the selector policy host starts once and bounds cancellation evidence", async () => {
   let executions = 0;
   let aborted = false;
-  const host = trustedSelectorPolicyHost(
+  const host = selectorPolicyHost(
     {
       execute: (_request, signal) => {
         executions += 1;
@@ -1860,4 +1861,174 @@ test("a host answering the pre-slice-2 spelling still names one dispatch", async
   assert.deepEqual(result.dispatches, [{ ticket: asTicketId(7) }]);
   assert.deepEqual(result.refusals, []);
   assert.deepEqual(result.lifts, []);
+});
+
+/** A state the store already holds, so a sweep's trigger has a cursor to compare. */
+function observedState(notificationCursor: number): SelectorProjectState {
+  return {
+    partition,
+    notificationCursor,
+    revision: 3,
+    attention: "Monitoring",
+    handoffNote: {},
+    candidateScan: { state: "Unstarted" },
+  };
+}
+
+test("a project whose change log has not moved takes no turn and spends nothing", async () => {
+  const permits: string[] = [];
+  let identities = 0;
+  let started = 0;
+  let saved: unknown = "unwritten";
+  const result = await selectorRunOnce(
+    {
+      ...stateStore(() => undefined),
+      project: () => Promise.resolve(observedState(5)),
+      allocateAttempt: (attempt) => {
+        permits.push(attempt);
+        return Promise.resolve(true);
+      },
+      saveInventoryCursor: (cursor) => {
+        saved = cursor;
+        return Promise.resolve();
+      },
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [partition] }),
+      moved: () =>
+        Promise.resolve({ result: "Events", cursor: 5, events: [] } as const),
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+      dispatchView: () =>
+        Promise.reject(new Error("an unmoved project was observed")),
+    },
+    policyHost(() => {
+      started += 1;
+      return Promise.reject(new Error("an unmoved project ran its policy"));
+    }),
+    {
+      next: () => {
+        identities += 1;
+        return {
+          operation: asOperationId("unused"),
+          selectorDecisionReference: "unused",
+        };
+      },
+    },
+    settingsSource(() => Promise.resolve(runtimeSettings)),
+  );
+  assert.deepEqual(permits, []);
+  assert.equal(identities, 0);
+  assert.equal(started, 0);
+  assert.deepEqual(result.failures, []);
+  assert.equal(result.observed, 0);
+  assert.equal(saved, undefined);
+});
+
+test("a project that moved takes one turn, and the window is what the lead is shown", async () => {
+  const events = [{ ordinal: 6, kind: "Ticket", resource: "3" }] as const;
+  const permits: string[] = [];
+  const observed: SelectorObservation[] = [];
+  let pages = 0;
+  const result = await selectorRunOnce(
+    {
+      ...stateStore(() => undefined),
+      project: () => Promise.resolve(observedState(5)),
+      allocateAttempt: (attempt) => {
+        permits.push(attempt);
+        return Promise.resolve(true);
+      },
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [partition] }),
+      moved: () => {
+        pages += 1;
+        return Promise.resolve({ result: "Events", cursor: 6, events });
+      },
+      notifications: () =>
+        Promise.reject(new Error("the trigger's page was read twice")),
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    policyHost((request) => {
+      observed.push(request.observation);
+      return Promise.resolve(waitingExecution());
+    }),
+    {
+      next: () => ({
+        operation: asOperationId("operation-moved"),
+        selectorDecisionReference: "decision-moved",
+      }),
+    },
+    settingsSource(() => Promise.resolve(runtimeSettings)),
+  );
+  assert.deepEqual(permits, ["decision-moved"]);
+  assert.equal(pages, 1);
+  assert.equal(observed.length, 1);
+  assert.deepEqual(observed[0]?.changes, events);
+  assert.equal(observed[0]?.notificationCursor, 6);
+  assert.equal(result.observed, 1);
+});
+
+test("a reset the consumer cannot replay is a turn rather than a skip", async () => {
+  let started = 0;
+  await selectorRunOnce(
+    {
+      ...stateStore(() => undefined),
+      project: () => Promise.resolve(observedState(5)),
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [partition] }),
+      moved: () => Promise.resolve({ result: "Reset", cursor: 5 } as const),
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    policyHost(() => {
+      started += 1;
+      return Promise.resolve(waitingExecution());
+    }),
+    perProjectIdentities(),
+    settingsSource(() => Promise.resolve(runtimeSettings)),
+  );
+  assert.equal(started, 1);
+});
+
+test("a turn that spent more than its envelope allows is refused", async () => {
+  let recorded: JsonValue | undefined;
+  await selectorRunOnce(
+    {
+      ...stateStore(() => undefined),
+      project: () => Promise.resolve(observedState(5)),
+      recordInteraction: (interaction) => {
+        recorded = interaction.result;
+        return Promise.resolve(true);
+      },
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [partition] }),
+      moved: () =>
+        Promise.resolve({ result: "Events", cursor: 6, events: [] } as const),
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    policyHost(() =>
+      Promise.resolve({
+        ...waitingExecution(),
+        accounting: {
+          tokens: runtimeSettings.limits.tokensPerDecision + 1,
+          durationMs: 1_000,
+        },
+      }),
+    ),
+    perProjectIdentities(),
+    settingsSource(() => Promise.resolve(runtimeSettings)),
+  );
+  assert.deepEqual(recorded, {
+    outcome: "Failed",
+    code: "ControlViolation",
+  });
 });

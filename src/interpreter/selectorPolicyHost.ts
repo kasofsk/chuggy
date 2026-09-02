@@ -1,3 +1,15 @@
+/**
+ * The host every selector policy runs under: one deadline over the run, one
+ * retained run per decision, and a termination the caller can prove.
+ *
+ * THE DISCIPLINE WAS NEVER THE PROTOCOL. This module was written for a policy
+ * reached over HTTP and named for it, but nothing it holds is transport: the
+ * race against the control deadline, the map that makes a retried decision find
+ * its own run, and the rule that a cancellation is worth nothing without a
+ * proof are the same whether the policy is a wire away or a mailbox away. Only
+ * the protocol was trusted over a wire.
+ */
+
 import type {
   SelectorPolicyHost,
   SelectorPolicyRequest,
@@ -5,7 +17,7 @@ import type {
   SelectorTerminationResult,
 } from "./selector.ts";
 
-export interface TrustedSelectorPolicy {
+export interface SelectorPolicy {
   execute(
     request: SelectorPolicyRequest,
     signal: AbortSignal,
@@ -24,7 +36,7 @@ export interface SelectorHostDeadline {
   after(milliseconds: number, signal: AbortSignal): Promise<never>;
 }
 
-export interface TrustedSelectorPolicyHostConfig {
+export interface SelectorPolicyHostConfig {
   readonly controlDeadlineMs: number;
 }
 
@@ -48,11 +60,11 @@ function boundedControl<T>(
   });
 }
 
-/** Runs trusted policy code with only its request and an abort signal. */
-export function trustedSelectorPolicyHost(
-  policy: TrustedSelectorPolicy,
+/** Runs policy code with only its request and an abort signal. */
+export function selectorPolicyHost(
+  policy: SelectorPolicy,
   deadline: SelectorHostDeadline,
-  config: TrustedSelectorPolicyHostConfig,
+  config: SelectorPolicyHostConfig,
 ): SelectorPolicyHost {
   const controlDeadlineMs = checkedControlDeadline(config.controlDeadlineMs);
   const runs = new Map<string, SelectorPolicyRun>();

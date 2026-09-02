@@ -25,7 +25,7 @@ import {
   type ServiceRuntime,
   type ServiceStopResult,
 } from "../interpreter/serviceRuntime.ts";
-import { trustedSelectorPolicyHost } from "../interpreter/trustedSelectorPolicyHost.ts";
+import { selectorPolicyHost } from "../interpreter/selectorPolicyHost.ts";
 import { threadWakesPerPassMax } from "../contract/http.ts";
 import {
   commandDatabaseConfig,
@@ -293,7 +293,7 @@ export function selectorCommandRoot(
   });
   const policyClient = trustedSelectorPolicyHttpClient(config.policy);
   const principal = asPrincipal(config.identity.principal);
-  const policy = trustedSelectorPolicyHost(
+  const policy = selectorPolicyHost(
     policyClient,
     { after: (milliseconds, signal) => deadline(milliseconds, signal) },
     { controlDeadlineMs: config.policy.controlDeadlineMs },

@@ -13,10 +13,11 @@ import type {
   TicketCommand,
 } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
-import type {
-  NotificationBatch,
-  NotificationCursor,
-  ProjectNotification,
+import {
+  notificationPageLimitMax,
+  type NotificationBatch,
+  type NotificationCursor,
+  type ProjectNotification,
 } from "./notifications.ts";
 import type { DispatchViewPage, DispatchViewQuery } from "./dispatchView.ts";
 
@@ -156,6 +157,18 @@ export type SelectorCandidateScan =
       readonly after: DispatchCandidate["ticket"];
     }
   | { readonly state: "Exhausted"; readonly token: DispatchViewToken };
+
+/** How many change rows one turn's window carries, which is the page the notifications hold. */
+export const selectorNotificationPageLimit = notificationPageLimitMax;
+
+/** Whether this project has anything new, read before a permit is spent on it. */
+export interface SelectorChangeTrigger {
+  moved(
+    partition: Partition,
+    after: number,
+    limit: number,
+  ): Promise<NotificationBatch>;
+}
 
 export interface SelectorObservationSource {
   currentTimeEpochMs(): Promise<number>;
@@ -327,6 +340,8 @@ export interface SelectorPolicyExecution {
   readonly accounting: {
     readonly tokens: number;
     readonly durationMs: number;
+    /** Present only where the host measured it; the two above are what the controls read. */
+    readonly costMicros?: number;
   };
   readonly startedAt: string;
   readonly completedAt: string;
@@ -901,6 +916,14 @@ function parsedPolicyExecution(value: unknown): SelectorPolicyExecution {
         accountingValue["durationMs"],
         "selector duration accounting",
       ),
+      ...(accountingValue["costMicros"] === undefined
+        ? {}
+        : {
+            costMicros: policyNonnegativeInteger(
+              accountingValue["costMicros"],
+              "selector cost accounting",
+            ),
+          }),
     },
     startedAt: policyInstant(found["startedAt"], "selector start"),
     completedAt: policyInstant(found["completedAt"], "selector completion"),
@@ -1288,7 +1311,11 @@ export async function runSelectorCycle(
   const observation = await observeSelectorProject(
     state,
     source,
-    100,
+    await source.notifications(state.partition, {
+      after: state.notificationCursor,
+      limit: selectorNotificationPageLimit,
+    }),
+    selectorNotificationPageLimit,
     Math.floor(leadInputBytesMax(settings) / 2),
   );
   if (observation === undefined) return undefined;
@@ -1393,17 +1420,41 @@ async function selectorObservationIsFresh(
   return false;
 }
 
-/** Polls current state after every wake-up or cursor reset and never mixes view watermarks. */
+/**
+ * Whether a project moved past the cursor its last turn stood on, which is a
+ * reset — a gap the consumer cannot replay — or a page, or a cursor that moved
+ * past rows the page did not carry. Only an empty page at the standing cursor
+ * is nothing new.
+ */
+export function selectorProjectMoved(
+  state: SelectorProjectState,
+  changes: NotificationBatch,
+): boolean {
+  return (
+    changes.result === "Reset" ||
+    changes.events.length > 0 ||
+    changes.cursor !== state.notificationCursor
+  );
+}
+
+/**
+ * Polls current state after every wake-up or cursor reset and never mixes view
+ * watermarks. The notification page is read by the caller and handed in, so it
+ * is read once per cycle: reading it here as well would let a row arrive
+ * between the two reads and be counted as the trigger for a window that does
+ * not contain it.
+ */
 export async function observeSelectorProject(
   state: SelectorProjectState,
-  source: SelectorObservationSource,
+  source: Pick<
+    SelectorObservationSource,
+    "dispatchView" | "operationalContext"
+  >,
+  notifications: NotificationBatch,
   pageLimit = 100,
   candidateBytesMax = 524_288,
 ): Promise<SelectorObservation | undefined> {
-  const notifications = await source.notifications(state.partition, {
-    after: state.notificationCursor,
-    limit: pageLimit,
-  });
+  if (!selectorProjectMoved(state, notifications)) return undefined;
   const changes = notifications.result === "Events" ? notifications.events : [];
   const scan = state.candidateScan ?? ({ state: "Unstarted" } as const);
   const query =
@@ -1474,7 +1525,7 @@ type BoundedCandidatePage =
     };
 
 async function boundedCandidatePage(
-  source: SelectorObservationSource,
+  source: Pick<SelectorObservationSource, "dispatchView">,
   partition: Partition,
   query: DispatchViewQuery,
   bytesMax: number,

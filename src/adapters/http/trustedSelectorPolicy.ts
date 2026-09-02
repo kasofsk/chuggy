@@ -6,7 +6,7 @@ import type {
   SelectorPolicyRequest,
   SelectorTerminationResult,
 } from "../../interpreter/selector.ts";
-import type { TrustedSelectorPolicy } from "../../interpreter/trustedSelectorPolicyHost.ts";
+import type { SelectorPolicy } from "../../interpreter/selectorPolicyHost.ts";
 import { selectorOperationalContextV2Schema } from "./selectorContext.ts";
 import { checkedPositiveBound } from "./bounds.ts";
 
@@ -249,7 +249,7 @@ export interface TrustedSelectorPolicyClientConfig {
   readonly responseBytesMax: number;
 }
 
-export interface TrustedSelectorPolicyClient extends TrustedSelectorPolicy {
+export interface TrustedSelectorPolicyClient extends SelectorPolicy {
   ready(signal?: AbortSignal): Promise<boolean>;
 }
 
