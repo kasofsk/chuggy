@@ -287,8 +287,9 @@ function fenceObservation(partition: Partition) {
     token,
     candidates: [],
     notificationCursor: 0,
+    changes: [],
     operationalContext: postgresHarnessSelectorContext,
-    workingMemory: {},
+    handoffNote: {},
     nextCandidateScan: { state: "Exhausted", token },
   } as const;
 }
@@ -506,7 +507,7 @@ test("an interaction recorded without an attempt keeps both fence revisions", as
           instructions: "choose a dispatchable ticket",
           observedView: [],
           context: {
-            workingMemory: {},
+            handoffNote: {},
             operationalContext: postgresHarnessSelectorContext,
           },
           toolActivity: [],
@@ -523,7 +524,7 @@ test("an interaction recorded without an attempt keeps both fence revisions", as
           notificationCursor: 0,
           revision: 0,
           attention: "Monitoring",
-          workingMemory: {},
+          handoffNote: {},
         },
         { settingsRevision: 12, projectSettingsRevision: 1 },
       ),

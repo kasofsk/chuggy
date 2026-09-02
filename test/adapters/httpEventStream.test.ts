@@ -38,6 +38,7 @@ import { asInstallationId } from "../../src/domain/ids.ts";
 import {
   projectChangeKinds,
   projectChangeRepresentationSchemas,
+  type ProjectChangeKind,
 } from "../../src/contract/events.ts";
 import {
   changeRow,
@@ -382,7 +383,8 @@ test("a live change arrives as the kind's own GET representation", async () => {
   );
 });
 
-const kindResources: Readonly<Record<string, string>> = {
+/** The resource each kind's read is driven with. */
+const kindResources: Readonly<Record<ProjectChangeKind, string>> = {
   Operation: "operation-one",
   Ticket: "3",
   Draft: "3",
@@ -390,7 +392,42 @@ const kindResources: Readonly<Record<string, string>> = {
   Project: "project",
   Execution: "execution-one",
   NativeAction: "3",
+  AgenticRefusal: "3",
+  Session: "lead-atlas",
 };
+
+/**
+ * The kinds no route answers yet. They must read as tombstones rather than
+ * raise, because `framesForRow` turns a read that keeps raising into a stream
+ * reset and 059's triggers append one of these on every lead turn.
+ */
+const kindsWithoutReads = ["AgenticRefusal", "Session"] as const;
+
+test("a kind whose read the API does not hold is a tombstone, not a raise", async () => {
+  const reader = projectResourceReader(servedWeb(true, () => []));
+  for (const kind of projectChangeKinds)
+    await assert.doesNotReject(
+      () =>
+        reader.read(
+          asPrincipal("issuer\u0000subject"),
+          partition,
+          kind,
+          kindResources[kind],
+        ),
+      kind,
+    );
+  for (const kind of kindsWithoutReads)
+    assert.equal(
+      await reader.read(
+        asPrincipal("issuer\u0000subject"),
+        partition,
+        kind,
+        kindResources[kind],
+      ),
+      null,
+      kind,
+    );
+});
 
 test("every kind the log can name reaches the stream as its own schema", async () => {
   const rig = await rigOf();
@@ -399,7 +436,6 @@ test("every kind the log can name reaches the stream as its own schema", async (
   let sequence = 100;
   for (const kind of projectChangeKinds) {
     const resource = kindResources[kind];
-    assert.ok(resource !== undefined, `${kind} has a resource to name`);
     rig.log.append(changeRow(sequence, partition, kind, resource));
     sequence += 1;
     rig.doorbell.ring();

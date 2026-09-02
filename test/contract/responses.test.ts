@@ -59,15 +59,20 @@ import {
   runTurnsResponseSchema,
   selectorProjectSettingsResponseSchema,
   selectorSettingsHistoryResponseSchema,
+  leadResponseSchema,
+  ticketAgenticRefusalsResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
 } from "../../src/contract/responses.ts";
 import { authoringSchema } from "../../src/contract/authoring.ts";
 import { draftRevisionSchema } from "../../src/contract/requests.ts";
 import {
+  agenticRefusalLedgerAnsweredMax,
+  agenticRefusalReasonCharsMax,
   errorEnvelopeSchema,
   runModelCharsMax,
   runTranscriptPageBatchesMax,
+  selectorHandoffNoteBytesMax,
 } from "../../src/contract/http.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { resolvedSelectorSettings } from "../../src/interpreter/selector.ts";
@@ -1195,5 +1200,65 @@ test("a run figure past the bound the contract names is refused", () => {
         },
       }).body,
     ),
+  );
+});
+
+test("a lead read refuses a handoff note larger than its column holds", () => {
+  const lead = {
+    session: "lead-atlas",
+    state: "Open",
+    attention: "Monitoring",
+    notificationCursor: 4,
+    handoffNote: {},
+    turns: [],
+    streams: [],
+  };
+  assert.equal(leadResponseSchema.parse(lead).session, "lead-atlas");
+  assert.throws(() =>
+    leadResponseSchema.parse({
+      ...lead,
+      handoffNote: { padding: "x".repeat(selectorHandoffNoteBytesMax) },
+    }),
+  );
+});
+
+test("a refusal ledger refuses a reason longer than its column holds", () => {
+  const entry = {
+    ordinal: 1,
+    event: "Refused",
+    ticketVersion: 2,
+    reason: "the dependency is still failing",
+    decision: "selector-decision-one",
+    recordedAt: instant,
+  };
+  const parsed = ticketAgenticRefusalsResponseSchema.parse({
+    ticket: 42,
+    entries: [entry],
+    more: false,
+  });
+  assert.equal(parsed.entries[0]?.event, "Refused");
+  assert.equal(parsed.standing, undefined);
+  assert.equal(parsed.more, false);
+  assert.throws(() =>
+    ticketAgenticRefusalsResponseSchema.parse({ ticket: 42, entries: [entry] }),
+  );
+  assert.throws(() =>
+    ticketAgenticRefusalsResponseSchema.parse({
+      ticket: 42,
+      more: true,
+      entries: Array.from(
+        { length: agenticRefusalLedgerAnsweredMax + 1 },
+        () => entry,
+      ),
+    }),
+  );
+  assert.throws(() =>
+    ticketAgenticRefusalsResponseSchema.parse({
+      ticket: 42,
+      more: false,
+      entries: [
+        { ...entry, reason: "x".repeat(agenticRefusalReasonCharsMax + 1) },
+      ],
+    }),
   );
 });

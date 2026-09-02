@@ -4,8 +4,9 @@
  *
  * A change frame's representation is the GET's own body, so the cases that
  * prove it start from `src/adapters/http/outcomes.ts` and feed what it emits
- * back through the stream. `Project` is the exception and the only one: its
- * representation is the inventory entry, which no encoder emits alone.
+ * back through the stream. Three kinds are written out here instead: `Project`,
+ * whose representation is the inventory entry that no encoder emits alone, and
+ * `AgenticRefusal` and `Session`, whose encoders arrive with their routes.
  */
 
 import assert from "node:assert/strict";
@@ -47,6 +48,54 @@ const ticketRepresentation = ticketResponse({
   ...ticketInstants,
 }).body;
 
+/** One ticket's refusal ledger with the standing the latest entry induces. */
+const ticketAgenticRefusalsRepresentation = {
+  ticket: 42,
+  more: false,
+  entries: [
+    {
+      ordinal: 91,
+      event: "Refused",
+      ticketVersion: 2,
+      reason: "the dependency is still failing",
+      decision: "selector-decision-one",
+      recordedAt: "2026-09-02T12:00:00.000Z",
+    },
+  ],
+  standing: {
+    ticketVersion: 2,
+    reason: "the dependency is still failing",
+    recordedAt: "2026-09-02T12:00:00.000Z",
+  },
+};
+
+/** The lead read, which is what a `Session` frame carries under the session id. */
+const leadRepresentation = {
+  session: "lead-atlas",
+  state: "Open",
+  attention: "Monitoring",
+  agentReference: "1a2b",
+  notificationCursor: 1_204,
+  handoffNote: {},
+  turns: [
+    {
+      turn: "selector-decision-one",
+      ordinal: 7,
+      inputKind: "Observation",
+      state: "Answered",
+      decision: "selector-decision-one",
+      model: "model-one",
+      tokens: 41_234,
+      costMicros: 182_000,
+      durationMs: 74_210,
+      tools: [],
+      batchFirst: 12,
+      batchLast: 14,
+    },
+  ],
+  streams: [{ stream: "1a2b", batches: 14 }],
+};
+
 const nativeActionRepresentation = ticketNativeActionsResponse([
   {
     action: "approval",
@@ -65,6 +114,8 @@ const representations: Readonly<Record<ProjectChangeKind, unknown>> = {
   Operation: operationResponse(operation).body,
   Project: partition,
   NativeAction: nativeActionRepresentation,
+  AgenticRefusal: ticketAgenticRefusalsRepresentation,
+  Session: leadRepresentation,
 };
 
 test("a change frame carries the GET's own representation under its identity", () => {

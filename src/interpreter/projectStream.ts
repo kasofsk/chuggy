@@ -286,6 +286,18 @@ function changeEvent(
         sequence,
         data: schemas.NativeAction.parse(carried),
       };
+    case "AgenticRefusal":
+      return {
+        event: row.kind,
+        sequence,
+        data: schemas.AgenticRefusal.parse(carried),
+      };
+    case "Session":
+      return {
+        event: row.kind,
+        sequence,
+        data: schemas.Session.parse(carried),
+      };
     default:
       return assertNever(row.kind);
   }

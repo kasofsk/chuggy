@@ -1,3 +1,11 @@
+import {
+  agenticRefusalReasonCharsMax,
+  agenticRefusalsAnsweredMax,
+  selectorHandoffNoteBytesMax,
+  selectorSettingsTextCharsMax,
+  sessionTurnInputCharsMax,
+  sessionTurnResultCharsMax,
+} from "../contract/http.ts";
 import type { DispatchCandidate, DispatchViewToken } from "./dispatchView.ts";
 import type {
   Authority,
@@ -5,7 +13,11 @@ import type {
   TicketCommand,
 } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
-import type { NotificationBatch, NotificationCursor } from "./notifications.ts";
+import type {
+  NotificationBatch,
+  NotificationCursor,
+  ProjectNotification,
+} from "./notifications.ts";
 import type { DispatchViewPage, DispatchViewQuery } from "./dispatchView.ts";
 
 export type JsonValue =
@@ -25,7 +37,7 @@ export interface SelectorInteraction {
   readonly observedToken?: DispatchViewToken;
   readonly context: {
     readonly operationalContext: SelectorOperationalContext;
-    readonly workingMemory: JsonValue;
+    readonly handoffNote: JsonValue;
   };
   readonly toolActivity: readonly JsonValue[];
   readonly result: JsonValue;
@@ -130,7 +142,8 @@ export interface SelectorProjectState {
   readonly revision: number;
   readonly recoveryEpoch?: string;
   readonly attention: "Monitoring" | "Attention" | "Stopped";
-  readonly workingMemory: JsonValue;
+  /** The note a lead leaves for a successor that has no transcript. */
+  readonly handoffNote: JsonValue;
   /** Missing is accepted only as the persisted pre-I5 spelling of Unstarted. */
   readonly candidateScan?: SelectorCandidateScan;
 }
@@ -236,8 +249,10 @@ export interface SelectorObservation {
   readonly token: DispatchViewToken;
   readonly candidates: readonly DispatchCandidate[];
   readonly notificationCursor: number;
+  /** What moved since the last turn: kinds and resources, never bodies. */
+  readonly changes: readonly ProjectNotification[];
   readonly operationalContext: SelectorOperationalContext;
-  readonly workingMemory: JsonValue;
+  readonly handoffNote: JsonValue;
   readonly nextCandidateScan: Exclude<
     SelectorCandidateScan,
     { readonly state: "Unstarted" }
@@ -245,11 +260,64 @@ export interface SelectorObservation {
   readonly resourceLimit?: "CandidateTooLarge";
 }
 
+/** One ticket a decision chose, fenced on the version the observation showed. */
+export interface SelectorDispatchChoice {
+  readonly ticket: DispatchCandidate["ticket"];
+  /** Absent only in the pre-slice-2 spelling, whose fence is the observed candidate alone. */
+  readonly expectedTicketVersion?: number;
+}
+
+/** One ticket a decision declined to dispatch, and why. */
+export interface SelectorRefusalChoice {
+  readonly ticket: DispatchCandidate["ticket"];
+  readonly ticketVersion: number;
+  readonly reason: string;
+}
+
+/** One ticket a decision cleared a standing refusal from. */
+export interface SelectorLiftChoice {
+  readonly ticket: DispatchCandidate["ticket"];
+}
+
 export interface SelectorPolicyResult {
-  readonly selectedTicket?: DispatchCandidate["ticket"];
-  readonly planningIntent?: JsonValue;
+  /** At most `leadDispatchesMax`; empty is a decision to dispatch nothing, which is free. */
+  readonly dispatches: readonly SelectorDispatchChoice[];
+  readonly refusals: readonly SelectorRefusalChoice[];
+  readonly lifts: readonly SelectorLiftChoice[];
   readonly attention: SelectorProjectState["attention"];
-  readonly workingMemory: JsonValue;
+  /** The note a lead leaves for a successor that has no transcript. */
+  readonly handoffNote: JsonValue;
+  readonly planningIntent?: JsonValue;
+}
+
+/** How many tickets one decision may dispatch, which delivery keys one of. */
+export const leadDispatchesMax = 1;
+
+/** How many tickets one decision may refuse, and how many it may lift. */
+export const leadRefusalsPerDecisionMax = 16;
+
+/** How many standing refusals one observation carries, which is what a read of them answers. */
+export const leadRefusalsObservedMax = agenticRefusalsAnsweredMax;
+
+/** How many past decisions a seeding turn carries, newest last. */
+export const leadSeedingDecisionsMax = 16;
+
+/** What one lead turn's observation may weigh, which is what its mailbox row holds. */
+export const leadObservationBytesMax = sessionTurnInputCharsMax;
+
+/** What one lead decision may weigh, which is what its mailbox row holds. */
+export const leadDecisionBytesMax = sessionTurnResultCharsMax;
+
+/**
+ * The budget one decision is actually built under: the settings' or the
+ * mailbox's, whichever binds. A decision legal under the settings and too large
+ * for the mailbox is a decision the runtime builds and the database refuses.
+ */
+export function leadInputBytesMax(settings: SelectorResolvedSettings): number {
+  return Math.min(
+    settings.limits.inputBytesPerDecision,
+    leadObservationBytesMax,
+  );
 }
 
 /** Provenance measured by the trusted policy host, never authored by the model result. */
@@ -669,6 +737,82 @@ function policyNonnegativeInteger(value: unknown, what: string): number {
   return value;
 }
 
+function policyTicket(
+  value: unknown,
+  what: string,
+): DispatchCandidate["ticket"] {
+  if (!Number.isSafeInteger(value) || Number(value) < 1)
+    throw new TypeError(`${what} is invalid`);
+  return value as DispatchCandidate["ticket"];
+}
+
+/**
+ * Every choice of one kind, bounded by count before any of them is read. An
+ * absent member is an empty list, because choosing nothing is what most
+ * decisions do and a result that had to spell it out would be refused for
+ * saying nothing.
+ */
+function policyChoices<Choice>(
+  value: unknown,
+  what: string,
+  countMax: number,
+  choice: (member: unknown, index: number) => Choice,
+): readonly Choice[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new TypeError(`${what} must be an array`);
+  if (value.length > countMax)
+    throw new RangeError(`${what} names more tickets than a decision may`);
+  return value.map(choice);
+}
+
+function policyDispatch(value: unknown, index: number): SelectorDispatchChoice {
+  const found = recordOf(value, "selector dispatch");
+  const version = found["expectedTicketVersion"];
+  return {
+    ticket: policyTicket(found["ticket"], `selector dispatch ${String(index)}`),
+    ...(version === undefined
+      ? {}
+      : {
+          expectedTicketVersion: policyNonnegativeInteger(
+            version,
+            "selector dispatch version",
+          ),
+        }),
+  };
+}
+
+function policyRefusal(value: unknown, index: number): SelectorRefusalChoice {
+  const found = recordOf(value, "selector refusal");
+  const reason = found["reason"];
+  if (
+    typeof reason !== "string" ||
+    reason.length < 1 ||
+    reason.length > agenticRefusalReasonCharsMax
+  )
+    throw new TypeError("selector refusal reason must be bounded text");
+  return {
+    ticket: policyTicket(found["ticket"], `selector refusal ${String(index)}`),
+    ticketVersion: policyNonnegativeInteger(
+      found["ticketVersion"],
+      "selector refusal version",
+    ),
+    reason,
+  };
+}
+
+function policyLift(value: unknown, index: number): SelectorLiftChoice {
+  const found = recordOf(value, "selector lift");
+  return {
+    ticket: policyTicket(found["ticket"], `selector lift ${String(index)}`),
+  };
+}
+
+/**
+ * A result as a policy host answers it. `selectedTicket` is accepted as the
+ * pre-slice-2 spelling of a single dispatch, so a recorded interaction still
+ * replays; its version is the observation's and is filled in by the caller that
+ * holds one.
+ */
 function policyResult(value: unknown): SelectorPolicyResult {
   const found = recordOf(value, "selector result");
   const attention = found["attention"];
@@ -678,23 +822,40 @@ function policyResult(value: unknown): SelectorPolicyResult {
     attention !== "Stopped"
   )
     throw new TypeError("selector attention is invalid");
-  if (!("workingMemory" in found))
-    throw new TypeError("selector working memory is absent");
+  if (!("handoffNote" in found))
+    throw new TypeError("selector handoff note is absent");
   const selectedTicket = found["selectedTicket"];
-  if (
-    selectedTicket !== undefined &&
-    (!Number.isSafeInteger(selectedTicket) || Number(selectedTicket) < 1)
-  )
-    throw new TypeError("selector ticket is invalid");
+  if (selectedTicket !== undefined && found["dispatches"] !== undefined)
+    throw new TypeError("selector result names its dispatch two ways");
+  const dispatches =
+    selectedTicket === undefined
+      ? policyChoices(
+          found["dispatches"],
+          "selector dispatches",
+          leadDispatchesMax,
+          policyDispatch,
+        )
+      : [{ ticket: policyTicket(selectedTicket, "selector ticket") }];
   const result: SelectorPolicyResult = {
-    attention,
-    workingMemory: checkedJson(
-      found["workingMemory"],
-      "selector working memory",
+    dispatches,
+    refusals: policyChoices(
+      found["refusals"],
+      "selector refusals",
+      leadRefusalsPerDecisionMax,
+      policyRefusal,
     ),
-    ...(selectedTicket === undefined
-      ? {}
-      : { selectedTicket: selectedTicket as DispatchCandidate["ticket"] }),
+    lifts: policyChoices(
+      found["lifts"],
+      "selector lifts",
+      leadRefusalsPerDecisionMax,
+      policyLift,
+    ),
+    attention,
+    handoffNote: checkedJson(
+      found["handoffNote"],
+      "selector handoff note",
+      selectorHandoffNoteBytesMax,
+    ),
     ...(found["planningIntent"] === undefined
       ? {}
       : {
@@ -777,8 +938,9 @@ export function recordedSelectorObservation(
     token: interaction.observedToken,
     candidates: interaction.observedView,
     notificationCursor: 0,
+    changes: [],
     operationalContext: interaction.context.operationalContext,
-    workingMemory: interaction.context.workingMemory,
+    handoffNote: interaction.context.handoffNote,
     nextCandidateScan: { state: "Exhausted", token: interaction.observedToken },
   };
 }
@@ -816,7 +978,7 @@ function selectorInteraction(
     observedToken: observation.token,
     context: {
       operationalContext: observation.operationalContext,
-      workingMemory: observation.workingMemory,
+      handoffNote: observation.handoffNote,
     },
     toolActivity: execution.toolActivity,
     result: checkedJson(execution.result, "selector result"),
@@ -887,17 +1049,20 @@ async function executeSelectorPolicy(
 }
 
 /**
- * Everything the policy is given, weighed against `inputBytesPerDecision` before
- * any of it is sent. A project's North Star is inside that budget rather than
- * beside it, so a long one narrows the view its own project can carry and does
- * not quietly widen what one decision costs.
+ * Everything the policy is given, weighed against `leadInputBytesMax` before any
+ * of it is sent. A project's North Star is inside that budget rather than beside
+ * it, so a long one narrows the view its own project can carry and does not
+ * quietly widen what one decision costs.
  */
 function persistablePolicyObservation(
   observation: SelectorObservation,
   settings: SelectorResolvedSettings,
 ): SelectorObservation {
   try {
-    if (settings.basePrompt.length < 1 || settings.basePrompt.length > 65_536)
+    if (
+      settings.basePrompt.length < 1 ||
+      settings.basePrompt.length > selectorSettingsTextCharsMax
+    )
       throw new RangeError("selector instructions must be bounded");
     const persistedInput = checkedJson(
       {
@@ -905,15 +1070,17 @@ function persistablePolicyObservation(
         instructions: settings.basePrompt,
         northStar: settings.northStar ?? null,
         candidates: observation.candidates,
+        changes: observation.changes,
         context: {
           operationalContext: observation.operationalContext,
-          workingMemory: observation.workingMemory,
+          handoffNote: observation.handoffNote,
         },
       },
       "selector interaction input",
-      settings.limits.inputBytesPerDecision,
+      leadInputBytesMax(settings),
     ) as unknown as {
       readonly candidates: readonly DispatchCandidate[];
+      readonly changes: readonly ProjectNotification[];
       readonly context: SelectorInteraction["context"];
       readonly token: DispatchViewToken;
     };
@@ -921,8 +1088,9 @@ function persistablePolicyObservation(
       token: persistedInput.token,
       candidates: persistedInput.candidates,
       notificationCursor: observation.notificationCursor,
+      changes: persistedInput.changes,
       operationalContext: persistedInput.context.operationalContext,
-      workingMemory: persistedInput.context.workingMemory,
+      handoffNote: persistedInput.context.handoffNote,
       nextCandidateScan: observation.nextCandidateScan,
       ...(observation.resourceLimit === undefined
         ? {}
@@ -958,14 +1126,22 @@ function observationMatchesProject(
   );
 }
 
+/**
+ * The candidate one decision's dispatch names. The version it fenced on is
+ * checked where the document is read, and the command carries the observed
+ * candidate's own version, so this refuses the one thing neither covers: a
+ * ticket the view did not carry at all.
+ */
 function selectedCandidate(
   observation: SelectorObservation,
-  selectedTicket: SelectorPolicyResult["selectedTicket"],
+  dispatches: SelectorPolicyResult["dispatches"],
 ): DispatchCandidate | undefined {
+  const dispatch = dispatches[0];
+  if (dispatch === undefined) return undefined;
   const selected = observation.candidates.find(
-    (candidate) => candidate.ticket === selectedTicket,
+    (candidate) => candidate.ticket === dispatch.ticket,
   );
-  if (selectedTicket !== undefined && selected === undefined)
+  if (selected === undefined)
     throw new Error("selector policy chose a ticket outside its observed view");
   return selected;
 }
@@ -1004,7 +1180,7 @@ function failedSelectorInteraction(
     observedToken: observation.token,
     context: {
       operationalContext: observation.operationalContext,
-      workingMemory: observation.workingMemory,
+      handoffNote: observation.handoffNote,
     },
     toolActivity: measured?.toolActivity ?? [],
     result: { outcome: "Failed", code: policyFailureCode(error) },
@@ -1041,7 +1217,7 @@ async function recordFailedSelectorCycle(
       revision: state.revision,
       recoveryEpoch: observation.token.recoveryEpoch,
       attention: "Attention",
-      workingMemory: observation.workingMemory,
+      handoffNote: observation.handoffNote,
       candidateScan: observation.nextCandidateScan,
     },
     selectorSettingsFence(settings),
@@ -1064,14 +1240,14 @@ async function recordCompletedSelectorCycle(
     settings,
     state.partition,
   );
-  const selected = selectedCandidate(observation, result.selectedTicket);
+  const selected = selectedCandidate(observation, result.dispatches);
   const nextState: SelectorProjectState = {
     partition: state.partition,
     notificationCursor: observation.notificationCursor,
     revision: state.revision,
     recoveryEpoch: observation.token.recoveryEpoch,
     attention: result.attention,
-    workingMemory: result.workingMemory,
+    handoffNote: result.handoffNote,
     candidateScan:
       selected === undefined
         ? observation.nextCandidateScan
@@ -1116,7 +1292,7 @@ export async function runSelectorCycle(
     state,
     source,
     100,
-    Math.floor(settings.limits.inputBytesPerDecision / 2),
+    Math.floor(leadInputBytesMax(settings) / 2),
   );
   if (observation === undefined) return undefined;
   return runObservedSelectorCycle(
@@ -1231,6 +1407,7 @@ export async function observeSelectorProject(
     after: state.notificationCursor,
     limit: pageLimit,
   });
+  const changes = notifications.result === "Events" ? notifications.events : [];
   const scan = state.candidateScan ?? ({ state: "Unstarted" } as const);
   const query =
     scan.state === "Unstarted"
@@ -1266,8 +1443,9 @@ export async function observeSelectorProject(
           token: page.token,
           candidates: [],
           notificationCursor: notifications.cursor,
+          changes,
           operationalContext: await source.operationalContext(state.partition),
-          workingMemory: state.workingMemory,
+          handoffNote: state.handoffNote,
           nextCandidateScan:
             page.nextAfter === undefined
               ? { state: "Exhausted", token: page.token }
@@ -1278,8 +1456,9 @@ export async function observeSelectorProject(
           token: page.token,
           candidates: page.candidates,
           notificationCursor: notifications.cursor,
+          changes,
           operationalContext: await source.operationalContext(state.partition),
-          workingMemory: state.workingMemory,
+          handoffNote: state.handoffNote,
           nextCandidateScan:
             page.nextAfter === undefined
               ? { state: "Exhausted", token: page.token }

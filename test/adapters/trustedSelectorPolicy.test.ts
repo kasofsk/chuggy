@@ -22,6 +22,7 @@ const request: SelectorPolicyRequest = {
     },
     candidates: [],
     notificationCursor: 3,
+    changes: [],
     operationalContext: {
       version: 2,
       observedAt: "2026-08-23T00:00:00.000Z",
@@ -41,7 +42,7 @@ const request: SelectorPolicyRequest = {
         project: { queued: 6, ceiling: 100 },
       },
     },
-    workingMemory: {},
+    handoffNote: {},
     nextCandidateScan: {
       state: "Exhausted",
       token: {
@@ -84,7 +85,7 @@ function response(value: unknown): Response {
 }
 
 const execution = {
-  result: { attention: "Monitoring", workingMemory: {} },
+  result: { attention: "Monitoring", handoffNote: {} },
   implementationRevision: "implementation-1",
   modelRevision: "model-1",
   policyRevision: "policy-1",

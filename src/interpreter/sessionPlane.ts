@@ -28,6 +28,7 @@ import type {
   SessionTurnFailure,
   SessionTurnId,
   SessionTurnInputKind,
+  SessionTurnMeasured,
 } from "./agentSession.ts";
 import type { Partition } from "./projectStore.ts";
 import type { SessionAttemptEvidence } from "./sessionScheduler.ts";
@@ -131,6 +132,8 @@ export interface SessionTurnSettlePort {
     /** The batches of the session's own stream this turn produced, both or neither. */
     readonly batchFirst?: number;
     readonly batchLast?: number;
+    /** What the runtime spent, absent where the pod could not read it. */
+    readonly measured?: SessionTurnMeasured;
   }): Promise<SessionTurnAnswered>;
   fail(input: {
     readonly secret: SessionBearerSecret;

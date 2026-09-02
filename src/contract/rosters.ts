@@ -276,3 +276,51 @@ export const nativeActionResolutions = [
   ...nativeActionKindResolutions.FinalizationApproval,
 ] as const;
 export type NativeActionResolution = (typeof nativeActionResolutions)[number];
+
+/** How closely the lead says a project needs watching, which one decision may move. */
+export const selectorAttentions = [
+  "Monitoring",
+  "Attention",
+  "Stopped",
+] as const;
+export type SelectorAttention = (typeof selectorAttentions)[number];
+
+/** What the lead did about one ticket, in the order it did it. */
+export const agenticRefusalEvents = ["Refused", "Lifted"] as const;
+export type AgenticRefusalEvent = (typeof agenticRefusalEvents)[number];
+
+/** Whether a session still takes turns, which is the whole of its lifecycle. */
+export const sessionStates = ["Open", "Closed"] as const;
+export type SessionState = (typeof sessionStates)[number];
+
+/** Who or what put a turn in a session's mailbox. */
+export const sessionTurnInputKinds = [
+  "Observation",
+  "UserMessage",
+  "Wake",
+  "Inquiry",
+] as const;
+export type SessionTurnInputKind = (typeof sessionTurnInputKinds)[number];
+
+/** Where one turn stands. */
+export const sessionTurnStates = [
+  "Queued",
+  "Claimed",
+  "Answered",
+  "Failed",
+  "Abandoned",
+] as const;
+export type SessionTurnState = (typeof sessionTurnStates)[number];
+
+/** Why one turn ended without an answer. */
+export const sessionTurnFailures = [
+  "AgentFailed",
+  "AgentRateLimited",
+  "AgentTurnsExhausted",
+  "AgentBudgetExhausted",
+  "StoreRefused",
+  "AttemptLost",
+  "SessionClosed",
+  "TurnWithdrawn",
+] as const;
+export type SessionTurnFailure = (typeof sessionTurnFailures)[number];

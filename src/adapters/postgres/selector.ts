@@ -130,46 +130,65 @@ const dispatchCandidateSchema = z
     configurationCanonical: z.string(),
   })
   .readonly();
-const selectorContextSchema = z
-  .object({
-    operationalContext: z.union([
-      legacyOperationalContextSchema,
-      z
-        .object({
-          version: z.literal(2),
-          observedAt: z.iso.datetime(),
-          observedAtEpochMs: z.number().int().safe().nonnegative(),
-          reviewFeedback: z.array(reviewFeedbackSchema).readonly(),
-          activeWork: z.object({
-            queued: z.number().int().safe().nonnegative(),
-            admitted: z.number().int().safe().nonnegative(),
-            launching: z.number().int().safe().nonnegative(),
-            running: z.number().int().safe().nonnegative(),
-          }),
-          capacity: z.object({
-            account: z.string(),
-            accountMaximum: z.number().int().safe().nonnegative(),
-            accountActive: z.number().int().safe().nonnegative(),
-            accountReservationDeficit: z.number().int().safe().nonnegative(),
-            clusterSlotsMax: z.number().int().safe().nonnegative(),
-            clusterActive: z.number().int().safe().nonnegative(),
-          }),
-          backlog: z.object({
-            project: z.object({
-              queued: z.number().int().safe().nonnegative(),
-              ceiling: z.number().int().safe().positive(),
-            }),
-            installation: z.object({
-              queued: z.number().int().safe().nonnegative(),
-              ceiling: z.number().int().safe().positive(),
-            }),
-          }),
-        })
-        .readonly(),
-    ]),
-    workingMemory: jsonValueSchema,
-  })
-  .readonly();
+const selectorOperationalContextSchema = z.union([
+  legacyOperationalContextSchema,
+  z
+    .object({
+      version: z.literal(2),
+      observedAt: z.iso.datetime(),
+      observedAtEpochMs: z.number().int().safe().nonnegative(),
+      reviewFeedback: z.array(reviewFeedbackSchema).readonly(),
+      activeWork: z.object({
+        queued: z.number().int().safe().nonnegative(),
+        admitted: z.number().int().safe().nonnegative(),
+        launching: z.number().int().safe().nonnegative(),
+        running: z.number().int().safe().nonnegative(),
+      }),
+      capacity: z.object({
+        account: z.string(),
+        accountMaximum: z.number().int().safe().nonnegative(),
+        accountActive: z.number().int().safe().nonnegative(),
+        accountReservationDeficit: z.number().int().safe().nonnegative(),
+        clusterSlotsMax: z.number().int().safe().nonnegative(),
+        clusterActive: z.number().int().safe().nonnegative(),
+      }),
+      backlog: z.object({
+        project: z.object({
+          queued: z.number().int().safe().nonnegative(),
+          ceiling: z.number().int().safe().positive(),
+        }),
+        installation: z.object({
+          queued: z.number().int().safe().nonnegative(),
+          ceiling: z.number().int().safe().positive(),
+        }),
+      }),
+    })
+    .readonly(),
+]);
+
+/**
+ * A retained policy input under exactly one spelling of the note. Two strict
+ * alternatives are what say a row carrying neither, or both, is a row that is
+ * not intact — which is the whole of what this parser is relied on to say.
+ */
+const selectorContextSchema = z.union([
+  z
+    .strictObject({
+      operationalContext: selectorOperationalContextSchema,
+      handoffNote: jsonValueSchema,
+    })
+    .readonly(),
+  z
+    .strictObject({
+      operationalContext: selectorOperationalContextSchema,
+      workingMemory: jsonValueSchema,
+    })
+    .readonly()
+    .transform((value) => ({
+      operationalContext: value.operationalContext,
+      handoffNote: value.workingMemory,
+    })),
+]);
 
 /** Parses current and retained historical selector policy inputs. */
 export function parseSelectorInteractionContext(
@@ -1094,10 +1113,10 @@ async function readSelectorProject(
           ? {}
           : { recoveryEpoch: row.recovery_epoch }),
         attention: selectorAttention(row.attention),
-        workingMemory: decoded(
+        handoffNote: decoded(
           row.working_memory,
           jsonValueSchema,
-          "selector working memory",
+          "selector handoff note",
         ),
         candidateScan: candidateScanOf({
           ...row,
@@ -1190,7 +1209,7 @@ async function writeSelectorProject(
     sql`UPDATE selector_project_state
        SET notification_cursor=${state.notificationCursor},
        recovery_epoch=${state.recoveryEpoch ?? null},attention=${String(state.attention)},
-       working_memory=${encode(state.workingMemory)},
+       working_memory=${encode(state.handoffNote)},
        candidate_scan_token=${scan.state === "Continue" ? encode(scan.token) : null},
        candidate_scan_after=${scan.state === "Continue" ? scan.after : null},
        candidate_scan_state=${scan.state},

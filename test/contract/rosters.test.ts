@@ -45,14 +45,27 @@ import {
   resumePricings,
   runCostBases,
   schedulerFreshnesses,
+  selectorAttentions,
   selectorDispatchModes,
   selectorModes,
+  agenticRefusalEvents,
+  sessionStates,
+  sessionTurnFailures,
+  sessionTurnInputKinds,
+  sessionTurnStates,
 } from "../../src/contract/rosters.ts";
 import {
+  agenticRefusalLedgerAnsweredMax,
+  agenticRefusalReasonCharsMax,
+  agenticRefusalsAnsweredMax,
+  nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
   resultReportCharsMax,
   resultReportSchemaVersionMin,
   runConfigurationBytesMax,
+  sessionTurnInputCharsMax,
+  sessionTurnModelCharsMax,
+  sessionTurnResultCharsMax,
 } from "../../src/contract/http.ts";
 import {
   resultReportCharsMax as interpretedReportCharsMax,
@@ -61,6 +74,23 @@ import {
 import { runTurnsPageLimitMax } from "../../src/interpreter/runEvidence.ts";
 import type { RunTotals } from "../../src/interpreter/runEvidence.ts";
 import { projectChangeKinds } from "../../src/contract/events.ts";
+import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
+import { allAgenticRefusalEvents } from "../../src/interpreter/agenticRefusal.ts";
+import {
+  allAgentReportedTurnFailures,
+  allPlatformTurnFailures,
+  allSessionStates,
+  allSessionTurnFailures,
+  allSessionTurnInputKinds,
+  allSessionTurnStates,
+  sessionIdentityCharsMax,
+} from "../../src/interpreter/agentSession.ts";
+import type { SelectorProjectState } from "../../src/interpreter/selector.ts";
+import {
+  leadDecisionBytesMax,
+  leadObservationBytesMax,
+  leadRefusalsObservedMax,
+} from "../../src/interpreter/selector.ts";
 import {
   phaseTags,
   reasonTags,
@@ -386,9 +416,64 @@ test("the authoring rosters are exhaustive over the model unions", () => {
   assert.deepEqual(sorted(repositoryConfigurationFaults), keysOf(faults));
 });
 
-test("the stream carries every polled kind and the two polling omits", () => {
+test("the stream carries every polled kind and the four polling omits", () => {
   assert.deepEqual(
     sorted(projectChangeKinds),
-    sorted([...notificationKinds, "Execution", "NativeAction"]),
+    sorted([
+      ...notificationKinds,
+      "Execution",
+      "NativeAction",
+      "AgenticRefusal",
+      "Session",
+    ]),
+  );
+  assert.deepEqual(sorted(projectChangeKinds), sorted(allProjectChangeKinds));
+});
+
+test("every session and refusal roster restates the interpreter's own", () => {
+  assert.deepEqual(agenticRefusalEvents, allAgenticRefusalEvents);
+  assert.deepEqual(sessionStates, allSessionStates);
+  assert.deepEqual(sessionTurnInputKinds, allSessionTurnInputKinds);
+  assert.deepEqual(sessionTurnStates, allSessionTurnStates);
+  assert.deepEqual(sessionTurnFailures, allSessionTurnFailures);
+  assert.deepEqual(sessionTurnFailures, [
+    ...allAgentReportedTurnFailures,
+    ...allPlatformTurnFailures,
+  ]);
+});
+
+/**
+ * The attention roster has no runtime list behind it, so this record is what
+ * the compiler rejects when the union gains or loses a member.
+ */
+const attention: Readonly<Record<SelectorProjectState["attention"], true>> = {
+  Monitoring: true,
+  Attention: true,
+  Stopped: true,
+};
+
+test("the attention roster is the union the selector's own state carries", () => {
+  assert.deepEqual(sorted(selectorAttentions), keysOf(attention));
+});
+
+test("every bound the wire restates holds the value its source does", () => {
+  assert.equal(sessionTurnModelCharsMax, sessionIdentityCharsMax);
+  assert.equal(leadRefusalsObservedMax, agenticRefusalsAnsweredMax);
+  assert.equal(leadObservationBytesMax, sessionTurnInputCharsMax);
+  assert.equal(leadDecisionBytesMax, sessionTurnResultCharsMax);
+});
+
+/**
+ * Each refusal page argues its size as a product with the reason bound, so the
+ * arithmetic is what is asserted rather than either number.
+ */
+test("a page of refusals fits the body and the observation it is sized against", () => {
+  assert.ok(
+    agenticRefusalLedgerAnsweredMax * agenticRefusalReasonCharsMax <=
+      nativeHttpBodyBytesMax / 2,
+  );
+  assert.ok(
+    agenticRefusalsAnsweredMax * agenticRefusalReasonCharsMax <=
+      leadObservationBytesMax / 2,
   );
 });

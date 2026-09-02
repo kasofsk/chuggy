@@ -59,6 +59,9 @@ export const sessionStoreStreamCharsMax = 256;
 /** How many batches one store read answers with, so a page stays under the body bound. */
 export const sessionStorePageBatchesMax = 8;
 
+/** How many transcript entries one page of a store read answers with. */
+export const sessionTranscriptEntriesMax = 512;
+
 /**
  * How many streams one listing answers with: one past the page above, so a
  * store holding more than a page of them is distinguishable from one holding
@@ -78,6 +81,20 @@ export const sessionTurnAttemptsMax = 3;
 
 export const sessionTurnInputCharsMax = 65_536;
 export const sessionTurnResultCharsMax = 65_536;
+
+/**
+ * The longest model identity one turn's measurement names. It is the session
+ * identity bound rather than a run's, because a turn's measure is stored beside
+ * the session's own opaque identities and `test/contract/rosters.test.ts` holds
+ * it against that one.
+ */
+export const sessionTurnModelCharsMax = 256;
+
+/** The most tool names one turn's measurement reports, distinct and in no order. */
+export const sessionTurnToolsMax = 64;
+
+/** The longest tool name one turn's measurement reports. */
+export const sessionTurnToolNameCharsMax = 128;
 
 /** How many already-confirmed entry uuids one stream's adapter remembers. */
 export const sessionStoreUuidsRemembered = 4_096;
@@ -100,6 +117,36 @@ export const selectorAllowlistNamesMax = 64;
 /** The longest name one selector allowlist entry carries. */
 export const selectorAllowlistNameCharsMax = 256;
 
+/** The largest handoff note the wire carries, which is what its column holds. */
+export const selectorHandoffNoteBytesMax = 65_536;
+
+/** How many of one project's decisions a single history page answers with. */
+export const selectorHistoryLimitMax = 50;
+
+/**
+ * The longest reason one agentic refusal carries. It is what makes a page of
+ * standing refusals bounded, so it moves only together with the two counts
+ * below it.
+ */
+export const agenticRefusalReasonCharsMax = 1_024;
+
+/**
+ * How many standing refusals one read answers with. Its product with the reason
+ * bound is half of what a lead turn's observation may weigh, which is the share
+ * the refusals may take of a document that also carries the candidates.
+ */
+export const agenticRefusalsAnsweredMax = 32;
+
+/** How many of a lead's turns one read of the lead answers with, newest last. */
+export const leadTurnsAnsweredMax = 32;
+
+/**
+ * How many entries one page of one ticket's refusal ledger answers with, `more`
+ * carrying the rest. Its product with the reason bound is half of one wire body,
+ * which is what makes a full page a body and a stream frame the wire can hold.
+ */
+export const agenticRefusalLedgerAnsweredMax = 32;
+
 /** The longest summary a result carries, restating what the manifest reader accepts. */
 export const resultReportCharsMax = 8_192;
 
@@ -117,11 +164,16 @@ export const nativeHttpRoutes = {
   tickets: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets`,
   ticket: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket`,
   ticketNativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/native-actions`,
+  ticketAgenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/agentic-refusals`,
   nativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/native-actions`,
+  agenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/agentic-refusals`,
   operationalStatus: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operational-status`,
   selectorContext: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-context`,
   selectorSettings: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-settings`,
   selectorSettingsHistory: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-settings/history`,
+  selectorHistory: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-history`,
+  lead: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead`,
+  leadTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/transcript`,
   executions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions`,
   execution: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution`,
   outputContent: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/artifacts/:ordinal`,

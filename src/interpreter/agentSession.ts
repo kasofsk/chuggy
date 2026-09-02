@@ -203,17 +203,55 @@ export const allSessionTurnStates = [
 ] as const;
 export type SessionTurnState = (typeof allSessionTurnStates)[number];
 
-/** Why one turn ended without an answer, a closed vocabulary so a label is never a payload. */
-export const allSessionTurnFailures = [
+/**
+ * Why one turn a pod held ended without an answer, which is the whole of what a
+ * pod may name. Each is something the pod is the only witness to: its runtime
+ * failed, was rate limited, ran out of turns or budget, or its store refused a
+ * batch.
+ */
+export const allAgentReportedTurnFailures = [
   "AgentFailed",
   "AgentRateLimited",
   "AgentTurnsExhausted",
   "AgentBudgetExhausted",
   "StoreRefused",
+] as const;
+
+/**
+ * Why one turn ended without an answer by the platform's own act. Rules 6 and 7
+ * above write the first two and the selector's withdrawal writes the third, each
+ * from a definer function; a pod naming one would be provenance nobody wrote,
+ * and a pod claiming its own session closed would leave a row saying so while
+ * the session is open.
+ */
+export const allPlatformTurnFailures = [
   "AttemptLost",
   "SessionClosed",
+  "TurnWithdrawn",
+] as const;
+
+/**
+ * Why one turn ended without an answer, a closed vocabulary so a label is never
+ * a payload. The durable check on it is generated from this list at the
+ * migration that last wrote `session_turn_failure_is_known`, so a member added
+ * here is one an installation that already ran that migration refuses until a
+ * further migration replaces the constraint.
+ */
+export const allSessionTurnFailures = [
+  ...allAgentReportedTurnFailures,
+  ...allPlatformTurnFailures,
 ] as const;
 export type SessionTurnFailure = (typeof allSessionTurnFailures)[number];
+
+/** What the runtime spent on one turn, measured by the pod from the runtime's own messages. */
+export interface SessionTurnMeasured {
+  readonly model: string;
+  readonly tokens: number;
+  /** Integer micros, because a float in a durable column is a comparison nobody can reproduce. */
+  readonly costMicros: number;
+  readonly durationMs: number;
+  readonly tools: readonly string[];
+}
 
 /** What opening a session answers: it is open now, it already was, or it is not this one. */
 export type AgentSessionOpened = "Opened" | "AlreadyOpen" | "Conflict";
