@@ -188,11 +188,22 @@ test("a truncated index marks every row it did not reach", () => {
   ]);
 });
 
-test("what a task runs on is its worker or its driver, by the mode it names", () => {
+test("what a task runs on is its worker, capability or driver, by the mode it names", () => {
   expect(projectTableRunsOn(container)).toEqual({
     text: "worker:1",
     title: "registry/worker:1",
   });
+  expect(
+    projectTableRunsOn({
+      ...container,
+      requirement: {
+        mode: "ContainerCapability",
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        capabilities: ["Agent:Claude"],
+      },
+    }),
+  ).toEqual({ text: "Claude", title: "Agent:Claude" });
   expect(
     projectTableRunsOn({
       ...container,

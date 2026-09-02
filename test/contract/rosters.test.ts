@@ -22,6 +22,7 @@ import {
   dispatchViewResults,
   escalationReasons,
   evaluationCombinators,
+  executionCapabilities,
   executionOutcomes,
   executionStatuses,
   executionTaskKinds,
@@ -79,10 +80,13 @@ import {
 import type { ExecutionTaskKind } from "../../src/interpreter/executionScheduler.ts";
 import type {
   Architecture as RequiredArchitecture,
+  ExecutionCapability as RequiredExecutionCapability,
+  ExecutionRequirement,
   NativeDriver as RequiredNativeDriver,
   OperatingSystem as RequiredOperatingSystem,
   RequirementSource as MaterializedRequirementSource,
 } from "../../src/interpreter/executionRequirement.ts";
+import { executionRequirementSchema } from "../../src/contract/responses.ts";
 import { allArtifactRoles } from "../../src/interpreter/resultManifest.ts";
 import {
   allNativeActionKinds,
@@ -180,10 +184,34 @@ test("the requirement rosters are exhaustive over the interpreter's unions", () 
     TicketDefault: true,
     PlatformDefault: true,
   };
+  const capabilities: Record<RequiredExecutionCapability, true> = {
+    "Agent:Claude": true,
+    "Agent:Codex": true,
+  };
   assert.deepEqual(sorted(operatingSystems), keysOf(systems));
   assert.deepEqual(sorted(architectures), keysOf(widths));
   assert.deepEqual(sorted(nativeDrivers), keysOf(drivers));
   assert.deepEqual(sorted(requirementSources), keysOf(sources));
+  assert.deepEqual(sorted(executionCapabilities), keysOf(capabilities));
+});
+
+/**
+ * Held over the schema's own arms rather than a roster, because the arms are
+ * the wire's list of modes. A mode the interpreter materializes with no arm
+ * here is a response the console parses as nothing at all.
+ */
+test("the wire has an arm for every mode the interpreter materializes", () => {
+  const modes: Record<ExecutionRequirement["mode"], true> = {
+    Container: true,
+    ContainerCapability: true,
+    Native: true,
+  };
+  assert.deepEqual(
+    sorted(
+      executionRequirementSchema.options.map((arm) => arm.shape.mode.value),
+    ),
+    keysOf(modes),
+  );
 });
 
 test("the wire's evidence labels are the interpreter's own list", () => {

@@ -43,6 +43,7 @@ import {
   dispatchViewResponseSchema,
   draftInitializationResponseSchema,
   draftResponseSchema,
+  executionRequirementSchema,
   executionResponseSchema,
   executionsResponseSchema,
   notificationsResponseSchema,
@@ -508,7 +509,7 @@ test("every encoded summary names its request, and a page without one still read
   assert.equal(older.executions[0]?.status, "Terminal");
 });
 
-test("an execution names what it ran on, in either mode", () => {
+test("an execution names what it ran on, in every mode", () => {
   const page = executionsResponseSchema.parse(
     executionsResponse(partition, {
       result: "Authorized",
@@ -542,6 +543,33 @@ test("an execution names what it ran on, in either mode", () => {
   );
 });
 
+/**
+ * The requirement the scheduler materializes for a task whose worker names an
+ * agent. It reaches the console through the execution page a ticket's cycles
+ * are read from.
+ */
+test("an execution asking the site for a capability parses as one", () => {
+  const capability: ExecutionRequirement = {
+    mode: "ContainerCapability",
+    operatingSystem: "Linux",
+    architecture: "Amd64",
+    capabilities: ["Agent:Claude"],
+  };
+  assert.deepEqual(
+    executionRequirementSchema.parse(capability as unknown),
+    capability,
+  );
+  const page = executionsResponseSchema.parse(
+    executionsResponse(partition, {
+      result: "Authorized",
+      value: {
+        executions: [{ ...executionSummary, requirement: capability }],
+      },
+    }).body,
+  );
+  assert.deepEqual(page.executions[0]?.requirement, capability);
+});
+
 /** The page body one execution carrying this requirement would be sent as. */
 function pageWithRequirement(value: unknown): unknown {
   return executionsResponse(partition, {
@@ -553,6 +581,39 @@ function pageWithRequirement(value: unknown): unknown {
     },
   }).body;
 }
+
+test("a requirement naming a mode the wire does not is refused", () => {
+  assert.throws(() =>
+    executionsResponseSchema.parse(
+      pageWithRequirement({
+        mode: "ContainerRuntime",
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        capabilities: ["Agent:Claude"],
+      }),
+    ),
+  );
+  assert.throws(() =>
+    executionsResponseSchema.parse(
+      pageWithRequirement({
+        mode: "ContainerCapability",
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        capabilities: [],
+      }),
+    ),
+  );
+  assert.throws(() =>
+    executionsResponseSchema.parse(
+      pageWithRequirement({
+        mode: "ContainerCapability",
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        capabilities: ["Agent:Unnamed"],
+      }),
+    ),
+  );
+});
 
 test("a requirement carrying a key its mode does not name is refused", () => {
   assert.throws(() =>

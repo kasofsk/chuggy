@@ -35,7 +35,11 @@ import type {
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
 
-import { configurationLabel, workerLabel } from "./labels.ts";
+import {
+  capabilitiesShortened,
+  configurationLabel,
+  workerLabel,
+} from "./labels.ts";
 import type { Label } from "./labels.ts";
 import { projectExecutionIndexAt } from "./projectExecutionIndex.ts";
 import type {
@@ -68,13 +72,18 @@ export interface ProjectTableRow {
 }
 
 /** What the task was placed on, named where the catalog names it: a container
- * is its worker or the image the catalog holds no worker for, and a native task
- * is its driver. */
+ * is its worker or the image the catalog holds no worker for, a capability task
+ * is what it asked the site for, and a native task is its driver. */
 export function projectTableRunsOn(execution: ExecutionSummary): Label {
   const requirement = execution.requirement;
   switch (requirement.mode) {
     case "Container":
       return workerLabel(execution.worker, requirement.image);
+    case "ContainerCapability":
+      return {
+        text: capabilitiesShortened(requirement.capabilities),
+        title: requirement.capabilities.join(", "),
+      };
     case "Native":
       return { text: requirement.driver, title: requirement.driver };
   }
