@@ -10,6 +10,7 @@ import {
 import { chuggyToolPrefix, sessionBuiltInTools } from "./chuggyTools.mjs";
 import {
   checkedSessionBounds,
+  runModelCharsMax,
   sessionBoundNames,
   sessionMain,
   sessionMeasure,
@@ -969,14 +970,29 @@ test("a thread originates through the API under its own session bearer, and answ
     "filed ticket 14",
   );
 });
-/** One usage as the runtime reports it, four counters the measurement sums. */
-const usage = {
-  input_tokens: 30,
-  output_tokens: 331,
-  cache_creation_input_tokens: 16_150,
-  cache_read_input_tokens: 31_671,
-};
-const usageTokens = 30 + 331 + 16_150 + 31_671;
+/**
+ * What the runtime reported its query pipeline had spent, taken from the spike's
+ * own two-turn run: per-model totals, cumulative across the turns of one query,
+ * four counters the measurement sums.
+ */
+const spentAfter = (
+  inputTokens,
+  outputTokens,
+  cacheCreationInputTokens,
+  cacheReadInputTokens,
+) => ({
+  "claude-haiku-4-5-20251001": {
+    inputTokens,
+    outputTokens,
+    cacheCreationInputTokens,
+    cacheReadInputTokens,
+    webSearchRequests: 0,
+  },
+});
+const spent = spentAfter(948, 349, 16_150, 31_671);
+const spentAgain = spentAfter(958, 375, 16_251, 47_821);
+const spentTokens = 948 + 349 + 16_150 + 31_671;
+const spentAgainTokens = 958 + 375 + 16_251 + 47_821 - spentTokens;
 
 const answerOf = (plane) =>
   plane.calls.find(({ path }) => path === "/v1/session/turn/answer").body;
@@ -992,7 +1008,7 @@ test("a turn reports the model, the tokens, the cost and the time the runtime sp
     },
     result("success", {
       result: "ok",
-      usage,
+      modelUsage: spent,
       total_cost_usd: 0.038_160_1,
       duration_ms: 5_195,
     }),
@@ -1003,14 +1019,14 @@ test("a turn reports the model, the tokens, the cost and the time the runtime sp
   assert.equal(code, 0);
   assert.deepEqual(answerOf(plane).measured, {
     model: "haiku",
-    tokens: usageTokens,
+    tokens: spentTokens,
     costMicros: 38_160,
     durationMs: 5_195,
     tools: [],
   });
 });
 
-test("a turn's cost is what the runtime's running total moved by, not the total", async () => {
+test("a turn's cost and tokens are what the running totals moved by, not the totals", async () => {
   const plane = planeOf([turnOne, { ...turnOne, turn: "turn-2" }], facts);
   const { query } = queryOf((_asked, index) => [
     {
@@ -1021,7 +1037,7 @@ test("a turn's cost is what the runtime's running total moved by, not the total"
     },
     result("success", {
       result: "ok",
-      usage,
+      modelUsage: index === 0 ? spent : spentAgain,
       duration_ms: 1,
       total_cost_usd: index === 0 ? 0.038_160_1 : 0.040_117_1,
     }),
@@ -1029,10 +1045,17 @@ test("a turn's cost is what the runtime's running total moved by, not the total"
 
   await run({ request: plane.request, query });
 
-  const costs = plane.calls
+  const answered = plane.calls
     .filter(({ path }) => path === "/v1/session/turn/answer")
-    .map(({ body }) => body.measured.costMicros);
-  assert.deepEqual(costs, [38_160, 1_957]);
+    .map(({ body }) => body.measured);
+  assert.deepEqual(
+    answered.map(({ costMicros }) => costMicros),
+    [38_160, 1_957],
+  );
+  assert.deepEqual(
+    answered.map(({ tokens }) => tokens),
+    [spentTokens, spentAgainTokens],
+  );
 });
 
 test("the tools a turn reports are the distinct ones its assistant named", async () => {
@@ -1060,9 +1083,19 @@ test("the tools a turn reports are the distinct ones its assistant named", async
           },
           called("Read"),
           called("Bash"),
-          result("success", { result: "ok", usage, duration_ms: 1 }),
+          result("success", {
+            result: "ok",
+            modelUsage: spent,
+            duration_ms: 1,
+          }),
         ]
-      : [result("success", { result: "ok", usage, duration_ms: 1 })],
+      : [
+          result("success", {
+            result: "ok",
+            modelUsage: spent,
+            duration_ms: 1,
+          }),
+        ],
   );
 
   await run({ request: plane.request, query });
@@ -1093,7 +1126,7 @@ test("a turn naming more tools than a row holds reports the bound and no more", 
         content: named.map((name) => ({ type: "tool_use", name })),
       },
     },
-    result("success", { result: "ok", usage, duration_ms: 1 }),
+    result("success", { result: "ok", modelUsage: spent, duration_ms: 1 }),
   ]);
 
   await run({ request: plane.request, query });
@@ -1120,7 +1153,7 @@ test("a tool name longer than a row holds is cut to the bound rather than refuse
         content: [{ type: "tool_use", name: long }],
       },
     },
-    result("success", { result: "ok", usage, duration_ms: 1 }),
+    result("success", { result: "ok", modelUsage: spent, duration_ms: 1 }),
   ]);
 
   await run({ request: plane.request, query });
@@ -1130,10 +1163,10 @@ test("a tool name longer than a row holds is cut to the bound rather than refuse
   assert.ok(only.isWellFormed(), "the cut left half a surrogate pair behind");
 });
 
-test("a turn the runtime reported no usage for is answered with no measurement", async () => {
+test("a turn the runtime accounted for nothing on is answered with no measurement", async () => {
   for (const ended of [
     result("success", { result: "ok", duration_ms: 1 }),
-    result("success", { result: "ok", usage: null, duration_ms: 1 }),
+    result("success", { result: "ok", modelUsage: null, duration_ms: 1 }),
   ]) {
     const plane = planeOf([turnOne], facts);
     const { query } = queryOf(() => [
@@ -1161,7 +1194,7 @@ test("a turn whose runtime named no model carries no measurement either", async 
   const plane = planeOf([turnOne], facts);
   const { query } = queryOf(() => [
     { type: "system", subtype: "init", session_id: "runtime-1" },
-    result("success", { result: "ok", usage, duration_ms: 1 }),
+    result("success", { result: "ok", modelUsage: spent, duration_ms: 1 }),
   ]);
 
   await run({ request: plane.request, query });
@@ -1177,7 +1210,7 @@ test("a figure the runtime reported as no number is measured as nothing spent", 
   measure.saw({ type: "system", subtype: "init", model: "haiku" });
   assert.deepEqual(
     measure.of({
-      usage: { input_tokens: "many", output_tokens: -3 },
+      modelUsage: { haiku: { inputTokens: "many", outputTokens: -3 } },
       total_cost_usd: "free",
       duration_ms: undefined,
     }),
@@ -1189,4 +1222,129 @@ test("a figure the runtime reported as no number is measured as nothing spent", 
       tools: [],
     },
   );
+});
+
+/** One measure that has already been told a model, which is all the envelope needs. */
+function measureOf(model = "haiku") {
+  const measure = sessionMeasure();
+  measure.saw({ type: "system", subtype: "init", model });
+  return measure;
+}
+
+test("a total the runtime did not report leaves the mark, and the next one is a delta from it", () => {
+  const measure = measureOf();
+  const costs = [0.3, undefined, 0.45].map(
+    (total_cost_usd) =>
+      measure.of({ modelUsage: spent, total_cost_usd }).costMicros,
+  );
+
+  assert.deepEqual(costs, [300_000, 0, 150_000]);
+});
+
+test("a total the runtime reported lower than the last charges the turn nothing", () => {
+  const measure = measureOf();
+  const costs = [0.3, 0.1, 0.25].map(
+    (total_cost_usd) =>
+      measure.of({ modelUsage: spent, total_cost_usd }).costMicros,
+  );
+
+  assert.deepEqual(costs, [300_000, 0, 150_000]);
+});
+
+test("what a failed turn spent is charged to the next turn that answers", async () => {
+  const plane = planeOf([turnOne, { ...turnOne, turn: "turn-2" }], facts);
+  const { query } = queryOf((_asked, index) => [
+    {
+      type: "system",
+      subtype: "init",
+      session_id: "runtime-1",
+      model: "haiku",
+    },
+    index === 0
+      ? result("error_during_execution", {
+          modelUsage: spent,
+          total_cost_usd: 0.3,
+          duration_ms: 1,
+        })
+      : result("success", {
+          result: "ok",
+          modelUsage: spentAgain,
+          total_cost_usd: 0.45,
+          duration_ms: 1,
+        }),
+  ]);
+
+  await run({ request: plane.request, query });
+
+  const answers = plane.calls.filter(
+    ({ path }) => path === "/v1/session/turn/answer",
+  );
+  assert.equal(answers.length, 1, "a failed turn was answered");
+  assert.equal(answers[0].body.measured.costMicros, 450_000);
+  assert.equal(
+    answers[0].body.measured.tokens,
+    spentTokens + spentAgainTokens,
+    "the failed turn's tokens were dropped rather than carried",
+  );
+});
+
+test("the tokens counted are every model's, not the main loop's alone", () => {
+  const withSubagent = {
+    ...spent,
+    "claude-opus-4-5": {
+      inputTokens: 11,
+      outputTokens: 22,
+      cacheCreationInputTokens: 33,
+      cacheReadInputTokens: 44,
+    },
+  };
+
+  assert.equal(
+    measureOf().of({ modelUsage: withSubagent }).tokens,
+    spentTokens + 11 + 22 + 33 + 44,
+  );
+});
+
+test("a name carrying the one character no stored row holds is stripped of it", async () => {
+  const plane = planeOf([turnOne], facts);
+  const named = "Ba\u0000sh";
+  const { query } = queryOf(() => [
+    {
+      type: "system",
+      subtype: "init",
+      session_id: "runtime-1",
+      model: "hai\u0000ku",
+    },
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [{ type: "tool_use", name: named }],
+      },
+    },
+    result("success", { result: "ok", modelUsage: spent, duration_ms: 1 }),
+  ]);
+
+  await run({ request: plane.request, query });
+
+  const { model, tools } = answerOf(plane).measured;
+  assert.deepEqual(tools, ["Bash"]);
+  assert.equal(model, "haiku");
+});
+
+test("a model identity longer than a row holds is cut to the bound rather than refused", () => {
+  const long = `x${"\u{1f600}".repeat(runModelCharsMax)}`;
+  const measure = measureOf(long);
+
+  const { model } = measure.of({ modelUsage: spent });
+  assert.equal(model.length, runModelCharsMax);
+  assert.ok(model.isWellFormed(), "the cut left half a surrogate pair behind");
+});
+
+test("a model the runtime named as nothing a row holds leaves the last one standing", () => {
+  const measure = measureOf();
+  measure.saw({ type: "system", subtype: "init", model: "\u0000" });
+  measure.saw({ type: "system", subtype: "init", model: "" });
+
+  assert.equal(measure.of({ modelUsage: spent }).model, "haiku");
 });

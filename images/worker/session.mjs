@@ -26,9 +26,9 @@
  * RESULT TEXT. The controls the selector runs over a decision check the model,
  * the tools, the tokens and the duration it took; a count taken from the
  * answer's prose would be a count the thing being controlled wrote. So the pod
- * is the measuring host, and a turn the runtime reported no usage for carries
- * no measurement at all rather than one of zeroes — the reader of the envelope
- * is what refuses a decision with no provenance.
+ * is the measuring host, and a turn the runtime accounted for nothing on
+ * carries no measurement at all rather than one of zeroes — the reader of the
+ * envelope is what refuses a decision with no provenance.
  */
 
 import { mkdir, readFile } from "node:fs/promises";
@@ -62,8 +62,19 @@ export const sessionTurnToolsMax = 64;
 /** The longest tool name one turn's measurement reports. */
 export const sessionTurnToolNameCharsMax = 128;
 
+/** The longest model identity one turn's measurement reports. */
+export const runModelCharsMax = 128;
+
 /** What a micro is of a dollar, which is the unit the measured cost is carried in. */
 const microsPerDollar = 1_000_000;
+
+/** Every counter of one model's usage that this pod counts as a token spent. */
+const modelUsageCounters = [
+  "inputTokens",
+  "outputTokens",
+  "cacheCreationInputTokens",
+  "cacheReadInputTokens",
+];
 
 const agentSdkModule = "@anthropic-ai/claude-agent-sdk";
 const zodModule = "zod";
@@ -168,16 +179,13 @@ function measuredCount(value) {
 }
 
 /**
- * One tool name as a stored row can hold it: cut to the bound, made whole again
- * where the cut fell inside a surrogate pair, and stripped of the one character
- * no stored text holds. A name the plane refused would fail, over a label, a
- * turn the runtime completed.
+ * One text as a stored row can hold it: stripped of the one character no stored
+ * text holds, cut to the bound, and made whole again where the cut fell inside a
+ * surrogate pair. A value the plane refused would fail a turn the runtime
+ * completed, over a label, and leave that turn claimed by a pod that has exited.
  */
-function measuredToolName(name) {
-  return name
-    .replaceAll("\u0000", "")
-    .slice(0, sessionTurnToolNameCharsMax)
-    .toWellFormed();
+function measuredText(value, charsMax) {
+  return value.replaceAll("\u0000", "").slice(0, charsMax).toWellFormed();
 }
 
 /** The tools one message called, which the runtime names in the assistant's own blocks. */
@@ -188,59 +196,88 @@ function messageToolNames(message) {
     .filter(
       (block) => block?.type === "tool_use" && typeof block.name === "string",
     )
-    .map((block) => measuredToolName(block.name))
+    .map((block) => measuredText(block.name, sessionTurnToolNameCharsMax))
     .filter((name) => name.length > 0);
 }
 
 /**
- * What the runtime spent, gathered as it says it. The model and the cost outlive
- * one turn because the runtime reports them per query rather than per turn — it
- * names the model on every init and reports the cost as the total so far — so
- * what one turn cost is what that total moved by. The tokens and the duration
- * it reports are already the turn's, and the tools are this turn's alone.
+ * What every model call the runtime made through its query pipeline has spent so
+ * far, or nothing where the runtime accounted for none. This is the runtime's
+ * own field for token accounting rather than the per-turn one beside it: that
+ * one declares itself the main agent loop alone, so a lead with tools would
+ * spend its subagents outside every budget.
+ */
+function modelUsageTokens(modelUsage) {
+  if (typeof modelUsage !== "object" || modelUsage === null) return undefined;
+  let counted = 0;
+  for (const spent of Object.values(modelUsage))
+    for (const counter of modelUsageCounters)
+      counted += measuredCount(spent?.[counter]);
+  return counted;
+}
+
+/**
+ * One figure the runtime reports as a total for its whole query rather than for
+ * one turn, read as what this turn moved it by. A total the runtime did not
+ * report leaves the mark where it stood, so that spend lands on the next turn
+ * reporting one rather than being charged twice; a total that fell — a crash's
+ * zeroes, or the clear the runtime documents as resetting it — moves the mark
+ * down and charges this turn nothing.
+ */
+function runningTotal() {
+  let mark = 0;
+  return (total) => {
+    const now = Number.isFinite(total) ? Math.max(0, total) : mark;
+    const moved = now - mark;
+    mark = now;
+    return moved;
+  };
+}
+
+/**
+ * What the runtime spent, gathered as it says it. The model, the tokens and the
+ * cost outlive one turn because the runtime reports each per query rather than
+ * per turn, so what one turn spent is what its total moved by; the duration is
+ * already the turn's and the tools are this turn's alone.
+ *
+ * A FAILED TURN IS NEVER MEASURED, AND ITS SPEND IS NOT LOST. Only an answered
+ * turn asks for an envelope, so a failed one leaves both marks where they stood
+ * and what it spent is charged to the next turn that answers. The session's
+ * total is what stays true and per-turn attribution is what gives way, toward
+ * over-reporting, which is the direction a budget refuses in.
  */
 export function sessionMeasure() {
   let model;
-  let spentDollars = 0;
+  const dollarsSince = runningTotal();
+  const tokensSince = runningTotal();
   let tools = [];
   return {
     startTurn() {
       tools = [];
     },
     saw(message) {
-      if (
-        message.type === "system" &&
-        message.subtype === "init" &&
-        typeof message.model === "string" &&
-        message.model.length > 0
-      )
-        model = message.model;
+      if (message.type === "system" && message.subtype === "init") {
+        const named =
+          typeof message.model === "string"
+            ? measuredText(message.model, runModelCharsMax)
+            : "";
+        if (named.length > 0) model = named;
+      }
       if (message.type !== "assistant") return;
       for (const name of messageToolNames(message))
         if (!tools.includes(name) && tools.length < sessionTurnToolsMax)
           tools.push(name);
     },
-    /** The turn's envelope, or nothing where the runtime reported no usage to measure. */
+    /** The turn's envelope, or nothing where the runtime accounted for nothing. */
     of(result) {
-      const usage = result?.usage;
-      if (model === undefined || typeof usage !== "object" || usage === null)
-        return undefined;
-      const total = Number.isFinite(result.total_cost_usd)
-        ? Math.max(0, result.total_cost_usd)
-        : spentDollars;
-      const costMicros = measuredCount(
-        (total - spentDollars) * microsPerDollar,
-      );
-      spentDollars = total;
+      const spent = modelUsageTokens(result?.modelUsage);
+      if (model === undefined || spent === undefined) return undefined;
       return {
         model,
-        tokens: measuredCount(
-          measuredCount(usage.input_tokens) +
-            measuredCount(usage.output_tokens) +
-            measuredCount(usage.cache_creation_input_tokens) +
-            measuredCount(usage.cache_read_input_tokens),
+        tokens: measuredCount(tokensSince(spent)),
+        costMicros: measuredCount(
+          dollarsSince(result.total_cost_usd) * microsPerDollar,
         ),
-        costMicros,
         durationMs: measuredCount(result.duration_ms),
         tools: [...tools],
       };
