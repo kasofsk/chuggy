@@ -39,6 +39,7 @@
  * healthy project writer.
  */
 
+import type { SessionId } from "./agentSession.ts";
 import { asBoundedText } from "./boundedText.ts";
 import type { Lifecycle, Partition } from "./projectStore.ts";
 import { safetyResolution, type TicketCommand } from "./ticketCommand.ts";
@@ -194,6 +195,13 @@ export interface Submission {
   readonly authority: Authority;
   readonly key: IdempotencyKey;
   readonly command: TicketCommand;
+  /**
+   * The session a command came through, recorded on the accepted row and read
+   * by nothing else. It is not on `Authority`, so idempotency stays scoped by
+   * authority kind: two sessions of one member offering one key are that member
+   * retrying, and merging them is right.
+   */
+  readonly viaSession?: SessionId;
 }
 
 /** The immutable scheduling class trusted ingress derives from a typed command. */
