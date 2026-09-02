@@ -5,7 +5,10 @@ import fastify, {
 } from "fastify";
 
 import type { TicketId } from "../../domain/ids.ts";
-import type { SessionId } from "../../interpreter/agentSession.ts";
+import {
+  asSessionStoreStream,
+  type SessionId,
+} from "../../interpreter/agentSession.ts";
 import type { InstallationAuthorityRead } from "../../interpreter/installationAuthority.ts";
 import { phaseTags, type Phase } from "../../domain/generated/modelTypes.ts";
 import {
@@ -30,11 +33,14 @@ import type { SelectorProjectSettingsAdministration } from "../../interpreter/se
 import { projectStreamSocket } from "./eventStream.ts";
 import { nativeHttpContractDocument } from "../../contract/document.ts";
 import {
+  agenticRefusalsAnsweredMax,
   nativeHttpBodyBytesMax,
   nativeHttpError,
   nativeHttpHeaderBytesMax,
   nativeHttpMediaType,
   nativeHttpPathSegmentCharsMax,
+  selectorHistoryLimitMax,
+  sessionStorePageBatchesMax,
 } from "../../contract/http.ts";
 import {
   parseConfigurationCursor,
@@ -74,6 +80,11 @@ import {
   executionResponse,
   executionsResponse,
   operationalStatusResponse,
+  agenticRefusalsResponse,
+  leadResponse,
+  leadTranscriptResponse,
+  selectorHistoryResponse,
+  ticketAgenticRefusalsResponse,
   selectorOperationalContextResponse,
   selectorProjectSettingsResponse,
   selectorProjectSettingsWriteResponse,
@@ -147,6 +158,11 @@ type InitialNativeWeb = Pick<
   | "executions"
   | "operationalStatus"
   | "selectorOperationalContext"
+  | "lead"
+  | "leadTranscript"
+  | "agenticRefusals"
+  | "ticketAgenticRefusals"
+  | "selectorHistory"
   | "outputContent"
   | "runTurns"
   | "runTranscript"
@@ -472,8 +488,106 @@ function registerProject(app: FastifyInstance, web: InitialNativeWeb): void {
     send(reply, ticketResponse(resource));
   });
   registerNativeActions(app, web, root);
+  registerAgenticRefusals(app, web, root);
   registerOperationalRoutes(app, web, root);
   registerRunEvidenceRoutes(app, web, root);
+}
+
+/**
+ * The lead's own read and a page of its transcript. The transcript defaults to
+ * the session's own stream, because a reader who has not asked for one wants
+ * the conversation rather than a subagent's.
+ */
+function registerLead(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+  root: string,
+): void {
+  app.get(`${root}/lead`, async (request, reply) => {
+    send(
+      reply,
+      leadResponse(await web.lead(principalOf(request), partitionOf(request))),
+    );
+  });
+  app.get(`${root}/lead/transcript`, async (request, reply) => {
+    const query = fieldsOnly(request.query, ["stream", "after", "limit"]);
+    const stream = query["stream"];
+    send(
+      reply,
+      leadTranscriptResponse(
+        await web.leadTranscript(principalOf(request), partitionOf(request), {
+          ...(stream === undefined
+            ? {}
+            : { stream: asSessionStoreStream(textField(query, "stream")) }),
+          after: integerField(query, "after", 0),
+          limit: integerField(query, "limit", sessionStorePageBatchesMax),
+        }),
+      ),
+    );
+  });
+}
+
+/** The lead's refusals, across a project and under the one ticket each names. */
+function registerAgenticRefusals(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+  root: string,
+): void {
+  app.get(`${root}/agentic-refusals`, async (request, reply) => {
+    const query = fieldsOnly(request.query, ["limit"]);
+    send(
+      reply,
+      agenticRefusalsResponse(
+        await web.agenticRefusals(
+          principalOf(request),
+          partitionOf(request),
+          integerField(query, "limit", agenticRefusalsAnsweredMax),
+        ),
+      ),
+    );
+  });
+  app.get(
+    `${root}/tickets/:ticket/agentic-refusals`,
+    async (request, reply) => {
+      const params = record(request.params);
+      send(
+        reply,
+        ticketAgenticRefusalsResponse(
+          await web.ticketAgenticRefusals(
+            principalOf(request),
+            partitionOf(request),
+            asTicketIdField(params, "ticket"),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/** The decision log, beside the settings the decisions were made under. */
+function registerSelectorHistory(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+): void {
+  app.get(
+    "/api/v1/tenants/:tenant/projects/:project/selector-history",
+    async (request, reply) => {
+      const query = fieldsOnly(request.query, ["after", "limit"]);
+      send(
+        reply,
+        selectorHistoryResponse(
+          await web.selectorHistory(
+            principalOf(request),
+            partitionOf(request),
+            query["after"] === undefined
+              ? undefined
+              : integerField(query, "after"),
+            integerField(query, "limit", selectorHistoryLimitMax),
+          ),
+        ),
+      );
+    },
+  );
 }
 
 function registerRunEvidenceRoutes(
@@ -1093,7 +1207,9 @@ export function createNativeHttpApp(
   registerInstallation(app, authority);
   registerInventory(app, web);
   registerProject(app, web);
+  registerLead(app, web, "/api/v1/tenants/:tenant/projects/:project");
   registerSelectorContext(app, web);
+  registerSelectorHistory(app, web);
   if (selectorSettings !== undefined)
     registerSelectorSettings(app, selectorSettings);
   registerOperations(app, web);

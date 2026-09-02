@@ -8,14 +8,18 @@
  * project actor nor owns a database transaction.
  */
 
-import type { SessionId } from "./agentSession.ts";
+import {
+  asSessionStoreStream,
+  isSessionStoreStream,
+  type SessionId,
+  type SessionStoreStream,
+} from "./agentSession.ts";
 import type { Principal } from "./principal.ts";
 import type { EscalationReason, ResumePoint } from "../contract/rosters.ts";
 import { phaseTags, type Phase } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type {
   Accepted,
-  Authority,
   Cancelled,
   IdempotencyKey,
   OperationId,
@@ -93,8 +97,38 @@ import {
 } from "./runEvidence.ts";
 import type { AttemptId, ExecutionId } from "./schedulerIdentity.ts";
 import { type PublicInstant } from "./publicResource.ts";
+import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
 import type { SelectorOperationalContext } from "./selector.ts";
 import type { SelectorOperationalContextRead } from "./selectorOperationalContext.ts";
+import {
+  agenticRefusalIsSuperseded,
+  agenticRefusals,
+  checkedAgenticRefusalsLimit,
+  type AgenticRefusalRead,
+  type AgenticRefusalsRead,
+  type AgenticRefusalStanding,
+  type TicketAgenticRefusalsRead,
+} from "./agenticRefusal.ts";
+import {
+  checkedLeadTranscriptQuery,
+  leadTranscriptPage,
+  type LeadRead,
+  type LeadReadStore,
+  type LeadStanding,
+  type LeadTranscriptQuery,
+  type LeadTranscriptRead,
+} from "./leadRead.ts";
+import {
+  selectorHistory,
+  type SelectorHistoryRead,
+  type SelectorHistoryStore,
+} from "./selectorHistory.ts";
+import type { SessionStoreReadPort, SessionStoreRead } from "./sessionStore.ts";
+import {
+  agenticRefusalLedgerAnsweredMax,
+  leadTurnsAnsweredMax,
+  sessionStoreStreamsAnswered,
+} from "../contract/http.ts";
 import type { GitObjectId } from "./finalizer.ts";
 import {
   importRepositoryConfigurations,
@@ -103,34 +137,12 @@ import {
 } from "./repositoryConfiguration.ts";
 export { asPublicInstant, type PublicInstant } from "./publicResource.ts";
 export { asPrincipal, oidcPrincipal, type Principal } from "./principal.ts";
-
-/** Every project access kind, and the declaration `ProjectAccessKind` derives from, so narrowing a supplied kind has one list to check. */
-export const allProjectAccessKinds = [
-  "Read",
-  "Mutate",
-  "DispatchTicket",
-  "ProposeDispatch",
-  "ManageProjectSelector",
-] as const;
-
-export type ProjectAccessKind = (typeof allProjectAccessKinds)[number];
-
-/** Narrows text to the access kind it names, refusing anything `authorize_project_access` would not know. */
-export function asProjectAccessKind(value: string): ProjectAccessKind {
-  const kind = allProjectAccessKinds.find((known) => known === value);
-  if (kind === undefined)
-    throw new RangeError(`project access kind: ${value} is not a known kind`);
-  return kind;
-}
-
-/** Current project access and the non-reassignable authority it resolves to. */
-export interface ProjectAccess {
-  authorize(
-    principal: Principal,
-    partition: Partition,
-    access: ProjectAccessKind,
-  ): Promise<Authority | undefined>;
-}
+export {
+  allProjectAccessKinds,
+  asProjectAccessKind,
+  type ProjectAccess,
+  type ProjectAccessKind,
+} from "./projectAccess.ts";
 
 export interface ProjectInventory {
   projects(
@@ -438,6 +450,28 @@ export interface NativeWeb {
     principal: Principal,
     partition: Partition,
   ): Promise<AuthorizedResult<SelectorOperationalContext>>;
+  lead(principal: Principal, partition: Partition): Promise<LeadRead>;
+  leadTranscript(
+    principal: Principal,
+    partition: Partition,
+    query: LeadTranscriptQuery,
+  ): Promise<LeadTranscriptRead>;
+  agenticRefusals(
+    principal: Principal,
+    partition: Partition,
+    limit: number,
+  ): Promise<AgenticRefusalsRead>;
+  ticketAgenticRefusals(
+    principal: Principal,
+    partition: Partition,
+    ticket: TicketId,
+  ): Promise<TicketAgenticRefusalsRead>;
+  selectorHistory(
+    principal: Principal,
+    partition: Partition,
+    after: number | undefined,
+    limit: number,
+  ): Promise<SelectorHistoryRead>;
   executions(
     principal: Principal,
     partition: Partition,
@@ -958,6 +992,216 @@ function nativeTicketMethods(
   };
 }
 
+/**
+ * The four ports the lead's read side needs. They arrive together because the
+ * lead page needs all four and a deployment that composed three of them would
+ * answer a page that is a quarter blank without saying which quarter.
+ */
+export interface NativeLeadPorts {
+  readonly leads: LeadReadStore;
+  readonly store: SessionStoreReadPort;
+  readonly refusals: AgenticRefusalRead;
+  readonly history: SelectorHistoryStore;
+}
+
+function composedLeadPorts(ports?: NativeLeadPorts): NativeLeadPorts {
+  if (ports === undefined)
+    throw new Error("native web: no lead read ports were composed");
+  return ports;
+}
+
+/** The stream a transcript read defaults to, which is the session's own agent reference. */
+function nativeLeadStream(
+  standing: LeadStanding,
+): SessionStoreStream | undefined {
+  const reference = standing.agentReference;
+  return reference !== undefined && isSessionStoreStream(reference)
+    ? asSessionStoreStream(reference)
+    : undefined;
+}
+
+/**
+ * One page of a stream, drawn batch by batch. Only an outage refuses it; a
+ * batch that is gone or fails its digest is elided and counted, the same answer
+ * `nativeRunTranscriptBatches` gives the same situation.
+ */
+async function nativeLeadTranscriptBatches(
+  ports: NativeLeadPorts,
+  partition: Partition,
+  standing: LeadStanding,
+  query: LeadTranscriptQuery,
+): Promise<LeadTranscriptRead> {
+  const stream = query.stream ?? nativeLeadStream(standing);
+  if (stream === undefined) return { read: "NotFound" };
+  const rows = await ports.leads.batches({
+    partition,
+    stream,
+    after: query.after,
+    limit: query.limit,
+  });
+  const drawn: SessionStoreRead[] = [];
+  for (const row of rows) {
+    const read = await ports.store.readBatch({
+      partition,
+      session: standing.session,
+      stream,
+      batch: row.batch,
+    });
+    if (read.read === "Unavailable") return read;
+    drawn.push(read);
+  }
+  const last = rows.at(-1)?.batch;
+  return {
+    read: "Page",
+    page: leadTranscriptPage({
+      stream,
+      drawn,
+      ...(rows.length < query.limit || last === undefined
+        ? {}
+        : { nextAfter: last }),
+    }),
+  };
+}
+
+/** Whether each standing refusal has been cleared by its ticket being authored again. */
+async function nativeStandingRefusals(
+  reads: NativeReadStore,
+  partition: Partition,
+  refusals: readonly Omit<AgenticRefusalStanding, "superseded">[],
+): Promise<readonly AgenticRefusalStanding[]> {
+  return Promise.all(
+    refusals.map(async (refusal) => {
+      const held = await reads.ticket(partition, refusal.ticket);
+      return {
+        ...refusal,
+        superseded:
+          held !== undefined &&
+          agenticRefusalIsSuperseded(refusal, held.sequence),
+      };
+    }),
+  );
+}
+
+type NativeLeadMethods = Pick<
+  NativeWeb,
+  | "lead"
+  | "leadTranscript"
+  | "agenticRefusals"
+  | "ticketAgenticRefusals"
+  | "selectorHistory"
+>;
+
+/** The lead's own two reads, each reauthorizing before it reaches a store. */
+function nativeLeadSessionMethods(
+  access: ProjectAccess,
+  leads?: NativeLeadPorts,
+): Pick<NativeWeb, "lead" | "leadTranscript"> {
+  return {
+    lead: async (principal, partition) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return { result: "NotFound" };
+      const ports = composedLeadPorts(leads);
+      const standing = await ports.leads.standing(
+        partition,
+        leadTurnsAnsweredMax,
+      );
+      if (standing === undefined) return { result: "NotFound" };
+      return {
+        result: "Found",
+        lead: standing,
+        streams: await ports.leads.streams(
+          partition,
+          sessionStoreStreamsAnswered,
+        ),
+      };
+    },
+    leadTranscript: async (principal, partition, query) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return { read: "NotFound" };
+      const ports = composedLeadPorts(leads);
+      const standing = await ports.leads.standing(
+        partition,
+        leadTurnsAnsweredMax,
+      );
+      if (standing === undefined) return { read: "NotFound" };
+      return nativeLeadTranscriptBatches(
+        ports,
+        partition,
+        standing,
+        checkedLeadTranscriptQuery(query),
+      );
+    },
+  };
+}
+
+/** The refusals and the decision log, each reauthorizing before it reaches a store. */
+function nativeLeadRecordMethods(
+  access: ProjectAccess,
+  reads: NativeReadStore,
+  leads?: NativeLeadPorts,
+): Pick<
+  NativeWeb,
+  "agenticRefusals" | "ticketAgenticRefusals" | "selectorHistory"
+> {
+  return {
+    agenticRefusals: async (principal, partition, limit) => {
+      const ports = composedLeadPorts(leads);
+      const asked = checkedAgenticRefusalsLimit(limit);
+      const found = await agenticRefusals(access, ports.refusals).standing(
+        principal,
+        partition,
+        asked,
+      );
+      if (found.result === "NotFound") return { result: "NotFound" };
+      const page = found.refusals.slice(0, asked);
+      return {
+        result: "Found",
+        refusals: await nativeStandingRefusals(reads, partition, page),
+        more: found.refusals.length > page.length,
+      };
+    },
+    ticketAgenticRefusals: async (principal, partition, ticket) => {
+      const ports = composedLeadPorts(leads);
+      const found = await agenticRefusals(access, ports.refusals).ledger(
+        principal,
+        partition,
+        ticket,
+        agenticRefusalLedgerAnsweredMax,
+      );
+      if (found.result === "NotFound") return { result: "NotFound" };
+      const more = found.entries.length > agenticRefusalLedgerAnsweredMax;
+      return {
+        result: "Found",
+        ticket,
+        entries: found.entries.slice(0, agenticRefusalLedgerAnsweredMax),
+        more,
+        ...(more || found.standing === undefined
+          ? {}
+          : { standing: found.standing }),
+      };
+    },
+    selectorHistory: (principal, partition, after, limit) =>
+      selectorHistory(access, composedLeadPorts(leads).history).read(
+        principal,
+        partition,
+        after,
+        limit,
+      ),
+  };
+}
+
+/** The lead's read side, whose two halves reach the boundary as one. */
+function nativeLeadReadMethods(
+  access: ProjectAccess,
+  reads: NativeReadStore,
+  leads?: NativeLeadPorts,
+): NativeLeadMethods {
+  return {
+    ...nativeLeadSessionMethods(access, leads),
+    ...nativeLeadRecordMethods(access, reads, leads),
+  };
+}
+
 /** Builds the application boundary from authorization, read, and inbox ports. */
 export function nativeWeb(
   access: ProjectAccess,
@@ -974,9 +1218,11 @@ export function nativeWeb(
   repositoryConfigurationImports?: RepositoryConfigurationImportPorts,
   runEvidenceReads?: RunEvidenceReadStore,
   runEvidenceContents?: RunEvidenceContentPort,
+  leads?: NativeLeadPorts,
 ): NativeWeb {
   return {
     ...nativeRunEvidenceMethods(access, runEvidenceReads, runEvidenceContents),
+    ...nativeLeadReadMethods(access, reads, leads),
     importRepositoryConfigurations: nativeRepositoryConfigurationImportMethod(
       access,
       repositoryConfigurationImports,

@@ -25,6 +25,17 @@ import type {
 } from "../../interpreter/nativeWeb.ts";
 import type { SelectorOperationalContext } from "../../interpreter/selector.ts";
 import type {
+  AgenticRefusalsRead,
+  TicketAgenticRefusalsRead,
+} from "../../interpreter/agenticRefusal.ts";
+import {
+  handoffNotePreview,
+  type LeadRead,
+  type LeadTranscriptRead,
+  type LeadTurnRecord,
+} from "../../interpreter/leadRead.ts";
+import type { SelectorHistoryRead } from "../../interpreter/selectorHistory.ts";
+import type {
   SelectorProjectSettingsHistoryRead,
   SelectorProjectSettingsRead,
   SelectorProjectSettingsRecord,
@@ -870,4 +881,104 @@ export function dispatchViewResponse(
   return result.result === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
     : response(200, encodeDispatchViewResponse(result.value));
+}
+
+/**
+ * One turn of the lead's mailbox on the wire. The turn's identity is the
+ * decision's for an observation turn — that is what makes offering one
+ * idempotent — so the decision is named rather than stored twice, and no other
+ * input kind has one.
+ */
+function leadTurnBody(turn: LeadTurnRecord): unknown {
+  return {
+    turn: turn.turn,
+    ordinal: turn.ordinal,
+    inputKind: turn.inputKind,
+    state: turn.state,
+    ...(turn.inputKind === "Observation" ? { decision: turn.turn } : {}),
+    ...(turn.failure === undefined ? {} : { failure: turn.failure }),
+    ...(turn.measured === undefined ? {} : turn.measured),
+    ...(turn.batchFirst === undefined ? {} : { batchFirst: turn.batchFirst }),
+    ...(turn.batchLast === undefined ? {} : { batchLast: turn.batchLast }),
+  };
+}
+
+export function leadResponse(result: LeadRead): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, {
+        session: result.lead.session,
+        state: result.lead.state,
+        attention: result.lead.attention,
+        ...(result.lead.agentReference === undefined
+          ? {}
+          : { agentReference: result.lead.agentReference }),
+        notificationCursor: result.lead.notificationCursor,
+        handoffNote: handoffNotePreview(result.lead.handoffNote),
+        turns: result.lead.turns.map(leadTurnBody),
+        streams: result.streams,
+      });
+}
+
+export function leadTranscriptResponse(
+  result: LeadTranscriptRead,
+): NativeHttpResponse {
+  switch (result.read) {
+    case "Page":
+      return response(200, result.page);
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Unavailable":
+      return retry(503, result.retryAfterSeconds, "TranscriptUnavailable");
+  }
+}
+
+export function agenticRefusalsResponse(
+  result: AgenticRefusalsRead,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, { refusals: result.refusals, more: result.more });
+}
+
+/** A ticket's refusals answer with the ticket rather than the partition each entry stands in. */
+export function ticketAgenticRefusalsResponse(
+  result: TicketAgenticRefusalsRead,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, {
+        ticket: result.ticket,
+        entries: result.entries.map((entry) => ({
+          ordinal: entry.ordinal,
+          event: entry.event,
+          ticketVersion: entry.ticketVersion,
+          reason: entry.reason,
+          decision: entry.decision,
+          recordedAt: entry.recordedAt,
+        })),
+        more: result.more,
+        ...(result.standing === undefined
+          ? {}
+          : {
+              standing: {
+                ticketVersion: result.standing.ticketVersion,
+                reason: result.standing.reason,
+                recordedAt: result.standing.recordedAt,
+              },
+            }),
+      });
+}
+
+export function selectorHistoryResponse(
+  result: SelectorHistoryRead,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, {
+        decisions: result.decisions,
+        ...(result.nextAfter === undefined
+          ? {}
+          : { nextAfter: result.nextAfter }),
+      });
 }

@@ -107,6 +107,7 @@ import type { IdempotencyKeying } from "./adapters/postgres/keying.ts";
 import type { OperationInbox } from "./interpreter/operationInbox.ts";
 import {
   nativeWeb,
+  type NativeLeadPorts,
   type NativeWeb,
   type ProjectAccess,
   type ProjectInventory,
@@ -376,6 +377,7 @@ export function composeNativeWeb(
   outputContents?: OutputContentPort & RunEvidenceContentPort,
   selectorContexts?: SelectorOperationalContextRead,
   repositoryConfigurationSnapshots?: RepositoryConfigurationSnapshotPort,
+  leads?: NativeLeadPorts,
 ): NativeWeb {
   const inbox = postgresOperationInbox(apiPool, keying, config, metrics);
   const authoring = postgresAuthoring(apiPool);
@@ -401,6 +403,7 @@ export function composeNativeWeb(
         },
     postgresRunEvidenceReads(apiPool),
     outputContents,
+    leads,
   );
 }
 
