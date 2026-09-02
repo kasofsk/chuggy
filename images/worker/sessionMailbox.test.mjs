@@ -22,7 +22,13 @@ function mailboxOf(answers) {
     },
     now: () => clock,
   };
-  return { calls, mailbox: sessionMailbox(task, "chgs_b", services) };
+  return {
+    calls,
+    advance: (milliseconds) => {
+      clock += milliseconds;
+    },
+    mailbox: sessionMailbox(task, "chgs_b", services),
+  };
 }
 
 const claimed = (turn) => ({
@@ -113,4 +119,24 @@ test("the user message carries the turn's input and nothing of the plane's envel
     parent_tool_use_id: null,
     message: { role: "user", content: "remember kestrel" },
   });
+});
+
+test("the idle window opens when a turn settles, not when it was claimed", async () => {
+  const { calls, advance, mailbox } = mailboxOf([
+    claimed("turn-1"),
+    { status: 204 },
+  ]);
+
+  const turns = mailbox.turns();
+  await turns.next();
+  advance(task.bounds.idleMs * 10);
+  mailbox.settled();
+  assert.equal((await turns.next()).done, true);
+
+  const polled = calls.length - 1;
+  assert.equal(
+    polled,
+    task.bounds.idleMs / task.bounds.mailboxPollMs + 1,
+    "a turn that outran the idle bound reaped the session on its next poll",
+  );
 });

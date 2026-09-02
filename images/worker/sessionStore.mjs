@@ -257,20 +257,32 @@ function takeBatch(state, entries, batch, stream) {
   }
 }
 
+/**
+ * One stream's whole transcript, or a refusal. Reaching the page bound with the
+ * stream still unexhausted is not a short read to be returned: the runtime would
+ * resume over the missing head and append past it, which is the hole this mode
+ * exists to prevent.
+ */
 async function loadStream(held, stream) {
   const state = streamState(held.streams, stream);
   const entries = [];
   let after = 0;
   let highest = 0;
-  for (let page = 0; page < loadPagesMax; page += 1) {
+  let exhausted = false;
+  for (let page = 0; page < loadPagesMax && !exhausted; page += 1) {
     const read = await readPage(held, stream, after);
     for (const batch of read.batches ?? []) {
       highest = Math.max(highest, batch.batch);
       takeBatch(state, entries, batch, stream);
     }
-    if (read.nextAfter === undefined || read.nextAfter === null) break;
-    after = read.nextAfter;
+    if (read.nextAfter === undefined || read.nextAfter === null)
+      exhausted = true;
+    else after = read.nextAfter;
   }
+  if (!exhausted)
+    throw new Error(
+      `the session store paged ${stream} to its bound and the stream still names more`,
+    );
   state.nextBatch = highest + 1;
   return entries.length === 0 ? null : entries;
 }

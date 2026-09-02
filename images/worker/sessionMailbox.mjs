@@ -41,6 +41,7 @@ export function sessionMailbox(task, bearer, services = {}) {
   let stopped = false;
   let settle = () => undefined;
   let awaitSettled = Promise.resolve();
+  let idleSince = now();
 
   function hold() {
     awaitSettled = new Promise((resolve) => {
@@ -64,9 +65,15 @@ export function sessionMailbox(task, bearer, services = {}) {
   return {
     claimed: () => held,
 
-    /** What the pod calls once a turn is answered or failed, releasing the next. */
+    /**
+     * What the pod calls once a turn is answered or failed, releasing the next.
+     * The idle window opens here, because idle is time the session had nothing
+     * to do — not time since it last picked something up, which would reap a
+     * lead in the middle of a turn that ran longer than the bound.
+     */
     settled() {
       held = undefined;
+      idleSince = now();
       settle();
     },
 
@@ -77,7 +84,6 @@ export function sessionMailbox(task, bearer, services = {}) {
     },
 
     async *turns() {
-      let idleSince = now();
       for (;;) {
         await awaitSettled;
         if (stopped) return;
@@ -89,7 +95,6 @@ export function sessionMailbox(task, bearer, services = {}) {
           continue;
         }
         held = turn;
-        idleSince = now();
         hold();
         yield sessionUserMessage(turn.input);
       }

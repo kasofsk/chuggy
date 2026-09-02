@@ -46,6 +46,37 @@ function unreffed(milliseconds) {
   return wait(milliseconds, undefined, { ref: false });
 }
 
+/** The bounds a session pod is launched with, each an operational choice. */
+export const sessionBoundNames = [
+  "mailboxPollMs",
+  "idleMs",
+  "resultDrainMs",
+  "loadTimeoutMs",
+  "turnsMax",
+];
+
+/**
+ * Every bound the launcher owes this pod, refused by name where one is missing
+ * or not positive. There is no default to fall back to: a bound this image
+ * invented would be a loop nobody chose the cap of, and an absent one silently
+ * makes its loop unbounded rather than short.
+ */
+export function checkedSessionBounds(bounds) {
+  for (const name of sessionBoundNames) {
+    const value = bounds?.[name];
+    if (!Number.isSafeInteger(value) || value <= 0)
+      throw new Error(
+        `CHUG_SESSION_TASK needs a positive whole ${name} and carries ${JSON.stringify(value)}`,
+      );
+  }
+  const budget = bounds.budgetUsd;
+  if (typeof budget !== "number" || !Number.isFinite(budget) || budget <= 0)
+    throw new Error(
+      `CHUG_SESSION_TASK needs a positive budgetUsd and carries ${JSON.stringify(budget)}`,
+    );
+  return bounds;
+}
+
 function required(environment, name) {
   const value = environment[name];
   if (typeof value !== "string" || value.length === 0)
@@ -70,9 +101,14 @@ export function sessionTurnFailure(result) {
   return "AgentFailed";
 }
 
-function sessionResultText(result) {
+/**
+ * What a turn answers with, scrubbed before it is cut. Truncating first would
+ * let the cut fall inside a credential, leaving a head the scrub no longer
+ * matches.
+ */
+function sessionResultText(result, scrub) {
   return typeof result?.result === "string"
-    ? result.result.slice(0, sessionTurnResultCharsMax)
+    ? scrub(result.result).slice(0, sessionTurnResultCharsMax)
     : "";
 }
 
@@ -154,7 +190,6 @@ async function bindReference(context, message) {
   const reference = message.session_id;
   if (context.bound || typeof reference !== "string" || reference.length === 0)
     return;
-  context.bound = true;
   const response = await context.request(
     context.task,
     context.bearer,
@@ -167,6 +202,11 @@ async function bindReference(context, message) {
   );
   if (sessionStopped(response))
     throw new Error("the session reference was refused by the worker plane");
+  if (response.status !== acceptedStatus)
+    throw new Error(
+      `the worker plane answered ${String(response.status)} binding the session reference`,
+    );
+  context.bound = true;
 }
 
 async function observe(context, message) {
@@ -217,7 +257,7 @@ async function settleTurn(context, turn, result) {
   }
   await post(context, "/v1/session/turn/answer", {
     turn: turn.turn,
-    result: context.scrub(sessionResultText(result)),
+    result: sessionResultText(result, context.scrub),
     ...context.store.turnBatches(),
   });
   return "Continue";
@@ -296,6 +336,7 @@ export async function sessionMain(services = {}) {
   let stopLease = async () => undefined;
   try {
     const task = JSON.parse(required(environment, "CHUG_SESSION_TASK"));
+    checkedSessionBounds(task.bounds);
     const bearer = (await read(task.workerPlane.capabilityFile)).trim();
     const context = { task, bearer, request, now, scrub, mirrored: false };
     const facts = await sessionFacts(context);

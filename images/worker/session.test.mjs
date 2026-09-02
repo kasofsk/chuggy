@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { sessionMain, sessionTurnFailure } from "./session.mjs";
+import {
+  checkedSessionBounds,
+  sessionBoundNames,
+  sessionMain,
+  sessionTurnFailure,
+  sessionTurnResultCharsMax,
+} from "./session.mjs";
 
 const bearerFile = "/var/run/chuggy/session-capability/bearer";
 const credentialFile = "/var/run/chuggy/credentials/claude-code";
@@ -21,7 +27,7 @@ const task = {
   },
   bounds: {
     mailboxPollMs: 1,
-    idleMs: 0,
+    idleMs: 1,
     resultDrainMs: 50,
     loadTimeoutMs: 1_000,
     turnsMax: 200,
@@ -37,12 +43,17 @@ const environment = {
   CHUG_WORKER_WORKSPACE: "/workspace",
 };
 
-function planeOf(turns, facts) {
+function planeOf(turns, facts, refuse = () => undefined) {
   const calls = [];
   let claims = 0;
   return {
     calls,
     request: async (_task, _bearer, path, init) => {
+      const refused = refuse(path);
+      if (refused !== undefined) {
+        calls.push({ path, method: init?.method });
+        return { status: refused, json: async () => ({}) };
+      }
       const type = init?.headers?.["content-type"];
       calls.push({
         path,
@@ -313,4 +324,113 @@ test("every result subtype maps to one failure, and success maps to none", () =>
     "AgentRateLimited",
   );
   assert.equal(sessionTurnFailure(undefined), "AgentFailed");
+});
+
+test("a mirror_error before the result fails the turn just as a late one does", async () => {
+  const plane = planeOf([turnOne], facts);
+  const { query } = queryOf(() => [
+    { type: "system", subtype: "init", session_id: "runtime-1" },
+    { type: "system", subtype: "mirror_error", error: "gave up on batch 3" },
+    { type: "assistant", message: { role: "assistant" } },
+    result("success", { result: "ok" }),
+  ]);
+
+  const code = await run({ request: plane.request, query });
+
+  assert.equal(code, 1);
+  const failure = plane.calls.find(
+    ({ path }) => path === "/v1/session/turn/failure",
+  );
+  assert.ok(failure !== undefined, "the early mirror_error failed no turn");
+  assert.deepEqual(failure.body, { turn: "turn-1", failure: "StoreRefused" });
+  assert.ok(
+    !plane.calls.some(({ path }) => path === "/v1/session/turn/answer"),
+    "a turn whose transcript has a hole was answered",
+  );
+});
+
+test("a bound the launcher did not give is refused by name, with no default invented", async () => {
+  for (const name of [...sessionBoundNames, "budgetUsd"]) {
+    const rest = Object.fromEntries(
+      Object.entries(task.bounds).filter(([held]) => held !== name),
+    );
+    const warned = [];
+
+    const code = await run({
+      environment: {
+        ...environment,
+        CHUG_SESSION_TASK: JSON.stringify({ ...task, bounds: rest }),
+      },
+      request: planeOf([], facts).request,
+      query: queryOf(() => []).query,
+      warn: (text) => warned.push(text),
+    });
+
+    assert.equal(code, 1, name);
+    assert.ok(
+      warned.join("").includes(name),
+      `${name} was not named: ${warned.join("")}`,
+    );
+  }
+});
+
+test("a bound that is not a positive whole number is refused too", () => {
+  const bounds = task.bounds;
+  assert.throws(
+    () => checkedSessionBounds({ ...bounds, idleMs: 0 }),
+    /idleMs/u,
+  );
+  assert.throws(
+    () => checkedSessionBounds({ ...bounds, idleMs: -1 }),
+    /idleMs/u,
+  );
+  assert.throws(
+    () => checkedSessionBounds({ ...bounds, turnsMax: 1.5 }),
+    /turnsMax/u,
+  );
+  assert.throws(
+    () => checkedSessionBounds({ ...bounds, budgetUsd: 0 }),
+    /budgetUsd/u,
+  );
+  assert.deepEqual(checkedSessionBounds({ ...bounds, budgetUsd: 0.5 }), {
+    ...bounds,
+    budgetUsd: 0.5,
+  });
+});
+
+test("a credential that straddles the result's truncation is scrubbed whole", async () => {
+  const plane = planeOf([turnOne], facts);
+  const straddled = `${"x".repeat(sessionTurnResultCharsMax - 10)}${token}`;
+  const { query } = queryOf(() => [result("success", { result: straddled })]);
+
+  await run({ request: plane.request, query });
+
+  const answered = plane.calls.find(
+    ({ path }) => path === "/v1/session/turn/answer",
+  ).body.result;
+  assert.ok(answered.length <= sessionTurnResultCharsMax);
+  assert.ok(
+    !answered.includes(token.slice(0, 10)),
+    "the truncation cut a credential in half and posted the head",
+  );
+});
+
+test("a reference bind the plane did not accept ends the session rather than running on", async () => {
+  for (const status of [400, 413, 401]) {
+    const plane = planeOf([turnOne], facts, (path) =>
+      path === "/v1/session/reference" ? status : undefined,
+    );
+    const { query } = queryOf(() => [
+      { type: "system", subtype: "init", session_id: "runtime-1" },
+      result("success", { result: "ok" }),
+    ]);
+
+    const code = await run({ request: plane.request, query });
+
+    assert.equal(code, 1, `status ${String(status)} was treated as bound`);
+    assert.ok(
+      !plane.calls.some(({ path }) => path === "/v1/session/turn/answer"),
+      `status ${String(status)} answered a turn the plane cannot resume`,
+    );
+  }
 });

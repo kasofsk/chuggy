@@ -267,3 +267,56 @@ test("a subagent's stream is not the session's own, and is not in the turn's ran
 
   assert.deepEqual(store.turnBatches(), {});
 });
+
+test("a stream writes the uuids another stream of the same session already confirmed", async () => {
+  const shared = [entry("a"), entry("b"), entry("c")];
+  const parentPage = {
+    status: 200,
+    body: {
+      batches: [
+        {
+          batch: 1,
+          content: `${shared.map((held) => JSON.stringify(held)).join("\n")}\n`,
+        },
+      ],
+    },
+  };
+  const { calls, store } = storeOf((path) =>
+    path.startsWith("/v1/session/store/parent?") ? parentPage : { status: 204 },
+  );
+
+  await store.load({ projectKey: "-tmp-a", sessionId: "parent" });
+  await store.append({ sessionId: "fork" }, [...shared, entry("d")]);
+  await store.append({ sessionId: "parent", subpath: "subagent-7" }, shared);
+  await store.append({ sessionId: "parent" }, shared);
+
+  const written = bodies(calls);
+  assert.deepEqual(
+    written.map(({ path }) => path),
+    ["/v1/session/store/fork/1", "/v1/session/store/parent%2Fsubagent-7/1"],
+    "a stream was denied entries another stream had confirmed",
+  );
+  assert.deepEqual(
+    written[0].body
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line).uuid),
+    ["a", "b", "c", "d"],
+  );
+  assert.deepEqual(
+    written[1].body
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line).uuid),
+    ["a", "b", "c"],
+  );
+});
+
+test("a load that reaches its page bound refuses rather than answering a short transcript", async () => {
+  const { store } = storeOf(() => ({
+    status: 200,
+    body: { batches: [], nextAfter: 8 },
+  }));
+
+  await assert.rejects(store.load({ sessionId: "s" }), /paged s to its bound/u);
+});
