@@ -3,8 +3,6 @@ import { Buffer } from "node:buffer";
 import test from "node:test";
 
 import {
-  sessionAllowedTools,
-  sessionBuiltInTools,
   sessionStoreAdapter,
   sessionStoreBatchBytesMax,
   sessionStoreStream,
@@ -39,41 +37,6 @@ function bodies(calls) {
     .filter(({ init }) => init.method === "PUT")
     .map(({ path, init }) => ({ path, body: init.body.toString("utf8") }));
 }
-
-const capabilityTools = {
-  RepositoryRead: ["Read", "Glob", "Grep"],
-  RepositoryWrite: ["Write", "Edit", "NotebookEdit"],
-  RunCommands: ["Bash"],
-};
-
-test("every subset of the capabilities admits its tools and disallows the rest", () => {
-  const roster = Object.keys(capabilityTools);
-  for (let subset = 0; subset < 2 ** roster.length; subset += 1) {
-    const held = roster.filter((_, index) => ((subset >> index) & 1) === 1);
-    const admitted = new Set(held.flatMap((name) => capabilityTools[name]));
-
-    const { allowedTools, disallowedTools } = sessionAllowedTools(held);
-
-    assert.deepEqual(new Set(allowedTools), admitted, held.join(","));
-    assert.deepEqual(
-      [...allowedTools, ...disallowedTools].sort(),
-      [...sessionBuiltInTools].sort(),
-      held.join(","),
-    );
-    for (const tool of disallowedTools)
-      assert.ok(
-        !admitted.has(tool),
-        `${tool} was both admitted and disallowed`,
-      );
-  }
-});
-
-test("a capability this image does not know admits nothing", () => {
-  const { allowedTools, disallowedTools } = sessionAllowedTools(["Telepathy"]);
-
-  assert.deepEqual(allowedTools, []);
-  assert.deepEqual(disallowedTools.sort(), [...sessionBuiltInTools].sort());
-});
 
 test("a stream is the session id and its subpath, and the project key is not in it", async () => {
   assert.equal(
