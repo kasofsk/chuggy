@@ -52,7 +52,10 @@ import {
 import { allAgentReportedTurnFailures } from "../../../../interpreter/agentSession.ts";
 import { allSessionTurnFailures } from "../../../../interpreter/agentSession.ts";
 import { allAgenticRefusalEvents } from "../../../../interpreter/agenticRefusal.ts";
-import { allProjectChangeKinds } from "../../../../interpreter/projectChange.ts";
+import {
+  allProjectChangeKinds,
+  projectChangeResourceCharsMax,
+} from "../../../../interpreter/projectChange.ts";
 import {
   agenticRefusalImmutableFunction,
   agenticRefusalLedgerReadFunction,
@@ -70,6 +73,8 @@ import {
   leadTurnWithdrawFunction,
   projectChangeAgenticRefusalFunction,
   projectChangeAppendFunction,
+  projectChangeSessionStoreFunction,
+  projectChangeSessionTurnFunction,
   schemaTextSet,
   selectorInteractionsReadFunction,
   selectorPlanningIntentReadFunction,
@@ -91,6 +96,9 @@ const refusalLedgerCeiling = agenticRefusalLedgerAnsweredMax + 1;
 
 /** The bound one project's identity columns are held to wherever this file writes them. */
 const partitionCharsMax = 256;
+
+/** What a session change puts between the session, its kind and what moved. */
+const sessionChangeSeparator = "|";
 
 /** The states a turn may still be withdrawn out of, which is the mailbox's live set. */
 const liveTurnStates = "('Queued','Claimed')";
@@ -176,12 +184,63 @@ const boundaryOwnerReads = [
      TO ${boundaryOwnerRole}`,
 ];
 
+/**
+ * A session's own moves on the change log, so a page watching a lead learns a
+ * turn moved without polling for it. The resource names the session first, so
+ * a console filters on it, then what the session is and what moved.
+ */
+const sessionChange = [
+  `CREATE FUNCTION ${projectChangeSessionTurnFunction}() RETURNS trigger
+     LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE named text;
+     BEGIN
+       SELECT s.kind INTO named FROM agent_session s
+        WHERE s.tenant=NEW.tenant AND s.project=NEW.project
+          AND s.session=NEW.session;
+       PERFORM ${projectChangeAppendFunction}(NEW.tenant,NEW.project,'Session',
+         NEW.session||'${sessionChangeSeparator}'||named
+           ||'${sessionChangeSeparator}turn${sessionChangeSeparator}'||NEW.turn);
+       RETURN NULL;
+     END $$`,
+  `ALTER FUNCTION ${projectChangeSessionTurnFunction}() OWNER TO ${boundaryOwnerRole}`,
+  `REVOKE ALL ON FUNCTION ${projectChangeSessionTurnFunction}() FROM PUBLIC`,
+  `CREATE TRIGGER session_turn_enqueue_appends_a_change
+     AFTER INSERT ON session_turn
+     FOR EACH ROW EXECUTE FUNCTION ${projectChangeSessionTurnFunction}()`,
+  `CREATE TRIGGER session_turn_move_appends_a_change
+     AFTER UPDATE OF state ON session_turn
+     FOR EACH ROW WHEN (OLD.state IS DISTINCT FROM NEW.state)
+     EXECUTE FUNCTION ${projectChangeSessionTurnFunction}()`,
+  `CREATE FUNCTION ${projectChangeSessionStoreFunction}() RETURNS trigger
+     LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE named text;
+     BEGIN
+       SELECT s.kind INTO named FROM agent_session s
+        WHERE s.tenant=NEW.tenant AND s.project=NEW.project
+          AND s.session=NEW.session;
+       PERFORM ${projectChangeAppendFunction}(NEW.tenant,NEW.project,'Session',
+         NEW.session||'${sessionChangeSeparator}'||named
+           ||'${sessionChangeSeparator}batch${sessionChangeSeparator}'||NEW.stream
+           ||'${sessionChangeSeparator}'||NEW.batch::text);
+       RETURN NULL;
+     END $$`,
+  `ALTER FUNCTION ${projectChangeSessionStoreFunction}() OWNER TO ${boundaryOwnerRole}`,
+  `REVOKE ALL ON FUNCTION ${projectChangeSessionStoreFunction}() FROM PUBLIC`,
+  `CREATE TRIGGER session_store_batch_appends_a_change
+     AFTER INSERT ON session_store_batch
+     FOR EACH ROW EXECUTE FUNCTION ${projectChangeSessionStoreFunction}()`,
+];
+
 /** The kind roster and the failure roster, each replaced where it was last written. */
 const replacedRosters = [
   `ALTER TABLE project_change
      DROP CONSTRAINT project_change_kind_is_known,
      ADD CONSTRAINT project_change_kind_is_known CHECK
        (kind IN (${schemaTextSet([...allProjectChangeKinds])}))`,
+  `ALTER TABLE project_change
+     DROP CONSTRAINT project_change_resource_is_bounded,
+     ADD CONSTRAINT project_change_resource_is_bounded CHECK
+       (length(resource) BETWEEN 1 AND ${projectChangeResourceCharsMax})`,
   `ALTER TABLE session_turn
      DROP CONSTRAINT session_turn_failure_is_known,
      ADD CONSTRAINT session_turn_failure_is_known CHECK
@@ -697,6 +756,7 @@ export const migration059: Migration = {
   statements: [
     ...refusalRelation,
     ...boundaryOwnerReads,
+    ...sessionChange,
     ...replacedRosters,
     ...renamedHandoffNote,
     ...measureColumns,

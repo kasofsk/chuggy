@@ -52,5 +52,9 @@ export type ProjectChangeKind = (typeof allProjectChangeKinds)[number];
  */
 export const projectChangeRetentionMax = 100_000;
 
-/** How long a resource identity a change row may name. */
-export const projectChangeResourceCharsMax = 256;
+/**
+ * How long a resource identity a change row may name. A session change names
+ * the session, its kind and the turn or store batch that moved, and three
+ * identities do not fit the bound one of them does.
+ */
+export const projectChangeResourceCharsMax = 1_024;

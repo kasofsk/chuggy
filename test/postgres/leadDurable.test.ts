@@ -24,6 +24,7 @@ import {
   asSessionStoreStream,
   type SessionId,
 } from "../../src/interpreter/agentSession.ts";
+import { postgresProjectChangeLog } from "../../src/adapters/postgres/projectChangeLog.ts";
 import { selectorServiceRole } from "../../src/adapters/postgres/schema.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { postgresHarnessRolePool } from "./harness.ts";
@@ -32,6 +33,7 @@ import type { LeadRig } from "./leadHarness.ts";
 import {
   sessionRigAttempt,
   sessionRigSession,
+  sessionRigTurn,
   sessionRigTurnId,
   sessionRigTurnState,
 } from "./sessionHarness.ts";
@@ -534,5 +536,79 @@ test("the seeding read answers the newest decisions first", async () => {
       await rig.apiLead.history(partition, undefined, selectorHistoryLimitMax)
     ).map((each) => each.decision),
     decisions,
+  );
+});
+
+test("a turn answer and a batch record each append one session change", async () => {
+  const { partition, session } = await leadProject("session-change");
+  const log = postgresProjectChangeLog(rig.sessions.harness.pool);
+  const turn = sessionRigTurnId("session-change");
+  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  const attempt = await leadPod(partition, session, "session-change");
+  await rig.sessions.plane.claim({
+    secret: attempt.secret,
+    generation: attempt.attempt.generation,
+  });
+
+  const stream = asSessionStoreStream(`stream-${randomUUID()}`);
+  const beforeBatch = await log.latest();
+  await rig.sessions.plane.record({
+    secret: attempt.secret,
+    generation: attempt.attempt.generation,
+    stream,
+    batch: 1,
+    digest: "c".repeat(64),
+    bytes: 4,
+    events: 1,
+  });
+  assert.deepEqual(
+    (await log.after(partition, beforeBatch, 10)).map((row) => [
+      row.kind,
+      row.resource,
+    ]),
+    [["Session", `${session}|Lead|batch|${stream}|1`]],
+    "one batch is one session change naming the stream and batch that moved",
+  );
+
+  const beforeAnswer = await log.latest();
+  await rig.sessions.plane.answer({
+    secret: attempt.secret,
+    generation: attempt.attempt.generation,
+    turn,
+    result: "{}",
+  });
+  assert.deepEqual(
+    (await log.after(partition, beforeAnswer, 10)).map((row) => [
+      row.kind,
+      row.resource,
+    ]),
+    [["Session", `${session}|Lead|turn|${turn}`]],
+    "one state move is one session change naming the turn that moved",
+  );
+});
+
+test("a thread's session changes are keyed to its own session", async () => {
+  const partition = await leadRigProject(rig, "thread-change");
+  const thread = await sessionRigSession(
+    rig.sessions,
+    partition,
+    "thread-change",
+    { kind: "Thread", principal: "member-thread-change" },
+  );
+  const log = postgresProjectChangeLog(rig.sessions.harness.pool);
+  const before = await log.latest();
+  const turn = await sessionRigTurn(
+    rig.sessions,
+    partition,
+    thread,
+    "thread-change",
+  );
+  assert.deepEqual(
+    (await log.after(partition, before, 10)).map((row) => [
+      row.kind,
+      row.resource,
+    ]),
+    [["Session", `${thread}|Thread|turn|${turn}`]],
+    "a console filters a session's own changes on the session it names first",
   );
 });

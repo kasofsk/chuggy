@@ -123,6 +123,9 @@ export const leadStoreReadFunction = "read_lead_store";
 export const leadStreamListFunction = "list_lead_store_streams";
 export const agenticRefusalImmutableFunction = "selector_refusal_is_immutable";
 export const projectChangeAgenticRefusalFunction = "selector_refusal_change";
+export const projectChangeSessionTurnFunction = "session_turn_appends_a_change";
+export const projectChangeSessionStoreFunction =
+  "session_store_batch_appends_a_change";
 export const finalizerRole = "chuggy_finalizer";
 export const completionFunction = "submit_task_completion";
 export const finalizationFunction = "submit_finalization_result";
