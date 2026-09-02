@@ -16,6 +16,7 @@ import {
   postgresWorkerRunTranscript,
   postgresWorkerRunTurns,
 } from "../adapters/postgres/workerPlane.ts";
+import { workerPlaneUploadBytesMax } from "../contract/http.ts";
 import { silentSchedulerTelemetry } from "../interpreter/executionScheduler.ts";
 import { executionSchedulerIngest } from "../interpreter/executionSchedulerReport.ts";
 
@@ -39,7 +40,7 @@ async function main(): Promise<void> {
   const pool = postgresPool(required("CHUG_WORKER_PLANE_DATABASE_URL"));
   const uploadBytesMax = positive(
     "CHUG_WORKER_PLANE_UPLOAD_BYTES_MAX",
-    4_194_304,
+    workerPlaneUploadBytesMax,
   );
   const artifacts = artifactStore({
     root: required("CHUG_WORKER_PLANE_ARTIFACT_ROOT"),

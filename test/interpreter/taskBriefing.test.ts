@@ -763,6 +763,96 @@ test("an evaluation stage names its commands or briefs an agent, never both or n
   );
 });
 
+test("an entry briefed with instructions parses as the agent stage it has always been", () => {
+  for (const block of [
+    {
+      purpose: "Check",
+      instructions: ["Run the gate and pass only when it exits cleanly."],
+      practices: ["AcceptanceCriteria"],
+    },
+    {
+      purpose: "Review",
+      instructions: ["Review the change."],
+      practices: ["ChangedCallPaths"],
+    },
+    { instructions: ["Review the change."], practices: [] },
+  ]) {
+    const authored: unknown = JSON.parse(
+      JSON.stringify({ ...authoredConfiguration, evaluations: [block] }),
+    );
+    assert.deepEqual(
+      authoredTaskConfigurationReadiness(authored),
+      {
+        readiness: "Ready",
+        configuration: {
+          ...authoredConfiguration,
+          evaluations: [{ purpose: "Review", ...block }],
+        },
+      },
+      JSON.stringify(block),
+    );
+  }
+});
+
+test("a released revision's agentic Check stage still parses beside this tree's own", () => {
+  const { configuration } = JSON.parse(
+    readFileSync(".chug/configurations/chuggy-development.json", "utf8"),
+  ) as {
+    readonly configuration: Record<string, unknown> & {
+      readonly evaluations: readonly unknown[];
+    };
+  };
+  const released = {
+    purpose: "Check",
+    instructions: [
+      "Run .chug/tasks/ci.sh and pass only when it exits cleanly; exit 2 means the evaluation could not run and is not a pass.",
+    ],
+    practices: ["AcceptanceCriteria"],
+  };
+  const parsed = authoredTaskConfigurationReadiness({
+    ...configuration,
+    evaluations: [...configuration.evaluations.slice(0, -1), released],
+  });
+  if (parsed.readiness !== "Ready") assert.fail(parsed.fault);
+  assert.deepEqual(parsed.configuration.evaluations?.at(-1), released);
+});
+
+test("a narrowing a commanded stage cannot honour is refused, never dropped", () => {
+  const entry = {
+    purpose: "Check",
+    checks: [".chug/tasks/ci.sh"],
+    authority: { filesystem: "ReadWorkspace", network: false },
+  };
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      evaluations: [entry],
+    }),
+    { readiness: "Incomplete", fault: "EvaluationFieldUnknown" },
+  );
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      evaluations: [{ purpose: "Check", checks: entry.checks, stage: 1 }],
+    }),
+    { readiness: "Incomplete", fault: "EvaluationFieldUnknown" },
+  );
+});
+
+test("an authored worker cannot spell the mode a check stage resolves to", () => {
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      worker: {
+        mode: { type: "Commands", commands: [".chug/tasks/ci.sh"] },
+        setup: [],
+        files: [],
+      },
+    }),
+    { readiness: "Incomplete", fault: "WorkerInvalid" },
+  );
+});
+
 test("a stage's command list is bounded and made of readable lines", () => {
   const checksOf = (checks: unknown): unknown => ({
     ...authoredConfiguration,

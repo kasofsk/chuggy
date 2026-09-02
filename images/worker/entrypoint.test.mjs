@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readdir, readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   publishWorkerResult,
@@ -52,6 +55,22 @@ function evidenceFor(request) {
     warn: () => undefined,
   });
 }
+
+test("the image carries every module the worker imports", async () => {
+  const directory = dirname(fileURLToPath(import.meta.url));
+  const dockerfile = await readFile(join(directory, "Dockerfile"), "utf8");
+  const modules = (await readdir(directory)).filter(
+    (name) => name.endsWith(".mjs") && !name.endsWith(".test.mjs"),
+  );
+
+  assert.ok(modules.includes("checks.mjs"), modules.join(" "));
+  for (const name of modules) {
+    assert.ok(
+      dockerfile.includes(`COPY images/worker/${name} `),
+      `${name} is imported by the worker and copied into no image`,
+    );
+  }
+});
 
 test("a run that died posts its figures and ends the attempt", async () => {
   const { calls, request } = planeCalls();

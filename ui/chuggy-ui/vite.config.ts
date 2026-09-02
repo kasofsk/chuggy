@@ -7,6 +7,14 @@
  * suite runner with a document, and suites that live in one directory. What the
  * production build emits is held to the policy the web image serves it under by
  * `scripts/check-console-policy.ts`, which the `build` script runs.
+ *
+ * `execArgv` is the other setting with a reason outside this file. Node now
+ * defines `localStorage` on its own global, as a getter that yields undefined
+ * unless a storage file was named, and the suite runner only copies a document
+ * property onto the global when the global lacks it.
+ * A suite would then read Node's undefined where it expects the document's
+ * storage. Leaving Node's web storage off is what keeps the runner on the
+ * document's, on every Node line the suites run under.
  */
 
 import react from "@vitejs/plugin-react";
@@ -17,6 +25,7 @@ export default defineConfig({
   server: { fs: { allow: ["../.."] } },
   test: {
     environment: "jsdom",
+    execArgv: ["--no-experimental-webstorage"],
     include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
   },
 });

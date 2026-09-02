@@ -152,6 +152,7 @@ export type TaskConfigurationFault =
   | "EvaluationsInvalid"
   | "ChecksInvalid"
   | "EvaluationKindAmbiguous"
+  | "EvaluationFieldUnknown"
   | "AuthorityInvalid"
   | "WorkerInvalid"
   | "EmptyBrief"
@@ -174,6 +175,7 @@ export const allTaskConfigurationFaults: readonly TaskConfigurationFault[] = [
   "EvaluationsInvalid",
   "ChecksInvalid",
   "EvaluationKindAmbiguous",
+  "EvaluationFieldUnknown",
   "AuthorityInvalid",
   "WorkerInvalid",
   "EmptyBrief",
@@ -417,9 +419,21 @@ function authoredTaskConfigurationAgentEvaluationBlock(
       };
 }
 
+/** Every field a commanded check entry is made of, so any other is refused rather than dropped. */
+const commandEvaluationFields: readonly string[] = ["purpose", "checks"];
+
+/**
+ * One commanded check stage. A field this kind has no place for is refused,
+ * because a stage runs shell under whatever narrowing it was given, and a
+ * dropped narrowing is the one reading of an authored line nobody asked for.
+ */
 function authoredTaskConfigurationCommandEvaluationBlock(
   record: Record<string, unknown>,
 ): EvaluationBlockParsed {
+  if (
+    !Object.keys(record).every((key) => commandEvaluationFields.includes(key))
+  )
+    return { parsed: "Refused", fault: "EvaluationFieldUnknown" };
   const checks = authoredTaskConfigurationStringArray(record["checks"]);
   return checks === undefined ||
     checks.length === 0 ||
