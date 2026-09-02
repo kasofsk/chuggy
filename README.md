@@ -1,5 +1,7 @@
 # chuggy
 
+A Check stage runs its commands itself.
+
 A job orchestrator. Tickets form a DAG; one journaled actor decides everything; the fabric runs the work and decides nothing.
 
 **The formal model leads.** A Quint model of the machine is proved first and emits golden traces; this implementation grows up against them. When the two disagree, the implementation is wrong.
