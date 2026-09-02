@@ -27,6 +27,7 @@ import {
 import { frame } from "./streamDouble.ts";
 import {
   leadBody,
+  leadHandoffNote,
   leadPartition,
   leadRefusals,
   leadRouteAnswer,
@@ -189,4 +190,34 @@ test("a Session frame moves the turn tail and walks the transcript on", async ()
   expect(screen.getByText("third decision")).toBeDefined();
   expect(logLines().length).toBe(6);
   expect(holdingEntries()).toStrictEqual(["Entry 3", "Entry 4", "Entry 5"]);
+});
+
+/**
+ * The lead read carries the note's size and as much of it as one wire body has
+ * room for, never the note itself. A page that drew the object as it stands
+ * would put `[object Object]` where the successor's whole context is meant to
+ * be, and would say nothing about the part it is not showing.
+ */
+test("the handoff note is drawn as its preview, marked where it is cut", async () => {
+  await drawLead(() => ({ ...opening, note: leadHandoffNote(true) }));
+  expect(screen.getByText("Handoff note")).toBeDefined();
+  expect(screen.getByText("watch ticket 41")).toBeDefined();
+  expect(screen.getByText("9000")).toBeDefined();
+  expect(screen.getByText("Truncated")).toBeDefined();
+});
+
+test("a note the read carried whole is drawn with no Truncated mark", async () => {
+  await drawLead(() => opening);
+  expect(screen.getByText("watch ticket 41")).toBeDefined();
+  expect(screen.queryByText("Truncated")).toBeNull();
+});
+
+/** A lead that has left no note has nothing to draw, and a zero-byte preview
+ * drawn as an empty block would read as a note that says nothing. */
+test("a lead that has left no note draws no note at all", async () => {
+  await drawLead(() => ({
+    ...opening,
+    note: { bytes: 0, preview: "", truncated: false },
+  }));
+  expect(screen.queryByText("Handoff note")).toBeNull();
 });

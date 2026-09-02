@@ -21,14 +21,29 @@ export const leadStream = "1a2b3c";
 /** The boundary the last compaction cut at, which is the first entry held. */
 export const leadBoundaryUuid = "uuid-c";
 
-export function leadBody(batches: number, turns: number): LeadResponse {
+/** How much of the note the lead read carries, and how much of it is missing. */
+export function leadHandoffNote(
+  truncated: boolean,
+): LeadResponse["handoffNote"] {
+  return {
+    bytes: truncated ? 9_000 : 42,
+    preview: "watch ticket 41",
+    truncated,
+  };
+}
+
+export function leadBody(
+  batches: number,
+  turns: number,
+  note = leadHandoffNote(false),
+): LeadResponse {
   return {
     session: leadSession,
     state: "Open",
     attention: "Monitoring",
     agentReference: leadStream,
     notificationCursor: 1204,
-    handoffNote: {},
+    handoffNote: note,
     turns: Array.from({ length: turns }, (_unused, at) => ({
       turn: `turn-${String(at + 1)}`,
       ordinal: at + 1,
@@ -60,34 +75,57 @@ function leadEntry(
   };
 }
 
-export const leadTranscriptPages: Readonly<
-  Record<string, LeadTranscriptResponse>
-> = {
-  "0": {
-    stream: leadStream,
-    entries: [
+/** The store, a batch at a time, the compaction summary ending the first. */
+const leadBatchEntries: readonly (readonly LeadTranscriptResponse["entries"][number][])[] =
+  [
+    [
       leadEntry("uuid-a", "user", "first observation"),
       leadEntry("uuid-b", "assistant", "first decision"),
       leadEntry(leadBoundaryUuid, "user", "compaction summary"),
     ],
-    held: [leadBoundaryUuid],
-    compaction: { boundary: leadBoundaryUuid, at: "2026-09-01T10:00:00Z" },
-    elided: 0,
-    nextAfter: 1,
-  },
-  "1": {
+    [leadEntry("uuid-d", "assistant", "second decision")],
+    [leadEntry("uuid-e", "assistant", "third decision")],
+  ];
+
+/** Which of a page's own entries the lead still holds: the boundary on, where
+ * the page carries one, and all of them where it is already past one. */
+function leadHeldOf(
+  entries: readonly LeadTranscriptResponse["entries"][number][],
+): readonly string[] {
+  const at = entries.findIndex((entry) => entry.uuid === leadBoundaryUuid);
+  return entries
+    .slice(at < 0 ? 0 : at)
+    .flatMap((entry) => (entry.uuid === undefined ? [] : [entry.uuid]));
+}
+
+/**
+ * One page of the store: one batch, so `nextAfter` is present exactly where the
+ * page filled its limit. A final full page is therefore followed by an empty
+ * one, which is the shape the walk has to stop on.
+ */
+export function leadTranscriptPage(
+  after: number,
+  batches: number,
+): LeadTranscriptResponse {
+  const entries = after < batches ? (leadBatchEntries[after] ?? []) : [];
+  const at = entries.findIndex((entry) => entry.uuid === leadBoundaryUuid);
+  return {
     stream: leadStream,
-    entries: [leadEntry("uuid-d", "assistant", "second decision")],
-    held: [leadBoundaryUuid, "uuid-d"],
+    entries: [...entries],
+    held: [...leadHeldOf(entries)],
+    ...(at < 0
+      ? {}
+      : {
+          compaction: {
+            boundary: leadBoundaryUuid,
+            at: "2026-09-01T10:00:00Z",
+          },
+        }),
     elided: 0,
-  },
-  "2": {
-    stream: leadStream,
-    entries: [leadEntry("uuid-e", "assistant", "third decision")],
-    held: [leadBoundaryUuid, "uuid-d", "uuid-e"],
-    elided: 0,
-  },
-};
+    truncated: false,
+    ...(entries.length === 0 ? {} : { nextAfter: after + 1 }),
+  };
+}
 
 /** A lead whose first turn has not run, so it names no stream and holds none. */
 export function leadUnstarted(): LeadResponse {
@@ -96,7 +134,7 @@ export function leadUnstarted(): LeadResponse {
     state: "Open",
     attention: "Monitoring",
     notificationCursor: 0,
-    handoffNote: {},
+    handoffNote: { bytes: 0, preview: "", truncated: false },
     turns: [],
     streams: [],
   };
@@ -177,6 +215,7 @@ export interface LeadServed {
   readonly batches: number;
   readonly turns: number;
   readonly refusals: AgenticRefusalsResponse;
+  readonly note?: LeadResponse["handoffNote"];
 }
 
 /** The body and status every route the lead page reads answers with, so a case
@@ -187,14 +226,17 @@ export function leadRouteAnswer(
 ): { readonly body: unknown; readonly status: number } {
   const found = (body: unknown, status = 200) => ({ body, status });
   if (url.includes("/lead/transcript")) {
-    const after = new URL(url, "https://console").searchParams.get("after");
-    const page = leadTranscriptPages[after ?? "0"];
-    return found(
-      page ?? { stream: leadStream, entries: [], held: [], elided: 0 },
-    );
+    const asked = new URL(url, "https://console").searchParams.get("after");
+    return found(leadTranscriptPage(Number(asked ?? "0"), served.batches));
   }
   if (url.includes("/lead"))
-    return found(leadBody(served.batches, served.turns));
+    return found(
+      leadBody(
+        served.batches,
+        served.turns,
+        served.note ?? leadHandoffNote(false),
+      ),
+    );
   if (url.includes("/selector-history")) return found(leadHistory);
   if (url.includes("/agentic-refusals")) return found(served.refusals);
   if (url.includes("/native-actions")) return found({ actions: [] });

@@ -25,6 +25,7 @@ import {
   leadTranscriptReadsMax,
 } from "../../core/leadTranscript.ts";
 import type {
+  LeadHandoffNote,
   LeadTranscriptHeld,
   LeadTranscriptLine,
 } from "../../core/leadTranscript.ts";
@@ -33,6 +34,7 @@ import { EmptyState } from "../ui/EmptyState.tsx";
 import { Ledger, LedgerBlock, LedgerRow } from "../ui/Ledger.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
+import { Pill } from "../ui/Pill.tsx";
 
 export interface LeadTranscriptRead {
   readonly partition: PartitionIdentity;
@@ -100,6 +102,9 @@ function LeadTranscriptNotes(props: {
       {held.failure === undefined ? null : (
         <Notice tone="danger" inline detail={`Failed · ${held.failure}`} />
       )}
+      {held.truncated ? (
+        <Notice tone="parked" inline detail="Truncated" />
+      ) : null}
       {held.elided === 0 ? null : (
         <Notice
           tone="parked"
@@ -145,10 +150,30 @@ function LeadEntryRow(props: {
   );
 }
 
-/** What the lead is working from: the chain from the last seam on, one block
- * per entry, in the order the chain holds them. */
+/** The note a lead leaves a successor that has no transcript, as much of it as
+ * the lead read carries. */
+function LeadNote(props: {
+  readonly note: LeadHandoffNote | undefined;
+}): ReactNode {
+  const note = props.note;
+  if (note === undefined || note.bytes === 0) return null;
+  return (
+    <div className="lead-note-held">
+      <p className="lead-note-head">
+        <span className="eyebrow">Handoff note</span>
+        <span className="num">{note.bytes}</span>
+        {note.truncated ? <Pill tone="parked">Truncated</Pill> : null}
+      </p>
+      <pre className="lead-entry-text">{note.preview}</pre>
+    </div>
+  );
+}
+
+/** What the lead is working from: the note it left itself and the chain from
+ * the last seam on, one block per entry. */
 export function LeadHolding(props: {
   readonly held: LeadTranscriptHeld;
+  readonly note: LeadHandoffNote | undefined;
   readonly nowMs: number;
 }): ReactNode {
   const [open, setOpen] = useState<string | undefined>(undefined);
@@ -156,6 +181,7 @@ export function LeadHolding(props: {
   return (
     <Panel title="Holding">
       <LeadTranscriptNotes held={props.held} />
+      <LeadNote note={props.note} />
       {lines.length === 0 ? (
         <EmptyState label="Nothing held" />
       ) : (

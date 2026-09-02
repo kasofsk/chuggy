@@ -26,6 +26,9 @@ import type {
   SelectorDecisionResponse,
 } from "../../../../src/contract/responses.ts";
 
+/** As much of the note the lead left its successor as the lead read carries. */
+export type LeadHandoffNote = LeadResponse["handoffNote"];
+
 /** The most reads one rise of the store's batch count may cost. */
 export const leadTranscriptReadsMax = 8;
 
@@ -43,8 +46,11 @@ export interface LeadTranscriptHeld {
   readonly holding: readonly string[];
   readonly compaction: LeadTranscriptCompaction;
   readonly elided: number;
+  readonly truncated: boolean;
   readonly entriesDropped: number;
   readonly readTo: number | undefined;
+  /** Whether the last page said there may be more above the cursor it gave. */
+  readonly more: boolean;
   readonly failure: string | undefined;
 }
 
@@ -54,21 +60,44 @@ export const leadTranscriptHeldEmpty: LeadTranscriptHeld = {
   holding: [],
   compaction: undefined,
   elided: 0,
+  truncated: false,
   entriesDropped: 0,
   readTo: undefined,
+  more: false,
   failure: undefined,
 };
 
 /**
- * The batch the next read asks after, and nothing at all where the store has
- * written no batch above the one this pane has read to.
+ * The batch the next read asks after. `nextAfter` says a page filled its limit
+ * and so only that there MAY be more, which is why a full page that ends the
+ * store is followed by one empty page; past that the walk resumes only when the
+ * store has been written above the cursor this pane has read to.
  */
 export function leadTranscriptNextAfter(
   held: LeadTranscriptHeld,
   highWaterBatch: number,
 ): number | undefined {
   if (held.readTo === undefined) return highWaterBatch > 0 ? 0 : undefined;
+  if (held.more) return held.readTo;
   return highWaterBatch > held.readTo ? held.readTo : undefined;
+}
+
+/**
+ * Whether the walk asks again. A page with no entries ends the chain whatever
+ * cursor it carries, and so does one whose cursor did not move: either would
+ * otherwise be asked for again until the read budget ran out, and neither can
+ * have filled a limit.
+ */
+function leadTranscriptMore(
+  held: LeadTranscriptHeld,
+  page: LeadTranscriptResponse,
+): boolean {
+  const asked = held.readTo ?? 0;
+  return (
+    page.nextAfter !== undefined &&
+    page.entries.length > 0 &&
+    page.nextAfter > asked
+  );
 }
 
 /** Each uuid once, in the order the chain gave it, oldest first. */
@@ -105,8 +134,10 @@ export function leadTranscriptMerged(
         : [...page.held],
     compaction: page.compaction ?? held.compaction,
     elided: held.elided + page.elided,
+    truncated: held.truncated || page.truncated,
     entriesDropped: held.entriesDropped + (merged.length - kept.length),
     readTo: page.nextAfter ?? highWaterBatch,
+    more: leadTranscriptMore(held, page),
     failure: undefined,
   };
 }

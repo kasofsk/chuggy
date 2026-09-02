@@ -22,6 +22,7 @@ import {
   leadTranscriptLines,
   leadTranscriptMerged,
   leadTranscriptNextAfter,
+  leadTranscriptReadsMax,
 } from "../app/core/leadTranscript.ts";
 import type { LeadTranscriptHeld } from "../app/core/leadTranscript.ts";
 import type {
@@ -36,7 +37,7 @@ import {
   leadRefusals,
   leadSession,
   leadStream,
-  leadTranscriptPages,
+  leadTranscriptPage,
   leadUnstarted,
 } from "./leadFixture.ts";
 
@@ -52,25 +53,87 @@ function refusalAt(superseded: boolean): AgenticRefusalResponse {
   return held;
 }
 
-function pageAt(after: string): (typeof leadTranscriptPages)[string] {
-  const page = leadTranscriptPages[after];
-  if (page === undefined) throw new Error("the fixture has no such page");
-  return page;
+/** The store walked to its end at two batches, which is three reads: two full
+ * pages and the empty one a full page that ends the store is followed by. */
+function walkedToEnd(batches: number): LeadTranscriptHeld {
+  let held = leadTranscriptHeldEmpty;
+  for (let read = 0; read < leadTranscriptReadsMax; read += 1) {
+    const after = leadTranscriptNextAfter(held, batches);
+    if (after === undefined) return held;
+    held = leadTranscriptMerged(
+      held,
+      leadTranscriptPage(after, batches),
+      batches,
+    );
+  }
+  throw new Error("the walk did not stop inside its own budget");
 }
 
 function walkedTwice(): LeadTranscriptHeld {
-  const first = leadTranscriptMerged(leadTranscriptHeldEmpty, pageAt("0"), 2);
-  return leadTranscriptMerged(first, pageAt("1"), 2);
+  return walkedToEnd(2);
 }
 
-test("the walk starts at nothing and stops when the store has written nothing more", () => {
+/**
+ * `nextAfter` says a page filled its limit, so it means only that there MAY be
+ * more: a full page that ends the store still carries one, and the walk has to
+ * ask once more to learn that it is done. A pane that read it as "there IS
+ * more" would stop one page early on every store whose last page is full.
+ */
+test("a full page is asked past, and the empty page after it ends the walk", () => {
   expect(leadTranscriptNextAfter(leadTranscriptHeldEmpty, 0)).toBeUndefined();
   expect(leadTranscriptNextAfter(leadTranscriptHeldEmpty, 2)).toBe(0);
-  const first = leadTranscriptMerged(leadTranscriptHeldEmpty, pageAt("0"), 2);
+  const first = leadTranscriptMerged(
+    leadTranscriptHeldEmpty,
+    leadTranscriptPage(0, 2),
+    2,
+  );
   expect(leadTranscriptNextAfter(first, 2)).toBe(1);
-  const second = leadTranscriptMerged(first, pageAt("1"), 2);
-  expect(leadTranscriptNextAfter(second, 2)).toBeUndefined();
-  expect(leadTranscriptNextAfter(second, 3)).toBe(2);
+  const second = leadTranscriptMerged(first, leadTranscriptPage(1, 2), 2);
+  expect(
+    second.more,
+    "a full page that ends the store was read as the end",
+  ).toBe(true);
+  expect(leadTranscriptNextAfter(second, 2)).toBe(2);
+  const third = leadTranscriptMerged(second, leadTranscriptPage(2, 2), 2);
+  expect(leadTranscriptNextAfter(third, 2)).toBeUndefined();
+  expect(leadTranscriptNextAfter(third, 3)).toBe(2);
+});
+
+/** A page with nothing on it cannot have filled a limit, and neither can one
+ * whose cursor did not move; either asked for again is a walk that spends its
+ * whole budget on one batch. */
+test("an empty page and a cursor that stood still both end the walk", () => {
+  const stuck = {
+    stream: "1a2b3c",
+    entries: [],
+    held: [],
+    elided: 0,
+    truncated: false,
+    nextAfter: 1,
+  };
+  const empty = leadTranscriptMerged(leadTranscriptHeldEmpty, stuck, 4);
+  expect(empty.more).toBe(false);
+  expect(leadTranscriptNextAfter(empty, 4)).toBe(1);
+  const standing = leadTranscriptMerged(
+    leadTranscriptMerged(leadTranscriptHeldEmpty, leadTranscriptPage(0, 3), 3),
+    { ...leadTranscriptPage(1, 3), nextAfter: 1 },
+    3,
+  );
+  expect(standing.more).toBe(false);
+});
+
+/** The chain over the batches read was longer than one page of entries, which
+ * is a different shortfall from a batch the read could not draw. */
+test("a truncated page is remembered once the walk has moved past it", () => {
+  const held = leadTranscriptMerged(
+    leadTranscriptHeldEmpty,
+    { ...leadTranscriptPage(0, 2), truncated: true },
+    2,
+  );
+  expect(held.truncated).toBe(true);
+  expect(
+    leadTranscriptMerged(held, leadTranscriptPage(1, 2), 2).truncated,
+  ).toBe(true);
 });
 
 test("each entry lands once, oldest first, over as many pages as it took", () => {
@@ -107,7 +170,7 @@ test("a later compaction drops what the earlier page said was held", () => {
   const held = leadTranscriptMerged(
     walkedTwice(),
     {
-      ...pageAt("2"),
+      ...leadTranscriptPage(2, 3),
       held: ["uuid-e"],
       compaction: { boundary: "uuid-e", at: "2026-09-01T11:00:00Z" },
     },

@@ -179,7 +179,7 @@ function LeadBody(props: {
       <DataPanel title="Turns" state={props.state}>
         {(value) => <LeadTurns lead={value} />}
       </DataPanel>
-      <LeadHolding held={held} nowMs={props.nowMs} />
+      <LeadHolding held={held} note={lead?.handoffNote} nowMs={props.nowMs} />
       <LeadLog held={held} stream={lead?.agentReference} />
       <LeadDecisions partition={props.partition} nowMs={props.nowMs} />
       <LeadRefusals partition={props.partition} nowMs={props.nowMs} />
