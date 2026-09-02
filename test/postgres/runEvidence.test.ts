@@ -37,7 +37,10 @@ import {
 } from "../../src/contract/http.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
-import type { RunTotals } from "../../src/interpreter/runEvidence.ts";
+import type {
+  RunEndedEvidence,
+  RunTotals,
+} from "../../src/interpreter/runEvidence.ts";
 import {
   postgresHarnessNewEpoch,
   postgresHarnessRolePool,
@@ -640,6 +643,71 @@ test("a run may narrow its own ending to the label its failure names", async () 
       evidence: "RunFailed",
     }),
     false,
+  );
+});
+
+/** What the execution and its attempt look like after one run ended. */
+async function endedRun(label: string, evidence: RunEndedEvidence) {
+  const { attempt } = await placedAttempt(label);
+  assert.equal(
+    await endings.end({
+      secret: attempt.capability.secret,
+      generation: attempt.generation,
+      evidence,
+    }),
+    true,
+  );
+  const [state] = await rig.harness.query(
+    `SELECT a.state,a.evidence,e.retries_spent::text AS retries_spent,
+            (e.placement_backoff_from IS NOT NULL) AS backed_off
+       FROM execution_attempt a
+       JOIN execution e ON e.tenant=a.tenant AND e.project=a.project
+                       AND e.execution=a.execution
+      WHERE a.tenant=$1 AND a.project=$2 AND a.attempt=$3`,
+    [attempt.partition.tenant, attempt.partition.project, attempt.attempt],
+  );
+  return state;
+}
+
+/**
+ * kasofsk/chuggy#386's ask, at the grain the charge is made: the pair is what
+ * makes either half falsifiable, because a boundary that never charged would
+ * pass the withdrawn case alone.
+ */
+test("a rate-limited run is withdrawn and charges no retry; a failed one is lost and charges one", async () => {
+  assert.deepEqual(await endedRun("run-withdrawn", "RunRateLimited"), {
+    state: "Withdrawn",
+    evidence: "RunRateLimited",
+    retries_spent: "0",
+    backed_off: true,
+  });
+  assert.deepEqual(await endedRun("run-lost", "RunFailed"), {
+    state: "Lost",
+    evidence: "RunFailed",
+    retries_spent: "1",
+    backed_off: true,
+  });
+});
+
+test("a withdrawn attempt is ended once, so a redelivered ending moves nothing", async () => {
+  const { attempt } = await placedAttempt("run-withdrawn-twice");
+  const ending = {
+    secret: attempt.capability.secret,
+    generation: attempt.generation,
+    evidence: "RunRateLimited",
+  } as const;
+  assert.equal(await endings.end(ending), true);
+  assert.equal(await endings.end(ending), false);
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT e.retries_spent::text AS retries_spent
+         FROM execution e
+         JOIN execution_attempt a ON a.tenant=e.tenant AND a.project=e.project
+                                 AND a.execution=e.execution
+        WHERE a.attempt=$1`,
+      [attempt.attempt],
+    ),
+    [{ retries_spent: "0" }],
   );
 });
 

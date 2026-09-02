@@ -77,6 +77,20 @@ export interface SessionAttemptLossPort {
   ): Promise<boolean>;
 }
 
+/**
+ * Ending the attempt a bearer names as a hold rather than a loss, which is what
+ * a pod whose provider refused its account has to report. The turns it claimed
+ * go back to the mailbox uncharged, because nothing about the work failed and
+ * nothing about the turn was tried.
+ *
+ * It names no evidence and no loss arm. A pod choosing either would be the thing
+ * being controlled choosing what it is charged; there is exactly one condition a
+ * pod may declare a hold for, and the definer function writes its own label.
+ */
+export interface SessionAttemptHoldPort {
+  hold(secret: SessionBearerSecret, generation: number): Promise<boolean>;
+}
+
 export interface SessionHeartbeatPort {
   heartbeat(
     secret: SessionBearerSecret,

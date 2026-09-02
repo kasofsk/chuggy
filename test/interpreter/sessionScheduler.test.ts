@@ -84,5 +84,6 @@ test("the evidence roster is its own, and holds no member twice", () => {
     "SessionClosed",
     "TurnFailed",
     "StoreRefused",
+    "AgentRateLimited",
   ]);
 });

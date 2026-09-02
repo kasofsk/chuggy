@@ -19,6 +19,7 @@ import { asOperationId } from "../../interpreter/operationInbox.ts";
 import {
   allRunEvidenceStored,
   runConfigurationPath,
+  runEndedLoss,
   runTranscriptBatchPath,
   type RunEvidenceStored,
   type WorkerRunConfigurationPort,
@@ -276,12 +277,26 @@ export function postgresWorkerRunTotal(pool: pg.Pool): WorkerRunTotalPort {
 /**
  * Narrowing a live attempt to the label its own run ended under, through the
  * boundary that already ends one; the lease sweep ends it either way.
+ *
+ * Which of the two boundaries is `runEndedLoss`'s answer to the label, never the
+ * pod's: the wire carries what the run saw, and what that costs the ticket is
+ * decided here. `lose_worker_attempt` spends a retry because the attempt ran;
+ * `withdraw_worker_attempt` spends none because a provider that refused every
+ * request is a hold, and the work was never tried.
  */
 export function postgresWorkerRunEnded(pool: pg.Pool): WorkerRunEndedPort {
   return {
     end: async (input) => {
+      const digest = workerSecretDigest(input.secret);
+      if (runEndedLoss(input.evidence) === "Withdrawn") {
+        const withdrawn = await pool.query<{ withdrawn: boolean | null }>(
+          sql`SELECT withdraw_worker_attempt(${digest},
+            ${input.generation},${input.evidence})::boolean AS withdrawn`,
+        );
+        return withdrawn.rows[0]?.withdrawn === true;
+      }
       const ended = await pool.query<{ ended: boolean | null }>(
-        sql`SELECT lose_worker_attempt(${workerSecretDigest(input.secret)},
+        sql`SELECT lose_worker_attempt(${digest},
           ${input.generation},${input.evidence})::boolean AS ended`,
       );
       return ended.rows[0]?.ended === true;

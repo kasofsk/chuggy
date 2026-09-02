@@ -71,6 +71,7 @@ const inertSessions: SessionPlaneService = {
     answer: () => Promise.resolve("Answered"),
     fail: () => Promise.resolve("Failed"),
   },
+  holds: { hold: () => Promise.resolve(true) },
   records: { record: () => Promise.resolve("Stored") },
   queries: {
     batches: () => Promise.resolve([]),
@@ -1052,6 +1053,7 @@ test("a plane composed with no session plane serves no session route at all", as
       "/v1/session/turn",
       "/v1/session/turn/answer",
       "/v1/session/turn/failure",
+      "/v1/session/held",
       "/v1/session/store",
       "/v1/session/store/*",
     ],

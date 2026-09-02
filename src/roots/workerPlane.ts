@@ -66,6 +66,7 @@ function planeSessions(
     references: sessions,
     turns: sessions,
     settlements: sessions,
+    holds: sessions,
     records: sessions,
     queries: sessions,
     store: artifacts,

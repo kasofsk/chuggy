@@ -16,6 +16,12 @@ import {
   runTurnSeriesMax,
   truncatedEvent,
 } from "./runEvidence.mjs";
+import { observeRateLimit, rateLimitSightings } from "./rateLimit.mjs";
+
+/** The sightings a run that saw exactly these frames, in this order, ends with. */
+function seenBy(...events) {
+  return events.reduce(observeRateLimit, rateLimitSightings());
+}
 
 const task = { workerPlane: { url: "http://worker-plane.test:3001" } };
 const secret = "sk-ant-oat01-0123456789abcdefghijklmnopqrstuvwxyz";
@@ -389,22 +395,97 @@ test("a refused evidence call stops the transcript and never fails the run", asy
 
 test("a run that outlived its evidence still names the plane as the reason", () => {
   assert.equal(
-    endedEvidence({ subtype: "error_max_turns" }, false),
+    endedEvidence({ subtype: "error_max_turns" }, false, undefined),
     "RunTurnsExhausted",
   );
+  assert.equal(endedEvidence(undefined, true, undefined), "RunUploadRefused");
+  assert.equal(endedEvidence(undefined, false, undefined), "RunFailed");
+  assert.equal(
+    endedEvidence({ subtype: "error_during_execution" }, false, undefined),
+    "RunFailed",
+  );
+});
+
+/**
+ * The frames kasofsk/chuggy#386 reports, as the runtime declares them: the
+ * status is on `rate_limit_info`, and the result the issue quotes says only
+ * `api_error`. Nothing in either carries the text the label used to look for.
+ */
+const rejection = {
+  type: "rate_limit_event",
+  rate_limit_info: {
+    status: "rejected",
+    rateLimitType: "five_hour",
+    utilization: 1,
+    resetsAt: 1787823600,
+  },
+};
+const apiErrorResult = {
+  type: "result",
+  subtype: "error_during_execution",
+  terminal_reason: "api_error",
+};
+
+test("the run the issue reports is a hold, and the same run without the rejection is not", () => {
+  const seen = seenBy(rejection);
+  assert.equal(endedEvidence(apiErrorResult, false, seen), "RunRateLimited");
+  assert.equal(
+    endedEvidence(apiErrorResult, false, rateLimitSightings()),
+    "RunFailed",
+  );
+});
+
+test("an assistant frame naming the rate-limited error kind is a hold", () => {
   assert.equal(
     endedEvidence(
-      { subtype: "error_during_execution", stop_reason: "rate_limit" },
+      apiErrorResult,
       false,
+      seenBy({ type: "assistant", error: "rate_limit" }),
     ),
     "RunRateLimited",
   );
-  assert.equal(endedEvidence(undefined, true), "RunUploadRefused");
-  assert.equal(endedEvidence(undefined, false), "RunFailed");
   assert.equal(
-    endedEvidence({ subtype: "error_during_execution" }, false),
+    endedEvidence(
+      apiErrorResult,
+      false,
+      seenBy({ type: "assistant", error: "server_error" }),
+    ),
     "RunFailed",
   );
+});
+
+test("a rejection the provider then lifted is not a hold when the run ends", () => {
+  assert.equal(
+    endedEvidence(
+      apiErrorResult,
+      false,
+      seenBy(rejection, {
+        type: "rate_limit_event",
+        rate_limit_info: { status: "allowed" },
+      }),
+    ),
+    "RunFailed",
+  );
+});
+
+test("a hold outranks the turn count, because a held run had no turns to spend", () => {
+  assert.equal(
+    endedEvidence({ subtype: "error_max_turns" }, false, seenBy(rejection)),
+    "RunRateLimited",
+  );
+});
+
+test("the recorder folds the frames it ships, so the ending reads the whole run", async () => {
+  const { recorder, calls } = harness();
+  const line = JSON.stringify(rejection);
+  await recorder.record(line, rejection);
+  recorder.observed(apiErrorResult);
+  await recorder.ended();
+
+  const ended = calls.find(({ path }) => path === "/v1/run/ended");
+  assert.deepEqual(JSON.parse(ended.init.body), {
+    evidence: "RunRateLimited",
+  });
 });
 
 test("every transcript byte the worker ships has passed the scrub", async () => {
