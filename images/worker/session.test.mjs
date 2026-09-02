@@ -15,6 +15,7 @@ import {
 import { observeRateLimit, rateLimitSightings } from "./rateLimit.mjs";
 import {
   bearer,
+  credentialFile,
   environment,
   facts,
   planeOf,
@@ -834,4 +835,106 @@ test("a thread originates through the API under its own session bearer, and answ
       .result,
     "filed ticket 14",
   );
+});
+
+test("a session with a checkout runs in it, and one without runs in the bare workspace", async () => {
+  for (const [checkout, cwd] of [
+    [undefined, "/workspace"],
+    [{ directory: "/workspace/repository", commit: "a".repeat(40) }, "/workspace/repository"],
+  ]) {
+    const plane = planeOf([], facts);
+    const { seen, query } = queryOf(() => []);
+
+    await run({
+      request: plane.request,
+      query,
+      checkout: async () => checkout,
+    });
+
+    assert.equal(seen.options.cwd, cwd);
+    assert.equal(
+      seen.options.env.CLAUDE_CONFIG_DIR,
+      "/workspace/.claude",
+      "the runtime's local mirror moved into the git working tree",
+    );
+    assert.deepEqual(seen.options.settingSources, ["project"]);
+  }
+});
+
+test("the checkout is asked for what the placement bound, under the session's own workspace", async () => {
+  const plane = planeOf([], facts);
+  const { query } = queryOf(() => []);
+  const asked = [];
+
+  await run({
+    request: plane.request,
+    query,
+    environment: {
+      ...environment,
+      CHUG_SESSION_TASK: JSON.stringify({
+        ...task,
+        repository: { reference: "chuggy" },
+      }),
+      CHUG_WORKER_REPOSITORIES: JSON.stringify({ chuggy: { url: "git://x" } }),
+    },
+    checkout: async (checkoutTask, repositories, credentialFiles, workspace) => {
+      asked.push({ checkoutTask, repositories, credentialFiles, workspace });
+      return undefined;
+    },
+  });
+
+  assert.equal(asked.length, 1);
+  assert.deepEqual(asked[0].checkoutTask.repository, { reference: "chuggy" });
+  assert.deepEqual(asked[0].repositories, { chuggy: { url: "git://x" } });
+  assert.deepEqual(asked[0].credentialFiles, { "claude-code": credentialFile });
+  assert.equal(asked[0].workspace, "/workspace");
+});
+
+test("a site that names no repository map still runs the sessions that bind none", async () => {
+  const plane = planeOf([], facts);
+  const { query } = queryOf(() => []);
+
+  const code = await run({ request: plane.request, query });
+
+  assert.equal(code, 0);
+});
+
+/**
+ * The runtime derives `projectKey` from the sanitised `cwd`, so moving `cwd` to
+ * a checkout is the one change in this unit that could rename every stream a
+ * session has ever written — and a renamed stream is a resumed lead that finds
+ * no transcript. Both runs write through the real store adapter, so what is
+ * compared is the path the plane was asked for.
+ */
+test("moving cwd to the checkout does not move the store stream a resumed session reads", async () => {
+  const written = [];
+  for (const checkout of [
+    undefined,
+    { directory: "/workspace/repository", commit: "b".repeat(40) },
+  ]) {
+    const plane = planeOf([turnOne], facts);
+    const { query } = queryOf((_asked, _index, options) => [
+      { type: "system", subtype: "init", session_id: "runtime-1" },
+      () =>
+        options.sessionStore.append(
+          {
+            projectKey: options.cwd.replaceAll("/", "-"),
+            sessionId: "runtime-1",
+          },
+          [{ uuid: "a", type: "assistant" }],
+        ),
+      result("success", { result: "ok" }),
+    ]);
+
+    await run({ request: plane.request, query, checkout: async () => checkout });
+
+    written.push(
+      plane.calls
+        .filter(({ path }) => path.startsWith("/v1/session/store/"))
+        .map(({ path }) => path),
+    );
+  }
+
+  assert.deepEqual(written[0], ["/v1/session/store/runtime-1/1"]);
+  assert.deepEqual(written[1], written[0]);
 });

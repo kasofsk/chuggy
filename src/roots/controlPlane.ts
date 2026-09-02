@@ -399,8 +399,11 @@ export interface SchedulerProcessRootConfig {
     ExecutionSchedulerService,
     "store" | "configurations" | "priorWorkReports" | "ticketBriefs"
   >;
-  /** The session half of the same process; its own store comes from the same pool. */
-  readonly sessions: Omit<SessionSchedulerService, "store">;
+  /**
+   * The session half of the same process; its own store and its binding read
+   * come from the same pool, so a deployment names neither.
+   */
+  readonly sessions: Omit<SessionSchedulerService, "store" | "bindings">;
   readonly workerCatalog: readonly AdmittedWorker[];
   readonly additional?: readonly RuntimePrecondition[];
 }
@@ -429,7 +432,11 @@ export function schedulerProcessRoot(
     pool,
     schedulerProcess(
       service,
-      { ...config.sessions, store: postgresSessionScheduler(pool) },
+      {
+        ...config.sessions,
+        store: postgresSessionScheduler(pool),
+        bindings: postgresProjectRepositoryBinding(pool),
+      },
       config.identity,
       {
         pool,

@@ -48,7 +48,9 @@ import {
   rateLimitSightings,
   rateLimited,
 } from "./rateLimit.mjs";
+import { workerRepositories } from "./repository.mjs";
 import { credentialScrub } from "./runEvidence.mjs";
+import { sessionCheckout } from "./sessionCheckout.mjs";
 import { sessionMailbox } from "./sessionMailbox.mjs";
 import { sessionStoreAdapter } from "./sessionStore.mjs";
 import { sessionRequest, sessionStopped } from "./sessionTransport.mjs";
@@ -355,14 +357,28 @@ function sessionSystemPrompt(facts) {
   };
 }
 
-/** The options one session's query runs under, every bound the pod was launched with. */
+/**
+ * The options one session's query runs under, every bound the pod was launched
+ * with.
+ *
+ * `cwd` IS THE CHECKOUT WHERE THERE IS ONE, because that is what makes
+ * `settingSources: ["project"]` load the tree's own `CLAUDE.md` rather than the
+ * bare workspace's absence of one. `CLAUDE_CONFIG_DIR` does NOT move with it:
+ * it is the runtime's local mirror, and a mirror written inside a git working
+ * tree is pod state the lead would read back as the project's.
+ *
+ * MOVING `cwd` DOES NOT MOVE A STORE STREAM. The runtime derives `projectKey`
+ * from the sanitised `cwd` and `./sessionStore.mjs` discards it, so a session
+ * resumed into a pod with a checkout finds the transcript a pod without one
+ * wrote. `sessionStore.test.mjs` and this module's suite both hold that.
+ */
 export function sessionQueryOptions(
   task,
   facts,
   store,
   environment,
   token,
-  servers = {},
+  { servers = {}, checkout } = {},
 ) {
   const workspace = environment.CHUG_WORKER_WORKSPACE ?? defaultWorkspace;
   const { allowedTools, disallowedTools } = sessionAllowedTools(
@@ -372,7 +388,7 @@ export function sessionQueryOptions(
   return {
     sessionStore: store,
     sessionStoreFlush: "eager",
-    cwd: workspace,
+    cwd: checkout?.directory ?? workspace,
     env: {
       ...environment,
       CLAUDE_CODE_OAUTH_TOKEN: token,
@@ -558,14 +574,22 @@ async function sessionFacts(context) {
   return response.json();
 }
 
-async function sessionCredential(environment, read, slot) {
-  const files = JSON.parse(
-    required(environment, "CHUG_WORKER_CREDENTIAL_FILES"),
-  );
+async function sessionCredential(files, read, slot) {
   const path = files[slot];
   if (typeof path !== "string")
     throw new Error(`the session credential ${slot} is not mounted`);
   return (await read(path)).trim();
+}
+
+/**
+ * The site's repository map, read only where the placement bound one. A site
+ * that runs sessions against projects with no binding owes no map, and reading
+ * the variable regardless would refuse those pods for a fact they never use.
+ */
+function sessionRepositories(task, environment) {
+  return task.repository === undefined
+    ? {}
+    : workerRepositories(required(environment, "CHUG_WORKER_REPOSITORIES"));
 }
 
 /**
@@ -634,6 +658,7 @@ export async function sessionMain(services = {}) {
     pause = unreffed,
     ensureDirectory = (path) => mkdir(path, { recursive: true }),
     warn = (text) => process.stderr.write(text),
+    checkout: takeCheckout = sessionCheckout,
   } = services;
   let scrub = (text) => text;
   let stopLease = async () => undefined;
@@ -652,8 +677,11 @@ export async function sessionMain(services = {}) {
       measure: sessionMeasure(),
     };
     const facts = await sessionFacts(context);
+    const credentialFiles = JSON.parse(
+      required(environment, "CHUG_WORKER_CREDENTIAL_FILES"),
+    );
     const token = await sessionCredential(
-      environment,
+      credentialFiles,
       read,
       facts.credentialSlot,
     );
@@ -661,7 +689,16 @@ export async function sessionMain(services = {}) {
     context.scrub = scrub;
     const workspace = environment.CHUG_WORKER_WORKSPACE ?? defaultWorkspace;
     await ensureDirectory(sessionConfigDirectory(environment, workspace));
+    // The lease is started before the clone, so a slow one is a session that is
+    // still alive rather than an attempt the scheduler reaped while git ran.
     stopLease = sessionLease(task, bearer, request);
+    const checkout = await takeCheckout(
+      task,
+      sessionRepositories(task, environment),
+      credentialFiles,
+      workspace,
+      { log: warn, scrub },
+    );
     context.store = sessionStoreAdapter(task, bearer, { request });
     sessionStagedMailbox(context, { request, wait: pause, now });
     const sdk = services.sdk ?? (await sessionSdk());
@@ -673,7 +710,10 @@ export async function sessionMain(services = {}) {
         context.store,
         environment,
         token,
-        sessionToolServers(context, facts, environment, services, sdk),
+        {
+          servers: sessionToolServers(context, facts, environment, services, sdk),
+          ...(checkout === undefined ? {} : { checkout }),
+        },
       ),
     });
     context.reader = messageReader(stream, pause);

@@ -34,10 +34,20 @@
  * NOTHING HERE READS A CLOCK. The lease, the placement backoff and the idle
  * horizon are durations handed to the store, which asks the database what time
  * it is; `eslint.config.js` says so for this directory.
+ *
+ * THE REPOSITORY IS RESOLVED PER SESSION AND A PROJECT THAT BINDS NONE IS
+ * PLACED ANYWAY. Which repository a session reads is the project's own binding
+ * rather than the site's policy, so it is read here, once per placement, and a
+ * project with no binding places a session with no checkout: the session reads
+ * the project through the API and has no tree. A binding read that *fails*
+ * stops the pass instead, because placing every session with no checkout is
+ * how a missing grant would look, and a control that degrades silently is one
+ * nobody can tell from a working one.
  */
 
 import type { AgentSession, SessionAttemptId } from "./agentSession.ts";
 import type { RecoveryEpoch } from "./projectStore.ts";
+import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
 import {
   checkedSessionSchedulerConfig,
   type FencedSessionAttempt,
@@ -66,6 +76,8 @@ export interface SessionSchedulerService {
   readonly placement: SessionPlacementPort;
   readonly bearers: SessionAttemptMint;
   readonly policy: SessionPolicy;
+  /** Where the repository a placed session reads comes from, which is the project's binding. */
+  readonly bindings: ProjectRepositoryBindingRead;
   readonly config: SessionSchedulerConfig;
 }
 
@@ -172,6 +184,7 @@ async function sessionPlaceOne(
     clusterAttemptsMax: config.clusterAttemptsMax,
   });
   if (opened.opened !== "Opened") return false;
+  const binding = await service.bindings.binding(session.partition);
   return sessionAttemptPlaced(
     service,
     opened.attempt,
@@ -187,6 +200,7 @@ async function sessionPlaceOne(
       image: service.policy.image,
       authority: service.policy.grant,
       bearer: minted.bearer,
+      ...(binding === undefined ? {} : { repository: binding.repository }),
     }),
   );
 }
