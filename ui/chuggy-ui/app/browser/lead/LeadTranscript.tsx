@@ -17,18 +17,19 @@ import { instantFigure } from "../../core/figures.ts";
 import { panelReason } from "../../core/freshness.ts";
 import {
   leadTranscriptDrawn,
-  leadTranscriptFailed,
-  leadTranscriptHeldEmpty,
   leadTranscriptHolding,
   leadTranscriptLines,
-  leadTranscriptMerged,
   leadTranscriptNextAfter,
+  leadTranscriptPaneEmpty,
   leadTranscriptReadsMax,
+  leadTranscriptStep,
 } from "../../core/leadTranscript.ts";
 import type {
   LeadHandoffNote,
+  LeadTranscriptEvent,
   LeadTranscriptHeld,
   LeadTranscriptLine,
+  LeadTranscriptPane,
 } from "../../core/leadTranscript.ts";
 import { useApiPorts } from "../api.ts";
 import { EmptyState } from "../ui/EmptyState.tsx";
@@ -45,31 +46,32 @@ export interface LeadTranscriptRead {
 
 /**
  * The batches above what is held, a bounded number of pages at a time,
- * abandoned when the page goes away. WHAT THE WALK HOLDS AND WHAT IS DRAWN ARE
- * TWO VALUES: a moved cut empties the first so the cursor goes back to the
- * start of the stream, and `leadTranscriptDrawn` is what keeps that step from
- * reaching a reader as a lead that has recorded nothing.
+ * abandoned when the page goes away. THE PANE IS THE STATE AND WHAT IS DRAWN IS
+ * DERIVED FROM IT: this reads, turns each read into one of the events the pane
+ * accepts, and holds nothing of its own — every decision about what a reader
+ * sees is `leadTranscriptStep`'s and `leadTranscriptDrawn`'s.
  */
 export function useLeadTranscript(
   read: LeadTranscriptRead,
 ): LeadTranscriptHeld {
   const ports = useApiPorts();
-  const [held, setHeld] = useState<LeadTranscriptHeld>(leadTranscriptHeldEmpty);
-  const holding = useRef<LeadTranscriptHeld>(leadTranscriptHeldEmpty);
+  const pane = useRef<LeadTranscriptPane>(leadTranscriptPaneEmpty);
+  const [held, setHeld] = useState<LeadTranscriptHeld>(
+    leadTranscriptDrawn(leadTranscriptPaneEmpty),
+  );
   const { stream, highWaterBatch } = read;
   const { tenant, project } = read.partition;
   useEffect(() => {
     let abandoned = false;
+    const stepped = (event: LeadTranscriptEvent): void => {
+      pane.current = leadTranscriptStep(pane.current, event);
+      setHeld(leadTranscriptDrawn(pane.current));
+    };
     const walk = async (): Promise<void> => {
-      if (
-        holding.current.stream !== undefined &&
-        holding.current.stream !== stream
-      ) {
-        holding.current = leadTranscriptHeldEmpty;
-        setHeld(leadTranscriptHeldEmpty);
-      }
-      for (let page = 0; page < leadTranscriptReadsMax; page += 1) {
-        const after = leadTranscriptNextAfter(holding.current, highWaterBatch);
+      if (pane.current.stream !== undefined && pane.current.stream !== stream)
+        stepped({ event: "StreamChange", stream });
+      for (let read = 0; read < leadTranscriptReadsMax; read += 1) {
+        const after = leadTranscriptNextAfter(pane.current, highWaterBatch);
         if (after === undefined || stream === undefined || abandoned) return;
         const answered = await apiLeadTranscript(
           ports,
@@ -77,18 +79,13 @@ export function useLeadTranscript(
           { stream, after },
         );
         if (abandoned) return;
-        const next =
-          answered.outcome === "Ok"
-            ? leadTranscriptMerged(
-                holding.current,
-                answered.value,
-                highWaterBatch,
-              )
-            : leadTranscriptFailed(holding.current, panelReason(answered));
-        holding.current = next;
-        setHeld((drawn) => leadTranscriptDrawn(drawn, next));
-        if (answered.outcome !== "Ok") return;
+        if (answered.outcome !== "Ok") {
+          stepped({ event: "Failure", reason: panelReason(answered) });
+          return;
+        }
+        stepped({ event: "Page", page: answered.value, highWaterBatch });
       }
+      if (!abandoned) stepped({ event: "BudgetEnd" });
     };
     void walk();
     return () => {

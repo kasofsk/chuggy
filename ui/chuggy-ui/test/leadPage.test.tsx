@@ -439,3 +439,144 @@ test("a cut that moves early is rebuilt inside the budget and drawn", async () =
   expect(screen.queryByText("No entries")).toBeNull();
   expect(screen.queryByText("Undecided")).toBeNull();
 });
+
+/** A store whose pages the case decides, so a probe can move the cut, fail a
+ * read, or answer entry-less pages at whatever point it is about. */
+function scriptedStore(answering: (read: number, after: number) => Response): {
+  readonly reads: () => number;
+} {
+  let reads = 0;
+  const api = apiDouble({
+    operation: { operation: "op-one", state: "Pending" },
+    route: (url) => {
+      if (url.includes("/lead/transcript")) {
+        const after = Number(
+          new URL(url, "https://console").searchParams.get("after") ?? "0",
+        );
+        reads += 1;
+        return answering(reads, after);
+      }
+      const found = leadRouteAnswer(url, { ...opening, batches: 40 });
+      return answer(found.body, found.status);
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  return { reads: () => reads };
+}
+
+function scriptedPage(
+  after: number,
+  cut: number,
+  entries: readonly string[],
+): Response {
+  return answer({
+    stream: leadStream,
+    entries: entries.map((uuid) => ({
+      uuid,
+      type: "assistant",
+      message: { content: [] },
+    })),
+    held: [...entries],
+    cut,
+    elided: 0,
+    truncated: false,
+    nextAfter: after + 1,
+  });
+}
+
+/**
+ * The reason a read gave has to reach the reader even when a re-walk is in
+ * flight, because the pane is then drawing a fold from before the compaction
+ * and a reader with no notice has no way to know why it stopped moving.
+ */
+test("a read that fails after a cut moved still draws its reason", async () => {
+  scriptedStore((read, after) => {
+    if (read === 1) return scriptedPage(after, 1, [`uuid-${String(after)}`]);
+    if (read === 2) return scriptedPage(after, 9, [`uuid-${String(after)}`]);
+    return answer({ error: { code: "InternalError", message: "no" } }, 500);
+  });
+  await mountLead();
+  expect(
+    screen.getByText(/^Failed · /u),
+    "a read that failed across a re-walk said nothing to the reader",
+  ).toBeDefined();
+  expect(screen.queryByText("No entries")).toBeNull();
+});
+
+/**
+ * A re-walk whose own pages draw nothing — every batch elided, or every entry
+ * meta — must not replace a whole chain with the two claims these panels
+ * reserve for a lead that has recorded nothing.
+ */
+test("a re-walk that draws nothing keeps the chain the reader had", async () => {
+  scriptedStore((read, after) => {
+    if (read === 1) return scriptedPage(after, 1, [`uuid-${String(after)}`]);
+    if (read === 2) return scriptedPage(after, 9, [`uuid-${String(after)}`]);
+    return answer({
+      stream: leadStream,
+      entries: [],
+      held: [],
+      cut: 9,
+      elided: 1,
+      truncated: false,
+      nextAfter: after + 1,
+    });
+  });
+  await mountLead();
+  expect(
+    screen.queryByText("No entries"),
+    "a re-walk drawing nothing said the lead had recorded nothing",
+  ).toBeNull();
+  expect(screen.queryByText("Nothing held")).toBeNull();
+  expect(logLines().length).toBeGreaterThan(0);
+  expect(screen.getByText("Undecided")).toBeDefined();
+});
+
+/** The two words a pane says when it really does hold nothing, drawn rather
+ * than merely absent. */
+test("a lead that has recorded nothing says so in both panels", async () => {
+  scriptedStore((_read, after) =>
+    answer({
+      stream: leadStream,
+      entries: [],
+      held: [],
+      cut: 1,
+      elided: 0,
+      truncated: false,
+      nextAfter: after + 1,
+    }),
+  );
+  await mountLead();
+  expect(screen.getByText("No entries")).toBeDefined();
+  expect(screen.getByText("Nothing held")).toBeDefined();
+});
+
+/** What the read could not draw is drawn as itself, in the words the counts
+ * behind them are pinned under. */
+test("what a read could not draw is said beside what it did", async () => {
+  scriptedStore((read, after) =>
+    read === 1
+      ? answer({
+          stream: leadStream,
+          entries: [
+            { uuid: "uuid-a", type: "assistant", message: { content: [] } },
+          ],
+          held: ["uuid-a"],
+          cut: 1,
+          elided: 2,
+          truncated: true,
+          nextAfter: after + 1,
+        })
+      : answer({
+          stream: leadStream,
+          entries: [],
+          held: [],
+          cut: 1,
+          elided: 0,
+          truncated: false,
+        }),
+  );
+  await mountLead();
+  expect(screen.getByText("Elided · 2")).toBeDefined();
+  expect(screen.getAllByText("Truncated").length).toBeGreaterThan(0);
+});
