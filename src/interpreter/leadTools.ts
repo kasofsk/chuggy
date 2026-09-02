@@ -25,6 +25,12 @@
  * what the selector refuses is the decision that used it. A control described
  * as stronger than it is, is worse than none.
  *
+ * THE ROSTER NAMES ONE READ THE TREE DOES NOT YET HAVE. `list_drafts` reaches
+ * `GET .../drafts`, whose page shapes are declared in `./authoring.ts` and whose
+ * `AuthoringStore.drafts` and `NativeWeb.drafts` are declared beside the
+ * migration that gives them a definer to read through, because the tree's one
+ * store is a postgres adapter that could not implement the method before then.
+ *
  * DERIVED WORK ONLY, AND THE MODEL IS WHY. There is no bare create in the
  * roster: a dependent is filed against a parent that already exists. Nor is
  * there any tool that re-authors a released ticket — merge, split, supersede,
@@ -33,7 +39,10 @@
  * deliberately absent.
  */
 
-import { nativeHttpBodyBytesMax } from "../contract/http.ts";
+import {
+  nativeHttpBodyBytesMax,
+  selectorSettingsTextCharsMax,
+} from "../contract/http.ts";
 import type { SessionCapability } from "./agentSession.ts";
 import type { SelectorResolvedSettings } from "./selector.ts";
 
@@ -49,9 +58,6 @@ export const chuggyToolTimeoutMs = 30_000;
 
 /** How many pages one tool call may walk, so a tool answers a page and names its cursor. */
 export const chuggyToolPagesMax = 1;
-
-/** The longest set of objectives one session row holds. */
-export const sessionSystemPromptCharsMax = 65_536;
 
 /**
  * Which capability admits which tool, written once and read both ways round. A
@@ -143,7 +149,25 @@ export const allDependentRelations = ["FollowUp", "Prerequisite"] as const;
 export type DependentRelation = (typeof allDependentRelations)[number];
 export const dependentRelationsAdmitted = ["FollowUp"] as const;
 
-/** What a lead is told about its own tools, beside what the project tells it. */
+/** The relations the schema names so that their refusal can name the reason. */
+export const dependentRelationsRefused: readonly DependentRelation[] =
+  allDependentRelations.filter(
+    (relation) =>
+      !(dependentRelationsAdmitted as readonly DependentRelation[]).includes(
+        relation,
+      ),
+  );
+
+/** One list of relations as a sentence holds them. */
+function relationsSaid(relations: readonly DependentRelation[]): string {
+  return relations.map((relation) => `\`${relation}\``).join(" and ");
+}
+
+/**
+ * What a lead is told about its own tools, beside what the project tells it.
+ * Which relation `file_dependent` admits is read off the roster rather than
+ * written again here, so the prompt cannot say the opposite of the schema.
+ */
 const leadStandingInstructions = `# How you act on this project
 
 - Two channels. A project tool is a command any member of this project has: it
@@ -151,31 +175,55 @@ const leadStandingInstructions = `# How you act on this project
   A decision tool writes nothing — it composes this turn's answer, and the
   selector runtime is what dispatches, refuses and lifts, under its own fence.
 - Derived work only. \`file_dependent\` files a draft against a parent ticket
-  that already exists; there is no bare create.
-- A released ticket cannot be re-authored. A prerequisite of one is therefore
-  not possible and a follow-up is; a prerequisite of a draft is a revision of
-  that draft's dependencies.
+  that already exists; there is no bare create. It admits ${relationsSaid(
+    dependentRelationsAdmitted,
+  )} and refuses ${relationsSaid(dependentRelationsRefused)}.
+- A released ticket cannot be re-authored. A follow-up points from the new
+  draft at the ticket it derives from and rewrites nothing; a prerequisite
+  would point from an existing ticket at the new one, which rewrites
+  dependencies that are immutable once released. A prerequisite of a draft is
+  a revision of that draft's own dependencies.
 - \`release_draft\` answers an accepted operation rather than an outcome. Read
   the operation to learn what happened.`;
+
+/** The objectives themselves, before the bound they are checked against is known. */
+function leadObjectives(
+  basePrompt: string,
+  northStar: string | undefined,
+): string {
+  return [
+    basePrompt,
+    ...(northStar === undefined ? [] : [`# North Star\n\n${northStar}`]),
+    leadStandingInstructions,
+  ].join("\n\n");
+}
+
+/**
+ * What this module itself contributes to a lead's objectives: the standing
+ * instructions, the North Star's heading, and the joins between them.
+ */
+const leadObjectivesFixedChars = leadObjectives("", "").length;
+
+/**
+ * The longest set of objectives one session row holds, derived from the parts
+ * rather than named, because the two texts a project may set are each bounded
+ * by `selectorSettingsTextCharsMax` and a ceiling below their sum would refuse
+ * a `basePrompt` the settings API had already accepted — on every pass, long
+ * after the write that caused it.
+ */
+export const sessionSystemPromptCharsMax =
+  selectorSettingsTextCharsMax * 2 + leadObjectivesFixedChars;
 
 /**
  * The lead's objectives as one recorded prefix: what this installation asks of
  * a lead, then what this project wants, then what its own tools mean. The bound
- * is checked here rather than by the row, so a project whose prompt outgrew the
- * column is refused where the prompt is composed.
+ * is checked here rather than by the row, so text no project could have set is
+ * refused where the prompt is composed.
  */
 export function leadSystemPrompt(
   settings: Pick<SelectorResolvedSettings, "basePrompt" | "northStar">,
 ): string {
-  const northStar =
-    settings.northStar === undefined
-      ? []
-      : [`# North Star\n\n${settings.northStar}`];
-  const prompt = [
-    settings.basePrompt,
-    ...northStar,
-    leadStandingInstructions,
-  ].join("\n\n");
+  const prompt = leadObjectives(settings.basePrompt, settings.northStar);
   if (prompt.length > sessionSystemPromptCharsMax)
     throw new RangeError(
       `lead system prompt must be at most ${String(sessionSystemPromptCharsMax)} characters`,

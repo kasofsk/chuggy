@@ -12,17 +12,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { nativeHttpBodyBytesMax } from "../../src/contract/http.ts";
+import {
+  nativeHttpBodyBytesMax,
+  selectorSettingsTextCharsMax,
+} from "../../src/contract/http.ts";
 import { allSessionCapabilities } from "../../src/interpreter/agentSession.ts";
 import {
   allChuggyTools,
   allDependentRelations,
   chuggyToolCapabilities,
   chuggyToolNames,
+  chuggyToolPagesMax,
   chuggyToolPrefix,
   chuggyToolResponseBytesMax,
   chuggyToolServer,
+  chuggyToolTimeoutMs,
   dependentRelationsAdmitted,
+  dependentRelationsRefused,
   leadSystemPrompt,
   sessionSystemPromptCharsMax,
 } from "../../src/interpreter/leadTools.ts";
@@ -177,13 +183,20 @@ test("the qualified names are the roster's own, prefixed, and never repeated", (
   assert.equal(chuggyToolPrefix, `mcp__${chuggyToolServer}__`);
 });
 
-test("a tool answer weighs no more than the body the API sent it in", () => {
+test("every bound a tool call is held to is named, an unnamed one being unbounded", () => {
   assert.equal(chuggyToolResponseBytesMax, nativeHttpBodyBytesMax);
+  assert.equal(chuggyToolTimeoutMs, 30_000);
+  assert.equal(chuggyToolPagesMax, 1);
 });
 
 test("a dependent may be a follow-up and may not be a prerequisite", () => {
   assert.deepEqual(allDependentRelations, ["FollowUp", "Prerequisite"]);
   assert.deepEqual(dependentRelationsAdmitted, ["FollowUp"]);
+  assert.deepEqual(dependentRelationsRefused, ["Prerequisite"]);
+  assert.deepEqual(
+    [...dependentRelationsAdmitted, ...dependentRelationsRefused].sort(),
+    [...allDependentRelations].sort(),
+  );
   for (const relation of allDependentRelations)
     assert.equal(
       (dependentRelationsAdmitted as readonly string[]).includes(relation),
@@ -202,12 +215,26 @@ test("the objectives carry the project's prompt, its north star and the standing
     "composes this turn's answer",
   ])
     assert.ok(bare.includes(rule), `the objectives state ${rule}`);
+  assert.ok(bare.includes("admits `FollowUp` and refuses `Prerequisite`"));
+  assert.ok(
+    bare.indexOf("A follow-up points from the new") <
+      bare.indexOf("a prerequisite\n  would point from an existing"),
+  );
   const guided = leadSystemPrompt(settings("Select.", "Ship the console."));
   assert.ok(guided.includes("# North Star\n\nShip the console."));
   assert.ok(guided.indexOf("Ship the console.") > guided.indexOf("Select."));
 });
 
-test("objectives longer than the session row holds are refused where they are composed", () => {
+test("the largest objectives a project may legally set are ones the session row holds", () => {
+  const legal = "x".repeat(selectorSettingsTextCharsMax);
+  assert.equal(
+    leadSystemPrompt(settings(legal, legal)).length,
+    sessionSystemPromptCharsMax,
+  );
+  assert.ok(sessionSystemPromptCharsMax > selectorSettingsTextCharsMax * 2);
+});
+
+test("objectives longer than any project could have set are refused where they are composed", () => {
   const standing = leadSystemPrompt(settings("x")).length - 1;
   const room = sessionSystemPromptCharsMax - standing;
   assert.equal(
