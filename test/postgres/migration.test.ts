@@ -2113,13 +2113,12 @@ const leadSelectorDoors = [
   "standing_agentic_refusals(text,text,bigint)",
   "lead_session(text,text)",
   "enqueue_lead_turn(text,text,text,text)",
-  "read_lead_turn(text,text,text)",
-  "withdraw_lead_turn(text,text,text)",
+  "read_lead_turn(text)",
+  "withdraw_lead_turn(text)",
 ];
 const leadApiDoors = [
   "read_agentic_refusals(text,text,bigint,bigint)",
   "read_standing_agentic_refusals(text,text,bigint)",
-  "read_selector_interactions(text,text,bigint,bigint)",
   "read_selector_planning_intent(text,text)",
   "read_lead_standing(text,text,bigint)",
   "read_lead_store(text,text,text,bigint,bigint)",
@@ -2144,6 +2143,15 @@ test("migration 59 grants each lead door to exactly one role", async () => {
       assert.equal(await executes(apiRole, door), true, door);
       assert.equal(await executes(selectorServiceRole, door), false, door);
     }
+    for (const role of [selectorServiceRole, apiRole])
+      assert.equal(
+        await executes(
+          role,
+          "read_selector_interactions(text,text,bigint,bigint,boolean)",
+        ),
+        true,
+        "the console draws the decision log and a fresh lead is seeded from it",
+      );
     assert.equal(
       await executes(
         selectorServiceRole,
@@ -2152,6 +2160,22 @@ test("migration 59 grants each lead door to exactly one role", async () => {
       false,
       "a role that may name any session may put a turn in a member's thread",
     );
+    for (const relation of [
+      "agent_session",
+      "session_turn",
+      "session_store_batch",
+    ])
+      for (const verb of ["SELECT", "INSERT", "UPDATE", "DELETE"])
+        assert.equal(
+          (
+            await subject.query<{ granted: boolean }>(
+              "SELECT has_table_privilege($1,$2,$3) AS granted",
+              [selectorServiceRole, relation, verb],
+            )
+          ).rows[0]?.granted,
+          false,
+          `${selectorServiceRole} reaches ${relation} only through a door`,
+        );
     for (const [role, verb] of [
       [selectorServiceRole, "SELECT"],
       [selectorServiceRole, "INSERT"],

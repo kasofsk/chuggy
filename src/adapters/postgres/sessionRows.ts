@@ -28,6 +28,7 @@ import {
   type SessionTurn,
   type SessionTurnFailure,
   type SessionTurnInputKind,
+  type SessionTurnMeasured,
   type SessionTurnState,
 } from "../../interpreter/agentSession.ts";
 import { asPrincipal } from "../../interpreter/principal.ts";
@@ -176,4 +177,39 @@ export function sessionTurnRowOf(partition: Partition, session: SessionId) {
       ? {}
       : { batchLast: projectRowCounter(row.batch_last, "last batch") }),
   });
+}
+
+/** One turn's measurement, nullable per column because a function may answer nothing. */
+export interface SessionTurnMeasureRow {
+  readonly model: string | null;
+  readonly tokens: string | null;
+  readonly cost_micros: string | null;
+  readonly duration_ms: string | null;
+  readonly tools: string[] | null;
+}
+
+/**
+ * What the pod measured of one turn, or nothing where it measured none. The
+ * five columns are whole or absent together, so the model column decides.
+ */
+export function sessionTurnMeasuredOf(
+  row: SessionTurnMeasureRow,
+): SessionTurnMeasured | undefined {
+  if (row.model === null) return undefined;
+  return {
+    model: row.model,
+    tokens: projectRowCounter(
+      sessionRowText(row.tokens, "tokens"),
+      "session turn tokens",
+    ),
+    costMicros: projectRowCounter(
+      sessionRowText(row.cost_micros, "cost"),
+      "session turn cost",
+    ),
+    durationMs: projectRowCounter(
+      sessionRowText(row.duration_ms, "duration"),
+      "session turn duration",
+    ),
+    tools: row.tools ?? [],
+  };
 }

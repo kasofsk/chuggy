@@ -54,7 +54,12 @@ import {
   selectorInteractionRecord,
   type SelectorInteractionRow,
 } from "./selector.ts";
-import { sessionRowMember, sessionRowText } from "./sessionRows.ts";
+import {
+  sessionRowMember,
+  sessionRowText,
+  sessionTurnMeasuredOf,
+  type SessionTurnMeasureRow,
+} from "./sessionRows.ts";
 
 /** One turn of the lead's mailbox tail, with what the pod measured of it. */
 export interface LeadTurnRead {
@@ -100,10 +105,15 @@ export interface LeadReadStore extends Pick<
     partition: Partition,
     max: number,
   ): Promise<readonly SessionStoreStreamRow[]>;
+  /** The newest decisions first, which is what seeds a lead that has no transcript. */
+  tail(
+    partition: Partition,
+    limit: number,
+  ): Promise<readonly SelectorInteractionRecord[]>;
 }
 
 /** One `read_lead_standing` row: the session facts, and one turn of the tail or none. */
-interface LeadStandingRow {
+interface LeadStandingRow extends SessionTurnMeasureRow {
   readonly session: string | null;
   readonly session_state: string | null;
   readonly agent_reference: string | null;
@@ -115,11 +125,6 @@ interface LeadStandingRow {
   readonly input_kind: string | null;
   readonly turn_state: string | null;
   readonly failure: string | null;
-  readonly model: string | null;
-  readonly tokens: string | null;
-  readonly cost_micros: string | null;
-  readonly duration_ms: string | null;
-  readonly tools: string[] | null;
   readonly batch_first: string | null;
   readonly batch_last: string | null;
 }
@@ -136,6 +141,7 @@ const leadAttentions: readonly SelectorProjectState["attention"][] = [
 /** The turn a standing row carries, or nothing where the lead has taken none. */
 function leadTurnRead(row: LeadStandingRow): LeadTurnRead | undefined {
   if (row.turn === null) return undefined;
+  const measured = sessionTurnMeasuredOf(row);
   return {
     turn: asSessionTurnId(row.turn),
     ordinal: projectRowCounter(
@@ -161,26 +167,7 @@ function leadTurnRead(row: LeadStandingRow): LeadTurnRead | undefined {
             "session turn failure",
           ),
         }),
-    ...(row.model === null
-      ? {}
-      : {
-          measured: {
-            model: row.model,
-            tokens: projectRowCounter(
-              sessionRowText(row.tokens, "tokens"),
-              "lead turn tokens",
-            ),
-            costMicros: projectRowCounter(
-              sessionRowText(row.cost_micros, "cost"),
-              "lead turn cost",
-            ),
-            durationMs: projectRowCounter(
-              sessionRowText(row.duration_ms, "duration"),
-              "lead turn duration",
-            ),
-            tools: row.tools ?? [],
-          },
-        }),
+    ...(measured === undefined ? {} : { measured }),
     ...(row.batch_first === null
       ? {}
       : { batchFirst: projectRowCounter(row.batch_first, "first batch") }),
@@ -360,6 +347,7 @@ async function leadDecisionHistory(
   partition: Partition,
   after: number | undefined,
   limit: number,
+  newestFirst: boolean,
 ): Promise<readonly SelectorInteractionRecord[]> {
   const found = await pool.query<SelectorInteractionsRow>(
     sql`SELECT selector_decision,ordinal::text,instructions_version,instructions,
@@ -369,7 +357,7 @@ async function leadDecisionHistory(
                observed_view_chunks,context_chunks,tool_activity_chunks
           FROM read_selector_interactions(
                  ${partition.tenant},${partition.project},
-                 ${after ?? null},${limit})`,
+                 ${after ?? null},${limit},${newestFirst})`,
   );
   return found.rows.map((row) =>
     selectorInteractionRecord(partition, selectorInteractionRowOf(row), {
@@ -414,7 +402,9 @@ export function postgresLeadReads(pool: pg.Pool): LeadReadStore {
     batches: (partition, query) => leadStoreBatches(pool, partition, query),
     streams: (partition, max) => leadStoreStreams(pool, partition, max),
     history: (partition, after, limit) =>
-      leadDecisionHistory(pool, partition, after, limit),
+      leadDecisionHistory(pool, partition, after, limit, false),
+    tail: (partition, limit) =>
+      leadDecisionHistory(pool, partition, undefined, limit, true),
     planningIntent: (partition) => leadPlanningIntent(pool, partition),
   };
 }

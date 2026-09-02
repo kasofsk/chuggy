@@ -12,6 +12,12 @@
  * A TURN'S IDENTITY IS THE DECISION'S, so `offer` is idempotent without this
  * file doing anything: a retry of one decision finds the turn it already
  * enqueued and is answered `AlreadyEnqueued`.
+ *
+ * READING AND WITHDRAWING NAME THE TURN AND NOT THE PROJECT. A turn identity
+ * is never reused, and a process that restarted holds the decision reference
+ * with no partition beside it — which is exactly the case reconciliation is
+ * for. The partition the port passes is therefore not consulted, and the
+ * doors stay bounded because each joins to a `Lead` session.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -30,7 +36,12 @@ import type {
   LeadTurnWithdrawn,
 } from "../../interpreter/leadMailbox.ts";
 import { projectRowCounter } from "./rows.ts";
-import { sessionRowMember, sessionRowText } from "./sessionRows.ts";
+import {
+  sessionRowMember,
+  sessionRowText,
+  sessionTurnMeasuredOf,
+  type SessionTurnMeasureRow,
+} from "./sessionRows.ts";
 
 /** One `lead_session` row, whose columns are nullable to the checker because the body may answer nothing. */
 interface LeadSessionRow {
@@ -40,15 +51,10 @@ interface LeadSessionRow {
 }
 
 /** One `read_lead_turn` row: where the turn stands and everything it has produced. */
-interface LeadTurnRow {
+interface LeadTurnRow extends SessionTurnMeasureRow {
   readonly state: string | null;
   readonly result: string | null;
   readonly failure: string | null;
-  readonly model: string | null;
-  readonly tokens: string | null;
-  readonly cost_micros: string | null;
-  readonly duration_ms: string | null;
-  readonly tools: string[] | null;
 }
 
 /** The arms the mailbox holds an ordinal for, and the arms it does not. */
@@ -83,12 +89,9 @@ function leadSessionOf(row: LeadSessionRow): LeadSessionStanding {
   };
 }
 
-/**
- * What a turn has produced. The five measure columns are whole or absent
- * together — the constraint 059 adds says so — so the model column is what
- * decides whether there is a measurement to read at all.
- */
+/** What a turn has produced, with the measurement present only where the pod took one. */
 function leadTurnOf(row: LeadTurnRow): LeadTurnStanding {
+  const measured = sessionTurnMeasuredOf(row);
   return {
     state: sessionRowMember(allSessionTurnStates, row.state, "turn state"),
     ...(row.result === null ? {} : { result: row.result }),
@@ -101,26 +104,7 @@ function leadTurnOf(row: LeadTurnRow): LeadTurnStanding {
             "turn failure",
           ),
         }),
-    ...(row.model === null
-      ? {}
-      : {
-          measured: {
-            model: row.model,
-            tokens: projectRowCounter(
-              sessionRowText(row.tokens, "tokens"),
-              "lead turn tokens",
-            ),
-            costMicros: projectRowCounter(
-              sessionRowText(row.cost_micros, "cost"),
-              "lead turn cost",
-            ),
-            durationMs: projectRowCounter(
-              sessionRowText(row.duration_ms, "duration"),
-              "lead turn duration",
-            ),
-            tools: row.tools ?? [],
-          },
-        }),
+    ...(measured === undefined ? {} : { measured }),
   };
 }
 
@@ -165,22 +149,20 @@ export function postgresLeadMailbox(pool: pg.Pool): LeadMailbox {
       };
     },
 
-    turn: async (partition, turn) => {
+    turn: async (_partition, turn) => {
       const found = await pool.query<LeadTurnRow>(
         sql`SELECT state,result,failure,model,tokens::text AS tokens,
                    cost_micros::text AS cost_micros,
                    duration_ms::text AS duration_ms,tools
-              FROM read_lead_turn(
-                ${partition.tenant},${partition.project},${turn})`,
+              FROM read_lead_turn(${turn})`,
       );
       const row = found.rows[0];
       return row === undefined ? undefined : leadTurnOf(row);
     },
 
-    withdraw: async (partition, turn) => {
+    withdraw: async (_partition, turn) => {
       const withdrawn = await pool.query<{ withdrawn: string | null }>(
-        sql`SELECT withdraw_lead_turn(
-          ${partition.tenant},${partition.project},${turn})::text AS withdrawn`,
+        sql`SELECT withdraw_lead_turn(${turn})::text AS withdrawn`,
       );
       return leadVerdict(
         withdrawnArms,

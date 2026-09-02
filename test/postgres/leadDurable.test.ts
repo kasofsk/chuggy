@@ -24,7 +24,9 @@ import {
   asSessionStoreStream,
   type SessionId,
 } from "../../src/interpreter/agentSession.ts";
+import { selectorServiceRole } from "../../src/adapters/postgres/schema.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
+import { postgresHarnessRolePool } from "./harness.ts";
 import { leadRigDecision, leadRigOpen, leadRigProject } from "./leadHarness.ts";
 import type { LeadRig } from "./leadHarness.ts";
 import {
@@ -478,5 +480,59 @@ test("a pod cannot name the withdrawal as its own failure", async () => {
     }),
     "Failed",
     "every failure a pod is about is still its own to name",
+  );
+});
+
+test("a restarted process withdraws a turn it holds no partition for", async () => {
+  const { partition, session } = await leadProject("restart");
+  const turn = sessionRigTurnId("restart");
+  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  const attempt = await leadPod(partition, session, "restart");
+  await rig.sessions.plane.claim({
+    secret: attempt.secret,
+    generation: attempt.attempt.generation,
+  });
+
+  const restarted = postgresHarnessRolePool(selectorServiceRole);
+  try {
+    assert.equal(
+      (
+        await restarted.query<{ withdrawn: string }>(
+          "SELECT withdraw_lead_turn($1)::text AS withdrawn",
+          [turn],
+        )
+      ).rows[0]?.withdrawn,
+      "Withdrawn",
+      "reconciliation holds the decision reference and no partition beside it",
+    );
+  } finally {
+    await restarted.end();
+  }
+  assert.equal(
+    (await rig.mailbox.turn(partition, turn))?.failure,
+    "TurnWithdrawn",
+  );
+});
+
+test("the seeding read answers the newest decisions first", async () => {
+  const partition = await leadRigProject(rig, "api-tail");
+  const decisions = [];
+  for (const label of ["one", "two", "three"])
+    decisions.push(
+      await leadRigDecision(rig, partition, `api-tail-${label}`, {
+        notificationCursor: decisions.length,
+      }),
+    );
+
+  assert.deepEqual(
+    (await rig.apiLead.tail(partition, 2)).map((each) => each.decision),
+    [decisions[2], decisions[1]],
+    "a fresh lead is seeded with the last decisions, not the first",
+  );
+  assert.deepEqual(
+    (
+      await rig.apiLead.history(partition, undefined, selectorHistoryLimitMax)
+    ).map((each) => each.decision),
+    decisions,
   );
 });

@@ -331,15 +331,15 @@ const refusalRecordSignature = "text,text,text,jsonb,jsonb";
 const refusalStandingSignature = "text,text,bigint";
 const leadSessionSignature = "text,text";
 const leadEnqueueSignature = "text,text,text,text";
-const leadTurnSignature = "text,text,text";
+const leadTurnSignature = "text";
 
 /**
- * The mailbox and the ledger as the selector's own role reaches them, each
- * resolving the project's `Lead` session itself so the role names a project
- * and never a session. A retry that has already landed is `AlreadyRecorded`
- * and one that raced past that read is stopped by
- * `selector_refusal_is_one_per_decision`, so nothing here locks a relation it
- * may only read.
+ * The mailbox and the ledger as the selector's own role reaches them: offering
+ * resolves the project's `Lead` session itself, while reading and withdrawing
+ * name the turn alone, because `session_turn_identity_is_never_reused` makes a
+ * turn identity global and a process that restarted holds the decision
+ * reference with no partition beside it. The join to `kind='Lead'` is what
+ * keeps a member's thread out of reach either way.
  */
 const selectorDoors = [
   `CREATE FUNCTION ${agenticRefusalRecordFunction}(
@@ -425,8 +425,7 @@ const selectorDoors = [
          in_tenant,in_project,held,in_turn,'Observation',in_input);
        RETURN QUERY SELECT answered.enqueued,answered.ordinal;
      END $$`,
-  `CREATE FUNCTION ${leadTurnReadFunction}(
-     in_tenant text,in_project text,in_turn text)
+  `CREATE FUNCTION ${leadTurnReadFunction}(in_turn text)
      RETURNS TABLE(state text,result text,failure text,model text,tokens bigint,
                    cost_micros bigint,duration_ms bigint,tools text[])
      LANGUAGE sql STABLE SECURITY DEFINER
@@ -436,25 +435,22 @@ const selectorDoors = [
          FROM session_turn t
          JOIN agent_session s ON s.tenant=t.tenant AND s.project=t.project
                              AND s.session=t.session
-        WHERE t.tenant=in_tenant AND t.project=in_project
-          AND s.kind='Lead' AND t.turn=in_turn
+        WHERE s.kind='Lead' AND t.turn=in_turn
      $$`,
-  `CREATE FUNCTION ${leadTurnWithdrawFunction}(
-     in_tenant text,in_project text,in_turn text) RETURNS text
+  `CREATE FUNCTION ${leadTurnWithdrawFunction}(in_turn text) RETURNS text
      LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
      DECLARE held record;
      BEGIN
        SELECT t.state INTO held FROM session_turn t
          JOIN agent_session s ON s.tenant=t.tenant AND s.project=t.project
                              AND s.session=t.session
-        WHERE t.tenant=in_tenant AND t.project=in_project
-          AND s.kind='Lead' AND t.turn=in_turn FOR UPDATE OF t;
+        WHERE s.kind='Lead' AND t.turn=in_turn FOR UPDATE OF t;
        IF NOT FOUND THEN RETURN 'NoTurn'; END IF;
        IF held.state NOT IN ${liveTurnStates} THEN RETURN 'AlreadyEnded'; END IF;
        UPDATE session_turn t
           SET state='Abandoned',failure='TurnWithdrawn',ended_at=now(),
               attempt=NULL,claim_generation=NULL,claimed_at=NULL
-        WHERE t.tenant=in_tenant AND t.project=in_project AND t.turn=in_turn;
+        WHERE t.turn=in_turn;
        RETURN 'Withdrawn';
      END $$`,
 ];
@@ -471,16 +467,19 @@ const selectorSignatures: readonly (readonly [string, string])[] = [
 
 const ledgerReadSignature = "text,text,bigint,bigint";
 const standingReadSignature = "text,text,bigint";
-const interactionsReadSignature = "text,text,bigint,bigint";
+const interactionsReadSignature = "text,text,bigint,bigint,boolean";
 const planningIntentReadSignature = "text,text";
 const leadStandingSignature = "text,text,bigint";
 const leadStoreSignature = "text,text,text,bigint,bigint";
 const leadStreamsSignature = "text,text,bigint";
 
 /**
- * What the API may read of a lead and of the decisions behind it. Each is
- * bounded by the roster bound its response is bounded by, so a page the wire
- * refuses is a page no body can build.
+ * What the API may read of a lead and of the decisions behind it, each bounded
+ * by the bound its response is bounded by, so a page the wire refuses is a
+ * page no body can build. The decision log is the one read both roles hold:
+ * the console draws it oldest-first from a cursor and a fresh lead is seeded
+ * with the newest of it, and a second body for the second direction would be
+ * two answers to one question.
  */
 const apiReads = [
   `CREATE FUNCTION ${agenticRefusalLedgerReadFunction}(
@@ -508,7 +507,8 @@ const apiReads = [
          FROM ${agenticRefusalStandingFunction}(in_tenant,in_project,in_max) standing
      $$`,
   `CREATE FUNCTION ${selectorInteractionsReadFunction}(
-     in_tenant text,in_project text,in_after bigint,in_max bigint)
+     in_tenant text,in_project text,in_after bigint,in_max bigint,
+     in_newest_first boolean)
      RETURNS TABLE(selector_decision text,ordinal bigint,instructions_version text,
                    instructions text,observed_view text,observed_token text,
                    context text,tool_activity text,result text,
@@ -543,8 +543,8 @@ const apiReads = [
             WHERE r.selector_decision=i.selector_decision
               AND r.kind='ToolActivity') used ON true
         WHERE i.tenant=in_tenant AND i.project=in_project
-          AND i.ordinal>coalesce(in_after,0)
-        ORDER BY i.ordinal
+          AND (in_newest_first IS TRUE OR i.ordinal>coalesce(in_after,0))
+        ORDER BY CASE WHEN in_newest_first IS TRUE THEN -i.ordinal ELSE i.ordinal END
         LIMIT least(coalesce(in_max,${selectorHistoryLimitMax}),
                     ${selectorHistoryLimitMax})
      $$`,
@@ -656,6 +656,9 @@ const doorGrants = [
     ([name, signature]) =>
       `GRANT EXECUTE ON FUNCTION ${name}(${signature}) TO ${apiRole}`,
   ),
+  `GRANT EXECUTE ON FUNCTION
+     ${selectorInteractionsReadFunction}(${interactionsReadSignature})
+     TO ${selectorServiceRole}`,
 ];
 
 /**
