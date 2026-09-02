@@ -20,7 +20,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  runModelCharsMax,
+  sessionTurnModelCharsMax,
   sessionTurnResultCharsMax,
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
@@ -30,13 +30,13 @@ import * as pod from "../../images/worker/session.mjs";
 test("every bound the session pod copies is the contract's own value", () => {
   assert.deepEqual(
     {
-      runModelCharsMax: pod.runModelCharsMax,
+      sessionTurnModelCharsMax: pod.sessionTurnModelCharsMax,
       sessionTurnResultCharsMax: pod.sessionTurnResultCharsMax,
       sessionTurnToolNameCharsMax: pod.sessionTurnToolNameCharsMax,
       sessionTurnToolsMax: pod.sessionTurnToolsMax,
     },
     {
-      runModelCharsMax,
+      sessionTurnModelCharsMax,
       sessionTurnResultCharsMax,
       sessionTurnToolNameCharsMax,
       sessionTurnToolsMax,

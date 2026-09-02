@@ -28,10 +28,10 @@ import {
 } from "../../src/adapters/http/workerPlaneServer.ts";
 import {
   nativeHttpPageItemsMax,
-  runModelCharsMax,
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
+  sessionTurnModelCharsMax,
   sessionTurnResultCharsMax,
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
@@ -677,6 +677,50 @@ test("what a pod measured of a turn is carried through whole, and absent where i
  * body the boundary would refuse is refused here, where the pod has an arm for
  * it.
  */
+/**
+ * The bound is the session's own identity bound and not a run usage row's. The
+ * read side answers a model of this length, so a write side refusing one would
+ * be a turn the pod cannot settle over an identity the console would have
+ * shown; only asserting the refusal above the bound would leave every tighter
+ * bound passing.
+ */
+test("a model as long as a stored row holds is taken, not refused", async () => {
+  const settled: unknown[] = [];
+  const app = sessionPlane({
+    settlements: {
+      answer: (input) => {
+        settled.push(input);
+        return Promise.resolve("Answered");
+      },
+      fail: () => Promise.resolve("Failed"),
+    },
+  });
+  const model = "m".repeat(sessionTurnModelCharsMax);
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/v1/session/turn/answer",
+    headers: held,
+    payload: {
+      turn: "turn-7",
+      result: "done",
+      measured: { ...measured, model },
+    },
+  });
+
+  assert.equal(response.statusCode, 204);
+  assert.deepEqual(settled, [
+    {
+      secret,
+      generation: 3,
+      turn: "turn-7",
+      result: "done",
+      measured: { ...measured, model },
+    },
+  ]);
+  await app.close();
+});
+
 test("a measurement with a hole, a figure or a name no row holds reaches no boundary", async () => {
   let reached = 0;
   const app = sessionPlane({
@@ -700,7 +744,7 @@ test("a measurement with a hole, a figure or a name no row holds reaches no boun
     { ...measured, costMicros: "38160" },
     { ...measured, durationMs: Number.MAX_SAFE_INTEGER + 2 },
     { ...measured, model: "" },
-    { ...measured, model: "a".repeat(runModelCharsMax + 1) },
+    { ...measured, model: "a".repeat(sessionTurnModelCharsMax + 1) },
     { ...measured, model: "claude\u0000haiku" },
     { ...measured, tools: [""] },
     { ...measured, tools: ["Bash\ud800"] },

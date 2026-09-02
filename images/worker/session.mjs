@@ -62,8 +62,11 @@ export const sessionTurnToolsMax = 64;
 /** The longest tool name one turn's measurement reports. */
 export const sessionTurnToolNameCharsMax = 128;
 
-/** The longest model identity one turn's measurement reports. */
-export const runModelCharsMax = 128;
+/**
+ * The longest model identity one turn's measurement reports, which is the bound
+ * on the session's own opaque identities rather than a run usage row's.
+ */
+export const sessionTurnModelCharsMax = 256;
 
 /** What a micro is of a dollar, which is the unit the measured cost is carried in. */
 const microsPerDollar = 1_000_000;
@@ -202,15 +205,22 @@ function messageToolNames(message) {
 
 /**
  * What every model call the runtime made through its query pipeline has spent so
- * far, or nothing where the runtime accounted for none. This is the runtime's
- * own field for token accounting rather than the per-turn one beside it: that
- * one declares itself the main agent loop alone, so a lead with tools would
- * spend its subagents outside every budget.
+ * far, or nothing where the runtime named no model to account for. This is the
+ * runtime's own field for token accounting rather than the per-turn one beside
+ * it: that one declares itself the main agent loop alone, so a lead with tools
+ * would spend its subagents outside every budget.
+ *
+ * A RECORD WITH NO MODEL IN IT IS NOT A TOTAL OF ZERO. A running total read as
+ * zero moves the mark back to the start, and the next turn reporting a real
+ * total is then charged the whole session. So an empty record is nothing
+ * reported, exactly as an absent one is.
  */
 function modelUsageTokens(modelUsage) {
   if (typeof modelUsage !== "object" || modelUsage === null) return undefined;
+  const spending = Object.values(modelUsage);
+  if (spending.length === 0) return undefined;
   let counted = 0;
-  for (const spent of Object.values(modelUsage))
+  for (const spent of spending)
     for (const counter of modelUsageCounters)
       counted += measuredCount(spent?.[counter]);
   return counted;
@@ -259,7 +269,7 @@ export function sessionMeasure() {
       if (message.type === "system" && message.subtype === "init") {
         const named =
           typeof message.model === "string"
-            ? measuredText(message.model, runModelCharsMax)
+            ? measuredText(message.model, sessionTurnModelCharsMax)
             : "";
         if (named.length > 0) model = named;
       }

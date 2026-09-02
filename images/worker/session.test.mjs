@@ -10,11 +10,11 @@ import {
 import { chuggyToolPrefix, sessionBuiltInTools } from "./chuggyTools.mjs";
 import {
   checkedSessionBounds,
-  runModelCharsMax,
   sessionBoundNames,
   sessionMain,
   sessionMeasure,
   sessionTurnFailure,
+  sessionTurnModelCharsMax,
   sessionTurnResultCharsMax,
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
@@ -1333,11 +1333,11 @@ test("a name carrying the one character no stored row holds is stripped of it", 
 });
 
 test("a model identity longer than a row holds is cut to the bound rather than refused", () => {
-  const long = `x${"\u{1f600}".repeat(runModelCharsMax)}`;
+  const long = `x${"\u{1f600}".repeat(sessionTurnModelCharsMax)}`;
   const measure = measureOf(long);
 
   const { model } = measure.of({ modelUsage: spent });
-  assert.equal(model.length, runModelCharsMax);
+  assert.equal(model.length, sessionTurnModelCharsMax);
   assert.ok(model.isWellFormed(), "the cut left half a surrogate pair behind");
 });
 
@@ -1347,4 +1347,17 @@ test("a model the runtime named as nothing a row holds leaves the last one stand
   measure.saw({ type: "system", subtype: "init", model: "" });
 
   assert.equal(measure.of({ modelUsage: spent }).model, "haiku");
+});
+
+test("a record naming no model leaves the mark, so the next turn is a delta not a session", () => {
+  const measure = measureOf();
+
+  const first = measure.of({ modelUsage: spent, total_cost_usd: 0.3 });
+  const empty = measure.of({ modelUsage: {}, total_cost_usd: undefined });
+  const next = measure.of({ modelUsage: spentAgain, total_cost_usd: 0.45 });
+
+  assert.equal(first.tokens, spentTokens);
+  assert.equal(empty, undefined, "a record naming no model was measured");
+  assert.equal(next.tokens, spentAgainTokens);
+  assert.equal(next.costMicros, 150_000);
 });

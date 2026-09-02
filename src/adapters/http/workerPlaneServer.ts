@@ -18,6 +18,7 @@ import {
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
+  sessionTurnModelCharsMax,
   sessionTurnResultCharsMax,
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
@@ -732,7 +733,9 @@ const sessionReferenceSchema = z.strictObject({
  * five-hundred where the route's own map names four-hundred.
  */
 const sessionTurnMeasuredSchema = z.strictObject({
-  model: z.string().refine((value) => isBoundedText(value, runModelCharsMax)),
+  model: z
+    .string()
+    .refine((value) => isBoundedText(value, sessionTurnModelCharsMax)),
   tokens: countSchema,
   costMicros: countSchema,
   durationMs: countSchema,
