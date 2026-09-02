@@ -16,6 +16,7 @@ import {
   type SelectorPolicyExecution,
   type SelectorPolicyHost,
   type SelectorPolicyRequest,
+  type SelectorObservation,
   type JsonValue,
 } from "../../src/interpreter/selector.ts";
 import {
@@ -125,6 +126,26 @@ function resolved(
   settings: SelectorRuntimeSettings = runtimeSettings,
 ): ReturnType<typeof resolvedSelectorSettings> {
   return resolvedSelectorSettings(partition, settings, 0, {});
+}
+
+/** One project's view, exhausted, which is the shape a policy is handed. */
+function exhaustedObservation(): SelectorObservation {
+  const token = {
+    ...partition,
+    recoveryEpoch: "epoch",
+    schemaVersion: 1,
+    watermark: 1,
+    digest: "a".repeat(64),
+  };
+  return {
+    token,
+    candidates: [],
+    notificationCursor: 0,
+    changes: [],
+    operationalContext,
+    handoffNote: {},
+    nextCandidateScan: { state: "Exhausted", token },
+  };
 }
 
 /** A source whose every project resolves the installation defaults it is given. */
@@ -1742,30 +1763,7 @@ test("the trusted policy host starts once and bounds cancellation evidence", asy
   );
   const request: SelectorPolicyRequest = {
     attempt: "durable-attempt",
-    observation: Object.freeze({
-      token: {
-        ...partition,
-        recoveryEpoch: "epoch",
-        schemaVersion: 1,
-        watermark: 1,
-        digest: "a".repeat(64),
-      },
-      candidates: [],
-      notificationCursor: 0,
-      changes: [],
-      operationalContext,
-      handoffNote: {},
-      nextCandidateScan: {
-        state: "Exhausted" as const,
-        token: {
-          ...partition,
-          recoveryEpoch: "epoch",
-          schemaVersion: 1,
-          watermark: 1,
-          digest: "a".repeat(64),
-        },
-      },
-    }),
+    observation: Object.freeze(exhaustedObservation()),
     instructions: Object.freeze({ revision: "1.0", content: "prompt" }),
     constraints: Object.freeze({
       models: Object.freeze(["model"]),
@@ -1786,30 +1784,7 @@ test("the trusted policy host starts once and bounds cancellation evidence", asy
 });
 
 test("a host answering the pre-slice-2 spelling still names one dispatch", async () => {
-  const observation = {
-    token: {
-      ...partition,
-      recoveryEpoch: "epoch",
-      schemaVersion: 1,
-      watermark: 1,
-      digest: "a".repeat(64),
-    },
-    candidates: [],
-    notificationCursor: 0,
-    changes: [],
-    operationalContext,
-    handoffNote: {},
-    nextCandidateScan: {
-      state: "Exhausted" as const,
-      token: {
-        ...partition,
-        recoveryEpoch: "epoch",
-        schemaVersion: 1,
-        watermark: 1,
-        digest: "a".repeat(64),
-      },
-    },
-  };
+  const observation = exhaustedObservation();
   const result = await dryRunSelectorPolicy(
     policyHost(() =>
       Promise.resolve({
