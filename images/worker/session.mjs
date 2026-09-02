@@ -448,6 +448,22 @@ function sessionToolServers(context, facts, environment, services, sdk) {
   };
 }
 
+/**
+ * The mailbox and the buffer its claims reset, hung on the context as one thing
+ * rather than two: the reset is bound to the claim, so a turn that fails leaves
+ * nothing for the next one to inherit.
+ */
+function sessionStagedMailbox(context, { request, wait: pause, now }) {
+  const staging = leadDecisionStaging();
+  context.staging = staging;
+  context.mailbox = sessionMailbox(context.task, context.bearer, {
+    request,
+    wait: pause,
+    now,
+    claim: (turn) => staging.reset(turn.input),
+  });
+}
+
 export async function sessionMain(services = {}) {
   const {
     environment = process.env,
@@ -485,16 +501,7 @@ export async function sessionMain(services = {}) {
     await ensureDirectory(sessionConfigDirectory(environment, workspace));
     stopLease = sessionLease(task, bearer, request);
     context.store = sessionStoreAdapter(task, bearer, { request });
-    const staging = leadDecisionStaging();
-    context.staging = staging;
-    context.mailbox = sessionMailbox(task, bearer, {
-      request,
-      wait: pause,
-      now,
-      // The buffer is reset as the turn is claimed rather than as it settles, so
-      // a turn that fails leaves nothing for the next one to inherit.
-      claim: (turn) => staging.reset(turn.input),
-    });
+    sessionStagedMailbox(context, { request, wait: pause, now });
     const sdk = services.sdk ?? (await sessionSdk());
     const stream = sdk.query({
       prompt: context.mailbox.turns(),
