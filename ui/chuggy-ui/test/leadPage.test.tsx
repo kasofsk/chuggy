@@ -34,6 +34,8 @@ import {
   leadRefusals,
   leadRouteAnswer,
   leadSession,
+  leadStream,
+  leadUnstarted,
 } from "./leadFixture.ts";
 import type { LeadServed } from "./leadFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -149,6 +151,48 @@ test("the seam is drawn once, above the boundary entry and nowhere else", async 
   expect(seams).toStrictEqual([2]);
   expect(lines[3]?.dataset["holding"]).toBe("true");
   expect(lines[0]?.dataset["holding"]).toBeUndefined();
+});
+
+/** One state, one word. A lead with no store yet is the same fact in both
+ * panels, and two words for it would read as two different situations. */
+test("a lead with no store says so in the same word in both panels", async () => {
+  const api = apiDouble({
+    operation: { operation: "op-one", state: "Pending" },
+    route: (url) => {
+      if (url.includes("/lead") && !url.includes("/transcript"))
+        return answer(leadUnstarted());
+      const found = leadRouteAnswer(url, opening);
+      return answer(found.body, found.status);
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  await mountLead();
+  expect(screen.getAllByText("No store").length).toBe(2);
+  expect(screen.queryByText("Stream unlisted")).toBeNull();
+  expect(screen.queryByText("Nothing held")).toBeNull();
+});
+
+/** A read the route could not decide the held set for is not a lead that has
+ * forgotten everything; it is the server saying it could not tell. */
+test("a read that could not decide what is held says so, not nothing held", async () => {
+  const api = apiDouble({
+    operation: { operation: "op-one", state: "Pending" },
+    route: (url) => {
+      if (url.includes("/lead/transcript"))
+        return answer({
+          stream: leadStream,
+          entries: [{ uuid: "uuid-a", type: "user", message: { content: [] } }],
+          elided: 0,
+          truncated: true,
+        });
+      const found = leadRouteAnswer(url, { ...opening, batches: 1 });
+      return answer(found.body, found.status);
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  await mountLead();
+  expect(screen.getByText("Undecided")).toBeDefined();
+  expect(screen.queryByText("Nothing held")).toBeNull();
 });
 
 test("a project with no lead is a page saying so, not five empty panels", async () => {

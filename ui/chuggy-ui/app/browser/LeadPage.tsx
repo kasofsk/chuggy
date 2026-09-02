@@ -187,6 +187,7 @@ function LeadBody(props: {
       <LeadHolding
         held={held}
         note={lead?.handoffNote}
+        stream={lead?.agentReference}
         listed={listed}
         nowMs={props.nowMs}
       />

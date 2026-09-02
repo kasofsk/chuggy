@@ -8,12 +8,17 @@
  * so the Holding panel and the Log panel are two readings of one value and
  * cannot disagree about what the lead is working from.
  *
- * `held` ABSENT MEANS THE PAGE DOES NOT KNOW, AND `held` PRESENT MEANS THE CUT
- * IS ON IT. A page carrying the boundary replaces what is held, because entries
- * below a cut are exactly the ones the lead stopped holding; a page without one
- * adds its own entries, which is right after a boundary already seen and is a
- * guess corrected by the boundary page before it. A stream paged whole with no
- * `held` anywhere is a stream nothing was ever dropped from.
+ * `held` IS A FACT ABOUT THE STREAM, ANSWERED PER PAGE. The route decides it
+ * from the last compaction in the whole stream and names the entries of that
+ * page the lead holds, which may be none of them. So a page's answer is final
+ * for its own entries and no page can correct or contradict another: what a
+ * pane holds is those answers gathered, and nothing here guesses.
+ *
+ * `held` ABSENT IS UNKNOWN AND NEVER EMPTY. It is absent only where the route
+ * could not reach the stream's end to decide it, and it says so with
+ * `truncated`. Drawing that as "nothing held" would tell a reader the lead has
+ * forgotten everything at exactly the moment the server said it could not
+ * tell.
  *
  * ENTRY TEXT IS TEXT. A compaction summary embeds a resume path that names
  * nothing durable, so no derivation here turns an entry into a reference and
@@ -49,6 +54,9 @@ export interface LeadTranscriptHeld {
   readonly compaction: LeadTranscriptCompaction;
   readonly elided: number;
   readonly truncated: boolean;
+  /** Whether a page has answered no `held`, which is the route saying it could
+   * not decide what the lead holds rather than that it holds nothing. */
+  readonly holdingUnknown: boolean;
   readonly entriesDropped: number;
   readonly readTo: number | undefined;
   /** Whether the last page said there may be more above the cursor it gave. */
@@ -63,6 +71,7 @@ export const leadTranscriptHeldEmpty: LeadTranscriptHeld = {
   compaction: undefined,
   elided: 0,
   truncated: false,
+  holdingUnknown: false,
   entriesDropped: 0,
   readTo: undefined,
   more: false,
@@ -119,27 +128,17 @@ function leadTranscriptEntriesMerged(
   return merged;
 }
 
-/** What a page says is held: its own answer where it carries the cut, and its
- * own entries where it does not. */
-function leadTranscriptHolds(page: LeadTranscriptResponse): readonly string[] {
-  return (
-    page.held ??
-    page.entries.flatMap((entry) =>
-      entry.uuid === undefined ? [] : [entry.uuid],
-    )
-  );
-}
-
 /**
- * The cursor the next read asks after. A page with no entries has nothing above
- * the cursor it was asked with, so the walk moves to the high-water mark rather
- * than back to a cursor that would answer the same empty page again.
+ * The cursor the next read asks after: the one the page gave, and otherwise the
+ * high-water mark the read was made against. THE CURSOR AND THE ENTRIES ARE
+ * DIFFERENT QUESTIONS — a full page whose entries were all elided or all meta
+ * draws nothing and still has batches above it, so a walk that jumped to the
+ * high-water mark on an empty page would abandon the rest of the store.
  */
 function leadTranscriptReadTo(
   page: LeadTranscriptResponse,
   highWaterBatch: number,
 ): number {
-  if (page.entries.length === 0) return highWaterBatch;
   return page.nextAfter ?? highWaterBatch;
 }
 
@@ -154,13 +153,11 @@ export function leadTranscriptMerged(
   return {
     stream: page.stream,
     entries: kept,
-    holding:
-      page.held === undefined
-        ? [...new Set([...held.holding, ...leadTranscriptHolds(page)])]
-        : [...page.held],
+    holding: [...new Set([...held.holding, ...(page.held ?? [])])],
     compaction: page.compaction ?? held.compaction,
     elided: held.elided + page.elided,
     truncated: held.truncated || page.truncated,
+    holdingUnknown: held.holdingUnknown || page.held === undefined,
     entriesDropped: held.entriesDropped + (merged.length - kept.length),
     readTo: leadTranscriptReadTo(page, highWaterBatch),
     more: leadTranscriptMore(held, page),

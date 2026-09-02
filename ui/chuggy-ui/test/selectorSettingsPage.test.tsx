@@ -393,3 +393,52 @@ test("text typed while a save is in flight survives the answer", async () => {
     overrides: { northStar: "ship the console" },
   });
 });
+
+/**
+ * The same lost update, through a limit box rather than a text one. This reader
+ * edits the North Star and never looks at Tokens; another administrator raises
+ * Tokens under them. Carrying every limit forward would put this reader's stale
+ * copy of the old ceiling back on the wire under a revision that by then
+ * matches, and the route would take it.
+ */
+test("a conflict does not carry a limit this reader never touched", async () => {
+  let conflicting = true;
+  const server = await drawSettings(
+    () => {
+      if (conflicting) {
+        conflicting = false;
+        return {
+          body: {
+            error: { code: "SettingsRevisionConflict", message: "moved" },
+            settings: settingsBody(14, {
+              limits: { tokensPerDecision: 900_000 },
+            }),
+          },
+          status: 409,
+        };
+      }
+      return { body: settingsBody(15, {}), status: 200 };
+    },
+    settingsBody(12, { limits: { tokensPerDecision: 100 } }),
+  );
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("North Star"), {
+      target: { value: "ship the lead page" },
+    });
+  });
+  await turned(save);
+  await settled();
+  expect(screen.getByText("Conflict · 14")).toBeDefined();
+  expect(screen.getByLabelText<HTMLInputElement>("Tokens").value).toBe(
+    "900000",
+  );
+  await turned(save);
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 14,
+    overrides: {
+      northStar: "ship the lead page",
+      limits: { tokensPerDecision: 900_000 },
+    },
+  });
+});

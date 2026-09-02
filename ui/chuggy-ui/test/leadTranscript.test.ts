@@ -95,27 +95,21 @@ test("a full page is asked past, and the empty page after it ends the walk", () 
   expect(leadTranscriptNextAfter(third, 3)).toBe(2);
 });
 
-/**
- * A page with nothing on it cannot have filled a limit, and neither can one
- * whose cursor did not move; either asked for again is a walk that spends its
- * whole budget on one batch. An empty page takes the cursor to the high-water
- * mark rather than to the one it answered with, so a store written above it
- * does not send the walk back to the same empty page.
- */
+/** A page with nothing on it cannot have filled a limit, and neither can one
+ * whose cursor did not move; neither is asked past on the strength of its own
+ * cursor. */
 test("an empty page and a cursor that stood still both end the walk", () => {
   const stuck = {
     stream: "1a2b3c",
     entries: [],
+    held: [],
     elided: 0,
     truncated: false,
     nextAfter: 1,
   };
   const empty = leadTranscriptMerged(leadTranscriptHeldEmpty, stuck, 4);
   expect(empty.more).toBe(false);
-  expect(
-    leadTranscriptNextAfter(empty, 4),
-    "the walk went back to the cursor an empty page answered with",
-  ).toBeUndefined();
+  expect(leadTranscriptNextAfter(empty, 4)).toBe(1);
   const standing = leadTranscriptMerged(
     leadTranscriptMerged(leadTranscriptHeldEmpty, leadTranscriptPage(0, 3), 3),
     { ...leadTranscriptPage(1, 3), nextAfter: 1 },
@@ -166,19 +160,20 @@ test("what the lead holds is the chain from the seam on and nothing above it", (
   ).toEqual([leadBoundaryUuid]);
 });
 
-/** A page that carries its own boundary replaces what is held rather than
- * adding to it, which is what a second compaction is. */
-test("a later compaction drops what the earlier page said was held", () => {
-  const held = leadTranscriptMerged(
-    walkedTwice(),
-    {
-      ...leadTranscriptPage(2, 3),
-      held: ["uuid-e"],
-      compaction: { boundary: "uuid-e", at: "2026-09-01T11:00:00Z" },
-    },
-    3,
-  );
+/**
+ * A PAGE'S ANSWER IS FINAL FOR ITS OWN ENTRIES. The route decides `held` from
+ * the last cut in the whole stream, so a page below that cut answers none of
+ * its entries and one above it answers all of them; no page can correct or
+ * contradict another, and a pane that let a later page replace an earlier
+ * page's answer would drop entries the lead is holding.
+ */
+test("each page answers for its own entries and none overrides another", () => {
+  const below = leadTranscriptPage(0, 3);
+  expect(below.held).toStrictEqual([leadBoundaryUuid]);
+  const held = leadTranscriptMerged(walkedTwice(), leadTranscriptPage(2, 3), 3);
   expect(leadTranscriptHolding(held).map((line) => line.uuid)).toEqual([
+    leadBoundaryUuid,
+    "uuid-d",
     "uuid-e",
   ]);
 });
@@ -271,41 +266,38 @@ test("a refusal stands until the ticket is authored again", () => {
 });
 
 /**
- * `held` ABSENT IS "THIS PAGE DOES NOT KNOW", NOT "NOTHING IS HELD". The route
- * answers it only on the page that carries the cut, so a reader taking absence
- * for an empty set would draw a lead that is holding nothing on every page but
- * one — and one taking it for the whole page before the cut arrives is corrected
- * by the page that carries it.
+ * `held` ABSENT IS UNDECIDED AND NEVER EMPTY, the route omitting it only where
+ * it could not reach the stream's end to decide it. A pane reading absence as
+ * an empty set would tell a reader the lead has forgotten everything at the
+ * moment the server said it could not tell.
  */
-test("a page that does not carry the cut says nothing about what is held", () => {
-  const before = leadTranscriptMerged(
+test("a page that could not decide what is held is not a page holding nothing", () => {
+  const undecided = leadTranscriptMerged(
     leadTranscriptHeldEmpty,
     {
       stream: "1a2b3c",
-      entries: [
-        { uuid: "uuid-x", type: "user", message: { content: [] } },
-        { uuid: "uuid-y", type: "assistant", message: { content: [] } },
-      ],
+      entries: [{ uuid: "uuid-x", type: "user", message: { content: [] } }],
+      elided: 0,
+      truncated: true,
+      nextAfter: 1,
+    },
+    2,
+  );
+  expect(undecided.holdingUnknown).toBe(true);
+  expect(undecided.holding).toStrictEqual([]);
+  const decided = leadTranscriptMerged(
+    leadTranscriptHeldEmpty,
+    {
+      stream: "1a2b3c",
+      entries: [{ uuid: "uuid-x", type: "user", message: { content: [] } }],
+      held: [],
       elided: 0,
       truncated: false,
       nextAfter: 1,
     },
     2,
   );
-  expect(before.holding).toStrictEqual(["uuid-x", "uuid-y"]);
-  const cut = leadTranscriptMerged(
-    before,
-    {
-      stream: "1a2b3c",
-      entries: [{ uuid: "uuid-z", type: "user", message: { content: [] } }],
-      held: ["uuid-z"],
-      compaction: { boundary: "uuid-z" },
-      elided: 0,
-      truncated: false,
-    },
-    2,
-  );
-  expect(cut.holding).toStrictEqual(["uuid-z"]);
+  expect(decided.holdingUnknown).toBe(false);
 });
 
 /** A route that answered the log's other end would put a months-old decision at
@@ -320,4 +312,31 @@ test("the decisions are ordered by ordinal whichever way the page arrived", () =
       (decision) => decision.ordinal,
     ),
   ).toStrictEqual([1_202, 1_201]);
+});
+
+/**
+ * THE CURSOR AND THE ENTRIES ARE DIFFERENT QUESTIONS: a full page can draw no
+ * entries at all — every batch on it elided, or every entry meta — and still
+ * have most of the store above it. A walk that read "no entries" as "no more
+ * store" and jumped its cursor to the high-water mark would abandon everything
+ * above that page.
+ */
+test("a page that drew nothing still hands the walk the cursor it gave", () => {
+  const drawnEmpty = leadTranscriptMerged(
+    leadTranscriptHeldEmpty,
+    {
+      stream: "1a2b3c",
+      entries: [],
+      held: [],
+      elided: 3,
+      truncated: false,
+      nextAfter: 4,
+    },
+    20,
+  );
+  expect(drawnEmpty.readTo).toBe(4);
+  expect(
+    leadTranscriptNextAfter(drawnEmpty, 20),
+    "a page that drew no entries took the walk to the end of the store",
+  ).toBe(4);
 });

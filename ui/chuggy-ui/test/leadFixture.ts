@@ -87,11 +87,19 @@ const leadBatchEntries: readonly (readonly LeadTranscriptResponse["entries"][num
     [leadEntry("uuid-e", "assistant", "third decision")],
   ];
 
-/** Which of a page's own entries the lead still holds: the boundary on, where
- * the page carries one, and all of them where it is already past one. */
+/**
+ * Which of a page's own entries the lead still holds, decided by the cut in the
+ * whole stream and not by what this page happens to carry: none of them below
+ * the boundary batch, and all of them from the boundary on.
+ */
 function leadHeldOf(
+  after: number,
   entries: readonly LeadTranscriptResponse["entries"][number][],
 ): readonly string[] {
+  const boundaryBatch = leadBatchEntries.findIndex((batch) =>
+    batch.some((entry) => entry.uuid === leadBoundaryUuid),
+  );
+  if (after < boundaryBatch) return [];
   const at = entries.findIndex((entry) => entry.uuid === leadBoundaryUuid);
   return entries
     .slice(at < 0 ? 0 : at)
@@ -100,9 +108,9 @@ function leadHeldOf(
 
 /**
  * One page of the store: one batch, so `nextAfter` is present exactly where the
- * page filled its limit and a final full page is followed by an empty one. Only
- * the page carrying the boundary answers `held`; every other page says nothing
- * about it, which is what absent means on this route.
+ * page filled its limit and a final full page is followed by an empty one.
+ * Every page answers `held` over its own entries — possibly none of them — and
+ * absence is reserved for a read that could not decide it.
  */
 export function leadTranscriptPage(
   after: number,
@@ -113,10 +121,10 @@ export function leadTranscriptPage(
   return {
     stream: leadStream,
     entries: [...entries],
+    held: [...leadHeldOf(after, entries)],
     ...(at < 0
       ? {}
       : {
-          held: [...leadHeldOf(entries)],
           compaction: {
             boundary: leadBoundaryUuid,
             at: "2026-09-01T10:00:00Z",

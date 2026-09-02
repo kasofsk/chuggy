@@ -178,14 +178,16 @@ function LeadNote(props: {
 
 /**
  * What the lead is working from: the note it left itself and the chain from the
- * last seam on, one block per entry. A stream the store's listing does not
- * carry has nothing to walk, so it is said as itself here too — "nothing held"
- * beside a lead that has plainly been deciding is the same false reading the
- * Log panel refuses to give.
+ * last seam on, one block per entry. Three things that are not an empty context
+ * are said as themselves, in the same words the Log says them in — a lead with
+ * no store, a stream the store's listing does not carry, and a read the route
+ * could not decide the held set for — because "nothing held" beside a lead that
+ * has plainly been deciding is a claim none of them makes.
  */
 export function LeadHolding(props: {
   readonly held: LeadTranscriptHeld;
   readonly note: LeadHandoffNote | undefined;
+  readonly stream: string | undefined;
   readonly listed: boolean;
   readonly nowMs: number;
 }): ReactNode {
@@ -194,8 +196,12 @@ export function LeadHolding(props: {
   return (
     <Panel title="Holding">
       <LeadNote note={props.note} />
-      {!props.listed ? (
+      {props.stream === undefined ? (
+        <EmptyState label="No store" />
+      ) : !props.listed ? (
         <EmptyState label="Stream unlisted" />
+      ) : props.held.holdingUnknown && lines.length === 0 ? (
+        <EmptyState label="Undecided" />
       ) : lines.length === 0 ? (
         <EmptyState label="Nothing held" />
       ) : (

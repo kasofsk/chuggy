@@ -121,6 +121,23 @@ test("a project that has decided nothing says so rather than drawing a table", a
 });
 
 /**
+ * THE PANEL DEPENDS ON A ROUTE ARM, AND THAT DEPENDENCY IS PINNED HERE. The
+ * read asks the log's newest end and never pages, so a route that ignored
+ * `order` — or refused it — would answer the wrong slice of the log; a case
+ * asserting only what is drawn would pass against both.
+ */
+test("the read names the newest arm and carries no cursor at all", async () => {
+  const asked = await drawDecisions();
+  expect(asked.length).toBeGreaterThan(0);
+  for (const url of asked) {
+    const query = new URL(url, "https://console").searchParams;
+    expect(query.get("order")).toBe("newest");
+    expect(query.get("after"), "the panel paged a bounded read").toBeNull();
+    expect(Number(query.get("limit"))).toBeGreaterThan(0);
+  }
+});
+
+/**
  * WHICH ROW IS CURRENT IS READ OFF THE ORDINALS AND NOT OFF THE PAGE'S
  * ARRANGEMENT: a route that ignored the newest arm would answer an ascending
  * page, and a panel trusting position would draw a months-old decision at the
