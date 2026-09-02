@@ -27,9 +27,10 @@
  *
  * THE ROSTER NAMES ONE READ THE TREE DOES NOT YET HAVE. `list_drafts` reaches
  * `GET .../drafts`, whose page shapes are declared in `./authoring.ts` and whose
- * `AuthoringStore.drafts` and `NativeWeb.drafts` are declared beside the
- * migration that gives them a definer to read through, because the tree's one
- * store is a postgres adapter that could not implement the method before then.
+ * `AuthoringStore.drafts` and `NativeWeb.drafts` will be declared beside the
+ * migration that gives them a definer to read through, because the tree's
+ * production store is a postgres adapter that could not implement the method
+ * before then, and the test double beside it is not what the port is for.
  *
  * DERIVED WORK ONLY, AND THE MODEL IS WHY. There is no bare create in the
  * roster: a dependent is filed against a parent that already exists. Nor is

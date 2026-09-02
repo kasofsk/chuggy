@@ -1280,8 +1280,12 @@ test("a drafts page carries whole drafts, its cursor and whether it ends them", 
     undefined,
   );
   assert.ok(
-    Object.hasOwn(configurationsResponseSchema.shape, "nextCursor") &&
-      Object.hasOwn(draftsResponseSchema.shape, "nextCursor"),
+    Object.hasOwn(draftsResponseSchema.shape, "nextCursor"),
+    "a drafts page names its cursor nextCursor",
+  );
+  assert.ok(
+    Object.hasOwn(configurationsResponseSchema.shape, "nextCursor"),
+    "a configurations page is the sibling that spelling is copied from",
   );
   assert.throws(() => draftsResponseSchema.parse({ drafts: [body] }));
   assert.throws(() =>
