@@ -23,12 +23,14 @@ import {
   asSessionBearerId,
   asSessionBearerSecret,
   asSessionId,
+  asSessionStoreStream,
   asSessionTurnId,
   sessionBearerPattern,
   sessionBearerPrefix,
   sessionCapabilitiesMax,
   sessionIdentityCharsMax,
 } from "../../src/interpreter/agentSession.ts";
+import { sessionStoreStreamCharsMax } from "../../src/contract/http.ts";
 import { populated } from "./roster.ts";
 
 /** Every brander, beside the subject its refusal has to name. */
@@ -155,6 +157,38 @@ test("a minted secret matches the pattern and a real compact JWS never does", ()
     jws.startsWith("ey"),
     "a compact JWS begins with the base64url of an object, which the prefix cannot",
   );
+});
+
+test("a stream the store and the row agree on is returned unchanged", () => {
+  const stream = "018f2c-agent-session/checkpoints.jsonl";
+  assert.equal(asSessionStoreStream(stream), stream);
+  const longest = "a".repeat(sessionStoreStreamCharsMax);
+  assert.equal(asSessionStoreStream(longest), longest);
+  assert.throws(() => asSessionStoreStream(`${longest}a`), RangeError);
+});
+
+test("a stream carrying a control or whitespace character is refused at the door", () => {
+  for (const refused of [
+    "stream one",
+    "stream\tone",
+    "stream\none",
+    "stream\u000bone",
+    "stream\u001fone",
+    "stream\u007fone",
+    "stream\u00a0one",
+    " stream",
+    "stream ",
+  ]) {
+    assert.throws(
+      () => asSessionStoreStream(refused),
+      (error: unknown) => {
+        assert.ok(error instanceof RangeError);
+        assert.match(error.message, /^store stream: /u);
+        return true;
+      },
+      `a stream is refused: ${JSON.stringify(refused)}`,
+    );
+  }
 });
 
 test("every roster holds its members in the order the schema iterates", () => {

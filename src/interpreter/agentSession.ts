@@ -6,10 +6,12 @@
  *
  * EVERY IDENTITY IS OPAQUE, AND OPAQUE MEANS BOUNDED, exactly as
  * `./schedulerIdentity.ts` has it: minted outside this tree's arithmetic, equal
- * or not, and refused when a stored row could not hold it. The bearer secret is
- * the one that carries a shape as well as a bound, because the API tells the two
+ * or not, and refused when a stored row could not hold it. Two of them carry a
+ * shape as well as a bound: the bearer secret, because the API tells the two
  * bearer kinds apart by the language each is written in rather than by offering
- * a token to one authority and then the other.
+ * a token to one authority and then the other; and the store stream, because it
+ * becomes a directory name as well as a stored key, so the characters neither
+ * of those holds are refused where the value is minted.
  *
  * MAILBOX SEMANTICS, stated here because the SQL that enforces them is a
  * different layer and a reader of either needs both:
@@ -33,6 +35,7 @@
  *      with `SessionClosed`.
  */
 
+import { sessionStoreStreamCharsMax } from "../contract/http.ts";
 import { asBoundedText } from "./boundedText.ts";
 import type { Principal } from "./nativeWeb.ts";
 import type { Partition } from "./projectStore.ts";
@@ -97,6 +100,26 @@ export function asSessionAttemptId(value: string): SessionAttemptId {
 /** Brands an opaque session bearer identity. */
 export function asSessionBearerId(value: string): SessionBearerId {
   return asSessionText(value, "session bearer id") as SessionBearerId;
+}
+
+/**
+ * Brands a store stream, which becomes a directory name and a stored key. It
+ * refuses control and whitespace characters as well as the bound, because the
+ * row that holds it refuses both and a refusal at the far edge is a constraint
+ * violation where a refusal at the door is a value nobody minted.
+ */
+export function asSessionStoreStream(value: string): SessionStoreStream {
+  const bounded = asBoundedText(
+    value,
+    "store stream",
+    sessionStoreStreamCharsMax,
+  );
+  if (/[\p{Cc}\s]/u.test(bounded)) {
+    throw new RangeError(
+      "store stream: a control or whitespace character is not a value a directory name and a stored key agree on",
+    );
+  }
+  return bounded as SessionStoreStream;
 }
 
 /** What marks a token as a session bearer rather than an OIDC one, so the API never probes. */
