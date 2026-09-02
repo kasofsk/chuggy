@@ -1,0 +1,88 @@
+/* The lead page: its head, its raw log, and the seam a compaction cut at. */
+
+@layer page {
+  .lead {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+
+  .lead-head {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .lead-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-4);
+  }
+
+  .lead-session {
+    color: var(--ink-3);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: var(--measure);
+  }
+
+  .lead-state {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .lead-note {
+    color: var(--ink-3);
+  }
+
+  .lead-reason {
+    max-width: var(--measure);
+  }
+
+  .lead-log {
+    display: grid;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .lead-line {
+    display: grid;
+    gap: var(--space-1);
+    border-top: var(--hairline) solid var(--edge);
+    padding-top: var(--space-2);
+    min-width: 0;
+  }
+
+  .lead-line[data-holding="true"] {
+    border-left: var(--rail) solid var(--tone-live);
+    padding-left: var(--space-3);
+  }
+
+  .lead-line-type,
+  .lead-line-tools {
+    color: var(--ink-3);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+
+  .lead-seam {
+    border-top: var(--rail) solid var(--edge-strong);
+    padding-top: var(--space-2);
+    margin-top: var(--space-3);
+  }
+
+  .lead-entry-text {
+    background: var(--surface-2);
+    border-radius: var(--radius-2);
+    color: var(--ink-1);
+    font-size: var(--mono-optical);
+    max-height: 24em;
+    overflow: auto;
+    padding: var(--space-2);
+  }
+}

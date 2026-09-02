@@ -168,6 +168,12 @@ function ShellNav(props: { readonly partition: PartitionIdentity }): ReactNode {
       <Link to="/$tenant/$project/inbox" params={params} activeProps={here}>
         Inbox <InboxCount partition={props.partition} />
       </Link>
+      <Link to="/$tenant/$project/lead" params={params} activeProps={here}>
+        Lead
+      </Link>
+      <Link to="/$tenant/$project/selector" params={params} activeProps={here}>
+        Selector
+      </Link>
       <Link
         to="/$tenant/$project/tickets/new"
         params={params}

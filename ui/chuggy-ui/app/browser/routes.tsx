@@ -24,8 +24,10 @@ import { usePanelInventory } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { Footer } from "./Footer.tsx";
 import { Inbox } from "./Inbox.tsx";
+import { LeadPage } from "./LeadPage.tsx";
 import { persistentStore } from "./ports.ts";
 import { ProjectTable } from "./ProjectTable.tsx";
+import { SelectorSettingsPage } from "./SelectorSettingsPage.tsx";
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
 import { TicketCreation } from "./TicketCreation.tsx";
@@ -103,6 +105,18 @@ const inboxRoute = createRoute({
   component: Inbox,
 });
 
+const leadRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/lead",
+  component: LeadPage,
+});
+
+const selectorRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/selector",
+  component: SelectorSettingsPage,
+});
+
 const ticketCreationRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/tickets/new",
@@ -120,6 +134,8 @@ const routeTree = rootRoute.addChildren([
   partitionRoute.addChildren([
     projectRoute,
     inboxRoute,
+    leadRoute,
+    selectorRoute,
     ticketCreationRoute,
     ticketRoute,
   ]),
