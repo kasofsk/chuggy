@@ -294,6 +294,12 @@ async function sessionPlaneStreams(
   }));
 }
 
+/**
+ * One turn's answer, with what the pod measured of it where it measured
+ * anything. The five measured parameters are passed together or all null,
+ * because the row holds them together and four of them beside a null is a
+ * measurement the boundary would refuse anyway.
+ */
 async function sessionPlaneAnswer(
   pool: pg.Pool,
   input: Parameters<SessionTurnSettlePort["answer"]>[0],

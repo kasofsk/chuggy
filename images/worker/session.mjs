@@ -21,6 +21,14 @@
  * `sessionStoreFlush` IS EAGER, because under the batched default nothing
  * reaches the store until the turn ends and the console's per-message
  * granularity would be a blank page for the whole turn.
+ *
+ * WHAT A TURN SPENT IS READ OFF THE RUNTIME'S OWN MESSAGES, NEVER OFF THE
+ * RESULT TEXT. The controls the selector runs over a decision check the model,
+ * the tools, the tokens and the duration it took; a count taken from the
+ * answer's prose would be a count the thing being controlled wrote. So the pod
+ * is the measuring host, and a turn the runtime reported no usage for carries
+ * no measurement at all rather than one of zeroes — the reader of the envelope
+ * is what refuses a decision with no provenance.
  */
 
 import { mkdir, readFile } from "node:fs/promises";
@@ -47,6 +55,15 @@ import { sessionRequest, sessionStopped } from "./sessionTransport.mjs";
 
 /** The longest result text the plane stores for one turn. */
 export const sessionTurnResultCharsMax = 65_536;
+
+/** The most tool names one turn's measurement reports, distinct and in no order. */
+export const sessionTurnToolsMax = 64;
+
+/** The longest tool name one turn's measurement reports. */
+export const sessionTurnToolNameCharsMax = 128;
+
+/** What a micro is of a dollar, which is the unit the measured cost is carried in. */
+const microsPerDollar = 1_000_000;
 
 const agentSdkModule = "@anthropic-ai/claude-agent-sdk";
 const zodModule = "zod";
@@ -137,6 +154,98 @@ function sessionResultText(result, scrub) {
   return typeof result?.result === "string"
     ? scrub(result.result).slice(0, sessionTurnResultCharsMax)
     : "";
+}
+
+/**
+ * One figure the runtime reported, taken where it is a count a stored row holds
+ * and zero where it is anything else. A figure this pod cannot read is not a
+ * reason to fail a turn the runtime finished, and a whole non-negative number
+ * is the only thing the plane's door accepts.
+ */
+function measuredCount(value) {
+  const counted = Number.isFinite(value) ? Math.round(value) : 0;
+  return Number.isSafeInteger(counted) && counted > 0 ? counted : 0;
+}
+
+/**
+ * One tool name as a stored row can hold it: cut to the bound, made whole again
+ * where the cut fell inside a surrogate pair, and stripped of the one character
+ * no stored text holds. A name the plane refused would fail, over a label, a
+ * turn the runtime completed.
+ */
+function measuredToolName(name) {
+  return name
+    .replaceAll("\u0000", "")
+    .slice(0, sessionTurnToolNameCharsMax)
+    .toWellFormed();
+}
+
+/** The tools one message called, which the runtime names in the assistant's own blocks. */
+function messageToolNames(message) {
+  const content = message.message?.content;
+  if (!Array.isArray(content)) return [];
+  return content
+    .filter(
+      (block) => block?.type === "tool_use" && typeof block.name === "string",
+    )
+    .map((block) => measuredToolName(block.name))
+    .filter((name) => name.length > 0);
+}
+
+/**
+ * What the runtime spent, gathered as it says it. The model and the cost outlive
+ * one turn because the runtime reports them per query rather than per turn — it
+ * names the model on every init and reports the cost as the total so far — so
+ * what one turn cost is what that total moved by. The tokens and the duration
+ * it reports are already the turn's, and the tools are this turn's alone.
+ */
+export function sessionMeasure() {
+  let model;
+  let spentDollars = 0;
+  let tools = [];
+  return {
+    startTurn() {
+      tools = [];
+    },
+    saw(message) {
+      if (
+        message.type === "system" &&
+        message.subtype === "init" &&
+        typeof message.model === "string" &&
+        message.model.length > 0
+      )
+        model = message.model;
+      if (message.type !== "assistant") return;
+      for (const name of messageToolNames(message))
+        if (!tools.includes(name) && tools.length < sessionTurnToolsMax)
+          tools.push(name);
+    },
+    /** The turn's envelope, or nothing where the runtime reported no usage to measure. */
+    of(result) {
+      const usage = result?.usage;
+      if (model === undefined || typeof usage !== "object" || usage === null)
+        return undefined;
+      const total = Number.isFinite(result.total_cost_usd)
+        ? Math.max(0, result.total_cost_usd)
+        : spentDollars;
+      const costMicros = measuredCount(
+        (total - spentDollars) * microsPerDollar,
+      );
+      spentDollars = total;
+      return {
+        model,
+        tokens: measuredCount(
+          measuredCount(usage.input_tokens) +
+            measuredCount(usage.output_tokens) +
+            measuredCount(usage.cache_creation_input_tokens) +
+            measuredCount(usage.cache_read_input_tokens),
+        ),
+        costMicros,
+        durationMs: measuredCount(result.duration_ms),
+        tools: [...tools],
+      };
+    },
+  };
 }
 
 /**
@@ -279,6 +388,7 @@ async function bindReference(context, message) {
 
 async function observe(context, message) {
   observeRateLimit(context.sightings, message);
+  context.measure.saw(message);
   if (message.type !== "system") return;
   if (message.subtype === "init") await bindReference(context, message);
   if (message.subtype === "mirror_error") context.mirrored = true;
@@ -288,6 +398,7 @@ async function observe(context, message) {
 export async function runSessionTurn(context) {
   context.store.startTurn();
   context.sightings = rateLimitSightings();
+  context.measure.startTurn();
   let result;
   for (;;) {
     const { message } = await context.reader.next();
@@ -337,10 +448,12 @@ async function settleTurn(context, turn, result) {
     });
     return "Continue";
   }
+  const measured = context.measure.of(result);
   await post(context, "/v1/session/turn/answer", {
     turn: turn.turn,
     result: sessionAnswerText(context, turn, result),
     ...context.store.turnBatches(),
+    ...(measured === undefined ? {} : { measured }),
   });
   return "Continue";
 }
@@ -488,6 +601,7 @@ export async function sessionMain(services = {}) {
       scrub,
       mirrored: false,
       sightings: rateLimitSightings(),
+      measure: sessionMeasure(),
     };
     const facts = await sessionFacts(context);
     const token = await sessionCredential(

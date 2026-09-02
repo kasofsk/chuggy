@@ -19,6 +19,8 @@ import {
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
   sessionTurnResultCharsMax,
+  sessionTurnToolNameCharsMax,
+  sessionTurnToolsMax,
 } from "../../contract/http.ts";
 import {
   runModelUsageSchema,
@@ -723,14 +725,40 @@ const sessionReferenceSchema = z.strictObject({
 });
 
 /**
+ * What the pod measured of one turn: one measurement rather than five figures,
+ * so a body carrying four of them is refused here rather than written as a
+ * measurement with a hole in it. Every text is one a stored row holds, because
+ * a model or a tool the plane took and PostgreSQL then refused would be a
+ * five-hundred where the route's own map names four-hundred.
+ */
+const sessionTurnMeasuredSchema = z.strictObject({
+  model: z.string().refine((value) => isBoundedText(value, runModelCharsMax)),
+  tokens: countSchema,
+  costMicros: countSchema,
+  durationMs: countSchema,
+  tools: z
+    .array(
+      z
+        .string()
+        .refine((value) => isBoundedText(value, sessionTurnToolNameCharsMax)),
+    )
+    .max(sessionTurnToolsMax),
+});
+
+/**
  * One answered turn as a pod offers it. A batch range is both of its ends or
  * neither, because the row it is written into says so and a half range is a
- * refusal a caller should read here rather than out of a failed cast.
+ * refusal a caller should read here rather than out of a failed cast, and the
+ * measurement is optional for two reasons that are both real: a thread's turn
+ * is answered by this same route and has no policy control over it, and a
+ * runtime that reported no usage must still be able to answer rather than be
+ * stuck.
  */
 const sessionTurnAnswerSchema = z
   .strictObject({
     turn: sessionIdentitySchema,
     result: z.string().max(sessionTurnResultCharsMax),
+    measured: sessionTurnMeasuredSchema.optional(),
     batchFirst: z
       .number()
       .int()
@@ -870,7 +898,7 @@ function sessionSettleRoutes(
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const offered = sessionTurnAnswerSchema.safeParse(request.body);
     if (!offered.success) return reply.code(400).send({ action: "stop" });
-    const { turn, result, batchFirst, batchLast } = offered.data;
+    const { turn, result, batchFirst, batchLast, measured } = offered.data;
     return sessionSettled(
       reply,
       await sessions.settlements.answer({
@@ -880,6 +908,7 @@ function sessionSettleRoutes(
         result,
         ...(batchFirst === undefined ? {} : { batchFirst }),
         ...(batchLast === undefined ? {} : { batchLast }),
+        ...(measured === undefined ? {} : { measured }),
       }),
     );
   });
