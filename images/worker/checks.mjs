@@ -58,7 +58,7 @@ export const workerCheckStageOutputCharsMax = Math.floor(
 /** The characters one command keeps, so no single command spends the stage's room. */
 export const workerCheckOutputCharsMax = 262_144;
 
-/** The characters one stage's report keeps, which is the manifest summary's bound. */
+/** The characters one stage's report keeps, mirroring the manifest's `resultReportCharsMax`. */
 export const workerCheckReportCharsMax = 8_192;
 
 /** The resolved command lines this task runs itself, or nothing when an agent runs it. */

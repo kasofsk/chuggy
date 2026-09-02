@@ -812,6 +812,28 @@ test("a released revision's agentic Check stage still parses beside this tree's 
   assert.deepEqual(parsed.configuration.evaluations?.at(-1), released);
 });
 
+test("a narrowing a commanded stage cannot honour is refused, never dropped", () => {
+  const entry = {
+    purpose: "Check",
+    checks: [".chug/tasks/ci.sh"],
+    authority: { filesystem: "ReadWorkspace", network: false },
+  };
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      evaluations: [entry],
+    }),
+    { readiness: "Incomplete", fault: "EvaluationFieldUnknown" },
+  );
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      evaluations: [{ purpose: "Check", checks: entry.checks, stage: 1 }],
+    }),
+    { readiness: "Incomplete", fault: "EvaluationFieldUnknown" },
+  );
+});
+
 test("an authored worker cannot spell the mode a check stage resolves to", () => {
   assert.deepEqual(
     authoredTaskConfigurationReadiness({

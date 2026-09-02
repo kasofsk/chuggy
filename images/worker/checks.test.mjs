@@ -16,6 +16,7 @@ import { Buffer } from "node:buffer";
 import test from "node:test";
 
 import { workerPlaneUploadBytesMax } from "../../src/contract/http.ts";
+import { resultReportCharsMax } from "../../src/interpreter/resultManifest.ts";
 import {
   briefingLineCharsMax,
   evaluationChecksMax,
@@ -26,6 +27,7 @@ import {
   workerCheckArtifactBytesMax,
   workerCheckCommands,
   workerCheckOutputCharsMax,
+  workerCheckReportCharsMax,
   workerCheckStageOutputCharsMax,
 } from "./checks.mjs";
 
@@ -159,8 +161,9 @@ test("what a stage captures across its commands is bounded as one total", async 
   assert.equal(output.checks[1].truncated, true);
 });
 
-test("the worker is written against the upload bound the plane enforces", () => {
+test("the worker is written against the bounds the plane enforces", () => {
   assert.equal(workerCheckArtifactBytesMax, workerPlaneUploadBytesMax);
+  assert.equal(workerCheckReportCharsMax, resultReportCharsMax);
 });
 
 test("the worst artifact a stage can produce is one the plane accepts", () => {
