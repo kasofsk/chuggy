@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { z } from "zod";
+
+import { chuggyToolPrefix, sessionBuiltInTools } from "./chuggyTools.mjs";
 import {
   checkedSessionBounds,
   sessionBoundNames,
@@ -25,6 +28,7 @@ const task = {
     url: "http://worker-plane.test:3001",
     capabilityFile: bearerFile,
   },
+  api: { url: "http://chuggy-api.test:3000" },
   bounds: {
     mailboxPollMs: 1,
     idleMs: 1,
@@ -103,13 +107,35 @@ const facts = {
   credentialSlot: "claude-code",
 };
 
+/**
+ * The runtime as this pod resolves it, with the suite's own `query`. The other
+ * three members are what the in-process server is built from, and `zod` is the
+ * real one: a stub shape would prove the tools were registered and nothing about
+ * whether their bounds hold.
+ */
+function sdkOf(query) {
+  return {
+    query,
+    z,
+    tool: (name, description, shape, handler) => ({
+      name,
+      description,
+      shape,
+      handler,
+    }),
+    createSdkMcpServer: (options) => options,
+  };
+}
+
 function run(services) {
+  const { query, ...rest } = services;
   return sessionMain({
     environment,
     read: async (path) => (path === bearerFile ? `${bearer}\n` : `${token}\n`),
     ensureDirectory: async () => undefined,
     warn: () => undefined,
-    ...services,
+    ...(query === undefined ? {} : { sdk: sdkOf(query) }),
+    ...rest,
   });
 }
 
@@ -437,4 +463,272 @@ test("a reference bind the plane did not accept ends the session rather than run
       `status ${String(status)} answered a turn the plane cannot resume`,
     );
   }
+});
+
+const leadFacts = {
+  ...facts,
+  capabilities: [
+    "RepositoryRead",
+    "ProjectRead",
+    "DraftAuthor",
+    "LeadDecision",
+  ],
+  systemPrompt: "# What this project wants\n\nShip the lead.",
+};
+
+const observation = JSON.stringify({
+  version: 1,
+  decision: "decision-1",
+  partition: { tenant: "vteng", project: "chuggy" },
+  changes: [],
+  candidates: [{ ticket: 4, ticketVersion: 2 }],
+  token: {},
+  operationalContext: {},
+  handoffNote: { carried: "note" },
+  refusals: [],
+});
+
+const observationTurn = {
+  turn: "turn-1",
+  ordinal: 1,
+  inputKind: "Observation",
+  input: observation,
+};
+
+test("the one chuggy server is served in-process, with the tools the roster admits", async () => {
+  const plane = planeOf([], leadFacts);
+  const { seen, query } = queryOf(() => []);
+
+  await run({ request: plane.request, query });
+
+  const server = seen.options.mcpServers.chuggy;
+  assert.equal(server.name, "chuggy");
+  assert.equal(server.timeout, 30_000);
+  const names = server.tools.map(({ name }) => `${chuggyToolPrefix}${name}`);
+  assert.deepEqual(
+    names.filter((name) => !seen.options.allowedTools.includes(name)),
+    [],
+    "a tool was registered that the allowlist does not name",
+  );
+  assert.equal(
+    names.length,
+    seen.options.allowedTools.filter((name) =>
+      name.startsWith(chuggyToolPrefix),
+    ).length,
+  );
+  for (const name of names)
+    assert.ok(
+      name.length <= 128,
+      `${name} is longer than a measured turn's tool name holds`,
+    );
+});
+
+test("a session with no ProjectRead registers no read and disallows every one by name", async () => {
+  const plane = planeOf([], { ...leadFacts, capabilities: ["LeadDecision"] });
+  const { seen, query } = queryOf(() => []);
+
+  await run({ request: plane.request, query });
+
+  const registered = seen.options.mcpServers.chuggy.tools.map(
+    ({ name }) => name,
+  );
+  assert.deepEqual(registered, [
+    "dispatch",
+    "refuse",
+    "lift",
+    "set_attention",
+    "set_handoff_note",
+    "set_planning_intent",
+  ]);
+  const disallowed = seen.options.disallowedTools;
+  assert.ok(disallowed.includes(`${chuggyToolPrefix}read_ticket`));
+  assert.ok(disallowed.includes(`${chuggyToolPrefix}release_draft`));
+  for (const tool of sessionBuiltInTools)
+    assert.ok(disallowed.includes(tool), `${tool} was left ungoverned`);
+});
+
+test("the session's objectives ride on the preset prompt, recorded for the conversation", async () => {
+  const plane = planeOf([], leadFacts);
+  const { seen, query } = queryOf(() => []);
+
+  await run({ request: plane.request, query });
+
+  assert.deepEqual(seen.options.systemPrompt, {
+    type: "preset",
+    preset: "claude_code",
+    snapshot: true,
+    append: leadFacts.systemPrompt,
+  });
+  assert.deepEqual(seen.options.settingSources, ["project"]);
+});
+
+test("a session row that carries no objectives still takes its turn", async () => {
+  for (const systemPrompt of [undefined, ""]) {
+    const plane = planeOf([], { ...leadFacts, systemPrompt });
+    const { seen, query } = queryOf(() => []);
+
+    const code = await run({ request: plane.request, query });
+
+    assert.equal(code, 0);
+    assert.deepEqual(seen.options.systemPrompt, {
+      type: "preset",
+      preset: "claude_code",
+      snapshot: true,
+    });
+  }
+});
+
+test("an observation answered with decision tools posts the document they composed", async () => {
+  const plane = planeOf([observationTurn], leadFacts);
+  const { query } = queryOf((_asked, _index, options) => [
+    async () => {
+      const tools = options.mcpServers.chuggy.tools;
+      const staged = (name, args) =>
+        tools.find((tool) => tool.name === name).handler(args);
+      await staged("dispatch", { ticket: 4, expectedTicketVersion: 2 });
+      await staged("set_attention", { attention: "Attention" });
+    },
+    result("success", { result: "I dispatched ticket 4." }),
+  ]);
+
+  await run({ request: plane.request, query });
+
+  const answered = plane.calls.find(
+    ({ path }) => path === "/v1/session/turn/answer",
+  ).body;
+  assert.deepEqual(JSON.parse(answered.result), {
+    version: 1,
+    dispatches: [{ ticket: 4, expectedTicketVersion: 2 }],
+    refusals: [],
+    lifts: [],
+    attention: "Attention",
+    handoffNote: { carried: "note" },
+  });
+});
+
+test("an observation that called no decision tool still answers in the model's own text", async () => {
+  const plane = planeOf([observationTurn], leadFacts);
+  const { query } = queryOf(() => [
+    result("success", { result: '{"version":1,"attention":"Monitoring"}' }),
+  ]);
+
+  await run({ request: plane.request, query });
+
+  assert.equal(
+    plane.calls.find(({ path }) => path === "/v1/session/turn/answer").body
+      .result,
+    '{"version":1,"attention":"Monitoring"}',
+  );
+});
+
+test("a user's message is answered in text however many decision tools it called", async () => {
+  const plane = planeOf(
+    [{ ...observationTurn, inputKind: "UserMessage" }],
+    leadFacts,
+  );
+  const { query } = queryOf((_asked, _index, options) => [
+    async () => {
+      const tools = options.mcpServers.chuggy.tools;
+      await tools
+        .find((tool) => tool.name === "set_attention")
+        .handler({ attention: "Stopped" });
+    },
+    result("success", { result: "here is the plan" }),
+  ]);
+
+  await run({ request: plane.request, query });
+
+  assert.equal(
+    plane.calls.find(({ path }) => path === "/v1/session/turn/answer").body
+      .result,
+    "here is the plan",
+  );
+});
+
+test("one turn's staging never reaches the next turn's answer", async () => {
+  const plane = planeOf(
+    [observationTurn, { ...observationTurn, turn: "turn-2" }],
+    leadFacts,
+  );
+  const { query } = queryOf((_asked, index, options) => [
+    async () => {
+      if (index > 0) return;
+      const tools = options.mcpServers.chuggy.tools;
+      await tools
+        .find((tool) => tool.name === "dispatch")
+        .handler({ ticket: 4, expectedTicketVersion: 2 });
+    },
+    result("success", { result: "done" }),
+  ]);
+
+  await run({ request: plane.request, query });
+
+  const answers = plane.calls.filter(
+    ({ path }) => path === "/v1/session/turn/answer",
+  );
+  assert.equal(answers.length, 2);
+  assert.deepEqual(JSON.parse(answers[0].body.result).dispatches, [
+    { ticket: 4, expectedTicketVersion: 2 },
+  ]);
+  assert.equal(answers[1].body.result, "done");
+});
+
+test("a composed decision is scrubbed of what the pod was handed, exactly as prose is", async () => {
+  const plane = planeOf([observationTurn], leadFacts);
+  const { query } = queryOf((_asked, _index, options) => [
+    async () => {
+      const tools = options.mcpServers.chuggy.tools;
+      const staged = (name, args) =>
+        tools.find((tool) => tool.name === name).handler(args);
+      await staged("refuse", {
+        ticket: 4,
+        ticketVersion: 2,
+        reason: `the run logged ${token} and ${bearer}`,
+      });
+      await staged("set_handoff_note", { note: { seen: bearer } });
+    },
+    result("success", { result: "refused" }),
+  ]);
+
+  await run({ request: plane.request, query });
+
+  const answered = plane.calls.find(
+    ({ path }) => path === "/v1/session/turn/answer",
+  ).body.result;
+  assert.ok(!answered.includes(token), "the credential reached the mailbox");
+  assert.ok(!answered.includes(bearer), "the bearer reached the mailbox");
+  assert.ok(answered.includes("[redacted credential]"));
+  assert.equal(
+    JSON.parse(answered).refusals.length,
+    1,
+    "the scrub broke the document",
+  );
+});
+
+test("a project tool reaches the API under the session's own bearer", async () => {
+  const plane = planeOf([observationTurn], leadFacts);
+  const seenApi = [];
+  const { query } = queryOf((_asked, _index, options) => [
+    async () => {
+      await options.mcpServers.chuggy.tools
+        .find((tool) => tool.name === "read_ticket")
+        .handler({ ticket: 4 });
+    },
+    result("success", { result: "read" }),
+  ]);
+
+  await run({
+    request: plane.request,
+    query,
+    chuggyRequest: async (_task, apiBearer, path, init) => {
+      seenApi.push({ apiBearer, path, init });
+      return { status: 200, text: async () => "{}" };
+    },
+  });
+
+  assert.deepEqual(
+    seenApi.map(({ path }) => path),
+    ["/api/v1/tenants/vteng/projects/chuggy/tickets/4"],
+  );
+  assert.equal(seenApi[0].apiBearer, bearer);
 });

@@ -13,6 +13,10 @@
  * mailbox that stays empty that long ends the iterable, the query ends with it,
  * and the process exits for the scheduler's idle reaper to collect.
  *
+ * A CLAIM IS ANNOUNCED BEFORE THE TURN IS YIELDED, which is what lets the pod
+ * reset anything a turn owns — its decision staging — with no way for one turn's
+ * state to be read by the next.
+ *
  * THE IDLE WINDOW OPENS ON THE FIRST EMPTY POLL, NOT WHEN THE POD STARTED. A
  * cold session pages a resumed store and spawns a runtime before this loop is
  * asked for anything, and a startup slower than the bound would then end the
@@ -43,6 +47,7 @@ export function sessionMailbox(task, bearer, services = {}) {
     request = sessionRequest,
     wait: pause = wait,
     now = Date.now,
+    claim: onClaim = () => undefined,
   } = services;
   let held;
   let stopped = false;
@@ -98,6 +103,7 @@ export function sessionMailbox(task, bearer, services = {}) {
         }
         held = turn;
         idleSince = undefined;
+        onClaim(turn);
         hold();
         yield sessionUserMessage(turn.input);
       }

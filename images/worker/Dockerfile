@@ -21,9 +21,17 @@ FROM node:26.7.0-bookworm@sha256:e929171d35b9df7773a3ec5b068e387fa109441dc90f91e
 # by the SDK's `manifest.json`. Nothing makes those two agree, so the probe
 # below reads both versions off the built image and fails the build when they
 # differ. Bump the two ARGs together.
+#
+# THE SDK'S `zod` PEER IS INSTALLED HERE FOR THE SAME REASON. A global install
+# resolves no peers, so the SDK alone leaves `zod` absent and the session mode
+# fails every turn it takes; `sdkProbe.mjs` reads the SDK's own declared range
+# and fails the build where this pin no longer satisfies it. The version is the
+# one `package-lock.json` resolves, so the tool shapes the suites validate are
+# validated by the same zod the image runs.
 ARG CLAUDE_CODE_VERSION=2.1.258
 ARG CODEX_VERSION=0.151.0
 ARG AGENT_SDK_VERSION=0.3.258
+ARG ZOD_VERSION=4.4.3
 
 RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
     /etc/apt/sources.list.d/debian.sources \
@@ -36,6 +44,7 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
   && npm install --global \
     "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     "@anthropic-ai/claude-agent-sdk@${AGENT_SDK_VERSION}" \
+    "zod@${ZOD_VERSION}" \
     "@openai/codex@${CODEX_VERSION}" \
   && claude --version \
   && codex --version \
@@ -51,19 +60,24 @@ ENV DISABLE_AUTOUPDATER=1 \
 COPY images/worker/entrypoint.mjs /usr/local/lib/chuggy/worker.mjs
 COPY images/worker/agent.mjs /usr/local/lib/chuggy/agent.mjs
 COPY images/worker/checks.mjs /usr/local/lib/chuggy/checks.mjs
+COPY images/worker/chuggyApi.mjs /usr/local/lib/chuggy/chuggyApi.mjs
+COPY images/worker/chuggyTools.mjs /usr/local/lib/chuggy/chuggyTools.mjs
 COPY images/worker/claude.mjs /usr/local/lib/chuggy/claude.mjs
 COPY images/worker/codex.mjs /usr/local/lib/chuggy/codex.mjs
+COPY images/worker/leadDecision.mjs /usr/local/lib/chuggy/leadDecision.mjs
 COPY images/worker/lease.mjs /usr/local/lib/chuggy/lease.mjs
 COPY images/worker/postgres.mjs /usr/local/lib/chuggy/postgres.mjs
 COPY images/worker/repository.mjs /usr/local/lib/chuggy/repository.mjs
 COPY images/worker/result.mjs /usr/local/lib/chuggy/result.mjs
 COPY images/worker/runEvidence.mjs /usr/local/lib/chuggy/runEvidence.mjs
+COPY images/worker/sdkProbe.mjs /usr/local/lib/chuggy/sdkProbe.mjs
 COPY images/worker/session.mjs /usr/local/lib/chuggy/session.mjs
 COPY images/worker/sessionMailbox.mjs /usr/local/lib/chuggy/sessionMailbox.mjs
 COPY images/worker/sessionStore.mjs /usr/local/lib/chuggy/sessionStore.mjs
 COPY images/worker/sessionTransport.mjs /usr/local/lib/chuggy/sessionTransport.mjs
 COPY images/worker/snapshot.mjs /usr/local/lib/chuggy/snapshot.mjs
 COPY images/worker/source.mjs /usr/local/lib/chuggy/source.mjs
+COPY images/worker/toolProbe.mjs /usr/local/lib/chuggy/toolProbe.mjs
 COPY images/worker/transport.mjs /usr/local/lib/chuggy/transport.mjs
 COPY --chmod=0555 images/worker/git-askpass.sh /usr/local/lib/chuggy/git-askpass.sh
 
@@ -73,10 +87,20 @@ COPY --chmod=0555 images/worker/git-askpass.sh /usr/local/lib/chuggy/git-askpass
 # ignored by `import`, and what actually finds the SDK is the node_modules walk
 # up from `/usr/local/lib/chuggy/`. The second half holds the two Claude Codes
 # to the same version.
+#
+# Both probes resolve the runtime through `session.mjs`'s own `sessionSdk`, so
+# what they prove is the resolution a turn will make. `sdkProbe.mjs` holds the
+# installed `zod` to the range the SDK declares for its peer; `toolProbe.mjs`
+# then lists the whole chuggy server over the runtime's own transport, because a
+# shape the runtime cannot render to JSON schema makes the entire listing throw
+# while the server still reports itself connected — every tool silently absent,
+# and the lead told they do not exist. Each argues itself in its own header, and
+# each is removed after it has run, because a build's verdict is not something a
+# pod needs.
 RUN cd /usr/local/lib/chuggy \
-  && echo "const { query } = await import('@anthropic-ai/claude-agent-sdk'); if (typeof query !== 'function') throw new Error('the Agent SDK exports no query');" > sdk-probe.mjs \
-  && node sdk-probe.mjs \
-  && rm sdk-probe.mjs \
+  && node sdkProbe.mjs \
+  && node toolProbe.mjs \
+  && rm sdkProbe.mjs toolProbe.mjs \
   && bundled="$(node -e "console.log(require('/usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk/manifest.json').version)")" \
   && global="$(claude --version)" \
   && if [ "${global% (Claude Code)}" != "$bundled" ]; then \

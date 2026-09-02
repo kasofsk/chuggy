@@ -1,6 +1,7 @@
 /**
  * The agent runtime's `SessionStore`, written against the worker plane instead
- * of a local file, and the capability roster the same session runs under.
+ * of a local file. The capability roster the same session runs under is
+ * `./chuggyTools.mjs`, beside the tools it admits.
  *
  * `query()` calls exactly three of the interface's six methods — `append` on
  * every run, `load` and `listSubkeys` on every resume — so those three are what
@@ -52,50 +53,6 @@ const loadPagesMax = Math.ceil(
 );
 const storedStatus = 204;
 const readStatus = 200;
-
-/**
- * The runtime's built-in tools as the pinned CLI names them. A tool a later
- * runtime adds is not in `disallowedTools` until this roster carries it, which
- * is the one thing this file cannot check for itself.
- */
-export const sessionBuiltInTools = [
-  "Bash",
-  "BashOutput",
-  "Edit",
-  "ExitPlanMode",
-  "Glob",
-  "Grep",
-  "KillShell",
-  "NotebookEdit",
-  "Read",
-  "SlashCommand",
-  "Task",
-  "TodoWrite",
-  "WebFetch",
-  "WebSearch",
-  "Write",
-];
-
-const sessionCapabilityTools = {
-  RepositoryRead: ["Read", "Glob", "Grep"],
-  RepositoryWrite: ["Write", "Edit", "NotebookEdit"],
-  RunCommands: ["Bash"],
-};
-
-/**
- * What the session may reach for and what it may not, over the whole roster, so
- * absence is enforced rather than merely not granted. A capability this image
- * does not know admits nothing.
- */
-export function sessionAllowedTools(capabilities) {
-  const admitted = new Set(
-    (capabilities ?? []).flatMap((held) => sessionCapabilityTools[held] ?? []),
-  );
-  return {
-    allowedTools: sessionBuiltInTools.filter((tool) => admitted.has(tool)),
-    disallowedTools: sessionBuiltInTools.filter((tool) => !admitted.has(tool)),
-  };
-}
 
 /** One stream of the store: the runtime's session id, and its subpath where it set one. */
 export function sessionStoreStream(key) {

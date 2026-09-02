@@ -48,7 +48,7 @@ import type { SessionCapability } from "./agentSession.ts";
 import type { SelectorResolvedSettings } from "./selector.ts";
 
 /** The one MCP server every session is given, and the prefix its tool names carry. */
-export const chuggyToolServer = "chuggy";
+export const chuggyToolServerName = "chuggy";
 export const chuggyToolPrefix = "mcp__chuggy__";
 
 /** What one tool answer may weigh, which is what the API answered and never more. */

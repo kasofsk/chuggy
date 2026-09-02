@@ -27,16 +27,24 @@ import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
 
+import {
+  chuggyToolContext,
+  chuggyToolServer,
+  chuggyToolServerName,
+  sessionAllowedTools,
+} from "./chuggyTools.mjs";
+import { leadDecisionStaging } from "./leadDecision.mjs";
 import { keepWorkerLease } from "./lease.mjs";
 import { credentialScrub } from "./runEvidence.mjs";
 import { sessionMailbox } from "./sessionMailbox.mjs";
-import { sessionAllowedTools, sessionStoreAdapter } from "./sessionStore.mjs";
+import { sessionStoreAdapter } from "./sessionStore.mjs";
 import { sessionRequest, sessionStopped } from "./sessionTransport.mjs";
 
 /** The longest result text the plane stores for one turn. */
 export const sessionTurnResultCharsMax = 65_536;
 
 const agentSdkModule = "@anthropic-ai/claude-agent-sdk";
+const zodModule = "zod";
 const defaultWorkspace = "/workspace";
 const rateLimitLabel = "rate_limit";
 const readStatus = 200;
@@ -44,6 +52,18 @@ const acceptedStatus = 204;
 
 function unreffed(milliseconds) {
   return wait(milliseconds, undefined, { ref: false });
+}
+
+/**
+ * The runtime this pod drives, resolved rather than imported at load, so every
+ * suite here runs without the SDK installed. `zod` comes from its own module
+ * because the SDK declares it a PEER dependency and does not re-export it; the
+ * image's build probe is what proves the peer resolved beside the SDK.
+ */
+export async function sessionSdk() {
+  const { query, tool, createSdkMcpServer } = await import(agentSdkModule);
+  const { z } = await import(zodModule);
+  return { query, tool, createSdkMcpServer, z };
 }
 
 /**
@@ -142,8 +162,46 @@ export function messageReader(stream, pause) {
   };
 }
 
+/**
+ * The objectives the session carries, appended to the runtime's own preset.
+ *
+ * THE PRESET RATHER THAN A CUSTOM PROMPT, because the preset is what loads the
+ * checkout's `CLAUDE.md`, and `settingSources` must name `'project'` for it to.
+ * Until the checkout lands there is no `CLAUDE.md` to load and naming the one
+ * source is inert — but it is narrower than omitting the option, which loads the
+ * pod's user and local settings too.
+ *
+ * `snapshot: true` RECORDS THE RENDERED PROMPT FOR THE CONVERSATION instead of
+ * re-rendering it every request. A prompt changed mid-session therefore takes
+ * effect at the next compaction or in a new session, so an owner who edits the
+ * North Star will not see a running lead change. Where the account has not been
+ * enabled for recording the option is accepted and has no effect, so it is safe
+ * to set now.
+ *
+ * A SESSION WITH NO OBJECTIVES STILL TAKES ITS TURN. An older session row, or a
+ * project whose settings the host has not pushed yet, carries no prompt; a lead
+ * with the preset's own objectives is worse than one with the project's and is
+ * not a reason to refuse the turn.
+ */
+function sessionSystemPrompt(facts) {
+  const append = facts.systemPrompt;
+  return {
+    type: "preset",
+    preset: "claude_code",
+    snapshot: true,
+    ...(typeof append === "string" && append.length > 0 ? { append } : {}),
+  };
+}
+
 /** The options one session's query runs under, every bound the pod was launched with. */
-export function sessionQueryOptions(task, facts, store, environment, token) {
+export function sessionQueryOptions(
+  task,
+  facts,
+  store,
+  environment,
+  token,
+  servers = {},
+) {
   const workspace = environment.CHUG_WORKER_WORKSPACE ?? defaultWorkspace;
   const { allowedTools, disallowedTools } = sessionAllowedTools(
     facts.capabilities,
@@ -158,6 +216,9 @@ export function sessionQueryOptions(task, facts, store, environment, token) {
       CLAUDE_CODE_OAUTH_TOKEN: token,
       CLAUDE_CONFIG_DIR: sessionConfigDirectory(environment, workspace),
     },
+    mcpServers: servers,
+    systemPrompt: sessionSystemPrompt(facts),
+    settingSources: ["project"],
     allowedTools,
     disallowedTools,
     permissionMode: "bypassPermissions",
@@ -259,10 +320,28 @@ async function settleTurn(context, turn, result) {
   }
   await post(context, "/v1/session/turn/answer", {
     turn: turn.turn,
-    result: sessionResultText(result, context.scrub),
+    result: sessionAnswerText(context, turn, result),
     ...context.store.turnBatches(),
   });
   return "Continue";
+}
+
+/**
+ * What one turn answers with: the document its decision tools composed, or the
+ * model's own text. The prose arm is not a fallback to be removed — a lead
+ * resumed from before the decision tools existed answers in text, and the
+ * runtime's one parser reads whichever arrived. A composed document belongs only
+ * to an observation: a user's message and a wake are answered to a reader, not
+ * to the selector.
+ */
+function sessionAnswerText(context, turn, result) {
+  const document =
+    turn.inputKind === "Observation" ? context.staging?.document() : undefined;
+  return document === undefined
+    ? sessionResultText(result, context.scrub)
+    : context
+        .scrub(JSON.stringify(document))
+        .slice(0, sessionTurnResultCharsMax);
 }
 
 /** Every turn the mailbox hands over, until it stops handing them over. */
@@ -324,6 +403,28 @@ function sessionLease(task, bearer, request) {
   });
 }
 
+/**
+ * The in-process servers this session's runtime is opened with, which is the one
+ * `chuggy` server and nothing else. Its tools reach the API under the pod's own
+ * session bearer, so every command they issue is the session's and carries it.
+ */
+function sessionToolServers(context, facts, environment, services, sdk) {
+  return {
+    [chuggyToolServerName]: chuggyToolServer(
+      chuggyToolContext(context.task, context.bearer, {
+        capabilities: facts.capabilities,
+        version: environment.CHUG_SESSION_IMAGE_VERSION ?? "1",
+        turn: () => context.mailbox.claimed()?.turn,
+        staging: context.staging,
+        ...(services.chuggyRequest === undefined
+          ? {}
+          : { request: services.chuggyRequest }),
+      }),
+      sdk,
+    ),
+  };
+}
+
 export async function sessionMain(services = {}) {
   const {
     environment = process.env,
@@ -353,13 +454,18 @@ export async function sessionMain(services = {}) {
     await ensureDirectory(sessionConfigDirectory(environment, workspace));
     stopLease = sessionLease(task, bearer, request);
     context.store = sessionStoreAdapter(task, bearer, { request });
+    const staging = leadDecisionStaging();
+    context.staging = staging;
     context.mailbox = sessionMailbox(task, bearer, {
       request,
       wait: pause,
       now,
+      // The buffer is reset as the turn is claimed rather than as it settles, so
+      // a turn that fails leaves nothing for the next one to inherit.
+      claim: (turn) => staging.reset(turn.input),
     });
-    const query = services.query ?? (await import(agentSdkModule)).query;
-    const stream = query({
+    const sdk = services.sdk ?? (await sessionSdk());
+    const stream = sdk.query({
       prompt: context.mailbox.turns(),
       options: sessionQueryOptions(
         task,
@@ -367,6 +473,7 @@ export async function sessionMain(services = {}) {
         context.store,
         environment,
         token,
+        sessionToolServers(context, facts, environment, services, sdk),
       ),
     });
     context.reader = messageReader(stream, pause);
