@@ -366,3 +366,76 @@ test("a stream the store's listing does not carry is named, not drawn as empty",
   expect(screen.queryByText("No entries")).toBeNull();
   expect(screen.queryByText("Nothing held")).toBeNull();
 });
+
+/**
+ * A store whose `cut` moves on the last read the budget allows, which is the
+ * reachable worst case: the walk ends on the reset and no re-walk page arrives
+ * to replace it.
+ */
+function compactingStore(moveOnRead: number): { readonly reads: () => number } {
+  let reads = 0;
+  const api = apiDouble({
+    operation: { operation: "op-one", state: "Pending" },
+    route: (url) => {
+      if (url.includes("/lead/transcript")) {
+        const asked = Number(
+          new URL(url, "https://console").searchParams.get("after") ?? "0",
+        );
+        reads += 1;
+        const cut = reads >= moveOnRead ? 9 : 1;
+        return answer({
+          stream: leadStream,
+          entries: [
+            {
+              uuid: `uuid-${String(asked)}`,
+              type: "assistant",
+              message: { content: [] },
+            },
+          ],
+          held: [`uuid-${String(asked)}`],
+          cut,
+          elided: 0,
+          truncated: false,
+          nextAfter: asked + 1,
+        });
+      }
+      const found = leadRouteAnswer(url, { ...opening, batches: 40 });
+      return answer(found.body, found.status);
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  return { reads: () => reads };
+}
+
+/**
+ * THE RESET IS A STEP IN THE WALK AND NOT A STATE A READER IS SHOWN. A pane
+ * drawn from it says the lead has recorded nothing and is holding nothing —
+ * the two claims these panels reserve for a lead that really has — and when the
+ * reset lands on the last read of the budget it says them until the store is
+ * written again.
+ */
+test("a cut that moves on the last read does not blank the log", async () => {
+  const store = compactingStore(leadTranscriptReadsMax);
+  await mountLead();
+  expect(store.reads()).toBe(leadTranscriptReadsMax);
+  expect(
+    screen.queryByText("No entries"),
+    "the walk's own reset was drawn as a lead that has recorded nothing",
+  ).toBeNull();
+  expect(logLines().length).toBeGreaterThan(0);
+  expect(screen.queryByText("Nothing held")).toBeNull();
+  expect(
+    screen.getByText("Undecided"),
+    "what the lead holds was still claimed after the cut moved under the walk",
+  ).toBeDefined();
+});
+
+/** A re-walk that finishes inside the budget draws what it rebuilt, and says
+ * nothing about being undecided. */
+test("a cut that moves early is rebuilt inside the budget and drawn", async () => {
+  compactingStore(2);
+  await mountLead();
+  expect(logLines().length).toBeGreaterThan(0);
+  expect(screen.queryByText("No entries")).toBeNull();
+  expect(screen.queryByText("Undecided")).toBeNull();
+});

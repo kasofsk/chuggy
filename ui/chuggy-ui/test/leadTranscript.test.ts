@@ -20,6 +20,7 @@ import {
   leadFolded,
   leadStreamBatches,
   leadStreamListed,
+  leadTranscriptDrawn,
   leadTranscriptEntriesHeldMax,
   leadTranscriptHeldEmpty,
   leadTranscriptHolding,
@@ -331,6 +332,10 @@ test("a page delivered twice lands once, in the place it first took", () => {
   expect(leadTranscriptHolding(twice).map((line) => line.uuid)).toStrictEqual([
     "uuid-a",
   ]);
+  expect(
+    twice.holding.length,
+    "the holding set grew by a page it had already gathered",
+  ).toBe(1);
 });
 
 /**
@@ -356,6 +361,78 @@ test("what could not be drawn is counted once per walk, not once per reading", (
   expect(reset.elided, "an undrawable batch was counted twice").toBe(0);
   expect(reset.truncated).toBe(false);
   expect(leadTranscriptMerged(reset, elided(2), 2).elided).toBe(1);
+});
+
+/**
+ * A STREAM COMPACTED FOR THE FIRST TIME UNDER AN OPEN PANE moves its cut from
+ * absent to a batch. Every answer gathered before it said "held" of every entry,
+ * because nothing had been dropped, so those are exactly the answers that are
+ * now wrong — and a comparison that only noticed a cut moving between two
+ * numbers would keep every one of them.
+ */
+test("a first compaction invalidates as surely as a later one", () => {
+  const uncut = leadTranscriptMerged(
+    leadTranscriptHeldEmpty,
+    cutPage(undefined, ["uuid-a", "uuid-b"], ["uuid-a", "uuid-b"], 1),
+    1,
+  );
+  expect(uncut.cut).toBeUndefined();
+  expect(uncut.holding).toStrictEqual(["uuid-a", "uuid-b"]);
+  const compacted = leadTranscriptMerged(
+    uncut,
+    cutPage(2, ["uuid-c"], ["uuid-c"]),
+    2,
+  );
+  expect(
+    compacted.entries,
+    "a stream compacted for the first time kept its pre-cut answers",
+  ).toStrictEqual([]);
+  expect(compacted.holding).toStrictEqual([]);
+  expect(compacted.cut).toBe(2);
+  expect(leadTranscriptNextAfter(compacted, 2)).toBe(0);
+});
+
+/**
+ * THE RESET IS A STEP IN THE WALK AND NOT A STATE A READER IS SHOWN: it holds
+ * nothing, so a pane drawn from it says the lead has recorded nothing and holds
+ * nothing, which are the two claims these panels reserve for a lead that really
+ * has. What is drawn keeps the chain it had and says only what the reset makes
+ * true.
+ */
+test("a reset is not drawn; the chain stands and what is held is unknown", () => {
+  const walked = leadTranscriptMerged(
+    leadTranscriptHeldEmpty,
+    cutPage(1, ["uuid-a", "uuid-b"], ["uuid-a"], 1),
+    2,
+  );
+  const reset = leadTranscriptMerged(
+    walked,
+    cutPage(3, ["uuid-c"], ["uuid-c"]),
+    2,
+  );
+  expect(reset.entries).toStrictEqual([]);
+  const drawn = leadTranscriptDrawn(walked, reset);
+  expect(
+    leadTranscriptLines(drawn).map((line) => line.uuid),
+    "a reader was shown the empty pane the walk restarts from",
+  ).toStrictEqual(["uuid-a", "uuid-b"]);
+  expect(leadTranscriptHolding(drawn)).toStrictEqual([]);
+  expect(drawn.holdingUnknown).toBe(true);
+  expect(drawn.cut).toBe(3);
+});
+
+/** Every fold but the reset is drawn as it stands, including the first page the
+ * re-walk reaches, which is what the reader is waiting for. */
+test("an ordinary fold is drawn as it stands", () => {
+  const walked = leadTranscriptMerged(
+    leadTranscriptHeldEmpty,
+    cutPage(1, ["uuid-a"], ["uuid-a"], 1),
+    2,
+  );
+  expect(leadTranscriptDrawn(leadTranscriptHeldEmpty, walked)).toStrictEqual(
+    walked,
+  );
+  expect(walked.rewalking).toBe(false);
 });
 
 /**

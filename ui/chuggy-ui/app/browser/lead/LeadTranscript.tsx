@@ -16,6 +16,7 @@ import { apiLeadTranscript } from "../../core/apiRoutes.ts";
 import { instantFigure } from "../../core/figures.ts";
 import { panelReason } from "../../core/freshness.ts";
 import {
+  leadTranscriptDrawn,
   leadTranscriptFailed,
   leadTranscriptHeldEmpty,
   leadTranscriptHolding,
@@ -42,8 +43,13 @@ export interface LeadTranscriptRead {
   readonly highWaterBatch: number;
 }
 
-/** The batches above what is held, a bounded number of pages at a time,
- * abandoned when the page goes away. */
+/**
+ * The batches above what is held, a bounded number of pages at a time,
+ * abandoned when the page goes away. WHAT THE WALK HOLDS AND WHAT IS DRAWN ARE
+ * TWO VALUES: a moved cut empties the first so the cursor goes back to the
+ * start of the stream, and `leadTranscriptDrawn` is what keeps that step from
+ * reaching a reader as a lead that has recorded nothing.
+ */
 export function useLeadTranscript(
   read: LeadTranscriptRead,
 ): LeadTranscriptHeld {
@@ -80,7 +86,7 @@ export function useLeadTranscript(
               )
             : leadTranscriptFailed(holding.current, panelReason(answered));
         holding.current = next;
-        setHeld(next);
+        setHeld((drawn) => leadTranscriptDrawn(drawn, next));
         if (answered.outcome !== "Ok") return;
       }
     };

@@ -30,6 +30,13 @@
  * new cut and the identity of the stream being walked, and the re-walk rebuilds
  * the rest in the order the chain gives it.
  *
+ * THE RESET IS AN EVENT IN THE WALK AND NOT A STATE A READER IS SHOWN. It holds
+ * nothing, and a pane drawn from it says the lead has recorded nothing and is
+ * holding nothing — the two claims this module's panels reserve for a lead that
+ * really has. So what is drawn keeps the last whole fold until the re-walk has
+ * one of its own, and says only the thing the reset does make true: that what
+ * the lead holds is no longer known.
+ *
  * THE RE-WALK COSTS A RUN OF THE READ BUDGET, which is the price of being
  * right: a pane part-way through a re-walk holds less than it did, and the next
  * rise of the store's batch count carries it further. A lead compacting faster
@@ -74,10 +81,13 @@ export interface LeadTranscriptHeld {
   readonly entries: readonly LeadTranscriptEntry[];
   readonly holding: readonly string[];
   readonly compaction: LeadTranscriptCompaction;
-  /** The batch the compaction the gathered answers were decided against fell
-   * in, so a page answered under a different one can be told from one answered
+  /** The batch the compaction this pane's answers are decided against falls in,
+   * so a page answered under a different one can be told from one answered
    * under this. */
   readonly cut: number | undefined;
+  /** Whether this is the empty pane a moved cut leaves behind, which the walk
+   * reads from and no reader is shown. */
+  readonly rewalking: boolean;
   readonly elided: number;
   readonly truncated: boolean;
   /**
@@ -100,6 +110,7 @@ export const leadTranscriptHeldEmpty: LeadTranscriptHeld = {
   holding: [],
   compaction: undefined,
   cut: undefined,
+  rewalking: false,
   elided: 0,
   truncated: false,
   holdingUnknown: false,
@@ -189,8 +200,8 @@ function leadTranscriptCutMoved(
 }
 
 /**
- * A pane holding nothing but the cut its next answers will be decided against,
- * and the stream it is walking — which names what is being read rather than
+ * A pane holding nothing but the cut its answers will now be decided against,
+ * and the stream it is walking, which names what is being read rather than
  * anything read from it. A cursor of nothing is what sends the walk back to the
  * start of the stream.
  */
@@ -198,7 +209,28 @@ function leadTranscriptReset(
   stream: string | undefined,
   cut: number | undefined,
 ): LeadTranscriptHeld {
-  return { ...leadTranscriptHeldEmpty, stream, cut };
+  return { ...leadTranscriptHeldEmpty, stream, cut, rewalking: true };
+}
+
+/**
+ * What a reader is shown, given what the walk now holds and what they were shown
+ * last: every fold as it stands, except the empty pane a moved cut leaves, which
+ * is a step in the walk rather than anything true of the lead. What the reset
+ * does make true is drawn instead — the chain still stands, and what the lead
+ * holds of it is no longer known.
+ */
+export function leadTranscriptDrawn(
+  drawn: LeadTranscriptHeld,
+  walked: LeadTranscriptHeld,
+): LeadTranscriptHeld {
+  if (!walked.rewalking) return walked;
+  return {
+    ...drawn,
+    holding: [],
+    holdingUnknown: true,
+    cut: walked.cut,
+    rewalking: true,
+  };
 }
 
 /** The uuids still worth holding: what is gathered, less any whose entry has
@@ -225,7 +257,7 @@ export function leadTranscriptMerged(
   highWaterBatch: number,
 ): LeadTranscriptHeld {
   if (leadTranscriptCutMoved(held, page))
-    return leadTranscriptReset(held.stream, page.cut);
+    return leadTranscriptReset(page.stream, page.cut);
   const merged = leadTranscriptEntriesMerged(held.entries, page.entries);
   const kept = merged.slice(-leadTranscriptEntriesHeldMax);
   return {
@@ -236,6 +268,7 @@ export function leadTranscriptMerged(
       kept,
     ),
     cut: page.held === undefined ? held.cut : page.cut,
+    rewalking: false,
     compaction: page.compaction ?? held.compaction,
     elided: held.elided + page.elided,
     truncated: held.truncated || page.truncated,
