@@ -1,13 +1,20 @@
 import assert from "node:assert/strict";
+import { readdir, readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
-import { publishWorkerResult, reportWorkerFailure } from "./entrypoint.mjs";
+import {
+  publishWorkerResult,
+  reportWorkerFailure,
+  runWorkerTask,
+} from "./entrypoint.mjs";
 import { credentialScrub, runEvidenceRecorder } from "./runEvidence.mjs";
 
 const task = { workerPlane: { url: "http://worker-plane.test:3001" } };
 const secret = "sk-ant-oat01-0123456789abcdefghijklmnop";
 
-function published(calls, request, scrub) {
+function published(calls, request, scrub, run) {
   return publishWorkerResult(
     {
       task: { ...task, taskKind: "Evaluation" },
@@ -18,12 +25,13 @@ function published(calls, request, scrub) {
       request,
     },
     {},
-    {
+    run ?? {
       output: {
         type: "result",
         structured_output: { summary: `saw ${secret}` },
       },
       result: { verdict: "Pass", summary: `the run saw ${secret}` },
+      diagnosticPath: ".chuggy/agent-result.json",
     },
   );
 }
@@ -47,6 +55,22 @@ function evidenceFor(request) {
     warn: () => undefined,
   });
 }
+
+test("the image carries every module the worker imports", async () => {
+  const directory = dirname(fileURLToPath(import.meta.url));
+  const dockerfile = await readFile(join(directory, "Dockerfile"), "utf8");
+  const modules = (await readdir(directory)).filter(
+    (name) => name.endsWith(".mjs") && !name.endsWith(".test.mjs"),
+  );
+
+  assert.ok(modules.includes("checks.mjs"), modules.join(" "));
+  for (const name of modules) {
+    assert.ok(
+      dockerfile.includes(`COPY images/worker/${name} `),
+      `${name} is imported by the worker and copied into no image`,
+    );
+  }
+});
 
 test("a run that died posts its figures and ends the attempt", async () => {
   const { calls, request } = planeCalls();
@@ -138,6 +162,44 @@ test("the report summary and the diagnostic artifact are scrubbed", async () => 
   assert.ok(summary.includes("[redacted credential]"));
   assert.ok(!diagnostic.includes(secret));
   assert.ok(diagnostic.includes("[redacted credential]"));
+});
+
+test("a task carrying commands runs them and never reaches for an agent", async () => {
+  const context = {
+    directory: process.cwd(),
+    get agent() {
+      throw new Error("the agent was consulted for a check stage");
+    },
+  };
+
+  const run = await runWorkerTask(context, ["exit 2"]);
+
+  assert.equal(run.diagnosticPath, ".chuggy/check-output.json");
+  assert.equal(run.result.verdict, "Fail");
+  assert.equal(run.result.summary, "exit 2 exited 2");
+});
+
+test("a check stage's captured output is the run's own diagnostic artifact", async () => {
+  const { calls, request } = planeCalls();
+
+  await published(calls, request, credentialScrub([secret]), {
+    output: {
+      checks: [{ command: ".chug/tasks/ci.sh", exitStatus: 2, output: secret }],
+    },
+    result: { verdict: "Fail", summary: ".chug/tasks/ci.sh exited 2" },
+    diagnosticPath: ".chuggy/check-output.json",
+  });
+
+  const uploaded = calls.find(({ path }) => path.endsWith("check-output.json"));
+  assert.ok(uploaded, calls.map(({ path }) => path).join(" "));
+  const body = uploaded.init.body.toString("utf8");
+  assert.ok(!body.includes(secret));
+  assert.ok(body.includes(".chug/tasks/ci.sh"));
+  assert.equal(
+    JSON.parse(calls.find(({ path }) => path === "/v1/report").init.body)
+      .report,
+    ".chug/tasks/ci.sh exited 2",
+  );
 });
 
 test("the failure text a crashed run uploads is scrubbed", async () => {

@@ -18,6 +18,12 @@
  * it must report — and they are the two that are never empty, so a briefing
  * that carries nothing else still says who is reading it and what comes back.
  *
+ * A CARRIER SELECTS THE WORDING, NOT A SECOND TEMPLATE. A check stage whose
+ * configuration names commands is run by the worker itself, so its sections
+ * state what the stage is and reports rather than addressing a reader. The two
+ * sections a template owns are still never empty; under `Commands` they say
+ * that nothing reads them, which is the honest version of the same claim.
+ *
  * THE ORDER IS ONE ARRAY AND NOT A SEQUENCE OF STATEMENTS. `./taskBriefing.ts`
  * builds a body for every section identity, then walks `briefingSectionOrder`
  * and drops the empty ones. A section's position is therefore a fact about this
@@ -42,6 +48,20 @@ export const allTaskPurposes: readonly TaskPurpose[] = [
   "Check",
 ];
 
+/**
+ * What carries out the task a briefing is written for: an agent that reads it,
+ * or the worker running the stage's own commands. A commanded stage renders a
+ * briefing nobody reads, because the record of what a stage ran is what a
+ * reader of the attempt has.
+ */
+export type BriefingCarrier = "Agent" | "Commands";
+
+/** Every carrier, so a suite and a renderer iterate rather than restate. */
+export const allBriefingCarriers: readonly BriefingCarrier[] = [
+  "Agent",
+  "Commands",
+];
+
 /** The sections a briefing is made of, named so a rendered one can be inspected by identity. */
 export type BriefingSectionId =
   | "RoleInstructions"
@@ -51,6 +71,7 @@ export type BriefingSectionId =
   | "AcceptanceAndConstraints"
   | "PriorWorkReports"
   | "PurposeInstructions"
+  | "CheckCommands"
   | "Practices"
   | "RuntimeContext"
   | "RequiredResult";
@@ -64,6 +85,7 @@ export const briefingSectionOrder: readonly BriefingSectionId[] = [
   "AcceptanceAndConstraints",
   "PriorWorkReports",
   "PurposeInstructions",
+  "CheckCommands",
   "Practices",
   "RuntimeContext",
   "RequiredResult",
@@ -76,16 +98,17 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 3;
+export const briefingTemplateVersion = 4;
 
-/** The heading one section renders under, which is the only one that varies by role. */
+/** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
   section: BriefingSectionId,
   purpose: TaskPurpose,
+  carrier: BriefingCarrier,
 ): string {
   switch (section) {
     case "RoleInstructions":
-      return "Your role";
+      return carrier === "Commands" ? "What this stage is" : "Your role";
     case "TicketIntent":
       return "What this ticket asks for";
     case "TicketLinks":
@@ -102,12 +125,16 @@ export function briefingHeading(
         : purpose === "Review"
           ? "Review focus"
           : "Check instructions";
+    case "CheckCommands":
+      return "Commands this stage runs";
     case "Practices":
       return "Practices for this task";
     case "RuntimeContext":
       return "Runtime context";
     case "RequiredResult":
-      return "The result you must report";
+      return carrier === "Commands"
+        ? "The result this stage reports"
+        : "The result you must report";
   }
 }
 
@@ -121,10 +148,24 @@ export const briefingLabels = {
   workReports: "Worker reports:",
 } as const;
 
+/** What a commanded stage is, stated rather than addressed to anyone. */
+const briefingCommandedRole: readonly string[] = [
+  "This evaluation stage is the command list below, run in order by the worker.",
+  "No agent runs this stage and nothing reads this briefing.",
+];
+
+/** What a commanded stage reports, stated rather than asked of anyone. */
+const briefingCommandedResult: readonly string[] = [
+  "The stage reports every command it ran and the status that command exited with.",
+  "It passes only when every command exits zero, and stops at the first that does not.",
+];
+
 /** The standing responsibilities of the role, which no ticket may edit. */
 export function briefingRoleInstructions(
   purpose: TaskPurpose,
+  carrier: BriefingCarrier,
 ): readonly string[] {
+  if (carrier === "Commands") return briefingCommandedRole;
   switch (purpose) {
     case "Work":
       return [
@@ -154,7 +195,9 @@ export function briefingRoleInstructions(
 /** What the role must report, which is what the scheduler will read back as a result. */
 export function briefingRequiredResult(
   purpose: TaskPurpose,
+  carrier: BriefingCarrier,
 ): readonly string[] {
+  if (carrier === "Commands") return briefingCommandedResult;
   switch (purpose) {
     case "Work":
       return [

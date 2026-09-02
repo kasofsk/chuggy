@@ -5,6 +5,8 @@ export function workerAgent(task) {
   const mode = task.worker?.mode;
   if (mode === undefined && Array.isArray(task.worker?.arguments))
     return claudeAgent;
+  if (mode?.type === "Commands")
+    throw new Error("a check stage runs its commands and no agent");
   if (mode?.type !== "SingleAgent")
     throw new Error("worker mode is not SingleAgent");
   switch (mode.agent) {

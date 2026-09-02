@@ -7,6 +7,10 @@
  * enumerate for both roles, and each case asserts the rendered identities are
  * the fixed order with members removed rather than merely the right set.
  *
+ * THE CHECKED-IN CONFIGURATIONS ARE READ FROM DISK, because a configuration
+ * this tree ships is refused by the importer rather than by a suite, and a
+ * refusal found there is found on a rig.
+ *
  * THE AUTHORITY CLAIM IS `./taskAuthority.test.ts`'s. What is checked here is
  * the one thing composition adds to it: the template's own narrowing leads the
  * fold, so no grant and no authored block leaves a briefed worker able to
@@ -14,6 +18,7 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -32,6 +37,7 @@ import {
   blessedPracticeCatalog,
   briefingLineCharsMax,
   briefingLinesMax,
+  evaluationChecksMax,
   authoredTaskConfigurationReadiness,
   composeTaskInvocation,
   priorWorkReportsMax,
@@ -616,6 +622,278 @@ test("each evaluation stage selects its own block, practices, and authority", ()
   assert.deepEqual(second.provenance.practices, ["AcceptanceCriteria"]);
   assert.deepEqual(taskAuthorityGrant(first.authority).tools, ["editor"]);
   assert.deepEqual(taskAuthorityGrant(second.authority).tools, ["shell"]);
+});
+
+/** The evaluation stages a check-stage case is composed against. */
+const checkEvaluations: readonly EvaluationBlock[] = [
+  {
+    purpose: "Review",
+    instructions: ["Review the change."],
+    practices: ["ChangedCallPaths"],
+  },
+  { purpose: "Check", checks: [".chug/tasks/ci.sh", "just check-full"] },
+];
+
+/** The lines one composed briefing renders for a section, or nothing when it has none. */
+function sectionLines(
+  view: BriefingView,
+  section: BriefingSectionId,
+): readonly string[] | undefined {
+  return composed(view).briefing.sections.find(
+    (each) => each.section === section,
+  )?.lines;
+}
+
+test("a check stage that names commands hands the worker that resolved list", () => {
+  const worker: WorkerConfiguration = {
+    mode: { type: "SingleAgent", agent: "Claude", arguments: ["--model"] },
+    setup: ["npm ci"],
+    files: [{ path: ".env", content: "" }],
+  };
+  const invocation = composed(
+    viewOf({
+      purpose: "Check",
+      stage: 1,
+      evaluations: checkEvaluations,
+      worker,
+    }),
+  );
+  assert.deepEqual(invocation.worker, {
+    mode: {
+      type: "Commands",
+      commands: [".chug/tasks/ci.sh", "just check-full"],
+    },
+    setup: ["npm ci"],
+    files: [{ path: ".env", content: "" }],
+  });
+});
+
+test("a check stage that names commands is composed even where no worker was authored", () => {
+  const invocation = composed(
+    viewOf({ purpose: "Check", stage: 1, evaluations: checkEvaluations }),
+  );
+  assert.deepEqual(invocation.worker, {
+    mode: {
+      type: "Commands",
+      commands: [".chug/tasks/ci.sh", "just check-full"],
+    },
+    setup: [],
+    files: [],
+  });
+});
+
+test("a check stage that names commands briefs no agent", () => {
+  const view = viewOf({
+    purpose: "Check",
+    stage: 1,
+    evaluations: checkEvaluations,
+    practices: [...allPracticeIds],
+  });
+  const invocation = composed(view);
+  assert.deepEqual(sectionLines(view, "CheckCommands"), [
+    "- .chug/tasks/ci.sh",
+    "- just check-full",
+  ]);
+  assert.equal(sectionLines(view, "PurposeInstructions"), undefined);
+  assert.equal(sectionLines(view, "Practices"), undefined);
+  assert.deepEqual(invocation.provenance.practices, []);
+  for (const line of invocation.briefing.sections.flatMap(
+    (section) => section.lines,
+  )) {
+    assert.ok(!line.startsWith("You are"), line);
+  }
+});
+
+test("a check stage briefed with instructions keeps the agent it always had", () => {
+  const evaluations: readonly EvaluationBlock[] = [
+    {
+      purpose: "Check",
+      instructions: ["Run .chug/tasks/ci.sh and pass only when it exits 0."],
+      practices: ["AcceptanceCriteria"],
+    },
+  ];
+  const view = viewOf({ purpose: "Check", stage: 0, evaluations });
+  assert.deepEqual(sectionLines(view, "PurposeInstructions"), [
+    "Run .chug/tasks/ci.sh and pass only when it exits 0.",
+  ]);
+  assert.equal(sectionLines(view, "CheckCommands"), undefined);
+  assert.equal(composed(view).worker, undefined);
+  assert.deepEqual(composed(view).provenance.practices, ["AcceptanceCriteria"]);
+  assert.deepEqual(sectionLines(view, "RoleInstructions"), [
+    "You are running the separate executable check stage for this ticket.",
+    "Run only the commands named below and judge their actual exit status.",
+    "Exit 2 means the check could not run and is not a pass.",
+  ]);
+});
+
+test("an evaluation stage names its commands or briefs an agent, never both or neither", () => {
+  const evaluationsOf = (evaluations: unknown): unknown => ({
+    ...authoredConfiguration,
+    evaluations,
+  });
+  for (const entry of [
+    { purpose: "Check", checks: ["./ci.sh"], instructions: [] },
+    { purpose: "Check", checks: ["./ci.sh"], practices: [] },
+    { purpose: "Check" },
+    { purpose: "Review", checks: ["./ci.sh"] },
+    { checks: ["./ci.sh"] },
+  ]) {
+    assert.deepEqual(
+      authoredTaskConfigurationReadiness(evaluationsOf([entry])),
+      { readiness: "Incomplete", fault: "EvaluationKindAmbiguous" },
+      JSON.stringify(entry),
+    );
+  }
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness(
+      evaluationsOf([{ purpose: "Check", checks: [".chug/tasks/ci.sh"] }]),
+    ),
+    {
+      readiness: "Ready",
+      configuration: {
+        ...authoredConfiguration,
+        evaluations: [{ purpose: "Check", checks: [".chug/tasks/ci.sh"] }],
+      },
+    },
+  );
+});
+
+test("an entry briefed with instructions parses as the agent stage it has always been", () => {
+  for (const block of [
+    {
+      purpose: "Check",
+      instructions: ["Run the gate and pass only when it exits cleanly."],
+      practices: ["AcceptanceCriteria"],
+    },
+    {
+      purpose: "Review",
+      instructions: ["Review the change."],
+      practices: ["ChangedCallPaths"],
+    },
+    { instructions: ["Review the change."], practices: [] },
+  ]) {
+    const authored: unknown = JSON.parse(
+      JSON.stringify({ ...authoredConfiguration, evaluations: [block] }),
+    );
+    assert.deepEqual(
+      authoredTaskConfigurationReadiness(authored),
+      {
+        readiness: "Ready",
+        configuration: {
+          ...authoredConfiguration,
+          evaluations: [{ purpose: "Review", ...block }],
+        },
+      },
+      JSON.stringify(block),
+    );
+  }
+});
+
+test("a released revision's agentic Check stage still parses beside this tree's own", () => {
+  const { configuration } = JSON.parse(
+    readFileSync(".chug/configurations/chuggy-development.json", "utf8"),
+  ) as {
+    readonly configuration: Record<string, unknown> & {
+      readonly evaluations: readonly unknown[];
+    };
+  };
+  const released = {
+    purpose: "Check",
+    instructions: [
+      "Run .chug/tasks/ci.sh and pass only when it exits cleanly; exit 2 means the evaluation could not run and is not a pass.",
+    ],
+    practices: ["AcceptanceCriteria"],
+  };
+  const parsed = authoredTaskConfigurationReadiness({
+    ...configuration,
+    evaluations: [...configuration.evaluations.slice(0, -1), released],
+  });
+  if (parsed.readiness !== "Ready") assert.fail(parsed.fault);
+  assert.deepEqual(parsed.configuration.evaluations?.at(-1), released);
+});
+
+test("a narrowing a commanded stage cannot honour is refused, never dropped", () => {
+  const entry = {
+    purpose: "Check",
+    checks: [".chug/tasks/ci.sh"],
+    authority: { filesystem: "ReadWorkspace", network: false },
+  };
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      evaluations: [entry],
+    }),
+    { readiness: "Incomplete", fault: "EvaluationFieldUnknown" },
+  );
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      evaluations: [{ purpose: "Check", checks: entry.checks, stage: 1 }],
+    }),
+    { readiness: "Incomplete", fault: "EvaluationFieldUnknown" },
+  );
+});
+
+test("an authored worker cannot spell the mode a check stage resolves to", () => {
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      worker: {
+        mode: { type: "Commands", commands: [".chug/tasks/ci.sh"] },
+        setup: [],
+        files: [],
+      },
+    }),
+    { readiness: "Incomplete", fault: "WorkerInvalid" },
+  );
+});
+
+test("a stage's command list is bounded and made of readable lines", () => {
+  const checksOf = (checks: unknown): unknown => ({
+    ...authoredConfiguration,
+    evaluations: [{ purpose: "Check", checks }],
+  });
+  for (const checks of [
+    [],
+    "./ci.sh",
+    [1],
+    Array.from({ length: evaluationChecksMax + 1 }, () => "./ci.sh"),
+  ]) {
+    assert.deepEqual(authoredTaskConfigurationReadiness(checksOf(checks)), {
+      readiness: "Incomplete",
+      fault: "ChecksInvalid",
+    });
+  }
+  assert.deepEqual(authoredTaskConfigurationReadiness(checksOf([""])), {
+    readiness: "Incomplete",
+    fault: "EmptyLine",
+  });
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness(
+      checksOf(["x".repeat(briefingLineCharsMax + 1)]),
+    ),
+    { readiness: "Incomplete", fault: "TextTooLong" },
+  );
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness(checksOf(["./ci.sh\nrm -rf /"])),
+    { readiness: "Incomplete", fault: "TextUnreadable" },
+  );
+});
+
+test("this tree's own configurations name a check stage the worker runs itself", () => {
+  for (const name of ["chuggy-development", "basic-coding"]) {
+    const document: unknown = JSON.parse(
+      readFileSync(`.chug/configurations/${name}.json`, "utf8"),
+    );
+    const parsed = authoredTaskConfigurationReadiness(
+      (document as { readonly configuration: unknown }).configuration,
+    );
+    if (parsed.readiness !== "Ready") assert.fail(`${name}: ${parsed.fault}`);
+    assert.deepEqual(parsed.configuration.evaluations?.at(-1), {
+      purpose: "Check",
+      checks: [".chug/tasks/ci.sh"],
+    });
+  }
 });
 
 test("a fault in one role's block does not refuse the other role's briefing", () => {

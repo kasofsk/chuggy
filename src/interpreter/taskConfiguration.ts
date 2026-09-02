@@ -15,11 +15,23 @@ export interface PurposeBlock {
   readonly authority?: AuthorityRequest;
 }
 
-/** What one indexed evaluation stage is told beyond the shared brief. */
-export interface EvaluationBlock extends PurposeBlock {
+/** What one indexed evaluation stage briefs an agent with, beyond the shared brief. */
+export interface AgentEvaluationBlock extends PurposeBlock {
   readonly practices: readonly string[];
   readonly purpose: "Review" | "Check";
+  readonly checks?: undefined;
 }
+
+/** One check stage the worker runs itself: command lines, and no agent to brief. */
+export interface CommandEvaluationBlock {
+  readonly purpose: "Check";
+  readonly checks: readonly string[];
+  readonly instructions?: undefined;
+  readonly authority?: undefined;
+}
+
+/** One indexed evaluation stage, which is one of the two kinds a stage may be. */
+export type EvaluationBlock = AgentEvaluationBlock | CommandEvaluationBlock;
 
 interface SingleClaudeWorkerMode {
   readonly type: "SingleAgent";
@@ -38,8 +50,17 @@ interface SingleCodexWorkerMode {
 export type SingleAgentWorkerMode =
   SingleClaudeWorkerMode | SingleCodexWorkerMode;
 
+/**
+ * The resolved command lines a check stage runs, in order, with no agent. The
+ * worker runs this list and never reads the configuration block it came from.
+ */
+export interface CommandsWorkerMode {
+  readonly type: "Commands";
+  readonly commands: readonly string[];
+}
+
 /** How the worker executes a task, discriminated so each mode owns its options. */
-export type WorkerMode = SingleAgentWorkerMode;
+export type WorkerMode = SingleAgentWorkerMode | CommandsWorkerMode;
 
 /** Runtime inputs whose canonical authored bytes travel with every task invocation. */
 export interface ModeWorkerConfiguration {
@@ -94,6 +115,9 @@ export const briefingLinesMax = 8;
 
 export const evaluationBlocksMax = 64;
 
+/** The most command lines one check stage may name. */
+export const evaluationChecksMax = 8;
+
 /** Why an authored document cannot supply the briefing contract. */
 export type TaskConfigurationFault =
   | "BriefingShapeMissing"
@@ -104,6 +128,9 @@ export type TaskConfigurationFault =
   | "WorkInvalid"
   | "ReviewInvalid"
   | "EvaluationsInvalid"
+  | "ChecksInvalid"
+  | "EvaluationKindAmbiguous"
+  | "EvaluationFieldUnknown"
   | "AuthorityInvalid"
   | "WorkerInvalid"
   | "EmptyBrief"
@@ -124,6 +151,9 @@ export const allTaskConfigurationFaults: readonly TaskConfigurationFault[] = [
   "WorkInvalid",
   "ReviewInvalid",
   "EvaluationsInvalid",
+  "ChecksInvalid",
+  "EvaluationKindAmbiguous",
+  "EvaluationFieldUnknown",
   "AuthorityInvalid",
   "WorkerInvalid",
   "EmptyBrief",
@@ -337,34 +367,105 @@ function authoredWorkerMode(value: unknown): WorkerMode | undefined {
     : { type: "SingleAgent", agent, model: model as string, arguments: args };
 }
 
-function authoredTaskConfigurationEvaluationBlock(
+/** One parsed evaluation stage, or the fault that names why it is not one. */
+type EvaluationBlockParsed =
+  | { readonly parsed: "Block"; readonly block: EvaluationBlock }
+  | { readonly parsed: "Refused"; readonly fault: TaskConfigurationFault };
+
+/** Every parsed evaluation stage, or the first fault one of them earned. */
+type EvaluationBlocksParsed =
+  | { readonly parsed: "Blocks"; readonly blocks: readonly EvaluationBlock[] }
+  | { readonly parsed: "Refused"; readonly fault: TaskConfigurationFault };
+
+function authoredTaskConfigurationAgentEvaluationBlock(
   value: unknown,
-): EvaluationBlock | undefined {
+): EvaluationBlockParsed {
   const block = authoredTaskConfigurationPurposeBlock(value);
   if (block === undefined || typeof value !== "object" || value === null)
-    return undefined;
+    return { parsed: "Refused", fault: "EvaluationsInvalid" };
   const practices = authoredTaskConfigurationStringArray(
     (value as Record<string, unknown>)["practices"],
   );
   const purpose = (value as Record<string, unknown>)["purpose"];
   if (purpose !== undefined && purpose !== "Review" && purpose !== "Check")
-    return undefined;
+    return { parsed: "Refused", fault: "EvaluationsInvalid" };
   return practices === undefined
-    ? undefined
-    : { ...block, practices, purpose: purpose ?? "Review" };
+    ? { parsed: "Refused", fault: "EvaluationsInvalid" }
+    : {
+        parsed: "Block",
+        block: { ...block, practices, purpose: purpose ?? "Review" },
+      };
+}
+
+/** Every field a commanded check entry is made of, so any other is refused rather than dropped. */
+const commandEvaluationFields: readonly string[] = ["purpose", "checks"];
+
+/**
+ * One commanded check stage. A field this kind has no place for is refused,
+ * because a stage runs shell under whatever narrowing it was given, and a
+ * dropped narrowing is the one reading of an authored line nobody asked for.
+ */
+function authoredTaskConfigurationCommandEvaluationBlock(
+  record: Record<string, unknown>,
+): EvaluationBlockParsed {
+  if (
+    !Object.keys(record).every((key) => commandEvaluationFields.includes(key))
+  )
+    return { parsed: "Refused", fault: "EvaluationFieldUnknown" };
+  const checks = authoredTaskConfigurationStringArray(record["checks"]);
+  return checks === undefined ||
+    checks.length === 0 ||
+    checks.length > evaluationChecksMax
+    ? { parsed: "Refused", fault: "ChecksInvalid" }
+    : { parsed: "Block", block: { purpose: "Check", checks } };
+}
+
+/**
+ * Whether an entry says which kind of stage it is. A check stage names its
+ * commands or briefs an agent, and naming both or neither says neither.
+ */
+function authoredTaskConfigurationEvaluationKindFault(
+  record: Record<string, unknown>,
+): TaskConfigurationFault | undefined {
+  const commanded = Object.hasOwn(record, "checks");
+  const briefed =
+    record["instructions"] !== undefined || record["practices"] !== undefined;
+  if (commanded && (briefed || record["purpose"] !== "Check"))
+    return "EvaluationKindAmbiguous";
+  return record["purpose"] === "Check" && !commanded && !briefed
+    ? "EvaluationKindAmbiguous"
+    : undefined;
+}
+
+function authoredTaskConfigurationEvaluationBlock(
+  value: unknown,
+): EvaluationBlockParsed {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return { parsed: "Refused", fault: "EvaluationsInvalid" };
+  const record = value as Record<string, unknown>;
+  const kindFault = authoredTaskConfigurationEvaluationKindFault(record);
+  if (kindFault !== undefined) return { parsed: "Refused", fault: kindFault };
+  return Object.hasOwn(record, "checks")
+    ? authoredTaskConfigurationCommandEvaluationBlock(record)
+    : authoredTaskConfigurationAgentEvaluationBlock(value);
 }
 
 function authoredTaskConfigurationEvaluationBlocks(
   value: unknown,
-): readonly EvaluationBlock[] | undefined {
+): EvaluationBlocksParsed {
   if (
     !Array.isArray(value) ||
     value.length === 0 ||
     value.length > evaluationBlocksMax
   )
-    return undefined;
-  const blocks = value.map(authoredTaskConfigurationEvaluationBlock);
-  return blocks.every((block) => block !== undefined) ? blocks : undefined;
+    return { parsed: "Refused", fault: "EvaluationsInvalid" };
+  const blocks: EvaluationBlock[] = [];
+  for (const entry of value) {
+    const parsed = authoredTaskConfigurationEvaluationBlock(entry);
+    if (parsed.parsed === "Refused") return parsed;
+    blocks.push(parsed.block);
+  }
+  return { parsed: "Blocks", blocks };
 }
 
 function authoredTaskConfigurationValidated(input: {
@@ -386,6 +487,7 @@ function authoredTaskConfigurationValidated(input: {
   if (practicesFault !== undefined)
     return { readiness: "Incomplete", fault: practicesFault };
   for (const evaluation of input.evaluations ?? []) {
+    if (evaluation.checks !== undefined) continue;
     const fault = authoredTaskConfigurationPracticesFault(evaluation.practices);
     if (fault !== undefined) return { readiness: "Incomplete", fault };
   }
@@ -395,7 +497,11 @@ function authoredTaskConfigurationValidated(input: {
     input.constraints,
     input.work.instructions,
     input.review.instructions,
-    ...(input.evaluations ?? []).map((evaluation) => evaluation.instructions),
+    ...(input.evaluations ?? []).map((evaluation) =>
+      evaluation.checks === undefined
+        ? evaluation.instructions
+        : evaluation.checks,
+    ),
   ]);
   if (textFault !== undefined)
     return { readiness: "Incomplete", fault: textFault };
@@ -484,12 +590,13 @@ export function authoredTaskConfigurationReadiness(
   if (review === undefined)
     return { readiness: "Incomplete", fault: "ReviewInvalid" };
   const evaluationsValue = record["evaluations"];
-  const evaluations =
+  const parsedEvaluations =
     evaluationsValue === undefined
       ? undefined
       : authoredTaskConfigurationEvaluationBlocks(evaluationsValue);
-  if (evaluationsValue !== undefined && evaluations === undefined)
-    return { readiness: "Incomplete", fault: "EvaluationsInvalid" };
+  if (parsedEvaluations?.parsed === "Refused")
+    return { readiness: "Incomplete", fault: parsedEvaluations.fault };
+  const evaluations = parsedEvaluations?.blocks;
   const authority = record["authority"];
   const parsedAuthority =
     authority === undefined

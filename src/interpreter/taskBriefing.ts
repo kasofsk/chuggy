@@ -21,6 +21,12 @@
  * registration. So a moving ticket row cannot reach a second attempt, and a
  * silently rewritten revision is a refusal rather than a different prompt.
  *
+ * A CHECK STAGE THAT NAMES COMMANDS BRIEFS NOBODY. Its evaluation block
+ * carries `checks` instead of instructions, and composition resolves that list
+ * into the invocation's own worker mode. The worker runs the list it is handed
+ * and never reads the configuration, so a later source of check lines is folded
+ * in here rather than by a second path into the worker.
+ *
  * AUTHORITY IS NEVER COMPOSED FROM PROSE. `./taskAuthority.ts` holds the whole
  * of it, the requests folded into it are structured data, and a rendered
  * briefing has no authority field for a later block to raise. The template's
@@ -86,8 +92,10 @@ import {
   authoredTaskConfigurationReadiness,
   allPracticeIds,
   briefingLinesMax,
+  evaluationChecksMax,
   taskConfigurationLineFault,
   type AuthoredTaskConfiguration,
+  type CommandEvaluationBlock,
   type EvaluationBlock,
   type PurposeBlock,
   type PracticeId,
@@ -100,7 +108,11 @@ export {
   allPracticeIds,
   briefingLineCharsMax,
   briefingLinesMax,
+  evaluationChecksMax,
+  type AgentEvaluationBlock,
   type AuthoredTaskConfiguration,
+  type CommandEvaluationBlock,
+  type CommandsWorkerMode,
   type EvaluationBlock,
   type PurposeBlock,
   type PracticeId,
@@ -117,10 +129,11 @@ import {
   briefingRoleInstructions,
   briefingSectionOrder,
   briefingTemplateVersion,
+  type BriefingCarrier,
   type BriefingSectionId,
   type TaskPurpose,
 } from "./briefingTemplate.ts";
-export type { TaskPurpose } from "./briefingTemplate.ts";
+export type { BriefingCarrier, TaskPurpose } from "./briefingTemplate.ts";
 import { briefIntentLines, type DraftBrief } from "./ticketBrief.ts";
 import {
   resolveTaskAuthority,
@@ -413,9 +426,23 @@ function purposeBlock(
   return stage === undefined ? undefined : configuration.evaluations[stage];
 }
 
+/** Whether this stage is the kind the worker runs itself rather than briefing an agent. */
+function commandedStage(
+  block: PurposeBlock | EvaluationBlock,
+): block is CommandEvaluationBlock {
+  return "checks" in block && block.checks !== undefined;
+}
+
+/** The carrier one view renders under, which is the only thing the wording turns on. */
+function briefingCarrier(view: BriefingView): BriefingCarrier {
+  const block = purposeBlock(view.configuration, view.purpose, view.stage);
+  return block !== undefined && commandedStage(block) ? "Commands" : "Agent";
+}
+
 function purposePractices(view: BriefingView): readonly string[] | undefined {
   const block = purposeBlock(view.configuration, view.purpose, view.stage);
   if (block === undefined) return undefined;
+  if (commandedStage(block)) return [];
   return "practices" in block ? block.practices : view.configuration.practices;
 }
 
@@ -448,7 +475,9 @@ function briefingConfigurationFault(
     [brief.motivation, briefingLinesMax],
     [brief.acceptanceCriteria, briefingLinesMax],
     [brief.constraints, briefingLinesMax],
-    [block.instructions, briefingLinesMax],
+    commandedStage(block)
+      ? [block.checks, evaluationChecksMax]
+      : [block.instructions, briefingLinesMax],
   ]);
 }
 
@@ -537,8 +566,11 @@ function briefingBodies(
   view: BriefingView,
   practices: readonly BlessedPractice[],
 ): Record<BriefingSectionId, readonly string[]> {
+  const block = purposeBlock(view.configuration, view.purpose, view.stage);
+  const commanded = block !== undefined && commandedStage(block);
+  const carrier = briefingCarrier(view);
   return {
-    RoleInstructions: briefingRoleInstructions(view.purpose),
+    RoleInstructions: briefingRoleInstructions(view.purpose, carrier),
     TicketIntent:
       view.brief === undefined ? [] : briefIntentLines(view.brief.intent),
     TicketLinks:
@@ -552,14 +584,13 @@ function briefingBodies(
             view.priorWorkReports.reports,
           )
         : [],
-    PurposeInstructions:
-      purposeBlock(view.configuration, view.purpose, view.stage)
-        ?.instructions ?? [],
+    PurposeInstructions: commanded ? [] : (block?.instructions ?? []),
+    CheckCommands: commanded ? block.checks.map(briefingBullet) : [],
     Practices: practices.map((practice) =>
       briefingBullet(practice.instruction),
     ),
     RuntimeContext: briefingRuntimeLines(view.runtime),
-    RequiredResult: briefingRequiredResult(view.purpose),
+    RequiredResult: briefingRequiredResult(view.purpose, carrier),
   };
 }
 
@@ -609,11 +640,12 @@ export function renderBriefing(
   practices: readonly BlessedPractice[],
 ): RenderedBriefing {
   const bodies = briefingBodies(view, practices);
+  const carrier = briefingCarrier(view);
   const sections = briefingSectionOrder
     .filter((section) => bodies[section].length > 0)
     .map((section) => ({
       section,
-      heading: briefingHeading(section, view.purpose),
+      heading: briefingHeading(section, view.purpose, carrier),
       lines: bodies[section],
     }));
   if (!briefingSectionsOrdered(sections)) {
@@ -688,6 +720,25 @@ function briefingAuthorityRequests(
   ];
 }
 
+/**
+ * The worker configuration this stage runs under, which for a commanded check
+ * stage is the resolved command list rather than the authored agent mode. The
+ * authored setup and files are kept, because a stage prepares its workspace the
+ * same way whatever runs in it.
+ */
+function briefingWorker(
+  view: BriefingView,
+): AuthoredTaskConfiguration["worker"] {
+  const block = purposeBlock(view.configuration, view.purpose, view.stage);
+  const worker = view.configuration.worker;
+  if (block === undefined || !commandedStage(block)) return worker;
+  return {
+    mode: { type: "Commands", commands: block.checks },
+    setup: worker?.setup ?? [],
+    files: worker?.files ?? [],
+  };
+}
+
 /** What a launched worker receives: what to do, what it may do, and what was retained about both. */
 export interface TaskInvocation {
   readonly briefing: RenderedBriefing;
@@ -740,6 +791,7 @@ export function composeTaskInvocation(
     return { composed: "Blocked", fault: resolved.fault };
   }
   const briefing = renderBriefing(view, resolved.practices);
+  const worker = briefingWorker(view);
   const invocation: TaskInvocation = {
     briefing,
     authority: resolveTaskAuthority(
@@ -747,9 +799,7 @@ export function composeTaskInvocation(
       briefingAuthorityRequests(view),
     ),
     provenance: briefingProvenance(briefing, view.pin, resolved.practices),
-    ...(view.configuration.worker === undefined
-      ? {}
-      : { worker: view.configuration.worker }),
+    ...(worker === undefined ? {} : { worker }),
   };
   return taskInvocationBytes(invocation) > taskInvocationBytesMax
     ? { composed: "Blocked", fault: "EnvelopeTooLong" }
