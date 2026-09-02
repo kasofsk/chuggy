@@ -24,7 +24,9 @@ import { after, test } from "node:test";
 import { promisify } from "node:util";
 
 import { postgresLimitsDefault } from "../../src/adapters/postgres/pool.ts";
+import { kubernetesSessionBoundsDefaults } from "../../src/adapters/kubernetes/sessionPod.ts";
 import { executionSchedulerDefaults } from "../../src/interpreter/executionScheduler.ts";
+import { sessionSchedulerDefaults } from "../../src/interpreter/sessionScheduler.ts";
 import { finalizerDefaults } from "../../src/interpreter/finalizer.ts";
 import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
 import {
@@ -67,6 +69,13 @@ const policy = {
   Work: { profile: "standard", runtimeVersion: "1", grant },
 };
 
+const sessionPolicy = {
+  image: workerImage,
+  profile: "session",
+  runtimeVersion: "1",
+  grant,
+};
+
 const configuration = {
   tenant: "tenant",
   project: "project",
@@ -98,6 +107,9 @@ const environment: Readonly<Record<string, string>> = {
   CHUG_SCHEDULER_ADMITTED_IMAGES: JSON.stringify(images),
   CHUG_SCHEDULER_WORKER_RESOURCES: JSON.stringify(resources),
   CHUG_SCHEDULER_EXECUTION_POLICY: JSON.stringify(policy),
+  CHUG_SCHEDULER_SESSION_RESOURCES: JSON.stringify(resources),
+  CHUG_SCHEDULER_SESSION_POLICY: JSON.stringify(sessionPolicy),
+  CHUG_SCHEDULER_SESSION_MODEL: "claude-opus-4-5",
 };
 
 /** Every variable the command refuses to start without. */
@@ -129,62 +141,153 @@ function parseProgram(named: Readonly<Record<string, string>>): string {
   `;
 }
 
+/** What the complete environment above parses into, whole, so the case is one assertion. */
+const parsed = {
+  database: {
+    url: environment["CHUG_SCHEDULER_DATABASE_URL"],
+    limits: postgresLimitsDefault,
+  },
+  runtime: {
+    idleIntervalMilliseconds: 1_000,
+    shutdownDrainMilliseconds: 15_000,
+  },
+  identity: {
+    owner: "scheduler-one",
+    recoveryEpoch: "epoch-one",
+    cluster: "default",
+  },
+  scheduler: executionSchedulerDefaults,
+  ticketService: ticketServiceDefaults,
+  finalizer: finalizerDefaults,
+  workers: {
+    podLabels: {},
+    podAnnotations: {},
+    nodeSelector: {},
+    podSecurityContext: {},
+    containerSecurityContext: {},
+    apiBaseUrl: "https://cluster.invalid:6443",
+    namespace: "chuggy-workers",
+    tokenFile,
+    workerPlaneUrl: "https://worker-plane.invalid",
+    capabilityFile: "/run/chuggy/capability",
+    workspacePath: "/workspace",
+    credentialMounts: {},
+    environment: {},
+    serviceAccountName: "chuggy-worker",
+    podNamePrefix: "chuggy-worker",
+    resources,
+    activeDeadlineSecs: 3_600,
+    requestTimeoutSecsMax: 30,
+    unavailableRetryAfterSecs: 15,
+  },
+  policy: {
+    profiles: {
+      Work: {
+        profile: { profile: "standard", runtimeVersion: "1" },
+        grant,
+      },
+    },
+    imagesAdmitted: images,
+  },
+  workerCatalog: [],
+  runtimeFacts: {},
+  sessions: {
+    apiBaseUrl: "https://cluster.invalid:6443",
+    namespace: "chuggy-workers",
+    tokenFile,
+    serviceAccountName: "chuggy-worker",
+    nodeSelector: {},
+    podSecurityContext: {},
+    containerSecurityContext: {},
+    requestTimeoutSecsMax: 30,
+    unavailableRetryAfterSecs: 15,
+    workerPlaneUrl: "https://worker-plane.invalid",
+    capabilityFile: "/run/chuggy/capability",
+    workspacePath: "/workspace",
+    credentialMounts: {},
+    podNamePrefix: "chuggy-session",
+    podLabels: {},
+    podAnnotations: {},
+    environment: {},
+    resources,
+    activeDeadlineSecs: 86_400,
+    bounds: kubernetesSessionBoundsDefaults,
+    model: "claude-opus-4-5",
+  },
+  sessionScheduler: sessionSchedulerDefaults,
+  sessionPolicy: {
+    image: workerImage,
+    profile: { profile: "session", runtimeVersion: "1" },
+    grant,
+  },
+};
+
 test("a complete environment parses into the plain data the process root takes", async () => {
   const found: unknown = JSON.parse(
     await schedulerProgram(parseProgram(environment)),
   );
-  assert.deepEqual(found, {
-    parsed: {
-      database: {
-        url: environment["CHUG_SCHEDULER_DATABASE_URL"],
-        limits: postgresLimitsDefault,
-      },
-      runtime: {
-        idleIntervalMilliseconds: 1_000,
-        shutdownDrainMilliseconds: 15_000,
-      },
-      identity: {
-        owner: "scheduler-one",
-        recoveryEpoch: "epoch-one",
-        cluster: "default",
-      },
-      scheduler: executionSchedulerDefaults,
-      ticketService: ticketServiceDefaults,
-      finalizer: finalizerDefaults,
-      workers: {
-        podLabels: {},
-        podAnnotations: {},
-        nodeSelector: {},
-        podSecurityContext: {},
-        containerSecurityContext: {},
-        apiBaseUrl: "https://cluster.invalid:6443",
-        namespace: "chuggy-workers",
-        tokenFile,
-        workerPlaneUrl: "https://worker-plane.invalid",
-        capabilityFile: "/run/chuggy/capability",
-        workspacePath: "/workspace",
-        credentialMounts: {},
-        environment: {},
-        serviceAccountName: "chuggy-worker",
-        podNamePrefix: "chuggy-worker",
-        resources,
-        activeDeadlineSecs: 3_600,
-        requestTimeoutSecsMax: 30,
-        unavailableRetryAfterSecs: 15,
-      },
-      policy: {
-        profiles: {
-          Work: {
-            profile: { profile: "standard", runtimeVersion: "1" },
-            grant,
-          },
-        },
-        imagesAdmitted: images,
-      },
-      workerCatalog: [],
-      runtimeFacts: {},
-    },
+  assert.deepEqual(found, { parsed });
+});
+
+test("a session stands on the site the worker half of one deployment already names", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(parseProgram(environment)),
+  ) as {
+    readonly parsed: {
+      readonly workers: Readonly<Record<string, unknown>>;
+      readonly sessions: Readonly<Record<string, unknown>>;
+    };
+  };
+  for (const shared of [
+    "apiBaseUrl",
+    "namespace",
+    "tokenFile",
+    "serviceAccountName",
+    "nodeSelector",
+    "podSecurityContext",
+    "containerSecurityContext",
+    "requestTimeoutSecsMax",
+    "unavailableRetryAfterSecs",
+    "workerPlaneUrl",
+    "capabilityFile",
+    "workspacePath",
+    "credentialMounts",
+  ]) {
+    assert.deepEqual(
+      found.parsed.sessions[shared],
+      found.parsed.workers[shared],
+      shared,
+    );
+  }
+});
+
+test("a session bound a deployment states is taken and the rest stay the defaults", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(
+      parseProgram({
+        ...environment,
+        CHUG_SCHEDULER_SESSION_BOUNDS: JSON.stringify({ idleMs: 60_000 }),
+      }),
+    ),
+  ) as {
+    readonly parsed?: { readonly sessions: { readonly bounds: unknown } };
+  };
+  assert.deepEqual(found.parsed?.sessions.bounds, {
+    ...kubernetesSessionBoundsDefaults,
+    idleMs: 60_000,
   });
+});
+
+test("a session bound no configuration publishes is refused rather than ignored", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(
+      parseProgram({
+        ...environment,
+        CHUG_SCHEDULER_SESSION_BOUNDS: JSON.stringify({ idelMs: 60_000 }),
+      }),
+    ),
+  ) as { readonly refused?: string };
+  assert.match(found.refused ?? "", /SESSION_BOUNDS names an unknown bound/u);
 });
 
 /** What one admitted-images list parses into: the images admitted and the catalog. */

@@ -375,3 +375,13 @@ export function kubernetesSessionPodRequest(
     },
   };
 }
+
+/** The bounds a deployment that names none of them gets. */
+export const kubernetesSessionBoundsDefaults: KubernetesSessionBounds = {
+  mailboxPollMs: 1_000,
+  idleMs: 300_000,
+  resultDrainMs: 2_000,
+  loadTimeoutMs: 120_000,
+  turnsMax: 200,
+  budgetUsd: 5,
+};

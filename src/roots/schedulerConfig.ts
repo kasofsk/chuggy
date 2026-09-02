@@ -30,6 +30,12 @@ import {
   postgresLimitsDefault,
   type PostgresLimits,
 } from "../adapters/postgres/pool.ts";
+import type { KubernetesPodSite } from "../adapters/kubernetes/kubernetesSite.ts";
+import {
+  kubernetesSessionBoundsDefaults,
+  type KubernetesSessionBounds,
+  type KubernetesSessionLaunchConfig,
+} from "../adapters/kubernetes/sessionPod.ts";
 import type { KubernetesWorkerLaunchConfig } from "../adapters/kubernetes/workerPod.ts";
 import type {
   SuppliedExecutionPolicyConfig,
@@ -51,6 +57,11 @@ import {
   finalizerDefaults,
   type FinalizerConfig,
 } from "../interpreter/finalizer.ts";
+import {
+  sessionSchedulerDefaults,
+  type SessionPolicy,
+  type SessionSchedulerConfig,
+} from "../interpreter/sessionScheduler.ts";
 import {
   asRecoveryEpoch,
   type RecoveryEpoch,
@@ -88,6 +99,9 @@ export interface SchedulerCommandConfig {
   readonly policy: SuppliedExecutionPolicyConfig;
   readonly workerCatalog: readonly AdmittedWorker[];
   readonly runtimeFacts: SuppliedRuntimeFactsConfig;
+  readonly sessions: KubernetesSessionLaunchConfig;
+  readonly sessionScheduler: SessionSchedulerConfig;
+  readonly sessionPolicy: SessionPolicy;
 }
 
 /** The one prefix every variable this command reads is spelled with. */
@@ -101,6 +115,8 @@ const schedulerCommandDefaults = {
   clusterRetryAfterSecs: 15,
   workerDeadlineSecs: 3_600,
   workerPodNamePrefix: "chuggy-worker",
+  sessionDeadlineSecs: 86_400,
+  sessionPodNamePrefix: "chuggy-session",
 } as const;
 
 /** A record of the environment as read, so a caller supplies one rather than a process. */
@@ -129,6 +145,13 @@ const schedulerGrantSchema = z.strictObject({
 });
 
 const schedulerProfileSchema = z.strictObject({
+  profile: schedulerTextSchema,
+  runtimeVersion: schedulerTextSchema,
+  grant: schedulerGrantSchema,
+});
+
+const schedulerSessionPolicySchema = z.strictObject({
+  image: schedulerTextSchema.max(workerImageCharsMax),
   profile: schedulerTextSchema,
   runtimeVersion: schedulerTextSchema,
   grant: schedulerGrantSchema,
@@ -520,6 +543,97 @@ function schedulerWorkers(
   };
 }
 
+/**
+ * The session half of this deployment, which stands on the same site the worker
+ * half does — same namespace, service account, API and credential mounts, since
+ * a second set of variables for those would be a second answer to what the site
+ * is and the first deployment to change one would leave the other placing pods
+ * the site no longer describes. What a session names for itself is what makes
+ * it a session: its own pod name, budget, deadline, labels, bounds and model.
+ */
+function schedulerSessions(
+  environment: SchedulerEnvironment,
+  site: KubernetesPodSite,
+): KubernetesSessionLaunchConfig {
+  return {
+    ...site,
+    podNamePrefix:
+      schedulerOptional(environment, "SESSION_POD_NAME_PREFIX") ??
+      schedulerCommandDefaults.sessionPodNamePrefix,
+    podLabels: schedulerJsonOr(
+      environment,
+      "SESSION_LABELS",
+      schedulerTextMapSchema,
+      {},
+    ),
+    podAnnotations: schedulerJsonOr(
+      environment,
+      "SESSION_ANNOTATIONS",
+      schedulerTextMapSchema,
+      {},
+    ),
+    environment: schedulerJsonOr(
+      environment,
+      "SESSION_ENVIRONMENT",
+      schedulerTextMapSchema,
+      {},
+    ),
+    resources: schedulerJson(
+      environment,
+      "SESSION_RESOURCES",
+      schedulerResourcesSchema,
+    ),
+    activeDeadlineSecs: schedulerPositive(
+      environment,
+      "SESSION_DEADLINE_SECS",
+      schedulerCommandDefaults.sessionDeadlineSecs,
+    ),
+    bounds: schedulerBounds<KubernetesSessionBounds>(
+      environment,
+      "SESSION_BOUNDS",
+      kubernetesSessionBoundsDefaults,
+    ),
+    model: schedulerRequired(environment, "SESSION_MODEL"),
+  };
+}
+
+/** The one image, profile and grant every session of this site runs under. */
+function schedulerSessionPolicy(
+  environment: SchedulerEnvironment,
+): SessionPolicy {
+  const parsed = schedulerJson(
+    environment,
+    "SESSION_POLICY",
+    schedulerSessionPolicySchema,
+  );
+  return {
+    image: parsed.image,
+    profile: { profile: parsed.profile, runtimeVersion: parsed.runtimeVersion },
+    grant: parsed.grant,
+  };
+}
+
+/** Only the cluster half of a worker configuration, which is the site both halves share. */
+function schedulerPodSite(
+  workers: KubernetesWorkerLaunchConfig,
+): KubernetesPodSite {
+  return {
+    apiBaseUrl: workers.apiBaseUrl,
+    namespace: workers.namespace,
+    tokenFile: workers.tokenFile,
+    serviceAccountName: workers.serviceAccountName,
+    nodeSelector: workers.nodeSelector,
+    podSecurityContext: workers.podSecurityContext,
+    containerSecurityContext: workers.containerSecurityContext,
+    requestTimeoutSecsMax: workers.requestTimeoutSecsMax,
+    unavailableRetryAfterSecs: workers.unavailableRetryAfterSecs,
+    workerPlaneUrl: workers.workerPlaneUrl,
+    capabilityFile: workers.capabilityFile,
+    workspacePath: workers.workspacePath,
+    credentialMounts: workers.credentialMounts,
+  };
+}
+
 /** The database this process holds its scheduler credential against, and its pool bounds. */
 function schedulerDatabase(
   environment: SchedulerEnvironment,
@@ -544,6 +658,7 @@ export function schedulerCommandConfig(
     "ADMITTED_IMAGES",
     schedulerImagesSchema,
   );
+  const workers = schedulerWorkers(environment);
   return {
     database: schedulerDatabase(environment),
     runtime: {
@@ -583,9 +698,16 @@ export function schedulerCommandConfig(
       "FINALIZER_BOUNDS",
       finalizerDefaults,
     ),
-    workers: schedulerWorkers(environment),
+    workers,
     policy: schedulerPolicy(environment, admitted),
     workerCatalog: schedulerWorkerCatalog(admitted),
     runtimeFacts: workspace === undefined ? {} : { workspace },
+    sessions: schedulerSessions(environment, schedulerPodSite(workers)),
+    sessionScheduler: schedulerBounds(
+      environment,
+      "SESSION_PASS_BOUNDS",
+      sessionSchedulerDefaults,
+    ),
+    sessionPolicy: schedulerSessionPolicy(environment),
   };
 }
