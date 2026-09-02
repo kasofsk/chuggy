@@ -44,6 +44,36 @@ export const runTranscriptPageBatchesMax = 8;
 /** The largest configuration snapshot, which is what one read answers whole. */
 export const runConfigurationBytesMax = 1_048_576;
 
+/** One store batch is one wire body's worth, so a batch never needs a second read. */
+export const sessionStoreBatchBytesMax = nativeHttpBodyBytesMax;
+
+/** The most batches one stream of a session's store holds. */
+export const sessionStoreBatchesMax = 65_536;
+
+/** The most bytes one session's whole store holds, across every stream. */
+export const sessionStoreBytesMax = 1_073_741_824;
+
+/** The longest stream name, which is an agent runtime session id and an optional subpath. */
+export const sessionStoreStreamCharsMax = 256;
+
+/** How many batches one store read answers with, so a page stays under the body bound. */
+export const sessionStorePageBatchesMax = 8;
+
+/** The most turns one session's mailbox ever holds. */
+export const sessionTurnSeriesMax = 100_000;
+
+/** How many of those turns wait at once, past which a submitter is refused. */
+export const sessionTurnBacklogMax = 256;
+
+/** How many attempts one turn may be handed before it is failed. */
+export const sessionTurnAttemptsMax = 3;
+
+export const sessionTurnInputCharsMax = 65_536;
+export const sessionTurnResultCharsMax = 65_536;
+
+/** How many already-confirmed entry uuids one stream's adapter remembers. */
+export const sessionStoreUuidsRemembered = 4_096;
+
 /** The largest body one worker-plane upload carries, which an artifact is written against. */
 export const workerPlaneUploadBytesMax = 4_194_304;
 
