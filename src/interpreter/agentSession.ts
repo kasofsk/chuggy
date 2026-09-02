@@ -173,6 +173,12 @@ export const allSessionCapabilities = [
   "RepositoryRead",
   "RepositoryWrite",
   "RunCommands",
+  /** The chuggy server's reads: what a session may see of the project through the API. */
+  "ProjectRead",
+  /** The chuggy server's authorship: drafts, and releasing one. */
+  "DraftAuthor",
+  /** The decision tools, which write nothing and compose the turn's answer. */
+  "LeadDecision",
 ] as const;
 export type SessionCapability = (typeof allSessionCapabilities)[number];
 
