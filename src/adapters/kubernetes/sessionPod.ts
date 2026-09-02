@@ -80,6 +80,24 @@ export const kubernetesSessionBoundsDefaults: KubernetesSessionBounds = {
 };
 
 /**
+ * The least a dollar cap may be. A budget below the smallest unit a model is
+ * billed in cannot pay for a turn at any price, so a site naming one has named
+ * a session that fails every turn it is handed rather than a cap on spending —
+ * and a cap that can only ever be breached is not a cap.
+ */
+export const kubernetesSessionBudgetUsdMin = 0.01;
+
+/** A dollar cap: a fraction the image can spend, and never one too small to buy a turn. */
+function kubernetesSessionBudget(value: number, what: string): number {
+  kubernetesPositiveNumber(value, what);
+  if (value < kubernetesSessionBudgetUsdMin)
+    throw new RangeError(
+      `${what} must be at least ${String(kubernetesSessionBudgetUsdMin)} to buy a turn at all`,
+    );
+  return value;
+}
+
+/**
  * How each bound is refused: milliseconds and counts are whole numbers, and a
  * dollar cap is not, because the image spends a fraction of one and a bound the
  * pod honours while the launcher refuses it is a bound with two readings.
@@ -100,7 +118,7 @@ const kubernetesSessionBoundChecks: {
   resultDrainMs: kubernetesPositive,
   loadTimeoutMs: kubernetesPositive,
   turnsMax: kubernetesPositive,
-  budgetUsd: kubernetesPositiveNumber,
+  budgetUsd: kubernetesSessionBudget,
 };
 
 /** Every bound, read off the checks so the two can never name different sets. */

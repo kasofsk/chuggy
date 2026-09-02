@@ -33,6 +33,7 @@ import {
 import type { KubernetesPodSite } from "../adapters/kubernetes/kubernetesSite.ts";
 import {
   kubernetesSessionBoundsDefaults,
+  kubernetesSessionBudgetUsdMin,
   type KubernetesSessionBounds,
   type KubernetesSessionLaunchConfig,
 } from "../adapters/kubernetes/sessionPod.ts";
@@ -374,16 +375,23 @@ function schedulerJsonOr<Parsed>(
     : schedulerDocument(name, schema, value);
 }
 
-/** A published set of bounds with this deployment's overrides applied, refusing an unknown one. */
+/**
+ * A published set of bounds with this deployment's overrides applied, refusing
+ * an unknown one. A bound is a positive whole number unless `kinds` gives it
+ * another schema: a bound the launcher accepts and this parse refuses is a
+ * bound with two readings, and the deployment meets the stricter one as a
+ * refusal to boot on a value the tree's own documentation invited.
+ */
 function schedulerBounds<Bounds extends Record<keyof Bounds, number>>(
   environment: SchedulerEnvironment,
   name: string,
   defaults: Bounds,
+  kinds?: Readonly<Partial<Record<keyof Bounds, z.ZodType<number>>>>,
 ): Bounds {
   const overrides = schedulerJsonOr(
     environment,
     name,
-    z.record(schedulerTextSchema, schedulerBoundSchema),
+    z.record(schedulerTextSchema, z.number()),
     {},
   );
   const merged = { ...defaults };
@@ -392,10 +400,30 @@ function schedulerBounds<Bounds extends Record<keyof Bounds, number>>(
       throw new RangeError(
         `${schedulerVariablePrefix}${name} names an unknown bound ${bound}`,
       );
-    Object.assign(merged, { [bound]: value });
+    const parsed = (
+      kinds?.[bound as keyof Bounds] ?? schedulerBoundSchema
+    ).safeParse(value);
+    if (!parsed.success)
+      throw new RangeError(
+        `${schedulerVariablePrefix}${name}: ${bound} ${parsed.error.issues
+          .map((issue) => issue.message)
+          .join("; ")}`,
+      );
+    Object.assign(merged, { [bound]: parsed.data });
   }
   return merged;
 }
+
+/**
+ * The session bounds that are not whole numbers, which is the dollar cap alone.
+ * Its floor is the launcher's own, so the two tiers admit exactly one set of
+ * values rather than agreeing by coincidence.
+ */
+const schedulerSessionBoundKinds: Readonly<
+  Partial<Record<keyof KubernetesSessionBounds, z.ZodType<number>>>
+> = {
+  budgetUsd: z.number().finite().min(kubernetesSessionBudgetUsdMin),
+};
 
 /** Only the entries that named themselves, which are the ones a boot publishes. */
 function schedulerWorkerCatalog(
@@ -592,6 +620,7 @@ function schedulerSessions(
       environment,
       "SESSION_BOUNDS",
       kubernetesSessionBoundsDefaults,
+      schedulerSessionBoundKinds,
     ),
     model: schedulerRequired(environment, "SESSION_MODEL"),
   };

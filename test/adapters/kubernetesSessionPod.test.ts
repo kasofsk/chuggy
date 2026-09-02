@@ -32,6 +32,7 @@ import {
   kubernetesSessionContainerName,
   kubernetesSessionModelVariable,
   kubernetesSessionPodName,
+  kubernetesSessionBudgetUsdMin,
   kubernetesSessionPodRequest,
   kubernetesSessionReservedVariables,
   kubernetesSessionSecret,
@@ -390,8 +391,19 @@ test("a dollar cap the image can spend a fraction of is a bound and not an error
     bounds: { ...config.bounds, budgetUsd: 0.5 },
   };
   assert.deepEqual(checkedKubernetesSessionLaunchConfig(halved), halved);
+  const least = {
+    ...config,
+    bounds: { ...config.bounds, budgetUsd: kubernetesSessionBudgetUsdMin },
+  };
+  assert.deepEqual(checkedKubernetesSessionLaunchConfig(least), least);
   assert.equal(kubernetesSessionTask(halved, placement).bounds.budgetUsd, 0.5);
-  for (const refused of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+  for (const refused of [
+    0,
+    -1,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    kubernetesSessionBudgetUsdMin / 10,
+  ]) {
     assert.throws(
       () =>
         checkedKubernetesSessionLaunchConfig({

@@ -24,7 +24,11 @@ import { after, test } from "node:test";
 import { promisify } from "node:util";
 
 import { postgresLimitsDefault } from "../../src/adapters/postgres/pool.ts";
-import { kubernetesSessionBoundsDefaults } from "../../src/adapters/kubernetes/sessionPod.ts";
+import {
+  kubernetesSessionBoundsDefaults,
+  kubernetesSessionBudgetUsdMin,
+  type KubernetesSessionBounds,
+} from "../../src/adapters/kubernetes/sessionPod.ts";
 import { executionSchedulerDefaults } from "../../src/interpreter/executionScheduler.ts";
 import { sessionSchedulerDefaults } from "../../src/interpreter/sessionScheduler.ts";
 import { finalizerDefaults } from "../../src/interpreter/finalizer.ts";
@@ -309,6 +313,58 @@ test("a session bound a deployment states is taken and the rest stay the default
     ...kubernetesSessionBoundsDefaults,
     idleMs: 60_000,
   });
+});
+
+/** One session bound as a deployment states it, through the whole real parse. */
+async function parsedSessionBound(
+  bound: string,
+  value: number,
+): Promise<{
+  readonly parsed?: {
+    readonly sessions: { readonly bounds: KubernetesSessionBounds };
+  };
+  readonly refused?: string;
+}> {
+  return JSON.parse(
+    await schedulerProgram(
+      parseProgram({
+        ...environment,
+        CHUG_SCHEDULER_SESSION_BOUNDS: JSON.stringify({ [bound]: value }),
+      }),
+    ),
+  ) as {
+    readonly parsed?: {
+      readonly sessions: { readonly bounds: KubernetesSessionBounds };
+    };
+    readonly refused?: string;
+  };
+}
+
+test("a site may hold one session turn to a fraction of a dollar", async () => {
+  const found = await parsedSessionBound("budgetUsd", 0.5);
+  assert.equal(found.refused, undefined);
+  assert.equal(found.parsed?.sessions.bounds.budgetUsd, 0.5);
+});
+
+test("a budget too small to buy a turn is refused, and a count is still whole", async () => {
+  for (const [bound, value] of [
+    ["budgetUsd", kubernetesSessionBudgetUsdMin / 10],
+    ["budgetUsd", 0],
+    ["budgetUsd", -1],
+    ["turnsMax", 1.5],
+    ["idleMs", 0],
+  ] as const) {
+    const found = await parsedSessionBound(bound, value);
+    assert.equal(
+      found.parsed,
+      undefined,
+      `${bound} ${String(value)} was accepted`,
+    );
+    assert.match(
+      found.refused ?? "",
+      new RegExp(`SESSION_BOUNDS: ${bound}`, "u"),
+    );
+  }
 });
 
 test("a session bound no configuration publishes is refused rather than ignored", async () => {
