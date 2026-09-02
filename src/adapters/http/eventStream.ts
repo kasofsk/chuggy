@@ -146,6 +146,9 @@ export function projectResourceReader(
               }),
             ),
           );
+        case "AgenticRefusal":
+        case "Session":
+          throw new RangeError(`no read is registered for a ${kind} change`);
         default:
           return assertNever(kind);
       }

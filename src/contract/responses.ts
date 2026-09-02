@@ -12,18 +12,28 @@
 import { z } from "zod";
 
 import {
+  agenticRefusalReasonCharsMax,
+  agenticRefusalsAnsweredMax,
   countSchema,
   cursorSchema,
   digestSchema,
   dispatchViewSchemaVersion,
   identitySchema,
   instantSchema,
+  leadTurnsAnsweredMax,
   nativeHttpPageItemsMax,
   partitionSchema,
   resultReportCharsMax,
   runModelCharsMax,
   runOutcomeLabelCharsMax,
   runTranscriptPageBatchesMax,
+  selectorHandoffNoteBytesMax,
+  selectorHistoryLimitMax,
+  sessionStoreStreamCharsMax,
+  sessionStoreStreamsAnswered,
+  sessionTranscriptEntriesMax,
+  sessionTurnToolNameCharsMax,
+  sessionTurnToolsMax,
   ticketNumberSchema,
 } from "./http.ts";
 import {
@@ -68,8 +78,14 @@ import {
   resumePoints,
   runCostBases,
   schedulerFreshnesses,
+  selectorAttentions,
   selectorDispatchModes,
   selectorModes,
+  agenticRefusalEvents,
+  sessionStates,
+  sessionTurnFailures,
+  sessionTurnInputKinds,
+  sessionTurnStates,
 } from "./rosters.ts";
 
 const page = <T extends z.ZodType>(item: T) =>
@@ -740,4 +756,185 @@ export const draftInitializationResponseSchema = z.object({
 });
 export type DraftInitializationResponse = z.infer<
   typeof draftInitializationResponseSchema
+>;
+
+function handoffNoteIsBounded(value: unknown): boolean {
+  return (
+    new TextEncoder().encode(JSON.stringify(value ?? null)).byteLength <=
+    selectorHandoffNoteBytesMax
+  );
+}
+
+/** Bounded JSON a lead writes for its successor, opaque to everything but the lead. */
+const handoffNoteSchema = z
+  .unknown()
+  .refine(
+    handoffNoteIsBounded,
+    "a handoff note is larger than its column holds",
+  );
+
+/** One entry of one ticket's refusal ledger, as the ledger recorded it. */
+export const agenticRefusalEntryResponseSchema = z.object({
+  ordinal: countSchema,
+  event: z.enum(agenticRefusalEvents),
+  ticketVersion: countSchema,
+  reason: z.string().min(1).max(agenticRefusalReasonCharsMax),
+  decision: identitySchema,
+  recordedAt: instantSchema,
+});
+export type AgenticRefusalEntryResponse = z.infer<
+  typeof agenticRefusalEntryResponseSchema
+>;
+
+/**
+ * One ticket's whole refusal ledger, oldest first. `standing` is present
+ * exactly where the latest entry is a refusal, which is what standing means and
+ * is why no entry carries it.
+ */
+export const ticketAgenticRefusalsResponseSchema = z.object({
+  ticket: ticketNumberSchema,
+  entries: z
+    .array(agenticRefusalEntryResponseSchema)
+    .max(agenticRefusalsAnsweredMax),
+  standing: z
+    .object({
+      ticketVersion: countSchema,
+      reason: z.string().min(1).max(agenticRefusalReasonCharsMax),
+      recordedAt: instantSchema,
+    })
+    .optional(),
+});
+export type TicketAgenticRefusalsResponse = z.infer<
+  typeof ticketAgenticRefusalsResponseSchema
+>;
+
+/** One standing refusal across a project, with the ticket as its identity. */
+export const agenticRefusalResponseSchema = z.object({
+  ticket: ticketNumberSchema,
+  ticketVersion: countSchema,
+  reason: z.string().min(1).max(agenticRefusalReasonCharsMax),
+  decision: identitySchema,
+  recordedAt: instantSchema,
+  /** Whether the ticket has been authored again since the refusal was made. */
+  superseded: z.boolean(),
+});
+export type AgenticRefusalResponse = z.infer<
+  typeof agenticRefusalResponseSchema
+>;
+
+export const agenticRefusalsResponseSchema = z.object({
+  refusals: z
+    .array(agenticRefusalResponseSchema)
+    .max(agenticRefusalsAnsweredMax),
+  more: z.boolean(),
+});
+export type AgenticRefusalsResponse = z.infer<
+  typeof agenticRefusalsResponseSchema
+>;
+
+/**
+ * One turn of the lead's mailbox and what the pod measured of it. The turn's
+ * input is absent: it is the observation document, the decision log already
+ * holds it, and shipping it twice would double the page for nothing.
+ */
+export const leadTurnResponseSchema = z.object({
+  turn: identitySchema,
+  ordinal: countSchema,
+  inputKind: z.enum(sessionTurnInputKinds),
+  state: z.enum(sessionTurnStates),
+  decision: identitySchema.optional(),
+  failure: z.enum(sessionTurnFailures).optional(),
+  model: z.string().min(1).max(runModelCharsMax).optional(),
+  tokens: countSchema.optional(),
+  costMicros: countSchema.optional(),
+  durationMs: countSchema.optional(),
+  tools: z
+    .array(z.string().min(1).max(sessionTurnToolNameCharsMax))
+    .max(sessionTurnToolsMax)
+    .optional(),
+  batchFirst: countSchema.optional(),
+  batchLast: countSchema.optional(),
+});
+export type LeadTurnResponse = z.infer<typeof leadTurnResponseSchema>;
+
+/** One stream a session's store holds, and how many batches stand under it. */
+export const leadStoreStreamResponseSchema = z.object({
+  stream: z.string().min(1).max(sessionStoreStreamCharsMax),
+  batches: countSchema,
+});
+
+/** The project's lead session: what it is, what it decided under, and its mailbox tail. */
+export const leadResponseSchema = z.object({
+  session: identitySchema,
+  state: z.enum(sessionStates),
+  attention: z.enum(selectorAttentions),
+  agentReference: identitySchema.optional(),
+  notificationCursor: countSchema,
+  handoffNote: handoffNoteSchema,
+  turns: z.array(leadTurnResponseSchema).max(leadTurnsAnsweredMax),
+  streams: z
+    .array(leadStoreStreamResponseSchema)
+    .max(sessionStoreStreamsAnswered),
+});
+export type LeadResponse = z.infer<typeof leadResponseSchema>;
+
+/** One entry of a session's transcript, parsed no further than a reader draws it. */
+export const leadTranscriptEntryResponseSchema = z.object({
+  uuid: identitySchema.optional(),
+  type: identitySchema,
+  timestamp: instantSchema.optional(),
+  message: z.unknown(),
+});
+
+/**
+ * The chain over the batches read, with the subset the lead still holds named
+ * rather than sent twice. An elided batch is one whose row exists and whose
+ * object cannot be drawn, which is what a run that died leaves behind.
+ */
+export const leadTranscriptResponseSchema = z.object({
+  stream: z.string().min(1).max(sessionStoreStreamCharsMax),
+  entries: z
+    .array(leadTranscriptEntryResponseSchema)
+    .max(sessionTranscriptEntriesMax),
+  held: z.array(identitySchema).max(sessionTranscriptEntriesMax),
+  compaction: z
+    .object({ boundary: identitySchema, at: instantSchema.optional() })
+    .optional(),
+  elided: countSchema,
+  nextAfter: countSchema.optional(),
+});
+export type LeadTranscriptResponse = z.infer<
+  typeof leadTranscriptResponseSchema
+>;
+
+/** What one decision did, which is what the decision log draws and not what it saw. */
+export const selectorDecisionResponseSchema = z.object({
+  ordinal: countSchema,
+  decision: identitySchema,
+  instructionsVersion: identitySchema,
+  dispatched: z.array(ticketNumberSchema).max(nativeHttpPageItemsMax),
+  refused: z.array(ticketNumberSchema).max(nativeHttpPageItemsMax),
+  lifted: z.array(ticketNumberSchema).max(nativeHttpPageItemsMax),
+  attention: z.enum(selectorAttentions).optional(),
+  outcome: identitySchema.optional(),
+  modelRevision: identitySchema,
+  policyRevision: identitySchema,
+  tokens: countSchema.optional(),
+  costMicros: countSchema.optional(),
+  durationMs: countSchema.optional(),
+  startedAt: instantSchema,
+  completedAt: instantSchema,
+});
+export type SelectorDecisionResponse = z.infer<
+  typeof selectorDecisionResponseSchema
+>;
+
+export const selectorHistoryResponseSchema = z.object({
+  decisions: z
+    .array(selectorDecisionResponseSchema)
+    .max(selectorHistoryLimitMax),
+  nextAfter: countSchema.optional(),
+});
+export type SelectorHistoryResponse = z.infer<
+  typeof selectorHistoryResponseSchema
 >;

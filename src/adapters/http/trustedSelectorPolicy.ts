@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { notificationKinds } from "../../contract/rosters.ts";
+
 import type {
   SelectorPolicyRequest,
   SelectorTerminationResult,
@@ -149,8 +151,19 @@ const policyRequest = z.strictObject({
       .array(candidate)
       .max(trustedSelectorPolicyCollectionMembersMax),
     notificationCursor: integer,
+    changes: z
+      .array(
+        z.strictObject({
+          ordinal: integer,
+          kind: z.enum(notificationKinds),
+          resource: z.string(),
+          projectSequence: integer.optional(),
+          authoringVersion: integer.optional(),
+        }),
+      )
+      .max(trustedSelectorPolicyCollectionMembersMax),
     operationalContext,
-    workingMemory: json,
+    handoffNote: json,
     nextCandidateScan: candidateScan,
     resourceLimit: z.literal("CandidateTooLarge").optional(),
   }),
@@ -168,9 +181,32 @@ const policyRequest = z.strictObject({
 
 const policyResult = z.strictObject({
   selectedTicket: positiveInteger.optional(),
+  dispatches: z
+    .array(
+      z.strictObject({
+        ticket: positiveInteger,
+        expectedTicketVersion: positiveInteger.optional(),
+      }),
+    )
+    .max(trustedSelectorPolicyCollectionMembersMax)
+    .optional(),
+  refusals: z
+    .array(
+      z.strictObject({
+        ticket: positiveInteger,
+        ticketVersion: positiveInteger,
+        reason: boundedText,
+      }),
+    )
+    .max(trustedSelectorPolicyCollectionMembersMax)
+    .optional(),
+  lifts: z
+    .array(z.strictObject({ ticket: positiveInteger }))
+    .max(trustedSelectorPolicyCollectionMembersMax)
+    .optional(),
   planningIntent: json.optional(),
   attention: z.enum(["Monitoring", "Attention", "Stopped"]),
-  workingMemory: json,
+  handoffNote: json,
 });
 const policyExecution = z.strictObject({
   result: policyResult,

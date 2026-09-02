@@ -15,7 +15,10 @@
  * identity too, and carries what that ticket has open for a person to answer
  * rather than the ticket itself: an approval is opened and answered without the
  * ticket's own phase or sequence moving, so the two are separate resources
- * under one identity. `ready` opens the stream, `reset` says the requested
+ * under one identity, and `AgenticRefusal` is the same arrangement for what the
+ * lead declined to dispatch. `Session` names a session as its identity and
+ * carries the lead read, so a page watching a lead sees a turn move without
+ * polling for it. `ready` opens the stream, `reset` says the requested
  * `Last-Event-ID` is no longer retained and the client must reload from the GET
  * routes, and `source` reports whether the change log behind the stream is live
  * or degraded.
@@ -28,7 +31,9 @@ import {
   configurationResponseSchema,
   draftResponseSchema,
   executionResponseSchema,
+  leadResponseSchema,
   operationResponseSchema,
+  ticketAgenticRefusalsResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
 } from "./responses.ts";
@@ -43,6 +48,8 @@ export const projectChangeKinds = [
   "Project",
   "Execution",
   "NativeAction",
+  "AgenticRefusal",
+  "Session",
 ] as const;
 export type ProjectChangeKind = (typeof projectChangeKinds)[number];
 
@@ -68,6 +75,8 @@ export const projectChangeRepresentationSchemas = {
   Project: partitionSchema,
   Execution: executionResponseSchema,
   NativeAction: ticketNativeActionsResponseSchema,
+  AgenticRefusal: ticketAgenticRefusalsResponseSchema,
+  Session: leadResponseSchema,
 } as const satisfies Record<ProjectChangeKind, z.ZodType>;
 
 export type ProjectChangeRepresentation<Kind extends ProjectChangeKind> =
@@ -95,6 +104,10 @@ export const projectChangeDataSchemas = {
   NativeAction: changeDataSchema(
     projectChangeRepresentationSchemas.NativeAction,
   ),
+  AgenticRefusal: changeDataSchema(
+    projectChangeRepresentationSchemas.AgenticRefusal,
+  ),
+  Session: changeDataSchema(projectChangeRepresentationSchemas.Session),
 } as const;
 
 export type ProjectChangeData<Kind extends ProjectChangeKind> = z.infer<
@@ -169,6 +182,14 @@ function projectChangeEvent(
       return { event: kind, sequence, data: schemas.Execution.parse(body) };
     case "NativeAction":
       return { event: kind, sequence, data: schemas.NativeAction.parse(body) };
+    case "AgenticRefusal":
+      return {
+        event: kind,
+        sequence,
+        data: schemas.AgenticRefusal.parse(body),
+      };
+    case "Session":
+      return { event: kind, sequence, data: schemas.Session.parse(body) };
   }
 }
 

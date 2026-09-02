@@ -31,6 +31,7 @@ test("the golden is the document and not an empty stand-in", () => {
     schemas: Readonly<Record<string, unknown>>;
   };
   assert.deepEqual(Object.keys(document.routes).sort(), [
+    "agenticRefusals",
     "configuration",
     "configurationImports",
     "configurations",
@@ -43,6 +44,8 @@ test("the golden is the document and not an empty stand-in", () => {
     "execution",
     "executions",
     "installation",
+    "lead",
+    "leadTranscript",
     "nativeActions",
     "notifications",
     "operation",
@@ -55,9 +58,11 @@ test("the golden is the document and not an empty stand-in", () => {
     "runTranscript",
     "runTurns",
     "selectorContext",
+    "selectorHistory",
     "selectorSettings",
     "selectorSettingsHistory",
     "ticket",
+    "ticketAgenticRefusals",
     "ticketNativeActions",
     "tickets",
   ]);

@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
+  dryRunSelectorPolicy,
   observeSelectorProject,
   runObservedSelectorCycle,
   runSelectorCycle,
@@ -138,10 +139,16 @@ function settingsSource(
 }
 
 function waitingExecution(
-  workingMemory: JsonValue = {},
+  handoffNote: JsonValue = {},
 ): SelectorPolicyExecution {
   return {
-    result: { attention: "Monitoring", workingMemory },
+    result: {
+      dispatches: [],
+      refusals: [],
+      lifts: [],
+      attention: "Monitoring",
+      handoffNote,
+    },
     toolActivity: [],
     implementationRevision: "implementation-1",
     modelRevision: "model-1",
@@ -262,7 +269,7 @@ test("selector observation resumes from a reset cursor and pins every view page"
       notificationCursor: 3,
       revision: 0,
       attention: "Monitoring",
-      workingMemory: {},
+      handoffNote: {},
     },
     {
       notifications: () => Promise.resolve({ result: "Reset", cursor: 12 }),
@@ -290,6 +297,30 @@ test("selector observation resumes from a reset cursor and pins every view page"
   );
   assert.equal(observed?.notificationCursor, 12);
   assert.deepEqual(watermarks, [undefined]);
+  assert.deepEqual(observed?.changes, []);
+});
+
+test("an observation carries the notification page that triggered it", async () => {
+  const events = [
+    { ordinal: 4, kind: "Ticket", resource: "3" },
+    { ordinal: 5, kind: "Operation", resource: "operation-one" },
+  ] as const;
+  const observed = await observeSelectorProject(
+    {
+      partition,
+      notificationCursor: 3,
+      revision: 0,
+      attention: "Monitoring",
+      handoffNote: {},
+    },
+    {
+      ...promptObservationSource(),
+      notifications: () =>
+        Promise.resolve({ result: "Events", cursor: 5, events } as const),
+    },
+  );
+  assert.deepEqual(observed?.changes, events);
+  assert.equal(observed?.notificationCursor, 5);
 });
 
 test("selector observation restarts a continued scan when its view resets", async () => {
@@ -300,7 +331,7 @@ test("selector observation restarts a continued scan when its view resets", asyn
       notificationCursor: 0,
       revision: 0,
       attention: "Monitoring",
-      workingMemory: {},
+      handoffNote: {},
       candidateScan: {
         state: "Continue",
         token: {
@@ -380,7 +411,7 @@ test("an oversized final candidate advances the scan to Exhausted", async () => 
       notificationCursor: 0,
       revision: 0,
       attention: "Monitoring",
-      workingMemory: {},
+      handoffNote: {},
       candidateScan: { state: "Unstarted" },
     },
     source,
@@ -397,7 +428,7 @@ test("an oversized final candidate advances the scan to Exhausted", async () => 
         notificationCursor: 1,
         revision: 1,
         attention: "Attention",
-        workingMemory: {},
+        handoffNote: {},
         candidateScan: observation?.nextCandidateScan,
       },
       source,
@@ -893,7 +924,7 @@ test("a stale persisted observation releases its permit without starting policy"
       notificationCursor: 0,
       revision: 0,
       attention: "Monitoring",
-      workingMemory: {},
+      handoffNote: {},
     },
     promptObservationSource(),
   );
@@ -904,7 +935,7 @@ test("a stale persisted observation releases its permit without starting policy"
       notificationCursor: 0,
       revision: 0,
       attention: "Monitoring",
-      workingMemory: {},
+      handoffNote: {},
     },
     observation,
     {
@@ -1025,7 +1056,7 @@ test("a selector decision uses and records one hot-loaded prompt revision", asyn
       notificationCursor: 0,
       revision: 0,
       attention: "Monitoring",
-      workingMemory: {},
+      handoffNote: {},
     },
     promptObservationSource(),
     {
@@ -1091,7 +1122,7 @@ test("the runtime deadline confirms capability cancellation before returning", a
       notificationCursor: 0,
       revision: 0,
       attention: "Monitoring",
-      workingMemory: {},
+      handoffNote: {},
     },
     {
       ...promptObservationSource(),
@@ -1274,7 +1305,7 @@ test("policy-host constraints and observations are immutable", async () => {
       notificationCursor: 0,
       revision: 0,
       attention: "Monitoring",
-      workingMemory: {},
+      handoffNote: {},
     },
     promptObservationSource(),
     stateStore(() => undefined),
@@ -1315,7 +1346,7 @@ test("a rejected measured execution retains its available provenance", async () 
       notificationCursor: 0,
       revision: 0,
       attention: "Monitoring",
-      workingMemory: {},
+      handoffNote: {},
     },
     promptObservationSource(),
     {
@@ -1353,7 +1384,7 @@ test("structurally invalid JSON is audited instead of reaching persistence", asy
       notificationCursor: 0,
       revision: 0,
       attention: "Monitoring",
-      workingMemory: {},
+      handoffNote: {},
     },
     promptObservationSource(),
     {
@@ -1384,7 +1415,7 @@ test("policy timestamps compare chronologically across accepted precisions", asy
       notificationCursor: 0,
       revision: 0,
       attention: "Monitoring",
-      workingMemory: {},
+      handoffNote: {},
     },
     promptObservationSource(),
     {
@@ -1418,7 +1449,7 @@ test("unpersistable selector input is rejected before policy execution", async (
       notificationCursor: 0,
       revision: 0,
       attention: "Monitoring",
-      workingMemory: {},
+      handoffNote: {},
     },
     {
       ...promptObservationSource(),
@@ -1453,7 +1484,7 @@ test("invalid policy JSON is recorded as a bounded failed interaction", async ()
       notificationCursor: 0,
       revision: 0,
       attention: "Monitoring",
-      workingMemory: {},
+      handoffNote: {},
     },
     promptObservationSource(),
     {
@@ -1721,8 +1752,9 @@ test("the trusted policy host starts once and bounds cancellation evidence", asy
       },
       candidates: [],
       notificationCursor: 0,
+      changes: [],
       operationalContext,
-      workingMemory: {},
+      handoffNote: {},
       nextCandidateScan: {
         state: "Exhausted" as const,
         token: {
@@ -1751,4 +1783,51 @@ test("the trusted policy host starts once and bounds cancellation evidence", asy
     proof: "all capability calls settled",
   });
   assert.equal(aborted, true);
+});
+
+test("a host answering the pre-slice-2 spelling still names one dispatch", async () => {
+  const observation = {
+    token: {
+      ...partition,
+      recoveryEpoch: "epoch",
+      schemaVersion: 1,
+      watermark: 1,
+      digest: "a".repeat(64),
+    },
+    candidates: [],
+    notificationCursor: 0,
+    changes: [],
+    operationalContext,
+    handoffNote: {},
+    nextCandidateScan: {
+      state: "Exhausted" as const,
+      token: {
+        ...partition,
+        recoveryEpoch: "epoch",
+        schemaVersion: 1,
+        watermark: 1,
+        digest: "a".repeat(64),
+      },
+    },
+  };
+  const result = await dryRunSelectorPolicy(
+    policyHost(() =>
+      Promise.resolve({
+        result: { selectedTicket: 7, attention: "Monitoring", handoffNote: {} },
+        implementationRevision: "implementation-1",
+        modelRevision: "model-1",
+        policyRevision: "policy-1",
+        toolActivity: [],
+        accounting: { tokens: 1, durationMs: 1 },
+        startedAt: "2026-09-02T12:00:00.000Z",
+        completedAt: "2026-09-02T12:00:01.000Z",
+      }),
+    ),
+    { decisionDeadline: () => new Promise<never>(() => undefined) },
+    observation,
+    resolved(),
+  );
+  assert.deepEqual(result.dispatches, [{ ticket: asTicketId(7) }]);
+  assert.deepEqual(result.refusals, []);
+  assert.deepEqual(result.lifts, []);
 });

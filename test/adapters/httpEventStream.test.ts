@@ -38,6 +38,7 @@ import { asInstallationId } from "../../src/domain/ids.ts";
 import {
   projectChangeKinds,
   projectChangeRepresentationSchemas,
+  type ProjectChangeKind,
 } from "../../src/contract/events.ts";
 import {
   changeRow,
@@ -382,7 +383,12 @@ test("a live change arrives as the kind's own GET representation", async () => {
   );
 });
 
-const kindResources: Readonly<Record<string, string>> = {
+/**
+ * The resource each kind's read is driven with. Two are absent because the API
+ * holds no read for them yet, and the test below is what says so rather than
+ * leaving them quietly unexercised.
+ */
+const kindResources: Readonly<Record<ProjectChangeKind, string | undefined>> = {
   Operation: "operation-one",
   Ticket: "3",
   Draft: "3",
@@ -390,7 +396,23 @@ const kindResources: Readonly<Record<string, string>> = {
   Project: "project",
   Execution: "execution-one",
   NativeAction: "3",
+  AgenticRefusal: undefined,
+  Session: undefined,
 };
+
+test("a kind whose read the API does not hold is refused, not guessed at", async () => {
+  const reader = projectResourceReader(servedWeb(true, () => []));
+  const absent = projectChangeKinds.filter(
+    (kind) => kindResources[kind] === undefined,
+  );
+  assert.deepEqual(absent, ["AgenticRefusal", "Session"]);
+  for (const kind of absent)
+    await assert.rejects(
+      () =>
+        reader.read(asPrincipal("issuer\u0000subject"), partition, kind, "3"),
+      RangeError,
+    );
+});
 
 test("every kind the log can name reaches the stream as its own schema", async () => {
   const rig = await rigOf();
@@ -399,7 +421,7 @@ test("every kind the log can name reaches the stream as its own schema", async (
   let sequence = 100;
   for (const kind of projectChangeKinds) {
     const resource = kindResources[kind];
-    assert.ok(resource !== undefined, `${kind} has a resource to name`);
+    if (resource === undefined) continue;
     rig.log.append(changeRow(sequence, partition, kind, resource));
     sequence += 1;
     rig.doorbell.ring();

@@ -1,6 +1,7 @@
 import type { Partition } from "./projectStore.ts";
 import type { ProjectInventoryPage } from "./nativeWeb.ts";
 import {
+  leadInputBytesMax,
   observeSelectorProject,
   runObservedSelectorCycle,
   type SelectorCycleIdentity,
@@ -74,7 +75,7 @@ function initialState(partition: Partition): SelectorProjectState {
     notificationCursor: 0,
     revision: 0,
     attention: "Monitoring",
-    workingMemory: {},
+    handoffNote: {},
     candidateScan: { state: "Unstarted" },
   };
 }
@@ -193,7 +194,7 @@ async function observeFencedProject(
     state,
     source,
     100,
-    Math.floor(settings.limits.inputBytesPerDecision / 2),
+    Math.floor(leadInputBytesMax(settings) / 2),
   );
   if (observation === undefined) {
     await store.terminateAttempt(

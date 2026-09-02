@@ -47,6 +47,11 @@ import {
   schedulerFreshnesses,
   selectorDispatchModes,
   selectorModes,
+  agenticRefusalEvents,
+  sessionStates,
+  sessionTurnFailures,
+  sessionTurnInputKinds,
+  sessionTurnStates,
 } from "../../src/contract/rosters.ts";
 import {
   nativeHttpPageItemsMax,
@@ -61,6 +66,14 @@ import {
 import { runTurnsPageLimitMax } from "../../src/interpreter/runEvidence.ts";
 import type { RunTotals } from "../../src/interpreter/runEvidence.ts";
 import { projectChangeKinds } from "../../src/contract/events.ts";
+import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
+import { allAgenticRefusalEvents } from "../../src/interpreter/agenticRefusal.ts";
+import {
+  allSessionStates,
+  allSessionTurnFailures,
+  allSessionTurnInputKinds,
+  allSessionTurnStates,
+} from "../../src/interpreter/agentSession.ts";
 import {
   phaseTags,
   reasonTags,
@@ -386,9 +399,24 @@ test("the authoring rosters are exhaustive over the model unions", () => {
   assert.deepEqual(sorted(repositoryConfigurationFaults), keysOf(faults));
 });
 
-test("the stream carries every polled kind and the two polling omits", () => {
+test("the stream carries every polled kind and the four polling omits", () => {
   assert.deepEqual(
     sorted(projectChangeKinds),
-    sorted([...notificationKinds, "Execution", "NativeAction"]),
+    sorted([
+      ...notificationKinds,
+      "Execution",
+      "NativeAction",
+      "AgenticRefusal",
+      "Session",
+    ]),
   );
+  assert.deepEqual(sorted(projectChangeKinds), sorted(allProjectChangeKinds));
+});
+
+test("every session and refusal roster restates the interpreter's own", () => {
+  assert.deepEqual(agenticRefusalEvents, allAgenticRefusalEvents);
+  assert.deepEqual(sessionStates, allSessionStates);
+  assert.deepEqual(sessionTurnInputKinds, allSessionTurnInputKinds);
+  assert.deepEqual(sessionTurnStates, allSessionTurnStates);
+  assert.deepEqual(sessionTurnFailures, allSessionTurnFailures);
 });

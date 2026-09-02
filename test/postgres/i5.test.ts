@@ -46,7 +46,7 @@ after(async () => {
 });
 
 const selectorInteractionContext = {
-  workingMemory: {},
+  handoffNote: {},
   operationalContext: postgresHarnessSelectorContext,
 } as const;
 
@@ -128,7 +128,7 @@ function selectorTestState(
     notificationCursor,
     revision,
     attention: "Monitoring",
-    workingMemory: {},
+    handoffNote: {},
   } as const;
 }
 
@@ -335,7 +335,7 @@ test("selector provenance and its observed cursor roll back together", async () 
     const later = {
       ...selectorTestState(partition, 1, 99),
       attention: "Attention",
-      workingMemory: { conflicting: true },
+      handoffNote: { conflicting: true },
     } as const;
     await assert.rejects(
       state.recordInteraction(
@@ -380,7 +380,7 @@ test("selector provenance round-trips resources larger than one audit column", a
     ...selectorTestInteraction(partition, `chunked-${crypto.randomUUID()}`),
     context: {
       ...selectorInteractionContext,
-      workingMemory: { evidence: largeEvidence },
+      handoffNote: { evidence: largeEvidence },
     },
     toolActivity: [{ evidence: largeEvidence }],
   };
@@ -582,7 +582,7 @@ test("proposal review retains reviewer authority and readable feedback", async (
       notificationCursor: 0,
       revision: 0,
       attention: "Monitoring",
-      workingMemory: {},
+      handoffNote: {},
     });
     const reviewer = {
       kind: asAuthorityKind("User"),
@@ -769,8 +769,9 @@ test("attempt reconciliation cannot claim another runtime's active attempt", asy
         token,
         candidates: [],
         notificationCursor: 0,
+        changes: [],
         operationalContext: selectorInteractionContext.operationalContext,
-        workingMemory: {},
+        handoffNote: {},
         nextCandidateScan: { state: "Exhausted", token },
       },
       { settingsRevision: 1, projectSettingsRevision: 0 },

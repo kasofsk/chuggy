@@ -167,9 +167,15 @@ const selectorContextSchema = z
         })
         .readonly(),
     ]),
-    workingMemory: jsonValueSchema,
+    handoffNote: jsonValueSchema.optional(),
+    /** The pre-slice-2 spelling, which the rows already written say. */
+    workingMemory: jsonValueSchema.optional(),
   })
-  .readonly();
+  .readonly()
+  .transform((value) => ({
+    operationalContext: value.operationalContext,
+    handoffNote: value.handoffNote ?? value.workingMemory ?? null,
+  }));
 
 /** Parses current and retained historical selector policy inputs. */
 export function parseSelectorInteractionContext(
@@ -1094,10 +1100,10 @@ async function readSelectorProject(
           ? {}
           : { recoveryEpoch: row.recovery_epoch }),
         attention: selectorAttention(row.attention),
-        workingMemory: decoded(
+        handoffNote: decoded(
           row.working_memory,
           jsonValueSchema,
-          "selector working memory",
+          "selector handoff note",
         ),
         candidateScan: candidateScanOf({
           ...row,
@@ -1190,7 +1196,7 @@ async function writeSelectorProject(
     sql`UPDATE selector_project_state
        SET notification_cursor=${state.notificationCursor},
        recovery_epoch=${state.recoveryEpoch ?? null},attention=${String(state.attention)},
-       working_memory=${encode(state.workingMemory)},
+       working_memory=${encode(state.handoffNote)},
        candidate_scan_token=${scan.state === "Continue" ? encode(scan.token) : null},
        candidate_scan_after=${scan.state === "Continue" ? scan.after : null},
        candidate_scan_state=${scan.state},

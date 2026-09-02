@@ -203,7 +203,13 @@ export const allSessionTurnStates = [
 ] as const;
 export type SessionTurnState = (typeof allSessionTurnStates)[number];
 
-/** Why one turn ended without an answer, a closed vocabulary so a label is never a payload. */
+/**
+ * Why one turn ended without an answer, a closed vocabulary so a label is never
+ * a payload. The durable check on it is generated from this list at the
+ * migration that last wrote `session_turn_failure_is_known`, so a member added
+ * here is one an installation that already ran that migration refuses until a
+ * further migration replaces the constraint.
+ */
 export const allSessionTurnFailures = [
   "AgentFailed",
   "AgentRateLimited",
@@ -212,6 +218,7 @@ export const allSessionTurnFailures = [
   "StoreRefused",
   "AttemptLost",
   "SessionClosed",
+  "TurnWithdrawn",
 ] as const;
 export type SessionTurnFailure = (typeof allSessionTurnFailures)[number];
 
