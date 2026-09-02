@@ -43,6 +43,7 @@ const branders: readonly {
   { what: "session attempt id", brand: asSessionAttemptId },
   { what: "session bearer id", brand: asSessionBearerId },
   { what: "session bearer secret", brand: asSessionBearerSecret },
+  { what: "store stream", brand: asSessionStoreStream },
 ];
 
 /** One unpaired surrogate, which every UTF-8 encoding folds to one replacement. */
@@ -103,6 +104,19 @@ test("an unpaired surrogate is refused by every brander", () => {
   for (const { what, brand } of populated(branders, "the session branders")) {
     assert.throws(
       () => brand(unpaired),
+      (error: unknown) => {
+        assert.ok(error instanceof RangeError);
+        assert.match(error.message, new RegExp(`^${what}: `, "u"));
+        return true;
+      },
+    );
+  }
+});
+
+test("a NUL is refused by every brander, which no stored row holds at all", () => {
+  for (const { what, brand } of populated(branders, "the session branders")) {
+    assert.throws(
+      () => brand("lead\u0000one"),
       (error: unknown) => {
         assert.ok(error instanceof RangeError);
         assert.match(error.message, new RegExp(`^${what}: `, "u"));

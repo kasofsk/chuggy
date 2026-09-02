@@ -106,7 +106,9 @@ export function asSessionBearerId(value: string): SessionBearerId {
  * Brands a store stream, which becomes a directory name and a stored key. It
  * refuses control and whitespace characters as well as the bound, because the
  * row that holds it refuses both and a refusal at the far edge is a constraint
- * violation where a refusal at the door is a value nobody minted.
+ * violation where a refusal at the door is a value nobody minted; the
+ * whitespace class is Unicode's and so refuses a little more than the row's
+ * `[[:space:]]` does, which is the direction that costs nothing.
  */
 export function asSessionStoreStream(value: string): SessionStoreStream {
   const bounded = asBoundedText(
