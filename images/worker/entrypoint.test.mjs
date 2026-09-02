@@ -8,6 +8,7 @@ import {
   publishWorkerResult,
   reportWorkerFailure,
   runWorkerTask,
+  workerMode,
 } from "./entrypoint.mjs";
 import { credentialScrub, runEvidenceRecorder } from "./runEvidence.mjs";
 
@@ -70,6 +71,20 @@ test("the image carries every module the worker imports", async () => {
       `${name} is imported by the worker and copied into no image`,
     );
   }
+});
+
+test("exactly one task document is what a pod may be launched with", () => {
+  assert.equal(workerMode({ CHUG_WORKER_TASK: "{}" }), "Work");
+  assert.equal(workerMode({ CHUG_SESSION_TASK: "{}" }), "Session");
+  assert.throws(
+    () => workerMode({ CHUG_WORKER_TASK: "{}", CHUG_SESSION_TASK: "{}" }),
+    /never both/u,
+  );
+  assert.throws(() => workerMode({}), /needs one of/u);
+  assert.throws(
+    () => workerMode({ CHUG_WORKER_TASK: "", CHUG_SESSION_TASK: "" }),
+    /needs one of/u,
+  );
 });
 
 test("a run that died posts its figures and ends the attempt", async () => {
