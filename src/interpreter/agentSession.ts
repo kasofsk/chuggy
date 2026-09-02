@@ -203,26 +203,32 @@ export const allSessionTurnStates = [
 ] as const;
 export type SessionTurnState = (typeof allSessionTurnStates)[number];
 
-/** Why one turn a pod held ended without an answer, which is what the pod itself reports. */
+/**
+ * Why one turn a pod held ended without an answer, which is the whole of what a
+ * pod may name. Each is something the pod is the only witness to: its runtime
+ * failed, was rate limited, ran out of turns or budget, or its store refused a
+ * batch.
+ */
 export const allAgentReportedTurnFailures = [
   "AgentFailed",
   "AgentRateLimited",
   "AgentTurnsExhausted",
   "AgentBudgetExhausted",
   "StoreRefused",
-  "AttemptLost",
-  "SessionClosed",
 ] as const;
-export type AgentReportedTurnFailure =
-  (typeof allAgentReportedTurnFailures)[number];
 
 /**
- * Why one turn ended without an answer by the platform's own act rather than
- * the pod's. A pod may not name one of these: a withdrawal is the selector
- * giving up a decision, and a pod claiming it would be provenance nobody wrote.
+ * Why one turn ended without an answer by the platform's own act. Rules 6 and 7
+ * above write the first two and the selector's withdrawal writes the third, each
+ * from a definer function; a pod naming one would be provenance nobody wrote,
+ * and a pod claiming its own session closed would leave a row saying so while
+ * the session is open.
  */
-export const allPlatformTurnFailures = ["TurnWithdrawn"] as const;
-export type PlatformTurnFailure = (typeof allPlatformTurnFailures)[number];
+export const allPlatformTurnFailures = [
+  "AttemptLost",
+  "SessionClosed",
+  "TurnWithdrawn",
+] as const;
 
 /**
  * Why one turn ended without an answer, a closed vocabulary so a label is never

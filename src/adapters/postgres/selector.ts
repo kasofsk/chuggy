@@ -167,20 +167,19 @@ const selectorOperationalContextSchema = z.union([
 ]);
 
 /**
- * A retained policy input under either spelling of the note, and under neither
- * only if a row lost it. A union of two required alternatives is what says the
- * third case is a row that is not intact, which is the whole of what this
- * parser is relied on to say.
+ * A retained policy input under exactly one spelling of the note. Two strict
+ * alternatives are what say a row carrying neither, or both, is a row that is
+ * not intact — which is the whole of what this parser is relied on to say.
  */
 const selectorContextSchema = z.union([
   z
-    .object({
+    .strictObject({
       operationalContext: selectorOperationalContextSchema,
       handoffNote: jsonValueSchema,
     })
     .readonly(),
   z
-    .object({
+    .strictObject({
       operationalContext: selectorOperationalContextSchema,
       workingMemory: jsonValueSchema,
     })

@@ -60,3 +60,18 @@ test("a row written under either spelling of the note reads back as the note", (
     { operationalContext, handoffNote: { note: "written after it" } },
   );
 });
+
+test("a row carrying neither spelling, or both, is a row that is not intact", () => {
+  assert.throws(() =>
+    parseSelectorInteractionContext({
+      operationalContext: legacyOperationalContext,
+    }),
+  );
+  assert.throws(() =>
+    parseSelectorInteractionContext({
+      operationalContext: legacyOperationalContext,
+      handoffNote: { note: "one" },
+      workingMemory: { note: "the other" },
+    }),
+  );
+});

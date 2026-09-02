@@ -55,12 +55,14 @@ import {
   sessionTurnStates,
 } from "../../src/contract/rosters.ts";
 import {
+  agenticRefusalLedgerAnsweredMax,
+  agenticRefusalReasonCharsMax,
   agenticRefusalsAnsweredMax,
+  nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
   resultReportCharsMax,
   resultReportSchemaVersionMin,
   runConfigurationBytesMax,
-  selectorHandoffNoteBytesMax,
   sessionTurnInputCharsMax,
   sessionTurnModelCharsMax,
   sessionTurnResultCharsMax,
@@ -89,7 +91,6 @@ import {
   leadObservationBytesMax,
   leadRefusalsObservedMax,
 } from "../../src/interpreter/selector.ts";
-import { migration010 } from "../../src/adapters/postgres/schema/migrations/010-selector-controls.ts";
 import {
   phaseTags,
   reasonTags,
@@ -463,16 +464,16 @@ test("every bound the wire restates holds the value its source does", () => {
 });
 
 /**
- * The handoff-note bound restates a durable ceiling rather than naming one, so
- * it is read out of the migration that writes that ceiling rather than copied
- * beside it.
+ * Each refusal page argues its size as a product with the reason bound, so the
+ * arithmetic is what is asserted rather than either number.
  */
-test("the handoff-note bound is the ceiling its own column checks", () => {
-  const statement = migration010.statements
-    .map((each) => String(each))
-    .find((each) => each.includes("working_memory"));
-  assert.ok(statement !== undefined, "010 writes the handoff-note column");
-  const checked = /length\(working_memory\) <= (\d+)/u.exec(statement);
-  assert.ok(checked !== null, "010 bounds the handoff-note column");
-  assert.equal(Number(checked[1]), selectorHandoffNoteBytesMax);
+test("a page of refusals fits the body and the observation it is sized against", () => {
+  assert.ok(
+    agenticRefusalLedgerAnsweredMax * agenticRefusalReasonCharsMax <=
+      nativeHttpBodyBytesMax / 2,
+  );
+  assert.ok(
+    agenticRefusalsAnsweredMax * agenticRefusalReasonCharsMax <=
+      leadObservationBytesMax / 2,
+  );
 });

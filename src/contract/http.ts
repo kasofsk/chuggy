@@ -141,11 +141,11 @@ export const agenticRefusalsAnsweredMax = 32;
 export const leadTurnsAnsweredMax = 32;
 
 /**
- * How many entries one page of one ticket's refusal ledger answers with. It is
- * its own bound rather than the standing page's, because a ledger appends a row
- * for every refusal and every lift and grows past what any one turn observes.
+ * How many entries one page of one ticket's refusal ledger answers with, `more`
+ * carrying the rest. Its product with the reason bound is half of one wire body,
+ * which is what makes a full page a body and a stream frame the wire can hold.
  */
-export const agenticRefusalLedgerAnsweredMax = 100;
+export const agenticRefusalLedgerAnsweredMax = 32;
 
 /** The longest summary a result carries, restating what the manifest reader accepts. */
 export const resultReportCharsMax = 8_192;

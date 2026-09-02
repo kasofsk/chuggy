@@ -34,6 +34,7 @@ import {
   sessionTurnResultCharsMax,
 } from "../../src/contract/http.ts";
 import {
+  allPlatformTurnFailures,
   asSessionAttemptId,
   asSessionId,
   asSessionStoreStream,
@@ -510,7 +511,7 @@ test("a turn is answered or failed by the attempt that holds it, and refused oth
   });
 });
 
-test("a failed turn names a failure from the closed roster and nothing else", async () => {
+test("a failed turn names a failure the pod itself witnessed and nothing else", async () => {
   const failed: unknown[] = [];
   const app = sessionPlane({
     settlements: {
@@ -535,6 +536,7 @@ test("a failed turn names a failure from the closed roster and nothing else", as
     { turn: "turn-7", failure: "Whatever" },
     { turn: "turn-7" },
     { turn: "", failure: "AgentFailed" },
+    ...allPlatformTurnFailures.map((failure) => ({ turn: "turn-7", failure })),
   ]) {
     const refused = await app.inject({
       method: "POST",
