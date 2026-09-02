@@ -917,6 +917,13 @@ test("a briefed draft and ticket read carry the brief, and an older one omits it
     draftResponseSchema.parse(draftResponse(draftResource).body).brief,
     undefined,
   );
+  assert.deepEqual(
+    draftResponseSchema.parse(
+      draftResponse({ ...briefedDraft, brief: { ...brief, checks: [] } }).body,
+    ).brief?.checks,
+    [],
+    "a brief appending nothing answers the empty list rather than omitting it",
+  );
   const ticket = ticketResponseSchema.parse(
     ticketResponse({
       ticket: asTicketId(3),
