@@ -1,0 +1,42 @@
+/* The selector settings page: the editor's boxes and the revisions beside it. */
+
+@layer page {
+  .selector {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+
+  .selector-form {
+    display: grid;
+    gap: var(--space-4);
+    justify-items: start;
+    min-width: 0;
+  }
+
+  .selector-input,
+  .selector-text {
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge-control);
+    border-radius: var(--radius-2);
+    padding: var(--space-1) var(--space-2);
+    width: 100%;
+  }
+
+  .selector-text {
+    font-family: var(--font-mono);
+    font-size: var(--mono-optical);
+    max-width: var(--measure);
+    min-height: 8em;
+    resize: vertical;
+  }
+
+  .selector-input {
+    max-width: var(--col-when);
+  }
+
+  .selector-input[aria-invalid="true"],
+  .selector-text[aria-invalid="true"] {
+    border-color: var(--tone-fail);
+  }
+}
