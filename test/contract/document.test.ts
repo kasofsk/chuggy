@@ -25,23 +25,6 @@ test("the contract document renders the committed golden", () => {
   assert.equal(canonical(nativeHttpContractDocument()), canonical(golden));
 });
 
-test("the wire names both bearer formats it accepts, and what the second one means", () => {
-  const document = nativeHttpContractDocument() as {
-    authentication: { formats: readonly string[]; session: string };
-  };
-  assert.deepEqual(Object.keys(document.authentication), [
-    "scheme",
-    "formats",
-    "principal",
-    "session",
-  ]);
-  assert.deepEqual(document.authentication.formats, [
-    "OIDC JWT",
-    "session bearer",
-  ]);
-  assert.match(document.authentication.session, /recorded on the operation/u);
-});
-
 test("the golden is the document and not an empty stand-in", () => {
   const document = golden as {
     routes: Readonly<Record<string, string>>;

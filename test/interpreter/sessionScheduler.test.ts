@@ -54,13 +54,13 @@ test("a per-account ceiling above the installation's own never binds and is refu
     () =>
       checkedSessionSchedulerConfig({
         ...sessionSchedulerDefaults,
-        attemptsPerAccountMax: sessionSchedulerDefaults.attemptsMax + 1,
+        attemptsPerAccountMax: sessionSchedulerDefaults.clusterAttemptsMax + 1,
       }),
     /attemptsPerAccountMax/u,
   );
   const atTheCeiling = {
     ...sessionSchedulerDefaults,
-    attemptsPerAccountMax: sessionSchedulerDefaults.attemptsMax,
+    attemptsPerAccountMax: sessionSchedulerDefaults.clusterAttemptsMax,
   };
   assert.deepEqual(checkedSessionSchedulerConfig(atTheCeiling), atTheCeiling);
 });

@@ -15,6 +15,14 @@
  * A session has no manifest, no verdict and no retry budget, so widening the
  * execution roster with `SessionIdle` would put a label on an execution attempt
  * that no execution can reach.
+ *
+ * A DENIED SESSION PLACEMENT RECORDS BARE `PlacementDenied`, AND ITS REASON IS
+ * DISCARDED. The placement outcome is the execution scheduler's unchanged, so
+ * its `Denied` arm carries a `BlockedReason` — and a `BlockedReason` exists to
+ * become `ExecutionBlocked`, which a session has no execution to become. The
+ * reason is a diagnostic here and nothing more: there is no session state it
+ * names, and wiring it to one would be reading a decision about a ticket into a
+ * session that has none.
  */
 
 import type {
@@ -119,7 +127,7 @@ export interface SessionAttemptOpening {
   readonly leaseSecs: number;
   readonly placementBackoffSecs: number;
   readonly attemptsPerAccountMax: number;
-  readonly attemptsMax: number;
+  readonly clusterAttemptsMax: number;
 }
 
 /**
@@ -202,7 +210,8 @@ export interface SessionSchedulerConfig {
   readonly placementBackoffSecs: number;
   readonly idleSecsMax: number;
   readonly attemptsPerAccountMax: number;
-  readonly attemptsMax: number;
+  /** The installation-wide ceiling on live session attempts, which is the cluster's own. */
+  readonly clusterAttemptsMax: number;
 }
 
 /** The values a deployment starts from when it names none. */
@@ -213,7 +222,7 @@ export const sessionSchedulerDefaults: SessionSchedulerConfig = {
   placementBackoffSecs: 15,
   idleSecsMax: 300,
   attemptsPerAccountMax: 2,
-  attemptsMax: 16,
+  clusterAttemptsMax: 16,
 };
 
 /**
@@ -242,9 +251,9 @@ export function checkedSessionSchedulerConfig(
       );
     }
   }
-  if (config.attemptsPerAccountMax > config.attemptsMax) {
+  if (config.attemptsPerAccountMax > config.clusterAttemptsMax) {
     throw new RangeError(
-      "session scheduler configuration: attemptsPerAccountMax is above attemptsMax, so the per-account ceiling never binds",
+      "session scheduler configuration: attemptsPerAccountMax is above clusterAttemptsMax, so the per-account ceiling never binds",
     );
   }
   return config;
