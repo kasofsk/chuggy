@@ -3,7 +3,7 @@
   "name": "chuggy-development",
   "configuration": {
     "version": 1,
-    "image": "registry.chuggy.internal/chuggy/worker@sha256:64e5f0216584270e71c32ffc0cb9b05003c8c3e59c49eaf34f38a7cac08ec06c",
+    "image": "registry.chuggy.internal/chuggy/worker@sha256:842a0297acb5a83fb80baee1b885e82e7b356d182914ff9d6606973da8fba448",
     "authority": {
       "tools": ["claude-code", "shell"],
       "credentials": ["chuggy-github-worker", "claude-code"],
