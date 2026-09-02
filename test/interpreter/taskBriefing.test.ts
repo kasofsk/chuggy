@@ -30,6 +30,7 @@ import {
   type BriefingSectionId,
   type TaskPurpose,
 } from "../../src/interpreter/briefingTemplate.ts";
+import { briefChecksMax } from "../../src/contract/brief.ts";
 import { resultReportCharsMax } from "../../src/interpreter/resultManifest.ts";
 import {
   allBriefingFaults,
@@ -38,6 +39,7 @@ import {
   briefingLineCharsMax,
   briefingLinesMax,
   evaluationChecksMax,
+  stageCommandsMax,
   authoredTaskConfigurationReadiness,
   composeTaskInvocation,
   priorWorkReportsMax,
@@ -51,6 +53,7 @@ import {
   runtimeHandoffLinesMax,
   type BlessedPractice,
   type BriefingFault,
+  type BriefingProvenanceSection,
   type BriefingSection,
   type BriefingView,
   type EvaluationBlock,
@@ -69,6 +72,8 @@ import {
 import type { ConfigurationPin } from "../../src/interpreter/projectDecision.ts";
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 import {
+  asBriefCheckLine,
+  asBriefIntent,
   asDraftBrief,
   type DraftBrief,
 } from "../../src/interpreter/ticketBrief.ts";
@@ -880,6 +885,153 @@ test("a stage's command list is bounded and made of readable lines", () => {
   );
 });
 
+/** A ticket brief carrying the check lines a case appends. */
+function briefAppending(checks: readonly string[]): DraftBrief {
+  return {
+    intent: asBriefIntent("Fix the importer."),
+    links: [],
+    checks: checks.map(asBriefCheckLine),
+  };
+}
+
+/** The commands a composed view hands its worker, failing the case for any other mode. */
+function stageCommands(view: BriefingView): readonly string[] {
+  const worker = composed(view).worker;
+  const mode =
+    worker !== undefined && "mode" in worker ? worker.mode : undefined;
+  if (mode?.type !== "Commands") assert.fail("the stage runs no command list");
+  return mode.commands;
+}
+
+test("a ticket's own check lines run after the configuration's, never before", () => {
+  const view = viewOf({
+    purpose: "Check",
+    stage: 1,
+    evaluations: checkEvaluations,
+    ticketBrief: briefAppending(["npm run lint", "npm test"]),
+  });
+  assert.deepEqual(stageCommands(view), [
+    ".chug/tasks/ci.sh",
+    "just check-full",
+    "npm run lint",
+    "npm test",
+  ]);
+  assert.deepEqual(sectionLines(view, "CheckCommands"), [
+    "- .chug/tasks/ci.sh",
+    "- just check-full",
+    "- npm run lint",
+    "- npm test",
+  ]);
+});
+
+test("a ticket's check lines join the first commanded stage and no other", () => {
+  const evaluations: readonly EvaluationBlock[] = [
+    { purpose: "Check", checks: ["./first.sh"] },
+    { purpose: "Check", checks: ["./second.sh"] },
+  ];
+  const ticketBrief = briefAppending(["npm test"]);
+  assert.deepEqual(
+    stageCommands(
+      viewOf({ purpose: "Check", stage: 0, evaluations, ticketBrief }),
+    ),
+    ["./first.sh", "npm test"],
+  );
+  assert.deepEqual(
+    stageCommands(
+      viewOf({ purpose: "Check", stage: 1, evaluations, ticketBrief }),
+    ),
+    ["./second.sh"],
+  );
+});
+
+test("a ticket's check lines reach no stage its configuration briefs an agent for", () => {
+  const view = viewOf({
+    purpose: "Review",
+    stage: 0,
+    evaluations: checkEvaluations,
+    ticketBrief: briefAppending(["npm test"]),
+  });
+  assert.equal(composed(view).worker, undefined);
+  assert.equal(sectionLines(view, "CheckCommands"), undefined);
+});
+
+test("a stage runs no more command lines than its two sources together bound", () => {
+  const checks = Array.from({ length: evaluationChecksMax }, () => "./gate.sh");
+  const appended = (count: number): DraftBrief =>
+    briefAppending(Array.from({ length: count }, () => "npm test"));
+  const viewAppending = (count: number): BriefingView =>
+    viewOf({
+      purpose: "Check",
+      stage: 0,
+      evaluations: [{ purpose: "Check", checks }],
+      ticketBrief: appended(count),
+    });
+  assert.equal(
+    stageCommands(viewAppending(briefChecksMax)).length,
+    stageCommandsMax,
+  );
+  assert.equal(blockedFault(viewAppending(briefChecksMax + 1)), "TooManyLines");
+  assert.equal(
+    blockedFault(
+      viewOf({
+        purpose: "Check",
+        stage: 0,
+        evaluations: [{ purpose: "Check", checks: ["./gate.sh"] }],
+        ticketBrief: appended(briefChecksMax + 1),
+      }),
+    ),
+    "TooManyLines",
+    "the ticket's own list is bounded whatever room the configuration left",
+  );
+});
+
+test("the provenance says how many of a stage's command lines the ticket added", () => {
+  const sectionsOf = (
+    view: BriefingView,
+  ): readonly BriefingProvenanceSection[] => composed(view).provenance.sections;
+  const appended = sectionsOf(
+    viewOf({
+      purpose: "Check",
+      stage: 1,
+      evaluations: checkEvaluations,
+      ticketBrief: briefAppending(["npm test"]),
+    }),
+  );
+  assert.equal(
+    appended.find((section) => section.section === "CheckCommands")
+      ?.ticketLines,
+    1,
+  );
+  assert.equal(
+    appended.find((section) => section.section === "RequiredResult")
+      ?.ticketLines,
+    undefined,
+  );
+  const none = sectionsOf(
+    viewOf({ purpose: "Check", stage: 1, evaluations: checkEvaluations }),
+  );
+  assert.equal(
+    none.find((section) => section.section === "CheckCommands")?.ticketLines,
+    0,
+  );
+  const later = sectionsOf(
+    viewOf({
+      purpose: "Check",
+      stage: 1,
+      evaluations: [
+        { purpose: "Check", checks: ["./first.sh"] },
+        { purpose: "Check", checks: ["./second.sh"] },
+      ],
+      ticketBrief: briefAppending(["npm test"]),
+    }),
+  );
+  assert.equal(
+    later.find((section) => section.section === "CheckCommands")?.ticketLines,
+    0,
+    "a stage the ticket's lines did not join records none of them",
+  );
+});
+
 test("this tree's own configurations name a check stage the worker runs itself", () => {
   for (const name of ["chuggy-development", "basic-coding"]) {
     const document: unknown = JSON.parse(
@@ -1162,7 +1314,7 @@ test("a brief with nothing to point at renders its intent and no link section", 
 
 /** A brief that reached the view unbranded, which is what a stored one cannot be. */
 function unbrandedBrief(intent: string): DraftBrief {
-  return { intent: intent as DraftBrief["intent"], links: [] };
+  return { intent: intent as DraftBrief["intent"], links: [], checks: [] };
 }
 
 test("a ticket cannot forge a section, whatever reaches its brief unbranded", () => {

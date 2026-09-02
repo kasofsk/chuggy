@@ -11,7 +11,10 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 
-import type { DraftResponse } from "../../../src/contract/responses.ts";
+import {
+  draftResponseSchema,
+  type DraftResponse,
+} from "../../../src/contract/responses.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import { TicketBrief } from "../app/browser/TicketProvenance.tsx";
 
@@ -75,6 +78,62 @@ test("a link this console did not write cannot reach back through what it opens"
   );
   for (const link of screen.getAllByRole("link"))
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+});
+
+test("the check lines a brief appends are drawn one per line, in order", () => {
+  render(
+    <TicketBrief
+      state={draft({
+        intent: "an intent",
+        links: [],
+        checks: ["npm run lint", "npm test"],
+      })}
+    />,
+  );
+  const lines = screen.getByText("checks").nextElementSibling;
+  expect(
+    [...(lines?.querySelectorAll("li") ?? [])].map((li) => li.textContent),
+  ).toEqual(["npm run lint", "npm test"]);
+});
+
+/**
+ * The panel is handed what the API answered, so a case that hand-builds its
+ * value agrees with the panel about a shape neither side got from the wire.
+ */
+test("the lines a brief appends survive the wire's own parse into the panel", () => {
+  const body: unknown = {
+    partition: { tenant: "acme", project: "atlas" },
+    ticket: 7,
+    authoringVersion: 1,
+    state: "Released",
+    configurationRevision: "r1",
+    authoring,
+    brief: {
+      intent: "an intent",
+      links: [],
+      checks: ["npm run lint", "npm test"],
+    },
+  };
+  render(
+    <TicketBrief
+      state={{
+        state: "Ready",
+        observedAtMs: 0,
+        value: draftResponseSchema.parse(body),
+      }}
+    />,
+  );
+  const lines = screen.getByText("checks").nextElementSibling;
+  expect(
+    [...(lines?.querySelectorAll("li") ?? [])].map((li) => li.textContent),
+  ).toEqual(["npm run lint", "npm test"]);
+});
+
+test("a brief appending no check lines says so rather than drawing an empty list", () => {
+  render(<TicketBrief state={draft({ intent: "an intent", links: [] })} />);
+  expect(screen.getByText("checks").nextElementSibling?.textContent).toBe(
+    "none",
+  );
 });
 
 test("a brief with no branch says so rather than drawing an empty field", () => {

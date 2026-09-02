@@ -62,6 +62,7 @@ import {
   ticketResponseSchema,
 } from "../../src/contract/responses.ts";
 import { authoringSchema } from "../../src/contract/authoring.ts";
+import { draftRevisionSchema } from "../../src/contract/requests.ts";
 import {
   errorEnvelopeSchema,
   runModelCharsMax,
@@ -908,12 +909,20 @@ test("a briefed draft and ticket read carry the brief, and an older one omits it
   assert.deepEqual(briefed.brief, {
     intent: "Serve the brief on the ticket resource.",
     links: ["https://example.test/issues/340"],
+    checks: ["npm test"],
     branch: "refs/heads/rt/ticket-brief",
     finalization: { mode: "PullRequest", target: "refs/heads/main" },
   });
   assert.equal(
     draftResponseSchema.parse(draftResponse(draftResource).body).brief,
     undefined,
+  );
+  assert.deepEqual(
+    draftResponseSchema.parse(
+      draftResponse({ ...briefedDraft, brief: { ...brief, checks: [] } }).body,
+    ).brief?.checks,
+    [],
+    "a brief appending nothing answers the empty list rather than omitting it",
   );
   const ticket = ticketResponseSchema.parse(
     ticketResponse({
@@ -925,6 +934,7 @@ test("a briefed draft and ticket read carry the brief, and an older one omits it
     }).body,
   );
   assert.deepEqual(ticket.brief?.links, ["https://example.test/issues/340"]);
+  assert.deepEqual(ticket.brief?.checks, ["npm test"]);
   assert.deepEqual(ticket.brief?.finalization, {
     mode: "PullRequest",
     target: "refs/heads/main",
@@ -940,6 +950,26 @@ test("a briefed draft and ticket read carry the brief, and an older one omits it
     ).brief,
     undefined,
   );
+});
+
+/**
+ * A reader that revises sends back the brief it read, and a revision replaces
+ * every list the brief carries, so a list a read dropped is one a revision
+ * erases with no refusal to warn anybody.
+ */
+test("a brief a read answers is a brief a revision may send back unchanged", () => {
+  const read = draftResponseSchema.parse(
+    draftResponse(briefedDraft).body,
+  ).brief;
+  assert.ok(read !== undefined);
+  const revision = draftRevisionSchema.parse({
+    expectedVersion: 2,
+    configurationRevision: "revision-one",
+    authoring: authoringWireBody,
+    brief: read,
+  });
+  assert.deepEqual(revision.brief.checks, ["npm test"]);
+  assert.deepEqual(revision.brief.links, ["https://example.test/issues/340"]);
 });
 
 test("a draft initialization offers no default brief, an intent having no default", () => {

@@ -3,12 +3,13 @@
  * asked about.
  *
  * What is visible is what only a person can state — the intent, what to read
- * first, the branch the work happens on and the one it lands on; the rest is
- * prefilled behind the disclosure. Submit creates the draft and releases it in
- * one motion, and the navigation happens on a settled success alone, so a
- * screen never hands a reader a ticket the projection has not got to yet.
- * Every other ending is drawn here with its reason and the form still holding
- * what was typed.
+ * first, the check lines this ticket adds where its configuration commands a
+ * stage for them, the branch the work happens on and the one it lands on; the
+ * rest is prefilled behind the disclosure. Submit creates the draft and
+ * releases it in one motion, and the navigation happens on a settled success
+ * alone, so a screen never hands a reader a ticket the projection has not got
+ * to yet. Every other ending is drawn here with its reason and the form still
+ * holding what was typed.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -16,7 +17,10 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
-import { briefLinksMax } from "../../../../src/contract/brief.ts";
+import {
+  briefChecksMax,
+  briefLinksMax,
+} from "../../../../src/contract/brief.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
   ConfigurationSummary,
@@ -143,6 +147,53 @@ function Links(props: FormEdit): ReactNode {
   );
 }
 
+/** The command lines this ticket adds to the stage its configuration runs. */
+function Checks(props: FormEdit): ReactNode {
+  const { form, onChange } = props;
+  return (
+    <fieldset className="creation-set">
+      <legend>checks</legend>
+      {form.checks.map((check, index) => (
+        <div key={index} className="creation-row">
+          <input
+            type="text"
+            value={check}
+            placeholder="a command line"
+            onChange={(event) => {
+              onChange({
+                ...form,
+                checks: form.checks.map((held, at) =>
+                  at === index ? event.target.value : held,
+                ),
+              });
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              onChange({
+                ...form,
+                checks: form.checks.filter((_, at) => at !== index),
+              });
+            }}
+          >
+            remove
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        disabled={form.checks.length >= briefChecksMax}
+        onClick={() => {
+          onChange({ ...form, checks: [...form.checks, ""] });
+        }}
+      >
+        add check
+      </button>
+    </fieldset>
+  );
+}
+
 function Branch(props: FormEdit): ReactNode {
   const { form, onChange } = props;
   return (
@@ -230,6 +281,12 @@ function CreationFields(
       <Fault field="intent" faults={faults} />
       <Links form={form} onChange={onChange} />
       <Fault field="links" faults={faults} />
+      {initialization.commandedCheckStage === undefined ? null : (
+        <>
+          <Checks form={form} onChange={onChange} />
+          <Fault field="checks" faults={faults} />
+        </>
+      )}
       <Branch form={form} onChange={onChange} />
       <Fault field="branch" faults={faults} />
       <TargetBranch form={form} onChange={onChange} />

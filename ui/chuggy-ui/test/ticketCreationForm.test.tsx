@@ -19,6 +19,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 
+import { briefChecksMax, briefLinksMax } from "../../../src/contract/brief.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
@@ -302,4 +303,50 @@ test("the advanced disclosure holds the authoring, and offers what is chosen", (
     "1",
     "2",
   ]);
+});
+
+test("the checks editor is drawn only where the configuration commands a stage for them", async () => {
+  const commanding = { ...creationInitialization, commandedCheckStage: 1 };
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, [], commanding);
+  typeIntent("ship it");
+  fireEvent.click(screen.getByText("add check"));
+  fireEvent.change(screen.getByPlaceholderText("a command line"), {
+    target: { value: "npm test" },
+  });
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  const body = drafts(held.sent)[0]?.body;
+  expect(
+    body !== null && typeof body === "object" && "brief" in body
+      ? (body.brief as { readonly checks?: readonly string[] }).checks
+      : undefined,
+  ).toStrictEqual(["npm test"]);
+});
+
+test("a configuration commanding no check stage offers no checks editor", () => {
+  draw(api({ state: "Succeeded" }).ports, []);
+  expect(screen.queryByText("add check")).toBeNull();
+});
+
+/**
+ * The add control is what stops a form assembling a body the wire refuses, so
+ * the row it disables at is the bound itself and not one either side of it.
+ */
+test("each list editor stops adding rows exactly at the bound the wire states", () => {
+  const commanding = { ...creationInitialization, commandedCheckStage: 1 };
+  draw(api({ state: "Succeeded" }).ports, [], commanding);
+  for (const [control, bound] of [
+    ["add link", briefLinksMax],
+    ["add check", briefChecksMax],
+  ] as const) {
+    const add = screen.getByText<HTMLButtonElement>(control);
+    for (let added = 0; added < bound; added += 1) {
+      expect(add.disabled).toBe(false);
+      fireEvent.click(add);
+    }
+    expect(add.disabled).toBe(true);
+  }
 });

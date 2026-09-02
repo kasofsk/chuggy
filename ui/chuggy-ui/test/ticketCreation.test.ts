@@ -12,6 +12,7 @@ import { expect, test } from "vitest";
 import {
   briefBranchCharsMax,
   briefBranchPrefix,
+  briefChecksMax,
   briefIntentCharsMax,
   briefIntentLinesMax,
   briefLineCharsMax,
@@ -268,6 +269,26 @@ test("the links a brief carries are bounded and read over one scheme", () => {
   expect(
     assembled.assembled === "Body" && assembled.body.brief.links,
   ).toStrictEqual(["https://a.test"]);
+});
+
+test("the check lines a brief appends are bounded, trimmed and omitted when empty", () => {
+  const many = Array.from({ length: briefChecksMax + 1 }, () => "npm test");
+  expect(faultFields(creationForm({ checks: many }))).toStrictEqual(["checks"]);
+  expect(
+    faultFields(creationForm({ checks: ["x".repeat(briefLineCharsMax + 1)] })),
+  ).toStrictEqual(["checks"]);
+  const appended = creationBodyFrom(
+    creationInitialization,
+    creationForm({ checks: ["  ", " npm test "] }),
+  );
+  expect(
+    appended.assembled === "Body" && appended.body.brief.checks,
+  ).toStrictEqual(["npm test"]);
+  const none = creationBodyFrom(
+    creationInitialization,
+    creationForm({ checks: ["   "] }),
+  );
+  expect(none.assembled === "Body" && none.body.brief.checks).toBe(undefined);
 });
 
 test("an intent is required, and bounded in characters and in printed lines", () => {

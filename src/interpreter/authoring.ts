@@ -34,9 +34,10 @@ import {
   type HandoffConfigurationFault,
 } from "./handoffConfiguration.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
-import type { BriefFinalization, DraftBrief } from "./ticketBrief.ts";
+import type { DraftBrief, ReleaseBrief } from "./ticketBrief.ts";
 import {
   authoredTaskConfigurationReadiness,
+  firstCommandedCheckStage,
   type AuthoredTaskConfiguration,
   type TaskConfigurationFault,
 } from "./taskConfiguration.ts";
@@ -55,14 +56,16 @@ export type ReleaseConfiguration = Readonly<Record<string, unknown>> & {
 } & AuthoredTaskConfiguration;
 
 /**
- * Why one configuration is not releasable. `HandoffProposesChange` is the one
- * fault about the pairing rather than the document: a configuration carrying a
- * handoff and a brief that opens a change proposal contradict each other, and
- * the document alone is fine.
+ * Why one configuration is not releasable. `HandoffProposesChange` and
+ * `BriefChecksUncommanded` are the two faults about the pairing rather than the
+ * document, either document alone being fine: a configuration carrying a handoff
+ * contradicts a brief that opens a change proposal, and one commanding no check
+ * stage contradicts a brief that appends check lines to it.
  */
 export type ReleaseConfigurationFault =
   | "ReleaseShapeInvalid"
   | "HandoffProposesChange"
+  | "BriefChecksUncommanded"
   | TaskConfigurationFault
   | HandoffConfigurationFault;
 
@@ -120,13 +123,13 @@ export function canonicalConfigurationOf(
 
 /**
  * Applies the release-time semantic minimum without restricting draft
- * authoring. The brief's finalization is read where the caller has one, because
- * a handoff configuration and a brief that proposes a change contradict each
- * other and release is the last moment either can still be edited.
+ * authoring. The brief is read where the caller has one, because release is the
+ * last moment either it or the configuration can still be edited, and it is the
+ * only moment a pair that contradicts each other can still be refused.
  */
 export function releaseConfigurationReadiness(
   configuration: CanonicalConfiguration,
-  finalization?: BriefFinalization,
+  brief?: ReleaseBrief,
 ): ReleaseConfigurationReadiness {
   const value: unknown = JSON.parse(configuration);
   const authored = authoredTaskConfigurationReadiness(value);
@@ -143,9 +146,15 @@ export function releaseConfigurationReadiness(
   }
   if (authored.readiness === "Incomplete") return authored;
   if (
+    brief !== undefined &&
+    brief.checks.length > 0 &&
+    firstCommandedCheckStage(authored.configuration) === undefined
+  )
+    return { readiness: "Incomplete", fault: "BriefChecksUncommanded" };
+  if (
     (value as Record<string, unknown>)[handoffConfigurationField] !== undefined
   ) {
-    if (finalization?.mode === "PullRequest")
+    if (brief?.finalization?.mode === "PullRequest")
       return { readiness: "Incomplete", fault: "HandoffProposesChange" };
     const handoff = authoredHandoffConfigurationReadiness(value);
     if (handoff.readiness === "Incomplete") return handoff;
@@ -363,6 +372,12 @@ export interface DraftInitialization {
   };
   readonly dependencyCandidates: readonly TicketId[];
   readonly dependencyCandidatesTruncated: boolean;
+  /**
+   * The stage this configuration runs as commands and a ticket's own check
+   * lines would join, absent where it commands none — which is what makes a
+   * brief carrying them unreleasable against this configuration.
+   */
+  readonly commandedCheckStage?: number;
 }
 
 export type DraftInitializationRead =
@@ -373,7 +388,7 @@ export type DraftInitializationRead =
 
 export interface DraftInitializationSnapshot extends Omit<
   DraftInitialization,
-  "defaults" | "choices"
+  "defaults" | "choices" | "commandedCheckStage"
 > {
   readonly domain: Config;
 }

@@ -653,8 +653,8 @@ async function decisionReleaseOutcome(
     );
   const canonical = asCanonicalConfiguration(revision.canonical);
   if (
-    releaseConfigurationReadiness(canonical, fence.briefFinalization)
-      .readiness === "Incomplete"
+    releaseConfigurationReadiness(canonical, fence.brief).readiness ===
+    "Incomplete"
   )
     return { outcome: "Refused", code: "ConfigurationInvalid" };
   if (decision.outcome.outcome === "Journaled" && !(await releaseFence(true)))

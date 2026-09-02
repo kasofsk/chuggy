@@ -33,6 +33,28 @@ export interface CommandEvaluationBlock {
 /** One indexed evaluation stage, which is one of the two kinds a stage may be. */
 export type EvaluationBlock = AgentEvaluationBlock | CommandEvaluationBlock;
 
+/** Whether one block is the kind the worker runs itself rather than briefing an agent. */
+export function commandedEvaluationBlock(
+  block: PurposeBlock | EvaluationBlock,
+): block is CommandEvaluationBlock {
+  return "checks" in block && block.checks !== undefined;
+}
+
+/**
+ * The stage a ticket's own check lines join, which is the first one the
+ * configuration runs as commands. A configuration commanding none has no stage
+ * for a ticket to append to, and a ticket carrying lines cannot be released
+ * against it.
+ */
+export function firstCommandedCheckStage(
+  configuration: AuthoredTaskConfiguration,
+): number | undefined {
+  const at = (configuration.evaluations ?? []).findIndex(
+    commandedEvaluationBlock,
+  );
+  return at === -1 ? undefined : at;
+}
+
 interface SingleClaudeWorkerMode {
   readonly type: "SingleAgent";
   readonly agent: "Claude";

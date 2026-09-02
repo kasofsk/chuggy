@@ -52,7 +52,7 @@ function briefLandingName(
  * branch above it is the answer whenever it does not.
  */
 function Brief(props: { readonly brief: TicketBriefBody }): ReactNode {
-  const { intent, links, branch, finalization } = props.brief;
+  const { intent, links, checks, branch, finalization } = props.brief;
   return (
     <>
       <Field name="intent">
@@ -69,6 +69,17 @@ function Brief(props: { readonly brief: TicketBriefBody }): ReactNode {
                   {link}
                 </a>
               </li>
+            ))}
+          </ul>
+        )}
+      </Field>
+      <Field name="checks">
+        {checks === undefined || checks.length === 0 ? (
+          "none"
+        ) : (
+          <ul className="checks">
+            {checks.map((check) => (
+              <li key={check}>{check}</li>
             ))}
           </ul>
         )}
@@ -96,7 +107,7 @@ export function TicketBrief(props: {
         return (
           <dl className="legacy-fields">
             {draft.brief === undefined ? (
-              <Field name="intent, links, branch, landing">
+              <Field name="brief">
                 <span className="panel-absent">
                   this ticket was released before a brief was kept for one
                 </span>

@@ -96,6 +96,7 @@ export const authoringWireBody = {
 export const brief = asDraftBrief({
   intent: "Serve the brief on the ticket resource.",
   links: ["https://example.test/issues/340"],
+  checks: ["npm test"],
   branch: "refs/heads/rt/ticket-brief",
   finalization: { mode: "PullRequest", target: "refs/heads/main" },
 });
@@ -104,6 +105,7 @@ export const brief = asDraftBrief({
 export const briefWireBody = {
   intent: "Serve the brief on the ticket resource.",
   links: ["https://example.test/issues/340"],
+  checks: ["npm test"],
   branch: "refs/heads/rt/ticket-brief",
   finalization: { mode: "PullRequest", target: "refs/heads/main" },
 };

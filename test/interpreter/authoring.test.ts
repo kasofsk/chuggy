@@ -11,7 +11,10 @@ import {
   parseDraftAuthoring,
   releaseConfigurationReadiness,
 } from "../../src/interpreter/authoring.ts";
-import { asBriefBranch } from "../../src/interpreter/ticketBrief.ts";
+import {
+  asBriefBranch,
+  asBriefCheckLine,
+} from "../../src/interpreter/ticketBrief.ts";
 import { handoffFixture } from "./handoffFixture.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
@@ -154,13 +157,19 @@ test("a configuration that hands off refuses a brief that would propose a change
   });
   assert.deepEqual(
     releaseConfigurationReadiness(handing, {
-      mode: "PullRequest",
-      target: asBriefBranch("refs/heads/rt/landing"),
+      checks: [],
+      finalization: {
+        mode: "PullRequest",
+        target: asBriefBranch("refs/heads/rt/landing"),
+      },
     }),
     { readiness: "Incomplete", fault: "HandoffProposesChange" },
   );
   assert.equal(
-    releaseConfigurationReadiness(handing, { mode: "Push" }).readiness,
+    releaseConfigurationReadiness(handing, {
+      checks: [],
+      finalization: { mode: "Push" },
+    }).readiness,
     "Ready",
     "the same configuration releases under every other mode",
   );
@@ -171,11 +180,53 @@ test("a configuration that hands off refuses a brief that would propose a change
   );
   assert.equal(
     releaseConfigurationReadiness(readyConfiguration, {
-      mode: "PullRequest",
-      target: asBriefBranch("refs/heads/rt/landing"),
+      checks: [],
+      finalization: {
+        mode: "PullRequest",
+        target: asBriefBranch("refs/heads/rt/landing"),
+      },
     }).readiness,
     "Ready",
     "a configuration that hands nothing off is proposed against freely",
+  );
+});
+
+test("a configuration commanding no check stage refuses a brief that appends check lines", () => {
+  const parsed = JSON.parse(readyConfiguration) as Record<string, unknown>;
+  const commanding = canonicalConfigurationOf({
+    ...parsed,
+    evaluations: [
+      { purpose: "Review", instructions: ["Review it."], practices: [] },
+      { purpose: "Check", checks: [".chug/tasks/ci.sh"] },
+    ],
+  });
+  const appending = { checks: [asBriefCheckLine("npm test")] };
+  assert.deepEqual(
+    releaseConfigurationReadiness(readyConfiguration, appending),
+    { readiness: "Incomplete", fault: "BriefChecksUncommanded" },
+  );
+  assert.equal(
+    releaseConfigurationReadiness(commanding, appending).readiness,
+    "Ready",
+    "a configuration commanding a check stage takes the lines",
+  );
+  assert.equal(
+    releaseConfigurationReadiness(readyConfiguration, { checks: [] }).readiness,
+    "Ready",
+    "a brief appending nothing is released against either",
+  );
+  assert.equal(
+    releaseConfigurationReadiness(
+      canonicalConfigurationOf({
+        ...parsed,
+        evaluations: [
+          { purpose: "Check", instructions: ["Run it."], practices: [] },
+        ],
+      }),
+      appending,
+    ).readiness,
+    "Incomplete",
+    "a check stage that briefs an agent commands nothing for a ticket to join",
   );
 });
 

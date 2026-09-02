@@ -420,6 +420,7 @@ test("the finalizer's read surface is exactly the relations its view is gathered
       "commit_permit",
       "configuration_revision",
       "draft_brief",
+      "draft_brief_check",
       "draft_brief_link",
       "execution",
       "execution_request_task",

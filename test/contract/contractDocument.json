@@ -419,6 +419,15 @@
                 "pattern": "^https:\\/\\/.*"
               }
             },
+            "checks": {
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            },
             "branch": {
               "type": "string",
               "maxLength": 256,
@@ -599,6 +608,15 @@
                 "type": "string",
                 "maxLength": 512,
                 "pattern": "^https:\\/\\/.*"
+              }
+            },
+            "checks": {
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
               }
             },
             "branch": {
