@@ -298,10 +298,14 @@ async function sessionPlaneAnswer(
   pool: pg.Pool,
   input: Parameters<SessionTurnSettlePort["answer"]>[0],
 ): Promise<SessionTurnAnswered> {
+  const measured = input.measured;
   const answered = await pool.query<{ answered: string | null }>(
     sql`SELECT answer_session_turn(${sessionSecretDigest(input.secret)},
       ${input.generation},${input.turn},${input.result},
-      ${input.batchFirst ?? null},${input.batchLast ?? null})::text AS answered`,
+      ${input.batchFirst ?? null},${input.batchLast ?? null},
+      ${measured?.model ?? null},${measured?.tokens ?? null},
+      ${measured?.costMicros ?? null},${measured?.durationMs ?? null},
+      ${measured === undefined ? null : [...measured.tools]})::text AS answered`,
   );
   return sessionVerdict(
     answerArms,

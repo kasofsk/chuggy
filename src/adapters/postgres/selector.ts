@@ -411,45 +411,26 @@ async function insertInteractionResource(
     );
 }
 
-async function readInteractionResource<T>(
-  pool: pg.Pool,
-  decision: string,
+/**
+ * Reassembles one resource from the chunks a reader holds and refuses any that
+ * does not answer its manifest. The chunk count, the reassembled length and
+ * the reassembled digest are the whole of what a manifest promises, so a
+ * caller that read the chunks another way is held to the same three.
+ */
+export function selectorInteractionResource<T>(
   manifestText: string,
+  chunks: readonly string[],
   schema: z.ZodType<T>,
-): Promise<T> {
+): T {
   const manifest = decoded(
     manifestText,
     interactionResourceManifestSchema,
     "selector interaction resource manifest",
   );
-  const resourceKind: string = manifest.kind;
-  const found = await pool.query<{
-    ordinal: string;
-    digest: string;
-    byte_length: string;
-    chunk_count: string;
-    content: string;
-  }>(
-    sql`SELECT ordinal::text,digest,byte_length::text,chunk_count::text,content
-       FROM selector_interaction_resource
-       WHERE selector_decision=${decision} AND kind=${resourceKind} ORDER BY ordinal`,
-  );
-  if (
-    found.rows.length !== manifest.chunks ||
-    found.rows.some(
-      (row, ordinal) =>
-        projectRowCounter(row.ordinal, "selector resource ordinal") !==
-          ordinal ||
-        row.digest !== manifest.digest ||
-        projectRowCounter(row.byte_length, "selector resource byte length") !==
-          manifest.bytes ||
-        projectRowCounter(row.chunk_count, "selector resource chunk count") !==
-          manifest.chunks,
-    )
-  )
+  if (chunks.length !== manifest.chunks)
     throw new Error("selector interaction resource manifest is incomplete");
   const bytes = Buffer.concat(
-    found.rows.map((row) => Buffer.from(row.content, "base64")),
+    chunks.map((chunk) => Buffer.from(chunk, "base64")),
   );
   if (
     bytes.length !== manifest.bytes ||
@@ -461,6 +442,32 @@ async function readInteractionResource<T>(
     schema,
     "selector interaction resource",
   );
+}
+
+/**
+ * One resource's chunks in the order they were written, over the selector's
+ * own grant on the relation. Each row repeats the manifest it belongs to, and
+ * a row whose repeat disagrees is a row this decision did not write.
+ */
+async function readInteractionChunks(
+  pool: pg.Pool,
+  decision: string,
+  kind: InteractionResourceKind,
+): Promise<readonly string[]> {
+  const resourceKind: string = kind;
+  const found = await pool.query<{ ordinal: string; content: string }>(
+    sql`SELECT ordinal::text,content
+       FROM selector_interaction_resource
+       WHERE selector_decision=${decision} AND kind=${resourceKind} ORDER BY ordinal`,
+  );
+  if (
+    found.rows.some(
+      (row, ordinal) =>
+        projectRowCounter(row.ordinal, "selector resource ordinal") !== ordinal,
+    )
+  )
+    throw new Error("selector interaction resource manifest is incomplete");
+  return found.rows.map((row) => row.content);
 }
 
 /**
@@ -1087,13 +1094,13 @@ async function readSelectorProject(
     revision: string;
     recovery_epoch: string | null;
     attention: string;
-    working_memory: string;
+    handoff_note: string;
     candidate_scan_token: string | null;
     candidate_scan_after: string | null;
     candidate_scan_state: string;
     candidate_scan_exhausted_token: string | null;
   }>(
-    sql`SELECT notification_cursor::text,revision::text,recovery_epoch,attention,working_memory,
+    sql`SELECT notification_cursor::text,revision::text,recovery_epoch,attention,handoff_note,
        candidate_scan_token,candidate_scan_after::text,candidate_scan_state,
        candidate_scan_exhausted_token
        FROM selector_project_state
@@ -1114,7 +1121,7 @@ async function readSelectorProject(
           : { recoveryEpoch: row.recovery_epoch }),
         attention: selectorAttention(row.attention),
         handoffNote: decoded(
-          row.working_memory,
+          row.handoff_note,
           jsonValueSchema,
           "selector handoff note",
         ),
@@ -1209,7 +1216,7 @@ async function writeSelectorProject(
     sql`UPDATE selector_project_state
        SET notification_cursor=${state.notificationCursor},
        recovery_epoch=${state.recoveryEpoch ?? null},attention=${String(state.attention)},
-       working_memory=${encode(state.handoffNote)},
+       handoff_note=${encode(state.handoffNote)},
        candidate_scan_token=${scan.state === "Continue" ? encode(scan.token) : null},
        candidate_scan_after=${scan.state === "Continue" ? scan.after : null},
        candidate_scan_state=${scan.state},
@@ -1544,7 +1551,8 @@ async function readPlanningIntent(
       };
 }
 
-interface SelectorInteractionRow {
+/** One `selector_interaction` row, however the reader was granted it. */
+export interface SelectorInteractionRow {
   readonly selector_decision: string;
   readonly ordinal: string;
   readonly instructions_version: string;
@@ -1562,21 +1570,33 @@ interface SelectorInteractionRow {
   readonly completed_at: Date;
 }
 
-async function selectorInteractionOf(
-  pool: pg.Pool,
+/** The chunked resources one interaction row's three manifests point at. */
+export interface SelectorInteractionChunks {
+  readonly observedView: readonly string[];
+  readonly context: readonly string[];
+  readonly toolActivity: readonly string[];
+}
+
+/**
+ * One decision as the log records it, built from the row and the chunks a
+ * reader already holds. The selector's own pool selects those chunks per
+ * resource; the API's definer function answers them beside the row, and both
+ * are held to the same manifest.
+ */
+export function selectorInteractionRecord(
   partition: Partition,
   row: SelectorInteractionRow,
-): Promise<SelectorInteractionRecord> {
+  chunks: SelectorInteractionChunks,
+): SelectorInteractionRecord {
   return {
     decision: row.selector_decision,
     ordinal: projectRowCounter(row.ordinal, "selector interaction ordinal"),
     partition,
     instructionsVersion: row.instructions_version,
     instructions: row.instructions,
-    observedView: await readInteractionResource(
-      pool,
-      row.selector_decision,
+    observedView: selectorInteractionResource(
       row.observed_view,
+      chunks.observedView,
       z.array(dispatchCandidateSchema).readonly(),
     ),
     ...(row.observed_token === null
@@ -1588,16 +1608,14 @@ async function selectorInteractionOf(
             "selector observed token",
           ),
         }),
-    context: await readInteractionResource<SelectorInteraction["context"]>(
-      pool,
-      row.selector_decision,
+    context: selectorInteractionResource<SelectorInteraction["context"]>(
       row.context,
+      chunks.context,
       selectorContextSchema,
     ),
-    toolActivity: await readInteractionResource(
-      pool,
-      row.selector_decision,
+    toolActivity: selectorInteractionResource(
       row.tool_activity,
+      chunks.toolActivity,
       z.array(jsonValueSchema).readonly(),
     ),
     result: decoded(row.result, jsonValueSchema, "selector result"),
@@ -1608,6 +1626,30 @@ async function selectorInteractionOf(
     startedAt: row.started_at.toISOString(),
     completedAt: row.completed_at.toISOString(),
   };
+}
+
+async function selectorInteractionOf(
+  pool: pg.Pool,
+  partition: Partition,
+  row: SelectorInteractionRow,
+): Promise<SelectorInteractionRecord> {
+  return selectorInteractionRecord(partition, row, {
+    observedView: await readInteractionChunks(
+      pool,
+      row.selector_decision,
+      "ObservedView",
+    ),
+    context: await readInteractionChunks(
+      pool,
+      row.selector_decision,
+      "Context",
+    ),
+    toolActivity: await readInteractionChunks(
+      pool,
+      row.selector_decision,
+      "ToolActivity",
+    ),
+  });
 }
 
 async function readSelectorHistory(
