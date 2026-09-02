@@ -43,6 +43,7 @@ import {
   dispatchViewResponseSchema,
   draftInitializationResponseSchema,
   draftResponseSchema,
+  draftsResponseSchema,
   executionRequirementSchema,
   executionResponseSchema,
   executionsResponseSchema,
@@ -70,6 +71,7 @@ import {
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
   errorEnvelopeSchema,
+  nativeHttpPageItemsMax,
   runModelCharsMax,
   runTranscriptPageBatchesMax,
   selectorHandoffNoteBytesMax,
@@ -1259,6 +1261,31 @@ test("a refusal ledger refuses a reason longer than its column holds", () => {
       entries: [
         { ...entry, reason: "x".repeat(agenticRefusalReasonCharsMax + 1) },
       ],
+    }),
+  );
+});
+
+test("a drafts page carries whole drafts, its cursor and whether it ends them", () => {
+  const body = draftResponseSchema.parse(draftResponse(draftResource).body);
+  assert.deepEqual(
+    draftsResponseSchema.parse({ drafts: [body], cursor: "Nw", more: true }),
+    { drafts: [body], cursor: "Nw", more: true },
+  );
+  assert.equal(
+    draftsResponseSchema.parse({ drafts: [], more: false }).cursor,
+    undefined,
+  );
+  assert.throws(() => draftsResponseSchema.parse({ drafts: [body] }));
+  assert.throws(() =>
+    draftsResponseSchema.parse({
+      more: false,
+      drafts: Array.from({ length: nativeHttpPageItemsMax + 1 }, () => body),
+    }),
+  );
+  assert.throws(() =>
+    draftsResponseSchema.parse({
+      more: false,
+      drafts: [{ ...body, authoringVersion: -1 }],
     }),
   );
 });

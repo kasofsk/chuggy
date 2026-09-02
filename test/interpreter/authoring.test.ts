@@ -5,7 +5,9 @@ import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
   canonicalConfigurationOf,
+  checkedDraftPageQuery,
   configurationRevisionSummary,
+  draftPageLimitDefault,
   draftInitializationPolicy,
   encodeDraftAuthoring,
   parseDraftAuthoring,
@@ -19,6 +21,7 @@ import { handoffFixture } from "./handoffFixture.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { nativeHttpPageItemsMax } from "../../src/contract/http.ts";
 import {
   encodeTicketCommand,
   parseTicketCommand,
@@ -300,4 +303,22 @@ test("ReleaseDraft round-trips as a revision-fenced public command", () => {
     parsed: "Ok",
     value: command,
   });
+});
+
+test("a draft page is refused outside the wire's own page bound", () => {
+  const cursor = asTicketId(4);
+  assert.deepEqual(checkedDraftPageQuery({ limit: 1 }), { limit: 1 });
+  assert.deepEqual(
+    checkedDraftPageQuery({ cursor, limit: draftPageLimitDefault }),
+    {
+      cursor,
+      limit: draftPageLimitDefault,
+    },
+  );
+  assert.deepEqual(checkedDraftPageQuery({ limit: nativeHttpPageItemsMax }), {
+    limit: nativeHttpPageItemsMax,
+  });
+  for (const limit of [0, -1, 1.5, nativeHttpPageItemsMax + 1])
+    assert.throws(() => checkedDraftPageQuery({ limit }), RangeError);
+  assert.ok(draftPageLimitDefault <= nativeHttpPageItemsMax);
 });
