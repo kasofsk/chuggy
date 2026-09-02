@@ -10,6 +10,10 @@ import {
   type FinalizerService,
 } from "../interpreter/finalizerRun.ts";
 import type { Partition, RecoveryEpoch } from "../interpreter/projectStore.ts";
+import {
+  sessionSchedulerPass,
+  type SessionSchedulerService,
+} from "../interpreter/sessionSchedulerRun.ts";
 import type {
   RuntimePrecondition,
   ServiceRuntime,
@@ -53,6 +57,7 @@ import {
   gitScratchWritablePrecondition,
 } from "../adapters/git/gitPrerequisites.ts";
 import { postgresExecutionScheduler } from "../adapters/postgres/scheduler.ts";
+import { postgresSessionScheduler } from "../adapters/postgres/sessionScheduler.ts";
 import { postgresPriorWorkReports } from "../adapters/postgres/evaluationReports.ts";
 import { postgresTicketBrief } from "../adapters/postgres/ticketBrief.ts";
 import { postgresPinnedConfigurations } from "../adapters/postgres/pinnedConfigurations.ts";
@@ -193,8 +198,17 @@ export function selectorProcess(
   );
 }
 
+/**
+ * Drives both schedulers in one tick of one pacing loop, execution first: either
+ * cleanup raises on a cluster answering `Unavailable` to a cancel and
+ * `../interpreter/serviceRuntime.ts` ends the loop on a raise out of `run`, so
+ * the order decides only which half has finished its pass when the other stops
+ * the tick, and this slice's newest infrastructure does not get to deny the
+ * proved execution machine a dispatch on its way out.
+ */
 export function schedulerProcess(
   service: ExecutionSchedulerService,
+  sessions: SessionSchedulerService,
   identity: {
     readonly owner: SchedulerOwnerId;
     readonly recoveryEpoch: RecoveryEpoch;
@@ -205,13 +219,15 @@ export function schedulerProcess(
 ): ServiceRuntime {
   return serviceRuntime(
     {
-      run: async () =>
-        void (await executionSchedulerPass(
+      run: async () => {
+        await executionSchedulerPass(
           service,
           identity.owner,
           identity.recoveryEpoch,
           identity.cluster,
-        )),
+        );
+        await sessionSchedulerPass(sessions, identity.recoveryEpoch);
+      },
     },
     systemPacing,
     processPreconditions(requirements),
@@ -383,6 +399,8 @@ export interface SchedulerProcessRootConfig {
     ExecutionSchedulerService,
     "store" | "configurations" | "priorWorkReports" | "ticketBriefs"
   >;
+  /** The session half of the same process; its own store comes from the same pool. */
+  readonly sessions: Omit<SessionSchedulerService, "store">;
   readonly workerCatalog: readonly AdmittedWorker[];
   readonly additional?: readonly RuntimePrecondition[];
 }
@@ -411,6 +429,7 @@ export function schedulerProcessRoot(
     pool,
     schedulerProcess(
       service,
+      { ...config.sessions, store: postgresSessionScheduler(pool) },
       config.identity,
       {
         pool,

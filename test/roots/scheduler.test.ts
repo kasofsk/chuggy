@@ -579,8 +579,13 @@ test("a stated bound is taken and the rest stay the published defaults", async (
   });
 });
 
-/** The cluster a case answers for, and the durable rows one pass is given to move. */
-function processFakes(reachable: boolean): string {
+/**
+ * The cluster a case answers for, reachable or not, and the site each half
+ * stands on. Both halves place against that one site, so what is recorded is
+ * the pod or Secret name, which carries the prefix its own launcher was
+ * configured with and is therefore the only thing that says which half asked.
+ */
+function processCluster(reachable: boolean): string {
   return `
     const cluster = {
       apiBaseUrl: 'https://cluster.invalid:6443',
@@ -600,9 +605,26 @@ function processFakes(reachable: boolean): string {
       requestTimeoutSecsMax: 5,
       unavailableRetryAfterSecs: 15,
     };
+    const sessionSite = {
+      ...cluster,
+      credentialMounts: { 'claude-code': {
+        secretName: 'claude-code', key: 'token',
+        mountPath: '/var/run/chuggy/credentials/claude-code',
+      } },
+      podNamePrefix: 'chuggy-session',
+      activeDeadlineSecs: 86400,
+      bounds: ${JSON.stringify(kubernetesSessionBoundsDefaults)},
+      model: 'claude-haiku-4-5',
+    };
     const asked = [];
+    const half = (init) => {
+      const named = init && init.body ? JSON.parse(init.body).metadata.name : '';
+      if (named.startsWith(cluster.podNamePrefix)) return ' worker';
+      if (named.startsWith(sessionSite.podNamePrefix)) return ' session';
+      return '';
+    };
     const fetcher = (input, init) => {
-      asked.push(((init && init.method) || 'GET') + ' ' + String(input));
+      asked.push(((init && init.method) || 'GET') + ' ' + String(input) + half(init));
       if (!${String(reachable)}) return Promise.reject(new Error('connection refused'));
       if (init && init.method === 'POST' && String(input).endsWith('/pods')) {
         const submitted = JSON.parse(init.body);
@@ -613,6 +635,12 @@ function processFakes(reachable: boolean): string {
       return Promise.resolve(new Response(null, { status: init && init.method === 'POST' ? 201 : 200 }));
     };
 
+  `;
+}
+
+/** The durable rows the execution half of one pass is given to move. */
+function processExecutionFakes(): string {
+  return `
     const partition = { tenant: 'tenant', project: 'project' };
     const execution = {
       partition, execution: 'execution-one', ticket: 1, task: 1, taskKind: 'Work',
@@ -647,18 +675,58 @@ function processFakes(reachable: boolean): string {
   `;
 }
 
+/** The durable rows the session half of the same pass is given to move. */
+function processSessionFakes(): string {
+  return `
+    const sessionGrant = { ...${JSON.stringify(grant)}, credentials: ['claude-code'] };
+    const agentSession = {
+      partition, session: 'session-one', kind: 'Lead',
+      principal: '21:https://auth.invalid4:lead', capabilities: ['RunCommands'],
+      credentialSlot: 'claude-code', account: 'project', cluster: 'cluster', state: 'Open',
+    };
+    const sessionFence = {
+      partition, session: 'session-one', attempt: 'session-attempt-one', generation: 1,
+    };
+    const sessionPlaced = [];
+    const sessionStore = {
+      fenceOldEpochAttempts: async () => 0,
+      attemptsAwaitingCleanup: async () => [],
+      attemptCleanupCompleted: async () => true,
+      reapLapsedAttempts: async () => 0,
+      reapIdleAttempts: async () => 0,
+      awaitingPlacement: async () => [agentSession],
+      openAttempt: async () => ({ opened: 'Opened', attempt: sessionFence }),
+      attemptPlaced: async (_attempt, placement) => { sessionPlaced.push(placement); return true; },
+      attemptEnded: async () => true,
+    };
+  `;
+}
+
+/** Everything one driven pass calls out through, cluster and rows alike. */
+function processFakes(reachable: boolean): string {
+  return `
+    ${processCluster(reachable)}
+    ${processExecutionFakes()}
+    ${processSessionFakes()}
+  `;
+}
+
 /**
  * One scheduler process against fakes for the two authorities it does not own:
  * a pool that answers the schema query, and a cluster that answers the probe
- * and the create.
+ * and the create. Both halves of the process are driven, because both are one
+ * tick of one pacing loop.
  */
 function processProgram(reachable: boolean): string {
   return `
     const roots = await import('./src/roots/controlPlane.ts');
     const schema = await import('./src/adapters/postgres/runtimeSchema.ts');
     const launch = await import('./src/adapters/kubernetes/workerLaunch.ts');
+    const sessionLaunch = await import('./src/adapters/kubernetes/sessionLaunch.ts');
+    const mint = await import('./src/adapters/crypto/sessionAttemptMint.ts');
     const supplied = await import('./src/adapters/supplied/schedulerPorts.ts');
     const scheduler = await import('./src/interpreter/executionScheduler.ts');
+    const sessions = await import('./src/interpreter/sessionScheduler.ts');
     const briefing = await import('./src/interpreter/taskBriefing.ts');
     const tickets = await import('./src/interpreter/ticketService.ts');
     const finalizer = await import('./src/interpreter/finalizer.ts');
@@ -685,9 +753,21 @@ function processProgram(reachable: boolean): string {
       finalizer: finalizer.finalizerDefaults,
       metrics: scheduler.silentSchedulerTelemetry,
     };
+    const sessionService = {
+      store: sessionStore,
+      placement: sessionLaunch.kubernetesSessionLaunch(sessionSite, fetcher),
+      bearers: mint.sessionAttemptMint(),
+      policy: {
+        image: ${JSON.stringify(workerImage)},
+        profile: { profile: 'session', runtimeVersion: '1' },
+        grant: sessionGrant,
+      },
+      config: sessions.sessionSchedulerDefaults,
+    };
     const pool = { query: async () => ({ rows: schema.currentRuntimeSchemaContract.required }) };
     const runtime = roots.schedulerProcess(
       service,
+      sessionService,
       { owner: 'scheduler-one', recoveryEpoch: 'epoch-one', cluster: 'cluster' },
       { pool, additional: [launch.kubernetesNamespacePrecondition(cluster, fetcher)] },
       { idleIntervalMilliseconds: 1000, shutdownDrainMilliseconds: 1000 },
@@ -696,44 +776,74 @@ function processProgram(reachable: boolean): string {
     await new Promise((resolve) => setTimeout(resolve, 50));
     const health = runtime.health();
     const stopped = await runtime.stop();
-    process.stdout.write(JSON.stringify({ started, health, stopped, placed, asked }));
+    process.stdout.write(JSON.stringify({
+      started, health, stopped, placed, sessionPlaced, asked,
+    }));
   `;
 }
 
-test("the scheduler process starts, places one worker, reports health and stops", async () => {
-  const found = JSON.parse(await schedulerProgram(processProgram(true))) as {
-    readonly started: unknown;
-    readonly health: unknown;
-    readonly stopped: unknown;
-    readonly placed: readonly string[];
-    readonly asked: readonly string[];
+/** What one driven scheduler process reported of itself and of the cluster it asked. */
+interface ProcessRan {
+  readonly started: {
+    readonly started: string;
+    readonly precondition?: string;
+    readonly verdict?: string;
   };
+  readonly health: { readonly live?: boolean; readonly ready: boolean };
+  readonly stopped?: unknown;
+  readonly placed: readonly string[];
+  readonly sessionPlaced: readonly string[];
+  readonly asked: readonly string[];
+}
+
+const namespaceUrl =
+  "https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers";
+
+test("the scheduler process starts, places one worker, reports health and stops", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(processProgram(true)),
+  ) as ProcessRan;
   assert.deepEqual(found.started, { started: "Started" });
   assert.deepEqual(found.health, { live: true, ready: true });
   assert.deepEqual(found.stopped, { stopped: "Stopped" });
   assert.equal(found.placed.length, 1);
+  assert.deepEqual(found.asked.slice(0, 3), [
+    `GET ${namespaceUrl}`,
+    `POST ${namespaceUrl}/pods worker`,
+    `POST ${namespaceUrl}/secrets worker`,
+  ]);
+});
+
+/**
+ * The session half of the same tick, and the order of the two. A pass nobody
+ * calls would leave this untouched while the process reported itself healthy,
+ * so the cluster is asked for the pod rather than the store merely told a
+ * placement happened, and each request says which half named it.
+ */
+test("the same tick places the session waiting for a pod, after the worker", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(processProgram(true)),
+  ) as ProcessRan;
+  assert.equal(found.sessionPlaced.length, 1);
   assert.deepEqual(found.asked, [
-    "GET https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers",
-    "POST https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers/pods",
-    "POST https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers/secrets",
+    `GET ${namespaceUrl}`,
+    `POST ${namespaceUrl}/pods worker`,
+    `POST ${namespaceUrl}/secrets worker`,
+    `POST ${namespaceUrl}/pods session`,
+    `POST ${namespaceUrl}/secrets session`,
   ]);
 });
 
 test("a cluster that does not answer is a named could-not-run and never readiness", async () => {
-  const found = JSON.parse(await schedulerProgram(processProgram(false))) as {
-    readonly started: {
-      readonly started: string;
-      readonly precondition: string;
-      readonly verdict: string;
-    };
-    readonly health: { readonly ready: boolean };
-    readonly placed: readonly string[];
-  };
+  const found = JSON.parse(
+    await schedulerProgram(processProgram(false)),
+  ) as ProcessRan;
   assert.equal(found.started.started, "CouldNotRun");
   assert.equal(found.started.precondition, "cluster-namespace-reachable");
   assert.equal(found.started.verdict, "Undecided");
   assert.equal(found.health.ready, false);
   assert.deepEqual(found.placed, []);
+  assert.deepEqual(found.sessionPlaced, []);
 });
 
 /** What running the command itself produced, a refusal being an exit code and a line. */

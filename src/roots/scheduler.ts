@@ -1,5 +1,7 @@
 import { pathToFileURL } from "node:url";
 
+import { sessionAttemptMint } from "../adapters/crypto/sessionAttemptMint.ts";
+import { kubernetesSessionLaunch } from "../adapters/kubernetes/sessionLaunch.ts";
 import {
   kubernetesNamespacePrecondition,
   kubernetesWorkerLaunch,
@@ -31,6 +33,12 @@ function schedulerRuntime(config: SchedulerCommandConfig): ServiceRuntime {
       ticketService: config.ticketService,
       finalizer: config.finalizer,
       metrics: silentSchedulerTelemetry,
+    },
+    sessions: {
+      placement: kubernetesSessionLaunch(config.sessions),
+      bearers: sessionAttemptMint(),
+      policy: config.sessionPolicy,
+      config: config.sessionScheduler,
     },
     workerCatalog: config.workerCatalog,
     additional: [kubernetesNamespacePrecondition(config.workers)],

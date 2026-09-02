@@ -25,7 +25,6 @@ import {
   createWorkerPlaneApp,
   workerPlaneServed,
   type SessionPlaneService,
-  type WorkerPlaneServerService,
 } from "../../src/adapters/http/workerPlaneServer.ts";
 import {
   nativeHttpPageItemsMax,
@@ -42,7 +41,7 @@ import {
 } from "../../src/interpreter/agentSession.ts";
 import type { SessionPlaneIdentity } from "../../src/interpreter/sessionPlane.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
-import { inertRunEvidence } from "./workerPlaneFixtures.ts";
+import { inertWorkerPlane } from "./workerPlaneFixtures.ts";
 
 /** One bearer in the session language, which is the only token these routes read. */
 const secret = `chgs_${"a".repeat(32)}`;
@@ -86,19 +85,7 @@ const inertSessions: SessionPlaneService = {
 };
 
 /** The attempt half of the plane, inert throughout: no case here is about a run. */
-const inertAttempt = {
-  authority: { authenticate: () => Promise.resolve(undefined) },
-  heartbeats: { heartbeat: () => Promise.resolve(true) },
-  heartbeatLeaseSecs: 300,
-  artifacts: { store: () => Promise.resolve({ stored: "Stored" as const }) },
-  reservations: {
-    reserve: () => Promise.resolve({ reserved: "Reserved" as const }),
-  },
-  reports: { report: () => Promise.resolve({ ingested: "Fenced" as const }) },
-  runEvidence: inertRunEvidence,
-  ready: () => Promise.resolve(true),
-  uploadBytesMax: sessionStoreBatchBytesMax * 2,
-} satisfies Omit<WorkerPlaneServerService, "sessions">;
+const inertAttempt = inertWorkerPlane(sessionStoreBatchBytesMax * 2);
 
 function sessionPlane(over: Partial<SessionPlaneService> = {}) {
   return createWorkerPlaneApp({
