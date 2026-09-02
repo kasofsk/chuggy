@@ -28,6 +28,7 @@ import type {
   SelectorPolicyExecution,
   SelectorPolicyRequest,
 } from "../../src/interpreter/selector.ts";
+import { selectorOperationalContext } from "./selectorFixture.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -57,25 +58,7 @@ const candidate = {
   configurationCanonical: "{}",
 } as const;
 
-const operationalContext = {
-  version: 2,
-  observedAt: "2026-09-02T12:00:00.000Z",
-  observedAtEpochMs: 1_788_000_000_000,
-  reviewFeedback: [],
-  activeWork: { queued: 0, admitted: 0, launching: 0, running: 0 },
-  capacity: {
-    account: "project",
-    accountMaximum: 4,
-    accountActive: 0,
-    accountReservationDeficit: 0,
-    clusterSlotsMax: 10,
-    clusterActive: 2,
-  },
-  backlog: {
-    project: { queued: 0, ceiling: 100 },
-    installation: { queued: 0, ceiling: 1_000 },
-  },
-} as const;
+const operationalContext = selectorOperationalContext;
 
 const observation: SelectorObservation = {
   token,

@@ -37,6 +37,7 @@ import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import { selectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
 import { selectorRuntimeAdministration } from "../../src/interpreter/selectorAdmin.ts";
 import { selectorPlanning } from "../../src/interpreter/selectorPlanning.ts";
+import { selectorOperationalContext } from "./selectorFixture.ts";
 import { selectorPolicyHost } from "../../src/interpreter/selectorPolicyHost.ts";
 
 const partition = {
@@ -65,25 +66,7 @@ const delivery: SelectorDelivery = {
   },
 };
 
-const operationalContext = {
-  version: 2,
-  observedAt: "2026-08-21T12:00:00.000Z",
-  observedAtEpochMs: 1_777_000_000_000,
-  reviewFeedback: [],
-  activeWork: { queued: 0, admitted: 0, launching: 0, running: 0 },
-  capacity: {
-    account: "project",
-    accountMaximum: 4,
-    accountActive: 0,
-    accountReservationDeficit: 0,
-    clusterSlotsMax: 10,
-    clusterActive: 2,
-  },
-  backlog: {
-    project: { queued: 0, ceiling: 100 },
-    installation: { queued: 0, ceiling: 1_000 },
-  },
-} as const;
+const operationalContext = selectorOperationalContext;
 
 test("selector backlog admission requires room under both ceilings", () => {
   assert.equal(selectorBacklogsAdmitDispatch(operationalContext.backlog), true);
