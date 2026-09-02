@@ -90,6 +90,34 @@ test("a single-agent mode keeps a pinned image the execution requirements state"
   });
 });
 
+test("a platform default naming another image than the legacy field is refused", () => {
+  const stale = {
+    version: 1,
+    image: "pinned-worker@sha256:842a",
+    executionRequirements: {
+      platformDefault: container("other-worker@sha256:de14"),
+      platformDefaultVersion: 1,
+    },
+  };
+  assert.equal(executionRequirementConfigurationIsValid(stale), false);
+  assert.equal(
+    executionRequirementConfigurationIsValid({ ...stale, worker: codexWorker }),
+    false,
+    "naming an agent does not make one image stand for another",
+  );
+  assert.equal(
+    executionRequirementConfigurationIsValid({
+      ...stale,
+      worker: codexWorker,
+      executionRequirements: {
+        platformDefault: container("pinned-worker@sha256:842a"),
+        platformDefaultVersion: 1,
+      },
+    }),
+    true,
+  );
+});
+
 test("a worker that names no single agent needs no capability of an image", () => {
   assert.equal(
     executionAgentCapability({ version: 1, image: "worker:v1" }),

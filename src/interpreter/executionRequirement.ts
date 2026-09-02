@@ -257,10 +257,11 @@ function requirementMap(
 }
 
 /**
- * How the two statements of the platform default are compared when the
- * configuration names an agent: as the capability each satisfies, so that a
- * default authored by capability and the legacy image field are one
- * requirement to compare rather than two modes that can never match.
+ * The form the two statements of the platform default are compared in when
+ * they are stated in different modes and the configuration names an agent: as
+ * the capability each satisfies, which is what lets a default authored by
+ * capability and the legacy image field be one requirement rather than two
+ * modes that can never match.
  */
 function platformDefaultComparable(
   value: ExecutionRequirement,
@@ -280,12 +281,22 @@ function platformDefaultComparable(
   };
 }
 
+/**
+ * Whether the two statements of the platform default agree. The conversion
+ * above exists only to bridge a mode mismatch, so where there is none the two
+ * are compared as they stand however the worker is authored: naming an agent
+ * does not make one image stand for another, and a default left behind by a
+ * bumped image field is a disagreement rather than a pair to reconcile.
+ */
 function platformDefaultMatchesLegacy(
   platformDefault: ExecutionRequirement,
   legacy: ExecutionRequirement,
   capability: ExecutionCapability | undefined,
 ): boolean {
-  if (capability === undefined)
+  if (
+    capability === undefined ||
+    (platformDefault.mode === "Container" && legacy.mode === "Container")
+  )
     return JSON.stringify(platformDefault) === JSON.stringify(legacy);
   const effectiveDefault = platformDefaultComparable(
     platformDefault,
