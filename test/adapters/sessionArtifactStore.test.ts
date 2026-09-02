@@ -119,29 +119,46 @@ test("a stored batch is read-only, so no later write can change what a digest na
 
 test("the same batch offered twice is one object, and different bytes are a conflict", async (t) => {
   const fixture = await fixtureOpen(t);
-  const stored = () =>
+  const offer = (line: string) =>
     fixture.store.storeBatch({
       partition,
       session,
       stream,
       batch: 4,
-      content: bytes("{}\n"),
+      content: bytes(line),
     });
-  assert.deepEqual(await stored(), { stored: "Stored" });
-  assert.deepEqual(await stored(), { stored: "Stored" });
+  assert.deepEqual(await offer('{"a":1}\n'), { stored: "Stored" });
+  assert.deepEqual(await offer('{"a":1}\n'), { stored: "Stored" });
+  assert.deepEqual(await offer('{"a":1}{}\n'), { stored: "Conflict" });
   assert.deepEqual(
-    await fixture.store.storeBatch({
+    await fixture.store.readBatch({ partition, session, stream, batch: 4 }),
+    { read: "Content", content: '{"a":1}\n' },
+  );
+});
+
+/**
+ * The byte count is the cheap arm and the digest is the one that decides. A
+ * case whose two offers differ in length is answered before any digest is
+ * taken, so it cannot see a commit that hashes the bytes it was handed instead
+ * of the object already standing there — which is the whole of what makes a
+ * retry of an unacknowledged batch safe.
+ */
+test("a batch re-sent at its own length under other bytes is a conflict, and the stored bytes stand", async (t) => {
+  const fixture = await fixtureOpen(t);
+  const offer = (line: string) =>
+    fixture.store.storeBatch({
       partition,
       session,
       stream,
-      batch: 4,
-      content: bytes("{}{}\n"),
-    }),
-    { stored: "Conflict" },
-  );
+      batch: 1,
+      content: bytes(line),
+    });
+  assert.deepEqual(await offer('{"a":1}\n'), { stored: "Stored" });
+  assert.equal('{"b":2}\n'.length, '{"a":1}\n'.length);
+  assert.deepEqual(await offer('{"b":2}\n'), { stored: "Conflict" });
   assert.deepEqual(
-    await fixture.store.readBatch({ partition, session, stream, batch: 4 }),
-    { read: "Content", content: "{}\n" },
+    await fixture.store.readBatch({ partition, session, stream, batch: 1 }),
+    { read: "Content", content: '{"a":1}\n' },
   );
 });
 

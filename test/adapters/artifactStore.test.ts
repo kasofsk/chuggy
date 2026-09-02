@@ -495,6 +495,7 @@ test("a project-owned artifact is written read-only and answers with its own dig
   assert.equal(again.written, "Artifact");
 });
 
+/** The byte count refuses a shorter offer, so only a same-length one reaches the digest. */
 test("a worker upload is immutable, idempotent for the same bytes, and conflicts for different bytes", async (t) => {
   const fixture = fixtureOpen(t);
   const upload = (content: string) =>
@@ -506,6 +507,8 @@ test("a worker upload is immutable, idempotent for the same bytes, and conflicts
   assert.deepEqual(await upload("result"), { stored: "Stored" });
   assert.deepEqual(await upload("result"), { stored: "Stored" });
   assert.deepEqual(await upload("changed"), { stored: "Conflict" });
+  assert.equal("pushed".length, "result".length);
+  assert.deepEqual(await upload("pushed"), { stored: "Conflict" });
   const file = artifactAttemptFile(
     artifactProjectDirectory(fixture.root, partition.tenant, partition.project),
     execution,

@@ -28,6 +28,7 @@ import {
   type WorkerPlaneServerService,
 } from "../../src/adapters/http/workerPlaneServer.ts";
 import {
+  nativeHttpPageItemsMax,
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
@@ -372,6 +373,110 @@ test("a mailbox already holding its most waiters answers at once rather than que
   assert.equal(turned.statusCode, 204);
   assert.equal(claims, 1);
   assert.equal((await waiting).statusCode, 204);
+  await app.close();
+});
+
+/**
+ * The bound is backpressure and never a latch. It is the claiming path that the
+ * case above does not reach, and a slot it fails to give back is a mailbox that
+ * answers empty for the life of the process — every lead and thread on the
+ * plane stopping, with only a restart to recover it.
+ */
+test("claiming a turn gives the mailbox slot back, so the bound never latches shut", async () => {
+  const claimed = {
+    turn: asSessionTurnId("turn-1"),
+    ordinal: 1,
+    inputKind: "Wake" as const,
+    input: "carry on",
+  };
+  const app = sessionPlane({
+    pollsMax: 2,
+    turnPollIntervalMs: 1_000,
+    turnPollSecsMax: 1,
+    turns: { claim: () => Promise.resolve(claimed) },
+  });
+  const answered: number[] = [];
+  for (let request = 0; request < 6; request += 1) {
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/session/turn",
+      headers: held,
+    });
+    answered.push(response.statusCode);
+  }
+  assert.deepEqual(answered, [200, 200, 200, 200, 200, 200]);
+  await app.close();
+});
+
+/** A claim that raises must give the slot back too, which no returning path does for it. */
+test("a mailbox whose claim raises still gives its slot back", async () => {
+  let claims = 0;
+  const app = sessionPlane({
+    pollsMax: 1,
+    turnPollIntervalMs: 1_000,
+    turnPollSecsMax: 1,
+    turns: {
+      claim: () => {
+        claims += 1;
+        return Promise.reject(new Error("the durable side was unreachable"));
+      },
+    },
+  });
+  for (let request = 0; request < 3; request += 1) {
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/session/turn",
+      headers: held,
+    });
+    assert.equal(response.statusCode, 500);
+  }
+  assert.equal(claims, 3);
+  await app.close();
+});
+
+/**
+ * `asSessionTurnId` refuses more than a length, and a raise inside a handler is
+ * a five-hundred carrying an internal message where the route's status map
+ * names four-hundred and the pod has no arm to read.
+ */
+test("a turn id or reference no stored row holds is refused at the door", async () => {
+  let reached = 0;
+  const counted = () => {
+    reached += 1;
+    return Promise.resolve("Answered" as const);
+  };
+  const app = sessionPlane({
+    settlements: { answer: counted, fail: () => Promise.resolve("Failed") },
+    references: {
+      bind: () => {
+        reached += 1;
+        return Promise.resolve("Bound");
+      },
+    },
+  });
+  for (const turn of ["lead\u0000one", "lead\ud800one", "", "t".repeat(257)]) {
+    for (const [url, payload] of [
+      ["/v1/session/turn/answer", { turn, result: "done" }],
+      ["/v1/session/turn/failure", { turn, failure: "AgentFailed" }],
+    ] as const) {
+      const response = await app.inject({
+        method: "POST",
+        url,
+        headers: held,
+        payload,
+      });
+      assert.equal(response.statusCode, 400, `${url} ${JSON.stringify(turn)}`);
+      assert.deepEqual(response.json(), { action: "stop" });
+    }
+    const bound = await app.inject({
+      method: "PUT",
+      url: "/v1/session/reference",
+      headers: held,
+      payload: { reference: turn },
+    });
+    assert.equal(bound.statusCode, 400, JSON.stringify(turn));
+  }
+  assert.equal(reached, 0);
   await app.close();
 });
 
@@ -859,6 +964,73 @@ test("the streams a session holds are answered whole, or narrowed by the prefix 
   });
   assert.deepEqual(narrowed.json(), { streams: rows.slice(0, 2) });
   await app.close();
+});
+
+/**
+ * A cut list is a resume that materialises some of a lead's subagent history
+ * and reports success, which is the silent wrongness the store exists to
+ * prevent. There is no cursor to page by, so the answer is refused whole.
+ */
+test("more streams than one answer holds is refused, never quietly cut", async () => {
+  const many = Array.from(
+    { length: nativeHttpPageItemsMax + 1 },
+    (_unused, index) => ({
+      stream: asSessionStoreStream(`1a2b/subagent-${String(index)}`),
+      batches: 1,
+    }),
+  );
+  const app = sessionPlane({
+    queries: {
+      batches: () => Promise.resolve([]),
+      streams: () => Promise.resolve(many),
+    },
+  });
+  const refused = await app.inject({
+    method: "GET",
+    url: "/v1/session/store",
+    headers: held,
+  });
+  assert.equal(refused.statusCode, 413);
+  assert.deepEqual(refused.json(), {
+    action: "stop",
+    reason: "TooManyStreams",
+  });
+  const narrowed = await app.inject({
+    method: "GET",
+    url: "/v1/session/store?stream=1a2b/subagent-99",
+    headers: held,
+  });
+  assert.equal(narrowed.statusCode, 200);
+  assert.deepEqual(narrowed.json<{ streams: unknown[] }>().streams.length, 1);
+  await app.close();
+});
+
+/**
+ * `artifactStore` refuses its own options at construction for this reason: a
+ * poll interval of zero derives an unbounded loop with no wait in it, and a
+ * ceiling of zero is a mailbox that answers empty forever. Neither is anything
+ * a later call could work around.
+ */
+test("a session bound no loop could work around is refused at construction", () => {
+  for (const bound of [
+    { turnPollIntervalMs: 0 },
+    { turnPollIntervalMs: -1 },
+    { turnPollIntervalMs: 1.5 },
+    { turnPollSecsMax: 0 },
+    { pollsMax: 0 },
+    { pollsMax: Number.POSITIVE_INFINITY },
+    { heartbeatLeaseSecs: 0 },
+  ]) {
+    assert.throws(
+      () =>
+        createWorkerPlaneApp({
+          ...inertAttempt,
+          sessions: { ...inertSessions, ...bound },
+        }),
+      RangeError,
+      JSON.stringify(bound),
+    );
+  }
 });
 
 test("a plane composed with no session plane serves no session route at all", async () => {

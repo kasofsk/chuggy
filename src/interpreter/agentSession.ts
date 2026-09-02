@@ -36,7 +36,7 @@
  */
 
 import { sessionStoreStreamCharsMax } from "../contract/http.ts";
-import { asBoundedText } from "./boundedText.ts";
+import { asBoundedText, isBoundedText } from "./boundedText.ts";
 import type { Principal } from "./principal.ts";
 import type { Partition } from "./projectStore.ts";
 import type { CapacityAccountId, ClusterId } from "./schedulerIdentity.ts";
@@ -112,9 +112,7 @@ const sessionStoreStreamRefused = /[\p{Cc}\s]/u;
  */
 export function isSessionStoreStream(value: string): boolean {
   return (
-    value.length > 0 &&
-    value.length <= sessionStoreStreamCharsMax &&
-    value.isWellFormed() &&
+    isBoundedText(value, sessionStoreStreamCharsMax) &&
     !sessionStoreStreamRefused.test(value)
   );
 }

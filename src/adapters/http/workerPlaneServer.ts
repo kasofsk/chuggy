@@ -24,6 +24,7 @@ import {
   runModelUsageSchema,
   runTotalsSchema,
 } from "../../contract/responses.ts";
+import { isBoundedText } from "../../interpreter/boundedText.ts";
 import {
   allSessionTurnFailures,
   asSessionBearerSecret,
@@ -379,8 +380,13 @@ async function workerRunWriter(
     : { authority, secret };
 }
 
-/** What one refused write answers with, decided before any of it is sent. */
-interface WorkerRunRefusal {
+/**
+ * What one refused write answers with, decided before any of it is sent. It is
+ * the plane's and not a run's: a status, a body and a retry interval are what
+ * every route here refuses with, and a second copy under a session name would
+ * be a second renderer to keep true.
+ */
+interface WorkerPlaneRefusal {
   readonly status: number;
   readonly body: Readonly<Record<string, string>>;
   readonly retryAfterSeconds?: number;
@@ -389,7 +395,7 @@ interface WorkerRunRefusal {
 /** The refusal storing one object earned, or nothing where its bytes are kept. */
 function workerRunObjectRefusal(
   kept: WorkerArtifactStored,
-): WorkerRunRefusal | undefined {
+): WorkerPlaneRefusal | undefined {
   switch (kept.stored) {
     case "Stored":
       return undefined;
@@ -419,15 +425,15 @@ async function workerRunObjectKept(
   authority: WorkerAttemptAuthority,
   path: ArtifactPath,
   content: Uint8Array,
-): Promise<WorkerRunRefusal | undefined> {
+): Promise<WorkerPlaneRefusal | undefined> {
   return workerRunObjectRefusal(
     await service.artifacts.store({ authority, path, content }),
   );
 }
 
-function workerRunRefused(
+function workerPlaneRefused(
   reply: FastifyReply,
-  refusal: WorkerRunRefusal,
+  refusal: WorkerPlaneRefusal,
 ): FastifyReply {
   return refusal.retryAfterSeconds === undefined
     ? reply.code(refusal.status).send(refusal.body)
@@ -459,7 +465,7 @@ function workerRunConfigurationRoute(
       runConfigurationPath(),
       request.body,
     );
-    if (refusal !== undefined) return workerRunRefused(reply, refusal);
+    if (refusal !== undefined) return workerPlaneRefused(reply, refusal);
     const stored = await service.runEvidence.configurations.record({
       secret: writer.secret,
       generation: writer.authority.generation,
@@ -495,7 +501,7 @@ function workerRunTranscriptRoute(
       runTranscriptBatchPath(batch),
       request.body,
     );
-    if (refusal !== undefined) return workerRunRefused(reply, refusal);
+    if (refusal !== undefined) return workerPlaneRefused(reply, refusal);
     const stored = await service.runEvidence.transcripts.record({
       secret: writer.secret,
       generation: writer.authority.generation,
@@ -698,8 +704,19 @@ function sessionQueryCount(
     : undefined;
 }
 
+/**
+ * One opaque identity a session body carries, refused here rather than by the
+ * brand it is about to become. `asBoundedText`'s rule is wider than a length:
+ * a NUL and an unpaired surrogate are values no stored row holds, and a brand
+ * raising on one inside a handler is a five-hundred with an internal message in
+ * it where the route's own status map names four-hundred.
+ */
+const sessionIdentitySchema = z
+  .string()
+  .refine((value) => isBoundedText(value, sessionIdentityCharsMax));
+
 const sessionReferenceSchema = z.strictObject({
-  reference: z.string().min(1).max(sessionIdentityCharsMax),
+  reference: sessionIdentitySchema,
 });
 
 /**
@@ -709,7 +726,7 @@ const sessionReferenceSchema = z.strictObject({
  */
 const sessionTurnAnswerSchema = z
   .strictObject({
-    turn: z.string().min(1).max(sessionIdentityCharsMax),
+    turn: sessionIdentitySchema,
     result: z.string().max(sessionTurnResultCharsMax),
     batchFirst: z
       .number()
@@ -732,7 +749,7 @@ const sessionTurnAnswerSchema = z
   );
 
 const sessionTurnFailureSchema = z.strictObject({
-  turn: z.string().min(1).max(sessionIdentityCharsMax),
+  turn: sessionIdentitySchema,
   failure: z.enum(allSessionTurnFailures),
 });
 
@@ -883,7 +900,7 @@ function sessionSettleRoutes(
 /** The refusal keeping one batch's bytes earned, or nothing where they are kept. */
 function sessionStoreObjectRefusal(
   kept: Awaited<ReturnType<SessionStoreWritePort["storeBatch"]>>,
-): WorkerRunRefusal | undefined {
+): WorkerPlaneRefusal | undefined {
   switch (kept.stored) {
     case "Stored":
       return undefined;
@@ -931,7 +948,7 @@ function sessionStoreWriteRoute(
         content: request.body,
       }),
     );
-    if (refusal !== undefined) return workerRunRefused(reply, refusal);
+    if (refusal !== undefined) return workerPlaneRefused(reply, refusal);
     const recorded = await sessions.records.record({
       secret: caller.secret,
       generation: caller.identity.generation,
@@ -1001,7 +1018,7 @@ function sessionStoreReadRoute(
         batch: row.batch,
       });
       if (drawn.read === "Unavailable")
-        return workerRunRefused(reply, {
+        return workerPlaneRefused(reply, {
           status: 503,
           body: { action: "retry" },
           retryAfterSeconds: drawn.retryAfterSeconds,
@@ -1023,10 +1040,15 @@ function sessionStoreReadRoute(
 }
 
 /**
- * The streams one session's store holds, narrowed by the prefix the resuming
- * adapter asks under. The durable side keys streams by session alone, so the
- * prefix is answered here — it is a question about the name and never about
- * what the stream holds.
+ * The streams one session's store holds, narrowed here by the prefix the
+ * resuming adapter asks under, because the durable side keys them by session
+ * alone and a prefix is a question about the name rather than about what the
+ * stream holds.
+ *
+ * AN ANSWER PAST THE BOUND IS REFUSED AND NEVER CUT, there being no cursor to
+ * page by: a cut list is a resume that materialises some of a lead's subagent
+ * history and reports success, which is the silent wrongness this store exists
+ * to prevent.
  */
 function sessionStoreStreamsRoute(
   app: FastifyInstance,
@@ -1042,15 +1064,37 @@ function sessionStoreStreamsRoute(
       secret: caller.secret,
       generation: caller.identity.generation,
     });
-    return reply.code(200).send({
-      streams: rows
-        .filter(
-          (row: { readonly stream: SessionStoreStream }) =>
-            asked === undefined || row.stream.startsWith(asked),
-        )
-        .slice(0, nativeHttpPageItemsMax),
-    });
+    const streams = rows.filter(
+      (row: { readonly stream: SessionStoreStream }) =>
+        asked === undefined || row.stream.startsWith(asked),
+    );
+    return streams.length > nativeHttpPageItemsMax
+      ? reply.code(413).send({ action: "stop", reason: "TooManyStreams" })
+      : reply.code(200).send({ streams });
   });
+}
+
+/**
+ * Refuses at construction what no later call could work around, the way
+ * `artifactStore` refuses its own options: a poll interval of zero derives an
+ * unbounded loop with no wait in it, and a ceiling of zero is a mailbox that
+ * answers empty for the life of the process. None of them has a default,
+ * because a default here is a bound nobody chose standing in for one nobody
+ * supplied.
+ */
+function sessionBoundsChecked(sessions: SessionPlaneService): void {
+  for (const [name, bound] of [
+    ["heartbeatLeaseSecs", sessions.heartbeatLeaseSecs],
+    ["turnPollIntervalMs", sessions.turnPollIntervalMs],
+    ["turnPollSecsMax", sessions.turnPollSecsMax],
+    ["pollsMax", sessions.pollsMax],
+  ] as const) {
+    if (!Number.isSafeInteger(bound) || bound <= 0) {
+      throw new RangeError(
+        `worker plane: session ${name} must be a positive safe integer`,
+      );
+    }
+  }
 }
 
 export function createWorkerPlaneApp(
@@ -1074,6 +1118,7 @@ export function createWorkerPlaneApp(
   workerRunFigureRoutes(app, service);
   const sessions = service.sessions;
   if (sessions !== undefined) {
+    sessionBoundsChecked(sessions);
     sessionFactsRoute(app, sessions);
     sessionHeartbeatRoute(app, sessions);
     sessionReferenceRoute(app, sessions);
