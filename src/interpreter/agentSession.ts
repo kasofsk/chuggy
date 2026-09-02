@@ -215,11 +215,6 @@ export const allSessionTurnFailures = [
 ] as const;
 export type SessionTurnFailure = (typeof allSessionTurnFailures)[number];
 
-/**
- * The durable session authority a provisioning command drives. Its three doors
- * are granted to the boundary owner alone, because a session is an authority to
- * act as a principal and minting one is provisioning rather than work.
- */
 /** What opening a session answers: it is open now, it already was, or it is not this one. */
 export type AgentSessionOpened = "Opened" | "AlreadyOpen" | "Conflict";
 
@@ -257,7 +252,11 @@ export interface AgentSessionWriter {
   readonly canExecute: boolean;
 }
 
-/** The durable session authority a provisioning command drives. */
+/**
+ * The durable session authority a provisioning command drives. Its three doors
+ * are granted to the boundary owner alone, because a session is an authority to
+ * act as a principal and minting one is provisioning rather than work.
+ */
 export interface AgentSessionStore {
   /** The privilege the three doors need, asked of the server rather than of a role name. */
   writer(): Promise<AgentSessionWriter>;

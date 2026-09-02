@@ -18,6 +18,7 @@ import type { FencedSessionAttempt } from "../../src/interpreter/sessionSchedule
 import { postgresHarnessNewEpoch, postgresHarnessProject } from "./harness.ts";
 import {
   sessionRigAttempt,
+  type SessionRigAttempt,
   sessionRigTurnId,
   sessionRigTurnState,
   sessionRigBoundless,
@@ -43,6 +44,27 @@ async function launchable(label: string) {
   const session = await sessionRigSession(rig, partition, label);
   await sessionRigTurn(rig, partition, session, label);
   return { partition, session };
+}
+
+/**
+ * Requires the attempt exempt from the idle sweep, by ageing the column an hour
+ * and sweeping at a minute. The ageing is a no-op on the NULL a claim writes,
+ * which is what makes the sweep's verdict the whole of what is asserted.
+ */
+async function stillWorking(held: SessionRigAttempt): Promise<void> {
+  assert.equal(
+    (await sessionRigAttemptState(rig, held.attempt))["idle_unset"],
+    true,
+  );
+  await rig.harness.query(
+    `UPDATE session_attempt SET idle_since=idle_since-interval '1 hour'
+      WHERE attempt=$1`,
+    [held.attempt.attempt],
+  );
+  await rig.scheduler.reapIdleAttempts(rig.epoch, 60, sessionRigBoundless);
+  const working = await sessionRigAttemptState(rig, held.attempt);
+  assert.equal(working["state"], "Running");
+  assert.equal(working["evidence"], null);
 }
 
 test("an attempt is placed, then ended, and each move is fenced on its generation", async () => {
@@ -354,19 +376,7 @@ test("an attempt holding a claimed turn is never reaped as idle, however long it
     generation: held.attempt.generation,
   });
   assert.notEqual(claimed, undefined);
-  assert.equal(
-    (await sessionRigAttemptState(rig, held.attempt))["idle_unset"],
-    true,
-  );
-  await rig.harness.query(
-    `UPDATE session_attempt SET idle_since=idle_since-interval '1 hour'
-      WHERE attempt=$1`,
-    [held.attempt.attempt],
-  );
-  await rig.scheduler.reapIdleAttempts(rig.epoch, 60, sessionRigBoundless);
-  const working = await sessionRigAttemptState(rig, held.attempt);
-  assert.equal(working["state"], "Running");
-  assert.equal(working["evidence"], null);
+  await stillWorking(held);
   if (claimed !== undefined)
     assert.equal(
       (await sessionRigTurnState(rig, partition, session, claimed.turn))[
@@ -387,6 +397,24 @@ test("an attempt holding a claimed turn is never reaped as idle, however long it
     (await sessionRigAttemptState(rig, held.attempt))["idle_unset"],
     false,
   );
+});
+
+test("a placement recorded after a claim leaves the working attempt exempt from the sweep", async () => {
+  const { partition, session } = await launchable("placed-late");
+  const held = await sessionRigAttempt(rig, partition, session, "placed-late");
+  const claimed = await rig.plane.claim({
+    secret: held.secret,
+    generation: held.attempt.generation,
+  });
+  assert.notEqual(claimed, undefined);
+  assert.equal(
+    await rig.scheduler.attemptPlaced(
+      held.attempt,
+      asPlacementId("placement-placed-late"),
+    ),
+    true,
+  );
+  await stillWorking(held);
 });
 
 test("a restore fences every attempt an older epoch issued, and the sweep is bounded", async () => {

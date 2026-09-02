@@ -14,7 +14,7 @@ import { after, before, test } from "node:test";
 
 import { sessionTurnBacklogMax } from "../../src/contract/http.ts";
 import { asSessionId } from "../../src/interpreter/agentSession.ts";
-import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
   sessionRigOpen,
   sessionRigProject,

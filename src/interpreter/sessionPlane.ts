@@ -19,6 +19,7 @@
 
 import type {
   SessionAttemptId,
+  SessionBearerIdentity,
   SessionBearerSecret,
   SessionCapability,
   SessionId,
@@ -29,6 +30,7 @@ import type {
   SessionTurnInputKind,
 } from "./agentSession.ts";
 import type { Partition } from "./projectStore.ts";
+import type { SessionAttemptEvidence } from "./sessionScheduler.ts";
 import type { SessionStoreRecorded } from "./sessionStore.ts";
 
 /** Everything a session bearer recovers, which is the whole of what a pod may be told. */
@@ -50,6 +52,28 @@ export interface SessionPlaneAuthority {
   authenticate(
     secret: SessionBearerSecret,
   ): Promise<SessionPlaneIdentity | undefined>;
+}
+
+/**
+ * Who one live bearer resolves to, which is the principal an operation it
+ * carries is recorded under. It is the same fence `authenticate` makes and a
+ * different answer: a route fences on the attempt, and an audit names the
+ * principal.
+ */
+export interface SessionAttemptBindingPort {
+  binding(input: {
+    readonly secret: SessionBearerSecret;
+    readonly generation: number;
+  }): Promise<SessionBearerIdentity | undefined>;
+}
+
+/** Ending the attempt a bearer names, which is how a pod gives up its own. */
+export interface SessionAttemptLossPort {
+  lose(
+    secret: SessionBearerSecret,
+    generation: number,
+    evidence: SessionAttemptEvidence,
+  ): Promise<boolean>;
 }
 
 export interface SessionHeartbeatPort {

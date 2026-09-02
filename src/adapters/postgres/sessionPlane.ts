@@ -21,7 +21,7 @@ import { createHash } from "node:crypto";
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
-import { nativeHttpPageItemsMax } from "../../contract/http.ts";
+import { sessionStoreStreamsAnswered } from "../../contract/http.ts";
 import {
   allSessionKinds,
   allSessionTurnInputKinds,
@@ -36,8 +36,9 @@ import {
 import { asPrincipal } from "../../interpreter/principal.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
-import type { SessionAttemptEvidence } from "../../interpreter/sessionScheduler.ts";
 import type {
+  SessionAttemptBindingPort,
+  SessionAttemptLossPort,
   SessionHeartbeatPort,
   SessionPlaneAuthority,
   SessionPlaneIdentity,
@@ -62,35 +63,18 @@ import {
 } from "./sessionRows.ts";
 
 /**
- * Everything a session pod may ask of the durable side, which is every port the
- * worker plane's session service names and the two the scheduler's own reaper
- * shares with it.
+ * Everything a session pod may ask of the durable side, which is every port
+ * `src/interpreter/sessionPlane.ts` declares.
  */
-export interface SessionPlaneStore
-  extends
-    SessionPlaneAuthority,
-    SessionHeartbeatPort,
-    SessionReferencePort,
-    SessionTurnClaimPort,
-    SessionTurnSettlePort,
-    SessionStoreRecordPort,
-    SessionStoreQueryPort {
-  /** Who one live bearer resolves to, or nothing where it resolves to nobody. */
-  binding(input: {
-    readonly secret: SessionBearerSecret;
-    readonly generation: number;
-  }): Promise<SessionBearerIdentity | undefined>;
-
-  /** Ends the attempt the bearer names, which is how a pod gives up its own. */
-  lose(
-    secret: SessionBearerSecret,
-    generation: number,
-    evidence: SessionAttemptEvidence,
-  ): Promise<boolean>;
-}
-
-/** One row past the page the plane may answer with, which is the listing's own bound. */
-const sessionStreamsAnswered = nativeHttpPageItemsMax + 1;
+export type SessionPlaneStore = SessionPlaneAuthority &
+  SessionAttemptBindingPort &
+  SessionAttemptLossPort &
+  SessionHeartbeatPort &
+  SessionReferencePort &
+  SessionTurnClaimPort &
+  SessionTurnSettlePort &
+  SessionStoreRecordPort &
+  SessionStoreQueryPort;
 
 /** The digest a session bearer is keyed by, which is all the database holds of it. */
 function sessionSecretDigest(secret: SessionBearerSecret): string {
@@ -297,7 +281,7 @@ async function sessionPlaneStreams(
   }>(
     sql`SELECT stream,batches::text AS batches
           FROM list_session_streams(${sessionSecretDigest(secret)},${generation},
-            ${sessionStreamsAnswered})`,
+            ${sessionStoreStreamsAnswered})`,
   );
   return found.rows.map((row) => ({
     stream: asSessionStoreStream(sessionRowText(row.stream, "stream")),

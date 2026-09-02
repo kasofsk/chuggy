@@ -31,11 +31,11 @@
  */
 
 import {
-  nativeHttpPageItemsMax,
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStoreBytesMax,
   sessionStorePageBatchesMax,
+  sessionStoreStreamsAnswered,
   sessionStoreStreamCharsMax,
   sessionTurnAttemptsMax,
   sessionTurnBacklogMax,
@@ -109,15 +109,6 @@ const currentEpoch = `(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LI
 const liveStates = "('Placing','Running')";
 
 const digestPattern = `^[0-9a-f]{${artifactDigestChars}}$`;
-
-/**
- * One row past the page the worker plane may answer with. A store holding more
- * streams than that is then visible to the plane as an overflow it refuses,
- * where a listing capped at the page itself would be silently short of the
- * truth — and a resume that materialises only some of a lead's subagent
- * histories is the hole this store exists to prevent.
- */
-const sessionStreamsAnswered = nativeHttpPageItemsMax + 1;
 
 /** The bound to which a session's key columns are matched against one function's arguments. */
 const sessionArguments =
@@ -594,7 +585,12 @@ const sessionPlacement = [
      LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
      BEGIN
        UPDATE session_attempt a
-          SET state='Running',placement=in_placement,idle_since=now()
+          SET state='Running',placement=in_placement,
+              idle_since=CASE WHEN EXISTS(
+                SELECT 1 FROM session_turn t
+                 WHERE t.tenant=a.tenant AND t.project=a.project
+                   AND t.session=a.session AND t.attempt=a.attempt
+                   AND t.state='Claimed') THEN NULL ELSE now() END
         WHERE a.attempt=in_attempt AND a.generation=in_generation
           AND a.state='Placing' AND a.recovery_epoch=${currentEpoch};
        RETURN FOUND;
@@ -972,8 +968,8 @@ const sessionPlane = [
          JOIN session_store_batch b ON b.tenant=k.tenant AND b.project=k.project
                                    AND b.session=k.session
         GROUP BY b.stream ORDER BY b.stream
-        LIMIT least(coalesce(in_max,${sessionStreamsAnswered}),
-                    ${sessionStreamsAnswered})
+        LIMIT least(coalesce(in_max,${sessionStoreStreamsAnswered}),
+                    ${sessionStoreStreamsAnswered})
      $$`,
 ];
 

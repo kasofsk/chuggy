@@ -59,6 +59,14 @@ export const sessionStoreStreamCharsMax = 256;
 /** How many batches one store read answers with, so a page stays under the body bound. */
 export const sessionStorePageBatchesMax = 8;
 
+/**
+ * How many streams one listing answers with: one past the page above, so a
+ * store holding more than a page of them is distinguishable from one holding
+ * exactly a page. A listing capped at the page itself would be silently short
+ * of the truth, and what a reader does about the extra row is that reader's.
+ */
+export const sessionStoreStreamsAnswered = nativeHttpPageItemsMax + 1;
+
 /** The most turns one session's mailbox ever holds. */
 export const sessionTurnSeriesMax = 100_000;
 
