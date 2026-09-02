@@ -18,7 +18,10 @@
  * point it became short.
  */
 
-import { nativeHttpPageItemsMax } from "../../../../src/contract/http.ts";
+import {
+  agenticRefusalsAnsweredMax,
+  nativeHttpPageItemsMax,
+} from "../../../../src/contract/http.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
 import type { NativeActionsPage, ProjectPage } from "./apiRoutes.ts";
@@ -48,6 +51,11 @@ export function inboxActionsPage(
     limit: nativeHttpPageItemsMax,
     ...(cursor === undefined ? {} : { cursor }),
   };
+}
+
+/** The standing refusals, asked for at the whole of what one read answers. */
+export function inboxRefusalsPage(): { readonly limit: number } {
+  return { limit: agenticRefusalsAnsweredMax };
 }
 
 /** Nothing where the inbox is empty, so an empty badge is not drawn as a zero. */

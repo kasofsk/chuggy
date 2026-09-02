@@ -16,6 +16,7 @@
 import { expect, test } from "vitest";
 
 import type {
+  AgenticRefusalsResponse,
   ProjectNativeActionResponse,
   ProjectNativeActionsResponse,
   ProjectResponse,
@@ -107,13 +108,13 @@ const open = projectNativeActionRowsAppend(
 );
 
 test("a ticket in either read gets a row, and one in both gets one row", () => {
-  const union = inboxUnion(parked, open);
+  const union = inboxUnion(parked, open, undefined);
   expect(union.entries.map((entry) => entry.ticket)).toStrictEqual([4, 2, 11]);
   expect(inboxCountLabel(union)).toBe("3");
 });
 
 test("a ticket the phase page reached carries its row and its open actions", () => {
-  const union = inboxUnion(parked, open);
+  const union = inboxUnion(parked, open, undefined);
   const four = union.entries.find((entry) => entry.ticket === 4);
   expect(four?.held).toStrictEqual(escalated);
   expect(four?.actions).toStrictEqual([escalation]);
@@ -123,7 +124,7 @@ test("a ticket the phase page reached carries its row and its open actions", () 
 });
 
 test("a ticket only a question names is a row with no projection behind it", () => {
-  const eleven = inboxUnion(parked, open).entries.find(
+  const eleven = inboxUnion(parked, open, undefined).entries.find(
     (entry) => entry.ticket === 11,
   );
   expect(eleven?.held).toBeUndefined();
@@ -137,6 +138,7 @@ test("an approval on a phase the inbox does not hold is still a row", () => {
       projectNativeActionRowsEmpty,
       actionPage([approval]),
     ),
+    undefined,
   );
   expect(union.entries.map((entry) => entry.ticket)).toStrictEqual([11]);
   expect(inboxCountLabel(union)).toBe("1");
@@ -151,6 +153,7 @@ test("either read still unread makes the count say it is short", () => {
           ticketPage([escalated], "after-four"),
         ),
         open,
+        undefined,
       ),
     ),
   ).toBe("2+");
@@ -162,28 +165,37 @@ test("either read still unread makes the count say it is short", () => {
           projectNativeActionRowsEmpty,
           actionPage([approval], "after-eleven"),
         ),
+        undefined,
       ),
     ),
   ).toBe("3+");
-  expect(inboxCountLabel(inboxUnion(parked, open))).toBe("3");
+  expect(inboxCountLabel(inboxUnion(parked, open, undefined))).toBe("3");
 });
 
 test("a read that has answered nothing yet counts nothing", () => {
-  expect(inboxUnion(undefined, undefined).entries).toStrictEqual([]);
-  expect(inboxCountLabel(inboxUnion(undefined, undefined))).toBeUndefined();
+  expect(inboxUnion(undefined, undefined, undefined).entries).toStrictEqual([]);
+  expect(
+    inboxCountLabel(inboxUnion(undefined, undefined, undefined)),
+  ).toBeUndefined();
   expect(
     inboxCountLabel(
-      inboxUnion(projectTicketRowsEmpty, projectNativeActionRowsEmpty),
+      inboxUnion(
+        projectTicketRowsEmpty,
+        projectNativeActionRowsEmpty,
+        undefined,
+      ),
     ),
   ).toBeUndefined();
 });
 
 test("one read alone is the whole union while the other is still arriving", () => {
   expect(
-    inboxUnion(parked, undefined).entries.map((entry) => entry.ticket),
+    inboxUnion(parked, undefined, undefined).entries.map(
+      (entry) => entry.ticket,
+    ),
   ).toStrictEqual([4, 2]);
   expect(
-    inboxUnion(undefined, open).entries.map((entry) => entry.ticket),
+    inboxUnion(undefined, open, undefined).entries.map((entry) => entry.ticket),
   ).toStrictEqual([11, 4]);
 });
 
@@ -203,67 +215,89 @@ const openFailed: PanelState<ProjectNativeActionRows> = {
   reason: "the API could not be reached",
 };
 
+const standingFailed: PanelState<AgenticRefusalsResponse> = {
+  state: "Failed",
+  reason: "the API failed with InternalError",
+};
+
 /**
  * The finding this file exists to keep closed: a badge counting rows the panel
  * refuses to draw. Either read answering has to draw the union, because the
  * question the console did read is the one a person came here to answer.
  */
 test("a read that refused does not take the other read's rows off the panel", () => {
-  const union = inboxUnion(undefined, open);
-  const state = inboxUnionState(union, phaseFailed, ready(open));
+  const union = inboxUnion(undefined, open, undefined);
+  const state = inboxUnionState(union, phaseFailed, ready(open), pending);
   expect(state.state).toBe("Ready");
   expect(state.state === "Ready" && state.value.entries.length).toBe(2);
   expect(inboxCountLabel(union)).toBe("2");
-  expect(inboxUnionRefusals(state, phaseFailed, ready(open))).toStrictEqual({
+  expect(
+    inboxUnionRefusals(state, phaseFailed, ready(open), pending),
+  ).toStrictEqual({
     phase: "the API failed with InternalError",
     open: undefined,
+    standing: undefined,
   });
 });
 
 test("the same holds the other way round, and the refusal is said as itself", () => {
-  const union = inboxUnion(parked, undefined);
-  const state = inboxUnionState(union, ready(parked), openFailed);
+  const union = inboxUnion(parked, undefined, undefined);
+  const state = inboxUnionState(union, ready(parked), openFailed, pending);
   expect(state.state).toBe("Ready");
   expect(state.state === "Ready" && state.value.entries.length).toBe(2);
-  expect(inboxUnionRefusals(state, ready(parked), openFailed)).toStrictEqual({
+  expect(
+    inboxUnionRefusals(state, ready(parked), openFailed, pending),
+  ).toStrictEqual({
     phase: undefined,
     open: "the API could not be reached",
+    standing: undefined,
   });
 });
 
 test("a screen holding neither answer refuses, with the phase page's reason", () => {
-  const refused = inboxUnionState(inboxUnionEmpty, phaseFailed, openFailed);
+  const refused = inboxUnionState(
+    inboxUnionEmpty,
+    phaseFailed,
+    openFailed,
+    standingFailed,
+  );
   expect(refused).toStrictEqual(phaseFailed);
   expect(
-    inboxUnionRefusals(refused, phaseFailed, openFailed),
+    inboxUnionRefusals(refused, phaseFailed, openFailed, standingFailed),
     "a refusal the panel is already drawing was repeated beside it",
-  ).toStrictEqual({ phase: undefined, open: undefined });
+  ).toStrictEqual({ phase: undefined, open: undefined, standing: undefined });
 });
 
 test("both reads still arriving is pending, and one of them arriving is not", () => {
-  expect(inboxUnionState(inboxUnionEmpty, pending, pending)).toStrictEqual({
-    state: "Pending",
-  });
-  expect(inboxUnionState(inboxUnionEmpty, phaseFailed, pending).state).toBe(
-    "Failed",
-  );
   expect(
-    inboxUnionState(inboxUnion(parked, undefined), ready(parked), pending)
-      .state,
+    inboxUnionState(inboxUnionEmpty, pending, pending, pending),
+  ).toStrictEqual({ state: "Pending" });
+  expect(
+    inboxUnionState(inboxUnionEmpty, phaseFailed, pending, pending).state,
+  ).toBe("Failed");
+  expect(
+    inboxUnionState(
+      inboxUnion(parked, undefined, undefined),
+      ready(parked),
+      pending,
+      pending,
+    ).state,
   ).toBe("Ready");
 });
 
 /** A panel is as fresh as the stalest half of what it draws. */
 test("the panel is observed at the older of the two reads", () => {
   const state = inboxUnionState(
-    inboxUnion(parked, open),
+    inboxUnion(parked, open, undefined),
     ready(parked, 90),
     ready(open, 40),
+    pending,
   );
   expect(state.state === "Ready" && state.observedAtMs).toBe(40);
   const alone = inboxUnionState(
-    inboxUnion(parked, undefined),
+    inboxUnion(parked, undefined, undefined),
     ready(parked, 90),
+    pending,
     pending,
   );
   expect(alone.state === "Ready" && alone.observedAtMs).toBe(90);

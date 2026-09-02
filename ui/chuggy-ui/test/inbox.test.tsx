@@ -26,6 +26,7 @@ import {
 } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { leadRefusals } from "./leadFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
@@ -65,9 +66,34 @@ const working = {
 
 /** One escalated ticket, nothing else open, and nothing that has run. */
 function served(url: string): Response {
+  if (url.includes("/agentic-refusals"))
+    return answer({ refusals: [], more: false });
   if (url.includes("/native-actions")) return answer({ actions: [] });
   if (url.includes("/executions")) return answer({ executions: [] });
   return answer({ partition: atlas, sequence: 9, tickets: [escalated] });
+}
+
+/** The same project with a ticket the lead is refusing to dispatch, which no
+ * phase the section holds and no open question would ever find. */
+function servedWithRefusal(url: string): Response {
+  if (url.includes("/agentic-refusals")) return answer(leadRefusals(false));
+  return served(url);
+}
+
+function drawInbox(route: (url: string) => Response): void {
+  vi.stubGlobal(
+    "fetch",
+    apiDouble({ operation: operationAt("Pending"), route }).fetch,
+  );
+  render(
+    <ScreenHarness
+      partition={atlas}
+      client={new QueryClient()}
+      transport={openedStream().ports.fetch}
+    >
+      <InboxScreen partition={atlas} />
+    </ScreenHarness>,
+  );
 }
 
 test("an answered row stays until a Ticket frame moves it out of the section", async () => {
@@ -107,4 +133,19 @@ test("an answered row stays until a Ticket frame moves it out of the section", a
   });
   expect(screen.queryByRole("button", { name: "resume" })).toBeNull();
   expect(screen.getByText("Inbox is clear")).toBeDefined();
+});
+
+/**
+ * The inbox's fourth member on screen. A refused ticket keeps its phase and has
+ * no open question behind it, so the row is drawn from the refusal alone and
+ * the reason it names is what the reader came for.
+ */
+test("a ticket the lead refused is a row of its own, marked and reasoned", async () => {
+  drawInbox(servedWithRefusal);
+  await settled();
+  expect(screen.getByRole("link", { name: "42" })).toBeDefined();
+  const standing = screen.getByText("Standing");
+  expect(standing.closest("[title]")?.getAttribute("title")).toBe(
+    "the brief names no reference",
+  );
 });
