@@ -480,6 +480,50 @@ test("held is the stream's last cut, whichever page is asked for", async () => {
   );
 });
 
+test("a compaction while a reader is paging moves the cut it is told", async () => {
+  const whole = twiceCompactedBatches();
+  const page = `${root}/lead/transcript?after=0&limit=2`;
+  await using before = appOf({ draws: whole.slice(0, 5) });
+  const first = leadTranscriptResponseSchema.parse(
+    (await before.inject({ url: page, headers: authorized })).json(),
+  );
+  await using after = appOf({ draws: whole });
+  const second = leadTranscriptResponseSchema.parse(
+    (await after.inject({ url: page, headers: authorized })).json(),
+  );
+  assert.equal(first.cut, 3, "the first cut fell in the third batch");
+  assert.equal(second.cut, 6, "the second fell in the sixth");
+  assert.notEqual(
+    first.cut,
+    second.cut,
+    "a reader seeing a cut it has not seen resets what it holds",
+  );
+  assert.equal(
+    first.compaction,
+    undefined,
+    "and neither page carries a boundary of its own to have read it from",
+  );
+  assert.equal(second.compaction, undefined);
+});
+
+test("a stream that never compacted names no cut", async () => {
+  await using app = appOf({
+    draws: storedBatches(stream, 2).map(
+      (content) => ({ read: "Content", content }) as const,
+    ),
+  });
+  const body = leadTranscriptResponseSchema.parse(
+    (
+      await app.inject({
+        url: `${root}/lead/transcript?limit=2`,
+        headers: authorized,
+      })
+    ).json(),
+  );
+  assert.ok(body.held !== undefined, "the walk reached the stream's end");
+  assert.equal(body.cut, undefined);
+});
+
 test("a page ending on a compaction boundary still answers its chain", async () => {
   await using app = appOf({ draws: twiceCompactedBatches() });
   const page = leadTranscriptResponseSchema.parse(
@@ -554,10 +598,15 @@ test("a batch that cannot be drawn is elided, and the page is still answered", a
   const body = leadTranscriptResponseSchema.parse(found.json());
   assert.equal(body.elided, 1);
   assert.ok(body.entries.length > 0);
-  assert.equal(body.held, undefined, "this page carries no compaction");
+  assert.equal(
+    body.held,
+    undefined,
+    "the walk met the batch nobody could draw and decided nothing",
+  );
+  assert.equal(body.truncated, true);
 });
 
-test("a store that cannot be reached at all refuses the page", async () => {
+test("an outage on the page's own batch refuses the page", async () => {
   await using app = appOf({
     draws: [{ read: "Unavailable", retryAfterSeconds: 3 }],
   });
@@ -567,6 +616,31 @@ test("a store that cannot be reached at all refuses the page", async () => {
   });
   assert.equal(found.statusCode, 503);
   assert.equal(found.headers["retry-after"], "3");
+});
+
+test("an outage beyond the page leaves held undecided, not the page refused", async () => {
+  const batches = storedBatches(stream, 2);
+  await using app = appOf({
+    draws: [
+      { read: "Content", content: batches[0] ?? "" },
+      { read: "Content", content: batches[1] ?? "" },
+      { read: "Unavailable", retryAfterSeconds: 7 },
+    ],
+  });
+  const found = await app.inject({
+    url: `${root}/lead/transcript?limit=2`,
+    headers: authorized,
+  });
+  assert.equal(
+    found.statusCode,
+    200,
+    "the batches the reader asked for all drew",
+  );
+  const body = leadTranscriptResponseSchema.parse(found.json());
+  assert.ok(body.entries.length > 0);
+  assert.equal(body.elided, 0, "no batch of this page was elided");
+  assert.equal(body.held, undefined, "the walk could not decide what is held");
+  assert.equal(body.truncated, true);
 });
 
 test("a lead that has bound no stream has no transcript to answer", async () => {

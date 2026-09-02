@@ -930,6 +930,13 @@ export const leadTranscriptResponseSchema = z.object({
     .array(leadTranscriptEntryResponseSchema)
     .max(sessionTranscriptEntriesMax),
   held: z.array(identitySchema).max(sessionTranscriptEntriesMax).optional(),
+  /**
+   * The batch the stream's last cut fell in, present with `held`. A reader that
+   * sees a `cut` it has not seen before has been paging across a compaction and
+   * every held set it holds is stale.
+   */
+  cut: countSchema.optional(),
+  /** The last cut among the entries sent, which need not be the one `held` was decided by. */
   compaction: z
     .object({ boundary: identitySchema, at: instantSchema.optional() })
     .optional(),

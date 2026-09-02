@@ -8,10 +8,11 @@
  * characters. A reader that needs the note whole is the lead itself, and it is
  * given the note in its observation rather than over the wire.
  *
- * A BATCH THAT CANNOT BE DRAWN IS ELIDED, NOT FATAL. Only an outage refuses the
- * page: a batch that is gone or fails its digest is counted, because a run that
- * died leaves exactly that and the batches beside it are what a reader came
- * for. `nativeRunTranscriptBatches` answers the same situation the same way.
+ * A BATCH THAT CANNOT BE DRAWN IS ELIDED, NOT FATAL. Only an outage on the
+ * page's OWN batches refuses the page: a batch that is gone or fails its digest
+ * is counted, because a run that died leaves exactly that and the batches beside
+ * it are what a reader came for. `nativeRunTranscriptBatches` answers the same
+ * situation the same way.
  *
  * THE PAGE IS BOUNDED TWICE, by batches and by entries, because one batch's
  * ceiling is bytes and a stream of small entries reaches the entry bound first.
@@ -25,10 +26,12 @@
  * which is empty on a page the last cut dropped entirely.
  *
  * THE WALK IS BOUNDED AND SAYS SO WHEN IT ENDS SHORT. A stream longer than
- * `sessionTranscriptHeldBatchesMax`, or one holding a batch nobody can draw, is
- * one this read cannot decide what is held from; the page then names no held set
- * and reports itself truncated, because a held set answered off a partial walk
- * is the very thing this rule exists to stop.
+ * `sessionTranscriptHeldBatchesMax`, or one holding a batch the walk cannot draw
+ * for any reason, is one this read cannot decide what is held from; the page
+ * then names no held set and reports itself truncated, because a held set
+ * answered off a partial walk is the very thing this rule exists to stop. A
+ * batch the walk needed and the page did not never refuses the page: what the
+ * reader asked for drew, and only what the walk was for goes unanswered.
  */
 
 import {
@@ -136,6 +139,8 @@ export interface LeadTranscriptPage {
   readonly stream: SessionStoreStream;
   readonly entries: readonly SessionStoreEntry[];
   readonly held?: readonly string[];
+  /** The batch the stream's last cut fell in, beside the held set it decided. */
+  readonly cut?: number;
   readonly compaction?: { readonly boundary: string; readonly at?: string };
   readonly elided: number;
   readonly truncated: boolean;
@@ -173,15 +178,41 @@ export function checkedLeadTranscriptQuery(
   return query;
 }
 
-/** The uuids one whole stream's entries say the session still holds. */
-export function sessionHeldUuids(
-  stored: readonly SessionStoreEntry[],
-): ReadonlySet<string> {
-  return new Set(
+/** What a whole-stream walk decided: the held uuids, and where the last cut fell. */
+export interface SessionHeldWalk {
+  readonly held: ReadonlySet<string>;
+  /** The batch the stream's last compaction boundary was written in. */
+  readonly cut?: number;
+}
+
+/**
+ * What a whole stream says the session holds, and which batch its last cut fell
+ * in — one uuid is written in one batch, so the first batch holding the boundary
+ * is the only one. The batch lets a reader notice a compaction that happened
+ * while it was paging: a `cut` it has not seen before invalidates every held set
+ * it holds.
+ */
+export function sessionHeldWalk(
+  batches: readonly { readonly batch: number; readonly content: string }[],
+): SessionHeldWalk {
+  const read = batches.map((batch) => ({
+    batch: batch.batch,
+    entries: sessionStoreEntries(batch.content),
+  }));
+  const stored = read.flatMap((batch) => batch.entries);
+  const held = new Set(
     sessionTranscriptHeld(stored).flatMap((entry) =>
       entry.uuid === undefined ? [] : [entry.uuid],
     ),
   );
+  const boundary = sessionTranscriptCompaction(stored)?.boundary.uuid;
+  const cut =
+    boundary === undefined
+      ? undefined
+      : read.find((batch) =>
+          batch.entries.some((entry) => entry.uuid === boundary),
+        )?.batch;
+  return { held, ...(cut === undefined ? {} : { cut }) };
 }
 
 /**
@@ -207,7 +238,7 @@ export function sessionHeldWalkAsks(batchesRead: number): number {
 export function leadTranscriptPage(input: {
   readonly stream: SessionStoreStream;
   readonly drawn: readonly SessionStoreRead[];
-  readonly held?: ReadonlySet<string>;
+  readonly walk?: SessionHeldWalk;
   readonly nextAfter?: number;
 }): LeadTranscriptPage {
   let elided = 0;
@@ -221,7 +252,8 @@ export function leadTranscriptPage(input: {
   const entries = chain.slice(0, sessionTranscriptEntriesMax);
   const compaction = sessionTranscriptCompaction(stored);
   const boundary = compaction?.boundary.uuid;
-  const held = input.held;
+  const held = input.walk?.held;
+  const cut = input.walk?.cut;
   return {
     stream: input.stream,
     entries,
@@ -234,6 +266,7 @@ export function leadTranscriptPage(input: {
               : [],
           ),
         }),
+    ...(cut === undefined ? {} : { cut }),
     ...(boundary === undefined
       ? {}
       : {

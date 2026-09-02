@@ -85,14 +85,14 @@ test("a page longer than the entry bound is cut and says so", () => {
   const held = new Set<string>();
   const page = leadTranscriptPage({
     stream,
-    held,
+    walk: { held },
     drawn: [drawn(chainText(sessionTranscriptEntriesMax + 4))],
   });
   assert.equal(page.entries.length, sessionTranscriptEntriesMax);
   assert.equal(page.truncated, true);
   const whole = leadTranscriptPage({
     stream,
-    held,
+    walk: { held },
     drawn: [drawn(chainText(sessionTranscriptEntriesMax))],
   });
   assert.equal(whole.entries.length, sessionTranscriptEntriesMax);
@@ -108,7 +108,7 @@ test("a walk that could not decide what is held truncates the page", () => {
   assert.equal(undecided.truncated, true);
   const decided = leadTranscriptPage({
     stream,
-    held: new Set(["entry-1"]),
+    walk: { held: new Set(["entry-1"]) },
     drawn: [drawn(chainText(2))],
   });
   assert.deepEqual(decided.held, ["entry-1"]);
@@ -118,7 +118,7 @@ test("a walk that could not decide what is held truncates the page", () => {
 test("a page names the held entries it carries, and no others", () => {
   const page = leadTranscriptPage({
     stream,
-    held: new Set(["entry-2", "elsewhere"]),
+    walk: { held: new Set(["entry-2", "elsewhere"]) },
     drawn: [drawn(chainText(3))],
   });
   assert.equal(page.compaction, undefined);
@@ -129,7 +129,7 @@ test("a page names the held entries it carries, and no others", () => {
   );
   const dropped = leadTranscriptPage({
     stream,
-    held: new Set(["elsewhere"]),
+    walk: { held: new Set(["elsewhere"]) },
     drawn: [drawn(chainText(3))],
   });
   assert.deepEqual(
@@ -142,7 +142,7 @@ test("a page names the held entries it carries, and no others", () => {
 test("a batch nobody could draw is counted and the page still stands", () => {
   const page = leadTranscriptPage({
     stream,
-    held: new Set(["entry-0", "entry-1"]),
+    walk: { held: new Set(["entry-0", "entry-1"]) },
     drawn: [drawn(chainText(2)), { read: "Corrupt" }, { read: "NotFound" }],
     nextAfter: 3,
   });
