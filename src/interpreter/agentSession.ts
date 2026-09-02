@@ -141,6 +141,40 @@ export function asSessionBearerSecret(value: string): SessionBearerSecret {
   return bounded as SessionBearerSecret;
 }
 
+/**
+ * What a stream name may not carry. A stream is a path segment on the wire and
+ * a digest on the volume, and it is bounded by its own column rather than by
+ * the identity bound: control and whitespace are refused here because the
+ * stored row refuses them too, and a brand looser than its column is a value
+ * that passes the door and fails the cast.
+ */
+const sessionStoreStreamRefused = /[\p{Cc}\s]/u;
+
+/** Whether one stream name is one a stored row holds, asked before it is branded. */
+export function isSessionStoreStream(value: string): boolean {
+  return (
+    value.length > 0 &&
+    value.length <= sessionStoreStreamCharsMax &&
+    value.isWellFormed() &&
+    !sessionStoreStreamRefused.test(value)
+  );
+}
+
+/** Brands one stream of a session's store, refusing what its own column would. */
+export function asSessionStoreStream(value: string): SessionStoreStream {
+  const bounded = asBoundedText(
+    value,
+    "session store stream",
+    sessionStoreStreamCharsMax,
+  );
+  if (sessionStoreStreamRefused.test(bounded)) {
+    throw new RangeError(
+      "session store stream: control and whitespace are not what a stored row holds",
+    );
+  }
+  return bounded as SessionStoreStream;
+}
+
 /** What a session is for, which is what decides whose turns it takes and what it may write. */
 export const allSessionKinds = ["Lead", "Thread", "Inquiry"] as const;
 export type SessionKind = (typeof allSessionKinds)[number];

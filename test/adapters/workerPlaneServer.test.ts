@@ -155,6 +155,45 @@ test("an unknown or oversized bearer reaches no attempt act", async () => {
   await app.close();
 });
 
+test("a bearer written in the session language is never offered to the attempt authority", async () => {
+  const offered: string[] = [];
+  const app = createWorkerPlaneApp({
+    ...heartbeatService,
+    ...runEvidenceService,
+    authority: {
+      authenticate: (secret) => {
+        offered.push(secret);
+        return Promise.resolve(authority);
+      },
+    },
+    reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
+    artifacts: { store: () => Promise.resolve({ stored: "Stored" }) },
+    reports: { report: () => Promise.resolve({ ingested: "Fenced" }) },
+    ready: () => Promise.resolve(true),
+    uploadBytesMax: 64,
+  });
+  const session = { authorization: `Bearer chgs_${"a".repeat(32)}` };
+  for (const [method, url, body, kind] of [
+    ["GET", "/v1/input", undefined, {}],
+    ["POST", "/v1/heartbeat", undefined, {}],
+    ["PUT", "/v1/artifacts/out.txt", Buffer.from("x"), octets],
+    ["POST", "/v1/report", "{}", { "content-type": "text/plain" }],
+    ["PUT", "/v1/run/configuration", Buffer.from("{}\n"), octets],
+    ["PUT", "/v1/run/transcript/1", Buffer.from("{}\n"), octets],
+    ["POST", "/v1/run/totals", {}, {}],
+  ] as const) {
+    const response = await app.inject({
+      method,
+      url,
+      headers: { ...session, ...kind },
+      ...(body === undefined ? {} : { payload: body }),
+    });
+    assert.equal(response.statusCode, 401, url);
+  }
+  assert.deepEqual(offered, []);
+  await app.close();
+});
+
 test("a live bearer renews only its fenced attempt generation", async () => {
   const calls: unknown[] = [];
   const app = createWorkerPlaneApp({

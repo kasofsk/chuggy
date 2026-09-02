@@ -96,6 +96,13 @@ import type {
   RunEvidenceObject,
 } from "../../interpreter/runEvidence.ts";
 import type {
+  SessionStoreObject,
+  SessionStoreRead,
+  SessionStoreReadPort,
+  SessionStoreStored,
+  SessionStoreWritePort,
+} from "../../interpreter/sessionStore.ts";
+import type {
   WorkerArtifactStored,
   WorkerArtifactUploadPort,
 } from "../../interpreter/workerPlane.ts";
@@ -104,6 +111,8 @@ import {
   artifactAttemptRoot,
   artifactOwnedFile,
   artifactProjectDirectory,
+  artifactSessionFile,
+  artifactSessionRoot,
   artifactWithinProject,
 } from "./artifactKey.ts";
 
@@ -126,13 +135,15 @@ export const artifactStoreDefaults = {
   storedFileMode: 0o440,
 } as const;
 
-/** The three ports one store answers, which is one boundary and not three deployments. */
+/** The ports one store answers, which is one boundary and not one deployment each. */
 export type ArtifactStore = ArtifactVerificationPort &
   HandoffContentPort &
   ProjectArtifactPort &
   OutputContentPort &
   RunEvidenceContentPort &
-  WorkerArtifactUploadPort;
+  WorkerArtifactUploadPort &
+  SessionStoreWritePort &
+  SessionStoreReadPort;
 
 /** The most bytes one read of a stored object draws at a time. */
 const artifactStoreChunkBytes = 65_536;
@@ -408,13 +419,24 @@ async function artifactStoreDiscard(pending: string): Promise<void> {
   }
 }
 
-async function artifactStoreCommitAttemptWrite(
+/**
+ * What committing one already-written object under its final name found. It is
+ * narrower than either port's own answer because a refusal — a path this store
+ * will not resolve, a body past the ceiling — is decided before anything is
+ * written, so no commit can reach one.
+ */
+type ArtifactStoreCommitted =
+  | { readonly stored: "Stored" }
+  | { readonly stored: "Conflict" }
+  | { readonly stored: "Unavailable"; readonly retryAfterSeconds: number };
+
+async function artifactStoreCommitObject(
   own: ArtifactStoreState,
   directory: string,
   file: string,
   pending: string,
   content: Uint8Array,
-): Promise<WorkerArtifactStored> {
+): Promise<ArtifactStoreCommitted> {
   const existing = await artifactStoreEntryOf(directory, file);
   if (existing.entry === "Object") {
     if (existing.bytes !== content.byteLength) return { stored: "Conflict" };
@@ -520,7 +542,7 @@ async function artifactStoreAttemptWrite(
       flag: constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
     });
     await chmod(pending, own.storedFileMode);
-    return await artifactStoreCommitAttemptWrite(
+    return await artifactStoreCommitObject(
       own,
       directory,
       file,
@@ -533,7 +555,7 @@ async function artifactStoreAttemptWrite(
       refused !== null &&
       (refused as { code?: unknown }).code === "EEXIST"
     ) {
-      return artifactStoreCommitAttemptWrite(
+      return artifactStoreCommitObject(
         own,
         directory,
         file,
@@ -548,6 +570,99 @@ async function artifactStoreAttemptWrite(
   } finally {
     await artifactStoreDiscard(pending);
   }
+}
+
+/**
+ * One batch of one session's store, kept under the session's own key. The
+ * commit is the attempt upload's: an object already standing there is this
+ * batch again when its bytes hash the same and a conflict when they do not,
+ * which is what makes a retry safe without the plane ever reading the payload.
+ */
+async function artifactStoreSessionWrite(
+  own: ArtifactStoreState,
+  input: SessionStoreObject & { readonly content: Uint8Array },
+): Promise<SessionStoreStored> {
+  if (input.content.byteLength > own.writeBytesMax)
+    return { stored: "Refused", reason: "QuotaExceeded" };
+  const directory = artifactProjectDirectory(
+    own.root,
+    input.partition.tenant,
+    input.partition.project,
+  );
+  const file = artifactSessionFile(
+    directory,
+    input.session,
+    input.stream,
+    input.batch,
+  );
+  const pendingDirectory = `${artifactSessionRoot(directory, input.session, input.stream)}.upload-pending`;
+  const pending = `${pendingDirectory}/${randomUUID()}`;
+  try {
+    await mkdir(dirname(file), { recursive: true });
+    await mkdir(pendingDirectory, { recursive: true });
+    if ((await artifactStoreDirectoryRejection(directory, file)) !== undefined)
+      return {
+        stored: "Unavailable",
+        retryAfterSeconds: own.unavailableRetrySecs,
+      };
+    await writeFile(pending, input.content, {
+      mode: own.storedFileMode,
+      flag: constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+    });
+    await chmod(pending, own.storedFileMode);
+    return await artifactStoreCommitObject(
+      own,
+      directory,
+      file,
+      pending,
+      input.content,
+    );
+  } catch {
+    return {
+      stored: "Unavailable",
+      retryAfterSeconds: own.unavailableRetrySecs,
+    };
+  } finally {
+    await artifactStoreDiscard(pending);
+  }
+}
+
+/**
+ * The bytes of one recorded batch. No digest is confirmed here, because the row
+ * the reader came from is what pins one and this port is handed the object
+ * alone; what it separates is an outage, an absence and bytes no reader can
+ * speak for.
+ */
+async function artifactStoreSessionRead(
+  own: ArtifactStoreState,
+  object: SessionStoreObject,
+): Promise<SessionStoreRead> {
+  const directory = artifactProjectDirectory(
+    own.root,
+    object.partition.tenant,
+    object.partition.project,
+  );
+  const file = artifactSessionFile(
+    directory,
+    object.session,
+    object.stream,
+    object.batch,
+  );
+  const entry = await artifactStoreEntryOf(directory, file);
+  if (entry.entry === "Unavailable")
+    return artifactStoreCharacters(own, { confirmed: "Unavailable" });
+  if (entry.entry === "Rejected")
+    return artifactStoreCharacters(own, {
+      confirmed: "Rejected",
+      failure: entry.failure,
+    });
+  const content = await artifactStoreBytesOf(file);
+  return artifactStoreCharacters(
+    own,
+    content === undefined
+      ? { confirmed: "Unavailable" }
+      : { confirmed: "Object", content },
+  );
 }
 
 async function artifactStoreOutput(
@@ -682,5 +797,7 @@ export function artifactStore(options: ArtifactStoreOptions): ArtifactStore {
     store: (input) => artifactStoreAttemptWrite(own, input),
     read: (input) => artifactStoreOutput(own, input),
     readEvidence: (object) => artifactStoreEvidence(own, object),
+    storeBatch: (input) => artifactStoreSessionWrite(own, input),
+    readBatch: (object) => artifactStoreSessionRead(own, object),
   };
 }
