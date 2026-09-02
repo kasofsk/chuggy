@@ -205,26 +205,31 @@ function refines(
   return false;
 }
 
+/**
+ * The requirement a configuration that names an agent runs under. A pinned
+ * image is what runs, so a container requirement is returned as it stands and
+ * the agent constrains the catalog entry that image names rather than replacing
+ * it; a requirement authored by capability names workers rather than an image,
+ * so the agent joins the capabilities it asks for.
+ */
 function requirementForAgent(
   value: ExecutionRequirement,
   capability: ExecutionCapability | undefined,
 ): ExecutionRequirement | undefined {
-  if (capability === undefined) return value;
+  if (capability === undefined || value.mode === "Container") return value;
   if (value.mode === "Native") return undefined;
-  if (value.mode === "Container")
-    return {
-      mode: "ContainerCapability",
-      operatingSystem: value.operatingSystem,
-      architecture: value.architecture,
-      capabilities: [capability],
-    };
   return {
     ...value,
     capabilities: [...new Set([...value.capabilities, capability])],
   };
 }
 
-function agentCapability(
+/**
+ * The agent capability a configuration's worker needs, which is what an image
+ * has to provide for the configuration to run on it. A worker that states no
+ * single agent needs none.
+ */
+export function executionAgentCapability(
   configuration: unknown,
 ): ExecutionCapability | undefined {
   const root = record(configuration);
@@ -251,6 +256,30 @@ function requirementMap(
   return result;
 }
 
+/**
+ * How the two statements of the platform default are compared when the
+ * configuration names an agent: as the capability each satisfies, so that a
+ * default authored by capability and the legacy image field are one
+ * requirement to compare rather than two modes that can never match.
+ */
+function platformDefaultComparable(
+  value: ExecutionRequirement,
+  capability: ExecutionCapability,
+): ExecutionRequirement | undefined {
+  if (value.mode === "Native") return undefined;
+  if (value.mode === "Container")
+    return {
+      mode: "ContainerCapability",
+      operatingSystem: value.operatingSystem,
+      architecture: value.architecture,
+      capabilities: [capability],
+    };
+  return {
+    ...value,
+    capabilities: [...new Set([...value.capabilities, capability])],
+  };
+}
+
 function platformDefaultMatchesLegacy(
   platformDefault: ExecutionRequirement,
   legacy: ExecutionRequirement,
@@ -258,8 +287,11 @@ function platformDefaultMatchesLegacy(
 ): boolean {
   if (capability === undefined)
     return JSON.stringify(platformDefault) === JSON.stringify(legacy);
-  const effectiveDefault = requirementForAgent(platformDefault, capability);
-  const effectiveLegacy = requirementForAgent(legacy, capability);
+  const effectiveDefault = platformDefaultComparable(
+    platformDefault,
+    capability,
+  );
+  const effectiveLegacy = platformDefaultComparable(legacy, capability);
   return (
     effectiveDefault !== undefined &&
     effectiveLegacy !== undefined &&
@@ -355,7 +387,7 @@ function parsedConfiguration(
     architecture: "Amd64",
     image: root["image"],
   };
-  const capability = agentCapability(value);
+  const capability = executionAgentCapability(value);
   if (root["executionRequirements"] !== undefined)
     return configuredRequirements(
       root["executionRequirements"],
@@ -401,7 +433,7 @@ export function materializeExecutionRequirement(
   const kindDefault = parsed.taskKindDefaults?.[kindKey];
   const value =
     explicit ?? kindDefault ?? parsed.ticketDefault ?? parsed.platformDefault;
-  const capability = agentCapability(configuration);
+  const capability = executionAgentCapability(configuration);
   const selected = requirementForAgent(value, capability);
   if (selected === undefined)
     throw new TypeError(

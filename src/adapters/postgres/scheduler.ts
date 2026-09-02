@@ -738,7 +738,8 @@ async function schedulerLockForLaunch(
             q.input_bundle, q.input_bundle_digest,
             q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
             q.ticket_version::text AS ticket_version, e.account, e.cluster,
-            e.configuration_revision, e.configuration_digest, e.requirement_identity,
+            e.configuration_revision, e.configuration_digest,
+            c.canonical AS configuration_canonical, e.requirement_identity,
             e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
             e.platform_default_version::text AS platform_default_version, e.status, e.outcome,
             e.result_manifest, e.completion_operation,
@@ -758,6 +759,9 @@ async function schedulerLockForLaunch(
        JOIN execution_request_task t
          ON t.tenant = e.tenant AND t.project = e.project
         AND t.request = e.source_request AND t.task = e.task
+       JOIN configuration_revision c
+         ON c.tenant = e.tenant AND c.project = e.project
+        AND c.revision = e.configuration_revision AND c.digest = e.configuration_digest
       WHERE e.tenant = ${opening.partition.tenant} AND e.project = ${opening.partition.project}
         AND e.execution = ${opening.execution}
       FOR UPDATE OF e`,
@@ -996,7 +1000,8 @@ async function schedulerUnlaunched(
             q.input_bundle, q.input_bundle_digest,
             q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
             q.ticket_version::text AS ticket_version, e.account, e.cluster,
-            e.configuration_revision, e.configuration_digest, e.requirement_identity,
+            e.configuration_revision, e.configuration_digest,
+            c.canonical AS configuration_canonical, e.requirement_identity,
             e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
             e.platform_default_version::text AS platform_default_version, e.status, e.outcome,
             e.result_manifest, e.completion_operation,
@@ -1008,6 +1013,9 @@ async function schedulerUnlaunched(
        JOIN execution_request_task t
          ON t.tenant = e.tenant AND t.project = e.project
         AND t.request = e.source_request AND t.task = e.task
+       JOIN configuration_revision c
+         ON c.tenant = e.tenant AND c.project = e.project
+        AND c.revision = e.configuration_revision AND c.digest = e.configuration_digest
       WHERE e.status IN ('Admitted', 'Launching', 'Running')
         AND NOT EXISTS (SELECT 1 FROM execution_attempt a
                          WHERE a.tenant = e.tenant AND a.project = e.project
@@ -1108,7 +1116,8 @@ async function schedulerExecution(
                q.authorizing_seq::text AS source_seq,
                q.effect_position::text AS source_effect,
                q.ticket_version::text AS ticket_version, e.account, e.cluster,
-               e.configuration_revision, e.configuration_digest, e.requirement_identity,
+               e.configuration_revision, e.configuration_digest,
+               c.canonical AS configuration_canonical, e.requirement_identity,
                e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
                e.platform_default_version::text AS platform_default_version, e.status,
                e.outcome, e.result_manifest, e.completion_operation,
@@ -1121,6 +1130,9 @@ async function schedulerExecution(
           JOIN execution_request_task t
             ON t.tenant = e.tenant AND t.project = e.project
            AND t.request = e.source_request AND t.task = e.task
+          JOIN configuration_revision c
+            ON c.tenant = e.tenant AND c.project = e.project
+           AND c.revision = e.configuration_revision AND c.digest = e.configuration_digest
          WHERE e.tenant = ${partition.tenant} AND e.project = ${partition.project}
            AND e.execution = ${execution}`,
   );
