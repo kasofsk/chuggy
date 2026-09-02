@@ -46,14 +46,21 @@ function unreffed(milliseconds) {
   return wait(milliseconds, undefined, { ref: false });
 }
 
-/** The bounds a session pod is launched with, each an operational choice. */
-export const sessionBoundNames = [
-  "mailboxPollMs",
-  "idleMs",
-  "resultDrainMs",
-  "loadTimeoutMs",
-  "turnsMax",
-];
+/**
+ * Every bound a session pod is launched with, and what makes each one valid. A
+ * count of milliseconds or turns is whole; a dollar cap is not, because half a
+ * dollar is a cap a site may legitimately choose and this image does not get to
+ * overrule its launcher.
+ */
+export const sessionBounds = {
+  mailboxPollMs: Number.isSafeInteger,
+  idleMs: Number.isSafeInteger,
+  resultDrainMs: Number.isSafeInteger,
+  loadTimeoutMs: Number.isSafeInteger,
+  turnsMax: Number.isSafeInteger,
+  budgetUsd: Number.isFinite,
+};
+export const sessionBoundNames = Object.keys(sessionBounds);
 
 /**
  * Every bound the launcher owes this pod, refused by name where one is missing
@@ -62,18 +69,13 @@ export const sessionBoundNames = [
  * makes its loop unbounded rather than short.
  */
 export function checkedSessionBounds(bounds) {
-  for (const name of sessionBoundNames) {
+  for (const [name, valid] of Object.entries(sessionBounds)) {
     const value = bounds?.[name];
-    if (!Number.isSafeInteger(value) || value <= 0)
+    if (!valid(value) || value <= 0)
       throw new Error(
-        `CHUG_SESSION_TASK needs a positive whole ${name} and carries ${JSON.stringify(value)}`,
+        `CHUG_SESSION_TASK needs a positive ${name} and carries ${JSON.stringify(value)}`,
       );
   }
-  const budget = bounds.budgetUsd;
-  if (typeof budget !== "number" || !Number.isFinite(budget) || budget <= 0)
-    throw new Error(
-      `CHUG_SESSION_TASK needs a positive budgetUsd and carries ${JSON.stringify(budget)}`,
-    );
   return bounds;
 }
 

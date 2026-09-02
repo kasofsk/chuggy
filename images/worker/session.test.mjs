@@ -350,7 +350,7 @@ test("a mirror_error before the result fails the turn just as a late one does", 
 });
 
 test("a bound the launcher did not give is refused by name, with no default invented", async () => {
-  for (const name of [...sessionBoundNames, "budgetUsd"]) {
+  for (const name of sessionBoundNames) {
     const rest = Object.fromEntries(
       Object.entries(task.bounds).filter(([held]) => held !== name),
     );
@@ -387,6 +387,10 @@ test("a bound that is not a positive whole number is refused too", () => {
   assert.throws(
     () => checkedSessionBounds({ ...bounds, turnsMax: 1.5 }),
     /turnsMax/u,
+  );
+  assert.ok(
+    sessionBoundNames.includes("budgetUsd"),
+    "the roster omits a bound the check enforces",
   );
   assert.throws(
     () => checkedSessionBounds({ ...bounds, budgetUsd: 0 }),

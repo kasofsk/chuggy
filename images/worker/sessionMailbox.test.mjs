@@ -140,3 +140,18 @@ test("the idle window opens when a turn settles, not when it was claimed", async
     "a turn that outran the idle bound reaped the session on its next poll",
   );
 });
+
+test("a startup slower than the idle bound does not end the iterable on its first look", async () => {
+  const { calls, advance, mailbox } = mailboxOf([{ status: 204 }]);
+
+  advance(task.bounds.idleMs * 10);
+  const taken = [];
+  for await (const message of mailbox.turns()) taken.push(message);
+
+  assert.deepEqual(taken, []);
+  assert.equal(
+    calls.length,
+    task.bounds.idleMs / task.bounds.mailboxPollMs + 1,
+    "a slow start was read as an idle session",
+  );
+});

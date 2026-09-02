@@ -12,6 +12,13 @@
  * and the loop as a whole by the idle bound the pod was launched with: a
  * mailbox that stays empty that long ends the iterable, the query ends with it,
  * and the process exits for the scheduler's idle reaper to collect.
+ *
+ * THE IDLE WINDOW OPENS ON THE FIRST EMPTY POLL, NOT WHEN THE POD STARTED. A
+ * cold session pages a resumed store and spawns a runtime before this loop is
+ * asked for anything, and a startup slower than the bound would then end the
+ * iterable on its first look at an empty mailbox. Idle is time the session spent
+ * with nothing to do, so it is measured from the first moment it had nothing to
+ * do, and a claim closes the window again.
  */
 
 import { setTimeout as wait } from "node:timers/promises";
@@ -41,7 +48,7 @@ export function sessionMailbox(task, bearer, services = {}) {
   let stopped = false;
   let settle = () => undefined;
   let awaitSettled = Promise.resolve();
-  let idleSince = now();
+  let idleSince;
 
   function hold() {
     awaitSettled = new Promise((resolve) => {
@@ -65,15 +72,9 @@ export function sessionMailbox(task, bearer, services = {}) {
   return {
     claimed: () => held,
 
-    /**
-     * What the pod calls once a turn is answered or failed, releasing the next.
-     * The idle window opens here, because idle is time the session had nothing
-     * to do — not time since it last picked something up, which would reap a
-     * lead in the middle of a turn that ran longer than the bound.
-     */
+    /** What the pod calls once a turn is answered or failed, releasing the next. */
     settled() {
       held = undefined;
-      idleSince = now();
       settle();
     },
 
@@ -90,11 +91,13 @@ export function sessionMailbox(task, bearer, services = {}) {
         const turn = await claim();
         if (turn === "Stop") return;
         if (turn === undefined) {
+          idleSince ??= now();
           if (now() - idleSince >= task.bounds.idleMs) return;
           await pause(task.bounds.mailboxPollMs);
           continue;
         }
         held = turn;
+        idleSince = undefined;
         hold();
         yield sessionUserMessage(turn.input);
       }
