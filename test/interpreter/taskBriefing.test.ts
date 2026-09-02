@@ -1014,6 +1014,22 @@ test("the provenance says how many of a stage's command lines the ticket added",
     none.find((section) => section.section === "CheckCommands")?.ticketLines,
     0,
   );
+  const later = sectionsOf(
+    viewOf({
+      purpose: "Check",
+      stage: 1,
+      evaluations: [
+        { purpose: "Check", checks: ["./first.sh"] },
+        { purpose: "Check", checks: ["./second.sh"] },
+      ],
+      ticketBrief: briefAppending(["npm test"]),
+    }),
+  );
+  assert.equal(
+    later.find((section) => section.section === "CheckCommands")?.ticketLines,
+    0,
+    "a stage the ticket's lines did not join records none of them",
+  );
 });
 
 test("this tree's own configurations name a check stage the worker runs itself", () => {

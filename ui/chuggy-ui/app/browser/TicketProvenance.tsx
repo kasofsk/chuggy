@@ -107,7 +107,7 @@ export function TicketBrief(props: {
         return (
           <dl className="legacy-fields">
             {draft.brief === undefined ? (
-              <Field name="intent, links, branch, landing">
+              <Field name="brief">
                 <span className="panel-absent">
                   this ticket was released before a brief was kept for one
                 </span>

@@ -579,11 +579,16 @@ function resourcePath(
   ].join("/");
 }
 
-/** The brief as the wire reads it, absent for a draft authored without one. */
+/**
+ * The brief as the wire reads it, absent for a draft authored without one. Every
+ * list is answered whether or not it has members, because a reader that revises
+ * sends back what it read and an omitted list is what a revision erases.
+ */
 function briefBody(brief: DraftBrief): unknown {
   return {
     intent: brief.intent,
     links: [...brief.links],
+    checks: [...brief.checks],
     ...(brief.branch === undefined ? {} : { branch: brief.branch }),
     ...(brief.finalization === undefined
       ? {}

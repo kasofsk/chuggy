@@ -5,11 +5,11 @@
  * What is visible is what only a person can state — the intent, what to read
  * first, the check lines this ticket adds where its configuration commands a
  * stage for them, the branch the work happens on and the one it lands on; the
- * rest is prefilled behind the disclosure. Submit creates the draft and releases it in
- * one motion, and the navigation happens on a settled success alone, so a
- * screen never hands a reader a ticket the projection has not got to yet.
- * Every other ending is drawn here with its reason and the form still holding
- * what was typed.
+ * rest is prefilled behind the disclosure. Submit creates the draft and
+ * releases it in one motion, and the navigation happens on a settled success
+ * alone, so a screen never hands a reader a ticket the projection has not got
+ * to yet. Every other ending is drawn here with its reason and the form still
+ * holding what was typed.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -147,7 +147,7 @@ function Links(props: FormEdit): ReactNode {
   );
 }
 
-/** The command lines this ticket adds to the stage its configuration commands. */
+/** The command lines this ticket adds to the stage its configuration runs. */
 function Checks(props: FormEdit): ReactNode {
   const { form, onChange } = props;
   return (
