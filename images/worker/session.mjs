@@ -210,20 +210,21 @@ function messageToolNames(message) {
  * it: that one declares itself the main agent loop alone, so a lead with tools
  * would spend its subagents outside every budget.
  *
- * A RECORD WITH NO MODEL IN IT IS NOT A TOTAL OF ZERO. A running total read as
- * zero moves the mark back to the start, and the next turn reporting a real
- * total is then charged the whole session. So an empty record is nothing
- * reported, exactly as an absent one is.
+ * A RECORD THAT COUNTS NOTHING IS NOT A TOTAL OF ZERO. A running total read as
+ * zero moves the mark back to the start of the session, and the next turn
+ * reporting a real total is then charged the whole of it. A record with no
+ * model in it, one naming models whose counters this pod cannot read, and one
+ * whose counters are the zeroes the runtime documents a crashed result as
+ * carrying are the same thing to a reader: nothing reported, exactly as an
+ * absent record is.
  */
 function modelUsageTokens(modelUsage) {
   if (typeof modelUsage !== "object" || modelUsage === null) return undefined;
-  const spending = Object.values(modelUsage);
-  if (spending.length === 0) return undefined;
   let counted = 0;
-  for (const spent of spending)
+  for (const spent of Object.values(modelUsage))
     for (const counter of modelUsageCounters)
       counted += measuredCount(spent?.[counter]);
-  return counted;
+  return counted > 0 ? counted : undefined;
 }
 
 /**

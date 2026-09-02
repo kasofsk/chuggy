@@ -1210,13 +1210,13 @@ test("a figure the runtime reported as no number is measured as nothing spent", 
   measure.saw({ type: "system", subtype: "init", model: "haiku" });
   assert.deepEqual(
     measure.of({
-      modelUsage: { haiku: { inputTokens: "many", outputTokens: -3 } },
+      modelUsage: { haiku: { inputTokens: 7, outputTokens: "many" } },
       total_cost_usd: "free",
       duration_ms: undefined,
     }),
     {
       model: "haiku",
-      tokens: 0,
+      tokens: 7,
       costMicros: 0,
       durationMs: 0,
       tools: [],
@@ -1349,15 +1349,23 @@ test("a model the runtime named as nothing a row holds leaves the last one stand
   assert.equal(measure.of({ modelUsage: spent }).model, "haiku");
 });
 
-test("a record naming no model leaves the mark, so the next turn is a delta not a session", () => {
-  const measure = measureOf();
+test("a record that counts nothing leaves the mark, so the next turn is a delta not a session", () => {
+  const uncountable = [
+    ["no model at all", {}],
+    ["a model with no counters", { "claude-haiku-4-5": {} }],
+    ["counters this pod cannot read", spentAfter("many", null, undefined, "0")],
+    ["the zeroes a crashed result carries", spentAfter(0, 0, 0, 0)],
+  ];
+  for (const [what, modelUsage] of uncountable) {
+    const measure = measureOf();
 
-  const first = measure.of({ modelUsage: spent, total_cost_usd: 0.3 });
-  const empty = measure.of({ modelUsage: {}, total_cost_usd: undefined });
-  const next = measure.of({ modelUsage: spentAgain, total_cost_usd: 0.45 });
+    const first = measure.of({ modelUsage: spent, total_cost_usd: 0.3 });
+    const counting = measure.of({ modelUsage, total_cost_usd: undefined });
+    const next = measure.of({ modelUsage: spentAgain, total_cost_usd: 0.45 });
 
-  assert.equal(first.tokens, spentTokens);
-  assert.equal(empty, undefined, "a record naming no model was measured");
-  assert.equal(next.tokens, spentAgainTokens);
-  assert.equal(next.costMicros, 150_000);
+    assert.equal(first.tokens, spentTokens, what);
+    assert.equal(counting, undefined, `${what} was measured`);
+    assert.equal(next.tokens, spentAgainTokens, what);
+    assert.equal(next.costMicros, 150_000, what);
+  }
 });

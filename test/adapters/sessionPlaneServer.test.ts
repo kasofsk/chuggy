@@ -672,12 +672,6 @@ test("what a pod measured of a turn is carried through whole, and absent where i
 });
 
 /**
- * The five are one measurement, so four of them is a hole rather than a partial
- * answer, and every figure is a whole count and every text one a row holds — a
- * body the boundary would refuse is refused here, where the pod has an arm for
- * it.
- */
-/**
  * The bound is the session's own identity bound and not a run usage row's. The
  * read side answers a model of this length, so a write side refusing one would
  * be a turn the pod cannot settle over an identity the console would have
@@ -721,6 +715,12 @@ test("a model as long as a stored row holds is taken, not refused", async () => 
   await app.close();
 });
 
+/**
+ * The five are one measurement, so four of them is a hole rather than a partial
+ * answer, and every figure is a whole count and every text one a row holds — a
+ * body the boundary would refuse is refused here, where the pod has an arm for
+ * it.
+ */
 test("a measurement with a hole, a figure or a name no row holds reaches no boundary", async () => {
   let reached = 0;
   const app = sessionPlane({
