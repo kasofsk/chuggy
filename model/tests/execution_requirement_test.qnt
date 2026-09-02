@@ -88,6 +88,16 @@ module execution_requirement_test {
       | RequirementRefused => assert(false)
     }
 
+  run siteRefusesAnAgentACapabilitySelectionDoesNotNameTest =
+    assert(not(siteAdmits(
+      CapabilityRequirement({ operatingSystem: Linux, architecture: Amd64,
+        capabilities: Set(AgentClaude) }),
+      RequiredAgent(AgentCodex), CapabilitiesUndeclared)))
+
+  run siteProvidesNoAgentToANativeSelectionTest =
+    assert(not(siteAdmits(
+      nativeBase, RequiredAgent(AgentCodex), CapabilitiesUndeclared)))
+
   run aWorkerNamingNoAgentConstrainsNoSiteEntryTest =
     val migrated = defaultsFromLegacyReleaseImage(42, 1)
     match materialize(101, 11, 2, 3, migrated, LegacyWorker) {
