@@ -141,6 +141,31 @@ test("an observation document round-trips through its own text", () => {
   );
 });
 
+test("an observation whose objectives are the session's own still reads", () => {
+  const prompted: LeadObservationDocument = {
+    version: document.version,
+    decision: document.decision,
+    partition: document.partition,
+    changes: document.changes,
+    candidates: document.candidates,
+    token: document.token,
+    operationalContext: document.operationalContext,
+    handoffNote: document.handoffNote,
+    refusals: document.refusals,
+  };
+  assert.deepEqual(
+    parseLeadObservation(leadObservationText(prompted)),
+    prompted,
+  );
+  assert.throws(
+    () =>
+      parseLeadObservation(
+        JSON.stringify({ ...document, instructions: "select" }),
+      ),
+    TypeError,
+  );
+});
+
 test("a refusal is superseded where its version is not the candidate's", () => {
   const refused: AgenticRefusalRecord = {
     ticket: candidate.ticket,

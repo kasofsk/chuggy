@@ -89,7 +89,8 @@ export interface LeadObservationDocument {
   readonly version: typeof leadTurnDocumentVersion;
   readonly decision: string;
   readonly partition: Partition;
-  readonly instructions: {
+  /** Absent where the session carries its objectives as a system prompt instead, which a retained document predates. */
+  readonly instructions?: {
     readonly revision: string;
     readonly content: string;
     readonly northStar?: string;
@@ -155,7 +156,8 @@ export function parseLeadObservation(text: string): LeadObservationDocument {
     leadObservationBytesMax,
   );
   leadTurnRecord(found["partition"], "lead observation partition");
-  leadTurnRecord(found["instructions"], "lead observation instructions");
+  if (found["instructions"] !== undefined)
+    leadTurnRecord(found["instructions"], "lead observation instructions");
   leadTurnRecord(found["token"], "lead observation token");
   leadTurnRecord(found["operationalContext"], "lead observation context");
   leadObservationArray(
