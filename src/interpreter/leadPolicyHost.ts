@@ -33,6 +33,7 @@
 import {
   asSessionTurnId,
   type SessionTurnId,
+  type SessionTurnMeasured,
   type SessionTurnState,
 } from "./agentSession.ts";
 import type {
@@ -41,7 +42,6 @@ import type {
 } from "./agenticRefusal.ts";
 import type {
   LeadMailbox,
-  LeadTurnMeasured,
   LeadTurnStanding,
   LeadTurnWithdrawn,
 } from "./leadMailbox.ts";
@@ -230,7 +230,7 @@ function leadTurnInput(
 }
 
 function leadTurnAccounting(
-  measured: LeadTurnMeasured | undefined,
+  measured: SessionTurnMeasured | undefined,
   started: LeadPolicyReading,
   completed: LeadPolicyReading,
 ): SelectorPolicyExecution["accounting"] {

@@ -5,12 +5,12 @@ import { asTicketId } from "../../src/domain/ids.ts";
 import {
   asSessionId,
   type SessionTurnId,
+  type SessionTurnMeasured,
   type SessionTurnState,
 } from "../../src/interpreter/agentSession.ts";
 import type { AgenticRefusalRecord } from "../../src/interpreter/agenticRefusal.ts";
 import type {
   LeadMailbox,
-  LeadTurnMeasured,
   LeadTurnOffered,
   LeadTurnStanding,
   LeadTurnWithdrawn,
@@ -60,9 +60,12 @@ const candidate = {
 
 const operationalContext = selectorOperationalContext;
 
+/** A second candidate, so one decision can dispatch one ticket and refuse another. */
+const declined = { ...candidate, ticket: asTicketId(43), ticketVersion: 1 };
+
 const observation: SelectorObservation = {
   token,
-  candidates: [candidate],
+  candidates: [candidate, declined],
   notificationCursor: 12,
   changes: [{ ordinal: 12, kind: "Ticket", resource: "41" }],
   operationalContext,
@@ -107,7 +110,7 @@ const standingRefusals: readonly AgenticRefusalRecord[] = [
   },
 ];
 
-const measured: LeadTurnMeasured = {
+const measured: SessionTurnMeasured = {
   model: "claude-opus-5",
   tokens: 4_096,
   costMicros: 12_345,
@@ -118,7 +121,7 @@ const measured: LeadTurnMeasured = {
 const decisionDocument = JSON.stringify({
   version: 1,
   dispatches: [{ ticket: 41, expectedTicketVersion: 3 }],
-  refusals: [{ ticket: 41, ticketVersion: 3, reason: "not yet" }],
+  refusals: [{ ticket: 43, ticketVersion: 1, reason: "not yet" }],
   lifts: [{ ticket: 42 }],
   attention: "Attention",
   handoffNote: { next: "41" },
@@ -145,7 +148,7 @@ interface MailboxOptions {
   readonly offered?: LeadTurnOffered;
   readonly turnStates?: readonly SessionTurnState[];
   readonly result?: string;
-  readonly measured?: LeadTurnMeasured;
+  readonly measured?: SessionTurnMeasured;
   readonly withdrawn?: LeadTurnWithdrawn;
 }
 
