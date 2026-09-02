@@ -36,11 +36,13 @@ import {
   kubernetesWorkerDatabaseUrlVariable,
   kubernetesWorkerPodName,
   kubernetesWorkerPodRequest,
+  kubernetesWorkerReservedVariables,
   type KubernetesWorkerLaunchConfig,
   type KubernetesWorkerTask,
 } from "../../src/adapters/kubernetes/workerPod.ts";
 import {
   kubernetesNameCharsMax,
+  kubernetesSessionTaskVariable,
   kubernetesWorkerCredentialFilesVariable,
   kubernetesWorkerTaskVariable,
   type KubernetesPod,
@@ -70,6 +72,7 @@ import {
   type TaskInvocation,
 } from "../../src/interpreter/taskBriefing.ts";
 import { resultReportCharsMax } from "../../src/interpreter/resultManifest.ts";
+import { populated } from "../interpreter/roster.ts";
 
 const root = mkdtempSync(join(tmpdir(), "chuggy-cluster-"));
 after(() => {
@@ -944,12 +947,18 @@ test("a deployment that cannot address a cluster is refused where it is composed
   );
 });
 
-test("site environment cannot replace worker-owned documents", () => {
-  for (const variable of [
+test("site environment cannot replace any worker-owned document", () => {
+  assert.deepEqual(kubernetesWorkerReservedVariables, [
     kubernetesWorkerTaskVariable,
+    kubernetesSessionTaskVariable,
+    kubernetesWorkerCredentialFilesVariable,
     kubernetesWorkerDatabaseUrlVariable,
     kubernetesWorkerDatabaseScopeVariable,
-  ]) {
+  ]);
+  for (const variable of populated(
+    kubernetesWorkerReservedVariables,
+    "the worker's reserved variables",
+  )) {
     assert.throws(
       () =>
         checkedKubernetesWorkerLaunchConfig({
@@ -957,6 +966,7 @@ test("site environment cannot replace worker-owned documents", () => {
           environment: { [variable]: "replacement" },
         }),
       new RegExp(variable, "u"),
+      variable,
     );
   }
 });

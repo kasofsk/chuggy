@@ -213,6 +213,17 @@ export function kubernetesPositive(value: number, what: string): number {
   return value;
 }
 
+/**
+ * Refuses a value that is not a positive finite number, for the bounds a whole
+ * one is not meant for: a site holding a turn to half a dollar has named a
+ * budget rather than a rounding error.
+ */
+export function kubernetesPositiveNumber(value: number, what: string): number {
+  if (!Number.isFinite(value) || value <= 0)
+    throw new RangeError(`${what} must be a positive number`);
+  return value;
+}
+
 /** The one attempt a pod and every object beside it are named for, as a digest of it. */
 export function kubernetesAttemptDigest(
   partition: Partition,

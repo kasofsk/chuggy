@@ -7,10 +7,14 @@
  * it beside the digest is what makes that pair atomic — a digest stored for a
  * secret nobody holds is a session no pod can ever authenticate as.
  *
- * TWO UUIDS, BECAUSE ONE IS NOT ENOUGH ENTROPY FOR A BEARER. A v4 UUID carries
- * 122 random bits; a bearer that authenticates a session for the life of an
- * attempt is offered to a public endpoint, so it is two of them concatenated
- * with their hyphens kept, which is the language `sessionBearerPattern` admits.
+ * TWO INDEPENDENT DRAWS, AND THE SUITE ASSERTS THEY DIFFER. A bearer that
+ * authenticates a session for the life of an attempt is offered to a public
+ * endpoint, so it is two UUIDs concatenated with their hyphens kept, which is
+ * the language `sessionBearerPattern` admits. Drawing one and repeating it
+ * would still be long enough to resist guessing and would still match the
+ * pattern, and it would mean any disclosure past the halfway point disclosed
+ * the whole secret — a truncated log line, a slice in a diagnostic, a scrub
+ * that redacts a suffix. No prefix of a bearer may be the rest of it.
  */
 
 import { createHash, randomUUID } from "node:crypto";

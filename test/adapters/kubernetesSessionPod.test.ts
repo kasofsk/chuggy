@@ -21,6 +21,7 @@ import { test } from "node:test";
 
 import {
   kubernetesNameCharsMax,
+  kubernetesSessionTaskVariable,
   kubernetesWorkerCredentialFilesVariable,
   kubernetesWorkerTaskVariable,
   kubernetesWorkerWorkspaceVariable,
@@ -32,6 +33,7 @@ import {
   kubernetesSessionModelVariable,
   kubernetesSessionPodName,
   kubernetesSessionPodRequest,
+  kubernetesSessionReservedVariables,
   kubernetesSessionSecret,
   kubernetesSessionTask,
   type KubernetesSessionLaunchConfig,
@@ -45,6 +47,7 @@ import {
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import type { SessionPlacement } from "../../src/interpreter/sessionScheduler.ts";
 import type { PolicyAuthorityGrant } from "../../src/interpreter/taskAuthority.ts";
+import { populated } from "../interpreter/roster.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -334,15 +337,19 @@ test("a credential slot the grant does not name is denied rather than placed", (
   );
 });
 
-test("a site environment cannot replace a variable the launcher writes itself", () => {
-  for (const variable of [
-    "CHUG_SESSION_TASK",
+test("a site environment cannot replace any variable the launcher writes itself", () => {
+  assert.deepEqual(kubernetesSessionReservedVariables, [
+    kubernetesSessionTaskVariable,
     kubernetesWorkerTaskVariable,
     kubernetesWorkerCredentialFilesVariable,
     kubernetesWorkerWorkspaceVariable,
     kubernetesSessionConfigDirVariable,
     kubernetesSessionModelVariable,
-  ]) {
+  ]);
+  for (const variable of populated(
+    kubernetesSessionReservedVariables,
+    "the session's reserved variables",
+  )) {
     assert.throws(
       () =>
         checkedKubernetesSessionLaunchConfig({
@@ -351,6 +358,48 @@ test("a site environment cannot replace a variable the launcher writes itself", 
         }),
       RangeError,
       variable,
+    );
+  }
+});
+
+test("the pod carries this deployment's own labels and no other pod kind's", () => {
+  const pod = renderedPod();
+  assert.deepEqual(pod.metadata.labels, config.podLabels);
+  assert.deepEqual(pod.metadata.labels, { "chuggy.dev/session": "true" });
+  assert.deepEqual(
+    renderedPod({ ...config, podLabels: {} }).metadata.labels,
+    {},
+  );
+});
+
+test("the pod carries the wall clock this deployment gave it", () => {
+  assert.equal(
+    renderedPod().spec.activeDeadlineSeconds,
+    config.activeDeadlineSecs,
+  );
+  assert.equal(
+    renderedPod({ ...config, activeDeadlineSecs: 60 }).spec
+      .activeDeadlineSeconds,
+    60,
+  );
+});
+
+test("a dollar cap the image can spend a fraction of is a bound and not an error", () => {
+  const halved = {
+    ...config,
+    bounds: { ...config.bounds, budgetUsd: 0.5 },
+  };
+  assert.deepEqual(checkedKubernetesSessionLaunchConfig(halved), halved);
+  assert.equal(kubernetesSessionTask(halved, placement).bounds.budgetUsd, 0.5);
+  for (const refused of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.throws(
+      () =>
+        checkedKubernetesSessionLaunchConfig({
+          ...config,
+          bounds: { ...config.bounds, budgetUsd: refused },
+        }),
+      RangeError,
+      String(refused),
     );
   }
 });
@@ -371,6 +420,7 @@ test("a configuration that cannot address a cluster or bound a pod is refused", 
     { unavailableRetryAfterSecs: 0 },
     { bounds: { ...config.bounds, idleMs: 0 } },
     { bounds: { ...config.bounds, turnsMax: 1.5 } },
+    { bounds: { ...config.bounds, budgetUsd: 0 } },
   ];
   for (const refused of refusals) {
     assert.throws(

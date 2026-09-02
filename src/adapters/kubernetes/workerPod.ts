@@ -109,7 +109,7 @@ export const kubernetesWorkerDatabaseScopeVariable =
   "CHUG_WORKER_DATABASE_SCOPE";
 
 /** The names this adapter writes itself, which a site's own environment may not take. */
-const kubernetesWorkerReservedVariables = [
+export const kubernetesWorkerReservedVariables = [
   kubernetesWorkerTaskVariable,
   kubernetesSessionTaskVariable,
   kubernetesWorkerCredentialFilesVariable,

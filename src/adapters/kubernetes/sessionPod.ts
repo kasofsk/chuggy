@@ -41,6 +41,7 @@ import {
   kubernetesCredentials,
   kubernetesPodNamePrefix,
   kubernetesPositive,
+  kubernetesPositiveNumber,
   kubernetesReservedVariables,
   kubernetesSessionTaskVariable,
   kubernetesWorkerCredentialFilesVariable,
@@ -68,15 +69,44 @@ export interface KubernetesSessionBounds {
   readonly budgetUsd: number;
 }
 
-/** Every bound above, read off the interface so a bound added here must be named. */
-const kubernetesSessionBoundNames = [
-  "mailboxPollMs",
-  "idleMs",
-  "resultDrainMs",
-  "loadTimeoutMs",
-  "turnsMax",
-  "budgetUsd",
-] as const satisfies readonly (keyof KubernetesSessionBounds)[];
+/** The bounds a deployment that names none of them gets. */
+export const kubernetesSessionBoundsDefaults: KubernetesSessionBounds = {
+  mailboxPollMs: 1_000,
+  idleMs: 300_000,
+  resultDrainMs: 2_000,
+  loadTimeoutMs: 120_000,
+  turnsMax: 200,
+  budgetUsd: 5,
+};
+
+/**
+ * How each bound is refused: milliseconds and counts are whole numbers, and a
+ * dollar cap is not, because the image spends a fraction of one and a bound the
+ * pod honours while the launcher refuses it is a bound with two readings.
+ *
+ * The record is keyed by the bounds themselves rather than listed beside them,
+ * so a bound added to the interface has no check here and does not compile —
+ * where a list of names only ever proves that what it holds are keys, never
+ * that the keys are all held.
+ */
+const kubernetesSessionBoundChecks: {
+  readonly [Bound in keyof KubernetesSessionBounds]: (
+    value: number,
+    what: string,
+  ) => number;
+} = {
+  mailboxPollMs: kubernetesPositive,
+  idleMs: kubernetesPositive,
+  resultDrainMs: kubernetesPositive,
+  loadTimeoutMs: kubernetesPositive,
+  turnsMax: kubernetesPositive,
+  budgetUsd: kubernetesPositiveNumber,
+};
+
+/** Every bound, read off the checks so the two can never name different sets. */
+const kubernetesSessionBoundNames = Object.keys(
+  kubernetesSessionBoundChecks,
+) as readonly (keyof KubernetesSessionBounds)[];
 
 /** Everything a deployment supplies the session-launch adapter beyond the shared site. */
 export interface KubernetesSessionLaunchConfig extends KubernetesPodSite {
@@ -108,7 +138,7 @@ export const kubernetesSessionConfigDirVariable = "CLAUDE_CONFIG_DIR";
 const kubernetesSessionConfigDirectory = ".claude";
 
 /** The names this adapter writes itself, which a site's own environment may not take. */
-const kubernetesSessionReservedVariables = [
+export const kubernetesSessionReservedVariables = [
   kubernetesSessionTaskVariable,
   kubernetesWorkerTaskVariable,
   kubernetesWorkerCredentialFilesVariable,
@@ -154,7 +184,10 @@ export function checkedKubernetesSessionLaunchConfig(
   if (config.model.length === 0) throw new RangeError("session model is empty");
   kubernetesPositive(config.activeDeadlineSecs, "session active deadline");
   for (const bound of kubernetesSessionBoundNames)
-    kubernetesPositive(config.bounds[bound], `session ${bound}`);
+    kubernetesSessionBoundChecks[bound](
+      config.bounds[bound],
+      `session ${bound}`,
+    );
   return config;
 }
 
@@ -375,13 +408,3 @@ export function kubernetesSessionPodRequest(
     },
   };
 }
-
-/** The bounds a deployment that names none of them gets. */
-export const kubernetesSessionBoundsDefaults: KubernetesSessionBounds = {
-  mailboxPollMs: 1_000,
-  idleMs: 300_000,
-  resultDrainMs: 2_000,
-  loadTimeoutMs: 120_000,
-  turnsMax: 200,
-  budgetUsd: 5,
-};

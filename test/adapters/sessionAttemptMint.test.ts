@@ -15,6 +15,7 @@ import { sessionAttemptMint } from "../../src/adapters/crypto/sessionAttemptMint
 import {
   asSessionBearerSecret,
   sessionBearerPattern,
+  sessionBearerPrefix,
 } from "../../src/interpreter/agentSession.ts";
 
 test("a drawn bearer is in the language the API routes on, and is never reused", () => {
@@ -31,6 +32,20 @@ test("a drawn bearer is in the language the API routes on, and is never reused",
       drawnValue === "attempt" ? attempt : bearer[drawnValue],
     );
     assert.equal(new Set(values).size, values.length, `${drawnValue} repeated`);
+  }
+});
+
+test("the two halves of a drawn bearer are two draws, so no prefix of it is the rest", () => {
+  const mint = sessionAttemptMint();
+  for (let drawn = 0; drawn < 32; drawn += 1) {
+    const body = mint.mint().bearer.secret.slice(sessionBearerPrefix.length);
+    const half = body.length / 2;
+    assert.equal(body.length % 2, 0);
+    assert.notEqual(
+      body.slice(0, half),
+      body.slice(half),
+      "a bearer whose second half repeats its first is disclosed by any part of it past the middle",
+    );
   }
 });
 

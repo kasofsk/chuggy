@@ -261,6 +261,39 @@ test("a session stands on the site the worker half of one deployment already nam
   }
 });
 
+test("a session pod wears the session's own labels and never the worker's", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(
+      parseProgram({
+        ...environment,
+        CHUG_SCHEDULER_WORKER_LABELS: JSON.stringify({ pod: "worker" }),
+        CHUG_SCHEDULER_SESSION_LABELS: JSON.stringify({ pod: "session" }),
+      }),
+    ),
+  ) as {
+    readonly parsed?: {
+      readonly workers: { readonly podLabels: unknown };
+      readonly sessions: { readonly podLabels: unknown };
+    };
+  };
+  assert.deepEqual(found.parsed?.workers.podLabels, { pod: "worker" });
+  assert.deepEqual(found.parsed?.sessions.podLabels, { pod: "session" });
+});
+
+test("a deployment naming only the worker's labels gives its sessions none", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(
+      parseProgram({
+        ...environment,
+        CHUG_SCHEDULER_WORKER_LABELS: JSON.stringify({ pod: "worker" }),
+      }),
+    ),
+  ) as {
+    readonly parsed?: { readonly sessions: { readonly podLabels: unknown } };
+  };
+  assert.deepEqual(found.parsed?.sessions.podLabels, {});
+});
+
 test("a session bound a deployment states is taken and the rest stay the defaults", async () => {
   const found = JSON.parse(
     await schedulerProgram(
