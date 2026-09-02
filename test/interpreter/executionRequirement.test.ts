@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  executionAgentCapability,
   executionRequirementConfigurationIsValid,
   materializeExecutionRequirement,
 } from "../../src/interpreter/executionRequirement.ts";
@@ -53,23 +54,82 @@ test("legacy release image materializes the identical Linux container default", 
   );
 });
 
-test("a single-agent mode materializes an agent capability instead of an image choice", () => {
+test("a single-agent mode keeps the image its configuration pins", () => {
+  const configuration = {
+    version: 1,
+    image: "pinned-worker@sha256:842a",
+    worker: codexWorker,
+  };
   assert.deepEqual(
-    materializeExecutionRequirement(
-      {
-        version: 1,
-        image: "legacy-worker:v1",
-        worker: codexWorker,
-      },
-      1,
-      "Work",
-    ).value,
-    {
-      mode: "ContainerCapability",
-      operatingSystem: "Linux",
-      architecture: "Amd64",
-      capabilities: ["Agent:Codex"],
+    materializeExecutionRequirement(configuration, 1, "Work").value,
+    container("pinned-worker@sha256:842a"),
+  );
+  assert.equal(
+    executionAgentCapability(configuration),
+    "Agent:Codex",
+    "the agent the pinned image has to provide",
+  );
+});
+
+test("a single-agent mode keeps a pinned image the execution requirements state", () => {
+  const configuration = {
+    version: 1,
+    image: "pinned-worker@sha256:842a",
+    worker: codexWorker,
+    executionRequirements: {
+      platformDefault: container("pinned-worker@sha256:842a"),
+      platformDefaultVersion: 3,
+      taskDefaults: { "2": container("other-worker@sha256:de14") },
     },
+  };
+  assert.equal(executionRequirementConfigurationIsValid(configuration), true);
+  assert.deepEqual(materializeExecutionRequirement(configuration, 2, "Work"), {
+    value: container("other-worker@sha256:de14"),
+    source: "ExplicitTask",
+    platformDefaultVersion: 3,
+  });
+});
+
+test("a platform default naming another image than the legacy field is refused", () => {
+  const stale = {
+    version: 1,
+    image: "pinned-worker@sha256:842a",
+    executionRequirements: {
+      platformDefault: container("other-worker@sha256:de14"),
+      platformDefaultVersion: 1,
+    },
+  };
+  assert.equal(executionRequirementConfigurationIsValid(stale), false);
+  assert.equal(
+    executionRequirementConfigurationIsValid({ ...stale, worker: codexWorker }),
+    false,
+    "naming an agent does not make one image stand for another",
+  );
+  assert.equal(
+    executionRequirementConfigurationIsValid({
+      ...stale,
+      worker: codexWorker,
+      executionRequirements: {
+        platformDefault: container("pinned-worker@sha256:842a"),
+        platformDefaultVersion: 1,
+      },
+    }),
+    true,
+  );
+});
+
+test("a worker that names no single agent needs no capability of an image", () => {
+  assert.equal(
+    executionAgentCapability({ version: 1, image: "worker:v1" }),
+    undefined,
+  );
+  assert.equal(
+    executionAgentCapability({
+      version: 1,
+      image: "worker:v1",
+      worker: { mode: { type: "Pipeline" }, setup: [], files: [] },
+    }),
+    undefined,
   );
 });
 

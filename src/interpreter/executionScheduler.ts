@@ -111,6 +111,7 @@ import type {
 } from "./taskBriefing.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
 import type {
+  ExecutionCapability,
   ExecutionRequirement,
   ExecutionTaskKind,
   RequirementSource,
@@ -370,6 +371,12 @@ export interface LogicalExecution {
   readonly requirement: ExecutionRequirement;
   readonly requirementDigest: string;
   readonly requirementSource: RequirementSource;
+  /**
+   * The agent the configuration this registration pins names, absent where it
+   * names none. It is a constraint on the requirement and never a substitute
+   * for one: a pinned image runs, and this is what that image has to provide.
+   */
+  readonly agentCapability?: ExecutionCapability;
   readonly platformDefaultVersion: number;
   readonly status: ExecutionStatus;
   readonly outcome?: ExecutionOutcome;

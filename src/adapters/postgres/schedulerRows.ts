@@ -53,6 +53,7 @@ import { asResultManifestId } from "../../interpreter/resultManifest.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
   asExecutionRequirement,
+  executionAgentCapability,
   type RequirementSource,
 } from "../../interpreter/executionRequirement.ts";
 
@@ -75,6 +76,7 @@ export interface ExecutionRow {
   readonly cluster: string;
   readonly configuration_revision: string;
   readonly configuration_digest: string;
+  readonly configuration_canonical: string;
   readonly requirement_identity: string;
   readonly requirement_value: string;
   readonly requirement_digest: string;
@@ -116,6 +118,9 @@ export const executionRowFrom = `
   JOIN execution_request_task t
     ON t.tenant = e.tenant AND t.project = e.project
    AND t.request = e.source_request AND t.task = e.task
+  JOIN configuration_revision c
+    ON c.tenant = e.tenant AND c.project = e.project
+   AND c.revision = e.configuration_revision AND c.digest = e.configuration_digest
 `;
 
 /** The columns those reads select, cast so every counter arrives as text to parse. */
@@ -125,7 +130,8 @@ export const executionRowColumns = `
   q.input_bundle, q.input_bundle_digest,
   q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
   q.ticket_version::text AS ticket_version, e.account, e.cluster,
-  e.configuration_revision, e.configuration_digest, e.requirement_identity,
+  e.configuration_revision, e.configuration_digest,
+  c.canonical AS configuration_canonical, e.requirement_identity,
   e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
   e.platform_default_version::text AS platform_default_version, e.status, e.outcome,
   e.result_manifest, e.completion_operation,
@@ -222,6 +228,19 @@ function executionRowSettlement(row: ExecutionRow) {
   };
 }
 
+/**
+ * The agent a registration's pinned configuration names, read from that
+ * configuration rather than copied into the row beside the requirement: the
+ * revision and digest a registration pins cannot move, so the answer cannot
+ * drift from the configuration the requirement was materialized out of.
+ */
+function executionRowAgentCapability(row: ExecutionRow) {
+  const capability = executionAgentCapability(
+    JSON.parse(row.configuration_canonical) as unknown,
+  );
+  return capability === undefined ? {} : { agentCapability: capability };
+}
+
 /** What one joined execution row says about itself. */
 export function executionRowLogical(row: ExecutionRow): LogicalExecution {
   if (row.input_bundle === null || row.input_bundle_digest === null)
@@ -251,6 +270,7 @@ export function executionRowLogical(row: ExecutionRow): LogicalExecution {
     ),
     requirementDigest: row.requirement_digest,
     requirementSource: executionRowRequirementSource(row.requirement_source),
+    ...executionRowAgentCapability(row),
     platformDefaultVersion: projectRowCounter(
       row.platform_default_version,
       "platform default version",

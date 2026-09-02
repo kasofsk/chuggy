@@ -115,6 +115,105 @@ test("an image the site does not admit is a definitive policy denial", async () 
   });
 });
 
+/**
+ * The catalog a deployment grows one release at a time: older entries that
+ * never published a capability, and the newest one that does.
+ */
+const catalogGrown = [
+  "registry.invalid/worker:v1",
+  {
+    image: "registry.invalid/worker:v10",
+    operatingSystem: "Linux" as const,
+    architecture: "Amd64" as const,
+    capabilities: ["Agent:Claude" as const, "Agent:Codex" as const],
+  },
+];
+
+test("a pinned image is what runs when the configuration also names an agent", async () => {
+  const policy = suppliedExecutionPolicy({
+    profiles: new Map([["Work", work]]),
+    imagesAdmitted: catalogGrown,
+  });
+  assert.deepEqual(
+    await policy.profileFor({
+      ...executionOf("Work"),
+      requirement: {
+        mode: "Container",
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        image: "registry.invalid/worker:v10",
+      },
+      agentCapability: "Agent:Claude",
+    }),
+    { resolved: "Profile", profile: work.profile, grant },
+  );
+});
+
+test("a pinned image whose entry does not provide the agent is a policy denial", async () => {
+  const policy = suppliedExecutionPolicy({
+    profiles: new Map([["Work", work]]),
+    imagesAdmitted: [
+      {
+        image: "registry.invalid/claude-only:v1",
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        capabilities: ["Agent:Claude"],
+      },
+    ],
+  });
+  assert.deepEqual(
+    await policy.profileFor({
+      ...executionOf("Work"),
+      requirement: {
+        mode: "Container",
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        image: "registry.invalid/claude-only:v1",
+      },
+      agentCapability: "Agent:Codex",
+    }),
+    { resolved: "Denied", reason: "ExecutionPolicyDenied" },
+  );
+});
+
+test("a pinned image whose entry publishes no capability runs the agent anyway", async () => {
+  const policy = suppliedExecutionPolicy({
+    profiles: new Map([["Work", work]]),
+    imagesAdmitted: admitted,
+  });
+  assert.deepEqual(
+    await policy.profileFor({
+      ...executionOf("Work"),
+      agentCapability: "Agent:Codex",
+    }),
+    { resolved: "Profile", profile: work.profile, grant },
+  );
+});
+
+test("an agent capability resolves to the last admitted runtime that provides it", async () => {
+  const policy = suppliedExecutionPolicy({
+    profiles: new Map([["Work", work]]),
+    imagesAdmitted: catalogGrown,
+  });
+  assert.deepEqual(
+    await policy.profileFor({
+      ...executionOf("Work"),
+      requirement: {
+        mode: "ContainerCapability",
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        capabilities: ["Agent:Claude"],
+      },
+    }),
+    {
+      resolved: "Profile",
+      profile: work.profile,
+      image: "registry.invalid/worker:v10",
+      grant,
+    },
+  );
+});
+
 test("an agent capability resolves to an admitted runtime that provides it", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
@@ -240,6 +339,24 @@ test("a policy admitting no image at all is refused where it is composed", () =>
         imagesAdmitted: [""],
       }),
     Error,
+  );
+});
+
+test("an entry publishing an empty capability list is refused where it is composed", () => {
+  assert.throws(
+    () =>
+      suppliedExecutionPolicy({
+        profiles: new Map([["Work", work]]),
+        imagesAdmitted: [
+          {
+            image: "registry.invalid/worker:v1",
+            operatingSystem: "Linux",
+            architecture: "Amd64",
+            capabilities: [],
+          },
+        ],
+      }),
+    /empty capability list/u,
   );
 });
 

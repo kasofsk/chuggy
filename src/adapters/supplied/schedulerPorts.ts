@@ -21,9 +21,10 @@ import type {
   LogicalExecution,
   ProfileResolved,
 } from "../../interpreter/executionScheduler.ts";
-import type { ExecutionCapability } from "../../interpreter/executionRequirement.ts";
 import type {
   Architecture,
+  CapabilityExecutionRequirement,
+  ExecutionCapability,
   OperatingSystem,
 } from "../../interpreter/executionRequirement.ts";
 import { grantTaskAuthority } from "../../interpreter/taskAuthority.ts";
@@ -45,23 +46,35 @@ export interface SuppliedExecutionPolicyConfig {
   readonly imagesAdmitted: readonly (string | SuppliedRuntime)[];
 }
 
+/**
+ * One image a deployment admits, where omitting the capabilities says nothing
+ * about what its worker provides — admitted before a deployment published
+ * any — and leaves that unknown rather than nothing. An empty list is the
+ * opposite statement, which no deployment means, so it is refused where the
+ * policy is composed.
+ */
 export interface SuppliedRuntime {
   readonly image: string;
   readonly operatingSystem: OperatingSystem;
   readonly architecture: Architecture;
-  readonly capabilities: readonly ExecutionCapability[];
+  readonly capabilities?: readonly ExecutionCapability[];
 }
 
 function suppliedRuntime(runtime: string | SuppliedRuntime): SuppliedRuntime {
   return typeof runtime === "string"
-    ? {
-        image: runtime,
-        operatingSystem: "Linux",
-        architecture: "Amd64",
-        capabilities: ["Agent:Claude"],
-      }
+    ? { image: runtime, operatingSystem: "Linux", architecture: "Amd64" }
     : runtime;
 }
+
+/**
+ * What an entry that declares no capabilities is taken to provide when a
+ * requirement asks for a worker by capability. There is no image to fall back
+ * on in that case, and every image admitted before capabilities were declared
+ * is a Claude worker.
+ */
+const suppliedUndeclaredCapabilities: readonly ExecutionCapability[] = [
+  "Agent:Claude",
+];
 
 /** What a deployment states about the workspace its worker image runs in. */
 export interface SuppliedRuntimeFactsConfig {
@@ -83,6 +96,15 @@ export function checkedSuppliedExecutionPolicyConfig(
     )
   )
     throw new RangeError("supplied execution policy admits an empty image");
+  if (
+    config.imagesAdmitted.some(
+      (runtime) =>
+        typeof runtime !== "string" && runtime.capabilities?.length === 0,
+    )
+  )
+    throw new RangeError(
+      "supplied execution policy publishes an empty capability list",
+    );
   for (const supplied of config.profiles.values()) {
     if (supplied.profile.profile.length === 0)
       throw new RangeError("supplied execution policy names an empty profile");
@@ -93,6 +115,55 @@ export function checkedSuppliedExecutionPolicyConfig(
     grantTaskAuthority(supplied.grant);
   }
   return config;
+}
+
+/**
+ * Whether this site runs the image an execution pins, and whether that image
+ * provides the agent its configuration names. The pin is what runs: an entry
+ * that declares its capabilities is refused for an agent it does not provide,
+ * and an entry that declares none is admitted as the author's choice, because
+ * a deployment that never said what an image provides has not said it does not
+ * provide this.
+ */
+function suppliedPinnedAdmission(
+  runtimes: readonly SuppliedRuntime[],
+  image: string,
+  capability: ExecutionCapability | undefined,
+): { readonly denied: ProfileResolved } | Record<string, never> {
+  const denied = {
+    denied: { resolved: "Denied", reason: "ExecutionPolicyDenied" },
+  } as const;
+  const entry = runtimes.find((runtime) => runtime.image === image);
+  if (entry === undefined) return denied;
+  if (capability === undefined || entry.capabilities === undefined) return {};
+  return entry.capabilities.includes(capability) ? {} : denied;
+}
+
+/**
+ * The admitted entry that serves a requirement stated as capabilities, taken
+ * from the end of the list: a version is bounded text no reader orders, so the
+ * order a deployment wrote its entries in is the only account of which of them
+ * is the most recently admitted.
+ */
+function suppliedCapabilityAdmission(
+  runtimes: readonly SuppliedRuntime[],
+  requirement: CapabilityExecutionRequirement,
+): { readonly denied: ProfileResolved } | { readonly image: string } {
+  const runtime = runtimes.findLast(
+    (candidate) =>
+      candidate.operatingSystem === requirement.operatingSystem &&
+      candidate.architecture === requirement.architecture &&
+      requirement.capabilities.every((capability) =>
+        (candidate.capabilities ?? suppliedUndeclaredCapabilities).includes(
+          capability,
+        ),
+      ),
+  );
+  return runtime === undefined
+    ? {
+        denied: { resolved: "Denied", reason: "RequiredCapabilityUnavailable" },
+      }
+    : { image: runtime.image };
 }
 
 /**
@@ -111,23 +182,13 @@ function suppliedAdmission(
     return {
       denied: { resolved: "Denied", reason: "RequiredCapabilityUnavailable" },
     };
-  if (requirement.mode === "Container")
-    return runtimes.some((runtime) => runtime.image === requirement.image)
-      ? {}
-      : { denied: { resolved: "Denied", reason: "ExecutionPolicyDenied" } };
-  const runtime = runtimes.find(
-    (candidate) =>
-      candidate.operatingSystem === requirement.operatingSystem &&
-      candidate.architecture === requirement.architecture &&
-      requirement.capabilities.every((capability) =>
-        candidate.capabilities.includes(capability),
-      ),
-  );
-  return runtime === undefined
-    ? {
-        denied: { resolved: "Denied", reason: "RequiredCapabilityUnavailable" },
-      }
-    : { image: runtime.image };
+  return requirement.mode === "Container"
+    ? suppliedPinnedAdmission(
+        runtimes,
+        requirement.image,
+        execution.agentCapability,
+      )
+    : suppliedCapabilityAdmission(runtimes, requirement);
 }
 
 /** Admits what this site runs, then resolves the profile it states for this kind of logical task. */
