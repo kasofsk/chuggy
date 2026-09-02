@@ -29,7 +29,7 @@ before(async () => {
   rig = await sessionRigOpen();
 });
 after(async () => {
-  await rig.harness.close();
+  await rig.close();
 });
 
 test("a session opens once, and offering the same one again is already open", async () => {

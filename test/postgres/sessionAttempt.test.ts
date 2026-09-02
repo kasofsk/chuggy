@@ -18,6 +18,8 @@ import type { FencedSessionAttempt } from "../../src/interpreter/sessionSchedule
 import { postgresHarnessNewEpoch, postgresHarnessProject } from "./harness.ts";
 import {
   sessionRigAttempt,
+  sessionRigTurnId,
+  sessionRigTurnState,
   sessionRigBoundless,
   sessionRigOpen,
   sessionRigProject,
@@ -32,7 +34,7 @@ before(async () => {
   rig = await sessionRigOpen();
 });
 after(async () => {
-  await rig.harness.close();
+  await rig.close();
 });
 
 /** A session with one queued turn, which is what makes it launchable at all. */
@@ -264,6 +266,25 @@ test("the read offers only sessions with queued work and no attempt already runn
   assert.equal(await offered(), false);
 });
 
+test("a per-account ceiling binds one account and leaves another project's alone", async () => {
+  const first = await sessionRigProject(rig, "account-first");
+  const lead = await sessionRigSession(rig, first, "account-first");
+  await sessionRigTurn(rig, first, lead, "account-first");
+  await sessionRigAttempt(rig, first, lead, "account-first");
+  const second = await sessionRigProject(rig, "account-second");
+  const elsewhere = await sessionRigSession(rig, second, "account-second");
+  await sessionRigTurn(rig, second, elsewhere, "account-second");
+  const accounts = await rig.harness.query(
+    `SELECT count(DISTINCT account)::text AS accounts FROM agent_session
+      WHERE session = ANY($1::text[])`,
+    [[lead, elsewhere]],
+  );
+  assert.deepEqual(accounts, [{ accounts: "2" }]);
+  await sessionRigAttempt(rig, second, elsewhere, "account-second", {
+    attemptsPerAccountMax: 1,
+  });
+});
+
 test("a per-account ceiling and a cluster ceiling each refuse the launch they bind", async () => {
   const partition = await sessionRigProject(rig, "ceilings");
   const lead = await sessionRigSession(rig, partition, "ceiling-lead");
@@ -315,6 +336,53 @@ test("the server itself admits one live attempt and one claimed turn per session
       [partition.tenant, partition.project, session, held.attempt.attempt],
     ),
     /session_turn_one_claimed/u,
+  );
+});
+
+test("an attempt holding a claimed turn is never reaped as idle, however long it works", async () => {
+  const { partition, session } = await launchable("busy");
+  const held = await sessionRigAttempt(rig, partition, session, "busy");
+  await rig.scheduler.attemptPlaced(
+    held.attempt,
+    asPlacementId("placement-busy"),
+  );
+  const claimed = await rig.plane.claim({
+    secret: held.secret,
+    gen: held.attempt.generation,
+  });
+  assert.notEqual(claimed, undefined);
+  assert.equal(
+    (await sessionRigAttemptState(rig, held.attempt))["idle_unset"],
+    true,
+  );
+  await rig.harness.query(
+    `UPDATE session_attempt SET idle_since=idle_since-interval '1 hour'
+      WHERE attempt=$1`,
+    [held.attempt.attempt],
+  );
+  await rig.scheduler.reapIdleAttempts(rig.epoch, 60, sessionRigBoundless);
+  const working = await sessionRigAttemptState(rig, held.attempt);
+  assert.equal(working["state"], "Running");
+  assert.equal(working["evidence"], null);
+  if (claimed !== undefined)
+    assert.equal(
+      (await sessionRigTurnState(rig, partition, session, claimed.turn))[
+        "state"
+      ],
+      "Claimed",
+    );
+  assert.equal(
+    await rig.plane.answer({
+      secret: held.secret,
+      gen: held.attempt.generation,
+      turn: claimed?.turn ?? sessionRigTurnId("absent"),
+      result: "answered at last",
+    }),
+    "Answered",
+  );
+  assert.equal(
+    (await sessionRigAttemptState(rig, held.attempt))["idle_unset"],
+    false,
   );
 });
 

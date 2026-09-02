@@ -15,12 +15,12 @@
  */
 
 import { postgresAgentSessions } from "../adapters/postgres/agentSession.ts";
+import { postgresPool } from "../adapters/postgres/pool.ts";
 import type {
   AgentSessionOpening,
   AgentSessionStore,
   SessionTurnOffering,
-} from "../adapters/postgres/agentSession.ts";
-import { postgresPool } from "../adapters/postgres/pool.ts";
+} from "../interpreter/agentSession.ts";
 import {
   allSessionCapabilities,
   allSessionKinds,
@@ -32,7 +32,7 @@ import {
   type SessionKind,
   type SessionTurnInputKind,
 } from "../interpreter/agentSession.ts";
-import { asPrincipal } from "../interpreter/nativeWeb.ts";
+import { asPrincipal } from "../interpreter/principal.ts";
 import { asProjectId, asTenantId } from "../interpreter/projectStore.ts";
 
 const variables = {

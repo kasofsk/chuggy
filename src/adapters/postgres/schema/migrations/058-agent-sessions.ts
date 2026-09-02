@@ -31,6 +31,7 @@
  */
 
 import {
+  nativeHttpPageItemsMax,
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStoreBytesMax,
@@ -108,6 +109,15 @@ const currentEpoch = `(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LI
 const liveStates = "('Placing','Running')";
 
 const digestPattern = `^[0-9a-f]{${artifactDigestChars}}$`;
+
+/**
+ * One row past the page the worker plane may answer with. A store holding more
+ * streams than that is then visible to the plane as an overflow it refuses,
+ * where a listing capped at the page itself would be silently short of the
+ * truth — and a resume that materialises only some of a lead's subagent
+ * histories is the hole this store exists to prevent.
+ */
+const sessionStreamsAnswered = nativeHttpPageItemsMax + 1;
 
 /** The bound to which a session's key columns are matched against one function's arguments. */
 const sessionArguments =
@@ -719,18 +729,20 @@ const answerSignature = "text,bigint,text,text,bigint,bigint";
 const failSignature = "text,bigint,text,text";
 const storeBatchSignature = "text,bigint,text,bigint,text,bigint,bigint";
 const storeReadSignature = "text,bigint,text,bigint,bigint";
-const streamListSignature = "text,bigint";
+const streamListSignature = "text,bigint,bigint";
 
 /** The eleven boundaries a session pod reaches through the worker plane. */
 const sessionPlane = [
   `CREATE FUNCTION ${sessionAttemptBindingFunction}(
      in_secret_digest text,in_generation bigint)
-     RETURNS TABLE(tenant text,project text,session text,attempt text)
+     RETURNS TABLE(tenant text,project text,session text,attempt text,
+                   kind text,principal text)
      LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
      DECLARE bound record;
      BEGIN
        SELECT a.tenant,a.project,a.session,a.attempt,a.generation,
-              a.state AS attempt_state,a.recovery_epoch,s.state AS session_state
+              a.state AS attempt_state,a.recovery_epoch,s.state AS session_state,
+              s.kind,s.principal
          INTO bound FROM session_attempt a
          JOIN agent_session s ON s.tenant=a.tenant AND s.project=a.project
                              AND s.session=a.session
@@ -740,7 +752,8 @@ const sessionPlane = [
           OR bound.recovery_epoch<>${currentEpoch} THEN
          RETURN;
        END IF;
-       RETURN QUERY SELECT bound.tenant,bound.project,bound.session,bound.attempt;
+       RETURN QUERY SELECT bound.tenant,bound.project,bound.session,bound.attempt,
+                           bound.kind,bound.principal;
      END $$`,
   `CREATE FUNCTION ${sessionAttemptReadFunction}(in_secret_digest text)
      RETURNS TABLE(tenant text,project text,session text,attempt text,generation bigint,
@@ -951,7 +964,7 @@ const sessionPlane = [
                     ${sessionStorePageBatchesMax})
      $$`,
   `CREATE FUNCTION ${sessionStreamListFunction}(
-     in_secret_digest text,in_generation bigint)
+     in_secret_digest text,in_generation bigint,in_max bigint)
      RETURNS TABLE(stream text,batches bigint)
      LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
        SELECT b.stream,count(*)::bigint
@@ -959,6 +972,8 @@ const sessionPlane = [
          JOIN session_store_batch b ON b.tenant=k.tenant AND b.project=k.project
                                    AND b.session=k.session
         GROUP BY b.stream ORDER BY b.stream
+        LIMIT least(coalesce(in_max,${sessionStreamsAnswered}),
+                    ${sessionStreamsAnswered})
      $$`,
 ];
 

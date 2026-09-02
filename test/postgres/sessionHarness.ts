@@ -3,6 +3,12 @@
  * migrated schema, a project to hold sessions, and identities no other case is
  * using.
  *
+ * EACH STORE STANDS ON ITS OWN ROLE'S POOL. The scheduler's boundaries are
+ * granted to `chuggy_scheduler` and the plane's to `chuggy_worker_plane`, and a
+ * suite that drove both as the migration owner would be green over a query that
+ * reads a table neither role may touch — which is a defect only the deployed
+ * credential ever meets.
+ *
  * BOUNDS ARE THE CASE'S ARGUMENT AND NOT A FIXTURE'S. A ceiling is a parameter
  * of the boundary being driven, so a case that is about one names it and every
  * other case takes the wide default here — the suites of one worker share a
@@ -25,7 +31,8 @@ import {
   type SessionKind,
   type SessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
-import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
+import type { AgentSessionStore } from "../../src/interpreter/agentSession.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type {
   Partition,
   RecoveryEpoch,
@@ -34,18 +41,20 @@ import type {
   FencedSessionAttempt,
   SessionSchedulerStore,
 } from "../../src/interpreter/sessionScheduler.ts";
-import {
-  postgresAgentSessions,
-  type AgentSessionStore,
-} from "../../src/adapters/postgres/agentSession.ts";
+import { postgresAgentSessions } from "../../src/adapters/postgres/agentSession.ts";
 import {
   postgresSessionPlane,
   type SessionPlaneStore,
 } from "../../src/adapters/postgres/sessionPlane.ts";
 import { postgresSessionScheduler } from "../../src/adapters/postgres/sessionScheduler.ts";
 import {
+  schedulerRole,
+  workerPlaneRole,
+} from "../../src/adapters/postgres/schema.ts";
+import {
   postgresHarnessOpen,
   postgresHarnessProject,
+  postgresHarnessRolePool,
   type PostgresHarness,
 } from "./harness.ts";
 
@@ -62,6 +71,9 @@ export interface SessionRig {
   readonly scheduler: SessionSchedulerStore;
   readonly plane: SessionPlaneStore;
   readonly epoch: RecoveryEpoch;
+
+  /** Gives back the harness and the two role-scoped pools beneath it. */
+  readonly close: () => Promise<void>;
 }
 
 /** One live attempt and the bearer secret only its launcher was given. */
@@ -73,12 +85,19 @@ export interface SessionRigAttempt {
 
 export async function sessionRigOpen(): Promise<SessionRig> {
   const harness = await postgresHarnessOpen();
+  const scheduling = postgresHarnessRolePool(schedulerRole);
+  const plane = postgresHarnessRolePool(workerPlaneRole);
   return {
     harness,
     sessions: postgresAgentSessions(harness.pool),
-    scheduler: postgresSessionScheduler(harness.pool),
-    plane: postgresSessionPlane(harness.pool),
+    scheduler: postgresSessionScheduler(scheduling),
+    plane: postgresSessionPlane(plane),
     epoch: await harness.store.currentRecoveryEpoch(),
+    close: async () => {
+      await plane.end();
+      await scheduling.end();
+      await harness.close();
+    },
   };
 }
 

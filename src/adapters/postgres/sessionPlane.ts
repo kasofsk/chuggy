@@ -14,6 +14,8 @@
  */
 
 import { createHash } from "node:crypto";
+
+import { nativeHttpPageItemsMax } from "../../contract/http.ts";
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
@@ -32,7 +34,7 @@ import {
   type SessionTurnId,
   type SessionTurnInputKind,
 } from "../../interpreter/agentSession.ts";
-import { asPrincipal } from "../../interpreter/nativeWeb.ts";
+import { asPrincipal } from "../../interpreter/principal.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { SessionAttemptEvidence } from "../../interpreter/sessionScheduler.ts";
@@ -134,7 +136,7 @@ export interface SessionPlaneStore {
     secret: SessionBearerSecret,
   ): Promise<SessionAttemptAuthority | undefined>;
 
-  /** The partition, session and attempt one live bearer names, or nothing. */
+  /** Who one live bearer resolves to, or nothing where it resolves to nobody. */
   binding(fence: SessionPlaneFence): Promise<SessionBearerIdentity | undefined>;
 
   heartbeat(
@@ -164,8 +166,18 @@ export interface SessionPlaneStore {
     page: SessionStorePage,
   ): Promise<readonly SessionStoreBatchStanding[]>;
 
-  streams(fence: SessionPlaneFence): Promise<readonly SessionStreamStanding[]>;
+  /**
+   * The streams one session's store holds. `streamsMax` defaults to one past
+   * the page the plane may answer with, so a store that overflows is refused
+   * rather than silently listed short.
+   */
+  streams(
+    fence: SessionPlaneFence & { readonly streamsMax?: number },
+  ): Promise<readonly SessionStreamStanding[]>;
 }
+
+/** One row past the page the plane may answer with, which is the listing's own bound. */
+const sessionStreamsAnswered = nativeHttpPageItemsMax + 1;
 
 /** The digest a session bearer is keyed by, which is all the database holds of it. */
 function sessionSecretDigest(secret: SessionBearerSecret): string {
@@ -179,15 +191,6 @@ interface SessionIdentityRow {
   readonly session: string | null;
   readonly kind: string | null;
   readonly principal: string | null;
-}
-
-/** The same identity where a join to the session row makes every column certain. */
-interface SessionBoundRow {
-  readonly tenant: string;
-  readonly project: string;
-  readonly session: string;
-  readonly kind: string;
-  readonly principal: string;
 }
 
 /** One `read_session_attempt` row, with the liveness the server computed. */
@@ -362,12 +365,10 @@ async function sessionPlaneBinding(
   secret: SessionBearerSecret,
   generation: number,
 ): Promise<SessionBearerIdentity | undefined> {
-  const found = await pool.query<SessionBoundRow>(
-    sql`SELECT k.tenant,k.project,k.session,s.kind,s.principal
+  const found = await pool.query<SessionIdentityRow>(
+    sql`SELECT tenant,project,session,kind,principal
           FROM session_attempt_binding(
-                 ${sessionSecretDigest(secret)},${generation}) k
-          JOIN agent_session s ON s.tenant=k.tenant AND s.project=k.project
-                              AND s.session=k.session`,
+                 ${sessionSecretDigest(secret)},${generation})`,
   );
   const row = found.rows[0];
   return row === undefined ? undefined : sessionIdentityOf(row);
@@ -403,6 +404,7 @@ async function sessionPlaneStreams(
   pool: pg.Pool,
   secret: SessionBearerSecret,
   generation: number,
+  streamsMax: number,
 ): Promise<readonly SessionStreamStanding[]> {
   const found = await pool.query<{
     stream: string | null;
@@ -410,7 +412,7 @@ async function sessionPlaneStreams(
   }>(
     sql`SELECT stream,batches::text AS batches
           FROM list_session_streams(
-            ${sessionSecretDigest(secret)},${generation})`,
+            ${sessionSecretDigest(secret)},${generation},${streamsMax})`,
   );
   return found.rows.map((row) => ({
     stream: sessionRowText(row.stream, "stream"),
@@ -480,7 +482,13 @@ export function postgresSessionPlane(pool: pg.Pool): SessionPlaneStore {
         limit: page.limit,
       }),
 
-    streams: (fence) => sessionPlaneStreams(pool, fence.secret, fence.gen),
+    streams: (fence) =>
+      sessionPlaneStreams(
+        pool,
+        fence.secret,
+        fence.gen,
+        fence.streamsMax ?? sessionStreamsAnswered,
+      ),
   };
 }
 

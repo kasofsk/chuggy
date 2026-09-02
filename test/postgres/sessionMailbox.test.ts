@@ -29,7 +29,7 @@ before(async () => {
   rig = await sessionRigOpen();
 });
 after(async () => {
-  await rig.harness.close();
+  await rig.close();
 });
 
 /** A session with two queued turns and a live attempt holding its bearer. */
@@ -253,7 +253,7 @@ test("the runtime's session id is bound once, and a second one is a conflict", a
   );
 });
 
-test("the bearer names the partition and the attempt it was minted for", async () => {
+test("the bearer resolves to the partition, session and principal it was minted for", async () => {
   const { partition, session, held } = await mailbox("binding");
   await rig.scheduler.attemptPlaced(
     held.attempt,
@@ -265,6 +265,8 @@ test("the bearer names the partition and the attempt it was minted for", async (
   });
   assert.deepEqual(bound?.partition, partition);
   assert.equal(bound?.session, session);
+  assert.equal(bound?.kind, "Lead");
+  assert.equal(bound?.principal, "principal-binding");
   assert.equal(
     await rig.plane.binding({ secret: held.secret, gen: 99 }),
     undefined,

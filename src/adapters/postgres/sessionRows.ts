@@ -30,7 +30,7 @@ import {
   type SessionTurnInputKind,
   type SessionTurnState,
 } from "../../interpreter/agentSession.ts";
-import { asPrincipal } from "../../interpreter/nativeWeb.ts";
+import { asPrincipal } from "../../interpreter/principal.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import {

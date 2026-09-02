@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
 import {
+  nativeHttpPageItemsMax,
   sessionStoreBatchBytesMax,
   sessionStoreBytesMax,
   sessionStorePageBatchesMax,
@@ -32,7 +33,7 @@ before(async () => {
   rig = await sessionRigOpen();
 });
 after(async () => {
-  await rig.harness.close();
+  await rig.close();
 });
 
 /** A digest of the right shape, distinct for each thing a case names. */
@@ -246,5 +247,37 @@ test("a page of one stream is bounded, and the streams a session holds are count
   assert.deepEqual(
     await rig.plane.streams({ secret: held.secret, gen: 99 }),
     [],
+  );
+});
+
+test("the listing is bounded one past the page the plane may answer with", async () => {
+  const { partition, session, held } = await storing("many-streams");
+  const opened = nativeHttpPageItemsMax + 5;
+  await rig.harness.query(
+    `INSERT INTO session_store_batch
+       (tenant,project,session,stream,batch,digest,bytes,events)
+     SELECT $1,$2,$3,'runtime-'||opening,1,
+            encode(sha256(convert_to(opening::text,'UTF8')),'hex'),1,1
+       FROM generate_series(1,$4) AS opening`,
+    [partition.tenant, partition.project, session, opened],
+  );
+  assert.equal(
+    (
+      await rig.plane.streams({
+        secret: held.secret,
+        gen: held.attempt.generation,
+      })
+    ).length,
+    nativeHttpPageItemsMax + 1,
+  );
+  assert.equal(
+    (
+      await rig.plane.streams({
+        secret: held.secret,
+        gen: held.attempt.generation,
+        streamsMax: 3,
+      })
+    ).length,
+    3,
   );
 });

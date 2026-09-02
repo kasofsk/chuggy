@@ -21,6 +21,7 @@ import {
   postgresHarnessSubmission,
   type PostgresHarness,
 } from "./harness.ts";
+import { id } from "../domain/fixtures.ts";
 import {
   sessionRigOpen,
   sessionRigProject,
@@ -35,7 +36,7 @@ before(async () => {
   harness = rig.harness;
 });
 after(async () => {
-  await harness.close();
+  await rig.close();
 });
 
 /** The session an operation was submitted through, as the row holds it. */
@@ -109,6 +110,35 @@ test("an operation may not name a session of another project", async () => {
       viaSession: session,
     }),
     /operation_via_session_is_a_session/u,
+  );
+});
+
+test("a dispatch submitted through a session records it too, by the other door", async () => {
+  const partition = await sessionRigProject(rig, "dispatched");
+  const session = await sessionRigSession(rig, partition, "dispatched", {
+    kind: "Thread",
+    principal: "member-dispatched",
+  });
+  const submission = postgresHarnessSubmission(partition, "dispatched");
+  const dispatch = {
+    ...submission,
+    command: {
+      version: 1,
+      command: "ManualDispatch",
+      ticket: id(1),
+      expectedTicketVersion: 1,
+    } as const,
+    viaSession: session,
+  };
+  assert.equal((await harness.inbox.accept(dispatch)).accepted, "Accepted");
+  assert.equal(await storedSession(partition, submission.operation), session);
+  assert.deepEqual(
+    await harness.query(
+      `SELECT command_tag FROM operation
+        WHERE tenant=$1 AND project=$2 AND operation=$3`,
+      [partition.tenant, partition.project, submission.operation],
+    ),
+    [{ command_tag: "ManualDispatch" }],
   );
 });
 

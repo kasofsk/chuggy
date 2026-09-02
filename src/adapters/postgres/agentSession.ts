@@ -11,90 +11,27 @@
  * takes them from the project's own capacity account, because a caller naming
  * them could name another project's.
  *
- * THE PORTS ARE DECLARED HERE RATHER THAN IN THE INTERPRETER because the plan
- * this slice implements gives these three doors a SQL signature and no
- * TypeScript shape, and inventing one in a module another unit owns would be
- * two units editing one file. A later slice that needs a second implementation
- * is what moves them.
+ * THE PORTS ARE `src/interpreter/agentSession.ts`'S, and this module is one
+ * implementation of them: the inner layer declares what a session authority
+ * answers and the outer says how PostgreSQL answers it.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
-import {
-  type SessionId,
-  type SessionKind,
-  type SessionTurn,
-  type SessionTurnInputKind,
-  type AgentSession,
-  type SessionCapability,
+import type {
+  AgentSession,
+  AgentSessionOpened,
+  AgentSessionOpening,
+  AgentSessionStore,
+  SessionId,
+  SessionTurn,
+  SessionTurnEnqueued,
+  SessionTurnOffering,
 } from "../../interpreter/agentSession.ts";
-import type { Principal } from "../../interpreter/nativeWeb.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { projectRowCounter } from "./rows.ts";
 import { agentSessionRowOf, sessionTurnRowOf } from "./sessionRows.ts";
-
-/** What opening a session answers: it is open now, it already was, or it is not this one. */
-export type AgentSessionOpened = "Opened" | "AlreadyOpen" | "Conflict";
-
-/** What one session is opened as, which is everything the row carries that is not derived. */
-export interface AgentSessionOpening {
-  readonly partition: Partition;
-  readonly session: SessionId;
-  readonly kind: SessionKind;
-  readonly principal: Principal;
-  readonly parent?: SessionId;
-  readonly capabilities: readonly SessionCapability[];
-  readonly credentialSlot: string;
-}
-
-/** One turn offered to a session's mailbox. */
-export interface SessionTurnOffering {
-  readonly partition: Partition;
-  readonly session: SessionId;
-  readonly turn: SessionTurn["turn"];
-  readonly inputKind: SessionTurnInputKind;
-  readonly input: string;
-}
-
-/** What enqueuing answered, carrying the ordinal only where the turn has one. */
-export type SessionTurnEnqueued =
-  | {
-      readonly enqueued: "Enqueued" | "AlreadyEnqueued";
-      readonly ordinal: number;
-    }
-  | { readonly enqueued: "Closed" | "Backlogged" };
-
-/** Who the pool connected as, and whether that identity may open a session at all. */
-export interface AgentSessionWriter {
-  readonly role: string;
-  readonly canExecute: boolean;
-}
-
-/** The durable session authority a provisioning command drives. */
-export interface AgentSessionStore {
-  /** The privilege the three doors need, asked of the server rather than of a role name. */
-  writer(): Promise<AgentSessionWriter>;
-
-  open(opening: AgentSessionOpening): Promise<AgentSessionOpened>;
-
-  /** Closes one open session, abandoning every turn it had not finished. */
-  close(partition: Partition, session: SessionId): Promise<boolean>;
-
-  enqueue(offering: SessionTurnOffering): Promise<SessionTurnEnqueued>;
-
-  session(
-    partition: Partition,
-    session: SessionId,
-  ): Promise<AgentSession | undefined>;
-
-  /** The session's mailbox in ordinal order, at most `turnsMax` of it. */
-  turns(
-    partition: Partition,
-    session: SessionId,
-    turnsMax: number,
-  ): Promise<readonly SessionTurn[]>;
-}
 
 /**
  * The two relations read straight rather than through a boundary, where the

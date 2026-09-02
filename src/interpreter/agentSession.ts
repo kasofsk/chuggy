@@ -215,6 +215,73 @@ export const allSessionTurnFailures = [
 ] as const;
 export type SessionTurnFailure = (typeof allSessionTurnFailures)[number];
 
+/**
+ * The durable session authority a provisioning command drives. Its three doors
+ * are granted to the boundary owner alone, because a session is an authority to
+ * act as a principal and minting one is provisioning rather than work.
+ */
+/** What opening a session answers: it is open now, it already was, or it is not this one. */
+export type AgentSessionOpened = "Opened" | "AlreadyOpen" | "Conflict";
+
+/** What one session is opened as, which is everything the row carries that is not derived. */
+export interface AgentSessionOpening {
+  readonly partition: Partition;
+  readonly session: SessionId;
+  readonly kind: SessionKind;
+  readonly principal: Principal;
+  readonly parent?: SessionId;
+  readonly capabilities: readonly SessionCapability[];
+  readonly credentialSlot: string;
+}
+
+/** One turn offered to a session's mailbox. */
+export interface SessionTurnOffering {
+  readonly partition: Partition;
+  readonly session: SessionId;
+  readonly turn: SessionTurn["turn"];
+  readonly inputKind: SessionTurnInputKind;
+  readonly input: string;
+}
+
+/** What enqueuing answered, carrying the ordinal only where the turn has one. */
+export type SessionTurnEnqueued =
+  | {
+      readonly enqueued: "Enqueued" | "AlreadyEnqueued";
+      readonly ordinal: number;
+    }
+  | { readonly enqueued: "Closed" | "Backlogged" };
+
+/** Who the pool connected as, and whether that identity may open a session at all. */
+export interface AgentSessionWriter {
+  readonly role: string;
+  readonly canExecute: boolean;
+}
+
+/** The durable session authority a provisioning command drives. */
+export interface AgentSessionStore {
+  /** The privilege the three doors need, asked of the server rather than of a role name. */
+  writer(): Promise<AgentSessionWriter>;
+
+  open(opening: AgentSessionOpening): Promise<AgentSessionOpened>;
+
+  /** Closes one open session, abandoning every turn it had not finished. */
+  close(partition: Partition, session: SessionId): Promise<boolean>;
+
+  enqueue(offering: SessionTurnOffering): Promise<SessionTurnEnqueued>;
+
+  session(
+    partition: Partition,
+    session: SessionId,
+  ): Promise<AgentSession | undefined>;
+
+  /** The session's mailbox in ordinal order, at most `turnsMax` of it. */
+  turns(
+    partition: Partition,
+    session: SessionId,
+    turnsMax: number,
+  ): Promise<readonly SessionTurn[]>;
+}
+
 /** Whose authority one session bearer carries, and which session carried it. */
 export interface SessionBearerIdentity {
   readonly partition: Partition;
