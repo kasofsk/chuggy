@@ -19,7 +19,9 @@ import {
   asAuthoritySubject,
   asOperationId,
   type OperationInbox,
+  type Submission,
 } from "../../src/interpreter/operationInbox.ts";
+import { asSessionId } from "../../src/interpreter/agentSession.ts";
 import {
   asProjectId,
   asRecoveryEpoch,
@@ -871,4 +873,54 @@ test("an outage refuses the whole transcript page rather than marking it", async
     0,
   );
   assert.deepEqual(page, { read: "Unavailable", retryAfterSeconds: 5 });
+});
+
+/** The inbox as this file's other cases never use it: keeping what it was offered. */
+function submittingBoundary(): {
+  readonly web: NativeWeb;
+  readonly accepted: Submission[];
+} {
+  const accepted: Submission[] = [];
+  const inbox: OperationInbox = {
+    accept: (submission) => {
+      accepted.push(submission);
+      return Promise.resolve({ accepted: "InvalidCommand" });
+    },
+    cancel: () => Promise.resolve({ cancelled: "Unknown" }),
+    operation: () => Promise.resolve(undefined),
+  };
+  return {
+    web: nativeWeb(
+      {
+        authorize: () => Promise.resolve(authority),
+      },
+      readStore([]),
+      inbox,
+      authoringStore([]),
+      {
+        read: () =>
+          Promise.resolve({ result: "Events", cursor: 0, events: [] }),
+      },
+      openExecutionBacklogGuard,
+    ),
+    accepted,
+  };
+}
+
+test("the session a submission came through reaches the inbox, and the authority is untouched", async () => {
+  const session = asSessionId("session-one");
+  const { web, accepted } = submittingBoundary();
+  await web.submit(principal, {
+    ...submissionOf(dispatchDecision),
+    viaSession: session,
+  });
+  await web.submit(principal, submissionOf(dispatchDecision));
+  assert.deepEqual(
+    accepted.map((submission) => submission.viaSession),
+    [session, undefined],
+  );
+  assert.deepEqual(
+    accepted.map((submission) => submission.authority),
+    [authority, authority],
+  );
 });

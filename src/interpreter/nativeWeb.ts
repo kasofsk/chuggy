@@ -8,6 +8,8 @@
  * project actor nor owns a database transaction.
  */
 
+import type { SessionId } from "./agentSession.ts";
+import type { Principal } from "./principal.ts";
 import type { EscalationReason, ResumePoint } from "../contract/rosters.ts";
 import { phaseTags, type Phase } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
@@ -100,28 +102,7 @@ import {
   type RepositoryConfigurationImportPorts,
 } from "./repositoryConfiguration.ts";
 export { asPublicInstant, type PublicInstant } from "./publicResource.ts";
-
-declare const principalBrand: unique symbol;
-
-/** An authenticated session subject, opaque to the application boundary. */
-export type Principal = string & { readonly [principalBrand]: true };
-
-export function asPrincipal(value: string): Principal {
-  if (value.length === 0)
-    throw new RangeError("principal: an identity is empty");
-  return value as Principal;
-}
-
-/**
- * The principal an OIDC identity resolves to, length-prefixing the issuer so
- * that no issuer and subject pair encodes to the same string as another's.
- * Every side that names an identity derives it here.
- */
-export function oidcPrincipal(issuer: string, subject: string): Principal {
-  if (issuer.length === 0) throw new RangeError("OIDC issuer is empty");
-  if (subject.length === 0) throw new RangeError("OIDC subject is empty");
-  return asPrincipal(`${String(issuer.length)}:${issuer}${subject}`);
-}
+export { asPrincipal, oidcPrincipal, type Principal } from "./principal.ts";
 
 /** Every project access kind, and the declaration `ProjectAccessKind` derives from, so narrowing a supplied kind has one list to check. */
 export const allProjectAccessKinds = [
@@ -398,6 +379,8 @@ export interface NativeSubmission {
   readonly operation: OperationId;
   readonly key: IdempotencyKey;
   readonly command: TicketCommand;
+  /** The session a command came through, where a session bearer is what carried it. */
+  readonly viaSession?: SessionId;
 }
 
 export type NativeSubmissionResult =

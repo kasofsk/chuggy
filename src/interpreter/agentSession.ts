@@ -37,7 +37,7 @@
 
 import { sessionStoreStreamCharsMax } from "../contract/http.ts";
 import { asBoundedText } from "./boundedText.ts";
-import type { Principal } from "./nativeWeb.ts";
+import type { Principal } from "./principal.ts";
 import type { Partition } from "./projectStore.ts";
 import type { CapacityAccountId, ClusterId } from "./schedulerIdentity.ts";
 

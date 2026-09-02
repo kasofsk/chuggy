@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import net from "node:net";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
@@ -31,6 +32,11 @@ import {
   asTicketId,
 } from "../../src/domain/ids.ts";
 import { encodeExecutionCursor } from "../../src/adapters/http/contract.ts";
+import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
+import {
+  asSessionId,
+  sessionBearerPrefix,
+} from "../../src/interpreter/agentSession.ts";
 
 const authority = {
   installationAuthority: () =>
@@ -304,7 +310,11 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
       return Promise.resolve({ projects: [] });
     },
     submit: (_principal, submission) => {
-      calls.push(`submit:${submission.command.command}`);
+      const via =
+        submission.viaSession === undefined
+          ? ""
+          : `:via:${String(submission.viaSession)}`;
+      calls.push(`submit:${submission.command.command}${via}`);
       return Promise.resolve({
         result: "Authorized",
         acceptance: { accepted: "InvalidCommand" },
@@ -1218,4 +1228,105 @@ test("only a token this server rejected carries the invalid-token challenge", as
   const offered = await app.inject({ url: "/api/v1/projects" });
   assert.equal(offered.statusCode, 401);
   assert.equal(offered.headers["www-authenticate"], "Bearer");
+});
+
+/** A secret minted the way the scheduler mints one, so the routing under test is the real one. */
+function sessionSecret(): string {
+  return `${sessionBearerPrefix}${randomUUID()}${randomUUID()}`;
+}
+
+const liveSession = asSessionId("session-one");
+
+/**
+ * The server as it is composed once a session authority stands beside the
+ * issuer, which is the only arrangement in which either bearer kind is routed.
+ */
+function twoBearerAppOf(calls: string[], known: ReadonlySet<string>) {
+  return createNativeHttpApp(
+    fakeWeb(calls),
+    twoBearerAuthentication(
+      {
+        authenticateBearer: (token) => {
+          calls.push(`oidc:${token}`);
+          return Promise.resolve(
+            token === "valid"
+              ? {
+                  authenticated: "Bearer" as const,
+                  bearer: { principal: asPrincipal("issuer subject") },
+                }
+              : { authenticated: "InvalidToken" as const },
+          );
+        },
+      },
+      {
+        authenticate: (secret) => {
+          calls.push("session-authority");
+          return Promise.resolve(
+            known.has(secret)
+              ? {
+                  partition: {
+                    tenant: asTenantId("tenant"),
+                    project: asProjectId("project"),
+                  },
+                  session: liveSession,
+                  kind: "Thread" as const,
+                  principal: asPrincipal("issuer subject"),
+                }
+              : undefined,
+          );
+        },
+      },
+    ),
+    { ready: () => Promise.resolve(true) },
+    authority,
+  );
+}
+
+/** One submission, offered under whichever bearer a case is about. */
+function submissionUnder(token: string) {
+  return {
+    method: "POST" as const,
+    url: "/api/v1/tenants/tenant/projects/project/operations",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "idempotency-key": "key",
+      "content-type": "application/vnd.chuggy.v1+json",
+    },
+    body: {
+      operation: "operation",
+      mutation: { mutation: "ResumeTicket", ticket: 1 },
+    },
+  };
+}
+
+test("an OIDC bearer still authenticates, and stamps no session", async () => {
+  const calls: string[] = [];
+  await using app = twoBearerAppOf(calls, new Set());
+  const found = await app.inject(submissionUnder("valid"));
+  assert.equal(found.statusCode, 422);
+  assert.deepEqual(calls, ["oidc:valid", "submit:Decide"]);
+});
+
+test("a session bearer submits as its principal, and the record says which session", async () => {
+  const calls: string[] = [];
+  const secret = sessionSecret();
+  await using app = twoBearerAppOf(calls, new Set([secret]));
+  const found = await app.inject(submissionUnder(secret));
+  assert.equal(found.statusCode, 422);
+  assert.deepEqual(calls, [
+    "session-authority",
+    `submit:Decide:via:${String(liveSession)}`,
+  ]);
+});
+
+test("a session bearer no live row answers is unauthenticated, not forbidden", async () => {
+  const calls: string[] = [];
+  await using app = twoBearerAppOf(calls, new Set());
+  const found = await app.inject(submissionUnder(sessionSecret()));
+  assert.equal(found.statusCode, 401);
+  assert.equal(
+    found.headers["www-authenticate"],
+    'Bearer error="invalid_token"',
+  );
+  assert.deepEqual(calls, ["session-authority"]);
 });

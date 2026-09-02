@@ -5,6 +5,7 @@ import fastify, {
 } from "fastify";
 
 import type { TicketId } from "../../domain/ids.ts";
+import type { SessionId } from "../../interpreter/agentSession.ts";
 import type { InstallationAuthorityRead } from "../../interpreter/installationAuthority.ts";
 import { phaseTags, type Phase } from "../../domain/generated/modelTypes.ts";
 import {
@@ -89,6 +90,8 @@ import {
 export interface AuthenticatedBearer {
   readonly principal: Principal;
   readonly expiresAtMs?: number | undefined;
+  /** The session a command came through, where a session bearer is what carried it. */
+  readonly viaSession?: SessionId;
 }
 
 /**
@@ -241,6 +244,7 @@ declare module "fastify" {
   interface FastifyRequest {
     principal?: Principal;
     bearerExpiresAtMs?: number;
+    viaSession?: SessionId;
   }
 }
 
@@ -290,6 +294,7 @@ function registerAuthentication(
 ): void {
   app.decorateRequest("principal");
   app.decorateRequest("bearerExpiresAtMs");
+  app.decorateRequest("viaSession");
   app.addHook("preHandler", async (request, reply) => {
     if (request.routeOptions.config.public === true) return;
     const token = bearer(request.headers.authorization);
@@ -311,6 +316,8 @@ function registerAuthentication(
     request.principal = decided.bearer.principal;
     if (decided.bearer.expiresAtMs !== undefined)
       request.bearerExpiresAtMs = decided.bearer.expiresAtMs;
+    if (decided.bearer.viaSession !== undefined)
+      request.viaSession = decided.bearer.viaSession;
   });
 }
 
@@ -790,9 +797,11 @@ function registerOperations(app: FastifyInstance, web: InitialNativeWeb): void {
         key,
         fields["mutation"],
       );
+      const session = request.viaSession;
       const result = await web.submit(principalOf(request), {
         partition,
         ...parsed,
+        ...(session === undefined ? {} : { viaSession: session }),
       });
       send(reply, submissionResponse(partition, result));
     },
