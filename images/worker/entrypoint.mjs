@@ -394,6 +394,33 @@ export async function reportWorkerFailure(
   await evidence?.ended();
 }
 
+/**
+ * Which mode the pod was launched in. Exactly one task document must be set:
+ * neither leaves the pod with nothing to do, and both would let a launcher's
+ * environment decide which of two authorities the pod acts under.
+ */
+export function workerMode(environment) {
+  const named = (name) => {
+    const value = environment[name];
+    return typeof value === "string" && value.length > 0;
+  };
+  const work = named("CHUG_WORKER_TASK");
+  const session = named("CHUG_SESSION_TASK");
+  if (work && session)
+    throw new Error(
+      "a pod is launched with CHUG_WORKER_TASK or CHUG_SESSION_TASK, never both",
+    );
+  if (work) return "Work";
+  if (session) return "Session";
+  throw new Error("a pod needs one of CHUG_WORKER_TASK and CHUG_SESSION_TASK");
+}
+
+async function run() {
+  if (workerMode(process.env) === "Work") return main();
+  const { sessionMain } = await import("./session.mjs");
+  process.exitCode = await sessionMain();
+}
+
 async function reportActiveFailure(failure) {
   const message = scrubbed(
     failure instanceof Error ? failure.message : "worker failed",
@@ -418,4 +445,4 @@ async function reportActiveFailure(failure) {
 }
 
 if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url))
-  main().catch(reportActiveFailure);
+  run().catch(reportActiveFailure);
