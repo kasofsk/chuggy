@@ -30,6 +30,12 @@
  *
  * THE LATEST STATUS IS THE ONE THAT COUNTS, for that same reason: a run rejected
  * at one point and allowed again later was not being held when it ended.
+ *
+ * THE FRAME'S TYPE IS HALF OF WHAT `error` MEANS. `SDKAPIRetryMessage` —
+ * `{type:"system", subtype:"api_retry", error}` — carries the same closed set on
+ * the same field name and says the opposite thing: the request is being retried,
+ * not refused. So the assistant arm is guarded on `type`, and a rate-limited
+ * retry the runtime recovered from is not a hold.
  */
 
 const rateLimitEventType = "rate_limit_event";

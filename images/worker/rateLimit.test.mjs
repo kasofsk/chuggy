@@ -109,6 +109,31 @@ test("a frame that carries no status of its own leaves the last one standing", (
     assert.equal(rateLimited(seenBy(rateLimitEvent("rejected"), event)), true);
 });
 
+/**
+ * `SDKAPIRetryMessage` is `{type:"system", subtype:"api_retry", error}`, the
+ * same closed set on the same field name as the assistant frame's, saying the
+ * request is being retried rather than refused. Only the type tells them apart.
+ */
+test("a retry the runtime recovered from carries the same error and is not a hold", () => {
+  const retry = {
+    type: "system",
+    subtype: "api_retry",
+    attempt: 1,
+    max_retries: 10,
+    retry_delay_ms: 1_000,
+    error_status: 429,
+    error: "rate_limit",
+  };
+  assert.equal(rateLimited(seenBy(retry)), false);
+  for (const error of declaredErrors)
+    assert.equal(rateLimited(seenBy({ ...retry, error })), false, error);
+  assert.equal(
+    rateLimited(seenBy(retry, { type: "assistant", error: "rate_limit" })),
+    true,
+    "a refusal after a recovered retry is still a hold",
+  );
+});
+
 test("no other frame the runtime emits is read as a hold", () => {
   for (const event of [
     {
