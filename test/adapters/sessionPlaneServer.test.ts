@@ -41,6 +41,7 @@ import {
 } from "../../src/interpreter/agentSession.ts";
 import type { SessionPlaneIdentity } from "../../src/interpreter/sessionPlane.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import { inertRunEvidence } from "./workerPlaneFixtures.ts";
 
 /** One bearer in the session language, which is the only token these routes read. */
 const secret = `chgs_${"a".repeat(32)}`;
@@ -93,16 +94,7 @@ const inertAttempt = {
     reserve: () => Promise.resolve({ reserved: "Reserved" as const }),
   },
   reports: { report: () => Promise.resolve({ ingested: "Fenced" as const }) },
-  runEvidence: {
-    configurations: { record: () => Promise.resolve("Stored" as const) },
-    transcripts: { record: () => Promise.resolve("Stored" as const) },
-    turns: {
-      record: () =>
-        Promise.resolve({ recorded: "Recorded" as const, turnsRecorded: 0 }),
-    },
-    totals: { record: () => Promise.resolve("Stored" as const) },
-    endings: { end: () => Promise.resolve(true) },
-  },
+  runEvidence: inertRunEvidence,
   ready: () => Promise.resolve(true),
   uploadBytesMax: sessionStoreBatchBytesMax * 2,
 } satisfies Omit<WorkerPlaneServerService, "sessions">;

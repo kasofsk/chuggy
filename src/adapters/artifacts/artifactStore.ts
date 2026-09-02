@@ -501,6 +501,54 @@ async function artifactStoreWrite(
   };
 }
 
+/**
+ * One object written under a temporary name in a pending directory beside it
+ * and committed into place, which is how every immutable object here lands: a
+ * reader never sees a half-written one, and a name that is already taken is the
+ * same question as an object already standing there rather than a failed write.
+ * Both writers land bytes this way, because a second spelling of it would be a
+ * second set of failure arms to keep true.
+ */
+async function artifactStoreLanded(
+  own: ArtifactStoreState,
+  directory: string,
+  file: string,
+  pendingDirectory: string,
+  content: Uint8Array,
+): Promise<ArtifactStoreCommitted> {
+  const pending = `${pendingDirectory}/${randomUUID()}`;
+  const unavailable = {
+    stored: "Unavailable",
+    retryAfterSeconds: own.unavailableRetrySecs,
+  } as const;
+  try {
+    await mkdir(dirname(file), { recursive: true });
+    await mkdir(pendingDirectory, { recursive: true });
+    if ((await artifactStoreDirectoryRejection(directory, file)) !== undefined)
+      return unavailable;
+    await writeFile(pending, content, {
+      mode: own.storedFileMode,
+      flag: constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+    });
+    await chmod(pending, own.storedFileMode);
+    return await artifactStoreCommitObject(
+      own,
+      directory,
+      file,
+      pending,
+      content,
+    );
+  } catch (refused: unknown) {
+    return typeof refused === "object" &&
+      refused !== null &&
+      (refused as { code?: unknown }).code === "EEXIST"
+      ? artifactStoreCommitObject(own, directory, file, pending, content)
+      : unavailable;
+  } finally {
+    await artifactStoreDiscard(pending);
+  }
+}
+
 async function artifactStoreAttemptWrite(
   own: ArtifactStoreState,
   input: Parameters<WorkerArtifactUploadPort["store"]>[0],
@@ -527,49 +575,13 @@ async function artifactStoreAttemptWrite(
     input.authority.execution,
     input.authority.attempt,
   );
-  const pendingDirectory = `${attemptDirectory}.upload-pending`;
-  const pending = `${pendingDirectory}/${randomUUID()}`;
-  try {
-    await mkdir(dirname(file), { recursive: true });
-    await mkdir(pendingDirectory, { recursive: true });
-    if ((await artifactStoreDirectoryRejection(directory, file)) !== undefined)
-      return {
-        stored: "Unavailable",
-        retryAfterSeconds: own.unavailableRetrySecs,
-      };
-    await writeFile(pending, input.content, {
-      mode: own.storedFileMode,
-      flag: constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
-    });
-    await chmod(pending, own.storedFileMode);
-    return await artifactStoreCommitObject(
-      own,
-      directory,
-      file,
-      pending,
-      input.content,
-    );
-  } catch (refused: unknown) {
-    if (
-      typeof refused === "object" &&
-      refused !== null &&
-      (refused as { code?: unknown }).code === "EEXIST"
-    ) {
-      return artifactStoreCommitObject(
-        own,
-        directory,
-        file,
-        pending,
-        input.content,
-      );
-    }
-    return {
-      stored: "Unavailable",
-      retryAfterSeconds: own.unavailableRetrySecs,
-    };
-  } finally {
-    await artifactStoreDiscard(pending);
-  }
+  return artifactStoreLanded(
+    own,
+    directory,
+    file,
+    `${attemptDirectory}.upload-pending`,
+    input.content,
+  );
 }
 
 /**
@@ -595,36 +607,13 @@ async function artifactStoreSessionWrite(
     input.stream,
     input.batch,
   );
-  const pendingDirectory = `${artifactSessionRoot(directory, input.session, input.stream)}.upload-pending`;
-  const pending = `${pendingDirectory}/${randomUUID()}`;
-  try {
-    await mkdir(dirname(file), { recursive: true });
-    await mkdir(pendingDirectory, { recursive: true });
-    if ((await artifactStoreDirectoryRejection(directory, file)) !== undefined)
-      return {
-        stored: "Unavailable",
-        retryAfterSeconds: own.unavailableRetrySecs,
-      };
-    await writeFile(pending, input.content, {
-      mode: own.storedFileMode,
-      flag: constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
-    });
-    await chmod(pending, own.storedFileMode);
-    return await artifactStoreCommitObject(
-      own,
-      directory,
-      file,
-      pending,
-      input.content,
-    );
-  } catch {
-    return {
-      stored: "Unavailable",
-      retryAfterSeconds: own.unavailableRetrySecs,
-    };
-  } finally {
-    await artifactStoreDiscard(pending);
-  }
+  return artifactStoreLanded(
+    own,
+    directory,
+    file,
+    `${artifactSessionRoot(directory, input.session, input.stream)}.upload-pending`,
+    input.content,
+  );
 }
 
 /**

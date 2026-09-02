@@ -22,6 +22,7 @@ import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import type { ReportIngested } from "../../src/interpreter/executionSchedulerReport.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
+import { inertRunEvidence } from "./workerPlaneFixtures.ts";
 
 const authority = {
   live: true,
@@ -43,18 +44,7 @@ const heartbeatService = {
 } as const;
 
 /** The evidence ports a case about something else never reaches. */
-const runEvidenceService = {
-  runEvidence: {
-    configurations: { record: () => Promise.resolve("Stored" as const) },
-    transcripts: { record: () => Promise.resolve("Stored" as const) },
-    turns: {
-      record: () =>
-        Promise.resolve({ recorded: "Recorded" as const, turnsRecorded: 0 }),
-    },
-    totals: { record: () => Promise.resolve("Stored" as const) },
-    endings: { end: () => Promise.resolve(true) },
-  },
-} as const;
+const runEvidenceService = { runEvidence: inertRunEvidence } as const;
 
 test("the worker plane has no tenant-shaped or project-shaped route", () => {
   for (const route of workerPlaneRoutes) {
