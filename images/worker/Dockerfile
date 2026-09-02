@@ -41,6 +41,7 @@ ENV DISABLE_AUTOUPDATER=1 \
 
 COPY images/worker/entrypoint.mjs /usr/local/lib/chuggy/worker.mjs
 COPY images/worker/agent.mjs /usr/local/lib/chuggy/agent.mjs
+COPY images/worker/checks.mjs /usr/local/lib/chuggy/checks.mjs
 COPY images/worker/claude.mjs /usr/local/lib/chuggy/claude.mjs
 COPY images/worker/codex.mjs /usr/local/lib/chuggy/codex.mjs
 COPY images/worker/lease.mjs /usr/local/lib/chuggy/lease.mjs
