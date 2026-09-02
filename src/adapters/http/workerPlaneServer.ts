@@ -37,6 +37,7 @@ import {
   type SessionStoreStream,
 } from "../../interpreter/agentSession.ts";
 import type {
+  SessionAttemptHoldPort,
   SessionHeartbeatPort,
   SessionPlaneAuthority,
   SessionPlaneIdentity,
@@ -106,6 +107,7 @@ export const workerPlaneRoutes = [
   "/v1/session/turn",
   "/v1/session/turn/answer",
   "/v1/session/turn/failure",
+  "/v1/session/held",
   "/v1/session/store",
   "/v1/session/store/*",
 ] as const;
@@ -138,6 +140,7 @@ export interface SessionPlaneService {
   readonly references: SessionReferencePort;
   readonly turns: SessionTurnClaimPort;
   readonly settlements: SessionTurnSettlePort;
+  readonly holds: SessionAttemptHoldPort;
   readonly records: SessionStoreRecordPort;
   readonly queries: SessionStoreQueryPort;
   readonly store: SessionStoreWritePort & SessionStoreReadPort;
@@ -895,6 +898,17 @@ function sessionSettleRoutes(
       }),
     );
   });
+  app.post(workerPlaneRoutes[17], async (request, reply) => {
+    const caller = await sessionCaller(sessions, request);
+    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+    const held = await sessions.holds.hold(
+      caller.secret,
+      caller.identity.generation,
+    );
+    return held
+      ? reply.code(204).send()
+      : reply.code(409).send({ action: "stop", reason: "Fenced" });
+  });
 }
 
 /** The refusal keeping one batch's bytes earned, or nothing where they are kept. */
@@ -921,7 +935,7 @@ function sessionStoreWriteRoute(
   app: FastifyInstance,
   sessions: SessionPlaneService,
 ): void {
-  app.put(workerPlaneRoutes[18], async (request, reply) => {
+  app.put(workerPlaneRoutes[19], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     if (!(request.body instanceof Uint8Array))
@@ -977,7 +991,7 @@ function sessionStoreReadRoute(
   app: FastifyInstance,
   sessions: SessionPlaneService,
 ): void {
-  app.get(workerPlaneRoutes[18], async (request, reply) => {
+  app.get(workerPlaneRoutes[19], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const segments = sessionStoreSegments(request);
@@ -1054,7 +1068,7 @@ function sessionStoreStreamsRoute(
   app: FastifyInstance,
   sessions: SessionPlaneService,
 ): void {
-  app.get(workerPlaneRoutes[17], async (request, reply) => {
+  app.get(workerPlaneRoutes[18], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const asked = (request.query as Record<string, unknown>)["stream"];

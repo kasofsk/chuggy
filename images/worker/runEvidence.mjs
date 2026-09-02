@@ -19,6 +19,11 @@
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 
+import {
+  observeRateLimit,
+  rateLimitSightings,
+  rateLimited,
+} from "./rateLimit.mjs";
 import { workerRequest } from "./transport.mjs";
 
 /** The interval a run's transcript is shipped on, whether or not anyone reads. */
@@ -56,7 +61,6 @@ export const runModelCharsMax = 128;
 export const credentialScrubCharsMin = 16;
 
 const credentialRedaction = "[redacted credential]";
-const rateLimitLabel = "rate_limit";
 const turnsExhaustedSubtype = "error_max_turns";
 const runCostBasis = "List";
 const unnamedModel = "unknown";
@@ -279,14 +283,15 @@ export function runTotals(result, turns) {
  * Which of the plane's run-ended labels this failure was. A run the runtime
  * accounted for is labelled by that account, so a refused upload names the end
  * only of a run nothing else speaks for.
+ *
+ * A hold outranks the account, because a run that exhausted its turns while the
+ * provider was refusing every request never had the turns to spend. What counts
+ * as a hold is `rateLimit.mjs`'s, folded from the frames as they went past.
  */
-export function endedEvidence(result, planeRefused) {
+export function endedEvidence(result, planeRefused, sightings) {
   const subtype = typeof result?.subtype === "string" ? result.subtype : "";
-  const stopReason =
-    typeof result?.stop_reason === "string" ? result.stop_reason : "";
+  if (rateLimited(sightings)) return "RunRateLimited";
   if (subtype === turnsExhaustedSubtype) return "RunTurnsExhausted";
-  if (subtype.includes(rateLimitLabel) || stopReason.includes(rateLimitLabel))
-    return "RunRateLimited";
   if (result !== null && result !== undefined) return "RunFailed";
   return planeRefused === true ? "RunUploadRefused" : "RunFailed";
 }
@@ -313,6 +318,7 @@ function evidenceState(scrub) {
     turns: [],
     pending: [],
     result: undefined,
+    sightings: rateLimitSightings(),
     totalsPosted: false,
     flushing: Promise.resolve(),
   };
@@ -449,7 +455,11 @@ function evidenceUploads(state, call, warn, flush, done) {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          evidence: endedEvidence(state.result, state.planeRefused),
+          evidence: endedEvidence(
+            state.result,
+            state.planeRefused,
+            state.sightings,
+          ),
         }),
       });
     },
@@ -485,6 +495,7 @@ export function runEvidenceRecorder(task, bearer, scrub, services = {}) {
   return {
     ...evidenceUploads(state, call, warn, flush, () => unschedule(timer)),
     async record(line, event) {
+      observeRateLimit(state.sightings, event);
       await append(state.scrub(truncatedEvent(line)));
       const marker = foldTurn(state, event);
       if (marker !== undefined) await append(marker);

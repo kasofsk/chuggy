@@ -456,8 +456,9 @@ export const allAttemptStates: readonly AttemptState[] = [
 
 /**
  * Why an attempt ended without a result. `Lost` spends the safe retry budget
- * because the attempt ran, and `Withdrawn` does not, because the fabric never
- * took it and a cluster outage is a hold rather than a work failure.
+ * because the attempt ran, and `Withdrawn` does not, because a fabric that never
+ * took the work and a provider that refused the account are both holds rather
+ * than work failures.
  */
 export type AttemptLoss = "Lost" | "Withdrawn";
 

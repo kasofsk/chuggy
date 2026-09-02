@@ -11,6 +11,18 @@ import {
   sessionTurnFailure,
   sessionTurnResultCharsMax,
 } from "./session.mjs";
+import { observeRateLimit, rateLimitSightings } from "./rateLimit.mjs";
+
+/** The sightings a turn that saw exactly these frames, in this order, ends with. */
+function seenBy(...events) {
+  return events.reduce(observeRateLimit, rateLimitSightings());
+}
+
+/** The rejection frame kasofsk/chuggy#386 reports, as the runtime declares it. */
+const rejection = {
+  type: "rate_limit_event",
+  rate_limit_info: { status: "rejected", rateLimitType: "five_hour" },
+};
 
 const bearerFile = "/var/run/chuggy/session-capability/bearer";
 const credentialFile = "/var/run/chuggy/credentials/claude-code";
@@ -208,10 +220,6 @@ test("a result the runtime could not finish is the failure that names why", asyn
   const cases = [
     [result("error_max_budget_usd"), "AgentBudgetExhausted"],
     [result("error_max_turns"), "AgentTurnsExhausted"],
-    [
-      result("error_during_execution", { stop_reason: "rate_limit" }),
-      "AgentRateLimited",
-    ],
     [result("error_during_execution"), "AgentFailed"],
   ];
   for (const [ended, failure] of cases) {
@@ -345,11 +353,57 @@ test("every result subtype maps to one failure, and success maps to none", () =>
     sessionTurnFailure({ subtype: "error_max_turns" }),
     "AgentTurnsExhausted",
   );
+  assert.equal(sessionTurnFailure(undefined), "AgentFailed");
+});
+
+test("a turn is rate limited by the frames the runtime declares, not by its subtype", () => {
   assert.equal(
-    sessionTurnFailure({ subtype: "error_rate_limit" }),
+    sessionTurnFailure(
+      { subtype: "error_during_execution" },
+      seenBy(rejection),
+    ),
     "AgentRateLimited",
   );
-  assert.equal(sessionTurnFailure(undefined), "AgentFailed");
+  assert.equal(
+    sessionTurnFailure(
+      { subtype: "error_during_execution", terminal_reason: "api_error" },
+      rateLimitSightings(),
+    ),
+    "AgentFailed",
+  );
+  assert.equal(
+    sessionTurnFailure({ subtype: "success", result: "ok" }, seenBy(rejection)),
+    "AgentRateLimited",
+  );
+});
+
+test("a rate-limited turn is held, never failed, and the pod gives up its attempt", async () => {
+  const plane = planeOf([turnOne, turnOne], facts);
+  const { query } = queryOf(() => [
+    { type: "system", subtype: "init", session_id: "runtime-1" },
+    rejection,
+    result("error_during_execution", { terminal_reason: "api_error" }),
+  ]);
+
+  const code = await run({ request: plane.request, query });
+
+  assert.equal(code, 0, "a hold is not the pod failing");
+  const held = plane.calls.filter(({ path }) => path === "/v1/session/held");
+  assert.equal(held.length, 1);
+  assert.deepEqual(held[0].body, {});
+  assert.ok(
+    !plane.calls.some(({ path }) => path === "/v1/session/turn/failure"),
+    "a held turn was charged as a failure",
+  );
+  assert.ok(
+    !plane.calls.some(({ path }) => path === "/v1/session/turn/answer"),
+    "a held turn was answered",
+  );
+  assert.equal(
+    plane.calls.filter(({ path }) => path === "/v1/session/turn").length,
+    1,
+    "the pod claimed another turn while its account was refused",
+  );
 });
 
 test("a mirror_error before the result fails the turn just as a late one does", async () => {
@@ -671,6 +725,40 @@ test("one turn's staging never reaches the next turn's answer", async () => {
     { ticket: 4, expectedTicketVersion: 2 },
   ]);
   assert.equal(answers[1].body.result, "done");
+});
+
+/**
+ * The two arms this branch and the decision tools each added meet here, and the
+ * order they meet in is the property: a turn whose account was refused is a turn
+ * the session never got, so the choices its tools staged are not an answer to
+ * post. The result below is a *success* carrying text, which is what makes the
+ * ordering load-bearing rather than incidental.
+ */
+test("a held turn posts no answer, so the decision its tools staged is never settled", async () => {
+  const plane = planeOf([observationTurn], leadFacts);
+  const { query } = queryOf((_asked, _index, options) => [
+    async () => {
+      const tools = options.mcpServers.chuggy.tools;
+      await tools
+        .find((tool) => tool.name === "dispatch")
+        .handler({ ticket: 4, expectedTicketVersion: 2 });
+    },
+    rejection,
+    result("success", { result: "I dispatched ticket 4." }),
+  ]);
+
+  const code = await run({ request: plane.request, query });
+
+  assert.equal(code, 0);
+  assert.deepEqual(
+    plane.calls.filter(({ path }) => path === "/v1/session/held").length,
+    1,
+  );
+  assert.deepEqual(
+    plane.calls.filter(({ path }) => path.startsWith("/v1/session/turn/")),
+    [],
+    "a held turn was settled",
+  );
 });
 
 test("a composed decision is scrubbed of what the pod was handed, exactly as prose is", async () => {

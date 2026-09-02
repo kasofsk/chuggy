@@ -16,6 +16,7 @@ import { sessionTurnAttemptsMax } from "../../src/contract/http.ts";
 import { asPlacementId } from "../../src/interpreter/schedulerIdentity.ts";
 import {
   sessionRigAttempt,
+  sessionRigAttemptState,
   sessionRigOpen,
   sessionRigProject,
   sessionRigSession,
@@ -198,6 +199,73 @@ test("the attempt that exhausts a turn's budget fails it, and the mailbox moves 
     )?.turn,
     second,
   );
+});
+
+/**
+ * The session twin of kasofsk/chuggy#386. The pair is what makes either half
+ * falsifiable: a boundary that charged nothing on both arms would pass the held
+ * case alone, and one that charged on both would pass the lost case alone.
+ */
+test("a held attempt returns its turn uncharged, where a lost one spends an attempt", async () => {
+  const { partition, session, first, held } = await mailbox("held");
+  assert.equal(
+    (
+      await rig.plane.claim({
+        secret: held.secret,
+        generation: held.attempt.generation,
+      })
+    )?.turn,
+    first,
+  );
+  assert.equal(
+    await rig.plane.hold(held.secret, held.attempt.generation),
+    true,
+  );
+  const requeued = await sessionRigTurnState(rig, partition, session, first);
+  assert.equal(requeued["state"], "Queued");
+  assert.equal(requeued["attempts_spent"], "0");
+  assert.equal(requeued["attempt"], null);
+  assert.equal(requeued["failure"], null);
+  const ended = await sessionRigAttemptState(rig, held.attempt);
+  assert.equal(ended["state"], "Withdrawn");
+  assert.equal(ended["evidence"], "AgentRateLimited");
+
+  const next = await sessionRigAttempt(rig, partition, session, "held-next");
+  assert.equal(
+    (
+      await rig.plane.claim({
+        secret: next.secret,
+        generation: next.attempt.generation,
+      })
+    )?.turn,
+    first,
+  );
+  await rig.scheduler.attemptEnded(next.attempt, "Vanished");
+  assert.equal(
+    (await sessionRigTurnState(rig, partition, session, first))[
+      "attempts_spent"
+    ],
+    "1",
+  );
+});
+
+test("a hold under a generation the durable side has moved past holds nothing", async () => {
+  const { partition, session, first, held } = await mailbox("held-stale");
+  await rig.plane.claim({
+    secret: held.secret,
+    generation: held.attempt.generation,
+  });
+  assert.equal(
+    await rig.plane.hold(held.secret, held.attempt.generation + 1),
+    false,
+  );
+  assert.equal(
+    (await sessionRigTurnState(rig, partition, session, first))["state"],
+    "Claimed",
+  );
+  const unmoved = await sessionRigAttemptState(rig, held.attempt);
+  assert.equal(unmoved["running"], true);
+  assert.equal(unmoved["evidence"], null);
 });
 
 test("a pod reads its own session's facts, renews its lease, and loses its attempt", async () => {

@@ -77,6 +77,17 @@ export interface SessionAttemptLossPort {
   ): Promise<boolean>;
 }
 
+/**
+ * Ending the attempt a bearer names as a hold rather than a loss, which returns
+ * the turns it claimed to the mailbox uncharged.
+ *
+ * It carries no evidence and no loss arm: a pod choosing either would be the
+ * thing being controlled choosing what it is charged.
+ */
+export interface SessionAttemptHoldPort {
+  hold(secret: SessionBearerSecret, generation: number): Promise<boolean>;
+}
+
 export interface SessionHeartbeatPort {
   heartbeat(
     secret: SessionBearerSecret,

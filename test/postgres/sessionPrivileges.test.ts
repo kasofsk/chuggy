@@ -1,6 +1,6 @@
 /**
- * What migration 58's grants let each role do, asked of the server rather than
- * read off the DDL. Every function here is granted to exactly one
+ * What the session migrations' grants let each role do, asked of the server
+ * rather than read off the DDL. Every function here is granted to exactly one
  * role, so each case asserts the grant and every refusal beside it.
  *
  * THE NEGATIVE SPACE IS THE CONTROL. A grant nobody exercised and a revoke
@@ -31,6 +31,7 @@ import {
   sessionAttemptReadFunction,
   sessionAttemptReapIdleFunction,
   sessionAttemptReapLapsedFunction,
+  sessionAttemptWithdrawFunction,
   sessionBearerAuthenticateFunction,
   sessionCloseFunction,
   sessionOpenFunction,
@@ -84,6 +85,7 @@ const boundaries: readonly (readonly [string, string | undefined])[] = [
   [sessionAttemptReadFunction, workerPlaneRole],
   [sessionAttemptHeartbeatFunction, workerPlaneRole],
   [sessionAttemptLoseFunction, workerPlaneRole],
+  [sessionAttemptWithdrawFunction, workerPlaneRole],
   [sessionReferenceBindFunction, workerPlaneRole],
   [sessionTurnClaimFunction, workerPlaneRole],
   [sessionTurnAnswerFunction, workerPlaneRole],
@@ -105,7 +107,7 @@ const runtimeRoles = [
   configurationImporterRole,
 ] as const;
 
-/** The four relations migration 58 adds, none of which any role may reach directly. */
+/** The relations the session migrations add, none of which any role may reach directly. */
 const relations = [
   "agent_session",
   "session_attempt",

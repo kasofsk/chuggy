@@ -121,6 +121,12 @@ export const allSessionAttemptEvidences = [
   "SessionClosed",
   "TurnFailed",
   "StoreRefused",
+  /**
+   * The provider refused the account the pod was running under. It is the one
+   * evidence a pod may end its own attempt on, and the only one that ends it
+   * `Withdrawn`: the session never got to spend its turn.
+   */
+  "AgentRateLimited",
 ] as const;
 export type SessionAttemptEvidence =
   (typeof allSessionAttemptEvidences)[number];

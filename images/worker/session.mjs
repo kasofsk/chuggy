@@ -35,6 +35,11 @@ import {
 } from "./chuggyTools.mjs";
 import { leadDecisionStaging } from "./leadDecision.mjs";
 import { keepWorkerLease } from "./lease.mjs";
+import {
+  observeRateLimit,
+  rateLimitSightings,
+  rateLimited,
+} from "./rateLimit.mjs";
 import { credentialScrub } from "./runEvidence.mjs";
 import { sessionMailbox } from "./sessionMailbox.mjs";
 import { sessionStoreAdapter } from "./sessionStore.mjs";
@@ -46,7 +51,6 @@ export const sessionTurnResultCharsMax = 65_536;
 const agentSdkModule = "@anthropic-ai/claude-agent-sdk";
 const zodModule = "zod";
 const defaultWorkspace = "/workspace";
-const rateLimitLabel = "rate_limit";
 const readStatus = 200;
 const acceptedStatus = 204;
 
@@ -110,16 +114,17 @@ function required(environment, name) {
  * Which failure a result was, or nothing where the turn is answerable. A result
  * the pod cannot account for is `AgentFailed` rather than an answer, because a
  * turn nothing spoke for is not a turn that succeeded.
+ *
+ * A hold outranks every other reading, including a successful one: a turn whose
+ * account was being refused is a turn the session never got, and answering with
+ * whatever text came back would settle it as though it had.
  */
-export function sessionTurnFailure(result) {
+export function sessionTurnFailure(result, sightings) {
   const subtype = typeof result?.subtype === "string" ? result.subtype : "";
-  const stopReason =
-    typeof result?.stop_reason === "string" ? result.stop_reason : "";
+  if (rateLimited(sightings)) return "AgentRateLimited";
   if (subtype === "success") return undefined;
   if (subtype === "error_max_budget_usd") return "AgentBudgetExhausted";
   if (subtype === "error_max_turns") return "AgentTurnsExhausted";
-  if (subtype.includes(rateLimitLabel) || stopReason.includes(rateLimitLabel))
-    return "AgentRateLimited";
   return "AgentFailed";
 }
 
@@ -273,6 +278,7 @@ async function bindReference(context, message) {
 }
 
 async function observe(context, message) {
+  observeRateLimit(context.sightings, message);
   if (message.type !== "system") return;
   if (message.subtype === "init") await bindReference(context, message);
   if (message.subtype === "mirror_error") context.mirrored = true;
@@ -281,6 +287,7 @@ async function observe(context, message) {
 /** One turn's messages, read to its result and then drained past it. */
 export async function runSessionTurn(context) {
   context.store.startTurn();
+  context.sightings = rateLimitSightings();
   let result;
   for (;;) {
     const { message } = await context.reader.next();
@@ -302,6 +309,14 @@ export async function runSessionTurn(context) {
   }
 }
 
+/**
+ * What one turn's messages settle it as. `Held` names no turn, because it is not
+ * the turn that ended: the provider refused the account, so the pod gives up the
+ * whole attempt and the plane returns every turn it claimed to the mailbox
+ * uncharged. Stopping is the point — a held turn requeued under a live pod would
+ * be claimed again at once, and the loop would spend the hold rather than wait
+ * it out. The scheduler's placement backoff is what paces the next attempt.
+ */
 async function settleTurn(context, turn, result) {
   if (context.mirrored) {
     await post(context, "/v1/session/turn/failure", {
@@ -310,7 +325,11 @@ async function settleTurn(context, turn, result) {
     });
     return "Stop";
   }
-  const failure = sessionTurnFailure(result);
+  const failure = sessionTurnFailure(result, context.sightings);
+  if (failure === "AgentRateLimited") {
+    await post(context, "/v1/session/held", {});
+    return "Held";
+  }
   if (failure !== undefined) {
     await post(context, "/v1/session/turn/failure", {
       turn: turn.turn,
@@ -351,6 +370,10 @@ export async function runSessionTurns(context) {
     const turn = context.mailbox.claimed();
     if (turn === undefined) return context.mirrored ? 1 : 0;
     const verdict = await settleTurn(context, turn, result);
+    if (verdict === "Held") {
+      context.mailbox.stop();
+      return 0;
+    }
     if (verdict === "Stop") {
       context.mailbox.stop();
       return 1;
@@ -425,6 +448,22 @@ function sessionToolServers(context, facts, environment, services, sdk) {
   };
 }
 
+/**
+ * The mailbox and the buffer its claims reset, hung on the context as one thing
+ * rather than two: the reset is bound to the claim, so a turn that fails leaves
+ * nothing for the next one to inherit.
+ */
+function sessionStagedMailbox(context, { request, wait: pause, now }) {
+  const staging = leadDecisionStaging();
+  context.staging = staging;
+  context.mailbox = sessionMailbox(context.task, context.bearer, {
+    request,
+    wait: pause,
+    now,
+    claim: (turn) => staging.reset(turn.input),
+  });
+}
+
 export async function sessionMain(services = {}) {
   const {
     environment = process.env,
@@ -441,7 +480,15 @@ export async function sessionMain(services = {}) {
     const task = JSON.parse(required(environment, "CHUG_SESSION_TASK"));
     checkedSessionBounds(task.bounds);
     const bearer = (await read(task.workerPlane.capabilityFile)).trim();
-    const context = { task, bearer, request, now, scrub, mirrored: false };
+    const context = {
+      task,
+      bearer,
+      request,
+      now,
+      scrub,
+      mirrored: false,
+      sightings: rateLimitSightings(),
+    };
     const facts = await sessionFacts(context);
     const token = await sessionCredential(
       environment,
@@ -454,16 +501,7 @@ export async function sessionMain(services = {}) {
     await ensureDirectory(sessionConfigDirectory(environment, workspace));
     stopLease = sessionLease(task, bearer, request);
     context.store = sessionStoreAdapter(task, bearer, { request });
-    const staging = leadDecisionStaging();
-    context.staging = staging;
-    context.mailbox = sessionMailbox(task, bearer, {
-      request,
-      wait: pause,
-      now,
-      // The buffer is reset as the turn is claimed rather than as it settles, so
-      // a turn that fails leaves nothing for the next one to inherit.
-      claim: (turn) => staging.reset(turn.input),
-    });
+    sessionStagedMailbox(context, { request, wait: pause, now });
     const sdk = services.sdk ?? (await sessionSdk());
     const stream = sdk.query({
       prompt: context.mailbox.turns(),

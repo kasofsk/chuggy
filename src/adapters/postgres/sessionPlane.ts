@@ -38,6 +38,7 @@ import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type {
   SessionAttemptBindingPort,
+  SessionAttemptHoldPort,
   SessionAttemptLossPort,
   SessionHeartbeatPort,
   SessionPlaneAuthority,
@@ -68,6 +69,7 @@ import {
  */
 export type SessionPlaneStore = SessionPlaneAuthority &
   SessionAttemptBindingPort &
+  SessionAttemptHoldPort &
   SessionAttemptLossPort &
   SessionHeartbeatPort &
   SessionReferencePort &
@@ -354,6 +356,14 @@ export function postgresSessionPlane(pool: pg.Pool): SessionPlaneStore {
           ${generation},${evidence})::boolean AS lost`,
       );
       return lost.rows[0]?.lost === true;
+    },
+
+    hold: async (secret, generation) => {
+      const held = await pool.query<{ held: boolean | null }>(
+        sql`SELECT withdraw_session_attempt(${sessionSecretDigest(secret)},
+          ${generation})::boolean AS held`,
+      );
+      return held.rows[0]?.held === true;
     },
 
     bind: async (input) => {
