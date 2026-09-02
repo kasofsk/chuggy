@@ -2,10 +2,11 @@
  * One lead, its store read a page at a time, and the two lists the page draws
  * beside it.
  *
- * The store is written so that the seam falls in the middle of what the page
- * holds: the first page carries the compaction boundary and the second carries
- * an entry after it, so a case can tell "held" from "read" and can tell where
- * the seam is drawn from whether it is drawn at all.
+ * The store is written so that a walk over it meets every shape a page has: one
+ * wholly below the cut holding none of its entries, one carrying the boundary
+ * and holding it, and pages above it holding all of theirs. So a case can tell
+ * "held" from "read", and can tell where the seam is drawn from whether it is
+ * drawn at all.
  */
 
 import type {
@@ -96,15 +97,16 @@ const leadBatchEntries: readonly (readonly LeadTranscriptResponse["entries"][num
     [leadEntry("uuid-e", "assistant", "third decision")],
   ];
 
-/**
- * Which of a page's own entries the lead still holds, decided by the cut in the
- * whole stream and not by what this page happens to carry: none of them below
- * the boundary batch, and all of them from the boundary on.
- */
 /** The batch the stream's one compaction falls in, which every page decided
  * against answers with. */
 const leadCutBatch = 2;
 
+/**
+ * Which of a page's own entries the lead still holds, decided by the cut in the
+ * whole stream and not by what the page happens to carry: none of them on a
+ * batch below the cut, and the boundary on where the page holds it. `after` is
+ * the cursor the page was asked with, so the batch it answers is `after + 1`.
+ */
 function leadHeldOf(
   after: number,
   entries: readonly LeadTranscriptResponse["entries"][number][],

@@ -2,10 +2,11 @@
  * The lead page's derivations: how a store page merges into what a pane holds,
  * which entries the lead is working from, and where the seam falls.
  *
- * The case with teeth is the second page. A page that carries no compaction
- * adds to what is held, and one that carries a compaction replaces it — and a
- * pane that unioned across a boundary would mark the entries the lead has
- * stopped holding as held, which is the whole claim the Holding panel makes.
+ * The cases with teeth are the ones about time. Every page answers `held` over
+ * its own entries under the stream's current cut, so pages read under one cut
+ * gather; but a pane walks a stream that is compacted beneath it, and the
+ * answers it gathered under a cut that has moved are the ones that would mark
+ * the lead as holding what it has dropped.
  */
 
 import { expect, test } from "vitest";
@@ -221,13 +222,13 @@ function cutPage(
 }
 
 /**
- * A CUT THAT MOVES INVALIDATES WHAT WAS GATHERED UNDER THE OLD ONE. The pane
- * walks a stream that is compacted beneath it, so answers from pages ago were
- * decided against a cut that no longer exists; keeping them leaves the lead
- * marked as holding entries it has dropped, drawn above the seam the same page
- * moved.
+ * A CUT THAT MOVES REPLACES THE PANE, because everything it held was gathered
+ * under the old cut — the answers, the entries they were answered over, the
+ * counts and the cursors — and a fold that reset some and kept others would be
+ * a pane in two eras at once. The page that revealed the move goes with the
+ * rest, and the walk starts again from the beginning of the stream.
  */
-test("a page naming a different cut drops what was gathered under the old one", () => {
+test("a page naming a different cut replaces the pane and re-walks", () => {
   const first = leadTranscriptMerged(
     leadTranscriptHeldEmpty,
     cutPage(1, ["uuid-a", "uuid-b"], ["uuid-a", "uuid-b"], 1),
@@ -240,46 +241,121 @@ test("a page naming a different cut drops what was gathered under the old one", 
     cutPage(3, ["uuid-c", "uuid-d"], ["uuid-d"]),
     2,
   );
-  expect(compacted.cut).toBe(3);
+  expect(compacted.cut, "the new cut was not carried across").toBe(3);
+  expect(compacted.entries).toStrictEqual([]);
+  expect(compacted.holding).toStrictEqual([]);
+  expect(compacted.compaction).toBeUndefined();
   expect(
-    leadTranscriptHolding(compacted).map((line) => line.uuid),
-    "entries below a new cut stayed marked held",
-  ).toStrictEqual(["uuid-d"]);
-  const lines = leadTranscriptLines(compacted);
-  expect(lines.map((line) => line.uuid)).toStrictEqual([
+    leadTranscriptNextAfter(compacted, 2),
+    "the pane did not re-walk the moved stream",
+  ).toBe(0);
+});
+
+/** The re-walk rebuilds what the reset dropped, in the order the chain gives
+ * it, and under the cut the moved page named. */
+test("the walk after a reset rebuilds the chain under the new cut", () => {
+  const reset = leadTranscriptMerged(
+    leadTranscriptMerged(
+      leadTranscriptHeldEmpty,
+      cutPage(1, ["uuid-a", "uuid-b"], ["uuid-a", "uuid-b"], 1),
+      1,
+    ),
+    cutPage(3, ["uuid-c", "uuid-d"], ["uuid-d"]),
+    2,
+  );
+  const rebuilt = leadTranscriptMerged(
+    leadTranscriptMerged(reset, cutPage(3, ["uuid-a", "uuid-b"], [], 1), 2),
+    cutPage(3, ["uuid-c", "uuid-d"], ["uuid-d"]),
+    2,
+  );
+  expect(leadTranscriptLines(rebuilt).map((line) => line.uuid)).toStrictEqual([
     "uuid-a",
     "uuid-b",
     "uuid-c",
     "uuid-d",
   ]);
-  expect(lines.filter((line) => line.seam).map((line) => line.uuid)).toEqual([
-    "uuid-d",
-  ]);
-  expect(compacted.readTo, "the pane did not re-walk the moved stream").toBe(0);
+  expect(
+    leadTranscriptHolding(rebuilt).map((line) => line.uuid),
+    "entries below a new cut stayed marked held",
+  ).toStrictEqual(["uuid-d"]);
 });
 
 /**
- * A STREAM COMPACTED FOR THE FIRST TIME UNDER AN OPEN PANE moves its cut from
- * absent to a batch, and the answers gathered before it — every entry, because
- * nothing had been dropped — are exactly the ones that are now stale.
+ * THE RE-WALK RE-READS PAGES THE PANE HAS ALREADY FOLDED, so the fold has to
+ * survive being handed the same page twice. A pane that kept its entries across
+ * the reset seeds its dedupe from a list the cap has already trimmed, so the
+ * oldest entries of the stream are unseen, re-append as the newest, and push
+ * real ones off the front.
  */
-test("a first compaction invalidates as surely as a later one", () => {
-  const uncut = leadTranscriptMerged(
+test("a reset past the entries cap keeps the chain's order and its uniqueness", () => {
+  const overflowing = leadTranscriptEntriesHeldMax + 1;
+  const uuids = Array.from(
+    { length: overflowing },
+    (_unused, at) => `uuid-${String(at).padStart(4, "0")}`,
+  );
+  const walked = leadTranscriptMerged(
     leadTranscriptHeldEmpty,
-    cutPage(undefined, ["uuid-a", "uuid-b"], ["uuid-a", "uuid-b"], 1),
+    cutPage(1, uuids, uuids, 1),
     1,
   );
-  expect(uncut.cut).toBeUndefined();
-  const compacted = leadTranscriptMerged(
-    uncut,
-    cutPage(2, ["uuid-c"], ["uuid-c"]),
+  expect(walked.entriesDropped).toBe(1);
+  const reset = leadTranscriptMerged(
+    walked,
+    cutPage(2, ["uuid-new"], ["uuid-new"]),
     2,
   );
+  const rebuilt = leadTranscriptMerged(reset, cutPage(2, uuids, [], 1), 2);
+  const lines = leadTranscriptLines(rebuilt);
+  expect(lines[0]?.uuid, "the oldest entry did not lead the chain").toBe(
+    uuids[1],
+  );
+  expect(lines[lines.length - 1]?.uuid).toBe(uuids[overflowing - 1]);
+  expect(new Set(lines.map((line) => line.uuid)).size).toBe(lines.length);
+  expect(rebuilt.entriesDropped).toBe(1);
+});
+
+/**
+ * A PAGE CAN REACH THE FOLD TWICE WITHOUT A RESET. A page whose cursor did not
+ * move is asked for again as soon as the store is written above it, so the same
+ * entries arrive a second time; a fold that appended them would draw the lead
+ * saying everything twice.
+ */
+test("a page delivered twice lands once, in the place it first took", () => {
+  const page = cutPage(1, ["uuid-a", "uuid-b"], ["uuid-a"], 1);
+  const once = leadTranscriptMerged(leadTranscriptHeldEmpty, page, 2);
+  const twice = leadTranscriptMerged(once, page, 3);
   expect(
-    leadTranscriptHolding(compacted).map((line) => line.uuid),
-    "a stream compacted for the first time kept its pre-cut answers",
-  ).toStrictEqual(["uuid-c"]);
-  expect(compacted.readTo).toBe(0);
+    leadTranscriptLines(twice).map((line) => line.uuid),
+    "a page read again appended its entries a second time",
+  ).toStrictEqual(["uuid-a", "uuid-b"]);
+  expect(leadTranscriptHolding(twice).map((line) => line.uuid)).toStrictEqual([
+    "uuid-a",
+  ]);
+});
+
+/**
+ * `elided` IS A CLAIM ABOUT THE STORE — how many batches exist whose object
+ * cannot be drawn — so it counts the walk that is standing, not every walk the
+ * pane has made. A count carried across a reset says one undrawable batch is
+ * two the second time the stream is read.
+ */
+test("what could not be drawn is counted once per walk, not once per reading", () => {
+  const elided = (cut: number): LeadTranscriptResponse => ({
+    ...cutPage(cut, ["uuid-a"], ["uuid-a"], 1),
+    elided: 1,
+    truncated: true,
+  });
+  const walked = leadTranscriptMerged(leadTranscriptHeldEmpty, elided(1), 1);
+  expect(walked.elided).toBe(1);
+  expect(walked.truncated).toBe(true);
+  const reset = leadTranscriptMerged(
+    walked,
+    cutPage(2, ["uuid-b"], ["uuid-b"]),
+    2,
+  );
+  expect(reset.elided, "an undrawable batch was counted twice").toBe(0);
+  expect(reset.truncated).toBe(false);
+  expect(leadTranscriptMerged(reset, elided(2), 2).elided).toBe(1);
 });
 
 /**

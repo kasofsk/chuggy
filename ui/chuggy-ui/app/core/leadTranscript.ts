@@ -18,9 +18,23 @@
  * walks a stream that is being written and compacted beneath it, so answers it
  * gathered pages ago were decided against a cut that no longer exists. Keeping
  * them would leave the lead marked as holding entries it dropped, and would
- * draw them above the seam the same page moved. So a page naming a different
- * cut takes the pane back to the start of the stream, keeping only its own
- * answer.
+ * draw them above the seam the same page moved.
+ *
+ * SO THE PANE IS REPLACED RATHER THAN PATCHED, and the page that revealed the
+ * move is dropped with the rest. Everything a pane holds was gathered under one
+ * cut — the answers, the entries they were answered over, the counts of what
+ * could not be drawn, and the cursors saying how far the walk got — so a fold
+ * that reset some of them and kept others would be a pane in two eras at once:
+ * that is how the oldest entries of a re-walked stream came back as its newest,
+ * and how one undrawable batch came to be counted twice. What survives is the
+ * new cut and the identity of the stream being walked, and the re-walk rebuilds
+ * the rest in the order the chain gives it.
+ *
+ * THE RE-WALK COSTS A RUN OF THE READ BUDGET, which is the price of being
+ * right: a pane part-way through a re-walk holds less than it did, and the next
+ * rise of the store's batch count carries it further. A lead compacting faster
+ * than its own transcript can be paged is a lead whose transcript no reader can
+ * follow anyway.
  *
  * `held` ABSENT IS UNKNOWN AND NEVER EMPTY. It is absent only where the route
  * could not reach the stream's end to decide it, and it says so with
@@ -174,6 +188,19 @@ function leadTranscriptCutMoved(
   return held.readTo !== undefined && page.cut !== held.cut;
 }
 
+/**
+ * A pane holding nothing but the cut its next answers will be decided against,
+ * and the stream it is walking — which names what is being read rather than
+ * anything read from it. A cursor of nothing is what sends the walk back to the
+ * start of the stream.
+ */
+function leadTranscriptReset(
+  stream: string | undefined,
+  cut: number | undefined,
+): LeadTranscriptHeld {
+  return { ...leadTranscriptHeldEmpty, stream, cut };
+}
+
 /** The uuids still worth holding: what is gathered, less any whose entry has
  * left at the cap, so the set is bounded by the entries and not by the walk. */
 function leadTranscriptHoldingPruned(
@@ -186,32 +213,36 @@ function leadTranscriptHoldingPruned(
   return [...new Set(holding)].filter((uuid) => present.has(uuid));
 }
 
-/** One page folded in, with the walk's cursor advanced to what it read to. */
+/**
+ * One page folded in, with the walk's cursor advanced to what it read to. A
+ * page answered under a cut the pane has not been reading under replaces the
+ * pane instead: it is dropped with everything else, and the re-walk that starts
+ * from the empty pane reads it again in its place in the chain.
+ */
 export function leadTranscriptMerged(
   held: LeadTranscriptHeld,
   page: LeadTranscriptResponse,
   highWaterBatch: number,
 ): LeadTranscriptHeld {
-  const moved = leadTranscriptCutMoved(held, page);
+  if (leadTranscriptCutMoved(held, page))
+    return leadTranscriptReset(held.stream, page.cut);
   const merged = leadTranscriptEntriesMerged(held.entries, page.entries);
   const kept = merged.slice(-leadTranscriptEntriesHeldMax);
   return {
     stream: page.stream,
     entries: kept,
     holding: leadTranscriptHoldingPruned(
-      moved ? (page.held ?? []) : [...held.holding, ...(page.held ?? [])],
+      [...held.holding, ...(page.held ?? [])],
       kept,
     ),
     cut: page.held === undefined ? held.cut : page.cut,
     compaction: page.compaction ?? held.compaction,
     elided: held.elided + page.elided,
     truncated: held.truncated || page.truncated,
-    holdingUnknown: moved
-      ? page.held === undefined
-      : held.holdingUnknown || page.held === undefined,
+    holdingUnknown: held.holdingUnknown || page.held === undefined,
     entriesDropped: held.entriesDropped + (merged.length - kept.length),
-    readTo: moved ? 0 : leadTranscriptReadTo(page, highWaterBatch),
-    more: moved ? false : leadTranscriptMore(held, page),
+    readTo: leadTranscriptReadTo(page, highWaterBatch),
+    more: leadTranscriptMore(held, page),
     failure: undefined,
   };
 }
