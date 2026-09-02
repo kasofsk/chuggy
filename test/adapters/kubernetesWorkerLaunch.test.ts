@@ -30,7 +30,6 @@ import {
 } from "../../src/adapters/kubernetes/workerLaunch.ts";
 import {
   checkedKubernetesWorkerLaunchConfig,
-  kubernetesNameCharsMax,
   kubernetesWorkerContainerName,
   kubernetesWorkerCredentialFilesVariable,
   kubernetesWorkerDatabaseScope,
@@ -39,10 +38,13 @@ import {
   kubernetesWorkerPodName,
   kubernetesWorkerPodRequest,
   kubernetesWorkerTaskVariable,
-  type KubernetesPod,
   type KubernetesWorkerLaunchConfig,
   type KubernetesWorkerTask,
 } from "../../src/adapters/kubernetes/workerPod.ts";
+import {
+  kubernetesNameCharsMax,
+  type KubernetesPod,
+} from "../../src/adapters/kubernetes/kubernetesSite.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import {
   asAttemptCapabilityId,
