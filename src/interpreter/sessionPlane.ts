@@ -78,14 +78,11 @@ export interface SessionAttemptLossPort {
 }
 
 /**
- * Ending the attempt a bearer names as a hold rather than a loss, which is what
- * a pod whose provider refused its account has to report. The turns it claimed
- * go back to the mailbox uncharged, because nothing about the work failed and
- * nothing about the turn was tried.
+ * Ending the attempt a bearer names as a hold rather than a loss, which returns
+ * the turns it claimed to the mailbox uncharged.
  *
- * It names no evidence and no loss arm. A pod choosing either would be the thing
- * being controlled choosing what it is charged; there is exactly one condition a
- * pod may declare a hold for, and the definer function writes its own label.
+ * It carries no evidence and no loss arm: a pod choosing either would be the
+ * thing being controlled choosing what it is charged.
  */
 export interface SessionAttemptHoldPort {
   hold(secret: SessionBearerSecret, generation: number): Promise<boolean>;

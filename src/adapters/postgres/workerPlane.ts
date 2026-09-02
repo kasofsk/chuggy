@@ -278,11 +278,10 @@ export function postgresWorkerRunTotal(pool: pg.Pool): WorkerRunTotalPort {
  * Narrowing a live attempt to the label its own run ended under, through the
  * boundary that already ends one; the lease sweep ends it either way.
  *
- * Which of the two boundaries is `runEndedLoss`'s answer to the label, never the
- * pod's: the wire carries what the run saw, and what that costs the ticket is
- * decided here. `lose_worker_attempt` spends a retry because the attempt ran;
- * `withdraw_worker_attempt` spends none because a provider that refused every
- * request is a hold, and the work was never tried.
+ * Which of the two boundaries is `runEndedLoss`'s answer to the label rather
+ * than the pod's: `lose_worker_attempt` spends a retry because the attempt ran,
+ * and `withdraw_worker_attempt` spends none because a provider that refused
+ * every request held the work rather than failing it.
  */
 export function postgresWorkerRunEnded(pool: pg.Pool): WorkerRunEndedPort {
   return {

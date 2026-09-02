@@ -49,7 +49,10 @@ export function observeRateLimit(sightings, event) {
     if (typeof status === "string") sightings.status = status;
     return sightings;
   }
-  if (event?.type === assistantMessageType && event.error === rateLimitErrorKind)
+  if (
+    event?.type === assistantMessageType &&
+    event.error === rateLimitErrorKind
+  )
     sightings.refused = true;
   return sightings;
 }
@@ -57,7 +60,6 @@ export function observeRateLimit(sightings, event) {
 /** Whether what was seen says the provider was refusing the account. */
 export function rateLimited(sightings) {
   return (
-    sightings?.refused === true ||
-    sightings?.status === rateLimitRejectedStatus
+    sightings?.refused === true || sightings?.status === rateLimitRejectedStatus
   );
 }

@@ -18,9 +18,8 @@ import {
 const liveStates = "('Placing','Running')";
 
 /**
- * The one condition a pod may end its own attempt on. A pod that could name any
- * of the others could write provenance nobody else witnessed; this one it is the
- * only witness to.
+ * The one condition a pod may end its own attempt on, because it is the only one
+ * a pod is the sole witness to.
  */
 const holdEvidence = "AgentRateLimited";
 
@@ -28,10 +27,9 @@ const holdEvidence = "AgentRateLimited";
  * A hold on a work attempt: the attempt ends, the execution keeps its retry
  * budget, and the placement backoff paces the next one.
  *
- * It is a second function rather than a fourth argument to `lose_worker_attempt`
- * because the two differ in what they charge, and a boundary that takes the
- * charge as an argument is a boundary whose caller decides it. The caller here is
- * the worker plane, standing in front of a pod.
+ * It is a second function rather than a fourth argument to
+ * `lose_worker_attempt`, because a boundary that takes its charge as an argument
+ * is a boundary whose caller decides it.
  */
 const workerHold = [
   `CREATE FUNCTION ${workerAttemptWithdrawFunction}(
@@ -70,18 +68,13 @@ const workerHold = [
 ];
 
 /**
- * A hold on a session attempt, which is the same fact one grain down: the pod's
- * account was refused, so the attempt ends `Withdrawn` and every turn it had
- * claimed goes back to the mailbox with its attempt budget untouched.
+ * A hold on a session attempt, the same fact one grain down: the attempt ends
+ * `Withdrawn` and every turn it claimed goes back to the mailbox with its
+ * attempt budget untouched.
  *
- * It does not call `release_session_attempt_turns`. That body spends one of the
- * turn's attempts on every caller, which is the rule for an attempt that ran; a
- * held turn was never tried, so returning it through that body would charge the
- * very budget this function exists not to charge.
- *
- * It names its own evidence rather than taking one. The pod says only that it is
- * held; a pod that could pass a label could write any of the eleven the platform
- * writes for itself.
+ * It requeues the turns itself rather than through
+ * `release_session_attempt_turns`, which spends one of the turn's attempts on
+ * every caller because every caller until now had one that ran.
  */
 const sessionHold = [
   `ALTER TABLE session_attempt DROP CONSTRAINT session_attempt_evidence_is_known`,
