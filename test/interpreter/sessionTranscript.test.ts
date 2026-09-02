@@ -50,41 +50,49 @@ function uuids(entries: readonly SessionStoreEntry[]): readonly string[] {
 }
 
 test("the chain is the store's parent links, not its file order", () => {
-  const entries = storedEntries(streams.compacted);
+  const entries = twiceCompacted();
   const chain = sessionTranscriptChain(entries);
   const chained = new Set(uuids(chain));
-  const inFileOrder = entries.filter(
-    (entry) => entry.type === "user" || entry.type === "assistant",
-  );
-  assert.ok(
-    inFileOrder.some(
-      (entry) => entry.uuid !== undefined && !chained.has(entry.uuid),
-    ),
-    "the compacted stream holds a user entry off the chain",
-  );
   const byUuid = new Map(
     entries.flatMap((entry) =>
       entry.uuid === undefined ? [] : [[entry.uuid, entry] as const],
     ),
   );
-  const ancestors = (entry: SessionStoreEntry): readonly string[] => {
-    const named: string[] = [];
-    let current = entry.parentUuid;
-    while (current !== undefined && !named.includes(current)) {
-      named.push(current);
+  const reaches = (from: string | undefined, target: string): boolean => {
+    const seen = new Set<string>();
+    let current = from;
+    while (current !== undefined && !seen.has(current)) {
+      if (current === target) return true;
+      seen.add(current);
       current = byUuid.get(current)?.parentUuid;
     }
-    return named;
+    return false;
   };
-  for (const [index, entry] of chain.entries()) {
-    if (index === 0) continue;
-    const before = chain[index - 1]?.uuid;
-    assert.ok(before !== undefined);
+  const tip = entries.at(-1)?.uuid;
+  const anchor = sessionTranscriptCompaction(entries)?.anchor;
+  const orphaned = entries.filter(
+    (entry) =>
+      (entry.type === "user" || entry.type === "assistant") &&
+      entry.isMeta !== true &&
+      entry.uuid !== undefined &&
+      !chained.has(entry.uuid),
+  );
+  assert.ok(
+    orphaned.length > 0,
+    "the twice-compacted stream holds a user entry on neither live branch",
+  );
+  for (const entry of chain) {
+    assert.ok(entry.uuid !== undefined);
     assert.ok(
-      ancestors(entry).includes(before),
-      "each chained entry descends from the one before it",
+      reaches(tip, entry.uuid) || reaches(anchor, entry.uuid),
+      "a chained entry is reached from the tip or from the summary",
     );
   }
+  for (const entry of orphaned)
+    assert.ok(
+      !reaches(tip, entry.uuid ?? "") && !reaches(anchor, entry.uuid ?? ""),
+      "an entry off both branches is reached from neither",
+    );
 });
 
 test("the chain drops the runtime's bookkeeping entries", () => {
@@ -105,6 +113,57 @@ test("the chain drops the runtime's bookkeeping entries", () => {
     "the stream holds entries carrying no uuid",
   );
   assert.equal(chain.length, 12);
+});
+
+/**
+ * The stored stream with a second compaction laid over it, built from the real
+ * boundary's own shape: its uuids are rewritten so the case has two, and every
+ * field the walk reads keeps the value the runtime wrote. The real store holds
+ * one compaction, so a stream that has compacted twice can only be composed.
+ */
+function twiceCompacted(): readonly SessionStoreEntry[] {
+  const entries = [...storedEntries(streams.compacted)];
+  const first = sessionTranscriptCompaction(entries);
+  assert.ok(first?.anchor !== undefined);
+  const tip = entries.at(-1);
+  const boundary: SessionStoreEntry = {
+    ...first.boundary,
+    uuid: "second-boundary",
+    compactMetadata: {
+      preservedMessages: {
+        anchorUuid: "second-summary",
+        uuids: [first.anchor],
+      },
+    },
+  };
+  const summary: SessionStoreEntry = {
+    type: "user",
+    uuid: "second-summary",
+    parentUuid: "second-boundary",
+    message: { role: "user", content: "This session is being continued." },
+  };
+  const next: SessionStoreEntry = {
+    type: "user",
+    uuid: "second-turn",
+    parentUuid: tip?.uuid ?? "",
+    message: { role: "user", content: "and again" },
+  };
+  return [...entries, boundary, summary, next];
+}
+
+test("the seam is the last compaction, not the first", () => {
+  const entries = twiceCompacted();
+  const compaction = sessionTranscriptCompaction(entries);
+  assert.equal(compaction?.boundary.uuid, "second-boundary");
+  assert.equal(compaction?.anchor, "second-summary");
+  const first = sessionTranscriptCompaction(storedEntries(streams.compacted));
+  assert.notEqual(compaction?.boundary.uuid, first?.boundary.uuid);
+  const held = uuids(sessionTranscriptHeld(entries));
+  assert.deepEqual([...held].sort(), ["second-summary", "second-turn"].sort());
+  assert.ok(
+    !held.includes(first?.anchor ?? ""),
+    "the first compaction's summary is not held after the second cut",
+  );
 });
 
 test("the compaction is keyed on its own entry, not on the summary's prose", () => {
@@ -132,7 +191,21 @@ test("the compaction is keyed on its own entry, not on the summary's prose", () 
   assert.notEqual(summary.uuid, compaction.boundary.uuid);
 });
 
-test("what the lead holds is the preserved segment and everything after the cut", () => {
+/**
+ * What `getSessionMessages({ sessionStore })` answered for these exact bytes,
+ * measured against the SDK rather than reasoned about: the summary, the two
+ * entries the cut preserved, and the two appended after it. The runtime's own
+ * caveat entry is not among them, which is why a meta entry is not conversation.
+ */
+const sdkHeldAfterCompaction = [
+  "3dac513c-ce7f-4064-852d-fa43d71830cd",
+  "908e5b0d-97bf-4722-9b53-e0ea8a283d41",
+  "155c3c01-aeea-4312-ab8a-68b553c15903",
+  "44da818a-00ff-4b21-b967-cda5ca2c0bb1",
+  "ed0c7b23-28f0-40f2-b7a9-1f9e4c0a88d3",
+];
+
+test("what the lead holds is what the runtime's own accessor answers", () => {
   const entries = storedEntries(streams.compacted);
   const chain = sessionTranscriptChain(entries);
   const held = sessionTranscriptHeld(entries);
@@ -142,9 +215,11 @@ test("what the lead holds is the preserved segment and everything after the cut"
     held.length < chain.length,
     "a compacted stream holds less than its chain",
   );
-  const chained = new Set(uuids(chain));
-  for (const preserved of compaction.preserved)
-    assert.ok(chained.has(preserved) === uuids(held).includes(preserved));
+  assert.deepEqual([...uuids(held)].sort(), [...sdkHeldAfterCompaction].sort());
+  assert.ok(
+    uuids(held).includes(compaction.anchor ?? ""),
+    "the summary the cut wrote is held",
+  );
   const cut = entries.indexOf(compaction.boundary);
   for (const entry of held)
     assert.ok(
@@ -159,6 +234,15 @@ test("what the lead holds is the preserved segment and everything after the cut"
       entries.indexOf(entry) < cut,
       "what was dropped predates the cut",
     );
+});
+
+test("a meta entry is the runtime talking, and is not on the chain", () => {
+  const entries = storedEntries(streams.compacted);
+  const meta = entries.filter((entry) => entry.isMeta === true);
+  assert.ok(meta.length > 0, "the compacted stream holds a meta entry");
+  const chained = new Set(uuids(sessionTranscriptChain(entries)));
+  for (const entry of meta)
+    assert.ok(!chained.has(entry.uuid ?? ""), "a meta entry is not chained");
 });
 
 test("an uncompacted stream holds its whole chain", () => {

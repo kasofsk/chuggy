@@ -54,6 +54,22 @@ test("the handoff note crosses as its size and its leading characters", () => {
   assert.ok(large.bytes > selectorHandoffNotePreviewCharsMax);
 });
 
+test("a note the cut did not reach is whole, whatever it weighs in bytes", () => {
+  const note = { watching: "依存関係がまだ失敗しています".repeat(110) };
+  const whole = handoffNotePreview(note);
+  const text = JSON.stringify(note);
+  assert.ok(
+    text.length < selectorHandoffNotePreviewCharsMax,
+    "the note is shorter than the cut",
+  );
+  assert.ok(
+    whole.bytes > selectorHandoffNotePreviewCharsMax,
+    "and heavier than it in bytes, which is the case the flag must not confuse",
+  );
+  assert.equal(whole.preview, text);
+  assert.equal(whole.truncated, false);
+});
+
 test("a transcript query outside its bounds is refused rather than clamped", () => {
   assert.deepEqual(
     checkedLeadTranscriptQuery({ after: 0, limit: sessionStorePageBatchesMax }),
@@ -78,6 +94,16 @@ test("a page longer than the entry bound is cut and says so", () => {
   });
   assert.equal(whole.entries.length, sessionTranscriptEntriesMax);
   assert.equal(whole.truncated, false);
+});
+
+test("a page carrying no compaction cannot say what is held", () => {
+  const plain = leadTranscriptPage({ stream, drawn: [drawn(chainText(3))] });
+  assert.equal(plain.compaction, undefined);
+  assert.equal(
+    plain.held,
+    undefined,
+    "a page with no boundary answers no held set rather than the whole chain",
+  );
 });
 
 test("a batch nobody could draw is counted and the page still stands", () => {

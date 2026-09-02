@@ -48,6 +48,10 @@ import {
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
+  agenticRefusalLedgerAnsweredMax,
+  agenticRefusalsAnsweredMax,
+} from "../../src/contract/http.ts";
+import {
   asAuthorityKind,
   asAuthoritySubject,
   type OperationInbox,
@@ -63,6 +67,14 @@ const authority = {
   subject: asAuthoritySubject("person"),
 };
 const stream = asSessionStoreStream("1ffa6adc-2acf-4f98-a642-f2de9acd0623");
+/** What the SDK's own accessor answered for the compacted stream's bytes. */
+const sdkHeldAfterCompaction = [
+  "3dac513c-ce7f-4064-852d-fa43d71830cd",
+  "908e5b0d-97bf-4722-9b53-e0ea8a283d41",
+  "155c3c01-aeea-4312-ab8a-68b553c15903",
+  "44da818a-00ff-4b21-b967-cda5ca2c0bb1",
+  "ed0c7b23-28f0-40f2-b7a9-1f9e4c0a88d3",
+];
 const compactedStream = asSessionStoreStream(
   "489c5211-ca5d-4031-acc7-4e8014ea966d",
 );
@@ -171,6 +183,32 @@ interface LeadCase {
   readonly standing?: LeadStanding | undefined;
   readonly draws?: readonly SessionStoreRead[];
   readonly ticketVersion?: number;
+  /** How many rows each refusal read answers, so a short page can be driven. */
+  readonly refusalRows?: number;
+  /** Whether the ledger's newest entry lifts the refusal before it. */
+  readonly lifted?: boolean;
+}
+
+/**
+ * A ledger of `rows` entries, oldest first, alternating so the newest is a lift
+ * where a case asks for one. The port answers one past the page bound the way
+ * the definer function does, which is what lets `more` be true at all.
+ */
+function ledgerOf(
+  rows: number,
+  lifted: boolean,
+): readonly AgenticRefusalEntry[] {
+  return Array.from({ length: rows }, (_unused, index) => ({
+    ordinal: index + 1,
+    partition,
+    ticket: asTicketId(42),
+    event:
+      lifted && index === rows - 1 ? ("Lifted" as const) : ("Refused" as const),
+    ticketVersion: 2,
+    reason: "the dependency is still failing",
+    decision: `selector-decision-${String(index)}`,
+    recordedAt: "2026-09-02T00:00:00.000Z",
+  }));
 }
 
 function readStore(ticketVersion: number): NativeReadStore {
@@ -217,17 +255,28 @@ function leadPorts(shape: LeadCase): NativeLeadPorts {
         Promise.resolve(draws[object.batch - 1] ?? { read: "NotFound" }),
     },
     refusals: {
-      standing: () =>
-        Promise.resolve([
-          {
-            ticket: asTicketId(42),
-            ticketVersion: 2,
-            reason: "the dependency is still failing",
-            decision: "selector-decision-one",
-            recordedAt: "2026-09-02T00:00:00.000Z",
-          },
-        ]),
-      ledger: () => Promise.resolve(refusalEntries),
+      standing: (_partition, limit) =>
+        Promise.resolve(
+          Array.from(
+            { length: Math.min(shape.refusalRows ?? 1, limit) },
+            (_unused, index) => ({
+              ticket: asTicketId(42 + index),
+              ticketVersion: 2,
+              reason: "the dependency is still failing",
+              decision: "selector-decision-one",
+              recordedAt: "2026-09-02T00:00:00.000Z",
+            }),
+          ),
+        ),
+      ledger: (_partition, _ticket, limit) =>
+        Promise.resolve(
+          shape.refusalRows === undefined
+            ? refusalEntries
+            : ledgerOf(shape.refusalRows, shape.lifted ?? false).slice(
+                0,
+                limit,
+              ),
+        ),
     },
     history,
   };
@@ -269,7 +318,7 @@ function appOf(shape: LeadCase = {}) {
       authenticateBearer: () =>
         Promise.resolve({
           authenticated: "Bearer" as const,
-          bearer: { principal: asPrincipal("issuer subject") },
+          bearer: { principal: asPrincipal("issuer\u0000subject") },
         }),
     },
     { ready: () => Promise.resolve(true) },
@@ -339,10 +388,18 @@ test("the transcript answers the chain over its batches and marks what is held",
     "83738f97-737d-412f-8a49-3c56c4a78ef9",
   );
   assert.equal(body.entries.length, 15);
-  assert.equal(body.held.length, 5);
+  assert.deepEqual(
+    [...(body.held ?? [])].sort(),
+    [...sdkHeldAfterCompaction].sort(),
+  );
   const carried = new Set(body.entries.map((entry) => entry.uuid));
-  for (const held of body.held) assert.ok(carried.has(held));
+  for (const held of body.held ?? []) assert.ok(carried.has(held));
   assert.ok(body.entries.every((entry) => entry.type !== "attachment"));
+  const sent = found.json<{ entries: readonly Record<string, unknown>[] }>();
+  assert.ok(
+    sent.entries.every((entry) => !Object.hasOwn(entry, "parentUuid")),
+    "the wire says what the chain is, not how it was found",
+  );
 });
 
 test("a batch that cannot be drawn is elided, and the page is still answered", async () => {
@@ -361,6 +418,7 @@ test("a batch that cannot be drawn is elided, and the page is still answered", a
   const body = leadTranscriptResponseSchema.parse(found.json());
   assert.equal(body.elided, 1);
   assert.ok(body.entries.length > 0);
+  assert.equal(body.held, undefined, "this page carries no compaction");
 });
 
 test("a store that cannot be reached at all refuses the page", async () => {
@@ -411,6 +469,43 @@ test("standing refusals carry the supersession the reader computes", async () =>
     ).json(),
   );
   assert.equal(cleared.refusals[0]?.superseded, true);
+});
+
+test("a page that stops short of the ledger says so and claims no standing", async () => {
+  await using app = appOf({
+    refusalRows: agenticRefusalLedgerAnsweredMax + 5,
+    lifted: true,
+  });
+  const body = ticketAgenticRefusalsResponseSchema.parse(
+    (
+      await app.inject({
+        url: `${root}/tickets/42/agentic-refusals`,
+        headers: authorized,
+      })
+    ).json(),
+  );
+  assert.equal(body.more, true, "more must be able to come out true");
+  assert.equal(body.entries.length, agenticRefusalLedgerAnsweredMax);
+  assert.ok(
+    body.entries.every((entry) => entry.event === "Refused"),
+    "the page ends on a refusal the ledger's own latest entry has lifted",
+  );
+  assert.equal(
+    body.standing,
+    undefined,
+    "standing is not read off a page that stops short of the latest entry",
+  );
+});
+
+test("a standing page that stops short says so", async () => {
+  await using app = appOf({ refusalRows: agenticRefusalsAnsweredMax + 1 });
+  const body = agenticRefusalsResponseSchema.parse(
+    (
+      await app.inject({ url: `${root}/agentic-refusals`, headers: authorized })
+    ).json(),
+  );
+  assert.equal(body.more, true, "more must be able to come out true");
+  assert.equal(body.refusals.length, agenticRefusalsAnsweredMax);
 });
 
 test("a ticket's ledger answers its entries and the refusal it stands on", async () => {

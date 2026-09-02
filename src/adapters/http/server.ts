@@ -568,26 +568,24 @@ function registerAgenticRefusals(
 function registerSelectorHistory(
   app: FastifyInstance,
   web: InitialNativeWeb,
+  root: string,
 ): void {
-  app.get(
-    "/api/v1/tenants/:tenant/projects/:project/selector-history",
-    async (request, reply) => {
-      const query = fieldsOnly(request.query, ["after", "limit"]);
-      send(
-        reply,
-        selectorHistoryResponse(
-          await web.selectorHistory(
-            principalOf(request),
-            partitionOf(request),
-            query["after"] === undefined
-              ? undefined
-              : integerField(query, "after"),
-            integerField(query, "limit", selectorHistoryLimitMax),
-          ),
+  app.get(`${root}/selector-history`, async (request, reply) => {
+    const query = fieldsOnly(request.query, ["after", "limit"]);
+    send(
+      reply,
+      selectorHistoryResponse(
+        await web.selectorHistory(
+          principalOf(request),
+          partitionOf(request),
+          query["after"] === undefined
+            ? undefined
+            : integerField(query, "after"),
+          integerField(query, "limit", selectorHistoryLimitMax),
         ),
-      );
-    },
-  );
+      ),
+    );
+  });
 }
 
 function registerRunEvidenceRoutes(
@@ -1200,6 +1198,7 @@ export function createNativeHttpApp(
     }
     return Promise.resolve();
   });
+  const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
   registerCapacity(app, limits.concurrentRequestsMax);
   registerAuthentication(app, authentication);
   registerHealth(app, readiness);
@@ -1207,9 +1206,9 @@ export function createNativeHttpApp(
   registerInstallation(app, authority);
   registerInventory(app, web);
   registerProject(app, web);
-  registerLead(app, web, "/api/v1/tenants/:tenant/projects/:project");
+  registerLead(app, web, partitionRoot);
   registerSelectorContext(app, web);
-  registerSelectorHistory(app, web);
+  registerSelectorHistory(app, web, partitionRoot);
   if (selectorSettings !== undefined)
     registerSelectorSettings(app, selectorSettings);
   registerOperations(app, web);

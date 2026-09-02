@@ -16,6 +16,13 @@
  * THE PAGE IS BOUNDED TWICE, by batches and by entries, because one batch's
  * ceiling is bytes and a stream of small entries reaches the entry bound first.
  * A page that had to drop entries says so rather than shortening in silence.
+ *
+ * `held` IS ABSENT ON A PAGE THAT CARRIES NO COMPACTION BOUNDARY, because such a
+ * page cannot decide it: a later page may hold a cut that dropped everything
+ * here, and answering the whole chain would mark the oldest entries held at
+ * exactly the moment they are not. Absent means "this page does not know", and a
+ * reader that has paged a whole stream and seen no `held` has seen a stream
+ * nothing was ever dropped from.
  */
 
 import {
@@ -115,14 +122,13 @@ export interface LeadTranscriptQuery {
 }
 
 /**
- * One page of one stream. `held` names which of the entries the lead still
- * holds rather than sending them twice, and `truncated` says the chain was
- * longer than a page of entries.
+ * One page of one stream, with `held` naming the entries the lead still holds
+ * and absent where this page carries no boundary to decide them by.
  */
 export interface LeadTranscriptPage {
   readonly stream: SessionStoreStream;
   readonly entries: readonly SessionStoreEntry[];
-  readonly held: readonly string[];
+  readonly held?: readonly string[];
   readonly compaction?: { readonly boundary: string; readonly at?: string };
   readonly elided: number;
   readonly truncated: boolean;
@@ -178,20 +184,26 @@ export function leadTranscriptPage(input: {
   }
   const stored = sessionStoreEntries(texts.join("\n"));
   const chain = sessionTranscriptChain(stored);
+  const entries = chain.slice(0, sessionTranscriptEntriesMax);
+  const compaction = sessionTranscriptCompaction(stored);
+  const boundary = compaction?.boundary.uuid;
   const held = new Set(
     sessionTranscriptHeld(stored).flatMap((entry) =>
       entry.uuid === undefined ? [] : [entry.uuid],
     ),
   );
-  const entries = chain.slice(0, sessionTranscriptEntriesMax);
-  const compaction = sessionTranscriptCompaction(stored);
-  const boundary = compaction?.boundary.uuid;
   return {
     stream: input.stream,
     entries,
-    held: entries.flatMap((entry) =>
-      entry.uuid !== undefined && held.has(entry.uuid) ? [entry.uuid] : [],
-    ),
+    ...(compaction === undefined
+      ? {}
+      : {
+          held: entries.flatMap((entry) =>
+            entry.uuid !== undefined && held.has(entry.uuid)
+              ? [entry.uuid]
+              : [],
+          ),
+        }),
     ...(boundary === undefined
       ? {}
       : {

@@ -807,9 +807,10 @@ export type AgenticRefusalEntryResponse = z.infer<
 
 /**
  * One page of one ticket's refusal ledger, oldest first, `more` saying whether
- * the page ends the ledger. `standing` is present exactly where the latest
- * entry is a refusal, which is what standing means and is why no entry carries
- * it.
+ * the page ends the ledger. `standing` is present exactly where this page holds
+ * the ledger's latest entry and that entry is a refusal, which is what standing
+ * means and is why no entry carries it: a page that stops short of the latest
+ * entry says nothing about what stands.
  */
 export const ticketAgenticRefusalsResponseSchema = z.object({
   ticket: ticketNumberSchema,
@@ -918,15 +919,16 @@ export const leadTranscriptEntryResponseSchema = z.object({
 
 /**
  * The chain over the batches read, with the subset the lead still holds named
- * rather than sent twice. An elided batch is one whose row exists and whose
- * object cannot be drawn, which is what a run that died leaves behind.
+ * rather than sent twice and absent where the page carries no boundary to
+ * decide it by. An elided batch is one whose row exists and whose object cannot
+ * be drawn, which is what a run that died leaves behind.
  */
 export const leadTranscriptResponseSchema = z.object({
   stream: z.string().min(1).max(sessionStoreStreamCharsMax),
   entries: z
     .array(leadTranscriptEntryResponseSchema)
     .max(sessionTranscriptEntriesMax),
-  held: z.array(identitySchema).max(sessionTranscriptEntriesMax),
+  held: z.array(identitySchema).max(sessionTranscriptEntriesMax).optional(),
   compaction: z
     .object({ boundary: identitySchema, at: instantSchema.optional() })
     .optional(),

@@ -35,6 +35,7 @@ import {
   type LeadTurnRecord,
 } from "../../interpreter/leadRead.ts";
 import type { SelectorHistoryRead } from "../../interpreter/selectorHistory.ts";
+import type { SessionStoreEntry } from "../../interpreter/sessionTranscript.ts";
 import type {
   SelectorProjectSettingsHistoryRead,
   SelectorProjectSettingsRead,
@@ -920,12 +921,29 @@ export function leadResponse(result: LeadRead): NativeHttpResponse {
       });
 }
 
+/**
+ * One transcript entry as the contract declares it. The stored entry carries the
+ * parent links and the compaction metadata the walk needed, and a reader is
+ * given neither: the wire says what the chain is, not how it was found.
+ */
+function leadTranscriptEntryBody(entry: SessionStoreEntry): unknown {
+  return {
+    ...(entry.uuid === undefined ? {} : { uuid: entry.uuid }),
+    type: entry.type,
+    ...(entry.timestamp === undefined ? {} : { timestamp: entry.timestamp }),
+    ...(entry.message === undefined ? {} : { message: entry.message }),
+  };
+}
+
 export function leadTranscriptResponse(
   result: LeadTranscriptRead,
 ): NativeHttpResponse {
   switch (result.read) {
     case "Page":
-      return response(200, result.page);
+      return response(200, {
+        ...result.page,
+        entries: result.page.entries.map(leadTranscriptEntryBody),
+      });
     case "NotFound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "Unavailable":

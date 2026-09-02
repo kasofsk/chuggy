@@ -16,10 +16,19 @@
  * claiming a source this tree has no reader for.
  *
  * A LEAF IS THE LAST ENTRY APPENDED. The store is append-only, so the newest
- * uuid-bearing entry is the tip of the chain that is still being written, and a
- * compaction leaves a second branch behind it that no later entry descends
- * from. Walking file order instead would read the abandoned branch as part of
- * the conversation.
+ * uuid-bearing entry is the tip of the chain that is still being written.
+ *
+ * TWO LIVE BRANCHES SURVIVE A COMPACTION and both are walked. A compaction's
+ * summary hangs off the boundary rather than off the entry the next turn
+ * attaches to, so a walk from the tip alone loses the one entry that stands for
+ * everything the cut dropped. Parents-first is then the append order itself: an
+ * entry's parent is always written before it, so ordering the walked set by
+ * where it was appended orders every branch against every other.
+ *
+ * A META ENTRY IS THE RUNTIME TALKING TO THE READER, not the conversation, and
+ * it is dropped for the same reason the bookkeeping types are. The suite pins
+ * the chain and what it holds against what the SDK's own accessor answered for
+ * the same bytes.
  */
 
 import type { JsonValue } from "./selector.ts";
@@ -33,12 +42,20 @@ export interface SessionStoreEntry {
   readonly timestamp?: string;
   readonly message?: JsonValue;
   readonly compactMetadata?: JsonValue;
+  /** The runtime's own note to the reader, which is not part of the conversation. */
+  readonly isMeta?: boolean;
 }
 
 /** Where the last compaction cut, and which entries it kept on the far side of the cut. */
 export interface SessionTranscriptCompaction {
   readonly boundary: SessionStoreEntry;
   readonly preserved: readonly string[];
+  /**
+   * The summary the compaction wrote in place of what it dropped. It is named
+   * apart from `preserved` because it did not survive the cut: it replaced what
+   * did not.
+   */
+  readonly anchor?: string;
 }
 
 /** The entry types a reader is shown; every other type is the runtime's bookkeeping. */
@@ -73,6 +90,9 @@ function entryOf(value: unknown): SessionStoreEntry | undefined {
     ...(fields["compactMetadata"] === undefined
       ? {}
       : { compactMetadata: fields["compactMetadata"] as JsonValue }),
+    ...(typeof fields["isMeta"] === "boolean"
+      ? { isMeta: fields["isMeta"] }
+      : {}),
   };
 }
 
@@ -102,9 +122,9 @@ export function sessionStoreEntries(
 
 /**
  * The first entry each uuid names. A fork re-appends its parent's entries with
- * their uuids unchanged, so a reader given a parent's stream beside a fork's
- * holds two entries under one identity, and the chain must count that identity
- * once.
+ * their uuids unchanged, so a stream concatenated with the one it forked from
+ * holds two entries under one identity; keeping the first is what makes the walk
+ * total over any set of entries rather than only over one stream's.
  */
 function entriesByUuid(
   entries: readonly SessionStoreEntry[],
@@ -116,37 +136,72 @@ function entriesByUuid(
   return byUuid;
 }
 
-/** The chain the agent itself sees: user and assistant entries, parents first. */
+/** Walks one entry's ancestry into `walked`, stopping at anything already there. */
+function walkAncestry(
+  from: SessionStoreEntry | undefined,
+  byUuid: ReadonlyMap<string, SessionStoreEntry>,
+  walked: Set<SessionStoreEntry>,
+  seen: Set<string>,
+): void {
+  let current = from;
+  while (current?.uuid !== undefined && !seen.has(current.uuid)) {
+    seen.add(current.uuid);
+    walked.add(current);
+    current =
+      current.parentUuid === undefined
+        ? undefined
+        : byUuid.get(current.parentUuid);
+  }
+}
+
+/**
+ * The chain the agent itself sees: user and assistant entries, parents first,
+ * walked from the tip and from the last compaction's summary alike.
+ */
 export function sessionTranscriptChain(
   entries: readonly SessionStoreEntry[],
 ): readonly SessionStoreEntry[] {
   const byUuid = entriesByUuid(entries);
   let leaf: SessionStoreEntry | undefined;
   for (const entry of entries) if (entry.uuid !== undefined) leaf = entry;
-  const walked: SessionStoreEntry[] = [];
+  const walked = new Set<SessionStoreEntry>();
   const seen = new Set<string>();
-  let current = leaf;
-  while (current?.uuid !== undefined && !seen.has(current.uuid)) {
-    seen.add(current.uuid);
-    walked.push(current);
-    current =
-      current.parentUuid === undefined
-        ? undefined
-        : byUuid.get(current.parentUuid);
-  }
-  walked.reverse();
-  return walked.filter((entry) => transcriptTypes.includes(entry.type));
+  walkAncestry(leaf, byUuid, walked, seen);
+  const anchor = sessionTranscriptCompaction(entries)?.anchor;
+  if (anchor !== undefined)
+    walkAncestry(byUuid.get(anchor), byUuid, walked, seen);
+  return entries.filter(
+    (entry) =>
+      walked.has(entry) &&
+      transcriptTypes.includes(entry.type) &&
+      entry.isMeta !== true,
+  );
 }
 
-function preservedUuids(metadata: JsonValue | undefined): readonly string[] {
-  if (typeof metadata !== "object" || metadata === null) return [];
+function preservedMessages(
+  metadata: JsonValue | undefined,
+): Record<string, JsonValue> | undefined {
+  if (typeof metadata !== "object" || metadata === null) return undefined;
   const preserved = (metadata as Record<string, JsonValue>)[
     "preservedMessages"
   ];
-  if (typeof preserved !== "object" || preserved === null) return [];
-  const named = (preserved as Record<string, JsonValue>)["uuids"];
-  if (!Array.isArray(named)) return [];
-  return named.filter((uuid): uuid is string => typeof uuid === "string");
+  return typeof preserved === "object" &&
+    preserved !== null &&
+    !Array.isArray(preserved)
+    ? (preserved as Record<string, JsonValue>)
+    : undefined;
+}
+
+function preservedUuids(metadata: JsonValue | undefined): readonly string[] {
+  const named = preservedMessages(metadata)?.["uuids"];
+  const listed: readonly JsonValue[] = Array.isArray(named) ? named : [];
+  return listed.filter((uuid): uuid is string => typeof uuid === "string");
+}
+
+/** The summary a compaction wrote, which is what the context holds in place of the cut. */
+function anchorUuid(metadata: JsonValue | undefined): string | undefined {
+  const named = preservedMessages(metadata)?.["anchorUuid"];
+  return typeof named === "string" && named.length > 0 ? named : undefined;
 }
 
 /**
@@ -163,7 +218,12 @@ export function sessionTranscriptCompaction(
     if (entry.type === "system" && entry.subtype === compactionSubtype)
       boundary = entry;
   if (boundary === undefined) return undefined;
-  return { boundary, preserved: preservedUuids(boundary.compactMetadata) };
+  const anchor = anchorUuid(boundary.compactMetadata);
+  return {
+    boundary,
+    preserved: preservedUuids(boundary.compactMetadata),
+    ...(anchor === undefined ? {} : { anchor }),
+  };
 }
 
 /**

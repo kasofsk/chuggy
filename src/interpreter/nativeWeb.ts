@@ -1134,7 +1134,11 @@ function nativeLeadSessionMethods(
   };
 }
 
-/** The refusals and the decision log, each reauthorizing before it reaches a store. */
+/**
+ * The refusals and the decision log, each reauthorizing before it reaches a
+ * store, and each refusal read asking for one past its page so `more` can be
+ * true at all.
+ */
 function nativeLeadRecordMethods(
   access: ProjectAccess,
   reads: NativeReadStore,
@@ -1150,14 +1154,14 @@ function nativeLeadRecordMethods(
       const found = await agenticRefusals(access, ports.refusals).standing(
         principal,
         partition,
-        asked,
+        asked + 1,
       );
       if (found.result === "NotFound") return { result: "NotFound" };
       const page = found.refusals.slice(0, asked);
       return {
         result: "Found",
         refusals: await nativeStandingRefusals(reads, partition, page),
-        more: found.refusals.length > page.length,
+        more: found.refusals.length > asked,
       };
     },
     ticketAgenticRefusals: async (principal, partition, ticket) => {
@@ -1166,7 +1170,7 @@ function nativeLeadRecordMethods(
         principal,
         partition,
         ticket,
-        agenticRefusalLedgerAnsweredMax,
+        agenticRefusalLedgerAnsweredMax + 1,
       );
       if (found.result === "NotFound") return { result: "NotFound" };
       const more = found.entries.length > agenticRefusalLedgerAnsweredMax;
