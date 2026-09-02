@@ -26,7 +26,10 @@ import {
 } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import { sessionStorePageBatchesMax } from "../../../src/contract/http.ts";
-import { leadTranscriptReadsMax } from "../app/core/leadTranscript.ts";
+import {
+  leadTranscriptEntriesHeldMax,
+  leadTranscriptReadsMax,
+} from "../app/core/leadTranscript.ts";
 import {
   leadBody,
   leadHandoffNote,
@@ -579,4 +582,99 @@ test("what a read could not draw is said beside what it did", async () => {
   await mountLead();
   expect(screen.getByText("Elided · 2")).toBeDefined();
   expect(screen.getAllByText("Truncated").length).toBeGreaterThan(0);
+});
+
+/** What a pane stopped holding is said as itself: a chain longer than the cap
+ * is drawn short, and a reader with no notice reads the short one as the whole
+ * of it. */
+test("the entries a pane stopped holding are counted where a reader sees them", async () => {
+  const overflowing = leadTranscriptEntriesHeldMax + 2;
+  scriptedStore((read, after) =>
+    read === 1
+      ? answer({
+          stream: leadStream,
+          entries: Array.from({ length: overflowing }, (_unused, at) => ({
+            uuid: `uuid-${String(at).padStart(4, "0")}`,
+            type: "assistant",
+            message: { content: [] },
+          })),
+          held: [],
+          cut: 1,
+          elided: 0,
+          truncated: false,
+          nextAfter: after + 1,
+        })
+      : answer({
+          stream: leadStream,
+          entries: [],
+          held: [],
+          cut: 1,
+          elided: 0,
+          truncated: false,
+        }),
+  );
+  await mountLead();
+  expect(screen.getByText("Dropped · 2")).toBeDefined();
+});
+
+/**
+ * A DIFFERENT STREAM IS A DIFFERENT PANE. The lead's own reference changes when
+ * its session is resumed on a new store, and a walk that merged the new
+ * stream's pages into the old stream's fold would draw one lead's chain as the
+ * other's.
+ */
+test("a lead that changes stream is walked as a new pane", async () => {
+  let stream = leadStream;
+  const api = apiDouble({
+    operation: { operation: "op-one", state: "Pending" },
+    route: (url) => {
+      if (url.includes("/lead/transcript"))
+        return answer({
+          stream,
+          entries: [
+            {
+              uuid: `${stream}-entry`,
+              type: "assistant",
+              message: { content: [{ type: "text", text: `on ${stream}` }] },
+            },
+          ],
+          held: [`${stream}-entry`],
+          cut: 1,
+          elided: 0,
+          truncated: false,
+        });
+      if (url.includes("/lead") && !url.includes("/transcript"))
+        return answer({
+          ...leadBody(1, 1),
+          agentReference: stream,
+          streams: [{ stream, batches: 1 }],
+        });
+      const found = leadRouteAnswer(url, opening);
+      return answer(found.body, found.status);
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  const server = await mountLead();
+  expect(screen.getByText(`on ${leadStream}`)).toBeDefined();
+  stream = "another-stream";
+  await turned(() => {
+    server.push(
+      frame("Session", "60", {
+        version: 1,
+        resource: leadSession,
+        representation: {
+          ...leadBody(1, 1),
+          agentReference: stream,
+          streams: [{ stream, batches: 1 }],
+        },
+      }),
+    );
+  });
+  await settled();
+  expect(screen.getByText("on another-stream")).toBeDefined();
+  expect(
+    screen.queryByText(`on ${leadStream}`),
+    "one lead's chain was drawn as another stream's",
+  ).toBeNull();
+  expect(logLines().length).toBe(1);
 });

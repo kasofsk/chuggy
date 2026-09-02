@@ -70,7 +70,7 @@ export function useLeadTranscript(
     const walk = async (): Promise<void> => {
       if (pane.current.stream !== undefined && pane.current.stream !== stream)
         stepped({ event: "StreamChange", stream });
-      for (let read = 0; read < leadTranscriptReadsMax; read += 1) {
+      for (let asked = 0; asked < leadTranscriptReadsMax; asked += 1) {
         const after = leadTranscriptNextAfter(pane.current, highWaterBatch);
         if (after === undefined || stream === undefined || abandoned) return;
         const answered = await apiLeadTranscript(

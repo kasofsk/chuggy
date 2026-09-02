@@ -147,12 +147,6 @@ export interface LeadTranscriptHeld extends LeadTranscriptFold {
   readonly failure: string | undefined;
 }
 
-export const leadTranscriptHeldEmpty: LeadTranscriptHeld = {
-  ...leadTranscriptFoldEmpty,
-  stream: undefined,
-  failure: undefined,
-};
-
 /**
  * The batch the next read asks after. `nextAfter` says a page filled its limit
  * and so only that there MAY be more, which is why a full page that ends the
