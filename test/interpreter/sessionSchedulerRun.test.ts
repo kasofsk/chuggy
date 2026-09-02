@@ -1,0 +1,363 @@
+/**
+ * The session pass at the lowest tier that can express it: which durable move
+ * each placement answer produces, and that every step of one pass is asked for
+ * at most the bound this deployment named.
+ *
+ * THE BOUNDS ARE ASSERTED AS THE ARGUMENTS THE STORE WAS GIVEN, not as a count
+ * of what came back. A store that was asked for everything and happened to
+ * answer with two rows is a pass with no bound at all on the day the table
+ * fills up, and counting the answers cannot tell the two apart.
+ *
+ * WHAT THIS TIER CAN DECIDE is the branch. Whether ending an attempt returns
+ * its turns to the mailbox atomically is a claim about PostgreSQL and belongs
+ * against a real server.
+ */
+
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import {
+  asSessionAttemptId,
+  asSessionBearerId,
+  asSessionBearerSecret,
+  asSessionId,
+  type AgentSession,
+} from "../../src/interpreter/agentSession.ts";
+import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
+import {
+  asCapacityAccountId,
+  asClusterId,
+  asPlacementId,
+} from "../../src/interpreter/schedulerIdentity.ts";
+import {
+  asProjectId,
+  asRecoveryEpoch,
+  asTenantId,
+} from "../../src/interpreter/projectStore.ts";
+import {
+  sessionSchedulerDefaults,
+  type FencedSessionAttempt,
+  type SessionAttemptEvidence,
+  type SessionAttemptOpened,
+  type SessionAttemptOpening,
+  type SessionPlacement,
+  type SessionPlacementOutcome,
+  type SessionPolicy,
+  type SessionSchedulerStore,
+} from "../../src/interpreter/sessionScheduler.ts";
+import {
+  sessionSchedulerPass,
+  type SessionAttemptMint,
+  type SessionSchedulerService,
+} from "../../src/interpreter/sessionSchedulerRun.ts";
+
+const partition = {
+  tenant: asTenantId("tenant"),
+  project: asProjectId("project"),
+};
+const epoch = asRecoveryEpoch("epoch-one");
+
+const session: AgentSession = {
+  partition,
+  session: asSessionId("session-one"),
+  kind: "Lead",
+  principal: asPrincipal("21:https://auth.invalidlead"),
+  agentReference: "1a2b3c",
+  capabilities: ["RepositoryRead"],
+  credentialSlot: "claude-code",
+  account: asCapacityAccountId("project"),
+  cluster: asClusterId("cluster"),
+  state: "Open",
+};
+
+const attempt: FencedSessionAttempt = {
+  partition,
+  session: session.session,
+  attempt: asSessionAttemptId("session-attempt-one"),
+  generation: 1,
+};
+
+const policy: SessionPolicy = {
+  profile: { profile: "standard", runtimeVersion: "1" },
+  image: "registry.invalid/worker:1",
+  grant: {
+    tools: [],
+    credentials: ["claude-code"],
+    network: true,
+    filesystem: "WriteWorkspace",
+    mayCompleteTask: false,
+  },
+};
+
+/** The mint a case is driven with, which draws the same values every time. */
+const bearers: SessionAttemptMint = {
+  mint: () => ({
+    attempt: attempt.attempt,
+    bearer: {
+      id: asSessionBearerId("bearer-one"),
+      secret: asSessionBearerSecret(`chgs_${"a".repeat(64)}`),
+    },
+    bearerSecretDigest: "d".repeat(64),
+  }),
+};
+
+/** One durable move asked of the store, kept as text so a whole pass is one array. */
+type StoreCall = string;
+
+/** What a case wants the store to answer, everything else being the empty answer. */
+interface StoreAnswers {
+  readonly awaiting?: readonly AgentSession[];
+  readonly opened?: SessionAttemptOpened;
+  readonly placed?: boolean;
+  readonly cleanup?: readonly FencedSessionAttempt[];
+  readonly cancelled?: "Accepted" | "Unavailable";
+}
+
+/** A store that records the bound of every move asked of it and takes none. */
+function recordingStore(
+  calls: StoreCall[],
+  answers: StoreAnswers,
+): SessionSchedulerStore {
+  return {
+    awaitingPlacement: (_epoch, sessionsMax) => {
+      calls.push(`awaitingPlacement ${String(sessionsMax)}`);
+      return Promise.resolve(answers.awaiting ?? []);
+    },
+    openAttempt: (opening: SessionAttemptOpening) => {
+      calls.push(
+        `openAttempt ${opening.attempt} lease=${String(opening.leaseSecs)} backoff=${String(opening.placementBackoffSecs)} account=${String(opening.attemptsPerAccountMax)} cluster=${String(opening.clusterAttemptsMax)}`,
+      );
+      return Promise.resolve(answers.opened ?? { opened: "Opened", attempt });
+    },
+    attemptPlaced: (_attempt, placement) => {
+      calls.push(`attemptPlaced ${placement}`);
+      return Promise.resolve(answers.placed ?? true);
+    },
+    attemptEnded: (_attempt, evidence: SessionAttemptEvidence) => {
+      calls.push(`attemptEnded ${evidence}`);
+      return Promise.resolve(true);
+    },
+    reapLapsedAttempts: (_epoch, attemptsMax) => {
+      calls.push(`reapLapsedAttempts ${String(attemptsMax)}`);
+      return Promise.resolve(0);
+    },
+    reapIdleAttempts: (_epoch, idleSecsMax, attemptsMax) => {
+      calls.push(
+        `reapIdleAttempts ${String(idleSecsMax)} ${String(attemptsMax)}`,
+      );
+      return Promise.resolve(0);
+    },
+    fenceOldEpochAttempts: (_epoch, attemptsMax) => {
+      calls.push(`fenceOldEpochAttempts ${String(attemptsMax)}`);
+      return Promise.resolve(0);
+    },
+    attemptsAwaitingCleanup: (attemptsMax) => {
+      calls.push(`attemptsAwaitingCleanup ${String(attemptsMax)}`);
+      return Promise.resolve(answers.cleanup ?? []);
+    },
+    attemptCleanupCompleted: () => {
+      calls.push("attemptCleanupCompleted");
+      return Promise.resolve(true);
+    },
+  };
+}
+
+/** The service one case drives, with the placement answer that case is about. */
+function service(
+  calls: StoreCall[],
+  answers: StoreAnswers,
+  placement: SessionPlacementOutcome,
+  placed?: (asked: SessionPlacement) => void,
+): SessionSchedulerService {
+  return {
+    store: recordingStore(calls, answers),
+    placement: {
+      place: (asked) => {
+        calls.push(`place ${asked.attempt}`);
+        placed?.(asked);
+        return Promise.resolve(placement);
+      },
+      cancel: () => {
+        calls.push("cancel");
+        return Promise.resolve({
+          cancelled: answers.cancelled ?? "Accepted",
+        });
+      },
+    },
+    bearers,
+    policy,
+    config: sessionSchedulerDefaults,
+  };
+}
+
+test("every step of one pass is asked for at most the bound this deployment named", async () => {
+  const calls: StoreCall[] = [];
+  const report = await sessionSchedulerPass(
+    service(calls, {}, { placed: "Unavailable", retryAfterSeconds: 1 }),
+    epoch,
+  );
+  assert.deepEqual(calls, [
+    `fenceOldEpochAttempts ${String(sessionSchedulerDefaults.attemptsPerPassMax)}`,
+    `attemptsAwaitingCleanup ${String(sessionSchedulerDefaults.attemptsPerPassMax)}`,
+    `reapLapsedAttempts ${String(sessionSchedulerDefaults.attemptsPerPassMax)}`,
+    `reapIdleAttempts ${String(sessionSchedulerDefaults.idleSecsMax)} ${String(sessionSchedulerDefaults.attemptsPerPassMax)}`,
+    `awaitingPlacement ${String(sessionSchedulerDefaults.placementsPerPassMax)}`,
+  ]);
+  assert.deepEqual(report, {
+    fenced: 0,
+    cleaned: 0,
+    reaped: 0,
+    idled: 0,
+    placed: 0,
+  });
+});
+
+test("a session with a turn waiting is opened under this deployment's ceilings and placed", async () => {
+  const calls: StoreCall[] = [];
+  let asked: SessionPlacement | undefined = undefined;
+  const report = await sessionSchedulerPass(
+    service(
+      calls,
+      { awaiting: [session] },
+      { placed: "Placed", placement: asPlacementId("chuggy-session-one") },
+      (placement) => {
+        asked = placement;
+      },
+    ),
+    epoch,
+  );
+  assert.equal(report.placed, 1);
+  assert.deepEqual(calls.slice(-3), [
+    `openAttempt session-attempt-one lease=${String(sessionSchedulerDefaults.attemptLeaseSecs)} backoff=${String(sessionSchedulerDefaults.placementBackoffSecs)} account=${String(sessionSchedulerDefaults.attemptsPerAccountMax)} cluster=${String(sessionSchedulerDefaults.clusterAttemptsMax)}`,
+    "place session-attempt-one",
+    "attemptPlaced chuggy-session-one",
+  ]);
+  assert.deepEqual(asked, {
+    ...attempt,
+    kind: "Lead",
+    capabilities: ["RepositoryRead"],
+    credentialSlot: "claude-code",
+    agentReference: "1a2b3c",
+    profile: policy.profile,
+    image: policy.image,
+    authority: policy.grant,
+    bearer: bearers.mint().bearer,
+  });
+});
+
+test("a session that has never run is placed with no reference to resume", async () => {
+  let asked: SessionPlacement | undefined = undefined;
+  const unrun: AgentSession = {
+    partition,
+    session: session.session,
+    kind: session.kind,
+    principal: session.principal,
+    capabilities: session.capabilities,
+    credentialSlot: session.credentialSlot,
+    account: session.account,
+    cluster: session.cluster,
+    state: session.state,
+  };
+  await sessionSchedulerPass(
+    service(
+      [],
+      { awaiting: [unrun] },
+      { placed: "Placed", placement: asPlacementId("chuggy-session-one") },
+      (placement) => {
+        asked = placement;
+      },
+    ),
+    epoch,
+  );
+  assert.ok(asked !== undefined);
+  assert.ok(!Object.hasOwn(asked, "agentReference"));
+});
+
+test("an unavailable placement withdraws the attempt and a denied one records the denial", async () => {
+  for (const [outcome, evidence] of [
+    [{ placed: "Unavailable", retryAfterSeconds: 15 }, "PlacementUnavailable"],
+    [
+      { placed: "Denied", reason: "RequiredCapabilityUnavailable" },
+      "PlacementDenied",
+    ],
+  ] as const) {
+    const calls: StoreCall[] = [];
+    const report = await sessionSchedulerPass(
+      service(calls, { awaiting: [session] }, outcome),
+      epoch,
+    );
+    assert.equal(report.placed, 0);
+    assert.equal(calls.at(-1), `attemptEnded ${evidence}`);
+    assert.ok(!calls.includes("attemptPlaced chuggy-session-one"));
+  }
+});
+
+test("a session the durable side will not open an attempt for is not placed", async () => {
+  for (const opened of [
+    { opened: "NotLaunchable" },
+    { opened: "BackingOff" },
+    { opened: "AccountAtMaximum" },
+    { opened: "ClusterFull" },
+  ] as const) {
+    const calls: StoreCall[] = [];
+    const report = await sessionSchedulerPass(
+      service(
+        calls,
+        { awaiting: [session], opened },
+        { placed: "Placed", placement: asPlacementId("chuggy-session-one") },
+      ),
+      epoch,
+    );
+    assert.equal(report.placed, 0);
+    assert.ok(
+      !calls.includes("place session-attempt-one"),
+      `a ${opened.opened} session reached the cluster`,
+    );
+  }
+});
+
+test("a pod the durable row would not take is cancelled where it was placed", async () => {
+  const calls: StoreCall[] = [];
+  const report = await sessionSchedulerPass(
+    service(
+      calls,
+      { awaiting: [session], placed: false },
+      { placed: "Placed", placement: asPlacementId("chuggy-session-one") },
+    ),
+    epoch,
+  );
+  assert.equal(report.placed, 0);
+  assert.equal(calls.at(-1), "cancel");
+});
+
+test("cleanup deletes each ended pod before it acknowledges the row", async () => {
+  const calls: StoreCall[] = [];
+  const report = await sessionSchedulerPass(
+    service(
+      calls,
+      { cleanup: [attempt] },
+      { placed: "Unavailable", retryAfterSeconds: 1 },
+    ),
+    epoch,
+  );
+  assert.equal(report.cleaned, 1);
+  assert.deepEqual(calls.slice(1, 4), [
+    `attemptsAwaitingCleanup ${String(sessionSchedulerDefaults.attemptsPerPassMax)}`,
+    "cancel",
+    "attemptCleanupCompleted",
+  ]);
+});
+
+test("a cleanup the cluster cannot accept stops the pass rather than acknowledging it", async () => {
+  await assert.rejects(
+    sessionSchedulerPass(
+      service(
+        [],
+        { cleanup: [attempt], cancelled: "Unavailable" },
+        { placed: "Unavailable", retryAfterSeconds: 1 },
+      ),
+      epoch,
+    ),
+    /attempt cleanup is unavailable/u,
+  );
+});

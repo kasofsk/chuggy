@@ -45,9 +45,6 @@
  * a second placement of one attempt names what the first created.
  */
 
-import { createHash } from "node:crypto";
-import { basename, dirname, isAbsolute, resolve } from "node:path";
-
 import type {
   AttemptPlacement,
   BlockedReason,
@@ -57,22 +54,29 @@ import type { AttemptId } from "../../interpreter/schedulerIdentity.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { taskAuthorityGrant } from "../../interpreter/taskAuthority.ts";
 import type { PolicyAuthorityGrant } from "../../interpreter/taskAuthority.ts";
-
-/** What one worker container may request and may not exceed. */
-export interface KubernetesResourceBudget {
-  readonly cpuRequest: string;
-  readonly cpuLimit: string;
-  readonly memoryRequest: string;
-  readonly memoryLimit: string;
-  readonly ephemeralStorageLimit: string;
-}
-
-/** One site-owned Secret key that may satisfy a policy's named credential. */
-export interface KubernetesWorkerCredentialMount {
-  readonly secretName: string;
-  readonly key: string;
-  readonly mountPath: string;
-}
+import {
+  checkedKubernetesPodSite,
+  kubernetesAnnotationPrefix,
+  kubernetesAttemptDigest,
+  kubernetesContainerResources,
+  kubernetesCredentials,
+  kubernetesDigestChars,
+  kubernetesName,
+  kubernetesPodNamePrefix,
+  kubernetesPositive,
+  kubernetesReservedVariables,
+  kubernetesSessionTaskVariable,
+  kubernetesWorkerCredentialFilesVariable,
+  kubernetesWorkerTaskVariable,
+  type KubernetesContainer,
+  type KubernetesContainerVariable,
+  type KubernetesCredentialSelection,
+  type KubernetesPod,
+  type KubernetesPodRequested,
+  type KubernetesPodSite,
+  type KubernetesResourceBudget,
+  type KubernetesSecret,
+} from "./kubernetesSite.ts";
 
 /** The Secret key holding the URL of the PostgreSQL every worker of this site shares. */
 export interface KubernetesWorkerDatabase {
@@ -80,40 +84,22 @@ export interface KubernetesWorkerDatabase {
   readonly key: string;
 }
 
-export const kubernetesWorkerCredentialFilesVariable =
-  "CHUG_WORKER_CREDENTIAL_FILES";
-
-/** Everything a deployment supplies the worker-launch adapter, and the bounds it works within. */
-export interface KubernetesWorkerLaunchConfig {
-  readonly apiBaseUrl: string;
-  readonly namespace: string;
-  readonly tokenFile: string;
-  readonly serviceAccountName: string;
+/**
+ * Everything a deployment supplies the worker-launch adapter beyond the site
+ * every pod of it shares, and the bounds it works within.
+ */
+export interface KubernetesWorkerLaunchConfig extends KubernetesPodSite {
   readonly podNamePrefix: string;
   readonly resources: KubernetesResourceBudget;
   readonly podLabels: Readonly<Record<string, string>>;
   readonly podAnnotations: Readonly<Record<string, string>>;
-  readonly nodeSelector: Readonly<Record<string, string>>;
-  readonly podSecurityContext: Readonly<Record<string, unknown>>;
-  readonly containerSecurityContext: Readonly<Record<string, unknown>>;
   readonly activeDeadlineSecs: number;
-  readonly requestTimeoutSecsMax: number;
-  readonly unavailableRetryAfterSecs: number;
-  readonly workerPlaneUrl: string;
-  readonly capabilityFile: string;
-  readonly workspacePath: string;
-  readonly credentialMounts: Readonly<
-    Record<string, KubernetesWorkerCredentialMount>
-  >;
   readonly environment: Readonly<Record<string, string>>;
   readonly database?: KubernetesWorkerDatabase;
 }
 
 /** The one container name a placed pod carries, so a reader of the cluster needs no lookup. */
 export const kubernetesWorkerContainerName = "worker";
-
-/** The environment variable a placed worker reads its whole task from. */
-export const kubernetesWorkerTaskVariable = "CHUG_WORKER_TASK";
 
 /** The environment variable a placed worker reaches the site's shared PostgreSQL by. */
 export const kubernetesWorkerDatabaseUrlVariable = "CHUG_WORKER_DATABASE_URL";
@@ -123,27 +109,16 @@ export const kubernetesWorkerDatabaseScopeVariable =
   "CHUG_WORKER_DATABASE_SCOPE";
 
 /** The names this adapter writes itself, which a site's own environment may not take. */
-const kubernetesWorkerReservedVariables = [
+export const kubernetesWorkerReservedVariables = [
   kubernetesWorkerTaskVariable,
+  kubernetesSessionTaskVariable,
   kubernetesWorkerCredentialFilesVariable,
   kubernetesWorkerDatabaseUrlVariable,
   kubernetesWorkerDatabaseScopeVariable,
 ] as const;
 
-/** The annotation namespace every identity this adapter writes is qualified by. */
-const kubernetesWorkerAnnotationPrefix = "chuggy.internal/";
-
-/** The object-name alphabet a namespace, a service account and a name prefix are held to. */
-const kubernetesNamePattern = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/u;
-
-/** The longest name the cluster API accepts for an object. */
-export const kubernetesNameCharsMax = 253;
-
-/** How much of a pod name the attempt digest takes, measured from the digest itself. */
-const kubernetesWorkerDigestChars = createHash("sha256").digest("hex").length;
-
 /** How much of that digest a scoped database name carries, which a PostgreSQL name bounds. */
-const kubernetesWorkerScopeDigestChars = kubernetesWorkerDigestChars / 2;
+const kubernetesWorkerScopeDigestChars = kubernetesDigestChars / 2;
 
 /** What a worker is handed: its fenced identity, its pinned inputs and what it may do. */
 export interface KubernetesWorkerTask {
@@ -180,198 +155,26 @@ export interface KubernetesWorkerTask {
 }
 
 /**
- * One variable a worker container is given, which is a value or a reference to
- * one. A site's secret is the second kind: the pod spec names the Secret and
- * the kubelet is what reads it, so the value is in no document this adapter
- * writes and in no request it sends.
+ * Refuses a deployment whose supplied cluster data cannot address a cluster,
+ * and whose own environment would replace a variable this adapter writes.
  */
-type KubernetesContainerVariable =
-  | { readonly name: string; readonly value: string }
-  | {
-      readonly name: string;
-      readonly valueFrom: {
-        readonly secretKeyRef: { readonly name: string; readonly key: string };
-      };
-    };
-
-/** One container of a worker pod, as the cluster API is given it. */
-interface KubernetesContainer {
-  readonly name: string;
-  readonly image: string;
-  readonly env: readonly KubernetesContainerVariable[];
-  readonly resources: {
-    readonly requests: Readonly<Record<string, string>>;
-    readonly limits: Readonly<Record<string, string>>;
-  };
-  readonly securityContext: Readonly<Record<string, unknown>>;
-  readonly volumeMounts: readonly {
-    readonly name: string;
-    readonly mountPath: string;
-    readonly subPath?: string;
-    readonly readOnly: boolean;
-  }[];
-}
-
-export interface KubernetesSecret {
-  readonly apiVersion: "v1";
-  readonly kind: "Secret";
-  readonly immutable: true;
-  readonly metadata: {
-    readonly name: string;
-    readonly namespace: string;
-    readonly ownerReferences: readonly {
-      readonly apiVersion: "v1";
-      readonly kind: "Pod";
-      readonly name: string;
-      readonly uid: string;
-      readonly controller: true;
-      readonly blockOwnerDeletion: true;
-    }[];
-  };
-  readonly stringData: { readonly bearer: string };
-}
-
-/** One worker pod, as the cluster API is given it. */
-export interface KubernetesPod {
-  readonly apiVersion: "v1";
-  readonly kind: "Pod";
-  readonly metadata: {
-    readonly name: string;
-    readonly namespace: string;
-    readonly labels: Readonly<Record<string, string>>;
-    readonly annotations: Readonly<Record<string, string>>;
-  };
-  readonly spec: {
-    readonly restartPolicy: "Never";
-    readonly serviceAccountName: string;
-    readonly automountServiceAccountToken: false;
-    readonly activeDeadlineSeconds: number;
-    readonly nodeSelector: Readonly<Record<string, string>>;
-    readonly securityContext: Readonly<Record<string, unknown>>;
-    readonly containers: readonly KubernetesContainer[];
-    readonly volumes: readonly {
-      readonly name: string;
-      readonly secret?: {
-        readonly secretName: string;
-        readonly defaultMode: number;
-        readonly items: readonly {
-          readonly key: string;
-          readonly path: string;
-        }[];
-      };
-      readonly emptyDir?: { readonly sizeLimit?: string };
-      readonly projected?: {
-        readonly defaultMode: number;
-        readonly sources: readonly {
-          readonly secret: {
-            readonly name: string;
-            readonly items: readonly {
-              readonly key: string;
-              readonly path: string;
-            }[];
-          };
-        }[];
-      };
-    }[];
-  };
-}
-
-/** What translating one placement found, a refusal being a value like every other here. */
-export type KubernetesPodRequested =
-  | { readonly requested: "Pod"; readonly pod: KubernetesPod }
-  | { readonly requested: "Denied"; readonly reason: BlockedReason };
-
-function kubernetesName(value: string, what: string): string {
-  if (!kubernetesNamePattern.test(value))
-    throw new RangeError(`${what} is not a Kubernetes object name`);
-  return value;
-}
-
-function kubernetesPositive(value: number, what: string): number {
-  if (!Number.isSafeInteger(value) || value < 1)
-    throw new RangeError(`${what} must be a positive integer`);
-  return value;
-}
-
-/** Refuses a deployment whose supplied cluster data cannot address a cluster. */
 export function checkedKubernetesWorkerLaunchConfig(
   config: KubernetesWorkerLaunchConfig,
 ): KubernetesWorkerLaunchConfig {
-  const api = new URL(config.apiBaseUrl);
-  if (api.username !== "" || api.password !== "")
-    throw new RangeError("cluster API URL must carry no credentials");
-  kubernetesName(config.namespace, "worker namespace");
-  kubernetesName(config.serviceAccountName, "worker service account");
-  kubernetesName(config.podNamePrefix, "worker pod name prefix");
-  if (
-    config.podNamePrefix.length + "-".length + kubernetesWorkerDigestChars >
-    kubernetesNameCharsMax
-  )
-    throw new RangeError(
-      "worker pod name prefix leaves no room for its attempt digest",
-    );
-  if (config.tokenFile.length === 0)
-    throw new RangeError("cluster token file is empty");
-  const workerPlane = new URL(config.workerPlaneUrl);
-  if (workerPlane.username !== "" || workerPlane.password !== "")
-    throw new RangeError("worker plane URL must carry no credentials");
-  if (!config.capabilityFile.startsWith("/"))
-    throw new RangeError("worker capability file must be absolute");
-  if (!config.workspacePath.startsWith("/"))
-    throw new RangeError("worker workspace path must be absolute");
-  const mountPaths = new Set([config.capabilityFile, config.workspacePath]);
-  const credentialPaths = new Set<string>();
-  for (const reserved of kubernetesWorkerReservedVariables)
-    if (Object.hasOwn(config.environment, reserved))
-      throw new RangeError(`worker environment may not replace ${reserved}`);
+  checkedKubernetesPodSite(config, "worker");
+  kubernetesPodNamePrefix(config.podNamePrefix, "worker pod name prefix");
+  kubernetesReservedVariables(
+    config.environment,
+    kubernetesWorkerReservedVariables,
+    "worker environment",
+  );
   if (config.database !== undefined) {
     kubernetesName(config.database.secretName, "worker database Secret");
     if (config.database.key.length === 0)
       throw new RangeError("worker database key is empty");
   }
-  for (const [credential, mount] of Object.entries(config.credentialMounts)) {
-    if (credential.length === 0)
-      throw new RangeError("worker credential name is empty");
-    kubernetesName(mount.secretName, `worker credential ${credential} Secret`);
-    if (mount.key.length === 0)
-      throw new RangeError(`worker credential ${credential} key is empty`);
-    if (!isAbsolute(mount.mountPath))
-      throw new RangeError(
-        `worker credential ${credential} mount path must be absolute`,
-      );
-    if (resolve(mount.mountPath) !== mount.mountPath)
-      throw new RangeError(
-        `worker credential ${credential} mount path must be canonical`,
-      );
-    const directory = dirname(mount.mountPath);
-    if (directory === "/")
-      throw new RangeError(
-        `worker credential ${credential} mount path must have a dedicated directory`,
-      );
-    if (mountPaths.has(directory))
-      throw new RangeError(`worker mount path ${directory} is repeated`);
-    if (credentialPaths.has(mount.mountPath))
-      throw new RangeError(`worker mount path ${mount.mountPath} is repeated`);
-    credentialPaths.add(mount.mountPath);
-  }
   kubernetesPositive(config.activeDeadlineSecs, "worker active deadline");
-  kubernetesPositive(config.requestTimeoutSecsMax, "cluster request timeout");
-  kubernetesPositive(
-    config.unavailableRetryAfterSecs,
-    "cluster retry interval",
-  );
   return config;
-}
-
-/** The one attempt a pod and its database are both named for, as a digest of it. */
-function kubernetesWorkerAttemptDigest(
-  partition: Partition,
-  attempt: AttemptId,
-): string {
-  const identity = [partition.tenant, partition.project, attempt]
-    .map((part) => `${String(part.length)}:${part}`)
-    .join("/");
-  return createHash("sha256").update(identity).digest("hex");
 }
 
 /**
@@ -383,7 +186,7 @@ export function kubernetesWorkerPodName(
   partition: Partition,
   attempt: AttemptId,
 ): string {
-  return `${config.podNamePrefix}-${kubernetesWorkerAttemptDigest(partition, attempt)}`;
+  return `${config.podNamePrefix}-${kubernetesAttemptDigest(partition, attempt)}`;
 }
 
 /**
@@ -398,7 +201,7 @@ export function kubernetesWorkerDatabaseScope(
   partition: Partition,
   attempt: AttemptId,
 ): string {
-  const digest = kubernetesWorkerAttemptDigest(partition, attempt);
+  const digest = kubernetesAttemptDigest(partition, attempt);
   return `chug_${digest.slice(0, kubernetesWorkerScopeDigestChars)}`;
 }
 
@@ -487,7 +290,7 @@ function kubernetesWorkerAnnotations(
     ...config.podAnnotations,
     ...Object.fromEntries(
       Object.entries(identity).map(([name, value]) => [
-        `${kubernetesWorkerAnnotationPrefix}${name}`,
+        `${kubernetesAnnotationPrefix}${name}`,
         value,
       ]),
     ),
@@ -556,64 +359,6 @@ function kubernetesWorkerCapabilityVolumes(
   ];
 }
 
-interface KubernetesWorkerCredentialSelection {
-  readonly volumes: KubernetesPod["spec"]["volumes"];
-  readonly mounts: KubernetesContainer["volumeMounts"];
-  readonly files: Readonly<Record<string, string>>;
-}
-
-/** Resolves only credentials the authority granted, refusing an unserved name. */
-function kubernetesWorkerCredentials(
-  config: KubernetesWorkerLaunchConfig,
-  authority: PolicyAuthorityGrant,
-): KubernetesWorkerCredentialSelection | undefined {
-  const directories = new Map<
-    string,
-    {
-      readonly name: string;
-      readonly sources: {
-        readonly secret: {
-          readonly name: string;
-          readonly items: readonly {
-            readonly key: string;
-            readonly path: string;
-          }[];
-        };
-      }[];
-    }
-  >();
-  const files: Record<string, string> = {};
-  for (const credential of authority.credentials) {
-    const supplied = config.credentialMounts[credential];
-    if (supplied === undefined) return undefined;
-    const directory = dirname(supplied.mountPath);
-    const selected = directories.get(directory) ?? {
-      name: `worker-credential-${String(directories.size)}`,
-      sources: [],
-    };
-    selected.sources.push({
-      secret: {
-        name: supplied.secretName,
-        items: [{ key: supplied.key, path: basename(supplied.mountPath) }],
-      },
-    });
-    directories.set(directory, selected);
-    files[credential] = supplied.mountPath;
-  }
-  return {
-    volumes: [...directories.values()].map(({ name, sources }) => ({
-      name,
-      projected: { defaultMode: 0o400, sources },
-    })),
-    mounts: [...directories.entries()].map(([mountPath, { name }]) => ({
-      name,
-      mountPath,
-      readOnly: true,
-    })),
-    files,
-  };
-}
-
 /**
  * The shared server a worker reaches and the database on it that is the
  * attempt's, or nothing where the site runs no such server: work that then
@@ -650,7 +395,7 @@ function kubernetesWorkerContainer(
   config: KubernetesWorkerLaunchConfig,
   placement: AttemptPlacement,
   image: string,
-  credentials: KubernetesWorkerCredentialSelection,
+  credentials: KubernetesCredentialSelection,
 ): KubernetesContainer {
   return {
     name: kubernetesWorkerContainerName,
@@ -670,18 +415,7 @@ function kubernetesWorkerContainer(
         value,
       })),
     ],
-    resources: {
-      requests: {
-        cpu: config.resources.cpuRequest,
-        memory: config.resources.memoryRequest,
-        "ephemeral-storage": config.resources.ephemeralStorageLimit,
-      },
-      limits: {
-        cpu: config.resources.cpuLimit,
-        memory: config.resources.memoryLimit,
-        "ephemeral-storage": config.resources.ephemeralStorageLimit,
-      },
-    },
+    resources: kubernetesContainerResources(config.resources),
     securityContext: config.containerSecurityContext,
     volumeMounts: [
       {
@@ -708,9 +442,10 @@ export function kubernetesWorkerPodRequest(
   const admitted = kubernetesWorkerImage(placement);
   if ("reason" in admitted)
     return { requested: "Denied", reason: admitted.reason };
-  const credentials = kubernetesWorkerCredentials(
+  const credentials = kubernetesCredentials(
     config,
     taskAuthorityGrant(placement.invocation.authority),
+    kubernetesWorkerContainerName,
   );
   if (credentials === undefined)
     return { requested: "Denied", reason: "RequiredCapabilityUnavailable" };

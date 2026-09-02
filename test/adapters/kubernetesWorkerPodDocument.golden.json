@@ -1,0 +1,347 @@
+{
+  "withDatabase": {
+    "requested": "Pod",
+    "pod": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "golden-worker-cf45557c1dd3fa5e62070da1ffe0664faf25ab7d9b84c19ee95b519e914bdae6",
+        "namespace": "golden-work",
+        "labels": {
+          "app.kubernetes.io/name": "golden-worker"
+        },
+        "annotations": {
+          "site.invalid/tier": "golden",
+          "chuggy.internal/tenant": "golden-tenant",
+          "chuggy.internal/project": "golden-project",
+          "chuggy.internal/execution": "golden-execution",
+          "chuggy.internal/attempt": "golden-attempt",
+          "chuggy.internal/generation": "4",
+          "chuggy.internal/ticket": "11",
+          "chuggy.internal/task": "3",
+          "chuggy.internal/task-kind": "Work",
+          "chuggy.internal/source-request": "11:0:SpawnWork",
+          "chuggy.internal/input-bundle": "11:0:InputBundle",
+          "chuggy.internal/input-bundle-digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "chuggy.internal/configuration-revision": "revision-of-record",
+          "chuggy.internal/configuration-digest": "configuration-digest",
+          "chuggy.internal/profile": "standard",
+          "chuggy.internal/runtime-version": "1",
+          "chuggy.internal/requirement": "golden-requirement",
+          "chuggy.internal/requirement-digest": "requirement-digest",
+          "chuggy.internal/stage": "2"
+        }
+      },
+      "spec": {
+        "restartPolicy": "Never",
+        "serviceAccountName": "golden-worker",
+        "automountServiceAccountToken": false,
+        "activeDeadlineSeconds": 7200,
+        "nodeSelector": {
+          "kubernetes.io/arch": "amd64"
+        },
+        "securityContext": {
+          "runAsNonRoot": true,
+          "fsGroup": 2000
+        },
+        "containers": [
+          {
+            "name": "worker",
+            "image": "registry.invalid/golden-worker:1",
+            "env": [
+              {
+                "name": "CHUG_WORKER_TASK",
+                "value": "{\"tenant\":\"golden-tenant\",\"project\":\"golden-project\",\"execution\":\"golden-execution\",\"attempt\":\"golden-attempt\",\"generation\":4,\"ticket\":11,\"task\":3,\"taskKind\":\"Work\",\"stage\":2,\"sourceRequest\":\"11:0:SpawnWork\",\"inputBundle\":\"11:0:InputBundle\",\"inputBundleDigest\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"configurationRevision\":\"revision-of-record\",\"configurationDigest\":\"configuration-digest\",\"profile\":{\"profile\":\"standard\",\"runtimeVersion\":\"1\"},\"requirementIdentity\":\"golden-requirement\",\"requirementDigest\":\"requirement-digest\",\"briefing\":{\"templateVersion\":4,\"purpose\":\"Work\",\"text\":\"## Your role\\nYou are implementing one task on this ticket, and nothing else on it.\\nRead the code you are about to change before you change it.\\nChange the least that satisfies the acceptance criteria below, and leave the rest alone.\\nIf the ticket cannot be satisfied as written, report that rather than satisfying something adjacent to it.\\n\\n## Why this ticket matters\\nA placed pod is the only thing a worker ever reads.\\n\\n## Acceptance criteria and constraints\\nAcceptance criteria:\\n- The submitted document is the one asserted here.\\n\\n## Implementation instructions\\nRender the document and submit nothing beside it.\\n\\n## Practices for this task\\n- Take the acceptance criteria one at a time and say which of them the change meets.\\n\\n## The result you must report\\nReport one result manifest: a verdict, and a handoff for anything the reviewer will need.\\nReport a pass only for work you have verified running; an unverified pass is a false verdict.\\nReport a failure plainly, with the criterion you could not satisfy and what stopped you.\"},\"authority\":{\"tools\":[\"editor\"],\"credentials\":[\"forge\",\"workspace\"],\"network\":true,\"filesystem\":\"WriteWorkspace\",\"mayCompleteTask\":false},\"workerPlane\":{\"url\":\"http://golden-plane.invalid:3001\",\"capabilityFile\":\"/var/run/golden/capability/bearer\",\"capability\":\"golden-capability\",\"manifest\":\"golden-manifest\"}}"
+              },
+              {
+                "name": "CHUG_WORKER_CREDENTIAL_FILES",
+                "value": "{\"forge\":\"/var/run/golden/forge/token\",\"workspace\":\"/var/run/golden/workspace/token\"}"
+              },
+              {
+                "name": "CHUG_WORKER_DATABASE_URL",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "name": "golden-database",
+                    "key": "url"
+                  }
+                }
+              },
+              {
+                "name": "CHUG_WORKER_DATABASE_SCOPE",
+                "value": "chug_cf45557c1dd3fa5e62070da1ffe0664f"
+              },
+              {
+                "name": "CHUG_WORKER_REPOSITORIES",
+                "value": "{\"repository\":{}}"
+              }
+            ],
+            "resources": {
+              "requests": {
+                "cpu": "250m",
+                "memory": "512Mi",
+                "ephemeral-storage": "20Gi"
+              },
+              "limits": {
+                "cpu": "2",
+                "memory": "4Gi",
+                "ephemeral-storage": "20Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "readOnlyRootFilesystem": true
+            },
+            "volumeMounts": [
+              {
+                "name": "worker-capability",
+                "mountPath": "/var/run/golden/capability/bearer",
+                "subPath": "bearer",
+                "readOnly": true
+              },
+              {
+                "name": "worker-workspace",
+                "mountPath": "/workspace",
+                "readOnly": false
+              },
+              {
+                "name": "worker-credential-0",
+                "mountPath": "/var/run/golden/forge",
+                "readOnly": true
+              },
+              {
+                "name": "worker-credential-1",
+                "mountPath": "/var/run/golden/workspace",
+                "readOnly": true
+              }
+            ]
+          }
+        ],
+        "volumes": [
+          {
+            "name": "worker-capability",
+            "secret": {
+              "secretName": "golden-worker-cf45557c1dd3fa5e62070da1ffe0664faf25ab7d9b84c19ee95b519e914bdae6",
+              "defaultMode": 256,
+              "items": [
+                {
+                  "key": "bearer",
+                  "path": "bearer"
+                }
+              ]
+            }
+          },
+          {
+            "name": "worker-workspace",
+            "emptyDir": {
+              "sizeLimit": "20Gi"
+            }
+          },
+          {
+            "name": "worker-credential-0",
+            "projected": {
+              "defaultMode": 256,
+              "sources": [
+                {
+                  "secret": {
+                    "name": "golden-forge",
+                    "items": [
+                      {
+                        "key": "token",
+                        "path": "token"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "worker-credential-1",
+            "projected": {
+              "defaultMode": 256,
+              "sources": [
+                {
+                  "secret": {
+                    "name": "golden-workspace",
+                    "items": [
+                      {
+                        "key": "token",
+                        "path": "token"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "withoutDatabase": {
+    "requested": "Pod",
+    "pod": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "golden-worker-cf45557c1dd3fa5e62070da1ffe0664faf25ab7d9b84c19ee95b519e914bdae6",
+        "namespace": "golden-work",
+        "labels": {
+          "app.kubernetes.io/name": "golden-worker"
+        },
+        "annotations": {
+          "site.invalid/tier": "golden",
+          "chuggy.internal/tenant": "golden-tenant",
+          "chuggy.internal/project": "golden-project",
+          "chuggy.internal/execution": "golden-execution",
+          "chuggy.internal/attempt": "golden-attempt",
+          "chuggy.internal/generation": "4",
+          "chuggy.internal/ticket": "11",
+          "chuggy.internal/task": "3",
+          "chuggy.internal/task-kind": "Work",
+          "chuggy.internal/source-request": "11:0:SpawnWork",
+          "chuggy.internal/input-bundle": "11:0:InputBundle",
+          "chuggy.internal/input-bundle-digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "chuggy.internal/configuration-revision": "revision-of-record",
+          "chuggy.internal/configuration-digest": "configuration-digest",
+          "chuggy.internal/profile": "standard",
+          "chuggy.internal/runtime-version": "1",
+          "chuggy.internal/requirement": "golden-requirement",
+          "chuggy.internal/requirement-digest": "requirement-digest",
+          "chuggy.internal/stage": "2"
+        }
+      },
+      "spec": {
+        "restartPolicy": "Never",
+        "serviceAccountName": "golden-worker",
+        "automountServiceAccountToken": false,
+        "activeDeadlineSeconds": 7200,
+        "nodeSelector": {
+          "kubernetes.io/arch": "amd64"
+        },
+        "securityContext": {
+          "runAsNonRoot": true,
+          "fsGroup": 2000
+        },
+        "containers": [
+          {
+            "name": "worker",
+            "image": "registry.invalid/golden-worker:1",
+            "env": [
+              {
+                "name": "CHUG_WORKER_TASK",
+                "value": "{\"tenant\":\"golden-tenant\",\"project\":\"golden-project\",\"execution\":\"golden-execution\",\"attempt\":\"golden-attempt\",\"generation\":4,\"ticket\":11,\"task\":3,\"taskKind\":\"Work\",\"stage\":2,\"sourceRequest\":\"11:0:SpawnWork\",\"inputBundle\":\"11:0:InputBundle\",\"inputBundleDigest\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"configurationRevision\":\"revision-of-record\",\"configurationDigest\":\"configuration-digest\",\"profile\":{\"profile\":\"standard\",\"runtimeVersion\":\"1\"},\"requirementIdentity\":\"golden-requirement\",\"requirementDigest\":\"requirement-digest\",\"briefing\":{\"templateVersion\":4,\"purpose\":\"Work\",\"text\":\"## Your role\\nYou are implementing one task on this ticket, and nothing else on it.\\nRead the code you are about to change before you change it.\\nChange the least that satisfies the acceptance criteria below, and leave the rest alone.\\nIf the ticket cannot be satisfied as written, report that rather than satisfying something adjacent to it.\\n\\n## Why this ticket matters\\nA placed pod is the only thing a worker ever reads.\\n\\n## Acceptance criteria and constraints\\nAcceptance criteria:\\n- The submitted document is the one asserted here.\\n\\n## Implementation instructions\\nRender the document and submit nothing beside it.\\n\\n## Practices for this task\\n- Take the acceptance criteria one at a time and say which of them the change meets.\\n\\n## The result you must report\\nReport one result manifest: a verdict, and a handoff for anything the reviewer will need.\\nReport a pass only for work you have verified running; an unverified pass is a false verdict.\\nReport a failure plainly, with the criterion you could not satisfy and what stopped you.\"},\"authority\":{\"tools\":[\"editor\"],\"credentials\":[\"forge\",\"workspace\"],\"network\":true,\"filesystem\":\"WriteWorkspace\",\"mayCompleteTask\":false},\"workerPlane\":{\"url\":\"http://golden-plane.invalid:3001\",\"capabilityFile\":\"/var/run/golden/capability/bearer\",\"capability\":\"golden-capability\",\"manifest\":\"golden-manifest\"}}"
+              },
+              {
+                "name": "CHUG_WORKER_CREDENTIAL_FILES",
+                "value": "{\"forge\":\"/var/run/golden/forge/token\",\"workspace\":\"/var/run/golden/workspace/token\"}"
+              },
+              {
+                "name": "CHUG_WORKER_REPOSITORIES",
+                "value": "{\"repository\":{}}"
+              }
+            ],
+            "resources": {
+              "requests": {
+                "cpu": "250m",
+                "memory": "512Mi",
+                "ephemeral-storage": "20Gi"
+              },
+              "limits": {
+                "cpu": "2",
+                "memory": "4Gi",
+                "ephemeral-storage": "20Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "readOnlyRootFilesystem": true
+            },
+            "volumeMounts": [
+              {
+                "name": "worker-capability",
+                "mountPath": "/var/run/golden/capability/bearer",
+                "subPath": "bearer",
+                "readOnly": true
+              },
+              {
+                "name": "worker-workspace",
+                "mountPath": "/workspace",
+                "readOnly": false
+              },
+              {
+                "name": "worker-credential-0",
+                "mountPath": "/var/run/golden/forge",
+                "readOnly": true
+              },
+              {
+                "name": "worker-credential-1",
+                "mountPath": "/var/run/golden/workspace",
+                "readOnly": true
+              }
+            ]
+          }
+        ],
+        "volumes": [
+          {
+            "name": "worker-capability",
+            "secret": {
+              "secretName": "golden-worker-cf45557c1dd3fa5e62070da1ffe0664faf25ab7d9b84c19ee95b519e914bdae6",
+              "defaultMode": 256,
+              "items": [
+                {
+                  "key": "bearer",
+                  "path": "bearer"
+                }
+              ]
+            }
+          },
+          {
+            "name": "worker-workspace",
+            "emptyDir": {
+              "sizeLimit": "20Gi"
+            }
+          },
+          {
+            "name": "worker-credential-0",
+            "projected": {
+              "defaultMode": 256,
+              "sources": [
+                {
+                  "secret": {
+                    "name": "golden-forge",
+                    "items": [
+                      {
+                        "key": "token",
+                        "path": "token"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "worker-credential-1",
+            "projected": {
+              "defaultMode": 256,
+              "sources": [
+                {
+                  "secret": {
+                    "name": "golden-workspace",
+                    "items": [
+                      {
+                        "key": "token",
+                        "path": "token"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

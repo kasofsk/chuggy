@@ -30,6 +30,13 @@ import {
   postgresLimitsDefault,
   type PostgresLimits,
 } from "../adapters/postgres/pool.ts";
+import type { KubernetesPodSite } from "../adapters/kubernetes/kubernetesSite.ts";
+import {
+  kubernetesSessionBoundsDefaults,
+  kubernetesSessionBudgetUsdMin,
+  type KubernetesSessionBounds,
+  type KubernetesSessionLaunchConfig,
+} from "../adapters/kubernetes/sessionPod.ts";
 import type { KubernetesWorkerLaunchConfig } from "../adapters/kubernetes/workerPod.ts";
 import type {
   SuppliedExecutionPolicyConfig,
@@ -51,6 +58,11 @@ import {
   finalizerDefaults,
   type FinalizerConfig,
 } from "../interpreter/finalizer.ts";
+import {
+  sessionSchedulerDefaults,
+  type SessionPolicy,
+  type SessionSchedulerConfig,
+} from "../interpreter/sessionScheduler.ts";
 import {
   asRecoveryEpoch,
   type RecoveryEpoch,
@@ -88,6 +100,9 @@ export interface SchedulerCommandConfig {
   readonly policy: SuppliedExecutionPolicyConfig;
   readonly workerCatalog: readonly AdmittedWorker[];
   readonly runtimeFacts: SuppliedRuntimeFactsConfig;
+  readonly sessions: KubernetesSessionLaunchConfig;
+  readonly sessionScheduler: SessionSchedulerConfig;
+  readonly sessionPolicy: SessionPolicy;
 }
 
 /** The one prefix every variable this command reads is spelled with. */
@@ -101,6 +116,8 @@ const schedulerCommandDefaults = {
   clusterRetryAfterSecs: 15,
   workerDeadlineSecs: 3_600,
   workerPodNamePrefix: "chuggy-worker",
+  sessionDeadlineSecs: 86_400,
+  sessionPodNamePrefix: "chuggy-session",
 } as const;
 
 /** A record of the environment as read, so a caller supplies one rather than a process. */
@@ -129,6 +146,13 @@ const schedulerGrantSchema = z.strictObject({
 });
 
 const schedulerProfileSchema = z.strictObject({
+  profile: schedulerTextSchema,
+  runtimeVersion: schedulerTextSchema,
+  grant: schedulerGrantSchema,
+});
+
+const schedulerSessionPolicySchema = z.strictObject({
+  image: schedulerTextSchema.max(workerImageCharsMax),
   profile: schedulerTextSchema,
   runtimeVersion: schedulerTextSchema,
   grant: schedulerGrantSchema,
@@ -351,16 +375,23 @@ function schedulerJsonOr<Parsed>(
     : schedulerDocument(name, schema, value);
 }
 
-/** A published set of bounds with this deployment's overrides applied, refusing an unknown one. */
+/**
+ * A published set of bounds with this deployment's overrides applied, refusing
+ * an unknown one. A bound is a positive whole number unless `kinds` gives it
+ * another schema, because a bound one tier accepts and another refuses is a
+ * bound with two readings and a deployment meets the stricter one as a refusal
+ * to boot.
+ */
 function schedulerBounds<Bounds extends Record<keyof Bounds, number>>(
   environment: SchedulerEnvironment,
   name: string,
   defaults: Bounds,
+  kinds?: Readonly<Partial<Record<keyof Bounds, z.ZodType<number>>>>,
 ): Bounds {
   const overrides = schedulerJsonOr(
     environment,
     name,
-    z.record(schedulerTextSchema, schedulerBoundSchema),
+    z.record(schedulerTextSchema, z.number()),
     {},
   );
   const merged = { ...defaults };
@@ -369,10 +400,37 @@ function schedulerBounds<Bounds extends Record<keyof Bounds, number>>(
       throw new RangeError(
         `${schedulerVariablePrefix}${name} names an unknown bound ${bound}`,
       );
-    Object.assign(merged, { [bound]: value });
+    const parsed = (
+      kinds?.[bound as keyof Bounds] ?? schedulerBoundSchema
+    ).safeParse(value);
+    if (!parsed.success)
+      throw new RangeError(
+        `${schedulerVariablePrefix}${name}: ${bound} ${parsed.error.issues
+          .map((issue) => issue.message)
+          .join("; ")}`,
+      );
+    Object.assign(merged, { [bound]: parsed.data });
   }
   return merged;
 }
+
+/**
+ * What each session bound is parsed as, keyed over the bounds themselves the
+ * way the launcher's own checks are, so a bound added there and forgotten here
+ * does not compile rather than falling quietly to the whole-number default.
+ * The dollar cap reads its floor from the launcher's constant, so the two tiers
+ * admit one set of values rather than agreeing by coincidence.
+ */
+const schedulerSessionBoundKinds: {
+  readonly [Bound in keyof KubernetesSessionBounds]: z.ZodType<number>;
+} = {
+  mailboxPollMs: schedulerBoundSchema,
+  idleMs: schedulerBoundSchema,
+  resultDrainMs: schedulerBoundSchema,
+  loadTimeoutMs: schedulerBoundSchema,
+  turnsMax: schedulerBoundSchema,
+  budgetUsd: z.number().finite().min(kubernetesSessionBudgetUsdMin),
+};
 
 /** Only the entries that named themselves, which are the ones a boot publishes. */
 function schedulerWorkerCatalog(
@@ -520,6 +578,98 @@ function schedulerWorkers(
   };
 }
 
+/**
+ * The session half of this deployment, which stands on the same site the worker
+ * half does — same namespace, service account, API and credential mounts, since
+ * a second set of variables for those would be a second answer to what the site
+ * is and the first deployment to change one would leave the other placing pods
+ * the site no longer describes. What a session names for itself is what makes
+ * it a session: its own pod name, budget, deadline, labels, bounds and model.
+ */
+function schedulerSessions(
+  environment: SchedulerEnvironment,
+  site: KubernetesPodSite,
+): KubernetesSessionLaunchConfig {
+  return {
+    ...site,
+    podNamePrefix:
+      schedulerOptional(environment, "SESSION_POD_NAME_PREFIX") ??
+      schedulerCommandDefaults.sessionPodNamePrefix,
+    podLabels: schedulerJsonOr(
+      environment,
+      "SESSION_LABELS",
+      schedulerTextMapSchema,
+      {},
+    ),
+    podAnnotations: schedulerJsonOr(
+      environment,
+      "SESSION_ANNOTATIONS",
+      schedulerTextMapSchema,
+      {},
+    ),
+    environment: schedulerJsonOr(
+      environment,
+      "SESSION_ENVIRONMENT",
+      schedulerTextMapSchema,
+      {},
+    ),
+    resources: schedulerJson(
+      environment,
+      "SESSION_RESOURCES",
+      schedulerResourcesSchema,
+    ),
+    activeDeadlineSecs: schedulerPositive(
+      environment,
+      "SESSION_DEADLINE_SECS",
+      schedulerCommandDefaults.sessionDeadlineSecs,
+    ),
+    bounds: schedulerBounds<KubernetesSessionBounds>(
+      environment,
+      "SESSION_BOUNDS",
+      kubernetesSessionBoundsDefaults,
+      schedulerSessionBoundKinds,
+    ),
+    model: schedulerRequired(environment, "SESSION_MODEL"),
+  };
+}
+
+/** The one image, profile and grant every session of this site runs under. */
+function schedulerSessionPolicy(
+  environment: SchedulerEnvironment,
+): SessionPolicy {
+  const parsed = schedulerJson(
+    environment,
+    "SESSION_POLICY",
+    schedulerSessionPolicySchema,
+  );
+  return {
+    image: parsed.image,
+    profile: { profile: parsed.profile, runtimeVersion: parsed.runtimeVersion },
+    grant: parsed.grant,
+  };
+}
+
+/** Only the cluster half of a worker configuration, which is the site both halves share. */
+function schedulerPodSite(
+  workers: KubernetesWorkerLaunchConfig,
+): KubernetesPodSite {
+  return {
+    apiBaseUrl: workers.apiBaseUrl,
+    namespace: workers.namespace,
+    tokenFile: workers.tokenFile,
+    serviceAccountName: workers.serviceAccountName,
+    nodeSelector: workers.nodeSelector,
+    podSecurityContext: workers.podSecurityContext,
+    containerSecurityContext: workers.containerSecurityContext,
+    requestTimeoutSecsMax: workers.requestTimeoutSecsMax,
+    unavailableRetryAfterSecs: workers.unavailableRetryAfterSecs,
+    workerPlaneUrl: workers.workerPlaneUrl,
+    capabilityFile: workers.capabilityFile,
+    workspacePath: workers.workspacePath,
+    credentialMounts: workers.credentialMounts,
+  };
+}
+
 /** The database this process holds its scheduler credential against, and its pool bounds. */
 function schedulerDatabase(
   environment: SchedulerEnvironment,
@@ -544,6 +694,7 @@ export function schedulerCommandConfig(
     "ADMITTED_IMAGES",
     schedulerImagesSchema,
   );
+  const workers = schedulerWorkers(environment);
   return {
     database: schedulerDatabase(environment),
     runtime: {
@@ -583,9 +734,16 @@ export function schedulerCommandConfig(
       "FINALIZER_BOUNDS",
       finalizerDefaults,
     ),
-    workers: schedulerWorkers(environment),
+    workers,
     policy: schedulerPolicy(environment, admitted),
     workerCatalog: schedulerWorkerCatalog(admitted),
     runtimeFacts: workspace === undefined ? {} : { workspace },
+    sessions: schedulerSessions(environment, schedulerPodSite(workers)),
+    sessionScheduler: schedulerBounds(
+      environment,
+      "SESSION_PASS_BOUNDS",
+      sessionSchedulerDefaults,
+    ),
+    sessionPolicy: schedulerSessionPolicy(environment),
   };
 }
