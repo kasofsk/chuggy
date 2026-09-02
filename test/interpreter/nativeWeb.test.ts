@@ -826,6 +826,17 @@ test("a principal needs both halves of the identity it names", () => {
   assert.throws(() => oidcPrincipal("https://one.example", ""), RangeError);
 });
 
+/**
+ * The branding site refuses, rather than every caller: a principal read back out
+ * of a stored row reaches it directly, and the columns it comes from are
+ * `text NOT NULL` with no non-empty constraint. An empty identity that branded
+ * cleanly would be authorized against an empty-identity access row.
+ */
+test("branding an identity refuses one that names nobody", () => {
+  assert.throws(() => asPrincipal(""), RangeError);
+  assert.equal(asPrincipal("subject"), "subject");
+});
+
 test("only the access kinds the authorization function knows narrow", () => {
   assert.equal(asProjectAccessKind("DispatchTicket"), "DispatchTicket");
   assert.throws(() => asProjectAccessKind("Dispatch"), RangeError);

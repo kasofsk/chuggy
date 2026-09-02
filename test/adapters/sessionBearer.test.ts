@@ -9,15 +9,13 @@ import {
   asSessionBearerSecret,
   sessionBearerPattern,
   sessionBearerPrefix,
+  type SessionBearerAuthority,
+  type SessionBearerIdentity,
   type SessionBearerSecret,
 } from "../../src/interpreter/agentSession.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
-import {
-  twoBearerAuthentication,
-  type SessionBearerAuthority,
-  type SessionBearerIdentity,
-} from "../../src/adapters/http/sessionBearer.ts";
+import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
 import type {
   BearerAuthentication,
   PrincipalAuthentication,
@@ -166,4 +164,41 @@ test("the two bearer languages are disjoint, so the routing is total", async () 
   assert.equal(token.startsWith("ey"), true);
   assert.equal(sessionBearerPattern.test(token), false);
   assert.equal(sessionBearerPattern.test(mintedSecret()), true);
+});
+
+/** Text the prefix routes to this side and the brand refuses, which is nobody's credential. */
+const malformed = [
+  sessionBearerPrefix,
+  `${sessionBearerPrefix}${"a".repeat(31)}`,
+  `${sessionBearerPrefix}${"a".repeat(241)}`,
+  `${sessionBearerPrefix}not a bearer!`,
+];
+
+test("a prefixed token outside the language is the token's fault, and reaches neither authority", async () => {
+  for (const token of malformed) {
+    const offered: string[] = [];
+    const { oidc, sessions } = authorities(offered, { session: identity });
+    const decided = await twoBearerAuthentication(
+      oidc,
+      sessions,
+    ).authenticateBearer(token);
+    assert.deepEqual(
+      decided,
+      { authenticated: "InvalidToken" },
+      `refusing ${JSON.stringify(token)}`,
+    );
+    assert.deepEqual(offered, [], `refusing ${JSON.stringify(token)}`);
+  }
+});
+
+test("the prefix is compared exactly, so a case that no minting produces is the issuer's", async () => {
+  const offered: string[] = [];
+  const token = `${sessionBearerPrefix.toUpperCase()}${randomUUID()}${randomUUID()}`;
+  const { oidc, sessions } = authorities(offered, { session: identity });
+  const decided = await twoBearerAuthentication(
+    oidc,
+    sessions,
+  ).authenticateBearer(token);
+  assert.deepEqual(decided, { authenticated: "InvalidToken" });
+  assert.deepEqual(offered, [`oidc:${token}`]);
 });

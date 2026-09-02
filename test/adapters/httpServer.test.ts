@@ -1330,3 +1330,32 @@ test("a session bearer no live row answers is unauthenticated, not forbidden", a
   );
   assert.deepEqual(calls, ["session-authority"]);
 });
+
+/**
+ * A malformed session bearer must not reach the hook's blanket catch, which
+ * would report a bad token as this server's own outage — so the case is written
+ * against the status the server actually sends rather than against the routing.
+ */
+test("a malformed session bearer is refused, and never reported as an outage", async () => {
+  for (const token of [
+    sessionBearerPrefix,
+    `${sessionBearerPrefix}!!`,
+    `${sessionBearerPrefix.toUpperCase()}${randomUUID()}${randomUUID()}`,
+  ]) {
+    const calls: string[] = [];
+    await using app = twoBearerAppOf(calls, new Set());
+    const found = await app.inject(submissionUnder(token));
+    assert.equal(found.statusCode, 401, token);
+    assert.equal(
+      found.headers["www-authenticate"],
+      'Bearer error="invalid_token"',
+      token,
+    );
+    assert.equal(found.headers["retry-after"], undefined, token);
+    assert.equal(
+      calls.includes("session-authority"),
+      false,
+      `${token} reached the session authority`,
+    );
+  }
+});

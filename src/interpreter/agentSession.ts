@@ -200,6 +200,30 @@ export const allSessionTurnFailures = [
 ] as const;
 export type SessionTurnFailure = (typeof allSessionTurnFailures)[number];
 
+/** Whose authority one session bearer carries, and which session carried it. */
+export interface SessionBearerIdentity {
+  readonly partition: Partition;
+  readonly session: SessionId;
+  readonly kind: SessionKind;
+  readonly principal: Principal;
+}
+
+/**
+ * What the durable side answers about one session bearer: a row for a live
+ * attempt of an open session, and nothing for a closed session, an ended
+ * attempt, a stale epoch or a secret never minted — all the token's own fault,
+ * indistinguishable from outside, so raising is left to a durable side that
+ * could not be asked at all.
+ * It stands here rather than beside the HTTP composition that consumes it,
+ * because its only implementation is a postgres adapter and one adapter may not
+ * see another.
+ */
+export interface SessionBearerAuthority {
+  authenticate(
+    secret: SessionBearerSecret,
+  ): Promise<SessionBearerIdentity | undefined>;
+}
+
 /** One agent session as the platform holds it; the transcript is not here. */
 export interface AgentSession {
   readonly partition: Partition;
