@@ -29,6 +29,7 @@ import {
   runOutcomeLabelCharsMax,
   runTranscriptPageBatchesMax,
   selectorHandoffNoteBytesMax,
+  selectorHandoffNotePreviewCharsMax,
   selectorHistoryLimitMax,
   sessionStoreStreamCharsMax,
   sessionStoreStreamsAnswered,
@@ -779,20 +780,17 @@ export type DraftInitializationResponse = z.infer<
   typeof draftInitializationResponseSchema
 >;
 
-function handoffNoteIsBounded(value: unknown): boolean {
-  return (
-    new TextEncoder().encode(JSON.stringify(value ?? null)).byteLength <=
-    selectorHandoffNoteBytesMax
-  );
-}
-
-/** Bounded JSON a lead writes for its successor, opaque to everything but the lead. */
-const handoffNoteSchema = z
-  .unknown()
-  .refine(
-    handoffNoteIsBounded,
-    "a handoff note is larger than its column holds",
-  );
+/**
+ * How large the note a lead leaves its successor is, and as much of it as the
+ * lead read carries. The note itself is opaque to everything but the lead, and
+ * at its own ceiling it weighs a whole wire body, so the read that carries a
+ * mailbox tail and a stream listing beside it carries this instead.
+ */
+const handoffNotePreviewSchema = z.strictObject({
+  bytes: countSchema.max(selectorHandoffNoteBytesMax),
+  preview: z.string().max(selectorHandoffNotePreviewCharsMax),
+  truncated: z.boolean(),
+});
 
 /** One entry of one ticket's refusal ledger, as the ledger recorded it. */
 export const agenticRefusalEntryResponseSchema = z.object({
@@ -902,7 +900,7 @@ export const leadResponseSchema = z.object({
   attention: z.enum(selectorAttentions),
   agentReference: identitySchema.optional(),
   notificationCursor: countSchema,
-  handoffNote: handoffNoteSchema,
+  handoffNote: handoffNotePreviewSchema,
   turns: z.array(leadTurnResponseSchema).max(leadTurnsAnsweredMax),
   streams: z
     .array(leadStoreStreamResponseSchema)
@@ -933,6 +931,8 @@ export const leadTranscriptResponseSchema = z.object({
     .object({ boundary: identitySchema, at: instantSchema.optional() })
     .optional(),
   elided: countSchema,
+  /** Whether the chain over these batches was longer than a page of entries. */
+  truncated: z.boolean(),
   nextAfter: countSchema.optional(),
 });
 export type LeadTranscriptResponse = z.infer<

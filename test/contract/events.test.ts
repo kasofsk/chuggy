@@ -76,7 +76,7 @@ const leadRepresentation = {
   attention: "Monitoring",
   agentReference: "1a2b",
   notificationCursor: 1_204,
-  handoffNote: {},
+  handoffNote: { bytes: 2, preview: "{}", truncated: false },
   turns: [
     {
       turn: "selector-decision-one",
