@@ -100,8 +100,9 @@ function leadHeldOf(
 
 /**
  * One page of the store: one batch, so `nextAfter` is present exactly where the
- * page filled its limit. A final full page is therefore followed by an empty
- * one, which is the shape the walk has to stop on.
+ * page filled its limit and a final full page is followed by an empty one. Only
+ * the page carrying the boundary answers `held`; every other page says nothing
+ * about it, which is what absent means on this route.
  */
 export function leadTranscriptPage(
   after: number,
@@ -112,10 +113,10 @@ export function leadTranscriptPage(
   return {
     stream: leadStream,
     entries: [...entries],
-    held: [...leadHeldOf(entries)],
     ...(at < 0
       ? {}
       : {
+          held: [...leadHeldOf(entries)],
           compaction: {
             boundary: leadBoundaryUuid,
             at: "2026-09-01T10:00:00Z",

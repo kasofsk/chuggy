@@ -121,30 +121,26 @@ test("a project that has decided nothing says so rather than drawing a table", a
 });
 
 /**
- * The panel reads the log's newest end, which is the whole reason it can call
- * its top row current. The ascending arm is paged from the beginning, so a
- * panel asking for it and dropping the cursor would show a project's first
- * decisions forever and draw a months-old one as the one that just ran.
+ * WHICH ROW IS CURRENT IS READ OFF THE ORDINALS AND NOT OFF THE PAGE'S
+ * ARRANGEMENT: a route that ignored the newest arm would answer an ascending
+ * page, and a panel trusting position would draw a months-old decision at the
+ * top labelled `Current`. The same page is served both ways up here, and the
+ * panel has to lead with the newest either way.
  */
-test("the decisions are read from the newest end, bounded, with no cursor", async () => {
-  const asked = await drawDecisions();
-  expect(asked.length).toBeGreaterThan(0);
-  for (const url of asked) {
-    const query = new URL(url, "https://console").searchParams;
-    expect(query.get("order")).toBe("newest");
-    expect(query.get("after"), "the panel paged a bounded read").toBeNull();
-    expect(Number(query.get("limit"))).toBeGreaterThan(0);
-  }
-});
-
-/** The page arrives descending, so a panel that reordered it would put the
- * oldest decision it holds at the top and mark that one current. */
-test("the page is drawn in the order the route gave it", async () => {
+test("the newest decision leads the panel whichever way the page arrived", async () => {
+  await drawDecisions({
+    decisions: [leadDecisionDispatching, leadDecisionRefusing],
+  });
+  expect(groups()[0]?.textContent).toContain("Decision 1202");
+  cleanup();
   await drawDecisions({
     decisions: [leadDecisionRefusing, leadDecisionDispatching],
   });
   const drawn = groups();
-  expect(drawn[0]?.textContent).toContain("Decision 1201");
+  expect(
+    drawn[0]?.textContent,
+    "an ascending page put the oldest decision at the top of the panel",
+  ).toContain("Decision 1202");
   expect(drawn[0]?.hasAttribute("open")).toBe(true);
-  expect(drawn[1]?.textContent).toContain("Decision 1202");
+  expect(drawn[1]?.textContent).toContain("Decision 1201");
 });

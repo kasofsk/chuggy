@@ -25,6 +25,7 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
+import { sessionStorePageBatchesMax } from "../../../src/contract/http.ts";
 import { leadTranscriptReadsMax } from "../app/core/leadTranscript.ts";
 import {
   leadBody,
@@ -256,13 +257,18 @@ function endlessStore(): { readonly reads: () => number } {
 
 /**
  * The read budget is the only thing between a lead whose store keeps answering
- * and a tab that walks it forever. A page mounted against a store that never
- * ends must stop at the bound and not one page later.
+ * and a tab that walks it forever, and its size is part of the control: a bound
+ * raised past what the route itself pages in is a budget that no longer bounds
+ * anything a reader waits on.
  */
 test("the walk stops at its own read budget however much the store offers", async () => {
   const store = endlessStore();
   await mountLead();
   expect(store.reads()).toBe(leadTranscriptReadsMax);
+  expect(
+    leadTranscriptReadsMax,
+    "one rise of the store may now cost more reads than the route pages in",
+  ).toBeLessThanOrEqual(sessionStorePageBatchesMax);
 });
 
 /** A transcript that will not read is said as itself; a Log drawn as empty
@@ -308,6 +314,10 @@ test("a stream the store's listing does not carry is named, not drawn as empty",
   });
   vi.stubGlobal("fetch", api.fetch);
   await mountLead();
-  expect(screen.getByText("Stream unlisted")).toBeDefined();
+  expect(
+    screen.getAllByText("Stream unlisted").length,
+    "a panel drawing a stream nothing can be read for said nothing about it",
+  ).toBe(2);
   expect(screen.queryByText("No entries")).toBeNull();
+  expect(screen.queryByText("Nothing held")).toBeNull();
 });

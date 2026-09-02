@@ -8,10 +8,12 @@
  * so the Holding panel and the Log panel are two readings of one value and
  * cannot disagree about what the lead is working from.
  *
- * A PAGE THAT CARRIES A COMPACTION REPLACES WHAT IS HELD RATHER THAN ADDING TO
- * IT. Entries below a boundary are exactly the ones the lead stopped holding,
- * so a union across pages would mark them held again; where no page has ever
- * carried a boundary nothing has been dropped and the union is what holds.
+ * `held` ABSENT MEANS THE PAGE DOES NOT KNOW, AND `held` PRESENT MEANS THE CUT
+ * IS ON IT. A page carrying the boundary replaces what is held, because entries
+ * below a cut are exactly the ones the lead stopped holding; a page without one
+ * adds its own entries, which is right after a boundary already seen and is a
+ * guess corrected by the boundary page before it. A stream paged whole with no
+ * `held` anywhere is a stream nothing was ever dropped from.
  *
  * ENTRY TEXT IS TEXT. A compaction summary embeds a resume path that names
  * nothing durable, so no derivation here turns an entry into a reference and
@@ -117,6 +119,30 @@ function leadTranscriptEntriesMerged(
   return merged;
 }
 
+/** What a page says is held: its own answer where it carries the cut, and its
+ * own entries where it does not. */
+function leadTranscriptHolds(page: LeadTranscriptResponse): readonly string[] {
+  return (
+    page.held ??
+    page.entries.flatMap((entry) =>
+      entry.uuid === undefined ? [] : [entry.uuid],
+    )
+  );
+}
+
+/**
+ * The cursor the next read asks after. A page with no entries has nothing above
+ * the cursor it was asked with, so the walk moves to the high-water mark rather
+ * than back to a cursor that would answer the same empty page again.
+ */
+function leadTranscriptReadTo(
+  page: LeadTranscriptResponse,
+  highWaterBatch: number,
+): number {
+  if (page.entries.length === 0) return highWaterBatch;
+  return page.nextAfter ?? highWaterBatch;
+}
+
 /** One page folded in, with the walk's cursor advanced to what it read to. */
 export function leadTranscriptMerged(
   held: LeadTranscriptHeld,
@@ -129,14 +155,14 @@ export function leadTranscriptMerged(
     stream: page.stream,
     entries: kept,
     holding:
-      page.compaction === undefined
-        ? [...new Set([...held.holding, ...page.held])]
+      page.held === undefined
+        ? [...new Set([...held.holding, ...leadTranscriptHolds(page)])]
         : [...page.held],
     compaction: page.compaction ?? held.compaction,
     elided: held.elided + page.elided,
     truncated: held.truncated || page.truncated,
     entriesDropped: held.entriesDropped + (merged.length - kept.length),
-    readTo: page.nextAfter ?? highWaterBatch,
+    readTo: leadTranscriptReadTo(page, highWaterBatch),
     more: leadTranscriptMore(held, page),
     failure: undefined,
   };
@@ -255,6 +281,18 @@ export function leadFolded(
   if (representation === null) return previous;
   const read = leadResponseSchema.safeParse(representation);
   return read.success ? read.data : previous;
+}
+
+/**
+ * The page a decision panel draws, highest ordinal first. The order is derived
+ * from the ordinals rather than taken from the page's own arrangement, so a
+ * route answering the log's other end cannot put a months-old decision at the
+ * top of the panel and have it drawn as the one that just ran.
+ */
+export function leadDecisionsNewestFirst(
+  decisions: readonly SelectorDecisionResponse[],
+): readonly SelectorDecisionResponse[] {
+  return [...decisions].sort((left, right) => right.ordinal - left.ordinal);
 }
 
 /** What one decision did, as the one line the log is scanned down. */

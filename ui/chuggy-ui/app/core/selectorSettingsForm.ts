@@ -7,11 +7,18 @@
  * omission here and the effective value beside it is what the project then
  * runs under.
  *
- * THE WRITE REPLACES THE WHOLE OVERRIDE SET, so an override the form draws no
- * box for is carried through it unchanged. The fields this form owns are named
- * once below and everything else the read returned rides along, which is what
- * keeps an allowlist nobody can see here from being deleted by an edit to the
- * North Star.
+ * THE WRITE REPLACES THE WHOLE OVERRIDE SET, so the three overrides this form
+ * draws no box for — the two allowlists and the context age — are carried
+ * through it unchanged rather than deleted by an edit to the North Star.
+ *
+ * A BOX THE READER HAS TOUCHED IS THEIRS AND EVERY OTHER BOX FOLLOWS THE READ.
+ * The draft holds what the read gave beside what is held, so the two can be
+ * compared: when the settings move under an open form — a conflict, or a
+ * refetch — an edited box keeps its text and an untouched one takes the value
+ * that now stands. Carrying every drawn field forward instead would write this
+ * reader's stale copy of another administrator's North Star back over it, under
+ * a revision that by then matches, which is the one thing `expectedRevision`
+ * exists to prevent.
  *
  * The wire's own parser decides what is writable. A field it rejects is named
  * by its path rather than judged again here, because a second account of what
@@ -49,9 +56,8 @@ export type SelectorSettingsLimitDraft = Readonly<
 >;
 
 /**
- * The override fields this form draws a box for. Everything else the read
- * returned is carried, so a field the wire grows is preserved by a console that
- * has never heard of it.
+ * The override fields this form draws a box for. What is carried instead is the
+ * rest of what the read returned — the two allowlists and the context age.
  */
 export const selectorSettingsEditedNames = [
   "northStar",
@@ -61,16 +67,24 @@ export const selectorSettingsEditedNames = [
   "limits",
 ] as const;
 
-/** What the form holds, under the revision it was read at, beside the overrides
- * it does not draw and must not drop. */
-export interface SelectorSettingsDraft {
-  readonly revision: number;
+/** The boxes this form draws, as the strings they hold. */
+export interface SelectorSettingsDrawn {
   readonly northStar: string;
   readonly basePrompt: string;
   readonly mode: string;
   readonly dispatchMode: string;
   readonly limits: SelectorSettingsLimitDraft;
+}
+
+/**
+ * What the form holds, under the revision it was read at, beside the overrides
+ * it does not draw and must not drop and the values the read gave for the ones
+ * it does — which is how an edited box is told from an untouched one.
+ */
+export interface SelectorSettingsDraft extends SelectorSettingsDrawn {
+  readonly revision: number;
   readonly carried: SelectorProjectOverrides;
+  readonly read: SelectorSettingsDrawn;
 }
 
 function selectorSettingsLimitDraft(
@@ -98,32 +112,71 @@ function selectorSettingsCarried(
   return carried;
 }
 
-/** The settings as the form holds them, an absent override being an empty box. */
-export function selectorSettingsDraft(
-  settings: SelectorProjectSettingsResponse,
-): SelectorSettingsDraft {
-  const overrides = settings.overrides;
+/** The boxes as the read gave them, an absent override being an empty one. */
+function selectorSettingsDrawn(
+  overrides: SelectorProjectOverrides,
+): SelectorSettingsDrawn {
   return {
-    revision: settings.revision,
     northStar: overrides.northStar ?? "",
     basePrompt: overrides.basePrompt ?? "",
     mode: overrides.mode ?? "",
     dispatchMode: overrides.dispatchMode ?? "",
     limits: selectorSettingsLimitDraft(overrides.limits),
-    carried: selectorSettingsCarried(overrides),
   };
 }
 
-/** The draft under a revision the route has since answered with, keeping what
- * the reader has typed and taking everything they did not. */
+/** The settings as the form holds them, an absent override being an empty box. */
+export function selectorSettingsDraft(
+  settings: SelectorProjectSettingsResponse,
+): SelectorSettingsDraft {
+  const drawn = selectorSettingsDrawn(settings.overrides);
+  return {
+    ...drawn,
+    revision: settings.revision,
+    carried: selectorSettingsCarried(settings.overrides),
+    read: drawn,
+  };
+}
+
+function selectorSettingsLimitsRebased(
+  draft: SelectorSettingsDraft,
+  arriving: SelectorSettingsDrawn,
+): SelectorSettingsLimitDraft {
+  const rebased = (name: SelectorSettingsLimitName): string =>
+    draft.limits[name] === draft.read.limits[name]
+      ? arriving.limits[name]
+      : draft.limits[name];
+  return {
+    tokensPerDecision: rebased("tokensPerDecision"),
+    millisecondsPerDecision: rebased("millisecondsPerDecision"),
+    toolCallsPerDecision: rebased("toolCallsPerDecision"),
+    inputBytesPerDecision: rebased("inputBytesPerDecision"),
+    candidatePagesPerDecision: rebased("candidatePagesPerDecision"),
+  };
+}
+
+/**
+ * The draft under settings the route has since answered with: a box whose text
+ * still equals what the read gave takes the arriving value, and one the reader
+ * changed keeps theirs. The arriving values become the new comparison, so a box
+ * the write accepted stops reading as edited.
+ */
 export function selectorSettingsRebased(
   draft: SelectorSettingsDraft,
   settings: SelectorProjectSettingsResponse,
 ): SelectorSettingsDraft {
+  const arriving = selectorSettingsDrawn(settings.overrides);
+  const kept = (name: "northStar" | "basePrompt" | "mode" | "dispatchMode") =>
+    draft[name] === draft.read[name] ? arriving[name] : draft[name];
   return {
-    ...draft,
+    northStar: kept("northStar"),
+    basePrompt: kept("basePrompt"),
+    mode: kept("mode"),
+    dispatchMode: kept("dispatchMode"),
+    limits: selectorSettingsLimitsRebased(draft, arriving),
     revision: settings.revision,
     carried: selectorSettingsCarried(settings.overrides),
+    read: arriving,
   };
 }
 

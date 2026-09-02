@@ -3,11 +3,11 @@
  * tickets it dispatched, refused and lifted.
  *
  * THE READ IS THE LOG'S NEWEST END AND NOT ITS FIRST PAGE. `order=newest`
- * answers the last `limit` decisions in descending ordinal as one bounded page
- * with no cursor, so the panel is one read and the row at the top is the
- * decision that just ran. Asking for the default ascending arm and dropping its
- * cursor would show a months-old decision as the current one on any project
- * that has decided more than a page.
+ * answers the last `limit` decisions as one bounded page with no cursor, so the
+ * panel is one read; asking for the default ascending arm and dropping its
+ * cursor would show a project's first decisions forever. Which row is current
+ * is decided from the ordinals rather than from the page's arrangement, so a
+ * page arriving the other way up is drawn right way up rather than mislabelled.
  *
  * The log has no change kind of its own, so it is re-read on the partition
  * invalidation the stream's fallback already performs; what a decision saw is
@@ -30,7 +30,10 @@ import {
   instantFigure,
   tokenCountFigure,
 } from "../../core/figures.ts";
-import { leadDecisionSummary } from "../../core/leadTranscript.ts";
+import {
+  leadDecisionsNewestFirst,
+  leadDecisionSummary,
+} from "../../core/leadTranscript.ts";
 import type { Tone } from "../../core/tones.ts";
 import { usePanelResource } from "../api.ts";
 import { DataPanel } from "../DataPanel.tsx";
@@ -153,13 +156,11 @@ function LeadDecisionGroup(props: {
   );
 }
 
-/** The page arrives newest first, so the row the panel opens on is the one at
- * the top of it and nothing here reorders anything. */
 function LeadDecisionList(props: {
   readonly history: SelectorHistoryResponse;
   readonly nowMs: number;
 }): ReactNode {
-  const decisions = props.history.decisions;
+  const decisions = leadDecisionsNewestFirst(props.history.decisions);
   const newest = decisions[0]?.ordinal;
   if (decisions.length === 0) return <EmptyState label="No decisions" />;
   return (

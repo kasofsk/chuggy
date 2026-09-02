@@ -498,11 +498,9 @@ export function apiAgenticRefusals(
 }
 
 /**
- * Which end of the decision log a read starts at: `oldest` is the route's own
- * default and pages forward with `after`, while `newest` answers the last
- * `limit` decisions as one bounded page with no cursor and is refused beside
- * `after`. The roster moves to `src/contract/rosters.ts` with the closing
- * commit of kasofsk/chuggy#507 and is stated here until it does.
+ * Which end of the decision log a read starts at: `oldest` pages forward with
+ * `after`, and `newest` answers the last `limit` decisions as one bounded page
+ * with no cursor.
  */
 export const selectorHistoryOrders = ["oldest", "newest"] as const;
 

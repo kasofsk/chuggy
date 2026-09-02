@@ -12,6 +12,7 @@ import { expect, test } from "vitest";
 
 import {
   agenticRefusalStanding,
+  leadDecisionsNewestFirst,
   leadDecisionSummary,
   leadEntryText,
   leadEntryTools,
@@ -34,6 +35,7 @@ import {
   leadDecisionDispatching,
   leadDecisionIdle,
   leadDecisionRefusing,
+  leadHistory,
   leadRefusals,
   leadSession,
   leadStream,
@@ -93,21 +95,27 @@ test("a full page is asked past, and the empty page after it ends the walk", () 
   expect(leadTranscriptNextAfter(third, 3)).toBe(2);
 });
 
-/** A page with nothing on it cannot have filled a limit, and neither can one
+/**
+ * A page with nothing on it cannot have filled a limit, and neither can one
  * whose cursor did not move; either asked for again is a walk that spends its
- * whole budget on one batch. */
+ * whole budget on one batch. An empty page takes the cursor to the high-water
+ * mark rather than to the one it answered with, so a store written above it
+ * does not send the walk back to the same empty page.
+ */
 test("an empty page and a cursor that stood still both end the walk", () => {
   const stuck = {
     stream: "1a2b3c",
     entries: [],
-    held: [],
     elided: 0,
     truncated: false,
     nextAfter: 1,
   };
   const empty = leadTranscriptMerged(leadTranscriptHeldEmpty, stuck, 4);
   expect(empty.more).toBe(false);
-  expect(leadTranscriptNextAfter(empty, 4)).toBe(1);
+  expect(
+    leadTranscriptNextAfter(empty, 4),
+    "the walk went back to the cursor an empty page answered with",
+  ).toBeUndefined();
   const standing = leadTranscriptMerged(
     leadTranscriptMerged(leadTranscriptHeldEmpty, leadTranscriptPage(0, 3), 3),
     { ...leadTranscriptPage(1, 3), nextAfter: 1 },
@@ -226,7 +234,6 @@ test("the oldest entries leave at the cap, and the pane counts them going", () =
         type: "assistant",
         message: { content: [] },
       })),
-      held: [],
       elided: 0,
       truncated: false,
     },
@@ -261,4 +268,56 @@ test("a decision says what it did, and says so when it did nothing", () => {
 test("a refusal stands until the ticket is authored again", () => {
   expect(agenticRefusalStanding(refusalAt(false))).toBe("Standing");
   expect(agenticRefusalStanding(refusalAt(true))).toBe("Superseded");
+});
+
+/**
+ * `held` ABSENT IS "THIS PAGE DOES NOT KNOW", NOT "NOTHING IS HELD". The route
+ * answers it only on the page that carries the cut, so a reader taking absence
+ * for an empty set would draw a lead that is holding nothing on every page but
+ * one — and one taking it for the whole page before the cut arrives is corrected
+ * by the page that carries it.
+ */
+test("a page that does not carry the cut says nothing about what is held", () => {
+  const before = leadTranscriptMerged(
+    leadTranscriptHeldEmpty,
+    {
+      stream: "1a2b3c",
+      entries: [
+        { uuid: "uuid-x", type: "user", message: { content: [] } },
+        { uuid: "uuid-y", type: "assistant", message: { content: [] } },
+      ],
+      elided: 0,
+      truncated: false,
+      nextAfter: 1,
+    },
+    2,
+  );
+  expect(before.holding).toStrictEqual(["uuid-x", "uuid-y"]);
+  const cut = leadTranscriptMerged(
+    before,
+    {
+      stream: "1a2b3c",
+      entries: [{ uuid: "uuid-z", type: "user", message: { content: [] } }],
+      held: ["uuid-z"],
+      compaction: { boundary: "uuid-z" },
+      elided: 0,
+      truncated: false,
+    },
+    2,
+  );
+  expect(cut.holding).toStrictEqual(["uuid-z"]);
+});
+
+/** A route that answered the log's other end would put a months-old decision at
+ * the top of the panel, so which one is newest is read off the ordinals. */
+test("the decisions are ordered by ordinal whichever way the page arrived", () => {
+  const ascending = [leadDecisionRefusing, leadDecisionDispatching];
+  expect(
+    leadDecisionsNewestFirst(ascending).map((decision) => decision.ordinal),
+  ).toStrictEqual([1_202, 1_201]);
+  expect(
+    leadDecisionsNewestFirst(leadHistory.decisions).map(
+      (decision) => decision.ordinal,
+    ),
+  ).toStrictEqual([1_202, 1_201]);
 });

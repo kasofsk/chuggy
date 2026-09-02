@@ -176,11 +176,17 @@ function LeadNote(props: {
   );
 }
 
-/** What the lead is working from: the note it left itself and the chain from
- * the last seam on, one block per entry. */
+/**
+ * What the lead is working from: the note it left itself and the chain from the
+ * last seam on, one block per entry. A stream the store's listing does not
+ * carry has nothing to walk, so it is said as itself here too — "nothing held"
+ * beside a lead that has plainly been deciding is the same false reading the
+ * Log panel refuses to give.
+ */
 export function LeadHolding(props: {
   readonly held: LeadTranscriptHeld;
   readonly note: LeadHandoffNote | undefined;
+  readonly listed: boolean;
   readonly nowMs: number;
 }): ReactNode {
   const [open, setOpen] = useState<string | undefined>(undefined);
@@ -188,12 +194,14 @@ export function LeadHolding(props: {
   return (
     <Panel title="Holding">
       <LeadNote note={props.note} />
-      {lines.length === 0 ? (
+      {!props.listed ? (
+        <EmptyState label="Stream unlisted" />
+      ) : lines.length === 0 ? (
         <EmptyState label="Nothing held" />
       ) : (
         <Ledger>
           {lines.map((line) => (
-            <LedgerBlock key={line.ordinal}>
+            <LedgerBlock key={leadLineKey(line)}>
               <LeadEntryRow
                 line={line}
                 nowMs={props.nowMs}

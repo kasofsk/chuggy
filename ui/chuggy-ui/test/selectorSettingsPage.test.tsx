@@ -313,3 +313,83 @@ test("a save after a conflict is made against the revision that moved", async ()
   });
   expect(screen.getByText("Written · 15")).toBeDefined();
 });
+
+/**
+ * THE CASE `expectedRevision` EXISTS FOR. This reader edits one limit and never
+ * looks at the North Star; another administrator changes the North Star under
+ * them. Carrying every drawn box forward would put this reader's stale copy of
+ * that North Star back on the wire under a revision that by then matches, so
+ * the route would accept it and the other write would be gone with nobody
+ * having typed a word of it.
+ */
+test("a conflict does not carry a box this reader never touched", async () => {
+  let conflicting = true;
+  const server = await drawSettings(
+    () => {
+      if (conflicting) {
+        conflicting = false;
+        return {
+          body: {
+            error: { code: "SettingsRevisionConflict", message: "moved" },
+            settings: settingsBody(14, {
+              northStar: "somebody else's star",
+              toolAllowlist: ["Read"],
+            }),
+          },
+          status: 409,
+        };
+      }
+      return { body: settingsBody(15, {}), status: 200 };
+    },
+    settingsBody(12, { northStar: "the original star" }),
+  );
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("Tokens"), {
+      target: { value: "500" },
+    });
+  });
+  await turned(save);
+  await settled();
+  expect(screen.getByText("Conflict · 14")).toBeDefined();
+  expect(screen.getByLabelText<HTMLTextAreaElement>("North Star").value).toBe(
+    "somebody else's star",
+  );
+  expect(screen.getByLabelText<HTMLInputElement>("Tokens").value).toBe("500");
+  await turned(save);
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 14,
+    overrides: {
+      toolAllowlist: ["Read"],
+      northStar: "somebody else's star",
+      limits: { tokensPerDecision: 500 },
+    },
+  });
+});
+
+/**
+ * A read can move under an open form at any moment, including between a Save
+ * click and its answer. A reseed there takes back text the reader typed while
+ * they were waiting, which is the one window in which they cannot see it go.
+ */
+test("text typed while a save is in flight survives the answer", async () => {
+  const server = await drawSettings(() => ({
+    body: settingsBody(13, { northStar: "ship the console" }),
+    status: 200,
+  }));
+  await turned(save);
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("Base prompt"), {
+      target: { value: "typed while the save was in flight" },
+    });
+  });
+  await settled();
+  expect(
+    screen.getByLabelText<HTMLTextAreaElement>("Base prompt").value,
+    "the answer to a save took back what was typed while it was in flight",
+  ).toBe("typed while the save was in flight");
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 12,
+    overrides: { northStar: "ship the console" },
+  });
+});

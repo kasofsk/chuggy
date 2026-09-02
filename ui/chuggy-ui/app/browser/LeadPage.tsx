@@ -172,6 +172,7 @@ function LeadBody(props: {
   readonly nowMs: number;
 }): ReactNode {
   const lead = props.state.state === "Ready" ? props.state.value : undefined;
+  const listed = lead !== undefined && leadStreamListed(lead);
   const held = useLeadTranscript({
     partition: props.partition,
     stream: lead?.agentReference,
@@ -183,12 +184,13 @@ function LeadBody(props: {
       <DataPanel title="Turns" state={props.state}>
         {(value) => <LeadTurns lead={value} />}
       </DataPanel>
-      <LeadHolding held={held} note={lead?.handoffNote} nowMs={props.nowMs} />
-      <LeadLog
+      <LeadHolding
         held={held}
-        stream={lead?.agentReference}
-        listed={lead !== undefined && leadStreamListed(lead)}
+        note={lead?.handoffNote}
+        listed={listed}
+        nowMs={props.nowMs}
       />
+      <LeadLog held={held} stream={lead?.agentReference} listed={listed} />
       <LeadDecisions partition={props.partition} nowMs={props.nowMs} />
       <LeadRefusals partition={props.partition} nowMs={props.nowMs} />
     </>

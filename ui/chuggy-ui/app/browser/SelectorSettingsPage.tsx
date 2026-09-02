@@ -4,10 +4,12 @@
  * project may set for itself.
  *
  * A WRITE THE REVISION MOVED UNDER IS NOT RETRIED. The route answers `409` with
- * the settings that moved, and this draws the revision rather than reapplying a
- * draft over somebody else's write. Every box left empty is an override
- * cleared, which is what the route means by omitting a field, and the effective
- * value stands in the box as what the project runs under instead.
+ * the settings that moved; the page names the revision and stops, and the boxes
+ * this reader never touched take what now stands rather than carrying their
+ * stale copy of it back over another administrator's write. Every box left
+ * empty is an override cleared, which is what the route means by omitting a
+ * field, and the effective value stands in the box as what the project runs
+ * under instead.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -224,11 +226,12 @@ function SelectorLimitFields(props: {
 }
 
 /**
- * The draft, seeded from the read and reseeded when THE READ moves — not when
- * the draft and the read merely differ. A conflict moves the draft's own
- * revision ahead of the read's so the reader's next Save is made against what
- * the route says stands, and a reseed on any difference would take their typed
- * text back off the screen at exactly that point.
+ * The draft, seeded from the read and rebased when THE READ moves — not when
+ * the draft and the read merely differ, since a conflict moves the draft's own
+ * revision ahead of the read's. It is a rebase rather than a reseed because a
+ * read can move under an open form at any moment, including between a Save
+ * click and its answer, and a reseed would take back text the reader had typed
+ * in that window.
  */
 function useSelectorSettingsDraft(settings: SelectorProjectSettingsResponse): {
   readonly draft: SelectorSettingsDraft;
@@ -240,9 +243,9 @@ function useSelectorSettingsDraft(settings: SelectorProjectSettingsResponse): {
   const [seen, setSeen] = useState(settings.revision);
   if (seen !== settings.revision) {
     setSeen(settings.revision);
-    const seeded = selectorSettingsDraft(settings);
-    setDraft(seeded);
-    return { draft: seeded, setDraft };
+    const rebased = selectorSettingsRebased(draft, settings);
+    setDraft(rebased);
+    return { draft: rebased, setDraft };
   }
   return { draft, setDraft };
 }
