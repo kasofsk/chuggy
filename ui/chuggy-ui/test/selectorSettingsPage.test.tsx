@@ -16,6 +16,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { SelectorSettingsPage } from "../app/browser/SelectorSettingsPage.tsx";
+import { leadDispatchesMax } from "../../../src/contract/http.ts";
 import { selectorProjectOverridesSchema } from "../../../src/contract/requests.ts";
 import { selectorSettingsLimitNames } from "../app/core/selectorSettingsForm.ts";
 import {
@@ -485,4 +486,186 @@ test("a limit a project set survives a save that edits the North Star", async ()
       limits: { dispatchesPerDecision: 2 },
     },
   });
+});
+
+/**
+ * THE DISPATCH BUDGET INHERITS THE WHOLE-SET REPLACE, and this is the direction
+ * the other limit cases do not cover: the write is rebuilt from the boxes, so a
+ * save that edits only this one carries every other override or deletes it. A
+ * reader raising the budget would silently drop the project's North Star, its
+ * allowlists and its other limits, and nothing on the page would show it go.
+ */
+test("editing only the dispatch budget leaves every other override in place", async () => {
+  const server = await drawSettings(
+    () => ({ body: settingsBody(13, {}), status: 200 }),
+    settingsBody(12, {
+      northStar: "ship the console",
+      basePrompt: "choose the next ticket",
+      mode: "Running",
+      dispatchMode: "ApprovalRequired",
+      modelAllowlist: ["claude-opus-4"],
+      toolAllowlist: ["Read"],
+      operationalContextMaxAgeMs: 30_000,
+      limits: { tokensPerDecision: 100, dispatchesPerDecision: 2 },
+    }),
+  );
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("Dispatches"), {
+      target: { value: "5" },
+    });
+  });
+  await turned(save);
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 12,
+    overrides: {
+      northStar: "ship the console",
+      basePrompt: "choose the next ticket",
+      mode: "Running",
+      dispatchMode: "ApprovalRequired",
+      modelAllowlist: ["claude-opus-4"],
+      toolAllowlist: ["Read"],
+      operationalContextMaxAgeMs: 30_000,
+      limits: { tokensPerDecision: 100, dispatchesPerDecision: 5 },
+    },
+  });
+});
+
+/**
+ * THE DISPATCH BUDGET INHERITS THE EDITED-FIELDS REBASE. This reader raises the
+ * budget and never looks at the North Star; another administrator changes the
+ * North Star under them. The edited box keeps what was typed and every other
+ * box takes what now stands, so the next save does not write this reader's
+ * stale copy of somebody else's star back over it.
+ */
+test("a conflict keeps a typed dispatch budget and takes the rest", async () => {
+  let conflicting = true;
+  const server = await drawSettings(
+    () => {
+      if (conflicting) {
+        conflicting = false;
+        return {
+          body: {
+            error: { code: "SettingsRevisionConflict", message: "moved" },
+            settings: settingsBody(14, {
+              northStar: "somebody else's star",
+              limits: { dispatchesPerDecision: 2 },
+            }),
+          },
+          status: 409,
+        };
+      }
+      return { body: settingsBody(15, {}), status: 200 };
+    },
+    settingsBody(12, { limits: { dispatchesPerDecision: 1 } }),
+  );
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("Dispatches"), {
+      target: { value: "5" },
+    });
+  });
+  await turned(save);
+  await settled();
+  expect(screen.getByText("Conflict · 14")).toBeDefined();
+  expect(
+    screen.getByLabelText<HTMLInputElement>("Dispatches").value,
+    "the rebase took back a budget this reader had typed",
+  ).toBe("5");
+  expect(screen.getByLabelText<HTMLTextAreaElement>("North Star").value).toBe(
+    "somebody else's star",
+  );
+  await turned(save);
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 14,
+    overrides: {
+      northStar: "somebody else's star",
+      limits: { dispatchesPerDecision: 5 },
+    },
+  });
+});
+
+/**
+ * THE REBASE IS PER BOX AND NOT PER LIMIT SET, and this is the direction no
+ * other case reaches: a limit typed in *and* a different limit moved under it.
+ * `limits` is one override on the wire, so a rebase taking the reader's whole
+ * set wherever one box in it was touched reads as harmless and is the lost
+ * update the per-box rule exists to refuse — the arriving ceiling is discarded
+ * unseen and the next save writes the stale one back under a revision that by
+ * then matches.
+ */
+test("a conflict rebases a limit beside the budget this reader typed", async () => {
+  let conflicting = true;
+  const server = await drawSettings(
+    () => {
+      if (conflicting) {
+        conflicting = false;
+        return {
+          body: {
+            error: { code: "SettingsRevisionConflict", message: "moved" },
+            settings: settingsBody(14, {
+              limits: { tokensPerDecision: 900_000, dispatchesPerDecision: 1 },
+            }),
+          },
+          status: 409,
+        };
+      }
+      return { body: settingsBody(15, {}), status: 200 };
+    },
+    settingsBody(12, {
+      limits: { tokensPerDecision: 100, dispatchesPerDecision: 1 },
+    }),
+  );
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("Dispatches"), {
+      target: { value: "5" },
+    });
+  });
+  await turned(save);
+  await settled();
+  expect(
+    screen.getByLabelText<HTMLInputElement>("Tokens").value,
+    "a ceiling nobody here typed was held over the one that arrived",
+  ).toBe("900000");
+  expect(screen.getByLabelText<HTMLInputElement>("Dispatches").value).toBe("5");
+  await turned(save);
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 14,
+    overrides: {
+      limits: { tokensPerDecision: 900_000, dispatchesPerDecision: 5 },
+    },
+  });
+});
+
+/**
+ * THE CEILING IS THE WIRE'S AND THE PAGE HOLDS NO COPY OF IT. What a decision
+ * may dispatch is bounded by the override schema this form parses its draft
+ * with, so a budget past it marks its own box exactly as an unreadable one
+ * does — and the ceiling itself is admitted, which is the half a bound stated
+ * one off would get wrong. The number is imported from where the wire states
+ * it, never written here, so a ceiling that moves moves this case with it.
+ */
+test("a dispatch budget past the wire's ceiling marks its own box", async () => {
+  await drawSettings(() => ({ body: {}, status: 200 }));
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("Dispatches"), {
+      target: { value: String(leadDispatchesMax + 1) },
+    });
+  });
+  expect(screen.getByLabelText("Dispatches").getAttribute("aria-invalid")).toBe(
+    "true",
+  );
+  expect(
+    screen.getByRole("button", { name: "Save" }).hasAttribute("disabled"),
+  ).toBe(true);
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("Dispatches"), {
+      target: { value: String(leadDispatchesMax) },
+    });
+  });
+  expect(
+    screen.getByLabelText("Dispatches").getAttribute("aria-invalid"),
+    "the box refused the ceiling itself and not only what is past it",
+  ).toBe("false");
 });
