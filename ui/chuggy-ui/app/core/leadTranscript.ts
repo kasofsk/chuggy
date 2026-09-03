@@ -68,9 +68,7 @@
  * nothing that draws one may make it look actionable.
  */
 
-import { z } from "zod";
-
-import { countSchema, identitySchema } from "../../../../src/contract/http.ts";
+import { sessionChangeResourceSchema } from "../../../../src/contract/events.ts";
 import type {
   AgenticRefusalResponse,
   LeadResponse,
@@ -483,55 +481,46 @@ export function leadTranscriptHolding(
   return leadTranscriptLines(held).filter((line) => line.holding);
 }
 
+/**
+ * What either read says about the session's store: the stream it is writing and
+ * the listing of what the store holds. Stated as the fields rather than as the
+ * lead's whole response, because a thread read carries the same two and the
+ * walk below is the same walk over a different session.
+ */
+export interface SessionStreams {
+  readonly agentReference?: string | undefined;
+  readonly streams: LeadResponse["streams"];
+}
+
 /** The stream the transcript route defaults to, and how far its store has been written. */
-export function leadStreamBatches(lead: LeadResponse): number {
-  const named = lead.agentReference;
+export function leadStreamBatches(session: SessionStreams): number {
+  const named = session.agentReference;
   if (named === undefined) return 0;
-  return lead.streams.find((held) => held.stream === named)?.batches ?? 0;
+  return session.streams.find((held) => held.stream === named)?.batches ?? 0;
 }
 
 /**
  * Whether the store's own listing carries the stream the session names. The
- * listing is bounded, so a lead with many streams can name one that is not on
- * it, and a reader shown an empty log would read that as a lead that has said
- * nothing.
+ * listing is bounded, so a session with many streams can name one that is not
+ * on it, and a reader shown an empty log would read that as a session that has
+ * said nothing.
  */
-export function leadStreamListed(lead: LeadResponse): boolean {
-  const named = lead.agentReference;
+export function leadStreamListed(session: SessionStreams): boolean {
+  const named = session.agentReference;
   if (named === undefined) return false;
-  return lead.streams.some((held) => held.stream === named);
+  return session.streams.some((held) => held.stream === named);
 }
 
 /**
- * What a `Session` change frame names — the session, and the turn or the store
- * batch that moved — which migration 059 writes as the resource, so it crosses
- * the wire as the JSON text of this object inside one identity.
+ * The session a `Session` frame is about, read with the contract's own
+ * `sessionChangeResourceSchema` — the shape the trigger writes, so no reader
+ * here guesses at another's spelling.
  *
- * DECLARED HERE UNTIL kasofsk/chuggy#505 EXPORTS IT from
- * `src/contract/events.ts`, where a schema the durable side writes and the
- * console reads belongs; this copy goes when that one lands.
- */
-const sessionChangeResourceSchema = z.union([
-  z.strictObject({
-    session: identitySchema,
-    kind: identitySchema,
-    turn: identitySchema,
-  }),
-  z.strictObject({
-    session: identitySchema,
-    kind: identitySchema,
-    stream: identitySchema,
-    batch: countSchema,
-  }),
-]);
-
-/**
- * The session a `Session` frame is about, and nothing where the frame does not
- * name one — a change frame being a pointer and never a body, so what a reader
- * takes from it is which session to re-read, and a resource this console cannot
- * parse is a frame it ignores rather than one it throws on, since a stream that
- * ended on a shape a console did not expect would stop carrying every other
- * kind with it.
+ * It is nothing where the frame does not name one — a change frame being a
+ * pointer and never a body, so what a reader takes from it is which session to
+ * re-read, and a resource this console cannot parse is a frame it ignores
+ * rather than one it throws on, since a stream that ended on a shape a console
+ * did not expect would stop carrying every other kind with it.
  */
 export function leadSessionNamed(resource: string): string | undefined {
   let parsed: unknown;

@@ -38,6 +38,11 @@ import {
   selectorHistoryResponseSchema,
   selectorProjectSettingsResponseSchema,
   selectorSettingsHistoryResponseSchema,
+  threadEntryResponseSchema,
+  threadMessageAcceptedSchema,
+  threadResponseSchema,
+  threadTranscriptResponseSchema,
+  threadsResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
 } from "../../../../src/contract/responses.ts";
@@ -67,6 +72,11 @@ import type {
   SelectorHistoryResponse,
   SelectorProjectSettingsResponse,
   SelectorSettingsHistoryResponse,
+  ThreadEntryResponse,
+  ThreadMessageAccepted,
+  ThreadResponse,
+  ThreadTranscriptResponse,
+  ThreadsResponse,
   TicketNativeActionsResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
@@ -77,6 +87,7 @@ import type {
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
   submissionSchema,
+  threadMessageSchema,
 } from "../../../../src/contract/requests.ts";
 import type { z } from "zod";
 
@@ -481,6 +492,94 @@ export function apiLeadTranscript(
       limit: page.limit,
     }),
     (value) => leadTranscriptResponseSchema.parse(value),
+  );
+}
+
+/**
+ * The project's member threads, each saying whether it is the caller's own.
+ * `mine` is the server's answer and never this browser's: nothing here decodes
+ * a token, so who is signed in is a question only the API can be asked.
+ */
+export function apiThreads(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+): Promise<ApiResult<ThreadsResponse>> {
+  return apiGet(ports, apiSegments(partition, "threads"), (value) =>
+    threadsResponseSchema.parse(value),
+  );
+}
+
+/** The caller's own thread, opened where they have none and answered where they
+ * have: the route is idempotent, so this is safe to press twice. */
+export function apiOpenThread(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+): Promise<ApiResult<ThreadEntryResponse>> {
+  return apiRead(
+    ports,
+    { method: "POST", path: apiSegments(partition, "threads") },
+    (value) => threadEntryResponseSchema.parse(value),
+  );
+}
+
+/**
+ * One thread: whose it is, where it stands, and a page of its mailbox. The
+ * unparameterised read is the newest page; `before` walks backwards from a
+ * cursor the read before it answered.
+ */
+export function apiThread(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  session: string,
+  page: { readonly before?: number; readonly limit?: number } = {},
+): Promise<ApiResult<ThreadResponse>> {
+  return apiGet(
+    ports,
+    apiPath(apiSegments(partition, "threads", session), {
+      before: page.before,
+      limit: page.limit,
+    }),
+    (value) => threadResponseSchema.parse(value),
+  );
+}
+
+/** One thread's store, paged exactly as the lead's is and by the same walk. */
+export function apiThreadTranscript(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  session: string,
+  page: LeadTranscriptPage = {},
+): Promise<ApiResult<ThreadTranscriptResponse>> {
+  return apiGet(
+    ports,
+    apiPath(apiSegments(partition, "threads", session, "transcript"), {
+      stream: page.stream,
+      after: page.after,
+      limit: page.limit,
+    }),
+    (value) => threadTranscriptResponseSchema.parse(value),
+  );
+}
+
+/**
+ * A message into the caller's own thread. The turn identity is in the body
+ * rather than an idempotency header because enqueuing is idempotent on it, so a
+ * retried post answers the ordinal it already has instead of a second turn.
+ */
+export function apiSendThreadMessage(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  session: string,
+  message: z.infer<typeof threadMessageSchema>,
+): Promise<ApiResult<ThreadMessageAccepted>> {
+  return apiRead(
+    ports,
+    {
+      method: "POST",
+      path: apiSegments(partition, "threads", session, "messages"),
+      body: message,
+    },
+    (value) => threadMessageAcceptedSchema.parse(value),
   );
 }
 

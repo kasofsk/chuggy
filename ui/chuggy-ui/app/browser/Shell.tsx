@@ -171,6 +171,9 @@ function ShellNav(props: { readonly partition: PartitionIdentity }): ReactNode {
       <Link to="/$tenant/$project/lead" params={params} activeProps={here}>
         Lead
       </Link>
+      <Link to="/$tenant/$project/threads" params={params} activeProps={here}>
+        Threads
+      </Link>
       <Link to="/$tenant/$project/selector" params={params} activeProps={here}>
         Selector
       </Link>

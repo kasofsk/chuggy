@@ -14,6 +14,7 @@ import type {
   SelectorAttention,
   SessionState,
   SessionTurnState,
+  ThreadStanding,
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
 import type { AgenticRefusalStanding } from "./leadTranscript.ts";
@@ -107,6 +108,23 @@ export function sessionStateTone(state: SessionState): Tone {
       return "live";
     case "Closed":
       return "retired";
+  }
+}
+
+/**
+ * Where one member thread stands. `Orphaned` is drawn in the parked hue rather
+ * than the retired one: a session that still takes turns as a member who is no
+ * longer one is something an administrator has to act on, and retired ink says
+ * the opposite.
+ */
+export function threadStandingTone(standing: ThreadStanding): Tone {
+  switch (standing) {
+    case "Open":
+      return "live";
+    case "Closed":
+      return "retired";
+    case "Orphaned":
+      return "parked";
   }
 }
 

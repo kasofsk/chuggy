@@ -1,18 +1,32 @@
 /**
- * The lead's transcript, in two readings of one list: what it currently holds,
- * and the whole chain with the seam the last compaction cut at.
+ * One session's transcript, in two readings of one list: what it currently
+ * holds, and the whole chain with the seam the last compaction cut at.
  *
  * The walk asks for the batches above the one it has read to, and it does so
- * when the batch count on the lead read rises — that read is the `Session`
- * frame's own body, so there is no poll here and no follow control. Every entry
- * is drawn as characters and nothing in a transcript is a link.
+ * when the batch count on the session's own read rises — a turn moving is what
+ * raises it, so there is no poll here and no follow control. Every entry is
+ * drawn as characters and nothing in a transcript is a link.
+ *
+ * ONE WALK SERVES THE LEAD AND A MEMBER THREAD. The two routes answer the same
+ * page over the same store — the contract aliases the thread's response to the
+ * lead's — so a second copy of this walk would be two accounts of one chain,
+ * and the compaction discipline is exactly the part that must not be re-derived.
+ * What a caller chooses is the session; everything below is the same.
+ *
+ * THE SESSION IS A VALUE AND NOT A READER FUNCTION, so that what the walk's
+ * effect depends on stays a string: a caller handing it a fresh closure each
+ * render would re-run the walk every render, which is a read loop rather than a
+ * live page.
  */
 
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import { apiLeadTranscript } from "../../core/apiRoutes.ts";
+import {
+  apiLeadTranscript,
+  apiThreadTranscript,
+} from "../../core/apiRoutes.ts";
 import { instantFigure } from "../../core/figures.ts";
 import { panelReason } from "../../core/freshness.ts";
 import {
@@ -40,6 +54,9 @@ import { Pill } from "../ui/Pill.tsx";
 
 export interface LeadTranscriptRead {
   readonly partition: PartitionIdentity;
+  /** The member thread whose store is walked, and nothing for the project's
+   * own lead. */
+  readonly session?: string | undefined;
   readonly stream: string | undefined;
   readonly highWaterBatch: number;
 }
@@ -59,7 +76,7 @@ export function useLeadTranscript(
   const [held, setHeld] = useState<LeadTranscriptHeld>(
     leadTranscriptDrawn(leadTranscriptPaneEmpty),
   );
-  const { stream, highWaterBatch } = read;
+  const { session, stream, highWaterBatch } = read;
   const { tenant, project } = read.partition;
   useEffect(() => {
     let abandoned = false;
@@ -73,11 +90,20 @@ export function useLeadTranscript(
       for (let asked = 0; asked < leadTranscriptReadsMax; asked += 1) {
         const after = leadTranscriptNextAfter(pane.current, highWaterBatch);
         if (after === undefined || stream === undefined || abandoned) return;
-        const answered = await apiLeadTranscript(
-          ports,
-          { tenant, project },
-          { stream, after },
-        );
+        const answered =
+          session === undefined
+            ? await apiLeadTranscript(
+                ports,
+                { tenant, project },
+                {
+                  stream,
+                  after,
+                },
+              )
+            : await apiThreadTranscript(ports, { tenant, project }, session, {
+                stream,
+                after,
+              });
         if (abandoned) return;
         if (answered.outcome !== "Ok") {
           stepped({ event: "Failure", reason: panelReason(answered) });
@@ -91,7 +117,7 @@ export function useLeadTranscript(
     return () => {
       abandoned = true;
     };
-  }, [ports, tenant, project, stream, highWaterBatch]);
+  }, [ports, tenant, project, session, stream, highWaterBatch]);
   return held;
 }
 

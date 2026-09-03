@@ -30,6 +30,8 @@ import { ProjectTable } from "./ProjectTable.tsx";
 import { SelectorSettingsPage } from "./SelectorSettingsPage.tsx";
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
+import { ThreadPage } from "./ThreadPage.tsx";
+import { ThreadsPage } from "./ThreadsPage.tsx";
 import { TicketCreation } from "./TicketCreation.tsx";
 import { TicketPage } from "./TicketPage.tsx";
 
@@ -117,6 +119,18 @@ const selectorRoute = createRoute({
   component: SelectorSettingsPage,
 });
 
+const threadsRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/threads",
+  component: ThreadsPage,
+});
+
+const threadRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/threads/$session",
+  component: ThreadPage,
+});
+
 const ticketCreationRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/tickets/new",
@@ -135,6 +149,8 @@ const routeTree = rootRoute.addChildren([
     projectRoute,
     inboxRoute,
     leadRoute,
+    threadsRoute,
+    threadRoute,
     selectorRoute,
     ticketCreationRoute,
     ticketRoute,
