@@ -522,14 +522,24 @@ export function apiOpenThread(
   );
 }
 
-/** One thread: whose it is, where it stands, and the tail of its mailbox. */
+/**
+ * One thread: whose it is, where it stands, and a page of its mailbox. The
+ * unparameterised read is the newest page; `before` walks backwards from a
+ * cursor the read before it answered.
+ */
 export function apiThread(
   ports: ApiPorts,
   partition: PartitionIdentity,
   session: string,
+  page: { readonly before?: number; readonly limit?: number } = {},
 ): Promise<ApiResult<ThreadResponse>> {
-  return apiGet(ports, apiSegments(partition, "threads", session), (value) =>
-    threadResponseSchema.parse(value),
+  return apiGet(
+    ports,
+    apiPath(apiSegments(partition, "threads", session), {
+      before: page.before,
+      limit: page.limit,
+    }),
+    (value) => threadResponseSchema.parse(value),
   );
 }
 

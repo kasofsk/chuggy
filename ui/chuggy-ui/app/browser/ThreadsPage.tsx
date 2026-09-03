@@ -27,11 +27,7 @@ import type {
 import { apiOpenThread, apiThreads } from "../core/apiRoutes.ts";
 import { panelReason } from "../core/freshness.ts";
 import { projectListReread } from "../core/projectQueryKeys.ts";
-import {
-  threadMine,
-  threadStanding,
-  threadsMineFirst,
-} from "../core/threads.ts";
+import { threadMine, threadsMineFirst } from "../core/threads.ts";
 import { threadStandingTone } from "../core/tones.ts";
 import { useApiPorts, usePanelList } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
@@ -66,9 +62,7 @@ function ThreadRow(props: {
         {thread.owner ?? "None"}
       </td>
       <td>
-        <Pill tone={threadStandingTone(threadStanding(thread))}>
-          {threadStanding(thread)}
-        </Pill>
+        <Pill tone={threadStandingTone(thread.state)}>{thread.state}</Pill>
       </td>
       <td className="num">{thread.turns}</td>
     </tr>

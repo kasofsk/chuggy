@@ -243,6 +243,35 @@ test("a backlogged mailbox draws the notice, keeps the text and retries the same
   ).toBe(first.turn);
 });
 
+/**
+ * ONCE THE MAILBOX HAS ACCEPTED THE TEXT, THE IDENTITY IS SPENT. Enqueuing is
+ * idempotent on the turn, so a second `ping` posted under the first `ping`'s
+ * identity is never enqueued: the door answers 202 with the ordinal it already
+ * had and the box clears, telling a member a message landed that the thread
+ * will never see.
+ */
+test("an identical message sent again is a turn of its own", async () => {
+  const server = drawThread(() => ({ thread: threadBody({}) }));
+  await mountThread();
+  const press = async (said: string): Promise<void> => {
+    await turned(() => {
+      fireEvent.change(typing(), { target: { value: said } });
+    });
+    await turned(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    });
+    await settled();
+  };
+  await press("ping");
+  await press("ping");
+  const posted = server.posts() as readonly { readonly turn: string }[];
+  expect(posted.length).toBe(2);
+  expect(
+    posted[1]?.turn,
+    "a repeated message was posted under the turn the mailbox already answered",
+  ).not.toBe(posted[0]?.turn);
+});
+
 /** Editing the text releases the identity: posting a correction under the turn
  * the mailbox already answered would report the correction as landed. */
 test("editing after a refusal posts under a turn of its own", async () => {
@@ -301,14 +330,14 @@ async function pressedAgainst(code: string): Promise<void> {
 
 test("a closed thread stops the composer taking typing", async () => {
   await pressedAgainst("ThreadClosed");
-  expect(screen.getByText("ThreadClosed")).toBeDefined();
+  expect(screen.getByText("Closed")).toBeDefined();
   expect(composer()?.disabled).toBe(true);
 });
 
 test("a thread whose owner is gone stops it too, and says which", async () => {
   await pressedAgainst("ThreadOrphaned");
   expect(
-    screen.getByText("ThreadOrphaned"),
+    screen.getByText("Orphaned"),
     "one refusal was drawn as another",
   ).toBeDefined();
   expect(composer()?.disabled).toBe(true);
@@ -400,7 +429,7 @@ test("a turn still queued draws its state and no answer block", async () => {
           turn: "thread-turn-1",
           state: "Queued",
           input: "waiting on this",
-          result: undefined,
+          result: "an answer no queued turn has",
           model: undefined,
         }),
       ],
@@ -413,6 +442,7 @@ test("a turn still queued draws its state and no answer block", async () => {
     document.querySelectorAll(".thread-answer").length,
     "a turn nobody has claimed was drawn with an answer block",
   ).toBe(0);
+  expect(screen.queryByText("an answer no queued turn has")).toBeNull();
 });
 
 test("a claimed turn draws no answer block either", async () => {
@@ -422,7 +452,7 @@ test("a claimed turn draws no answer block either", async () => {
         threadTurn({
           turn: "thread-turn-1",
           state: "Claimed",
-          result: undefined,
+          result: "an answer no claimed turn has",
         }),
       ],
     }),
@@ -430,6 +460,86 @@ test("a claimed turn draws no answer block either", async () => {
   await mountThread();
   expect(screen.getByText("Claimed")).toBeDefined();
   expect(document.querySelectorAll(".thread-answer").length).toBe(0);
+});
+
+/** `UserMessage` is what the mailbox calls a member's turn and `Message` is
+ * what a member calls it; the wire's word reaching the page is the console's
+ * nouns-only standard broken by the one roster nothing mapped. */
+test("a member's own turn is drawn as a Message", async () => {
+  drawThread(() => ({ thread: threadBody({}) }));
+  await mountThread();
+  expect(
+    document.querySelector(".thread-turn-head .eyebrow")?.textContent,
+    "the wire's own word for a member's turn reached the reader",
+  ).toBe("Message");
+});
+
+/**
+ * The read is the newest page and the reader walks back from it. A page that
+ * ignored `nextBefore` would leave the top of a long conversation unreachable,
+ * and one that drew the pages in arrival order would put the older page after
+ * the newer.
+ */
+test("Older walks back from the read's cursor and draws the mailbox in order", async () => {
+  const asked: string[] = [];
+  const fetching = (url: string): Promise<Response> => {
+    if (url.includes("/transcript"))
+      return Promise.resolve(answer(threadTranscriptPage(1)));
+    if (url.includes("/threads/")) {
+      const before = new URL(url, "https://console").searchParams.get("before");
+      if (before === null)
+        return Promise.resolve(
+          answer(
+            threadBody({
+              nextBefore: 8,
+              turns: [
+                threadTurn({ turn: "t-8", ordinal: 8, input: "the newer" }),
+              ],
+            }),
+          ),
+        );
+      asked.push(before);
+      return Promise.resolve(
+        answer(
+          threadBody({
+            turns: [
+              threadTurn({ turn: "t-7", ordinal: 7, input: "the older" }),
+            ],
+          }),
+        ),
+      );
+    }
+    return Promise.resolve(
+      answer({ partition: threadPartition, sequence: 1, tickets: [] }),
+    );
+  };
+  vi.stubGlobal("fetch", fetching);
+  await mountThread();
+  expect(screen.queryByText("the older")).toBeNull();
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Older" }));
+  });
+  await settled();
+  expect(
+    asked,
+    "the walk asked from somewhere other than the read's cursor",
+  ).toStrictEqual(["8"]);
+  const said = [...document.querySelectorAll(".thread-said")].map(
+    (block) => block.textContent,
+  );
+  expect(said).toStrictEqual(["the older", "the newer"]);
+  expect(
+    screen.queryByRole("button", { name: "Older" }),
+    "a page with no cursor still offered an older one",
+  ).toBeNull();
+});
+
+/** A thread the read already says takes no more messages is not a box a member
+ * types into to earn the refusal. */
+test("a thread already standing Closed draws a composer that takes nothing", async () => {
+  drawThread(() => ({ thread: threadBody({ state: "Closed" }) }));
+  await mountThread();
+  expect(composer()?.disabled).toBe(true);
 });
 
 /**

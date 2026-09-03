@@ -55,8 +55,7 @@ function ThreadSendNote(props: { readonly send: ThreadSend }): ReactNode {
     case "Sending":
     case "Sent":
       return null;
-    case "Backlogged":
-      return <Notice tone="parked" inline detail="Backlogged" />;
+    case "Waiting":
     case "Ended":
       return <Notice tone="parked" inline detail={send.why} />;
     case "Refused":
@@ -69,14 +68,19 @@ function ThreadSendNote(props: { readonly send: ThreadSend }): ReactNode {
 export function ThreadComposer(props: {
   readonly partition: PartitionIdentity;
   readonly session: string;
+  /** Whether the thread the read answered still takes messages, so a thread
+   * already standing `Closed` or `Orphaned` is not a box a member types a
+   * message into to learn that from the refusal. */
+  readonly takes: boolean;
 }): ReactNode {
   const ports = useApiPorts();
   const { partition, session } = props;
   const [text, setText] = useState("");
   const [held, setHeld] = useState<ThreadHeld | undefined>(undefined);
   const [send, setSend] = useState<ThreadSend>({ send: "Idle" });
-  const ended = send.send === "Ended";
+  const ended = send.send === "Ended" || !props.takes;
   const sending = send.send === "Sending";
+  const said = text.trim();
   const press = async (): Promise<void> => {
     const turn =
       threadTurnRetained(held, text) ??
@@ -117,7 +121,7 @@ export function ThreadComposer(props: {
         <Button
           variant="primary"
           busy={sending}
-          disabled={ended || sending || text.length === 0}
+          disabled={ended || sending || said.length === 0}
           onClick={() => {
             void press();
           }}

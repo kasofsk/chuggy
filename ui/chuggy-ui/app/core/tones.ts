@@ -14,10 +14,10 @@ import type {
   SelectorAttention,
   SessionState,
   SessionTurnState,
+  ThreadStanding,
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
 import type { AgenticRefusalStanding } from "./leadTranscript.ts";
-import type { ThreadStanding } from "./threads.ts";
 import type { CycleStanding, SetVerdict, StageRow } from "./ticketLedger.ts";
 
 export const pillTones = [

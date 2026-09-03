@@ -132,13 +132,27 @@ test("my thread is drawn first and marked", async () => {
   ).toBe(threadMineSession);
 });
 
-/** An open session whose owner's membership is gone still acts as that member,
- * and an administrator has to be able to see one. */
-test("a thread whose owner is gone is listed as Orphaned", async () => {
+/**
+ * An open session whose owner's membership is gone still acts as that member,
+ * and an administrator has to be able to see one.
+ *
+ * THE HUE IS HALF OF WHAT A PILL SAYS, and it is the half a reader scans a
+ * column by. Drawing `Orphaned` through the state map would answer the live
+ * green — the colour that says nothing is wrong — on the one page the thread
+ * would be noticed from, so the class is asserted and not only the word.
+ */
+test("a thread whose owner is gone is listed as Orphaned, in the parked hue", async () => {
   drawThreads(threadsBody);
   await mountThreads();
   expect(rowSessions()).toContain(threadOrphanSession);
-  expect(screen.getByText("Orphaned")).toBeDefined();
+  const pill = [...document.querySelectorAll("tbody tr")]
+    .find((row) => row.textContent?.includes(threadOrphanSession))
+    ?.querySelector("td:nth-child(4) .pill");
+  expect(pill?.textContent).toBe("Orphaned");
+  expect(
+    pill?.className,
+    "an orphaned thread was drawn in the hue that says nothing is wrong",
+  ).toBe("pill pill-parked");
 });
 
 test("a member with a thread is offered no Open", async () => {

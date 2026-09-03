@@ -32,7 +32,7 @@ import {
   leadStreamListed,
 } from "../core/leadTranscript.ts";
 import { projectListRereadNamed } from "../core/projectQueryKeys.ts";
-import { threadStanding } from "../core/threads.ts";
+import { threadTakesMessages } from "../core/threads.ts";
 import { threadStandingTone } from "../core/tones.ts";
 import { usePanelList } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
@@ -77,7 +77,6 @@ export function useThread(
 
 function ThreadHead(props: { readonly thread: ThreadResponse }): ReactNode {
   const thread = props.thread;
-  const standing = threadStanding(thread);
   return (
     <div className="thread-head">
       <div className="thread-title">
@@ -85,8 +84,8 @@ function ThreadHead(props: { readonly thread: ThreadResponse }): ReactNode {
         <p className="thread-session">{thread.session}</p>
       </div>
       <div className="thread-state">
-        <Pill tone={threadStandingTone(standing)} emphasis>
-          {standing}
+        <Pill tone={threadStandingTone(thread.state)} emphasis>
+          {thread.state}
         </Pill>
         {thread.mine ? <Pill tone="live">Mine</Pill> : null}
       </div>
@@ -120,10 +119,20 @@ function ThreadBody(props: {
     <>
       {thread === undefined ? null : <ThreadHead thread={thread} />}
       <DataPanel title="Turns" state={props.state}>
-        {(value) => <ThreadTurns thread={value} />}
+        {(value) => (
+          <ThreadTurns
+            partition={props.partition}
+            session={props.session}
+            thread={value}
+          />
+        )}
       </DataPanel>
       {thread?.mine === true ? (
-        <ThreadComposer partition={props.partition} session={props.session} />
+        <ThreadComposer
+          partition={props.partition}
+          session={props.session}
+          takes={threadTakesMessages(thread)}
+        />
       ) : null}
       <LeadHolding
         held={held}

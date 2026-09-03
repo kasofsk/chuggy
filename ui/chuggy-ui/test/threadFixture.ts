@@ -48,7 +48,7 @@ export function threadEntry(
 ): ThreadEntryResponse {
   return {
     owner: "ada",
-    state: "Open",
+    state: "Open" as const,
     mine: false,
     turns: 3,
     agentReference: threadStream,
@@ -66,6 +66,7 @@ export function threadsBody(): { readonly threads: ThreadEntryResponse[] } {
       threadEntry({
         session: threadOrphanSession,
         owner: undefined,
+        state: "Orphaned",
         turns: 1,
       }),
     ],
@@ -108,16 +109,18 @@ export function threadBody(input: {
    * owner at all rather than by hiding the session. */
   readonly orphaned?: boolean;
   readonly state?: ThreadResponse["state"];
+  readonly nextBefore?: number;
   readonly batches?: number;
   readonly turns?: readonly ThreadTurnResponse[];
 }): ThreadResponse {
   return {
     session: input.session ?? threadMineSession,
     ...(input.orphaned === true ? {} : { owner: input.owner ?? "geoff" }),
-    state: input.state ?? "Open",
+    state: input.state ?? (input.orphaned === true ? "Orphaned" : "Open"),
     mine: input.mine ?? true,
     agentReference: threadStream,
     turns: [...(input.turns ?? [threadTurn({ turn: "thread-turn-1" })])],
+    ...(input.nextBefore === undefined ? {} : { nextBefore: input.nextBefore }),
     streams: [{ stream: threadStream, batches: input.batches ?? 1 }],
   };
 }
