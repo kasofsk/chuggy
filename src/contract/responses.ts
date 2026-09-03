@@ -29,6 +29,7 @@ import {
   runOutcomeLabelCharsMax,
   runTranscriptPageBatchesMax,
   selectorHandoffNoteBytesMax,
+  selectorHandoffNotePreviewCharsMax,
   selectorHistoryLimitMax,
   sessionStoreStreamCharsMax,
   sessionStoreStreamsAnswered,
@@ -779,20 +780,17 @@ export type DraftInitializationResponse = z.infer<
   typeof draftInitializationResponseSchema
 >;
 
-function handoffNoteIsBounded(value: unknown): boolean {
-  return (
-    new TextEncoder().encode(JSON.stringify(value ?? null)).byteLength <=
-    selectorHandoffNoteBytesMax
-  );
-}
-
-/** Bounded JSON a lead writes for its successor, opaque to everything but the lead. */
-const handoffNoteSchema = z
-  .unknown()
-  .refine(
-    handoffNoteIsBounded,
-    "a handoff note is larger than its column holds",
-  );
+/**
+ * How large the note a lead leaves its successor is, and as much of it as the
+ * lead read carries. The note itself is opaque to everything but the lead, and
+ * at its own ceiling it weighs a whole wire body, so the read that carries a
+ * mailbox tail and a stream listing beside it carries this instead.
+ */
+const handoffNotePreviewSchema = z.strictObject({
+  bytes: countSchema.max(selectorHandoffNoteBytesMax),
+  preview: z.string().max(selectorHandoffNotePreviewCharsMax),
+  truncated: z.boolean(),
+});
 
 /** One entry of one ticket's refusal ledger, as the ledger recorded it. */
 export const agenticRefusalEntryResponseSchema = z.object({
@@ -809,9 +807,10 @@ export type AgenticRefusalEntryResponse = z.infer<
 
 /**
  * One page of one ticket's refusal ledger, oldest first, `more` saying whether
- * the page ends the ledger. `standing` is present exactly where the latest
- * entry is a refusal, which is what standing means and is why no entry carries
- * it.
+ * the page ends the ledger. `standing` is present exactly where this page holds
+ * the ledger's latest entry and that entry is a refusal, which is what standing
+ * means and is why no entry carries it: a page that stops short of the latest
+ * entry says nothing about what stands.
  */
 export const ticketAgenticRefusalsResponseSchema = z.object({
   ticket: ticketNumberSchema,
@@ -902,7 +901,7 @@ export const leadResponseSchema = z.object({
   attention: z.enum(selectorAttentions),
   agentReference: identitySchema.optional(),
   notificationCursor: countSchema,
-  handoffNote: handoffNoteSchema,
+  handoffNote: handoffNotePreviewSchema,
   turns: z.array(leadTurnResponseSchema).max(leadTurnsAnsweredMax),
   streams: z
     .array(leadStoreStreamResponseSchema)
@@ -919,20 +918,32 @@ export const leadTranscriptEntryResponseSchema = z.object({
 });
 
 /**
- * The chain over the batches read, with the subset the lead still holds named
- * rather than sent twice. An elided batch is one whose row exists and whose
- * object cannot be drawn, which is what a run that died leaves behind.
+ * The chain over the batches read, with `held` naming the entries of this page
+ * the lead still holds, decided by the last compaction in the whole stream and
+ * absent only where that walk could not reach the stream's end. An elided batch
+ * is one whose row exists and whose object cannot be drawn, which is what a run
+ * that died leaves behind.
  */
 export const leadTranscriptResponseSchema = z.object({
   stream: z.string().min(1).max(sessionStoreStreamCharsMax),
   entries: z
     .array(leadTranscriptEntryResponseSchema)
     .max(sessionTranscriptEntriesMax),
-  held: z.array(identitySchema).max(sessionTranscriptEntriesMax),
+  held: z.array(identitySchema).max(sessionTranscriptEntriesMax).optional(),
+  /**
+   * The batch the stream's last cut fell in, beside the `held` it decided and
+   * absent where the stream has never compacted. A reader that sees a `cut` it
+   * has not seen before has been paging across a compaction, and every held set
+   * it holds is stale.
+   */
+  cut: countSchema.optional(),
+  /** The last cut among the entries sent, which need not be the one `held` was decided by. */
   compaction: z
     .object({ boundary: identitySchema, at: instantSchema.optional() })
     .optional(),
   elided: countSchema,
+  /** Whether this page falls short: its entries were cut, or `held` is undecided. */
+  truncated: z.boolean(),
   nextAfter: countSchema.optional(),
 });
 export type LeadTranscriptResponse = z.infer<

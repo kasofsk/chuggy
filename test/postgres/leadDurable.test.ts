@@ -391,11 +391,11 @@ test("the API reads the lead, its mailbox tail and the streams beneath it", asyn
     },
   });
 
-  const lead = await rig.apiLead.lead(partition, leadTurnsAnsweredMax);
+  const lead = await rig.apiLead.standing(partition, leadTurnsAnsweredMax);
   assert.equal(lead?.session, session);
   assert.equal(lead?.state, "Open");
   assert.equal(lead?.attention, "Monitoring");
-  assert.equal(lead?.handoffNote, "{}");
+  assert.deepEqual(lead?.handoffNote, {});
   assert.deepEqual(
     lead?.turns.map((each) => [each.turn, each.state, each.inputKind]),
     [[turn, "Answered", "Observation"]],
@@ -414,7 +414,8 @@ test("the API reads the lead, its mailbox tail and the streams beneath it", asyn
     [{ stream, batches: 1 }],
   );
   assert.deepEqual(
-    await rig.apiLead.batches(partition, {
+    await rig.apiLead.batches({
+      partition,
       stream,
       after: 0,
       limit: sessionStorePageBatchesMax,
@@ -425,7 +426,7 @@ test("the API reads the lead, its mailbox tail and the streams beneath it", asyn
 
 test("a lead that has taken no turn still reads", async () => {
   const { partition, session } = await leadProject("api-read-empty");
-  const lead = await rig.apiLead.lead(partition, leadTurnsAnsweredMax);
+  const lead = await rig.apiLead.standing(partition, leadTurnsAnsweredMax);
   assert.equal(lead?.session, session);
   assert.deepEqual(lead?.turns, []);
   assert.equal(lead?.notificationCursor, 0);
@@ -440,11 +441,10 @@ test("the API reads the decision log and the intent one decision left", async ()
     notificationCursor: 9,
   });
 
-  const page = await rig.apiLead.history(
-    partition,
-    undefined,
-    selectorHistoryLimitMax,
-  );
+  const page = await rig.apiLead.history(partition, {
+    limit: selectorHistoryLimitMax,
+    order: "oldest",
+  });
   assert.deepEqual(
     page.map((decision) => decision.decision),
     [first, second],
@@ -454,11 +454,11 @@ test("the API reads the decision log and the intent one decision left", async ()
   assert.equal(page[0]?.instructions, "choose a dispatchable ticket");
   assert.equal(page[0]?.modelRevision, "model-1");
 
-  const after = await rig.apiLead.history(
-    partition,
-    page[0]?.ordinal,
-    selectorHistoryLimitMax,
-  );
+  const after = await rig.apiLead.history(partition, {
+    ...(page[0] === undefined ? {} : { after: page[0].ordinal }),
+    limit: selectorHistoryLimitMax,
+    order: "oldest",
+  });
   assert.deepEqual(
     after.map((decision) => decision.decision),
     [second],
@@ -480,11 +480,10 @@ test("the API reassembles a decision whose resources outgrew one audit column", 
     },
   );
 
-  const page = await rig.apiLead.history(
-    partition,
-    undefined,
-    selectorHistoryLimitMax,
-  );
+  const page = await rig.apiLead.history(partition, {
+    limit: selectorHistoryLimitMax,
+    order: "oldest",
+  });
   assert.deepEqual(
     page.map((each) => each.decision),
     [decision],
@@ -575,7 +574,10 @@ test("the seeding read answers the newest decisions first", async () => {
   );
   assert.deepEqual(
     (
-      await rig.apiLead.history(partition, undefined, selectorHistoryLimitMax)
+      await rig.apiLead.history(partition, {
+        limit: selectorHistoryLimitMax,
+        order: "oldest",
+      })
     ).map((each) => each.decision),
     decisions,
   );

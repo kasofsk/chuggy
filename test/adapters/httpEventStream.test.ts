@@ -49,6 +49,7 @@ import {
   type FakeDoorbell,
   type FakeLog,
 } from "../interpreter/projectStreamHarness.ts";
+import { unreadableLeadReads } from "./leadReadFixtures.ts";
 
 const partition = partitionOf("project");
 const streamPath = "/api/v1/tenants/tenant/projects/project/events";
@@ -86,6 +87,11 @@ type ServedWeb = Pick<
   | "executions"
   | "operationalStatus"
   | "selectorOperationalContext"
+  | "lead"
+  | "leadTranscript"
+  | "agenticRefusals"
+  | "ticketAgenticRefusals"
+  | "selectorHistory"
   | "outputContent"
   | "runTurns"
   | "runTranscript"
@@ -97,6 +103,7 @@ function servedWeb(
   actions: () => readonly TicketNativeAction[] | undefined,
 ): ServedWeb {
   return {
+    ...unreadableLeadReads(),
     cancel: notFound,
     configuration: () => Promise.resolve(undefined),
     configurations: notFound,

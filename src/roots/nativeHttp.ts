@@ -35,6 +35,10 @@ import {
 } from "../compose.ts";
 import type { IdempotencyKeying } from "../adapters/postgres/keying.ts";
 import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
+import { postgresLeadReads } from "../adapters/postgres/leadReads.ts";
+import { postgresAgenticRefusalReads } from "../adapters/postgres/agenticRefusal.ts";
+import type { NativeLeadPorts } from "../interpreter/nativeWeb.ts";
+import type { SessionStoreReadPort } from "../interpreter/sessionStore.ts";
 import {
   currentRuntimeSchemaContract,
   postgresRuntimeSchema,
@@ -377,6 +381,25 @@ async function nativeDatabasesReady(
   }
 }
 
+/**
+ * The lead's read side over the API pool and the artifact volume, taking both
+ * pools and choosing for the reason `nativeAuthentication` does: only the API
+ * role holds `EXECUTE` on 059's doors, and choosing here is what lets a case
+ * observe which pool was reached.
+ */
+export function nativeLeadPorts(
+  pools: NativePools,
+  artifacts: SessionStoreReadPort,
+): NativeLeadPorts {
+  const leads = postgresLeadReads(pools.pool);
+  return {
+    leads,
+    store: artifacts,
+    refusals: postgresAgenticRefusalReads(pools.pool),
+    history: leads,
+  };
+}
+
 async function main(): Promise<void> {
   const keying = idempotencyKeying();
   const authenticationConfig = oidcConfig();
@@ -393,6 +416,9 @@ async function main(): Promise<void> {
     pools,
   );
   const access = postgresProjectAccess(pool);
+  const artifacts = artifactStore({
+    root: requiredEnvironment(artifactRootVariable),
+  });
   const web = composeNativeWeb(
     pool,
     keying,
@@ -401,9 +427,10 @@ async function main(): Promise<void> {
     undefined,
     undefined,
     undefined,
-    artifactStore({ root: requiredEnvironment(artifactRootVariable) }),
+    artifacts,
     selectorContextSource(pool, selectorReviewPool),
     repositoryConfigurationSnapshots(),
+    nativeLeadPorts(pools, artifacts),
   );
   const hub = nativeStreamHub(pool, web);
   const app = createNativeHttpApp(

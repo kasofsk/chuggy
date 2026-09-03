@@ -19,8 +19,10 @@
  * leaves the refusal behind by being authored again.
  */
 
+import { agenticRefusalsAnsweredMax } from "../contract/http.ts";
 import type { TicketId } from "../domain/ids.ts";
-import type { Principal, ProjectAccess } from "./nativeWeb.ts";
+import type { Principal } from "./principal.ts";
+import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
 import type { SelectorLiftChoice, SelectorRefusalChoice } from "./selector.ts";
 
@@ -52,6 +54,11 @@ export interface AgenticRefusalRecord {
   readonly recordedAt: string;
 }
 
+/**
+ * The reads the API has onto the ledger. A caller may ask for one past the bound
+ * it answers and read the extra row as "there is more", so an adapter answers
+ * the limit it is given rather than clamping to the answered bound.
+ */
 export interface AgenticRefusalRead {
   /** Every ticket in the project whose latest entry is a refusal. */
   standing(
@@ -106,6 +113,48 @@ export interface AgenticRefusalService {
     limit: number,
   ): Promise<TicketAgenticRefusalsResult>;
 }
+
+/** The page one read of a project's standing refusals answers with. */
+export function checkedAgenticRefusalsLimit(limit: number): number {
+  if (
+    !Number.isSafeInteger(limit) ||
+    limit < 1 ||
+    limit > agenticRefusalsAnsweredMax
+  )
+    throw new RangeError(
+      `agentic refusals limit must be between 1 and ${String(agenticRefusalsAnsweredMax)}`,
+    );
+  return limit;
+}
+
+/** A standing refusal with the comparison the reader makes against the ticket it names. */
+export interface AgenticRefusalStanding extends AgenticRefusalRecord {
+  readonly superseded: boolean;
+}
+
+/** One page of a project's standing refusals, as the API answers it. */
+export type AgenticRefusalsRead =
+  | { readonly result: "NotFound" }
+  | {
+      readonly result: "Found";
+      readonly refusals: readonly AgenticRefusalStanding[];
+      readonly more: boolean;
+    };
+
+/**
+ * One page of one ticket's ledger. `standing` is present only where the page
+ * holds the ledger's latest entry, because standing is that entry and a page
+ * that stops short of it says nothing about what stands.
+ */
+export type TicketAgenticRefusalsRead =
+  | { readonly result: "NotFound" }
+  | {
+      readonly result: "Found";
+      readonly ticket: TicketId;
+      readonly entries: readonly AgenticRefusalEntry[];
+      readonly more: boolean;
+      readonly standing?: AgenticRefusalRecord;
+    };
 
 /**
  * The refusal a ledger currently stands on, which is its last entry where that

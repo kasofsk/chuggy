@@ -1205,21 +1205,26 @@ test("a run figure past the bound the contract names is refused", () => {
   );
 });
 
-test("a lead read refuses a handoff note larger than its column holds", () => {
+test("a lead read carries the handoff note by size and preview, never inline", () => {
   const lead = {
     session: "lead-atlas",
     state: "Open",
     attention: "Monitoring",
     notificationCursor: 4,
-    handoffNote: {},
+    handoffNote: { bytes: 2, preview: "{}", truncated: false },
     turns: [],
     streams: [],
   };
   assert.equal(leadResponseSchema.parse(lead).session, "lead-atlas");
+  assert.throws(() => leadResponseSchema.parse({ ...lead, handoffNote: {} }));
   assert.throws(() =>
     leadResponseSchema.parse({
       ...lead,
-      handoffNote: { padding: "x".repeat(selectorHandoffNoteBytesMax) },
+      handoffNote: {
+        bytes: selectorHandoffNoteBytesMax + 1,
+        preview: "{}",
+        truncated: true,
+      },
     }),
   );
 });

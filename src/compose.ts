@@ -37,20 +37,11 @@ import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
 import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
 import {
   postgresSelectorProjectSettings,
-  postgresSelectorProposalReviews,
   postgresSelectorRuntimeControl,
   postgresSelectorState,
 } from "./adapters/postgres/selector.ts";
 import { authorizedProjectInventory } from "./interpreter/projectInventory.ts";
-import {
-  selectorHistory,
-  type SelectorHistory,
-} from "./interpreter/selectorHistory.ts";
-import type {
-  SelectorPolicyHost,
-  SelectorRuntimeSettingsSource,
-  SelectorStateStore,
-} from "./interpreter/selector.ts";
+import type { SelectorPolicyHost } from "./interpreter/selector.ts";
 import {
   selectorRunOnce,
   type SelectorIdentityFactory,
@@ -59,22 +50,9 @@ import {
   type SelectorRuntimeSource,
 } from "./interpreter/selectorRuntime.ts";
 import {
-  selectorRuntimeAdministration,
-  type SelectorAdministrationAccess,
-  type SelectorRuntimeAdministration,
-} from "./interpreter/selectorAdmin.ts";
-import {
   selectorProjectSettingsAdministration,
   type SelectorProjectSettingsAdministration,
 } from "./interpreter/selectorProjectSettings.ts";
-import {
-  selectorProposalReviews,
-  type SelectorProposalReviews,
-} from "./interpreter/selectorReview.ts";
-import {
-  selectorPlanning,
-  type SelectorPlanning,
-} from "./interpreter/selectorPlanning.ts";
 import { postgresFinalizer } from "./adapters/postgres/finalizer.ts";
 import { postgresTicketBrief } from "./adapters/postgres/ticketBrief.ts";
 import {
@@ -107,6 +85,7 @@ import type { IdempotencyKeying } from "./adapters/postgres/keying.ts";
 import type { OperationInbox } from "./interpreter/operationInbox.ts";
 import {
   nativeWeb,
+  type NativeLeadPorts,
   type NativeWeb,
   type ProjectAccess,
   type ProjectInventory,
@@ -135,15 +114,6 @@ export interface TicketService {
   readonly projects: ProjectStore;
 }
 
-export interface SelectorService {
-  readonly state: SelectorStateStore;
-  readonly history: SelectorHistory;
-  readonly settings: SelectorRuntimeSettingsSource;
-  readonly administration: SelectorRuntimeAdministration;
-  readonly reviews: SelectorProposalReviews;
-  readonly planning: SelectorPlanning;
-}
-
 export interface SelectorRuntimeService {
   runOnce(): Promise<SelectorRunResult>;
 }
@@ -161,31 +131,6 @@ export function composeSelectorRuntime(
   return {
     runOnce: () =>
       selectorRunOnce(store, source, policy, identities, settings, config),
-  };
-}
-
-/** Wires selector-owned durability and project-authorized semantic history reads. */
-export function composeSelectorService(
-  selectorPool: pg.Pool,
-  selectorControlPool: pg.Pool,
-  selectorReviewPool: pg.Pool,
-  access: ProjectAccess,
-  administrationAccess: SelectorAdministrationAccess,
-): SelectorService {
-  const state = postgresSelectorState(selectorPool);
-  return {
-    state,
-    history: selectorHistory(access, state),
-    settings: postgresSelectorRuntimeControl(selectorPool),
-    administration: selectorRuntimeAdministration(
-      administrationAccess,
-      postgresSelectorRuntimeControl(selectorControlPool),
-    ),
-    reviews: selectorProposalReviews(
-      access,
-      postgresSelectorProposalReviews(selectorReviewPool),
-    ),
-    planning: selectorPlanning(access, state),
   };
 }
 
@@ -376,6 +321,7 @@ export function composeNativeWeb(
   outputContents?: OutputContentPort & RunEvidenceContentPort,
   selectorContexts?: SelectorOperationalContextRead,
   repositoryConfigurationSnapshots?: RepositoryConfigurationSnapshotPort,
+  leads?: NativeLeadPorts,
 ): NativeWeb {
   const inbox = postgresOperationInbox(apiPool, keying, config, metrics);
   const authoring = postgresAuthoring(apiPool);
@@ -401,6 +347,7 @@ export function composeNativeWeb(
         },
     postgresRunEvidenceReads(apiPool),
     outputContents,
+    leads,
   );
 }
 

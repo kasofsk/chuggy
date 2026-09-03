@@ -63,6 +63,14 @@ export const sessionStorePageBatchesMax = 8;
 export const sessionTranscriptEntriesMax = 512;
 
 /**
+ * How many of a stream's batches the walk that decides what a session holds may
+ * read. What is held is a fact about the whole stream rather than about the page
+ * being read, so the walk is stream-scoped and this is what stops it being
+ * unbounded; past it a page says it is truncated and names no held set.
+ */
+export const sessionTranscriptHeldBatchesMax = 64;
+
+/**
  * How many streams one listing answers with: one past the page above, so a
  * store holding more than a page of them is distinguishable from one holding
  * exactly a page. A listing capped at the page itself would be silently short
@@ -118,6 +126,14 @@ export const selectorAllowlistNameCharsMax = 256;
 
 /** The largest handoff note the wire carries, which is what its column holds. */
 export const selectorHandoffNoteBytesMax = 65_536;
+
+/**
+ * How much of the handoff note the lead read carries. The note's own ceiling is
+ * a whole wire body, and the lead read carries a mailbox tail and a stream
+ * listing beside it, so a note at its bound would put that one response past
+ * what the wire admits.
+ */
+export const selectorHandoffNotePreviewCharsMax = 4_096;
 
 /** How many of one project's decisions a single history page answers with. */
 export const selectorHistoryLimitMax = 50;

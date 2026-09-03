@@ -32,6 +32,7 @@ import {
   asTicketId,
 } from "../../src/domain/ids.ts";
 import { encodeExecutionCursor } from "../../src/adapters/http/contract.ts";
+import { unreadableLeadReads } from "./leadReadFixtures.ts";
 import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
 import {
   asSessionId,
@@ -68,6 +69,11 @@ type ServedNativeWeb = Pick<
   | "executions"
   | "operationalStatus"
   | "selectorOperationalContext"
+  | "lead"
+  | "leadTranscript"
+  | "agenticRefusals"
+  | "ticketAgenticRefusals"
+  | "selectorHistory"
   | "outputContent"
   | "runTurns"
   | "runTranscript"
@@ -271,6 +277,7 @@ function fakeDrafts(
 
 function fakeWeb(calls: string[]): ServedNativeWeb {
   return {
+    ...unreadableLeadReads(),
     ...fakeOperations(calls),
     ...fakeConfigurations(calls),
     ...fakeDrafts(calls),
