@@ -43,6 +43,20 @@
  * than its own transcript can be paged is a lead whose transcript no reader can
  * follow anyway.
  *
+ * THE CURSOR AND THE ENTRIES ARE DIFFERENT QUESTIONS. A full page whose entries
+ * were all elided or all meta draws nothing and still has batches above it, so
+ * a walk that jumped to the high-water mark on an empty page would abandon the
+ * rest of the store.
+ *
+ * A CURSOR THAT DOES NOT ADVANCE IS NOT A CURSOR, and the walk waits at it
+ * rather than skipping past. A page answered at a cursor that hands the same one
+ * back leaves the walk nowhere to go, since asking again returns the page just
+ * read; so the pane keeps that cursor, records the mark it was read against, and
+ * the store being written past that mark carries it on from exactly there.
+ * Taking the mark as the cursor instead would abandon every batch between and
+ * draw them as a lead holding nothing rather than as a stream this pane has not
+ * reached.
+ *
  * `held` ABSENT IS UNKNOWN AND NEVER EMPTY. It is absent only where the route
  * could not reach the stream's end to decide it, and it says so with
  * `truncated`. Drawing that as "nothing held" would tell a reader the lead has
@@ -93,14 +107,22 @@ export interface LeadTranscriptFold {
   readonly elided: number;
   readonly truncated: boolean;
   /**
-   * Whether a page has answered no `held`, which is the route saying it could
-   * not decide what the lead holds rather than that it holds nothing. It stands
-   * for the life of the fold, because a later page deciding for its own entries
-   * says nothing about the page that could not.
+   * Whether this fold has read enough to say what the lead holds: a page that
+   * answered no `held` did not decide it, and a walk waiting at a stalled
+   * cursor has not reached the rest of the stream. It stands for the life of
+   * the fold, because a later page deciding for its own entries says nothing
+   * about the page or the range that did not.
    */
   readonly holdingUnknown: boolean;
   readonly entriesDropped: number;
   readonly readTo: number | undefined;
+  /**
+   * The high-water mark a page that would not move the cursor was read against,
+   * and nothing where the last page moved it. The walk waits there rather than
+   * asking again, and the store being written past that mark is what carries it
+   * on from exactly where it stopped.
+   */
+  readonly stalledAt: number | undefined;
   /** Whether the last page said there may be more above the cursor it gave. */
   readonly more: boolean;
 }
@@ -115,6 +137,7 @@ export const leadTranscriptFoldEmpty: LeadTranscriptFold = {
   holdingUnknown: false,
   entriesDropped: 0,
   readTo: undefined,
+  stalledAt: undefined,
   more: false,
 };
 
@@ -161,6 +184,8 @@ export function leadTranscriptNextAfter(
 ): number | undefined {
   const fold = pane.fold;
   if (fold.readTo === undefined) return highWaterBatch > 0 ? 0 : undefined;
+  if (fold.stalledAt !== undefined && highWaterBatch <= fold.stalledAt)
+    return undefined;
   if (fold.more) return fold.readTo;
   return highWaterBatch > fold.readTo ? fold.readTo : undefined;
 }
@@ -199,27 +224,18 @@ function leadTranscriptEntriesMerged(
   return merged;
 }
 
-/**
- * The cursor the next read asks after: the one the page gave, and otherwise the
- * high-water mark the read was made against. THE CURSOR AND THE ENTRIES ARE
- * DIFFERENT QUESTIONS — a full page whose entries were all elided or all meta
- * draws nothing and still has batches above it, so a walk that jumped to the
- * high-water mark on an empty page would abandon the rest of the store.
- */
-/**
- * A CURSOR THAT DOES NOT ADVANCE IS NOT A CURSOR: a page answered at one that
- * hands the same one back leaves the walk nowhere to go, since asking again
- * returns the page just read. The pane takes the mark it read against instead
- * and stops, drawing what it has — a route misbehaving costs a reader a stale
- * pane rather than a tab spending every read it has on one batch.
- */
-function leadTranscriptReadTo(
+/** Where the walk stands after a page: the cursor it asks next, and the mark it
+ * is waiting at if a page would not move that cursor. */
+function leadTranscriptCursor(
   page: LeadTranscriptResponse,
   highWaterBatch: number,
   asked: number,
-): number {
-  if (page.nextAfter === undefined) return highWaterBatch;
-  return page.nextAfter > asked ? page.nextAfter : highWaterBatch;
+): { readonly readTo: number; readonly stalledAt: number | undefined } {
+  if (page.nextAfter === undefined)
+    return { readTo: highWaterBatch, stalledAt: undefined };
+  if (page.nextAfter > asked)
+    return { readTo: page.nextAfter, stalledAt: undefined };
+  return { readTo: asked, stalledAt: highWaterBatch };
 }
 
 /**
@@ -256,6 +272,7 @@ function leadTranscriptGathered(
   highWaterBatch: number,
 ): LeadTranscriptFold {
   const asked = fold.readTo ?? 0;
+  const cursor = leadTranscriptCursor(page, highWaterBatch, asked);
   const merged = leadTranscriptEntriesMerged(fold.entries, page.entries);
   const kept = merged.slice(-leadTranscriptEntriesHeldMax);
   return {
@@ -268,9 +285,13 @@ function leadTranscriptGathered(
     compaction: page.compaction ?? fold.compaction,
     elided: fold.elided + page.elided,
     truncated: fold.truncated || page.truncated,
-    holdingUnknown: fold.holdingUnknown || page.held === undefined,
+    holdingUnknown:
+      fold.holdingUnknown ||
+      page.held === undefined ||
+      cursor.stalledAt !== undefined,
     entriesDropped: fold.entriesDropped + (merged.length - kept.length),
-    readTo: leadTranscriptReadTo(page, highWaterBatch, asked),
+    readTo: cursor.readTo,
+    stalledAt: cursor.stalledAt,
     more: leadTranscriptMore(page, asked),
   };
 }

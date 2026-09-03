@@ -223,6 +223,52 @@ test("a Session frame naming another session leaves the page alone", async () =>
   ).toBe(7);
 });
 
+/**
+ * A READ THAT FAILED MUST STILL BE WOKEN BY THE FRAME THAT SAYS TO TRY AGAIN.
+ * The session a page watches is learnt from the read, so a panel that forgot it
+ * whenever the read was not ready would sit on its own failure until the query
+ * cache chose to retry — with the stream carrying the news the whole time.
+ */
+test("a lead whose read failed is still woken by its own Session frame", async () => {
+  let failing = false;
+  let reads = 0;
+  const api = apiDouble({
+    operation: { operation: "op-one", state: "Pending" },
+    route: (url) => {
+      const lead = url.includes("/lead") && !url.includes("/transcript");
+      if (lead) reads += 1;
+      if (lead && failing)
+        return answer({ error: { code: "InternalError", message: "no" } }, 500);
+      const found = leadRouteAnswer(url, opening);
+      return answer(found.body, found.status);
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  const server = await mountLead();
+  expect(screen.getByRole("heading", { name: "Lead" })).toBeDefined();
+  failing = true;
+  const woken = async (id: string): Promise<number> => {
+    const before = reads;
+    await turned(() => {
+      server.push(
+        frame("Session", id, {
+          version: 1,
+          resource: leadSessionResource(leadSession, `turn-${id}`),
+          representation: null,
+        }),
+      );
+    });
+    await settled();
+    return reads - before;
+  };
+  expect(await woken("43")).toBeGreaterThan(0);
+  expect(screen.getByText(/^Failed to load · /u)).toBeDefined();
+  expect(
+    await woken("44"),
+    "a panel whose read had already failed was deaf to the next frame",
+  ).toBeGreaterThan(0);
+});
+
 /** A resource this console cannot read is a frame it ignores, rather than one
  * that ends the stream and stops every other kind with it. */
 test("a Session frame with a resource this console cannot read is ignored", async () => {

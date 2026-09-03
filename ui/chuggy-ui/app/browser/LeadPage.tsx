@@ -56,13 +56,11 @@ import "./lead/lead.css";
 export const leadListName = "lead";
 
 /**
- * The lead read, re-read on the `Session` frames that name its own session — a
- * CHANGE FRAME BEING A POINTER AND NEVER A BODY, so the frame says which
- * session moved, the route says what it moved to, and nothing here reads a
- * representation. A frame naming another session leaves the panel alone,
- * because a project may hold several sessions and this page draws one; which
- * one is known only once the read has answered, and is adjusted during the
- * render that learns it.
+ * The lead read, re-read on the `Session` frames that name its own session and
+ * left alone by the rest, a project holding a session per thread beside its
+ * lead. Which session that is, is learnt from the read and then KEPT, since a
+ * read that has failed would otherwise leave the panel deaf to the very frame
+ * telling it to try again.
  */
 export function useLead(
   partition: PartitionIdentity,
@@ -79,7 +77,7 @@ export function useLead(
     (ports) => apiLead(ports, partition),
   );
   const named = state.state === "Ready" ? state.value.session : undefined;
-  if (named !== session) setSession(named);
+  if (named !== undefined && named !== session) setSession(named);
   return state;
 }
 

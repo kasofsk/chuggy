@@ -98,7 +98,7 @@ function modelChain(store: ModelStore): readonly string[] {
  * meta — it carries a cursor and no entries, which is the shape a pane must not
  * read as the end of the stream or as a lead that has recorded nothing, while
  * one that `stalls` hands back the cursor it was asked with and one that
- * `repeats` sends a batch below it again — the two ways a route can misbehave
+ * `repeats` sends its own entries twice — the two ways a route can misbehave
  * that the walk's cursor rule and the fold's dedupe are each there for.
  */
 function modelPage(
@@ -113,10 +113,7 @@ function modelPage(
   },
 ): LeadTranscriptResponse {
   const above = shape.draws ? (store.batches[after] ?? []) : [];
-  const batch =
-    shape.repeats && after > 0
-      ? [...(store.batches[after - 1] ?? []), ...above]
-      : above;
+  const batch = shape.repeats ? [...above, ...above] : above;
   const cut = store.cut;
   const held =
     cut === undefined
@@ -147,6 +144,9 @@ interface ModelSegment {
   readonly holding: readonly string[];
   readonly cut: number | undefined;
   readonly unknown: boolean;
+  /** Where the run's walk stands, recomputed so a page that would not move the
+   * cursor can be told from one that did. */
+  readonly asked: number;
   readonly pages: number;
 }
 
@@ -155,13 +155,17 @@ const modelSegmentEmpty: ModelSegment = {
   holding: [],
   cut: undefined,
   unknown: false,
+  asked: 0,
   pages: 0,
 };
 
 function modelGathered(
   segment: ModelSegment,
   page: LeadTranscriptResponse,
+  highWaterBatch: number,
 ): ModelSegment {
+  const stalls =
+    page.nextAfter !== undefined && page.nextAfter <= segment.asked;
   const arriving = page.entries.flatMap((entry) =>
     entry.uuid === undefined ? [] : [entry.uuid],
   );
@@ -175,7 +179,13 @@ function modelGathered(
     entries: kept,
     holding,
     cut: page.held === undefined ? segment.cut : page.cut,
-    unknown: segment.unknown || page.held === undefined,
+    unknown: segment.unknown || page.held === undefined || stalls,
+    asked:
+      page.nextAfter === undefined
+        ? highWaterBatch
+        : stalls
+          ? segment.asked
+          : page.nextAfter,
     pages: segment.pages + 1,
   };
 }
@@ -223,7 +233,12 @@ function modelReference(
         ...modelSegmentEmpty,
         ...(event.page.cut === undefined ? {} : { cut: event.page.cut }),
       });
-    else runs[runs.length - 1] = modelGathered(current, event.page);
+    else
+      runs[runs.length - 1] = modelGathered(
+        current,
+        event.page,
+        event.highWaterBatch,
+      );
   }
   const last = runs[runs.length - 1] ?? modelSegmentEmpty;
   if (last.entries.length > 0)
@@ -504,9 +519,11 @@ test("a walk over a store that stands still stops before its budget", () => {
     let pane = leadTranscriptPaneEmpty;
     let reads = 0;
     let stalls = false;
+    const cursors: number[] = [];
     for (let at = 0; at < leadTranscriptReadsMax; at += 1) {
       const after = leadTranscriptNextAfter(pane, store.batches.length);
       if (after === undefined) break;
+      cursors.push(after);
       reads += 1;
       const stalling = random() > 0.7;
       stalls = stalls || stalling;
@@ -524,6 +541,12 @@ test("a walk over a store that stands still stops before its budget", () => {
     }
     if (stalls) stalled += 1;
     expect(
+      [...new Set(cursors)],
+      `seed ${String(seed)}: the walk skipped a batch below the high-water mark`,
+    ).toStrictEqual(
+      Array.from({ length: new Set(cursors).size }, (_unused, at) => at),
+    );
+    expect(
       leadTranscriptNextAfter(pane, store.batches.length),
       `seed ${String(seed)}: the walk was still asking when its budget ran out`,
     ).toBeUndefined();
@@ -534,12 +557,71 @@ test("a walk over a store that stands still stops before its budget", () => {
   }
   expect(
     shapes.size,
-    "every sequence walked one store, so the seeds explored one shape",
-  ).toBeGreaterThan(1);
+    "the seeds stopped reaching every store shape the generator can build",
+  ).toBe(modelBatchesMax);
   expect(
     stalled,
     "no sequence met a cursor that did not advance",
   ).toBeGreaterThan(0);
+});
+
+/**
+ * THE WALK WAITS AT A STALL RATHER THAN SKIPPING PAST IT. A store written above
+ * the mark the stall was read against carries the walk on from exactly the
+ * cursor it stopped at, so the batches between are reached rather than
+ * abandoned — taking the mark as the cursor instead loses them for the life of
+ * the pane, and draws them as a lead holding nothing.
+ */
+test("a store written past a stall carries the walk on from where it stopped", () => {
+  const store = modelStore(5, modelEntriesPerBatch);
+  const stalling = (after: number) =>
+    modelPage(store, after, {
+      decides: true,
+      draws: true,
+      stalls: after === 1,
+      repeats: false,
+      elided: 0,
+    });
+  let pane = leadTranscriptStep(leadTranscriptPaneEmpty, {
+    event: "Page",
+    page: stalling(0),
+    highWaterBatch: 2,
+  });
+  pane = leadTranscriptStep(pane, {
+    event: "Page",
+    page: stalling(1),
+    highWaterBatch: 2,
+  });
+  expect(pane.fold.readTo, "the walk gave up the cursor it stalled at").toBe(1);
+  expect(leadTranscriptNextAfter(pane, 2)).toBeUndefined();
+  expect(
+    leadTranscriptDrawn(pane).holdingUnknown,
+    "a pane that has not reached the rest of the stream claimed to know",
+  ).toBe(true);
+  const cursors: number[] = [];
+  for (let at = 0; at < leadTranscriptReadsMax; at += 1) {
+    const after = leadTranscriptNextAfter(pane, store.batches.length);
+    if (after === undefined) break;
+    cursors.push(after);
+    pane = leadTranscriptStep(pane, {
+      event: "Page",
+      page: modelPage(store, after, {
+        decides: true,
+        draws: true,
+        stalls: false,
+        repeats: false,
+        elided: 0,
+      }),
+      highWaterBatch: store.batches.length,
+    });
+  }
+  expect(
+    cursors,
+    "the walk did not resume from the cursor it stalled at",
+  ).toStrictEqual([1, 2, 3, 4, 5]);
+  expect(pane.fold.entries.length).toBe(
+    store.batches.length * modelEntriesPerBatch,
+  );
 });
 
 /** A cursor a page hands back unchanged ends the walk, because asking again
