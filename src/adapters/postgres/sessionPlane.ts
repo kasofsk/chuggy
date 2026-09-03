@@ -45,7 +45,7 @@ import type {
   SessionPlaneIdentity,
   SessionReferenceBound,
   SessionReferencePort,
-  SessionStoreBatchRow,
+  SessionStoreBatchWritten,
   SessionStoreQueryPort,
   SessionStoreRecordPort,
   SessionStoreStreamRow,
@@ -257,17 +257,19 @@ async function sessionPlaneRead(
     readonly after: number;
     readonly limit: number;
   },
-): Promise<readonly SessionStoreBatchRow[]> {
+): Promise<readonly SessionStoreBatchWritten[]> {
   const found = await pool.query<{
+    session: string | null;
     batch: string | null;
     digest: string | null;
     bytes: string | null;
   }>(
-    sql`SELECT batch::text AS batch,digest,bytes::text AS bytes
+    sql`SELECT session,batch::text AS batch,digest,bytes::text AS bytes
           FROM read_session_store(${sessionSecretDigest(secret)},${generation},
             ${page.stream},${page.after},${page.limit})`,
   );
   return found.rows.map((row) => ({
+    session: asSessionId(sessionRowText(row.session, "batch session")),
     batch: projectRowCounter(sessionRowText(row.batch, "batch"), "store batch"),
     digest: sessionRowText(row.digest, "batch digest"),
     bytes: projectRowCounter(

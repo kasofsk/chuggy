@@ -182,6 +182,17 @@ export interface SessionStoreBatchRow {
   readonly bytes: number;
 }
 
+/**
+ * One recorded batch as the PLANE reads it, naming the session that WROTE it:
+ * a fork's rows are its parent's and a resume's are its own, and the bearer's
+ * identity is the reading session in both, so nothing but the row can say which
+ * session an object stands under. The read that answered the row is also the
+ * fence — a session it did not return is one no object is addressed under.
+ */
+export interface SessionStoreBatchWritten extends SessionStoreBatchRow {
+  readonly session: SessionId;
+}
+
 /** One stream a session's store holds, and how many batches stand under it. */
 export interface SessionStoreStreamRow {
   readonly stream: SessionStoreStream;
@@ -189,7 +200,8 @@ export interface SessionStoreStreamRow {
 }
 
 /**
- * What a session's own store rows say. Streams are answered whole and narrowed
+ * What a bearer's store rows say, which is its own session's and its parent's
+ * where it is a fork. Streams are answered whole and narrowed
  * by the route, because the durable side keys them by session alone and a
  * prefix is the reader's question rather than the row's.
  */
@@ -200,7 +212,7 @@ export interface SessionStoreQueryPort {
     readonly stream: SessionStoreStream;
     readonly after: number;
     readonly limit: number;
-  }): Promise<readonly SessionStoreBatchRow[]>;
+  }): Promise<readonly SessionStoreBatchWritten[]>;
   streams(input: {
     readonly secret: SessionBearerSecret;
     readonly generation: number;
