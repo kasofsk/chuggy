@@ -35,8 +35,15 @@ import {
   apiRole,
   selectorServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
-import { postgresHarnessRolePool } from "./harness.ts";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+import { postgresPool } from "../../src/adapters/postgres/pool.ts";
+import { systemPromptSetSignature } from "../../src/adapters/postgres/schema/migrations/061-lead-tools.ts";
+import { postgresHarnessRolePool, postgresHarnessUrl } from "./harness.ts";
 import type pg from "pg";
+
+const execute = promisify(execFile);
 
 let selectorPool: pg.Pool;
 let apiPool: pg.Pool;
@@ -111,4 +118,92 @@ test("the list names every door the selector's own role is granted", () => {
       named.includes(door),
       `${door} is granted to the selector, so a check that omits it passes a role that cannot start`,
     );
+});
+
+/** The connection string the selector process itself would be given. */
+function selectorDatabaseUrl(): string {
+  const url = new URL(postgresHarnessUrl());
+  url.searchParams.set("options", `-c role=${selectorServiceRole}`);
+  return url.toString();
+}
+
+/**
+ * The root is composed in a child process because nothing in this tree may
+ * import a process root, which `check-boundaries` holds; the existing root
+ * suite spawns one for the same reason.
+ */
+const composedRootProgram = `
+  const roots = await import('./src/roots/controlPlane.ts');
+  const reject = () => Promise.reject(new Error('no pass was expected'));
+  const runtime = roots.selectorProcessRoot(
+    {
+      database: { url: process.env.CHUG_SELECTOR_URL },
+      runtime: { idleIntervalMilliseconds: 60000, shutdownDrainMilliseconds: 1000 },
+      wakes: { wakesPerPassMax: 1 },
+    },
+    {
+      projects: reject, moved: reject, notifications: reject,
+      dispatchView: reject, operationalContext: reject,
+      currentTimeEpochMs: async () => 0,
+      currentInstant: async () => '2026-09-03T12:00:00.000Z',
+      decisionDeadline: () => new Promise(() => undefined),
+      submit: reject, operation: reject,
+    },
+    {
+      clock: {
+        now: async () => ({ instant: '2026-09-03T12:00:00.000Z', epochMs: 0 }),
+        wait: async () => undefined,
+      },
+      deadline: { after: () => new Promise(() => undefined) },
+      policy: { pollIntervalMs: 1, implementationRevision: 'test' },
+      controlDeadlineMs: 1000,
+    },
+    { next: () => ({ operation: 'unused', selectorDecisionReference: 'unused' }) },
+  );
+  const started = await runtime.start();
+  await runtime.stop();
+  process.stdout.write(JSON.stringify(started));
+`;
+
+test("the composed selector process refuses to start when one door is not granted", async () => {
+  const owner = postgresPool(postgresHarnessUrl());
+  const door = `${sessionSystemPromptSetFunction}(${systemPromptSetSignature})`;
+  let stdout: string;
+  await owner.query(
+    `REVOKE EXECUTE ON FUNCTION ${door} FROM ${selectorServiceRole}`,
+  );
+  try {
+    ({ stdout } = await execute(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--input-type=module",
+        "--eval",
+        composedRootProgram,
+      ],
+      {
+        cwd: process.cwd(),
+        env: { ...process.env, CHUG_SELECTOR_URL: selectorDatabaseUrl() },
+      },
+    ));
+  } finally {
+    await owner.query(
+      `GRANT EXECUTE ON FUNCTION ${door} TO ${selectorServiceRole}`,
+    );
+    await owner.end();
+  }
+  const started = JSON.parse(stdout) as {
+    readonly started: string;
+    readonly precondition?: string;
+  };
+  assert.equal(
+    started.started,
+    "CouldNotRun",
+    "a half-granted migration must stop the process, not let it run blind",
+  );
+  assert.equal(
+    started.precondition,
+    "selector-lead-doors",
+    "and it must say which control refused",
+  );
 });
