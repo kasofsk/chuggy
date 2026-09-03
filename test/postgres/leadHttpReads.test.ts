@@ -35,7 +35,10 @@ import { postgresProjectAccess } from "../../src/adapters/postgres/projectAccess
 import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { composeNativeWeb } from "../../src/compose.ts";
 import { checkedProjectMembership } from "../../src/interpreter/projectMembership.ts";
-import { asSessionStoreStream } from "../../src/interpreter/agentSession.ts";
+import {
+  asSessionStoreStream,
+  type SessionId,
+} from "../../src/interpreter/agentSession.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
@@ -93,11 +96,20 @@ async function claimedLead(label: string) {
 /** One batch of one entry, recorded through the plane the pod actually uses. */
 async function recordBatch(
   partition: Partition,
+  session: SessionId,
   attempt: Awaited<ReturnType<typeof claimedLead>>["attempt"],
   stream: string,
   batch: number,
 ): Promise<void> {
-  storeReads.put(partition, stream, batch, sessionStoreEntryLine(batch));
+  storeReads.put(
+    {
+      partition,
+      session,
+      stream: asSessionStoreStream(stream),
+      batch,
+    },
+    sessionStoreEntryLine(batch),
+  );
   assert.equal(
     await rig.sessions.plane.record({
       secret: attempt.secret,
@@ -172,7 +184,7 @@ function pathOf(partition: Partition): string {
 test("the lead route reads a real lead, its mailbox tail and its streams", async () => {
   const { partition, session, turn, attempt } = await claimedLead("http-lead");
   const stream = asSessionStoreStream(`stream-${randomUUID()}`);
-  await recordBatch(partition, attempt, stream, 1);
+  await recordBatch(partition, session, attempt, stream, 1);
   await rig.sessions.plane.answer({
     secret: attempt.secret,
     generation: attempt.attempt.generation,
@@ -231,7 +243,13 @@ async function pagedStream(label: string) {
   const opened = await claimedLead(label);
   const stream = asSessionStoreStream(`stream-${randomUUID()}`);
   for (let batch = 1; batch <= sessionStorePageBatchesMax + 2; batch += 1)
-    await recordBatch(opened.partition, opened.attempt, stream, batch);
+    await recordBatch(
+      opened.partition,
+      opened.session,
+      opened.attempt,
+      stream,
+      batch,
+    );
   return {
     partition: opened.partition,
     session: opened.session,

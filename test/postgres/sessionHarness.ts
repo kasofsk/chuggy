@@ -296,3 +296,31 @@ export async function sessionRigProvision(
     return { code: ran.code ?? 1, output: ran.stderr ?? "" };
   }
 }
+
+/**
+ * The membership provisioning command, run against the harness server. It is
+ * here beside the session one because the two roots must derive ONE principal
+ * from ONE issuer variable, and a case saying so has to drive both.
+ */
+export async function projectAccessProvision(
+  environment: Readonly<Record<string, string>>,
+): Promise<{ readonly code: number; readonly output: string }> {
+  try {
+    const ran = await execute(
+      process.execPath,
+      ["--experimental-strip-types", "src/roots/provisionProjectAccess.ts"],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          CHUG_PROVISION_DATABASE_URL: postgresHarnessUrl(),
+          ...environment,
+        },
+      },
+    );
+    return { code: 0, output: ran.stdout };
+  } catch (failure) {
+    const ran = failure as { code?: number; stderr?: string };
+    return { code: ran.code ?? 1, output: ran.stderr ?? "" };
+  }
+}

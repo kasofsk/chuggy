@@ -90,11 +90,12 @@ export interface LeadStanding {
 
 /**
  * Where one session's store rows are read from, SESSION-KEYED so that one walk
- * serves the lead and a member's thread both. `LeadReadStore.batches` below is
- * the lead's own definer and answers for the project's lead alone; migration
- * 062's `read_session_store_batches` is that read taking the session it reads,
- * which is a name of its own because `read_session_store` is already the worker
- * plane's, authenticated by a bearer digest rather than by project access.
+ * serves the lead and a member's thread both. It is the ONLY row read either
+ * has: `LeadReadStore` below extends this rather than declaring a lead-only
+ * `batches`, because 062 retired the definer that was fenced on `kind='Lead'`
+ * for `read_session_store_batches` — a name of its own because
+ * `read_session_store` is already the worker plane's, authenticated by a bearer
+ * digest rather than by project access.
  */
 export interface SessionStoreRowsRead {
   batches(input: {

@@ -13,6 +13,12 @@
  * project's own capacity account, so this command cannot name another
  * project's entitlement for a session to spend.
  *
+ * THE ISSUER IS THE SERVER'S OWN VARIABLE, `CHUG_API_OIDC_ISSUER`, which is
+ * what `./provisionProjectAccess.ts` reads and what the API validates: a
+ * session and the membership authorizing it must derive one principal, and two
+ * variable names for one issuer is the one-character difference this derived
+ * form exists to close.
+ *
  * A ROSTER IS RECONFIGURED HERE AND NOWHERE ELSE. `open_member_thread` writes
  * the installation's default and takes no roster, so the only way one thread's
  * roster moves is `capabilities` below, run by an administrator against the
@@ -50,7 +56,7 @@ const variables = {
   session: "CHUG_PROVISION_SESSION_SESSION",
   kind: "CHUG_PROVISION_SESSION_KIND",
   principal: "CHUG_PROVISION_SESSION_PRINCIPAL",
-  issuer: "CHUG_PROVISION_SESSION_ISSUER",
+  issuer: "CHUG_API_OIDC_ISSUER",
   subject: "CHUG_PROVISION_SESSION_SUBJECT",
   parent: "CHUG_PROVISION_SESSION_PARENT",
   capabilities: "CHUG_PROVISION_SESSION_CAPABILITIES",
@@ -121,18 +127,26 @@ function provisionCapabilities(
   );
 }
 
+/** Whether a variable was given a value, which an exported empty one was not. */
+function given(
+  environment: ProvisionSessionEnvironment,
+  name: string,
+): boolean {
+  const value = environment[name];
+  return value !== undefined && value.length > 0;
+}
+
 /**
- * Whose authority the session acts under, derived from the issuer and subject a
- * membership is derived from or given already encoded — because a typed
- * principal one character from the derived one authenticates and is then
- * refused `NotFound` on every project call, with nothing saying why.
+ * Whose authority the session acts under, derived from the issuer the API
+ * validates and a subject or given already encoded — because a typed principal
+ * one character from the derived one authenticates and is then refused
+ * `NotFound` on every project call, with nothing saying why.
  */
 function provisionPrincipal(environment: ProvisionSessionEnvironment) {
-  const encoded = environment[variables.principal];
-  const issuer = environment[variables.issuer];
-  const subject = environment[variables.subject];
-  const derived = issuer !== undefined || subject !== undefined;
-  if (derived && encoded !== undefined && encoded.length > 0)
+  const derived =
+    given(environment, variables.issuer) ||
+    given(environment, variables.subject);
+  if (derived && given(environment, variables.principal))
     throw new Error(
       `name either ${variables.principal} or ${variables.issuer} with ${variables.subject}, not both`,
     );

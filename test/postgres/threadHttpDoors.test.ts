@@ -269,7 +269,15 @@ test("the transcript route walks the thread's own store", async () => {
     asSessionId(opened.session),
     "http-transcript",
   );
-  storeReads.put(partition, stream, 1, sessionStoreEntryLine(1));
+  storeReads.put(
+    {
+      partition,
+      session: asSessionId(opened.session),
+      stream,
+      batch: 1,
+    },
+    sessionStoreEntryLine(1),
+  );
   assert.equal(
     await rig.sessions.plane.record({
       secret: attempt.secret,

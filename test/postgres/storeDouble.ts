@@ -8,34 +8,40 @@
  * map keyed the way the port addresses an object is what a batch resolves
  * through here. A lead's transcript and a thread's read one store through one
  * walk, so they read it through one double as well.
+ *
+ * THE KEY CARRIES THE SESSION, because 062 retired the `kind='Lead'` reads for
+ * session-keyed ones and a double that dropped it would answer any session's
+ * bytes for one address — so a case saying a thread walks its OWN store would
+ * stay green while the walk addressed another's.
  */
 
-import type { Partition } from "../../src/interpreter/projectStore.ts";
-import type { SessionStoreReadPort } from "../../src/interpreter/sessionStore.ts";
+import type {
+  SessionStoreObject,
+  SessionStoreReadPort,
+} from "../../src/interpreter/sessionStore.ts";
 
 /** One store the cases fill and the port reads, keyed as the port addresses an object. */
 export interface SessionStoreDouble extends SessionStoreReadPort {
-  /** Puts one batch's bytes where the port will find them. */
-  put(
-    partition: Partition,
-    stream: string,
-    batch: number,
-    content: string,
-  ): void;
+  /** Puts one batch's bytes where the port will find them, at its whole address. */
+  put(object: SessionStoreObject, content: string): void;
 }
 
 export function sessionStoreDouble(): SessionStoreDouble {
   const held = new Map<string, string>();
-  const key = (partition: Partition, stream: string, batch: number): string =>
-    [partition.tenant, partition.project, stream, batch].join("/");
+  const key = (object: SessionStoreObject): string =>
+    [
+      object.partition.tenant,
+      object.partition.project,
+      object.session,
+      object.stream,
+      object.batch,
+    ].join("/");
   return {
-    put: (partition, stream, batch, content) => {
-      held.set(key(partition, stream, batch), content);
+    put: (object, content) => {
+      held.set(key(object), content);
     },
     readBatch: (object) => {
-      const content = held.get(
-        key(object.partition, object.stream, object.batch),
-      );
+      const content = held.get(key(object));
       return Promise.resolve(
         content === undefined
           ? ({ read: "NotFound" } as const)

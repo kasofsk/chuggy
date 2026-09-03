@@ -39,6 +39,7 @@ import type { NotificationStore } from "../../src/interpreter/notifications.ts";
 import { openExecutionBacklogGuard } from "../../src/interpreter/schedulerContext.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
+  checkedThreadsLimit,
   threadBacklogRetrySeconds,
   type ThreadMessageEnqueued,
   type ThreadRecord,
@@ -344,6 +345,19 @@ test("a mailbox page names the cursor that reaches the turns behind it", async (
 
   assert.equal(read.result === "Found" ? read.nextBefore : undefined, 1);
   assert.ok(held.calls.includes(`standing:${mine}:4:2`));
+});
+
+/**
+ * The listing's own bound. `nativeThreadReadMethods` hands it
+ * `threadsAnsweredMax`, so the call there cannot throw and is a restatement
+ * rather than a control — what makes it one is any other caller, and the
+ * definer's `least(…)` is what bounds the rows either way.
+ */
+test("a thread listing limit outside its bounds is refused rather than clamped", () => {
+  assert.equal(checkedThreadsLimit(threadsAnsweredMax), threadsAnsweredMax);
+  assert.equal(checkedThreadsLimit(1), 1);
+  for (const asked of [0, -1, threadsAnsweredMax + 1, 1.5, Number.NaN])
+    assert.throws(() => checkedThreadsLimit(asked), RangeError, String(asked));
 });
 
 test("a mailbox page outside its bounds is refused rather than clamped", async () => {

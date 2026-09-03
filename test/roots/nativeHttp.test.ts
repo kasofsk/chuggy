@@ -181,14 +181,17 @@ test("each lead read reaches the definer function the plan names for it", async 
  */
 const threadPortsProgram = `
   const root = await import('./src/roots/nativeHttp.ts');
-  const asked = [];
-  const pooled = () => ({
+  const asked = { pool: [], selectorReviewPool: [] };
+  const pooled = (named) => ({
     query: async (statement) => {
-      asked.push(statement.text ?? String(statement));
+      asked[named].push(statement.text ?? String(statement));
       return { rows: [] };
     },
   });
-  const pools = { pool: pooled(), selectorReviewPool: pooled() };
+  const pools = {
+    pool: pooled('pool'),
+    selectorReviewPool: pooled('selectorReviewPool'),
+  };
   const ports = root.nativeThreadPorts(pools, {
     readBatch: async () => ({ read: 'NotFound' }),
   });
@@ -210,7 +213,10 @@ const threadPortsProgram = `
 `;
 
 interface ThreadPortsComposed {
-  readonly asked: readonly string[];
+  readonly asked: {
+    readonly pool: readonly string[];
+    readonly selectorReviewPool: readonly string[];
+  };
   readonly slot: string;
   readonly minted: string;
 }
@@ -249,9 +255,14 @@ test("the thread bundle the root composes reaches 062's own reads", async () => 
     "read_session_store_batches",
   ])
     assert.ok(
-      composed.asked.some((statement) => statement.includes(named)),
+      composed.asked.pool.some((statement) => statement.includes(named)),
       `${named} was reached over the API pool`,
     );
+  assert.deepEqual(
+    composed.asked.selectorReviewPool,
+    [],
+    "no thread read may reach the pool with no grant on 062's doors",
+  );
   assert.equal(composed.slot, "claude-code");
   assert.ok(composed.minted.startsWith("thread-"));
 });
