@@ -26,7 +26,15 @@
 
 import { z } from "zod";
 
-import { changeResourceSchema, countSchema, partitionSchema } from "./http.ts";
+import {
+  changeResourceSchema,
+  countSchema,
+  partitionSchema,
+  sessionIdentityCharsMax,
+  sessionKindCharsMax,
+  sessionStoreBatchesMax,
+  sessionStoreStreamCharsMax,
+} from "./http.ts";
 import {
   configurationResponseSchema,
   draftResponseSchema,
@@ -81,6 +89,33 @@ export const projectChangeRepresentationSchemas = {
 
 export type ProjectChangeRepresentation<Kind extends ProjectChangeKind> =
   z.infer<(typeof projectChangeRepresentationSchemas)[Kind]>;
+
+const sessionResourceIdentitySchema = z
+  .string()
+  .min(1)
+  .max(sessionIdentityCharsMax);
+
+/**
+ * What a `Session` change names: the session that moved, what that session is,
+ * and either the turn or the store batch the move was. It is the resource
+ * string parsed, so one reader does not guess at another's spelling — the
+ * triggers write it and a console reads it to know which lead to re-read.
+ */
+export const sessionChangeResourceSchema = z.union([
+  z.strictObject({
+    session: sessionResourceIdentitySchema,
+    kind: z.string().min(1).max(sessionKindCharsMax),
+    turn: sessionResourceIdentitySchema,
+  }),
+  z.strictObject({
+    session: sessionResourceIdentitySchema,
+    kind: z.string().min(1).max(sessionKindCharsMax),
+    stream: z.string().min(1).max(sessionStoreStreamCharsMax),
+    batch: countSchema.max(sessionStoreBatchesMax),
+  }),
+]);
+
+export type SessionChangeResource = z.infer<typeof sessionChangeResourceSchema>;
 
 /** What the changed kind names: a route's own identity, or a session's whole key. */
 const changeDataSchema = <Representation extends z.ZodType>(

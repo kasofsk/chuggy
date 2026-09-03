@@ -46,7 +46,10 @@ import {
   type SessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
-import { projectChangeDataSchemas } from "../../src/contract/events.ts";
+import {
+  projectChangeDataSchemas,
+  sessionChangeResourceSchema,
+} from "../../src/contract/events.ts";
 import { postgresProjectChangeLog } from "../../src/adapters/postgres/projectChangeLog.ts";
 import {
   selectorServiceRole,
@@ -1097,5 +1100,46 @@ test("the widest observation the parts admit is one the mailbox row holds", asyn
     )[0]?.["held"],
     String(input.length),
     "the row holds what was offered, whole",
+  );
+});
+
+test("both resources the session triggers write parse as the shape the wire exports", async () => {
+  const { partition, session } = await leadProject("resource-shape");
+  const log = postgresProjectChangeLog(rig.sessions.harness.pool);
+  const turn = sessionRigTurnId("resource-shape");
+  const beforeTurn = await log.latest();
+  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  const turnChange = (await log.after(partition, beforeTurn, 10))[0];
+  assert.ok(turnChange !== undefined, "the turn trigger appended nothing");
+  assert.deepEqual(
+    sessionChangeResourceSchema.parse(
+      JSON.parse(turnChange.resource) as unknown,
+    ),
+    { session, kind: "Lead", turn },
+  );
+
+  const attempt = await leadPod(partition, session, "resource-shape");
+  await rig.sessions.plane.claim({
+    secret: attempt.secret,
+    generation: attempt.attempt.generation,
+  });
+  const stream = asSessionStoreStream(`stream-${randomUUID()}`);
+  const beforeBatch = await log.latest();
+  await rig.sessions.plane.record({
+    secret: attempt.secret,
+    generation: attempt.attempt.generation,
+    stream,
+    batch: 1,
+    digest: "d".repeat(64),
+    bytes: 3,
+    events: 1,
+  });
+  const batchChange = (await log.after(partition, beforeBatch, 10))[0];
+  assert.ok(batchChange !== undefined, "the store trigger appended nothing");
+  assert.deepEqual(
+    sessionChangeResourceSchema.parse(
+      JSON.parse(batchChange.resource) as unknown,
+    ),
+    { session, kind: "Lead", stream, batch: 1 },
   );
 });
