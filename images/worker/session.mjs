@@ -38,10 +38,12 @@
  * of nothing, and the member reading the answer cannot tell that from the
  * lead's own thinking.
  *
- * AN INQUIRY IS ONE EXCHANGE, AND THE POD STOPS AFTER IT. The door is what
- * bounds it — nothing enqueues a second turn on an inquiry — so this is the
- * weaker of the two walls and it is here because the pod is what would spend
- * the account's attempt on a turn the member never asked for.
+ * AN INQUIRY IS ONE EXCHANGE, AND THE POD ENDS ITS MAILBOX AFTER IT. Leaving
+ * the loop is not enough: the mailbox's generator is still driven by the live
+ * query, so it would claim a second turn and abandon it claimed. The door is
+ * what bounds an inquiry — nothing enqueues a second turn on one — so this is
+ * the weaker of the two walls, and it is here because the pod is what would
+ * otherwise spend the account's attempt on a turn the member never asked for.
  */
 
 import { mkdir, readFile } from "node:fs/promises";
@@ -340,6 +342,18 @@ export function messageReader(stream, pause) {
 }
 
 /**
+ * The transcript this attempt forks from, where the plane named one. It is read
+ * through one function so the refusal and the query option cannot come to
+ * disagree about what "the plane named one" means, and an empty reference is
+ * absent here exactly as it is to `bindReference`.
+ */
+function sessionForkFrom(facts) {
+  return typeof facts.forkFrom === "string" && facts.forkFrom.length > 0
+    ? facts.forkFrom
+    : undefined;
+}
+
+/**
  * The objectives the session carries, appended to the runtime's own preset.
  *
  * THE PRESET RATHER THAN A CUSTOM PROMPT, because the preset is what loads the
@@ -370,17 +384,6 @@ export function messageReader(stream, pause) {
  * with the preset's own objectives is worse than one with the project's and is
  * not a reason to refuse the turn.
  */
-/**
- * The transcript this attempt forks from, where the plane named one. It is read
- * through one function so the refusal and the query option cannot come to
- * disagree about what "the plane named one" means.
- */
-export function sessionForkFrom(facts) {
-  return typeof facts.forkFrom === "string" && facts.forkFrom.length > 0
-    ? facts.forkFrom
-    : undefined;
-}
-
 function sessionSystemPrompt(facts) {
   const append = facts.systemPrompt;
   return {
@@ -592,7 +595,11 @@ export async function runSessionTurns(context) {
       return 1;
     }
     context.mailbox.settled();
-    if (ended || context.inquiry) return 0;
+    if (context.inquiry) {
+      context.mailbox.stop();
+      return 0;
+    }
+    if (ended) return 0;
   }
 }
 

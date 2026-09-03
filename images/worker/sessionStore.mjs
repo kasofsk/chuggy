@@ -270,8 +270,8 @@ async function listStreamSubkeys(held, sessionId) {
 }
 
 /** One session's store, held open for the life of the pod, retained unless it is a fork's. */
-export function sessionStoreAdapter(task, bearer, services = {}) {
-  const { request = sessionRequest, retain = true } = services;
+export function sessionStoreAdapter(task, bearer, options = {}) {
+  const { request = sessionRequest, retain = true } = options;
   const held = {
     streams: new Map(),
     turn: { first: undefined, last: undefined },
@@ -280,6 +280,8 @@ export function sessionStoreAdapter(task, bearer, services = {}) {
   let chain = Promise.resolve();
   return {
     async append(key, entries) {
+      // Named before the mode is read: a key the store cannot name is a fault
+      // in either mode, and a discard that swallowed it would hide it.
       const stream = sessionStoreStream(key);
       if (!retain) return undefined;
       const run = chain.then(() => appendOnce(held, stream, entries));

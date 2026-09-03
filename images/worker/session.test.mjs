@@ -65,33 +65,34 @@ test("a mirror_error after the result fails the turn and never answers it", asyn
   );
 });
 
-test("a successful turn is answered with its result text and the batches it wrote", async () => {
-  const plane = planeOf([turnOne], facts);
-  const { query } = queryOf((_asked, _index, options) => [
-    { type: "system", subtype: "init", session_id: "runtime-1" },
-    () =>
-      options.sessionStore.append({ sessionId: "runtime-1" }, [
-        { uuid: "a", type: "assistant" },
-      ]),
-    result("success", { result: "kestrel" }),
-  ]);
+test("a successful turn is answered with its result text and the batches it wrote, whichever kind wrote them", async () => {
+  for (const kind of ["Lead", "Thread"]) {
+    const plane = planeOf([turnOne], { ...facts, kind });
+    const { query } = queryOf((_asked, _index, options) => [
+      { type: "system", subtype: "init", session_id: "runtime-1" },
+      () =>
+        options.sessionStore.append({ sessionId: "runtime-1" }, [
+          { uuid: "a", type: "assistant" },
+        ]),
+      result("success", { result: "kestrel" }),
+    ]);
 
-  const code = await run({ request: plane.request, query });
+    const code = await run({ request: plane.request, query });
 
-  assert.equal(code, 0);
-  const answer = plane.calls.find(
-    ({ path }) => path === "/v1/session/turn/answer",
-  );
-  assert.deepEqual(answer.body, {
-    turn: "turn-1",
-    result: "kestrel",
-    batchFirst: 1,
-    batchLast: 1,
-  });
-  assert.ok(
-    plane.calls.some(({ path }) => path === "/v1/session/store/runtime-1/1"),
-    "the runtime's append never reached the plane",
-  );
+    assert.equal(code, 0, kind);
+    const answer = plane.calls.find(
+      ({ path }) => path === "/v1/session/turn/answer",
+    );
+    assert.deepEqual(
+      answer.body,
+      { turn: "turn-1", result: "kestrel", batchFirst: 1, batchLast: 1 },
+      kind,
+    );
+    assert.ok(
+      plane.calls.some(({ path }) => path === "/v1/session/store/runtime-1/1"),
+      `a ${kind}'s append never reached the plane`,
+    );
+  }
 });
 
 test("a result the runtime could not finish is the failure that names why", async () => {
@@ -185,28 +186,33 @@ test("an inquiry forks the parent's transcript, never its own empty reference", 
 });
 
 test("an inquiry with no transcript to fork from fails its turn and opens no query", async () => {
-  const plane = planeOf([{ ...turnOne, inputKind: "Inquiry" }], {
-    ...facts,
-    kind: "Inquiry",
-    capabilities: ["ProjectRead"],
-    agentReference: "runtime-1",
-  });
-  const { seen, query } = queryOf(() => [
-    result("success", { result: "answered from nothing" }),
-  ]);
+  for (const forkFrom of [undefined, ""]) {
+    const named = JSON.stringify(forkFrom);
+    const plane = planeOf([{ ...turnOne, inputKind: "Inquiry" }], {
+      ...facts,
+      kind: "Inquiry",
+      capabilities: ["ProjectRead"],
+      agentReference: "runtime-1",
+      ...(forkFrom === undefined ? {} : { forkFrom }),
+    });
+    const { seen, query } = queryOf(() => [
+      result("success", { result: "answered from nothing" }),
+    ]);
 
-  const code = await run({ request: plane.request, query });
+    const code = await run({ request: plane.request, query });
 
-  assert.equal(code, 1);
-  assert.equal(seen.options, undefined, "a query was opened with no fork");
-  assert.deepEqual(
-    plane.calls.find(({ path }) => path === "/v1/session/turn/failure").body,
-    { turn: "turn-1", failure: "AgentFailed" },
-  );
-  assert.ok(
-    !plane.calls.some(({ path }) => path === "/v1/session/turn/answer"),
-    "an unforked inquiry answered",
-  );
+    assert.equal(code, 1, named);
+    assert.equal(seen.options, undefined, `a query was opened for ${named}`);
+    assert.deepEqual(
+      plane.calls.find(({ path }) => path === "/v1/session/turn/failure").body,
+      { turn: "turn-1", failure: "AgentFailed" },
+      named,
+    );
+    assert.ok(
+      !plane.calls.some(({ path }) => path === "/v1/session/turn/answer"),
+      `an inquiry forking ${named} answered`,
+    );
+  }
 });
 
 test("an inquiry answers as the turn's result and writes no batch of its own", async () => {
@@ -239,9 +245,9 @@ test("an inquiry answers as the turn's result and writes no batch of its own", a
     "an inquiry posted a store batch",
   );
   assert.equal(
-    plane.calls.filter(({ path }) => path === "/v1/session/turn/answer").length,
+    plane.calls.filter(({ path }) => path === "/v1/session/turn").length,
     1,
-    "an inquiry took a second turn",
+    "an inquiry claimed a second turn",
   );
 });
 

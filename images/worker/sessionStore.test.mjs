@@ -23,11 +23,11 @@ function planeOf(answer) {
   };
 }
 
-function storeOf(answer, retained = {}) {
+function storeOf(answer, mode = {}) {
   const plane = planeOf(answer);
   return {
     ...plane,
-    store: sessionStoreAdapter(task, "chgs_b", { ...plane, ...retained }),
+    store: sessionStoreAdapter(task, "chgs_b", { ...plane, ...mode }),
   };
 }
 
