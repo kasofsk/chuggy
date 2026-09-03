@@ -286,6 +286,12 @@ export const leadSeededDecisionCharsMax = 4_096;
 /** What one notification in the observation's window weighs: an ordinal, a kind, a resource. */
 export const leadObservedChangeCharsMax = 1_024;
 
+/** How many dependencies one authored draft names. */
+export const nativeHttpDraftDependenciesMax = 100;
+
+/** How many stages one authored program carries. */
+export const nativeHttpDraftStagesMax = 100;
+
 /** The longest canonical configuration one revision holds, which 007's column checks. */
 export const configurationCanonicalCharsMax = 65_536;
 
@@ -296,24 +302,6 @@ export const configurationCanonicalCharsMax = 65_536;
  * quotes in every JSON document already exceed.
  */
 const jsonEmbeddedTextCharChars = 2;
-
-/**
- * What one dispatch candidate weighs beyond the configuration it pins: its
- * ticket, its version, its dependencies, its program, its pricing and the two
- * identities naming the revision.
- */
-export const leadObservedCandidateFixedCharsMax = 4_096;
-
-/**
- * What one dispatch candidate weighs. The configuration it carries is the whole
- * of its size — a candidate embeds the canonical text 007 bounds, not a
- * reference to it — so a ceiling below that is a page the view composes and the
- * mailbox refuses.
- */
-export const leadObservedCandidateCharsMax =
-  leadObservedCandidateFixedCharsMax +
-  configurationCanonicalCharsMax * jsonEmbeddedTextCharChars +
-  2;
 
 /**
  * What one observation carries that is neither a text a project set nor a page
@@ -352,6 +340,59 @@ const leadObservedRefusalsChars = stringifiedArrayChars(
   agenticRefusalsAnsweredMax,
   leadObservedRefusalChars,
 );
+
+/** The characters a sha-256 digest is written with, wherever one is carried. */
+export const artifactDigestChars = 64;
+
+/** The most digits any counter one candidate carries is written with. */
+const candidateCounterDigitsMax = 20;
+
+/** What one stage of a candidate's program weighs: its fanout and its combinator. */
+export const leadObservedStageCharsMax = 128;
+
+/** What one label a candidate's pricing or finalizer names weighs. */
+const candidateLabelCharsMax = 64;
+
+/**
+ * What one dispatch candidate weighs beyond the configuration it pins. Every
+ * part is the bound its own field is held to: the counters, the two pages
+ * authoring bounds, the labels its pricing is drawn from, and the identities
+ * naming the revision it was pinned under.
+ */
+export const leadObservedCandidateFixedCharsMax = stringifiedObjectChars([
+  ["ticket", candidateCounterDigitsMax],
+  ["ticketVersion", candidateCounterDigitsMax],
+  ["workFanout", candidateCounterDigitsMax],
+  [
+    "dependencies",
+    stringifiedArrayChars(
+      nativeHttpDraftDependenciesMax,
+      candidateCounterDigitsMax,
+    ),
+  ],
+  [
+    "program",
+    stringifiedArrayChars(nativeHttpDraftStagesMax, leadObservedStageCharsMax),
+  ],
+  ["reworkPolicy", jsonStringChars(candidateLabelCharsMax)],
+  ["finalizationPricing", jsonStringChars(candidateLabelCharsMax)],
+  ["resumePricing", jsonStringChars(candidateLabelCharsMax)],
+  ["finalizer", jsonStringChars(candidateLabelCharsMax)],
+  ["configurationVersion", jsonStringChars(nativeHttpPathSegmentCharsMax)],
+  ["configurationRevision", jsonStringChars(nativeHttpPathSegmentCharsMax)],
+  ["configurationDigest", jsonStringChars(artifactDigestChars)],
+]);
+
+/**
+ * What one dispatch candidate weighs. The configuration it carries is the whole
+ * of its size — a candidate embeds the canonical text 007 bounds, not a
+ * reference to it — so a ceiling below that is a page the view composes and the
+ * mailbox refuses.
+ */
+export const leadObservedCandidateCharsMax =
+  leadObservedCandidateFixedCharsMax +
+  configurationCanonicalCharsMax * jsonEmbeddedTextCharChars +
+  2;
 
 /**
  * The longest observation one lead turn may be given, which is what its mailbox

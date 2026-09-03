@@ -12,15 +12,20 @@
 
 import { z } from "zod";
 
-import { countSchema, ticketNumberSchema } from "./http.ts";
+import {
+  countSchema,
+  nativeHttpDraftDependenciesMax,
+  nativeHttpDraftStagesMax,
+  ticketNumberSchema,
+} from "./http.ts";
 import {
   evaluationCombinators,
   finalizers,
   resumePricings,
 } from "./rosters.ts";
 
-export const nativeHttpDraftDependenciesMax = 100;
-export const nativeHttpDraftStagesMax = 100;
+/** The two page bounds an authored draft is held to, surfaced where it is parsed. */
+export { nativeHttpDraftDependenciesMax, nativeHttpDraftStagesMax };
 
 export const programStageSchema = z.strictObject({
   fanout: ticketNumberSchema,

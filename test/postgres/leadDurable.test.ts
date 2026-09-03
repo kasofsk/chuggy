@@ -21,8 +21,11 @@ import {
   leadObservedCandidateCharsMax,
   leadObservationFixedCharsMax,
   leadObservedChangeCharsMax,
+  artifactDigestChars,
   configurationCanonicalCharsMax,
   leadObservedCandidateFixedCharsMax,
+  nativeHttpDraftDependenciesMax,
+  nativeHttpDraftStagesMax,
   leadSeededDecisionCharsMax,
   leadSeedingDecisionsMax,
   nativeHttpPathSegmentCharsMax,
@@ -1046,29 +1049,33 @@ test("a model name past what the measure column holds is refused", async () => {
 });
 
 /**
- * One candidate at its ceiling: a canonical configuration of the length 007
- * bounds, every character of which is a quote the embedding must escape, and a
- * revision padded out to what the rest of the candidate is allowed.
+ * One candidate at its ceiling: every field at the bound its own constant
+ * gives it — the two authored pages full, the identities at the identity bound
+ * with every character escaped, and a canonical configuration of the length 007
+ * bounds whose every character is a quote the embedding must escape.
  */
 function maximalCandidate(ticket: number): Record<string, unknown> {
-  const fixed = {
+  return {
     ticket,
-    ticketVersion: 1,
-    dependencies: [],
-    workFanout: 1,
-    program: [],
-    reworkPolicy: { type: "BudgetedRework", value: 1 },
-    finalizationPricing: "DeadlineOnly",
+    ticketVersion: Number.MAX_SAFE_INTEGER,
+    workFanout: Number.MAX_SAFE_INTEGER,
+    dependencies: Array.from(
+      { length: nativeHttpDraftDependenciesMax },
+      (_unused, at) => Number.MAX_SAFE_INTEGER - at,
+    ),
+    program: Array.from({ length: nativeHttpDraftStagesMax }, () => ({
+      fanout: Number.MAX_SAFE_INTEGER,
+      combinator: "AllOf",
+    })),
+    reworkPolicy: { type: "BudgetedRework", value: Number.MAX_SAFE_INTEGER },
+    finalizationPricing: { type: "Budgeted", value: Number.MAX_SAFE_INTEGER },
     resumePricing: "RetryCharged",
-    finalizer: "NoFinalizer",
-    configurationDigest: "c".repeat(64),
+    finalizer: "ManagedFinalizer",
+    configurationVersion: escapedText(nativeHttpPathSegmentCharsMax),
+    configurationRevision: escapedText(nativeHttpPathSegmentCharsMax),
+    configurationDigest: "c".repeat(artifactDigestChars),
     configurationCanonical: '"'.repeat(configurationCanonicalCharsMax),
   };
-  const spare =
-    leadObservedCandidateFixedCharsMax -
-    (JSON.stringify({ ...fixed, configurationRevision: "" }).length -
-      JSON.stringify(fixed.configurationCanonical).length);
-  return { ...fixed, configurationRevision: "r".repeat(Math.max(spare, 0)) };
 }
 
 /** A text of that many characters, every one of which JSON must escape. */
@@ -1158,14 +1165,25 @@ test("the widest observation the parts admit is one the mailbox row holds", asyn
 });
 
 test("one candidate at its ceiling is one the derivation makes room for", () => {
-  const one = JSON.stringify(maximalCandidate(1)).length;
+  const one = maximalCandidate(1);
+  const whole = JSON.stringify(one).length;
+  const fixed =
+    JSON.stringify({ ...one, configurationCanonical: "" }).length - 2;
   assert.ok(
-    one > configurationCanonicalCharsMax,
+    fixed > nativeHttpDraftStagesMax,
+    "the widest candidate carries both authored pages full",
+  );
+  assert.ok(
+    fixed <= leadObservedCandidateFixedCharsMax,
+    `a candidate's own fields weigh ${String(fixed)} against ${String(leadObservedCandidateFixedCharsMax)}`,
+  );
+  assert.ok(
+    whole > configurationCanonicalCharsMax,
     "a candidate embeds the canonical text rather than a reference to it",
   );
   assert.ok(
-    one <= leadObservedCandidateCharsMax,
-    `one candidate weighs ${String(one)} against a ceiling of ${String(leadObservedCandidateCharsMax)}`,
+    whole <= leadObservedCandidateCharsMax,
+    `one candidate weighs ${String(whole)} against ${String(leadObservedCandidateCharsMax)}`,
   );
 });
 

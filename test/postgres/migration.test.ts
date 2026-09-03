@@ -2134,6 +2134,10 @@ const leadSelectorDoors = [
   "read_lead_turn(text)",
   "withdraw_lead_turn(text)",
 ];
+/** The one door both roles hold, which is still a door nobody else may open. */
+const leadSharedDoors = [
+  "read_selector_interactions(text,text,bigint,bigint,boolean)",
+];
 const leadApiDoors = [
   "read_agentic_refusals(text,text,bigint,bigint)",
   "read_standing_agentic_refusals(text,text,bigint)",
@@ -2147,7 +2151,11 @@ const leadApiDoors = [
 async function migrationLeadDoorsAreStrangers(
   executes: (role: string, signature: string) => Promise<boolean | undefined>,
 ): Promise<void> {
-  for (const door of [...leadSelectorDoors, ...leadApiDoors])
+  for (const door of [
+    ...leadSelectorDoors,
+    ...leadApiDoors,
+    ...leadSharedDoors,
+  ])
     for (const stranger of ["public", ticketServiceRole, finalizerRole])
       assert.equal(
         await executes(stranger, door),
@@ -2174,15 +2182,13 @@ test("migration 59 grants each lead door to exactly one role", async () => {
       assert.equal(await executes(apiRole, door), true, door);
       assert.equal(await executes(selectorServiceRole, door), false, door);
     }
-    for (const role of [selectorServiceRole, apiRole])
-      assert.equal(
-        await executes(
-          role,
-          "read_selector_interactions(text,text,bigint,bigint,boolean)",
-        ),
-        true,
-        "the console draws the decision log and a fresh lead is seeded from it",
-      );
+    for (const door of leadSharedDoors)
+      for (const role of [selectorServiceRole, apiRole])
+        assert.equal(
+          await executes(role, door),
+          true,
+          "the console draws the decision log and a fresh lead is seeded from it",
+        );
     assert.equal(
       await executes(
         selectorServiceRole,
