@@ -16,6 +16,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { SelectorSettingsPage } from "../app/browser/SelectorSettingsPage.tsx";
+import { leadDispatchesMax } from "../../../src/contract/http.ts";
 import { selectorProjectOverridesSchema } from "../../../src/contract/requests.ts";
 import { selectorSettingsLimitNames } from "../app/core/selectorSettingsForm.ts";
 import {
@@ -638,46 +639,33 @@ test("a conflict rebases a limit beside the budget this reader typed", async () 
 });
 
 /**
- * THE CEILING IS THE ROUTE'S AND THE PAGE SHOWS WHAT THE ROUTE SAID. What a
- * decision may dispatch is bounded by the selector, and
- * `console-reaches-no-source` is why no copy of that bound can be here: a
- * second statement of it would refuse a budget the route takes, hiding a
- * setting an owner is entitled to, and would still not catch one the route
- * refuses. So the number is written as typed and the refusal is the one line
- * the page says.
+ * THE CEILING IS THE WIRE'S AND THE PAGE HOLDS NO COPY OF IT. What a decision
+ * may dispatch is bounded by the override schema this form parses its draft
+ * with, so a budget past it marks its own box exactly as an unreadable one
+ * does — and the ceiling itself is admitted, which is the half a bound stated
+ * one off would get wrong. The number is imported from where the wire states
+ * it, never written here, so a ceiling that moves moves this case with it.
  */
-const dispatchesPastTheCeiling = 99;
-
-test("a dispatch budget the route refuses is drawn and not judged here", async () => {
-  const server = await drawSettings(() => ({
-    body: {
-      error: { code: "InvalidRequest", message: "The request is invalid." },
-    },
-    status: 400,
-  }));
+test("a dispatch budget past the wire's ceiling marks its own box", async () => {
+  await drawSettings(() => ({ body: {}, status: 200 }));
   await turned(() => {
     fireEvent.change(screen.getByLabelText("Dispatches"), {
-      target: { value: String(dispatchesPastTheCeiling) },
+      target: { value: String(leadDispatchesMax + 1) },
+    });
+  });
+  expect(screen.getByLabelText("Dispatches").getAttribute("aria-invalid")).toBe(
+    "true",
+  );
+  expect(
+    screen.getByRole("button", { name: "Save" }).hasAttribute("disabled"),
+  ).toBe(true);
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("Dispatches"), {
+      target: { value: String(leadDispatchesMax) },
     });
   });
   expect(
     screen.getByLabelText("Dispatches").getAttribute("aria-invalid"),
-    "the form judged the ceiling itself instead of asking the route",
+    "the box refused the ceiling itself and not only what is past it",
   ).toBe("false");
-  expect(
-    screen.getByRole("button", { name: "Save" }).hasAttribute("disabled"),
-  ).toBe(false);
-  await turned(save);
-  await settled();
-  expect(server.written()).toStrictEqual({
-    expectedRevision: 12,
-    overrides: {
-      northStar: "ship the console",
-      limits: { dispatchesPerDecision: dispatchesPastTheCeiling },
-    },
-  });
-  expect(
-    screen.getByText(/^Failed · /).textContent,
-    "the route refused the budget and the page did not say so",
-  ).toContain("InvalidRequest");
 });
