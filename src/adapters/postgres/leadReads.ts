@@ -22,13 +22,8 @@ import * as z from "zod";
 
 import {
   allSessionStates,
-  allSessionTurnFailures,
-  allSessionTurnInputKinds,
   asSessionId,
-  asSessionStoreStream,
-  asSessionTurnId,
 } from "../../interpreter/agentSession.ts";
-import { allSessionTurnStates } from "../../interpreter/agentSession.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type {
   JsonValue,
@@ -38,16 +33,15 @@ import type {
   SelectorStateStore,
 } from "../../interpreter/selector.ts";
 import type {
-  SessionStoreBatchRow,
-  SessionStoreStreamRow,
-} from "../../interpreter/sessionPlane.ts";
-import type {
   LeadReadStore,
   LeadStanding,
-  LeadTurnRecord,
 } from "../../interpreter/leadRead.ts";
 import type { SelectorHistoryStore } from "../../interpreter/selectorHistory.ts";
 import { projectRowCounter } from "./rows.ts";
+import {
+  sessionStoreBatchRows,
+  sessionStoreStreamRows,
+} from "./sessionStoreReads.ts";
 import {
   selectorInteractionRecord,
   type SelectorInteractionRow,
@@ -55,8 +49,8 @@ import {
 import {
   sessionRowMember,
   sessionRowText,
-  sessionTurnMeasuredOf,
-  type SessionTurnMeasureRow,
+  sessionTurnStandingOf,
+  type SessionTurnStandingRow,
 } from "./sessionRows.ts";
 
 /**
@@ -77,20 +71,13 @@ export interface PostgresLeadReads
 }
 
 /** One `read_lead_standing` row: the session facts, and one turn of the tail or none. */
-interface LeadStandingRow extends SessionTurnMeasureRow {
+interface LeadStandingRow extends SessionTurnStandingRow {
   readonly session: string | null;
   readonly session_state: string | null;
   readonly agent_reference: string | null;
   readonly attention: string | null;
   readonly notification_cursor: string | null;
   readonly handoff_note: string | null;
-  readonly turn: string | null;
-  readonly turn_ordinal: string | null;
-  readonly input_kind: string | null;
-  readonly turn_state: string | null;
-  readonly failure: string | null;
-  readonly batch_first: string | null;
-  readonly batch_last: string | null;
 }
 
 const jsonValueSchema: z.ZodType<JsonValue> = z.json();
@@ -101,45 +88,6 @@ const leadAttentions: readonly SelectorProjectState["attention"][] = [
   "Attention",
   "Stopped",
 ];
-
-/** The turn a standing row carries, or nothing where the lead has taken none. */
-function leadTurnRead(row: LeadStandingRow): LeadTurnRecord | undefined {
-  if (row.turn === null) return undefined;
-  const measured = sessionTurnMeasuredOf(row);
-  return {
-    turn: asSessionTurnId(row.turn),
-    ordinal: projectRowCounter(
-      sessionRowText(row.turn_ordinal, "turn ordinal"),
-      "lead turn ordinal",
-    ),
-    inputKind: sessionRowMember(
-      allSessionTurnInputKinds,
-      row.input_kind,
-      "session turn input kind",
-    ),
-    state: sessionRowMember(
-      allSessionTurnStates,
-      row.turn_state,
-      "session turn state",
-    ),
-    ...(row.failure === null
-      ? {}
-      : {
-          failure: sessionRowMember(
-            allSessionTurnFailures,
-            row.failure,
-            "session turn failure",
-          ),
-        }),
-    ...(measured === undefined ? {} : { measured }),
-    ...(row.batch_first === null
-      ? {}
-      : { batchFirst: projectRowCounter(row.batch_first, "first batch") }),
-    ...(row.batch_last === null
-      ? {}
-      : { batchLast: projectRowCounter(row.batch_last, "last batch") }),
-  };
-}
 
 /** The note as the interpreter reads it, narrowed like every other column here. */
 function leadHandoffNote(value: string | null): JsonValue {
@@ -179,7 +127,7 @@ function leadReadOf(
     ),
     handoffNote: leadHandoffNote(head.handoff_note),
     turns: rows.flatMap((row) => {
-      const turn = leadTurnRead(row);
+      const turn = sessionTurnStandingOf(row);
       return turn === undefined ? [] : [turn];
     }),
   };
@@ -265,57 +213,6 @@ async function leadStanding(
   return leadReadOf(found.rows);
 }
 
-async function leadStoreBatches(
-  pool: pg.Pool,
-  query: {
-    readonly partition: Partition;
-    readonly stream: string;
-    readonly after: number;
-    readonly limit: number;
-  },
-): Promise<readonly SessionStoreBatchRow[]> {
-  const found = await pool.query<{
-    batch: string | null;
-    digest: string | null;
-    bytes: string | null;
-  }>(
-    sql`SELECT batch::text AS batch,digest,bytes::text AS bytes
-          FROM read_lead_store(${query.partition.tenant},
-            ${query.partition.project},
-            ${query.stream},${query.after},${query.limit})`,
-  );
-  return found.rows.map((row) => ({
-    batch: projectRowCounter(sessionRowText(row.batch, "batch"), "store batch"),
-    digest: sessionRowText(row.digest, "batch digest"),
-    bytes: projectRowCounter(
-      sessionRowText(row.bytes, "batch bytes"),
-      "store batch bytes",
-    ),
-  }));
-}
-
-async function leadStoreStreams(
-  pool: pg.Pool,
-  partition: Partition,
-  max: number,
-): Promise<readonly SessionStoreStreamRow[]> {
-  const found = await pool.query<{
-    stream: string | null;
-    batches: string | null;
-  }>(
-    sql`SELECT stream,batches::text AS batches
-          FROM list_lead_store_streams(
-                 ${partition.tenant},${partition.project},${max})`,
-  );
-  return found.rows.map((row) => ({
-    stream: asSessionStoreStream(sessionRowText(row.stream, "stream")),
-    batches: projectRowCounter(
-      sessionRowText(row.batches, "stream batches"),
-      "stream batches",
-    ),
-  }));
-}
-
 async function leadDecisionHistory(
   pool: pg.Pool,
   partition: Partition,
@@ -373,8 +270,9 @@ async function leadPlanningIntent(
 export function postgresLeadReads(pool: pg.Pool): PostgresLeadReads {
   return {
     standing: (partition, turnsMax) => leadStanding(pool, partition, turnsMax),
-    batches: (query) => leadStoreBatches(pool, query),
-    streams: (partition, limit) => leadStoreStreams(pool, partition, limit),
+    batches: (query) => sessionStoreBatchRows(pool, query),
+    streams: (partition, session, limit) =>
+      sessionStoreStreamRows(pool, partition, session, limit),
     history: (partition, query) =>
       leadDecisionHistory(
         pool,

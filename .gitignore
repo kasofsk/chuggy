@@ -9,3 +9,11 @@ dist/
 coverage/
 .claude/worktrees/*
 .DS_Store
+
+# What a merge tool leaves behind. `check-source.sh`'s residue stage refuses one
+# that is already tracked; these three lines are what stops `git add` staging a
+# fresh one, and a file already tracked is unaffected by either — which is why
+# there is a gate as well as this.
+*.orig
+*.rej
+*.bak

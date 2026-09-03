@@ -90,11 +90,12 @@ export interface LeadStanding {
 
 /**
  * Where one session's store rows are read from, SESSION-KEYED so that one walk
- * serves the lead and a member's thread both. `LeadReadStore.batches` below is
- * the lead's own definer and answers for the project's lead alone; migration
- * 062's `read_session_store_batches` is that read taking the session it reads,
- * which is a name of its own because `read_session_store` is already the worker
- * plane's, authenticated by a bearer digest rather than by project access.
+ * serves the lead and a member's thread both. It is the ONLY row read either
+ * has: `LeadReadStore` below extends this rather than declaring a lead-only
+ * `batches`, because 062 retired the definer that was fenced on `kind='Lead'`
+ * for `read_session_store_batches` — a name of its own because
+ * `read_session_store` is already the worker plane's, authenticated by a bearer
+ * digest rather than by project access.
  */
 export interface SessionStoreRowsRead {
   batches(input: {
@@ -112,25 +113,25 @@ export interface SessionTranscriptSubject {
   readonly agentReference?: string;
 }
 
-/** The API's own door onto one project's lead and the rows of its store. */
-export interface LeadReadStore {
+/**
+ * The API's own door onto one project's lead and the rows of its store. It
+ * READS ROWS THROUGH THE SESSION-KEYED PORT rather than declaring a lead-only
+ * one, because 062 retired the two definers that were keyed on `kind='Lead'`:
+ * a thread's transcript is this walk over a different session, and two reads
+ * differing in one predicate is where a fix lands in only one of them.
+ */
+export interface LeadReadStore extends SessionStoreRowsRead {
   /** The lead's standing with at most `turnsMax` of its mailbox, newest last. */
   standing(
     partition: Partition,
     turnsMax: number,
   ): Promise<LeadStanding | undefined>;
-  /** Every stream the lead's store holds, with the batches standing under each. */
+  /** Every stream one session's store holds, with the batches standing under each. */
   streams(
     partition: Partition,
+    session: SessionId,
     limit: number,
   ): Promise<readonly SessionStoreStreamRow[]>;
-  /** One page of one stream's batch rows, without the bytes they point at. */
-  batches(input: {
-    readonly partition: Partition;
-    readonly stream: SessionStoreStream;
-    readonly after: number;
-    readonly limit: number;
-  }): Promise<readonly SessionStoreBatchRow[]>;
 }
 
 /** How large the handoff note is, and as much of it as the lead read carries. */

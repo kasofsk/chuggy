@@ -39,6 +39,7 @@ import type { NotificationStore } from "../../src/interpreter/notifications.ts";
 import { openExecutionBacklogGuard } from "../../src/interpreter/schedulerContext.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
+  checkedThreadsLimit,
   threadBacklogRetrySeconds,
   type ThreadMessageEnqueued,
   type ThreadRecord,
@@ -346,6 +347,19 @@ test("a mailbox page names the cursor that reaches the turns behind it", async (
   assert.ok(held.calls.includes(`standing:${mine}:4:2`));
 });
 
+/**
+ * The listing's own bound. `nativeThreadReadMethods` hands it
+ * `threadsAnsweredMax`, so the call there cannot throw and is a restatement
+ * rather than a control — what makes it one is any other caller, and the
+ * definer's `least(…)` is what bounds the rows either way.
+ */
+test("a thread listing limit outside its bounds is refused rather than clamped", () => {
+  assert.equal(checkedThreadsLimit(threadsAnsweredMax), threadsAnsweredMax);
+  assert.equal(checkedThreadsLimit(1), 1);
+  for (const asked of [0, -1, threadsAnsweredMax + 1, 1.5, Number.NaN])
+    assert.throws(() => checkedThreadsLimit(asked), RangeError, String(asked));
+});
+
 test("a mailbox page outside its bounds is refused rather than clamped", async () => {
   const { web } = boundary();
 
@@ -514,6 +528,27 @@ test("a mailbox reopened under the caller between the two round trips is refused
   assert.equal(
     held.calls.filter((call) => call.startsWith("enqueue:")).length,
     1,
+  );
+});
+
+/**
+ * The durable side compares the session the URL named against the mailbox it
+ * resolved and refuses a mismatch itself, so the comparison here is the second
+ * of two. The door passes that refusal through rather than reading it as a
+ * mailbox that has gone.
+ */
+test("a mailbox the durable side says is not the caller's is refused as that", async () => {
+  const { web } = boundary({ enqueued: { enqueued: "NotYourThread" } });
+
+  assert.equal(
+    (
+      await web.sendThreadMessage(geoff, partition, {
+        session: mine,
+        turn: asSessionTurnId("thread-turn-1"),
+        message: "have a look at 42",
+      })
+    ).result,
+    "NotYourThread",
   );
 });
 

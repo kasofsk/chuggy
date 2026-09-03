@@ -20,6 +20,7 @@ import {
   allSessionTurnStates,
   asSessionAttemptId,
   asSessionId,
+  asSessionStoreStream,
   asSessionTurnId,
   type AgentSession,
   type SessionCapability,
@@ -27,11 +28,13 @@ import {
   type SessionState,
   type SessionTurn,
   type SessionTurnFailure,
+  type SessionTurnId,
   type SessionTurnInputKind,
   type SessionTurnMeasured,
   type SessionTurnState,
 } from "../../interpreter/agentSession.ts";
 import { asPrincipal } from "../../interpreter/principal.ts";
+import type { SessionStoreStreamRow } from "../../interpreter/sessionPlane.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import {
@@ -177,6 +180,96 @@ export function sessionTurnRowOf(partition: Partition, session: SessionId) {
       ? {}
       : { batchLast: projectRowCounter(row.batch_last, "last batch") }),
   });
+}
+
+/**
+ * One turn of a session's mailbox as a standing read answers it, every column
+ * nullable because a session that has taken no turn is answered by nulls.
+ */
+export interface SessionTurnStandingRow extends SessionTurnMeasureRow {
+  readonly turn: string | null;
+  readonly turn_ordinal: string | null;
+  readonly input_kind: string | null;
+  readonly turn_state: string | null;
+  readonly failure: string | null;
+  readonly batch_first: string | null;
+  readonly batch_last: string | null;
+}
+
+/** What every reader of a standing row reads the same way, whatever kind of session it is. */
+export interface SessionTurnStanding {
+  readonly turn: SessionTurnId;
+  readonly ordinal: number;
+  readonly inputKind: SessionTurnInputKind;
+  readonly state: SessionTurnState;
+  readonly failure?: SessionTurnFailure;
+  readonly measured?: SessionTurnMeasured;
+  readonly batchFirst?: number;
+  readonly batchLast?: number;
+}
+
+/**
+ * The turn a standing row carries, or nothing where the session has taken none.
+ * It stands here because a lead's mailbox and a thread's are read by two
+ * modules and differ in what they add to a turn, never in the turn.
+ */
+export function sessionTurnStandingOf(
+  row: SessionTurnStandingRow,
+): SessionTurnStanding | undefined {
+  if (row.turn === null) return undefined;
+  const measured = sessionTurnMeasuredOf(row);
+  return {
+    turn: asSessionTurnId(row.turn),
+    ordinal: projectRowCounter(
+      sessionRowText(row.turn_ordinal, "turn ordinal"),
+      "session turn ordinal",
+    ),
+    inputKind: sessionRowMember(
+      allSessionTurnInputKinds,
+      row.input_kind,
+      "session turn input kind",
+    ),
+    state: sessionRowMember(
+      allSessionTurnStates,
+      row.turn_state,
+      "session turn state",
+    ),
+    ...(row.failure === null
+      ? {}
+      : {
+          failure: sessionRowMember(
+            allSessionTurnFailures,
+            row.failure,
+            "session turn failure",
+          ),
+        }),
+    ...(measured === undefined ? {} : { measured }),
+    ...(row.batch_first === null
+      ? {}
+      : { batchFirst: projectRowCounter(row.batch_first, "first batch") }),
+    ...(row.batch_last === null
+      ? {}
+      : { batchLast: projectRowCounter(row.batch_last, "last batch") }),
+  };
+}
+
+/** One row of a store's stream listing, counted by the server. */
+export interface SessionStoreStreamCountRow {
+  readonly stream: string | null;
+  readonly batches: string | null;
+}
+
+/** The streams a listing answered, read the one way both callers read them. */
+export function sessionStoreStreamRowsOf(
+  rows: readonly SessionStoreStreamCountRow[],
+): readonly SessionStoreStreamRow[] {
+  return rows.map((row) => ({
+    stream: asSessionStoreStream(sessionRowText(row.stream, "stream")),
+    batches: projectRowCounter(
+      sessionRowText(row.batches, "stream batches"),
+      "stream batches",
+    ),
+  }));
 }
 
 /** One turn's measurement, nullable per column because a function may answer nothing. */

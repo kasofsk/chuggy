@@ -230,14 +230,26 @@ because a role that could open one could mint an authority to act as a
 principal. Its composite key is `(tenant, project)` and its identity is
 `(tenant, project, session)`, with the opaque session unique globally so a
 reused one cannot answer another project's mailbox. It is changed by those
-three doors, by the scheduler taking an attempt number, by the worker plane
-binding the runtime's session id once and by the selector moving the project's
-lead onto the objectives it now holds; a trigger refuses every other change,
-which is what makes the transcript the row points at singular. The objectives
-are the one column a later write may move, because a project whose North Star
-changed must be able to tell the next session that opens. Unfinished work
-is found by selecting open sessions with a queued turn and no live attempt,
-which is exactly what `sessions_awaiting_placement` answers.
+three doors, by `open_member_thread`, by the scheduler taking an attempt
+number, by the worker plane binding the runtime's session id once, by the
+selector moving the project's lead onto the objectives it now holds and by
+`set_session_capabilities` reconfiguring one session's roster; a trigger
+refuses every other change, which is what makes the transcript the row points
+at singular. The objectives and the roster are the two columns a later write
+may move — a project whose North Star changed must be able to tell the next
+session that opens, and a thread's roster is reconfigured by the provisioning
+identity rather than reopened — and everything that decides who the session
+acts as stays frozen. Unfinished work is found by selecting open sessions with
+a queued turn and no live attempt, which is exactly what
+`sessions_awaiting_placement` answers.
+
+`thread_wake_cursor` — how far the wake pass has read the installation's change
+log. It is a single row, keyed `singleton` and held to it by a CHECK, because
+the pass is installation-wide like the log it reads while the selector's own
+state is per project — a cursor per project over one shared log would re-wake
+every member of every other project's history the first time a project's
+selector ran. The selector service reads it and moves it forward through
+`advance_thread_wake_cursor`, which never moves it back.
 
 `session_attempt` — one physical run of a session, its lease, its bearer digest
 and how it ended. It is a sibling of `execution_attempt` rather than a widening

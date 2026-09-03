@@ -37,7 +37,17 @@ import type { IdempotencyKeying } from "../adapters/postgres/keying.ts";
 import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
 import { postgresLeadReads } from "../adapters/postgres/leadReads.ts";
 import { postgresAgenticRefusalReads } from "../adapters/postgres/agenticRefusal.ts";
-import type { NativeLeadPorts } from "../interpreter/nativeWeb.ts";
+import type {
+  NativeLeadPorts,
+  NativeThreadPorts,
+} from "../interpreter/nativeWeb.ts";
+import { threadSessionMint } from "../adapters/crypto/threadSessionMint.ts";
+import {
+  postgresThreadSeeding,
+  postgresThreads,
+} from "../adapters/postgres/thread.ts";
+import { postgresSessionStoreRows } from "../adapters/postgres/sessionStoreReads.ts";
+import { sessionStoreStreamsAnswered } from "../contract/http.ts";
 import type { SessionStoreReadPort } from "../interpreter/sessionStore.ts";
 import {
   currentRuntimeSchemaContract,
@@ -63,6 +73,13 @@ const oidcIssuerVariable = "CHUG_API_OIDC_ISSUER";
 const oidcAudienceVariable = "CHUG_API_OIDC_AUDIENCE";
 const oidcAlgorithmsVariable = "CHUG_API_OIDC_ALGORITHMS";
 const artifactRootVariable = "CHUG_API_ARTIFACT_ROOT";
+/**
+ * The named credential mount a member's thread speaks through. It is REQUIRED
+ * rather than defaulted: the slot is what a per-user Anthropic credential
+ * arrives as, and a default would open every member's thread on whatever the
+ * lead happens to use while reading as though somebody had chosen it.
+ */
+const threadCredentialSlotVariable = "CHUG_API_THREAD_CREDENTIAL_SLOT";
 const selectorReviewDatabaseUrlVariable =
   "CHUG_API_SELECTOR_REVIEW_DATABASE_URL";
 const gitScratchRootVariable = "CHUG_API_GIT_SCRATCH_ROOT";
@@ -400,6 +417,27 @@ export function nativeLeadPorts(
   };
 }
 
+/**
+ * The four ports one project's threads are reached through, beside the store
+ * the lead's transcript is already read from. The rows read is the session-keyed
+ * one, so a thread's transcript and the lead's are one walk over one function.
+ */
+export function nativeThreadPorts(
+  pools: NativePools,
+  artifacts: SessionStoreReadPort,
+): NativeThreadPorts {
+  return {
+    threads: postgresThreads(pools.pool, {
+      streamsMax: sessionStoreStreamsAnswered,
+    }),
+    sessions: threadSessionMint(),
+    seeding: postgresThreadSeeding(pools.pool),
+    rows: postgresSessionStoreRows(pools.pool),
+    store: artifacts,
+    credentialSlot: requiredEnvironment(threadCredentialSlotVariable),
+  };
+}
+
 async function main(): Promise<void> {
   const keying = idempotencyKeying();
   const authenticationConfig = oidcConfig();
@@ -431,6 +469,7 @@ async function main(): Promise<void> {
     selectorContextSource(pool, selectorReviewPool),
     repositoryConfigurationSnapshots(),
     nativeLeadPorts(pools, artifacts),
+    nativeThreadPorts(pools, artifacts),
   );
   const hub = nativeStreamHub(pool, web);
   const app = createNativeHttpApp(

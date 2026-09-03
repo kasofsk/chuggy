@@ -142,16 +142,46 @@ set -e
 check "a clean tree passes every stage" 0 "$RC" "0 stage(s) failed"
 # The tally is asserted rather than trusted: it is what says the run measured
 # something.
-check "the clean line counts the stages it ran" 0 "$RC" "0 stage(s) failed, 5 run"
-check "an exported checker database does not reach the lint stage" 0 "$RC" "0 stage(s) failed, 5 run"
+check "the clean line counts the stages it ran" 0 "$RC" "0 stage(s) failed, 6 run"
+check "an exported checker database does not reach the lint stage" 0 "$RC" "0 stage(s) failed, 6 run"
 
 run_in "$R" --static
-check "static mode runs only the four static stages" 0 "$RC" "0 stage(s) failed, 4 run"
+check "static mode runs only the five static stages" 0 "$RC" "0 stage(s) failed, 5 run"
 check "static mode does not discover unit suites" 0 "$RC" "typecheck: clean"
 
 run_in "$R" --unit
 check "unit mode runs only the unit stage" 0 "$RC" "0 stage(s) failed, 1 run"
 check "unit mode reports the suite partition" 0 "$RC" "unit ran 1 suite(s)"
+
+# A merge tool's leftovers under src/. Every checker selects `*.ts`, so a
+# residue file is source-shaped, ships in the image and passes every one of
+# them; a whole clean tree with one `.orig` in it is the case that says the
+# stage sees what they cannot.
+fixture
+clean_source
+printf '%s
+' 'export const answer = 41;' > "$R/src/domain/a.ts.orig"
+seal
+check "a tracked .orig under src is a finding" 1 "$RC" "tracked merge residue: src/domain/a.ts.orig"
+check "and the residue stage is what names it" 1 "$RC" "residue  : FAILED"
+check "while the checkers that select *.ts stay clean" 1 "$RC" "typecheck: clean"
+
+fixture
+clean_source
+printf '%s
+' 'export const answer = 41;' > "$R/test/domain/a.test.ts.rej"
+seal
+check "a tracked .rej under test is a finding too" 1 "$RC" "tracked merge residue: test/domain/a.test.ts.rej"
+
+# An untracked one is the working tree's business: the gate reads what a clone
+# would get, and .gitignore is what keeps one from being staged.
+fixture
+clean_source
+seal
+printf '%s
+' 'export const answer = 41;' > "$R/src/domain/a.ts.orig"
+run_in "$R"
+check "an untracked one is not this gate's finding" 0 "$RC" "residue  : clean"
 
 # A checkout nested inside the checkout. The parallel worktrees live under
 # .claude/, each with a tsconfig of its own, so a linter that walks in lints

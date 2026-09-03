@@ -35,12 +35,15 @@ import { postgresProjectAccess } from "../../src/adapters/postgres/projectAccess
 import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { composeNativeWeb } from "../../src/compose.ts";
 import { checkedProjectMembership } from "../../src/interpreter/projectMembership.ts";
-import { asSessionStoreStream } from "../../src/interpreter/agentSession.ts";
+import {
+  asSessionStoreStream,
+  type SessionId,
+} from "../../src/interpreter/agentSession.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import type { SessionStoreReadPort } from "../../src/interpreter/sessionStore.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { postgresHarnessKeying } from "./harness.ts";
+import { sessionStoreDouble, sessionStoreEntryLine } from "./storeDouble.ts";
 import {
   leadRigDecision,
   leadRigOpen,
@@ -64,42 +67,10 @@ after(async () => {
 });
 
 const issuer = "https://issuer.test";
+/** The volume the batch rows point at, filled by the cases that record one. */
+const storeReads = sessionStoreDouble();
+
 const authorized = { authorization: "Bearer token" };
-
-/** The bytes each recorded batch is answered with, keyed as the port addresses one. */
-const stored = new Map<string, string>();
-
-function storedKey(
-  partition: Partition,
-  stream: string,
-  batch: number,
-): string {
-  return [partition.tenant, partition.project, stream, batch].join("\u0000");
-}
-
-/** A store the batch rows point at, standing in for the artifact volume. */
-const storeReads: SessionStoreReadPort = {
-  readBatch: (object) => {
-    const content = stored.get(
-      storedKey(object.partition, object.stream, object.batch),
-    );
-    return Promise.resolve(
-      content === undefined
-        ? ({ read: "NotFound" } as const)
-        : ({ read: "Content", content } as const),
-    );
-  },
-};
-
-/** One entry per batch, chained, so a stream's batch count is its entry count. */
-function entryLine(index: number): string {
-  return JSON.stringify({
-    type: "user",
-    uuid: `entry-${String(index)}`,
-    ...(index === 1 ? {} : { parentUuid: `entry-${String(index - 1)}` }),
-    message: { role: "user", content: "one" },
-  });
-}
 
 /** One lead with a claimed attempt, which is what a pod holds while it writes. */
 async function claimedLead(label: string) {
@@ -125,11 +96,20 @@ async function claimedLead(label: string) {
 /** One batch of one entry, recorded through the plane the pod actually uses. */
 async function recordBatch(
   partition: Partition,
+  session: SessionId,
   attempt: Awaited<ReturnType<typeof claimedLead>>["attempt"],
   stream: string,
   batch: number,
 ): Promise<void> {
-  stored.set(storedKey(partition, stream, batch), entryLine(batch));
+  storeReads.put(
+    {
+      partition,
+      session,
+      stream: asSessionStoreStream(stream),
+      batch,
+    },
+    sessionStoreEntryLine(batch),
+  );
   assert.equal(
     await rig.sessions.plane.record({
       secret: attempt.secret,
@@ -204,7 +184,7 @@ function pathOf(partition: Partition): string {
 test("the lead route reads a real lead, its mailbox tail and its streams", async () => {
   const { partition, session, turn, attempt } = await claimedLead("http-lead");
   const stream = asSessionStoreStream(`stream-${randomUUID()}`);
-  await recordBatch(partition, attempt, stream, 1);
+  await recordBatch(partition, session, attempt, stream, 1);
   await rig.sessions.plane.answer({
     secret: attempt.secret,
     generation: attempt.attempt.generation,
@@ -263,15 +243,26 @@ async function pagedStream(label: string) {
   const opened = await claimedLead(label);
   const stream = asSessionStoreStream(`stream-${randomUUID()}`);
   for (let batch = 1; batch <= sessionStorePageBatchesMax + 2; batch += 1)
-    await recordBatch(opened.partition, opened.attempt, stream, batch);
-  return { partition: opened.partition, stream };
+    await recordBatch(
+      opened.partition,
+      opened.session,
+      opened.attempt,
+      stream,
+      batch,
+    );
+  return {
+    partition: opened.partition,
+    session: opened.session,
+    stream,
+  };
 }
 
-test("read_lead_store answers the limit it is given, never its own ceiling", async () => {
-  const { partition, stream } = await pagedStream("http-store");
+test("the row read answers the limit it is given, never its own ceiling", async () => {
+  const { partition, session, stream } = await pagedStream("http-store");
   const leads = postgresLeadReads(rig.apiPool);
   const asked = await leads.batches({
     partition,
+    session,
     stream,
     after: 0,
     limit: 2,
@@ -283,6 +274,7 @@ test("read_lead_store answers the limit it is given, never its own ceiling", asy
   );
   const capped = await leads.batches({
     partition,
+    session,
     stream,
     after: 0,
     limit: sessionStorePageBatchesMax + 5,

@@ -16,10 +16,8 @@
  */
 
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
-import { promisify } from "node:util";
 import type pg from "pg";
 
 import { postgresAuthoring } from "../../src/adapters/postgres/authoring.ts";
@@ -66,11 +64,12 @@ import {
   postgresHarnessConfiguration,
   postgresHarnessProject,
   postgresHarnessRolePool,
-  postgresHarnessUrl,
   type PostgresHarness,
 } from "./harness.ts";
 import {
+  projectAccessProvision,
   sessionRigAttempt,
+  sessionRigProvision,
   sessionRigBearer,
   sessionRigOpen,
   sessionRigSession,
@@ -645,34 +644,17 @@ test("the retyped session facts stay the plane's alone", async () => {
   }
 });
 
-const execute = promisify(execFile);
-
-/** The provisioning command, run as the identity that owns the boundary. */
-async function provisionSession(
+/** The provisioning command with this suite's own defaults for what it never varies. */
+function provisionSession(
   environment: Readonly<Record<string, string>>,
 ): Promise<{ readonly code: number; readonly output: string }> {
-  try {
-    const ran = await execute(
-      process.execPath,
-      ["--experimental-strip-types", "src/roots/provisionAgentSession.ts"],
-      {
-        cwd: process.cwd(),
-        env: {
-          ...process.env,
-          CHUG_PROVISION_SESSION_DATABASE_URL: postgresHarnessUrl(),
-          CHUG_PROVISION_SESSION_ACTION: "open",
-          CHUG_PROVISION_SESSION_KIND: "Lead",
-          CHUG_PROVISION_SESSION_CAPABILITIES: "RepositoryRead,ProjectRead",
-          CHUG_PROVISION_SESSION_CREDENTIAL_SLOT: "claude-code",
-          ...environment,
-        },
-      },
-    );
-    return { code: 0, output: ran.stdout };
-  } catch (failure) {
-    const ran = failure as { code?: number; stderr?: string };
-    return { code: ran.code ?? 1, output: ran.stderr ?? "" };
-  }
+  return sessionRigProvision({
+    CHUG_PROVISION_SESSION_ACTION: "open",
+    CHUG_PROVISION_SESSION_KIND: "Lead",
+    CHUG_PROVISION_SESSION_CAPABILITIES: "RepositoryRead,ProjectRead",
+    CHUG_PROVISION_SESSION_CREDENTIAL_SLOT: "claude-code",
+    ...environment,
+  });
 }
 
 test("a session provisioned from an issuer and a subject is the membership's own principal", async () => {
@@ -736,6 +718,58 @@ test("a session may be named by one principal form and never by two", async () =
   });
   assert.equal(neither.code, 1);
   assert.match(neither.output, /CHUG_PROVISION_SESSION_PRINCIPAL is required/u);
+});
+
+/**
+ * ONE ISSUER VARIABLE ACROSS BOTH PROVISIONING ROOTS, because a session and the
+ * membership authorizing it must derive the same principal and two names for
+ * one issuer is the one-character difference the derived form exists to close.
+ *
+ * So the case drives both commands with that variable alone and asks the server
+ * whether the membership one wrote authorizes the session the other opened.
+ */
+test("both provisioning roots derive one principal from one issuer variable", async () => {
+  const partition = await leadToolsProject("one-issuer");
+  const issuer = "https://accounts.example.test";
+  const subject = `member-${randomUUID()}`;
+  const session = `session-one-issuer-${randomUUID()}`;
+
+  const granted = await projectAccessProvision({
+    CHUG_API_OIDC_ISSUER: issuer,
+    CHUG_PROVISION_ACTION: "grant",
+    CHUG_PROVISION_SUBJECT: subject,
+    CHUG_PROVISION_TENANT: partition.tenant,
+    CHUG_PROVISION_PROJECT: partition.project,
+    CHUG_PROVISION_ACCESS: "Read",
+    CHUG_PROVISION_AUTHORITY_KIND: "OidcUser",
+    CHUG_PROVISION_AUTHORITY_SUBJECT: subject,
+  });
+  assert.equal(granted.code, 0, granted.output);
+
+  const opened = await provisionSession({
+    CHUG_PROVISION_SESSION_TENANT: partition.tenant,
+    CHUG_PROVISION_SESSION_PROJECT: partition.project,
+    CHUG_PROVISION_SESSION_SESSION: session,
+    CHUG_API_OIDC_ISSUER: issuer,
+    CHUG_PROVISION_SESSION_SUBJECT: subject,
+  });
+  assert.equal(opened.code, 0, opened.output);
+
+  const held = await harness.query(
+    "SELECT principal FROM agent_session WHERE session=$1",
+    [session],
+  );
+  const principal = held[0]?.["principal"];
+  assert.equal(principal, oidcPrincipal(issuer, subject));
+  assert.notEqual(
+    await harness.access.authorize(
+      oidcPrincipal(issuer, subject),
+      partition,
+      "Read",
+    ),
+    undefined,
+    "the membership one root wrote authorizes the session the other opened",
+  );
 });
 
 /**

@@ -2655,7 +2655,7 @@ test("the session migrations compose into the schema a fresh generation renders"
 
 test("the ledger the api image reads accepts what the session migrations applied", async () => {
   await migrationDatabase("lead_ledger", async (subject) => {
-    await migrationSeedApplied(subject, 62);
+    await migrationSeedApplied(subject, 63);
     const applied = await postgresRuntimeSchema(subject).applied(
       new AbortController().signal,
     );
@@ -2665,13 +2665,92 @@ test("the ledger the api image reads accepts what the session migrations applied
       "the ledger holds one row per version with no gap and no repeat",
     );
     assert.deepEqual(
-      applied.map((each) => each.version).slice(-4),
-      [58, 59, 60, 61],
-      "the four apply in the order their filenames give them",
+      applied.map((each) => each.version).slice(-5),
+      [58, 59, 60, 61, 62],
+      "the five apply in the order their filenames give them",
     );
     assert.ok(
       schemaContractAccepts(currentRuntimeSchemaContract, applied),
       "the prefix an api image requires is the prefix these three leave",
     );
+  });
+});
+
+/** The capabilities a session held before a member's thread could originate a draft. */
+const capabilitiesBeforeThreads = allSessionCapabilities.filter(
+  (capability) => capability !== "DraftOriginate",
+);
+
+/** Whether one function signature exists on this database at all. */
+async function migrationHasFunction(
+  subject: pg.Pool,
+  signature: string,
+): Promise<boolean> {
+  const found = await subject.query<{ present: boolean }>(
+    `SELECT to_regprocedure($1) IS NOT NULL AS present`,
+    [signature],
+  );
+  return found.rows[0]?.present === true;
+}
+
+test("migration 62 widens a capability check installed before origination existed", async () => {
+  await migrationDatabase("thread_capabilities", async (subject) => {
+    await migrationSeedApplied(subject, 62);
+    await migrationNarrowedRoster(
+      subject,
+      "agent_session",
+      "agent_session_capabilities_are_known",
+      `cardinality(capabilities) BETWEEN 0 AND ${sessionCapabilitiesMax}
+         AND capabilities <@ ARRAY[${schemaTextSet([
+           ...capabilitiesBeforeThreads,
+         ])}]::text[]`,
+    );
+    await assert.rejects(
+      () => migrationOpenHolding(subject, "DraftOriginate", true),
+      /agent_session_capabilities_are_known/u,
+      "a session table installed before threads refuses the roster one is opened with",
+    );
+
+    await applyMigration(subject, 62);
+
+    await migrationOpenHolding(subject, "DraftOriginate", true);
+    await assert.rejects(
+      () => migrationOpenHolding(subject, "Nowhere", true),
+      /agent_session_capabilities_are_known/u,
+      "the widened check is still a check",
+    );
+
+    await migrationDatabase("thread_capabilities_fresh", async (fresh) => {
+      await migrationSeedApplied(fresh, 63);
+      assert.equal(
+        await migrationCapabilityCheck(subject),
+        await migrationCapabilityCheck(fresh),
+        "a migrated database ends with the check a fresh one starts with",
+      );
+    });
+  });
+});
+
+test("migration 62 retires the lead-only store reads for the session-keyed pair", async () => {
+  await migrationDatabase("thread_store_reads", async (subject) => {
+    await migrationSeedApplied(subject, 62);
+    const leadBatches = "read_lead_store(text,text,text,bigint,bigint)";
+    const leadStreams = "list_lead_store_streams(text,text,bigint)";
+    const sessionBatches =
+      "read_session_store_batches(text,text,text,text,bigint,bigint)";
+    const sessionStreams = "list_session_store_streams(text,text,text,bigint)";
+    assert.equal(await migrationHasFunction(subject, leadBatches), true);
+    assert.equal(await migrationHasFunction(subject, sessionBatches), false);
+
+    await applyMigration(subject, 62);
+
+    assert.equal(
+      await migrationHasFunction(subject, leadBatches),
+      false,
+      "a read kept beside its replacement is a read a fix lands in one of",
+    );
+    assert.equal(await migrationHasFunction(subject, leadStreams), false);
+    assert.equal(await migrationHasFunction(subject, sessionBatches), true);
+    assert.equal(await migrationHasFunction(subject, sessionStreams), true);
   });
 });

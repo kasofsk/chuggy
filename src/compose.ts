@@ -86,6 +86,7 @@ import type { OperationInbox } from "./interpreter/operationInbox.ts";
 import {
   nativeWeb,
   type NativeLeadPorts,
+  type NativeThreadPorts,
   type NativeWeb,
   type ProjectAccess,
   type ProjectInventory,
@@ -322,6 +323,7 @@ export function composeNativeWeb(
   selectorContexts?: SelectorOperationalContextRead,
   repositoryConfigurationSnapshots?: RepositoryConfigurationSnapshotPort,
   leads?: NativeLeadPorts,
+  threads?: NativeThreadPorts,
 ): NativeWeb {
   const inbox = postgresOperationInbox(apiPool, keying, config, metrics);
   const authoring = postgresAuthoring(apiPool);
@@ -348,6 +350,7 @@ export function composeNativeWeb(
     postgresRunEvidenceReads(apiPool),
     outputContents,
     leads,
+    threads,
   );
 }
 
