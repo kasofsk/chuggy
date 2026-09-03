@@ -1,0 +1,258 @@
+/**
+ * The wake pass over a real PostgreSQL, driven by the role its three definers
+ * are granted to: a refusal against a ticket a member's draft revision
+ * authored, one pass, one `Wake` turn in that member's mailbox, and a second
+ * pass that writes nothing.
+ *
+ * THE CURSOR AND THE CANDIDATE READ ARE INSTALLATION-WIDE, so every case here
+ * moves the cursor to the change log's head before it makes its own rows. A
+ * case that started from where an earlier suite of the same worker left the
+ * cursor would be reading that suite's projects, and would pass or fail on
+ * them.
+ *
+ * WHAT THIS SUITE ADDS TO `threadWake.test.ts` is the one thing a stub cannot
+ * answer: whether the pass's derived turn identity is the identity the door
+ * treats as already enqueued, and whether the document it composes is a
+ * document the column takes and the reader parses back.
+ */
+
+import assert from "node:assert/strict";
+import { after, before, test } from "node:test";
+
+import { threadTurnsAnsweredMax } from "../../src/contract/http.ts";
+import {
+  asConfigurationRevisionId,
+  type ConfigurationRevisionId,
+} from "../../src/interpreter/authoring.ts";
+import type { TicketId } from "../../src/domain/ids.ts";
+import {
+  asAuthorityKind,
+  asAuthoritySubject,
+} from "../../src/interpreter/operationInbox.ts";
+import type { Partition } from "../../src/interpreter/projectStore.ts";
+import { parseThreadWake } from "../../src/interpreter/thread.ts";
+import {
+  threadWakePass,
+  threadWakeTurn,
+  type ThreadWakeService,
+} from "../../src/interpreter/threadWake.ts";
+import { plainAuthoring } from "../actor/harness.ts";
+import {
+  postgresHarnessBrief,
+  postgresHarnessConfiguration,
+} from "./harness.ts";
+import { leadRigDecision } from "./leadHarness.ts";
+import {
+  threadRigMember,
+  threadRigOpen,
+  threadRigProject,
+  threadRigThread,
+  type ThreadRig,
+  type ThreadRigMember,
+} from "./threadHarness.ts";
+
+let rig: ThreadRig;
+
+before(async () => {
+  rig = await threadRigOpen();
+});
+
+after(async () => {
+  await rig.close();
+});
+
+const instant = "2026-09-02T12:00:00.000Z";
+
+function service(wakesPerPassMax: number): ThreadWakeService {
+  return {
+    store: rig.wakes,
+    clock: { nowIso: () => instant },
+    wakesPerPassMax,
+  };
+}
+
+/** Moves the installation's cursor to the log's head, so a case reads its own rows alone. */
+async function fromTheHead(): Promise<number> {
+  const rows = await rig.sessions.harness.query(
+    "SELECT coalesce(max(sequence),0)::text AS head FROM project_change",
+  );
+  return rig.wakes.advance(Number(rows[0]?.["head"]));
+}
+
+async function configuration(
+  partition: Partition,
+): Promise<ConfigurationRevisionId> {
+  const revision = asConfigurationRevisionId(
+    `config-wake-${partition.project}`,
+  );
+  const created = await rig.sessions.harness.authoring.createConfiguration({
+    partition,
+    authority: {
+      kind: asAuthorityKind("System"),
+      subject: asAuthoritySubject("thread wake suite"),
+    },
+    revision,
+    canonical: postgresHarnessConfiguration,
+  });
+  if (created.created !== "Created")
+    throw new Error(`thread wake: configuration answered ${created.created}`);
+  return revision;
+}
+
+/** One open draft the member authored, which is the revision the wake join follows. */
+async function draft(
+  partition: Partition,
+  revision: ConfigurationRevisionId,
+  member: ThreadRigMember,
+): Promise<TicketId> {
+  const { authoring } = rig.sessions.harness;
+  const initialized = await authoring.initializeDraft(partition, revision, 100);
+  if (initialized === undefined || initialized === "PolicyUnavailable")
+    throw new Error("thread wake: the draft was not initialized");
+  const created = await authoring.createDraft({
+    partition,
+    authority: member.authority,
+    configurationRevision: revision,
+    configurationDigest: initialized.configuration.digest,
+    expectedProjectSequence: initialized.projectSequence,
+    authoring: plainAuthoring,
+    brief: postgresHarnessBrief,
+  });
+  if (created.created !== "Created")
+    throw new Error(`thread wake: the draft answered ${created.created}`);
+  return created.draft.ticket;
+}
+
+/** Refuses one of the member's tickets, which is the change a `TicketRefused` wake is derived from. */
+async function refuse(
+  partition: Partition,
+  label: string,
+  ticket: TicketId,
+): Promise<void> {
+  const decision = await leadRigDecision(rig, partition, `${label}-refusal`);
+  await rig.writes.record({
+    partition,
+    decision,
+    refusals: [{ ticket, ticketVersion: 1, reason: "not yet" }],
+    lifts: [],
+  });
+}
+
+test("a refusal against a member's own ticket becomes one Wake turn, once", async () => {
+  const partition = await threadRigProject(rig, "wakepass");
+  const member = await threadRigMember(rig, partition, "wakepass");
+  const thread = await threadRigThread(rig, partition, member);
+  const revision = await configuration(partition);
+  const ticket = await draft(partition, revision, member);
+  const started = await fromTheHead();
+  await refuse(partition, "wakepass", ticket);
+
+  const report = await threadWakePass(service(threadTurnsAnsweredMax));
+  assert.deepEqual(report, {
+    read: 1,
+    woken: 1,
+    skipped: 0,
+    cursor: report.cursor,
+  });
+  assert.ok(report.cursor > started, "the pass did not move the cursor");
+
+  const standing = await rig.threads.standing({
+    partition,
+    session: thread.session,
+    query: { limit: threadTurnsAnsweredMax },
+  });
+  assert.equal(standing?.turns.length, 1);
+  const turn = standing?.turns[0];
+  assert.ok(turn !== undefined);
+  assert.equal(turn.inputKind, "Wake");
+  assert.equal(
+    turn.turn,
+    threadWakeTurn({
+      sequence: report.cursor,
+      partition,
+      reason: "TicketRefused",
+      resource: String(ticket),
+      principal: member.principal,
+      session: thread.session,
+    }),
+    "the turn the door holds is the identity the pass derives, or a replay is a second turn",
+  );
+  const document = parseThreadWake(turn.input);
+  assert.equal(document.wake, "TicketRefused");
+  assert.equal(document.resource, String(ticket));
+  assert.equal(document.at, instant);
+
+  const again = await threadWakePass(service(threadTurnsAnsweredMax));
+  assert.deepEqual(again, {
+    read: 0,
+    woken: 0,
+    skipped: 0,
+    cursor: report.cursor,
+  });
+  const settled = await rig.threads.standing({
+    partition,
+    session: thread.session,
+    query: { limit: threadTurnsAnsweredMax },
+  });
+  assert.equal(settled?.turns.length, 1, "a second pass wrote a second turn");
+});
+
+test("a pass whose cursor was not moved re-offers the same turn and is told so", async () => {
+  const partition = await threadRigProject(rig, "wakereplay");
+  const member = await threadRigMember(rig, partition, "wakereplay");
+  const thread = await threadRigThread(rig, partition, member);
+  const revision = await configuration(partition);
+  const ticket = await draft(partition, revision, member);
+  const started = await fromTheHead();
+  await refuse(partition, "wakereplay", ticket);
+
+  const raising: ThreadWakeService = {
+    ...service(threadTurnsAnsweredMax),
+    store: {
+      ...rig.wakes,
+      advance: () => {
+        throw new Error(
+          "the process ended between the enqueue and the advance",
+        );
+      },
+    },
+  };
+  await assert.rejects(() => threadWakePass(raising));
+  assert.equal(
+    await rig.wakes.cursor(),
+    started,
+    "a pass that raised out of the advance moved the cursor anyway",
+  );
+
+  const resumed = await threadWakePass(service(threadTurnsAnsweredMax));
+  assert.equal(resumed.read, 1);
+  assert.equal(resumed.woken, 1);
+  const standing = await rig.threads.standing({
+    partition,
+    session: thread.session,
+    query: { limit: threadTurnsAnsweredMax },
+  });
+  assert.equal(
+    standing?.turns.length,
+    1,
+    "the replayed candidate became a second turn, so the identity is not derived",
+  );
+});
+
+test("a change for a closed thread is read by nobody and moves the cursor by itself", async () => {
+  const partition = await threadRigProject(rig, "wakeclosed");
+  const member = await threadRigMember(rig, partition, "wakeclosed");
+  const thread = await threadRigThread(rig, partition, member);
+  const revision = await configuration(partition);
+  const ticket = await draft(partition, revision, member);
+  await rig.sessions.sessions.close(partition, thread.session);
+  const started = await fromTheHead();
+  await refuse(partition, "wakeclosed", ticket);
+
+  const report = await threadWakePass(service(threadTurnsAnsweredMax));
+  assert.deepEqual(
+    report,
+    { read: 0, woken: 0, skipped: 0, cursor: started },
+    "a closed thread is no candidate, so the pass has nothing to move past",
+  );
+});

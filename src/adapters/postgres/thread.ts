@@ -41,8 +41,12 @@ import {
   allThreadWakeReasons,
   type ThreadSeededDraft,
   type ThreadSeededRefusal,
-  type ThreadWakeReason,
 } from "../../interpreter/thread.ts";
+import type {
+  ThreadWakeCandidate,
+  ThreadWakeOffered,
+  ThreadWakeStore,
+} from "../../interpreter/threadWake.ts";
 import type {
   ThreadMessageEnqueued,
   ThreadOpened,
@@ -403,46 +407,16 @@ export function postgresThreadSeeding(pool: pg.Pool): ThreadSeedingRead {
 }
 
 /**
- * One change the wake pass may act on: the change row that caused it, the
- * reason derived from what that row names, and the thread it wakes. The join
- * behind it is the definer's, because it is a bounded read over four relations
- * and a pass that pulled the change rows out and joined them itself would be a
- * second copy of a query the database answers.
+ * The wake pass's three doors, answering the ports
+ * `src/interpreter/threadWake.ts` declares. The candidate join is the
+ * definer's, because it is a bounded read over four relations and a pass that
+ * pulled the change rows out and joined them itself would be a second copy of a
+ * query the database answers.
  */
-export interface ThreadWakeCandidateRow {
-  readonly sequence: number;
-  readonly partition: Partition;
-  readonly resource: string;
-  readonly reason: ThreadWakeReason;
-  readonly principal: Principal;
-  readonly session: SessionId;
-}
-
-/** What one wake offered a member's mailbox, under the door's own arm names. */
-export type ThreadWokenRow =
-  | { readonly woken: "Woken" | "AlreadyWoken"; readonly ordinal: number }
-  | { readonly woken: "NoThread" | "Closed" | "Orphaned" | "Backlogged" };
-
-/** The selector's half of the wake pass, over the role the two definers are granted to. */
-export interface ThreadWakeStorePorts {
-  cursor(): Promise<number>;
-  candidates(
-    after: number,
-    limit: number,
-  ): Promise<readonly ThreadWakeCandidateRow[]>;
-  wake(input: {
-    readonly partition: Partition;
-    readonly principal: Principal;
-    readonly turn: SessionTurnId;
-    readonly input: string;
-  }): Promise<ThreadWokenRow>;
-  advance(sequence: number): Promise<number>;
-}
-
 function threadWokenRow(row: {
   readonly enqueued: string | null;
   readonly ordinal: string | null;
-}): ThreadWokenRow {
+}): ThreadWakeOffered {
   const woken = row.enqueued;
   if (
     woken === "NoThread" ||
@@ -470,7 +444,7 @@ function threadWakeCandidateOf(row: {
   readonly reason: string | null;
   readonly principal: string | null;
   readonly session: string | null;
-}): ThreadWakeCandidateRow {
+}): ThreadWakeCandidate {
   return {
     sequence: projectRowCounter(
       sessionRowText(row.sequence, "change sequence"),
@@ -495,7 +469,7 @@ async function threadWakeCandidates(
   pool: pg.Pool,
   after: number,
   limit: number,
-): Promise<readonly ThreadWakeCandidateRow[]> {
+): Promise<readonly ThreadWakeCandidate[]> {
   const found = await pool.query<{
     sequence: string | null;
     tenant: string | null;
@@ -520,7 +494,7 @@ async function threadWake(
     readonly turn: SessionTurnId;
     readonly input: string;
   },
-): Promise<ThreadWokenRow> {
+): Promise<ThreadWakeOffered> {
   const answered = await pool.query<{
     enqueued: string | null;
     ordinal: string | null;
@@ -535,7 +509,7 @@ async function threadWake(
   return threadWokenRow(row);
 }
 
-export function postgresThreadWakes(pool: pg.Pool): ThreadWakeStorePorts {
+export function postgresThreadWakes(pool: pg.Pool): ThreadWakeStore {
   return {
     cursor: async () => {
       const found = await pool.query<{ sequence: string }>(

@@ -42,8 +42,18 @@ test("every control-plane root reports an absent schema as could-not-run", async
     };
     const config = { idleIntervalMilliseconds: 1000, shutdownDrainMilliseconds: 1000 };
     const identity = { owner: 'owner', recoveryEpoch: 'epoch', cluster: 'cluster' };
+    const wakes = {
+      store: {
+        cursor: async () => { throw new Error('a process that could not run took a wake pass'); },
+        candidates: async () => [],
+        wake: async () => ({ woken: 'NoThread' }),
+        advance: async (sequence) => sequence,
+      },
+      clock: { nowIso: () => '2026-09-02T00:00:00.000Z' },
+      wakesPerPassMax: 1,
+    };
     const runtimes = [
-      roots.selectorProcess({}, requirements, config),
+      roots.selectorProcess({}, wakes, requirements, config),
       roots.schedulerProcess({}, {}, identity, requirements, config),
       roots.ticketServiceProcess(
         {},
@@ -100,7 +110,21 @@ const successfulProcessProgram = `
     const identity = { owner: 'owner', recoveryEpoch: 'epoch', cluster: 'cluster' };
     let selectorPasses = 0;
     let sessionPasses = 0;
-    const selectorService = { runOnce: async () => { selectorPasses += 1; return {}; } };
+    const ticks = [];
+    const selectorService = {
+      runOnce: async () => { selectorPasses += 1; ticks.push('selector'); return {}; },
+    };
+    let wakePasses = 0;
+    const selectorWakes = {
+      store: {
+        cursor: async () => 0,
+        candidates: async () => { wakePasses += 1; ticks.push('wake'); return []; },
+        wake: async () => { throw new Error('an empty page offered a wake'); },
+        advance: async () => { throw new Error('an empty page moved the cursor'); },
+      },
+      clock: { nowIso: () => '2026-09-02T00:00:00.000Z' },
+      wakesPerPassMax: 1,
+    };
     const schedulerService = {
       store: {
         fenceOldEpochAttempts: async () => 0,
@@ -149,7 +173,7 @@ const successfulProcessProgram = `
       metrics: finalizerTelemetry.silentFinalizerTelemetry,
     };
     const runtimes = [
-      roots.selectorProcess(selectorService, requirements, config),
+      roots.selectorProcess(selectorService, selectorWakes, requirements, config),
       roots.schedulerProcess(schedulerService, sessionService, identity, requirements, config),
       roots.ticketServiceProcess(
         ticketService,
@@ -164,7 +188,10 @@ const successfulProcessProgram = `
     await new Promise((resolve) => setTimeout(resolve, 10));
     const health = runtimes.map((runtime) => runtime.health());
     for (const runtime of runtimes) await runtime.stop();
-    process.stdout.write(JSON.stringify({ outcomes, health, selectorPasses, sessionPasses }));
+    process.stdout.write(JSON.stringify({
+      outcomes, health, selectorPasses, sessionPasses, wakePasses,
+      ticks: ticks.slice(0, 2),
+    }));
   `;
 
 test("every control-plane responsibility starts, passes and stops against its ports", async () => {
@@ -183,6 +210,8 @@ test("every control-plane responsibility starts, passes and stops against its po
     readonly health: readonly unknown[];
     readonly selectorPasses: number;
     readonly sessionPasses: number;
+    readonly wakePasses: number;
+    readonly ticks: readonly string[];
   };
   assert.deepEqual(
     found.outcomes,
@@ -201,6 +230,16 @@ test("every control-plane responsibility starts, passes and stops against its po
   assert.ok(
     found.sessionPasses > 0,
     "the scheduler process took a tick without a session pass in it",
+  );
+  assert.equal(
+    found.wakePasses,
+    found.selectorPasses,
+    "one loop drives both passes, so a tick that ran one ran the other",
+  );
+  assert.deepEqual(
+    found.ticks,
+    ["selector", "wake"],
+    "the wake pass runs after the runtime pass, in the same tick",
   );
 });
 

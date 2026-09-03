@@ -14,6 +14,10 @@ import {
   sessionSchedulerPass,
   type SessionSchedulerService,
 } from "../interpreter/sessionSchedulerRun.ts";
+import {
+  threadWakePass,
+  type ThreadWakeService,
+} from "../interpreter/threadWake.ts";
 import type {
   RuntimePrecondition,
   ServiceRuntime,
@@ -58,6 +62,7 @@ import {
 } from "../adapters/git/gitPrerequisites.ts";
 import { postgresExecutionScheduler } from "../adapters/postgres/scheduler.ts";
 import { postgresSessionScheduler } from "../adapters/postgres/sessionScheduler.ts";
+import { postgresThreadWakes } from "../adapters/postgres/thread.ts";
 import { postgresPriorWorkReports } from "../adapters/postgres/evaluationReports.ts";
 import { postgresTicketBrief } from "../adapters/postgres/ticketBrief.ts";
 import { postgresPinnedConfigurations } from "../adapters/postgres/pinnedConfigurations.ts";
@@ -185,13 +190,27 @@ function processPreconditions(
   ];
 }
 
+/**
+ * Drives the selector's own pass and the thread wake pass in ONE tick of ONE
+ * pacing loop, the runtime first. The wake pass turns rows this process's
+ * runtime may just have written into turns in members' mailboxes, so the order
+ * is what makes a refusal recorded this tick a notice this tick rather than the
+ * next; and one loop is the whole of the pacing, because a second loop over the
+ * same cursor would be a second writer to it.
+ */
 export function selectorProcess(
   service: SelectorRuntimeService,
+  wakes: ThreadWakeService,
   requirements: ControlPlaneRequirements,
   config: ServiceRuntimeConfig,
 ): ServiceRuntime {
   return serviceRuntime(
-    { run: async () => void (await service.runOnce()) },
+    {
+      run: async () => {
+        await service.runOnce();
+        await threadWakePass(wakes);
+      },
+    },
     systemPacing,
     processPreconditions(requirements),
     config,
@@ -297,6 +316,12 @@ export interface SelectorProcessRootConfig {
   readonly database: ProcessDatabaseConfig;
   readonly runtime: ServiceRuntimeConfig;
   readonly selector?: SelectorRuntimeConfig;
+  /**
+   * The wake pass's bound. It is required rather than defaulted here, because a
+   * root that supplied its own default would be a second place the default
+   * lives and an arm in which a deployment's bound is not the bound that runs.
+   */
+  readonly wakes: { readonly wakesPerPassMax: number };
 }
 
 /** Owns the selector-role pool and composes the independently deployable selector process. */
@@ -319,6 +344,11 @@ export function selectorProcessRoot(
     pool,
     selectorProcess(
       service,
+      {
+        store: postgresThreadWakes(pool),
+        clock: { nowIso: () => new Date().toISOString() },
+        wakesPerPassMax: config.wakes.wakesPerPassMax,
+      },
       {
         pool,
         additional: [
