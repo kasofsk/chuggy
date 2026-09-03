@@ -22,14 +22,18 @@
  * box that posted anyway would spend a reader's attention on a refusal this
  * page already knows about.
  *
- * A PROJECT SWITCH IS NOT A REMOUNT, so everything this page holds outlives the
- * project it was held for: the lead route declares no `remountDeps` and the
+ * A PROJECT SWITCH IS NOT A REMOUNT, so everything this panel holds outlives
+ * the project it was held for: the lead route declares no `remountDeps` and the
  * router sets no default, so a params-only navigation reconciles these
- * components rather than replacing them. What the box holds is therefore scoped
- * to a project by the box itself — the pair carries the project it was drawn
- * for, a session name being unique across the whole installation while the door
- * that takes it is one project's, and the box's last word is dropped when the
- * project moves under it rather than read as the new project's.
+ * components rather than replacing them. There is therefore A BOX PER PROJECT
+ * rather than one box scoped to the project on screen — the question typed at
+ * it, the pair a send is outstanding under, whether a press is outstanding at
+ * all, and what the last press answered are all one project's, so a project
+ * names which box is read, which box a press writes to, and which project's
+ * listing an accepted press re-reads. Nothing crosses, so nothing has to be
+ * dropped when the project moves: a reader who leaves a project and comes back
+ * finds what they left, and one whose send has not answered yet finds the next
+ * project's box exactly as they left it.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -53,15 +57,26 @@ import {
 import {
   inquiryAskAnswered,
   inquiryAsking,
+  inquiryBoxAnswered,
+  inquiryBoxName,
+  inquiryBoxOf,
+  inquiryBoxSent,
+  inquiryBoxTyped,
+  inquiryBoxWith,
   inquiryDraw,
   inquiryIdentityBytesCount,
   inquiryQuestion,
   inquiryQuestionFault,
   inquirySessionKind,
 } from "../../core/leadInquiries.ts";
-import type { InquiryAsk, InquiryDraw } from "../../core/leadInquiries.ts";
+import type {
+  InquiryAsk,
+  InquiryBox,
+  InquiryBoxes,
+} from "../../core/leadInquiries.ts";
 import { sessionChangeKindNamed } from "../../core/leadTranscript.ts";
 import { projectListRereadNamed } from "../../core/projectQueryKeys.ts";
+import type { ProjectList } from "../../core/projectQueryKeys.ts";
 import { sessionTurnStateTone } from "../../core/tones.ts";
 import { useApiPorts, usePanelList } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
@@ -75,6 +90,23 @@ import { Panel } from "../ui/Panel.tsx";
 import { Pill } from "../ui/Pill.tsx";
 
 export const leadInquiriesListName = "inquiries";
+
+/**
+ * One project's inquiries, re-read on the `Session` frames naming an inquiry
+ * and left alone by every other kind. Built from a project rather than closed
+ * over the one on screen, because an accepted press re-reads the project it was
+ * asked in and that is not always the project being drawn when it answers.
+ */
+function leadInquiriesList(
+  partition: PartitionIdentity,
+): ProjectList<LeadInquiriesResponse> {
+  return projectListRereadNamed<LeadInquiriesResponse>(
+    partition,
+    "Session",
+    leadInquiriesListName,
+    (change) => sessionChangeKindNamed(change.resource) === inquirySessionKind,
+  );
+}
 
 /** What the last ask did, in the one line the box says it in. */
 function LeadAskNotice(props: { readonly ask: InquiryAsk }): ReactNode {
@@ -108,54 +140,53 @@ function LeadAskNotice(props: { readonly ask: InquiryAsk }): ReactNode {
  */
 function LeadAsk(props: {
   readonly partition: PartitionIdentity;
-  readonly onAsked: () => void;
+  readonly onAsked: (partition: PartitionIdentity) => void;
 }): ReactNode {
   const ports = useApiPorts();
   const partition = props.partition;
-  const [typed, setTyped] = useState("");
-  const [ask, setAsk] = useState<InquiryAsk>({ ask: "Idle" });
-  const [seen, setSeen] = useState<PartitionIdentity>(partition);
-  const inFlight = useRef(false);
-  const held = useRef<InquiryDraw | undefined>(undefined);
-  const question = inquiryQuestion(typed);
+  const [boxes, setBoxes] = useState<InquiryBoxes>({});
+  const outstanding = useRef<Set<string>>(new Set());
+  const box = inquiryBoxOf(boxes, partition);
+  const question = inquiryQuestion(box.typed);
   const fault = inquiryQuestionFault(question);
-  const shown = typed === "" ? undefined : fault;
-  if (seen.tenant !== partition.tenant || seen.project !== partition.project) {
-    setSeen(partition);
-    setAsk({ ask: "Idle" });
-  }
+  const shown = box.typed === "" ? undefined : fault;
+  const write = (
+    at: PartitionIdentity,
+    next: (box: InquiryBox) => InquiryBox,
+  ) => {
+    setBoxes((held) => inquiryBoxWith(held, at, next(inquiryBoxOf(held, at))));
+  };
   const submit = () => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setAsk({ ask: "Asking" });
+    const name = inquiryBoxName(partition);
+    if (outstanding.current.has(name)) return;
+    outstanding.current.add(name);
+    const draw = inquiryDraw(box.held, question, partition, () =>
+      base64urlFromBytes(drawBytes(inquiryIdentityBytesCount)),
+    );
+    write(partition, (held) => inquiryBoxSent(held, draw));
     void (async () => {
-      const draw = inquiryDraw(held.current, question, partition, () =>
-        base64urlFromBytes(drawBytes(inquiryIdentityBytesCount)),
-      );
-      held.current = draw;
       const answered = inquiryAskAnswered(
-        await apiAskLead(ports, partition, inquiryAsking(draw)),
+        await apiAskLead(ports, draw.partition, inquiryAsking(draw)),
       );
-      inFlight.current = false;
-      setAsk(answered);
+      outstanding.current.delete(name);
+      write(draw.partition, (held) => inquiryBoxAnswered(held, draw, answered));
       if (answered.ask !== "Asked") return;
-      held.current = undefined;
-      setTyped("");
-      props.onAsked();
+      props.onAsked(draw.partition);
     })();
   };
   return (
     <div className="lead-ask">
-      <LeadAskNotice ask={ask} />
+      <LeadAskNotice ask={box.ask} />
       <Fields>
         <Field name="Question">
           <textarea
             className="lead-ask-text"
             aria-label="Question"
             aria-invalid={shown !== undefined}
-            value={typed}
+            value={box.typed}
             onChange={(event) => {
-              setTyped(event.target.value);
+              const typed = event.target.value;
+              write(partition, (held) => inquiryBoxTyped(held, typed));
             }}
           />
           <span className="num">{`${String(question.length)} / ${String(inquiryQuestionCharsMax)}`}</span>
@@ -164,8 +195,8 @@ function LeadAsk(props: {
       </Fields>
       <Button
         variant="primary"
-        busy={ask.ask === "Asking"}
-        disabled={fault !== undefined || ask.ask === "Asking"}
+        busy={box.ask.ask === "Asking"}
+        disabled={fault !== undefined || box.ask.ask === "Asking"}
         onClick={submit}
       >
         Ask
@@ -257,13 +288,7 @@ export function LeadInquiries(props: {
 }): ReactNode {
   const partition = props.partition;
   const client = useQueryClient();
-  const list = projectListRereadNamed<LeadInquiriesResponse>(
-    partition,
-    "Session",
-    leadInquiriesListName,
-    (change) => sessionChangeKindNamed(change.resource) === inquirySessionKind,
-  );
-  const state = usePanelList(list, (ports) =>
+  const state = usePanelList(leadInquiriesList(partition), (ports) =>
     apiLeadInquiries(ports, partition),
   );
   return (
@@ -271,8 +296,11 @@ export function LeadInquiries(props: {
       {props.head === undefined ? null : (
         <LeadAsk
           partition={partition}
-          onAsked={() => {
-            void client.invalidateQueries({ queryKey: list.key, exact: true });
+          onAsked={(at) => {
+            void client.invalidateQueries({
+              queryKey: leadInquiriesList(at).key,
+              exact: true,
+            });
           }}
         />
       )}

@@ -15,7 +15,11 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import { LeadInquiries } from "../app/browser/lead/LeadInquiries.tsx";
+import {
+  LeadInquiries,
+  leadInquiriesListName,
+} from "../app/browser/lead/LeadInquiries.tsx";
+import { projectListRereadNamed } from "../app/core/projectQueryKeys.ts";
 import {
   answer,
   openedStream,
@@ -64,6 +68,8 @@ interface InquiryServer {
   readonly reads: () => number;
   readonly posts: () => readonly unknown[];
   readonly postUrls: () => readonly string[];
+  readonly readUrls: () => readonly string[];
+  readonly client: QueryClient;
   /**
    * The same instance under another project's params, which is what a
    * params-only navigation does: the route declares no `remountDeps`, so the
@@ -95,6 +101,7 @@ async function drawInquiries(served: {
   let reads = 0;
   const posts: unknown[] = [];
   const postUrls: string[] = [];
+  const readUrls: string[] = [];
   const fetching = ((url: string, init?: InquiryInit) => {
     if (init?.method === "POST") {
       const body = JSON.parse(init.body ?? "null") as unknown;
@@ -108,6 +115,7 @@ async function drawInquiries(served: {
       return waited.then(() => answer(found.body, found.status));
     }
     reads += 1;
+    readUrls.push(url);
     return Promise.resolve(answer(served.listing()));
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", fetching);
@@ -134,6 +142,8 @@ async function drawInquiries(served: {
     reads: () => reads,
     posts: () => posts,
     postUrls: () => postUrls,
+    readUrls: () => readUrls,
+    client,
     moveTo: async (partition: PartitionIdentity) => {
       await turned(() => {
         drawn.rerender(panel(partition));
@@ -627,9 +637,7 @@ test("a re-send after a send that did not land carries the same pair", async () 
   expect(screen.getByText(/^Failed · /u)).toBeDefined();
   await turned(ask);
   await settled();
-  const sent = server
-    .posts()
-    .map((post) => (post as { session: string }).session);
+  const sent = sessionsPosted(server);
   expect(sent.length).toBe(2);
   expect(
     sent[1],
@@ -709,6 +717,10 @@ function uniqueDoor(): (
  * for. Carrying that pair to the next project's door asks it for a fork it does
  * not hold, or asks the installation for a session name it has already used.
  */
+function sessionsPosted(server: InquiryServer): readonly string[] {
+  return server.posts().map((post) => (post as { session: string }).session);
+}
+
 test("a pair drawn for one project is not posted to another after a switch", async () => {
   const server = await drawInquiries({
     listing: () => ({ inquiries: [] }),
@@ -723,20 +735,117 @@ test("a pair drawn for one project is not posted to another after a switch", asy
   await server.moveTo(elsewhere);
   expect(
     screen.getByLabelText<HTMLTextAreaElement>("Question").value,
-    "the box was remounted after all, so this case proves nothing",
-  ).toBe("why is ticket 41 waiting?");
+    "one project's question was drawn in another project's box",
+  ).toBe("");
+  await turned(() => {
+    typed("why is ticket 41 waiting?");
+  });
   await turned(ask);
   await settled();
-  const sent = server
-    .posts()
-    .map((post) => (post as { session: string }).session);
   const urls = server.postUrls();
   expect(urls[0]).toContain("/projects/atlas/lead/inquiries");
   expect(urls[1]).toContain("/projects/beta/lead/inquiries");
+  const sent = sessionsPosted(server);
   expect(
     sent[1],
     "a pair drawn for one project was posted to another project's door",
   ).not.toBe(sent[0]);
+});
+
+/**
+ * THE PANEL IS THE SAME INSTANCE ACROSS A PROJECT SWITCH, which is what makes
+ * one box per project the fix rather than a reset: a reader who leaves a
+ * project with a question typed and a send outstanding finds both where they
+ * left them, and the pair they find is the one their send went out under.
+ */
+test("a bounce through another project leaves the first project's box as it was", async () => {
+  const server = await drawInquiries({
+    listing: () => ({ inquiries: [] }),
+    asked: answerLostThenTaken(),
+  });
+  await turned(() => {
+    typed("why is ticket 41 waiting?");
+  });
+  await turned(ask);
+  await settled();
+  await server.moveTo(elsewhere);
+  await turned(() => {
+    typed("what is beta waiting on?");
+  });
+  await turned(ask);
+  await settled();
+  await server.moveTo(leadPartition);
+  expect(
+    screen.getByLabelText<HTMLTextAreaElement>("Question").value,
+    "a reader came back to a project and found their question gone",
+  ).toBe("why is ticket 41 waiting?");
+  await turned(ask);
+  await settled();
+  const sent = sessionsPosted(server);
+  expect(server.postUrls()[2]).toContain("/projects/atlas/lead/inquiries");
+  expect(
+    sent[2],
+    "a bounce through another project made this project's door fork twice",
+  ).toBe(sent[0]);
+  expect(sent[1]).not.toBe(sent[0]);
+});
+
+/**
+ * A PRESS OUTSTANDING FOR ONE PROJECT SAYS NOTHING ON ANOTHER'S PAGE, and
+ * blocks nothing there either: the answer is written to the box it was asked
+ * from, so a reader who switches while a send is in flight sees the project
+ * they switched to and can ask it something of their own.
+ */
+test("a press outstanding for one project neither speaks nor blocks on another's page", async () => {
+  let release = (): void => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let asks = 0;
+  const server = await drawInquiries({
+    listing: () => ({ inquiries: [] }),
+    asked: () => {
+      asks += 1;
+      return asks === 1 ? refusal("InquiriesInFlight") : refusal("LeadClosed");
+    },
+    gate: () => (asks === 1 ? gate : Promise.resolve()),
+  });
+  await turned(() => {
+    typed("why is ticket 41 waiting?");
+  });
+  await turned(ask);
+  await server.moveTo(elsewhere);
+  expect(screen.queryByText("Asking")).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Ask" }).getAttribute("aria-busy"),
+    "one project's press made another project's box busy",
+  ).not.toBe("true");
+  await turned(() => {
+    typed("what is beta waiting on?");
+  });
+  await turned(ask);
+  await settled();
+  expect(
+    server.postUrls()[1],
+    "a press on one project was swallowed by another project's press",
+  ).toContain("/projects/beta/lead/inquiries");
+  expect(screen.getByText("Closed")).toBeDefined();
+  await turned(release);
+  await settled();
+  expect(
+    screen.queryByText("In flight"),
+    "one project's refusal was drawn on another project's page",
+  ).toBeNull();
+  expect(screen.getByText("Closed")).toBeDefined();
+  expect(
+    screen.getByLabelText<HTMLTextAreaElement>("Question").value,
+    "one project's answer took away what another project's reader typed",
+  ).toBe("what is beta waiting on?");
+  await server.moveTo(leadPartition);
+  expect(
+    screen.getByText("In flight"),
+    "the answer never reached the box that asked for it",
+  ).toBeDefined();
 });
 
 /**
@@ -759,6 +868,9 @@ test("a box carried into another project is not wedged", async () => {
     "the door was meant to take the name and lose the answer",
   ).toBeDefined();
   await server.moveTo(elsewhere);
+  await turned(() => {
+    typed("why is ticket 41 waiting?");
+  });
   await turned(ask);
   await settled();
   expect(
@@ -766,9 +878,7 @@ test("a box carried into another project is not wedged", async () => {
     "the box was left re-sending a pair the installation had already used",
   ).toBeDefined();
   expect(screen.queryByText(/^Failed · /u)).toBeNull();
-  const sent = server
-    .posts()
-    .map((post) => (post as { session: string }).session);
+  const sent = sessionsPosted(server);
   expect(sent[1]).not.toBe(sent[0]);
 });
 
@@ -793,6 +903,47 @@ test("one project's last word is not drawn on another's page", async () => {
     screen.queryByText("In flight"),
     "one project's refusal was drawn on another project's page",
   ).toBeNull();
+});
+
+/**
+ * AN ACCEPTED PRESS RE-READS THE PROJECT IT WAS ASKED IN. The answer may arrive
+ * after the reader has moved on, and re-reading whichever project is on screen
+ * would leave the asked project's listing without the inquiry that was just
+ * opened while re-reading a project nothing happened to.
+ */
+test("an accepted press re-reads the project it was asked in", async () => {
+  let release = (): void => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const server = await drawInquiries({
+    listing: () => ({ inquiries: [] }),
+    gate: () => gate,
+  });
+  await turned(() => {
+    typed("why is ticket 41 waiting?");
+  });
+  await turned(ask);
+  await server.moveTo(elsewhere);
+  const staleness = (partition: PartitionIdentity) =>
+    server.client.getQueryState(
+      projectListRereadNamed<unknown>(
+        partition,
+        "Session",
+        leadInquiriesListName,
+        () => true,
+      ).key,
+    )?.isInvalidated;
+  await turned(release);
+  await settled();
+  expect(
+    staleness(leadPartition),
+    "the project the question was asked in was never marked for re-reading",
+  ).toBe(true);
+  expect(
+    staleness(elsewhere),
+    "a project nothing was asked in was marked stale instead",
+  ).not.toBe(true);
 });
 
 /** An edited question is a different question, and the held pair would have the
@@ -829,6 +980,34 @@ test("an edited question takes a pair of its own", async () => {
   ).not.toBe(sent[0]?.session);
 });
 
+/**
+ * AN ANSWER TAKES AWAY THE QUESTION IT ANSWERED AND NEVER THE NEXT ONE. A reader
+ * who types again while a send is outstanding has moved on, and emptying the box
+ * on that send's success would be this panel editing a question they had not
+ * asked yet.
+ */
+test("an accepted answer leaves a question typed since it was sent", async () => {
+  let release = (): void => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await drawInquiries({ listing: () => ({ inquiries: [] }), gate: () => gate });
+  await turned(() => {
+    typed("why is ticket 41 waiting?");
+  });
+  await turned(ask);
+  await turned(() => {
+    typed("what is ticket 42 waiting on?");
+  });
+  await turned(release);
+  await settled();
+  expect(screen.getByText("Asked")).toBeDefined();
+  expect(
+    screen.getByLabelText<HTMLTextAreaElement>("Question").value,
+    "an answer took away a question asked after the one it answered",
+  ).toBe("what is ticket 42 waiting on?");
+});
+
 /** A pair the door has taken is spent, so the same question asked again is a
  * new question and not a retry of the answered one. */
 test("a question asked again after it was answered takes a new pair", async () => {
@@ -848,9 +1027,7 @@ test("a question asked again after it was answered takes a new pair", async () =
   };
   await asking();
   await asking();
-  const sent = server
-    .posts()
-    .map((post) => (post as { session: string }).session);
+  const sent = sessionsPosted(server);
   expect(sent.length).toBe(2);
   expect(
     sent[1],

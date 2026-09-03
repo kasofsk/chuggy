@@ -24,6 +24,17 @@
  * what makes a retried post a retry, so a send that did not land is re-sent
  * under the pair it was sent under; a fresh draw would ask the door a second
  * question and spend the second of the asker's two on it.
+ *
+ * A BOX BELONGS TO A PROJECT, AND THERE IS ONE PER PROJECT RATHER THAN ONE
+ * SHARED. A panel is reconciled rather than replaced when only the route's
+ * params move, so whatever it holds outlives the project it was held for — and
+ * every one of the four things a box holds is about one project's door: the
+ * question typed at it, the pair a send is outstanding under, whether a press is
+ * outstanding at all, and what the last press answered. Held as one value keyed
+ * by the project, none of them can be read as another project's, no answer can
+ * land on a page it was not asked from, and a project's pair survives a reader
+ * visiting another and coming back — which is what a single slot per box could
+ * not do however carefully it was scoped.
  */
 
 import type { z } from "zod";
@@ -52,7 +63,7 @@ export const inquiryIdentityBytesCount = 16;
  */
 export const inquirySessionKind = "Inquiry";
 
-/** What a question typed into the box is asked as, which is what it is bounded
+/** What a question typed into a box is asked as, which is what it is bounded
  * as: the ends a reader did not mean to type are not part of it. */
 export function inquiryQuestion(typed: string): string {
   return typed.trim();
@@ -182,4 +193,77 @@ export function inquiryAskAnswered(
     case "Unreadable":
       return { ask: "Failed", reason: panelReason(result) };
   }
+}
+
+/**
+ * Everything one project's box holds: what has been typed at it, the pair a
+ * send it has not had accepted went out under, and what its last press
+ * answered.
+ */
+export interface InquiryBox {
+  readonly typed: string;
+  readonly ask: InquiryAsk;
+  readonly held: InquiryDraw | undefined;
+}
+
+export const inquiryBoxEmpty: InquiryBox = {
+  typed: "",
+  ask: { ask: "Idle" },
+  held: undefined,
+};
+
+/** A box per project, which is the panel's whole memory of what has been asked
+ * at it. A project nobody has typed at has an empty box rather than no box. */
+export type InquiryBoxes = Readonly<Record<string, InquiryBox>>;
+
+/**
+ * What a project's box is filed under. The two names are encoded rather than
+ * joined, because either may contain whatever a join would separate them by and
+ * two projects sharing a box is the fault this keying exists to prevent.
+ */
+export function inquiryBoxName(partition: PartitionIdentity): string {
+  return JSON.stringify([partition.tenant, partition.project]);
+}
+
+export function inquiryBoxOf(
+  boxes: InquiryBoxes,
+  partition: PartitionIdentity,
+): InquiryBox {
+  return boxes[inquiryBoxName(partition)] ?? inquiryBoxEmpty;
+}
+
+export function inquiryBoxWith(
+  boxes: InquiryBoxes,
+  partition: PartitionIdentity,
+  box: InquiryBox,
+): InquiryBoxes {
+  return { ...boxes, [inquiryBoxName(partition)]: box };
+}
+
+/** A reader typing, which is the one thing that changes what a press would
+ * send. */
+export function inquiryBoxTyped(box: InquiryBox, typed: string): InquiryBox {
+  return { ...box, typed };
+}
+
+/** A press going out: the box says so, and holds the pair it went out under. */
+export function inquiryBoxSent(box: InquiryBox, draw: InquiryDraw): InquiryBox {
+  return { ...box, ask: { ask: "Asking" }, held: draw };
+}
+
+/**
+ * A press answered: a pair the door took is spent, and so is the question it
+ * asked — unless the reader has since typed a different one, theirs not being
+ * the question that was answered and taking it away being this box editing
+ * their next one. Every other answer leaves both the question and the pair, a
+ * send that did not land being one to re-send under the pair it went out under.
+ */
+export function inquiryBoxAnswered(
+  box: InquiryBox,
+  sent: InquiryDraw,
+  answer: InquiryAsk,
+): InquiryBox {
+  if (answer.ask !== "Asked") return { ...box, ask: answer };
+  const moved = inquiryQuestion(box.typed) !== sent.question;
+  return { typed: moved ? box.typed : "", ask: answer, held: undefined };
 }
