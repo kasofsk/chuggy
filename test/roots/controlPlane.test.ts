@@ -429,6 +429,14 @@ test("a contained fault reaches an operator on stderr and leaves the loop live",
   );
 });
 
+/**
+ * What this cannot reach: a root that stops calling
+ * `selectorProcessPreconditions` and inlines a list of its own without the
+ * doors check. Reaching it needs the doors to refuse while the schema and role
+ * checks are met, and the root builds its own pool from a connection string, so
+ * a case cannot answer those three differently without a seam the root does not
+ * have. Making the pool injectable would buy it; nothing else here would.
+ */
 test("the selector process refuses to start without every door a decision opens", async () => {
   const program = `
     const roots = await import('./src/roots/controlPlane.ts');

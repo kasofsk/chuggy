@@ -21,6 +21,10 @@ import {
   type LeadDecisionTail,
   type LeadPolicyClock,
 } from "../../src/interpreter/leadPolicyHost.ts";
+import type {
+  LeadObservedRefusal,
+  LeadSeeding,
+} from "../../src/interpreter/leadTurn.ts";
 import { parseLeadObservation } from "../../src/interpreter/leadTurn.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
@@ -483,24 +487,29 @@ test("a lift of a refusal the turn did not show is impossible", () => {
     );
 });
 
-test("a document overflowed by a part nothing sheds is refused with what overflowed", () => {
-  const standing = Array.from(
-    { length: leadRefusalsObservedMax },
-    (_unused, index) => ({
-      ticket: asTicketId(index + 1),
-      ticketVersion: 1,
-      reason: "r".repeat(agenticRefusalReasonCharsMax),
-      recordedAt: "2026-09-01T12:00:00.000Z",
-      superseded: false,
-    }),
-  );
-  const seeding = {
-    handoffNote: { note: "kept" },
-    decisions: [],
-    refusals: [],
-    notificationCursor: 12,
-  };
-  const padded = (account: string, shown: typeof standing) =>
+/** Every standing refusal an observation may carry, each at its own ceiling. */
+const standingAtCeiling = Array.from(
+  { length: leadRefusalsObservedMax },
+  (_unused, index) => ({
+    ticket: asTicketId(index + 1),
+    ticketVersion: 1,
+    reason: "r".repeat(agenticRefusalReasonCharsMax),
+    recordedAt: "2026-09-01T12:00:00.000Z",
+    superseded: false,
+  }),
+);
+
+/**
+ * A document padded by a part nothing sheds, sized against itself so the
+ * standing refusals are exactly what tips it past the ceiling: without them it
+ * fits, with them it does not, and the rung under test has nothing left to
+ * shed but must not shed them.
+ */
+function overflowedByItsRefusals(seeding: LeadSeeding | undefined) {
+  const padded = (
+    account: string,
+    shown: readonly LeadObservedRefusal[],
+  ): string =>
     leadTurnInput(
       {
         ...request,
@@ -516,20 +525,41 @@ test("a document overflowed by a part nothing sheds is refused with what overflo
       shown,
       seeding,
     );
-  /** Sized so the refusals are what tips it over: without them it fits. */
   const bare = padded("", []).length;
-  const shownBytes = JSON.stringify(standing).length;
+  const shownBytes = JSON.stringify(standingAtCeiling).length;
   const account = "x".repeat(
     leadObservationBytesMax - bare - Math.floor(shownBytes / 2),
   );
-  assert.ok(padded(account, []).length <= leadObservationBytesMax);
+  assert.ok(
+    padded(account, []).length <= leadObservationBytesMax,
+    "without the refusals this document fits, so shedding them would answer one",
+  );
+  return () => padded(account, standingAtCeiling);
+}
+
+test("an unseeded document overflowed past its refusals is refused, not shed", () => {
   assert.throws(
-    () => padded(account, standing),
+    overflowedByItsRefusals(undefined),
+    (error: unknown) =>
+      error instanceof RangeError &&
+      /nothing sheddable/u.test(error.message) &&
+      /objectives, handoff note, cursor and refusals/u.test(error.message),
+    "the steady-state turn carries no seeding, and its refusals are still never shed",
+  );
+});
+
+test("a seeded document shed to nothing is refused, not shed further", () => {
+  assert.throws(
+    overflowedByItsRefusals({
+      handoffNote: { note: "kept" },
+      decisions: [],
+      refusals: [],
+      notificationCursor: 12,
+    }),
     (error: unknown) =>
       error instanceof RangeError &&
       /seeding shed to nothing/u.test(error.message) &&
       /objectives, handoff note, cursor and refusals/u.test(error.message),
-    "the last rung refuses; shedding the refusals would make this one fit",
   );
 });
 
