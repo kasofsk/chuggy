@@ -440,6 +440,37 @@ test("a session policy whose mirrors are not repositories is refused", async () 
   }
 });
 
+/**
+ * The session policy is the whole of what a site says about its sessions, so a
+ * key it does not publish is a site saying something this build does not read.
+ * A misspelling of `mirrors` accepted in silence is a lead cloning the forge it
+ * holds no credential for, with the manifest reading as though it would not.
+ */
+test("a key the session policy does not publish is refused rather than ignored", async () => {
+  for (const extra of [
+    {
+      mirror: {
+        "https://forge.invalid/chuggy.git": "http://git.invalid./c.git",
+      },
+    },
+    {
+      Mirrors: {
+        "https://forge.invalid/chuggy.git": "http://git.invalid./c.git",
+      },
+    },
+    { mirrorss: {} },
+    { nonsense: 42 },
+  ]) {
+    const found = await parsedSessionPolicy({ ...sessionPolicy, ...extra });
+    assert.equal(
+      found.parsed,
+      undefined,
+      `${JSON.stringify(extra)} was accepted`,
+    );
+    assert.match(found.refused ?? "", /SESSION_POLICY/u);
+  }
+});
+
 /** What one admitted-images list parses into: the images admitted and the catalog. */
 interface AdmittedImagesParsed {
   readonly parsed?: {

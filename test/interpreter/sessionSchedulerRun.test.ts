@@ -26,6 +26,7 @@ import {
 import {
   asRepositoryId,
   type RepositoryBinding,
+  type RepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import type { ProjectRepositoryBindingRead } from "../../src/interpreter/repositoryConfiguration.ts";
@@ -489,6 +490,61 @@ test("a bound repository no mirror names is placed as the project bound it", asy
     bound,
     "a site with mirrors it did not name this binding in moved the checkout anyway",
   );
+});
+
+/**
+ * A mirror stands for ONE bound repository and its key is the whole of what it
+ * stands for. A binding that merely ends in the same name — another owner,
+ * another host, another transport, the bare name, or the same name spelled
+ * differently — is a different repository, and reading this project's mirror
+ * for it would hand one project's tree to another.
+ */
+const mirrored = asRepositoryId("https://github.com/kasofsk/chuggy.git");
+
+async function placedRepository(
+  repository: RepositoryId,
+  mirrors: RepositoryMirrors,
+): Promise<RepositoryId | undefined> {
+  const asked: SessionPlacement[] = [];
+  await sessionSchedulerPass(
+    service(
+      [],
+      {
+        awaiting: [session],
+        binding: { partition, repository, recoveryEpoch: epoch },
+      },
+      { placed: "Placed", placement: asPlacementId("chuggy-session-one") },
+      (placement) => asked.push(placement),
+      { mirrors },
+    ),
+    epoch,
+  );
+  return asked[0]?.repository;
+}
+
+test("only the binding a mirror names is read from that mirror", async () => {
+  const mirrors = { [mirrored]: mirror };
+  assert.equal(
+    await placedRepository(mirrored, mirrors),
+    mirror,
+    "the key the site wrote did not reach its own mirror",
+  );
+  for (const near of [
+    "https://github.com/someone-else/chuggy.git",
+    "git@github.com:attacker/chuggy.git",
+    "https://forge.invalid/kasofsk/chuggy.git",
+    "https://github.com/kasofsk/chuggy",
+    "chuggy.git",
+    "chuggy",
+    "https://github.com/kasofsk/CHUGGY.git",
+  ]) {
+    const bound = asRepositoryId(near);
+    assert.equal(
+      await placedRepository(bound, mirrors),
+      bound,
+      `${near} was read from another repository's mirror`,
+    );
+  }
 });
 
 /**
