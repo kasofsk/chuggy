@@ -2,6 +2,11 @@
  * Per-project selector settings against a real server: what a project inherits,
  * what it overrides, the revision fence the write stands on, and the roles that
  * may reach any of it.
+ *
+ * A CASE ABOUT THE POLICY HOST SETS THE POLICY HOST. Readiness is one row for
+ * the whole installation and the suites of one worker share a database, so a
+ * case that read it rather than wrote it would be asserting about whatever
+ * suite ran before it in an order nothing here decides.
  */
 
 import assert from "node:assert/strict";
@@ -353,7 +358,9 @@ test("automatic dispatch with no production host is a refusal, not a fault", asy
     "selector-automatic-readiness",
   );
   const pool = postgresHarnessRolePool(apiRole);
+  const servicePool = postgresHarnessRolePool(selectorServiceRole);
   try {
+    await postgresSelectorState(servicePool).setAutomaticReadiness(false);
     assert.deepEqual(
       await postgresSelectorProjectSettings(pool).write(
         partition,
@@ -368,6 +375,7 @@ test("automatic dispatch with no production host is a refusal, not a fault", asy
       0,
     );
   } finally {
+    await servicePool.end();
     await pool.end();
   }
 });
@@ -677,8 +685,10 @@ test("a stale fence is answered as one whatever the policy host is doing", async
     "selector-stale-fence-refusal",
   );
   const pool = postgresHarnessRolePool(apiRole);
+  const servicePool = postgresHarnessRolePool(selectorServiceRole);
   const store = postgresSelectorProjectSettings(pool);
   try {
+    await postgresSelectorState(servicePool).setAutomaticReadiness(false);
     assert.equal(
       writtenSettings(
         await store.write(partition, 0, { northStar: "First." }, administrator),
@@ -705,6 +715,7 @@ test("a stale fence is answered as one whatever the policy host is doing", async
       { written: "Refused", refusal: "AutomaticDispatchUnavailable" },
     );
   } finally {
+    await servicePool.end();
     await pool.end();
   }
 });
