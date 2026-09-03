@@ -5,8 +5,8 @@
  *
  * WHAT WAS CHOSEN IS NOT WHAT LANDED. One decision's dispatches are delivered
  * and settled one at a time, so a decision that named three can have landed
- * one; a single Dispatched arm over a list of ticket numbers would say all
- * three went, which is the reading this panel had before the record could tell.
+ * one; a single dispatch arm over a list of ticket numbers would say all three
+ * went, which is the reading this panel had before the record could tell.
  *
  * THE READ IS THE LOG'S NEWEST END AND NOT ITS FIRST PAGE. `order=newest`
  * answers the last `limit` decisions as one bounded page with no cursor, so the
@@ -150,7 +150,7 @@ function LeadDecisionRows(props: {
         return (
           <LedgerRow
             key={dispatch.ticket}
-            label="Dispatched"
+            label="Dispatch"
             pill={{ tone: arm.tone, text: arm.word }}
             when={props.when}
             note={String(dispatch.ticket)}

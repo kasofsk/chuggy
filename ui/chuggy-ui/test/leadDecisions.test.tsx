@@ -138,7 +138,7 @@ test("each decision says what it dispatched, refused and lifted", async () => {
   expect(newest?.textContent).toContain(
     "Monitoring · 0 of 1 dispatched · 1 lifted",
   );
-  expect(newest?.textContent).toContain("Dispatched");
+  expect(newest?.textContent).toContain("Dispatch");
   expect(newest?.textContent).toContain("Lifted");
   expect(groups()[1]?.textContent).toContain("Attention · 1 refused");
 });
@@ -207,10 +207,10 @@ test("the newest decision leads the panel whichever way the page arrived", async
 test("a decision's three dispatches are three rows, each with its own landing", async () => {
   await drawDecisions({ decisions: [leadDecisionLanding] });
   expect(rows(groups()[0])).toStrictEqual([
-    { label: "Dispatched", tone: "pass", word: "Queued", note: "51" },
-    { label: "Dispatched", tone: "pass", word: "Dispatched", note: "52" },
+    { label: "Dispatch", tone: "pass", word: "Queued", note: "51" },
+    { label: "Dispatch", tone: "pass", word: "Dispatched", note: "52" },
     {
-      label: "Dispatched",
+      label: "Dispatch",
       tone: "fail",
       word: "SelectionChanged",
       note: "53",
@@ -255,7 +255,7 @@ test("a decision that did nothing keeps its ghost row", async () => {
 test("a decision with one dispatch draws one row", async () => {
   await drawDecisions({ decisions: [leadDecisionDispatching] });
   expect(rows(groups()[0])).toStrictEqual([
-    { label: "Dispatched", tone: "pass", word: "Sent", note: "41" },
+    { label: "Dispatch", tone: "pass", word: "Sent", note: "41" },
     { label: "Lifted", tone: "retired", word: "Lifted", note: "40" },
   ]);
 });
@@ -268,8 +268,8 @@ test("a decision with one dispatch draws one row", async () => {
 test("a dispatch settled with no readable outcome says so", async () => {
   await drawDecisions({ decisions: [leadDecisionUnsaid] });
   expect(rows(groups()[0])).toStrictEqual([
-    { label: "Dispatched", tone: "neutral", word: "Unknown", note: "71" },
-    { label: "Dispatched", tone: "parked", word: "Approval", note: "72" },
+    { label: "Dispatch", tone: "neutral", word: "Unknown", note: "71" },
+    { label: "Dispatch", tone: "parked", word: "Approval", note: "72" },
     { label: "Refused", tone: "fail", word: "Refused", note: "42" },
   ]);
 });
