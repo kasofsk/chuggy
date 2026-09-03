@@ -221,7 +221,7 @@ async function sessionPlaceOne(
       image: service.policy.image,
       authority: service.policy.grant,
       bearer: minted.bearer,
-      // A checkout nothing on the roster may read is a cost with no consequence.
+      /** A checkout nothing on the roster may read is a cost with no consequence. */
       ...(binding === undefined ||
       !session.capabilities.includes("RepositoryRead")
         ? {}

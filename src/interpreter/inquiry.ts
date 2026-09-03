@@ -147,7 +147,9 @@ function inquiryField(
 ): string {
   const value = fields[name];
   if (typeof value !== "string" || value.length === 0)
-    throw new RangeError(`inquiry document: ${name} is not a value one carries`);
+    throw new RangeError(
+      `inquiry document: ${name} is not a value one carries`,
+    );
   return value;
 }
 

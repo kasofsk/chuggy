@@ -1071,13 +1071,10 @@ const inquiryMeasureShape = leadTurnResponseSchema.pick({
 }).shape;
 
 /**
- * One inquiry against the project's lead. It carries its `question` and its
+ * One inquiry against the project's lead, carrying its `question` and its
  * `answer` where `leadTurnResponseSchema` carries neither: a lead's input is
  * the observation its decision log already holds, and an inquiry's is what the
- * member typed and the answer they are waiting for — a panel without them is a
- * panel of empty rows. `asker` is the membership's own authority subject, and
- * `mine` is computed against the request's principal, which is what lets a
- * browser name its own inquiry without ever decoding a token.
+ * member typed and the answer they are waiting for.
  */
 export const leadInquiryResponseSchema = z.object({
   session: identitySchema,
