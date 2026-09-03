@@ -184,10 +184,10 @@ export interface SessionStoreBatchRow {
 
 /**
  * One recorded batch as the PLANE reads it, naming the session that WROTE it:
- * this is the only store read whose page spans sessions, a fork's rows being
- * resolved through its parent, so nothing but the row can say which session an
- * object stands under. The read that answered the row is also the fence — a
- * session it did not return is one no object is addressed under.
+ * a fork's rows are its parent's and a resume's are its own, and the bearer's
+ * identity is the reading session in both, so nothing but the row can say which
+ * session an object stands under. The read that answered the row is also the
+ * fence — a session it did not return is one no object is addressed under.
  */
 export interface SessionStoreBatchWritten extends SessionStoreBatchRow {
   readonly session: SessionId;
