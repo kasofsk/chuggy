@@ -181,6 +181,22 @@ test("a dispatch past the ceiling is an error, and the staging stops there", asy
   assert.equal(staging.document().dispatches.length, leadDispatchesMax);
 });
 
+test("a repeat at the ceiling is named a repeat, not a ceiling", async () => {
+  const candidates = Array.from({ length: leadDispatchesMax }, (_, index) => ({
+    ticket: index + 1,
+    ticketVersion: 1,
+  }));
+  const { staging, call } = stagingOn(observationOf({ candidates }));
+
+  for (const { ticket } of candidates)
+    await call("dispatch", { ticket, expectedTicketVersion: 1 });
+  const again = await call("dispatch", { ticket: 1, expectedTicketVersion: 1 });
+
+  assert.ok(errored(again));
+  assert.match(textOf(again), /ticket 1 is already dispatched/);
+  assert.equal(staging.document().dispatches.length, leadDispatchesMax);
+});
+
 test("a dispatch fenced on a version the observation did not show is refused", async () => {
   const { staging, call } = stagingOn();
 

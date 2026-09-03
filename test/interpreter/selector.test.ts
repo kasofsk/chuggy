@@ -31,7 +31,7 @@ import {
   type SelectorStateStore,
 } from "../../src/interpreter/selector.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import { randomOf, subsetFrom } from "../random/random.ts";
+import { pickFrom, randomOf, subsetFrom } from "../random/random.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
@@ -2306,6 +2306,8 @@ async function cycleDispatching(
   tickets: readonly number[],
   limits: Partial<SelectorRuntimeSettings["limits"]> = {},
   view: readonly (typeof dispatchable)[] = offered,
+  rowsWritten: (proposals: SelectorDecisionProposals) => number = (written) =>
+    written.dispatches.length,
 ) {
   let interaction: SelectorInteraction | undefined;
   let recorded: SelectorDecisionProposals | undefined;
@@ -2328,7 +2330,7 @@ async function cycleDispatching(
       record: (written) => {
         recorded = written;
         interaction = written.interaction;
-        return Promise.resolve(written.dispatches.length);
+        return Promise.resolve(rowsWritten(written));
       },
     },
     policyHost(() =>
@@ -2370,6 +2372,62 @@ test("a decision dispatching past its project's budget is a control violation", 
     outcome: "Failed",
     code: "ControlViolation",
   });
+});
+
+/**
+ * The budget bounds the entries a decision wrote, not the tickets they name.
+ * They differ only on a repeat, and every layer under the control is per entry
+ * — `selectedCandidates` maps the list, and one delivery row is written for
+ * each — so a budget counting tickets would let two proposals through under a
+ * budget of one.
+ */
+test("a decision naming one ticket twice spends two of its budget", async () => {
+  const twice = await cycleDispatching([1, 1], { dispatchesPerDecision: 1 });
+  assert.equal(twice.recorded, undefined, "nothing is proposed");
+  assert.deepEqual(twice.interaction?.result, {
+    outcome: "Failed",
+    code: "ControlViolation",
+  });
+  const once = await cycleDispatching([1], { dispatchesPerDecision: 1 });
+  assert.deepEqual(
+    once.recorded?.dispatches.map((dispatch) => dispatch.ticket),
+    [asTicketId(1)],
+    "one entry under a budget of one is what the same budget admits",
+  );
+});
+
+/**
+ * The count `record` answers is the point of the widened return type: a
+ * decision whose rows were not all written claims none of them, because the
+ * interaction commits in the same transaction and a replay is refused before
+ * any delivery row is reached, so the missing dispatches would be unreachable.
+ */
+test("a decision whose delivery rows were not all written claims nothing", async () => {
+  const short = await cycleDispatching(
+    [1, 2],
+    { dispatchesPerDecision: 2 },
+    offered,
+    () => 1,
+  );
+  assert.equal(
+    short.proposals,
+    undefined,
+    "one row of two is not the decision",
+  );
+  assert.equal(
+    short.recorded?.dispatches.length,
+    2,
+    "the store was still offered both",
+  );
+  const replayed = await cycleDispatching(
+    [1, 2],
+    { dispatchesPerDecision: 2 },
+    offered,
+    () => 0,
+  );
+  assert.equal(replayed.proposals, undefined);
+  const whole = await cycleDispatching([1, 2], { dispatchesPerDecision: 2 });
+  assert.equal(whole.proposals?.dispatches.length, 2);
 });
 
 test("the same decision under a wider budget is accepted", async () => {
@@ -2462,12 +2520,14 @@ test("a project's dispatch budget resolves from its own row, or inherits", () =>
 
 /**
  * The budget and the walk, checked against a model rather than against
- * examples: the count is judged first, on the finished turn, so a decision over
- * its budget is a control violation whatever it named; one within it is refused
- * only where a ticket it names is outside the view, and otherwise proposes
- * exactly what it named, in order. The reference is a count then a set, which
- * is what the two rules are and the order they run in; a run is a pure function
- * of its seed, so a failure names the case that produced it.
+ * examples: the ENTRIES are counted first, on the finished turn, so a decision
+ * over its budget is a control violation whatever it named — a repeat spends
+ * two — while a decision past `leadDispatchesMax` never survives the parse to
+ * be judged, and one within both bounds is refused only where a ticket it names
+ * is outside the view, otherwise proposing exactly what it named, in order. The
+ * draw set carries repeats and out-of-view tickets, because a model counting
+ * entries and one counting distinct tickets agree on every other input; a run
+ * is a pure function of its seed, so a failure names the case that produced it.
  */
 test("a decision is proposed exactly when the view holds it and the budget allows it", async () => {
   const random = randomOf(20_260_903);
@@ -2481,10 +2541,29 @@ test("a decision is proposed exactly when the view holds it and the budget allow
     const named = subsetFrom(random, view).map((candidate) =>
       Number(candidate.ticket),
     );
-    const chosen = random.coin() ? [...named, size + 1] : named;
+    /** A repeat, so entries and distinct tickets differ; then a ticket the view lacks. */
+    const repeated =
+      random.coin() && named.length > 0
+        ? [...named, pickFrom(random, named)]
+        : named;
+    const chosen = random.coin() ? [...repeated, size + 1] : repeated;
     const carried = chosen.every((ticket) => ticket <= size);
     const label = `seed run ${String(run)}: view ${String(size)}, budget ${String(budget)}, chosen ${chosen.join(",")}`;
 
+    if (chosen.length > leadDispatchesMax) {
+      const walked = await cycleDispatching(
+        chosen,
+        { dispatchesPerDecision: budget },
+        view,
+      );
+      assert.equal(walked.recorded, undefined, label);
+      assert.deepEqual(
+        walked.interaction?.result,
+        { outcome: "Failed", code: "InvalidResult" },
+        label,
+      );
+      continue;
+    }
     if (chosen.length > budget) {
       const over = await cycleDispatching(
         chosen,

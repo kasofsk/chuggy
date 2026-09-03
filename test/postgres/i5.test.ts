@@ -25,7 +25,10 @@ import {
   type ProjectMemory,
 } from "../../src/interpreter/projectWriter.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import type { SelectorDecisionProposals } from "../../src/interpreter/selector.ts";
+import {
+  dispatchesPerDecisionUnstated,
+  type SelectorDecisionProposals,
+} from "../../src/interpreter/selector.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   asAuthorityKind,
@@ -985,35 +988,62 @@ test("dispatch acceptance refuses every command the wire parser cannot read", as
 
 /**
  * What the delivery relation can hold, said by the relation rather than assumed
- * by its caller. Keyed on the decision alone it holds one row, so a decision
- * offering two is refused whole rather than half-written — and the rekey on
- * `(decision, ticket)` is what lifts that.
+ * by its caller: keyed on the decision alone it holds exactly
+ * `dispatchesPerDecisionUnstated` rows, which is why that constant is the
+ * budget a controls row without one resolves to. Raising the constant past what
+ * the relation holds reds the first half here rather than shipping a budget no
+ * decision could spend; the rekey on `(decision, ticket)` is what lifts both.
  */
-test("a decision offering two dispatches is refused by the relation, not half-written", async () => {
+test("the relation holds the unstated budget's rows and refuses the next", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "i5-one-delivery",
   );
   const selectorPool = postgresRolePool(selectorServiceRole);
   const state = postgresSelectorState(selectorPool);
-  const decision = `multi-${crypto.randomUUID()}`;
+  const spent = Array.from(
+    { length: dispatchesPerDecisionUnstated },
+    (_, index) => index + 1,
+  );
+  const whole = `budget-${crypto.randomUUID()}`;
+  const over = `multi-${crypto.randomUUID()}`;
   try {
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, whole, spent),
+        selectorTestState(partition, 0),
+      ),
+      dispatchesPerDecisionUnstated,
+    );
+    assert.equal(
+      (
+        await harness.query(
+          "SELECT selector_decision FROM selector_proposal_delivery WHERE selector_decision=$1",
+          [whole],
+        )
+      ).length,
+      dispatchesPerDecisionUnstated,
+    );
+    assert.ok(
+      dispatchesPerDecisionUnstated > 0,
+      "a budget no decision can spend is not a budget",
+    );
     await assert.rejects(
       () =>
         state.record(
-          selectorTestProposal(partition, decision, [1, 2]),
-          selectorTestState(partition, 0),
+          selectorTestProposal(partition, over, [...spent, spent.length + 1]),
+          selectorTestState(partition, 1),
         ),
       RangeError,
     );
     assert.deepEqual(
       await harness.query(
         "SELECT selector_decision FROM selector_proposal_delivery WHERE selector_decision=$1",
-        [decision],
+        [over],
       ),
       [],
     );
-    assert.equal((await state.history(partition, undefined, 10)).length, 0);
+    assert.equal((await state.history(partition, undefined, 10)).length, 1);
   } finally {
     await selectorPool.end();
   }
