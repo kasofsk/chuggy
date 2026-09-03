@@ -953,12 +953,12 @@ test("moving cwd to the checkout does not move the store stream a resumed sessio
 
 /**
  * The clone is the longest thing the pod does before its first turn, and the
- * attempt's lease is already running down when the pod starts. So the heartbeat
- * must be beating while git runs: a clone slower than what is left of the lease
- * is reaped mid-clone, and the pod then opens its runtime against a fenced
- * attempt and is refused every call it makes.
+ * attempt's lease is already running down when the pod starts — so the lease is
+ * kept before the clone is asked for, and a clone slower than what is left of
+ * the lease is not reaped mid-clone. What this holds is that order; that a
+ * kept lease reaches the plane is `lease.mjs`'s own.
  */
-test("the lease is beating before the clone starts", async () => {
+test("the lease is kept before the clone is asked for", async () => {
   const plane = planeOf([], facts);
   const { query } = queryOf(() => []);
   const order = [];

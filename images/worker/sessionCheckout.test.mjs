@@ -221,3 +221,32 @@ test("a git call that runs past its bound leaves the session with no tree", asyn
   assert.equal(checkout, undefined);
   assert.match(logged[0], /killed after 300000ms/u);
 });
+
+/**
+ * A clone killed at its bound leaves its target behind, and the lead's `Read`
+ * and `Bash` would walk into a half-tree while the pod reports no tree at all.
+ */
+test("a clone that did not finish leaves nothing of its tree behind", async () => {
+  await scratch(async (root) => {
+    const { url } = await remoteOf(root);
+    const workspace = join(root, "workspace");
+    const directory = join(workspace, "repository");
+
+    const checkout = await sessionCheckout(
+      taskOf(),
+      repositories(url),
+      credentialFiles,
+      workspace,
+      {
+        run: async (args, given) => {
+          await run("git", ["clone", url, directory], given);
+          throw new Error("git was killed");
+        },
+        log: () => undefined,
+      },
+    );
+
+    assert.equal(checkout, undefined);
+    await assert.rejects(stat(directory), { code: "ENOENT" });
+  });
+});

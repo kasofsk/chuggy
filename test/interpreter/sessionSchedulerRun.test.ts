@@ -170,12 +170,8 @@ function recordingStore(
 
 /**
  * The binding a case's project has, which is none unless the case gave it one.
- *
- * `"PerProject"` answers a repository named for the project it was asked about,
- * rather than a fixed one. That is what lets a page carrying two projects say
- * whether each session got its own tree: against a fixed answer, a pass that
- * read one project's binding and handed it to every session in the page is
- * indistinguishable from a correct one.
+ * `"PerProject"` answers from the partition it was handed, because against a
+ * fixed answer a per-tenant read and a per-project one are the same test.
  */
 function bindingsOf(
   calls: StoreCall[],
@@ -265,8 +261,8 @@ test("a session with a turn waiting is opened under this deployment's ceilings a
   );
   assert.equal(report.placed, 1);
   assert.deepEqual(calls.slice(-4), [
-    `openAttempt session-attempt-one lease=${String(sessionSchedulerDefaults.attemptLeaseSecs)} backoff=${String(sessionSchedulerDefaults.placementBackoffSecs)} account=${String(sessionSchedulerDefaults.attemptsPerAccountMax)} cluster=${String(sessionSchedulerDefaults.clusterAttemptsMax)}`,
     "binding tenant/project",
+    `openAttempt session-attempt-one lease=${String(sessionSchedulerDefaults.attemptLeaseSecs)} backoff=${String(sessionSchedulerDefaults.placementBackoffSecs)} account=${String(sessionSchedulerDefaults.attemptsPerAccountMax)} cluster=${String(sessionSchedulerDefaults.clusterAttemptsMax)}`,
     "place session-attempt-one",
     "attemptPlaced chuggy-session-one",
   ]);
@@ -473,12 +469,9 @@ test("a binding the scheduler cannot read stops the pass rather than placing wit
 });
 
 /**
- * A binding is a PROJECT fact, and one page of `awaitingPlacement` is
- * deployment-wide: two projects of one tenant land in it routinely. A pass that
- * resolved the binding once per tenant would hand the second project the
- * first's repository reference, and the pod would clone another project's tree
- * and `cwd` the model into it — silently, since every tier below this one sees
- * one project and agrees with itself.
+ * A binding is a PROJECT fact and one page carries several projects of one
+ * tenant. A pass that resolved it per tenant would clone another project's tree
+ * and `cwd` the model into it.
  */
 test("two projects of one tenant in one page are each placed with their own repository", async () => {
   const calls: StoreCall[] = [];
@@ -506,5 +499,28 @@ test("two projects of one tenant in one page are each placed with their own repo
   assert.deepEqual(
     calls.filter((call) => call.startsWith("binding ")),
     ["binding tenant/chuggy", "binding tenant/payroll"],
+  );
+});
+
+/**
+ * A binding the scheduler may not read raises once per pass. Read after
+ * `openAttempt` it would strand an opened, unplaced attempt for a whole lease
+ * window; read before, the pass costs nothing to fail.
+ */
+test("a binding that cannot be read is asked for before an attempt is opened", async () => {
+  const calls: StoreCall[] = [];
+  await assert.rejects(
+    sessionSchedulerPass(
+      service(
+        calls,
+        { awaiting: [session], binding: new Error("permission denied") },
+        { placed: "Placed", placement: asPlacementId("chuggy-session-one") },
+      ),
+      epoch,
+    ),
+  );
+  assert.ok(
+    !calls.some((call) => call.startsWith("openAttempt ")),
+    "a binding the pass could not read still cost an attempt",
   );
 });

@@ -54,7 +54,11 @@
  * placement of every deployment raises `permission denied` and — by the
  * paragraph above — stops the session half of the pass.
  * `test/postgres/sessionPrivileges.test.ts` asserts the grant and is what says
- * when this is no longer true.
+ * when this is no longer true. It is read BEFORE the attempt is opened for that
+ * reason: the read depends on nothing an attempt produces, and a raise after
+ * `openAttempt` would leave an opened, unplaced attempt that nothing cancels
+ * and that costs a whole lease window to reap — once per pass, per deployment,
+ * for as long as the grant is missing.
  */
 
 import type { AgentSession, SessionAttemptId } from "./agentSession.ts";
@@ -182,6 +186,7 @@ async function sessionPlaceOne(
   epoch: RecoveryEpoch,
 ): Promise<boolean> {
   const config = checkedSessionSchedulerConfig(service.config);
+  const binding = await service.bindings.binding(session.partition);
   const minted = service.bearers.mint();
   const opened = await service.store.openAttempt({
     partition: session.partition,
@@ -196,7 +201,6 @@ async function sessionPlaceOne(
     clusterAttemptsMax: config.clusterAttemptsMax,
   });
   if (opened.opened !== "Opened") return false;
-  const binding = await service.bindings.binding(session.partition);
   return sessionAttemptPlaced(
     service,
     opened.attempt,

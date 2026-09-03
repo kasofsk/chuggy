@@ -243,19 +243,9 @@ test("the API may read the session an operation came through and no more of it",
 });
 
 /**
- * The one grant slice 3's session checkout added, asked of the server. The
- * scheduler's session pass reads the project's repository binding to decide
- * which tree a session pod clones, and a read it may not make raises and stops
- * the pass — so a missing grant is not a degraded checkout, it is a deployment
- * whose session half never moves again.
- *
- * THIS CASE IS RED UNTIL SLICE 3'S MIGRATION 061 LANDS. Every grant on this
- * function in the ledger today names some other role (021 the API, 029 the
- * configuration importer, 031 the ticket service, 040 the finalizer);
- * `PLAN.md` §1.11 puts the scheduler's in 061, which is Unit 2's and is not in
- * this tree. It is written here rather than there because the caller that
- * needs it is here: a grant nobody exercises is unverified, and a dependency
- * nobody can see is one that gets merged past.
+ * The grant the session pass needs, which slice 3's migration 061 adds and this
+ * tree does not carry. Until it lands this case is red, and a session placement
+ * pass raises on the read and stops.
  */
 test("the scheduler may read a project's repository binding, which its session pass needs", async () => {
   const refused = await harness.attemptAs(

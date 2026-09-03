@@ -27,8 +27,6 @@ import { execFile } from "node:child_process";
 import { after, before, test } from "node:test";
 import { promisify } from "node:util";
 
-import { randomUUID } from "node:crypto";
-
 import { schedulerRole } from "../../src/adapters/postgres/schema.ts";
 import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
@@ -77,12 +75,7 @@ before(async () => {
   configurationDigest = created.revision.digest;
 });
 
-/**
- * The session half's binding read, made by the composition root itself and run
- * as `chuggy_scheduler`, which is the only tier that can say whether the role
- * may make it. A fake `bindings` port would satisfy the type and answer
- * nothing, and that is a deployment placing every session with no tree.
- */
+/** The session half's binding read, made by the composition root itself. */
 function schedulerRootBindingProgram(partition: Partition): string {
   return `
     const roots = await import('./src/roots/controlPlane.ts');
@@ -210,14 +203,9 @@ test("the production scheduler root reads configurations through PostgreSQL", as
 });
 
 /**
- * THIS CASE IS RED UNTIL SLICE 3'S MIGRATION 061 LANDS, and that is what it is
- * for. Every `GRANT EXECUTE ON FUNCTION read_project_repository_binding` in the
- * ledger names some other role — the API (021), the configuration importer
- * (029), the ticket service (031), the finalizer (040) — and `PLAN.md` §1.11
- * puts the scheduler's in 061, which is slice 3's Unit 2 and is not in this
- * tree. The session pass raises on a binding it may not read, and a raise stops
- * the pass, so merging the checkout without that grant is a deployment whose
- * session half never moves again. Nothing else in the tree would have said so.
+ * Which adapter the root reaches for, asked as the scheduler's own role: a stub
+ * would satisfy the type and answer nothing, and that is every session placed
+ * with no tree.
  */
 test("the scheduler root reads the binding its session pass places on", async () => {
   const partition = await postgresHarnessProject(
@@ -226,8 +214,9 @@ test("the scheduler root reads the binding its session pass places on", async ()
   );
   const repository = asRepositoryId("scheduler-root-repository");
   await harness.query(
-    `SELECT activate_project_repository($1,$2,$3,$3,$4,$5,'Test','authoring')`,
-    [partition.tenant, partition.project, repository, epoch, randomUUID()],
+    `INSERT INTO project_repository(tenant,project,repository,recovery_epoch)
+     VALUES($1,$2,$3,$4)`,
+    [partition.tenant, partition.project, repository, epoch],
   );
 
   const result = await execute(

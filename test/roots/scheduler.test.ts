@@ -851,14 +851,9 @@ test("the same tick places the session waiting for a pod, after the worker", asy
 });
 
 /**
- * The binding reaches the pod: the pass puts it on the placement and the
- * adapter emits it into `CHUG_SESSION_TASK`, which neither tier alone can say.
- *
- * IT DOES NOT SAY THE ROOT WIRED THE READ. This case composes the session
- * service by hand and calls `schedulerProcess` directly, so the `bindings` it
- * proves is its own fake. What the real root reaches for is
- * `test/postgres/schedulerRoot.test.ts`, against a real pool as the scheduler's
- * own role.
+ * The binding reaches the pod, which neither tier alone can say. Which adapter
+ * the real root reaches for is `test/postgres/schedulerRoot.test.ts`, since the
+ * `bindings` here is this case's own fake.
  */
 test("the session pod is handed the repository its project binds", async () => {
   const found = JSON.parse(

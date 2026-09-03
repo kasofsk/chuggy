@@ -35,6 +35,7 @@
  */
 
 import { execFile } from "node:child_process";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
@@ -59,6 +60,11 @@ const sessionCheckoutBufferBytesMax = 16 * 1024 * 1024;
  * loop a deployment chose the size of, and the bounds `checkedSessionBounds`
  * refuses to invent are the latter. Exceeding it is the degraded arm below, so
  * a stalled remote is a lead with no tree rather than a pod nobody can settle.
+ *
+ * That it equals `attemptLeaseSecs` is a coincidence and not a derivation: the
+ * lease is beating under the clone, so a clone may legitimately outlast one
+ * lease window, and neither number is the other's cause. Change either without
+ * looking at the other.
  */
 export const sessionCheckoutTimeoutMs = 300_000;
 
@@ -67,6 +73,23 @@ async function git(args, options) {
     maxBuffer: sessionCheckoutBufferBytesMax,
     ...options,
   });
+}
+
+/**
+ * What a clone that did not finish leaves. `git` cleans up after itself only
+ * when it fails on its own; killed at the bound above it does not, and the
+ * degraded arm would then hand the lead a half-tree where it reports none.
+ */
+async function discard(directory, log) {
+  try {
+    await rm(directory, { recursive: true, force: true });
+  } catch (failure) {
+    log(
+      `session checkout could not remove ${directory}: ${
+        failure instanceof Error ? failure.message : String(failure)
+      }\n`,
+    );
+  }
 }
 
 /**
@@ -112,6 +135,7 @@ export async function sessionCheckout(
     log(`session checkout ${reference} at ${commit}\n`);
     return { directory, commit };
   } catch (failure) {
+    await discard(directory, log);
     log(
       scrub(
         `session checkout ${reference} failed: ${
