@@ -3036,14 +3036,11 @@ test("a partial write is reconciled by the next pass and no landed ticket twice"
     const budget = random.below(leadDispatchesMax) + 1;
     const all = Array.from({ length: size }, (_, index) => index + 1);
     const landed: number[] = [];
-    const passes: {
-      readonly offered: readonly number[];
-      readonly taken: readonly number[];
-    }[] = [];
     const label = `seed run ${String(run)}: view ${String(size)}, budget ${String(budget)}`;
     for (let pass = 0; pass < 2 * size && landed.length < size; pass += 1) {
       const outstanding = all.filter((ticket) => !landed.includes(ticket));
       const last = pass >= size;
+      let walked: { offered: number; taken: number } | undefined;
       const result = await sweep({
         projects: [partition],
         view: outstanding,
@@ -3054,16 +3051,15 @@ test("a partial write is reconciled by the next pass and no landed ticket twice"
             Number(dispatch.ticket),
           );
           const taken = last ? offered : subsetFrom(random, offered);
-          passes.push({ offered, taken });
+          walked = { offered: offered.length, taken: taken.length };
           landed.push(...taken);
           return { retained: true, dispatched: taken.map(asTicketId) };
         },
       });
-      const walked = passes.at(-1);
-      assert.equal(result.dispatched, walked?.taken.length, label);
+      assert.equal(result.dispatched, walked?.taken, label);
       assert.equal(
         result.failures.length,
-        (walked?.offered.length ?? 0) - (walked?.taken.length ?? 0),
+        (walked?.offered ?? 0) - (walked?.taken ?? 0),
         `${label}: every dispatch the relation refused is reported`,
       );
     }
