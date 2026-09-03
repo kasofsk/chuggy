@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/064-multi-dispatch-delivery.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   dryRunSelectorPolicy,
@@ -80,6 +81,18 @@ const delivery: SelectorDelivery = {
 };
 
 const operationalContext = selectorOperationalContext;
+
+/**
+ * The two dispatch bounds are written in different files — the ceiling here,
+ * the installation default in the migration that gives an installation its
+ * controls — and only one of them is a parse refusal. An installation seeded
+ * above the ceiling would hand a project a budget the document parser refuses
+ * before reading any of the decision that spent it: a control reporting a
+ * number it does not apply, which nothing else in either file can notice.
+ */
+test("the installation's dispatch default sits under the ceiling that parses it", () => {
+  assert.ok(leadDispatchesPerDecision <= leadDispatchesMax);
+});
 
 test("selector backlog admission requires room under both ceilings", () => {
   assert.equal(selectorBacklogsAdmitDispatch(operationalContext.backlog), true);
