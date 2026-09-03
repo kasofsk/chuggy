@@ -8,10 +8,14 @@
  * what the decision did, and the observation it did it on is the lead's own
  * transcript.
  *
- * THE RESULT IS RETAINED JSON AND IS READ DEFENSIVELY. Rows written before this
- * slice name one dispatched ticket as `selectedTicket`, and a row nobody can
- * parse must still leave the decisions beside it readable, so a field this
- * reader cannot speak for is absent rather than fatal.
+ * THE RESULT IS RETAINED JSON AND IS READ DEFENSIVELY, so a field this reader
+ * cannot speak for is absent rather than fatal and a row nobody can parse still
+ * leaves the decisions beside it readable.
+ *
+ * WHAT LANDED IS NOT WHAT WAS CHOSEN. The dispatches a decision made are its
+ * delivery rows, one per ticket, carrying the state each reached and the
+ * outcome each settled on; the chosen list is derivable from them, so the log
+ * draws the rows and never a stored duplicate of what they already say.
  */
 
 import { selectorHistoryLimitMax } from "../contract/http.ts";
@@ -19,6 +23,7 @@ import {
   selectorAttentions,
   selectorHistoryOrders,
   type SelectorAttention,
+  type SelectorDeliveryState,
   type SelectorHistoryOrder,
 } from "../contract/rosters.ts";
 import type { Principal } from "./principal.ts";
@@ -26,12 +31,20 @@ import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
 import type { JsonValue, SelectorInteractionRecord } from "./selector.ts";
 
+/** One dispatch of one decision, as the delivery record settled it. */
+export interface SelectorDispatchOutcome {
+  readonly ticket: number;
+  readonly state: SelectorDeliveryState;
+  /** The refusal code or acceptance the operation settled on, where it settled. */
+  readonly outcome?: string;
+}
+
 /** What one decision did, which is what the log draws and not what it saw. */
 export interface SelectorDecisionSummary {
   readonly ordinal: number;
   readonly decision: string;
   readonly instructionsVersion: string;
-  readonly dispatched: readonly number[];
+  readonly dispatches: readonly SelectorDispatchOutcome[];
   readonly refused: readonly number[];
   readonly lifted: readonly number[];
   readonly attention?: SelectorAttention;
@@ -147,12 +160,33 @@ function ticketsOf(
   });
 }
 
-/** The dispatches a decision made, under either the current spelling or the retained one. */
-function dispatchedTickets(result: JsonValue | undefined): readonly number[] {
-  const dispatches = ticketsOf(result, "dispatches");
-  if (dispatches.length > 0) return dispatches;
-  const selected = ticketOf(fieldOf(result, "selectedTicket"));
-  return selected === undefined ? [] : [selected];
+/**
+ * The code a settled operation named, or the state it settled in. A delivery
+ * that has not settled carries no outcome, and one whose retained outcome this
+ * reader cannot speak for carries none either.
+ */
+function outcomeCode(outcome: JsonValue | undefined): string | undefined {
+  const code = fieldOf(outcome, "code");
+  if (typeof code === "string") return code;
+  for (const name of ["state", "accepted"]) {
+    const named = fieldOf(outcome, name);
+    if (typeof named === "string") return named;
+  }
+  return undefined;
+}
+
+/** What each of a decision's dispatches did, in the order the relation keys them. */
+function dispatchOutcomes(
+  deliveries: SelectorInteractionRecord["deliveries"],
+): readonly SelectorDispatchOutcome[] {
+  return deliveries.map((delivery) => {
+    const outcome = outcomeCode(delivery.outcome);
+    return {
+      ticket: Number(delivery.ticket),
+      state: delivery.state,
+      ...(outcome === undefined ? {} : { outcome }),
+    };
+  });
 }
 
 function attentionOf(
@@ -174,7 +208,7 @@ export function selectorDecisionSummary(
     ordinal: record.ordinal,
     decision: record.decision,
     instructionsVersion: record.instructionsVersion,
-    dispatched: dispatchedTickets(record.result),
+    dispatches: dispatchOutcomes(record.deliveries),
     refused: ticketsOf(record.result, "refusals"),
     lifted: ticketsOf(record.result, "lifts"),
     ...(attention === undefined ? {} : { attention }),

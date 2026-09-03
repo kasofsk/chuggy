@@ -12,6 +12,7 @@ import {
 import type {
   JsonValue,
   SelectorDelivery,
+  SelectorDeliveryRecord,
   SelectorCandidateScan,
   SelectorInteraction,
   SelectorInteractionRecord,
@@ -32,6 +33,7 @@ import type {
 } from "../../interpreter/selector.ts";
 import {
   dispatchesPerDecisionUnstated,
+  leadDispatchesMax,
   resolvedSelectorSettings,
 } from "../../interpreter/selector.ts";
 import type {
@@ -48,10 +50,12 @@ import {
   type Partition,
 } from "../../interpreter/projectStore.ts";
 import { notificationSchema } from "../../contract/responses.ts";
+import { selectorDeliveryStates } from "../../contract/rosters.ts";
 import type { ProjectNotification } from "../../interpreter/notifications.ts";
 import { parseTicketCommand } from "../../interpreter/wire.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
+import { sessionRowText } from "./sessionRows.ts";
 import {
   finalizationPricingSchema,
   reworkPolicySchema,
@@ -119,6 +123,34 @@ const dispatchViewTokenSchema = z
     digest: z.string().regex(/^[0-9a-f]{64}$/),
   })
   .readonly();
+/**
+ * One decision's delivery rows as the interaction read aggregates them. The
+ * outcome is the text column the settlement wrote, parsed here rather than in
+ * the aggregate, so a row the reader cannot speak for is one decision's
+ * problem and not the page's.
+ */
+const selectorDeliveryRecordsSchema: z.ZodType<
+  readonly SelectorDeliveryRecord[]
+> = z
+  .array(
+    z.object({
+      ticket: z.number().int().safe().positive().transform(asTicketId),
+      state: z.enum(selectorDeliveryStates),
+      outcome: z.string().nullable(),
+    }),
+  )
+  .transform((rows) =>
+    rows.map((row) => ({
+      ticket: row.ticket,
+      state: row.state,
+      ...(row.outcome === null
+        ? {}
+        : {
+            outcome: decoded(row.outcome, jsonValueSchema, "delivery outcome"),
+          }),
+    })),
+  );
+
 const dispatchCandidateSchema = z
   .object({
     ticket: z.number().int().safe().positive().transform(asTicketId),
@@ -1660,6 +1692,8 @@ export interface SelectorInteractionRow {
   readonly accounting: string;
   readonly started_at: Date;
   readonly completed_at: Date;
+  /** The decision's delivery rows as JSON, which is what the log answers landed. */
+  readonly dispatches: string;
 }
 
 /** The chunked resources one interaction row's three manifests point at. */
@@ -1715,6 +1749,11 @@ export function selectorInteractionRecord(
     modelRevision: row.model_revision,
     policyRevision: row.policy_revision,
     accounting: decoded(row.accounting, jsonValueSchema, "selector accounting"),
+    deliveries: decoded(
+      row.dispatches,
+      selectorDeliveryRecordsSchema,
+      "selector decision deliveries",
+    ),
     startedAt: row.started_at.toISOString(),
     completedAt: row.completed_at.toISOString(),
   };
@@ -1744,6 +1783,19 @@ async function selectorInteractionOf(
   });
 }
 
+/**
+ * The aggregate the log read answers, which the query checker calls nullable
+ * because an aggregate over no rows is. It is narrowed rather than defaulted:
+ * a read that stopped answering the column would otherwise draw every decision
+ * as having dispatched nothing.
+ */
+interface SelectorHistoryRow extends Omit<
+  SelectorInteractionRow,
+  "dispatches"
+> {
+  readonly dispatches: string | null;
+}
+
 async function readSelectorHistory(
   pool: pg.Pool,
   partition: Partition,
@@ -1751,16 +1803,29 @@ async function readSelectorHistory(
   limit: number,
 ): Promise<readonly SelectorInteractionRecord[]> {
   checkedSelectorLimit(limit, "selector history");
-  const found = await pool.query<SelectorInteractionRow>(
+  const found = await pool.query<SelectorHistoryRow>(
     sql`SELECT selector_decision,ordinal::text,instructions_version,instructions,observed_view,
        observed_token,context,tool_activity,result,implementation_revision,model_revision,
-       policy_revision,accounting,started_at,completed_at
+       policy_revision,accounting,started_at,completed_at,
+       coalesce((SELECT json_agg(json_build_object(
+                  'ticket',landed.ticket,'state',landed.state,'outcome',landed.outcome)
+                  ORDER BY landed.ticket)
+                   FROM (SELECT d.ticket,d.state,d.outcome
+                           FROM selector_proposal_delivery d
+                          WHERE d.selector_decision=selector_interaction.selector_decision
+                          ORDER BY d.ticket LIMIT ${leadDispatchesMax}) landed),
+                '[]'::json)::text AS dispatches
        FROM selector_interaction WHERE tenant=${partition.tenant}
          AND project=${partition.project} AND ordinal>${after ?? 0}
        ORDER BY ordinal LIMIT ${limit}`,
   );
   return Promise.all(
-    found.rows.map((row) => selectorInteractionOf(pool, partition, row)),
+    found.rows.map((row) =>
+      selectorInteractionOf(pool, partition, {
+        ...row,
+        dispatches: sessionRowText(row.dispatches, "a decision's deliveries"),
+      }),
+    ),
   );
 }
 

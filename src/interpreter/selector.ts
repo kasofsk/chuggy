@@ -7,6 +7,7 @@ import {
   sessionTurnInputCharsMax,
   sessionTurnResultCharsMax,
 } from "../contract/http.ts";
+import type { SelectorDeliveryState } from "../contract/rosters.ts";
 import type { DispatchCandidate, DispatchViewToken } from "./dispatchView.ts";
 import {
   asOperationId,
@@ -114,7 +115,9 @@ export function unwrittenDispatches(
   recorded: SelectorProposedDecision,
 ): readonly DispatchCandidate["ticket"][] {
   return [
-    ...new Set(recorded.proposals.dispatches.map((dispatch) => dispatch.ticket)),
+    ...new Set(
+      recorded.proposals.dispatches.map((dispatch) => dispatch.ticket),
+    ),
   ].filter((ticket) => !recorded.dispatched.includes(ticket));
 }
 
@@ -171,8 +174,17 @@ export interface SelectorStateStore {
   ): Promise<SelectorPlanningIntent | undefined>;
 }
 
+/** One of a decision's dispatches as the delivery record settled it. */
+export interface SelectorDeliveryRecord {
+  readonly ticket: DispatchCandidate["ticket"];
+  readonly state: SelectorDeliveryState;
+  readonly outcome?: JsonValue;
+}
+
 export interface SelectorInteractionRecord extends SelectorInteraction {
   readonly ordinal: number;
+  /** The delivery rows this decision left, which say what landed and not what was chosen. */
+  readonly deliveries: readonly SelectorDeliveryRecord[];
 }
 
 export interface SelectorReviewFeedback {

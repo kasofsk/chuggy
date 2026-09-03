@@ -96,7 +96,7 @@ function leadDecisionArms(
   return [
     {
       label: "Dispatched",
-      tickets: decision.dispatched,
+      tickets: decision.dispatches.map((dispatch) => dispatch.ticket),
       tone: "pass",
       word: "Queued",
     },

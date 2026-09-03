@@ -89,6 +89,7 @@ import {
   runCostBases,
   schedulerFreshnesses,
   selectorAttentions,
+  selectorDeliveryStates,
   selectorDispatchModes,
   selectorModes,
   agenticRefusalEvents,
@@ -954,12 +955,21 @@ export type LeadTranscriptResponse = z.infer<
   typeof leadTranscriptResponseSchema
 >;
 
+/** One dispatch of one decision, and where the delivery record left it. */
+export const selectorDispatchResponseSchema = z.object({
+  ticket: ticketNumberSchema,
+  state: z.enum(selectorDeliveryStates),
+  outcome: identitySchema.optional(),
+});
+
 /** What one decision did, which is what the decision log draws and not what it saw. */
 export const selectorDecisionResponseSchema = z.object({
   ordinal: countSchema,
   decision: identitySchema,
   instructionsVersion: identitySchema,
-  dispatched: z.array(ticketNumberSchema).max(nativeHttpPageItemsMax),
+  dispatches: z
+    .array(selectorDispatchResponseSchema)
+    .max(nativeHttpPageItemsMax),
   refused: z.array(ticketNumberSchema).max(nativeHttpPageItemsMax),
   lifted: z.array(ticketNumberSchema).max(nativeHttpPageItemsMax),
   attention: z.enum(selectorAttentions).optional(),

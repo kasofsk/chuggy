@@ -158,6 +158,7 @@ interface SelectorInteractionsRow {
   readonly observed_view_chunks: string[] | null;
   readonly context_chunks: string[] | null;
   readonly tool_activity_chunks: string[] | null;
+  readonly dispatches: string | null;
 }
 
 function interactionInstant(value: Date | null, what: string): Date {
@@ -191,6 +192,7 @@ function selectorInteractionRowOf(
     accounting: sessionRowText(row.accounting, "accounting"),
     started_at: interactionInstant(row.started_at, "a decision's start"),
     completed_at: interactionInstant(row.completed_at, "a decision's end"),
+    dispatches: sessionRowText(row.dispatches, "a decision's deliveries"),
   };
 }
 
@@ -225,7 +227,7 @@ async function leadDecisionHistory(
                observed_view,observed_token,context,tool_activity,result,
                implementation_revision,model_revision,policy_revision,
                accounting,started_at,completed_at,
-               observed_view_chunks,context_chunks,tool_activity_chunks
+               observed_view_chunks,context_chunks,tool_activity_chunks,dispatches
           FROM read_selector_interactions(
                  ${partition.tenant},${partition.project},
                  ${after ?? null},${limit},${newestFirst})`,

@@ -246,6 +246,7 @@ function interactionRecord(
     observedView: [],
     context: { operationalContext, handoffNote: {} },
     toolActivity: [],
+    deliveries: [],
     result,
     implementationRevision: "implementation",
     modelRevision: "model",

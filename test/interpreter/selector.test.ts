@@ -2116,6 +2116,25 @@ test("a turn that spent more than its envelope allows is refused", async () => {
   });
 });
 
+/** A store that names each write it took, so a case can hold their order. */
+function orderingStore(order: string[]): SelectorStateStore {
+  return {
+    ...stateStore(() => undefined),
+    project: () => Promise.resolve(observedState(5)),
+    record: (proposals) => {
+      order.push("proposal");
+      return Promise.resolve({
+        retained: true,
+        dispatched: proposals.dispatches.map((dispatch) => dispatch.ticket),
+      });
+    },
+    recordInteraction: () => {
+      order.push("interaction");
+      return Promise.resolve(true);
+    },
+  };
+}
+
 test("a decision's refusals are entered after the decision they name", async () => {
   const order: string[] = [];
   let entered: Parameters<AgenticRefusalWrite["record"]>[0] | undefined;
@@ -2124,21 +2143,7 @@ test("a decision's refusals are entered after the decision they name", async () 
       order.push("refusals");
       entered = input;
     }),
-    {
-      ...stateStore(() => undefined),
-      project: () => Promise.resolve(observedState(5)),
-      record: (proposals) => {
-        order.push("proposal");
-        return Promise.resolve({
-          retained: true,
-          dispatched: proposals.dispatches.map((dispatch) => dispatch.ticket),
-        });
-      },
-      recordInteraction: () => {
-        order.push("interaction");
-        return Promise.resolve(true);
-      },
-    },
+    orderingStore(order),
     movedSource(6),
     policyHost(() =>
       Promise.resolve({
@@ -2235,21 +2240,7 @@ test("a dispatching decision's refusals are entered after its proposal", async (
     refusalWrites(() => {
       order.push("refusals");
     }),
-    {
-      ...stateStore(() => undefined),
-      project: () => Promise.resolve(observedState(5)),
-      record: (proposals) => {
-        order.push("proposal");
-        return Promise.resolve({
-          retained: true,
-          dispatched: proposals.dispatches.map((dispatch) => dispatch.ticket),
-        });
-      },
-      recordInteraction: () => {
-        order.push("interaction");
-        return Promise.resolve(true);
-      },
-    },
+    orderingStore(order),
     {
       ...movedSource(6),
       dispatchView: () =>
@@ -2923,7 +2914,9 @@ test("one decision with three dispatches is not three decisions with one", async
   const apart = await sweep({
     projects: [partition, second, third],
     view: [1, 2, 3],
-    named: (project) => [project === "project" ? 1 : project === "second" ? 2 : 3],
+    named: (project) => [
+      project === "project" ? 1 : project === "second" ? 2 : 3,
+    ],
   });
   assert.deepEqual(
     { proposed: apart.proposed, dispatched: apart.dispatched },
