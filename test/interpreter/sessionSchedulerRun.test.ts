@@ -524,3 +524,59 @@ test("a binding that cannot be read is asked for before an attempt is opened", a
     "a binding the pass could not read still cost an attempt",
   );
 });
+
+/**
+ * An inquiry holds reads of the project alone, so a checkout it may not open is
+ * a clone per question and a cost with no consequence. The project still binds
+ * a repository in this case — that is what makes it the case that fails when
+ * the placement carries the binding unconditionally.
+ */
+test("a session whose roster reads no tree is placed with no checkout, bound or not", async () => {
+  const asked: SessionPlacement[] = [];
+  await sessionSchedulerPass(
+    service(
+      [],
+      {
+        awaiting: [
+          { ...session, kind: "Inquiry", capabilities: ["ProjectRead"] },
+        ],
+        binding: {
+          partition,
+          repository: asRepositoryId("chuggy"),
+          recoveryEpoch: epoch,
+        },
+      },
+      { placed: "Placed", placement: asPlacementId("chuggy-session-one") },
+      (placement) => asked.push(placement),
+    ),
+    epoch,
+  );
+  assert.equal(asked.length, 1);
+  assert.ok(
+    !Object.hasOwn(asked[0] ?? {}, "repository"),
+    "a roster that reads no tree was given one to clone",
+  );
+});
+
+test("a session whose roster reads the tree is still placed with the binding", async () => {
+  const asked: SessionPlacement[] = [];
+  await sessionSchedulerPass(
+    service(
+      [],
+      {
+        awaiting: [
+          { ...session, capabilities: ["RepositoryRead", "ProjectRead"] },
+        ],
+        binding: {
+          partition,
+          repository: asRepositoryId("chuggy"),
+          recoveryEpoch: epoch,
+        },
+      },
+      { placed: "Placed", placement: asPlacementId("chuggy-session-one") },
+      (placement) => asked.push(placement),
+    ),
+    epoch,
+  );
+  assert.equal(asked[0]?.repository, asRepositoryId("chuggy"));
+});

@@ -41,11 +41,14 @@
  * *placement*, not per tenant: the binding is a project fact, one page of
  * `awaitingPlacement` routinely carries several projects of one tenant, and a
  * session handed another project's reference would clone another project's
- * tree and `cwd` its model into it. A project with no binding places a session
- * with no checkout: the session reads the project through the API and has no
- * tree. A binding read that *fails* stops the pass instead, because placing
- * every session with no checkout is how a missing grant would look, and a
- * control that degrades silently is one nobody can tell from a working one.
+ * tree and `cwd` its model into it. Two placements carry no checkout: one whose
+ * project binds no repository, and one whose ROSTER DOES NOT READ ONE — an
+ * inquiry holds the project's reads alone, and cloning a tree it may not open
+ * is a cost per question with no consequence. Either way the session reads the
+ * project through the API and has no tree. A binding read that *fails* stops
+ * the pass instead, because placing every session with no checkout is how a
+ * missing grant would look, and a control that degrades silently is one nobody
+ * can tell from a working one.
  *
  * THAT READ NEEDS A GRANT THIS TREE DOES NOT YET CARRY. The pass runs as
  * `chuggy_scheduler`, and every `GRANT EXECUTE ON FUNCTION
@@ -218,7 +221,11 @@ async function sessionPlaceOne(
       image: service.policy.image,
       authority: service.policy.grant,
       bearer: minted.bearer,
-      ...(binding === undefined ? {} : { repository: binding.repository }),
+      // A checkout nothing on the roster may read is a cost with no consequence.
+      ...(binding === undefined ||
+      !session.capabilities.includes("RepositoryRead")
+        ? {}
+        : { repository: binding.repository }),
     }),
   );
 }
