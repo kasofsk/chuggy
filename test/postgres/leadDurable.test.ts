@@ -486,6 +486,7 @@ function landingProposal(
   partition: Partition,
   decision: string,
   tickets: readonly number[],
+  deliveryMode: SelectorDecisionProposals["deliveryMode"] = "Automatic",
 ): SelectorDecisionProposals {
   return {
     interaction: {
@@ -508,7 +509,7 @@ function landingProposal(
       completedAt: "2026-09-03T12:00:01.000Z",
     },
     fence: { settingsRevision: 1, projectSettingsRevision: 0 },
-    deliveryMode: "Automatic",
+    deliveryMode,
     dispatches: tickets.map((ticket) => ({
       ticket: asTicketId(ticket),
       operation: asOperationId(`${decision}-t${String(ticket)}`),
@@ -620,6 +621,65 @@ test("the decision log answers each dispatch's landing under one decision", asyn
       .map((summary) => summary.dispatches.length),
     [0, 3],
     "the selector's own read of the log carries the same landings",
+  );
+});
+
+/**
+ * `AwaitingApproval` is a landing like the other three, and the only one no
+ * reviewer has to act for it to be reached: under an `ApprovalRequired`
+ * installation the trigger stamps every row of every decision with it. A log
+ * that drew nothing there would say a decision dispatched nothing in the one
+ * installation where every fresh decision is held — to the console, and to the
+ * lead's own decision-log tool, which would then re-dispatch a ticket it is
+ * already queued for.
+ */
+test("a dispatch a reviewer has not released is a landing the log draws", async () => {
+  const partition = await leadRigProject(rig, "api-landings-held");
+  const decision = `selector-decision-api-held-${randomUUID()}`;
+  const state = postgresSelectorState(rig.selectorPool);
+  await state.setAutomaticReadiness(true);
+  const restore = await leadRigHeldDispatchMode("ApprovalRequired");
+  try {
+    assert.deepEqual(
+      (
+        await state.record(
+          landingProposal(partition, decision, [41, 42], "ApprovalRequired"),
+          {
+            partition,
+            notificationCursor: 7,
+            revision: (await state.project(partition))?.revision ?? 0,
+            attention: "Monitoring",
+            handoffNote: {},
+          },
+        )
+      ).dispatched.map(Number),
+      [41, 42],
+    );
+  } finally {
+    await restore();
+  }
+
+  const held = [
+    { ticket: 41, state: "AwaitingApproval" },
+    { ticket: 42, state: "AwaitingApproval" },
+  ];
+  assert.deepEqual(
+    (
+      await rig.apiLead.history(partition, {
+        limit: selectorHistoryLimitMax,
+        order: "oldest",
+      })
+    )
+      .map(selectorDecisionSummary)
+      .map((summary) => [summary.decision, summary.dispatches]),
+    [[decision, held]],
+  );
+  assert.deepEqual(
+    (await state.history(partition, undefined, selectorHistoryLimitMax))
+      .map(selectorDecisionSummary)
+      .map((summary) => summary.dispatches),
+    [held],
+    "the selector's own read of the log holds them too",
   );
 });
 
