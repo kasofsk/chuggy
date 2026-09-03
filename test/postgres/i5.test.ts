@@ -4,6 +4,7 @@ import { after, before, test } from "node:test";
 import type pg from "pg";
 
 import { postgresDispatchViews } from "../../src/adapters/postgres/dispatchViews.ts";
+import { postgresNotifications } from "../../src/adapters/postgres/notifications.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   postgresSelectorProposalReviews,
@@ -31,6 +32,7 @@ import {
   type ProjectMemory,
 } from "../../src/interpreter/projectWriter.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { notificationPageLimitMax } from "../../src/interpreter/notifications.ts";
 import type {
   SelectorDecisionProposals,
   SelectorDelivery,
@@ -306,6 +308,84 @@ test("a proposal carrying the current strict view dispatches", async () => {
       input,
     );
     assert.equal(result.decided.decided, "Committed");
+  } finally {
+    await pool.end();
+  }
+});
+
+/**
+ * The change-driven runtime gives a project a turn only where its notification
+ * log moved past the cursor its last turn stood on, so a decision whose every
+ * dispatch the writer refuses must leave a row there or the lead is never asked
+ * again. It does, because a refused operation is settled and published in the
+ * deciding transaction exactly as a journaled one is.
+ */
+test("a refused proposal moves the project its lead's next turn waits on", async () => {
+  const partition = await postgresHarnessProject(harness.store, "i5-refused-moves");
+  const memory = await postgresHarnessHistory(
+    harness,
+    partition,
+    "i5-refused-moves",
+    1,
+  );
+  const pool = postgresPool(postgresHarnessUrl());
+  try {
+    const page = await postgresDispatchViews(pool).read(partition, {
+      limit: 10,
+    });
+    assert.ok(page.result === "Page");
+    const candidate = page.candidates[0];
+    assert.ok(candidate !== undefined);
+    const notifications = postgresNotifications(pool);
+    const standing = await notifications.read(partition, {
+      after: 0,
+      limit: notificationPageLimitMax,
+    });
+    assert.ok(standing.result === "Events");
+    const accepted = await harness.inbox.accept({
+      ...postgresHarnessSubmission(partition, "i5-refused-moves"),
+      command: {
+        version: 1,
+        command: "ProposeDispatch",
+        ticket: candidate.ticket,
+        expectedTicketVersion: candidate.ticketVersion + 1,
+        observedViewToken: page.token,
+        selectorDecisionReference: "i5-refused-moves-decision",
+      },
+    });
+    assert.equal(accepted.accepted, "Accepted");
+    const input = await harness.discovery.next(partition, 300);
+    assert.ok(input !== undefined);
+    const decided = await projectWriterDecide(
+      postgresHarnessWriter(harness),
+      memory,
+      input,
+    );
+    assert.equal(
+      decided.decided.decided,
+      "Refused",
+      "a version the ticket does not stand at is what the fence refuses",
+    );
+    const moved = await notifications.read(partition, {
+      after: standing.cursor,
+      limit: notificationPageLimitMax,
+    });
+    assert.ok(moved.result === "Events");
+    assert.deepEqual(
+      moved.events.map((event) => event.kind),
+      ["Operation"],
+      "the refusal is what the lead's next turn is triggered by",
+    );
+    assert.equal(
+      moved.events[0]?.resource,
+      input.source.kind === "Operation" ? input.source.operation : undefined,
+      "and it names the operation the proposal was submitted under",
+    );
+    assert.equal(
+      ticketAt(decided.memory.core, candidate.ticket).phase,
+      "Pending",
+      "a refused dispatch leaves its ticket where the lead will see it again",
+    );
   } finally {
     await pool.end();
   }
