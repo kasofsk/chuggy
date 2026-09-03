@@ -58,6 +58,26 @@ test("an inquiry carries its question, its answer and what the turn cost", () =>
   assert.equal(parsed.costMicros, entry.costMicros);
 });
 
+/**
+ * `asker` and `mine` are §1.4's whole answer to who asked and whether it is the
+ * caller's, and the schema is not strict, so a body carrying them would parse
+ * whether or not the schema declared them. Each is required here, which is what
+ * makes deleting either from the shape red.
+ */
+test("the listing names who asked and whether it is the caller's", () => {
+  const parsed = leadInquiryResponseSchema.parse(entry);
+  assert.equal(parsed.asker, entry.asker);
+  assert.equal(parsed.mine, true);
+
+  for (const absent of ["asker", "mine"] as const) {
+    const { [absent]: _dropped, ...rest } = entry;
+    assert.ok(
+      !leadInquiryResponseSchema.safeParse(rest).success,
+      `an inquiry naming no ${absent} was accepted`,
+    );
+  }
+});
+
 test("an inquiry the pod has not answered carries neither answer nor measure", () => {
   const parsed = leadInquiryResponseSchema.parse({
     ...entry,

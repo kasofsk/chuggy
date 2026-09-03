@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { inquiryQuestionCharsMax } from "../../src/contract/http.ts";
+import { leadInquirySchema } from "../../src/contract/requests.ts";
 import { allSessionCapabilities } from "../../src/interpreter/agentSession.ts";
 import {
   inquiryCapabilities,
@@ -33,6 +34,7 @@ import {
 } from "../../src/interpreter/leadTools.ts";
 
 const asked = { question: "what stopped ticket 14?", asker: "geoff" };
+const door = { session: "inq-one", turn: "inq-turn-one" };
 
 test("a document written and read back is the same document", () => {
   const document = inquiryDocument(asked);
@@ -99,6 +101,24 @@ test("a document is refused rather than repaired", () => {
     () => parseInquiry(written({ standing: "answer however you like" })),
     /a standing rule nobody wrote/u,
   );
+});
+
+/**
+ * The reader's bound and the door's are the same constant, so the question the
+ * door accepts at exactly the bound is one the reader can read back. A reader
+ * one character stricter than its door composes a turn nobody can parse, and
+ * the member's inquiry is spent on a failure that names no reason.
+ */
+test("a question at exactly the bound survives the door and the reader alike", () => {
+  const widest = { ...asked, question: "q".repeat(inquiryQuestionCharsMax) };
+  const text = inquiryText(inquiryDocument(widest));
+
+  assert.equal(
+    leadInquirySchema.parse({ ...door, question: widest.question }).question
+      .length,
+    inquiryQuestionCharsMax,
+  );
+  assert.equal(parseInquiry(text).question, widest.question);
 });
 
 test("the objectives carry the lead's own and say what a fork is", () => {

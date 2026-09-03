@@ -526,19 +526,24 @@ test("a binding that cannot be read is asked for before an attempt is opened", a
 });
 
 /**
- * An inquiry holds reads of the project alone, so a checkout it may not open is
- * a clone per question and a cost with no consequence. The project still binds
- * a repository in this case — that is what makes it the case that fails when
- * the placement carries the binding unconditionally.
+ * The rule is written on the ROSTER and not on the kind, and these two cases are
+ * what tell those two predicates apart: each is green under the roster and red
+ * under `session.kind === "Inquiry"`, so a rule quietly rewritten to the kind
+ * cannot pass. A predicate nothing can refute is the control this file's header
+ * argues against.
  */
-test("a session whose roster reads no tree is placed with no checkout, bound or not", async () => {
+test("a thread whose roster reads no tree is placed with no checkout, bound or not", async () => {
   const asked: SessionPlacement[] = [];
   await sessionSchedulerPass(
     service(
       [],
       {
         awaiting: [
-          { ...session, kind: "Inquiry", capabilities: ["ProjectRead"] },
+          {
+            ...session,
+            kind: "Thread",
+            capabilities: ["ProjectRead", "DraftAuthor"],
+          },
         ],
         binding: {
           partition,
@@ -558,14 +563,24 @@ test("a session whose roster reads no tree is placed with no checkout, bound or 
   );
 });
 
-test("a session whose roster reads the tree is still placed with the binding", async () => {
+/**
+ * The scheduler places what the row says rather than what a kind's default
+ * roster says, so a session recorded with `RepositoryRead` gets its checkout
+ * whatever kind it is. `inquiryCapabilities` does not hold it today; the
+ * placement is not where that is decided.
+ */
+test("a session recorded with a roster that reads the tree is placed with the binding", async () => {
   const asked: SessionPlacement[] = [];
   await sessionSchedulerPass(
     service(
       [],
       {
         awaiting: [
-          { ...session, capabilities: ["RepositoryRead", "ProjectRead"] },
+          {
+            ...session,
+            kind: "Inquiry",
+            capabilities: ["RepositoryRead", "ProjectRead"],
+          },
         ],
         binding: {
           partition,
