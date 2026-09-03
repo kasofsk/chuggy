@@ -18,6 +18,12 @@
  * the door answers the ordinal it already took if the two race; and a refusal on
  * it is reported rather than settled again, because a settlement that could
  * settle forever is a loop with a network in it.
+ *
+ * WHAT IS REPORTED IS WHAT WAS OBSERVED. A second dispute is reached only after
+ * a listing named a mailbox of the caller's own and that mailbox was read, so
+ * saying no such mailbox could be found would assert the fact the settlement had
+ * just disproved. The door's own second answer is what a reader is given
+ * instead, in the word the roster gives it.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -30,7 +36,8 @@ import { panelReason } from "./freshness.ts";
 import { threadHeldTurn, threadMine, threadSendFrom } from "./threads.ts";
 import type { ThreadSend } from "./threads.ts";
 
-/** What a settlement could not find, said as the refusal a reader is given. */
+/** The one thing a settlement can look for and fail to find: a mailbox of the
+ * caller's own on a listing it read. */
 const threadMailboxUnfound =
   "this member has no open thread the message could have reached";
 
@@ -71,7 +78,7 @@ async function threadSendSettled(
     await apiSendThreadMessage(ports, partition, found.session, message),
   );
   return again.send === "Unsettled"
-    ? { send: "Refused", reason: threadMailboxUnfound }
+    ? { send: "Refused", reason: again.why }
     : again;
 }
 

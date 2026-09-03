@@ -13,6 +13,7 @@ import { expect, test } from "vitest";
 
 import { nativeHttpMediaType } from "../../../src/contract/http.ts";
 import { threadMessageSent } from "../app/core/threadSendRun.ts";
+import { threadRefusalWord } from "../app/core/threads.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import {
   threadBody,
@@ -272,10 +273,45 @@ test("a second send the door disputes again is reported, not settled again", asy
     threadOtherSession,
     message,
   );
-  expect(answer.send, "a second dispute was settled rather than reported").toBe(
-    "Refused",
-  );
+  expect(
+    answer,
+    "a second dispute was settled rather than reported",
+  ).toStrictEqual({ send: "Refused", reason: "Elsewhere" });
   expect(run.posted().length, "the settlement sent a third time").toBe(2);
+});
+
+/**
+ * WHAT IS REPORTED IS WHAT WAS OBSERVED. This arm is reached only after the
+ * listing named a mailbox of the caller's own AND that mailbox was read, so a
+ * reason saying no such mailbox could be found asserts the fact the settlement
+ * had just disproved — and it is the arm a member reads when their thread was
+ * closed and reopened under them.
+ */
+test("a second dispute is not reported as a mailbox nobody could find", async () => {
+  const run = serving({
+    posts: [disputed, disputed],
+    listing: listed,
+    standing: answered(
+      threadBody({
+        session: threadMineSession,
+        turns: [threadTurn({ turn: "thread-turn-other", ordinal: 6 })],
+      }),
+    ),
+  });
+  const answer = await threadMessageSent(
+    run.ports,
+    threadPartition,
+    threadOtherSession,
+    message,
+  );
+  const reason = answer.send === "Refused" ? answer.reason : "";
+  expect(
+    reason,
+    "the reason named a mailbox the settlement had just read",
+  ).not.toContain("no open thread");
+  expect(reason, "the reason did not follow from the door's own answer").toBe(
+    threadRefusalWord("NotYourThread"),
+  );
 });
 
 /** Every other rejection is the door's answer and not a race, so it is
