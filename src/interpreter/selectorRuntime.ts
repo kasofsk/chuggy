@@ -51,11 +51,11 @@ export interface SelectorIdentityFactory {
 }
 
 /**
- * One quantum's account. `proposed` counts the decisions that reached the
- * relation and `dispatched` the delivery rows they left, so one decision with
- * three dispatches reads differently from three decisions with one — and a
- * decision the relation retained but took no row of reads as one proposal and
- * no dispatch, which is what its failures are about.
+ * One quantum's account. `proposed` counts the decisions this run retained
+ * that named a dispatch and `dispatched` the delivery rows they left, so one
+ * decision with three dispatches reads differently from three decisions with
+ * one — and a decision the relation retained but took no row of reads as one
+ * proposal and no dispatch, which is what its failures are about.
  */
 export interface SelectorRunResult {
   readonly observed: number;
