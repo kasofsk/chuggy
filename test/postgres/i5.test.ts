@@ -1775,12 +1775,13 @@ test("a delivery keyed by a ticket its command does not dispatch is unreadable",
 });
 
 /**
- * Every definer 064 dropped and re-created, with the roles it answers to: a
- * drop takes the owner, the `search_path` pin, the revoke and the grants with
- * it, and a re-create that loses one of them is world-executable or is resolved
- * under the caller's path. The pin is the arm no functional case can find,
- * because an unpinned definer answers an ordinary caller exactly as a pinned one
- * does and differs only for one that has shadowed a relation in `pg_temp`.
+ * Every definer this slice dropped and re-created, with the roles it answers
+ * to: a drop takes the owner, the `search_path` pin, the revoke and the grants
+ * with it, and a re-create that loses one of them is world-executable or is
+ * resolved under the caller's path. The pin is the arm no functional case can
+ * find, because an unpinned definer answers an ordinary caller exactly as a
+ * pinned one does and differs only for one that has shadowed a relation in
+ * `pg_temp`.
  */
 const i5SliceDefiners: readonly (readonly [
   string,
