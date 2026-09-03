@@ -148,13 +148,16 @@ describe("what a press ended as", () => {
         retryAfterSeconds: 9,
       }),
     ).toStrictEqual({ send: "Backlogged", retryAfterSeconds: 9 });
-    expect(
-      threadSendFrom({
-        outcome: "Conflict",
-        code: "ThreadClosed",
-        body: undefined,
-      }).send,
-    ).toBe("Closed");
+  });
+
+  /** A conflict is the end of the composer whichever refusal it is, and the
+   * envelope's code is what says which — so a sixth the door grows draws its
+   * own word rather than the one word a console roster happened to hold. */
+  test("every conflict the door states ends the composer and says which", () => {
+    for (const code of ["ThreadClosed", "ThreadOrphaned", "ThreadRetired"])
+      expect(
+        threadSendFrom({ outcome: "Conflict", code, body: undefined }),
+      ).toStrictEqual({ send: "Ended", why: code });
   });
 
   test("a door that refused another member's thread is one refusal with a reason", () => {

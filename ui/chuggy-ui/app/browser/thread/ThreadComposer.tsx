@@ -57,8 +57,8 @@ function ThreadSendNote(props: { readonly send: ThreadSend }): ReactNode {
       return null;
     case "Backlogged":
       return <Notice tone="parked" inline detail="Backlogged" />;
-    case "Closed":
-      return <Notice tone="parked" inline detail="Closed" />;
+    case "Ended":
+      return <Notice tone="parked" inline detail={send.why} />;
     case "Refused":
       return (
         <Notice tone="danger" inline detail={`Refused · ${send.reason}`} />
@@ -75,7 +75,7 @@ export function ThreadComposer(props: {
   const [text, setText] = useState("");
   const [held, setHeld] = useState<ThreadHeld | undefined>(undefined);
   const [send, setSend] = useState<ThreadSend>({ send: "Idle" });
-  const closed = send.send === "Closed";
+  const ended = send.send === "Ended";
   const sending = send.send === "Sending";
   const press = async (): Promise<void> => {
     const turn =
@@ -104,7 +104,7 @@ export function ThreadComposer(props: {
           rows={4}
           value={text}
           maxLength={threadMessageCharsMax}
-          disabled={closed}
+          disabled={ended}
           onChange={(event) => {
             setText(event.target.value);
           }}
@@ -117,7 +117,7 @@ export function ThreadComposer(props: {
         <Button
           variant="primary"
           busy={sending}
-          disabled={closed || sending || text.length === 0}
+          disabled={ended || sending || text.length === 0}
           onClick={() => {
             void press();
           }}

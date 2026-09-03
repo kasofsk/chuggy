@@ -27,6 +27,12 @@
  * console that refused an unfamiliar one would answer a wake it could plainly
  * name with silence.
  *
+ * A CONFLICT ON THE MESSAGE DOOR ENDS THE COMPOSER WHICHEVER ONE IT IS, and
+ * the code the envelope carried is what says which. A thread that is closed and
+ * a thread whose owner is no longer a member both take no more messages, and a
+ * console holding its own roster of the door's refusals would answer the next
+ * one the door grows by drawing nothing.
+ *
  * A TURN IDENTITY BELONGS TO THE TEXT IT WAS MINTED FOR. Enqueuing is
  * idempotent on the turn, so re-pressing after a mailbox said `Backlogged` must
  * reuse the identity or risk a second copy of one message; and posting EDITED
@@ -164,14 +170,13 @@ export type ThreadSend =
   | { readonly send: "Sending" }
   | { readonly send: "Sent"; readonly ordinal: number }
   | { readonly send: "Backlogged"; readonly retryAfterSeconds: number }
-  | { readonly send: "Closed" }
+  | { readonly send: "Ended"; readonly why: string }
   | { readonly send: "Refused"; readonly reason: string };
 
 /**
- * One post, classified. The three the message door states are drawn as
- * themselves and everything else is one refusal carrying its reason: a
- * backlogged mailbox is a wait, a closed thread is the end of the composer, and
- * neither is a fault the reader can do anything about by pressing again.
+ * One post, classified. A backlogged mailbox is a wait and a conflict is the
+ * end of the composer, and neither is a fault the reader can press through;
+ * everything else is one refusal carrying its reason.
  */
 export function threadSendFrom(
   result: ApiResult<ThreadMessageAccepted>,
@@ -185,7 +190,7 @@ export function threadSendFrom(
         retryAfterSeconds: result.retryAfterSeconds,
       };
     case "Conflict":
-      return { send: "Closed" };
+      return { send: "Ended", why: result.code };
     case "Absent":
     case "Unauthenticated":
     case "Rejected":

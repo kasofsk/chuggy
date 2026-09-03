@@ -281,13 +281,13 @@ test("editing after a refusal posts under a turn of its own", async () => {
   ).not.toBe(first.turn);
 });
 
-test("a closed thread stops the composer taking typing", async () => {
+/** A door that will take no more messages ends the composer and says which
+ * refusal it was, so a thread whose owner is no longer a member is told apart
+ * from one that was closed. */
+async function pressedAgainst(code: string): Promise<void> {
   drawThread(
     () => ({ thread: threadBody({}) }),
-    () => ({
-      body: { error: { code: "ThreadClosed", message: "closed" } },
-      status: 409,
-    }),
+    () => ({ body: { error: { code, message: "no" } }, status: 409 }),
   );
   await mountThread();
   await turned(() => {
@@ -297,7 +297,20 @@ test("a closed thread stops the composer taking typing", async () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
   });
   await settled();
-  expect(screen.getByText("Closed")).toBeDefined();
+}
+
+test("a closed thread stops the composer taking typing", async () => {
+  await pressedAgainst("ThreadClosed");
+  expect(screen.getByText("ThreadClosed")).toBeDefined();
+  expect(composer()?.disabled).toBe(true);
+});
+
+test("a thread whose owner is gone stops it too, and says which", async () => {
+  await pressedAgainst("ThreadOrphaned");
+  expect(
+    screen.getByText("ThreadOrphaned"),
+    "one refusal was drawn as another",
+  ).toBeDefined();
   expect(composer()?.disabled).toBe(true);
 });
 
