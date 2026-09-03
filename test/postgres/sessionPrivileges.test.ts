@@ -39,6 +39,7 @@ import {
   sessionStoreBatchRecordFunction,
   sessionStoreReadFunction,
   sessionStreamListFunction,
+  sessionSystemPromptSetFunction,
   sessionTurnAnswerFunction,
   sessionTurnClaimFunction,
   sessionTurnEnqueueFunction,
@@ -94,6 +95,7 @@ const boundaries: readonly (readonly [string, string | undefined])[] = [
   [sessionStoreReadFunction, workerPlaneRole],
   [sessionStreamListFunction, workerPlaneRole],
   [sessionBearerAuthenticateFunction, apiRole],
+  [sessionSystemPromptSetFunction, selectorServiceRole],
 ];
 
 /** Every runtime credential this installation deploys, none of which owns a relation here. */
