@@ -33,10 +33,15 @@ import {
   selectorServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { postgresSelectorState } from "../../src/adapters/postgres/selector.ts";
+import { sessionRigAttempt, type SessionRigAttempt } from "./sessionHarness.ts";
 import type {
   AgenticRefusalRead,
   AgenticRefusalWrite,
 } from "../../src/interpreter/agenticRefusal.ts";
+import type {
+  SessionId,
+  SessionTurnId,
+} from "../../src/interpreter/agentSession.ts";
 import type { LeadMailbox } from "../../src/interpreter/leadMailbox.ts";
 import type { JsonValue } from "../../src/interpreter/selector.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
@@ -145,4 +150,101 @@ export async function leadRigDecision(
   if (!recorded)
     throw new Error(`lead rig: recording ${label} answered nothing new`);
   return decision;
+}
+
+/** How long one wait in this harness may poll, and how often. */
+const leadRigPollMs = 5;
+const leadRigPollsMax = 2_000;
+
+/**
+ * Waits for something the runtime does from another connection, and gives up
+ * rather than hanging: an unbounded wait in a suite is a gate that stalls
+ * instead of failing, which is a red nobody can read.
+ */
+async function leadRigWaited<T>(
+  attempt: () => Promise<T>,
+  gaveUp: string,
+): Promise<T> {
+  for (let poll = 0; poll < leadRigPollsMax; poll += 1) {
+    try {
+      return await attempt();
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, leadRigPollMs));
+    }
+  }
+  throw new Error(gaveUp);
+}
+
+/** One live pod attempt, waited for because the runtime enqueues from elsewhere. */
+export function leadRigPodAttempt(
+  rig: LeadRig,
+  partition: Partition,
+  session: SessionId,
+  label: string,
+): Promise<SessionRigAttempt> {
+  return leadRigWaited(
+    () => sessionRigAttempt(rig.sessions, partition, session, label),
+    `${label}: no turn ever became launchable`,
+  );
+}
+
+/**
+ * One turn taken by a pod that already holds an attempt: it claims, binds the
+ * runtime session the way a real pod does — which is what makes the next turn a
+ * resumed one rather than a seeded one — and answers what the case decides.
+ * A session holds one live attempt, so a case wanting two turns takes them both
+ * on one of these.
+ */
+export async function leadRigPodTurn(
+  rig: LeadRig,
+  attempt: SessionRigAttempt,
+  label: string,
+  decide: (input: string) => unknown,
+): Promise<SessionTurnId> {
+  for (let poll = 0; poll < leadRigPollsMax; poll += 1) {
+    const claimed = await rig.sessions.plane.claim({
+      secret: attempt.secret,
+      generation: attempt.attempt.generation,
+    });
+    if (claimed === undefined) {
+      await new Promise((resolve) => setTimeout(resolve, leadRigPollMs));
+      continue;
+    }
+    await rig.sessions.plane.bind({
+      secret: attempt.secret,
+      generation: attempt.attempt.generation,
+      reference: `agent-session-${label}`,
+    });
+    await rig.sessions.plane.answer({
+      secret: attempt.secret,
+      generation: attempt.attempt.generation,
+      turn: claimed.turn,
+      result: JSON.stringify(decide(claimed.input)),
+      measured: {
+        model: "claude-model",
+        tokens: 4_096,
+        costMicros: 12_345,
+        durationMs: 61_000,
+        tools: ["Read"],
+      },
+    });
+    return claimed.turn;
+  }
+  throw new Error(`${label}: no turn ever became claimable`);
+}
+
+/** A pod that takes exactly one turn, which is what most cases here need. */
+export async function leadRigPod(
+  rig: LeadRig,
+  partition: Partition,
+  session: SessionId,
+  label: string,
+  decide: (input: string) => unknown,
+): Promise<SessionTurnId> {
+  return leadRigPodTurn(
+    rig,
+    await leadRigPodAttempt(rig, partition, session, label),
+    label,
+    decide,
+  );
 }

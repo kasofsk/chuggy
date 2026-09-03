@@ -29,7 +29,10 @@ import {
   type TicketServiceRuntimeConfig,
   type TicketServiceRuntimeService,
 } from "../interpreter/ticketServiceRun.ts";
-import type { SelectorRuntimeService } from "../compose.ts";
+import type {
+  SelectorLeadRuntime,
+  SelectorRuntimeService,
+} from "../compose.ts";
 import {
   composeFinalizerService,
   composeSelectorRuntime,
@@ -41,6 +44,7 @@ import {
   postgresPool,
   type PostgresLimits,
 } from "../adapters/postgres/pool.ts";
+import { postgresLeadDoorsRefused } from "../adapters/postgres/leadMailbox.ts";
 import { postgresProjectDecision } from "../adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "../adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../adapters/postgres/projectStore.ts";
@@ -92,7 +96,6 @@ import type {
   SelectorRuntimeConfig,
   SelectorRuntimeSource,
 } from "../interpreter/selectorRuntime.ts";
-import type { SelectorPolicyHost } from "../interpreter/selector.ts";
 import type { TicketServiceConfig } from "../interpreter/ticketService.ts";
 import type { FinalizerConfig } from "../interpreter/finalizer.ts";
 
@@ -330,11 +333,15 @@ export interface SelectorProcessRootConfig {
   readonly wakes: { readonly wakesPerPassMax: number };
 }
 
-/** Owns the selector-role pool and composes the independently deployable selector process. */
+/**
+ * Owns the selector-role pool and composes the independently deployable
+ * selector process, the lead host included: every door a decision opens is on
+ * this pool, so the host is built where the pool is.
+ */
 export function selectorProcessRoot(
   config: SelectorProcessRootConfig,
   source: SelectorRuntimeSource,
-  policy: SelectorPolicyHost,
+  lead: SelectorLeadRuntime,
   identities: SelectorIdentityFactory,
   additional: readonly RuntimePrecondition[] = [],
 ): ServiceRuntime {
@@ -342,7 +349,7 @@ export function selectorProcessRoot(
   const service = composeSelectorRuntime(
     pool,
     source,
-    policy,
+    lead,
     identities,
     config.selector,
   );
@@ -355,16 +362,46 @@ export function selectorProcessRoot(
         clock: { nowIso: () => new Date().toISOString() },
         wakesPerPassMax: config.wakes.wakesPerPassMax,
       },
-      {
-        pool,
-        additional: [
-          postgresRolePrecondition(pool, selectorServiceRole),
-          ...additional,
-        ],
-      },
+      { pool, additional: selectorProcessPreconditions(pool, additional) },
       config.runtime,
     ),
   );
+}
+
+/**
+ * What the selector process must be able to do before it takes a decision: it
+ * must be the role it claims, and it must hold every door a decision opens.
+ */
+export function selectorProcessPreconditions(
+  pool: pg.Pool,
+  additional: readonly RuntimePrecondition[] = [],
+): readonly RuntimePrecondition[] {
+  return [
+    postgresRolePrecondition(pool, selectorServiceRole),
+    leadMailboxPrivilegePrecondition(pool),
+    ...additional,
+  ];
+}
+
+/**
+ * Whether this process may open the doors a decision needs. A readiness check
+ * asked a host whether it felt able to answer; a privilege check asks the
+ * database whether this role is allowed to ask at all, which is the thing that
+ * silently fails on a migration that granted one door and not the next.
+ */
+function leadMailboxPrivilegePrecondition(pool: pg.Pool): RuntimePrecondition {
+  return {
+    name: "selector-lead-doors",
+    check: async (signal) => {
+      signal.throwIfAborted();
+      const refused = await postgresLeadDoorsRefused(pool);
+      signal.throwIfAborted();
+      return runtimePreconditionAnswer(
+        refused.length === 0,
+        `this role may not execute ${refused.join(", ")}`,
+      );
+    },
+  };
 }
 
 export interface TicketServiceProcessRootConfig {

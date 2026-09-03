@@ -1,13 +1,18 @@
+import type { NotificationBatch } from "./notifications.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ProjectInventoryPage } from "./nativeWeb.ts";
 import {
   leadInputBytesMax,
   observeSelectorProject,
   runObservedSelectorCycle,
+  type SelectorChangeTrigger,
+  type SelectorRefusalLedger,
   type SelectorCycleIdentity,
+  selectorNotificationPageLimit,
   type SelectorObservationSource,
   type SelectorOperationSource,
   type SelectorPolicyHost,
+  selectorProjectMoved,
   type SelectorProjectState,
   type SelectorProposal,
   selectorSettingsFence,
@@ -30,6 +35,7 @@ export type { SelectorRunFailure } from "./selectorRuntimeTypes.ts";
 
 export interface SelectorRuntimeSource
   extends
+    SelectorChangeTrigger,
     SelectorObservationSource,
     SelectorOperationSource,
     SelectorTicketService {
@@ -82,6 +88,7 @@ function initialState(partition: Partition): SelectorProjectState {
 
 async function observeProjects(
   projects: readonly Partition[],
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
@@ -100,6 +107,7 @@ async function observeProjects(
   for (const partition of projects) {
     const result = await observeProject(
       partition,
+      refusals,
       store,
       source,
       policy,
@@ -122,8 +130,20 @@ interface ProjectObservationResult {
   readonly failures: readonly SelectorRunFailure[];
 }
 
+/**
+ * Runs one swept project, taking its permit only where its change log has moved
+ * past the cursor its last turn stood on.
+ *
+ * THE PERMIT IS TAKEN AFTER THE TRIGGER, NOT BEFORE. Allocating first spends a
+ * permit and a selections-per-minute slot on a project with nothing new, which
+ * is the whole of what a change-driven runtime exists to stop. A quiet project
+ * therefore costs one bounded notification read and nothing else: no permit, no
+ * decision reference, no turn and no quota — and the sweep still counts it as
+ * scanned, so discovery goes on.
+ */
 async function observeProject(
   partition: Partition,
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
@@ -138,6 +158,19 @@ async function observeProject(
   }
   if (settings.installationMode === "Paused") return stoppedProjectObservation;
   if (settings.mode === "Paused") return emptyProjectObservation;
+  let state: SelectorProjectState;
+  let changes: NotificationBatch;
+  try {
+    state = (await store.project(partition)) ?? initialState(partition);
+    changes = await source.moved(
+      partition,
+      state.notificationCursor,
+      selectorNotificationPageLimit,
+    );
+  } catch {
+    return projectObservationFailure("Observation", partition);
+  }
+  if (!selectorProjectMoved(state, changes)) return emptyProjectObservation;
   const identity = identities.next(partition);
   let allocated: boolean;
   try {
@@ -157,6 +190,9 @@ async function observeProject(
   return observePermittedProject(
     partition,
     settings,
+    state,
+    changes,
+    refusals,
     store,
     source,
     policy,
@@ -180,20 +216,27 @@ function projectObservationFailure(
   return { ...emptyProjectObservation, failures: [{ phase, partition }] };
 }
 
-/** Runs one decision under settings the fence has just been re-read against. */
+/**
+ * Runs one decision under settings the fence has just been re-read against, on
+ * the state and the notification page the trigger already read. The page is not
+ * read again: a second read would let a row arrive between the two and be
+ * counted as the trigger for a window that does not contain it.
+ */
 async function observeFencedProject(
-  partition: Partition,
   settings: SelectorResolvedSettings,
+  state: SelectorProjectState,
+  changes: NotificationBatch,
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
   identity: SelectorCycleIdentity,
 ): Promise<SelectorProposal | undefined> {
-  const state = (await store.project(partition)) ?? initialState(partition);
   const observation = await observeSelectorProject(
     state,
     source,
-    100,
+    changes,
+    selectorNotificationPageLimit,
     Math.floor(leadInputBytesMax(settings) / 2),
   );
   if (observation === undefined) {
@@ -212,6 +255,7 @@ async function observeFencedProject(
     state,
     observation,
     source,
+    refusals,
     store,
     policy,
     identity,
@@ -228,6 +272,9 @@ async function observeFencedProject(
 async function observePermittedProject(
   partition: Partition,
   expectedSettings: SelectorResolvedSettings,
+  state: SelectorProjectState,
+  changes: NotificationBatch,
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
@@ -254,8 +301,10 @@ async function observePermittedProject(
       );
     } else {
       proposal = await observeFencedProject(
-        partition,
         settings,
+        state,
+        changes,
+        refusals,
         store,
         source,
         policy,
@@ -277,6 +326,7 @@ async function observePermittedProject(
 }
 
 async function observeInventory(
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
@@ -296,6 +346,7 @@ async function observeInventory(
   );
   const progress = await observeProjects(
     inventory.projects,
+    refusals,
     store,
     source,
     policy,
@@ -338,6 +389,7 @@ async function saveInventoryProgress(
 
 /** Performs one bounded poll, policy, delivery, and reconciliation quantum. */
 export async function selectorRunOnce(
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
@@ -354,6 +406,7 @@ export async function selectorRunOnce(
   const failures: SelectorRunFailure[] = [];
   try {
     const progress = await observeInventory(
+      refusals,
       store,
       source,
       policy,

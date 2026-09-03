@@ -554,8 +554,8 @@ const selectorDoors = [
      END $$`,
 ];
 
-/** Every selector-side door named beside its argument types, once. */
-const selectorSignatures: readonly (readonly [string, string])[] = [
+/** Every door this migration grants the selector role, named beside its argument types once. */
+export const selectorSignatures: readonly (readonly [string, string])[] = [
   [agenticRefusalRecordFunction, refusalRecordSignature],
   [agenticRefusalStandingFunction, refusalStandingSignature],
   [leadSessionFunction, leadSessionSignature],
@@ -566,7 +566,7 @@ const selectorSignatures: readonly (readonly [string, string])[] = [
 
 const ledgerReadSignature = "text,text,bigint,bigint";
 const standingReadSignature = "text,text,bigint";
-const interactionsReadSignature = "text,text,bigint,bigint,boolean";
+export const interactionsReadSignature = "text,text,bigint,bigint,boolean";
 const planningIntentReadSignature = "text,text";
 const leadStandingSignature = "text,text,bigint";
 const leadStoreSignature = "text,text,text,bigint,bigint";

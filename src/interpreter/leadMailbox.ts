@@ -3,6 +3,12 @@
  * declares the shapes and names no adapter, exactly as `./sessionPlane.ts` does
  * for the worker plane.
  *
+ * READING AND WITHDRAWING NAME THE TURN AND NOTHING ELSE. The turn is globally
+ * unique and its door joins it to the project's lead, so a process that did not
+ * offer a turn can still settle it — which is what lets a restarted selector
+ * withdraw the turn its predecessor left in flight instead of holding a permit
+ * against a decision nobody can end.
+ *
  * A TURN'S IDENTITY IS THE DECISION'S. Offering is therefore idempotent: a
  * retry of one decision finds the turn it already enqueued rather than putting
  * a second one in the mailbox, and nothing has to reconcile two turns that
@@ -62,12 +68,7 @@ export interface LeadMailbox {
     readonly turn: SessionTurnId;
     readonly input: string;
   }): Promise<LeadTurnOffered>;
-  turn(
-    partition: Partition,
-    turn: SessionTurnId,
-  ): Promise<LeadTurnStanding | undefined>;
-  withdraw(
-    partition: Partition,
-    turn: SessionTurnId,
-  ): Promise<LeadTurnWithdrawn>;
+  /** Keyed by the turn alone, which is globally unique and joined to the lead. */
+  turn(turn: SessionTurnId): Promise<LeadTurnStanding | undefined>;
+  withdraw(turn: SessionTurnId): Promise<LeadTurnWithdrawn>;
 }

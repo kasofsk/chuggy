@@ -210,7 +210,7 @@ test("an answered turn reports what the pod measured of it", async () => {
     "Answered",
   );
 
-  assert.deepEqual(await rig.mailbox.turn(partition, turn), {
+  assert.deepEqual(await rig.mailbox.turn(turn), {
     state: "Answered",
     result: '{"version":1,"dispatches":[]}',
     measured: {
@@ -241,7 +241,7 @@ test("a turn answered without a measurement carries none", async () => {
     }),
     "Answered",
   );
-  const standing = await rig.mailbox.turn(partition, turn);
+  const standing = await rig.mailbox.turn(turn);
   assert.equal(standing?.state, "Answered");
   assert.equal(
     standing?.measured,
@@ -322,7 +322,7 @@ test("a withdrawn turn is abandoned and the pod holding it is refused", async ()
     turn,
   );
 
-  assert.equal(await rig.mailbox.withdraw(partition, turn), "Withdrawn");
+  assert.equal(await rig.mailbox.withdraw(turn), "Withdrawn");
   assert.deepEqual(
     await sessionRigTurnState(rig.sessions, partition, session, turn),
     {
@@ -346,9 +346,9 @@ test("a withdrawn turn is abandoned and the pod holding it is refused", async ()
     "Conflict",
     "a withdrawn turn can never be answered, which is what makes it a proof",
   );
-  assert.equal(await rig.mailbox.withdraw(partition, turn), "AlreadyEnded");
+  assert.equal(await rig.mailbox.withdraw(turn), "AlreadyEnded");
   assert.equal(
-    await rig.mailbox.withdraw(partition, sessionRigTurnId("never-offered")),
+    await rig.mailbox.withdraw(sessionRigTurnId("never-offered")),
     "NoTurn",
   );
 });
@@ -552,10 +552,7 @@ test("a restarted process withdraws a turn it holds no partition for", async () 
   } finally {
     await restarted.end();
   }
-  assert.equal(
-    (await rig.mailbox.turn(partition, turn))?.failure,
-    "TurnWithdrawn",
-  );
+  assert.equal((await rig.mailbox.turn(turn))?.failure, "TurnWithdrawn");
 });
 
 test("the seeding read answers the newest decisions first", async () => {
@@ -698,12 +695,12 @@ test("neither mailbox door reaches a turn that is not a lead's", async () => {
   );
 
   assert.equal(
-    await rig.mailbox.turn(partition, turn),
+    await rig.mailbox.turn(turn),
     undefined,
     "the selector may not read a member's own conversation",
   );
   assert.equal(
-    await rig.mailbox.withdraw(partition, turn),
+    await rig.mailbox.withdraw(turn),
     "NoTurn",
     "the selector may not abandon a member's in-flight chat turn",
   );
@@ -768,10 +765,7 @@ test("an answer retried with a re-derived measurement is the same answer", async
     "Conflict",
     "the result is the identity, and a different one is a different answer",
   );
-  assert.deepEqual(
-    (await rig.mailbox.turn(partition, turn))?.measured,
-    measured,
-  );
+  assert.deepEqual((await rig.mailbox.turn(turn))?.measured, measured);
 });
 
 test("a tool name longer than one may be reported is refused at the door", async () => {
@@ -885,7 +879,7 @@ test("a tools array holding nothing where a name should be is refused", async ()
   } finally {
     await plane.end();
   }
-  assert.equal((await rig.mailbox.turn(partition, turn))?.state, "Claimed");
+  assert.equal((await rig.mailbox.turn(turn))?.state, "Claimed");
 });
 
 /** A character JSON may not carry as itself, which is what widens a resource. */

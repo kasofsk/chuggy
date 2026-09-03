@@ -8,10 +8,6 @@ import { nativeHttpClient } from "../adapters/http/client.ts";
 import type { AccessTokenSource } from "../adapters/http/accessToken.ts";
 import { clientCredentialsTokenSource } from "../adapters/http/clientCredentials.ts";
 import { selectorContextHttp } from "../adapters/http/selectorContext.ts";
-import {
-  trustedSelectorPolicyHttpClient,
-  type TrustedSelectorPolicyClient,
-} from "../adapters/http/trustedSelectorPolicy.ts";
 import { asPrincipal, type Principal } from "../interpreter/nativeWeb.ts";
 import { asOperationId } from "../interpreter/operationInbox.ts";
 import {
@@ -20,12 +16,10 @@ import {
 } from "../interpreter/selectorNativeSource.ts";
 import type { SelectorIdentityFactory } from "../interpreter/selectorRuntime.ts";
 import {
-  runtimePreconditionAnswer,
   type RuntimePrecondition,
   type ServiceRuntime,
   type ServiceStopResult,
 } from "../interpreter/serviceRuntime.ts";
-import { trustedSelectorPolicyHost } from "../interpreter/trustedSelectorPolicyHost.ts";
 import { threadWakesPerPassMax } from "../contract/http.ts";
 import {
   commandDatabaseConfig,
@@ -46,10 +40,6 @@ const httpUrl = z.url().refine((value) => {
   const protocol = new URL(value).protocol;
   return protocol === "http:" || protocol === "https:";
 });
-const bearerToken = z
-  .string()
-  .min(1)
-  .refine((value) => value.isWellFormed() && !/\s/u.test(value));
 const service = z
   .object({
     baseUrl: httpUrl,
@@ -93,8 +83,11 @@ const configurationSchema = z
     source: service
       .extend({ responseReadsMax: positiveInteger, credential })
       .strict(),
-    policy: service
-      .extend({ bearerToken, controlDeadlineMs: positiveInteger })
+    lead: z
+      .object({
+        pollIntervalMs: positiveInteger,
+        controlDeadlineMs: positiveInteger,
+      })
       .strict(),
   })
   .strict();
@@ -113,7 +106,7 @@ export interface SelectorCommandConfig {
   readonly process: SelectorProcessRootConfig;
   readonly identity: { readonly principal: string; readonly instance: string };
   readonly source: SelectorSourceCommandConfig;
-  readonly policy: z.infer<typeof configurationSchema>["policy"];
+  readonly lead: z.infer<typeof configurationSchema>["lead"];
 }
 
 export type SelectorCommandResult =
@@ -179,7 +172,7 @@ export function selectorConfiguration(
       ...data.source,
       credential: { ...data.source.credential, clientSecret },
     },
-    policy: data.policy,
+    lead: data.lead,
   };
 }
 
@@ -201,21 +194,8 @@ function deadline(milliseconds: number, signal?: AbortSignal): Promise<never> {
   });
 }
 
-function readyPrecondition(
-  name: string,
-  unready: string,
-  check: (signal: AbortSignal) => Promise<boolean>,
-): RuntimePrecondition {
-  return {
-    name,
-    check: async (signal) =>
-      runtimePreconditionAnswer(await check(signal), unready),
-  };
-}
-
 export function selectorCommandPreconditions(
   native: SelectorNativeApi,
-  policy: TrustedSelectorPolicyClient,
   principal: Principal,
   sourceReady: (signal: AbortSignal) => Promise<boolean>,
 ): readonly RuntimePrecondition[] {
@@ -235,11 +215,6 @@ export function selectorCommandPreconditions(
         return { met: "Met" };
       },
     },
-    readyPrecondition(
-      "selector-policy",
-      "the trusted policy host did not report itself ready",
-      (signal) => policy.ready(signal),
-    ),
   ];
 }
 
@@ -291,13 +266,7 @@ export function selectorCommandRoot(
     responseBytesMax: config.source.responseBytesMax,
     responseReadsMax: config.source.responseReadsMax,
   });
-  const policyClient = trustedSelectorPolicyHttpClient(config.policy);
   const principal = asPrincipal(config.identity.principal);
-  const policy = trustedSelectorPolicyHost(
-    policyClient,
-    { after: (milliseconds, signal) => deadline(milliseconds, signal) },
-    { controlDeadlineMs: config.policy.controlDeadlineMs },
-  );
   const source = selectorNativeSource(native, principal, {
     currentTimeEpochMs: () => Promise.resolve(Date.now()),
     currentInstant: () => Promise.resolve(new Date().toISOString()),
@@ -307,9 +276,29 @@ export function selectorCommandRoot(
   return selectorProcessRoot(
     config.process,
     source,
-    policy,
+    {
+      clock: {
+        now: () => {
+          const epochMs = Date.now();
+          return Promise.resolve({
+            instant: new Date(epochMs).toISOString(),
+            epochMs,
+          });
+        },
+        wait: (milliseconds, signal) =>
+          wait(milliseconds, undefined, { signal }),
+      },
+      deadline: {
+        after: (milliseconds, signal) => deadline(milliseconds, signal),
+      },
+      policy: {
+        pollIntervalMs: config.lead.pollIntervalMs,
+        implementationRevision: config.identity.instance,
+      },
+      controlDeadlineMs: config.lead.controlDeadlineMs,
+    },
     selectorIdentities(config.identity.instance),
-    selectorCommandPreconditions(native, policyClient, principal, (signal) =>
+    selectorCommandPreconditions(native, principal, (signal) =>
       nativeSourceReady(
         config.source.baseUrl,
         config.source.requestDeadlineMs,

@@ -44,6 +44,8 @@ import {
   asTenantId,
   type Partition,
 } from "../../interpreter/projectStore.ts";
+import { notificationSchema } from "../../contract/responses.ts";
+import type { ProjectNotification } from "../../interpreter/notifications.ts";
 import { parseTicketCommand } from "../../interpreter/wire.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
@@ -166,6 +168,23 @@ const selectorOperationalContextSchema = z.union([
     .readonly(),
 ]);
 
+/** One retained change row, its absent members absent rather than undefined. */
+function retainedChange(
+  change: z.infer<typeof notificationSchema>,
+): ProjectNotification {
+  return {
+    ordinal: change.ordinal,
+    kind: change.kind,
+    resource: change.resource,
+    ...(change.projectSequence === undefined
+      ? {}
+      : { projectSequence: change.projectSequence }),
+    ...(change.authoringVersion === undefined
+      ? {}
+      : { authoringVersion: change.authoringVersion }),
+  };
+}
+
 /**
  * A retained policy input under exactly one spelling of the note. Two strict
  * alternatives are what say a row carrying neither, or both, is a row that is
@@ -176,15 +195,23 @@ const selectorContextSchema = z.union([
     .strictObject({
       operationalContext: selectorOperationalContextSchema,
       handoffNote: jsonValueSchema,
+      changes: z.array(notificationSchema).readonly().optional(),
     })
-    .readonly(),
+    .readonly()
+    .transform((value): SelectorInteraction["context"] => ({
+      operationalContext: value.operationalContext,
+      handoffNote: value.handoffNote,
+      ...(value.changes === undefined
+        ? {}
+        : { changes: value.changes.map(retainedChange) }),
+    })),
   z
     .strictObject({
       operationalContext: selectorOperationalContextSchema,
       workingMemory: jsonValueSchema,
     })
     .readonly()
-    .transform((value) => ({
+    .transform((value): SelectorInteraction["context"] => ({
       operationalContext: value.operationalContext,
       handoffNote: value.workingMemory,
     })),

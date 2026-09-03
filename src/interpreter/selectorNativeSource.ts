@@ -1,5 +1,7 @@
+import type { NotificationBatch, NotificationCursor } from "./notifications.ts";
 import { asIdempotencyKey } from "./operationInbox.ts";
 import type { NativeWeb, Principal } from "./nativeWeb.ts";
+import type { Partition } from "./projectStore.ts";
 import type { SelectorProposalAcceptance } from "./selector.ts";
 import type { SelectorRuntimeSource } from "./selectorRuntime.ts";
 
@@ -9,6 +11,11 @@ function inaccessible(what: string): never {
 
 /**
  * Adapts the authenticated ticket-service API to the selector runtime port.
+ *
+ * `moved` AND `notifications` ARE ONE READ UNDER TWO NAMES: the runtime asks
+ * whether a project moved before it spends a permit on it, and the observation
+ * carries the same page as its window, so both are answered from the one
+ * authorized read rather than from two that could disagree.
  *
  * A BACKLOGGED PROJECT CROSSES AS BACKPRESSURE RATHER THAN AS AN INACCESSIBLE
  * ONE. The guard is the scheduler pausing dispatch and it hands back the delay
@@ -27,16 +34,22 @@ export function selectorNativeSource(
     | "operationalContext"
   >,
 ): SelectorRuntimeSource {
+  const notifications = async (
+    partition: Partition,
+    cursor: NotificationCursor,
+  ): Promise<NotificationBatch> => {
+    const result = await native.notifications(principal, partition, cursor);
+    return result.result === "Authorized"
+      ? result.value
+      : inaccessible("project notifications");
+  };
   return {
     ...environment,
     projects: (after, limit) =>
       native.projectInventory(principal, after, limit),
-    notifications: async (partition, cursor) => {
-      const result = await native.notifications(principal, partition, cursor);
-      return result.result === "Authorized"
-        ? result.value
-        : inaccessible("project notifications");
-    },
+    notifications,
+    moved: (partition, after, limit) =>
+      notifications(partition, { after, limit }),
     dispatchView: async (partition, query) => {
       const result = await native.dispatchView(principal, partition, query);
       return result.result === "Authorized"

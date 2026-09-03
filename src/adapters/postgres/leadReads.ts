@@ -266,6 +266,21 @@ async function leadPlanningIntent(
   };
 }
 
+/**
+ * The one interaction read the selector's own role holds, newest first: the
+ * decision tail a lead with no transcript is seeded from. It is its own
+ * constructor because the selector has a grant on this door and on none of the
+ * others here.
+ */
+export function postgresLeadDecisionTail(
+  pool: pg.Pool,
+): Pick<PostgresLeadReads, "tail"> {
+  return {
+    tail: (partition, limit) =>
+      leadDecisionHistory(pool, partition, undefined, limit, true),
+  };
+}
+
 /** Every read the API has onto a lead, over the API's own pool. */
 export function postgresLeadReads(pool: pg.Pool): PostgresLeadReads {
   return {

@@ -428,3 +428,60 @@ test("a contained fault reaches an operator on stderr and leaves the loop live",
     ),
   );
 });
+
+/** The composed root is driven against a real database in `test/postgres/leadDoors.test.ts`. */
+test("the selector process refuses to start without every door a decision opens", async () => {
+  const program = `
+    const roots = await import('./src/roots/controlPlane.ts');
+    const answer = (permitted) => ({
+      query: async (query) => {
+        const text = typeof query === 'string' ? query : query.text;
+        if (text.includes('current_user'))
+          return { rows: [{ current_role: 'chuggy_selector_service' }] };
+        return { rows: [
+          { door: 'enqueue_lead_turn(text,text,text,text)', permitted },
+          { door: 'read_lead_turn(text)', permitted: true },
+        ] };
+      },
+    });
+    const signal = new AbortController().signal;
+    const read = async (pool) => {
+      const answers = [];
+      for (const precondition of roots.selectorProcessPreconditions(pool))
+        answers.push({
+          name: precondition.name,
+          met: (await precondition.check(signal).catch(() => ({ met: 'Undecided' }))).met,
+        });
+      return answers;
+    };
+    process.stdout.write(JSON.stringify({
+      granted: await read(answer(true)),
+      refused: await read(answer(false)),
+    }));
+  `;
+  const result = await execute(
+    process.execPath,
+    ["--experimental-strip-types", "--input-type=module", "--eval", program],
+    { cwd: process.cwd() },
+  );
+  const found = JSON.parse(result.stdout) as {
+    granted: readonly { name: string; met: string }[];
+    refused: readonly { name: string; met: string }[];
+  };
+  assert.deepEqual(
+    found.granted.map((answer) => [answer.name, answer.met]),
+    [
+      ["database-role", "Met"],
+      ["selector-lead-doors", "Met"],
+    ],
+    "the composed selector process installs the doors check beside the role check",
+  );
+  assert.deepEqual(
+    found.refused.map((answer) => [answer.name, answer.met]),
+    [
+      ["database-role", "Met"],
+      ["selector-lead-doors", "Refused"],
+    ],
+    "a half-granted migration is a selector that refuses to start, not one that runs blind",
+  );
+});

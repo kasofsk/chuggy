@@ -13,10 +13,11 @@ import type {
   TicketCommand,
 } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
-import type {
-  NotificationBatch,
-  NotificationCursor,
-  ProjectNotification,
+import {
+  notificationPageLimitMax,
+  type NotificationBatch,
+  type NotificationCursor,
+  type ProjectNotification,
 } from "./notifications.ts";
 import type { DispatchViewPage, DispatchViewQuery } from "./dispatchView.ts";
 
@@ -38,6 +39,8 @@ export interface SelectorInteraction {
   readonly context: {
     readonly operationalContext: SelectorOperationalContext;
     readonly handoffNote: JsonValue;
+    /** What the lead was told had moved, absent on a row written before the window was recorded. */
+    readonly changes?: readonly ProjectNotification[];
   };
   readonly toolActivity: readonly JsonValue[];
   readonly result: JsonValue;
@@ -157,6 +160,18 @@ export type SelectorCandidateScan =
     }
   | { readonly state: "Exhausted"; readonly token: DispatchViewToken };
 
+/** How many change rows one turn's window carries, which is the page the notifications hold. */
+export const selectorNotificationPageLimit = notificationPageLimitMax;
+
+/** Whether this project has anything new, read before a permit is spent on it. */
+export interface SelectorChangeTrigger {
+  moved(
+    partition: Partition,
+    after: number,
+    limit: number,
+  ): Promise<NotificationBatch>;
+}
+
 export interface SelectorObservationSource {
   currentTimeEpochMs(): Promise<number>;
   currentInstant(): Promise<string>;
@@ -274,6 +289,22 @@ export interface SelectorRefusalChoice {
   readonly reason: string;
 }
 
+/**
+ * Where one decision's refusals and lifts are entered. It is declared here
+ * rather than taken from the ledger's own module because the ledger's module
+ * takes its vocabulary from this one, and a port pointing back would be a
+ * cycle.
+ */
+export interface SelectorRefusalLedger {
+  /** Appends one decision's refusals and lifts as one transaction, idempotent on the decision. */
+  record(input: {
+    readonly partition: Partition;
+    readonly decision: string;
+    readonly refusals: readonly SelectorRefusalChoice[];
+    readonly lifts: readonly SelectorLiftChoice[];
+  }): Promise<"Recorded" | "AlreadyRecorded">;
+}
+
 /** One ticket a decision cleared a standing refusal from. */
 export interface SelectorLiftChoice {
   readonly ticket: DispatchCandidate["ticket"];
@@ -327,6 +358,8 @@ export interface SelectorPolicyExecution {
   readonly accounting: {
     readonly tokens: number;
     readonly durationMs: number;
+    /** Present only where the host measured it; the two above are what the controls read. */
+    readonly costMicros?: number;
   };
   readonly startedAt: string;
   readonly completedAt: string;
@@ -901,6 +934,14 @@ function parsedPolicyExecution(value: unknown): SelectorPolicyExecution {
         accountingValue["durationMs"],
         "selector duration accounting",
       ),
+      ...(accountingValue["costMicros"] === undefined
+        ? {}
+        : {
+            costMicros: policyNonnegativeInteger(
+              accountingValue["costMicros"],
+              "selector cost accounting",
+            ),
+          }),
     },
     startedAt: policyInstant(found["startedAt"], "selector start"),
     completedAt: policyInstant(found["completedAt"], "selector completion"),
@@ -976,6 +1017,7 @@ function selectorInteraction(
     context: {
       operationalContext: observation.operationalContext,
       handoffNote: observation.handoffNote,
+      changes: observation.changes,
     },
     toolActivity: execution.toolActivity,
     result: checkedJson(execution.result, "selector result"),
@@ -1178,6 +1220,7 @@ function failedSelectorInteraction(
     context: {
       operationalContext: observation.operationalContext,
       handoffNote: observation.handoffNote,
+      changes: observation.changes,
     },
     toolActivity: measured?.toolActivity ?? [],
     result: { outcome: "Failed", code: policyFailureCode(error) },
@@ -1221,7 +1264,30 @@ async function recordFailedSelectorCycle(
   );
 }
 
+/**
+ * The decision's refusals and lifts, appended after the decision they belong to
+ * is recorded. The ledger names the decision, so a refusal written first could
+ * name one the log does not carry and no reader could ever explain it; a
+ * refusal lost the other way is refused again on the project's next turn, and
+ * the door is idempotent on the decision so a retry writes one row.
+ */
+async function recordDecisionRefusals(
+  refusals: SelectorRefusalLedger,
+  partition: Partition,
+  identity: SelectorCycleIdentity,
+  result: SelectorPolicyResult,
+): Promise<void> {
+  if (result.refusals.length + result.lifts.length === 0) return;
+  await refusals.record({
+    partition,
+    decision: identity.selectorDecisionReference,
+    refusals: result.refusals,
+    lifts: result.lifts,
+  });
+}
+
 async function recordCompletedSelectorCycle(
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   state: SelectorProjectState,
   observation: SelectorObservation,
@@ -1257,6 +1323,7 @@ async function recordCompletedSelectorCycle(
       selectorSettingsFence(settings),
       result.planningIntent,
     );
+    await recordDecisionRefusals(refusals, state.partition, identity, result);
     return undefined;
   }
   const proposal: SelectorProposal = {
@@ -1273,13 +1340,16 @@ async function recordCompletedSelectorCycle(
       ? {}
       : { planningIntent: result.planningIntent }),
   };
-  return (await store.record(proposal, nextState)) ? proposal : undefined;
+  const recorded = await store.record(proposal, nextState);
+  await recordDecisionRefusals(refusals, state.partition, identity, result);
+  return recorded ? proposal : undefined;
 }
 
 /** Runs one independently timed selector observation and durably records waiting or delivery. */
 export async function runSelectorCycle(
   state: SelectorProjectState,
   source: SelectorObservationSource,
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   policy: SelectorPolicyHost,
   identity: SelectorCycleIdentity,
@@ -1288,7 +1358,11 @@ export async function runSelectorCycle(
   const observation = await observeSelectorProject(
     state,
     source,
-    100,
+    await source.notifications(state.partition, {
+      after: state.notificationCursor,
+      limit: selectorNotificationPageLimit,
+    }),
+    selectorNotificationPageLimit,
     Math.floor(leadInputBytesMax(settings) / 2),
   );
   if (observation === undefined) return undefined;
@@ -1296,6 +1370,7 @@ export async function runSelectorCycle(
     state,
     observation,
     source,
+    refusals,
     store,
     policy,
     identity,
@@ -1308,6 +1383,7 @@ export async function runObservedSelectorCycle(
   state: SelectorProjectState,
   observation: SelectorObservation,
   source: SelectorObservationSource,
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   policy: SelectorPolicyHost,
   identity: SelectorCycleIdentity,
@@ -1362,6 +1438,7 @@ export async function runObservedSelectorCycle(
     return undefined;
   }
   return recordCompletedSelectorCycle(
+    refusals,
     store,
     state,
     observation,
@@ -1393,17 +1470,41 @@ async function selectorObservationIsFresh(
   return false;
 }
 
-/** Polls current state after every wake-up or cursor reset and never mixes view watermarks. */
+/**
+ * Whether a project moved past the cursor its last turn stood on, which is a
+ * reset — a gap the consumer cannot replay — or a page, or a cursor that moved
+ * past rows the page did not carry. Only an empty page at the standing cursor
+ * is nothing new.
+ */
+export function selectorProjectMoved(
+  state: SelectorProjectState,
+  changes: NotificationBatch,
+): boolean {
+  return (
+    changes.result === "Reset" ||
+    changes.events.length > 0 ||
+    changes.cursor !== state.notificationCursor
+  );
+}
+
+/**
+ * Polls current state after every wake-up or cursor reset and never mixes view
+ * watermarks. The notification page is read by the caller and handed in, so it
+ * is read once per cycle: reading it here as well would let a row arrive
+ * between the two reads and be counted as the trigger for a window that does
+ * not contain it.
+ */
 export async function observeSelectorProject(
   state: SelectorProjectState,
-  source: SelectorObservationSource,
+  source: Pick<
+    SelectorObservationSource,
+    "dispatchView" | "operationalContext"
+  >,
+  notifications: NotificationBatch,
   pageLimit = 100,
   candidateBytesMax = 524_288,
 ): Promise<SelectorObservation | undefined> {
-  const notifications = await source.notifications(state.partition, {
-    after: state.notificationCursor,
-    limit: pageLimit,
-  });
+  if (!selectorProjectMoved(state, notifications)) return undefined;
   const changes = notifications.result === "Events" ? notifications.events : [];
   const scan = state.candidateScan ?? ({ state: "Unstarted" } as const);
   const query =
@@ -1474,7 +1575,7 @@ type BoundedCandidatePage =
     };
 
 async function boundedCandidatePage(
-  source: SelectorObservationSource,
+  source: Pick<SelectorObservationSource, "dispatchView">,
   partition: Partition,
   query: DispatchViewQuery,
   bytesMax: number,
