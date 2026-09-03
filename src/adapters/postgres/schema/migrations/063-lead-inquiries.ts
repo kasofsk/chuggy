@@ -112,7 +112,7 @@ const settledTurnStates = "('Answered','Failed')";
  * the door's `LeadNotStarted`, so the two cannot come to disagree about what
  * there is to fork from; zero means there is no whole exchange to read.
  */
-function settledHead(partition: string, session: string): string {
+export function settledHead(partition: string, session: string): string {
   return `(SELECT coalesce(max(t.batch_last),0) FROM session_turn t
                 WHERE ${partition} AND t.session=${session}
                   AND t.state IN ${settledTurnStates})`;
@@ -122,7 +122,7 @@ function settledHead(partition: string, session: string): string {
 const endedTurnStates = "('Answered','Failed','Abandoned')";
 
 /** The roster an inquiry is opened with, rendered as the literal the definer writes. */
-const inquiryRosterLiteral = `ARRAY[${schemaTextSet([
+export const inquiryRosterLiteral = `ARRAY[${schemaTextSet([
   ...inquiryCapabilities,
 ])}]::text[]`;
 
@@ -137,7 +137,7 @@ const promptTag = "$inquiry_objectives$";
  * that function rather than written again here, and refused at build time if it
  * ever stops being an append or contains the tag it is quoted with.
  */
-const appendedObjectives = ((): string => {
+export const appendedObjectives = ((): string => {
   const composed = inquirySystemPrompt(leadPromptProbe);
   if (!composed.startsWith(leadPromptProbe))
     throw new Error(

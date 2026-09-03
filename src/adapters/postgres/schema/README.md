@@ -230,12 +230,17 @@ because a role that could open one could mint an authority to act as a
 principal. Its composite key is `(tenant, project)` and its identity is
 `(tenant, project, session)`, with the opaque session unique globally so a
 reused one cannot answer another project's mailbox. It is changed by those
-three doors, by `open_member_thread`, by the scheduler taking an attempt
-number, by the worker plane binding the runtime's session id once, by the
-selector moving the project's lead onto the objectives it now holds and by
-`set_session_capabilities` reconfiguring one session's roster; a trigger
+three doors, by `open_member_thread`, by `open_project_lead`, by the scheduler
+taking an attempt number, by the worker plane binding the runtime's session id
+once, by the selector moving the project's lead onto the objectives it now holds
+and by `set_session_capabilities` reconfiguring one session's roster; a trigger
 refuses every other change, which is what makes the transcript the row points
-at singular. The objectives and the roster are the two columns a later write
+at singular. A project holds one OPEN lead and any number of closed ones — a
+closed lead is the context that ended, and the successor the selector opens is
+how a project whose lead ended decides again — so the uniqueness is a partial
+index over `state='Open'` and `open_project_lead` is the selector service's own
+door onto it. Closing one is `close_agent_session`'s alone, which no runtime
+role may execute. The objectives and the roster are the two columns a later write
 may move — a project whose North Star changed must be able to tell the next
 session that opens, and a thread's roster is reconfigured by the provisioning
 identity rather than reopened — and everything that decides who the session

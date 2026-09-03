@@ -138,6 +138,25 @@ async function inquiryRows(partition: Partition): Promise<readonly unknown[]> {
   );
 }
 
+test("a question forks the lead that stands, not the one it replaced", async () => {
+  const { partition, lead, member } = await inquirySubject("succeeded");
+  assert.equal(
+    await rig.sessions.sessions.close(partition, lead.session),
+    true,
+  );
+  const successor = await inquiryRigLead(rig, partition, "succeeded-next");
+  const asking = await inquiryAsk(partition, member, "succeeded");
+  assert.equal(asking.opened.opened, "Opened");
+  assert.deepEqual(
+    await rig.sessions.harness.query(
+      `SELECT parent_session FROM agent_session WHERE session=$1`,
+      [asking.session],
+    ),
+    [{ parent_session: successor.session }],
+    "a fork of a closed predecessor would resume a transcript nothing is adding to",
+  );
+});
+
 test("a member's question forks the lead once, and a retry is the same fork", async () => {
   const { partition, lead, member } = await inquirySubject("once");
   const first = await inquiryAsk(partition, member, "once");
