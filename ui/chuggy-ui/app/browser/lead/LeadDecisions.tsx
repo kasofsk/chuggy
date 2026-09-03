@@ -1,6 +1,12 @@
 /**
- * The decision log: what the lead decided, newest first, each group holding the
- * tickets it dispatched, refused and lifted.
+ * The decision log: what the lead decided, newest first, each group holding one
+ * row per dispatch with the landing that dispatch reached, beside the tickets
+ * it refused and the refusals it lifted.
+ *
+ * WHAT WAS CHOSEN IS NOT WHAT LANDED. One decision's dispatches are delivered
+ * and settled one at a time, so a decision that named three can have landed
+ * one; a single Dispatched arm over a list of ticket numbers would say all
+ * three went, which is the reading this panel had before the record could tell.
  *
  * THE READ IS THE LOG'S NEWEST END AND NOT ITS FIRST PAGE. `order=newest`
  * answers the last `limit` decisions as one bounded page with no cursor, so the
@@ -30,10 +36,12 @@ import {
   instantFigure,
   tokenCountFigure,
 } from "../../core/figures.ts";
+import type { Figure as FigureValue } from "../../core/figures.ts";
 import {
   leadDecisionsNewestFirst,
   leadDecisionSummary,
 } from "../../core/leadTranscript.ts";
+import { leadDispatchArm } from "../../core/tones.ts";
 import type { Tone } from "../../core/tones.ts";
 import { usePanelResource } from "../api.ts";
 import { DataPanel } from "../DataPanel.tsx";
@@ -90,16 +98,17 @@ interface LeadDecisionArm {
   readonly word: string;
 }
 
+/**
+ * The two arms that are still one row over a list of ticket numbers: every
+ * ticket in either was decided the same way at the same moment, and there is
+ * nothing further to say about any one of them. What was dispatched is not one
+ * of these, because each dispatch has a delivery of its own that lands or does
+ * not.
+ */
 function leadDecisionArms(
   decision: SelectorDecisionResponse,
 ): readonly LeadDecisionArm[] {
   return [
-    {
-      label: "Dispatched",
-      tickets: decision.dispatches.map((dispatch) => dispatch.ticket),
-      tone: "pass",
-      word: "Queued",
-    },
     {
       label: "Refused",
       tickets: decision.refused,
@@ -115,15 +124,58 @@ function leadDecisionArms(
   ];
 }
 
+/** What one decision did, a row at a time: its dispatches with their landings,
+ * then the tickets it refused and lifted, and the ghost where it did none. */
+function LeadDecisionRows(props: {
+  readonly decision: SelectorDecisionResponse;
+  readonly when: FigureValue;
+}): ReactNode {
+  const decision = props.decision;
+  const arms = leadDecisionArms(decision).filter(
+    (arm) => arm.tickets.length > 0,
+  );
+  if (decision.dispatches.length === 0 && arms.length === 0)
+    return (
+      <LedgerRow
+        label="Tickets"
+        pill={{ tone: "retired", text: "None" }}
+        ghost
+        when={props.when}
+      />
+    );
+  return (
+    <>
+      {decision.dispatches.map((dispatch) => {
+        const arm = leadDispatchArm(dispatch);
+        return (
+          <LedgerRow
+            key={dispatch.ticket}
+            label="Dispatched"
+            pill={{ tone: arm.tone, text: arm.word }}
+            when={props.when}
+            note={String(dispatch.ticket)}
+          />
+        );
+      })}
+      {arms.map((arm) => (
+        <LedgerRow
+          key={arm.label}
+          label={arm.label}
+          pill={{ tone: arm.tone, text: arm.word }}
+          when={props.when}
+          note={arm.tickets.map((ticket) => String(ticket)).join(", ")}
+        />
+      ))}
+    </>
+  );
+}
+
 function LeadDecisionGroup(props: {
   readonly decision: SelectorDecisionResponse;
   readonly current: boolean;
   readonly nowMs: number;
 }): ReactNode {
   const decision = props.decision;
-  const arms = leadDecisionArms(decision).filter(
-    (arm) => arm.tickets.length > 0,
-  );
   return (
     <LedgerGroup
       title={`Decision ${String(decision.ordinal)}`}
@@ -133,24 +185,10 @@ function LeadDecisionGroup(props: {
       open={props.current}
     >
       <LedgerBlock eyebrow={decision.decision}>
-        {arms.length === 0 ? (
-          <LedgerRow
-            label="Tickets"
-            pill={{ tone: "retired", text: "None" }}
-            ghost
-            when={instantFigure(decision.completedAt, props.nowMs)}
-          />
-        ) : (
-          arms.map((arm) => (
-            <LedgerRow
-              key={arm.label}
-              label={arm.label}
-              pill={{ tone: arm.tone, text: arm.word }}
-              when={instantFigure(decision.completedAt, props.nowMs)}
-              note={arm.tickets.map((ticket) => String(ticket)).join(", ")}
-            />
-          ))
-        )}
+        <LeadDecisionRows
+          decision={decision}
+          when={instantFigure(decision.completedAt, props.nowMs)}
+        />
       </LedgerBlock>
     </LedgerGroup>
   );

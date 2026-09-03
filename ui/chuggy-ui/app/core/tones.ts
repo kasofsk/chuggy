@@ -17,7 +17,8 @@ import type {
   ThreadStanding,
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
-import type { AgenticRefusalStanding } from "./leadTranscript.ts";
+import { leadDispatchLanded } from "./leadTranscript.ts";
+import type { AgenticRefusalStanding, LeadDispatch } from "./leadTranscript.ts";
 import type { CycleStanding, SetVerdict, StageRow } from "./ticketLedger.ts";
 
 export const pillTones = [
@@ -153,6 +154,41 @@ export function sessionTurnStateTone(state: SessionTurnState): Tone {
       return "fail";
     case "Abandoned":
       return "retired";
+  }
+}
+
+/** One status word and its tone for one of a decision's dispatches. */
+export interface LeadDispatchArm {
+  readonly word: string;
+  readonly tone: Tone;
+}
+
+/** A settled dispatch whose outcome this console cannot read. The delivery
+ * record says it is over and does not say how it went, and a pill saying
+ * nothing would read as one that had not settled at all. */
+const leadDispatchUnread = "Unknown";
+
+/**
+ * Where one dispatch of a decision got to, in the one word the log says it in.
+ * `AwaitingApproval` takes the hue a ticket needing a human takes on the
+ * project table, because that is what it is; a settled dispatch that did not
+ * land is drawn as the code the record settled it on, which is already one word
+ * and is the thing a reader came for.
+ */
+export function leadDispatchArm(dispatch: LeadDispatch): LeadDispatchArm {
+  switch (dispatch.state) {
+    case "AwaitingApproval":
+      return { word: "Approval", tone: "parked" };
+    case "Pending":
+      return { word: "Queued", tone: "pass" };
+    case "Submitted":
+      return { word: "Sent", tone: "pass" };
+    case "Terminal":
+      if (leadDispatchLanded(dispatch))
+        return { word: "Dispatched", tone: "pass" };
+      return dispatch.outcome === undefined
+        ? { word: leadDispatchUnread, tone: "neutral" }
+        : { word: dispatch.outcome, tone: "fail" };
   }
 }
 

@@ -15,6 +15,7 @@ import {
   agenticRefusalStanding,
   leadDecisionsNewestFirst,
   leadDecisionSummary,
+  leadDispatchLanded,
   leadEntryText,
   leadEntryTools,
   leadSessionNamed,
@@ -43,6 +44,8 @@ import {
   leadBoundaryUuid,
   leadDecisionDispatching,
   leadDecisionIdle,
+  leadDecisionLanding,
+  leadDecisionRefusedEvery,
   leadDecisionRefusing,
   leadHistory,
   leadRefusals,
@@ -660,9 +663,61 @@ test("a decision says what it did, and says so when it did nothing", () => {
     "Attention · 1 refused",
   );
   expect(leadDecisionSummary(leadDecisionDispatching)).toBe(
-    "Monitoring · 1 dispatched · 1 lifted",
+    "Monitoring · 0 of 1 dispatched · 1 lifted",
   );
   expect(leadDecisionSummary(leadDecisionIdle)).toBe("None");
+});
+
+/**
+ * THE SUMMARY COUNTS THE LANDINGS AND THE CHOICES SEPARATELY, and both from the
+ * answer. A decision that named three dispatches and landed one did not
+ * dispatch three; a line built from the length of the list alone says it did,
+ * which is the reading the log had while the record could not tell.
+ */
+test("a decision's summary says how many of its dispatches landed", () => {
+  expect(leadDecisionSummary(leadDecisionLanding)).toBe(
+    "Monitoring · 1 of 3 dispatched · 1 refused",
+  );
+  expect(leadDecisionSummary(leadDecisionRefusedEvery)).toBe(
+    "Attention · 0 of 2 dispatched · 1 refused",
+  );
+});
+
+/**
+ * The figure is derived and not written down: a decision the record says landed
+ * every dispatch of reads as all of them, and the same decision with one
+ * outcome changed reads as one fewer, from the same code.
+ */
+test("the landing figure follows the record it is read from", () => {
+  const dispatches = leadDecisionLanding.dispatches.map((dispatch) => ({
+    ...dispatch,
+    state: "Terminal" as const,
+    outcome: "Succeeded",
+  }));
+  expect(leadDecisionSummary({ ...leadDecisionLanding, dispatches })).toContain(
+    "3 of 3 dispatched",
+  );
+  expect(
+    leadDecisionSummary({
+      ...leadDecisionLanding,
+      dispatches: dispatches.slice(1),
+    }),
+  ).toContain("2 of 2 dispatched");
+});
+
+/** What the pills say and what the summary counts are one predicate, so a group
+ * whose rows say `Dispatched` and whose line says none landed cannot be drawn. */
+test("a dispatch has landed exactly where the record says the writer took it", () => {
+  expect(
+    leadDecisionLanding.dispatches.map((dispatch) =>
+      leadDispatchLanded(dispatch),
+    ),
+  ).toStrictEqual([false, true, false]);
+  expect(
+    leadDispatchLanded({ ticket: 1, state: "Submitted", outcome: "Succeeded" }),
+    "a delivery still in flight was counted as one that landed",
+  ).toBe(false);
+  expect(leadDispatchLanded({ ticket: 1, state: "Terminal" })).toBe(false);
 });
 
 test("a refusal stands until the ticket is authored again", () => {

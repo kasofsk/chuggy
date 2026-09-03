@@ -216,6 +216,56 @@ export const leadDecisionDispatching: SelectorHistoryResponse["decisions"][numbe
   };
 
 /**
+ * One decision, three dispatches, three different landings: one still queued,
+ * one the writer took, and one it refused on a fence that had moved. A panel
+ * that drew a decision's dispatches as one arm would have to pick one of the
+ * three states to draw them all in.
+ */
+export const leadDecisionLanding: SelectorHistoryResponse["decisions"][number] =
+  {
+    ...leadDecisionDispatching,
+    ordinal: 1_203,
+    decision: "selector-decision-3",
+    dispatches: [
+      { ticket: 51, state: "Pending" },
+      { ticket: 52, state: "Terminal", outcome: "Succeeded" },
+      { ticket: 53, state: "Terminal", outcome: "SelectionChanged" },
+    ],
+    refused: [42],
+    lifted: [],
+  };
+
+/** A decision the writer refused every dispatch of, which is the partial-failure
+ * shape at its limit and the one group nothing in should read as a landing. */
+export const leadDecisionRefusedEvery: SelectorHistoryResponse["decisions"][number] =
+  {
+    ...leadDecisionLanding,
+    ordinal: 1_204,
+    decision: "selector-decision-4",
+    dispatches: [
+      { ticket: 61, state: "Terminal", outcome: "SelectionChanged" },
+      { ticket: 62, state: "Terminal", outcome: "TicketChanged" },
+    ],
+    attention: "Attention",
+  };
+
+/**
+ * A dispatch the record settled and cannot say the outcome of, which a
+ * retained outcome this reader could not speak for leaves behind, and a
+ * dispatch a reviewer has yet to answer.
+ */
+export const leadDecisionUnsaid: SelectorHistoryResponse["decisions"][number] =
+  {
+    ...leadDecisionLanding,
+    ordinal: 1_205,
+    decision: "selector-decision-5",
+    dispatches: [
+      { ticket: 71, state: "Terminal" },
+      { ticket: 72, state: "AwaitingApproval" },
+    ],
+  };
+
+/**
  * The newest arm's own answer: descending ordinal, one bounded page, no cursor.
  * A panel that reordered it would draw the oldest decision it holds as the one
  * that just ran.

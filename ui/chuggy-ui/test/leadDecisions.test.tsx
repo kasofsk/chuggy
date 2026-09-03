@@ -22,11 +22,16 @@ import {
 } from "./screenHarness.tsx";
 import {
   leadDecisionDispatching,
+  leadDecisionIdle,
+  leadDecisionLanding,
+  leadDecisionRefusedEvery,
   leadDecisionRefusing,
+  leadDecisionUnsaid,
   leadPartition,
   leadRefusals,
   leadRouteAnswer,
 } from "./leadFixture.ts";
+import { pillTones } from "../app/core/tones.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
@@ -86,6 +91,35 @@ function groups(): readonly HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>(".ledger-group")];
 }
 
+/** One row of a group as a reader takes it: its label, its pill's tone and
+ * word, and the tickets the row names. */
+interface DrawnRow {
+  readonly label: string;
+  readonly tone: string | undefined;
+  readonly word: string;
+  readonly note: string;
+}
+
+/** The rows of one group, read off the pills rather than off the text, because
+ * the tone is half of what a landing says and text alone cannot see it. The
+ * tone is found from the roster the pill draws from, so a hue the console gains
+ * is one this reader gains too. */
+function rows(group: HTMLElement | undefined): readonly DrawnRow[] {
+  return [...(group?.querySelectorAll<HTMLElement>("li.ledger-row") ?? [])].map(
+    (row) => {
+      const pill = row.querySelector<HTMLElement>(".ledger-pill .pill");
+      return {
+        label: row.querySelector(".ledger-label")?.textContent ?? "",
+        tone: pillTones.find((tone) =>
+          pill?.classList.contains(`pill-${tone}`),
+        ),
+        word: pill?.textContent ?? "",
+        note: row.querySelector(".ledger-note")?.textContent ?? "",
+      };
+    },
+  );
+}
+
 test("the decisions are newest first and the newest one is the open group", async () => {
   await drawDecisions();
   const drawn = groups();
@@ -101,7 +135,9 @@ test("the decisions are newest first and the newest one is the open group", asyn
 test("each decision says what it dispatched, refused and lifted", async () => {
   await drawDecisions();
   const newest = groups()[0];
-  expect(newest?.textContent).toContain("Monitoring · 1 dispatched · 1 lifted");
+  expect(newest?.textContent).toContain(
+    "Monitoring · 0 of 1 dispatched · 1 lifted",
+  );
   expect(newest?.textContent).toContain("Dispatched");
   expect(newest?.textContent).toContain("Lifted");
   expect(groups()[1]?.textContent).toContain("Attention · 1 refused");
@@ -160,4 +196,80 @@ test("the newest decision leads the panel whichever way the page arrived", async
   ).toContain("Decision 1202");
   expect(drawn[0]?.hasAttribute("open")).toBe(true);
   expect(drawn[1]?.textContent).toContain("Decision 1201");
+});
+
+/**
+ * THE STATES ARE NOT COLLAPSED TO THE FIRST ONE'S. Each of a decision's
+ * dispatches is delivered and settled on its own, so a panel drawing them as
+ * one arm has to pick one state to draw all of them in — and the one it would
+ * pick is whichever the relation keys first.
+ */
+test("a decision's three dispatches are three rows, each with its own landing", async () => {
+  await drawDecisions({ decisions: [leadDecisionLanding] });
+  expect(rows(groups()[0])).toStrictEqual([
+    { label: "Dispatched", tone: "pass", word: "Queued", note: "51" },
+    { label: "Dispatched", tone: "pass", word: "Dispatched", note: "52" },
+    {
+      label: "Dispatched",
+      tone: "fail",
+      word: "SelectionChanged",
+      note: "53",
+    },
+    { label: "Refused", tone: "fail", word: "Refused", note: "42" },
+  ]);
+});
+
+/** A group with a landing hue anywhere in it says something landed. A decision
+ * the writer refused every dispatch of landed nothing, and the summary counts
+ * the same way the pills do. */
+test("a decision whose every dispatch was refused draws no landing", async () => {
+  await drawDecisions({ decisions: [leadDecisionRefusedEvery] });
+  const group = groups()[0];
+  expect(group?.querySelectorAll(".pill-pass").length).toBe(0);
+  expect(rows(group).map((row) => row.word)).toStrictEqual([
+    "SelectionChanged",
+    "TicketChanged",
+    "Refused",
+  ]);
+  expect(group?.textContent).toContain("Attention · 0 of 2 dispatched");
+});
+
+/** A decision that dispatched, refused and lifted nothing still has a row, so
+ * the group is not an empty box a reader has to guess the meaning of. */
+test("a decision that did nothing keeps its ghost row", async () => {
+  await drawDecisions({ decisions: [leadDecisionIdle] });
+  const group = groups()[0];
+  expect(rows(group)).toStrictEqual([
+    { label: "Tickets", tone: "retired", word: "None", note: "" },
+  ]);
+  expect(
+    group
+      ?.querySelector("li.ledger-row")
+      ?.classList.contains("ledger-row-ghost"),
+  ).toBe(true);
+  expect(group?.textContent).toContain("None");
+});
+
+/** A decision from before the delivery relation was keyed per ticket has one
+ * row after the backfill, and the panel draws it as the one dispatch it is. */
+test("a decision with one dispatch draws one row", async () => {
+  await drawDecisions({ decisions: [leadDecisionDispatching] });
+  expect(rows(groups()[0])).toStrictEqual([
+    { label: "Dispatched", tone: "pass", word: "Sent", note: "41" },
+    { label: "Lifted", tone: "retired", word: "Lifted", note: "40" },
+  ]);
+});
+
+/**
+ * A settled dispatch the record cannot say the outcome of is not a dispatch
+ * that did nothing: the delivery is over and the reader is owed the fact that
+ * how it ended is unreadable, rather than a pill with no word in it.
+ */
+test("a dispatch settled with no readable outcome says so", async () => {
+  await drawDecisions({ decisions: [leadDecisionUnsaid] });
+  expect(rows(groups()[0])).toStrictEqual([
+    { label: "Dispatched", tone: "neutral", word: "Unknown", note: "71" },
+    { label: "Dispatched", tone: "parked", word: "Approval", note: "72" },
+    { label: "Refused", tone: "fail", word: "Refused", note: "42" },
+  ]);
 });
