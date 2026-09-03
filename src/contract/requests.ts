@@ -13,6 +13,7 @@ import {
   countSchema,
   digestSchema,
   dispatchViewSchemaVersion,
+  inquiryQuestionCharsMax,
   selectorAllowlistNameCharsMax,
   selectorAllowlistNamesMax,
   selectorSettingsTextCharsMax,
@@ -153,4 +154,17 @@ export const selectorProjectSettingsSchema = z.strictObject({
 export const threadMessageSchema = z.strictObject({
   turn: bodyIdentitySchema,
   message: z.string().min(1).max(threadMessageCharsMax),
+});
+
+/**
+ * What a member asks the lead aside: the session and the turn they mint
+ * themselves, and the question they typed. Both identities are the body's
+ * rather than a header's for the reason `submissionSchema` gives — opening is
+ * idempotent on them, so a retried post answers the ordinal it already has
+ * instead of forking the lead a second time.
+ */
+export const leadInquirySchema = z.strictObject({
+  session: bodyIdentitySchema,
+  turn: bodyIdentitySchema,
+  question: z.string().min(1).max(inquiryQuestionCharsMax),
 });
