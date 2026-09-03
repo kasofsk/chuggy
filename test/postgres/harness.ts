@@ -368,12 +368,12 @@ export async function postgresHarnessRowLock(
 
 /**
  * Resolves once that many backends are waiting on a lock, which is how a case
- * knows the calls it did not await have reached the row the blockade holds. It
- * asks on a connection of the blockade pool rather than on the locked one,
- * because a transaction caches its statistics snapshot and would answer with
- * whatever it saw the first time it asked.
+ * knows the calls it did not await have reached the row a blockade holds. It
+ * asks on a pool connection rather than on the one holding the lock, because a
+ * transaction caches its statistics snapshot and would answer with whatever it
+ * saw the first time it asked.
  */
-async function postgresHarnessStalled(
+export async function postgresHarnessStalled(
   blockade: pg.Pool,
   backends: number,
 ): Promise<void> {

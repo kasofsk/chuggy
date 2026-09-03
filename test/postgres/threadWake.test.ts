@@ -64,6 +64,7 @@ import { plainAuthoring } from "../actor/harness.ts";
 import {
   postgresHarnessBrief,
   postgresHarnessConfiguration,
+  postgresHarnessStalled,
 } from "./harness.ts";
 import { leadRigDecision } from "./leadHarness.ts";
 import {
@@ -429,5 +430,81 @@ test("a thread cannot be opened after a sequence the log never held", async () =
         [thread.session],
       ),
     /agent_session_opens_after_a_sequence/u,
+  );
+});
+
+/**
+ * Reopens the member's thread against a close that holds their session row, and
+ * appends one change before that close commits. Waiting for the opening to
+ * stall is what puts the append after every read the door makes on its way in.
+ */
+async function openingAgainstAClose(
+  partition: Partition,
+  member: ThreadRigMember,
+  standing: string,
+): Promise<{ readonly session: string; readonly appended: number }> {
+  const closing = await rig.sessions.harness.begin();
+  let committed = false;
+  try {
+    await closing.query("SELECT close_agent_session($1,$2,$3)", [
+      partition.tenant,
+      partition.project,
+      standing,
+    ]);
+    let appended = 0;
+    const [reopened] = await Promise.all([
+      threadRigThread(rig, partition, member),
+      (async () => {
+        await postgresHarnessStalled(rig.sessions.harness.pool, 1);
+        appended = Number(
+          (
+            await closing.query(
+              "SELECT append_project_change($1,$2,'Ticket','1')::text AS sequence",
+              [partition.tenant, partition.project],
+            )
+          )[0]?.["sequence"],
+        );
+        await closing.commit();
+        committed = true;
+      })(),
+    ]);
+    return { session: reopened.session, appended };
+  } finally {
+    if (!committed) await closing.rollback();
+  }
+}
+
+/**
+ * The position is the head at the moment the row is WRITTEN, and the door's
+ * `FOR UPDATE` is what makes that a different fact from the head when the door
+ * was called: a change appended before the close holding the member's session
+ * row commits is sequenced above anything the opening read on its way in, and
+ * still happened before the thread existed. A door drawing the head before it
+ * waits would store the earlier one, and kasofsk/chuggy#541 would arrive again
+ * through the flow 062 names — close, then reopen.
+ */
+test("a change that commits while the door waits is a change the thread was opened after", async () => {
+  const partition = await threadRigProject(rig, "wakerace");
+  const member = await threadRigMember(rig, partition, "wakerace");
+  const standing = await threadRigThread(rig, partition, member);
+  const called = await fromTheHead();
+
+  const reopened = await openingAgainstAClose(
+    partition,
+    member,
+    standing.session,
+  );
+
+  assert.ok(
+    reopened.appended > called,
+    "the change landed while the door was waiting, or this case is not the race it names",
+  );
+  assert.deepEqual(
+    await rig.sessions.harness.query(
+      "SELECT opened_after_sequence::text AS opened FROM agent_session WHERE session=$1",
+      [reopened.session],
+    ),
+    [{ opened: String(reopened.appended) }],
+    "the thread was opened after the head the door read before it waited",
   );
 });
