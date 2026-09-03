@@ -15,6 +15,7 @@ import {
   nativeHttpPageItemsMax,
   nativeHttpPathSegmentCharsMax,
   selectorSettingsTextCharsMax,
+  sessionTurnInputCharsMax,
   threadMessageCharsMax,
   threadSeedingCharsMax,
   threadSeedingFixedCharsMax,
@@ -338,14 +339,23 @@ test("a North Star at the bound the settings route accepts still composes", () =
 
   assert.ok(input.includes(northStar));
   assert.ok(input.length <= threadTurnInputCharsMax);
+  assert.ok(
+    input.length <= sessionTurnInputCharsMax,
+    "the widest first turn is a row the mailbox column will not take",
+  );
 });
 
 /** The ceiling the contract names is a claim about this block, so it is measured. */
 test("what the seeding weighs beyond its North Star is inside the named ceiling", () => {
-  assert.ok(
-    threadSeedingText({ northStar: "", drafts: [], refusals: [] }).length <=
-      threadSeedingFixedCharsMax,
-  );
+  const headings = threadSeedingText({
+    northStar: "",
+    drafts: [{ ticket: 1, summary: "" }],
+    refusals: [{ ticket: 1, reason: "" }],
+  });
+
+  assert.ok(headings.includes("open drafts"));
+  assert.ok(headings.includes("Standing against"));
+  assert.ok(headings.length <= threadSeedingFixedCharsMax);
   assert.equal(
     threadSeedingCharsMax,
     selectorSettingsTextCharsMax + threadSeedingFixedCharsMax,

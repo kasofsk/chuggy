@@ -109,7 +109,18 @@ test("the seeding ceiling is derived from the North Star it must carry", () => {
     threadSeedingCharsMax,
     selectorSettingsTextCharsMax + threadSeedingFixedCharsMax,
   );
-  assert.ok(threadSeedingCharsMax >= selectorSettingsTextCharsMax);
+});
+
+/**
+ * The mailbox column's ceiling is derived from the widest lead observation, and
+ * a thread's whole first turn is far inside it — so the thread needs no arm of
+ * that derivation. This is what says so, and what stops a later thread bound
+ * growing past a column nobody re-derived.
+ */
+test("a seeded first turn is dominated by the mailbox column it is written to", () => {
+  assert.ok(
+    threadMessageCharsMax + threadSeedingCharsMax <= sessionTurnInputCharsMax,
+  );
 });
 
 test("a thread's backlog and its answered tail are inside the mailbox's own", () => {

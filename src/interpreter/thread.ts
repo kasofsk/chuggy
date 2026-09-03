@@ -52,9 +52,9 @@ export const threadCapabilitiesDefault = [
 
 /**
  * Where one thread stands, as a listing names it: a session state, or that the
- * membership the thread acts under is gone. It is the roster PLAN 1.4's
- * `Orphaned` belongs to, and it is derived rather than stored because both
- * facts it folds are already on the row.
+ * membership the thread acts under is gone. It is derived rather than stored,
+ * from one fact on the session row and one on the membership join a listing
+ * already makes, so the join is what discovers an ownerless thread.
  */
 export const allThreadStandings = ["Open", "Closed", "Orphaned"] as const;
 export type ThreadStanding = (typeof allThreadStandings)[number];
