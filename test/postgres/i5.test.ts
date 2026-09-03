@@ -18,7 +18,12 @@ import {
   selectorServiceRole,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
-import { projectWriterDecide } from "../../src/interpreter/projectWriter.ts";
+import { decisionSemanticsVersionCurrent } from "../../src/actor/decisionSemantics.ts";
+import { ticketAt } from "../../src/domain/core.ts";
+import {
+  projectWriterDecide,
+  type ProjectMemory,
+} from "../../src/interpreter/projectWriter.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
@@ -30,6 +35,7 @@ import {
   postgresHarnessHistory,
   postgresHarnessOpen,
   postgresHarnessProject,
+  postgresHarnessReleaseSubmission,
   postgresHarnessSelectorContext,
   postgresHarnessSubmission,
   postgresHarnessUrl,
@@ -263,6 +269,85 @@ test("manual and agentic dispatch race by ordinary journal order", async () => {
     const staleChoice = await projectWriterDecide(writer, memory, second);
     assert.equal(staleChoice.decided.decided, "Refused");
     assert.equal(staleChoice.memory.lease.head, dispatchedHead);
+  } finally {
+    await pool.end();
+  }
+});
+
+/** Releases a second independent ticket, so one observed page carries two candidates. */
+async function i5TwoReleased(
+  partition: Partition,
+  label: string,
+): Promise<ProjectMemory> {
+  const writer = postgresHarnessWriter(harness);
+  const memory = await postgresHarnessHistory(harness, partition, label, 1);
+  const second = await postgresHarnessReleaseSubmission(
+    harness,
+    partition,
+    `${label}-second`,
+  );
+  assert.equal((await harness.inbox.accept(second)).accepted, "Accepted");
+  const release = await harness.discovery.next(partition, 300);
+  assert.ok(release !== undefined);
+  const released = await projectWriterDecide(writer, memory, release);
+  assert.equal(released.decided.decided, "Committed");
+  return released.memory;
+}
+
+test("one decision's proposals over the same observed page each dispatch", async () => {
+  const partition = await postgresHarnessProject(harness.store, "i5-several");
+  const writer = postgresHarnessWriter(harness);
+  let memory = await i5TwoReleased(partition, "i5-several");
+  const pool = postgresPool(postgresHarnessUrl());
+  try {
+    const page = await postgresDispatchViews(pool).read(partition, {
+      limit: 10,
+    });
+    assert.ok(page.result === "Page");
+    assert.equal(page.candidates.length, 2);
+    for (const candidate of page.candidates) {
+      const accepted = await harness.inbox.accept({
+        ...postgresHarnessSubmission(
+          partition,
+          `i5-several-${String(candidate.ticket)}`,
+        ),
+        command: {
+          version: 1,
+          command: "ProposeDispatch",
+          ticket: candidate.ticket,
+          expectedTicketVersion: candidate.ticketVersion,
+          observedViewToken: page.token,
+          selectorDecisionReference: "i5-several-decision",
+        },
+      });
+      assert.equal(accepted.accepted, "Accepted");
+    }
+    const journaled: number[] = [];
+    for (let delivered = 0; delivered < page.candidates.length; delivered++) {
+      const input = await harness.discovery.next(partition, 300);
+      assert.ok(input !== undefined);
+      const step = await projectWriterDecide(writer, memory, input);
+      assert.equal(step.decided.decided, "Committed");
+      memory = step.memory;
+      journaled.push(memory.lease.head);
+    }
+    assert.deepEqual(
+      page.candidates.map(
+        (candidate) => ticketAt(memory.core, candidate.ticket).phase,
+      ),
+      ["Working", "Working"],
+    );
+    const rows = await harness.query(
+      `SELECT seq, decision_semantics_version
+         FROM journal_entry
+        WHERE tenant = $1 AND project = $2 AND seq = ANY($3::bigint[])
+        ORDER BY seq`,
+      [partition.tenant, partition.project, journaled],
+    );
+    assert.deepEqual(
+      rows.map((row) => row["decision_semantics_version"]),
+      journaled.map(() => decisionSemanticsVersionCurrent),
+    );
   } finally {
     await pool.end();
   }

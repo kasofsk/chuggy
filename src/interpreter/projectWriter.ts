@@ -29,6 +29,22 @@
  * replayed `Core` alone, so rebuilding them from the journal and folding the
  * per-decision changes reach the same table — which is what makes it a
  * projection rather than a second authority.
+ *
+ * A DISPATCH FENCE NAMES A CANDIDATE, NOT A VIEW. A `ProposeDispatch` is
+ * admitted on the identity of the view its author observed — tenant, project,
+ * recovery epoch, schema version — and on the version of the one candidate it
+ * names, never on a digest of the whole candidate set. The whole-view digest
+ * attested that the alternatives the author chose among still existed, which is
+ * a preference rather than a safety property: `decideDispatch` in
+ * `model/domain.qnt` conforms with any policy over Ready tickets, and
+ * `model/refinement.qnt` re-checks `Dispatch(j)` per ticket at its own prefix.
+ * Requiring it also refused every dispatch a decision offered after its first,
+ * because the first removes its own ticket from the set the rest are digested
+ * against. What the digest covered of the named candidate, its version covers
+ * alone: every field `canonicalCandidate` digests is either a ticket field
+ * `ticketEquals` compares — so changing it stamps a new version — or a contract
+ * pin written once when the ticket is released and never rewritten. The
+ * token's digest stays on the command as provenance: which page the author saw.
  */
 
 import type { Entry, StoredEntry } from "../actor/journal.ts";
@@ -282,7 +298,6 @@ function operationDispatchFence(
     token.project === memory.lease.partition.project &&
     token.recoveryEpoch === memory.lease.recoveryEpoch &&
     token.schemaVersion === dispatchViewSchemaVersion &&
-    token.digest === dispatchViewDigest(candidates) &&
     selected?.ticketVersion === proposal.expectedTicketVersion
     ? undefined
     : { outcome: "Refused", code: "SelectionChanged" };

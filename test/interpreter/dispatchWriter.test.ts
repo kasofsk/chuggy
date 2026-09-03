@@ -63,7 +63,7 @@ import {
 import type { TicketCommand } from "../../src/interpreter/ticketCommand.ts";
 import { executionSourceObservation } from "../../src/interpreter/executionSourceObservation.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
-import { asTaskId } from "../../src/domain/ids.ts";
+import { asTaskId, type TicketId } from "../../src/domain/ids.ts";
 import {
   plainAuthoring,
   plainResult,
@@ -322,10 +322,11 @@ test("proposal validity ignores an unrelated journal-head advance", async () => 
     assert.equal(decision.outcome.entry.seq, 41);
 });
 
-test("proposal digest and recovery epoch mismatches are SelectionChanged", async () => {
+test("a proposal observed against another view identity is SelectionChanged", async () => {
   for (const mismatch of [
-    { recoveryEpoch: "old-epoch", digest: "a".repeat(64) },
-    { recoveryEpoch: "epoch", digest: "b".repeat(64) },
+    { project: asProjectId("other-project") },
+    { recoveryEpoch: "old-epoch" },
+    { schemaVersion: 2 },
   ]) {
     const decision = await planned(releasedMemory(), {
       version: 1,
@@ -334,9 +335,11 @@ test("proposal digest and recovery epoch mismatches are SelectionChanged", async
       expectedTicketVersion: 1,
       observedViewToken: {
         ...partition,
-        ...mismatch,
+        recoveryEpoch: "epoch",
         schemaVersion: 1,
         watermark: 1,
+        digest: "a".repeat(64),
+        ...mismatch,
       },
       selectorDecisionReference: "selector-decision",
     });
@@ -345,6 +348,198 @@ test("proposal digest and recovery epoch mismatches are SelectionChanged", async
       code: "SelectionChanged",
     });
   }
+});
+
+test("a proposal whose observed digest no longer describes the view still dispatches", async () => {
+  const decision = await planned(releasedMemory(), {
+    version: 1,
+    command: "ProposeDispatch",
+    ticket: id(1),
+    expectedTicketVersion: 1,
+    observedViewToken: {
+      ...partition,
+      recoveryEpoch: "epoch",
+      schemaVersion: 1,
+      watermark: 1,
+      digest: "b".repeat(64),
+    },
+    selectorDecisionReference: "selector-decision",
+  });
+  assert.equal(decision.outcome.outcome, "Journaled");
+});
+
+test("a proposal at a version the candidate has left is SelectionChanged", async () => {
+  const decision = await planned(releasedMemory(), {
+    version: 1,
+    command: "ProposeDispatch",
+    ticket: id(1),
+    expectedTicketVersion: 2,
+    observedViewToken: {
+      ...partition,
+      recoveryEpoch: "epoch",
+      schemaVersion: 1,
+      watermark: 1,
+      digest: dispatchViewDigest(
+        deriveDispatchCandidates(
+          refinementInstance,
+          releasedMemory().core,
+          releasedMemory().ticketVersions,
+          contracts,
+        ),
+      ),
+    },
+    selectorDecisionReference: "selector-decision",
+  });
+  assert.deepEqual(decision.outcome, {
+    outcome: "Refused",
+    code: "SelectionChanged",
+  });
+});
+
+/** The contract pins two independently dispatchable tickets were released under. */
+const twoContracts = new Map(
+  [id(1), id(2)].map((ticket) => [
+    ticket,
+    {
+      configurationRevision: "revision",
+      configurationDigest: "digest",
+      configurationCanonical: '{"worker":"one"}',
+    },
+  ]),
+);
+
+/** Two Ready tickets with no dependency between them: what one decision may dispatch both of. */
+function twoReleasedMemory(): ProjectMemory {
+  let state = journalStep(
+    refinementInstance,
+    actorInit(),
+    releaseTicketEvent(id(1), plainAuthoring),
+  );
+  state = journalStep(
+    refinementInstance,
+    state,
+    releaseTicketEvent(id(2), plainAuthoring),
+  );
+  return {
+    lease: {
+      partition,
+      owner: asOwnerId("owner"),
+      fencingEpoch: 1,
+      recoveryEpoch: asRecoveryEpoch("epoch"),
+      head: 2,
+    },
+    core: memoryCore(state),
+    ticketVersions: new Map([
+      [id(1), 1],
+      [id(2), 2],
+    ]),
+    dispatchContracts: twoContracts,
+  };
+}
+
+/** The one token a decision carries on every proposal it makes: the page it was shown. */
+function observedTokenOf(memory: ProjectMemory) {
+  return {
+    ...partition,
+    recoveryEpoch: "epoch",
+    schemaVersion: 1,
+    watermark: memory.lease.head,
+    digest: dispatchViewDigest(
+      deriveDispatchCandidates(
+        refinementInstance,
+        memory.core,
+        memory.ticketVersions,
+        memory.dispatchContracts ?? new Map(),
+      ),
+    ),
+  };
+}
+
+function proposalOf(
+  ticket: TicketId,
+  expectedTicketVersion: number,
+  observedViewToken: ReturnType<typeof observedTokenOf>,
+): TicketCommand {
+  return {
+    version: 1,
+    command: "ProposeDispatch",
+    ticket,
+    expectedTicketVersion,
+    observedViewToken,
+    selectorDecisionReference: "one-decision",
+  };
+}
+
+function proposalInput(
+  ticket: TicketId,
+  command: TicketCommand,
+): DecisionInput {
+  return {
+    partition,
+    ordinal: 1,
+    priority: classifyCommand(command).priority,
+    source: {
+      kind: "Operation",
+      operation: asOperationId(`operation-${String(ticket)}`),
+      command,
+      resolvedEvent: { type: "Dispatch", value: ticket },
+    },
+  };
+}
+
+/** A durable authority that commits what it is offered, so a second proposal meets the first's state. */
+const committingWriter: ProjectTicketWriter = {
+  config: refinementInstance,
+  store: {} as ProjectStore,
+  decisions: {
+    decide: (decision) =>
+      Promise.resolve({
+        decided: "Committed",
+        lease: { ...decision.lease, head: decision.lease.head + 1 },
+      }),
+  },
+  ticketBriefs: unbriefedTickets,
+  executionSources: readableSources,
+};
+
+test("both dispatches of one decision land, though the first changed the view", async () => {
+  const observed = twoReleasedMemory();
+  const token = observedTokenOf(observed);
+  const first = await projectWriterDecide(
+    committingWriter,
+    observed,
+    proposalInput(id(1), proposalOf(id(1), 1, token)),
+  );
+  assert.equal(first.decided.decided, "Committed");
+  const second = await projectWriterDecide(
+    committingWriter,
+    first.memory,
+    proposalInput(id(2), proposalOf(id(2), 2, token)),
+  );
+  assert.equal(second.decided.decided, "Committed");
+  assert.deepEqual(
+    [id(1), id(2)].map((ticket) => ticketAt(second.memory.core, ticket).phase),
+    ["Working", "Working"],
+  );
+});
+
+test("a proposal for a ticket another author already dispatched is SelectionChanged", async () => {
+  const observed = twoReleasedMemory();
+  const token = observedTokenOf(observed);
+  const dispatched = await projectWriterDecide(
+    committingWriter,
+    observed,
+    proposalInput(id(1), proposalOf(id(1), 1, token)),
+  );
+  assert.equal(dispatched.decided.decided, "Committed");
+  const { offered } = await decidedWith(
+    dispatched.memory,
+    proposalInput(id(1), proposalOf(id(1), 1, token)),
+  );
+  assert.deepEqual(offered?.outcome, {
+    outcome: "Refused",
+    code: "SelectionChanged",
+  });
 });
 
 test("the branch a ticket was briefed with names the ref its work is observed at", async () => {
