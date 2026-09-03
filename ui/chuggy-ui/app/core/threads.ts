@@ -26,6 +26,13 @@
  * the roster lives in the interpreter, a reason is already a noun, and a
  * console that refused an unfamiliar one would answer a wake it could plainly
  * name with silence.
+ *
+ * A TURN IDENTITY BELONGS TO THE TEXT IT WAS MINTED FOR. Enqueuing is
+ * idempotent on the turn, so re-pressing after a mailbox said `Backlogged` must
+ * reuse the identity or risk a second copy of one message; and posting EDITED
+ * text under a retained identity would answer the ordinal the first text
+ * already has, so the reader would be told their correction landed when the
+ * mailbox still holds what they corrected.
  */
 
 import { z } from "zod";
@@ -142,17 +149,8 @@ export function threadTurnMinted(bytes: Uint8Array): string {
   return `thread-turn-${base64urlFromBytes(bytes)}`;
 }
 
-/**
- * The turn a press posts under: the one the last press minted where the text is
- * unchanged, and nothing — so the caller mints — where it is not.
- *
- * THE IDENTITY BELONGS TO THE TEXT IT WAS MINTED FOR. Enqueuing is idempotent
- * on the turn, so re-pressing after a mailbox said `Backlogged` must reuse the
- * identity or risk a second copy of one message; and posting EDITED text under
- * a retained identity would answer the ordinal the first text already has, so
- * the reader would be told their correction landed when the mailbox still holds
- * what they corrected.
- */
+/** The turn a press posts under: the one the last press minted where the text
+ * is unchanged, and nothing — so the caller mints — where it is not. */
 export function threadTurnRetained(
   held: { readonly text: string; readonly turn: string } | undefined,
   text: string,

@@ -12,6 +12,11 @@
  * lead's — so a second copy of this walk would be two accounts of one chain,
  * and the compaction discipline is exactly the part that must not be re-derived.
  * What a caller chooses is the session; everything below is the same.
+ *
+ * THE SESSION IS A VALUE AND NOT A READER FUNCTION, so that what the walk's
+ * effect depends on stays a string: a caller handing it a fresh closure each
+ * render would re-run the walk every render, which is a read loop rather than a
+ * live page.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -49,15 +54,8 @@ import { Pill } from "../ui/Pill.tsx";
 
 export interface LeadTranscriptRead {
   readonly partition: PartitionIdentity;
-  /**
-   * The member thread whose store is walked, and nothing for the project's own
-   * lead. It is the session rather than a reader function so that what the
-   * effect depends on stays a string: a caller passing a fresh closure each
-   * render would re-run the walk on every render, which is a read loop and not
-   * a live page. The two routes answer one shape by construction — the
-   * contract aliases the thread's page to the lead's — so what differs here is
-   * the path and nothing else.
-   */
+  /** The member thread whose store is walked, and nothing for the project's
+   * own lead. */
   readonly session?: string | undefined;
   readonly stream: string | undefined;
   readonly highWaterBatch: number;

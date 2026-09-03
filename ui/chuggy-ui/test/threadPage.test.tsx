@@ -308,16 +308,15 @@ test("the composer bounds what one message may carry", async () => {
 });
 
 /**
- * A turn moving arrives as a `Session` frame naming this thread. The frame is a
- * pointer and carries no body, so the page re-reads; one that did not register
- * the kind would sit on the turn it opened with while the thread went on
- * answering, and would look exactly like a thread with nothing to report.
+ * A second turn landing in the mailbox, announced by one frame. What differs
+ * between the three cases below is only what the frame's resource says, so the
+ * page that must move and the two that must not are one arrangement asked three
+ * questions.
  */
-test("a Session frame naming this thread moves the turn tail", async () => {
+async function afterFrame(sequence: string, resource: string): Promise<number> {
   let served: ThreadServed = { thread: threadBody({}) };
   drawThread(() => served);
   const server = await mountThread();
-  expect(turnBlocks().length).toBe(1);
   served = {
     thread: threadBody({
       turns: [
@@ -333,44 +332,40 @@ test("a Session frame naming this thread moves the turn tail", async () => {
   };
   await turned(() => {
     server.push(
-      frame("Session", "70", {
+      frame("Session", sequence, {
         version: 1,
-        resource: threadSessionResource(threadMineSession, "thread-turn-2"),
+        resource,
         representation: null,
       }),
     );
   });
   await settled();
-  expect(turnBlocks().length).toBe(2);
+  return turnBlocks().length;
+}
+
+/**
+ * A turn moving arrives as a `Session` frame naming this thread. The frame is a
+ * pointer and carries no body, so the page re-reads; one that did not register
+ * the kind would sit on the turn it opened with while the thread went on
+ * answering, and would look exactly like a thread with nothing to report.
+ */
+test("a Session frame naming this thread moves the turn tail", async () => {
+  const drawn = await afterFrame(
+    "70",
+    threadSessionResource(threadMineSession, "thread-turn-2"),
+  );
+  expect(drawn).toBe(2);
   expect(screen.getByText("42 is done")).toBeDefined();
 });
 
 /** The falsifying twin: a project holds a session per member beside its lead,
  * so a page watching one must not re-read on another's frame. */
 test("a Session frame naming another session leaves the page alone", async () => {
-  let served: ThreadServed = { thread: threadBody({}) };
-  drawThread(() => served);
-  const server = await mountThread();
-  served = {
-    thread: threadBody({
-      turns: [
-        threadTurn({ turn: "thread-turn-1" }),
-        threadTurn({ turn: "thread-turn-2", ordinal: 2 }),
-      ],
-    }),
-  };
-  await turned(() => {
-    server.push(
-      frame("Session", "71", {
-        version: 1,
-        resource: threadSessionResource(threadOtherSession, "thread-turn-9"),
-        representation: null,
-      }),
-    );
-  });
-  await settled();
   expect(
-    turnBlocks().length,
+    await afterFrame(
+      "71",
+      threadSessionResource(threadOtherSession, "thread-turn-9"),
+    ),
     "another member's thread moving re-read this one's page",
   ).toBe(1);
 });
@@ -378,28 +373,7 @@ test("a Session frame naming another session leaves the page alone", async () =>
 /** A resource this console cannot read is a frame it ignores, rather than one
  * that ends the stream and stops every other kind with it. */
 test("a Session frame carrying a bare session id is ignored", async () => {
-  let served: ThreadServed = { thread: threadBody({}) };
-  drawThread(() => served);
-  const server = await mountThread();
-  served = {
-    thread: threadBody({
-      turns: [
-        threadTurn({ turn: "thread-turn-1" }),
-        threadTurn({ turn: "thread-turn-2", ordinal: 2 }),
-      ],
-    }),
-  };
-  await turned(() => {
-    server.push(
-      frame("Session", "72", {
-        version: 1,
-        resource: threadMineSession,
-        representation: null,
-      }),
-    );
-  });
-  await settled();
-  expect(turnBlocks().length).toBe(1);
+  expect(await afterFrame("72", threadMineSession)).toBe(1);
   expect(screen.queryByText(/^Failed to load · /u)).toBeNull();
 });
 
