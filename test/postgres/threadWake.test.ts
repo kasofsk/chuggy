@@ -25,16 +25,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import {
-  apiRole,
-  boundaryOwnerRole,
-  configurationImporterRole,
-  finalizerRole,
-  schedulerRole,
-  selectorServiceRole,
-  ticketServiceRole,
-  workerPlaneRole,
-} from "../../src/adapters/postgres/schema.ts";
+import { boundaryOwnerRole } from "../../src/adapters/postgres/schema.ts";
 import {
   threadTurnsAnsweredMax,
   threadWakesPerPassMax,
@@ -377,40 +368,37 @@ test("a thread is woken by a change after it opened, and by none the log held be
 });
 
 /**
- * The negative space that keeps the position a fact about the opening. It is
- * written by the INSERT `open_member_thread` makes and by nothing else, so no
- * role holds `UPDATE` on it — the roster a thread holds is the column beside it
- * that one role may move, and it is asked for here so a probe that could not
- * see a privilege at all would be visible.
+ * The negative space that keeps the position a fact about the opening: it is
+ * written by the INSERT `open_member_thread` makes and by nothing else, so the
+ * roster — read from `pg_roles`, because a list is the roles that existed the
+ * day it was written — holds no `UPDATE` on it. The column beside it that one
+ * role may move is swept the same way and asserted whole, so a pattern that
+ * stopped matching is a red rather than a green over an empty sweep.
  */
 test("no role may move the log position a thread was opened after", async () => {
-  const roles = [
-    boundaryOwnerRole,
-    apiRole,
-    selectorServiceRole,
-    schedulerRole,
-    workerPlaneRole,
-    ticketServiceRole,
-    finalizerRole,
-    configurationImporterRole,
-  ];
-  for (const role of roles) {
-    const rows = await rig.sessions.harness.query(
-      `SELECT has_column_privilege($1,'agent_session','opened_after_sequence','UPDATE') AS moves,
-              has_column_privilege($1,'agent_session','capabilities','UPDATE') AS reconfigures`,
-      [role],
-    );
-    assert.equal(
-      rows[0]?.["moves"],
-      false,
-      `${role} may rewrite what a thread is woken by`,
-    );
-    assert.equal(
-      rows[0]?.["reconfigures"],
-      role === boundaryOwnerRole,
-      `the probe disagrees with 062's own grant for ${role}`,
-    );
-  }
+  const roster = (await rig.sessions.harness.query(
+    `SELECT r.rolname,
+            has_column_privilege(r.rolname,'agent_session','opened_after_sequence','UPDATE') AS moves,
+            has_column_privilege(r.rolname,'agent_session','capabilities','UPDATE') AS reconfigures
+       FROM pg_roles r WHERE r.rolname LIKE 'chuggy\\_%'
+      ORDER BY r.rolname`,
+  )) as readonly {
+    rolname: string;
+    moves: boolean;
+    reconfigures: boolean;
+  }[];
+  assert.deepEqual(
+    roster.filter(({ moves }) => moves).map(({ rolname }) => rolname),
+    [],
+    "a role may rewrite the position a thread was opened after, so what its mailbox is filled from is settled somewhere other than its opening",
+  );
+  assert.deepEqual(
+    roster
+      .filter(({ reconfigures }) => reconfigures)
+      .map(({ rolname }) => rolname),
+    [boundaryOwnerRole],
+    "the sweep disagrees with 062's own grant on the column beside it, so an empty roster would have read as a clean negative space",
+  );
 });
 
 /**
