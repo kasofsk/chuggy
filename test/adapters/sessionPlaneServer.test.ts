@@ -153,6 +153,20 @@ test("a session pod is told what its own session is, and nothing it has not got"
     "1a2b",
   );
   await running.close();
+
+  const told = sessionPlane({
+    authority: {
+      authenticate: () =>
+        Promise.resolve({ ...identity, systemPrompt: "what it is" }),
+    },
+  });
+  assert.equal(
+    (
+      await told.inject({ method: "GET", url: "/v1/session", headers: held })
+    ).json<{ systemPrompt: string }>().systemPrompt,
+    "what it is",
+  );
+  await told.close();
 });
 
 test("no session route answers a bearer that is not a live session", async () => {
