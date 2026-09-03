@@ -169,6 +169,20 @@ test("a session pod is told what its own session is, and nothing it has not got"
   await told.close();
 });
 
+test("a session told what it forks from is told the reference the plane resolved", async () => {
+  const forking = sessionPlane({
+    authority: {
+      authenticate: () =>
+        Promise.resolve({ ...identity, kind: "Inquiry", forkFrom: "lead-1" }),
+    },
+  });
+  const told = (
+    await forking.inject({ method: "GET", url: "/v1/session", headers: held })
+  ).json<{ forkFrom?: string }>();
+  assert.equal(told.forkFrom, "lead-1");
+  await forking.close();
+});
+
 test("no session route answers a bearer that is not a live session", async () => {
   for (const [what, authority, headers] of [
     ["no bearer at all", inertSessions.authority, {}],

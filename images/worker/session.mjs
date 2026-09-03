@@ -29,6 +29,21 @@
  * is the measuring host, and a turn the runtime accounted for nothing on
  * carries no measurement at all rather than one of zeroes — the reader of the
  * envelope is what refuses a decision with no provenance.
+ *
+ * AN INQUIRY FORKS THE PARENT OR IT DOES NOT RUN. What it resumes is
+ * `forkFrom`, the lead's own runtime reference, and never its own: its own
+ * store is never written, so resuming it would load nothing. An inquiry the
+ * plane named no `forkFrom` for therefore fails its turn instead of opening a
+ * query — a fresh session under the lead's objectives answers confidently out
+ * of nothing, and the member reading the answer cannot tell that from the
+ * lead's own thinking.
+ *
+ * AN INQUIRY IS ONE EXCHANGE, AND THE POD ENDS ITS MAILBOX AFTER IT. Leaving
+ * the loop is not enough: the mailbox's generator is still driven by the live
+ * query, so it would claim a second turn and abandon it claimed. The door is
+ * what bounds an inquiry — nothing enqueues a second turn on one — so this is
+ * the weaker of the two walls, and it is here because the pod is what would
+ * otherwise spend the account's attempt on a turn the member never asked for.
  */
 
 import { mkdir, readFile } from "node:fs/promises";
@@ -327,6 +342,18 @@ export function messageReader(stream, pause) {
 }
 
 /**
+ * The transcript this attempt forks from, where the plane named one. It is read
+ * through one function so the refusal and the query option cannot come to
+ * disagree about what "the plane named one" means, and an empty reference is
+ * absent here exactly as it is to `bindReference`.
+ */
+function sessionForkFrom(facts) {
+  return typeof facts.forkFrom === "string" && facts.forkFrom.length > 0
+    ? facts.forkFrom
+    : undefined;
+}
+
+/**
  * The objectives the session carries, appended to the runtime's own preset.
  *
  * THE PRESET RATHER THAN A CUSTOM PROMPT, because the preset is what loads the
@@ -395,6 +422,7 @@ export function sessionQueryOptions(
     facts.capabilities,
   );
   const model = environment.CHUG_SESSION_MODEL;
+  const fork = sessionForkFrom(facts);
   return {
     sessionStore: store,
     sessionStoreFlush: "eager",
@@ -413,10 +441,11 @@ export function sessionQueryOptions(
     maxTurns: task.bounds.turnsMax,
     maxBudgetUsd: task.bounds.budgetUsd,
     loadTimeoutMs: task.bounds.loadTimeoutMs,
-    ...(typeof facts.agentReference === "string"
-      ? { resume: facts.agentReference }
-      : {}),
-    ...(facts.kind === "Inquiry" ? { forkSession: true } : {}),
+    ...(fork !== undefined
+      ? { resume: fork, forkSession: true }
+      : typeof facts.agentReference === "string"
+        ? { resume: facts.agentReference }
+        : {}),
     ...(typeof model === "string" && model.length > 0 ? { model } : {}),
   };
 }
@@ -566,8 +595,30 @@ export async function runSessionTurns(context) {
       return 1;
     }
     context.mailbox.settled();
+    if (context.inquiry) {
+      context.mailbox.stop();
+      return 0;
+    }
     if (ended) return 0;
   }
+}
+
+/**
+ * What an inquiry with nothing to fork from does instead of running: it claims
+ * the turn it was opened for and fails it, so the refusal lands where the asker
+ * reads every other answer. Exiting quietly would leave the member watching a
+ * question that never settles.
+ */
+async function refuseUnforkedInquiry(context, warn) {
+  warn("an inquiry was placed with no transcript to fork from\n");
+  const turns = context.mailbox.turns();
+  if ((await turns.next()).done === false)
+    await post(context, "/v1/session/turn/failure", {
+      turn: context.mailbox.claimed().turn,
+      failure: "AgentFailed",
+    });
+  context.mailbox.stop();
+  return 1;
 }
 
 async function sessionFacts(context) {
@@ -704,6 +755,30 @@ async function sessionRuntime(
   });
 }
 
+/**
+ * The session once everything it runs on is in hand: the store its kind decides
+ * the mode of, the mailbox its turns arrive through, and either the runtime it
+ * speaks with or the refusal that stands in place of one.
+ */
+async function sessionRun(context, facts, opened) {
+  const { pause, warn } = opened;
+  context.inquiry = facts.kind === "Inquiry";
+  context.store = sessionStoreAdapter(context.task, context.bearer, {
+    request: context.request,
+    retain: !context.inquiry,
+  });
+  sessionStagedMailbox(context, {
+    request: context.request,
+    wait: pause,
+    now: context.now,
+  });
+  if (context.inquiry && sessionForkFrom(facts) === undefined)
+    return await refuseUnforkedInquiry(context, warn);
+  const stream = await sessionRuntime(context, { ...opened, facts });
+  context.reader = messageReader(stream, pause);
+  return await runSessionTurns(context);
+}
+
 export async function sessionMain(services = {}) {
   const {
     environment = process.env,
@@ -750,17 +825,14 @@ export async function sessionMain(services = {}) {
       credentialFiles,
       { log: warn, scrub },
     );
-    context.store = sessionStoreAdapter(task, bearer, { request });
-    sessionStagedMailbox(context, { request, wait: pause, now });
-    const stream = await sessionRuntime(context, {
-      facts,
+    return await sessionRun(context, facts, {
       environment,
       token,
       checkout,
       services,
+      pause,
+      warn,
     });
-    context.reader = messageReader(stream, pause);
-    return await runSessionTurns(context);
   } catch (failure) {
     warn(
       `${scrub(failure instanceof Error ? failure.message : "the session failed")}\n`,

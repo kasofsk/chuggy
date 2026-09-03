@@ -5,7 +5,11 @@ import {
   leadRoster,
   threadRoster,
 } from "../../test/contract/sessionRosterFixture.ts";
-import { chuggyToolPrefix, sessionBuiltInTools } from "./chuggyTools.mjs";
+import {
+  chuggyToolPrefix,
+  sessionBuiltInTools,
+  sessionCapabilityTools,
+} from "./chuggyTools.mjs";
 import {
   checkedSessionBounds,
   sessionBoundNames,
@@ -61,33 +65,34 @@ test("a mirror_error after the result fails the turn and never answers it", asyn
   );
 });
 
-test("a successful turn is answered with its result text and the batches it wrote", async () => {
-  const plane = planeOf([turnOne], facts);
-  const { query } = queryOf((_asked, _index, options) => [
-    { type: "system", subtype: "init", session_id: "runtime-1" },
-    () =>
-      options.sessionStore.append({ sessionId: "runtime-1" }, [
-        { uuid: "a", type: "assistant" },
-      ]),
-    result("success", { result: "kestrel" }),
-  ]);
+test("a successful turn is answered with its result text and the batches it wrote, whichever kind wrote them", async () => {
+  for (const kind of ["Lead", "Thread"]) {
+    const plane = planeOf([turnOne], { ...facts, kind });
+    const { query } = queryOf((_asked, _index, options) => [
+      { type: "system", subtype: "init", session_id: "runtime-1" },
+      () =>
+        options.sessionStore.append({ sessionId: "runtime-1" }, [
+          { uuid: "a", type: "assistant" },
+        ]),
+      result("success", { result: "kestrel" }),
+    ]);
 
-  const code = await run({ request: plane.request, query });
+    const code = await run({ request: plane.request, query });
 
-  assert.equal(code, 0);
-  const answer = plane.calls.find(
-    ({ path }) => path === "/v1/session/turn/answer",
-  );
-  assert.deepEqual(answer.body, {
-    turn: "turn-1",
-    result: "kestrel",
-    batchFirst: 1,
-    batchLast: 1,
-  });
-  assert.ok(
-    plane.calls.some(({ path }) => path === "/v1/session/store/runtime-1/1"),
-    "the runtime's append never reached the plane",
-  );
+    assert.equal(code, 0, kind);
+    const answer = plane.calls.find(
+      ({ path }) => path === "/v1/session/turn/answer",
+    );
+    assert.deepEqual(
+      answer.body,
+      { turn: "turn-1", result: "kestrel", batchFirst: 1, batchLast: 1 },
+      kind,
+    );
+    assert.ok(
+      plane.calls.some(({ path }) => path === "/v1/session/store/runtime-1/1"),
+      `a ${kind}'s append never reached the plane`,
+    );
+  }
 });
 
 test("a result the runtime could not finish is the failure that names why", async () => {
@@ -150,20 +155,131 @@ test("the query is opened eagerly against the store, with the session's own boun
   assert.ok(!("forkSession" in options), "a lead was forked");
 });
 
-test("a session that has run before is resumed, and only an inquiry is forked", async () => {
-  for (const [kind, forked] of [
-    ["Lead", false],
-    ["Thread", false],
-    ["Inquiry", true],
-  ]) {
+test("a session that has run before resumes its own reference and is not forked", async () => {
+  for (const kind of ["Lead", "Thread"]) {
     const plane = planeOf([], { ...facts, kind, agentReference: "runtime-1" });
     const { seen, query } = queryOf(() => []);
 
     await run({ request: plane.request, query });
 
     assert.equal(seen.options.resume, "runtime-1", kind);
-    assert.equal(seen.options.forkSession, forked ? true : undefined, kind);
+    assert.ok(!("forkSession" in seen.options), `${kind} was forked`);
   }
+});
+
+test("an inquiry forks the parent's transcript, never its own empty reference", async () => {
+  for (const agentReference of [undefined, "runtime-1"]) {
+    const plane = planeOf([], {
+      ...facts,
+      kind: "Inquiry",
+      capabilities: ["ProjectRead"],
+      forkFrom: "lead-1",
+      ...(agentReference === undefined ? {} : { agentReference }),
+    });
+    const { seen, query } = queryOf(() => []);
+
+    await run({ request: plane.request, query });
+
+    assert.equal(seen.options.resume, "lead-1", String(agentReference));
+    assert.equal(seen.options.forkSession, true, String(agentReference));
+  }
+});
+
+test("an inquiry with no transcript to fork from fails its turn and opens no query", async () => {
+  for (const forkFrom of [undefined, ""]) {
+    const named = JSON.stringify(forkFrom);
+    const plane = planeOf([{ ...turnOne, inputKind: "Inquiry" }], {
+      ...facts,
+      kind: "Inquiry",
+      capabilities: ["ProjectRead"],
+      agentReference: "runtime-1",
+      ...(forkFrom === undefined ? {} : { forkFrom }),
+    });
+    const { seen, query } = queryOf(() => [
+      result("success", { result: "answered from nothing" }),
+    ]);
+
+    const code = await run({ request: plane.request, query });
+
+    assert.equal(code, 1, named);
+    assert.equal(seen.options, undefined, `a query was opened for ${named}`);
+    assert.deepEqual(
+      plane.calls.find(({ path }) => path === "/v1/session/turn/failure").body,
+      { turn: "turn-1", failure: "AgentFailed" },
+      named,
+    );
+    assert.ok(
+      !plane.calls.some(({ path }) => path === "/v1/session/turn/answer"),
+      `an inquiry forking ${named} answered`,
+    );
+  }
+});
+
+test("an inquiry answers as the turn's result and writes no batch of its own", async () => {
+  const inquiryTurn = { ...turnOne, inputKind: "Inquiry", input: "why?" };
+  const plane = planeOf([inquiryTurn, { ...inquiryTurn, turn: "turn-2" }], {
+    ...facts,
+    kind: "Inquiry",
+    capabilities: ["ProjectRead"],
+    forkFrom: "lead-1",
+  });
+  const { query } = queryOf((_asked, _index, options) => [
+    async () => {
+      await options.sessionStore.append({ sessionId: "fork-1" }, [
+        { uuid: "a", type: "assistant" },
+      ]);
+    },
+    { type: "system", subtype: "init", session_id: "fork-1" },
+    result("success", { result: "because." }),
+  ]);
+
+  const code = await run({ request: plane.request, query });
+
+  assert.equal(code, 0);
+  assert.deepEqual(
+    plane.calls.find(({ path }) => path === "/v1/session/turn/answer").body,
+    { turn: "turn-1", result: "because." },
+  );
+  assert.ok(
+    !plane.calls.some(({ path }) => path.startsWith("/v1/session/store")),
+    "an inquiry posted a store batch",
+  );
+  assert.equal(
+    plane.calls.filter(({ path }) => path === "/v1/session/turn").length,
+    1,
+    "an inquiry claimed a second turn",
+  );
+});
+
+test("an inquiry's roster leaves every tool that writes disallowed by name", async () => {
+  const plane = planeOf([], {
+    ...facts,
+    kind: "Inquiry",
+    capabilities: ["ProjectRead"],
+    forkFrom: "lead-1",
+  });
+  const { seen, query } = queryOf(() => []);
+
+  await run({ request: plane.request, query });
+
+  const { allowedTools, disallowedTools } = seen.options;
+  assert.deepEqual(
+    seen.options.mcpServers.chuggy.tools.map(({ name }) => name),
+    sessionCapabilityTools.ProjectRead,
+    "an inquiry was registered a tool that is not a project read",
+  );
+  for (const tool of sessionBuiltInTools)
+    assert.ok(disallowedTools.includes(tool), `${tool} was left ungoverned`);
+  assert.deepEqual(
+    allowedTools.filter((name) => !name.startsWith(chuggyToolPrefix)),
+    [],
+    "a read-only roster was given a built-in",
+  );
+  for (const tool of ["release_draft", "revise_draft", "dispatch"])
+    assert.ok(
+      disallowedTools.includes(`${chuggyToolPrefix}${tool}`),
+      `${tool} is not disallowed`,
+    );
 });
 
 test("the runtime's session id is bound once, however many times it says so", async () => {

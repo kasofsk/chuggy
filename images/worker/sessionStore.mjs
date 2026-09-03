@@ -27,6 +27,15 @@
  * The remembered set is bounded, so a re-appended ancient uuid is written twice
  * rather than dropped — a duplicate the `parentUuid` chain walks past, where a
  * dropped entry is a hole nothing can walk past.
+ *
+ * AN INQUIRY'S OWN TRANSCRIPT IS NEVER WRITTEN. A fork is answered aside and
+ * thrown away, so its adapter is opened with `retain: false`: `append` resolves
+ * having sent nothing, and the turn therefore names no batch range, because
+ * nothing numbered a batch to name. `load` and `listSubkeys` are untouched by
+ * the mode — they still go to the plane, which is how the fork reads the parent
+ * it was forked from, and "ephemeral" must not come to mean "disconnected".
+ * This discard is not the control: the pod is the thing being controlled, and
+ * the database refuses an inquiry's batch on its own.
  */
 
 import { Buffer } from "node:buffer";
@@ -260,9 +269,9 @@ async function listStreamSubkeys(held, sessionId) {
     .map((stream) => stream.slice(prefix.length));
 }
 
-/** One session's store, held open for the life of the pod. */
-export function sessionStoreAdapter(task, bearer, services = {}) {
-  const { request = sessionRequest } = services;
+/** One session's store, held open for the life of the pod, retained unless it is a fork's. */
+export function sessionStoreAdapter(task, bearer, options = {}) {
+  const { request = sessionRequest, retain = true } = options;
   const held = {
     streams: new Map(),
     turn: { first: undefined, last: undefined },
@@ -271,7 +280,10 @@ export function sessionStoreAdapter(task, bearer, services = {}) {
   let chain = Promise.resolve();
   return {
     async append(key, entries) {
+      // Named before the mode is read: a key the store cannot name is a fault
+      // in either mode, and a discard that swallowed it would hide it.
       const stream = sessionStoreStream(key);
+      if (!retain) return undefined;
       const run = chain.then(() => appendOnce(held, stream, entries));
       chain = run.catch(() => undefined);
       return run;
