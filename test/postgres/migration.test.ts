@@ -2916,6 +2916,83 @@ test("migration 64 keys a standing delivery by the ticket its command dispatches
   });
 });
 
+/** What an installation's controls say about dispatches, and at what revision. */
+async function standingInstallationBudget(subject: pg.Pool): Promise<{
+  readonly budget: string | null;
+  readonly revision: string;
+  readonly recorded: string;
+}> {
+  const found = await subject.query<{
+    budget: string | null;
+    revision: string;
+    recorded: string;
+  }>(
+    `SELECT settings.controls::jsonb->'limits'->>'dispatchesPerDecision' AS budget,
+            settings.revision::text AS revision,
+            (SELECT count(*)::text FROM selector_runtime_settings_history) AS recorded
+       FROM selector_runtime_settings settings WHERE singleton=1`,
+  );
+  const row = found.rows[0];
+  assert.ok(row, "the installation states its controls");
+  return row;
+}
+
+/** States a dispatch budget on an installation that has not stated one. */
+async function standingInstallationStates(
+  subject: pg.Pool,
+  budget: number,
+): Promise<void> {
+  await subject.query(
+    `UPDATE selector_runtime_settings
+        SET controls=jsonb_set(controls::jsonb,'{limits,dispatchesPerDecision}',
+              to_jsonb($1::bigint))::text
+      WHERE singleton=1`,
+    [budget],
+  );
+}
+
+/**
+ * The installation default is a floor and not a value: an owner who already
+ * asks for more keeps what they ask for, and keeping it mints nothing — no
+ * revision, no history row. The guards that hold it, the predicate that skips
+ * the write and the conflict arm that lets the unchanged revision keep the
+ * history row it has, are invisible on an installation that never stated the
+ * key, which is the one the case above drives.
+ */
+test("migration 64 leaves an installation standing above its floor untouched", async () => {
+  await migrationDatabase("delivery_budget_wider", async (subject) => {
+    await migrationSeedApplied(subject, 64);
+    const wider = leadDispatchesPerDecision + 1;
+    await standingInstallationStates(subject, wider);
+    const before = await standingInstallationBudget(subject);
+    await applyMigrationsAbove(subject, 63);
+    assert.deepEqual(await standingInstallationBudget(subject), {
+      budget: String(wider),
+      revision: before.revision,
+      recorded: before.recorded,
+    });
+  });
+});
+
+/**
+ * The other arm of the same floor: an installation standing below it is raised
+ * to it, and the raise is a revision like any other administrator's.
+ */
+test("migration 64 raises an installation standing below its floor", async () => {
+  await migrationDatabase("delivery_budget_narrower", async (subject) => {
+    await migrationSeedApplied(subject, 64);
+    const narrower = leadDispatchesPerDecision - 1;
+    await standingInstallationStates(subject, narrower);
+    const before = await standingInstallationBudget(subject);
+    await applyMigrationsAbove(subject, 63);
+    assert.deepEqual(await standingInstallationBudget(subject), {
+      budget: String(leadDispatchesPerDecision),
+      revision: String(Number(before.revision) + 1),
+      recorded: String(Number(before.recorded) + 1),
+    });
+  });
+});
+
 /** The capabilities a session held before a member's thread could originate a draft. */
 const capabilitiesBeforeThreads = allSessionCapabilities.filter(
   (capability) => capability !== "DraftOriginate",

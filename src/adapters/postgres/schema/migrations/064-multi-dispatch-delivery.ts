@@ -39,12 +39,18 @@
  * lead reads — and the cases below assert that over a decision holding several
  * rows rather than leaving it to a reader of the old body.
  *
- * THE INSTALLATION DEFAULT IS A FLOOR AND NOT A VALUE, as the two migrations
- * that last moved these controls also had it: an installation that already
- * states a wider budget keeps what it states, and the revision the raise mints
- * is recorded like every other. The floor is written from the constant the
+ * THE INSTALLATION DEFAULT IS A FLOOR AND NOT A VALUE, as the migrations that
+ * last moved these controls also had it: an installation that already states a
+ * wider budget keeps what it states, and the revision the raise mints is
+ * recorded like every other. The floor is written from the constant the
  * TypeScript side reads rather than by re-typing the controls literal, which
- * would drift from it the first time either moved.
+ * would drift from it the first time either moved. The predicate is where the
+ * floor lives, and the assignment is the bare constant: its predecessors wrap
+ * theirs in `greatest` because they move several keys under one predicate, so
+ * a row selected for one key may already stand above another's floor. This
+ * statement moves one key, so a selected row is below the floor by the
+ * predicate that selected it, and a `greatest` beside it would be a guard no
+ * case could tell the absence of.
  */
 
 import {
@@ -311,9 +317,7 @@ const projectSettingsWriteTakesTheBudget = [
 const installationDispatchBudget = [
   `UPDATE selector_runtime_settings
       SET controls=jsonb_set(controls::jsonb,'{limits,dispatchesPerDecision}',
-            to_jsonb(greatest(
-              coalesce((controls::jsonb->'limits'->>'dispatchesPerDecision')::bigint,0),
-              ${leadDispatchesPerDecision}::bigint)))::text,
+            to_jsonb(${leadDispatchesPerDecision}::bigint))::text,
           revision=revision+1,updated_at=now()
     WHERE singleton=1
       AND coalesce((controls::jsonb->'limits'->>'dispatchesPerDecision')::bigint,0)
