@@ -168,11 +168,6 @@ const selectorOperationalContextSchema = z.union([
     .readonly(),
 ]);
 
-/**
- * A retained policy input under exactly one spelling of the note. Two strict
- * alternatives are what say a row carrying neither, or both, is a row that is
- * not intact — which is the whole of what this parser is relied on to say.
- */
 /** One retained change row, its absent members absent rather than undefined. */
 function retainedChange(
   change: z.infer<typeof notificationSchema>,
@@ -190,6 +185,11 @@ function retainedChange(
   };
 }
 
+/**
+ * A retained policy input under exactly one spelling of the note. Two strict
+ * alternatives are what say a row carrying neither, or both, is a row that is
+ * not intact — which is the whole of what this parser is relied on to say.
+ */
 const selectorContextSchema = z.union([
   z
     .strictObject({

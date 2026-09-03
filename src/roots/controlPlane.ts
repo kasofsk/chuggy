@@ -362,17 +362,25 @@ export function selectorProcessRoot(
         clock: { nowIso: () => new Date().toISOString() },
         wakesPerPassMax: config.wakes.wakesPerPassMax,
       },
-      {
-        pool,
-        additional: [
-          postgresRolePrecondition(pool, selectorServiceRole),
-          leadMailboxPrivilegePrecondition(pool),
-          ...additional,
-        ],
-      },
+      { pool, additional: selectorProcessPreconditions(pool, additional) },
       config.runtime,
     ),
   );
+}
+
+/**
+ * What the selector process must be able to do before it takes a decision: it
+ * must be the role it claims, and it must hold every door a decision opens.
+ */
+export function selectorProcessPreconditions(
+  pool: pg.Pool,
+  additional: readonly RuntimePrecondition[] = [],
+): readonly RuntimePrecondition[] {
+  return [
+    postgresRolePrecondition(pool, selectorServiceRole),
+    leadMailboxPrivilegePrecondition(pool),
+    ...additional,
+  ];
 }
 
 /**

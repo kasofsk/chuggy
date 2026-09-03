@@ -71,10 +71,10 @@ import {
 /** What one lead turn may spend on tools, where the seeded row was written for a policy with none. */
 export const leadToolCallsPerDecision = 200;
 
-/** The signature 058 opened a session under, and the one this migration retypes it to. */
 /** The objectives door's argument types, which its grant and its callers share. */
 export const systemPromptSetSignature = "text,text,text";
 
+/** The signature 058 opened a session under, and the one this migration retypes it to. */
 const openSignature = "text,text,text,text,text,text,text[],text";
 const promptedOpenSignature = `${openSignature},text`;
 

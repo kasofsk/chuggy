@@ -554,7 +554,6 @@ const selectorDoors = [
      END $$`,
 ];
 
-/** Every selector-side door named beside its argument types, once. */
 /** Every door this migration grants the selector role, named beside its argument types once. */
 export const selectorSignatures: readonly (readonly [string, string])[] = [
   [agenticRefusalRecordFunction, refusalRecordSignature],

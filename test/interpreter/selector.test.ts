@@ -2224,3 +2224,46 @@ test("a dispatching decision's refusals are entered after its proposal", async (
     "a refusal naming a decision the log does not carry could never be explained",
   );
 });
+
+test("the trigger reads from the cursor the project's last turn stood on", async () => {
+  const asked: number[] = [];
+  let started = 0;
+  await selectorRunOnce(
+    refusalWrites(),
+    {
+      ...stateStore(() => undefined),
+      project: () => Promise.resolve(observedState(5)),
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [partition] }),
+      /** Moved to 5 and no further, so only a read starting before 5 sees anything. */
+      moved: (_scope: typeof partition, after: number) => {
+        asked.push(after);
+        return Promise.resolve(
+          after < 5
+            ? ({
+                result: "Events",
+                cursor: 5,
+                events: [{ ordinal: 5, kind: "Ticket", resource: "1" }],
+              } as const)
+            : ({ result: "Events", cursor: 5, events: [] } as const),
+        );
+      },
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    policyHost(() => {
+      started += 1;
+      return Promise.resolve(waitingExecution());
+    }),
+    perProjectIdentities(),
+    settingsSource(() => Promise.resolve(runtimeSettings)),
+  );
+  assert.deepEqual(
+    asked,
+    [5],
+    "a trigger that read from the start would replay every change on every pass",
+  );
+  assert.equal(started, 0, "nothing moved past that cursor, so nothing ran");
+});

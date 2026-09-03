@@ -484,30 +484,52 @@ test("a lift of a refusal the turn did not show is impossible", () => {
 });
 
 test("a document overflowed by a part nothing sheds is refused with what overflowed", () => {
-  assert.throws(
-    () =>
-      leadTurnInput(
-        {
-          ...request,
-          observation: {
-            ...observation,
-            operationalContext: {
-              ...operationalContext,
-              capacity: {
-                ...operationalContext.capacity,
-                account: "x".repeat(leadObservationBytesMax),
-              },
-            },
+  const standing = Array.from(
+    { length: leadRefusalsObservedMax },
+    (_unused, index) => ({
+      ticket: asTicketId(index + 1),
+      ticketVersion: 1,
+      reason: "r".repeat(agenticRefusalReasonCharsMax),
+      recordedAt: "2026-09-01T12:00:00.000Z",
+      superseded: false,
+    }),
+  );
+  const seeding = {
+    handoffNote: { note: "kept" },
+    decisions: [],
+    refusals: [],
+    notificationCursor: 12,
+  };
+  const padded = (account: string, shown: typeof standing) =>
+    leadTurnInput(
+      {
+        ...request,
+        observation: {
+          ...observation,
+          operationalContext: {
+            ...operationalContext,
+            capacity: { ...operationalContext.capacity, account },
           },
         },
-        partition,
-        [],
-        undefined,
-      ),
+      },
+      partition,
+      shown,
+      seeding,
+    );
+  /** Sized so the refusals are what tips it over: without them it fits. */
+  const bare = padded("", []).length;
+  const shownBytes = JSON.stringify(standing).length;
+  const account = "x".repeat(
+    leadObservationBytesMax - bare - Math.floor(shownBytes / 2),
+  );
+  assert.ok(padded(account, []).length <= leadObservationBytesMax);
+  assert.throws(
+    () => padded(account, standing),
     (error: unknown) =>
       error instanceof RangeError &&
-      /nothing sheddable/u.test(error.message) &&
+      /seeding shed to nothing/u.test(error.message) &&
       /objectives, handoff note, cursor and refusals/u.test(error.message),
+    "the last rung refuses; shedding the refusals would make this one fit",
   );
 });
 
