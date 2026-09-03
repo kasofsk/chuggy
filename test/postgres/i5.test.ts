@@ -40,10 +40,16 @@ import { notificationPageLimitMax } from "../../src/interpreter/notifications.ts
 import type {
   SelectorDecisionProposals,
   SelectorDelivery,
+  SelectorProjectOverrides,
   SelectorRecordedDecision,
 } from "../../src/interpreter/selector.ts";
+import type { SelectorProjectSettingsRecord } from "../../src/interpreter/selectorProjectSettings.ts";
 import type { DecisionInput } from "../../src/interpreter/projectDiscovery.ts";
-import type { Partition } from "../../src/interpreter/projectStore.ts";
+import {
+  asProjectId,
+  asTenantId,
+  type Partition,
+} from "../../src/interpreter/projectStore.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
@@ -1718,25 +1724,78 @@ const i5DispatchModePairings: readonly (readonly [
 
 /**
  * Sets one project's whole override set from revision zero, which is where a
- * project this suite made stands. The write is the API role's, as the settings
- * door makes it.
+ * project this suite made stands, and answers with the row it wrote. The write
+ * is the API role's, as the settings door makes it, so a case reaches the
+ * columns the way an administrator does and never by an INSERT of its own.
  */
-async function i5HeldProjectDispatchMode(
+async function i5HeldProjectOverrides(
   partition: Partition,
-  mode: "Automatic" | "ApprovalRequired",
-): Promise<void> {
+  overrides: SelectorProjectOverrides,
+): Promise<SelectorProjectSettingsRecord> {
   const pool = postgresRolePool(apiRole);
   try {
     const written = await postgresSelectorProjectSettings(pool).write(
       partition,
       0,
-      { dispatchMode: mode },
+      overrides,
       selectorAdministrator,
     );
     assert.equal(written.written, "Settings");
+    if (written.written !== "Settings")
+      throw new Error("i5: the settings door answered with no row");
+    return written.settings;
   } finally {
     await pool.end();
   }
+}
+
+/**
+ * What the durable resolution answers for one project, driven on its own
+ * rather than through the row it stamps. `null` is an answer here: a
+ * resolution that found neither an override nor a default gives one, and a
+ * case that read it as absent would call that agreement.
+ */
+async function i5ResolvedDispatchMode(
+  partition: Partition,
+): Promise<string | null> {
+  const rows = await harness.query(
+    `SELECT ${selectorProjectDispatchModeFunction}($1,$2) AS mode`,
+    [partition.tenant, partition.project],
+  );
+  assert.equal(rows.length, 1);
+  return (rows[0]?.["mode"] ?? null) as string | null;
+}
+
+/**
+ * The production host an `Automatic` dispatch mode is refused without, for the
+ * cases that write one and need the selector role for nothing else.
+ */
+async function i5HeldAutomaticReadiness(): Promise<void> {
+  const pool = postgresRolePool(selectorServiceRole);
+  try {
+    await postgresSelectorState(pool).setAutomaticReadiness(true);
+  } finally {
+    await pool.end();
+  }
+}
+
+/**
+ * A provisioned partition sharing one half of another's identity.
+ * `postgresHarnessPartition` mints a fresh tenant with every project, so the
+ * collisions an override's keying answers for exist nowhere else in this suite.
+ */
+async function i5HarnessNeighbour(
+  shared: Partial<Partition>,
+  label: string,
+): Promise<Partition> {
+  const neighbour = {
+    tenant:
+      shared.tenant ?? asTenantId(`tenant-${label}-${crypto.randomUUID()}`),
+    project:
+      shared.project ?? asProjectId(`project-${label}-${crypto.randomUUID()}`),
+  };
+  await harness.store.createProject(neighbour);
+  return neighbour;
 }
 
 /**
@@ -1757,7 +1816,7 @@ test("a delivery is stamped from its own project's dispatch mode", async () => {
         `i5-mode-${String(project)}-${installation}`,
       );
       if (project !== undefined)
-        await i5HeldProjectDispatchMode(partition, project);
+        await i5HeldProjectOverrides(partition, { dispatchMode: project });
       const restore = await i5HeldDispatchMode(installation);
       const decision = `project-mode-${crypto.randomUUID()}`;
       try {
@@ -1799,7 +1858,7 @@ test("the durable dispatch-mode resolution answers what the interpreter resolves
   const apiPool = postgresRolePool(apiRole);
   const state = postgresSelectorState(selectorPool);
   await state.setAutomaticReadiness(true);
-  const durable: (string | undefined)[] = [];
+  const durable: (string | null)[] = [];
   const resolved: string[] = [];
   try {
     for (const [project, installation] of i5DispatchModePairings) {
@@ -1808,14 +1867,10 @@ test("the durable dispatch-mode resolution answers what the interpreter resolves
         `i5-resolve-${String(project)}-${installation}`,
       );
       if (project !== undefined)
-        await i5HeldProjectDispatchMode(partition, project);
+        await i5HeldProjectOverrides(partition, { dispatchMode: project });
       const restore = await i5HeldDispatchMode(installation);
       try {
-        for (const row of await harness.query(
-          `SELECT ${selectorProjectDispatchModeFunction}($1,$2) AS mode`,
-          [partition.tenant, partition.project],
-        ))
-          durable.push(row["mode"] as string);
+        durable.push(await i5ResolvedDispatchMode(partition));
         resolved.push(
           (await postgresSelectorProjectSettings(apiPool).read(partition))
             .effective.dispatchMode,
@@ -1871,6 +1926,86 @@ test("the dispatch-mode resolution is owned, pinned and world-revoked", async ()
       [{ held: false }],
       `${identity} to ${role}`,
     );
+});
+
+/**
+ * An override answers for the project it was written under and for no sibling
+ * of it. The resolution joins on both halves of the key, and a join on the
+ * tenant alone would read this override for every other project the tenant
+ * holds.
+ */
+test("the dispatch-mode resolution reads no sibling project's override", async () => {
+  await i5HeldAutomaticReadiness();
+  const held = await postgresHarnessProject(harness.store, "i5-key-project");
+  const sibling = await i5HarnessNeighbour(
+    { tenant: held.tenant },
+    "i5-key-project",
+  );
+  const restore = await i5HeldDispatchMode("ApprovalRequired");
+  try {
+    await i5HeldProjectOverrides(held, { dispatchMode: "Automatic" });
+    assert.deepEqual(
+      [
+        await i5ResolvedDispatchMode(held),
+        await i5ResolvedDispatchMode(sibling),
+      ],
+      ["Automatic", "ApprovalRequired"],
+    );
+  } finally {
+    await restore();
+  }
+});
+
+/**
+ * The other half of the same key. Project identities are opaque and a tenant
+ * does not mint them, so one name standing in two tenants is ordinary, and a
+ * join on the project alone would hand one tenant's override to the other.
+ */
+test("the dispatch-mode resolution reads no other tenant's override", async () => {
+  await i5HeldAutomaticReadiness();
+  const held = await postgresHarnessProject(harness.store, "i5-key-tenant");
+  const namesake = await i5HarnessNeighbour(
+    { project: held.project },
+    "i5-key-tenant",
+  );
+  const restore = await i5HeldDispatchMode("ApprovalRequired");
+  try {
+    await i5HeldProjectOverrides(held, { dispatchMode: "Automatic" });
+    assert.deepEqual(
+      [
+        await i5ResolvedDispatchMode(held),
+        await i5ResolvedDispatchMode(namesake),
+      ],
+      ["Automatic", "ApprovalRequired"],
+    );
+  } finally {
+    await restore();
+  }
+});
+
+/**
+ * A row is not an override of every column it has. A write replaces the whole
+ * override set, so a project that sets only its north star holds a row whose
+ * `dispatch_mode` is NULL, and that column is what the installation default is
+ * fallen back to — not the row's absence.
+ */
+test("a project holding a row with no dispatch mode of its own inherits the installation's", async () => {
+  await i5HeldAutomaticReadiness();
+  const partition = await postgresHarnessProject(harness.store, "i5-null-mode");
+  const restore = await i5HeldDispatchMode("Automatic");
+  try {
+    const written = await i5HeldProjectOverrides(partition, {
+      northStar: "ship the thing",
+    });
+    assert.deepEqual(
+      [written.revision, written.overrides.dispatchMode],
+      [1, undefined],
+      "the project holds a row and no dispatch mode in it",
+    );
+    assert.equal(await i5ResolvedDispatchMode(partition), "Automatic");
+  } finally {
+    await restore();
+  }
 });
 
 /** A paused installation refuses each of a decision's rows, not merely its first. */
