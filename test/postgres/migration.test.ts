@@ -2788,6 +2788,16 @@ test("the session migrations compose into the schema a fresh generation renders"
 });
 
 /**
+ * The versions no declared migration holds, which this branch has one of: 067
+ * is numbered around kasofsk/chuggy#545, whose 066 is on its own branch until
+ * it merges. It is written down rather than computed so that a hole nobody
+ * meant is a hole nobody can leave — renumbering a migration upward opens one
+ * this list does not name, and the day #545 lands this list is wrong until it
+ * is emptied.
+ */
+const declaredVersionsAwaited = [66];
+
+/**
  * The ledger a whole chain leaves is exactly the versions this image declares,
  * once each and in the order their filenames give them. It is compared against
  * the declaration rather than against a tail of it or against the highest
@@ -2805,6 +2815,13 @@ test("the ledger a migrated database leaves is what the api image declares", asy
       applied.map((each) => each.version),
       migrations.map((each) => each.version),
       "every declared version is applied once, in declaration order",
+    );
+    assert.deepEqual(
+      Array.from({ length: declaredLatest }, (_, index) => index + 1).filter(
+        (version) => !applied.some((each) => each.version === version),
+      ),
+      declaredVersionsAwaited,
+      "the versions below the latest that no row holds are the siblings this image is numbered around",
     );
     assert.ok(
       schemaContractAccepts(currentRuntimeSchemaContract, applied),
