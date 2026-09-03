@@ -21,8 +21,10 @@
  * below and asserted by a case.
  */
 
-import { selectorHistoryLimitMax } from "../../../../contract/http.ts";
-import { leadDispatchesMax } from "../../../../interpreter/selector.ts";
+import {
+  leadDispatchesMax,
+  selectorHistoryLimitMax,
+} from "../../../../contract/http.ts";
 import {
   apiRole,
   boundaryOwnerRole,
