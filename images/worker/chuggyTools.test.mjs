@@ -199,6 +199,10 @@ test("each read reaches the route its roster names, and only it", async () => {
     [["list_threads", {}], "/threads"],
     [["read_thread", { session: "thread-1/a" }], "/threads/thread-1%2Fa"],
     [
+      ["read_thread", { session: "thread-1", before: 7, limit: 32 }],
+      "/threads/thread-1?before=7&limit=32",
+    ],
+    [
       ["read_thread_transcript", { session: "thread-1", after: 2, limit: 8 }],
       "/threads/thread-1/transcript?after=2&limit=8",
     ],
@@ -273,6 +277,9 @@ test("an identity carrying a separator stays inside the route its tool names", a
 test("a thread read past its bound is refused before it asks, and within it asks", async () => {
   for (const [name, args] of [
     ["read_thread", { session: "" }],
+    ["read_thread", { session: "t-1", limit: 0 }],
+    ["read_thread", { session: "t-1", limit: 33 }],
+    ["read_thread", { session: "t-1", before: 0 }],
     ["read_thread_transcript", { session: "t-1", limit: 0 }],
     ["read_thread_transcript", { session: "t-1", limit: 9 }],
     ["read_thread_transcript", { session: "" }],
@@ -615,9 +622,6 @@ const unservedOnThisInstallation = [
   "read_ticket_refusals",
   "read_lead",
   "read_lead_transcript",
-  "list_threads",
-  "read_thread",
-  "read_thread_transcript",
 ];
 
 test("the table names exactly the reads this installation does not serve", () => {

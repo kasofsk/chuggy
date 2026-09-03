@@ -68,6 +68,7 @@ export const nativeHttpPageItemsMax = 100;
 export const selectorHistoryLimitMax = 50;
 export const agenticRefusalsAnsweredMax = 32;
 export const sessionStorePageBatchesMax = 8;
+export const threadTurnsAnsweredMax = 32;
 
 /** The relation a filed dependent may carry, and the one it may not. */
 export const allDependentRelations = ["FollowUp", "Prerequisite"];
@@ -264,6 +265,8 @@ const ticket = (z) => z.number().int().min(1);
 const limit = (z, max) => z.number().int().min(1).max(max).optional();
 const count = (z) => z.number().int().min(0);
 const identity = (z) => z.string().min(1).max(256);
+/** A position in a mailbox, which is counted from one and never from zero. */
+const ordinal = (z) => z.number().int().min(1);
 /**
  * A JSON object this tool passes through and the API's own schema is the
  * authority on. IT IS `looseObject` AND NOT `record`: the runtime converts a
@@ -304,11 +307,6 @@ export const chuggyToolsNotYetServed = {
   read_lead: "The lead session cannot be read by this installation yet.",
   read_lead_transcript:
     "The lead's own transcript cannot be read by this installation yet.",
-  list_threads:
-    "This project's member threads cannot be listed by this installation yet.",
-  read_thread: "A member's thread cannot be read by this installation yet.",
-  read_thread_transcript:
-    "A thread's own transcript cannot be read by this installation yet.",
 };
 
 /**
@@ -529,12 +527,16 @@ export const chuggyProjectTools = [
   {
     name: "read_thread",
     description:
-      "One member thread: whose it is, its state, and the tail of its conversation.",
-    shape: (z) => ({ session: identity(z) }),
-    call: (context, { session }) =>
+      "One page of a member thread, newest turn last: whose it is, its state, and that much of its conversation. Answers `nextBefore` for the page before this one; `before` resumes from it.",
+    shape: (z) => ({
+      session: identity(z),
+      before: ordinal(z).optional(),
+      limit: limit(z, threadTurnsAnsweredMax),
+    }),
+    call: (context, { session, before, limit: pageLimit }) =>
       read(
         context,
-        `${partitionPath(context.task)}/threads/${encodeURIComponent(session)}`,
+        `${partitionPath(context.task)}/threads/${encodeURIComponent(session)}${search({ before, limit: pageLimit })}`,
       ),
   },
   {

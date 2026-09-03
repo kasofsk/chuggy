@@ -33,6 +33,7 @@ import {
   sessionTurnResultCharsMax,
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
+  threadTurnsAnsweredMax,
 } from "../../src/contract/http.ts";
 import { allSessionCapabilities } from "../../src/interpreter/agentSession.ts";
 import {
@@ -105,6 +106,7 @@ test("every bound the image copies is the contract's own value", () => {
       selectorHistoryLimitMax: image.selectorHistoryLimitMax,
       agenticRefusalsAnsweredMax: image.agenticRefusalsAnsweredMax,
       sessionStorePageBatchesMax: image.sessionStorePageBatchesMax,
+      threadTurnsAnsweredMax: image.threadTurnsAnsweredMax,
       leadDispatchesMax: decision.leadDispatchesMax,
       leadRefusalsPerDecisionMax: decision.leadRefusalsPerDecisionMax,
       agenticRefusalReasonCharsMax: decision.agenticRefusalReasonCharsMax,
@@ -119,6 +121,7 @@ test("every bound the image copies is the contract's own value", () => {
       selectorHistoryLimitMax,
       agenticRefusalsAnsweredMax,
       sessionStorePageBatchesMax,
+      threadTurnsAnsweredMax,
       leadDispatchesMax,
       leadRefusalsPerDecisionMax,
       agenticRefusalReasonCharsMax,
