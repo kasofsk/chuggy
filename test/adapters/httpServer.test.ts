@@ -42,7 +42,7 @@ import {
   asSessionId,
   sessionBearerPrefix,
 } from "../../src/interpreter/agentSession.ts";
-import { unservedThreads } from "./threadFixtures.ts";
+import { unservedLeadInquiries, unservedThreads } from "./threadFixtures.ts";
 
 const authority = {
   installationAuthority: () =>
@@ -264,6 +264,7 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
   return {
     ...unreadableLeadReads(),
     ...unservedThreads,
+    ...unservedLeadInquiries,
     ...fakeOperations(calls),
     ...fakeConfigurations(calls),
     ...fakeDrafts(calls),

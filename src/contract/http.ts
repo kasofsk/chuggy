@@ -351,11 +351,26 @@ export const sessionSystemPromptCharsMax =
   selectorSettingsTextCharsMax * 2 + leadObjectivesFixedCharsMax;
 
 /**
+ * The most an inquiry's objectives weigh beyond the lead's own that it forks,
+ * which is the sentence saying what being a fork means. It is named here rather
+ * than derived because the column every kind's objectives share is generated
+ * from the roster below and the contract may not read the interpreter that
+ * composes the sentence; `test/contract/rosters.test.ts` holds that composition
+ * to this bound, exactly as it holds a lead's.
+ */
+export const inquiryObjectivesFixedCharsMax = 1_024;
+
+/**
  * Every kind of session's own ceiling on the objectives it is opened with,
  * which share one column: a kind added here widens what that column holds, and
- * the check must then be replaced where it was last written.
+ * the check must then be replaced where it was last written. An inquiry's is
+ * the widest, because a fork carries the lead's own objectives and then says
+ * what being a fork means.
  */
-export const sessionPromptCeilings = [sessionSystemPromptCharsMax] as const;
+export const sessionPromptCeilings = [
+  sessionSystemPromptCharsMax,
+  sessionSystemPromptCharsMax + inquiryObjectivesFixedCharsMax,
+] as const;
 
 /** What `agent_session.system_prompt` holds, whichever kind of session wrote it. */
 export const agentSessionPromptCharsMax = Math.max(...sessionPromptCeilings);

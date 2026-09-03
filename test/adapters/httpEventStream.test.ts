@@ -31,7 +31,6 @@ import {
 import {
   asPrincipal,
   asPublicInstant,
-  type NativeWeb,
   type TicketNativeAction,
 } from "../../src/interpreter/nativeWeb.ts";
 import { asInstallationId } from "../../src/domain/ids.ts";
@@ -50,7 +49,7 @@ import {
   type FakeLog,
 } from "../interpreter/projectStreamHarness.ts";
 import { unreadableLeadReads } from "./leadReadFixtures.ts";
-import { unservedThreads } from "./threadFixtures.ts";
+import { unservedLeadInquiries, unservedThreads } from "./threadFixtures.ts";
 
 const partition = partitionOf("project");
 const streamPath = "/api/v1/tenants/tenant/projects/project/events";
@@ -63,47 +62,13 @@ const authority = {
 
 const notFound = () => Promise.resolve({ result: "NotFound" } as const);
 
-type ServedWeb = Pick<
-  NativeWeb,
-  | "cancel"
-  | "configuration"
-  | "configurations"
-  | "ticketNativeActions"
-  | "nativeActions"
-  | "createConfiguration"
-  | "importRepositoryConfigurations"
-  | "createDraft"
-  | "initializeDraft"
-  | "deleteDraft"
-  | "dispatchView"
-  | "draft"
-  | "drafts"
-  | "notifications"
-  | "operation"
-  | "project"
-  | "projectInventory"
-  | "reviseDraft"
-  | "submit"
-  | "ticket"
-  | "execution"
-  | "executions"
-  | "operationalStatus"
-  | "selectorOperationalContext"
-  | "lead"
-  | "leadTranscript"
-  | "agenticRefusals"
-  | "ticketAgenticRefusals"
-  | "selectorHistory"
-  | "outputContent"
-  | "runTurns"
-  | "runTranscript"
-  | "runConfiguration"
-  | "threads"
-  | "thread"
-  | "threadTranscript"
-  | "openThread"
-  | "sendThreadMessage"
->;
+/**
+ * What the app takes, which is one boundary and not the methods a case serves.
+ * It is `createNativeHttpApp`'s own parameter rather than a second Pick list:
+ * three copies of one roster is where a method added to the app stops being
+ * added to the suites that drive it.
+ */
+type ServedWeb = Parameters<typeof createNativeHttpApp>[0];
 
 function servedWeb(
   readable: boolean,
@@ -112,6 +77,7 @@ function servedWeb(
   return {
     ...unreadableLeadReads(),
     ...unservedThreads,
+    ...unservedLeadInquiries,
     cancel: notFound,
     configuration: () => Promise.resolve(undefined),
     configurations: notFound,

@@ -1077,11 +1077,15 @@ const inquiryMeasureShape = leadTurnResponseSchema.pick({
  * One inquiry against the project's lead, carrying its `question` and its
  * `answer` where `leadTurnResponseSchema` carries neither: a lead's input is
  * the observation its decision log already holds, and an inquiry's is what the
- * member typed and the answer they are waiting for.
+ * member typed and the answer they are waiting for. `asker` is the membership's
+ * own authority subject, absent where that membership has been revoked
+ * (`threadEntryResponseSchema.owner`'s shape, for its reason), and `mine` is
+ * computed against the request's own principal so a browser can name "my
+ * inquiry" without decoding a token.
  */
 export const leadInquiryResponseSchema = z.object({
   session: identitySchema,
-  asker: identitySchema,
+  asker: identitySchema.optional(),
   mine: z.boolean(),
   state: z.enum(sessionStates),
   turnState: z.enum(sessionTurnStates),

@@ -22,21 +22,17 @@ import {
   asSessionTurnId,
   type SessionId,
 } from "../../src/interpreter/agentSession.ts";
-import type { AuthoringStore } from "../../src/interpreter/authoring.ts";
 import { nativeWeb } from "../../src/interpreter/nativeWeb.ts";
 import type {
-  NativeReadStore,
   NativeThreadPorts,
   ProjectAccess,
 } from "../../src/interpreter/nativeWeb.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
-  type OperationInbox,
 } from "../../src/interpreter/operationInbox.ts";
 import { asPrincipal, oidcPrincipal } from "../../src/interpreter/principal.ts";
-import type { NotificationStore } from "../../src/interpreter/notifications.ts";
-import { openExecutionBacklogGuard } from "../../src/interpreter/schedulerContext.ts";
+import { unaskedNativeWebPorts } from "./nativeWebFixtures.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   checkedThreadsLimit,
@@ -196,29 +192,9 @@ function boundary(
       );
     },
   };
-  const reads = {
-    operation: () => Promise.resolve(undefined),
-    project: () => Promise.resolve({ result: "NotFound" as const }),
-    ticket: () => Promise.resolve(undefined),
-    ticketNativeActions: () => Promise.resolve(undefined),
-    nativeActions: () => Promise.resolve({ actions: [] }),
-  } satisfies NativeReadStore;
-  const inbox = {
-    accept: () => Promise.resolve({ accepted: "InvalidCommand" as const }),
-    cancel: () => Promise.resolve({ cancelled: "Unknown" as const }),
-    operation: () => Promise.resolve(undefined),
-  } satisfies OperationInbox;
-  const notifications = {
-    read: () =>
-      Promise.resolve({ result: "Events" as const, cursor: 0, events: [] }),
-  } satisfies NotificationStore;
   const web = nativeWeb(
     access,
-    reads,
-    inbox,
-    {} as AuthoringStore,
-    notifications,
-    openExecutionBacklogGuard,
+    ...unaskedNativeWebPorts,
     undefined,
     undefined,
     undefined,

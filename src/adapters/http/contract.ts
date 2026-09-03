@@ -20,6 +20,7 @@ import {
   configurationCreationSchema,
   draftCreationSchema,
   draftRevisionSchema,
+  leadInquirySchema,
   publicMutationSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
@@ -27,7 +28,9 @@ import {
   type PublicMutation,
 } from "../../contract/requests.ts";
 import {
+  asSessionId,
   asSessionTurnId,
+  type SessionId,
   type SessionTurnId,
 } from "../../interpreter/agentSession.ts";
 import type {
@@ -549,4 +552,23 @@ export function parseThreadMessage(body: unknown): {
 } {
   const value = threadMessageSchema.parse(body);
   return { turn: asSessionTurnId(value.turn), message: value.message };
+}
+
+/**
+ * What a member asked the lead aside: the two identities they minted and the
+ * question they typed. BOTH are the idempotency, because opening a fork and
+ * enqueuing its one turn are one write — so a retried post is answered the
+ * ordinal it already has rather than forking the lead a second time.
+ */
+export function parseLeadInquiry(body: unknown): {
+  readonly session: SessionId;
+  readonly turn: SessionTurnId;
+  readonly question: string;
+} {
+  const value = leadInquirySchema.parse(body);
+  return {
+    session: asSessionId(value.session),
+    turn: asSessionTurnId(value.turn),
+    question: value.question,
+  };
 }

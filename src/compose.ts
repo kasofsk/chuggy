@@ -29,6 +29,7 @@ import {
 } from "./adapters/git/gitPrerequisites.ts";
 import { gitPromotion } from "./adapters/git/gitPromotion.ts";
 import { postgresOperationInbox } from "./adapters/postgres/operationInbox.ts";
+import { postgresLeadInquiries } from "./adapters/postgres/leadInquiry.ts";
 import { postgresNativeReads } from "./adapters/postgres/nativeReads.ts";
 import { postgresAuthoring } from "./adapters/postgres/authoring.ts";
 import { postgresProjectRepositoryBinding } from "./adapters/postgres/repositoryConfiguration.ts";
@@ -310,7 +311,16 @@ export function composeFinalizerRuntime(
   };
 }
 
-/** Wires the authenticated web application to API-role PostgreSQL ports. */
+/**
+ * Wires the authenticated web application to API-role PostgreSQL ports.
+ *
+ * THE INQUIRY STORE IS COMPOSED HERE AND IS NOT A PARAMETER, which the lead's
+ * and the thread's bundles are: those carry an artifact volume and a credential
+ * slot a deployment must choose, this one is the API pool and nothing else, and
+ * a bundle with nothing to choose is a line no case can refute and a root can
+ * forget — a forgotten one costing three routes that raise in a deployment
+ * while every gate stays green, so there is no composing this without it.
+ */
 export function composeNativeWeb(
   apiPool: pg.Pool,
   keying: IdempotencyKeying,
@@ -351,6 +361,7 @@ export function composeNativeWeb(
     outputContents,
     leads,
     threads,
+    postgresLeadInquiries(apiPool),
   );
 }
 

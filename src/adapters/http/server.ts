@@ -65,6 +65,7 @@ import {
   parsePartition,
   parseSelectorProjectSettings,
   parseSubmission,
+  parseLeadInquiry,
   parseThreadMessage,
 } from "./contract.ts";
 import {
@@ -106,6 +107,9 @@ import {
   runTranscriptResponse,
   runTurnsResponse,
   submissionResponse,
+  askLeadResponse,
+  leadInquiriesResponse,
+  leadInquiryResponse,
   openThreadResponse,
   threadMessageResponse,
   threadResponse,
@@ -189,6 +193,9 @@ type InitialNativeWeb = Pick<
   | "threadTranscript"
   | "openThread"
   | "sendThreadMessage"
+  | "leadInquiries"
+  | "leadInquiry"
+  | "askLead"
 >;
 
 function send(reply: FastifyReply, result: NativeHttpResponse): void {
@@ -1201,6 +1208,57 @@ function registerThreadWrites(
   );
 }
 
+/**
+ * The lead's inquiries: the listing, one of them, and the door that asks. All
+ * three are gated on `Read` inside the boundary, so nothing about the gate is
+ * decided here; what IS decided here is that the ask door sits behind the
+ * versioned media type like every other write, and that the two identities come
+ * off the body because they are the idempotency.
+ */
+function registerLeadInquiries(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+  root: string,
+): void {
+  app.get(`${root}/lead/inquiries`, async (request, reply) => {
+    send(
+      reply,
+      leadInquiriesResponse(
+        await web.leadInquiries(principalOf(request), partitionOf(request)),
+      ),
+    );
+  });
+  app.get(`${root}/lead/inquiries/:session`, async (request, reply) => {
+    send(
+      reply,
+      leadInquiryResponse(
+        await web.leadInquiry(
+          principalOf(request),
+          partitionOf(request),
+          asSessionId(textField(record(request.params), "session")),
+        ),
+      ),
+    );
+  });
+  app.post(
+    `${root}/lead/inquiries`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        askLeadResponse(
+          partitionOf(request),
+          await web.askLead(
+            principalOf(request),
+            partitionOf(request),
+            parseLeadInquiry(request.body),
+          ),
+        ),
+      );
+    },
+  );
+}
+
 function registerDispatchView(
   app: FastifyInstance,
   web: InitialNativeWeb,
@@ -1368,6 +1426,7 @@ export function createNativeHttpApp(
   registerDrafts(app, web);
   registerThreadReads(app, web, partitionRoot);
   registerThreadWrites(app, web, partitionRoot);
+  registerLeadInquiries(app, web, partitionRoot);
   registerDispatchView(app, web);
   app.setErrorHandler((failure, _request, reply) => {
     send(reply, failureResponse(failure));

@@ -267,6 +267,78 @@ test("the thread bundle the root composes reaches 062's own reads", async () => 
   assert.ok(composed.minted.startsWith("thread-"));
 });
 
+/**
+ * The inquiry routes over the composition the root builds, driven against pools
+ * that record what they were asked: `nativeHttp.ts` reaches its three doors
+ * through `composeNativeWeb` and passes no bundle for them, because there is
+ * nothing about an inquiry for a deployment to choose, so what a case can
+ * observe is which pool the composition reached and that it reached one at all.
+ * The doors' own answers are `test/postgres/inquiryHttpDoors.test.ts`'s.
+ */
+const inquiryComposedProgram = `
+  const compose = await import('./src/compose.ts');
+  const asked = { pool: [], selectorReviewPool: [] };
+  const pooled = (named) => ({
+    query: async (statement) => {
+      asked[named].push(statement.text ?? String(statement));
+      return { rows: [] };
+    },
+  });
+  const pool = pooled('pool');
+  const web = compose.composeNativeWeb(
+    pool,
+    { digest: () => 'digest' },
+    { authorize: async () => ({ kind: 'OidcUser', subject: 'geoff' }) },
+    { admits: async () => ({ admitted: 'Admitted' }) },
+  );
+  const principal = 'principal';
+  const partition = { tenant: 'tenant', project: 'project' };
+  await web.leadInquiries(principal, partition);
+  await web.leadInquiry(principal, partition, 'inq-one');
+  await web
+    .askLead(principal, partition, {
+      session: 'inq-one',
+      turn: 'inq-turn-one',
+      question: 'what stopped ticket 14?',
+    })
+    .catch(() => undefined);
+  process.stdout.write(JSON.stringify(asked));
+`;
+
+/**
+ * A boundary composed without an inquiry store answers `500` on three routes in
+ * a deployment while every gate stays green. This case is what makes that
+ * impossible to reintroduce: the composition is driven rather than described,
+ * and each door names its own definer.
+ */
+test("the composition the root builds reaches 063's own doors, over the API pool", async () => {
+  const ran = await execute(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--input-type=module",
+      "--eval",
+      inquiryComposedProgram,
+    ],
+    { cwd: process.cwd() },
+  );
+  const composed = JSON.parse(ran.stdout) as LeadPortsAsked;
+  for (const named of [
+    "read_lead_inquiries",
+    "read_lead_inquiry",
+    "open_lead_inquiry",
+  ])
+    assert.ok(
+      composed.pool.some((statement) => statement.includes(named)),
+      `${named} was reached over the API pool`,
+    );
+  assert.deepEqual(
+    composed.selectorReviewPool,
+    [],
+    "an inquiry was read through a pool that holds no grant on it",
+  );
+});
+
 test("a deployment that names no credential slot for a thread is refused", async () => {
   const ran = await threadPortsComposed(undefined);
   assert.equal(ran.code, 1);

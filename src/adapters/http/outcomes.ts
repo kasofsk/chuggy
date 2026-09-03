@@ -63,6 +63,11 @@ import type {
 import type { NotificationBatch } from "../../interpreter/notifications.ts";
 import type { ThreadMessageRefusalCode } from "../../contract/rosters.ts";
 import type {
+  LeadInquiriesRead,
+  LeadInquiryAsked,
+  LeadInquiryRead,
+} from "../../interpreter/leadInquiry.ts";
+import type {
   ThreadMessageSent,
   ThreadOpening,
   ThreadRead,
@@ -1163,5 +1168,79 @@ export function threadMessageResponse(
     case "Sent":
     case "AlreadySent":
       return response(202, { turn: result.turn, ordinal: result.ordinal });
+  }
+}
+
+/**
+ * The lead's inquiries, and one of them. `NotFound` covers both a project the
+ * caller may not read and a session that is not an inquiry of this project's
+ * lead, because a member who may not read the project is owed neither fact and
+ * a session that is not this lead's fork is not a resource at all.
+ */
+export function leadInquiriesResponse(
+  result: LeadInquiriesRead,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, { inquiries: result.inquiries });
+}
+
+export function leadInquiryResponse(
+  result: LeadInquiryRead,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, result.inquiry);
+}
+
+/**
+ * The ask door's refusals, each naming which one it met; `InquiriesInFlight` is
+ * `409` and carries no `retry-after`, because a retry cannot succeed until one
+ * of the asker's own inquiries settles. Asking is idempotent on the two
+ * identities the caller minted, so its two successes are one status and one
+ * body — a retry is told the ordinal it has, not that a second fork was opened.
+ */
+export function askLeadResponse(
+  partition: Partition,
+  result: LeadInquiryAsked,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+    case "NoLead":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "LeadNotStarted":
+      return response(
+        409,
+        nativeHttpError(
+          "LeadNotStarted",
+          "The lead has taken no turn there is a transcript to fork.",
+        ),
+      );
+    case "LeadClosed":
+      return response(
+        409,
+        nativeHttpError("LeadClosed", "The lead takes no more turns."),
+      );
+    case "InFlight":
+      return response(
+        409,
+        nativeHttpError(
+          "InquiriesInFlight",
+          "Your own inquiries are unanswered.",
+        ),
+      );
+    case "Asked":
+    case "AlreadyAsked":
+      return response(
+        202,
+        {
+          session: result.session,
+          turn: result.turn,
+          ordinal: result.ordinal,
+        },
+        {
+          location: resourcePath(partition, "lead/inquiries", result.session),
+        },
+      );
   }
 }

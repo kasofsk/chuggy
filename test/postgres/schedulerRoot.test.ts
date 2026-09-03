@@ -24,10 +24,9 @@
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import { promisify } from "node:util";
-
-import { randomUUID } from "node:crypto";
 
 import { schedulerRole } from "../../src/adapters/postgres/schema.ts";
 import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
