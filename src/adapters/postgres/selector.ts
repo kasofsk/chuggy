@@ -359,6 +359,7 @@ async function quarantinedAttempts(
 
 interface DeliveryRow {
   readonly selector_decision: string | null;
+  readonly ticket: string | null;
   readonly tenant: string | null;
   readonly project: string | null;
   readonly operation: string | null;
@@ -368,9 +369,17 @@ interface DeliveryRow {
 
 type CompleteDeliveryRow = { readonly [Key in keyof DeliveryRow]: string };
 
+/**
+ * One delivery row as a delivery. The row's key and the command it stores each
+ * name a ticket and the two are compared rather than one being believed: they
+ * are written from one value and the rekeying backfilled one from the other, so
+ * a row where they differ is a row whose key and whose payload disagree — and
+ * submitting it would settle a sibling of the row it came from.
+ */
 function deliveryOf(row: DeliveryRow): SelectorDelivery {
   if (
     row.selector_decision === null ||
+    row.ticket === null ||
     row.tenant === null ||
     row.project === null ||
     row.operation === null ||
@@ -381,9 +390,12 @@ function deliveryOf(row: DeliveryRow): SelectorDelivery {
   const parsed = parseTicketCommand(row.command);
   if (parsed.parsed === "Refused" || parsed.value.command !== "ProposeDispatch")
     throw new Error("selector delivery contains an unreadable proposal");
+  if (Number(row.ticket) !== parsed.value.ticket)
+    throw new Error(
+      "selector delivery is keyed by a ticket its command does not dispatch",
+    );
   return {
     decision: row.selector_decision,
-    /** The command names it, which is what the rekeying backfills the column from. */
     ticket: parsed.value.ticket,
     partition: {
       tenant: asTenantId(row.tenant),
@@ -624,6 +636,7 @@ interface SelectorProjectOverrideRow {
   readonly tokens_per_decision: string | null;
   readonly milliseconds_per_decision: string | null;
   readonly tool_calls_per_decision: string | null;
+  readonly dispatches_per_decision: string | null;
   readonly input_bytes_per_decision: string | null;
   readonly candidate_pages_per_decision: string | null;
   readonly operational_context_max_age_ms: string | null;
@@ -698,6 +711,7 @@ function selectorProjectOverridesOf(
     ["tokensPerDecision", row.tokens_per_decision],
     ["millisecondsPerDecision", row.milliseconds_per_decision],
     ["toolCallsPerDecision", row.tool_calls_per_decision],
+    ["dispatchesPerDecision", row.dispatches_per_decision],
     ["inputBytesPerDecision", row.input_bytes_per_decision],
     ["candidatePagesPerDecision", row.candidate_pages_per_decision],
   ] as const;
@@ -779,6 +793,7 @@ async function readProjectSettings(
          overrides.tokens_per_decision::text,
          overrides.milliseconds_per_decision::text,
          overrides.tool_calls_per_decision::text,
+         overrides.dispatches_per_decision::text,
          overrides.input_bytes_per_decision::text,
          overrides.candidate_pages_per_decision::text,
          overrides.operational_context_max_age_ms::text,
@@ -849,6 +864,7 @@ async function writeProjectSettings(
       sql`SELECT revision::text,north_star,mode,dispatch_mode,base_prompt,
            model_allowlist,tool_allowlist,tokens_per_decision::text,
            milliseconds_per_decision::text,tool_calls_per_decision::text,
+           dispatches_per_decision::text,
            input_bytes_per_decision::text,candidate_pages_per_decision::text,
            operational_context_max_age_ms::text,installation_revision::text,
            installation_mode,installation_dispatch_mode,installation_base_prompt,
@@ -862,6 +878,7 @@ async function writeProjectSettings(
            ${limits.tokensPerDecision ?? null},
            ${limits.millisecondsPerDecision ?? null},
            ${limits.toolCallsPerDecision ?? null},
+           ${limits.dispatchesPerDecision ?? null},
            ${limits.inputBytesPerDecision ?? null},
            ${limits.candidatePagesPerDecision ?? null},
            ${overrides.operationalContextMaxAgeMs ?? null},
@@ -904,6 +921,7 @@ async function projectSettingsHistory(
          history.tokens_per_decision::text,
          history.milliseconds_per_decision::text,
          history.tool_calls_per_decision::text,
+         history.dispatches_per_decision::text,
          history.input_bytes_per_decision::text,
          history.candidate_pages_per_decision::text,
          history.operational_context_max_age_ms::text,
@@ -1095,6 +1113,11 @@ export function postgresSelectorRuntimeControl(
       settingsHistory(pool, afterRevision, limit),
     rollback: (expectedRevision, targetRevision, administrator) =>
       rollbackSettings(pool, expectedRevision, targetRevision, administrator),
+    /**
+     * What a drain is still waiting for, counted in delivery rows rather than
+     * decisions: one decision's dispatches settle one at a time, so a decision
+     * with a row left is not drained by the sibling that already landed.
+     */
     drainStatus: async () => {
       const settings = await readSettings(pool);
       const found = await pool.query<{
@@ -1265,9 +1288,13 @@ async function writeSelectorProject(
   );
 }
 
-async function markSubmitted(pool: pg.Pool, decision: string): Promise<void> {
+async function markSubmitted(
+  pool: pg.Pool,
+  decision: string,
+  ticket: number,
+): Promise<void> {
   await pool.query<{ advance_selector_delivery: string | null }>(
-    sql`SELECT advance_selector_delivery(${decision},'Submitted',NULL)::text`,
+    sql`SELECT advance_selector_delivery(${decision},${ticket},'Submitted',NULL)::text`,
   );
 }
 
@@ -1277,7 +1304,8 @@ async function submittedDeliveries(
 ): Promise<readonly SelectorDelivery[]> {
   checkedSelectorLimit(limit, "selector reconciliation");
   const found = await pool.query<DeliveryRow>(
-    sql`SELECT selector_decision,tenant,project,operation,command,attempts::text
+    sql`SELECT selector_decision,ticket::text,tenant,project,operation,command,
+         attempts::text
        FROM claim_selector_proposal_reconciliation(${limit})`,
   );
   return found.rows.map(deliveryOf);
@@ -1289,7 +1317,8 @@ async function pendingDeliveries(
 ): Promise<readonly SelectorDelivery[]> {
   checkedSelectorLimit(limit, "selector delivery");
   const found = await pool.query<DeliveryRow>(
-    sql`SELECT selector_decision,tenant,project,operation,command,attempts::text
+    sql`SELECT selector_decision,ticket::text,tenant,project,operation,command,
+         attempts::text
        FROM claim_selector_deliveries(${limit})`,
   );
   return found.rows.map(deliveryOf);
@@ -1302,11 +1331,12 @@ async function awaitingApproval(
 ): Promise<readonly SelectorDelivery[]> {
   checkedSelectorLimit(limit, "selector proposal review");
   const found = await pool.query<CompleteDeliveryRow>(
-    sql`SELECT selector_decision,tenant,project,operation,command,attempts::text
+    sql`SELECT selector_decision,ticket::text,tenant,project,operation,command,
+       attempts::text
      FROM selector_proposal_delivery
      WHERE tenant=${partition.tenant} AND project=${partition.project}
        AND state='AwaitingApproval'
-     ORDER BY selector_decision LIMIT ${limit}`,
+     ORDER BY selector_decision,ticket LIMIT ${limit}`,
   );
   return found.rows.map(deliveryOf);
 }
@@ -1527,32 +1557,29 @@ async function replacePlanningIntent(
 }
 
 /**
- * Writes a decision's delivery rows and answers how many it wrote. Keyed on the
- * decision alone until it is rekeyed on `(decision, ticket)`, the relation holds
- * one row per decision, so a second dispatch is refused whole rather than
- * colliding with the first — the relation stating what it can hold, not a second
- * control.
+ * Writes all of a decision's delivery rows in the interaction's own transaction
+ * and answers how many it wrote. A replayed decision conflicts on the key it is
+ * written under and writes nothing, which is a count of zero rather than a
+ * failure; a paused installation's trigger drops each row the same way, so the
+ * count is what reached the relation and never what was offered it.
  */
 async function insertSelectorProposals(
   client: pg.PoolClient,
   proposals: SelectorDecisionProposals | undefined,
 ): Promise<number> {
   if (proposals === undefined) return 0;
-  if (proposals.dispatches.length > 1)
-    throw new RangeError(
-      "selector delivery holds one dispatch per decision until it is keyed by ticket",
-    );
   const interaction = proposals.interaction;
   let written = 0;
   for (const dispatch of proposals.dispatches) {
     const inserted = await client.query(
       sql`INSERT INTO selector_proposal_delivery
-       (selector_decision,tenant,project,operation,command,state)
-       VALUES (${interaction.decision},${interaction.partition.tenant},
+       (selector_decision,ticket,tenant,project,operation,command,state)
+       VALUES (${interaction.decision},${dispatch.ticket},
+               ${interaction.partition.tenant},
                ${interaction.partition.project},${dispatch.operation},
                ${encode(dispatch.command)},
                ${proposals.deliveryMode === "Automatic" ? "Pending" : "AwaitingApproval"})
-       ON CONFLICT (selector_decision) DO NOTHING`,
+       ON CONFLICT (selector_decision,ticket) DO NOTHING`,
     );
     written += inserted.rowCount === 1 ? 1 : 0;
   }
@@ -1775,10 +1802,11 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
       ).deliveries,
     pending: (limit) => pendingDeliveries(pool, limit),
     submittedDeliveries: (limit) => submittedDeliveries(pool, limit),
-    submitted: (decision) => markSubmitted(pool, decision),
-    terminal: async (decision, outcome) => {
+    submitted: (decision, ticket) => markSubmitted(pool, decision, ticket),
+    terminal: async (decision, ticket, outcome) => {
       await pool.query<{ advance_selector_delivery: string | null }>(
-        sql`SELECT advance_selector_delivery(${decision},'Terminal',${encode(outcome)})::text`,
+        sql`SELECT advance_selector_delivery(
+          ${decision},${ticket},'Terminal',${encode(outcome)})::text`,
       );
     },
     history: (partition, after, limit) =>

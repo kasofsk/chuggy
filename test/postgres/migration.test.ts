@@ -22,6 +22,7 @@ import {
   selectorServiceRole,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
+import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/064-multi-dispatch-delivery.ts";
 import {
   postgresMigrate,
   postgresMigrateCompatible,
@@ -2733,25 +2734,130 @@ test("the session migrations compose into the schema a fresh generation renders"
   });
 });
 
-test("the ledger the api image reads accepts what the session migrations applied", async () => {
+/**
+ * The ledger a whole chain leaves is exactly the versions this image declares,
+ * once each and in the order their filenames give them. It is compared against
+ * the declaration rather than against a tail of it or against the highest
+ * version: a tail says nothing about the versions below it, and a count against
+ * a maximum cannot tell a repeat from a reorder, or either from a version this
+ * image declares and never applied.
+ */
+test("the ledger a migrated database leaves is what the api image declares", async () => {
   await migrationDatabase("lead_ledger", async (subject) => {
-    await migrationSeedApplied(subject, 64);
+    await migrationSeedApplied(subject, declaredLatest + 1);
     const applied = await postgresRuntimeSchema(subject).applied(
       new AbortController().signal,
     );
-    assert.equal(
-      applied.length,
-      Math.max(...applied.map((each) => each.version)),
-      "the ledger holds one row per version with no gap and no repeat",
-    );
     assert.deepEqual(
-      applied.map((each) => each.version).slice(-5),
-      [59, 60, 61, 62, 63],
-      "the five apply in the order their filenames give them",
+      applied.map((each) => each.version),
+      migrations.map((each) => each.version),
+      "every declared version is applied once, in declaration order",
     );
     assert.ok(
       schemaContractAccepts(currentRuntimeSchemaContract, applied),
-      "the prefix an api image requires is the prefix these three leave",
+      "the prefix an api image requires is the prefix a whole chain leaves",
+    );
+  });
+});
+
+/**
+ * One delivery row as an installation held it before the key moved: keyed by
+ * its decision alone, with the ticket named only inside the command it stores.
+ */
+async function seedStandingDelivery(
+  subject: pg.Pool,
+  decision: string,
+  ticket: number,
+): Promise<void> {
+  await subject.query(`INSERT INTO recovery_epoch (epoch) VALUES ('epoch')`);
+  await subject.query(
+    `INSERT INTO project (tenant,project,lifecycle,head,ingress_next)
+     VALUES ('tenant','project','Active',1,1)`,
+  );
+  await subject.query(
+    `INSERT INTO selector_attempt (attempt,tenant,project,state,settings_revision)
+     VALUES ($1,'tenant','project','Completed',1)`,
+    [decision],
+  );
+  await subject.query(
+    `INSERT INTO selector_interaction
+       (selector_decision,tenant,project,instructions_version,instructions,
+        observed_view,context,tool_activity,result,implementation_revision,
+        model_revision,policy_revision,accounting,started_at,completed_at)
+     VALUES ($1,'tenant','project','v1','choose','[]','{}','[]','{}',
+       'implementation','model','policy','{}',now(),now())`,
+    [decision],
+  );
+  await subject.query(
+    `INSERT INTO selector_proposal_delivery
+       (selector_decision,tenant,project,operation,command,state)
+     VALUES ($1,'tenant','project',$2,$3,'Pending')`,
+    [
+      decision,
+      `operation-${decision}`,
+      JSON.stringify({
+        version: 1,
+        command: "ProposeDispatch",
+        ticket,
+        expectedTicketVersion: 1,
+        observedViewToken: {
+          tenant: "tenant",
+          project: "project",
+          recoveryEpoch: "epoch",
+          schemaVersion: 1,
+          watermark: 0,
+          digest: "a".repeat(64),
+        },
+        selectorDecisionReference: decision,
+      }),
+    ],
+  );
+}
+
+/**
+ * The rekey moves a standing row onto the key its own command already named,
+ * and the installation that never stated a dispatch budget is given the one its
+ * migration writes. Both are driven rather than read out of the statements.
+ */
+test("migration 64 keys a standing delivery by the ticket its command dispatches", async () => {
+  await migrationDatabase("delivery_rekey", async (subject) => {
+    await migrationSeedApplied(subject, 64);
+    const decision = "standing-decision";
+    await seedStandingDelivery(subject, decision, 41);
+    await applyMigrationsAbove(subject, 63);
+    assert.deepEqual(
+      (
+        await subject.query<{ ticket: string }>(
+          `SELECT ticket::text AS ticket FROM selector_proposal_delivery
+            WHERE selector_decision=$1`,
+          [decision],
+        )
+      ).rows,
+      [{ ticket: "41" }],
+    );
+    await assert.rejects(
+      () =>
+        subject.query(
+          `INSERT INTO selector_proposal_delivery
+             (selector_decision,ticket,tenant,project,operation,command,state)
+           VALUES ($1,41,'tenant','project','second','{}','Pending')`,
+          [decision],
+        ),
+      /selector_proposal_delivery_pkey/,
+      "the migrated row is addressable by the key it moved onto",
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ budget: string; recorded: boolean }>(
+          `SELECT settings.controls::jsonb->'limits'->>'dispatchesPerDecision'
+                    AS budget,
+                  EXISTS(SELECT 1 FROM selector_runtime_settings_history recorded
+                          WHERE recorded.revision=settings.revision) AS recorded
+             FROM selector_runtime_settings settings WHERE singleton=1`,
+        )
+      ).rows,
+      [{ budget: String(leadDispatchesPerDecision), recorded: true }],
+      "the revision the raise mints is recorded like every other",
     );
   });
 });

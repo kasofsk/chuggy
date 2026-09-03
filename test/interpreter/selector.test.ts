@@ -286,7 +286,7 @@ function stateStore(
     pending: () => Promise.resolve([]),
     submittedDeliveries: () => Promise.resolve([]),
     submitted: () => Promise.resolve(),
-    terminal: (_decision, outcome) => {
+    terminal: (_decision, _ticket, outcome) => {
       onTerminal(outcome);
       return Promise.resolve();
     },
@@ -2696,4 +2696,56 @@ test("a decision is proposed exactly when the model says it is", async () => {
     [...decisionArms],
     "a rule no run reaches is a rule this case asserts nothing about",
   );
+});
+
+/**
+ * A delivery settles on its own ticket. The store keys a delivery by its
+ * decision and its ticket, so a settlement carrying the decision alone — or
+ * another of its tickets — would move a sibling row and leave this one where it
+ * was, which is the one thing per-ticket rows exist to prevent.
+ */
+test("a delivery is settled on the decision and the ticket it names", async () => {
+  const settled: unknown[] = [];
+  const sibling: SelectorDelivery = {
+    ...delivery,
+    ticket: asTicketId(7),
+    command: { ...delivery.command, ticket: asTicketId(7) },
+  };
+  const store = {
+    ...stateStore(() => undefined),
+    submitted: (decision: string, ticket: number) => {
+      settled.push(["submitted", decision, ticket]);
+      return Promise.resolve();
+    },
+    terminal: (decision: string, ticket: number, outcome: unknown) => {
+      settled.push(["terminal", decision, ticket, outcome]);
+      return Promise.resolve();
+    },
+  };
+  const delivered = await deliverSelectorProposal(
+    store,
+    { submit: () => Promise.resolve({ accepted: "Accepted" as const }) },
+    sibling,
+  );
+  assert.equal(delivered.result, "Delivered");
+  assert.equal(
+    await reconcileSelectorProposal(
+      store,
+      {
+        operation: () =>
+          Promise.resolve({ state: "Refused", code: "SelectionChanged" }),
+      },
+      sibling,
+    ),
+    true,
+  );
+  assert.deepEqual(settled, [
+    ["submitted", "decision", asTicketId(7)],
+    [
+      "terminal",
+      "decision",
+      asTicketId(7),
+      { state: "Refused", code: "SelectionChanged" },
+    ],
+  ]);
 });

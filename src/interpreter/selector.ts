@@ -119,8 +119,16 @@ export interface SelectorStateStore {
   ): Promise<number>;
   pending(limit: number): Promise<readonly SelectorDelivery[]>;
   submittedDeliveries(limit: number): Promise<readonly SelectorDelivery[]>;
-  submitted(decision: string): Promise<void>;
-  terminal(decision: string, outcome: JsonValue): Promise<void>;
+  /** One delivery of one decision settles alone, which is what partial failure is. */
+  submitted(
+    decision: string,
+    ticket: DispatchCandidate["ticket"],
+  ): Promise<void>;
+  terminal(
+    decision: string,
+    ticket: DispatchCandidate["ticket"],
+    outcome: JsonValue,
+  ): Promise<void>;
   history(
     partition: Partition,
     after: number | undefined,
@@ -1681,14 +1689,14 @@ export async function deliverSelectorProposal(
   try {
     const accepted = await ticketService.submit(delivery);
     if (accepted.accepted === "Accepted" || accepted.accepted === "Original") {
-      await store.submitted(delivery.decision);
+      await store.submitted(delivery.decision, delivery.ticket);
       return { result: "Delivered", decision: delivery.decision };
     }
     if (
       accepted.accepted === "IdempotencyConflict" ||
       accepted.accepted === "InvalidCommand"
     )
-      await store.terminal(delivery.decision, accepted);
+      await store.terminal(delivery.decision, delivery.ticket, accepted);
     return { result: "Retry", decision: delivery.decision };
   } catch {
     return { result: "Retry", decision: delivery.decision };
@@ -1713,6 +1721,7 @@ export async function reconcileSelectorProposal(
   if (state === "Pending") return false;
   await store.terminal(
     delivery.decision,
+    delivery.ticket,
     checkedJson(outcome, "selector operation outcome"),
   );
   return true;

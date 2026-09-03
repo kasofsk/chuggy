@@ -10,9 +10,13 @@ import {
 } from "../../src/adapters/postgres/selector.ts";
 import {
   apiRole,
+  boundaryOwnerRole,
   dispatchAcceptanceFunction,
   selectorClaimFunction,
   selectorControlRole,
+  selectorDeliveryFunction,
+  selectorProjectSettingsFunction,
+  selectorReconcileClaimFunction,
   selectorReviewFunction,
   selectorReviewRole,
   selectorServiceRole,
@@ -25,9 +29,9 @@ import {
   type ProjectMemory,
 } from "../../src/interpreter/projectWriter.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import {
-  dispatchesPerDecisionUnstated,
-  type SelectorDecisionProposals,
+import type {
+  SelectorDecisionProposals,
+  SelectorDelivery,
 } from "../../src/interpreter/selector.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
@@ -154,6 +158,94 @@ function postgresRolePool(role: string) {
   const url = new URL(postgresHarnessUrl());
   url.searchParams.set("options", `-c role=${role}`);
   return postgresPool(url.toString());
+}
+
+/**
+ * One delivery row offered to the relation directly, past the adapter that
+ * keys them: a case about a constraint has to reach the constraint, and the
+ * adapter is what a well-formed row goes through.
+ */
+async function i5OfferDelivery(
+  partition: Partition,
+  decision: string,
+  ticket: number,
+  operation: string,
+): Promise<void> {
+  await harness.query(
+    `INSERT INTO selector_proposal_delivery
+       (selector_decision,ticket,tenant,project,operation,command,state)
+     VALUES ($1,$2,$3,$4,$5,$6,'AwaitingApproval')`,
+    [
+      decision,
+      ticket,
+      partition.tenant,
+      partition.project,
+      operation,
+      JSON.stringify({
+        version: 1,
+        command: "ProposeDispatch",
+        ticket,
+        expectedTicketVersion: 1,
+        observedViewToken: {
+          ...partition,
+          recoveryEpoch: "epoch",
+          schemaVersion: 1,
+          watermark: 0,
+          digest: "a".repeat(64),
+        },
+        selectorDecisionReference: decision,
+      }),
+    ],
+  );
+}
+
+/** One decision's rows as the relation holds them, in the order its key gives. */
+async function i5DeliveryRows(
+  decision: string,
+): Promise<readonly Record<string, unknown>[]> {
+  return harness.query(
+    `SELECT ticket::text AS ticket,state,outcome,attempts::text AS attempts
+       FROM selector_proposal_delivery
+      WHERE selector_decision=$1 ORDER BY ticket`,
+    [decision],
+  );
+}
+
+/**
+ * Every delivery this database already holds in one claimable state, claimed
+ * and so deferred: a claim is installation-wide, so a case about which rows it
+ * picks has to start from a relation offering only its own.
+ */
+async function i5Drain(
+  claim: (limit: number) => Promise<readonly SelectorDelivery[]>,
+): Promise<void> {
+  for (let sweep = 0; sweep < 10; sweep += 1)
+    if ((await claim(100)).length === 0) return;
+  throw new Error("i5: claimable deliveries would not drain");
+}
+
+/** The installation's dispatch mode for the length of one case, and the way to put it back. */
+async function i5HeldDispatchMode(
+  mode: "Automatic" | "ApprovalRequired",
+): Promise<() => Promise<void>> {
+  const pool = postgresRolePool(selectorControlRole);
+  const control = postgresSelectorRuntimeControl(pool);
+  const original = await control.settings();
+  const held = await control.setDispatchMode(
+    original.revision,
+    mode,
+    selectorAdministrator,
+  );
+  assert.equal(held.updated, true);
+  return async () => {
+    const current = await control.settings();
+    await control.setDispatchMode(
+      current.revision,
+      original.dispatchMode,
+      selectorAdministrator,
+    );
+    await pool.end();
+  };
 }
 
 test("the API role reads a released ticket from the current dispatch view", async () => {
@@ -822,8 +914,8 @@ test("submitted proposal reconciliation claims do not starve later work", async 
       ),
       true,
     );
-    await state.submitted(firstDecision);
-    await state.submitted(secondDecision);
+    await state.submitted(firstDecision, asTicketId(1));
+    await state.submitted(secondDecision, asTicketId(1));
     const firstClaim = await state.submittedDeliveries(1);
     const secondClaim = await state.submittedDeliveries(1);
     assert.equal(firstClaim.length, 1);
@@ -994,61 +1086,6 @@ test("dispatch acceptance refuses every command the wire parser cannot read", as
  * the relation holds reds the first half here rather than shipping a budget no
  * decision could spend; the rekey on `(decision, ticket)` is what lifts both.
  */
-test("the relation holds the unstated budget's rows and refuses the next", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "i5-one-delivery",
-  );
-  const selectorPool = postgresRolePool(selectorServiceRole);
-  const state = postgresSelectorState(selectorPool);
-  const spent = Array.from(
-    { length: dispatchesPerDecisionUnstated },
-    (_, index) => index + 1,
-  );
-  const whole = `budget-${crypto.randomUUID()}`;
-  const over = `multi-${crypto.randomUUID()}`;
-  try {
-    assert.equal(
-      await state.record(
-        selectorTestProposal(partition, whole, spent),
-        selectorTestState(partition, 0),
-      ),
-      dispatchesPerDecisionUnstated,
-    );
-    assert.equal(
-      (
-        await harness.query(
-          "SELECT selector_decision FROM selector_proposal_delivery WHERE selector_decision=$1",
-          [whole],
-        )
-      ).length,
-      dispatchesPerDecisionUnstated,
-    );
-    assert.ok(
-      dispatchesPerDecisionUnstated > 0,
-      "a budget no decision can spend is not a budget",
-    );
-    await assert.rejects(
-      () =>
-        state.record(
-          selectorTestProposal(partition, over, [...spent, spent.length + 1]),
-          selectorTestState(partition, 1),
-        ),
-      RangeError,
-    );
-    assert.deepEqual(
-      await harness.query(
-        "SELECT selector_decision FROM selector_proposal_delivery WHERE selector_decision=$1",
-        [over],
-      ),
-      [],
-    );
-    assert.equal((await state.history(partition, undefined, 10)).length, 1);
-  } finally {
-    await selectorPool.end();
-  }
-});
-
 /**
  * The delivery a read answers names its own ticket, taken from the command the
  * row stores — which is the column the rekeying backfills from, so the reader
@@ -1099,5 +1136,611 @@ test("a stored delivery names the ticket its command dispatches", async () => {
     await selectorPool.end();
     await reviewPool.end();
     await controlPool.end();
+  }
+});
+
+/**
+ * The rekey's first claim: a decision holds one row per ticket. The key refuses
+ * a second row for a ticket the decision already dispatches, and `operation`
+ * keeps its own uniqueness, which is what lets one operation outcome settle one
+ * row.
+ */
+test("a decision's dispatches are one row each, and neither key admits a second", async () => {
+  const partition = await postgresHarnessProject(harness.store, "i5-rekeyed");
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const state = postgresSelectorState(selectorPool);
+  const decision = `pair-${crypto.randomUUID()}`;
+  try {
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, decision, [4, 9]),
+        selectorTestState(partition, 0),
+      ),
+      2,
+    );
+    assert.deepEqual(
+      (await i5DeliveryRows(decision)).map((row) => row["ticket"]),
+      ["4", "9"],
+    );
+    await assert.rejects(
+      () => i5OfferDelivery(partition, decision, 4, `${decision}-again`),
+      /selector_proposal_delivery_pkey/,
+    );
+    await assert.rejects(
+      () =>
+        i5OfferDelivery(partition, decision, 11, `operation-${decision}-t4`),
+      /selector_proposal_delivery_operation_key/,
+    );
+  } finally {
+    await selectorPool.end();
+  }
+});
+
+/**
+ * A decision is written once. The interaction is what a replay conflicts on, so
+ * a re-sent decision reaches the relation with rows it already holds and adds
+ * none of them: the count a replay answers is zero, and zero rows written is
+ * not the same answer as some of them written.
+ */
+test("a decision re-sent writes its rows once and none of them twice", async () => {
+  const partition = await postgresHarnessProject(harness.store, "i5-replayed");
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const state = postgresSelectorState(selectorPool);
+  const decision = `replayed-${crypto.randomUUID()}`;
+  const proposals = () => selectorTestProposal(partition, decision, [5, 6]);
+  try {
+    assert.equal(
+      await state.record(proposals(), selectorTestState(partition, 0)),
+      2,
+    );
+    assert.equal(
+      await state.record(proposals(), selectorTestState(partition, 1)),
+      0,
+    );
+    assert.deepEqual(
+      (await i5DeliveryRows(decision)).map((row) => row["ticket"]),
+      ["5", "6"],
+    );
+    assert.equal((await state.history(partition, undefined, 10)).length, 1);
+  } finally {
+    await selectorPool.end();
+  }
+});
+
+/** A ticket identifier is one the journal could carry, which starts at one. */
+test("a delivery of a ticket no journal could name is refused by the relation", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-ticket-floor",
+  );
+  const decision = `floor-${crypto.randomUUID()}`;
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const state = postgresSelectorState(selectorPool);
+  try {
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, decision, [1]),
+        selectorTestState(partition, 0),
+      ),
+      1,
+    );
+    for (const ticket of [0, -1]) {
+      await assert.rejects(
+        () =>
+          i5OfferDelivery(
+            partition,
+            decision,
+            ticket,
+            `${decision}-t${String(ticket)}`,
+          ),
+        /selector_proposal_ticket_is_positive/,
+        `ticket ${String(ticket)}`,
+      );
+    }
+  } finally {
+    await selectorPool.end();
+  }
+});
+
+/**
+ * A claim names the whole key. Selecting rows by decision alone would charge an
+ * attempt to and defer every sibling of the one row that was claimable.
+ */
+test("a decision's two deliveries are claimed as two rows", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-claim-rows",
+  );
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const reviewPool = postgresRolePool(selectorReviewRole);
+  const state = postgresSelectorState(selectorPool);
+  const reviews = postgresSelectorProposalReviews(reviewPool);
+  const restore = await i5HeldDispatchMode("ApprovalRequired");
+  const decision = `claimed-${crypto.randomUUID()}`;
+  try {
+    await i5Drain((limit) => state.pending(limit));
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, decision, [3, 8]),
+        selectorTestState(partition, 0),
+      ),
+      2,
+    );
+    assert.equal(
+      await reviews.approve(partition, decision, selectorAdministrator),
+      true,
+    );
+    const first = await state.pending(1);
+    const second = await state.pending(1);
+    assert.deepEqual(
+      [first.length, second.length],
+      [1, 1],
+      "a claim of one takes one row and not one decision",
+    );
+    assert.deepEqual(
+      [...first, ...second].map((delivery) => [
+        delivery.decision,
+        delivery.ticket,
+        delivery.attempts,
+      ]),
+      [
+        [decision, asTicketId(3), 1],
+        [decision, asTicketId(8), 1],
+      ],
+    );
+  } finally {
+    await restore();
+    await reviewPool.end();
+    await selectorPool.end();
+  }
+});
+
+/**
+ * Two rows written under one `retry_at` are ordered by the key rather than by
+ * where the relation happens to hold them, so a page taken under contention is
+ * the same page every runtime would take. The rows are written in descending
+ * ticket order for that reason: an order that fell back to the relation's own
+ * would agree with the key by accident if they were written ascending.
+ */
+test("the delivery claim's order is total over the whole key", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-claim-order",
+  );
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const reviewPool = postgresRolePool(selectorReviewRole);
+  const state = postgresSelectorState(selectorPool);
+  const reviews = postgresSelectorProposalReviews(reviewPool);
+  const restore = await i5HeldDispatchMode("ApprovalRequired");
+  const decisions = [
+    `order-a-${crypto.randomUUID()}`,
+    `order-b-${crypto.randomUUID()}`,
+  ];
+  try {
+    await i5Drain((limit) => state.pending(limit));
+    let revision = 0;
+    for (const decision of decisions) {
+      assert.equal(
+        await state.record(
+          selectorTestProposal(partition, decision, [12, 5]),
+          selectorTestState(partition, revision),
+        ),
+        2,
+      );
+      revision += 1;
+      assert.equal(
+        await reviews.approve(partition, decision, selectorAdministrator),
+        true,
+      );
+    }
+    const claimed: [string, number][] = [];
+    for (let taken = 0; taken < 4; taken += 1)
+      for (const delivery of await state.pending(1))
+        claimed.push([delivery.decision, delivery.ticket]);
+    assert.deepEqual(
+      claimed,
+      [...claimed].sort((left, right) =>
+        left[0] === right[0] ? left[1] - right[1] : left[0] < right[0] ? -1 : 1,
+      ),
+    );
+    assert.equal(claimed.length, 4);
+  } finally {
+    await restore();
+    await reviewPool.end();
+    await selectorPool.end();
+  }
+});
+
+/**
+ * The partial-failure primitive: one of a decision's dispatches settles and the
+ * others stand where they were. A settlement that carried only the decision
+ * would move every row on one row's answer, which is the whole thing per-ticket
+ * rows exist to prevent.
+ */
+test("one delivery of a decision settles and its sibling is left alone", async () => {
+  const partition = await postgresHarnessProject(harness.store, "i5-partial");
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const reviewPool = postgresRolePool(selectorReviewRole);
+  const state = postgresSelectorState(selectorPool);
+  const reviews = postgresSelectorProposalReviews(reviewPool);
+  const restore = await i5HeldDispatchMode("ApprovalRequired");
+  const decision = `partial-${crypto.randomUUID()}`;
+  try {
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, decision, [2, 6]),
+        selectorTestState(partition, 0),
+      ),
+      2,
+    );
+    assert.equal(
+      await reviews.approve(partition, decision, selectorAdministrator),
+      true,
+    );
+    await state.submitted(decision, asTicketId(2));
+    assert.deepEqual(
+      (await i5DeliveryRows(decision)).map((row) => [
+        row["ticket"],
+        row["state"],
+      ]),
+      [
+        ["2", "Submitted"],
+        ["6", "Pending"],
+      ],
+      "a submission moves the row it names and no sibling of it",
+    );
+    await state.terminal(decision, asTicketId(6), {
+      state: "Refused",
+      code: "SelectionChanged",
+    });
+    assert.deepEqual(
+      (await i5DeliveryRows(decision)).map((row) => [
+        row["ticket"],
+        row["state"],
+        typeof row["outcome"] === "string"
+          ? (JSON.parse(row["outcome"]) as unknown)
+          : row["outcome"],
+      ]),
+      [
+        ["2", "Submitted", null],
+        ["6", "Terminal", { state: "Refused", code: "SelectionChanged" }],
+      ],
+    );
+  } finally {
+    await restore();
+    await reviewPool.end();
+    await selectorPool.end();
+  }
+});
+
+/**
+ * A review is of the decision. Both arms move every one of its rows and write
+ * one review row, because the feedback a reviewer gives is fed back to the lead
+ * as one item per decision and a reviewer who wants two of three tickets is
+ * telling the lead something a per-row toggle could not carry.
+ */
+test("approving a decision moves all of its rows and records one review", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-approve-all",
+  );
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const reviewPool = postgresRolePool(selectorReviewRole);
+  const state = postgresSelectorState(selectorPool);
+  const reviews = postgresSelectorProposalReviews(reviewPool);
+  const restore = await i5HeldDispatchMode("ApprovalRequired");
+  const decision = `approved-${crypto.randomUUID()}`;
+  try {
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, decision, [9, 5, 1]),
+        selectorTestState(partition, 0),
+      ),
+      3,
+    );
+    assert.deepEqual(
+      (await reviews.awaitingApproval(partition, 10)).map(
+        (delivery) => delivery.ticket,
+      ),
+      [asTicketId(1), asTicketId(5), asTicketId(9)],
+      "a reviewer reads a decision's rows in the order its key gives",
+    );
+    assert.equal(
+      await reviews.approve(
+        partition,
+        decision,
+        selectorAdministrator,
+        "all three",
+      ),
+      true,
+    );
+    assert.deepEqual(
+      (await i5DeliveryRows(decision)).map((row) => row["state"]),
+      ["Pending", "Pending", "Pending"],
+    );
+    assert.deepEqual(
+      await harness.query(
+        `SELECT count(*)::text AS reviews FROM selector_proposal_review
+          WHERE selector_decision=$1`,
+        [decision],
+      ),
+      [{ reviews: "1" }],
+    );
+  } finally {
+    await restore();
+    await reviewPool.end();
+    await selectorPool.end();
+  }
+});
+
+/** Rejecting a decision terminates every row of it under the reviewer's one answer. */
+test("rejecting a decision terminates all of its rows under one outcome", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-reject-all",
+  );
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const reviewPool = postgresRolePool(selectorReviewRole);
+  const state = postgresSelectorState(selectorPool);
+  const reviews = postgresSelectorProposalReviews(reviewPool);
+  const restore = await i5HeldDispatchMode("ApprovalRequired");
+  const decision = `rejected-${crypto.randomUUID()}`;
+  try {
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, decision, [2, 3]),
+        selectorTestState(partition, 0),
+      ),
+      2,
+    );
+    assert.equal(
+      await reviews.reject(
+        partition,
+        decision,
+        selectorAdministrator,
+        "not yet",
+      ),
+      true,
+    );
+    assert.deepEqual(
+      (await i5DeliveryRows(decision)).map((row) => [
+        row["state"],
+        typeof row["outcome"] === "string"
+          ? (JSON.parse(row["outcome"]) as unknown)
+          : row["outcome"],
+      ]),
+      [
+        ["Terminal", { state: "RejectedByUser", feedback: "not yet" }],
+        ["Terminal", { state: "RejectedByUser", feedback: "not yet" }],
+      ],
+    );
+  } finally {
+    await restore();
+    await reviewPool.end();
+    await selectorPool.end();
+  }
+});
+
+/**
+ * Every row of a decision is stamped from one settings read, so a decision is
+ * never half awaiting a reviewer and half on its way.
+ */
+test("every row of a decision is stamped from one dispatch mode", async () => {
+  const partition = await postgresHarnessProject(harness.store, "i5-stamped");
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const state = postgresSelectorState(selectorPool);
+  await state.setAutomaticReadiness(true);
+  const stamped: Record<string, unknown>[] = [];
+  let revision = 0;
+  try {
+    for (const mode of ["Automatic", "ApprovalRequired"] as const) {
+      const restore = await i5HeldDispatchMode(mode);
+      const decision = `stamped-${mode}-${crypto.randomUUID()}`;
+      try {
+        assert.equal(
+          await state.record(
+            selectorTestProposal(partition, decision, [1, 2]),
+            selectorTestState(partition, revision),
+          ),
+          2,
+        );
+        revision += 1;
+        stamped.push(...(await i5DeliveryRows(decision)));
+      } finally {
+        await restore();
+      }
+    }
+    assert.deepEqual(
+      stamped.map((row) => row["state"]),
+      ["Pending", "Pending", "AwaitingApproval", "AwaitingApproval"],
+    );
+  } finally {
+    await selectorPool.end();
+  }
+});
+
+/** A paused installation refuses each of a decision's rows, not merely its first. */
+test("a paused installation admits none of a decision's deliveries", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-paused-multi",
+  );
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const controlPool = postgresRolePool(selectorControlRole);
+  const state = postgresSelectorState(selectorPool);
+  const control = postgresSelectorRuntimeControl(controlPool);
+  const initial = await control.settings();
+  const paused = await control.pause(initial.revision, selectorAdministrator);
+  assert.equal(paused.updated, true);
+  const decision = `paused-multi-${crypto.randomUUID()}`;
+  try {
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, decision, [1, 2, 3]),
+        selectorTestState(partition, 0),
+      ),
+      0,
+    );
+    assert.deepEqual(await i5DeliveryRows(decision), []);
+    assert.equal((await state.history(partition, undefined, 10)).length, 1);
+  } finally {
+    const current = await control.settings();
+    await control.unpause(current.revision, selectorAdministrator);
+    await selectorPool.end();
+    await controlPool.end();
+  }
+});
+
+/**
+ * The row's key and the command it stores name one ticket between them. A row
+ * where they disagree is not read as either: submitting it under the command's
+ * ticket would settle the row keyed by that ticket, which is a sibling of the
+ * row the value came from.
+ */
+test("a delivery keyed by a ticket its command does not dispatch is unreadable", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-key-payload",
+  );
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const reviewPool = postgresRolePool(selectorReviewRole);
+  const state = postgresSelectorState(selectorPool);
+  const reviews = postgresSelectorProposalReviews(reviewPool);
+  const restore = await i5HeldDispatchMode("ApprovalRequired");
+  const decision = `disagreeing-${crypto.randomUUID()}`;
+  try {
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, decision, [5]),
+        selectorTestState(partition, 0),
+      ),
+      1,
+    );
+    await harness.query(
+      `UPDATE selector_proposal_delivery SET ticket=6
+        WHERE selector_decision=$1`,
+      [decision],
+    );
+    await assert.rejects(
+      () => reviews.awaitingApproval(partition, 10),
+      /keyed by a ticket its command does not dispatch/,
+    );
+  } finally {
+    await restore();
+    await reviewPool.end();
+    await selectorPool.end();
+  }
+});
+
+/**
+ * Every definer 064 dropped and re-created, with the roles it answers to. A
+ * dropped function takes its owner, its revoke and its grants with it, and a
+ * function re-created without its revoke is executable by the world — the
+ * defect this tree has already found twice.
+ */
+const i5RekeyedDefiners: readonly (readonly [
+  string,
+  string,
+  readonly string[],
+])[] = [
+  [selectorClaimFunction, "integer", [selectorServiceRole]],
+  [selectorReconcileClaimFunction, "integer", [selectorServiceRole]],
+  [selectorDeliveryFunction, "text,bigint,text,text", [selectorServiceRole]],
+  [
+    selectorProjectSettingsFunction,
+    "text,text,bigint,text,text,text,text,text,text,bigint,bigint,bigint,bigint,bigint,bigint,bigint,text,text",
+    [apiRole, selectorControlRole],
+  ],
+];
+
+const i5SelectorRoles = [
+  apiRole,
+  selectorServiceRole,
+  selectorControlRole,
+  selectorReviewRole,
+  ticketServiceRole,
+];
+
+test("each definer the rekey re-created is owned, world-revoked and granted where it was", async () => {
+  for (const [name, signature, granted] of i5RekeyedDefiners) {
+    const identity = `${name}(${signature})`;
+    assert.deepEqual(
+      await harness.query(
+        `SELECT prosecdef AS definer,pg_get_userbyid(proowner) AS owner,
+                EXISTS(SELECT 1 FROM aclexplode(proacl) entry
+                        WHERE entry.grantee=0) AS world
+           FROM pg_proc WHERE oid=$1::regprocedure`,
+        [identity],
+      ),
+      [{ definer: true, owner: boundaryOwnerRole, world: false }],
+      identity,
+    );
+    for (const role of i5SelectorRoles)
+      assert.deepEqual(
+        await harness.query(
+          `SELECT has_function_privilege($1,$2::regprocedure,'EXECUTE') AS held`,
+          [role, identity],
+        ),
+        [{ held: granted.includes(role) }],
+        `${identity} to ${role}`,
+      );
+  }
+});
+
+/**
+ * The reconciliation claim names the whole key too, and orders by it: a
+ * decision with two submitted rows has two operation outcomes to read, and one
+ * of them settles one row. The two are given one `reconcile_at` so the order
+ * has to fall through to the key, and written descending so an order that read
+ * the relation's own would disagree with it.
+ */
+test("a decision's submitted deliveries are reconciled one row at a time", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-reconcile-key",
+  );
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const reviewPool = postgresRolePool(selectorReviewRole);
+  const state = postgresSelectorState(selectorPool);
+  const reviews = postgresSelectorProposalReviews(reviewPool);
+  const restore = await i5HeldDispatchMode("ApprovalRequired");
+  const decision = `reconciled-${crypto.randomUUID()}`;
+  try {
+    await i5Drain((limit) => state.submittedDeliveries(limit));
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, decision, [40, 30, 20, 10]),
+        selectorTestState(partition, 0),
+      ),
+      4,
+    );
+    assert.equal(
+      await reviews.approve(partition, decision, selectorAdministrator),
+      true,
+    );
+    for (const ticket of [40, 30, 20, 10])
+      await state.submitted(decision, asTicketId(ticket));
+    await harness.query(
+      `UPDATE selector_proposal_delivery SET reconcile_at=now()
+        WHERE selector_decision=$1`,
+      [decision],
+    );
+    const claimed: [number, number][] = [];
+    for (let taken = 0; taken < 4; taken += 1) {
+      const page = await state.submittedDeliveries(1);
+      assert.equal(page.length, 1, "a claim of one takes one row");
+      for (const delivery of page)
+        claimed.push([delivery.ticket, delivery.attempts]);
+    }
+    assert.deepEqual(claimed, [
+      [asTicketId(10), 1],
+      [asTicketId(20), 1],
+      [asTicketId(30), 1],
+      [asTicketId(40), 1],
+    ]);
+  } finally {
+    await restore();
+    await reviewPool.end();
+    await selectorPool.end();
   }
 });
