@@ -1961,9 +1961,11 @@ test("a second claimer of a decision's deliveries takes the row the first did no
   try {
     await i5Drain((limit) => state.pending(limit));
     assert.equal(
-      await state.record(
-        selectorTestProposal(partition, decision, [6, 7]),
-        selectorTestState(partition, 0),
+      await wrote(
+        state.record(
+          selectorTestProposal(partition, decision, [6, 7]),
+          selectorTestState(partition, 0),
+        ),
       ),
       2,
     );
@@ -1996,9 +1998,11 @@ test("a second claimer of a decision's reconciliations takes the row the first d
   try {
     await i5Drain((limit) => state.submittedDeliveries(limit));
     assert.equal(
-      await state.record(
-        selectorTestProposal(partition, decision, [6, 7]),
-        selectorTestState(partition, 0),
+      await wrote(
+        state.record(
+          selectorTestProposal(partition, decision, [6, 7]),
+          selectorTestState(partition, 0),
+        ),
       ),
       2,
     );
