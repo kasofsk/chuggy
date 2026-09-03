@@ -10,25 +10,31 @@
  * inquiry answered (kasofsk/chuggy#551). A resume was unaffected, reader and
  * writer being one session there.
  *
- * THE ROW IS THE ONLY THING THAT CAN SAY WHOSE DIRECTORY TO READ. The page spans
- * two sessions and the caller's identity names one of them, so the read that
- * resolved the fork reports the session each row came from and the plane reads
- * under that. It is also the fence: a session this read does not answer for is
- * one the plane never addresses an object under, so naming the writer widens
- * nothing.
+ * THE ROW IS THE ONLY THING THAT CAN SAY WHOSE DIRECTORY TO READ. A fork's rows
+ * are its parent's and a resume's are its own, and the caller's identity is the
+ * fork's own session in both — so the read that resolved the sessions reports
+ * which one each row came from and the plane reads under that. It is also the
+ * fence: a session this read does not answer for is one the plane never
+ * addresses an object under, so naming the writer widens nothing.
  *
- * THE BODY IS 063'S OWN, SHARED RATHER THAN RESPELLED, because the predicate
- * that decides which sessions a bearer may read is the whole control and a copy
- * of it here is a second control to keep in step. Only the column list moves.
+ * THE READABLE SET IS WRITTEN OUT HERE AND NOT SHARED WITH 063, for the reason
+ * 066 gives where it respells 061's body: a migration whose statements changed
+ * when a later one was edited would not be history. 063 declares the same
+ * predicate to the same effect, and the two are not one control kept in step —
+ * they are what each migration did, and 063's is frozen because a database has
+ * run it. The ledger records `(version, name)` alone
+ * (`src/adapters/postgres/runtimeSchema.ts`), so an edit reaching an applied
+ * body is invisible to every installation that already ran it; a rewrite of
+ * 063's constant would silently move `list_session_streams` too, which is built
+ * from it there and which nothing here re-creates.
  *
  * THE WRITE AND THE STREAM LISTING ARE UNTOUCHED. `record_session_store_batch`
  * still writes under the bearer's own session alone, which is the asymmetry 063
  * exists to state; `list_session_streams` names streams rather than objects, so
- * it has no writer to report.
+ * it has no writer to report and carries 063's predicate unchanged.
  */
 
 import { sessionStorePageBatchesMax } from "../../../../contract/http.ts";
-import { readableSessions } from "./063-lead-inquiries.ts";
 import {
   boundaryOwnerRole,
   sessionAttemptBindingFunction,
@@ -40,6 +46,23 @@ import {
 /** The argument types the read is named by, unchanged: only what it answers moves. */
 const storeReadSignature = "text,bigint,text,bigint,bigint";
 
+/**
+ * The sessions one bearer may read a store of: its own, and its parent's — the
+ * parent arm carrying the ceiling the read is bounded by and the own arm none.
+ * This is 063's set to the same effect, re-declared rather than imported, and
+ * private so that no later migration can couple to it either.
+ */
+const writerNamedReadableSessions = `(
+       SELECT k.session AS session,NULL::bigint AS ceiling
+       UNION ALL
+       SELECT s.parent_session,
+              (SELECT coalesce(max(t.batch_last),0) FROM session_turn t
+                WHERE t.tenant=s.tenant AND t.project=s.project
+                  AND t.session=s.parent_session
+                  AND t.state IN ('Answered','Failed'))
+         FROM agent_session s
+        WHERE s.tenant=k.tenant AND s.project=k.project AND s.session=k.session)`;
+
 const writerNamingRead = [
   `DROP FUNCTION ${sessionStoreReadFunction}(${storeReadSignature})`,
   `CREATE FUNCTION ${sessionStoreReadFunction}(
@@ -49,7 +72,7 @@ const writerNamingRead = [
      LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
        SELECT b.session,b.batch,b.digest,b.bytes
          FROM ${sessionAttemptBindingFunction}(in_secret_digest,in_generation) k
-         CROSS JOIN LATERAL ${readableSessions} readable
+         CROSS JOIN LATERAL ${writerNamedReadableSessions} readable
          JOIN session_store_batch b ON b.tenant=k.tenant AND b.project=k.project
                                    AND b.session=readable.session
         WHERE b.stream=in_stream AND b.batch>coalesce(in_after,0)
