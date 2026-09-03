@@ -2492,6 +2492,28 @@ test("the same decision under a wider budget is accepted", async () => {
   );
 });
 
+/**
+ * The parse ceiling is the control layer's own bound, refused before a member
+ * is read. A budget wide enough to admit the count and a view carrying every
+ * ticket leave it as the only thing that can refuse.
+ */
+test("a decision past the parse ceiling is refused before its budget judges", async () => {
+  const wide = Array.from({ length: leadDispatchesMax + 1 }, (_, index) => ({
+    ...dispatchable,
+    ticket: asTicketId(index + 1),
+  }));
+  const past = await cycleDispatching(
+    wide.map((candidate) => Number(candidate.ticket)),
+    { dispatchesPerDecision: wide.length },
+    wide,
+  );
+  assert.equal(past.recorded, undefined, "nothing is dispatched");
+  assert.deepEqual(past.interaction?.result, {
+    outcome: "Failed",
+    code: "InvalidResult",
+  });
+});
+
 test("every dispatch a decision names is proposed under its own operation", async () => {
   const three = await cycleDispatching([3, 1, 2], {
     dispatchesPerDecision: 3,
@@ -2576,8 +2598,9 @@ function drawnDecision(random: Random, run: number) {
     ...dispatchable,
     ticket: asTicketId(index + 1),
   }));
-  const named = subsetFrom(random, view).map((candidate) =>
-    Number(candidate.ticket),
+  /** Sometimes the whole view, so a repeat or a stranger can push one past the ceiling. */
+  const named = (random.coin() ? view : subsetFrom(random, view)).map(
+    (candidate) => Number(candidate.ticket),
   );
   /** A repeat, so entries and distinct tickets differ; then a ticket the view lacks. */
   const repeated =
@@ -2594,6 +2617,17 @@ function drawnDecision(random: Random, run: number) {
   };
 }
 
+/** Which rule answers a draw, sorted, so the roster is what the tally compares to. */
+const decisionArms = [
+  "InvalidResult",
+  "OutsideView",
+  "OverBudget",
+  "Proposed",
+  "Repeated",
+] as const;
+
+type DecisionArm = (typeof decisionArms)[number];
+
 /**
  * The reference: the parse ceiling refuses before the budget judges, the budget
  * counts ENTRIES so a repeat spends two, a repeat still inside the budget is a
@@ -2603,11 +2637,10 @@ function drawnDecision(random: Random, run: number) {
  */
 function expectedDecision(
   drawn: ReturnType<typeof drawnDecision>,
-): "InvalidResult" | "ControlViolation" | "OutsideView" | "Proposed" {
+): DecisionArm {
   if (drawn.chosen.length > leadDispatchesMax) return "InvalidResult";
-  if (drawn.chosen.length > drawn.budget) return "ControlViolation";
-  if (new Set(drawn.chosen).size !== drawn.chosen.length)
-    return "ControlViolation";
+  if (drawn.chosen.length > drawn.budget) return "OverBudget";
+  if (new Set(drawn.chosen).size !== drawn.chosen.length) return "Repeated";
   return drawn.chosen.every((ticket) => ticket <= drawn.size)
     ? "Proposed"
     : "OutsideView";
@@ -2615,17 +2648,20 @@ function expectedDecision(
 
 /**
  * The bounds and the walk, checked against that model rather than against
- * examples. The draw set carries repeats and out-of-view tickets, because a
+ * examples, with a tally that fails when the draw stops reaching a rule. The
+ * draw set carries whole views, repeats and out-of-view tickets, because a
  * model counting entries and one counting distinct tickets agree on every other
  * input; a run is a pure function of its seed, so a failure names the case that
  * produced it.
  */
 test("a decision is proposed exactly when the model says it is", async () => {
   const random = randomOf(20_260_903);
+  const reached = new Set<DecisionArm>();
   for (let run = 0; run < 128; run += 1) {
     const drawn = drawnDecision(random, run);
     const limits = { dispatchesPerDecision: drawn.budget };
     const expected = expectedDecision(drawn);
+    reached.add(expected);
     if (expected === "OutsideView") {
       await assert.rejects(
         () => cycleDispatching(drawn.chosen, limits, drawn.view),
@@ -2647,8 +2683,17 @@ test("a decision is proposed exactly when the model says it is", async () => {
     assert.equal(cycle.recorded, undefined, drawn.label);
     assert.deepEqual(
       cycle.interaction?.result,
-      { outcome: "Failed", code: expected },
+      {
+        outcome: "Failed",
+        code:
+          expected === "InvalidResult" ? "InvalidResult" : "ControlViolation",
+      },
       drawn.label,
     );
   }
+  assert.deepEqual(
+    [...reached].sort(),
+    [...decisionArms],
+    "a rule no run reaches is a rule this case asserts nothing about",
+  );
 });
