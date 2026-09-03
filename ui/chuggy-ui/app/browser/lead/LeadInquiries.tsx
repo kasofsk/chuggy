@@ -294,7 +294,7 @@ export function LeadInquiries(props: {
   readonly partition: PartitionIdentity;
   /** The lead's runtime reference, which is the head a fork is taken from. */
   readonly head: string | undefined;
-  /** The boxes, held by a caller no gate here unmounts. */
+  /** The boxes, which are the module's and outlive this panel and its page. */
   readonly held: InquiryBoxesHeld;
   readonly nowMs: number;
 }): ReactNode {
