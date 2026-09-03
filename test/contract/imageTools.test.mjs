@@ -36,6 +36,7 @@ import {
   threadTurnsAnsweredMax,
 } from "../../src/contract/http.ts";
 import { allSessionCapabilities } from "../../src/interpreter/agentSession.ts";
+import { inquiryCapabilities } from "../../src/interpreter/inquiry.ts";
 import {
   allChuggyTools,
   allDependentRelations,
@@ -217,4 +218,37 @@ test("both rosters carry the thread reads, under ProjectRead", () => {
         image.chuggyToolNames(roster).includes(`${chuggyToolPrefix}${tool}`),
         `${tool} for ${roster.join(",")}`,
       );
+});
+
+/**
+ * The wall that is not the pod's own choosing. A roster of reads must leave
+ * every write tool in `disallowedTools`, because an MCP name in NEITHER list is
+ * governed by `permissionMode` alone, which under `bypassPermissions` is no
+ * roster at all. The value read is the image module's, so this fails if the
+ * image stops naming both halves however the contract's roster reads.
+ */
+test("a roster of reads disallows every tool that writes", () => {
+  const { allowedTools, disallowedTools } = image.sessionAllowedTools([
+    ...inquiryCapabilities,
+  ]);
+  const writes = [
+    ...chuggyToolCapabilities.DraftAuthor,
+    ...chuggyToolCapabilities.LeadDecision,
+  ].map((tool) => `${chuggyToolPrefix}${tool}`);
+
+  for (const name of writes) {
+    assert.ok(disallowedTools.includes(name), `${name} is not disallowed`);
+    assert.ok(!allowedTools.includes(name), `${name} is allowed`);
+  }
+  assert.deepEqual(
+    allowedTools.filter((name) => name.startsWith(chuggyToolPrefix)),
+    chuggyToolCapabilities.ProjectRead.map(
+      (tool) => `${chuggyToolPrefix}${tool}`,
+    ),
+  );
+  for (const name of image.sessionBuiltInTools)
+    assert.ok(
+      disallowedTools.includes(name),
+      `${name} is a built-in no read roster maps and it is not disallowed`,
+    );
 });

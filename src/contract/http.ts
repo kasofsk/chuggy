@@ -162,6 +162,24 @@ export const leadTurnsAnsweredMax = 32;
  */
 export const agenticRefusalLedgerAnsweredMax = 32;
 
+/**
+ * The longest question a member may ask the lead aside. A door a human types at
+ * is bounded by what a human types rather than by what the mailbox column
+ * holds, and an inquiry is one exchange and not a conversation: a member with
+ * more to say than this has a thread.
+ */
+export const inquiryQuestionCharsMax = 4_096;
+
+/**
+ * How many inquiries one member may have unanswered at once. It is the whole of
+ * what stops one member spending the project's shared account on questions, so
+ * a member who asked and read neither answer waits.
+ */
+export const inquiriesOpenPerMemberMax = 2;
+
+/** How many of a lead's inquiries one listing answers with, newest first. */
+export const inquiriesAnsweredMax = 32;
+
 /** The longest summary a result carries, restating what the manifest reader accepts. */
 export const resultReportCharsMax = 8_192;
 
@@ -229,6 +247,8 @@ export const nativeHttpRoutes = {
   selectorHistory: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-history`,
   lead: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead`,
   leadTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/transcript`,
+  leadInquiries: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/inquiries`,
+  leadInquiry: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/inquiries/:session`,
   executions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions`,
   execution: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution`,
   outputContent: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/artifacts/:ordinal`,

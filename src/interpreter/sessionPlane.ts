@@ -47,6 +47,13 @@ export interface SessionPlaneIdentity {
   readonly agentReference?: string;
   /** What the session was told it is, absent for a session opened without objectives. */
   readonly systemPrompt?: string;
+  /**
+   * The transcript this attempt forks from, which is the parent's runtime
+   * reference and is present only for an inquiry. It is the parent's and never
+   * the session's own, so an attempt that follows a lost one forks again from
+   * the lead rather than resuming a fork whose store holds nothing.
+   */
+  readonly forkFrom?: string;
   /** Whether the attempt may still act, which every route requires before anything else. */
   readonly live: boolean;
 }

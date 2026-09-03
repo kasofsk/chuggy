@@ -688,7 +688,8 @@ function processSessionFakes(): string {
     const sessionGrant = { ...${JSON.stringify(grant)}, credentials: ['claude-code'] };
     const agentSession = {
       partition, session: 'session-one', kind: 'Lead',
-      principal: '21:https://auth.invalid4:lead', capabilities: ['RunCommands'],
+      principal: '21:https://auth.invalid4:lead',
+      capabilities: ['RepositoryRead', 'RunCommands'],
       credentialSlot: 'claude-code', account: 'project', cluster: 'cluster', state: 'Open',
     };
     const sessionFence = {
