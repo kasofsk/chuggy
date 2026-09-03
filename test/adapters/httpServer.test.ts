@@ -31,7 +31,11 @@ import {
   asTaskId,
   asTicketId,
 } from "../../src/domain/ids.ts";
-import { encodeExecutionCursor } from "../../src/adapters/http/contract.ts";
+import {
+  encodeDraftCursor,
+  encodeExecutionCursor,
+  parsePartition,
+} from "../../src/adapters/http/contract.ts";
 import { unreadableLeadReads } from "./leadReadFixtures.ts";
 import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
 import {
@@ -56,6 +60,7 @@ type ServedNativeWeb = Pick<
   | "deleteDraft"
   | "dispatchView"
   | "draft"
+  | "drafts"
   | "notifications"
   | "operation"
   | "project"
@@ -249,7 +254,12 @@ function fakeDrafts(
   calls: string[],
 ): Pick<
   NativeWeb,
-  "createDraft" | "initializeDraft" | "deleteDraft" | "reviseDraft" | "draft"
+  | "createDraft"
+  | "initializeDraft"
+  | "deleteDraft"
+  | "reviseDraft"
+  | "draft"
+  | "drafts"
 > {
   return {
     createDraft: () => {
@@ -271,6 +281,10 @@ function fakeDrafts(
     draft: (_principal, _partition, ticket) => {
       calls.push(`draft:${String(ticket)}`);
       return Promise.resolve(undefined);
+    },
+    drafts: (_principal, _partition, query) => {
+      calls.push(`drafts:${String(query.cursor)}:${String(query.limit)}`);
+      return Promise.resolve({ result: "NotFound" });
     },
   };
 }
@@ -1031,6 +1045,28 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     "reviseDraft:2",
     "deleteDraft:3",
     "dispatchView:4",
+  ]);
+});
+
+test("a drafts page routes its cursor and its bound, and nothing else", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const project = "/api/v1/tenants/tenant/projects/project";
+  const headers = { authorization: "Bearer valid" };
+  await app.inject({ url: `${project}/drafts?limit=3`, headers });
+  await app.inject({ url: `${project}/drafts`, headers });
+  const cursor = encodeDraftCursor(
+    parsePartition("tenant", "project"),
+    asTicketId(7),
+  );
+  await app.inject({
+    url: `${project}/drafts?cursor=${encodeURIComponent(cursor)}`,
+    headers,
+  });
+  assert.deepEqual(calls, [
+    "drafts:undefined:3",
+    "drafts:undefined:50",
+    "drafts:7:50",
   ]);
 });
 

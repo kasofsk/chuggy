@@ -22,6 +22,7 @@ import {
   draftInitializationResponse,
   draftDeletionResponse,
   draftResponse,
+  draftsResponse,
   draftRevisionResponse,
   inventoryResponse,
   notificationsResponse,
@@ -30,6 +31,7 @@ import {
   repositoryConfigurationImportResponse,
   submissionResponse,
 } from "../../src/adapters/http/outcomes.ts";
+import { draftsResponseSchema } from "../../src/contract/responses.ts";
 import { populated } from "../interpreter/roster.ts";
 import { id } from "../domain/fixtures.ts";
 import { plainAuthoring } from "../actor/harness.ts";
@@ -331,6 +333,32 @@ test("draft resources encode sets as stable JSON arrays", () => {
     }).status,
     201,
   );
+});
+
+test("a drafts page names its cursor exactly where it says there is more", () => {
+  const answered = draftsResponse({
+    result: "Authorized",
+    value: { partition, drafts: [draft], nextCursor: draft.ticket, more: true },
+  });
+  assert.equal(answered.status, 200);
+  assert.deepEqual(
+    draftsResponseSchema.parse(answered.body).drafts.map((one) => one.ticket),
+    [draft.ticket],
+  );
+  const cursor = (answered.body as { nextCursor: unknown }).nextCursor;
+  assert.equal(typeof cursor, "string");
+  assert.equal(String(cursor).includes(String(draft.ticket)), false);
+
+  const ended = draftsResponse({
+    result: "Authorized",
+    value: { partition, drafts: [], more: false },
+  });
+  assert.equal(
+    Object.hasOwn(ended.body as object, "nextCursor"),
+    false,
+    "a page that ends the collection names no cursor",
+  );
+  assert.equal(draftsResponse({ result: "NotFound" }).status, 404);
 });
 
 test("draft initialization outcomes remain discriminated at HTTP", () => {

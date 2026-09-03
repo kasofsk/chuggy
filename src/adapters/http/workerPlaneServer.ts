@@ -815,6 +815,9 @@ function sessionFactsRoute(
       ...(identity.agentReference === undefined
         ? {}
         : { agentReference: identity.agentReference }),
+      ...(identity.systemPrompt === undefined
+        ? {}
+        : { systemPrompt: identity.systemPrompt }),
     };
   });
 }

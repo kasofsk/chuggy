@@ -18,6 +18,8 @@ import {
   type ConfigurationRevisionResource,
   type DraftCreated,
   type DraftDeleted,
+  type DraftPage,
+  type DraftPageQuery,
   type DraftResource,
   type DraftRevised,
   type DraftState,
@@ -202,7 +204,11 @@ async function readDraft(
         AND d.ticket=${ticket}`,
   );
   const row = found.rows[0];
-  if (row === undefined) return undefined;
+  return row === undefined ? undefined : draftResourceOf(partition, row);
+}
+
+/** One draft row as the resource both the single read and the page answer. */
+function draftResourceOf(partition: Partition, row: DraftRow): DraftResource {
   const brief = draftBriefOf(row);
   const configurationVersion = configurationVersionOf(row);
   return {
@@ -219,6 +225,79 @@ async function readDraft(
     ...(configurationVersion === undefined ? {} : { configurationVersion }),
     authoring: parseDraftAuthoring(row.authoring),
     ...(brief === undefined ? {} : { brief }),
+  };
+}
+
+/**
+ * One `read_project_drafts` row. A set-returning function's columns are
+ * nullable to the query checker, so the four the relation declares `NOT NULL`
+ * are narrowed here rather than assumed.
+ */
+interface DraftPageRow extends ConfigurationVersionRow {
+  readonly ticket: string | null;
+  readonly authoring_version: string | null;
+  readonly state: string | null;
+  readonly configuration_revision: string | null;
+  readonly authoring: string | null;
+  readonly intent: string | null;
+  readonly branch: string | null;
+  readonly finalization_mode: string | null;
+  readonly finalization_target: string | null;
+  readonly links: string[] | null;
+  readonly checks: string[] | null;
+}
+
+function draftPageColumn(value: string | null, what: string): string {
+  if (value === null)
+    throw new Error(`authoring row: a draft page answered no ${what}`);
+  return value;
+}
+
+function draftPageRow(row: DraftPageRow): DraftRow {
+  return {
+    ...row,
+    ticket: draftPageColumn(row.ticket, "ticket"),
+    authoring_version: draftPageColumn(row.authoring_version, "version"),
+    state: draftPageColumn(row.state, "state"),
+    configuration_revision: draftPageColumn(
+      row.configuration_revision,
+      "configuration revision",
+    ),
+    authoring: draftPageColumn(row.authoring, "authoring"),
+  };
+}
+
+/**
+ * One page of a project's open drafts. The page is asked for one more row than
+ * it answers, which is what `more` is: whether the collection continues past
+ * what this body carries.
+ */
+async function readDrafts(
+  pool: pg.Pool,
+  partition: Partition,
+  query: DraftPageQuery,
+): Promise<DraftPage> {
+  const found = await pool.query<DraftPageRow>(
+    sql`SELECT ticket::text AS ticket,
+               authoring_version::text AS authoring_version,
+               state,configuration_revision,authoring,intent,branch,
+               finalization_mode,finalization_target,links,checks,
+               version_name,version_number::text AS version_number
+          FROM read_project_drafts(
+                 ${partition.tenant},${partition.project},
+                 ${query.cursor ?? null},${query.limit + 1})`,
+  );
+  const rows = found.rows.slice(0, query.limit);
+  const drafts = rows.map((row) =>
+    draftResourceOf(partition, draftPageRow(row)),
+  );
+  const last = drafts.at(-1);
+  const more = found.rows.length > query.limit && last !== undefined;
+  return {
+    partition,
+    drafts,
+    ...(more ? { nextCursor: last.ticket } : {}),
+    more,
   };
 }
 
@@ -571,6 +650,7 @@ export function postgresAuthoring(
     configuration: (partition, revision) =>
       readConfiguration(pool, partition, revision),
     draft: (partition, ticket) => readDraft(pool, partition, ticket),
+    drafts: (partition, query) => readDrafts(pool, partition, query),
     createConfiguration: (input) => createConfiguration(pool, input),
     importRepositoryConfigurations: (input) =>
       importRepositoryConfigurations(pool, input),

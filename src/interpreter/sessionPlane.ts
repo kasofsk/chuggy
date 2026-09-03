@@ -45,6 +45,8 @@ export interface SessionPlaneIdentity {
   readonly credentialSlot: string;
   /** The agent runtime's own session id, absent until a first turn has bound one. */
   readonly agentReference?: string;
+  /** What the session was told it is, absent for a session opened without objectives. */
+  readonly systemPrompt?: string;
   /** Whether the attempt may still act, which every route requires before anything else. */
   readonly live: boolean;
 }

@@ -36,6 +36,7 @@ import {
   type CanonicalConfiguration,
   type ConfigurationPageCursor,
   type ConfigurationRevisionId,
+  type DraftPageCursor,
 } from "../../interpreter/authoring.ts";
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
 import type {
@@ -91,6 +92,13 @@ const ticketActivityCursorSchema = z.strictObject({
   tenant: z.string(),
   project: z.string(),
   sequence: z.number().int().safe().nonnegative(),
+  ticket: z.number().int().safe().positive(),
+});
+
+const draftCursorSchema = z.strictObject({
+  version: z.literal(nativeHttpVersion),
+  tenant: z.string(),
+  project: z.string(),
   ticket: z.number().int().safe().positive(),
 });
 
@@ -399,6 +407,39 @@ export function parseConfigurationCursor(
   };
   if (encodeConfigurationCursor(partition, parsed) !== value)
     throw new RangeError("configuration cursor is not canonically encoded");
+  return parsed;
+}
+
+/** Where a page of drafts resumes, which is the last ticket the page before it answered. */
+export function encodeDraftCursor(
+  partition: Partition,
+  cursor: DraftPageCursor,
+): string {
+  return Buffer.from(
+    JSON.stringify({
+      version: nativeHttpVersion,
+      tenant: partition.tenant,
+      project: partition.project,
+      ticket: cursor,
+    }),
+  ).toString("base64url");
+}
+
+export function parseDraftCursor(
+  value: string,
+  expected: Partition,
+): DraftPageCursor {
+  const decoded: unknown = decodedCursor(value, "draft");
+  const cursor = draftCursorSchema.parse(decoded);
+  const partition = parsePartition(cursor.tenant, cursor.project);
+  if (
+    partition.tenant !== expected.tenant ||
+    partition.project !== expected.project
+  )
+    throw new RangeError("draft cursor belongs to another project");
+  const parsed = asTicketId(cursor.ticket);
+  if (encodeDraftCursor(partition, parsed) !== value)
+    throw new RangeError("draft cursor is not canonically encoded");
   return parsed;
 }
 

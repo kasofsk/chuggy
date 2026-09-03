@@ -33,6 +33,8 @@ import {
   runtimeSchemaContract,
 } from "../../src/adapters/postgres/runtimeSchema.ts";
 import {
+  agentSessionPromptCharsMax,
+  sessionPromptCeilings,
   nativeHttpPathSegmentCharsMax,
   projectChangeResourceCharsMax,
   sessionIdentityCharsMax,
@@ -45,7 +47,13 @@ import {
   leadMillisecondsPerDecision,
   leadTokensPerDecision,
 } from "../../src/adapters/postgres/schema/migrations/059-lead-decisions.ts";
+import {
+  allSessionCapabilities,
+  sessionCapabilitiesMax,
+} from "../../src/interpreter/agentSession.ts";
 import { allSessionTurnFailures } from "../../src/interpreter/agentSession.ts";
+import { leadToolAllowlist } from "../../src/interpreter/leadTools.ts";
+import { leadToolCallsPerDecision } from "../../src/adapters/postgres/schema/migrations/061-lead-tools.ts";
 import { allSessionAttemptEvidences } from "../../src/interpreter/sessionScheduler.ts";
 import { schemaContractAccepts } from "../../src/interpreter/serviceRuntime.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
@@ -2352,9 +2360,239 @@ test("migration 59 widens a turn's input check installed before an observation g
   });
 });
 
-test("058, 059 and 060 compose into the schema a fresh generation renders", async () => {
-  await migrationDatabase("lead_composition", async (subject) => {
+/** The capabilities a session held before the chuggy tools were admitted by three more. */
+const capabilitiesBeforeTheTools = allSessionCapabilities.filter(
+  (capability) =>
+    capability === "RepositoryRead" ||
+    capability === "RepositoryWrite" ||
+    capability === "RunCommands",
+);
+
+/** One session's capability check, as the server renders it. */
+async function migrationCapabilityCheck(
+  subject: pg.Pool,
+): Promise<string | undefined> {
+  return (
+    await subject.query<{ definition: string }>(
+      `SELECT pg_get_constraintdef(c.oid) AS definition
+         FROM pg_constraint c
+        WHERE c.conrelid = 'agent_session'::regclass
+          AND c.conname = 'agent_session_capabilities_are_known'`,
+    )
+  ).rows[0]?.definition;
+}
+
+/**
+ * Opens a lead holding one capability, answering whatever the server said. The
+ * door takes the objectives only after 061 retypes it, so a case that drove one
+ * signature either side of the migration would be reporting a missing function
+ * as the refusal it was looking for.
+ */
+async function migrationOpenHolding(
+  subject: pg.Pool,
+  capability: string,
+  prompted: boolean,
+): Promise<void> {
+  const store = postgresProjectStore(subject);
+  await postgresHarnessEpoch(store);
+  const partition = await postgresHarnessProject(
+    store,
+    `lead-tools-${capability}-${prompted ? "after" : "before"}`,
+  );
+  await subject.query(
+    `SELECT open_agent_session($1,$2,$3,'Lead','principal-61',NULL,
+       ARRAY[$4]::text[],'claude-code'${prompted ? ",NULL" : ""})`,
+    [
+      partition.tenant,
+      partition.project,
+      `session-61-${capability}-${prompted ? "after" : "before"}`,
+      capability,
+    ],
+  );
+}
+
+test("migration 61 widens a capability check installed before these capabilities existed", async () => {
+  await migrationDatabase("lead_tool_capabilities", async (subject) => {
     await migrationSeedApplied(subject, 61);
+    await migrationNarrowedRoster(
+      subject,
+      "agent_session",
+      "agent_session_capabilities_are_known",
+      `cardinality(capabilities) BETWEEN 0 AND ${sessionCapabilitiesMax}
+         AND capabilities <@ ARRAY[${schemaTextSet([
+           ...capabilitiesBeforeTheTools,
+         ])}]::text[]`,
+    );
+    await assert.rejects(
+      () => migrationOpenHolding(subject, "ProjectRead", false),
+      /agent_session_capabilities_are_known/u,
+      "a session table installed before the chuggy tools refuses their capability",
+    );
+
+    await applyMigration(subject, 61);
+
+    for (const capability of ["ProjectRead", "DraftAuthor", "LeadDecision"])
+      await migrationOpenHolding(subject, capability, true);
+    await assert.rejects(
+      () => migrationOpenHolding(subject, "Nowhere", true),
+      /agent_session_capabilities_are_known/u,
+      "the widened check is still a check",
+    );
+
+    await migrationDatabase("lead_tool_fresh", async (fresh) => {
+      await migrationSeedApplied(fresh, 62);
+      assert.equal(
+        await migrationCapabilityCheck(subject),
+        await migrationCapabilityCheck(fresh),
+        "a migrated database ends with the check a fresh one starts with",
+      );
+    });
+  });
+});
+
+/** The two tool controls 061 moves, as the settings row currently holds them. */
+async function migrationToolControls(
+  subject: pg.Pool,
+): Promise<{ readonly allowlist: string; readonly calls: string } | undefined> {
+  const found = await subject.query<{ allowlist: string; calls: string }>(
+    `SELECT (controls::jsonb->>'toolAllowlist') AS allowlist,
+            (controls::jsonb->'limits'->>'toolCallsPerDecision') AS calls
+       FROM selector_runtime_settings WHERE singleton=1`,
+  );
+  return found.rows[0];
+}
+
+test("migration 61 narrows an allowlist that admitted everything", async () => {
+  await migrationDatabase("lead_tool_allowlist", async (subject) => {
+    await migrationSeedApplied(subject, 61);
+    const seeded = await migrationToolControls(subject);
+    assert.equal(seeded?.allowlist, '["*"]');
+    assert.ok(Number(seeded?.calls) < leadToolCallsPerDecision);
+
+    await applyMigration(subject, 61);
+
+    const held = await migrationToolControls(subject);
+    assert.deepEqual(JSON.parse(held?.allowlist ?? "[]"), [
+      ...leadToolAllowlist,
+    ]);
+    assert.equal(held?.calls, String(leadToolCallsPerDecision));
+    assert.deepEqual(
+      (
+        await subject.query<{ revisions: string }>(
+          `SELECT count(*)::text AS revisions
+             FROM selector_runtime_settings_history h
+             JOIN selector_runtime_settings s ON s.revision=h.revision`,
+        )
+      ).rows,
+      [{ revisions: "1" }],
+      "the revision the narrowing mints is recorded like every other",
+    );
+  });
+});
+
+test("migration 61 never overwrites an allowlist somebody wrote", async () => {
+  await migrationDatabase("lead_tool_allowlist_kept", async (subject) => {
+    await migrationSeedApplied(subject, 61);
+    const held = leadToolCallsPerDecision * 2;
+    await subject.query(
+      `UPDATE selector_runtime_settings
+          SET controls=jsonb_set(
+                jsonb_set(controls::jsonb,'{toolAllowlist}','["Read"]'::jsonb),
+                '{limits,toolCallsPerDecision}',to_jsonb($1::bigint))::text
+        WHERE singleton=1`,
+      [held],
+    );
+
+    await applyMigration(subject, 61);
+
+    assert.deepEqual(await migrationToolControls(subject), {
+      allowlist: '["Read"]',
+      calls: String(held),
+    });
+  });
+});
+
+test("migration 61 moves the call bound as a floor, even where it narrows beside it", async () => {
+  await migrationDatabase("lead_tool_calls_kept", async (subject) => {
+    await migrationSeedApplied(subject, 61);
+    const held = leadToolCallsPerDecision * 2;
+    await subject.query(
+      `UPDATE selector_runtime_settings
+          SET controls=jsonb_set(controls::jsonb,
+                '{limits,toolCallsPerDecision}',to_jsonb($1::bigint))::text
+        WHERE singleton=1`,
+      [held],
+    );
+
+    await applyMigration(subject, 61);
+
+    const moved = await migrationToolControls(subject);
+    assert.deepEqual(JSON.parse(moved?.allowlist ?? "[]"), [
+      ...leadToolAllowlist,
+    ]);
+    assert.equal(
+      moved?.calls,
+      String(held),
+      "the row the narrowing writes keeps a bound somebody raised",
+    );
+  });
+});
+
+test("the objectives column holds the widest ceiling any kind of session composes", async () => {
+  await migrationDatabase("lead_tool_prompt_bound", async (subject) => {
+    await migrationSeedApplied(subject, 62);
+    const held = (
+      await subject.query<{ definition: string }>(
+        `SELECT pg_get_constraintdef(c.oid) AS definition
+           FROM pg_constraint c
+          WHERE c.conrelid = 'agent_session'::regclass
+            AND c.conname = 'agent_session_prompt_is_bounded'`,
+      )
+    ).rows[0]?.definition;
+    for (const ceiling of sessionPromptCeilings)
+      assert.ok(
+        ceiling <= agentSessionPromptCharsMax,
+        "the column holds every kind's own ceiling",
+      );
+    assert.ok(
+      held?.includes(String(agentSessionPromptCharsMax)),
+      "a kind with a wider ceiling widens this, and its migration replaces the check",
+    );
+  });
+});
+
+test("migration 61 leaves a session that was opened before it had objectives", async () => {
+  await migrationDatabase("lead_tool_prompt", async (subject) => {
+    await migrationSeedApplied(subject, 61);
+    await migrationLeadTurn(subject);
+
+    await applyMigration(subject, 61);
+
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT system_prompt FROM agent_session WHERE session='session-59'",
+        )
+      ).rows,
+      [{ system_prompt: null }],
+      "a session opened before the column existed holds no objectives",
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ prompted: string }>(
+          `SELECT set_session_system_prompt(s.tenant,s.project,'objectives')
+             AS prompted FROM agent_session s WHERE s.session='session-59'`,
+        )
+      ).rows,
+      [{ prompted: "Set" }],
+      "and takes them when the selector next offers a turn",
+    );
+  });
+});
+
+test("the session migrations compose into the schema a fresh generation renders", async () => {
+  await migrationDatabase("lead_composition", async (subject) => {
+    await migrationSeedApplied(subject, 62);
     const definition = async (relation: string, constraint: string) =>
       (
         await subject.query<{ definition: string }>(
@@ -2386,6 +2624,11 @@ test("058, 059 and 060 compose into the schema a fresh generation renders", asyn
       [...allSessionAttemptEvidences],
       "the evidence roster 058 wrote and 060 replaced is the roster on main",
     );
+    assert.deepEqual(
+      await members("agent_session", "agent_session_capabilities_are_known"),
+      [...allSessionCapabilities],
+      "the capability roster 058 wrote and 061 replaced is the roster on main",
+    );
     for (const [relation, constraint, bound] of [
       [
         "project_change",
@@ -2410,9 +2653,9 @@ test("058, 059 and 060 compose into the schema a fresh generation renders", asyn
   });
 });
 
-test("the ledger the api image reads accepts what 058, 059 and 060 applied", async () => {
+test("the ledger the api image reads accepts what the session migrations applied", async () => {
   await migrationDatabase("lead_ledger", async (subject) => {
-    await migrationSeedApplied(subject, 61);
+    await migrationSeedApplied(subject, 62);
     const applied = await postgresRuntimeSchema(subject).applied(
       new AbortController().signal,
     );
@@ -2422,9 +2665,9 @@ test("the ledger the api image reads accepts what 058, 059 and 060 applied", asy
       "the ledger holds one row per version with no gap and no repeat",
     );
     assert.deepEqual(
-      applied.map((each) => each.version).slice(-3),
-      [58, 59, 60],
-      "the three apply in the order their filenames give them",
+      applied.map((each) => each.version).slice(-4),
+      [58, 59, 60, 61],
+      "the four apply in the order their filenames give them",
     );
     assert.ok(
       schemaContractAccepts(currentRuntimeSchemaContract, applied),

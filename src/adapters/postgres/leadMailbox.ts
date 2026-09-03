@@ -1,7 +1,8 @@
 /**
- * The four doors the selector's own role has onto one project's lead mailbox.
- * Every port here is `src/interpreter/leadMailbox.ts`'s; this module says how
- * PostgreSQL answers them and declares nothing of its own.
+ * The doors the selector's own role has onto one project's lead: the four its
+ * mailbox is, and the one that moves the objectives the lead holds. Every port
+ * here is declared in `src/interpreter/`; this module says how PostgreSQL
+ * answers them and declares nothing of its own.
  *
  * EVERY DOOR NAMES A PROJECT AND NEVER A SESSION. The bodies 059 grants this
  * role resolve the project's `Lead` session themselves, so a compromised
@@ -28,6 +29,8 @@ import {
   allSessionTurnFailures,
   allSessionTurnStates,
   asSessionId,
+  type LeadSystemPromptPort,
+  type LeadSystemPromptSet,
 } from "../../interpreter/agentSession.ts";
 import type {
   LeadMailbox,
@@ -168,6 +171,35 @@ export function postgresLeadMailbox(pool: pg.Pool): LeadMailbox {
         withdrawnArms,
         withdrawn.rows[0]?.withdrawn,
         "withdrawing a turn",
+      );
+    },
+  };
+}
+
+/** The arms setting a lead's objectives may answer with. */
+const promptArms = [
+  "Set",
+  "Unchanged",
+  "NoLead",
+] as const satisfies readonly LeadSystemPromptSet[];
+
+/**
+ * The objectives door over the same pool, which the lead host calls before it
+ * offers a turn — a caller a later unit wires, so nothing in `src/` reaches this
+ * yet. `Unchanged` is what makes comparing on every pass cost one read.
+ */
+export function postgresLeadSystemPrompt(pool: pg.Pool): LeadSystemPromptPort {
+  return {
+    setSystemPrompt: async (partition, prompt) => {
+      const set = await pool.query<{ prompted: string | null }>(
+        sql`SELECT set_session_system_prompt(
+              ${partition.tenant},${partition.project},${prompt})::text
+            AS prompted`,
+      );
+      return leadVerdict(
+        promptArms,
+        set.rows[0]?.prompted,
+        "setting the lead's objectives",
       );
     },
   };

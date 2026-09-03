@@ -350,6 +350,7 @@ export type DraftPageCursor = TicketId;
 
 /** One page of a project's drafts, ascending by ticket, `more` saying whether the page ends them. */
 export interface DraftPage {
+  readonly partition: Partition;
   readonly drafts: readonly DraftResource[];
   readonly nextCursor?: DraftPageCursor;
   readonly more: boolean;
@@ -507,6 +508,8 @@ export interface AuthoringStore {
     partition: Partition,
     ticket: TicketId,
   ): Promise<DraftResource | undefined>;
+  /** One page of the drafts a project still holds open, ascending by ticket. */
+  drafts(partition: Partition, query: DraftPageQuery): Promise<DraftPage>;
   createConfiguration(input: {
     readonly partition: Partition;
     readonly authority: Authority;

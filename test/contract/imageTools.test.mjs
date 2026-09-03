@@ -47,6 +47,8 @@ import {
   chuggyToolServerName,
   chuggyToolTimeoutMs,
   dependentRelationsAdmitted,
+  leadSessionCapabilities,
+  leadToolAllowlist,
 } from "../../src/interpreter/leadTools.ts";
 import {
   leadDispatchesMax,
@@ -64,6 +66,15 @@ import { leadRoster, threadRoster } from "./sessionRosterFixture.ts";
  */
 test("the roster the image suites drive a thread with is the one a thread is opened with", () => {
   assert.deepEqual([...threadRoster], [...threadCapabilitiesDefault]);
+});
+
+/**
+ * The same thing for a lead, which the control plane now names because the
+ * installation's seeded allowlist is derived from it. Until then this fixture
+ * was held to nothing at all.
+ */
+test("the roster the image suites drive a lead with is the one the allowlist is written against", () => {
+  assert.deepEqual([...leadRoster], [...leadSessionCapabilities]);
 });
 
 test("the image offers exactly the tools the roster declares, in the same order", () => {
@@ -137,6 +148,19 @@ test("the relations the image offers and refuses are the roster's own", () => {
   assert.deepEqual(image.dependentRelationsAdmitted, [
     ...dependentRelationsAdmitted,
   ]);
+});
+
+test("the allowlist the installation seeds is the roster the image admits", () => {
+  const { allowedTools, disallowedTools } = image.sessionAllowedTools([
+    ...leadSessionCapabilities,
+  ]);
+
+  assert.deepEqual(allowedTools, [...leadToolAllowlist]);
+  assert.deepEqual(
+    disallowedTools.filter((tool) => leadToolAllowlist.includes(tool)),
+    [],
+    "a tool the allowlist names is not one the pod is denied",
+  );
 });
 
 test("either roster fits one measured turn's tool list", () => {

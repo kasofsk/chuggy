@@ -10,6 +10,8 @@ import {
 import {
   encodeConfigurationCursor,
   parseConfigurationCursor,
+  encodeDraftCursor,
+  parseDraftCursor,
   encodeExecutionCursor,
   encodeInventoryCursor,
   encodeNativeActionCursor,
@@ -229,6 +231,33 @@ test("configuration cursors preserve the stable newest-first key", () => {
     }),
   ).toString("base64url");
   assert.throws(() => parseConfigurationCursor(invalidTimestamp, partition));
+});
+
+test("a drafts cursor is the last ticket a page answered, and its project's own", () => {
+  const partition = parsePartition("tenant", "project");
+  const cursor = encodeDraftCursor(partition, id(7));
+  assert.equal(parseDraftCursor(cursor, partition), id(7));
+  assert.throws(() =>
+    parseDraftCursor(cursor, parsePartition("tenant", "other")),
+  );
+  assert.throws(() => parseDraftCursor(`${cursor}=`, partition));
+  assert.throws(() => parseDraftCursor("not-json", partition));
+  for (const ticket of [0, -1, 1.5])
+    assert.throws(
+      () =>
+        parseDraftCursor(
+          Buffer.from(
+            JSON.stringify({
+              version: 1,
+              tenant: "tenant",
+              project: "project",
+              ticket,
+            }),
+          ).toString("base64url"),
+          partition,
+        ),
+      `a ticket of ${String(ticket)} positions nothing`,
+    );
 });
 
 test("execution cursors carry the history position, not an identity", () => {

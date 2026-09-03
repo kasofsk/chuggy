@@ -4,15 +4,16 @@
  *
  * WHY THEY ARE WRITTEN OUT AT ALL. `images/worker/` reaches nothing under
  * `src/`, so a suite that drives the pod cannot import the control plane's
- * value; and `src/` names no lead roster to import even if it could — a lead's
- * capabilities are chosen per session by the provisioning root, so a suite that
- * derived them would be agreeing with whatever a caller last passed.
+ * value. Which roster any one session is opened with is still the provisioning
+ * root's, so these are what this installation opens one with and not what any
+ * caller must pass.
  *
- * WHAT HOLDS EACH. `threadRoster` is a copy of `threadCapabilitiesDefault`, and
- * `imageTools.test.mjs` asserts it is that value: without that assertion a
- * change to the default would leave every thread suite green against a roster
- * the tree no longer opens a thread with. `leadRoster` is held to nothing,
- * because there is nothing to hold it to. It is written here and in
+ * WHAT HOLDS EACH. `threadRoster` is a copy of `threadCapabilitiesDefault` and
+ * `leadRoster` of `leadSessionCapabilities`, and `imageTools.test.mjs` asserts
+ * each is that value: without those assertions a change to either would leave
+ * every suite green against a roster the tree no longer opens a session with.
+ * A lead's is a value the control plane names because the installation's seeded
+ * `toolAllowlist` is derived from it. Both are written here and in
  * `images/worker/toolProbe.mjs`, which is copied into the image and so cannot
  * read this file; every suite reads this one.
  */

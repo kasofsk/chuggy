@@ -104,7 +104,8 @@ async function agentSessionOpen(
     sql`SELECT open_agent_session(
       ${opening.partition.tenant},${opening.partition.project},${opening.session},
       ${opening.kind},${opening.principal},${opening.parent ?? null},
-      ${[...opening.capabilities]}::text[],${opening.credentialSlot})::text AS opened`,
+      ${[...opening.capabilities]}::text[],${opening.credentialSlot},
+      ${opening.systemPrompt ?? null})::text AS opened`,
   );
   return agentSessionOpened(opened.rows[0]?.opened);
 }
@@ -171,7 +172,7 @@ export function postgresAgentSessions(pool: pg.Pool): AgentSessionStore {
       }>(
         sql`SELECT current_user::text AS writer_role,
           has_function_privilege(current_user,
-            'open_agent_session(text,text,text,text,text,text,text[],text)',
+            'open_agent_session(text,text,text,text,text,text,text[],text,text)',
             'EXECUTE')::boolean AS can_execute`,
       );
       const row = found.rows[0];

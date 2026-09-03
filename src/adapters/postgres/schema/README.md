@@ -230,9 +230,12 @@ because a role that could open one could mint an authority to act as a
 principal. Its composite key is `(tenant, project)` and its identity is
 `(tenant, project, session)`, with the opaque session unique globally so a
 reused one cannot answer another project's mailbox. It is changed by those
-three doors, by the scheduler taking an attempt number and by the worker plane
-binding the runtime's session id once; a trigger refuses every other change,
-which is what makes the transcript the row points at singular. Unfinished work
+three doors, by the scheduler taking an attempt number, by the worker plane
+binding the runtime's session id once and by the selector moving the project's
+lead onto the objectives it now holds; a trigger refuses every other change,
+which is what makes the transcript the row points at singular. The objectives
+are the one column a later write may move, because a project whose North Star
+changed must be able to tell the next session that opens. Unfinished work
 is found by selecting open sessions with a queued turn and no live attempt,
 which is exactly what `sessions_awaiting_placement` answers.
 

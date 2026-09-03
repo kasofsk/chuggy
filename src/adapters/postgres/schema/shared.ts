@@ -106,6 +106,8 @@ export const sessionTurnReleaseFunction = "release_session_attempt_turns";
 export const sessionStoreImmutableFunction = "session_store_is_immutable";
 export const sessionReferenceWrittenOnceFunction =
   "agent_session_is_written_once";
+export const sessionSystemPromptSetFunction = "set_session_system_prompt";
+export const projectDraftsReadFunction = "read_project_drafts";
 export const agenticRefusalRecordFunction = "record_agentic_refusals";
 export const agenticRefusalStandingFunction = "standing_agentic_refusals";
 export const leadSessionFunction = "lead_session";
