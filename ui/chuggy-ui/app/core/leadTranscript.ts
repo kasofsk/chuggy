@@ -164,8 +164,15 @@ export const leadTranscriptPaneEmpty: LeadTranscriptPane = {
   failure: undefined,
 };
 
-/** What a reader is shown: one fold, the stream it came from, and the reason
- * the last read gave if it did not answer. */
+/**
+ * What a reader is shown: one fold, the stream it came from, and the reason the
+ * last read gave if it did not answer.
+ *
+ * `holdingUnknown` MEANS MORE HERE THAN ON A FOLD — on a fold it is what a page
+ * answered, and on what is drawn it is every reason this pane cannot say what
+ * the lead holds, the fold's own and a walk waiting at a cursor it could not
+ * move.
+ */
 export interface LeadTranscriptHeld extends LeadTranscriptFold {
   readonly stream: string | undefined;
   readonly failure: string | undefined;
@@ -399,7 +406,6 @@ export function leadTranscriptDrawn(
     holding: [],
     holdingUnknown: true,
     cut: pane.fold.cut,
-    stalledAt: pane.fold.stalledAt,
     stream: pane.stream,
     failure: pane.failure,
   };

@@ -96,20 +96,26 @@ export function useLeadTranscript(
 }
 
 /**
- * The one word for a pane that cannot say what it has not reached: a walk
+ * The one word for a pane that cannot say what it has not reached — a walk
  * waiting at a stalled cursor, or a read the route could not decide the held
- * set for. Both panels draw it, because a range one of them calls unreached and
- * the other draws as an empty log is two accounts of one state.
+ * set for — drawn by both panels, because a range one of them calls unreached
+ * and the other draws as an empty log is two accounts of one state.
+ *
+ * IT REPLACES WHAT IS NOT THERE AND SITS BESIDE WHAT IS: a panel with nothing
+ * drawn has no empty state but this one, while a panel with entries keeps them
+ * and takes the word beside them.
  */
-function LeadUndecided(props: {
-  readonly held: LeadTranscriptHeld;
-  readonly drawn: number;
-}): ReactNode {
+function LeadUndecided(props: { readonly drawn: number }): ReactNode {
   if (props.drawn === 0) return <EmptyState label="Undecided" />;
   return <Notice tone="parked" inline detail="Undecided" />;
 }
 
-/** What one read could not draw, as the one line each is worth. */
+/**
+ * What one read could not draw, as the one line each is worth. A read that could
+ * not decide the held set is truncated by construction, so `Undecided` is what
+ * that one fact is said in and `Truncated` stands only where it is the whole of
+ * what went short.
+ */
 function LeadTranscriptNotes(props: {
   readonly held: LeadTranscriptHeld;
 }): ReactNode {
@@ -119,7 +125,7 @@ function LeadTranscriptNotes(props: {
       {held.failure === undefined ? null : (
         <Notice tone="danger" inline detail={`Failed · ${held.failure}`} />
       )}
-      {held.truncated ? (
+      {held.truncated && !held.holdingUnknown ? (
         <Notice tone="parked" inline detail="Truncated" />
       ) : null}
       {held.elided === 0 ? null : (
@@ -220,7 +226,7 @@ export function LeadHolding(props: {
       ) : !props.listed ? (
         <EmptyState label="Stream unlisted" />
       ) : props.held.holdingUnknown ? (
-        <LeadUndecided held={props.held} drawn={lines.length} />
+        <LeadUndecided drawn={lines.length} />
       ) : lines.length === 0 ? (
         <EmptyState label="Nothing held" />
       ) : null}
@@ -295,7 +301,7 @@ export function LeadLog(props: {
       {!props.listed ? (
         <EmptyState label="Stream unlisted" />
       ) : props.held.holdingUnknown ? (
-        <LeadUndecided held={props.held} drawn={lines.length} />
+        <LeadUndecided drawn={lines.length} />
       ) : lines.length === 0 ? (
         <EmptyState label="No entries" />
       ) : null}

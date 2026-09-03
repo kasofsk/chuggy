@@ -430,9 +430,12 @@ interface ModelReached {
    * reader a fold, which is the one seam the cap and the reset share. */
   readonly droppedWhileRebuilding: boolean;
   /** Whether a page ever arrived carrying one of its own entries twice, which is
-   * the shape the fold's dedupe is for and the only one that reaches it now the
-   * walk refuses to re-ask a cursor. */
-  readonly repeated: boolean;
+   * what `repeats` generates and what nothing else in a run produces. */
+  readonly repeatedInPage: boolean;
+  /** Whether a page ever arrived carrying an entry the fold already held, which
+   * a walk resumed past a stall produces: it waits at the cursor it stalled on
+   * and re-asks it, so the batch above that cursor is folded a second time. */
+  readonly repeatedAcrossPages: boolean;
 }
 
 /** One run driven and checked at every step, answering what it reached. */
@@ -442,7 +445,8 @@ function modelDriven(seed: number, shape: ModelShape): ModelReached {
   let everHadEntries = false;
   let dropped = 0;
   let droppedWhileRebuilding = false;
-  let repeated = false;
+  let repeatedInPage = false;
+  let repeatedAcrossPages = false;
   const applied: LeadTranscriptEvent[] = [];
   for (const event of run.events) {
     applied.push(event);
@@ -453,10 +457,10 @@ function modelDriven(seed: number, shape: ModelShape): ModelReached {
       const held = pane.fold.entries.flatMap((entry) =>
         entry.uuid === undefined ? [] : [entry.uuid],
       );
-      repeated =
-        repeated ||
-        new Set(arriving).size !== arriving.length ||
-        arriving.some((uuid) => held.includes(uuid));
+      repeatedInPage =
+        repeatedInPage || new Set(arriving).size !== arriving.length;
+      repeatedAcrossPages =
+        repeatedAcrossPages || arriving.some((uuid) => held.includes(uuid));
     }
     pane = leadTranscriptStep(pane, event);
     if (event.event === "StreamChange") everHadEntries = false;
@@ -470,17 +474,29 @@ function modelDriven(seed: number, shape: ModelShape): ModelReached {
       droppedWhileRebuilding = true;
     if (drawnUuids(leadTranscriptDrawn(pane)).length > 0) everHadEntries = true;
   }
-  return { dropped, droppedWhileRebuilding, repeated };
+  return {
+    dropped,
+    droppedWhileRebuilding,
+    repeatedInPage,
+    repeatedAcrossPages,
+  };
 }
 
 test("the fold answers what a recompute over the whole history answers", () => {
-  let repeated = false;
-  for (let seed = 1; seed <= modelSequences; seed += 1)
-    repeated = modelDriven(seed, modelShapeOrdinary).repeated || repeated;
+  let inPage = false;
+  let acrossPages = false;
+  for (let seed = 1; seed <= modelSequences; seed += 1) {
+    const reached = modelDriven(seed, modelShapeOrdinary);
+    inPage = inPage || reached.repeatedInPage;
+    acrossPages = acrossPages || reached.repeatedAcrossPages;
+  }
   expect(
-    repeated,
-    "no page ever repeated an entry, so the dedupe was never exercised",
+    inPage,
+    "no page carried its own entry twice, so `repeats` generated nothing",
   ).toBe(true);
+  expect(acrossPages, "no page repeated an entry the fold already held").toBe(
+    true,
+  );
 });
 
 /**

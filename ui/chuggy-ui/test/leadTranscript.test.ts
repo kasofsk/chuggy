@@ -323,6 +323,27 @@ test("a reset past the entries cap keeps the chain's order and its uniqueness", 
 });
 
 /**
+ * ONE PAGE CAN CARRY ONE ENTRY TWICE. The route builds a page's entries by
+ * walking a chain, and a walk that met one entry by two paths would send it
+ * twice; a fold that seeded its dedupe from what it already held and not from
+ * what it was adding would keep both and draw the lead saying it twice.
+ */
+test("a page carrying one entry twice lands it once", () => {
+  const doubled = paged(
+    leadTranscriptPaneEmpty,
+    cutPage(1, ["uuid-a", "uuid-b", "uuid-a"], ["uuid-a"], 1),
+    1,
+  );
+  expect(
+    lines(doubled).map((line) => line.uuid),
+    "a page repeating its own entry drew it twice",
+  ).toStrictEqual(["uuid-a", "uuid-b"]);
+  expect(holdingLines(doubled).map((line) => line.uuid)).toStrictEqual([
+    "uuid-a",
+  ]);
+});
+
+/**
  * A PAGE CAN REACH THE FOLD TWICE WITHOUT A RESET. A page whose cursor did not
  * move is asked for again as soon as the store is written above it, so the same
  * entries arrive a second time; a fold that appended them would draw the lead

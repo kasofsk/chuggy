@@ -198,10 +198,14 @@ test("a read that could not decide what is held says so, not nothing held", asyn
   await mountLead();
   expect(
     screen.getAllByText("Undecided").length,
-    "the two panels gave different accounts of one unreached range",
+    "the two panels gave different accounts of one undecided held set",
   ).toBe(2);
   expect(screen.queryByText("Nothing held")).toBeNull();
   expect(screen.queryByText("No entries")).toBeNull();
+  expect(
+    screen.queryByText("Truncated"),
+    "one server fact was said in two words at once",
+  ).toBeNull();
 });
 
 /** A project holds a session per thread beside its lead, so a page watching one
@@ -797,10 +801,22 @@ test("a stalled walk says the same word in both panels", async () => {
   );
   await mountLead();
   expect(screen.getByText("batch 0")).toBeDefined();
+  const said = screen.getAllByText("Undecided");
   expect(
-    screen.getAllByText("Undecided").length,
+    said.length,
     "the Log and the Holding panel disagreed about one unreached range",
   ).toBe(2);
+  const drawn = said.map((element) => ({
+    panel: element.closest(".panel")?.querySelector("h2")?.textContent,
+    kind: element.className.includes("notice-inline") ? "beside" : "in place",
+  }));
+  expect(
+    drawn,
+    "the word did not stand beside what a panel has and replace what it lacks",
+  ).toStrictEqual([
+    { panel: "Holding", kind: "in place" },
+    { panel: "Log", kind: "beside" },
+  ]);
   expect(screen.queryByText("No entries")).toBeNull();
   expect(screen.queryByText("Nothing held")).toBeNull();
 });
