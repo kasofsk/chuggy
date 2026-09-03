@@ -89,11 +89,9 @@ test("a session bound to a repository is cloned at the remote's own default bran
       (await stat(join(checkout.directory, "CLAUDE.md"))).isFile(),
       "the checkout has no working tree",
     );
-    const { stdout } = await run(
-      "git",
-      ["rev-parse", "--abbrev-ref", "HEAD"],
-      { cwd: checkout.directory },
-    );
+    const { stdout } = await run("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd: checkout.directory,
+    });
     assert.equal(stdout.trim(), "trunk");
     assert.deepEqual(logged, [`session checkout chuggy at ${head}\n`]);
   });

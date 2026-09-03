@@ -840,7 +840,10 @@ test("a thread originates through the API under its own session bearer, and answ
 test("a session with a checkout runs in it, and one without runs in the bare workspace", async () => {
   for (const [checkout, cwd] of [
     [undefined, "/workspace"],
-    [{ directory: "/workspace/repository", commit: "a".repeat(40) }, "/workspace/repository"],
+    [
+      { directory: "/workspace/repository", commit: "a".repeat(40) },
+      "/workspace/repository",
+    ],
   ]) {
     const plane = planeOf([], facts);
     const { seen, query } = queryOf(() => []);
@@ -877,7 +880,12 @@ test("the checkout is asked for what the placement bound, under the session's ow
       }),
       CHUG_WORKER_REPOSITORIES: JSON.stringify({ chuggy: { url: "git://x" } }),
     },
-    checkout: async (checkoutTask, repositories, credentialFiles, workspace) => {
+    checkout: async (
+      checkoutTask,
+      repositories,
+      credentialFiles,
+      workspace,
+    ) => {
       asked.push({ checkoutTask, repositories, credentialFiles, workspace });
       return undefined;
     },
@@ -926,7 +934,11 @@ test("moving cwd to the checkout does not move the store stream a resumed sessio
       result("success", { result: "ok" }),
     ]);
 
-    await run({ request: plane.request, query, checkout: async () => checkout });
+    await run({
+      request: plane.request,
+      query,
+      checkout: async () => checkout,
+    });
 
     written.push(
       plane.calls
