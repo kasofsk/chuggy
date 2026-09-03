@@ -31,7 +31,12 @@ import {
   type SelectorStateStore,
 } from "../../src/interpreter/selector.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import { pickFrom, randomOf, subsetFrom } from "../random/random.ts";
+import {
+  pickFrom,
+  randomOf,
+  subsetFrom,
+  type Random,
+} from "../random/random.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
@@ -1811,7 +1816,11 @@ test("the selector policy host starts once and bounds cancellation evidence", as
   assert.equal(aborted, true);
 });
 
-async function policyAnswer(result: unknown) {
+/** A dry run under a project's own limits, so a refusal names the arm it took. */
+async function policyRefusing(
+  result: unknown,
+  limits: Partial<SelectorRuntimeSettings["limits"]>,
+) {
   return dryRunSelectorPolicy(
     policyHost(() =>
       Promise.resolve({
@@ -1827,8 +1836,15 @@ async function policyAnswer(result: unknown) {
     ),
     { decisionDeadline: () => new Promise<never>(() => undefined) },
     exhaustedObservation(),
-    resolved(),
+    resolved({
+      ...runtimeSettings,
+      limits: { ...runtimeSettings.limits, ...limits },
+    }),
   );
+}
+
+async function policyAnswer(result: unknown) {
+  return policyRefusing(result, {});
 }
 
 test("the grown result's refusals and lifts reach the runtime intact", async () => {
@@ -2375,25 +2391,60 @@ test("a decision dispatching past its project's budget is a control violation", 
 });
 
 /**
- * The budget bounds the entries a decision wrote, not the tickets they name.
- * They differ only on a repeat, and every layer under the control is per entry
- * — `selectedCandidates` maps the list, and one delivery row is written for
- * each — so a budget counting tickets would let two proposals through under a
- * budget of one.
+ * A decision names each ticket once. Two entries for one ticket would be two
+ * `Dispatch` events at their own prefixes, the second refused by enablement for
+ * a ticket the first left Working — and they would carry one derived operation
+ * id between them, so the second could never be delivered under a relation
+ * keyed by it.
  */
-test("a decision naming one ticket twice spends two of its budget", async () => {
-  const twice = await cycleDispatching([1, 1], { dispatchesPerDecision: 1 });
+test("a decision naming one ticket twice is refused however wide its budget", async () => {
+  const twice = await cycleDispatching([1, 1], { dispatchesPerDecision: 2 });
   assert.equal(twice.recorded, undefined, "nothing is proposed");
   assert.deepEqual(twice.interaction?.result, {
     outcome: "Failed",
     code: "ControlViolation",
   });
-  const once = await cycleDispatching([1], { dispatchesPerDecision: 1 });
+  const distinct = await cycleDispatching([1, 2], {
+    dispatchesPerDecision: 2,
+  });
   assert.deepEqual(
-    once.recorded?.dispatches.map((dispatch) => dispatch.ticket),
-    [asTicketId(1)],
-    "one entry under a budget of one is what the same budget admits",
+    distinct.recorded?.dispatches.map((dispatch) => dispatch.ticket),
+    [asTicketId(1), asTicketId(2)],
+    "two tickets under a budget of two is what the same budget admits",
   );
+});
+
+/**
+ * The reason a refused turn carries, which is the only thing separating the two
+ * arms: the budget counts ENTRIES and runs first, so one ticket named twice
+ * under a budget of one is over budget rather than repeated, and a budget
+ * counting distinct tickets would name the repeat instead.
+ */
+test("a repeat over budget is refused as a budget, and within it as a repeat", async () => {
+  const refusal = async (budget: number) => {
+    try {
+      await policyRefusing(
+        {
+          attention: "Monitoring",
+          handoffNote: {},
+          dispatches: [
+            { ticket: 1, expectedTicketVersion: 1 },
+            { ticket: 1, expectedTicketVersion: 1 },
+          ],
+        },
+        { dispatchesPerDecision: budget },
+      );
+    } catch (error) {
+      const rejection = (error as { readonly rejection?: unknown }).rejection;
+      return rejection instanceof Error ? rejection.message : undefined;
+    }
+    return undefined;
+  };
+  assert.match(
+    (await refusal(1)) ?? "",
+    /dispatched more tickets than its budget/,
+  );
+  assert.match((await refusal(2)) ?? "", /dispatched one ticket twice/);
 });
 
 /**
@@ -2518,84 +2569,86 @@ test("a project's dispatch budget resolves from its own row, or inherits", () =>
   );
 });
 
+/** One drawn decision: the view offered, the budget set, and the entries named. */
+function drawnDecision(random: Random, run: number) {
+  const size = random.below(leadDispatchesMax) + 1;
+  const view = Array.from({ length: size }, (_, index) => ({
+    ...dispatchable,
+    ticket: asTicketId(index + 1),
+  }));
+  const named = subsetFrom(random, view).map((candidate) =>
+    Number(candidate.ticket),
+  );
+  /** A repeat, so entries and distinct tickets differ; then a ticket the view lacks. */
+  const repeated =
+    random.coin() && named.length > 0
+      ? [...named, pickFrom(random, named)]
+      : named;
+  const chosen = random.coin() ? [...repeated, size + 1] : repeated;
+  return {
+    view,
+    chosen,
+    budget: random.below(leadDispatchesMax) + 1,
+    size,
+    label: `seed run ${String(run)}: view ${String(size)}, chosen ${chosen.join(",")}`,
+  };
+}
+
 /**
- * The budget and the walk, checked against a model rather than against
- * examples: the ENTRIES are counted first, on the finished turn, so a decision
- * over its budget is a control violation whatever it named — a repeat spends
- * two — while a decision past `leadDispatchesMax` never survives the parse to
- * be judged, and one within both bounds is refused only where a ticket it names
- * is outside the view, otherwise proposing exactly what it named, in order. The
- * draw set carries repeats and out-of-view tickets, because a model counting
- * entries and one counting distinct tickets agree on every other input; a run
- * is a pure function of its seed, so a failure names the case that produced it.
+ * The reference: the parse ceiling refuses before the budget judges, the budget
+ * counts ENTRIES so a repeat spends two, a repeat still inside the budget is a
+ * violation of its own, and only what clears all three is checked against the
+ * view. It is written as one total function because that is what the four rules
+ * and their order are.
  */
-test("a decision is proposed exactly when the view holds it and the budget allows it", async () => {
+function expectedDecision(
+  drawn: ReturnType<typeof drawnDecision>,
+): "InvalidResult" | "ControlViolation" | "OutsideView" | "Proposed" {
+  if (drawn.chosen.length > leadDispatchesMax) return "InvalidResult";
+  if (drawn.chosen.length > drawn.budget) return "ControlViolation";
+  if (new Set(drawn.chosen).size !== drawn.chosen.length)
+    return "ControlViolation";
+  return drawn.chosen.every((ticket) => ticket <= drawn.size)
+    ? "Proposed"
+    : "OutsideView";
+}
+
+/**
+ * The bounds and the walk, checked against that model rather than against
+ * examples. The draw set carries repeats and out-of-view tickets, because a
+ * model counting entries and one counting distinct tickets agree on every other
+ * input; a run is a pure function of its seed, so a failure names the case that
+ * produced it.
+ */
+test("a decision is proposed exactly when the model says it is", async () => {
   const random = randomOf(20_260_903);
   for (let run = 0; run < 128; run += 1) {
-    const size = random.below(leadDispatchesMax) + 1;
-    const view = Array.from({ length: size }, (_, index) => ({
-      ...dispatchable,
-      ticket: asTicketId(index + 1),
-    }));
-    const budget = random.below(leadDispatchesMax) + 1;
-    const named = subsetFrom(random, view).map((candidate) =>
-      Number(candidate.ticket),
-    );
-    /** A repeat, so entries and distinct tickets differ; then a ticket the view lacks. */
-    const repeated =
-      random.coin() && named.length > 0
-        ? [...named, pickFrom(random, named)]
-        : named;
-    const chosen = random.coin() ? [...repeated, size + 1] : repeated;
-    const carried = chosen.every((ticket) => ticket <= size);
-    const label = `seed run ${String(run)}: view ${String(size)}, budget ${String(budget)}, chosen ${chosen.join(",")}`;
-
-    if (chosen.length > leadDispatchesMax) {
-      const walked = await cycleDispatching(
-        chosen,
-        { dispatchesPerDecision: budget },
-        view,
-      );
-      assert.equal(walked.recorded, undefined, label);
-      assert.deepEqual(
-        walked.interaction?.result,
-        { outcome: "Failed", code: "InvalidResult" },
-        label,
-      );
-      continue;
-    }
-    if (chosen.length > budget) {
-      const over = await cycleDispatching(
-        chosen,
-        { dispatchesPerDecision: budget },
-        view,
-      );
-      assert.equal(over.recorded, undefined, label);
-      assert.deepEqual(
-        over.interaction?.result,
-        { outcome: "Failed", code: "ControlViolation" },
-        label,
-      );
-      continue;
-    }
-    if (!carried) {
+    const drawn = drawnDecision(random, run);
+    const limits = { dispatchesPerDecision: drawn.budget };
+    const expected = expectedDecision(drawn);
+    if (expected === "OutsideView") {
       await assert.rejects(
-        () => cycleDispatching(chosen, { dispatchesPerDecision: budget }, view),
+        () => cycleDispatching(drawn.chosen, limits, drawn.view),
         /outside its observed view/,
-        label,
+        drawn.label,
       );
       continue;
     }
-    const cycle = await cycleDispatching(
-      chosen,
-      { dispatchesPerDecision: budget },
-      view,
-    );
+    const cycle = await cycleDispatching(drawn.chosen, limits, drawn.view);
+    if (expected === "Proposed") {
+      assert.deepEqual(
+        cycle.recorded?.dispatches.map((dispatch) => Number(dispatch.ticket)) ??
+          [],
+        drawn.chosen,
+        drawn.label,
+      );
+      continue;
+    }
+    assert.equal(cycle.recorded, undefined, drawn.label);
     assert.deepEqual(
-      cycle.recorded?.dispatches.map((dispatch) => Number(dispatch.ticket)) ??
-        [],
-      chosen,
-      label,
+      cycle.interaction?.result,
+      { outcome: "Failed", code: expected },
+      drawn.label,
     );
   }
 });

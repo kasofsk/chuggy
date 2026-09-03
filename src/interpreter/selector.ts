@@ -59,7 +59,8 @@ export interface SelectorDecisionProposals {
   readonly fence: SelectorSettingsFence;
   readonly planningIntent?: JsonValue;
   readonly deliveryMode: "Automatic" | "ApprovalRequired";
-  /** At most `leadDispatchesMax`, each naming a distinct ticket. */
+  /** At most `leadDispatchesMax`, each naming a ticket the others do not, which
+   * `enforcePolicyControls` refuses the turn for breaking. */
   readonly dispatches: readonly SelectorProposedDispatch[];
 }
 
@@ -719,6 +720,13 @@ function enforcePolicyControls(
   )
     throw new SelectorControlViolation(
       "selector policy dispatched more tickets than its budget",
+    );
+  const dispatched = execution.result.dispatches.map(
+    (dispatch) => dispatch.ticket,
+  );
+  if (new Set(dispatched).size !== dispatched.length)
+    throw new SelectorControlViolation(
+      "selector policy dispatched one ticket twice",
     );
   for (const activity of execution.toolActivity) {
     if (
@@ -1712,10 +1720,11 @@ export async function reconcileSelectorProposal(
 
 /**
  * The operation one decision's dispatch of one ticket is submitted under,
- * derived rather than allocated. A minted list would have to be as long as the
- * ceiling and drawn before the decision is known; deriving it means a
+ * derived rather than allocated: a minted list would have to be as long as the
+ * ceiling and drawn before the decision is known. Deriving it means a
  * redelivery of the same decision's same ticket is the same operation, so
- * idempotency absorbs the retry and nothing has to remember what was minted.
+ * idempotency absorbs the retry — which is an identity only because a decision
+ * names each ticket once, and is why that is a control rather than a hope.
  */
 export function selectorDispatchOperation(
   identity: SelectorCycleIdentity,
