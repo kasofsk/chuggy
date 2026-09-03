@@ -606,7 +606,7 @@ export const operationAcceptanceSchema = z.strictObject({
 });
 export type OperationAcceptance = z.infer<typeof operationAcceptanceSchema>;
 
-const notificationSchema = z.strictObject({
+export const notificationSchema = z.strictObject({
   ordinal: countSchema,
   kind: z.enum(notificationKinds),
   resource: identitySchema,

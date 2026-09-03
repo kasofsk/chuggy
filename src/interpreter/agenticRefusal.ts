@@ -24,7 +24,7 @@ import type { TicketId } from "../domain/ids.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
-import type { SelectorLiftChoice, SelectorRefusalChoice } from "./selector.ts";
+import type { SelectorRefusalLedger } from "./selector.ts";
 
 /** What the lead did about one ticket, in the order it did it. */
 export const allAgenticRefusalEvents = ["Refused", "Lifted"] as const;
@@ -73,15 +73,8 @@ export interface AgenticRefusalRead {
   ): Promise<readonly AgenticRefusalEntry[]>;
 }
 
-export interface AgenticRefusalWrite {
-  /** Appends one decision's refusals and lifts as one transaction, idempotent on the decision. */
-  record(input: {
-    readonly partition: Partition;
-    readonly decision: string;
-    readonly refusals: readonly SelectorRefusalChoice[];
-    readonly lifts: readonly SelectorLiftChoice[];
-  }): Promise<"Recorded" | "AlreadyRecorded">;
-}
+/** The ledger's own name for the door the runtime holds, which is one shape. */
+export type AgenticRefusalWrite = SelectorRefusalLedger;
 
 export type AgenticRefusalsResult =
   | { readonly result: "NotFound" }

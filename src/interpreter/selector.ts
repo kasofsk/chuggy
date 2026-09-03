@@ -39,6 +39,8 @@ export interface SelectorInteraction {
   readonly context: {
     readonly operationalContext: SelectorOperationalContext;
     readonly handoffNote: JsonValue;
+    /** What the lead was told had moved, absent on a row written before the window was recorded. */
+    readonly changes?: readonly ProjectNotification[];
   };
   readonly toolActivity: readonly JsonValue[];
   readonly result: JsonValue;
@@ -285,6 +287,22 @@ export interface SelectorRefusalChoice {
   readonly ticket: DispatchCandidate["ticket"];
   readonly ticketVersion: number;
   readonly reason: string;
+}
+
+/**
+ * Where one decision's refusals and lifts are entered. It is declared here
+ * rather than taken from the ledger's own module because the ledger's module
+ * takes its vocabulary from this one, and a port pointing back would be a
+ * cycle.
+ */
+export interface SelectorRefusalLedger {
+  /** Appends one decision's refusals and lifts as one transaction, idempotent on the decision. */
+  record(input: {
+    readonly partition: Partition;
+    readonly decision: string;
+    readonly refusals: readonly SelectorRefusalChoice[];
+    readonly lifts: readonly SelectorLiftChoice[];
+  }): Promise<"Recorded" | "AlreadyRecorded">;
 }
 
 /** One ticket a decision cleared a standing refusal from. */
@@ -999,6 +1017,7 @@ function selectorInteraction(
     context: {
       operationalContext: observation.operationalContext,
       handoffNote: observation.handoffNote,
+      changes: observation.changes,
     },
     toolActivity: execution.toolActivity,
     result: checkedJson(execution.result, "selector result"),
@@ -1201,6 +1220,7 @@ function failedSelectorInteraction(
     context: {
       operationalContext: observation.operationalContext,
       handoffNote: observation.handoffNote,
+      changes: observation.changes,
     },
     toolActivity: measured?.toolActivity ?? [],
     result: { outcome: "Failed", code: policyFailureCode(error) },
@@ -1244,7 +1264,30 @@ async function recordFailedSelectorCycle(
   );
 }
 
+/**
+ * The decision's refusals and lifts, appended after the decision they belong to
+ * is recorded. The ledger names the decision, so a refusal written first could
+ * name one the log does not carry and no reader could ever explain it; a
+ * refusal lost the other way is refused again on the project's next turn, and
+ * the door is idempotent on the decision so a retry writes one row.
+ */
+async function recordDecisionRefusals(
+  refusals: SelectorRefusalLedger,
+  partition: Partition,
+  identity: SelectorCycleIdentity,
+  result: SelectorPolicyResult,
+): Promise<void> {
+  if (result.refusals.length + result.lifts.length === 0) return;
+  await refusals.record({
+    partition,
+    decision: identity.selectorDecisionReference,
+    refusals: result.refusals,
+    lifts: result.lifts,
+  });
+}
+
 async function recordCompletedSelectorCycle(
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   state: SelectorProjectState,
   observation: SelectorObservation,
@@ -1280,6 +1323,7 @@ async function recordCompletedSelectorCycle(
       selectorSettingsFence(settings),
       result.planningIntent,
     );
+    await recordDecisionRefusals(refusals, state.partition, identity, result);
     return undefined;
   }
   const proposal: SelectorProposal = {
@@ -1296,13 +1340,16 @@ async function recordCompletedSelectorCycle(
       ? {}
       : { planningIntent: result.planningIntent }),
   };
-  return (await store.record(proposal, nextState)) ? proposal : undefined;
+  const recorded = await store.record(proposal, nextState);
+  await recordDecisionRefusals(refusals, state.partition, identity, result);
+  return recorded ? proposal : undefined;
 }
 
 /** Runs one independently timed selector observation and durably records waiting or delivery. */
 export async function runSelectorCycle(
   state: SelectorProjectState,
   source: SelectorObservationSource,
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   policy: SelectorPolicyHost,
   identity: SelectorCycleIdentity,
@@ -1323,6 +1370,7 @@ export async function runSelectorCycle(
     state,
     observation,
     source,
+    refusals,
     store,
     policy,
     identity,
@@ -1335,6 +1383,7 @@ export async function runObservedSelectorCycle(
   state: SelectorProjectState,
   observation: SelectorObservation,
   source: SelectorObservationSource,
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   policy: SelectorPolicyHost,
   identity: SelectorCycleIdentity,
@@ -1389,6 +1438,7 @@ export async function runObservedSelectorCycle(
     return undefined;
   }
   return recordCompletedSelectorCycle(
+    refusals,
     store,
     state,
     observation,

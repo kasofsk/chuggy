@@ -89,11 +89,14 @@ export interface LeadObservationDocument {
   readonly version: typeof leadTurnDocumentVersion;
   readonly decision: string;
   readonly partition: Partition;
-  /** Absent where the session carries its objectives as a system prompt instead, which a retained document predates. */
+  /**
+   * The composed objectives, the North Star inside the content rather than
+   * beside it. Absent where the session carries them as a system prompt
+   * instead, which a retained document predates.
+   */
   readonly instructions?: {
     readonly revision: string;
     readonly content: string;
-    readonly northStar?: string;
   };
   /** Present only on a turn to a session that has bound no agent reference. */
   readonly seeding?: LeadSeeding;

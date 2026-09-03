@@ -33,6 +33,7 @@ import {
   asOperationId,
 } from "../../src/interpreter/operationInbox.ts";
 import { selectorRunOnce } from "../../src/interpreter/selectorRuntime.ts";
+import type { AgenticRefusalWrite } from "../../src/interpreter/agenticRefusal.ts";
 import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import { selectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
 import { selectorRuntimeAdministration } from "../../src/interpreter/selectorAdmin.ts";
@@ -190,6 +191,20 @@ function policyHost(
 }
 
 const movedPage = { result: "Events", cursor: 1, events: [] } as const;
+
+/** A ledger that answers, and records what one decision entered in it. */
+function refusalWrites(
+  onRecord: (
+    input: Parameters<AgenticRefusalWrite["record"]>[0],
+  ) => void = () => undefined,
+): AgenticRefusalWrite {
+  return {
+    record: (input) => {
+      onRecord(input);
+      return Promise.resolve("Recorded");
+    },
+  };
+}
 
 function promptObservationSource() {
   return {
@@ -502,6 +517,7 @@ test("a paused runtime creates no new observations but still drains durable work
     },
   };
   const result = await selectorRunOnce(
+    refusalWrites(),
     store,
     {
       projects: () =>
@@ -552,6 +568,7 @@ test("inventory progress follows scanned projects when a permit is unavailable",
   const second = { tenant: partition.tenant, project: asProjectId("second") };
   let saved: typeof partition | undefined;
   const result = await selectorRunOnce(
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       allocateAttempt: (_attempt, scope) => Promise.resolve(scope !== first),
@@ -595,6 +612,7 @@ test("one project's pause skips that project and the sweep carries on", async ()
   const allocated: string[] = [];
   let installationReads = 0;
   const result = await selectorRunOnce(
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       allocateAttempt: (_attempt, scope) => {
@@ -674,6 +692,7 @@ async function sweptProjects(sweep: SweptSweep) {
   const saved: (typeof partition | undefined)[] = [];
   let inventoryReads = 0;
   const result = await selectorRunOnce(
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       terminateAttempt: (attempt) => {
@@ -864,6 +883,7 @@ test("a pause observed after permit acquisition prevents a new decision", async 
   let settingsReads = 0;
   let releases = 0;
   const result = await selectorRunOnce(
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       terminateAttempt: () => {
@@ -947,6 +967,7 @@ test("a stale persisted observation releases its permit without starting policy"
             1,
         ),
     },
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       terminateAttempt: () => {
@@ -971,6 +992,7 @@ test("a stale persisted observation releases its permit without starting policy"
 test("unconfirmed attempt reconciliation yields to newer attempts", async () => {
   let deferred = 0;
   await selectorRunOnce(
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       quarantinedAttempts: () => Promise.resolve(["old-attempt"]),
@@ -1001,6 +1023,7 @@ test("one failed attempt inspection does not starve later quarantines", async ()
   const inspected: string[] = [];
   const rotated: string[] = [];
   const result = await selectorRunOnce(
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       quarantinedAttempts: () => Promise.resolve(["poisoned", "healthy"]),
@@ -1059,6 +1082,7 @@ test("a selector decision uses and records one hot-loaded prompt revision", asyn
       handoffNote: {},
     },
     promptObservationSource(),
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       recordInteraction: (interaction) => {
@@ -1130,6 +1154,7 @@ test("the runtime deadline confirms capability cancellation before returning", a
       decisionDeadline: () =>
         Promise.reject(new Error("decision deadline exceeded")),
     },
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       recordInteraction: (interaction) => {
@@ -1165,6 +1190,7 @@ test("unconfirmed capability cancellation quarantines its durable attempt", asyn
   let released = 0;
   let quarantined: string | undefined;
   const result = await selectorRunOnce(
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       recordInteraction: () => Promise.reject(new Error("audit unavailable")),
@@ -1204,6 +1230,7 @@ test("unconfirmed capability cancellation quarantines its durable attempt", asyn
 test("an unconfirmed permit release enters reconciliation", async () => {
   let quarantined: string | undefined;
   const result = await selectorRunOnce(
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       recordInteraction: () => Promise.reject(new Error("commit unknown")),
@@ -1249,6 +1276,7 @@ test("settings and permit failures remain isolated to their projects", async () 
     project: asProjectId("healthy-after-boundary-failures"),
   };
   const result = await selectorRunOnce(
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       allocateAttempt: (_attempt, scope) =>
@@ -1308,6 +1336,7 @@ test("policy-host constraints and observations are immutable", async () => {
       handoffNote: {},
     },
     promptObservationSource(),
+    refusalWrites(),
     stateStore(() => undefined),
     policyHost((request) => {
       try {
@@ -1349,6 +1378,7 @@ test("a rejected measured execution retains its available provenance", async () 
       handoffNote: {},
     },
     promptObservationSource(),
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       recordInteraction: (recorded) => {
@@ -1387,6 +1417,7 @@ test("structurally invalid JSON is audited instead of reaching persistence", asy
       handoffNote: {},
     },
     promptObservationSource(),
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       recordInteraction: (recorded) => {
@@ -1418,6 +1449,7 @@ test("policy timestamps compare chronologically across accepted precisions", asy
       handoffNote: {},
     },
     promptObservationSource(),
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       recordInteraction: (interaction) => {
@@ -1462,6 +1494,7 @@ test("unpersistable selector input is rejected before policy execution", async (
           },
         }),
     },
+    refusalWrites(),
     stateStore(() => undefined),
     policyHost(() => {
       started = true;
@@ -1487,6 +1520,7 @@ test("invalid policy JSON is recorded as a bounded failed interaction", async ()
       handoffNote: {},
     },
     promptObservationSource(),
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       recordInteraction: (interaction) => {
@@ -1515,6 +1549,7 @@ test("one project failure does not block later projects or durable delivery", as
   const broken = { tenant: partition.tenant, project: asProjectId("broken") };
   const healthy = { tenant: partition.tenant, project: asProjectId("healthy") };
   const result = await selectorRunOnce(
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       pending: () => Promise.resolve([delivery]),
@@ -1571,6 +1606,7 @@ test("one reconciliation failure does not abandon the rest of its claim", async 
   };
   let terminal = 0;
   const result = await selectorRunOnce(
+    refusalWrites(),
     {
       ...stateStore(() => {
         terminal += 1;
@@ -1846,6 +1882,18 @@ test("a host answering the pre-slice-2 spelling still names one dispatch", async
   assert.deepEqual(result.lifts, []);
 });
 
+/** A source whose one project moved to the cursor a case names. */
+function movedSource(cursor: number) {
+  return {
+    ...promptObservationSource(),
+    projects: () => Promise.resolve({ projects: [partition] }),
+    moved: () =>
+      Promise.resolve({ result: "Events", cursor, events: [] } as const),
+    submit: () => Promise.reject(new Error("no delivery expected")),
+    operation: () => Promise.resolve(undefined),
+  };
+}
+
 /** A state the store already holds, so a sweep's trigger has a cursor to compare. */
 function observedState(notificationCursor: number): SelectorProjectState {
   return {
@@ -1864,6 +1912,7 @@ test("a project whose change log has not moved takes no turn and spends nothing"
   let started = 0;
   let saved: unknown = "unwritten";
   const result = await selectorRunOnce(
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       project: () => Promise.resolve(observedState(5)),
@@ -1915,6 +1964,7 @@ test("a project that moved takes one turn, and the window is what the lead is sh
   const observed: SelectorObservation[] = [];
   let pages = 0;
   const result = await selectorRunOnce(
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       project: () => Promise.resolve(observedState(5)),
@@ -1958,6 +2008,7 @@ test("a project that moved takes one turn, and the window is what the lead is sh
 test("a reset the consumer cannot replay is a turn rather than a skip", async () => {
   let started = 0;
   await selectorRunOnce(
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       project: () => Promise.resolve(observedState(5)),
@@ -1982,6 +2033,7 @@ test("a reset the consumer cannot replay is a turn rather than a skip", async ()
 test("a turn that spent more than its envelope allows is refused", async () => {
   let recorded: JsonValue | undefined;
   await selectorRunOnce(
+    refusalWrites(),
     {
       ...stateStore(() => undefined),
       project: () => Promise.resolve(observedState(5)),
@@ -1990,14 +2042,7 @@ test("a turn that spent more than its envelope allows is refused", async () => {
         return Promise.resolve(true);
       },
     },
-    {
-      ...promptObservationSource(),
-      projects: () => Promise.resolve({ projects: [partition] }),
-      moved: () =>
-        Promise.resolve({ result: "Events", cursor: 6, events: [] } as const),
-      submit: () => Promise.reject(new Error("no delivery expected")),
-      operation: () => Promise.resolve(undefined),
-    },
+    movedSource(6),
     policyHost(() =>
       Promise.resolve({
         ...waitingExecution(),
@@ -2014,4 +2059,138 @@ test("a turn that spent more than its envelope allows is refused", async () => {
     outcome: "Failed",
     code: "ControlViolation",
   });
+});
+
+test("a decision's refusals are entered after the decision they name", async () => {
+  const order: string[] = [];
+  let entered: Parameters<AgenticRefusalWrite["record"]>[0] | undefined;
+  await selectorRunOnce(
+    refusalWrites((input) => {
+      order.push("refusals");
+      entered = input;
+    }),
+    {
+      ...stateStore(() => undefined),
+      project: () => Promise.resolve(observedState(5)),
+      record: () => {
+        order.push("proposal");
+        return Promise.resolve(true);
+      },
+      recordInteraction: () => {
+        order.push("interaction");
+        return Promise.resolve(true);
+      },
+    },
+    movedSource(6),
+    policyHost(() =>
+      Promise.resolve({
+        ...waitingExecution(),
+        result: {
+          ...waitingExecution().result,
+          refusals: [{ ticket: 7, ticketVersion: 2, reason: "blocked" }],
+          lifts: [{ ticket: 8 }],
+        },
+      }),
+    ),
+    perProjectIdentities(),
+    settingsSource(() => Promise.resolve(runtimeSettings)),
+  );
+  assert.deepEqual(order, ["interaction", "refusals"]);
+  assert.equal(entered?.decision, "decision-project");
+  assert.deepEqual(
+    entered?.refusals.map((refusal) => refusal.ticket),
+    [7],
+  );
+  assert.deepEqual(
+    entered?.lifts.map((lift) => lift.ticket),
+    [8],
+  );
+});
+
+test("a decision that refused nothing enters nothing in the ledger", async () => {
+  let entries = 0;
+  await selectorRunOnce(
+    refusalWrites(() => {
+      entries += 1;
+    }),
+    {
+      ...stateStore(() => undefined),
+      project: () => Promise.resolve(observedState(5)),
+    },
+    movedSource(6),
+    policyHost(() => Promise.resolve(waitingExecution())),
+    perProjectIdentities(),
+    settingsSource(() => Promise.resolve(runtimeSettings)),
+  );
+  assert.equal(entries, 0);
+});
+
+/** One candidate a decision can actually choose, so the proposal path is reached. */
+const dispatchable = {
+  ticket: asTicketId(1),
+  ticketVersion: 1,
+  dependencies: [],
+  workFanout: 1,
+  program: [{ fanout: 1, combinator: "UnanimousPass" }],
+  reworkPolicy: { type: "BudgetedRework", value: 1 },
+  finalizationPricing: "DeadlineOnly",
+  resumePricing: "RetryCharged",
+  finalizer: "NoFinalizer",
+  configurationRevision: "revision",
+  configurationDigest: "d".repeat(64),
+  configurationCanonical: "{}",
+} as const;
+
+test("a dispatching decision's refusals are entered after its proposal", async () => {
+  const order: string[] = [];
+  await selectorRunOnce(
+    refusalWrites(() => {
+      order.push("refusals");
+    }),
+    {
+      ...stateStore(() => undefined),
+      project: () => Promise.resolve(observedState(5)),
+      record: () => {
+        order.push("proposal");
+        return Promise.resolve(true);
+      },
+      recordInteraction: () => {
+        order.push("interaction");
+        return Promise.resolve(true);
+      },
+    },
+    {
+      ...movedSource(6),
+      dispatchView: () =>
+        Promise.resolve({
+          result: "Page",
+          token: {
+            ...partition,
+            recoveryEpoch: "epoch",
+            schemaVersion: 1,
+            watermark: 1,
+            digest: "c".repeat(64),
+          },
+          candidates: [dispatchable],
+          notificationCursor: 6,
+        } as const),
+    },
+    policyHost(() =>
+      Promise.resolve({
+        ...waitingExecution(),
+        result: {
+          ...waitingExecution().result,
+          dispatches: [{ ticket: 1, expectedTicketVersion: 1 }],
+          refusals: [{ ticket: 1, ticketVersion: 1, reason: "blocked" }],
+        },
+      }),
+    ),
+    perProjectIdentities(),
+    settingsSource(() => Promise.resolve(runtimeSettings)),
+  );
+  assert.deepEqual(
+    order,
+    ["proposal", "refusals"],
+    "a refusal naming a decision the log does not carry could never be explained",
+  );
 });

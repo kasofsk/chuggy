@@ -37,13 +37,7 @@ const validConfiguration = {
     responseBytesMax: 10_000,
     responseReadsMax: 100,
   },
-  policy: {
-    baseUrl: "http://127.0.0.1:2/",
-    bearerToken: "policy-token",
-    requestDeadlineMs: 10,
-    responseBytesMax: 10_000,
-    controlDeadlineMs: 10,
-  },
+  lead: { pollIntervalMs: 10, controlDeadlineMs: 10 },
 };
 const clientSecret = "selector-client-secret";
 const validEnvironment = {
@@ -95,7 +89,7 @@ test("the selector command parses every plain-data dependency", async () => {
       ...validConfiguration.source,
       credential: { ...validConfiguration.source.credential, clientSecret },
     },
-    policy: validConfiguration.policy,
+    lead: validConfiguration.lead,
   });
 });
 
@@ -240,13 +234,12 @@ test("identity generation is unique and names its process instance", async () =>
   }
 });
 
-test("source and policy readiness have stable named prerequisites", async () => {
+test("source readiness has a stable named prerequisite", async () => {
   const program = `
     const root = await import('./src/roots/selector.ts');
     const native = { projectInventory: async () => { throw new Error('absent'); } };
-    const policy = { ready: async () => false };
     const sourceReady = async () => false;
-    const preconditions = root.selectorCommandPreconditions(native, policy, 'selector', sourceReady);
+    const preconditions = root.selectorCommandPreconditions(native, 'selector', sourceReady);
     const signal = new AbortController().signal;
     process.stdout.write(JSON.stringify(await Promise.all(preconditions.map(async (value) => ({
       name: value.name,
@@ -263,7 +256,6 @@ test("source and policy readiness have stable named prerequisites", async () => 
   );
   assert.deepEqual(JSON.parse(found.stdout), [
     { name: "selector-source", met: false },
-    { name: "selector-policy", met: false },
   ]);
 });
 
@@ -272,10 +264,8 @@ test("native readiness refuses a healthy inventory over an unready context pool"
     const root = await import('./src/roots/selector.ts');
     let inventoryReads = 0;
     const native = { projectInventory: async () => { inventoryReads += 1; return { projects: [] }; } };
-    const policy = { ready: async () => true };
     const preconditions = root.selectorCommandPreconditions(
       native,
-      policy,
       'selector',
       async () => false,
     );

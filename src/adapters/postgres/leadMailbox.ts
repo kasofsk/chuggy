@@ -40,6 +40,16 @@ import type {
 } from "../../interpreter/leadMailbox.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
+  agenticRefusalRecordFunction,
+  agenticRefusalStandingFunction,
+  leadSessionFunction,
+  leadTurnEnqueueFunction,
+  leadTurnReadFunction,
+  leadTurnWithdrawFunction,
+  selectorInteractionsReadFunction,
+  sessionSystemPromptSetFunction,
+} from "./schema/shared.ts";
+import {
   sessionRowMember,
   sessionRowText,
   sessionTurnMeasuredOf,
@@ -152,7 +162,7 @@ export function postgresLeadMailbox(pool: pg.Pool): LeadMailbox {
       };
     },
 
-    turn: async (_partition, turn) => {
+    turn: async (turn) => {
       const found = await pool.query<LeadTurnRow>(
         sql`SELECT state,result,failure,model,tokens::text AS tokens,
                    cost_micros::text AS cost_micros,
@@ -163,7 +173,7 @@ export function postgresLeadMailbox(pool: pg.Pool): LeadMailbox {
       return row === undefined ? undefined : leadTurnOf(row);
     },
 
-    withdraw: async (_partition, turn) => {
+    withdraw: async (turn) => {
       const withdrawn = await pool.query<{ withdrawn: string | null }>(
         sql`SELECT withdraw_lead_turn(${turn})::text AS withdrawn`,
       );
@@ -203,4 +213,35 @@ export function postgresLeadSystemPrompt(pool: pg.Pool): LeadSystemPromptPort {
       );
     },
   };
+}
+
+/**
+ * Which of the doors a decision opens this role may not execute. A readiness
+ * check asks a host whether it feels able to answer; this asks the database
+ * whether the role is allowed to ask at all, which is what a migration that
+ * granted one door and not the next fails silently on.
+ */
+export async function postgresLeadDoorsRefused(
+  pool: pg.Pool,
+): Promise<readonly string[]> {
+  const doors = [
+    `${leadSessionFunction}(text,text)`,
+    `${leadTurnEnqueueFunction}(text,text,text,text)`,
+    `${leadTurnReadFunction}(text)`,
+    `${leadTurnWithdrawFunction}(text)`,
+    `${agenticRefusalRecordFunction}(text,text,text,jsonb,jsonb)`,
+    `${agenticRefusalStandingFunction}(text,text,bigint)`,
+    `${selectorInteractionsReadFunction}(text,text,bigint,integer,boolean)`,
+    `${sessionSystemPromptSetFunction}(text,text,text)`,
+  ];
+  const found = await pool.query<{
+    door: string | null;
+    permitted: boolean | null;
+  }>(
+    sql`SELECT door,has_function_privilege(door,'EXECUTE')::boolean AS permitted
+          FROM unnest(${doors}::text[]) AS door`,
+  );
+  return found.rows
+    .filter((row) => row.permitted !== true)
+    .map((row) => row.door ?? "an unnamed door");
 }

@@ -6,6 +6,7 @@ import {
   observeSelectorProject,
   runObservedSelectorCycle,
   type SelectorChangeTrigger,
+  type SelectorRefusalLedger,
   type SelectorCycleIdentity,
   selectorNotificationPageLimit,
   type SelectorObservationSource,
@@ -87,6 +88,7 @@ function initialState(partition: Partition): SelectorProjectState {
 
 async function observeProjects(
   projects: readonly Partition[],
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
@@ -105,6 +107,7 @@ async function observeProjects(
   for (const partition of projects) {
     const result = await observeProject(
       partition,
+      refusals,
       store,
       source,
       policy,
@@ -140,6 +143,7 @@ interface ProjectObservationResult {
  */
 async function observeProject(
   partition: Partition,
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
@@ -188,6 +192,7 @@ async function observeProject(
     settings,
     state,
     changes,
+    refusals,
     store,
     source,
     policy,
@@ -221,6 +226,7 @@ async function observeFencedProject(
   settings: SelectorResolvedSettings,
   state: SelectorProjectState,
   changes: NotificationBatch,
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
@@ -249,6 +255,7 @@ async function observeFencedProject(
     state,
     observation,
     source,
+    refusals,
     store,
     policy,
     identity,
@@ -267,6 +274,7 @@ async function observePermittedProject(
   expectedSettings: SelectorResolvedSettings,
   state: SelectorProjectState,
   changes: NotificationBatch,
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
@@ -296,6 +304,7 @@ async function observePermittedProject(
         settings,
         state,
         changes,
+        refusals,
         store,
         source,
         policy,
@@ -317,6 +326,7 @@ async function observePermittedProject(
 }
 
 async function observeInventory(
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
@@ -336,6 +346,7 @@ async function observeInventory(
   );
   const progress = await observeProjects(
     inventory.projects,
+    refusals,
     store,
     source,
     policy,
@@ -378,6 +389,7 @@ async function saveInventoryProgress(
 
 /** Performs one bounded poll, policy, delivery, and reconciliation quantum. */
 export async function selectorRunOnce(
+  refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
@@ -394,6 +406,7 @@ export async function selectorRunOnce(
   const failures: SelectorRunFailure[] = [];
   try {
     const progress = await observeInventory(
+      refusals,
       store,
       source,
       policy,

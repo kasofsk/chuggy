@@ -17,18 +17,26 @@ import type {
 } from "../../src/interpreter/leadMailbox.ts";
 import {
   leadSelectorPolicy,
+  leadTurnInput,
   type LeadDecisionTail,
   type LeadPolicyClock,
 } from "../../src/interpreter/leadPolicyHost.ts";
 import { parseLeadObservation } from "../../src/interpreter/leadTurn.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
-import type {
-  SelectorInteractionRecord,
-  SelectorObservation,
-  SelectorPolicyExecution,
-  SelectorPolicyRequest,
+import {
+  leadObservationBytesMax,
+  leadRefusalsObservedMax,
+  type SelectorInteractionRecord,
+  type SelectorObservation,
+  type SelectorPolicyExecution,
+  type SelectorPolicyRequest,
 } from "../../src/interpreter/selector.ts";
 import { selectorOperationalContext } from "./selectorFixture.ts";
+import {
+  agenticRefusalReasonCharsMax,
+  selectorHandoffNoteBytesMax,
+  selectorSettingsTextCharsMax,
+} from "../../src/contract/http.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -213,10 +221,11 @@ function refusalRead(
   };
 }
 
+/** The tail port answers newest first, which is what the door it stands for does. */
 function decisionTail(
-  records: readonly SelectorInteractionRecord[] = [],
+  newestFirst: readonly SelectorInteractionRecord[] = [],
 ): LeadDecisionTail {
-  return { tail: () => Promise.resolve(records) };
+  return { tail: () => Promise.resolve(newestFirst) };
 }
 
 function interactionRecord(
@@ -381,14 +390,73 @@ test("a withdrawal is the termination proof, and no turn is unconfirmed", async 
   );
 });
 
-test("a decision this process never offered is unconfirmed, not invented", async () => {
-  const double = mailboxDouble();
-  assert.deepEqual(
-    await policyOf(double).inspect(
-      "selector-decision-from-a-dead-process",
-      new AbortController().signal,
-    ),
-    { status: "Unconfirmed" },
+test("a decision this process never offered is still settled from the row", async () => {
+  const double = mailboxDouble({ withdrawn: "AlreadyEnded" });
+  const termination = await policyOf(double).inspect(
+    "selector-decision-from-a-dead-process",
+    new AbortController().signal,
+  );
+  assert.equal(termination.status, "Terminated");
+  assert.equal(
+    termination.status === "Terminated" ? termination.attempt : undefined,
+    "selector-decision-from-a-dead-process",
+  );
+});
+
+test("the parts a turn never sheds fit its mailbox row at their ceilings", () => {
+  const filled = leadTurnInput(
+    {
+      ...request,
+      instructions: {
+        revision: request.instructions.revision,
+        content: "b".repeat(selectorSettingsTextCharsMax),
+        northStar: "n".repeat(selectorSettingsTextCharsMax),
+      },
+      observation: {
+        ...observation,
+        candidates: [],
+        changes: [],
+        handoffNote: { note: "h".repeat(selectorHandoffNoteBytesMax / 2) },
+      },
+    },
+    partition,
+    Array.from({ length: leadRefusalsObservedMax }, (_unused, index) => ({
+      ticket: asTicketId(index + 1),
+      ticketVersion: 1,
+      reason: "r".repeat(agenticRefusalReasonCharsMax),
+      recordedAt: "2026-09-01T12:00:00.000Z",
+      superseded: false,
+    })),
+    undefined,
+  );
+  assert.ok(filled.length > 0);
+});
+
+test("a document overflowed by a part nothing sheds is refused with what overflowed", () => {
+  assert.throws(
+    () =>
+      leadTurnInput(
+        {
+          ...request,
+          observation: {
+            ...observation,
+            operationalContext: {
+              ...operationalContext,
+              capacity: {
+                ...operationalContext.capacity,
+                account: "x".repeat(leadObservationBytesMax),
+              },
+            },
+          },
+        },
+        partition,
+        [],
+        undefined,
+      ),
+    (error: unknown) =>
+      error instanceof RangeError &&
+      /nothing sheddable/u.test(error.message) &&
+      /objectives, handoff note, cursor and refusals/u.test(error.message),
   );
 });
 
@@ -398,7 +466,6 @@ test("a session with no agent reference is seeded and one with a reference is no
     seeded.mailbox,
     refusalRead(),
     decisionTail([
-      interactionRecord(1, { outcome: "Failed", code: "InvalidResult" }),
       interactionRecord(2, {
         dispatches: [{ ticket: 40 }],
         refusals: [{ ticket: 42, ticketVersion: 2, reason: "no" }],
@@ -406,6 +473,7 @@ test("a session with no agent reference is seeded and one with a reference is no
         attention: "Monitoring",
         handoffNote: {},
       }),
+      interactionRecord(1, { outcome: "Failed", code: "InvalidResult" }),
     ]),
     clock(),
     { pollIntervalMs: 1, implementationRevision: "selector-build-1" },
@@ -442,36 +510,36 @@ test("a session with no agent reference is seeded and one with a reference is no
 });
 
 test("a seeding block the mailbox could not hold sheds its oldest decisions", async () => {
-  const filler = "x".repeat(2_048);
+  const oversized = 500_000;
   const double = mailboxDouble();
   const policy = leadSelectorPolicy(
     double.mailbox,
     refusalRead(),
     decisionTail(
-      Array.from({ length: 64 }, (_unused, index) =>
-        interactionRecord(index + 1, {
+      Array.from({ length: 40 }, (_unused, index) => ({
+        ...interactionRecord(40 - index, {
           dispatches: [],
           refusals: [],
           lifts: [],
           attention: "Monitoring",
           handoffNote: {},
         }),
-      ),
+        decision: `${String(40 - index)}-${"d".repeat(oversized)}`,
+      })),
     ),
     clock(),
     { pollIntervalMs: 1, implementationRevision: "selector-build-1" },
   );
-  await policy.execute(
-    {
-      ...request,
-      instructions: { ...request.instructions, content: filler },
-    },
-    new AbortController().signal,
-  );
+  await policy.execute(request, new AbortController().signal);
   const observed = parseLeadObservation(double.offers[0]?.input ?? "");
   const decisions = observed.seeding?.decisions ?? [];
-  assert.ok(decisions.length > 0);
-  assert.equal(decisions.at(-1)?.ordinal, 64);
+  assert.ok(decisions.length > 0, "the shed stops while something is left");
+  assert.ok(decisions.length < 40, "an unholdable tail is shed, not offered");
+  assert.equal(
+    decisions.at(-1)?.ordinal,
+    40,
+    "the newest decision is what a successor keeps",
+  );
   assert.deepEqual(observed.seeding?.handoffNote, observation.handoffNote);
   assert.equal(observed.seeding?.notificationCursor, 12);
 });

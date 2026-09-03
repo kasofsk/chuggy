@@ -42,7 +42,21 @@ import {
   postgresSelectorState,
 } from "./adapters/postgres/selector.ts";
 import { authorizedProjectInventory } from "./interpreter/projectInventory.ts";
-import type { SelectorPolicyHost } from "./interpreter/selector.ts";
+import {
+  postgresAgenticRefusalStanding,
+  postgresAgenticRefusalWrites,
+} from "./adapters/postgres/agenticRefusal.ts";
+import { postgresLeadMailbox } from "./adapters/postgres/leadMailbox.ts";
+import { postgresLeadDecisionTail } from "./adapters/postgres/leadReads.ts";
+import {
+  leadSelectorPolicy,
+  type LeadPolicyClock,
+  type LeadPolicyConfig,
+} from "./interpreter/leadPolicyHost.ts";
+import {
+  selectorPolicyHost,
+  type SelectorHostDeadline,
+} from "./interpreter/selectorPolicyHost.ts";
 import {
   selectorRunOnce,
   type SelectorIdentityFactory,
@@ -120,20 +134,53 @@ export interface SelectorRuntimeService {
   runOnce(): Promise<SelectorRunResult>;
 }
 
-/** Wires the independently operated selector runtime to its owned persistence. */
+/**
+ * Wires the independently operated selector runtime to its owned persistence
+ * and to the lead whose turn each decision is. The policy is built here rather
+ * than passed in, because every door it opens is on the pool this function
+ * already holds and a caller handed the host would need that pool to build it.
+ */
 export function composeSelectorRuntime(
   selectorPool: pg.Pool,
   source: SelectorRuntimeSource,
-  policy: SelectorPolicyHost,
+  lead: SelectorLeadRuntime,
   identities: SelectorIdentityFactory,
   config?: SelectorRuntimeConfig,
 ): SelectorRuntimeService {
   const store = postgresSelectorState(selectorPool);
   const settings = postgresSelectorRuntimeControl(selectorPool);
+  const refusals = postgresAgenticRefusalWrites(selectorPool);
+  const policy = selectorPolicyHost(
+    leadSelectorPolicy(
+      postgresLeadMailbox(selectorPool),
+      postgresAgenticRefusalStanding(selectorPool),
+      postgresLeadDecisionTail(selectorPool),
+      lead.clock,
+      lead.policy,
+    ),
+    lead.deadline,
+    { controlDeadlineMs: lead.controlDeadlineMs },
+  );
   return {
     runOnce: () =>
-      selectorRunOnce(store, source, policy, identities, settings, config),
+      selectorRunOnce(
+        refusals,
+        store,
+        source,
+        policy,
+        identities,
+        settings,
+        config,
+      ),
   };
+}
+
+/** What the selector process answers the lead host's own ports with. */
+export interface SelectorLeadRuntime {
+  readonly clock: LeadPolicyClock;
+  readonly deadline: SelectorHostDeadline;
+  readonly policy: LeadPolicyConfig;
+  readonly controlDeadlineMs: number;
 }
 
 /**

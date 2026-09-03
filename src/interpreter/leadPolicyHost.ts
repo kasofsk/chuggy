@@ -16,12 +16,19 @@
  * both `Withdrawn` and `AlreadyEnded` are terminations, and only finding no
  * turn at all leaves the decision unconfirmed.
  *
- * A RESTART LOSES ONE TURN PER IN-FLIGHT PROJECT, DELIBERATELY. The turn row
- * survives the process and the promise over it does not, so the next pass finds
- * the decision quarantined and the project decides again on its next change.
- * Re-attaching would mean minting the decision reference from the project
- * rather than from a uuid, which would let two concurrent decisions for one
- * project collide on one identity.
+ * IT HOLDS NO STATE OF ITS OWN. Reading and withdrawing name the turn, which is
+ * the decision, so a process that never offered a turn can still settle it: a
+ * restart's quarantined decisions reconcile from the row rather than from a map
+ * that did not survive. A restart still loses the turn in flight, because the
+ * promise over it did not survive, and the project decides again on its next
+ * change.
+ *
+ * THE OBSERVATION SHEDS ONLY WHAT A SUCCESSOR CAN DO WITHOUT. The composed
+ * objectives, the handoff note, the cursor and the refusals a decision is
+ * judged against are never shed — a lead shown fewer refusals than it is judged
+ * on could lift one it was never told about — so only the seeded decision tail
+ * and the seeded refusals shrink, and a document those fixed parts alone
+ * overflow is refused with what overflowed rather than emptied until it fits.
  *
  * A TURN WITH NO MEASUREMENT IS A DECISION WITH NO PROVENANCE. The controls
  * over a decision are checked against what the pod measured, never against what
@@ -30,6 +37,7 @@
  * everything. A control that cannot see what it controls refuses.
  */
 
+import { leadSeedingDecisionsMax } from "../contract/http.ts";
 import {
   asSessionTurnId,
   type SessionTurnId,
@@ -45,6 +53,7 @@ import type {
   LeadTurnStanding,
   LeadTurnWithdrawn,
 } from "./leadMailbox.ts";
+import { leadSystemPrompt } from "./leadTools.ts";
 import {
   leadObservationText,
   leadObservedRefusals,
@@ -58,7 +67,6 @@ import {
 import { asProjectId, asTenantId, type Partition } from "./projectStore.ts";
 import {
   leadRefusalsObservedMax,
-  leadSeedingDecisionsMax,
   type SelectorInteractionRecord,
   type SelectorPolicyExecution,
   type SelectorPolicyRequest,
@@ -109,14 +117,6 @@ const leadSessionUnbound = "Unbound";
 
 /** The two states a turn is still in the mailbox for. */
 const leadTurnRunning: readonly SessionTurnState[] = ["Queued", "Claimed"];
-
-/**
- * How many decisions this process remembers the project of. An entry lives from
- * the offer until the decision is withdrawn or answered, so the map is the
- * in-flight set plus the decisions waiting to be reconciled; the bound is what
- * keeps a mailbox that refuses every withdrawal from growing it without end.
- */
-const leadOfferedRetainedMax = 1_024;
 
 function checkedPollInterval(milliseconds: number): number {
   if (!Number.isSafeInteger(milliseconds) || milliseconds < 1)
@@ -178,6 +178,26 @@ function leadSeedingDecision(
   ];
 }
 
+/**
+ * The objectives one turn carries: this installation's base prompt, the
+ * project's North Star and what the lead's own tools mean, composed once here.
+ * The North Star is inside them rather than beside them, so the turn weighs it
+ * once and the mailbox's derived ceiling counts it once.
+ */
+function leadTurnInstructions(
+  request: SelectorPolicyRequest,
+): NonNullable<LeadObservationDocument["instructions"]> {
+  return {
+    revision: request.instructions.revision,
+    content: leadSystemPrompt({
+      basePrompt: request.instructions.content,
+      ...(request.instructions.northStar === undefined
+        ? {}
+        : { northStar: request.instructions.northStar }),
+    }),
+  };
+}
+
 function leadObservationDocument(
   request: SelectorPolicyRequest,
   partition: Partition,
@@ -188,7 +208,7 @@ function leadObservationDocument(
     version: leadTurnDocumentVersion,
     decision: request.attempt,
     partition,
-    instructions: request.instructions,
+    instructions: leadTurnInstructions(request),
     ...(seeding === undefined ? {} : { seeding }),
     changes: request.observation.changes,
     candidates: request.observation.candidates,
@@ -200,13 +220,11 @@ function leadObservationDocument(
 }
 
 /**
- * The turn's input text, shrunk until the mailbox row holds it. The seeded
- * decision tail goes oldest first and the seeded refusals go next; the handoff
- * note, the cursor and the refusals the decision will be checked against are
- * never dropped, because a lead shown fewer refusals than it is judged on could
- * lift one it was never told about.
+ * The turn's input text, shed until the mailbox row holds it. Only the seeded
+ * decision tail, oldest first, and then the seeded refusals are shed; when
+ * there is nothing sheddable left the document is refused rather than emptied.
  */
-function leadTurnInput(
+export function leadTurnInput(
   request: SelectorPolicyRequest,
   partition: Partition,
   refusals: readonly LeadObservedRefusal[],
@@ -219,14 +237,29 @@ function leadTurnInput(
         leadObservationDocument(request, partition, refusals, current),
       );
     } catch (error) {
-      if (!(error instanceof RangeError) || current === undefined) throw error;
-      if (current.decisions.length > 0)
-        current = { ...current, decisions: current.decisions.slice(1) };
-      else if (current.refusals.length > 0)
-        current = { ...current, refusals: [] };
-      else throw error;
+      if (!(error instanceof RangeError)) throw error;
+      if (
+        current === undefined ||
+        current.decisions.length + current.refusals.length === 0
+      )
+        throw new RangeError(leadTurnOverflowed(current), { cause: error });
+      current =
+        current.decisions.length > 0
+          ? { ...current, decisions: current.decisions.slice(1) }
+          : { ...current, refusals: [] };
     }
   }
+}
+
+/**
+ * What overflowed, said rather than implied. The mailbox ceiling is derived
+ * from these parts at their own ceilings, so reaching this is a part the
+ * derivation does not cover and the reason has to name where to look.
+ */
+function leadTurnOverflowed(seeding: LeadSeeding | undefined): string {
+  return seeding === undefined
+    ? "lead observation exceeds its mailbox row with nothing sheddable in it: objectives, handoff note, cursor and refusals alone"
+    : "lead observation exceeds its mailbox row with its seeding shed to nothing: objectives, handoff note, cursor and refusals alone";
 }
 
 function leadTurnAccounting(
@@ -249,7 +282,7 @@ function leadTurnAccounting(
 /** What one lead session's mailbox and record answer for one project. */
 interface LeadPolicyPorts {
   readonly mailbox: LeadMailbox;
-  readonly refusals: AgenticRefusalRead;
+  readonly refusals: Pick<AgenticRefusalRead, "standing">;
   readonly decisions: LeadDecisionTail;
   readonly clock: LeadPolicyClock;
   readonly config: LeadPolicyConfig;
@@ -263,9 +296,11 @@ async function leadSeedingBlock(
 ): Promise<LeadSeeding> {
   return {
     handoffNote: request.observation.handoffNote,
-    decisions: (
-      await ports.decisions.tail(partition, leadSeedingDecisionsMax)
-    ).flatMap(leadSeedingDecision),
+    decisions: [
+      ...(await ports.decisions.tail(partition, leadSeedingDecisionsMax)),
+    ]
+      .reverse()
+      .flatMap(leadSeedingDecision),
     refusals: observed,
     notificationCursor: request.observation.notificationCursor,
   };
@@ -274,14 +309,13 @@ async function leadSeedingBlock(
 /** Polls the turn until it leaves the mailbox, or until the run is abandoned. */
 async function leadTurnSettled(
   ports: LeadPolicyPorts,
-  partition: Partition,
   turn: SessionTurnId,
   pollIntervalMs: number,
   signal: AbortSignal,
 ): Promise<LeadTurnStanding> {
   for (;;) {
     signal.throwIfAborted();
-    const standing = await ports.mailbox.turn(partition, turn);
+    const standing = await ports.mailbox.turn(turn);
     if (standing === undefined)
       throw new Error("the lead turn this decision offered is gone");
     if (!leadTurnRunning.includes(standing.state)) return standing;
@@ -343,7 +377,6 @@ async function leadDecision(
   request: SelectorPolicyRequest,
   pollIntervalMs: number,
   signal: AbortSignal,
-  retain: (attempt: string, partition: Partition) => void,
 ): Promise<SelectorPolicyExecution> {
   const partition = leadPartition(request);
   const lead = await ports.mailbox.lead(partition);
@@ -354,7 +387,6 @@ async function leadDecision(
     leadRefusalsObservedMax,
   );
   const started = await ports.clock.now();
-  retain(request.attempt, partition);
   const turn = await leadTurnOffer(
     ports,
     request,
@@ -362,13 +394,7 @@ async function leadDecision(
     standing,
     lead.agentReference,
   );
-  const answered = await leadTurnSettled(
-    ports,
-    partition,
-    turn,
-    pollIntervalMs,
-    signal,
-  );
+  const answered = await leadTurnSettled(ports, turn, pollIntervalMs, signal);
   const completed = await ports.clock.now();
   if (answered.state !== "Answered" || answered.result === undefined)
     throw leadTurnUnanswered(answered);
@@ -387,7 +413,7 @@ async function leadDecision(
 /** A decision is a turn on the project's lead, and the turn's result is the decision. */
 export function leadSelectorPolicy(
   mailbox: LeadMailbox,
-  refusals: AgenticRefusalRead,
+  refusals: Pick<AgenticRefusalRead, "standing">,
   decisions: LeadDecisionTail,
   clock: LeadPolicyClock,
   config: LeadPolicyConfig,
@@ -400,43 +426,15 @@ export function leadSelectorPolicy(
     config,
   };
   const pollIntervalMs = checkedPollInterval(config.pollIntervalMs);
-  const offered = new Map<string, Partition>();
-
-  const retain = (attempt: string, partition: Partition): void => {
-    offered.set(attempt, partition);
-    for (const oldest of offered.keys()) {
-      if (offered.size <= leadOfferedRetainedMax) break;
-      offered.delete(oldest);
-    }
-  };
-
   const withdraw = async (
     attempt: string,
   ): Promise<SelectorTerminationResult> => {
-    const partition = offered.get(attempt);
-    if (partition === undefined) return { status: "Unconfirmed" };
     const turn = asSessionTurnId(attempt);
-    const termination = leadTermination(
-      attempt,
-      turn,
-      await mailbox.withdraw(partition, turn),
-    );
-    offered.delete(attempt);
-    return termination;
+    return leadTermination(attempt, turn, await mailbox.withdraw(turn));
   };
-
   return {
-    execute: async (request, signal) => {
-      const execution = await leadDecision(
-        ports,
-        request,
-        pollIntervalMs,
-        signal,
-        retain,
-      );
-      offered.delete(request.attempt);
-      return execution;
-    },
+    execute: (request, signal) =>
+      leadDecision(ports, request, pollIntervalMs, signal),
     cancel: (attempt) => withdraw(attempt),
     inspect: (attempt) => withdraw(attempt),
   };
