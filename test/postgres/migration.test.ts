@@ -2761,19 +2761,40 @@ test("the ledger a migrated database leaves is what the api image declares", asy
 });
 
 /**
- * One delivery row as an installation held it before the key moved: keyed by
- * its decision alone, with the ticket named only inside the command it stores.
+ * The states a delivery relation holds when the key moves under it. A settled
+ * row is as much a row as a claimable one, and the key the rekey adds does not
+ * read the state, so a fixture offering only the claimable state agrees with a
+ * backfill that leaves every other row behind.
  */
-async function seedStandingDelivery(
-  subject: pg.Pool,
-  decision: string,
-  ticket: number,
-): Promise<void> {
+const standingDeliveryStates = [
+  "Pending",
+  "Submitted",
+  "Terminal",
+  "AwaitingApproval",
+] as const;
+
+/** The project every standing delivery below belongs to, seeded once. */
+async function seedStandingProject(subject: pg.Pool): Promise<void> {
   await subject.query(`INSERT INTO recovery_epoch (epoch) VALUES ('epoch')`);
   await subject.query(
     `INSERT INTO project (tenant,project,lifecycle,head,ingress_next)
      VALUES ('tenant','project','Active',1,1)`,
   );
+}
+
+/**
+ * One delivery row as an installation held it before the key moved: keyed by
+ * its decision alone, with the ticket named only inside the command it stores.
+ * The state is stamped after the insert because the initial-state trigger
+ * writes over whatever an insert offers, which is how a live row reaches every
+ * state but the first.
+ */
+async function seedStandingDelivery(
+  subject: pg.Pool,
+  decision: string,
+  ticket: number,
+  state: (typeof standingDeliveryStates)[number],
+): Promise<void> {
   await subject.query(
     `INSERT INTO selector_attempt (attempt,tenant,project,state,settings_revision)
      VALUES ($1,'tenant','project','Completed',1)`,
@@ -2812,36 +2833,69 @@ async function seedStandingDelivery(
       }),
     ],
   );
+  await subject.query(
+    `UPDATE selector_proposal_delivery
+        SET state=$2,outcome=CASE WHEN $2='Terminal' THEN '{"accepted":true}' END
+      WHERE selector_decision=$1`,
+    [decision, state],
+  );
 }
 
+/** The first ticket a standing row carries, which the rest count up from. */
+const standingDeliveryTicketFirst = 41;
+
+/** One standing row per delivery state, and the key each of them must land on. */
+const standingDeliveries = standingDeliveryStates.map((state, index) => ({
+  state,
+  decision: `standing-${state}`,
+  ticket: standingDeliveryTicketFirst + index,
+}));
+
 /**
- * The rekey moves a standing row onto the key its own command already named,
- * and the installation that never stated a dispatch budget is given the one its
- * migration writes. Both are driven rather than read out of the statements.
+ * The rekey moves every standing row onto the key its own command already
+ * named, whatever state that row is in, and the installation that never stated
+ * a dispatch budget is given the one its migration writes. Both are driven
+ * rather than read out of the statements.
  */
 test("migration 64 keys a standing delivery by the ticket its command dispatches", async () => {
   await migrationDatabase("delivery_rekey", async (subject) => {
     await migrationSeedApplied(subject, 64);
-    const decision = "standing-decision";
-    await seedStandingDelivery(subject, decision, 41);
+    await seedStandingProject(subject);
+    for (const standing of standingDeliveries)
+      await seedStandingDelivery(
+        subject,
+        standing.decision,
+        standing.ticket,
+        standing.state,
+      );
     await applyMigrationsAbove(subject, 63);
     assert.deepEqual(
       (
-        await subject.query<{ ticket: string }>(
-          `SELECT ticket::text AS ticket FROM selector_proposal_delivery
-            WHERE selector_decision=$1`,
-          [decision],
+        await subject.query<{
+          decision: string;
+          ticket: string;
+          state: string;
+        }>(
+          `SELECT selector_decision AS decision,ticket::text AS ticket,state
+             FROM selector_proposal_delivery ORDER BY ticket`,
         )
       ).rows,
-      [{ ticket: "41" }],
+      standingDeliveries.map((standing) => ({
+        decision: standing.decision,
+        ticket: String(standing.ticket),
+        state: standing.state,
+      })),
+      "every row a live relation holds is keyed by the ticket its command names",
     );
+    const [keyed] = standingDeliveries;
+    assert.ok(keyed);
     await assert.rejects(
       () =>
         subject.query(
           `INSERT INTO selector_proposal_delivery
              (selector_decision,ticket,tenant,project,operation,command,state)
-           VALUES ($1,41,'tenant','project','second','{}','Pending')`,
-          [decision],
+           VALUES ($1,$2,'tenant','project','second','{}','Pending')`,
+          [keyed.decision, keyed.ticket],
         ),
       /selector_proposal_delivery_pkey/,
       "the migrated row is addressable by the key it moved onto",
