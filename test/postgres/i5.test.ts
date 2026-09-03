@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
+import type pg from "pg";
+
 import { postgresDispatchViews } from "../../src/adapters/postgres/dispatchViews.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
@@ -1737,6 +1739,126 @@ test("a decision's submitted deliveries are reconciled one row at a time", async
       [asTicketId(20), 1],
       [asTicketId(30), 1],
       [asTicketId(40), 1],
+    ]);
+  } finally {
+    await restore();
+    await reviewPool.end();
+    await selectorPool.end();
+  }
+});
+
+/**
+ * How long a rival claimer waits before waiting is the answer. It is well
+ * under the pool's own statement timeout, so a claim that blocks fails the
+ * case as a claim that blocked rather than as a suite that hung.
+ */
+const i5RivalClaimTimeout = "2s";
+
+/**
+ * Two claimers of one relation, the first still holding what it took: a claim
+ * hands out disjoint pages, so the rival comes away with a row the holder did
+ * not take. A claim that held its rows without skipping the held ones would
+ * leave the rival waiting on the holder's transaction — with claimable rows
+ * sitting beside the one it waited on — until its statement timeout answered
+ * for it.
+ */
+async function i5RivalClaims(
+  claim: string,
+): Promise<readonly (readonly string[])[]> {
+  const pool = postgresRolePool(selectorServiceRole);
+  const holder = await pool.connect();
+  const rival = await pool.connect();
+  const taken = async (client: pg.PoolClient): Promise<readonly string[]> =>
+    (
+      await client.query<{ ticket: string }>(
+        `SELECT ticket::text AS ticket FROM ${claim}(1)`,
+      )
+    ).rows.map((row) => row.ticket);
+  try {
+    await holder.query("BEGIN");
+    const held = await taken(holder);
+    await rival.query("BEGIN");
+    await rival.query(`SET LOCAL statement_timeout='${i5RivalClaimTimeout}'`);
+    const beside = await taken(rival);
+    await rival.query("ROLLBACK");
+    await holder.query("ROLLBACK");
+    return [held, beside];
+  } finally {
+    holder.release(true);
+    rival.release(true);
+    await pool.end();
+  }
+}
+
+test("a second claimer of a decision's deliveries takes the row the first did not", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-claim-rival",
+  );
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const reviewPool = postgresRolePool(selectorReviewRole);
+  const state = postgresSelectorState(selectorPool);
+  const reviews = postgresSelectorProposalReviews(reviewPool);
+  const restore = await i5HeldDispatchMode("ApprovalRequired");
+  const decision = `rival-claim-${crypto.randomUUID()}`;
+  try {
+    await i5Drain((limit) => state.pending(limit));
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, decision, [6, 7]),
+        selectorTestState(partition, 0),
+      ),
+      2,
+    );
+    assert.equal(
+      await reviews.approve(partition, decision, selectorAdministrator),
+      true,
+    );
+    assert.deepEqual(await i5RivalClaims(selectorClaimFunction), [
+      ["6"],
+      ["7"],
+    ]);
+  } finally {
+    await restore();
+    await reviewPool.end();
+    await selectorPool.end();
+  }
+});
+
+test("a second claimer of a decision's reconciliations takes the row the first did not", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-reconcile-rival",
+  );
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const reviewPool = postgresRolePool(selectorReviewRole);
+  const state = postgresSelectorState(selectorPool);
+  const reviews = postgresSelectorProposalReviews(reviewPool);
+  const restore = await i5HeldDispatchMode("ApprovalRequired");
+  const decision = `rival-reconcile-${crypto.randomUUID()}`;
+  try {
+    await i5Drain((limit) => state.submittedDeliveries(limit));
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, decision, [6, 7]),
+        selectorTestState(partition, 0),
+      ),
+      2,
+    );
+    assert.equal(
+      await reviews.approve(partition, decision, selectorAdministrator),
+      true,
+    );
+    for (const ticket of [6, 7])
+      await state.submitted(decision, asTicketId(ticket));
+    await harness.query(
+      `UPDATE selector_proposal_delivery SET reconcile_at=now()
+        WHERE selector_decision=$1`,
+      [decision],
+    );
+    assert.deepEqual(await i5RivalClaims(selectorReconcileClaimFunction), [
+      ["6"],
+      ["7"],
     ]);
   } finally {
     await restore();
