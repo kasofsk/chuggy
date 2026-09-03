@@ -12,6 +12,7 @@ import { partitionPath } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { nativeHttpRoutes } from "../../../../src/contract/http.ts";
 import {
+  agenticRefusalsResponseSchema,
   configurationResponseSchema,
   configurationsResponseSchema,
   dispatchViewResponseSchema,
@@ -20,6 +21,8 @@ import {
   executionResponseSchema,
   executionsResponseSchema,
   installationResponseSchema,
+  leadResponseSchema,
+  leadTranscriptResponseSchema,
   notificationsResponseSchema,
   operationAcceptanceSchema,
   operationResponseSchema,
@@ -32,10 +35,14 @@ import {
   runConfigurationResponseSchema,
   runTranscriptResponseSchema,
   runTurnsResponseSchema,
+  selectorHistoryResponseSchema,
+  selectorProjectSettingsResponseSchema,
+  selectorSettingsHistoryResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
 } from "../../../../src/contract/responses.ts";
 import type {
+  AgenticRefusalsResponse,
   ConfigurationResponse,
   ConfigurationsResponse,
   DispatchViewResponse,
@@ -44,6 +51,8 @@ import type {
   ExecutionResponse,
   ExecutionsResponse,
   InstallationResponse,
+  LeadResponse,
+  LeadTranscriptResponse,
   NotificationsResponse,
   OperationAcceptance,
   OperationResponse,
@@ -55,6 +64,9 @@ import type {
   RunConfigurationResponse,
   RunTranscriptResponse,
   RunTurnsResponse,
+  SelectorHistoryResponse,
+  SelectorProjectSettingsResponse,
+  SelectorSettingsHistoryResponse,
   TicketNativeActionsResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
@@ -63,6 +75,7 @@ import type {
   draftCreationSchema,
   draftRevisionSchema,
   repositoryConfigurationImportSchema,
+  selectorProjectSettingsSchema,
   submissionSchema,
 } from "../../../../src/contract/requests.ts";
 import type { z } from "zod";
@@ -435,6 +448,130 @@ export function apiDraft(
 ): Promise<ApiResult<DraftResponse>> {
   return apiGet(ports, apiSegments(partition, "drafts", ticket), (value) =>
     draftResponseSchema.parse(value),
+  );
+}
+
+/** The project's lead session, its mailbox tail and the streams its store holds. */
+export function apiLead(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+): Promise<ApiResult<LeadResponse>> {
+  return apiGet(ports, apiSegments(partition, "lead"), (value) =>
+    leadResponseSchema.parse(value),
+  );
+}
+
+export interface LeadTranscriptPage {
+  readonly stream?: string | undefined;
+  readonly after?: number | undefined;
+  readonly limit?: number | undefined;
+}
+
+/** The chain over the batches above the one named, with the held subset marked. */
+export function apiLeadTranscript(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  page: LeadTranscriptPage = {},
+): Promise<ApiResult<LeadTranscriptResponse>> {
+  return apiGet(
+    ports,
+    apiPath(apiSegments(partition, "lead", "transcript"), {
+      stream: page.stream,
+      after: page.after,
+      limit: page.limit,
+    }),
+    (value) => leadTranscriptResponseSchema.parse(value),
+  );
+}
+
+/** Every ticket in the project whose latest refusal entry still stands. */
+export function apiAgenticRefusals(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  page: { readonly limit?: number | undefined } = {},
+): Promise<ApiResult<AgenticRefusalsResponse>> {
+  return apiGet(
+    ports,
+    apiPath(apiSegments(partition, "agentic-refusals"), { limit: page.limit }),
+    (value) => agenticRefusalsResponseSchema.parse(value),
+  );
+}
+
+/**
+ * Which end of the decision log a read starts at: `oldest` pages forward with
+ * `after`, and `newest` answers the last `limit` decisions as one bounded page
+ * with no cursor.
+ */
+export const selectorHistoryOrders = ["oldest", "newest"] as const;
+
+export type SelectorHistoryOrder = (typeof selectorHistoryOrders)[number];
+
+export interface SelectorHistoryPage {
+  readonly after?: number | undefined;
+  readonly limit?: number | undefined;
+  readonly order?: SelectorHistoryOrder | undefined;
+}
+
+/** What the lead decided, from whichever end of the log the caller named. */
+export function apiSelectorHistory(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  page: SelectorHistoryPage = {},
+): Promise<ApiResult<SelectorHistoryResponse>> {
+  return apiGet(
+    ports,
+    apiPath(apiSegments(partition, "selector-history"), {
+      after: page.after,
+      limit: page.limit,
+      order: page.order,
+    }),
+    (value) => selectorHistoryResponseSchema.parse(value),
+  );
+}
+
+/** The project's own selector settings and what they resolve to. */
+export function apiSelectorSettings(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+): Promise<ApiResult<SelectorProjectSettingsResponse>> {
+  return apiGet(ports, apiSegments(partition, "selector-settings"), (value) =>
+    selectorProjectSettingsResponseSchema.parse(value),
+  );
+}
+
+/**
+ * The overrides written whole under the revision they were read at. A write the
+ * revision moved under is a `Conflict` carrying the settings that moved, which
+ * is the caller's to draw and never this function's to retry.
+ */
+export function apiWriteSelectorSettings(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  written: z.infer<typeof selectorProjectSettingsSchema>,
+): Promise<ApiResult<SelectorProjectSettingsResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "PUT",
+      path: apiSegments(partition, "selector-settings"),
+      body: written,
+    },
+    (value) => selectorProjectSettingsResponseSchema.parse(value),
+  );
+}
+
+export function apiSelectorSettingsHistory(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  page: SelectorHistoryPage = {},
+): Promise<ApiResult<SelectorSettingsHistoryResponse>> {
+  return apiGet(
+    ports,
+    apiPath(apiSegments(partition, "selector-settings", "history"), {
+      after: page.after,
+      limit: page.limit,
+    }),
+    (value) => selectorSettingsHistoryResponseSchema.parse(value),
   );
 }
 

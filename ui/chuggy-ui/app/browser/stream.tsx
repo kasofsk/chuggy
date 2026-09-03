@@ -100,6 +100,13 @@ function applyListRefresh(
         exact: true,
       });
       return;
+    case "RereadNamed":
+      if (refresh.names(change))
+        void client.invalidateQueries({
+          queryKey: registered.key,
+          exact: true,
+        });
+      return;
   }
 }
 
@@ -286,13 +293,13 @@ export function useProjectListRefresh<T>(list: ProjectList<T>): void {
       key: JSON.parse(named) as ProjectQueryKey,
       refresh: () => {
         const current = held.current.refresh;
-        return current.refresh === "Reread"
-          ? current
-          : {
-              refresh: "Fold",
-              fold: (previous, change) =>
-                current.fold(previous as T | undefined, change),
-            };
+        if (current.refresh === "Reread" || current.refresh === "RereadNamed")
+          return current;
+        return {
+          refresh: "Fold",
+          fold: (previous, change) =>
+            current.fold(previous as T | undefined, change),
+        };
       },
     };
     folds.add(registration);

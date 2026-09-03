@@ -43,7 +43,7 @@ const partition = { tenant: "acme", project: "atlas" };
 function phaseCountLabel(
   rows: ProjectTicketRows | undefined,
 ): string | undefined {
-  return inboxCountLabel(inboxUnion(rows, undefined));
+  return inboxCountLabel(inboxUnion(rows, undefined, undefined));
 }
 
 function page(

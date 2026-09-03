@@ -117,7 +117,11 @@ export type ProjectListRefresh<T> =
         change: ProjectListChange,
       ) => T | undefined;
     }
-  | { readonly refresh: "Reread" };
+  | { readonly refresh: "Reread" }
+  | {
+      readonly refresh: "RereadNamed";
+      readonly names: (change: ProjectListChange) => boolean;
+    };
 
 /** Held by no literal a caller can write, so a `ProjectList` is one of the
  * constructors' own — though a spread of one is still a value of the type, and
@@ -163,4 +167,26 @@ export function projectListReread<T>(
   name: string,
 ): ProjectList<T> {
   return projectListOf(partition, kind, name, { refresh: "Reread" });
+}
+
+/**
+ * The frames of the kind that name this entry stale it and the rest leave it
+ * alone — `Reread`'s narrowing for where the frame's resource IS a fact about
+ * the entry rather than a fragment of something derived from more than it, as a
+ * `Session` frame names one session and a page draws one, so a project holding
+ * several would otherwise re-read every page on every one of them.
+ *
+ * THE FRAME IS STILL NEVER THE ANSWER: like `Reread`, this stales the entry and
+ * the server is asked again, and what the frame supplies is only whether to ask.
+ */
+export function projectListRereadNamed<T>(
+  partition: PartitionIdentity,
+  kind: ProjectChangeKind,
+  name: string,
+  names: (change: ProjectListChange) => boolean,
+): ProjectList<T> {
+  return projectListOf(partition, kind, name, {
+    refresh: "RereadNamed",
+    names,
+  });
 }

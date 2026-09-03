@@ -2,9 +2,10 @@
  * The escalation inbox: every ticket that needs a human, newest activity first,
  * each answerable where it stands.
  *
- * Two reads make the list — the phase page and the project's open native
- * actions — and `inboxUnion` is where they become one row per ticket. The shell
- * badge and this panel both take those two reads through `useInboxRows`, so the
+ * Three reads make the list — the phase page, the project's open native
+ * actions and the lead's standing refusals — and `inboxUnion` is where they
+ * become one row per ticket. The shell badge and this panel both take those
+ * three reads through `useInboxRows`, so the
  * count and the rows are one value: a read that refused becomes a notice beside
  * the rows the other one supplied rather than an empty panel under a badge that
  * still counts them. What a row ran is the project table's own index under the
@@ -27,7 +28,12 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import { apiNativeActions, apiProject } from "../core/apiRoutes.ts";
+import type { AgenticRefusalsResponse } from "../../../../src/contract/responses.ts";
+import {
+  apiAgenticRefusals,
+  apiNativeActions,
+  apiProject,
+} from "../core/apiRoutes.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import {
   escalationReasonSentence,
@@ -46,6 +52,7 @@ import {
   inboxActionsPage,
   inboxPage,
   inboxPhases,
+  inboxRefusalsPage,
   inboxSection,
 } from "../core/inboxList.ts";
 import {
@@ -78,7 +85,10 @@ import {
   projectNativeActionRowsRead,
 } from "../core/projectNativeActionPages.ts";
 import type { ProjectNativeActionRows } from "../core/projectNativeActionPages.ts";
-import { projectListFolded } from "../core/projectQueryKeys.ts";
+import {
+  projectListFolded,
+  projectListReread,
+} from "../core/projectQueryKeys.ts";
 import {
   projectTableExecutionPhrase,
   projectTableRow,
@@ -90,9 +100,11 @@ import {
   projectTicketRowsRead,
 } from "../core/projectTicketPages.ts";
 import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
+import { agenticRefusalStanding } from "../core/leadTranscript.ts";
 import { actionsFor, ticketActionSentence } from "../core/ticketActions.ts";
 import type { TicketAction } from "../core/ticketActions.ts";
 import { ticketSectionTitles } from "../core/ticketSections.ts";
+import { agenticRefusalStandingTone } from "../core/tones.ts";
 import { useApiPorts, usePanelList } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { useProjectExecutionIndex } from "./executionIndex.ts";
@@ -103,6 +115,8 @@ import {
   ticketRowExecutionCell,
   TicketNumberCell,
 } from "./TicketCells.tsx";
+import { Notice } from "./ui/Notice.tsx";
+import { Pill } from "./ui/Pill.tsx";
 
 const inboxListName = "inbox";
 
@@ -141,6 +155,25 @@ function useInboxOpenActions(
       projectNativeActionRowsRead((cursor) =>
         apiNativeActions(at, partition, inboxActionsPage(cursor)),
       ),
+  );
+}
+
+/**
+ * The project's standing agentic refusals, re-read rather than folded: the
+ * `AgenticRefusal` frame carries one ticket's ledger, and this list is the
+ * project's standing rows with each one's supersession decided against the
+ * ticket's current authoring version, which the frame does not carry.
+ */
+function useInboxRefusals(
+  partition: PartitionIdentity,
+): PanelState<AgenticRefusalsResponse> {
+  return usePanelList(
+    projectListReread<AgenticRefusalsResponse>(
+      partition,
+      "AgenticRefusal",
+      inboxListName,
+    ),
+    (at) => apiAgenticRefusals(at, partition, inboxRefusalsPage()),
   );
 }
 
@@ -194,24 +227,27 @@ function useInboxPhaseRows(partition: PartitionIdentity): {
 }
 
 /**
- * Both reads, the union they make and the one state that draws it. The badge
- * and the panel take the same two values through the same two functions, which
- * is what makes the header's claim above true rather than merely intended.
+ * All three reads, the union they make and the one state that draws it. The
+ * badge and the panel take the same three values through the same two
+ * functions, which is what makes the header's claim above true rather than
+ * merely intended.
  */
 export function useInboxRows(partition: PartitionIdentity): InboxRowsHeld {
   const phase = useInboxPhaseRows(partition);
   const open = useInboxOpenActions(partition);
+  const refused = useInboxRefusals(partition);
   const held = phase.state.state === "Ready" ? phase.state.value : undefined;
   const openHeld = open.state === "Ready" ? open.value : undefined;
+  const refusedHeld = refused.state === "Ready" ? refused.value : undefined;
   const union =
-    held === undefined && openHeld === undefined
+    held === undefined && openHeld === undefined && refusedHeld === undefined
       ? inboxUnionEmpty
-      : inboxUnion(held, openHeld);
-  const panel = inboxUnionState(union, phase.state, open);
+      : inboxUnion(held, openHeld, refusedHeld);
+  const panel = inboxUnionState(union, phase.state, open, refused);
   return {
     union,
     panel,
-    refusals: inboxUnionRefusals(panel, phase.state, open),
+    refusals: inboxUnionRefusals(panel, phase.state, open, refused),
     pageFailure: held?.failure,
     openPageFailure: openHeld?.failure,
     readMore: phase.readMore,
@@ -320,6 +356,19 @@ function InboxWhy(props: {
   );
 }
 
+/** Whether the lead is declining to dispatch this ticket, and whether that
+ * still binds. The reason is on hover, because a row is one line. */
+function InboxRefusal(props: { readonly entry: InboxEntry }): ReactNode {
+  const refusal = props.entry.refusals[0];
+  if (refusal === undefined) return null;
+  const standing = agenticRefusalStanding(refusal);
+  return (
+    <span title={refusal.reason}>
+      <Pill tone={agenticRefusalStandingTone(standing)}>{standing}</Pill>
+    </span>
+  );
+}
+
 /**
  * One row. A ticket only the actions named has no projection row to draw from,
  * so its execution and activity columns say the screen did not read them rather
@@ -346,6 +395,7 @@ function InboxRow(props: {
       />
       <td>
         <InboxWhy entry={props.entry} row={row} />
+        <InboxRefusal entry={props.entry} />
       </td>
       <td>
         {row === undefined
@@ -463,6 +513,13 @@ function InboxNotices(props: {
           the tickets waiting on an answer from you could not be read —{" "}
           {held.refusals.open}
         </p>
+      )}
+      {held.refusals.standing === undefined ? null : (
+        <Notice
+          tone="parked"
+          inline
+          detail={`Refusals · ${held.refusals.standing}`}
+        />
       )}
       {held.openPageFailure === undefined ? null : (
         <p className="panel-failed">
