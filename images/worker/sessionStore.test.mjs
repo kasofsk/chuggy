@@ -23,9 +23,12 @@ function planeOf(answer) {
   };
 }
 
-function storeOf(answer) {
+function storeOf(answer, retained = {}) {
   const plane = planeOf(answer);
-  return { ...plane, store: sessionStoreAdapter(task, "chgs_b", plane) };
+  return {
+    ...plane,
+    store: sessionStoreAdapter(task, "chgs_b", { ...plane, ...retained }),
+  };
 }
 
 function entry(uuid, bytes = 8) {
@@ -220,6 +223,55 @@ test("the batches one turn wrote are what its answer carries", async () => {
   store.startTurn();
   await store.append({ sessionId: "s" }, [entry("c")]);
   assert.deepEqual(store.turnBatches(), { batchFirst: 3, batchLast: 3 });
+});
+
+test("an ephemeral store sends no batch however much a turn appends, and names none", async () => {
+  const { calls, store } = storeOf(undefined, { retain: false });
+
+  store.startTurn();
+  for (let append = 0; append < 4; append += 1)
+    await store.append({ sessionId: "s" }, [
+      entry(`a${String(append)}`),
+      entry(`b${String(append)}`, sessionStoreBatchBytesMax / 2),
+    ]);
+  await store.append({ sessionId: "s", subpath: "subagent-7" }, [entry("c")]);
+
+  assert.equal(calls.length, 0, "an ephemeral store reached the plane");
+  assert.deepEqual(store.turnBatches(), {});
+});
+
+test("an ephemeral store still reads the transcript it was forked from", async () => {
+  const { calls, store } = storeOf(
+    (path) =>
+      path.startsWith("/v1/session/store/lead-1?")
+        ? {
+            status: 200,
+            body: {
+              batches: [
+                { batch: 1, content: `${JSON.stringify(entry("a"))}\n` },
+              ],
+            },
+          }
+        : { status: 200, body: { streams: [{ stream: "lead-1/subagent-7" }] } },
+    { retain: false },
+  );
+
+  const loaded = await store.load({ sessionId: "lead-1" });
+
+  assert.deepEqual(
+    loaded.map(({ uuid }) => uuid),
+    ["a"],
+  );
+  assert.deepEqual(await store.listSubkeys({ sessionId: "lead-1" }), [
+    "subagent-7",
+  ]);
+  assert.deepEqual(
+    calls.map(({ path }) => path),
+    [
+      "/v1/session/store/lead-1?after=0&limit=8",
+      "/v1/session/store?stream=lead-1",
+    ],
+  );
 });
 
 test("a subagent's stream is not the session's own, and is not in the turn's range", async () => {
