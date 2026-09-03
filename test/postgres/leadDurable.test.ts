@@ -65,11 +65,25 @@ import {
 import { postgresProjectChangeLog } from "../../src/adapters/postgres/projectChangeLog.ts";
 import type { ProjectChangeLog } from "../../src/interpreter/projectStream.ts";
 import {
+  selectorControlRole,
   selectorServiceRole,
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
+import type { SelectorDecisionProposals } from "../../src/interpreter/selector.ts";
 import { postgresHarnessRolePool } from "./harness.ts";
+import {
+  postgresSelectorRuntimeControl,
+  postgresSelectorState,
+} from "../../src/adapters/postgres/selector.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
+import {
+  asAuthorityKind,
+  asAuthoritySubject,
+  asOperationId,
+} from "../../src/interpreter/operationInbox.ts";
+import { selectorDecisionSummary } from "../../src/interpreter/selectorHistory.ts";
+import { postgresHarnessSelectorContext } from "./harness.ts";
 import { leadRigDecision, leadRigOpen, leadRigProject } from "./leadHarness.ts";
 import type { LeadRig } from "./leadHarness.ts";
 import {
@@ -465,6 +479,208 @@ test("the API reads the decision log and the intent one decision left", async ()
     [second],
   );
   assert.equal(await rig.apiLead.planningIntent(partition), undefined);
+});
+
+/** One decision's dispatch of a ticket, fenced on the version the case gives it. */
+function landingProposal(
+  partition: Partition,
+  decision: string,
+  tickets: readonly number[],
+  deliveryMode: SelectorDecisionProposals["deliveryMode"] = "Automatic",
+): SelectorDecisionProposals {
+  return {
+    interaction: {
+      decision,
+      partition,
+      instructionsVersion: "1.0",
+      instructions: "choose a dispatchable ticket",
+      observedView: [],
+      context: {
+        operationalContext: postgresHarnessSelectorContext,
+        handoffNote: {},
+      },
+      toolActivity: [],
+      result: { dispatches: tickets.map((ticket) => ({ ticket })) },
+      implementationRevision: "implementation-1",
+      modelRevision: "model-1",
+      policyRevision: "policy-1",
+      accounting: { tokens: 1, durationMs: 1 },
+      startedAt: "2026-09-03T12:00:00.000Z",
+      completedAt: "2026-09-03T12:00:01.000Z",
+    },
+    fence: { settingsRevision: 1, projectSettingsRevision: 0 },
+    deliveryMode,
+    dispatches: tickets.map((ticket) => ({
+      ticket: asTicketId(ticket),
+      operation: asOperationId(`${decision}-t${String(ticket)}`),
+      command: {
+        version: 1,
+        command: "ProposeDispatch",
+        ticket: asTicketId(ticket),
+        expectedTicketVersion: 1,
+        observedViewToken: {
+          ...partition,
+          recoveryEpoch: "epoch",
+          schemaVersion: 1,
+          watermark: 0,
+          digest: "a".repeat(64),
+        },
+        selectorDecisionReference: decision,
+      },
+    })),
+  };
+}
+
+/** The installation's dispatch mode, held for one case and put back after it. */
+async function leadRigHeldDispatchMode(
+  mode: "Automatic" | "ApprovalRequired",
+): Promise<() => Promise<void>> {
+  const pool = postgresHarnessRolePool(selectorControlRole);
+  const control = postgresSelectorRuntimeControl(pool);
+  const administrator = {
+    kind: asAuthorityKind("Administrator"),
+    subject: asAuthoritySubject("landings"),
+  };
+  const original = await control.settings();
+  assert.equal(
+    (await control.setDispatchMode(original.revision, mode, administrator))
+      .updated,
+    true,
+  );
+  return async () => {
+    const current = await control.settings();
+    await control.setDispatchMode(
+      current.revision,
+      original.dispatchMode,
+      administrator,
+    );
+    await pool.end();
+  };
+}
+
+/**
+ * The log says which of a decision's dispatches landed, because the record it
+ * is read from is the delivery relation and not the retained result. A decision
+ * that dispatched nothing answers an empty list, which is what a pre-slice-6
+ * row with no delivery row of its own also answers.
+ */
+test("the decision log answers each dispatch's landing under one decision", async () => {
+  const partition = await leadRigProject(rig, "api-landings");
+  const quiet = await leadRigDecision(rig, partition, "api-landings-quiet", {
+    notificationCursor: 3,
+  });
+  const decision = `selector-decision-api-landings-${randomUUID()}`;
+  const state = postgresSelectorState(rig.selectorPool);
+  await state.setAutomaticReadiness(true);
+  const restore = await leadRigHeldDispatchMode("Automatic");
+  try {
+    const written = await state.record(
+      landingProposal(partition, decision, [41, 42, 43]),
+      {
+        partition,
+        notificationCursor: 7,
+        revision: (await state.project(partition))?.revision ?? 0,
+        attention: "Monitoring",
+        handoffNote: {},
+      },
+    );
+    assert.deepEqual(written.dispatched.map(Number), [41, 42, 43]);
+    await state.submitted(decision, asTicketId(42));
+    await state.submitted(decision, asTicketId(43));
+    await state.terminal(decision, asTicketId(43), {
+      state: "Refused",
+      code: "SelectionChanged",
+    });
+  } finally {
+    await restore();
+  }
+
+  const drawn = (
+    await rig.apiLead.history(partition, {
+      limit: selectorHistoryLimitMax,
+      order: "oldest",
+    })
+  ).map(selectorDecisionSummary);
+  assert.deepEqual(
+    drawn.map((summary) => [summary.decision, summary.dispatches]),
+    [
+      [quiet, []],
+      [
+        decision,
+        [
+          { ticket: 41, state: "Pending" },
+          { ticket: 42, state: "Submitted" },
+          { ticket: 43, state: "Terminal", outcome: "SelectionChanged" },
+        ],
+      ],
+    ],
+  );
+  assert.deepEqual(
+    (await state.history(partition, undefined, selectorHistoryLimitMax))
+      .map(selectorDecisionSummary)
+      .map((summary) => summary.dispatches.length),
+    [0, 3],
+    "the selector's own read of the log carries the same landings",
+  );
+});
+
+/**
+ * `AwaitingApproval` is a landing like the other three, and the only one no
+ * reviewer has to act for it to be reached: under an `ApprovalRequired`
+ * installation the trigger stamps every row of every decision with it. A log
+ * that drew nothing there would say a decision dispatched nothing in the one
+ * installation where every fresh decision is held — to the console, and to the
+ * lead's own decision-log tool, which would then re-dispatch a ticket it is
+ * already queued for.
+ */
+test("a dispatch a reviewer has not released is a landing the log draws", async () => {
+  const partition = await leadRigProject(rig, "api-landings-held");
+  const decision = `selector-decision-api-held-${randomUUID()}`;
+  const state = postgresSelectorState(rig.selectorPool);
+  await state.setAutomaticReadiness(true);
+  const restore = await leadRigHeldDispatchMode("ApprovalRequired");
+  try {
+    assert.deepEqual(
+      (
+        await state.record(
+          landingProposal(partition, decision, [41, 42], "ApprovalRequired"),
+          {
+            partition,
+            notificationCursor: 7,
+            revision: (await state.project(partition))?.revision ?? 0,
+            attention: "Monitoring",
+            handoffNote: {},
+          },
+        )
+      ).dispatched.map(Number),
+      [41, 42],
+    );
+  } finally {
+    await restore();
+  }
+
+  const held = [
+    { ticket: 41, state: "AwaitingApproval" },
+    { ticket: 42, state: "AwaitingApproval" },
+  ];
+  assert.deepEqual(
+    (
+      await rig.apiLead.history(partition, {
+        limit: selectorHistoryLimitMax,
+        order: "oldest",
+      })
+    )
+      .map(selectorDecisionSummary)
+      .map((summary) => [summary.decision, summary.dispatches]),
+    [[decision, held]],
+  );
+  assert.deepEqual(
+    (await state.history(partition, undefined, selectorHistoryLimitMax))
+      .map(selectorDecisionSummary)
+      .map((summary) => summary.dispatches),
+    [held],
+    "the selector's own read of the log holds them too",
+  );
 });
 
 test("the API reassembles a decision whose resources outgrew one audit column", async () => {

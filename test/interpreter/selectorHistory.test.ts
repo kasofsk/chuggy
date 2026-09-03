@@ -11,8 +11,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { selectorHistoryLimitMax } from "../../src/contract/http.ts";
-import { checkedSelectorHistoryQuery } from "../../src/interpreter/selectorHistory.ts";
+import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
+import type { SelectorInteractionRecord } from "../../src/interpreter/selector.ts";
+import {
+  checkedSelectorHistoryQuery,
+  selectorDecisionSummary,
+} from "../../src/interpreter/selectorHistory.ts";
 import type { SelectorHistoryQuery } from "../../src/interpreter/selectorHistory.ts";
+import { selectorOperationalContext } from "./selectorFixture.ts";
 
 test("a query the log can answer is returned as it stands", () => {
   const forward: SelectorHistoryQuery = {
@@ -55,4 +62,82 @@ test("a page bound outside what the log answers is refused", () => {
     assert.throws(() =>
       checkedSelectorHistoryQuery({ after, limit: 1, order: "oldest" }),
     );
+});
+
+const decisionRecord = (
+  deliveries: SelectorInteractionRecord["deliveries"],
+): SelectorInteractionRecord => ({
+  ordinal: 4,
+  decision: "selector-decision-one",
+  partition: { tenant: asTenantId("tenant"), project: asProjectId("project") },
+  instructionsVersion: "1.0",
+  instructions: "prompt",
+  observedView: [],
+  context: {
+    operationalContext: selectorOperationalContext,
+    handoffNote: {},
+  },
+  toolActivity: [],
+  result: { dispatches: [{ ticket: 41 }, { ticket: 42 }] },
+  implementationRevision: "build",
+  modelRevision: "model",
+  policyRevision: "policy",
+  accounting: {},
+  deliveries,
+  startedAt: "2026-09-03T00:00:00.000Z",
+  completedAt: "2026-09-03T00:00:01.000Z",
+});
+
+/**
+ * What a dispatch did is the delivery row, never the retained result: a
+ * decision that chose two tickets and delivered one must not read as two, which
+ * is what reading the result would have said.
+ */
+test("the log draws a dispatch from its delivery row and not from the result", () => {
+  assert.deepEqual(
+    selectorDecisionSummary(
+      decisionRecord([
+        { ticket: asTicketId(41), state: "Submitted" },
+        {
+          ticket: asTicketId(42),
+          state: "Terminal",
+          outcome: { state: "Refused", code: "SelectionChanged" },
+        },
+      ]),
+    ).dispatches,
+    [
+      { ticket: 41, state: "Submitted" },
+      { ticket: 42, state: "Terminal", outcome: "SelectionChanged" },
+    ],
+  );
+  assert.deepEqual(
+    selectorDecisionSummary(decisionRecord([])).dispatches,
+    [],
+    "a decision with no delivery row dispatched nothing, whatever it chose",
+  );
+});
+
+/**
+ * The outcome is the code where the operation named one, and otherwise the word
+ * the settlement did carry — a delivery terminated at submission carries an
+ * acceptance and no code at all.
+ */
+test("a settled dispatch says the code it settled on, or the word it has", () => {
+  const outcomes = [
+    { state: "Refused", code: "TicketChanged" },
+    { state: "Succeeded", decidedSequence: 4 },
+    { accepted: "InvalidCommand" },
+    { unreadable: true },
+  ].map(
+    (outcome) =>
+      selectorDecisionSummary(
+        decisionRecord([{ ticket: asTicketId(7), state: "Terminal", outcome }]),
+      ).dispatches[0]?.outcome,
+  );
+  assert.deepEqual(outcomes, [
+    "TicketChanged",
+    "Succeeded",
+    "InvalidCommand",
+    undefined,
+  ]);
 });

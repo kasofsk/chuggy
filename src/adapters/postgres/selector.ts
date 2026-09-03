@@ -12,6 +12,7 @@ import {
 import type {
   JsonValue,
   SelectorDelivery,
+  SelectorDeliveryRecord,
   SelectorCandidateScan,
   SelectorInteraction,
   SelectorInteractionRecord,
@@ -32,6 +33,7 @@ import type {
 } from "../../interpreter/selector.ts";
 import {
   dispatchesPerDecisionUnstated,
+  leadDispatchesMax,
   resolvedSelectorSettings,
 } from "../../interpreter/selector.ts";
 import type {
@@ -48,6 +50,7 @@ import {
   type Partition,
 } from "../../interpreter/projectStore.ts";
 import { notificationSchema } from "../../contract/responses.ts";
+import { selectorDeliveryStates } from "../../contract/rosters.ts";
 import type { ProjectNotification } from "../../interpreter/notifications.ts";
 import { parseTicketCommand } from "../../interpreter/wire.ts";
 import { postgresTransaction } from "./pool.ts";
@@ -119,6 +122,34 @@ const dispatchViewTokenSchema = z
     digest: z.string().regex(/^[0-9a-f]{64}$/),
   })
   .readonly();
+/**
+ * One decision's delivery rows as the interaction read aggregates them. The
+ * outcome is the text column the settlement wrote, parsed here rather than in
+ * the aggregate, so a row the reader cannot speak for is one decision's
+ * problem and not the page's.
+ */
+const selectorDeliveryRecordsSchema: z.ZodType<
+  readonly SelectorDeliveryRecord[]
+> = z
+  .array(
+    z.object({
+      ticket: z.number().int().safe().positive().transform(asTicketId),
+      state: z.enum(selectorDeliveryStates),
+      outcome: z.string().nullable(),
+    }),
+  )
+  .transform((rows) =>
+    rows.map((row) => ({
+      ticket: row.ticket,
+      state: row.state,
+      ...(row.outcome === null
+        ? {}
+        : {
+            outcome: decoded(row.outcome, jsonValueSchema, "delivery outcome"),
+          }),
+    })),
+  );
+
 const dispatchCandidateSchema = z
   .object({
     ticket: z.number().int().safe().positive().transform(asTicketId),
@@ -1558,18 +1589,18 @@ async function replacePlanningIntent(
 
 /**
  * Writes all of a decision's delivery rows in the interaction's own transaction
- * and answers how many it wrote. A replayed decision conflicts on the key it is
- * written under and writes nothing, which is a count of zero rather than a
- * failure; a paused installation's trigger drops each row the same way, so the
- * count is what reached the relation and never what was offered it.
+ * and answers the tickets it wrote. A replayed decision conflicts on the key it
+ * is written under and writes nothing; a paused installation's trigger drops
+ * each row the same way, so the answer is what reached the relation and never
+ * what was offered it.
  */
 async function insertSelectorProposals(
   client: pg.PoolClient,
   proposals: SelectorDecisionProposals | undefined,
-): Promise<number> {
-  if (proposals === undefined) return 0;
+): Promise<readonly SelectorDelivery["ticket"][]> {
+  if (proposals === undefined) return [];
   const interaction = proposals.interaction;
-  let written = 0;
+  const written: SelectorDelivery["ticket"][] = [];
   for (const dispatch of proposals.dispatches) {
     const inserted = await client.query(
       sql`INSERT INTO selector_proposal_delivery
@@ -1581,7 +1612,7 @@ async function insertSelectorProposals(
                ${proposals.deliveryMode === "Automatic" ? "Pending" : "AwaitingApproval"})
        ON CONFLICT (selector_decision,ticket) DO NOTHING`,
     );
-    written += inserted.rowCount === 1 ? 1 : 0;
+    if (inserted.rowCount === 1) written.push(dispatch.ticket);
   }
   return written;
 }
@@ -1590,8 +1621,8 @@ async function insertSelectorProposals(
  * The one transaction a decision is written in: the interaction, the planning
  * intent, its delivery rows and the project's own next state. `recorded` is
  * false where the project moved under the write or the interaction was already
- * retained, and `deliveries` counts the rows this call wrote, which a replay
- * makes zero without making it a failure.
+ * retained, and `deliveries` names the tickets this call wrote a row for, which
+ * a replay leaves empty without making it a failure.
  */
 async function recordSelectorState(
   pool: pg.Pool,
@@ -1600,13 +1631,16 @@ async function recordSelectorState(
   fence: SelectorSettingsFence,
   planningIntent?: unknown,
   proposals?: SelectorDecisionProposals,
-): Promise<{ readonly recorded: boolean; readonly deliveries: number }> {
+): Promise<{
+  readonly recorded: boolean;
+  readonly deliveries: readonly SelectorDelivery["ticket"][];
+}> {
   return postgresTransaction(pool, async (client) => {
     if (!(await lockSelectorProject(client, state)))
-      return { recorded: false, deliveries: 0 };
+      return { recorded: false, deliveries: [] };
     await completeSelectorAttempt(client, interaction, fence);
     if (!(await insertSelectorInteraction(client, interaction)))
-      return { recorded: false, deliveries: 0 };
+      return { recorded: false, deliveries: [] };
     await replacePlanningIntent(client, interaction, planningIntent);
     const deliveries = await insertSelectorProposals(client, proposals);
     await writeSelectorProject(client, state);
@@ -1657,6 +1691,8 @@ export interface SelectorInteractionRow {
   readonly accounting: string;
   readonly started_at: Date;
   readonly completed_at: Date;
+  /** The decision's delivery rows as JSON, null where the decision dispatched nothing. */
+  readonly dispatches: string | null;
 }
 
 /** The chunked resources one interaction row's three manifests point at. */
@@ -1712,6 +1748,11 @@ export function selectorInteractionRecord(
     modelRevision: row.model_revision,
     policyRevision: row.policy_revision,
     accounting: decoded(row.accounting, jsonValueSchema, "selector accounting"),
+    deliveries: decoded(
+      row.dispatches ?? "[]",
+      selectorDeliveryRecordsSchema,
+      "selector decision deliveries",
+    ),
     startedAt: row.started_at.toISOString(),
     completedAt: row.completed_at.toISOString(),
   };
@@ -1751,7 +1792,15 @@ async function readSelectorHistory(
   const found = await pool.query<SelectorInteractionRow>(
     sql`SELECT selector_decision,ordinal::text,instructions_version,instructions,observed_view,
        observed_token,context,tool_activity,result,implementation_revision,model_revision,
-       policy_revision,accounting,started_at,completed_at
+       policy_revision,accounting,started_at,completed_at,
+       (SELECT json_agg(json_build_object(
+                 'ticket',landed.ticket,'state',landed.state,'outcome',landed.outcome)
+                 ORDER BY landed.ticket)
+          FROM (SELECT d.ticket,d.state,d.outcome
+                  FROM selector_proposal_delivery d
+                 WHERE d.selector_decision=selector_interaction.selector_decision
+                 ORDER BY d.ticket LIMIT ${leadDispatchesMax}) landed)::text
+         AS dispatches
        FROM selector_interaction WHERE tenant=${partition.tenant}
          AND project=${partition.project} AND ordinal>${after ?? 0}
        ORDER BY ordinal LIMIT ${limit}`,
@@ -1789,17 +1838,17 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
           planningIntent,
         )
       ).recorded,
-    record: async (proposals, state) =>
-      (
-        await recordSelectorState(
-          pool,
-          proposals.interaction,
-          state,
-          proposals.fence,
-          proposals.planningIntent,
-          proposals,
-        )
-      ).deliveries,
+    record: async (proposals, state) => {
+      const written = await recordSelectorState(
+        pool,
+        proposals.interaction,
+        state,
+        proposals.fence,
+        proposals.planningIntent,
+        proposals,
+      );
+      return { retained: written.recorded, dispatched: written.deliveries };
+    },
     pending: (limit) => pendingDeliveries(pool, limit),
     submittedDeliveries: (limit) => submittedDeliveries(pool, limit),
     submitted: (decision, ticket) => markSubmitted(pool, decision, ticket),

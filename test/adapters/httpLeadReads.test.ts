@@ -173,6 +173,13 @@ const interaction: SelectorInteractionRecord = {
   modelRevision: "claude-haiku-4-5",
   policyRevision: stream,
   accounting: { tokens: 41_234, durationMs: 74_210, costMicros: 182_000 },
+  deliveries: [
+    {
+      ticket: asTicketId(41),
+      state: "Terminal",
+      outcome: { state: "Refused", code: "SelectionChanged" },
+    },
+  ],
   startedAt: "2026-09-02T00:00:00.000Z",
   completedAt: "2026-09-02T00:01:14.210Z",
 };
@@ -754,7 +761,9 @@ test("the decision log draws what a decision did, never what it saw", async () =
   const body = selectorHistoryResponseSchema.parse(found.json());
   assert.equal(body.decisions.length, 1);
   const decision = body.decisions.at(-1);
-  assert.deepEqual(decision?.dispatched, [41]);
+  assert.deepEqual(decision?.dispatches, [
+    { ticket: 41, state: "Terminal", outcome: "SelectionChanged" },
+  ]);
   assert.deepEqual(decision?.refused, [42]);
   assert.deepEqual(decision?.lifted, [40]);
   assert.equal(decision?.attention, "Attention");

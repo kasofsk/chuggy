@@ -14,13 +14,14 @@ import {
   type SelectorPolicyHost,
   selectorProjectMoved,
   type SelectorProjectState,
-  type SelectorDecisionProposals,
+  type SelectorProposedDecision,
   selectorSettingsFence,
   selectorSettingsFenceHolds,
   type SelectorResolvedSettings,
   type SelectorRuntimeSettingsSource,
   type SelectorStateStore,
   type SelectorTicketService,
+  unwrittenDispatches,
 } from "./selector.ts";
 import {
   reconcileSelectorAttempts,
@@ -49,9 +50,17 @@ export interface SelectorIdentityFactory {
   next(partition: Partition): SelectorCycleIdentity;
 }
 
+/**
+ * One quantum's account. `proposed` counts the decisions this run retained
+ * that named a dispatch and `dispatched` the delivery rows they left, so one
+ * decision with three dispatches reads differently from three decisions with
+ * one — and a decision the relation retained but took no row of reads as one
+ * proposal and no dispatch, which is what its failures are about.
+ */
 export interface SelectorRunResult {
   readonly observed: number;
   readonly proposed: number;
+  readonly dispatched: number;
   readonly delivered: number;
   readonly reconciled: number;
   readonly failures: readonly SelectorRunFailure[];
@@ -98,9 +107,11 @@ async function observeProjects(
   readonly scanned: number;
   readonly observed: number;
   readonly proposed: number;
+  readonly dispatched: number;
   readonly failures: readonly SelectorRunFailure[];
 }> {
   let proposed = 0;
+  let dispatched = 0;
   let observed = 0;
   let scanned = 0;
   const failures: SelectorRunFailure[] = [];
@@ -119,27 +130,29 @@ async function observeProjects(
     scanned += 1;
     if (result.observed) observed += 1;
     if (result.proposed) proposed += 1;
+    dispatched += result.dispatched;
   }
-  return { scanned, observed, proposed, failures };
+  return { scanned, observed, proposed, dispatched, failures };
 }
 
 interface ProjectObservationResult {
   readonly stop: boolean;
   readonly observed: boolean;
+  /** Whether this project's turn left a decision in the relation for the writer to answer. */
   readonly proposed: boolean;
+  /** The delivery rows this project's decision left, which a decision that proposed nothing makes zero. */
+  readonly dispatched: number;
   readonly failures: readonly SelectorRunFailure[];
 }
 
 /**
- * Runs one swept project, taking its permit only where its change log has moved
- * past the cursor its last turn stood on.
- *
- * THE PERMIT IS TAKEN AFTER THE TRIGGER, NOT BEFORE. Allocating first spends a
- * permit and a selections-per-minute slot on a project with nothing new, which
- * is the whole of what a change-driven runtime exists to stop. A quiet project
- * therefore costs one bounded notification read and nothing else: no permit, no
- * decision reference, no turn and no quota — and the sweep still counts it as
- * scanned, so discovery goes on.
+ * Runs one swept project, taking its permit only after its change log is seen
+ * to have moved past the cursor its last turn stood on — allocating first
+ * spends a permit and a selections-per-minute slot on a project with nothing
+ * new, which is the whole of what a change-driven runtime exists to stop. A
+ * quiet project therefore costs one bounded notification read and nothing
+ * else — no permit, no decision reference, no turn and no quota — and the sweep
+ * still counts it as scanned, so discovery goes on.
  */
 async function observeProject(
   partition: Partition,
@@ -205,6 +218,7 @@ const emptyProjectObservation: ProjectObservationResult = {
   stop: false,
   observed: false,
   proposed: false,
+  dispatched: 0,
   failures: [],
 };
 const stoppedProjectObservation = { ...emptyProjectObservation, stop: true };
@@ -231,7 +245,7 @@ async function observeFencedProject(
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
   identity: SelectorCycleIdentity,
-): Promise<SelectorDecisionProposals | undefined> {
+): Promise<SelectorProposedDecision | undefined> {
   const observation = await observeSelectorProject(
     state,
     source,
@@ -282,7 +296,7 @@ async function observePermittedProject(
   control: SelectorRuntimeSettingsSource,
 ): Promise<ProjectObservationResult> {
   const failures: SelectorRunFailure[] = [];
-  let proposal: SelectorDecisionProposals | undefined;
+  let proposal: SelectorProposedDecision | undefined;
   let observed = false;
   let stop = false;
   try {
@@ -322,7 +336,21 @@ async function observePermittedProject(
       failures,
     );
   }
-  return { stop, observed, proposed: proposal !== undefined, failures };
+  if (proposal !== undefined)
+    for (const ticket of unwrittenDispatches(proposal))
+      failures.push({
+        phase: "Record",
+        partition,
+        decision: proposal.proposals.interaction.decision,
+        ticket,
+      });
+  return {
+    stop,
+    observed,
+    proposed: proposal !== undefined,
+    dispatched: proposal?.dispatched.length ?? 0,
+    failures,
+  };
 }
 
 async function observeInventory(
@@ -336,6 +364,7 @@ async function observeInventory(
 ): Promise<{
   readonly observed: number;
   readonly proposed: number;
+  readonly dispatched: number;
   readonly failures: readonly SelectorRunFailure[];
 }> {
   await store.setAutomaticReadiness(policy.productionReady);
@@ -361,6 +390,7 @@ async function observeInventory(
 const pausedInventory = {
   observed: 0,
   proposed: 0,
+  dispatched: 0,
   failures: [],
 } as const;
 
@@ -403,6 +433,7 @@ export async function selectorRunOnce(
   );
   let observed = 0;
   let proposed = 0;
+  let dispatched = 0;
   const failures: SelectorRunFailure[] = [];
   try {
     const progress = await observeInventory(
@@ -416,6 +447,7 @@ export async function selectorRunOnce(
     );
     observed = progress.observed;
     proposed = progress.proposed;
+    dispatched = progress.dispatched;
     failures.push(...progress.failures);
   } catch {
     failures.push({ phase: "Inventory" });
@@ -440,6 +472,7 @@ export async function selectorRunOnce(
   return {
     observed,
     proposed,
+    dispatched,
     delivered: delivery.delivered,
     reconciled: reconciliation.reconciled,
     failures,

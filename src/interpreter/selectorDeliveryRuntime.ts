@@ -28,6 +28,7 @@ export async function deliverPendingSelectorProposals(
           phase: "Delivery",
           partition: delivery.partition,
           decision: delivery.decision,
+          ticket: delivery.ticket,
         });
     }
   } catch {
@@ -53,6 +54,7 @@ export async function reconcileSubmittedSelectorProposals(
           phase: "Reconciliation",
           partition: delivery.partition,
           decision: delivery.decision,
+          ticket: delivery.ticket,
         });
       }
     }

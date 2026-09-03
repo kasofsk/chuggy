@@ -203,6 +203,15 @@ export const selectorModes = ["Running", "Paused"] as const;
 
 /** Whether a selector proposal is dispatched or held for a reviewer. */
 export const selectorDispatchModes = ["Automatic", "ApprovalRequired"] as const;
+
+/** Where one of a decision's dispatches stands, which is what the log says landed. */
+export const selectorDeliveryStates = [
+  "AwaitingApproval",
+  "Pending",
+  "Submitted",
+  "Terminal",
+] as const;
+export type SelectorDeliveryState = (typeof selectorDeliveryStates)[number];
 export type SchedulerFreshness = (typeof schedulerFreshnesses)[number];
 
 export const draftStates = ["Draft", "Released", "Deleted"] as const;

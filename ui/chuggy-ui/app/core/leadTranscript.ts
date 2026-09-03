@@ -564,7 +564,7 @@ export function leadDecisionSummary(
   decision: SelectorDecisionResponse,
 ): string {
   const counts = [
-    { count: decision.dispatched.length, noun: "dispatched" },
+    { count: decision.dispatches.length, noun: "dispatched" },
     { count: decision.refused.length, noun: "refused" },
     { count: decision.lifted.length, noun: "lifted" },
   ].flatMap((part) =>
