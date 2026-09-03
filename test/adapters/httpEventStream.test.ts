@@ -50,6 +50,7 @@ import {
   type FakeLog,
 } from "../interpreter/projectStreamHarness.ts";
 import { unreadableLeadReads } from "./leadReadFixtures.ts";
+import { unservedThreads } from "./threadFixtures.ts";
 
 const partition = partitionOf("project");
 const streamPath = "/api/v1/tenants/tenant/projects/project/events";
@@ -97,6 +98,11 @@ type ServedWeb = Pick<
   | "runTurns"
   | "runTranscript"
   | "runConfiguration"
+  | "threads"
+  | "thread"
+  | "threadTranscript"
+  | "openThread"
+  | "sendThreadMessage"
 >;
 
 function servedWeb(
@@ -105,6 +111,7 @@ function servedWeb(
 ): ServedWeb {
   return {
     ...unreadableLeadReads(),
+    ...unservedThreads,
     cancel: notFound,
     configuration: () => Promise.resolve(undefined),
     configurations: notFound,

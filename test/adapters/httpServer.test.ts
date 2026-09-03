@@ -42,48 +42,19 @@ import {
   asSessionId,
   sessionBearerPrefix,
 } from "../../src/interpreter/agentSession.ts";
+import { unservedThreads } from "./threadFixtures.ts";
 
 const authority = {
   installationAuthority: () =>
     Promise.resolve(asInstallationId("018f84a1-4c2b-7def-8abc-0123456789ab")),
 };
 
-type ServedNativeWeb = Pick<
-  NativeWeb,
-  | "cancel"
-  | "configuration"
-  | "configurations"
-  | "createConfiguration"
-  | "importRepositoryConfigurations"
-  | "createDraft"
-  | "initializeDraft"
-  | "deleteDraft"
-  | "dispatchView"
-  | "draft"
-  | "drafts"
-  | "notifications"
-  | "operation"
-  | "project"
-  | "projectInventory"
-  | "reviseDraft"
-  | "submit"
-  | "ticket"
-  | "ticketNativeActions"
-  | "nativeActions"
-  | "execution"
-  | "executions"
-  | "operationalStatus"
-  | "selectorOperationalContext"
-  | "lead"
-  | "leadTranscript"
-  | "agenticRefusals"
-  | "ticketAgenticRefusals"
-  | "selectorHistory"
-  | "outputContent"
-  | "runTurns"
-  | "runTranscript"
-  | "runConfiguration"
->;
+/**
+ * What the app takes, read from the app rather than restated here: a suite
+ * holding its own copy of that roster is a second place for it to drift, and
+ * the boundary gains a method every slice or two.
+ */
+type ServedNativeWeb = Parameters<typeof createNativeHttpApp>[0];
 
 function fakeTicket(calls: string[]): NativeWeb["ticket"] {
   return (_principal, _partition, ticket) => {
@@ -292,6 +263,7 @@ function fakeDrafts(
 function fakeWeb(calls: string[]): ServedNativeWeb {
   return {
     ...unreadableLeadReads(),
+    ...unservedThreads,
     ...fakeOperations(calls),
     ...fakeConfigurations(calls),
     ...fakeDrafts(calls),

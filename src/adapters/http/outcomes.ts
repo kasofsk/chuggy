@@ -61,6 +61,14 @@ import type {
   OperationId,
 } from "../../interpreter/operationInbox.ts";
 import type { NotificationBatch } from "../../interpreter/notifications.ts";
+import type { ThreadMessageRefusalCode } from "../../contract/rosters.ts";
+import type {
+  ThreadMessageSent,
+  ThreadOpening,
+  ThreadRead,
+  ThreadTurnRecord,
+  ThreadsRead,
+} from "../../interpreter/threadRead.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { DraftBrief } from "../../interpreter/ticketBrief.ts";
 import type { RepositoryConfigurationImportOutcome } from "../../interpreter/repositoryConfiguration.ts";
@@ -1020,4 +1028,140 @@ export function selectorHistoryResponse(
           ? {}
           : { nextAfter: result.nextAfter }),
       });
+}
+
+/** One turn as the wire carries it, dropping the fields a pod has not measured. */
+function threadTurnBody(turn: ThreadTurnRecord): unknown {
+  return {
+    turn: turn.turn,
+    ordinal: turn.ordinal,
+    inputKind: turn.inputKind,
+    state: turn.state,
+    input: turn.input,
+    ...(turn.result === undefined ? {} : { result: turn.result }),
+    ...(turn.failure === undefined ? {} : { failure: turn.failure }),
+    ...(turn.measured === undefined
+      ? {}
+      : {
+          model: turn.measured.model,
+          tokens: turn.measured.tokens,
+          costMicros: turn.measured.costMicros,
+          durationMs: turn.measured.durationMs,
+          tools: turn.measured.tools,
+        }),
+    ...(turn.batchFirst === undefined ? {} : { batchFirst: turn.batchFirst }),
+    ...(turn.batchLast === undefined ? {} : { batchLast: turn.batchLast }),
+  };
+}
+
+export function threadsResponse(result: ThreadsRead): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, { threads: result.threads });
+}
+
+export function threadResponse(result: ThreadRead): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, {
+        ...result.thread,
+        turns: result.turns.map(threadTurnBody),
+        ...(result.nextBefore === undefined
+          ? {}
+          : { nextBefore: result.nextBefore }),
+        streams: result.streams,
+      });
+}
+
+/**
+ * Opening a member's thread is idempotent, so the two ways it succeeds are two
+ * statuses and one body: a member who already had one is told they had one
+ * rather than told a second was created.
+ */
+export function openThreadResponse(
+  partition: Partition,
+  result: ThreadOpening,
+): NativeHttpResponse {
+  if (result.result === "NotFound")
+    return response(404, nativeHttpError("NotFound", "Resource not found."));
+  return response(result.result === "Opened" ? 201 : 200, result.thread, {
+    location: resourcePath(partition, "threads", result.thread.session),
+  });
+}
+
+/**
+ * Which code each of the door's refusals answers with, as one record over the
+ * roster the console reads. It is a record rather than six literals at the call
+ * sites so the compiler is what holds the two ends together: a code renamed on
+ * one side of the wire and not the other is the failure the roster exists to
+ * stop, and a literal is a rename nothing notices.
+ */
+const threadMessageRefusalCode: Readonly<
+  Record<
+    Exclude<ThreadMessageSent["result"], "NotFound" | "Sent" | "AlreadySent">,
+    ThreadMessageRefusalCode
+  >
+> = {
+  NotYourThread: "NotYourThread",
+  Closed: "ThreadClosed",
+  Orphaned: "ThreadOrphaned",
+  TooLarge: "ThreadTurnTooLarge",
+  Backlogged: "ThreadBacklogged",
+};
+
+/**
+ * The message door's refusals, each naming which one it met: `NotYourThread` is
+ * `403` rather than `404` because the thread is one this member may read, and
+ * the honest answer is that it is not theirs to write to. `ThreadTurnTooLarge`
+ * names its ceiling because what overflowed is the project's own context rather
+ * than anything the member can shorten.
+ */
+export function threadMessageResponse(
+  result: ThreadMessageSent,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "NotYourThread":
+      return response(
+        403,
+        nativeHttpError(
+          threadMessageRefusalCode.NotYourThread,
+          "The thread is not yours to write.",
+        ),
+      );
+    case "Closed":
+      return response(
+        409,
+        nativeHttpError(
+          threadMessageRefusalCode.Closed,
+          "The thread takes no more turns.",
+        ),
+      );
+    case "Orphaned":
+      return response(
+        409,
+        nativeHttpError(
+          threadMessageRefusalCode.Orphaned,
+          "The thread has no owner.",
+        ),
+      );
+    case "TooLarge":
+      return response(400, {
+        ...nativeHttpError(
+          threadMessageRefusalCode.TooLarge,
+          "The project's own context and this message do not fit one turn.",
+        ),
+        charsMax: result.charsMax,
+      });
+    case "Backlogged":
+      return retry(
+        429,
+        result.retryAfterSeconds,
+        threadMessageRefusalCode.Backlogged,
+      );
+    case "Sent":
+    case "AlreadySent":
+      return response(202, { turn: result.turn, ordinal: result.ordinal });
+  }
 }

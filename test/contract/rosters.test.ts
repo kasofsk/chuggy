@@ -50,6 +50,7 @@ import {
   selectorModes,
   agenticRefusalEvents,
   sessionStates,
+  threadStandings,
   sessionTurnFailures,
   sessionTurnInputKinds,
   sessionTurnStates,
@@ -79,6 +80,7 @@ import { projectChangeKinds } from "../../src/contract/events.ts";
 import { leadObjectivesFixedChars } from "../../src/interpreter/leadTools.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import { allAgenticRefusalEvents } from "../../src/interpreter/agenticRefusal.ts";
+import { allThreadStandings } from "../../src/interpreter/thread.ts";
 import {
   allAgentReportedTurnFailures,
   allPlatformTurnFailures,
@@ -444,6 +446,7 @@ test("every session and refusal roster restates the interpreter's own", () => {
     ...allAgentReportedTurnFailures,
     ...allPlatformTurnFailures,
   ]);
+  assert.deepEqual(threadStandings, allThreadStandings);
 });
 
 /**

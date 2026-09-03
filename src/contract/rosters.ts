@@ -301,6 +301,36 @@ export type AgenticRefusalEvent = (typeof agenticRefusalEvents)[number];
 export const sessionStates = ["Open", "Closed"] as const;
 export type SessionState = (typeof sessionStates)[number];
 
+/**
+ * Where one member thread stands, which is a session state or the membership it
+ * acts under being gone. It is wider than `sessionStates` because a thread with
+ * no owner is a thread a reader must still be told about.
+ */
+export const threadStandings = ["Open", "Closed", "Orphaned"] as const;
+export type ThreadStanding = (typeof threadStandings)[number];
+
+/**
+ * Why the message door refused a member's message, kept apart from
+ * `operationRefusalCodes` because the door answers through `nativeHttpError`
+ * and never through the operation resource's `Refused` arm, so a member put
+ * there would widen every operation's wire enum and its total switches for a
+ * code that never arrives. It is a roster rather than literals at each end
+ * because a reader's behaviour turns on one of them — a `NotYourThread` is
+ * settled against the mailbox rather than reported, the door having resolved
+ * that mailbox before it compared the URL — so a door that renamed the code
+ * while a console compared the old spelling would report a message as refused
+ * for a turn the mailbox already holds.
+ */
+export const threadMessageRefusalCodes = [
+  "NotYourThread",
+  "ThreadClosed",
+  "ThreadOrphaned",
+  "ThreadBacklogged",
+  "ThreadTurnTooLarge",
+] as const;
+export type ThreadMessageRefusalCode =
+  (typeof threadMessageRefusalCodes)[number];
+
 /** Who or what put a turn in a session's mailbox. */
 export const sessionTurnInputKinds = [
   "Observation",

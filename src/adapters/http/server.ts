@@ -6,6 +6,7 @@ import fastify, {
 
 import type { TicketId } from "../../domain/ids.ts";
 import {
+  asSessionId,
   asSessionStoreStream,
   type SessionId,
 } from "../../interpreter/agentSession.ts";
@@ -48,6 +49,7 @@ import {
   nativeHttpPathSegmentCharsMax,
   selectorHistoryLimitMax,
   sessionStorePageBatchesMax,
+  threadTurnsAnsweredMax,
 } from "../../contract/http.ts";
 import {
   parseConfigurationCursor,
@@ -63,6 +65,7 @@ import {
   parsePartition,
   parseSelectorProjectSettings,
   parseSubmission,
+  parseThreadMessage,
 } from "./contract.ts";
 import {
   cancellationResponse,
@@ -103,6 +106,10 @@ import {
   runTranscriptResponse,
   runTurnsResponse,
   submissionResponse,
+  openThreadResponse,
+  threadMessageResponse,
+  threadResponse,
+  threadsResponse,
   type NativeHttpResponse,
 } from "./outcomes.ts";
 
@@ -177,6 +184,11 @@ type InitialNativeWeb = Pick<
   | "runTurns"
   | "runTranscript"
   | "runConfiguration"
+  | "threads"
+  | "thread"
+  | "threadTranscript"
+  | "openThread"
+  | "sendThreadMessage"
 >;
 
 function send(reply: FastifyReply, result: NativeHttpResponse): void {
@@ -1081,6 +1093,114 @@ function registerDrafts(app: FastifyInstance, web: InitialNativeWeb): void {
   });
 }
 
+/**
+ * The project's threads and one thread's own pages, every bound checked at this
+ * door so a bad cursor or a bad stream is a status rather than a raise from a
+ * store.
+ */
+function registerThreadReads(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+  root: string,
+): void {
+  app.get(`${root}/threads`, async (request, reply) => {
+    send(
+      reply,
+      threadsResponse(
+        await web.threads(principalOf(request), partitionOf(request)),
+      ),
+    );
+  });
+  app.get(`${root}/threads/:session`, async (request, reply) => {
+    const query = fieldsOnly(request.query, ["before", "limit"]);
+    const before = query["before"];
+    send(
+      reply,
+      threadResponse(
+        await web.thread(
+          principalOf(request),
+          partitionOf(request),
+          asSessionId(textField(record(request.params), "session")),
+          {
+            ...(before === undefined
+              ? {}
+              : { before: integerField(query, "before") }),
+            limit: integerField(query, "limit", threadTurnsAnsweredMax),
+          },
+        ),
+      ),
+    );
+  });
+  app.get(`${root}/threads/:session/transcript`, async (request, reply) => {
+    const query = fieldsOnly(request.query, ["stream", "after", "limit"]);
+    const stream = query["stream"];
+    send(
+      reply,
+      leadTranscriptResponse(
+        await web.threadTranscript(
+          principalOf(request),
+          partitionOf(request),
+          asSessionId(textField(record(request.params), "session")),
+          {
+            ...(stream === undefined
+              ? {}
+              : { stream: asSessionStoreStream(textField(query, "stream")) }),
+            after: integerField(query, "after", 0),
+            limit: integerField(query, "limit", sessionStorePageBatchesMax),
+          },
+        ),
+      ),
+    );
+  });
+}
+
+/**
+ * The member's own two doors, each behind the versioned media type. Opening
+ * takes an empty body because a thread is the caller's own, and a message takes
+ * the turn identity the caller minted because that identity is the idempotency.
+ */
+function registerThreadWrites(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+  root: string,
+): void {
+  app.post(
+    `${root}/threads`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      fieldsOnly(request.body ?? {}, []);
+      send(
+        reply,
+        openThreadResponse(
+          partitionOf(request),
+          await web.openThread(principalOf(request), partitionOf(request)),
+        ),
+      );
+    },
+  );
+  app.post(
+    `${root}/threads/:session/messages`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        threadMessageResponse(
+          await web.sendThreadMessage(
+            principalOf(request),
+            partitionOf(request),
+            {
+              session: asSessionId(
+                textField(record(request.params), "session"),
+              ),
+              ...parseThreadMessage(request.body),
+            },
+          ),
+        ),
+      );
+    },
+  );
+}
+
 function registerDispatchView(
   app: FastifyInstance,
   web: InitialNativeWeb,
@@ -1246,6 +1366,8 @@ export function createNativeHttpApp(
   if (hub !== undefined) registerProjectEvents(app, web, hub);
   registerConfigurations(app, web);
   registerDrafts(app, web);
+  registerThreadReads(app, web, partitionRoot);
+  registerThreadWrites(app, web, partitionRoot);
   registerDispatchView(app, web);
   app.setErrorHandler((failure, _request, reply) => {
     send(reply, failureResponse(failure));

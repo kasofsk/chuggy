@@ -88,6 +88,30 @@ export interface LeadStanding {
   readonly turns: readonly LeadTurnRecord[];
 }
 
+/**
+ * Where one session's store rows are read from, SESSION-KEYED so that one walk
+ * serves the lead and a member's thread both. `LeadReadStore.batches` below is
+ * the lead's own definer and answers for the project's lead alone; migration
+ * 062's `read_session_store_batches` is that read taking the session it reads,
+ * which is a name of its own because `read_session_store` is already the worker
+ * plane's, authenticated by a bearer digest rather than by project access.
+ */
+export interface SessionStoreRowsRead {
+  batches(input: {
+    readonly partition: Partition;
+    readonly session: SessionId;
+    readonly stream: SessionStoreStream;
+    readonly after: number;
+    readonly limit: number;
+  }): Promise<readonly SessionStoreBatchRow[]>;
+}
+
+/** What a transcript read needs of the session behind it: which one, and its main stream. */
+export interface SessionTranscriptSubject {
+  readonly session: SessionId;
+  readonly agentReference?: string;
+}
+
 /** The API's own door onto one project's lead and the rows of its store. */
 export interface LeadReadStore {
   /** The lead's standing with at most `turnsMax` of its mailbox, newest last. */
