@@ -21,6 +21,7 @@ import { expect, test } from "vitest";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import {
   inquiryBoxAnswered,
+  inquiryBoxesMax,
   inquiryBoxEmpty,
   inquiryBoxName,
   inquiryBoxOf,
@@ -294,4 +295,49 @@ test("two projects a joined key would confuse are filed apart", () => {
     inquiryBoxTyped(inquiryBoxEmpty, "why"),
   );
   expect(inquiryBoxOf(boxes, second)).toBe(inquiryBoxEmpty);
+});
+
+/**
+ * A BOX HOLDING NOTHING IS NOT A BOX. A reader who typed at a project and then
+ * cleared it has left nothing to keep, and filing an empty box would grow the
+ * record by one for every project merely visited.
+ */
+test("a box a reader has emptied leaves the record", () => {
+  const at = walkPartitions[0];
+  const typed = inquiryBoxWith({}, at, inquiryBoxTyped(inquiryBoxEmpty, "why"));
+  expect(Object.keys(typed).length).toBe(1);
+  const cleared = inquiryBoxWith(
+    typed,
+    at,
+    inquiryBoxTyped(inquiryBoxEmpty, ""),
+  );
+  expect(Object.keys(cleared).length).toBe(0);
+  expect(inquiryBoxOf(cleared, at)).toBe(inquiryBoxEmpty);
+});
+
+function boxAt(at: number): PartitionIdentity {
+  return { tenant: "acme", project: `p${String(at)}` };
+}
+
+/**
+ * THE RECORD IS BOUNDED, AND A PAIR IS WHAT IT WILL NOT DROP TO STAY SO. Past
+ * the cap the oldest box holding nothing goes; a box still holding a pair its
+ * door has not taken is kept, because keeping one until then is the whole of
+ * what this record is for.
+ */
+test("the record is bounded, and never by dropping a pair", () => {
+  const said: InquiryAsk = { ask: "Refused", word: "In flight" };
+  let boxes: InquiryBoxes = inquiryBoxWith({}, boxAt(0), {
+    typed: "why",
+    ask: said,
+    held: { drawn: "kept", question: "why", partition: boxAt(0) },
+  });
+  for (let at = 1; at <= inquiryBoxesMax; at += 1)
+    boxes = inquiryBoxWith(boxes, boxAt(at), { ...inquiryBoxEmpty, ask: said });
+  expect(Object.keys(boxes).length).toBe(inquiryBoxesMax);
+  expect(
+    inquiryBoxOf(boxes, boxAt(0)).held?.drawn,
+    "the record was bounded by dropping a pair a door had not taken",
+  ).toBe("kept");
+  expect(inquiryBoxOf(boxes, boxAt(1))).toBe(inquiryBoxEmpty);
 });

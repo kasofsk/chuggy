@@ -6,6 +6,13 @@
  * moving rewrites the head and raises the batch count the transcript walks to
  * and the page is live by construction. A project with no lead answers `404`,
  * which is a page saying so rather than five empty panels.
+ *
+ * WHAT A READER HAS TYPED AT THE INQUIRY BOX IS HELD HERE, above every gate
+ * below: the head that gates the box is absent on a `Pending` render, on a lead
+ * that has never settled a turn and on a read that failed, and this page is
+ * reconciled rather than replaced when only the project moves — so held here,
+ * a box survives exactly the navigation it is about, and held below, it would
+ * be discarded by it.
  */
 
 import { useParams } from "@tanstack/react-router";
@@ -39,7 +46,8 @@ import { usePanelList } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { LeadDecisions } from "./lead/LeadDecisions.tsx";
-import { LeadInquiries } from "./lead/LeadInquiries.tsx";
+import { LeadInquiries, useInquiryBoxes } from "./lead/LeadInquiries.tsx";
+import type { InquiryBoxesHeld } from "./lead/LeadInquiries.tsx";
 import { LeadRefusals } from "./lead/LeadRefusals.tsx";
 import {
   LeadHolding,
@@ -181,6 +189,7 @@ function LeadTurns(props: { readonly lead: LeadResponse }): ReactNode {
 function LeadBody(props: {
   readonly partition: PartitionIdentity;
   readonly state: PanelState<LeadResponse>;
+  readonly inquiries: InquiryBoxesHeld;
   readonly nowMs: number;
 }): ReactNode {
   const lead = props.state.state === "Ready" ? props.state.value : undefined;
@@ -209,6 +218,7 @@ function LeadBody(props: {
       <LeadInquiries
         partition={props.partition}
         head={lead?.agentReference}
+        held={props.inquiries}
         nowMs={props.nowMs}
       />
     </>
@@ -223,11 +233,17 @@ export function LeadPage(): ReactNode {
   };
   const nowMs = useNowMs();
   const state = useLead(partition);
+  const inquiries = useInquiryBoxes();
   if (state.state === "Absent")
     return <EmptyState label="No lead" variant="page" />;
   return (
     <div className="lead">
-      <LeadBody partition={partition} state={state} nowMs={nowMs} />
+      <LeadBody
+        partition={partition}
+        state={state}
+        inquiries={inquiries}
+        nowMs={nowMs}
+      />
     </div>
   );
 }

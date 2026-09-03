@@ -109,10 +109,11 @@ function inquiryDrawnFor(
  * re-sends the refused pair on every press.
  *
  * Nothing is held past an accepted send, and the caller is what forgets it;
- * either arm answers a draw naming the project it was asked for, which is what
- * lets the send, the write of its answer and the re-read of its listing all be
- * addressed by the draw rather than by whichever project is on screen when the
- * door answers.
+ * either arm answers a draw naming the project it was asked for, so a caller
+ * may address the send, the write of its answer and the re-read of its listing
+ * by the draw — which today names the same project the press closed over, the
+ * comparison here being this function's own precondition rather than a hazard
+ * its callers have.
  */
 export function inquiryDraw(
   held: InquiryDraw | undefined,
@@ -221,6 +222,21 @@ export const inquiryBoxEmpty: InquiryBox = {
 export type InquiryBoxes = Readonly<Record<string, InquiryBox>>;
 
 /**
+ * How many projects' boxes are kept at once. A reader bounces between a handful
+ * of projects and this holds far more than that, so the bound is house rule 9's
+ * — a record with no limit at all is unbounded in the length of a session —
+ * rather than a limit a reader is meant to feel.
+ */
+export const inquiryBoxesMax = 32;
+
+/** Whether a box is worth a place in the record, which is whether it holds
+ * anything a reader would miss: what they typed, or a pair a door has not
+ * taken. */
+function inquiryBoxHolds(box: InquiryBox): boolean {
+  return box.typed !== "" || box.held !== undefined;
+}
+
+/**
  * What a project's box is filed under. The two names are encoded rather than
  * joined, because either may contain whatever a join would separate them by and
  * two projects sharing a box is the fault this keying exists to prevent.
@@ -236,12 +252,28 @@ export function inquiryBoxOf(
   return boxes[inquiryBoxName(partition)] ?? inquiryBoxEmpty;
 }
 
+/**
+ * A box written, with the record kept bounded: a box holding nothing a reader
+ * would miss is dropped rather than filed, and past the cap the oldest box
+ * holding nothing is evicted. A BOX HOLDING A PAIR IS NEVER EVICTED — keeping
+ * one until its door takes it is the whole of what this record is for — so a
+ * reader with more outstanding sends than the cap keeps them all.
+ */
 export function inquiryBoxWith(
   boxes: InquiryBoxes,
   partition: PartitionIdentity,
   box: InquiryBox,
 ): InquiryBoxes {
-  return { ...boxes, [inquiryBoxName(partition)]: box };
+  const name = inquiryBoxName(partition);
+  const written: Record<string, InquiryBox> = { ...boxes };
+  if (inquiryBoxHolds(box) || box.ask.ask !== "Idle") written[name] = box;
+  else delete written[name];
+  if (Object.keys(written).length <= inquiryBoxesMax) return written;
+  const spare = Object.keys(written).find(
+    (held) => held !== name && !inquiryBoxHolds(written[held] ?? box),
+  );
+  if (spare !== undefined) delete written[spare];
+  return written;
 }
 
 /** A reader typing, which is the one thing that changes what a press would

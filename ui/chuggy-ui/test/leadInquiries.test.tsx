@@ -18,6 +18,7 @@ import type { ReactNode } from "react";
 import {
   LeadInquiries,
   leadInquiriesListName,
+  useInquiryBoxes,
 } from "../app/browser/lead/LeadInquiries.tsx";
 import { projectListRereadNamed } from "../app/core/projectQueryKeys.ts";
 import {
@@ -62,6 +63,26 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
+
+/**
+ * The panel under a caller that holds the boxes, which is what `LeadPage` is:
+ * the head is gated below this, so a switch that passes through an absent head
+ * is the page's own navigation and not a shape only a case can make.
+ */
+function InquiryHolder(props: {
+  readonly partition: PartitionIdentity;
+  readonly head: string | undefined;
+}): ReactNode {
+  const held = useInquiryBoxes();
+  return (
+    <LeadInquiries
+      partition={props.partition}
+      head={props.head}
+      held={held}
+      nowMs={Date.parse("2026-09-01T12:00:00Z")}
+    />
+  );
+}
 
 interface InquiryServer {
   readonly stream: ReturnType<typeof openedStream>;
@@ -122,20 +143,16 @@ async function drawInquiries(served: {
   const stream = openedStream();
   const client = new QueryClient();
   const head = "head" in served ? served.head : leadStream;
-  const panel = (partition: PartitionIdentity) => (
+  const panel = (partition: PartitionIdentity, at: string | undefined) => (
     <ScreenHarness
       partition={partition}
       client={client}
       transport={stream.ports.fetch}
     >
-      <LeadInquiries
-        partition={partition}
-        head={head}
-        nowMs={Date.parse("2026-09-01T12:00:00Z")}
-      />
+      <InquiryHolder partition={partition} head={at} />
     </ScreenHarness>
   );
-  const drawn = render(panel(leadPartition));
+  const drawn = render(panel(leadPartition, head));
   await settled();
   return {
     stream,
@@ -146,7 +163,11 @@ async function drawInquiries(served: {
     client,
     moveTo: async (partition: PartitionIdentity) => {
       await turned(() => {
-        drawn.rerender(panel(partition));
+        drawn.rerender(panel(partition, undefined));
+      });
+      await settled();
+      await turned(() => {
+        drawn.rerender(panel(partition, head));
       });
       await settled();
     },

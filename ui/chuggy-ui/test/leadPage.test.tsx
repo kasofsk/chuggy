@@ -11,7 +11,7 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -44,6 +44,7 @@ import {
 } from "./leadFixture.ts";
 import type { LeadServed } from "./leadFixture.ts";
 import type { LeadInquiriesResponse } from "../../../src/contract/responses.ts";
+import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
@@ -56,13 +57,18 @@ vi.mock("@tanstack/react-router", () => ({
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
-  useParams: () => ({ ...leadPartition }),
+  useParams: () => ({ ...drawnPartition }),
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
+
+/** Which project the router says this page is for, which a case moves the way a
+ * params-only navigation does. */
+let drawnPartition = { ...leadPartition };
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  drawnPartition = { ...leadPartition };
 });
 
 /** The page under its providers, over whatever fetch the case has stubbed. */
@@ -879,4 +885,113 @@ test("a stalled walk says the same word in both panels", async () => {
   ]);
   expect(screen.queryByText("No entries")).toBeNull();
   expect(screen.queryByText("Nothing held")).toBeNull();
+});
+
+/**
+ * A door whose first answer is lost and whose next one lands, recording where
+ * each pair was posted, which is what a case about pairs across a project
+ * switch reads.
+ */
+function askingLead(): {
+  readonly fetch: typeof fetch;
+  readonly posted: { readonly url: string; readonly session: string }[];
+} {
+  const posted: { readonly url: string; readonly session: string }[] = [];
+  let asks = 0;
+  const fetching = ((
+    url: string,
+    init?: { method?: string; body?: string },
+  ) => {
+    if (init?.method === "POST") {
+      const body = JSON.parse(init.body ?? "null") as { session: string };
+      posted.push({ url, session: body.session });
+      asks += 1;
+      return Promise.resolve(
+        asks === 1
+          ? answer({ error: { code: "InternalError", message: "no" } }, 500)
+          : answer(
+              { session: body.session, turn: "inq-turn-1", ordinal: 1 },
+              202,
+            ),
+      );
+    }
+    const found = leadRouteAnswer(url, opening);
+    return Promise.resolve(answer(found.body, found.status));
+  }) as unknown as typeof fetch;
+  return { fetch: fetching, posted };
+}
+
+/** The page, and the navigation that moves only the route's params — which is
+ * what reuses this instance rather than replacing it. */
+async function drawLeadPage(
+  fetching: typeof fetch,
+): Promise<(partition: PartitionIdentity) => Promise<void>> {
+  vi.stubGlobal("fetch", fetching);
+  const server = openedStream();
+  const client = new QueryClient();
+  const under = (partition: PartitionIdentity) => (
+    <ScreenHarness
+      partition={partition}
+      client={client}
+      transport={server.ports.fetch}
+    >
+      <LeadPage />
+    </ScreenHarness>
+  );
+  const page = render(under(drawnPartition));
+  await settled();
+  return async (partition: PartitionIdentity) => {
+    drawnPartition = { ...partition };
+    await turned(() => {
+      page.rerender(under(partition));
+    });
+    await settled();
+  };
+}
+
+function askQuestion(said: string): void {
+  fireEvent.change(screen.getByLabelText("Question"), {
+    target: { value: said },
+  });
+}
+
+/**
+ * THE HEAD THAT GATES THE ASK BOX IS ABSENT EXACTLY WHEN A READER MOVES. A
+ * project switch re-keys the lead read, which has no placeholder, so the page
+ * draws at least one render with no head at all — and a box held inside the
+ * control that head gates would be discarded by the navigation the box exists to
+ * survive, leaving the reader's question gone and their next press asking one
+ * door one question under a second pair.
+ */
+test("a project switch and a return leave the box and its pair where they were", async () => {
+  const asked = askingLead();
+  const moveTo = await drawLeadPage(asked.fetch);
+  const box = () => screen.getByLabelText<HTMLTextAreaElement>("Question");
+  askQuestion("why is ticket 41 waiting?");
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+  });
+  await settled();
+  expect(screen.getByText(/^Failed · /u)).toBeDefined();
+  await moveTo({ tenant: "acme", project: "beta" });
+  expect(
+    box().value,
+    "one project's question was drawn on another project's page",
+  ).toBe("");
+  await moveTo(leadPartition);
+  expect(
+    box().value,
+    "a reader came back to a project and found their question gone",
+  ).toBe("why is ticket 41 waiting?");
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+  });
+  await settled();
+  expect(
+    asked.posted.map((post) => post.url.includes("/projects/atlas/")),
+  ).toStrictEqual([true, true]);
+  expect(
+    asked.posted[1]?.session,
+    "the page forked one door twice for one question",
+  ).toBe(asked.posted[0]?.session);
 });

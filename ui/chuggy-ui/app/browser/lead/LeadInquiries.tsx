@@ -92,6 +92,54 @@ import { Pill } from "../ui/Pill.tsx";
 export const leadInquiriesListName = "inquiries";
 
 /**
+ * The boxes and the presses outstanding, held by a caller that no gate on this
+ * page unmounts.
+ *
+ * IT IS HELD ABOVE THE HEAD GATE BECAUSE THE HEAD IS ABSENT EXACTLY WHEN A
+ * READER MOVES — the lead read is `Pending` for a render after a project
+ * switch, a lead that has never settled a turn names no head at all, and a read
+ * that failed names none either, so a box held inside the control the head
+ * gates would be discarded by the navigation the whole shape exists to survive,
+ * and the next press would ask one door one question under two pairs.
+ */
+export interface InquiryBoxesHeld {
+  readonly boxes: InquiryBoxes;
+  readonly write: (
+    at: PartitionIdentity,
+    next: (box: InquiryBox) => InquiryBox,
+  ) => void;
+  /**
+   * Whether a project has a press outstanding, taken and released in the press
+   * itself: two presses inside one render read one render, so what says a press
+   * is out cannot be the drawn state, and it is reached through these rather
+   * than as a value because it is not a thing a render may read.
+   */
+  readonly outstanding: {
+    readonly taken: (name: string) => boolean;
+    readonly take: (name: string) => void;
+    readonly release: (name: string) => void;
+  };
+}
+
+export function useInquiryBoxes(): InquiryBoxesHeld {
+  const [boxes, setBoxes] = useState<InquiryBoxes>({});
+  const outstanding = useRef<Set<string>>(new Set());
+  return {
+    boxes,
+    outstanding: {
+      taken: (name) => outstanding.current.has(name),
+      take: (name) => outstanding.current.add(name),
+      release: (name) => outstanding.current.delete(name),
+    },
+    write: (at, next) => {
+      setBoxes((held) =>
+        inquiryBoxWith(held, at, next(inquiryBoxOf(held, at))),
+      );
+    },
+  };
+}
+
+/**
  * One project's inquiries, re-read on the `Session` frames naming an inquiry
  * and left alone by every other kind. Built from a project rather than closed
  * over the one on screen, because an accepted press re-reads the project it was
@@ -140,26 +188,20 @@ function LeadAskNotice(props: { readonly ask: InquiryAsk }): ReactNode {
  */
 function LeadAsk(props: {
   readonly partition: PartitionIdentity;
+  readonly held: InquiryBoxesHeld;
   readonly onAsked: (partition: PartitionIdentity) => void;
 }): ReactNode {
   const ports = useApiPorts();
   const partition = props.partition;
-  const [boxes, setBoxes] = useState<InquiryBoxes>({});
-  const outstanding = useRef<Set<string>>(new Set());
+  const { boxes, write, outstanding } = props.held;
   const box = inquiryBoxOf(boxes, partition);
   const question = inquiryQuestion(box.typed);
   const fault = inquiryQuestionFault(question);
   const shown = box.typed === "" ? undefined : fault;
-  const write = (
-    at: PartitionIdentity,
-    next: (box: InquiryBox) => InquiryBox,
-  ) => {
-    setBoxes((held) => inquiryBoxWith(held, at, next(inquiryBoxOf(held, at))));
-  };
   const submit = () => {
     const name = inquiryBoxName(partition);
-    if (outstanding.current.has(name)) return;
-    outstanding.current.add(name);
+    if (outstanding.taken(name)) return;
+    outstanding.take(name);
     const draw = inquiryDraw(box.held, question, partition, () =>
       base64urlFromBytes(drawBytes(inquiryIdentityBytesCount)),
     );
@@ -168,7 +210,7 @@ function LeadAsk(props: {
       const answered = inquiryAskAnswered(
         await apiAskLead(ports, draw.partition, inquiryAsking(draw)),
       );
-      outstanding.current.delete(name);
+      outstanding.release(name);
       write(draw.partition, (held) => inquiryBoxAnswered(held, draw, answered));
       if (answered.ask !== "Asked") return;
       props.onAsked(draw.partition);
@@ -284,6 +326,8 @@ export function LeadInquiries(props: {
   readonly partition: PartitionIdentity;
   /** The lead's runtime reference, which is the head a fork is taken from. */
   readonly head: string | undefined;
+  /** The boxes, held by a caller no gate here unmounts. */
+  readonly held: InquiryBoxesHeld;
   readonly nowMs: number;
 }): ReactNode {
   const partition = props.partition;
@@ -296,6 +340,7 @@ export function LeadInquiries(props: {
       {props.head === undefined ? null : (
         <LeadAsk
           partition={partition}
+          held={props.held}
           onAsked={(at) => {
             void client.invalidateQueries({
               queryKey: leadInquiriesList(at).key,
