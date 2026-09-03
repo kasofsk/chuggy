@@ -132,6 +132,7 @@ export const selectorProjectOverridesSchema = z.strictObject({
       tokensPerDecision: selectorLimitSchema.optional(),
       millisecondsPerDecision: selectorLimitSchema.optional(),
       toolCallsPerDecision: selectorLimitSchema.optional(),
+      dispatchesPerDecision: selectorLimitSchema.optional(),
       inputBytesPerDecision: selectorLimitSchema.optional(),
       candidatePagesPerDecision: selectorLimitSchema.optional(),
     })

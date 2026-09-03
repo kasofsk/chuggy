@@ -16,6 +16,8 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { SelectorSettingsPage } from "../app/browser/SelectorSettingsPage.tsx";
+import { selectorProjectOverridesSchema } from "../../../src/contract/requests.ts";
+import { selectorSettingsLimitNames } from "../app/core/selectorSettingsForm.ts";
 import {
   answer,
   openedStream,
@@ -412,7 +414,7 @@ test("a conflict does not carry a limit this reader never touched", async () => 
           body: {
             error: { code: "SettingsRevisionConflict", message: "moved" },
             settings: settingsBody(14, {
-              limits: { tokensPerDecision: 900_000 },
+              limits: { tokensPerDecision: 900_000, dispatchesPerDecision: 2 },
             }),
           },
           status: 409,
@@ -433,13 +435,54 @@ test("a conflict does not carry a limit this reader never touched", async () => 
   expect(screen.getByLabelText<HTMLInputElement>("Tokens").value).toBe(
     "900000",
   );
+  expect(screen.getByLabelText<HTMLInputElement>("Dispatches").value).toBe("2");
   await turned(save);
   await settled();
   expect(server.written()).toStrictEqual({
     expectedRevision: 14,
     overrides: {
       northStar: "ship the lead page",
-      limits: { tokensPerDecision: 900_000 },
+      limits: { tokensPerDecision: 900_000, dispatchesPerDecision: 2 },
+    },
+  });
+});
+
+/**
+ * The boxes and the wire's own limit roster are one set, read from the schema
+ * rather than listed again. A limit the wire admits and the form draws no box
+ * for is not merely invisible: the write rebuilds the whole limit set from the
+ * boxes, so the first edit to anything would drop it.
+ */
+test("the form draws a box for every limit the wire admits", () => {
+  expect([...selectorSettingsLimitNames].sort()).toStrictEqual(
+    Object.keys(
+      (
+        selectorProjectOverridesSchema.shape.limits.unwrap() as never as {
+          readonly shape: Readonly<Record<string, unknown>>;
+        }
+      ).shape,
+    ).sort(),
+  );
+});
+
+test("a limit a project set survives a save that edits the North Star", async () => {
+  const server = await drawSettings(
+    () => ({ body: settingsBody(13, {}), status: 200 }),
+    settingsBody(12, { limits: { dispatchesPerDecision: 2 } }),
+  );
+  expect(screen.getByLabelText<HTMLInputElement>("Dispatches").value).toBe("2");
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("North Star"), {
+      target: { value: "ship the lead page" },
+    });
+  });
+  await turned(save);
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 12,
+    overrides: {
+      northStar: "ship the lead page",
+      limits: { dispatchesPerDecision: 2 },
     },
   });
 });

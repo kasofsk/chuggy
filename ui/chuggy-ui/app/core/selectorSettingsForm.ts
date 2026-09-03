@@ -44,6 +44,7 @@ export const selectorSettingsLimitNames = [
   "tokensPerDecision",
   "millisecondsPerDecision",
   "toolCallsPerDecision",
+  "dispatchesPerDecision",
   "inputBytesPerDecision",
   "candidatePagesPerDecision",
 ] as const;
@@ -98,6 +99,7 @@ function selectorSettingsLimitDraft(
     tokensPerDecision: named("tokensPerDecision"),
     millisecondsPerDecision: named("millisecondsPerDecision"),
     toolCallsPerDecision: named("toolCallsPerDecision"),
+    dispatchesPerDecision: named("dispatchesPerDecision"),
     inputBytesPerDecision: named("inputBytesPerDecision"),
     candidatePagesPerDecision: named("candidatePagesPerDecision"),
   };
@@ -150,6 +152,7 @@ function selectorSettingsLimitsRebased(
     tokensPerDecision: rebased("tokensPerDecision"),
     millisecondsPerDecision: rebased("millisecondsPerDecision"),
     toolCallsPerDecision: rebased("toolCallsPerDecision"),
+    dispatchesPerDecision: rebased("dispatchesPerDecision"),
     inputBytesPerDecision: rebased("inputBytesPerDecision"),
     candidatePagesPerDecision: rebased("candidatePagesPerDecision"),
   };
@@ -237,6 +240,8 @@ export function selectorSettingsLimitLabel(
       return "Milliseconds";
     case "toolCallsPerDecision":
       return "Tool calls";
+    case "dispatchesPerDecision":
+      return "Dispatches";
     case "inputBytesPerDecision":
       return "Input bytes";
     case "candidatePagesPerDecision":
