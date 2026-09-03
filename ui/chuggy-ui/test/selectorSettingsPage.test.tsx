@@ -585,6 +585,59 @@ test("a conflict keeps a typed dispatch budget and takes the rest", async () => 
 });
 
 /**
+ * THE REBASE IS PER BOX AND NOT PER LIMIT SET, and this is the direction no
+ * other case reaches: a limit typed in *and* a different limit moved under it.
+ * `limits` is one override on the wire, so a rebase taking the reader's whole
+ * set wherever one box in it was touched reads as harmless and is the lost
+ * update the per-box rule exists to refuse — the arriving ceiling is discarded
+ * unseen and the next save writes the stale one back under a revision that by
+ * then matches.
+ */
+test("a conflict rebases a limit beside the budget this reader typed", async () => {
+  let conflicting = true;
+  const server = await drawSettings(
+    () => {
+      if (conflicting) {
+        conflicting = false;
+        return {
+          body: {
+            error: { code: "SettingsRevisionConflict", message: "moved" },
+            settings: settingsBody(14, {
+              limits: { tokensPerDecision: 900_000, dispatchesPerDecision: 1 },
+            }),
+          },
+          status: 409,
+        };
+      }
+      return { body: settingsBody(15, {}), status: 200 };
+    },
+    settingsBody(12, {
+      limits: { tokensPerDecision: 100, dispatchesPerDecision: 1 },
+    }),
+  );
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("Dispatches"), {
+      target: { value: "5" },
+    });
+  });
+  await turned(save);
+  await settled();
+  expect(
+    screen.getByLabelText<HTMLInputElement>("Tokens").value,
+    "a ceiling nobody here typed was held over the one that arrived",
+  ).toBe("900000");
+  expect(screen.getByLabelText<HTMLInputElement>("Dispatches").value).toBe("5");
+  await turned(save);
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 14,
+    overrides: {
+      limits: { tokensPerDecision: 900_000, dispatchesPerDecision: 5 },
+    },
+  });
+});
+
+/**
  * THE CEILING IS THE ROUTE'S AND THE PAGE SHOWS WHAT THE ROUTE SAID. What a
  * decision may dispatch is bounded by the selector, and
  * `console-reaches-no-source` is why no copy of that bound can be here: a
