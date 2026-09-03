@@ -35,6 +35,7 @@ import {
 import {
   nativeHttpPathSegmentCharsMax,
   projectChangeResourceCharsMax,
+  sessionIdentityCharsMax,
   selectorHandoffNoteBytesMax,
   sessionTurnInputCharsMax,
   sessionTurnResultCharsMax,
@@ -45,6 +46,8 @@ import {
   leadTokensPerDecision,
 } from "../../src/adapters/postgres/schema/migrations/059-lead-decisions.ts";
 import { allSessionTurnFailures } from "../../src/interpreter/agentSession.ts";
+import { allSessionAttemptEvidences } from "../../src/interpreter/sessionScheduler.ts";
+import { schemaContractAccepts } from "../../src/interpreter/serviceRuntime.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import { resumeTags } from "../../src/domain/generated/modelTypes.ts";
 import { schemaCompatibilityPrecondition } from "../../src/interpreter/serviceRuntime.ts";
@@ -2317,6 +2320,87 @@ test("migration 59 widens a turn's input check installed before an observation g
       () => subject.query(widen, [sessionTurnInputCharsMax + 1]),
       /session_turn_text_is_bounded/u,
       "the widened check is still a check",
+    );
+  });
+});
+
+test("058, 059 and 060 compose into the schema a fresh generation renders", async () => {
+  await migrationDatabase("lead_composition", async (subject) => {
+    await migrationSeedApplied(subject, 61);
+    const definition = async (relation: string, constraint: string) =>
+      (
+        await subject.query<{ definition: string }>(
+          `SELECT pg_get_constraintdef(c.oid) AS definition
+             FROM pg_constraint c
+            WHERE c.conrelid = $1::regclass AND c.conname = $2`,
+          [relation, constraint],
+        )
+      ).rows[0]?.definition;
+
+    const members = async (relation: string, constraint: string) => {
+      const held = await definition(relation, constraint);
+      assert.ok(held !== undefined, `${constraint} was not found`);
+      return [...held.matchAll(/'([^']+)'::text/gu)].map((each) => each[1]);
+    };
+
+    assert.deepEqual(
+      await members("project_change", "project_change_kind_is_known"),
+      [...allProjectChangeKinds],
+      "the kind roster 043 wrote and 059 replaced is the roster on main",
+    );
+    assert.deepEqual(
+      await members("session_turn", "session_turn_failure_is_known"),
+      [...allSessionTurnFailures],
+      "the failure roster 058 wrote and 059 replaced is the roster on main",
+    );
+    assert.deepEqual(
+      await members("session_attempt", "session_attempt_evidence_is_known"),
+      [...allSessionAttemptEvidences],
+      "the evidence roster 058 wrote and 060 replaced is the roster on main",
+    );
+    for (const [relation, constraint, bound] of [
+      [
+        "project_change",
+        "project_change_resource_is_bounded",
+        projectChangeResourceCharsMax,
+      ],
+      [
+        "session_turn",
+        "session_turn_identity_is_bounded",
+        sessionIdentityCharsMax,
+      ],
+    ] as const) {
+      const held = await definition(relation, constraint);
+      assert.ok(held?.includes(String(bound)), `${constraint} holds its bound`);
+    }
+    const input = await definition(
+      "session_turn",
+      "session_turn_text_is_bounded",
+    );
+    assert.ok(input?.includes(String(sessionTurnInputCharsMax)));
+    assert.ok(input?.includes(String(sessionTurnResultCharsMax)));
+  });
+});
+
+test("the ledger the api image reads accepts what 058, 059 and 060 applied", async () => {
+  await migrationDatabase("lead_ledger", async (subject) => {
+    await migrationSeedApplied(subject, 61);
+    const applied = await postgresRuntimeSchema(subject).applied(
+      new AbortController().signal,
+    );
+    assert.equal(
+      applied.length,
+      Math.max(...applied.map((each) => each.version)),
+      "the ledger holds one row per version with no gap and no repeat",
+    );
+    assert.deepEqual(
+      applied.map((each) => each.version).slice(-3),
+      [58, 59, 60],
+      "the three apply in the order their filenames give them",
+    );
+    assert.ok(
+      schemaContractAccepts(currentRuntimeSchemaContract, applied),
+      "the prefix an api image requires is the prefix these three leave",
     );
   });
 });
