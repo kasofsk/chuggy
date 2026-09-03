@@ -620,6 +620,7 @@ function processCluster(reachable: boolean): string {
       apiUrl: 'https://chuggy-api.invalid',
     };
     const asked = [];
+    const sessionTasks = [];
     const half = (init) => {
       const named = init && init.body ? JSON.parse(init.body).metadata.name : '';
       if (named.startsWith(cluster.podNamePrefix)) return ' worker';
@@ -631,6 +632,9 @@ function processCluster(reachable: boolean): string {
       if (!${String(reachable)}) return Promise.reject(new Error('connection refused'));
       if (init && init.method === 'POST' && String(input).endsWith('/pods')) {
         const submitted = JSON.parse(init.body);
+        if (submitted.metadata.name.startsWith(sessionSite.podNamePrefix))
+          sessionTasks.push(JSON.parse(submitted.spec.containers[0].env
+            .find((variable) => variable.name === 'CHUG_SESSION_TASK').value));
         return Promise.resolve(Response.json({
           metadata: { ...submitted.metadata, uid: 'pod-uid-one' },
         }, { status: 201 }));
@@ -702,6 +706,11 @@ function processSessionFakes(): string {
       attemptPlaced: async (_attempt, placement) => { sessionPlaced.push(placement); return true; },
       attemptEnded: async () => true,
     };
+    const sessionBindings = {
+      binding: async (asked) => ({
+        partition: asked, repository: 'chuggy', recoveryEpoch: 'epoch-one',
+      }),
+    };
   `;
 }
 
@@ -758,6 +767,7 @@ function processProgram(reachable: boolean): string {
     };
     const sessionService = {
       store: sessionStore,
+      bindings: sessionBindings,
       placement: sessionLaunch.kubernetesSessionLaunch(sessionSite, fetcher),
       bearers: mint.sessionAttemptMint(),
       policy: {
@@ -780,7 +790,7 @@ function processProgram(reachable: boolean): string {
     const health = runtime.health();
     const stopped = await runtime.stop();
     process.stdout.write(JSON.stringify({
-      started, health, stopped, placed, sessionPlaced, asked,
+      started, health, stopped, placed, sessionPlaced, sessionTasks, asked,
     }));
   `;
 }
@@ -796,6 +806,9 @@ interface ProcessRan {
   readonly stopped?: unknown;
   readonly placed: readonly string[];
   readonly sessionPlaced: readonly string[];
+  readonly sessionTasks: readonly {
+    readonly repository?: { readonly reference: string };
+  }[];
   readonly asked: readonly string[];
 }
 
@@ -835,6 +848,19 @@ test("the same tick places the session waiting for a pod, after the worker", asy
     `POST ${namespaceUrl}/pods session`,
     `POST ${namespaceUrl}/secrets session`,
   ]);
+});
+
+/**
+ * The binding reaches the pod, which neither tier alone can say. Which adapter
+ * the real root reaches for is `test/postgres/schedulerRoot.test.ts`, since the
+ * `bindings` here is this case's own fake.
+ */
+test("the session pod is handed the repository its project binds", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(processProgram(true)),
+  ) as ProcessRan;
+  assert.equal(found.sessionTasks.length, 1);
+  assert.deepEqual(found.sessionTasks[0]?.repository, { reference: "chuggy" });
 });
 
 test("a cluster that does not answer is a named could-not-run and never readiness", async () => {

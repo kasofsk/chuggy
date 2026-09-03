@@ -23,7 +23,7 @@ export const rejection = {
 };
 
 export const bearerFile = "/var/run/chuggy/session-capability/bearer";
-const credentialFile = "/var/run/chuggy/credentials/claude-code";
+export const credentialFile = "/var/run/chuggy/credentials/claude-code";
 export const bearer = "chgs_0123456789abcdef0123456789abcdef";
 export const token = "sk-ant-oat01-0123456789abcdefghijklmnop";
 

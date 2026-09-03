@@ -17,6 +17,7 @@ import {
   boundaryOwnerRole,
   configurationImporterRole,
   finalizerRole,
+  repositoryBindingReadFunction,
   schedulerRole,
   selectorServiceRole,
   sessionAttemptBindingFunction,
@@ -239,4 +240,21 @@ test("the API may read the session an operation came through and no more of it",
     [apiRole],
   )) as readonly { reads: boolean; writes: boolean }[];
   assert.deepEqual(held, [{ reads: true, writes: false }]);
+});
+
+/**
+ * The grant the session pass needs, which slice 3's migration 061 adds and this
+ * tree does not carry. Until it lands this case is red, and a session placement
+ * pass raises on the read and stops.
+ */
+test("the scheduler may read a project's repository binding, which its session pass needs", async () => {
+  const refused = await harness.attemptAs(
+    schedulerRole,
+    `SELECT * FROM ${repositoryBindingReadFunction}('tenant','project')`,
+  );
+  assert.equal(
+    refused,
+    undefined,
+    `${schedulerRole} cannot execute ${repositoryBindingReadFunction}: slice 3's migration 061 has not granted it, and until it does every session placement pass raises and stops`,
+  );
 });

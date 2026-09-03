@@ -399,8 +399,11 @@ export interface SchedulerProcessRootConfig {
     ExecutionSchedulerService,
     "store" | "configurations" | "priorWorkReports" | "ticketBriefs"
   >;
-  /** The session half of the same process; its own store comes from the same pool. */
-  readonly sessions: Omit<SessionSchedulerService, "store">;
+  /**
+   * The session half of the same process; its own store and its binding read
+   * come from the same pool, so a deployment names neither.
+   */
+  readonly sessions: Omit<SessionSchedulerService, "store" | "bindings">;
   readonly workerCatalog: readonly AdmittedWorker[];
   readonly additional?: readonly RuntimePrecondition[];
 }
@@ -419,6 +422,24 @@ export function schedulerProcessRootService(
   };
 }
 
+/**
+ * Composes the session half with the PostgreSQL ports its process owns. It is
+ * separate from `schedulerProcessRoot` so a suite can say which adapters the
+ * root reaches for without standing up a process: the binding read in
+ * particular is one a stub would satisfy the type of and answer nothing from,
+ * which is a deployment placing every session with no tree.
+ */
+export function schedulerProcessRootSessions(
+  pool: pg.Pool,
+  sessions: SchedulerProcessRootConfig["sessions"],
+): SessionSchedulerService {
+  return {
+    ...sessions,
+    store: postgresSessionScheduler(pool),
+    bindings: postgresProjectRepositoryBinding(pool),
+  };
+}
+
 /** Owns the scheduler-role pool while its cluster and policy adapters stay explicit ports. */
 export function schedulerProcessRoot(
   config: SchedulerProcessRootConfig,
@@ -429,7 +450,7 @@ export function schedulerProcessRoot(
     pool,
     schedulerProcess(
       service,
-      { ...config.sessions, store: postgresSessionScheduler(pool) },
+      schedulerProcessRootSessions(pool, config.sessions),
       config.identity,
       {
         pool,

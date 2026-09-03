@@ -34,10 +34,38 @@
  * NOTHING HERE READS A CLOCK. The lease, the placement backoff and the idle
  * horizon are durations handed to the store, which asks the database what time
  * it is; `eslint.config.js` says so for this directory.
+ *
+ * THE REPOSITORY IS RESOLVED PER SESSION AND A PROJECT THAT BINDS NONE IS
+ * PLACED ANYWAY. Which repository a session reads is the project's own binding
+ * rather than the site's policy, so it is read here, once per placement — per
+ * *placement*, not per tenant: the binding is a project fact, one page of
+ * `awaitingPlacement` routinely carries several projects of one tenant, and a
+ * session handed another project's reference would clone another project's
+ * tree and `cwd` its model into it. A project with no binding places a session
+ * with no checkout: the session reads the project through the API and has no
+ * tree. A binding read that *fails* stops the pass instead, because placing
+ * every session with no checkout is how a missing grant would look, and a
+ * control that degrades silently is one nobody can tell from a working one.
+ *
+ * THAT READ NEEDS A GRANT THIS TREE DOES NOT YET CARRY. The pass runs as
+ * `chuggy_scheduler`, and every `GRANT EXECUTE ON FUNCTION
+ * read_project_repository_binding` in the ledger names some other role;
+ * slice 3's migration 061 adds the scheduler's. Until it lands, the first
+ * placement of every deployment raises `permission denied` and — by the
+ * paragraph above — stops the session half of the pass.
+ * `test/postgres/sessionPrivileges.test.ts` asserts the grant and is what says
+ * when this is no longer true. It is read BEFORE the attempt is opened for that
+ * reason: the read depends on nothing an attempt produces, and a raise after
+ * `openAttempt` would leave an opened, unplaced attempt that nothing cancels
+ * and that costs a whole lease window to reap — once per pass, per deployment,
+ * for as long as the grant is missing. It reads for a session whose attempt is
+ * then refused, which the older order did not; that is one definer call per
+ * refused session per pass, and simplicity over performance takes it.
  */
 
 import type { AgentSession, SessionAttemptId } from "./agentSession.ts";
 import type { RecoveryEpoch } from "./projectStore.ts";
+import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
 import {
   checkedSessionSchedulerConfig,
   type FencedSessionAttempt,
@@ -66,6 +94,8 @@ export interface SessionSchedulerService {
   readonly placement: SessionPlacementPort;
   readonly bearers: SessionAttemptMint;
   readonly policy: SessionPolicy;
+  /** Where the repository a placed session reads comes from, which is the project's binding. */
+  readonly bindings: ProjectRepositoryBindingRead;
   readonly config: SessionSchedulerConfig;
 }
 
@@ -158,6 +188,7 @@ async function sessionPlaceOne(
   epoch: RecoveryEpoch,
 ): Promise<boolean> {
   const config = checkedSessionSchedulerConfig(service.config);
+  const binding = await service.bindings.binding(session.partition);
   const minted = service.bearers.mint();
   const opened = await service.store.openAttempt({
     partition: session.partition,
@@ -187,6 +218,7 @@ async function sessionPlaceOne(
       image: service.policy.image,
       authority: service.policy.grant,
       bearer: minted.bearer,
+      ...(binding === undefined ? {} : { repository: binding.repository }),
     }),
   );
 }

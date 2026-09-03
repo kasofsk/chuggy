@@ -15,6 +15,7 @@ import {
 import { observeRateLimit, rateLimitSightings } from "./rateLimit.mjs";
 import {
   bearer,
+  credentialFile,
   environment,
   facts,
   planeOf,
@@ -834,4 +835,171 @@ test("a thread originates through the API under its own session bearer, and answ
       .result,
     "filed ticket 14",
   );
+});
+
+test("a session with a checkout runs in it, and one without runs in the bare workspace", async () => {
+  for (const [checkout, cwd] of [
+    [undefined, "/workspace"],
+    [
+      { directory: "/workspace/repository", commit: "a".repeat(40) },
+      "/workspace/repository",
+    ],
+  ]) {
+    const plane = planeOf([], facts);
+    const { seen, query } = queryOf(() => []);
+
+    await run({
+      request: plane.request,
+      query,
+      checkout: async () => checkout,
+    });
+
+    assert.equal(seen.options.cwd, cwd);
+    assert.equal(
+      seen.options.env.CLAUDE_CONFIG_DIR,
+      "/workspace/.claude",
+      "the runtime's local mirror moved into the git working tree",
+    );
+    assert.deepEqual(seen.options.settingSources, ["project"]);
+  }
+});
+
+test("the checkout is asked for what the placement bound, under the session's own workspace", async () => {
+  const plane = planeOf([], facts);
+  const { query } = queryOf(() => []);
+  const asked = [];
+
+  await run({
+    request: plane.request,
+    query,
+    environment: {
+      ...environment,
+      CHUG_SESSION_TASK: JSON.stringify({
+        ...task,
+        repository: { reference: "chuggy" },
+      }),
+      CHUG_WORKER_REPOSITORIES: JSON.stringify({ chuggy: { url: "git://x" } }),
+    },
+    checkout: async (
+      checkoutTask,
+      repositories,
+      credentialFiles,
+      workspace,
+    ) => {
+      asked.push({ checkoutTask, repositories, credentialFiles, workspace });
+      return undefined;
+    },
+  });
+
+  assert.equal(asked.length, 1);
+  assert.deepEqual(asked[0].checkoutTask.repository, { reference: "chuggy" });
+  assert.deepEqual(asked[0].repositories, { chuggy: { url: "git://x" } });
+  assert.deepEqual(asked[0].credentialFiles, { "claude-code": credentialFile });
+  assert.equal(asked[0].workspace, "/workspace");
+});
+
+test("a site that names no repository map still runs the sessions that bind none", async () => {
+  const plane = planeOf([], facts);
+  const { query } = queryOf(() => []);
+
+  const code = await run({ request: plane.request, query });
+
+  assert.equal(code, 0);
+});
+
+/**
+ * The runtime derives `projectKey` from the sanitised `cwd`, so moving `cwd` to
+ * a checkout is the one change in this unit that could rename every stream a
+ * session has ever written — and a renamed stream is a resumed lead that finds
+ * no transcript. Both runs write through the real store adapter, so what is
+ * compared is the path the plane was asked for.
+ */
+test("moving cwd to the checkout does not move the store stream a resumed session reads", async () => {
+  const written = [];
+  for (const checkout of [
+    undefined,
+    { directory: "/workspace/repository", commit: "b".repeat(40) },
+  ]) {
+    const plane = planeOf([turnOne], facts);
+    const { query } = queryOf((_asked, _index, options) => [
+      { type: "system", subtype: "init", session_id: "runtime-1" },
+      () =>
+        options.sessionStore.append(
+          {
+            projectKey: options.cwd.replaceAll("/", "-"),
+            sessionId: "runtime-1",
+          },
+          [{ uuid: "a", type: "assistant" }],
+        ),
+      result("success", { result: "ok" }),
+    ]);
+
+    await run({
+      request: plane.request,
+      query,
+      checkout: async () => checkout,
+    });
+
+    written.push(
+      plane.calls
+        .filter(({ path }) => path.startsWith("/v1/session/store/"))
+        .map(({ path }) => path),
+    );
+  }
+
+  assert.deepEqual(written[0], ["/v1/session/store/runtime-1/1"]);
+  assert.deepEqual(written[1], written[0]);
+});
+
+/**
+ * The clone is the longest thing the pod does before its first turn, and the
+ * attempt's lease is already running down when the pod starts — so the lease is
+ * kept before the clone is asked for, and a clone slower than what is left of
+ * the lease is not reaped mid-clone. What this holds is that order; that a
+ * kept lease reaches the plane is `lease.mjs`'s own.
+ */
+test("the lease is kept before the clone is asked for", async () => {
+  const plane = planeOf([], facts);
+  const { query } = queryOf(() => []);
+  const order = [];
+
+  await run({
+    request: plane.request,
+    query,
+    lease: () => {
+      order.push("lease");
+      return async () => undefined;
+    },
+    checkout: async () => {
+      order.push("checkout");
+      return undefined;
+    },
+  });
+
+  assert.deepEqual(order, ["lease", "checkout"]);
+});
+
+/**
+ * The scrub the checkout is handed must be the one built from this pod's
+ * secrets, not the identity function `sessionMain` starts with. Asserting it at
+ * the parameter would pass with either, so it is asserted at the wiring: what
+ * the checkout was actually given, redacting what a failed clone could print.
+ */
+test("the checkout is handed the scrub built from this pod's own secrets", async () => {
+  const plane = planeOf([], facts);
+  const { query } = queryOf(() => []);
+  let handed;
+
+  await run({
+    request: plane.request,
+    query,
+    checkout: async (_task, _repositories, _files, _workspace, logging) => {
+      handed = logging.scrub;
+      return undefined;
+    },
+  });
+
+  const printed = handed(`git failed: token ${token} bearer ${bearer}`);
+  assert.ok(!printed.includes(token), "a failed clone would print the token");
+  assert.ok(!printed.includes(bearer), "a failed clone would print the bearer");
 });

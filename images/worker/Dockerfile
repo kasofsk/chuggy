@@ -73,6 +73,7 @@ COPY images/worker/result.mjs /usr/local/lib/chuggy/result.mjs
 COPY images/worker/runEvidence.mjs /usr/local/lib/chuggy/runEvidence.mjs
 COPY images/worker/sdkProbe.mjs /usr/local/lib/chuggy/sdkProbe.mjs
 COPY images/worker/session.mjs /usr/local/lib/chuggy/session.mjs
+COPY images/worker/sessionCheckout.mjs /usr/local/lib/chuggy/sessionCheckout.mjs
 COPY images/worker/sessionMailbox.mjs /usr/local/lib/chuggy/sessionMailbox.mjs
 COPY images/worker/sessionStore.mjs /usr/local/lib/chuggy/sessionStore.mjs
 COPY images/worker/sessionTransport.mjs /usr/local/lib/chuggy/sessionTransport.mjs

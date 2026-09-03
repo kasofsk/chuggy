@@ -27,8 +27,11 @@ import { execFile } from "node:child_process";
 import { after, before, test } from "node:test";
 import { promisify } from "node:util";
 
+import { randomUUID } from "node:crypto";
+
 import { schedulerRole } from "../../src/adapters/postgres/schema.ts";
 import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
+import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
@@ -73,6 +76,25 @@ before(async () => {
     throw new Error("scheduler root configuration was not created");
   configurationDigest = created.revision.digest;
 });
+
+/** The session half's binding read, made by the composition root itself. */
+function schedulerRootBindingProgram(partition: Partition): string {
+  return `
+    const roots = await import('./src/roots/controlPlane.ts');
+    const pools = await import('./src/adapters/postgres/pool.ts');
+    const ports = await import('./test/postgres/schedulerRootPorts.ts');
+    const pool = pools.postgresPool(${JSON.stringify(schedulerRootUrl())});
+    const sessions = roots.schedulerProcessRootSessions(pool, ports.schedulerRootSessions);
+    let read;
+    try {
+      read = { binding: await sessions.bindings.binding(${JSON.stringify(partition)}) };
+    } catch (failure) {
+      read = { refused: failure.message };
+    }
+    await pool.end();
+    process.stdout.write(JSON.stringify(read));
+  `;
+}
 
 function schedulerRootConfigurationProgram(): string {
   return `
@@ -180,4 +202,46 @@ test("the production scheduler root reads configurations through PostgreSQL", as
   );
   const read = JSON.parse(result.stdout) as { readonly read: string };
   assert.equal(read.read, "Configuration");
+});
+
+/**
+ * Which adapter the root reaches for, asked as the scheduler's own role: a stub
+ * would satisfy the type and answer nothing, and that is every session placed
+ * with no tree.
+ */
+test("the scheduler root reads the binding its session pass places on", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "scheduler-root-binding",
+  );
+  const repository = asRepositoryId(
+    `scheduler-root-repository-${randomUUID()}`,
+  );
+  await harness.query(
+    `INSERT INTO project_repository(tenant,project,repository,recovery_epoch)
+     VALUES($1,$2,$3,$4)`,
+    [partition.tenant, partition.project, repository, epoch],
+  );
+
+  const result = await execute(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--input-type=module",
+      "--eval",
+      schedulerRootBindingProgram(partition),
+    ],
+    { cwd: process.cwd() },
+  );
+  const read = JSON.parse(result.stdout) as {
+    readonly binding?: { readonly repository: string };
+    readonly refused?: string;
+  };
+
+  assert.equal(
+    read.refused,
+    undefined,
+    "slice 3's migration 061 has not granted the scheduler this read",
+  );
+  assert.equal(read.binding?.repository, repository);
 });
