@@ -1,6 +1,7 @@
 import {
   agenticRefusalReasonCharsMax,
   agenticRefusalsAnsweredMax,
+  leadDispatchesMax,
   selectorHandoffNoteBytesMax,
   selectorSettingsTextCharsMax,
   sessionTurnInputCharsMax,
@@ -341,14 +342,7 @@ export interface SelectorPolicyResult {
   readonly planningIntent?: JsonValue;
 }
 
-/**
- * The most tickets any decision may dispatch, whatever a project asks for: the
- * parse ceiling, refusing a document naming more before any of it is read. What
- * a project may ask for inside it is `limits.dispatchesPerDecision`, judged on
- * the finished turn — two bounds for two questions, and the project's may only
- * narrow this one.
- */
-export const leadDispatchesMax = 8;
+export { leadDispatchesMax };
 
 /**
  * What a controls row written before `dispatchesPerDecision` existed resolves

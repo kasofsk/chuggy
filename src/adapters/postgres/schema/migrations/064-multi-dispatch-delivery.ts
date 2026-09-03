@@ -182,6 +182,17 @@ const settlementNamesItsTicket = [
 ];
 
 /**
+ * The widest dispatch budget a project may hold, which is the ceiling a lead
+ * decision is parsed under. It is frozen here rather than read from the
+ * interpreter that states it, because a constraint whose text followed a
+ * moving constant would differ between a database migrated before the move and
+ * one migrated after, and nothing in the ledger can see that; the case driving
+ * this column against the parse ceiling is what reddens a move that left this
+ * behind.
+ */
+const projectDispatchesMax = 8;
+
+/**
  * The column a project holds its own dispatch budget in, and the history
  * beside it. The history takes no check of its own, as none of the five limit
  * columns beside it does: its only writer copies a row the settings table has
@@ -191,8 +202,9 @@ const settlementNamesItsTicket = [
 const projectDispatchBudget = [
   `ALTER TABLE selector_project_settings
      ADD COLUMN dispatches_per_decision bigint,
-     ADD CONSTRAINT selector_project_dispatches_are_positive CHECK (
-       dispatches_per_decision IS NULL OR dispatches_per_decision >= 1)`,
+     ADD CONSTRAINT selector_project_dispatches_are_bounded CHECK (
+       dispatches_per_decision IS NULL
+         OR dispatches_per_decision BETWEEN 1 AND ${projectDispatchesMax})`,
   `ALTER TABLE selector_project_settings_history
      ADD COLUMN dispatches_per_decision bigint`,
 ];

@@ -34,7 +34,10 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import { selectorProjectOverridesSchema } from "../../src/contract/requests.ts";
-import { dispatchesPerDecisionUnstated } from "../../src/interpreter/selector.ts";
+import {
+  dispatchesPerDecisionUnstated,
+  leadDispatchesMax,
+} from "../../src/interpreter/selector.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/064-multi-dispatch-delivery.ts";
 import type { SelectorProjectSettingsRecord } from "../../src/interpreter/selectorProjectSettings.ts";
 import {
@@ -1045,7 +1048,7 @@ test("a project's dispatch budget is a column, and a budget of none is not one",
   try {
     await assert.rejects(
       () => write(0, 0),
-      /selector_project_dispatches_are_positive/,
+      /selector_project_dispatches_are_bounded/,
     );
     assert.deepEqual(await write(0, 5), [{ revision: "1" }]);
     const held = await store.read(partition);
@@ -1071,4 +1074,30 @@ test("a project's dispatch budget is a column, and a budget of none is not one",
   } finally {
     await pool.end();
   }
+});
+
+/**
+ * The column's ceiling is the one a decision is parsed under, because a
+ * project holding more would have every decision that spent it refused before
+ * any of the document was read. The definer is driven rather than the door:
+ * the wire schema refuses first, and the column is what answers anything that
+ * reaches the row another way.
+ */
+test("a project's dispatch budget stops at the ceiling its decisions are parsed under", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "selector-dispatch-ceiling",
+  );
+  const write = (revision: number, dispatches: number) =>
+    harness.query(
+      `SELECT revision::text FROM update_selector_project_settings(
+         $1,$2,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,$4,
+         NULL,NULL,NULL,'User','selector-admin')`,
+      [partition.tenant, partition.project, revision, dispatches],
+    );
+  await assert.rejects(
+    () => write(0, leadDispatchesMax + 1),
+    /selector_project_dispatches_are_bounded/,
+  );
+  assert.deepEqual(await write(0, leadDispatchesMax), [{ revision: "1" }]);
 });

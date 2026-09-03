@@ -128,6 +128,15 @@ export const selectorAllowlistNameCharsMax = 256;
 export const selectorHandoffNoteBytesMax = 65_536;
 
 /**
+ * The most tickets any decision may dispatch, whatever a project asks for: the
+ * parse ceiling, refusing a document naming more before any of it is read. It
+ * is stated here because a project writes its own `dispatchesPerDecision`
+ * through the settings door, and a budget the wire accepted above this is a
+ * control reporting a number the parser would refuse the lead for spending.
+ */
+export const leadDispatchesMax = 8;
+
+/**
  * How much of the handoff note the lead read carries. The note's own ceiling is
  * a whole wire body, and the lead read carries a mailbox tail and a stream
  * listing beside it, so a note at its bound would put that one response past
