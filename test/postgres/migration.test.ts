@@ -2671,6 +2671,59 @@ test("migration 61 leaves a session that was opened before it had objectives", a
   });
 });
 
+test("migration 66 lets a project whose lead is closed open another", async () => {
+  await migrationDatabase("lead_successor", async (subject) => {
+    await migrationSeedApplied(subject, 66);
+    const store = postgresProjectStore(subject);
+    await postgresHarnessEpoch(store);
+    const partition = await postgresHarnessProject(store, "lead-successor");
+    const open = async (session: string) =>
+      (
+        await subject.query<{ opened: string }>(
+          `SELECT open_agent_session($1,$2,$3,'Lead','principal-66',NULL,
+             ARRAY[]::text[],'claude-code',NULL) AS opened`,
+          [partition.tenant, partition.project, session],
+        )
+      ).rows[0]?.opened;
+
+    assert.equal(await open("lead-66-first"), "Opened");
+    await subject.query(`SELECT close_agent_session($1,$2,'lead-66-first')`, [
+      partition.tenant,
+      partition.project,
+    ]);
+    assert.equal(
+      await open("lead-66-second"),
+      "Conflict",
+      "the schema before 66 is the one release 18 measured: a closed lead is terminal",
+    );
+
+    await applyMigration(subject, 66);
+
+    assert.equal(
+      await open("lead-66-second"),
+      "Opened",
+      "and after it a closed lead is history rather than a claim on the project",
+    );
+    assert.equal(
+      await open("lead-66-third"),
+      "Conflict",
+      "while an OPEN lead still admits no second",
+    );
+
+    const rendered = (
+      await subject.query<{ definition: string }>(
+        `SELECT indexdef AS definition FROM pg_indexes
+          WHERE indexname = 'agent_session_one_lead_per_project'`,
+      )
+    ).rows[0]?.definition;
+    assert.match(
+      rendered ?? "",
+      /UNIQUE INDEX .* WHERE .*state = 'Open'::text/u,
+      "the uniqueness the server renders is the control, and it is over the open leads",
+    );
+  });
+});
+
 test("the session migrations compose into the schema a fresh generation renders", async () => {
   await migrationDatabase("lead_composition", async (subject) => {
     await migrationSeedApplied(subject, 62);

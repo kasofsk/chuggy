@@ -4,6 +4,7 @@ import { setTimeout as wait } from "node:timers/promises";
 
 import { z } from "zod";
 
+import { leadSessionMint } from "../adapters/crypto/leadSessionMint.ts";
 import { nativeHttpClient } from "../adapters/http/client.ts";
 import type { AccessTokenSource } from "../adapters/http/accessToken.ts";
 import { clientCredentialsTokenSource } from "../adapters/http/clientCredentials.ts";
@@ -20,7 +21,10 @@ import {
   type ServiceRuntime,
   type ServiceStopResult,
 } from "../interpreter/serviceRuntime.ts";
-import { threadWakesPerPassMax } from "../contract/http.ts";
+import {
+  sessionIdentityCharsMax,
+  threadWakesPerPassMax,
+} from "../contract/http.ts";
 import {
   commandDatabaseConfig,
   commandDatabaseSchema,
@@ -87,6 +91,7 @@ const configurationSchema = z
       .object({
         pollIntervalMs: positiveInteger,
         controlDeadlineMs: positiveInteger,
+        credentialSlot: z.string().min(1).max(sessionIdentityCharsMax),
       })
       .strict(),
   })
@@ -291,9 +296,12 @@ export function selectorCommandRoot(
       deadline: {
         after: (milliseconds, signal) => deadline(milliseconds, signal),
       },
+      sessions: leadSessionMint(),
       policy: {
         pollIntervalMs: config.lead.pollIntervalMs,
         implementationRevision: config.identity.instance,
+        principal: config.identity.principal,
+        credentialSlot: config.lead.credentialSlot,
       },
       controlDeadlineMs: config.lead.controlDeadlineMs,
     },

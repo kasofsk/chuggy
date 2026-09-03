@@ -9,8 +9,12 @@ import {
   type SessionTurnState,
 } from "../../src/interpreter/agentSession.ts";
 import type { AgenticRefusalRecord } from "../../src/interpreter/agenticRefusal.ts";
+import { leadSystemPrompt } from "../../src/interpreter/leadTools.ts";
 import type {
   LeadMailbox,
+  LeadOpening,
+  LeadSessionMint,
+  LeadSessionStanding,
   LeadTurnOffered,
   LeadTurnStanding,
   LeadTurnWithdrawn,
@@ -163,34 +167,47 @@ interface MailboxOptions {
   readonly result?: string;
   readonly measured?: SessionTurnMeasured;
   readonly withdrawn?: LeadTurnWithdrawn;
+  /** A door that answers and leaves no open lead, which is what the host refuses to decide on. */
+  readonly openLeavesNothing?: boolean;
 }
 
 interface MailboxDouble {
   readonly mailbox: LeadMailbox;
   readonly offers: { readonly input: string }[];
+  readonly openings: LeadOpening[];
   readonly reads: () => number;
 }
 
 function mailboxDouble(options: MailboxOptions = {}): MailboxDouble {
   const offers: { readonly input: string }[] = [];
+  const openings: LeadOpening[] = [];
   const states = options.turnStates ?? (["Answered"] as const);
   let read = 0;
+  let standing: LeadSessionStanding | undefined =
+    options.absent === true
+      ? undefined
+      : {
+          session: asSessionId("lead-session"),
+          state: options.state ?? "Open",
+          ...(options.agentReference === undefined
+            ? {}
+            : { agentReference: options.agentReference }),
+        };
   return {
     offers,
+    openings,
     reads: () => read,
     mailbox: {
-      lead: () =>
-        Promise.resolve(
-          options.absent === true
-            ? undefined
-            : {
-                session: asSessionId("lead-session"),
-                state: options.state ?? "Open",
-                ...(options.agentReference === undefined
-                  ? {}
-                  : { agentReference: options.agentReference }),
-              },
-        ),
+      lead: () => Promise.resolve(standing),
+      openLead: (opening) => {
+        openings.push(opening);
+        if (options.openLeavesNothing !== true)
+          standing = { session: opening.session, state: "Open" };
+        return Promise.resolve({
+          opened: "Opened" as const,
+          session: opening.session,
+        });
+      },
       offer: (input) => {
         offers.push({ input: input.input });
         return Promise.resolve(
@@ -257,13 +274,36 @@ function interactionRecord(
   };
 }
 
+/** The identity a successor is opened as, which the host takes from its own configuration. */
+const leadPrincipal = "18:https://auth.exampleselector";
+const leadCredentialSlot = "claude-code";
+
+/** One successor identity per draw, so a case can tell an opening from a re-read. */
+function sessionMint(): LeadSessionMint {
+  let drawn = 0;
+  return {
+    session: () => {
+      drawn += 1;
+      return asSessionId(`lead-successor-${String(drawn)}`);
+    },
+  };
+}
+
+const leadPolicyConfig = {
+  pollIntervalMs: 1,
+  implementationRevision: "selector-build-1",
+  principal: leadPrincipal,
+  credentialSlot: leadCredentialSlot,
+} as const;
+
 function policyOf(double: MailboxDouble) {
   return leadSelectorPolicy(
     double.mailbox,
     refusalRead(),
     decisionTail(),
+    sessionMint(),
     clock(),
-    { pollIntervalMs: 1, implementationRevision: "selector-build-1" },
+    leadPolicyConfig,
   );
 }
 
@@ -314,8 +354,9 @@ test("a turn that measured nothing spends the host's own wall clock", async () =
     double.mailbox,
     refusalRead(),
     decisionTail(),
+    sessionMint(),
     clock([1_788_000_000_000, 1_788_000_150_000]),
-    { pollIntervalMs: 1, implementationRevision: "selector-build-1" },
+    leadPolicyConfig,
   );
   const execution = (await policy.execute(
     request,
@@ -326,15 +367,55 @@ test("a turn that measured nothing spends the host's own wall clock", async () =
   assert.deepEqual(execution.toolActivity, []);
 });
 
-test("a project with no open lead is one no decision is invented for", async () => {
+test("a project with no open lead gets a successor, and decides through it", async () => {
   for (const options of [{ absent: true }, { state: "Closed" as const }]) {
     const double = mailboxDouble(options);
-    await assert.rejects(
-      policyOf(double).execute(request, new AbortController().signal),
-      /no open lead/u,
+    const execution = (await policyOf(double).execute(
+      request,
+      new AbortController().signal,
+    )) as SelectorPolicyExecution;
+    assert.deepEqual(
+      double.openings.map((opening) => [
+        opening.session,
+        opening.principal,
+        opening.credentialSlot,
+      ]),
+      [["lead-successor-1", leadPrincipal, leadCredentialSlot]],
+      "one successor, opened as the selector's own principal",
     );
-    assert.equal(double.offers.length, 0);
+    assert.equal(
+      double.openings[0]?.systemPrompt,
+      leadSystemPrompt({
+        basePrompt: request.instructions.content,
+        ...(request.instructions.northStar === undefined
+          ? {}
+          : { northStar: request.instructions.northStar }),
+      }),
+      "and told what the turn would have told it",
+    );
+    assert.equal(double.offers.length, 1);
+    const observed = parseLeadObservation(double.offers[0]?.input ?? "");
+    assert.ok(
+      observed.seeding !== undefined,
+      "a successor with no bound reference is seeded from the record",
+    );
+    assert.equal(execution.policyRevision, "Unbound");
   }
+});
+
+test("a lead already open is decided through rather than replaced", async () => {
+  const double = mailboxDouble({ agentReference: "agent-session-9" });
+  await policyOf(double).execute(request, new AbortController().signal);
+  assert.deepEqual(double.openings, []);
+});
+
+test("a successor that does not come back open is not decided on", async () => {
+  const double = mailboxDouble({ absent: true, openLeavesNothing: true });
+  await assert.rejects(
+    policyOf(double).execute(request, new AbortController().signal),
+    /no open lead/u,
+  );
+  assert.equal(double.offers.length, 0);
 });
 
 test("a turn that ends without an answer raises with what ended it", async () => {
@@ -580,8 +661,9 @@ test("a session with no agent reference is seeded and one with a reference is no
       }),
       interactionRecord(1, { outcome: "Failed", code: "InvalidResult" }),
     ]),
+    sessionMint(),
     clock(),
-    { pollIntervalMs: 1, implementationRevision: "selector-build-1" },
+    leadPolicyConfig,
   );
   const execution = (await policy.execute(
     request,
@@ -632,8 +714,9 @@ test("a seeding block the mailbox could not hold sheds its oldest decisions", as
         decision: `${String(40 - index)}-${"d".repeat(oversized)}`,
       })),
     ),
+    sessionMint(),
     clock(),
-    { pollIntervalMs: 1, implementationRevision: "selector-build-1" },
+    leadPolicyConfig,
   );
   await policy.execute(request, new AbortController().signal);
   const observed = parseLeadObservation(double.offers[0]?.input ?? "");
@@ -699,8 +782,9 @@ test("a poll interval that could never fire is refused at construction", () => {
         mailboxDouble().mailbox,
         refusalRead(),
         decisionTail(),
+        sessionMint(),
         clock(),
-        { pollIntervalMs: 0, implementationRevision: "selector-build-1" },
+        { ...leadPolicyConfig, pollIntervalMs: 0 },
       ),
     RangeError,
   );
@@ -728,8 +812,9 @@ test("the turn's identity is the decision's", async () => {
     },
     refusalRead(),
     decisionTail(),
+    sessionMint(),
     clock(),
-    { pollIntervalMs: 1, implementationRevision: "selector-build-1" },
+    leadPolicyConfig,
   );
   await policy.execute(request, new AbortController().signal);
   assert.deepEqual(identities, [request.attempt]);

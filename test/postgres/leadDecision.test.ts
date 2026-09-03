@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
 import { postgresAgenticRefusalStanding } from "../../src/adapters/postgres/agenticRefusal.ts";
+import { leadSessionMint } from "../../src/adapters/crypto/leadSessionMint.ts";
 import { postgresLeadDecisionTail } from "../../src/adapters/postgres/leadReads.ts";
 import { postgresSelectorState } from "../../src/adapters/postgres/selector.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
@@ -100,14 +101,23 @@ const clock: LeadPolicyClock = {
     }),
 };
 
+/** Who a lead this suite's host opens acts as, which is the selector's own principal. */
+const leadDecisionPrincipal = "principal-lead-successor";
+
 function leadPolicy() {
   return selectorPolicyHost(
     leadSelectorPolicy(
       rig.mailbox,
       postgresAgenticRefusalStanding(rig.selectorPool),
       postgresLeadDecisionTail(rig.selectorPool),
+      leadSessionMint(),
       clock,
-      { pollIntervalMs: 5, implementationRevision: "selector-build" },
+      {
+        pollIntervalMs: 5,
+        implementationRevision: "selector-build",
+        principal: leadDecisionPrincipal,
+        credentialSlot: "claude-code",
+      },
     ),
     {
       after: (milliseconds) =>

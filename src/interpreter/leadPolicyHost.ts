@@ -3,9 +3,13 @@
  * lead through the mailbox, waits for the turn to end, and answers the decision
  * the turn came back with.
  *
- * A PROJECT WITHOUT A LEAD IS ONE THE SELECTOR CANNOT DECIDE FOR. Opening one
- * here would be provisioning, which no runtime role may do, so an absent or
- * closed lead raises and the cycle is recorded as failed.
+ * A PROJECT WITH NO OPEN LEAD GETS A SUCCESSOR, AND THE RECORD IS WHAT MAKES
+ * ONE SUFFICIENT. A lead that closed is a context that ended, not a claim on
+ * the project for ever, so the cycle opens the next one and decides through it.
+ * The successor is seeded like any lead with no bound runtime reference — the
+ * handoff note, the tail of the decision log, the standing refusals and the
+ * cursor — which is the same block `leadSeedingBlock` composes below. Closing a
+ * lead is still provisioning and is still no runtime role's.
  *
  * THE TURN'S IDENTITY IS THE DECISION'S, WHICH IS WHAT MAKES THE OFFER
  * IDEMPOTENT. A retry of one decision finds the turn it already enqueued rather
@@ -50,6 +54,8 @@ import type {
 } from "./agenticRefusal.ts";
 import type {
   LeadMailbox,
+  LeadSessionMint,
+  LeadSessionStanding,
   LeadTurnStanding,
   LeadTurnWithdrawn,
 } from "./leadMailbox.ts";
@@ -107,6 +113,15 @@ export interface LeadPolicyClock {
 export interface LeadPolicyConfig {
   readonly pollIntervalMs: number;
   readonly implementationRevision: string;
+  /**
+   * Whose authorization a lead this process opens acts under, which is this
+   * process's own principal: the lead speaks through the membership the
+   * installation already grants the selector, and a second configured identity
+   * would be a second thing to keep in step with that membership.
+   */
+  readonly principal: string;
+  /** The named credential mount a lead's pod speaks through, which a deployment decides. */
+  readonly credentialSlot: string;
 }
 
 /** What a turn that measured nothing is answered as, so a control still decides. */
@@ -284,8 +299,35 @@ interface LeadPolicyPorts {
   readonly mailbox: LeadMailbox;
   readonly refusals: Pick<AgenticRefusalRead, "standing">;
   readonly decisions: LeadDecisionTail;
+  readonly sessions: LeadSessionMint;
   readonly clock: LeadPolicyClock;
   readonly config: LeadPolicyConfig;
+}
+
+/**
+ * The lead this decision is taken by, opening a successor where the project has
+ * none open. The standing is re-read rather than assembled from what opening
+ * answered, because `AlreadyOpen` names a session this process did not write
+ * and whose runtime reference decides whether the next turn is seeded.
+ */
+async function leadStanding(
+  ports: LeadPolicyPorts,
+  request: SelectorPolicyRequest,
+  partition: Partition,
+): Promise<LeadSessionStanding> {
+  const held = await ports.mailbox.lead(partition);
+  if (held !== undefined && held.state === "Open") return held;
+  await ports.mailbox.openLead({
+    partition,
+    session: ports.sessions.session(),
+    principal: ports.config.principal,
+    credentialSlot: ports.config.credentialSlot,
+    systemPrompt: leadTurnInstructions(request).content,
+  });
+  const opened = await ports.mailbox.lead(partition);
+  if (opened === undefined || opened.state !== "Open")
+    throw new Error("the project has no open lead to decide for it");
+  return opened;
 }
 
 async function leadSeedingBlock(
@@ -379,9 +421,7 @@ async function leadDecision(
   signal: AbortSignal,
 ): Promise<SelectorPolicyExecution> {
   const partition = leadPartition(request);
-  const lead = await ports.mailbox.lead(partition);
-  if (lead === undefined || lead.state !== "Open")
-    throw new Error("the project has no open lead to decide for it");
+  const lead = await leadStanding(ports, request, partition);
   const standing = await ports.refusals.standing(
     partition,
     leadRefusalsObservedMax,
@@ -415,6 +455,7 @@ export function leadSelectorPolicy(
   mailbox: LeadMailbox,
   refusals: Pick<AgenticRefusalRead, "standing">,
   decisions: LeadDecisionTail,
+  sessions: LeadSessionMint,
   clock: LeadPolicyClock,
   config: LeadPolicyConfig,
 ): SelectorPolicy {
@@ -422,6 +463,7 @@ export function leadSelectorPolicy(
     mailbox,
     refusals,
     decisions,
+    sessions,
     clock,
     config,
   };

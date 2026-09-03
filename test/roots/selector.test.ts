@@ -37,7 +37,11 @@ const validConfiguration = {
     responseBytesMax: 10_000,
     responseReadsMax: 100,
   },
-  lead: { pollIntervalMs: 10, controlDeadlineMs: 10 },
+  lead: {
+    pollIntervalMs: 10,
+    controlDeadlineMs: 10,
+    credentialSlot: "claude-code",
+  },
 };
 const clientSecret = "selector-client-secret";
 const validEnvironment = {
