@@ -20,6 +20,8 @@ import {
   repositoryBindingReadFunction,
   schemaTextSet,
   selectorServiceRole,
+  sessionStoreReadFunction,
+  sessionStreamListFunction,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/064-multi-dispatch-delivery.ts";
@@ -3292,5 +3294,54 @@ test("migration 68 stamps a delivery from its project's dispatch mode", async ()
       "Pending",
       "the project's own mode decides the deliveries admitted after it",
     );
+  });
+});
+
+/** The stored body of each door 063 declares over the sessions a bearer may read. */
+async function migrationStoreDoorBodies(
+  subject: pg.Pool,
+): Promise<Record<string, string>> {
+  const found = await subject.query<{ proname: string; prosrc: string }>(
+    `SELECT proname,prosrc FROM pg_proc WHERE proname=ANY($1) ORDER BY proname`,
+    [[sessionStoreReadFunction, sessionStreamListFunction]],
+  );
+  assert.equal(found.rows.length, 2, "both store doors stand on this database");
+  return Object.fromEntries(found.rows.map((row) => [row.proname, row.prosrc]));
+}
+
+/**
+ * What the ledger cannot see. It records `(version, name)` alone, so a body
+ * edited into an applied migration leaves every installation that already ran
+ * it holding the old one while a fresh install holds the new — which is why 069
+ * re-declares the readable set instead of sharing 063's, and why what it does
+ * NOT re-create must come through an upgrade untouched.
+ */
+test("migration 69 upgrades the read it re-creates and leaves the listing 063 gave", async () => {
+  await migrationDatabase("store_writer_upgraded", async (subject) => {
+    await migrationSeedApplied(subject, 64);
+    const applied63 = await migrationStoreDoorBodies(subject);
+
+    await applyMigrationsAbove(subject, 63);
+
+    const upgraded = await migrationStoreDoorBodies(subject);
+    assert.equal(
+      upgraded[sessionStreamListFunction],
+      applied63[sessionStreamListFunction],
+      "an upgrade moved a door nothing above 063 re-creates",
+    );
+    assert.notEqual(
+      upgraded[sessionStoreReadFunction],
+      applied63[sessionStoreReadFunction],
+      "the read a fork pages is the one 063 left, so no row names its writer",
+    );
+
+    await migrationDatabase("store_writer_fresh", async (fresh) => {
+      await migrationSeedApplied(fresh, declaredLatest + 1);
+      assert.deepEqual(
+        upgraded,
+        await migrationStoreDoorBodies(fresh),
+        "an upgraded installation and a fresh one disagree about a door's body",
+      );
+    });
   });
 });
