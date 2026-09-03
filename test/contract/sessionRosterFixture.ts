@@ -12,7 +12,9 @@
  * `imageTools.test.mjs` asserts it is that value: without that assertion a
  * change to the default would leave every thread suite green against a roster
  * the tree no longer opens a thread with. `leadRoster` is held to nothing,
- * because there is nothing to hold it to; it is one copy rather than three.
+ * because there is nothing to hold it to. It is written here and in
+ * `images/worker/toolProbe.mjs`, which is copied into the image and so cannot
+ * read this file; every suite reads this one.
  */
 
 import type { SessionCapability } from "../../src/interpreter/agentSession.ts";

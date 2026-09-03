@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { URL } from "node:url";
 
+import { leadRoster } from "../../test/contract/sessionRosterFixture.ts";
+
 import { z } from "zod";
 
 import {
@@ -596,12 +598,7 @@ test("origination is registered for a thread's roster and for no lead's", () => 
   assert.ok(registered(["DraftOriginate"]).includes("create_draft"));
   assert.deepEqual(registered(["DraftOriginate"]), ["create_draft"]);
   assert.ok(
-    !registered([
-      "RepositoryRead",
-      "ProjectRead",
-      "DraftAuthor",
-      "LeadDecision",
-    ]).includes("create_draft"),
+    !registered([...leadRoster]).includes("create_draft"),
     "a lead's roster registered the tool that files from nothing",
   );
 });

@@ -25,17 +25,22 @@ function serverOf(tools, answer) {
       connect(transport) {
         transport.onmessage = (message) => {
           if (message.id !== 2) return;
-          transport.send(
-            answer ?? {
-              jsonrpc: "2.0",
-              id: 2,
-              result: {
-                tools: tools.map((name) => ({
-                  name,
-                  inputSchema: objectSchema,
-                })),
+          // Deferred, as the runtime's own server answers: a stub that sent
+          // synchronously would leave `chuggyListingWaitMs` unobserved, and the
+          // probe would read `no answer` where every case here was green.
+          void Promise.resolve().then(() =>
+            transport.send(
+              answer ?? {
+                jsonrpc: "2.0",
+                id: 2,
+                result: {
+                  tools: tools.map((name) => ({
+                    name,
+                    inputSchema: objectSchema,
+                  })),
+                },
               },
-            },
+            ),
           );
         };
       },

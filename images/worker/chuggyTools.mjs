@@ -306,7 +306,7 @@ export const chuggyToolsNotYetServed = {
     "The lead's own transcript cannot be read by this installation yet.",
   list_threads:
     "This project's member threads cannot be listed by this installation yet.",
-  read_thread: "A member thread cannot be read by this installation yet.",
+  read_thread: "A member's thread cannot be read by this installation yet.",
   read_thread_transcript:
     "A thread's own transcript cannot be read by this installation yet.",
 };
