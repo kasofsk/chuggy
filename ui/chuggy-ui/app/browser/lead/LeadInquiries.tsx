@@ -22,22 +22,19 @@
  * box that posted anyway would spend a reader's attention on a refusal this
  * page already knows about.
  *
- * A PROJECT SWITCH IS NOT A REMOUNT, so everything this panel holds outlives
- * the project it was held for: the lead route declares no `remountDeps` and the
- * router sets no default, so a params-only navigation reconciles these
- * components rather than replacing them. There is therefore A BOX PER PROJECT
- * rather than one box scoped to the project on screen — the question typed at
- * it, the pair a send is outstanding under, whether a press is outstanding at
- * all, and what the last press answered are all one project's, so a project
- * names which box is read, which box a press writes to, and which project's
- * listing an accepted press re-reads. Nothing crosses, so nothing has to be
- * dropped when the project moves: a reader who leaves a project and comes back
- * finds what they left, and one whose send has not answered yet finds the next
- * project's box exactly as they left it.
+ * THERE IS A BOX PER PROJECT AND NONE OF THEM IS THIS PANEL'S. The question
+ * typed at a box, the pair a send is outstanding under, whether a press is
+ * outstanding at all and what the last press answered are all one project's, so
+ * a project names which box is read, which box a press writes to, and which
+ * project's listing an accepted press re-reads — and every one of them outlives
+ * this panel, the page above it and the route, because `lead/inquiryBoxes.ts`
+ * holds them for the tab. Nothing crosses between projects and nothing is lost
+ * to a navigation: a reader who leaves and comes back finds what they left,
+ * whichever way they left.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
 import { inquiryQuestionCharsMax } from "../../../../../src/contract/http.ts";
@@ -63,19 +60,16 @@ import {
   inquiryBoxOf,
   inquiryBoxSent,
   inquiryBoxTyped,
-  inquiryBoxWith,
   inquiryDraw,
   inquiryIdentityBytesCount,
   inquiryQuestion,
   inquiryQuestionFault,
   inquirySessionKind,
 } from "../../core/leadInquiries.ts";
-import type {
-  InquiryAsk,
-  InquiryBox,
-  InquiryBoxes,
-} from "../../core/leadInquiries.ts";
+import type { InquiryAsk } from "../../core/leadInquiries.ts";
 import { sessionChangeKindNamed } from "../../core/leadTranscript.ts";
+import { inquiryBoxesHeld } from "./inquiryBoxes.ts";
+import type { InquiryBoxStore } from "./inquiryBoxes.ts";
 import { projectListRereadNamed } from "../../core/projectQueryKeys.ts";
 import type { ProjectList } from "../../core/projectQueryKeys.ts";
 import { sessionTurnStateTone } from "../../core/tones.ts";
@@ -93,51 +87,21 @@ import { Pill } from "../ui/Pill.tsx";
 export const leadInquiriesListName = "inquiries";
 
 /**
- * The boxes and the presses outstanding, held by a caller that no gate on this
- * page unmounts.
+ * The boxes as a screen reads them: the store's own, and a render whenever it
+ * moves.
  *
- * IT IS HELD ABOVE THE HEAD GATE BECAUSE THE HEAD IS ABSENT EXACTLY WHEN A
- * READER MOVES — the lead read is `Pending` for a render after a project
- * switch, a lead that has never settled a turn names no head at all, and a read
- * that failed names none either, so a box held inside the control the head
- * gates would be discarded by the navigation the whole shape exists to survive,
- * and the next press would ask one door one question under two pairs.
+ * WHAT IS HELD IS THE MODULE'S AND NOT THIS TREE'S, because the pair is a
+ * de-duplication token and every component boundary is another way to lose one —
+ * the head that gates the control is absent on the render after a project
+ * switch, on a lead that has never settled a turn and on one whose read failed,
+ * and the page itself is replaced by a click on any sibling screen, all of which
+ * `inquiryBoxes.ts` argues at length while this is only how a screen reads it.
  */
-export interface InquiryBoxesHeld {
-  readonly boxes: InquiryBoxes;
-  readonly write: (
-    at: PartitionIdentity,
-    next: (box: InquiryBox) => InquiryBox,
-  ) => void;
-  /**
-   * Whether a project has a press outstanding, taken and released in the press
-   * itself: two presses inside one render read one render, so what says a press
-   * is out cannot be the drawn state, and it is reached through these rather
-   * than as a value because it is not a thing a render may read.
-   */
-  readonly outstanding: {
-    readonly taken: (name: string) => boolean;
-    readonly take: (name: string) => void;
-    readonly release: (name: string) => void;
-  };
-}
+export type InquiryBoxesHeld = InquiryBoxStore;
 
 export function useInquiryBoxes(): InquiryBoxesHeld {
-  const [boxes, setBoxes] = useState<InquiryBoxes>({});
-  const outstanding = useRef<Set<string>>(new Set());
-  return {
-    boxes,
-    outstanding: {
-      taken: (name) => outstanding.current.has(name),
-      take: (name) => outstanding.current.add(name),
-      release: (name) => outstanding.current.delete(name),
-    },
-    write: (at, next) => {
-      setBoxes((held) =>
-        inquiryBoxWith(held, at, next(inquiryBoxOf(held, at))),
-      );
-    },
-  };
+  useSyncExternalStore(inquiryBoxesHeld.subscribe, inquiryBoxesHeld.boxes);
+  return inquiryBoxesHeld;
 }
 
 /**
@@ -194,7 +158,8 @@ function LeadAsk(props: {
 }): ReactNode {
   const ports = useApiPorts();
   const partition = props.partition;
-  const { boxes, write, outstanding } = props.held;
+  const { write, outstanding } = props.held;
+  const boxes = props.held.boxes();
   const box = inquiryBoxOf(boxes, partition);
   const question = inquiryQuestion(box.typed);
   const fault = inquiryQuestionFault(question);

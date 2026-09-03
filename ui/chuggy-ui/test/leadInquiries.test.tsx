@@ -29,6 +29,7 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
+import { inquiryBoxesHeld } from "../app/browser/lead/inquiryBoxes.ts";
 import {
   leadInquiry,
   leadPartition,
@@ -61,6 +62,7 @@ vi.mock("@tanstack/react-router", () => ({
 
 afterEach(() => {
   cleanup();
+  inquiryBoxesHeld.discard();
   vi.unstubAllGlobals();
 });
 

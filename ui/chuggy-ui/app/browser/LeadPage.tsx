@@ -7,12 +7,11 @@
  * and the page is live by construction. A project with no lead answers `404`,
  * which is a page saying so rather than five empty panels.
  *
- * WHAT A READER HAS TYPED AT THE INQUIRY BOX IS HELD HERE, above every gate
- * below: the head that gates the box is absent on a `Pending` render, on a lead
- * that has never settled a turn and on a read that failed, and this page is
- * reconciled rather than replaced when only the project moves — so held here,
- * a box survives exactly the navigation it is about, and held below, it would
- * be discarded by it.
+ * WHAT A READER HAS TYPED AT THE INQUIRY BOX IS NOT HELD HERE. This page is
+ * replaced outright by a click on any sibling screen, and the pair a box holds
+ * is the token that makes a re-send a retry rather than a second question — so
+ * it lives in `lead/inquiryBoxes.ts`, which no navigation reaches, and this
+ * page only reads it.
  */
 
 import { useParams } from "@tanstack/react-router";

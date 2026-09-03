@@ -323,12 +323,14 @@ function boxAt(at: number): PartitionIdentity {
  * THE RECORD IS BOUNDED, AND A PAIR IS WHAT IT WILL NOT DROP TO STAY SO. Past
  * the cap the oldest box holding nothing goes; a box still holding a pair its
  * door has not taken is kept, because keeping one until then is the whole of
- * what this record is for.
+ * what this record is for — and the box it is kept by holds NOTHING ELSE, a
+ * reader who pressed and then cleared the textarea being exactly the one whose
+ * pair a bound counting only text would evict.
  */
 test("the record is bounded, and never by dropping a pair", () => {
   const said: InquiryAsk = { ask: "Refused", word: "In flight" };
   let boxes: InquiryBoxes = inquiryBoxWith({}, boxAt(0), {
-    typed: "why",
+    typed: "",
     ask: said,
     held: { drawn: "kept", question: "why", partition: boxAt(0) },
   });

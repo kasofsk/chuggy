@@ -25,6 +25,7 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
+import { inquiryBoxesHeld } from "../app/browser/lead/inquiryBoxes.ts";
 import { sessionStorePageBatchesMax } from "../../../src/contract/http.ts";
 import {
   leadTranscriptEntriesHeldMax,
@@ -67,6 +68,7 @@ let drawnPartition = { ...leadPartition };
 
 afterEach(() => {
   cleanup();
+  inquiryBoxesHeld.discard();
   vi.unstubAllGlobals();
   drawnPartition = { ...leadPartition };
 });
@@ -923,9 +925,12 @@ function askingLead(): {
 
 /** The page, and the navigation that moves only the route's params — which is
  * what reuses this instance rather than replacing it. */
-async function drawLeadPage(
-  fetching: typeof fetch,
-): Promise<(partition: PartitionIdentity) => Promise<void>> {
+interface LeadNavigation {
+  readonly moveTo: (partition: PartitionIdentity) => Promise<void>;
+  readonly away: () => Promise<void>;
+}
+
+async function drawLeadPage(fetching: typeof fetch): Promise<LeadNavigation> {
   vi.stubGlobal("fetch", fetching);
   const server = openedStream();
   const client = new QueryClient();
@@ -940,12 +945,34 @@ async function drawLeadPage(
   );
   const page = render(under(drawnPartition));
   await settled();
-  return async (partition: PartitionIdentity) => {
-    drawnPartition = { ...partition };
-    await turned(() => {
-      page.rerender(under(partition));
-    });
-    await settled();
+  return {
+    moveTo: async (partition: PartitionIdentity) => {
+      drawnPartition = { ...partition };
+      await turned(() => {
+        page.rerender(under(partition));
+      });
+      await settled();
+    },
+    /** A sibling screen and back, which is a route change rather than a params
+     * one: the lead page is replaced outright and mounted again. */
+    away: async () => {
+      await turned(() => {
+        page.rerender(
+          <ScreenHarness
+            partition={drawnPartition}
+            client={client}
+            transport={server.ports.fetch}
+          >
+            <p>elsewhere</p>
+          </ScreenHarness>,
+        );
+      });
+      await settled();
+      await turned(() => {
+        page.rerender(under(drawnPartition));
+      });
+      await settled();
+    },
   };
 }
 
@@ -965,7 +992,7 @@ function askQuestion(said: string): void {
  */
 test("a project switch and a return leave the box and its pair where they were", async () => {
   const asked = askingLead();
-  const moveTo = await drawLeadPage(asked.fetch);
+  const { moveTo } = await drawLeadPage(asked.fetch);
   const box = () => screen.getByLabelText<HTMLTextAreaElement>("Question");
   askQuestion("why is ticket 41 waiting?");
   await turned(() => {
@@ -993,5 +1020,77 @@ test("a project switch and a return leave the box and its pair where they were",
   expect(
     asked.posted[1]?.session,
     "the page forked one door twice for one question",
+  ).toBe(asked.posted[0]?.session);
+});
+
+/**
+ * THE PAIR IS A DE-DUPLICATION TOKEN AND EVERY SCREEN IS A SIBLING OF THIS ONE.
+ * A lead page replaced by a click on the inbox and mounted again is not the
+ * params navigation the box was made to survive; a token held in the page would
+ * go with it, and the next press would open a second fork for one question and
+ * spend the second of the asker's two.
+ */
+test("a click away to another screen and back keeps the box and its pair", async () => {
+  const asked = askingLead();
+  const { away } = await drawLeadPage(asked.fetch);
+  const box = () => screen.getByLabelText<HTMLTextAreaElement>("Question");
+  askQuestion("why is ticket 41 waiting?");
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+  });
+  await settled();
+  expect(screen.getByText(/^Failed · /u)).toBeDefined();
+  await away();
+  expect(
+    box().value,
+    "a reader came back to the lead page and found their question gone",
+  ).toBe("why is ticket 41 waiting?");
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+  });
+  await settled();
+  expect(asked.posted.length).toBe(2);
+  expect(
+    asked.posted[1]?.session,
+    "a click on another screen forked one door twice for one question",
+  ).toBe(asked.posted[0]?.session);
+});
+
+/**
+ * A PROJECT WITH NO LEAD IS A PAGE SAYING SO, and the page says it by drawing
+ * nothing else at all — so a reader who visits one between two presses would
+ * lose the pair to a gate that draws no box rather than to one that hides it.
+ */
+test("a visit to a project with no lead keeps the box of the one that has it", async () => {
+  const asked = askingLead();
+  const absent = { tenant: "acme", project: "leadless" };
+  const fetching = ((url: string, init?: { method?: string; body?: string }) =>
+    url.includes("/projects/leadless/") && init?.method !== "POST"
+      ? Promise.resolve(answer({ error: { code: "NotFound" } }, 404))
+      : (asked.fetch as (url: string, init?: unknown) => Promise<Response>)(
+          url,
+          init,
+        )) as unknown as typeof fetch;
+  const { moveTo } = await drawLeadPage(fetching);
+  const box = () => screen.getByLabelText<HTMLTextAreaElement>("Question");
+  askQuestion("why is ticket 41 waiting?");
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+  });
+  await settled();
+  await moveTo(absent);
+  expect(screen.getByRole("heading", { name: "No lead" })).toBeDefined();
+  await moveTo(leadPartition);
+  expect(
+    box().value,
+    "a project that answers no lead took another project's question with it",
+  ).toBe("why is ticket 41 waiting?");
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+  });
+  await settled();
+  expect(
+    asked.posted[1]?.session,
+    "a visit to a leadless project forked another door twice",
   ).toBe(asked.posted[0]?.session);
 });
