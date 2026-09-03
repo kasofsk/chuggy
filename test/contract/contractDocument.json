@@ -773,6 +773,16 @@
       },
       "required": ["expectedRevision", "overrides"],
       "additionalProperties": false
+    },
+    "threadMessage": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "turn": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 16384 }
+      },
+      "required": ["turn", "message"],
+      "additionalProperties": false
     }
   }
 }

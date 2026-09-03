@@ -77,5 +77,6 @@ test("the golden is the document and not an empty stand-in", () => {
     "publicMutation",
     "repositoryConfigurationImport",
     "selectorProjectSettings",
+    "threadMessage",
   ]);
 });

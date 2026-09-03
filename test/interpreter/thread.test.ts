@@ -16,16 +16,20 @@ import {
   nativeHttpPathSegmentCharsMax,
   selectorSettingsTextCharsMax,
   threadMessageCharsMax,
+  threadSeedingCharsMax,
+  threadSeedingFixedCharsMax,
   threadWakeCharsMax,
 } from "../../src/contract/http.ts";
 import { allSessionCapabilities } from "../../src/interpreter/agentSession.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
+  allThreadStandings,
   allThreadWakeReasons,
   parseThreadWake,
   threadCapabilitiesDefault,
   threadChannelStanding,
   threadSeedingText,
+  threadStanding,
   threadSystemPrompt,
   threadSystemPromptCharsMax,
   threadTurnInput,
@@ -52,6 +56,42 @@ test("the default roster is capabilities the tree knows, and holds neither of th
   assert.ok(!held.includes("LeadDecision"));
   assert.ok(!held.includes("RepositoryWrite"));
   assert.ok(held.includes("DraftOriginate"));
+});
+
+/**
+ * Unit 4's SQL mirrors this roster one-for-one against the change kinds it
+ * joins, so a member lost or renamed here is a wake nobody ever gets. The list
+ * is written out rather than iterated, the way the capability roster is.
+ */
+test("the wake roster holds exactly the reasons the wake runtime joins", () => {
+  assert.deepEqual(allThreadWakeReasons, [
+    "TicketRefused",
+    "RefusalLifted",
+    "DraftDeleted",
+    "TicketEscalated",
+    "TicketCompleted",
+    "TicketAbandoned",
+  ]);
+  assert.deepEqual(allThreadStandings, ["Open", "Closed", "Orphaned"]);
+});
+
+/**
+ * The two copies being identical says nothing about what they say, so the acts
+ * the sentence forbids are written out here. `originate` is the one that
+ * matters most: this slice gives every thread `DraftOriginate` by default.
+ */
+test("the standing sentence names each act a woken thread may not take", () => {
+  for (const act of ["originate", "revise", "release", "dispatch", "run"])
+    assert.ok(threadWakeStanding.includes(` ${act}`), act);
+  assert.match(threadWakeStanding, /notice, not an instruction/u);
+  assert.match(threadWakeStanding, /nothing/u);
+});
+
+test("a thread with no membership left stands apart from one that is closed", () => {
+  assert.equal(threadStanding({ state: "Open", owner: "geoff" }), "Open");
+  assert.equal(threadStanding({ state: "Open" }), "Orphaned");
+  assert.equal(threadStanding({ state: "Closed" }), "Closed");
+  assert.equal(threadStanding({ state: "Closed", owner: "geoff" }), "Closed");
 });
 
 test("a wake document carries the standing rule rather than taking one", () => {
@@ -223,7 +263,7 @@ test("a first turn puts the seeding block in front of the message", () => {
 });
 
 test("the drafts shed oldest first, and only then the refusals", () => {
-  const filler = "d".repeat(1_024);
+  const filler = "d".repeat(Math.ceil(threadTurnInputCharsMax / 8));
   const drafts = Array.from({ length: 32 }, (_unused, index) => ({
     ticket: index + 1,
     summary: `[${String(index + 1)}]${filler}`,
@@ -242,7 +282,7 @@ test("the drafts shed oldest first, and only then the refusals", () => {
 });
 
 test("the refusals shed oldest first once no draft is left to shed", () => {
-  const filler = "r".repeat(1_024);
+  const filler = "r".repeat(Math.ceil(threadTurnInputCharsMax / 8));
   const refusals = Array.from({ length: 32 }, (_unused, index) => ({
     ticket: index + 1,
     reason: `[${String(index + 1)}]${filler}`,
@@ -278,6 +318,37 @@ test("an input that cannot fit with everything sheddable shed is refused", () =>
       drafts: [],
       refusals: [],
     }),
+  );
+});
+
+/**
+ * The seeding carries a North Star the settings route has already accepted and
+ * never sheds it, so a first turn at that ceiling has to compose rather than
+ * raise. Refusing it would be a door no member could open and no member could
+ * fix.
+ */
+test("a North Star at the bound the settings route accepts still composes", () => {
+  const northStar = "n".repeat(selectorSettingsTextCharsMax);
+
+  const input = threadTurnInput("x".repeat(threadMessageCharsMax), {
+    northStar,
+    drafts: seededDrafts(nativeHttpPageItemsMax),
+    refusals: seededRefusals(32),
+  });
+
+  assert.ok(input.includes(northStar));
+  assert.ok(input.length <= threadTurnInputCharsMax);
+});
+
+/** The ceiling the contract names is a claim about this block, so it is measured. */
+test("what the seeding weighs beyond its North Star is inside the named ceiling", () => {
+  assert.ok(
+    threadSeedingText({ northStar: "", drafts: [], refusals: [] }).length <=
+      threadSeedingFixedCharsMax,
+  );
+  assert.equal(
+    threadSeedingCharsMax,
+    selectorSettingsTextCharsMax + threadSeedingFixedCharsMax,
   );
 });
 

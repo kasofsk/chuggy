@@ -19,6 +19,7 @@ import {
   publicMutationSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
+  threadMessageSchema,
 } from "./requests.ts";
 
 export function nativeHttpContractDocument(): unknown {
@@ -71,6 +72,7 @@ export function nativeHttpContractDocument(): unknown {
       draftCreation: z.toJSONSchema(draftCreationSchema),
       draftRevision: z.toJSONSchema(draftRevisionSchema),
       selectorProjectSettings: z.toJSONSchema(selectorProjectSettingsSchema),
+      threadMessage: z.toJSONSchema(threadMessageSchema),
     },
   };
 }

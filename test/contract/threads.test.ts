@@ -21,6 +21,7 @@ import {
   nativeHttpPathSegmentCharsMax,
   nativeHttpRoutes,
   partitionPath,
+  selectorSettingsTextCharsMax,
   sessionTurnBacklogMax,
   sessionTurnInputCharsMax,
   sessionTurnResultCharsMax,
@@ -28,12 +29,14 @@ import {
   threadBacklogMax,
   threadMessageCharsMax,
   threadSeedingCharsMax,
+  threadSeedingFixedCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
 } from "../../src/contract/http.ts";
 import { threadMessageSchema } from "../../src/contract/requests.ts";
 import {
   leadTranscriptResponseSchema,
+  leadTurnResponseSchema,
   threadEntryResponseSchema,
   threadMessageAcceptedSchema,
   threadResponseSchema,
@@ -88,13 +91,25 @@ test("every thread route hangs from the project it is scoped to", () => {
 });
 
 /**
- * A first turn is the seeding block and the member's message together, and the
- * mailbox column is what has to hold both.
+ * A later turn is the member's message alone, so it is the message bound the
+ * mailbox column has to hold outright.
  */
-test("a seeded first turn fits the mailbox column it is written to", () => {
-  assert.ok(
-    threadMessageCharsMax + threadSeedingCharsMax <= sessionTurnInputCharsMax,
+test("a message fits the mailbox column as that column stands", () => {
+  assert.ok(threadMessageCharsMax <= sessionTurnInputCharsMax);
+});
+
+/**
+ * A first turn carries the project's North Star and never sheds it, so the
+ * seeding ceiling is DERIVED from what the settings route already accepts
+ * rather than named below it — a ceiling under that would refuse every first
+ * turn of a project whose North Star is long, on every member.
+ */
+test("the seeding ceiling is derived from the North Star it must carry", () => {
+  assert.equal(
+    threadSeedingCharsMax,
+    selectorSettingsTextCharsMax + threadSeedingFixedCharsMax,
   );
+  assert.ok(threadSeedingCharsMax >= selectorSettingsTextCharsMax);
 });
 
 test("a thread's backlog and its answered tail are inside the mailbox's own", () => {
@@ -169,6 +184,50 @@ test("a turn carries what the member typed and what came back, each inside its c
   );
   assert.throws(() =>
     threadTurnResponseSchema.parse({ ...turn, input: undefined }),
+  );
+});
+
+/**
+ * The measurement is one shape both turns spread, so nothing else says which
+ * fields a turn's measure carries. Written out here in both directions, because
+ * `z.object` strips an unknown key rather than refusing it and a field dropped
+ * from the shape would be cut from every body in silence.
+ */
+test("a turn's measurement carries exactly the fields a pod reports", () => {
+  const measured = [
+    "batchFirst",
+    "batchLast",
+    "costMicros",
+    "durationMs",
+    "model",
+    "tokens",
+    "tools",
+  ];
+
+  assert.deepEqual(
+    Object.keys(leadTurnResponseSchema.shape).sort(),
+    [
+      ...measured,
+      "decision",
+      "failure",
+      "inputKind",
+      "ordinal",
+      "state",
+      "turn",
+    ].sort(),
+  );
+  assert.deepEqual(
+    Object.keys(threadTurnResponseSchema.shape).sort(),
+    [
+      ...measured,
+      "failure",
+      "input",
+      "inputKind",
+      "ordinal",
+      "result",
+      "state",
+      "turn",
+    ].sort(),
   );
 });
 

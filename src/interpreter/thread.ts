@@ -33,7 +33,7 @@ import {
   threadSeedingCharsMax,
   threadWakeCharsMax,
 } from "../contract/http.ts";
-import type { SessionCapability } from "./agentSession.ts";
+import type { SessionCapability, SessionState } from "./agentSession.ts";
 import type { Partition } from "./projectStore.ts";
 
 /**
@@ -49,6 +49,30 @@ export const threadCapabilitiesDefault = [
   "DraftAuthor",
   "DraftOriginate",
 ] as const satisfies readonly SessionCapability[];
+
+/**
+ * Where one thread stands, as a listing names it: a session state, or that the
+ * membership the thread acts under is gone. It is the roster PLAN 1.4's
+ * `Orphaned` belongs to, and it is derived rather than stored because both
+ * facts it folds are already on the row.
+ */
+export const allThreadStandings = ["Open", "Closed", "Orphaned"] as const;
+export type ThreadStanding = (typeof allThreadStandings)[number];
+
+/**
+ * An open thread whose owner has no membership left stands `Orphaned`, and
+ * every other thread stands where its session does. A closed one is `Closed`
+ * whatever became of its owner, because a session that takes no more turns
+ * needs no owner and hiding that it is closed would be the wrong warning.
+ */
+export function threadStanding(input: {
+  readonly state: SessionState;
+  readonly owner?: string;
+}): ThreadStanding {
+  return input.state === "Open" && input.owner === undefined
+    ? "Orphaned"
+    : input.state;
+}
 
 /**
  * Why a thread was woken without its owner typing: a closed roster, so a wake
