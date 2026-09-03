@@ -528,9 +528,12 @@ test("configuration pages authorize and enforce their bound before reading", asy
 
 test("draft pages authorize and enforce their bound before reading", async () => {
   const denied = boundary(false);
-  assert.deepEqual(await denied.web.drafts(principal, partition, { limit: 10 }), {
-    result: "NotFound",
-  });
+  assert.deepEqual(
+    await denied.web.drafts(principal, partition, { limit: 10 }),
+    {
+      result: "NotFound",
+    },
+  );
   assert.deepEqual(denied.calls, ["authorize:Read"]);
 
   const allowed = boundary(true);
@@ -543,7 +546,9 @@ test("draft pages authorize and enforce their bound before reading", async () =>
   );
   assert.deepEqual(allowed.calls, ["authorize:Read", "read:drafts:10"]);
   await assert.rejects(
-    allowed.web.drafts(principal, partition, { limit: nativeHttpPageItemsMax + 1 }),
+    allowed.web.drafts(principal, partition, {
+      limit: nativeHttpPageItemsMax + 1,
+    }),
     /draft page limit/u,
   );
   await assert.rejects(
