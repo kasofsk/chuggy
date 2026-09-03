@@ -104,11 +104,11 @@ stage() { # <label> <command>...
 	fi
 }
 
-# A merge tool's leftovers under src/ or test/. The four static stages above
-# select `*.ts`, so a file named `nativeWeb.ts.orig` is source-shaped, is copied
+# A merge tool's leftovers under src/ or test/. Every static stage above selects
+# `*.ts`, so a file named `nativeWeb.ts.orig` is source-shaped, is copied
 # into the API image by `COPY src/`, and is invisible to every one of them —
-# which is how 3,555 lines of stale duplicate reached a branch with a green
-# `ci.sh` (chuggy#530). The suffixes are exactly what `git merge`, `git apply`
+# which is how a stale duplicate of three live modules reached a branch with a
+# green `ci.sh` (chuggy#530). The suffixes are what `git merge`, `git apply`
 # and an editor leave behind, and none of them is ever a file somebody wrote.
 residue() {
 	found="$(git ls-files 'src/*' 'src/**' 'test/*' 'test/**' 2>/dev/null |

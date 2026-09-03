@@ -153,7 +153,7 @@ run_in "$R" --unit
 check "unit mode runs only the unit stage" 0 "$RC" "0 stage(s) failed, 1 run"
 check "unit mode reports the suite partition" 0 "$RC" "unit ran 1 suite(s)"
 
-# A merge tool's leftovers under src/. The four checkers select `*.ts`, so a
+# A merge tool's leftovers under src/. Every checker selects `*.ts`, so a
 # residue file is source-shaped, ships in the image and passes every one of
 # them; a whole clean tree with one `.orig` in it is the case that says the
 # stage sees what they cannot.

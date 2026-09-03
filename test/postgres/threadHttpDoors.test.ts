@@ -52,8 +52,8 @@ import {
 } from "../../src/interpreter/agentSession.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import type { SessionStoreReadPort } from "../../src/interpreter/sessionStore.ts";
 import { postgresHarnessKeying } from "./harness.ts";
+import { sessionStoreDouble, sessionStoreEntryLine } from "./storeDouble.ts";
 import { sessionRigAttempt } from "./sessionHarness.ts";
 import {
   threadRigIssuer,
@@ -76,40 +76,8 @@ after(async () => {
   await rig.close();
 });
 
-/** The bytes each recorded batch is answered with, keyed as the port addresses one. */
-const stored = new Map<string, string>();
-
-function storedKey(
-  partition: Partition,
-  stream: string,
-  batch: number,
-): string {
-  return [partition.tenant, partition.project, stream, batch].join("/");
-}
-
-/** A store the batch rows point at, standing in for the artifact volume. */
-const storeReads: SessionStoreReadPort = {
-  readBatch: (object) => {
-    const content = stored.get(
-      storedKey(object.partition, object.stream, object.batch),
-    );
-    return Promise.resolve(
-      content === undefined
-        ? ({ read: "NotFound" } as const)
-        : ({ read: "Content", content } as const),
-    );
-  },
-};
-
-/** One entry per batch, chained, so a stream's batch count is its entry count. */
-function entryLine(index: number): string {
-  return JSON.stringify({
-    type: "user",
-    uuid: `entry-${String(index)}`,
-    ...(index === 1 ? {} : { parentUuid: `entry-${String(index - 1)}` }),
-    message: { role: "user", content: "one" },
-  });
-}
+/** The volume the batch rows point at, filled by the cases that record one. */
+const storeReads = sessionStoreDouble();
 
 const authorized = { authorization: "Bearer valid" };
 const versioned = { ...authorized, "content-type": nativeHttpMediaType };
@@ -301,7 +269,7 @@ test("the transcript route walks the thread's own store", async () => {
     asSessionId(opened.session),
     "http-transcript",
   );
-  stored.set(storedKey(partition, stream, 1), entryLine(1));
+  storeReads.put(partition, stream, 1, sessionStoreEntryLine(1));
   assert.equal(
     await rig.sessions.plane.record({
       secret: attempt.secret,
