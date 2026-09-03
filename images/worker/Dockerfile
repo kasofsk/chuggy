@@ -78,6 +78,7 @@ COPY images/worker/sessionStore.mjs /usr/local/lib/chuggy/sessionStore.mjs
 COPY images/worker/sessionTransport.mjs /usr/local/lib/chuggy/sessionTransport.mjs
 COPY images/worker/snapshot.mjs /usr/local/lib/chuggy/snapshot.mjs
 COPY images/worker/source.mjs /usr/local/lib/chuggy/source.mjs
+COPY images/worker/toolListing.mjs /usr/local/lib/chuggy/toolListing.mjs
 COPY images/worker/toolProbe.mjs /usr/local/lib/chuggy/toolProbe.mjs
 COPY images/worker/transport.mjs /usr/local/lib/chuggy/transport.mjs
 COPY --chmod=0555 images/worker/git-askpass.sh /usr/local/lib/chuggy/git-askpass.sh
@@ -95,13 +96,14 @@ COPY --chmod=0555 images/worker/git-askpass.sh /usr/local/lib/chuggy/git-askpass
 # then lists the whole chuggy server over the runtime's own transport, because a
 # shape the runtime cannot render to JSON schema makes the entire listing throw
 # while the server still reports itself connected — every tool silently absent,
-# and the lead told they do not exist. Each argues itself in its own header, and
-# each is removed after it has run, because a build's verdict is not something a
-# pod needs.
+# and the lead told they do not exist. What that probe asks is `toolListing.mjs`,
+# which a suite drives against a stub server, so the gate itself is tested. Each
+# argues itself in its own header, and all three are removed after the probe has
+# run, because a build's verdict is not something a pod needs.
 RUN cd /usr/local/lib/chuggy \
   && node sdkProbe.mjs \
   && node toolProbe.mjs \
-  && rm sdkProbe.mjs toolProbe.mjs \
+  && rm sdkProbe.mjs toolProbe.mjs toolListing.mjs \
   && bundled="$(node -e "console.log(require('/usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk/manifest.json').version)")" \
   && global="$(claude --version)" \
   && if [ "${global% (Claude Code)}" != "$bundled" ]; then \

@@ -25,19 +25,27 @@
  * what the selector refuses is the decision that used it. A control described
  * as stronger than it is, is worse than none.
  *
- * THE ROSTER NAMES ONE READ THE TREE DOES NOT YET HAVE. `list_drafts` reaches
+ * THE ROSTER NAMES READS THE TREE DOES NOT YET SERVE. `list_drafts` reaches
  * `GET .../drafts`, whose page shapes are declared in `./authoring.ts` and whose
  * `AuthoringStore.drafts` and `NativeWeb.drafts` will be declared beside the
  * migration that gives them a definer to read through, because the tree's
  * production store is a postgres adapter that could not implement the method
- * before then, and the test double beside it is not what the port is for.
+ * before then, and the test double beside it is not what the port is for. The
+ * three thread reads are the same case against the routes `./thread.ts` names.
+ * The image's `chuggyToolsNotYetServed` is where each says so to a caller, and
+ * an entry there is deleted by the change that registers its route.
  *
- * DERIVED WORK ONLY, AND THE MODEL IS WHY. There is no bare create in the
- * roster: a dependent is filed against a parent that already exists. Nor is
- * there any tool that re-authors a released ticket — merge, split, supersede,
- * re-point a dependency — because a released ticket's dependencies are
- * immutable in `model/domain.qnt`, which names re-authoring machinery as
- * deliberately absent.
+ * DERIVED WORK ONLY IS THE LEAD'S RULE, AND THE MODEL IS WHY. `DraftAuthor`
+ * carries no bare create: a dependent is filed against a parent that already
+ * exists, and a roster holding only it cannot originate work. `create_draft` is
+ * admitted by `DraftOriginate` alone — a capability a thread is opened with
+ * (`./thread.ts`'s `threadCapabilitiesDefault`) and a lead is not — so the rule
+ * is a fact about which capability admits which tool rather than a sentence in
+ * a description. Which capabilities any one session is opened with is the
+ * provisioning root's, and nothing here can state it. No capability admits a
+ * tool that re-authors a released ticket — merge, split, supersede, re-point a
+ * dependency — because a released ticket's dependencies are immutable in
+ * `model/domain.qnt`, which names re-authoring machinery as deliberately absent.
  */
 
 import {
@@ -87,6 +95,9 @@ const chuggyToolRoster = {
     "read_execution",
     "read_run_transcript",
     "read_operation",
+    "list_threads",
+    "read_thread",
+    "read_thread_transcript",
   ],
   DraftAuthor: [
     "initialize_draft",
@@ -96,13 +107,12 @@ const chuggyToolRoster = {
     "release_draft",
   ],
   /**
-   * A member's own authorship, which no lead roster carries. It maps nothing
-   * yet: the tool that would admit it is the worker image's to serve, and until
-   * the image serves one this member admits nothing a session is given —
-   * exactly as the three project members above did before the chuggy server
-   * reached the image.
+   * A member's own authorship, which no lead roster carries: a thread files the
+   * draft its owner asked for, against no parent, because the member asking is
+   * where the work came from. It is one tool and it is not in `DraftAuthor`,
+   * for the reason `DraftAuthor` exists.
    */
-  DraftOriginate: [],
+  DraftOriginate: ["create_draft"],
   LeadDecision: [
     "dispatch",
     "refuse",
@@ -120,6 +130,7 @@ const chuggyToolRoster = {
 export const allChuggyTools = [
   ...chuggyToolRoster.ProjectRead,
   ...chuggyToolRoster.DraftAuthor,
+  ...chuggyToolRoster.DraftOriginate,
   ...chuggyToolRoster.LeadDecision,
 ] as const;
 export type ChuggyTool = (typeof allChuggyTools)[number];

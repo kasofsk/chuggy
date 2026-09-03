@@ -33,6 +33,7 @@ import {
   sessionTurnResultCharsMax,
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
+  threadTurnsAnsweredMax,
 } from "../../src/contract/http.ts";
 import { allSessionCapabilities } from "../../src/interpreter/agentSession.ts";
 import {
@@ -51,8 +52,19 @@ import {
   leadDispatchesMax,
   leadRefusalsPerDecisionMax,
 } from "../../src/interpreter/selector.ts";
+import { threadCapabilitiesDefault } from "../../src/interpreter/thread.ts";
 import * as image from "../../images/worker/chuggyTools.mjs";
 import * as decision from "../../images/worker/leadDecision.mjs";
+import { leadRoster, threadRoster } from "./sessionRosterFixture.ts";
+
+/**
+ * The one thing holding the roster the image's suites drive a thread with to
+ * the roster the control plane opens one with. Without it a capability added to
+ * the default leaves every thread suite green against a roster no thread has.
+ */
+test("the roster the image suites drive a thread with is the one a thread is opened with", () => {
+  assert.deepEqual([...threadRoster], [...threadCapabilitiesDefault]);
+});
 
 test("the image offers exactly the tools the roster declares, in the same order", () => {
   assert.deepEqual(image.allChuggyTools, [...allChuggyTools]);
@@ -94,6 +106,7 @@ test("every bound the image copies is the contract's own value", () => {
       selectorHistoryLimitMax: image.selectorHistoryLimitMax,
       agenticRefusalsAnsweredMax: image.agenticRefusalsAnsweredMax,
       sessionStorePageBatchesMax: image.sessionStorePageBatchesMax,
+      threadTurnsAnsweredMax: image.threadTurnsAnsweredMax,
       leadDispatchesMax: decision.leadDispatchesMax,
       leadRefusalsPerDecisionMax: decision.leadRefusalsPerDecisionMax,
       agenticRefusalReasonCharsMax: decision.agenticRefusalReasonCharsMax,
@@ -108,6 +121,7 @@ test("every bound the image copies is the contract's own value", () => {
       selectorHistoryLimitMax,
       agenticRefusalsAnsweredMax,
       sessionStorePageBatchesMax,
+      threadTurnsAnsweredMax,
       leadDispatchesMax,
       leadRefusalsPerDecisionMax,
       agenticRefusalReasonCharsMax,
@@ -125,17 +139,58 @@ test("the relations the image offers and refuses are the roster's own", () => {
   ]);
 });
 
-test("a lead's whole roster fits one measured turn's tool list", () => {
-  const lead = ["RepositoryRead", "ProjectRead", "DraftAuthor", "LeadDecision"];
-  const names = [...image.sessionBuiltInTools, ...image.chuggyToolNames(lead)];
+test("either roster fits one measured turn's tool list", () => {
+  for (const roster of [[...leadRoster], [...threadRoster]]) {
+    const names = [
+      ...image.sessionBuiltInTools,
+      ...image.chuggyToolNames(roster),
+    ];
 
-  assert.ok(
-    names.length <= sessionTurnToolsMax,
-    `a lead may report ${String(names.length)} tools and a turn records ${String(sessionTurnToolsMax)}`,
-  );
-  for (const name of names)
     assert.ok(
-      name.length <= sessionTurnToolNameCharsMax,
-      `${name} is longer than a recorded tool name holds`,
+      names.length <= sessionTurnToolsMax,
+      `a session may report ${String(names.length)} tools and a turn records ${String(sessionTurnToolsMax)}`,
     );
+    for (const name of names)
+      assert.ok(
+        name.length <= sessionTurnToolNameCharsMax,
+        `${name} is longer than a recorded tool name holds`,
+      );
+  }
+});
+
+/**
+ * The one capability that tells the two agents apart, held over the image's own
+ * `sessionAllowedTools` rather than over the roster it is derived from. It
+ * asserts MEMBERSHIP OF A LIST BOTH WAYS: a name in neither list is governed by
+ * `permissionMode: "bypassPermissions"` alone, which is no roster at all, so a
+ * tool dropped from `allChuggyTools` would satisfy "not allowed" while being
+ * reachable inside the pod.
+ */
+test("a thread's roster allows origination by name and a lead's disallows it by name", () => {
+  const originating = `${chuggyToolPrefix}create_draft`;
+  const thread = image.sessionAllowedTools([...threadRoster]);
+  const lead = image.sessionAllowedTools([...leadRoster]);
+
+  assert.ok(thread.allowedTools.includes(originating));
+  assert.ok(!thread.disallowedTools.includes(originating));
+  assert.ok(lead.disallowedTools.includes(originating));
+  assert.ok(!lead.allowedTools.includes(originating));
+});
+
+/**
+ * The reads a thread is given so it can see what the other members' threads are
+ * doing. They are `ProjectRead`, so a lead holds them too: what a thread has
+ * that a lead does not is origination alone.
+ */
+test("both rosters carry the thread reads, under ProjectRead", () => {
+  for (const roster of [[...leadRoster], [...threadRoster]])
+    for (const tool of [
+      "list_threads",
+      "read_thread",
+      "read_thread_transcript",
+    ])
+      assert.ok(
+        image.chuggyToolNames(roster).includes(`${chuggyToolPrefix}${tool}`),
+        `${tool} for ${roster.join(",")}`,
+      );
 });

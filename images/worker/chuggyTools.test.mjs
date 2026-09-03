@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { URL } from "node:url";
+
+import { leadRoster } from "../../test/contract/sessionRosterFixture.ts";
 
 import { z } from "zod";
 
@@ -193,6 +196,16 @@ test("each read reaches the route its roster names, and only it", async () => {
     ],
     [["read_operation", { operation: "o-1" }], "/operations/o-1"],
     [["initialize_draft", { revision: "r1" }], "/draft-initializations/r1"],
+    [["list_threads", {}], "/threads"],
+    [["read_thread", { session: "thread-1/a" }], "/threads/thread-1%2Fa"],
+    [
+      ["read_thread", { session: "thread-1", before: 7, limit: 32 }],
+      "/threads/thread-1?before=7&limit=32",
+    ],
+    [
+      ["read_thread_transcript", { session: "thread-1", after: 2, limit: 8 }],
+      "/threads/thread-1/transcript?after=2&limit=8",
+    ],
   ];
   for (const [[name, args], suffix] of cases) {
     const api = apiOf();
@@ -205,6 +218,84 @@ test("each read reaches the route its roster names, and only it", async () => {
       name,
     );
   }
+});
+
+/**
+ * Every identity a tool puts in a path segment, given one that carries the
+ * separator. A segment is model-chosen text bounded only by `identity(z)`, so
+ * an unencoded one is a tool that reaches a route its roster does not name:
+ * `new URL(path, origin)` resolves `..` before the request is made, which is
+ * how `…/threads/../lead/transcript` becomes the lead's route. The assertion is
+ * on the RESOLVED pathname rather than on the string this file built, because
+ * the string is not what the API is asked for.
+ */
+test("an identity carrying a separator stays inside the route its tool names", async () => {
+  const escaping = "../lead";
+  const escaped = "..%2Flead";
+  const partition = "/api/v1/tenants/vteng/projects/chuggy";
+  const cases = [
+    [
+      ["read_configuration", { revision: escaping }],
+      `/configurations/${escaped}`,
+    ],
+    [["read_execution", { execution: escaping }], `/executions/${escaped}`],
+    [
+      ["read_run_transcript", { execution: escaping, attempt: escaping }],
+      `/executions/${escaped}/attempts/${escaped}/transcript`,
+    ],
+    [["read_operation", { operation: escaping }], `/operations/${escaped}`],
+    [
+      ["initialize_draft", { revision: escaping }],
+      `/draft-initializations/${escaped}`,
+    ],
+    [["read_thread", { session: escaping }], `/threads/${escaped}`],
+    [
+      ["read_thread_transcript", { session: escaping }],
+      `/threads/${escaped}/transcript`,
+    ],
+  ];
+  for (const [[name, args], suffix] of cases) {
+    const api = apiOf();
+
+    await routeOf(name, args, api);
+
+    assert.equal(api.calls.length, 1, name);
+    assert.equal(
+      new URL(api.calls[0].path, "https://api.test").pathname,
+      `${partition}${suffix}`,
+      name,
+    );
+  }
+});
+
+/**
+ * The thread reads' own bounds, driven past the unserved table. Their entries
+ * there answer `isError` for any argument at all, so a bound checked through a
+ * session's handler would pass with the bound deleted; `routeOf` is what makes
+ * the refusal the shape's rather than the table's.
+ */
+test("a thread read past its bound is refused before it asks, and within it asks", async () => {
+  for (const [name, args] of [
+    ["read_thread", { session: "" }],
+    ["read_thread", { session: "t-1", limit: 0 }],
+    ["read_thread", { session: "t-1", limit: 33 }],
+    ["read_thread", { session: "t-1", before: 0 }],
+    ["read_thread_transcript", { session: "t-1", limit: 0 }],
+    ["read_thread_transcript", { session: "t-1", limit: 9 }],
+    ["read_thread_transcript", { session: "" }],
+  ]) {
+    const api = apiOf();
+
+    const answer = await routeOf(name, args, api);
+
+    assert.equal(answer.isError, true, `${name} ${JSON.stringify(args)}`);
+    assert.equal(api.calls.length, 0, name);
+  }
+  const api = apiOf();
+
+  await routeOf("read_thread_transcript", { session: "t-1", limit: 8 }, api);
+
+  assert.equal(api.calls.length, 1, "a transcript at its bound was refused");
 });
 
 test("the project inventory is read outside the project's own path", async () => {
@@ -440,8 +531,87 @@ test("a command submitted with no turn claimed is refused rather than minted", a
   assert.equal(api.calls.length, 0);
 });
 
+const origination = {
+  configurationRevision: "r1",
+  configurationDigest: "d1",
+  expectedProjectSequence: 12,
+  authoring: { dependencies: [] },
+  brief: { title: "what the member asked for" },
+};
+
+test("an originated draft is filed at the drafts route, fenced and derived from nothing", async () => {
+  const filed = JSON.stringify({ ticket: 14, version: 1 });
+  const { api, call } = toolsOf({}, () => ({ status: 201, body: filed }));
+
+  const answer = await call("create_draft", origination);
+
+  assert.equal(api.calls.length, 1);
+  assert.equal(api.calls[0].method, "POST");
+  assert.equal(
+    api.calls[0].path,
+    "/api/v1/tenants/vteng/projects/chuggy/drafts",
+  );
+  assert.equal(
+    api.calls[0].init.headers["content-type"],
+    "application/vnd.chuggy.v1+json",
+  );
+  assert.deepEqual(JSON.parse(api.calls[0].init.body), origination);
+  assert.equal(textOf(answer), `HTTP 201\n${filed}`);
+  assert.ok(answer.isError === undefined);
+});
+
+test("an origination the API refuses is relayed unaltered and never asked again", async () => {
+  const body = JSON.stringify({ error: "StaleProjectSequence" });
+  const { api, call } = toolsOf({}, () => ({ status: 409, body }));
+
+  const answer = await call("create_draft", origination);
+
+  assert.equal(textOf(answer), `HTTP 409\n${body}`);
+  assert.equal(answer.isError, true);
+  assert.equal(api.calls.length, 1);
+});
+
+test("an origination without the fence the route requires never reaches it", async () => {
+  const { api, call } = toolsOf();
+
+  for (const missing of [
+    "configurationRevision",
+    "configurationDigest",
+    "expectedProjectSequence",
+    "authoring",
+    "brief",
+  ]) {
+    const answer = await call(
+      "create_draft",
+      Object.fromEntries(
+        Object.entries(origination).filter(([field]) => field !== missing),
+      ),
+    );
+
+    assert.equal(answer.isError, true, missing);
+  }
+  assert.equal(api.calls.length, 0);
+});
+
+test("origination is registered for a thread's roster and for no lead's", () => {
+  const registered = (capabilities) =>
+    chuggyToolDefinitions(
+      chuggyToolContext(task, bearer, {
+        capabilities,
+        staging: leadDecisionStaging(),
+      }),
+    ).map(({ name }) => name);
+
+  assert.ok(registered(["DraftOriginate"]).includes("create_draft"));
+  assert.deepEqual(registered(["DraftOriginate"]), ["create_draft"]);
+  assert.ok(
+    !registered([...leadRoster]).includes("create_draft"),
+    "a lead's roster registered the tool that files from nothing",
+  );
+});
+
 /**
- * The six reads whose route `src/adapters/http/server.ts` does not register.
+ * The reads whose route `src/adapters/http/server.ts` does not register.
  * Written here rather than read off the table under test, so a table that lost
  * an entry is a failure rather than a change of expectation.
  */
@@ -469,9 +639,13 @@ test("every tool whose route is unserved refuses before it asks, and no other do
     read_ticket_refusals: { ticket: 4 },
     read_lead: {},
     read_lead_transcript: {},
+    list_threads: {},
+    read_thread: { session: "t-1" },
+    read_thread_transcript: { session: "t-1" },
     read_ticket: { ticket: 4 },
     list_tickets: {},
     read_operation: { operation: "o-1" },
+    create_draft: origination,
   };
   for (const [name, args] of Object.entries(arguments_)) {
     const unserved = unservedOnThisInstallation.includes(name);

@@ -28,10 +28,16 @@
  * text. No retry, no repair, no hiding a 409. A tool that decided what a refusal
  * meant would be deciding something the API decided.
  *
- * DERIVED WORK ONLY. There is no bare draft creation: `file_dependent` files
+ * DERIVED WORK ONLY IS WHAT `DraftAuthor` ADMITS. `file_dependent` files
  * against a parent that already exists and carries it in the draft's
- * dependencies. `Prerequisite` is admitted by the schema only so its refusal can
- * name the reason — a released ticket's dependencies are immutable in
+ * dependencies; a roster holding `DraftAuthor` alone cannot originate work.
+ * Origination is `create_draft` under `DraftOriginate` alone. Which capability
+ * a session is opened with is the provisioning root's, not this image's, so
+ * what is true here is the mapping: a roster without `DraftOriginate` cannot
+ * reach the tool, and the derived-work rule is that mapping rather than a
+ * sentence in a description.
+ * `Prerequisite` is admitted by the schema only so its refusal can name the
+ * reason — a released ticket's dependencies are immutable in
  * `model/domain.qnt`, which names re-authoring machinery as deliberately absent.
  *
  * `zod` IS A PEER DEPENDENCY OF THE AGENT SDK, NOT ONE OF ITS DEPENDENCIES, so
@@ -62,6 +68,7 @@ export const nativeHttpPageItemsMax = 100;
 export const selectorHistoryLimitMax = 50;
 export const agenticRefusalsAnsweredMax = 32;
 export const sessionStorePageBatchesMax = 8;
+export const threadTurnsAnsweredMax = 32;
 
 /** The relation a filed dependent may carry, and the one it may not. */
 export const allDependentRelations = ["FollowUp", "Prerequisite"];
@@ -108,6 +115,9 @@ const projectReadTools = [
   "read_execution",
   "read_run_transcript",
   "read_operation",
+  "list_threads",
+  "read_thread",
+  "read_thread_transcript",
 ];
 
 const draftAuthorTools = [
@@ -117,6 +127,9 @@ const draftAuthorTools = [
   "delete_draft",
   "release_draft",
 ];
+
+/** The one tool that files work nothing derived, which a thread holds and a lead does not. */
+const draftOriginateTools = ["create_draft"];
 
 /**
  * Which capability admits which tool. A capability this image does not know
@@ -128,7 +141,7 @@ export const sessionCapabilityTools = {
   RunCommands: ["Bash"],
   ProjectRead: projectReadTools,
   DraftAuthor: draftAuthorTools,
-  DraftOriginate: [],
+  DraftOriginate: draftOriginateTools,
   LeadDecision: leadDecisionToolNames,
 };
 
@@ -136,6 +149,7 @@ export const sessionCapabilityTools = {
 export const allChuggyTools = [
   ...projectReadTools,
   ...draftAuthorTools,
+  ...draftOriginateTools,
   ...leadDecisionToolNames,
 ];
 
@@ -251,6 +265,8 @@ const ticket = (z) => z.number().int().min(1);
 const limit = (z, max) => z.number().int().min(1).max(max).optional();
 const count = (z) => z.number().int().min(0);
 const identity = (z) => z.string().min(1).max(256);
+/** A position in a mailbox, which is counted from one and never from zero. */
+const ordinal = (z) => z.number().int().min(1);
 /**
  * A JSON object this tool passes through and the API's own schema is the
  * authority on. IT IS `looseObject` AND NOT `record`: the runtime converts a
@@ -502,6 +518,44 @@ export const chuggyProjectTools = [
       ),
   },
   {
+    name: "list_threads",
+    description:
+      "The member threads open on this project: whose each is, its state, and whether it is this session's own.",
+    shape: () => ({}),
+    call: (context) => read(context, `${partitionPath(context.task)}/threads`),
+  },
+  {
+    name: "read_thread",
+    description:
+      "One page of a member thread, newest turn last: whose it is, its state, and that much of its conversation. Answers `nextBefore` for the page before this one; `before` resumes from it.",
+    shape: (z) => ({
+      session: identity(z),
+      before: ordinal(z).optional(),
+      limit: limit(z, threadTurnsAnsweredMax),
+    }),
+    call: (context, { session, before, limit: pageLimit }) =>
+      read(
+        context,
+        `${partitionPath(context.task)}/threads/${encodeURIComponent(session)}${search({ before, limit: pageLimit })}`,
+      ),
+  },
+  {
+    name: "read_thread_transcript",
+    description:
+      "One page of a thread's own raw transcript, which is how it reads past its own compaction.",
+    shape: (z) => ({
+      session: identity(z),
+      stream: identity(z).optional(),
+      after: count(z).optional(),
+      limit: limit(z, sessionStorePageBatchesMax),
+    }),
+    call: (context, { session, stream, after, limit: pageLimit }) =>
+      read(
+        context,
+        `${partitionPath(context.task)}/threads/${encodeURIComponent(session)}/transcript${search({ stream, after, limit: pageLimit })}`,
+      ),
+  },
+  {
     name: "initialize_draft",
     description:
       "The defaults, the dependency candidates and the fence a new draft is filed against, for one configuration revision.",
@@ -606,6 +660,26 @@ export const chuggyProjectTools = [
         { "idempotency-key": operation },
       );
     },
+  },
+  {
+    name: "create_draft",
+    description:
+      "Files a new draft for work your owner asked for, derived from nothing. The fence comes from initialize_draft.",
+    shape: (z) => ({
+      configurationRevision: identity(z),
+      configurationDigest: identity(z),
+      expectedProjectSequence: count(z),
+      authoring: anyObject(z),
+      brief: anyObject(z),
+    }),
+    call: (context, args) =>
+      write(context, `${partitionPath(context.task)}/drafts`, "POST", {
+        configurationRevision: args.configurationRevision,
+        configurationDigest: args.configurationDigest,
+        expectedProjectSequence: args.expectedProjectSequence,
+        authoring: args.authoring,
+        brief: args.brief,
+      }),
   },
 ];
 
