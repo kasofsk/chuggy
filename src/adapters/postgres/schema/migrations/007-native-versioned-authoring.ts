@@ -1,3 +1,4 @@
+import { configurationCanonicalCharsMax } from "../../../../contract/http.ts";
 import {
   apiRole,
   boundaryOwnerRole,
@@ -43,7 +44,7 @@ const nativeAuthoring = [
      CONSTRAINT configuration_revision_parent_is_local FOREIGN KEY (tenant,project,parent)
        REFERENCES configuration_revision (tenant,project,revision),
      CONSTRAINT configuration_revision_digest_identity UNIQUE (tenant,project,revision,digest),
-     CONSTRAINT configuration_revision_content_is_bounded CHECK (length(canonical) BETWEEN 1 AND 65536)
+     CONSTRAINT configuration_revision_content_is_bounded CHECK (length(canonical) BETWEEN 1 AND ${configurationCanonicalCharsMax})
    )`,
   `ALTER TABLE journal_entry
      ADD COLUMN integrity_version integer NOT NULL DEFAULT 1,

@@ -106,6 +106,26 @@ export const sessionTurnReleaseFunction = "release_session_attempt_turns";
 export const sessionStoreImmutableFunction = "session_store_is_immutable";
 export const sessionReferenceWrittenOnceFunction =
   "agent_session_is_written_once";
+export const agenticRefusalRecordFunction = "record_agentic_refusals";
+export const agenticRefusalStandingFunction = "standing_agentic_refusals";
+export const leadSessionFunction = "lead_session";
+export const leadTurnEnqueueFunction = "enqueue_lead_turn";
+export const leadTurnReadFunction = "read_lead_turn";
+export const leadTurnWithdrawFunction = "withdraw_lead_turn";
+export const agenticRefusalLedgerReadFunction = "read_agentic_refusals";
+export const agenticRefusalStandingReadFunction =
+  "read_standing_agentic_refusals";
+export const selectorInteractionsReadFunction = "read_selector_interactions";
+export const selectorPlanningIntentReadFunction =
+  "read_selector_planning_intent";
+export const leadStandingReadFunction = "read_lead_standing";
+export const leadStoreReadFunction = "read_lead_store";
+export const leadStreamListFunction = "list_lead_store_streams";
+export const agenticRefusalImmutableFunction = "selector_refusal_is_immutable";
+export const projectChangeAgenticRefusalFunction = "selector_refusal_change";
+export const projectChangeSessionTurnFunction = "session_turn_appends_a_change";
+export const projectChangeSessionStoreFunction =
+  "session_store_batch_appends_a_change";
 export const finalizerRole = "chuggy_finalizer";
 export const completionFunction = "submit_task_completion";
 export const finalizationFunction = "submit_finalization_result";

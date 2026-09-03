@@ -50,6 +50,7 @@
  * materializer is the one that earns the rule.
  */
 
+import { artifactDigestChars } from "../contract/http.ts";
 import type { Verdict } from "../domain/generated/modelTypes.ts";
 import {
   asGitObjectId,
@@ -104,7 +105,7 @@ export const artifactPathSegmentCharsMax = 64;
 export const artifactPathSegmentsMax = 16;
 
 /** The width of an artifact digest in lower-case hex characters. */
-export const artifactDigestChars = 64;
+export { artifactDigestChars };
 
 /** The most declared handoffs one manifest may carry. */
 export const manifestHandoffsMax = 64;

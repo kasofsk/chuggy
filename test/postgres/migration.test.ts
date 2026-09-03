@@ -19,6 +19,7 @@ import {
   schedulerRole,
   repositoryBindingReadFunction,
   schemaTextSet,
+  selectorServiceRole,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import {
@@ -31,7 +32,22 @@ import {
   postgresRuntimeSchema,
   runtimeSchemaContract,
 } from "../../src/adapters/postgres/runtimeSchema.ts";
+import {
+  nativeHttpPathSegmentCharsMax,
+  projectChangeResourceCharsMax,
+  sessionIdentityCharsMax,
+  selectorHandoffNoteBytesMax,
+  sessionTurnInputCharsMax,
+  sessionTurnResultCharsMax,
+} from "../../src/contract/http.ts";
 import { briefFinalizationModes } from "../../src/contract/rosters.ts";
+import {
+  leadMillisecondsPerDecision,
+  leadTokensPerDecision,
+} from "../../src/adapters/postgres/schema/migrations/059-lead-decisions.ts";
+import { allSessionTurnFailures } from "../../src/interpreter/agentSession.ts";
+import { allSessionAttemptEvidences } from "../../src/interpreter/sessionScheduler.ts";
+import { schemaContractAccepts } from "../../src/interpreter/serviceRuntime.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import { resumeTags } from "../../src/domain/generated/modelTypes.ts";
 import { schemaCompatibilityPrecondition } from "../../src/interpreter/serviceRuntime.ts";
@@ -1993,6 +2009,426 @@ test("migration 55 widens a resume check installed before that point existed", a
         ),
       /ticket_projection_resume_is_known/u,
       "the widened check is still a check",
+    );
+  });
+});
+
+/** Narrows one roster's check to the members it held before 059 widened it. */
+async function migrationNarrowedRoster(
+  subject: pg.Pool,
+  relation: string,
+  constraint: string,
+  expression: string,
+): Promise<void> {
+  await subject.query(
+    `ALTER TABLE ${relation}
+       DROP CONSTRAINT ${constraint},
+       ADD CONSTRAINT ${constraint} CHECK (${expression})`,
+  );
+}
+
+/** A lead session with one queued turn, which is what a withdrawal moves. */
+async function migrationLeadTurn(subject: pg.Pool): Promise<void> {
+  const store = postgresProjectStore(subject);
+  await postgresHarnessEpoch(store);
+  const partition = await postgresHarnessProject(store, "lead-decisions");
+  const values = [partition.tenant, partition.project];
+  await subject.query(
+    `SELECT open_agent_session($1,$2,'session-59','Lead','principal-59',
+       NULL,ARRAY[]::text[],'claude-code')`,
+    values,
+  );
+  await subject.query(
+    `SELECT enqueue_session_turn($1,$2,'session-59','turn-59','Observation','{}')`,
+    values,
+  );
+}
+
+test("migration 59 widens a kind check installed before these kinds existed", async () => {
+  await migrationDatabase("lead_decision_kinds", async (subject) => {
+    await migrationSeedApplied(subject, 59);
+    await migrationNarrowedRoster(
+      subject,
+      "project_change",
+      "project_change_kind_is_known",
+      `kind IN (${schemaTextSet(
+        allProjectChangeKinds.filter(
+          (kind) => kind !== "AgenticRefusal" && kind !== "Session",
+        ),
+      )})`,
+    );
+    const append = (kind: string) =>
+      subject.query(
+        `SELECT ${projectChangeAppendFunction}('tenant','project',$1,'1')`,
+        [kind],
+      );
+    for (const kind of ["AgenticRefusal", "Session"] as const)
+      await assert.rejects(
+        () => append(kind),
+        /project_change_kind_is_known/u,
+        `the log installed with 43 refuses ${kind}`,
+      );
+
+    await applyMigration(subject, 59);
+
+    for (const kind of ["AgenticRefusal", "Session"] as const)
+      await append(kind);
+    assert.deepEqual(
+      (await subject.query("SELECT kind FROM project_change ORDER BY sequence"))
+        .rows,
+      [{ kind: "AgenticRefusal" }, { kind: "Session" }],
+    );
+    await assert.rejects(
+      () => append("Nowhere"),
+      /project_change_kind_is_known/u,
+      "the widened check is still a check",
+    );
+  });
+});
+
+test("migration 59 widens a failure check installed before the withdrawal existed", async () => {
+  await migrationDatabase("lead_decision_failures", async (subject) => {
+    await migrationSeedApplied(subject, 59);
+    await migrationNarrowedRoster(
+      subject,
+      "session_turn",
+      "session_turn_failure_is_known",
+      `failure IS NULL OR failure IN (${schemaTextSet(
+        allSessionTurnFailures.filter((failure) => failure !== "TurnWithdrawn"),
+      )})`,
+    );
+    await migrationLeadTurn(subject);
+    const withdraw = `UPDATE session_turn
+        SET state='Abandoned',failure='TurnWithdrawn',ended_at=now()
+      WHERE turn='turn-59'`;
+    await assert.rejects(
+      () => subject.query(withdraw),
+      /session_turn_failure_is_known/u,
+      "the mailbox installed with 58 refuses a withdrawal it was created before",
+    );
+
+    await applyMigration(subject, 59);
+
+    await subject.query(withdraw);
+    assert.deepEqual(
+      (await subject.query("SELECT state,failure FROM session_turn")).rows,
+      [{ state: "Abandoned", failure: "TurnWithdrawn" }],
+    );
+    await assert.rejects(
+      () =>
+        subject.query(
+          `UPDATE session_turn SET failure='Nowhere' WHERE turn='turn-59'`,
+        ),
+      /session_turn_failure_is_known/u,
+      "the widened check is still a check",
+    );
+  });
+});
+
+/** Every door 059 opens, beside the one role it is granted to. */
+const leadSelectorDoors = [
+  "record_agentic_refusals(text,text,text,jsonb,jsonb)",
+  "standing_agentic_refusals(text,text,bigint)",
+  "lead_session(text,text)",
+  "enqueue_lead_turn(text,text,text,text)",
+  "read_lead_turn(text)",
+  "withdraw_lead_turn(text)",
+];
+/** The one door both roles hold, which is still a door nobody else may open. */
+const leadSharedDoors = [
+  "read_selector_interactions(text,text,bigint,bigint,boolean)",
+];
+const leadApiDoors = [
+  "read_agentic_refusals(text,text,bigint,bigint)",
+  "read_standing_agentic_refusals(text,text,bigint)",
+  "read_selector_planning_intent(text,text)",
+  "read_lead_standing(text,text,bigint)",
+  "read_lead_store(text,text,text,bigint,bigint)",
+  "list_lead_store_streams(text,text,bigint)",
+];
+
+/** Nobody but the one role a door is granted to may execute it, `PUBLIC` included. */
+async function migrationLeadDoorsAreStrangers(
+  executes: (role: string, signature: string) => Promise<boolean | undefined>,
+): Promise<void> {
+  for (const door of [
+    ...leadSelectorDoors,
+    ...leadApiDoors,
+    ...leadSharedDoors,
+  ])
+    for (const stranger of ["public", ticketServiceRole, finalizerRole])
+      assert.equal(
+        await executes(stranger, door),
+        false,
+        `${stranger} holds nothing on ${door}`,
+      );
+}
+
+test("migration 59 grants each lead door to exactly one role", async () => {
+  await migrationDatabase("lead_grants", async (subject) => {
+    await migrationSeedApplied(subject, 60);
+    const executes = async (role: string, signature: string) =>
+      (
+        await subject.query<{ granted: boolean }>(
+          "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
+          [role, signature],
+        )
+      ).rows[0]?.granted;
+    for (const door of leadSelectorDoors) {
+      assert.equal(await executes(selectorServiceRole, door), true, door);
+      assert.equal(await executes(apiRole, door), false, door);
+    }
+    for (const door of leadApiDoors) {
+      assert.equal(await executes(apiRole, door), true, door);
+      assert.equal(await executes(selectorServiceRole, door), false, door);
+    }
+    for (const door of leadSharedDoors)
+      for (const role of [selectorServiceRole, apiRole])
+        assert.equal(
+          await executes(role, door),
+          true,
+          "the console draws the decision log and a fresh lead is seeded from it",
+        );
+    assert.equal(
+      await executes(
+        selectorServiceRole,
+        "enqueue_session_turn(text,text,text,text,text,text)",
+      ),
+      false,
+      "a role that may name any session may put a turn in a member's thread",
+    );
+    await migrationLeadDoorsAreStrangers(executes);
+    for (const relation of [
+      "agent_session",
+      "session_turn",
+      "session_store_batch",
+    ])
+      for (const verb of ["SELECT", "INSERT", "UPDATE", "DELETE"])
+        assert.equal(
+          (
+            await subject.query<{ granted: boolean }>(
+              "SELECT has_table_privilege($1,$2,$3) AS granted",
+              [selectorServiceRole, relation, verb],
+            )
+          ).rows[0]?.granted,
+          false,
+          `${selectorServiceRole} reaches ${relation} only through a door`,
+        );
+    for (const [role, verb] of [
+      [selectorServiceRole, "SELECT"],
+      [selectorServiceRole, "INSERT"],
+      [apiRole, "SELECT"],
+    ] as const)
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_table_privilege($1,'selector_agentic_refusal',$2) AS granted",
+            [role, verb],
+          )
+        ).rows[0]?.granted,
+        false,
+        `${role} reaches the ledger only through a door`,
+      );
+  });
+});
+
+/** The two limits 059 moves, as the settings row currently holds them. */
+async function migrationDecisionLimits(
+  subject: pg.Pool,
+): Promise<{ readonly tokens: string; readonly duration: string } | undefined> {
+  const found = await subject.query<{ tokens: string; duration: string }>(
+    `SELECT (controls::jsonb->'limits'->>'tokensPerDecision') AS tokens,
+            (controls::jsonb->'limits'->>'millisecondsPerDecision') AS duration
+       FROM selector_runtime_settings WHERE singleton=1`,
+  );
+  return found.rows[0];
+}
+
+test("migration 59 raises the seeded decision envelope to a lead turn", async () => {
+  await migrationDatabase("lead_limits_raised", async (subject) => {
+    await migrationSeedApplied(subject, 59);
+    const seeded = await migrationDecisionLimits(subject);
+    assert.ok(Number(seeded?.tokens) < leadTokensPerDecision);
+    assert.ok(Number(seeded?.duration) < leadMillisecondsPerDecision);
+
+    await applyMigration(subject, 59);
+
+    assert.deepEqual(await migrationDecisionLimits(subject), {
+      tokens: String(leadTokensPerDecision),
+      duration: String(leadMillisecondsPerDecision),
+    });
+  });
+});
+
+test("migration 59 moves a floor and never a value somebody raised", async () => {
+  await migrationDatabase("lead_limits_kept", async (subject) => {
+    await migrationSeedApplied(subject, 59);
+    const held = leadTokensPerDecision * 2;
+    await subject.query(
+      `UPDATE selector_runtime_settings
+          SET controls=jsonb_set(
+                jsonb_set(controls::jsonb,'{limits,tokensPerDecision}',
+                  to_jsonb($1::bigint)),
+                '{limits,millisecondsPerDecision}',to_jsonb($2::bigint))::text
+        WHERE singleton=1`,
+      [held, leadMillisecondsPerDecision],
+    );
+
+    await applyMigration(subject, 59);
+
+    assert.deepEqual(await migrationDecisionLimits(subject), {
+      tokens: String(held),
+      duration: String(leadMillisecondsPerDecision),
+    });
+  });
+});
+
+test("migration 59 widens a resource check installed before a session named three things", async () => {
+  await migrationDatabase("lead_resource_bound", async (subject) => {
+    await migrationSeedApplied(subject, 59);
+    await migrationNarrowedRoster(
+      subject,
+      "project_change",
+      "project_change_resource_is_bounded",
+      `length(resource) BETWEEN 1 AND ${nativeHttpPathSegmentCharsMax}`,
+    );
+    const resource = "r".repeat(nativeHttpPathSegmentCharsMax + 1);
+    const append = () =>
+      subject.query(
+        `SELECT ${projectChangeAppendFunction}('tenant','project','Session',$1)`,
+        [resource],
+      );
+    await assert.rejects(
+      append,
+      /project_change_resource_is_bounded/u,
+      "a log installed before a session named three things refuses one that does",
+    );
+
+    await applyMigration(subject, 59);
+
+    await append();
+    assert.deepEqual(
+      (await subject.query("SELECT kind FROM project_change")).rows,
+      [{ kind: "Session" }],
+    );
+    await assert.rejects(
+      () =>
+        subject.query(
+          `SELECT ${projectChangeAppendFunction}('tenant','project','Session',$1)`,
+          ["r".repeat(projectChangeResourceCharsMax + 1)],
+        ),
+      /project_change_resource_is_bounded/u,
+      "the widened check is still a check",
+    );
+  });
+});
+
+test("migration 59 widens a turn's input check installed before an observation grew", async () => {
+  await migrationDatabase("lead_turn_input", async (subject) => {
+    await migrationSeedApplied(subject, 59);
+    await migrationNarrowedRoster(
+      subject,
+      "session_turn",
+      "session_turn_text_is_bounded",
+      `length(input) BETWEEN 1 AND ${selectorHandoffNoteBytesMax}
+         AND coalesce(length(result), 0) <= ${sessionTurnResultCharsMax}`,
+    );
+    await migrationLeadTurn(subject);
+    const widen = `UPDATE session_turn SET input=repeat('o',$1) WHERE turn='turn-59'`;
+    await assert.rejects(
+      () => subject.query(widen, [selectorHandoffNoteBytesMax + 1]),
+      /session_turn_text_is_bounded/u,
+      "a mailbox installed before an observation named its parts refuses one",
+    );
+
+    await applyMigration(subject, 59);
+
+    await subject.query(widen, [selectorHandoffNoteBytesMax + 1]);
+    await assert.rejects(
+      () => subject.query(widen, [sessionTurnInputCharsMax + 1]),
+      /session_turn_text_is_bounded/u,
+      "the widened check is still a check",
+    );
+  });
+});
+
+test("058, 059 and 060 compose into the schema a fresh generation renders", async () => {
+  await migrationDatabase("lead_composition", async (subject) => {
+    await migrationSeedApplied(subject, 61);
+    const definition = async (relation: string, constraint: string) =>
+      (
+        await subject.query<{ definition: string }>(
+          `SELECT pg_get_constraintdef(c.oid) AS definition
+             FROM pg_constraint c
+            WHERE c.conrelid = $1::regclass AND c.conname = $2`,
+          [relation, constraint],
+        )
+      ).rows[0]?.definition;
+
+    const members = async (relation: string, constraint: string) => {
+      const held = await definition(relation, constraint);
+      assert.ok(held !== undefined, `${constraint} was not found`);
+      return [...held.matchAll(/'([^']+)'::text/gu)].map((each) => each[1]);
+    };
+
+    assert.deepEqual(
+      await members("project_change", "project_change_kind_is_known"),
+      [...allProjectChangeKinds],
+      "the kind roster 043 wrote and 059 replaced is the roster on main",
+    );
+    assert.deepEqual(
+      await members("session_turn", "session_turn_failure_is_known"),
+      [...allSessionTurnFailures],
+      "the failure roster 058 wrote and 059 replaced is the roster on main",
+    );
+    assert.deepEqual(
+      await members("session_attempt", "session_attempt_evidence_is_known"),
+      [...allSessionAttemptEvidences],
+      "the evidence roster 058 wrote and 060 replaced is the roster on main",
+    );
+    for (const [relation, constraint, bound] of [
+      [
+        "project_change",
+        "project_change_resource_is_bounded",
+        projectChangeResourceCharsMax,
+      ],
+      [
+        "session_turn",
+        "session_turn_identity_is_bounded",
+        sessionIdentityCharsMax,
+      ],
+    ] as const) {
+      const held = await definition(relation, constraint);
+      assert.ok(held?.includes(String(bound)), `${constraint} holds its bound`);
+    }
+    const input = await definition(
+      "session_turn",
+      "session_turn_text_is_bounded",
+    );
+    assert.ok(input?.includes(String(sessionTurnInputCharsMax)));
+    assert.ok(input?.includes(String(sessionTurnResultCharsMax)));
+  });
+});
+
+test("the ledger the api image reads accepts what 058, 059 and 060 applied", async () => {
+  await migrationDatabase("lead_ledger", async (subject) => {
+    await migrationSeedApplied(subject, 61);
+    const applied = await postgresRuntimeSchema(subject).applied(
+      new AbortController().signal,
+    );
+    assert.equal(
+      applied.length,
+      Math.max(...applied.map((each) => each.version)),
+      "the ledger holds one row per version with no gap and no repeat",
+    );
+    assert.deepEqual(
+      applied.map((each) => each.version).slice(-3),
+      [58, 59, 60],
+      "the three apply in the order their filenames give them",
+    );
+    assert.ok(
+      schemaContractAccepts(currentRuntimeSchemaContract, applied),
+      "the prefix an api image requires is the prefix these three leave",
     );
   });
 });

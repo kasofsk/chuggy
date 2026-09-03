@@ -24,7 +24,10 @@ import {
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { notificationPublishFunction } from "../../src/adapters/postgres/schema.ts";
 import type { ProjectChangeLog } from "../../src/interpreter/projectStream.ts";
-import type { ProjectSourceState } from "../../src/contract/events.ts";
+import {
+  projectChangeDataSchemas,
+  type ProjectSourceState,
+} from "../../src/contract/events.ts";
 import {
   asTenantId,
   type Partition,
@@ -254,4 +257,32 @@ test("a terminated listener degrades and then comes back live", async () => {
   } finally {
     await doorbell.close();
   }
+});
+
+test("the change frame parses every resource the log's own column accepts", async () => {
+  const constraint = await pool.query<{ definition: string }>(
+    `SELECT pg_get_constraintdef(c.oid) AS definition
+       FROM pg_constraint c
+      WHERE c.conrelid = 'project_change'::regclass
+        AND c.conname = 'project_change_resource_is_bounded'`,
+  );
+  const definition = constraint.rows[0]?.definition;
+  assert.ok(definition !== undefined, "the resource ceiling was not found");
+  const checked = /length\(resource\) <= (\d+)/u.exec(definition);
+  assert.ok(checked !== null, "the ceiling is not a length check");
+  const held = Number(checked[1]);
+
+  const frame = (resource: string) => ({
+    version: 1,
+    resource,
+    representation: null,
+  });
+  assert.doesNotThrow(
+    () => projectChangeDataSchemas.Session.parse(frame("r".repeat(held))),
+    "a row the column accepts is a frame the stream must be able to build",
+  );
+  assert.throws(
+    () => projectChangeDataSchemas.Session.parse(frame("r".repeat(held + 1))),
+    "a resource the column refuses is one the frame need not carry",
+  );
 });

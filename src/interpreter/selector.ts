@@ -299,9 +299,6 @@ export const leadRefusalsPerDecisionMax = 16;
 /** How many standing refusals one observation carries, which is what a read of them answers. */
 export const leadRefusalsObservedMax = agenticRefusalsAnsweredMax;
 
-/** How many past decisions a seeding turn carries, newest last. */
-export const leadSeedingDecisionsMax = 16;
-
 /** What one lead turn's observation may weigh, which is what its mailbox row holds. */
 export const leadObservationBytesMax = sessionTurnInputCharsMax;
 

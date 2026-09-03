@@ -51,6 +51,3 @@ export type ProjectChangeKind = (typeof allProjectChangeKinds)[number];
  * window for as many projects as an installation streams concurrently.
  */
 export const projectChangeRetentionMax = 100_000;
-
-/** How long a resource identity a change row may name. */
-export const projectChangeResourceCharsMax = 256;

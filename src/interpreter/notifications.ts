@@ -1,5 +1,6 @@
 /** Bounded project notifications used to accelerate authoritative reads. */
 
+import { notificationPageLimitMax } from "../contract/http.ts";
 import type { NotificationKind } from "../contract/rosters.ts";
 import type { Partition } from "./projectStore.ts";
 
@@ -16,7 +17,8 @@ export interface NotificationCursor {
   readonly limit: number;
 }
 
-export const notificationPageLimitMax = 100;
+/** How many of a project's notifications one page carries, surfaced where every reader of it looks. */
+export { notificationPageLimitMax };
 
 export function checkedNotificationCursor(
   cursor: NotificationCursor,

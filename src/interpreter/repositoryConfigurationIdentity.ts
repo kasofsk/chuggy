@@ -1,3 +1,4 @@
+import { repositoryConfigurationNameCharsMax } from "../contract/http.ts";
 declare const repositoryConfigurationNameBrand: unique symbol;
 declare const repositoryConfigurationPathBrand: unique symbol;
 
@@ -19,7 +20,8 @@ export interface ConfigurationVersion {
 }
 
 export const repositoryConfigurationDeclarationsMax = 100;
-export const repositoryConfigurationNameCharsMax = 128;
+/** The configuration name bound, surfaced where every branding of one reads it. */
+export { repositoryConfigurationNameCharsMax };
 export const repositoryConfigurationPathCharsMax = 256;
 export const repositoryConfigurationFileCharsMax = 65_536;
 export const repositoryConfigurationRoot = ".chug/configurations/";

@@ -59,11 +59,11 @@
  * watches.
  */
 
+import { projectChangeResourceCharsMax } from "../../../../contract/http.ts";
 import {
   allProjectChangeKinds,
   projectChangeChannel,
   projectChangePayload,
-  projectChangeResourceCharsMax,
   projectChangeRetentionMax,
 } from "../../../../interpreter/projectChange.ts";
 import {

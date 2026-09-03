@@ -58,11 +58,13 @@ import {
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
   agenticRefusalsAnsweredMax,
+  leadObjectivesFixedCharsMax,
   nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
   resultReportCharsMax,
   resultReportSchemaVersionMin,
   runConfigurationBytesMax,
+  sessionKindCharsMax,
   sessionTurnInputCharsMax,
   sessionTurnModelCharsMax,
   sessionTurnResultCharsMax,
@@ -74,11 +76,13 @@ import {
 import { runTurnsPageLimitMax } from "../../src/interpreter/runEvidence.ts";
 import type { RunTotals } from "../../src/interpreter/runEvidence.ts";
 import { projectChangeKinds } from "../../src/contract/events.ts";
+import { leadObjectivesFixedChars } from "../../src/interpreter/leadTools.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import { allAgenticRefusalEvents } from "../../src/interpreter/agenticRefusal.ts";
 import {
   allAgentReportedTurnFailures,
   allPlatformTurnFailures,
+  allSessionKinds,
   allSessionStates,
   allSessionTurnFailures,
   allSessionTurnInputKinds,
@@ -475,5 +479,30 @@ test("a page of refusals fits the body and the observation it is sized against",
   assert.ok(
     agenticRefusalsAnsweredMax * agenticRefusalReasonCharsMax <=
       leadObservationBytesMax / 2,
+  );
+});
+
+/**
+ * The change resource's bound is derived from a ceiling on a kind label, and
+ * the contract may not read the roster that ceiling is meant to contain — so
+ * this is the only place the two can be held together.
+ */
+test("every session kind fits the ceiling the resource bound allows it", () => {
+  for (const kind of allSessionKinds)
+    assert.ok(
+      kind.length <= sessionKindCharsMax,
+      `${kind} is longer than a session change's resource makes room for`,
+    );
+});
+
+/**
+ * The observation bound derives from a ceiling on what the objectives add
+ * beyond the two texts a project sets, and the contract may not read the
+ * prefix that ceiling is meant to contain.
+ */
+test("a lead's own objectives fit the room the observation bound leaves them", () => {
+  assert.ok(
+    leadObjectivesFixedChars <= leadObjectivesFixedCharsMax,
+    "the standing instructions outgrew what a turn's input makes room for",
   );
 });

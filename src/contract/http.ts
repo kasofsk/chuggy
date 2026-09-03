@@ -79,7 +79,6 @@ export const sessionTurnBacklogMax = 256;
 /** How many attempts one turn may be handed before it is failed. */
 export const sessionTurnAttemptsMax = 3;
 
-export const sessionTurnInputCharsMax = 65_536;
 export const sessionTurnResultCharsMax = 65_536;
 
 /**
@@ -200,6 +199,266 @@ export const identitySchema = z
   .string()
   .min(1)
   .max(nativeHttpPathSegmentCharsMax);
+
+/** The longest opaque session identity a stored row carries. */
+export const sessionIdentityCharsMax = 256;
+
+/** The longest label a session kind may be, which its own roster is inside. */
+export const sessionKindCharsMax = 16;
+
+/** What one character weighs once JSON escapes it, which a control character does. */
+const jsonEscapedCharChars = 6;
+
+/** What a JSON string of this many characters weighs: its quotes, every character escaped. */
+function jsonStringChars(chars: number): number {
+  return chars * jsonEscapedCharChars + 2;
+}
+
+/**
+ * What one JSON object weighs as `jsonb::text` renders it, which is the only
+ * renderer that writes these: its braces, its quoted keys, the space after each
+ * key and each comma, and its values.
+ */
+function jsonObjectChars(
+  members: readonly (readonly [string, number])[],
+): number {
+  return (
+    2 +
+    members.reduce((total, [key, value]) => total + key.length + 4 + value, 0) +
+    Math.max(members.length - 1, 0) * 2
+  );
+}
+
+/**
+ * How long a resource identity a change row may name, which the widest session
+ * change decides rather than a path segment: an object naming the session,
+ * what the session is, and either the turn or the stream and the batch that
+ * moved, with every character of every identity escaped.
+ */
+export const projectChangeResourceCharsMax = Math.max(
+  jsonObjectChars([
+    ["session", jsonStringChars(sessionIdentityCharsMax)],
+    ["kind", jsonStringChars(sessionKindCharsMax)],
+    ["turn", jsonStringChars(sessionIdentityCharsMax)],
+  ]),
+  jsonObjectChars([
+    ["session", jsonStringChars(sessionIdentityCharsMax)],
+    ["kind", jsonStringChars(sessionKindCharsMax)],
+    ["stream", jsonStringChars(sessionStoreStreamCharsMax)],
+    ["batch", String(sessionStoreBatchesMax).length],
+  ]),
+);
+
+/** How many of a project's notifications one page carries. */
+export const notificationPageLimitMax = 100;
+
+/** How many candidates one page of the dispatch view carries. */
+export const dispatchViewPageLimitMax = 100;
+
+/** How many of its own past decisions a fresh lead is seeded with. */
+export const leadSeedingDecisionsMax = 16;
+
+/** The most a lead's objectives weigh beyond the two texts a project sets. */
+export const leadObjectivesFixedCharsMax = 4_096;
+
+/**
+ * The longest composed set of objectives one session row holds: what the
+ * installation asks of a lead, what the project wants, and what its tools mean.
+ * A ceiling below the two texts' sum would refuse a base prompt the settings
+ * route had already accepted, on every pass, long after the write that caused it.
+ */
+export const sessionSystemPromptCharsMax =
+  selectorSettingsTextCharsMax * 2 + leadObjectivesFixedCharsMax;
+
+/** The most digits a cursor the observation carries may be written with. */
+export const cursorDigitsCharsMax = 20;
+
+/**
+ * What one refusal the observation shows weighs beyond its reason: the ticket,
+ * the version it was made against, the instant, whether it is superseded, and
+ * the keys naming each.
+ */
+export const leadObservedRefusalEnvelopeCharsMax = 512;
+
+/** What one seeded decision summary weighs: what it dispatched, refused and left. */
+export const leadSeededDecisionCharsMax = 4_096;
+
+/** What one notification in the observation's window weighs: an ordinal, a kind, a resource. */
+export const leadObservedChangeCharsMax = 1_024;
+
+/** How many dependencies one authored draft names. */
+export const nativeHttpDraftDependenciesMax = 100;
+
+/** How many stages one authored program carries. */
+export const nativeHttpDraftStagesMax = 100;
+
+/** The longest canonical configuration one revision holds, which 007's column checks. */
+export const configurationCanonicalCharsMax = 65_536;
+
+/**
+ * What one character of an already-JSON text weighs once it is embedded as a
+ * JSON string. It is two rather than six because a canonical configuration
+ * carries no control character, and one rather than two would be a bound the
+ * quotes in every JSON document already exceed.
+ */
+const jsonEmbeddedTextCharChars = 2;
+
+/**
+ * What one observation carries that is neither a text a project set nor a page
+ * of something: its version, its decision reference, its partition, its view
+ * token and its operational context.
+ */
+export const leadObservationFixedCharsMax = 16_384;
+
+/**
+ * What one JSON object weighs as `JSON.stringify` writes it, which is what
+ * composes an observation: its braces, its quoted keys, its colons and its
+ * commas. It is not `jsonb`'s renderer and emits none of its spaces.
+ */
+function stringifiedObjectChars(
+  members: readonly (readonly [string, number])[],
+): number {
+  return (
+    2 +
+    members.reduce((total, [key, value]) => total + key.length + 3 + value, 0) +
+    Math.max(members.length - 1, 0)
+  );
+}
+
+/** What one JSON array of that many members weighs beyond them: its brackets and its commas. */
+function stringifiedArrayChars(members: number, memberChars: number): number {
+  return 2 + members * memberChars + Math.max(members - 1, 0);
+}
+
+/** What one refusal weighs where an observation shows it, its reason escaped. */
+const leadObservedRefusalChars =
+  leadObservedRefusalEnvelopeCharsMax +
+  jsonStringChars(agenticRefusalReasonCharsMax);
+
+/** Every standing refusal one observation carries, as one array. */
+const leadObservedRefusalsChars = stringifiedArrayChars(
+  agenticRefusalsAnsweredMax,
+  leadObservedRefusalChars,
+);
+
+/** The characters a sha-256 digest is written with, wherever one is carried. */
+export const artifactDigestChars = 64;
+
+/** The most digits any counter one candidate carries is written with. */
+const candidateCounterDigitsMax = 20;
+
+/** What one stage of a candidate's program weighs: its fanout and its combinator. */
+export const leadObservedStageCharsMax = 128;
+
+/** What one label a candidate's pricing or finalizer names weighs. */
+const candidateLabelCharsMax = 64;
+
+/** The configuration name one candidate's version label names. */
+export const repositoryConfigurationNameCharsMax = 128;
+
+/** Every field one dispatch candidate carries but the configuration, at its own bound. */
+const candidateOwnMembers: readonly (readonly [string, number])[] = [
+  ["ticket", candidateCounterDigitsMax],
+  ["ticketVersion", candidateCounterDigitsMax],
+  ["workFanout", candidateCounterDigitsMax],
+  [
+    "dependencies",
+    stringifiedArrayChars(
+      nativeHttpDraftDependenciesMax,
+      candidateCounterDigitsMax,
+    ),
+  ],
+  [
+    "program",
+    stringifiedArrayChars(nativeHttpDraftStagesMax, leadObservedStageCharsMax),
+  ],
+  ["reworkPolicy", jsonStringChars(candidateLabelCharsMax)],
+  ["finalizationPricing", jsonStringChars(candidateLabelCharsMax)],
+  ["resumePricing", jsonStringChars(candidateLabelCharsMax)],
+  ["finalizer", jsonStringChars(candidateLabelCharsMax)],
+  [
+    "configurationVersion",
+    stringifiedObjectChars([
+      ["name", jsonStringChars(repositoryConfigurationNameCharsMax)],
+      ["number", candidateCounterDigitsMax],
+    ]),
+  ],
+  ["configurationRevision", jsonStringChars(nativeHttpPathSegmentCharsMax)],
+  ["configurationDigest", jsonStringChars(artifactDigestChars)],
+];
+
+/**
+ * What one dispatch candidate weighs beyond the configuration it pins: the
+ * counters, the two pages authoring bounds, the labels its pricing is drawn
+ * from, and the identities naming the revision it was pinned under.
+ */
+export const leadObservedCandidateFixedCharsMax =
+  stringifiedObjectChars(candidateOwnMembers);
+
+/**
+ * What one dispatch candidate weighs, the canonical counted as the member it is
+ * so the key naming it is weighed where every other key is. The configuration
+ * is the whole of a candidate's size — it embeds the text 007 bounds rather
+ * than a reference to it — so a ceiling below that is a page the view composes
+ * and the mailbox refuses.
+ */
+export const leadObservedCandidateCharsMax = stringifiedObjectChars([
+  ...candidateOwnMembers,
+  [
+    "configurationCanonical",
+    configurationCanonicalCharsMax * jsonEmbeddedTextCharChars + 2,
+  ],
+]);
+
+/**
+ * The longest observation one lead turn may be given, which is what its mailbox
+ * row must hold. Every part of it is bounded somewhere else, and a ceiling
+ * below their sum is a document the runtime composes and the database refuses.
+ */
+export const sessionTurnInputCharsMax = stringifiedObjectChars([
+  [
+    "instructions",
+    stringifiedObjectChars([
+      ["revision", jsonStringChars(nativeHttpPathSegmentCharsMax)],
+      ["content", jsonStringChars(sessionSystemPromptCharsMax)],
+    ]),
+  ],
+  ["handoffNote", selectorHandoffNoteBytesMax],
+  ["refusals", leadObservedRefusalsChars],
+  [
+    "seeding",
+    stringifiedObjectChars([
+      ["handoffNote", selectorHandoffNoteBytesMax],
+      [
+        "decisions",
+        stringifiedArrayChars(
+          leadSeedingDecisionsMax,
+          leadSeededDecisionCharsMax,
+        ),
+      ],
+      ["refusals", leadObservedRefusalsChars],
+      ["notificationCursor", cursorDigitsCharsMax],
+    ]),
+  ],
+  [
+    "changes",
+    stringifiedArrayChars(notificationPageLimitMax, leadObservedChangeCharsMax),
+  ],
+  [
+    "candidates",
+    stringifiedArrayChars(
+      dispatchViewPageLimitMax,
+      leadObservedCandidateCharsMax,
+    ),
+  ],
+  ["observation", leadObservationFixedCharsMax],
+]);
+
+/** The key a change row names, which the durable log is bounded by. */
+export const changeResourceSchema = z
+  .string()
+  .min(1)
+  .max(projectChangeResourceCharsMax);
 
 export const countSchema = z.number().int().safe().nonnegative();
 export const ticketNumberSchema = z.number().int().safe().positive();

@@ -42,7 +42,7 @@
 
 import {
   nativeHttpBodyBytesMax,
-  selectorSettingsTextCharsMax,
+  sessionSystemPromptCharsMax,
 } from "../contract/http.ts";
 import type { SessionCapability } from "./agentSession.ts";
 import type { SelectorResolvedSettings } from "./selector.ts";
@@ -201,19 +201,14 @@ function leadObjectives(
 
 /**
  * What this module itself contributes to a lead's objectives: the standing
- * instructions, the North Star's heading, and the joins between them.
+ * instructions, the North Star's heading, and the joins between them. The
+ * ceiling it is held to is the contract's, because the observation bound is
+ * derived from it and the contract may not read this file.
  */
-const leadObjectivesFixedChars = leadObjectives("", "").length;
+export const leadObjectivesFixedChars = leadObjectives("", "").length;
 
-/**
- * The longest set of objectives one session row holds, derived from the parts
- * rather than named, because the two texts a project may set are each bounded
- * by `selectorSettingsTextCharsMax` and a ceiling below their sum would refuse
- * a `basePrompt` the settings API had already accepted — on every pass, long
- * after the write that caused it.
- */
-export const sessionSystemPromptCharsMax =
-  selectorSettingsTextCharsMax * 2 + leadObjectivesFixedChars;
+/** The longest set of objectives one session row holds, surfaced where it is composed. */
+export { sessionSystemPromptCharsMax };
 
 /**
  * The lead's objectives as one recorded prefix: what this installation asks of
