@@ -3038,7 +3038,7 @@ test("migration 64 leaves an installation standing above its floor untouched", a
     const wider = leadDispatchesPerDecision + 1;
     await standingInstallationStates(subject, wider);
     const before = await standingInstallationBudget(subject);
-    await applyMigrationsAbove(subject, 63);
+    await applyMigration(subject, 64);
     assert.deepEqual(await standingInstallationBudget(subject), {
       budget: String(wider),
       revision: before.revision,
@@ -3057,7 +3057,7 @@ test("migration 64 raises an installation standing below its floor", async () =>
     const narrower = leadDispatchesPerDecision - 1;
     await standingInstallationStates(subject, narrower);
     const before = await standingInstallationBudget(subject);
-    await applyMigrationsAbove(subject, 63);
+    await applyMigration(subject, 64);
     assert.deepEqual(await standingInstallationBudget(subject), {
       budget: String(leadDispatchesPerDecision),
       revision: String(Number(before.revision) + 1),
