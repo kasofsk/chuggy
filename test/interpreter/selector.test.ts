@@ -29,9 +29,12 @@ import {
   deliverSelectorProposal,
   reconcileSelectorProposal,
   type SelectorDelivery,
+  type SelectorRecordedDecision,
   type SelectorStateStore,
+  unwrittenDispatches,
 } from "../../src/interpreter/selector.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import type { DispatchCandidate } from "../../src/interpreter/dispatchView.ts";
 import {
   pickFrom,
   randomOf,
@@ -44,8 +47,12 @@ import {
   asOperationId,
   operationIdentityCharsMax,
 } from "../../src/interpreter/operationInbox.ts";
-import { selectorRunOnce } from "../../src/interpreter/selectorRuntime.ts";
+import {
+  selectorRunOnce,
+  type SelectorRunResult,
+} from "../../src/interpreter/selectorRuntime.ts";
 import type { AgenticRefusalWrite } from "../../src/interpreter/agenticRefusal.ts";
+import type { SelectorRunFailure } from "../../src/interpreter/selectorRuntimeTypes.ts";
 import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import { selectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
 import { selectorRuntimeAdministration } from "../../src/interpreter/selectorAdmin.ts";
@@ -295,7 +302,11 @@ function stateStore(
     inventoryCursor: () => Promise.resolve(undefined),
     saveInventoryCursor: () => Promise.resolve(),
     recordInteraction: () => Promise.resolve(true),
-    record: () => Promise.resolve(1),
+    record: (proposals) =>
+      Promise.resolve({
+        retained: true,
+        dispatched: proposals.dispatches.map((dispatch) => dispatch.ticket),
+      }),
     pending: () => Promise.resolve([]),
     submittedDeliveries: () => Promise.resolve([]),
     submitted: () => Promise.resolve(),
@@ -582,6 +593,7 @@ test("a paused runtime creates no new observations but still drains durable work
   assert.deepEqual(result, {
     observed: 0,
     proposed: 0,
+    dispatched: 0,
     delivered: 0,
     reconciled: 0,
     failures: [],
@@ -953,6 +965,7 @@ test("a pause observed after permit acquisition prevents a new decision", async 
   assert.deepEqual(result, {
     observed: 0,
     proposed: 0,
+    dispatched: 0,
     delivered: 0,
     reconciled: 0,
     failures: [],
@@ -1678,13 +1691,18 @@ test("one reconciliation failure does not abandon the rest of its claim", async 
   );
   assert.equal(result.reconciled, 1);
   assert.equal(terminal, 1);
-  assert.deepEqual(result.failures, [
-    {
-      phase: "Reconciliation",
-      partition,
-      decision: delivery.decision,
-    },
-  ]);
+  assert.deepEqual(
+    result.failures,
+    [
+      {
+        phase: "Reconciliation",
+        partition,
+        decision: delivery.decision,
+        ticket: delivery.ticket,
+      },
+    ],
+    "a failure names the ticket, because one decision now carries several",
+  );
 });
 
 test("proposal review requires dispatch authority and preserves feedback", async () => {
@@ -2109,9 +2127,12 @@ test("a decision's refusals are entered after the decision they name", async () 
     {
       ...stateStore(() => undefined),
       project: () => Promise.resolve(observedState(5)),
-      record: () => {
+      record: (proposals) => {
         order.push("proposal");
-        return Promise.resolve(1);
+        return Promise.resolve({
+          retained: true,
+          dispatched: proposals.dispatches.map((dispatch) => dispatch.ticket),
+        });
       },
       recordInteraction: () => {
         order.push("interaction");
@@ -2217,9 +2238,12 @@ test("a dispatching decision's refusals are entered after its proposal", async (
     {
       ...stateStore(() => undefined),
       project: () => Promise.resolve(observedState(5)),
-      record: () => {
+      record: (proposals) => {
         order.push("proposal");
-        return Promise.resolve(1);
+        return Promise.resolve({
+          retained: true,
+          dispatched: proposals.dispatches.map((dispatch) => dispatch.ticket),
+        });
       },
       recordInteraction: () => {
         order.push("interaction");
@@ -2306,7 +2330,7 @@ test("the trigger reads from the cursor the project's last turn stood on", async
 });
 
 /** A source whose one page offers the candidates a case wants chosen among. */
-function candidateSource(candidates: readonly (typeof dispatchable)[]) {
+function candidateSource(candidates: readonly DispatchCandidate[]) {
   return {
     ...promptObservationSource(),
     dispatchView: () =>
@@ -2334,9 +2358,13 @@ const offered = Array.from({ length: 4 }, (_, index) => ({
 async function cycleDispatching(
   tickets: readonly number[],
   limits: Partial<SelectorRuntimeSettings["limits"]> = {},
-  view: readonly (typeof dispatchable)[] = offered,
-  rowsWritten: (proposals: SelectorDecisionProposals) => number = (written) =>
-    written.dispatches.length,
+  view: readonly DispatchCandidate[] = offered,
+  rowsWritten: (
+    proposals: SelectorDecisionProposals,
+  ) => SelectorRecordedDecision = (written) => ({
+    retained: true,
+    dispatched: written.dispatches.map((dispatch) => dispatch.ticket),
+  }),
 ) {
   let interaction: SelectorInteraction | undefined;
   let recorded: SelectorDecisionProposals | undefined;
@@ -2461,22 +2489,26 @@ test("a repeat over budget is refused as a budget, and within it as a repeat", a
 });
 
 /**
- * The count `record` answers is the point of the widened return type: a
- * decision whose rows were not all written claims none of them, because the
- * interaction commits in the same transaction and a replay is refused before
- * any delivery row is reached, so the missing dispatches would be unreachable.
+ * What `record` answers is the point of the widened return type: a decision
+ * whose rows were not all written claims the ones that were, because those rows
+ * are in the relation and will be delivered, and names the rest for the runtime
+ * to report. A decision the relation never retained claims nothing at all.
  */
-test("a decision whose delivery rows were not all written claims nothing", async () => {
+test("a decision whose delivery rows were not all written claims what landed", async () => {
   const short = await cycleDispatching(
     [1, 2],
     { dispatchesPerDecision: 2 },
     offered,
-    () => 1,
+    () => ({ retained: true, dispatched: [asTicketId(1)] }),
   );
-  assert.equal(
-    short.proposals,
-    undefined,
-    "one row of two is not the decision",
+  assert.deepEqual(
+    short.proposals?.dispatched,
+    [asTicketId(1)],
+    "one row of two is one row, and the other is the loss to report",
+  );
+  assert.deepEqual(
+    short.proposals === undefined ? [] : unwrittenDispatches(short.proposals),
+    [asTicketId(2)],
   );
   assert.equal(
     short.recorded?.dispatches.length,
@@ -2487,11 +2519,11 @@ test("a decision whose delivery rows were not all written claims nothing", async
     [1, 2],
     { dispatchesPerDecision: 2 },
     offered,
-    () => 0,
+    () => ({ retained: false, dispatched: [] }),
   );
   assert.equal(replayed.proposals, undefined);
   const whole = await cycleDispatching([1, 2], { dispatchesPerDecision: 2 });
-  assert.equal(whole.proposals?.dispatches.length, 2);
+  assert.equal(whole.proposals?.dispatched.length, 2);
 });
 
 test("the same decision under a wider budget is accepted", async () => {
@@ -2587,6 +2619,35 @@ test("a derived dispatch operation is one per ticket, and bounded", () => {
       ),
     RangeError,
     "an operation no stored row could hold is refused where it is built",
+  );
+});
+
+/**
+ * Each command is fenced on its own candidate. Taking the first candidate's
+ * version for every command would fence three tickets on one ticket's history,
+ * so a stale sibling would be admitted and a current one refused.
+ */
+test("each dispatch carries the version of the ticket it names", async () => {
+  const versioned = [3, 5, 9].map((version, index) => ({
+    ...dispatchable,
+    ticket: asTicketId(index + 1),
+    ticketVersion: version,
+  }));
+  const three = await cycleDispatching(
+    [1, 2, 3],
+    { dispatchesPerDecision: 3 },
+    versioned,
+  );
+  assert.deepEqual(
+    three.recorded?.dispatches.map((dispatch) => [
+      Number(dispatch.command.ticket),
+      dispatch.command.expectedTicketVersion,
+    ]),
+    [
+      [1, 3],
+      [2, 5],
+      [3, 9],
+    ],
   );
 });
 
@@ -2761,4 +2822,259 @@ test("a delivery is settled on the decision and the ticket it names", async () =
       { state: "Refused", code: "SelectionChanged" },
     ],
   ]);
+});
+
+const viewCarrying = (tickets: readonly number[]) =>
+  tickets.map((ticket) => ({ ...dispatchable, ticket: asTicketId(ticket) }));
+
+/**
+ * One sweep in which every project's decision dispatches the tickets `named`
+ * gives it and the relation takes what `taken` allows. The observed view is the
+ * same page for every project, so what the store answers is the only thing that
+ * varies between the runs below.
+ */
+function sweep(input: {
+  readonly projects: readonly (typeof partition)[];
+  readonly view: readonly number[];
+  readonly named: (project: string) => readonly number[];
+  readonly taken?: (
+    proposals: SelectorDecisionProposals,
+  ) => SelectorRecordedDecision;
+  readonly budget?: number;
+}): Promise<SelectorRunResult> {
+  return selectorRunOnce(
+    refusalWrites(),
+    {
+      ...stateStore(() => undefined),
+      project: (scope) =>
+        Promise.resolve({ ...observedState(0), partition: scope }),
+      record: (proposals) =>
+        Promise.resolve(
+          input.taken?.(proposals) ?? {
+            retained: true,
+            dispatched: proposals.dispatches.map((dispatch) => dispatch.ticket),
+          },
+        ),
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [...input.projects] }),
+      dispatchView: (scope: typeof partition) =>
+        Promise.resolve({
+          result: "Page",
+          token: {
+            ...scope,
+            recoveryEpoch: "epoch",
+            schemaVersion: 1,
+            watermark: 1,
+            digest: "e".repeat(64),
+          },
+          candidates: viewCarrying(input.view),
+          notificationCursor: 1,
+        } as const),
+      submit: () => Promise.reject(new Error("no delivery in this sweep")),
+      operation: () => Promise.resolve(undefined),
+    },
+    policyHost((request) =>
+      Promise.resolve({
+        ...waitingExecution(),
+        result: {
+          ...waitingExecution().result,
+          dispatches: input
+            .named(String(request.observation.token.project))
+            .map((ticket) => ({
+              ticket: asTicketId(ticket),
+              expectedTicketVersion: 1,
+            })),
+        },
+      }),
+    ),
+    perProjectIdentities(),
+    settingsSource(() =>
+      Promise.resolve({
+        ...runtimeSettings,
+        limits: {
+          ...runtimeSettings.limits,
+          dispatchesPerDecision: input.budget ?? leadDispatchesMax,
+        },
+      }),
+    ),
+  );
+}
+
+const second = { tenant: partition.tenant, project: asProjectId("second") };
+const third = { tenant: partition.tenant, project: asProjectId("third") };
+
+/**
+ * The account distinguishes the two shapes a slice-6 sweep can take. Counting
+ * only decisions would report one dispatch and three the same, which is the
+ * whole of what raising the bound changed.
+ */
+test("one decision with three dispatches is not three decisions with one", async () => {
+  const together = await sweep({
+    projects: [partition],
+    view: [1, 2, 3],
+    named: () => [1, 2, 3],
+  });
+  assert.deepEqual(
+    { proposed: together.proposed, dispatched: together.dispatched },
+    { proposed: 1, dispatched: 3 },
+  );
+  const apart = await sweep({
+    projects: [partition, second, third],
+    view: [1, 2, 3],
+    named: (project) => [project === "project" ? 1 : project === "second" ? 2 : 3],
+  });
+  assert.deepEqual(
+    { proposed: apart.proposed, dispatched: apart.dispatched },
+    { proposed: 3, dispatched: 3 },
+  );
+});
+
+/**
+ * A partial write is the caller's to report. The interaction is committed in
+ * the same transaction, so the dispatches the relation did not take are gone
+ * until the lead names them again — and a sweep that answered "proposed" would
+ * say the decision landed whole.
+ */
+test("a record that takes some of a decision's dispatches names the rest", async () => {
+  const partial = await sweep({
+    projects: [partition],
+    view: [1, 2, 3],
+    named: () => [1, 2, 3],
+    taken: (proposals) => ({
+      retained: true,
+      dispatched: [proposals.dispatches[0]?.ticket ?? asTicketId(1)],
+    }),
+  });
+  assert.equal(partial.dispatched, 1);
+  assert.deepEqual(
+    partial.failures.map((failure: SelectorRunFailure) => [
+      failure.phase,
+      failure.ticket,
+    ]),
+    [
+      ["Record", asTicketId(2)],
+      ["Record", asTicketId(3)],
+    ],
+  );
+  assert.deepEqual(
+    partial.failures.map((failure: SelectorRunFailure) => failure.decision),
+    ["decision-project", "decision-project"],
+    "each names the decision that asked for it",
+  );
+});
+
+test("a decision none of whose dispatches the relation took is reported whole", async () => {
+  const none = await sweep({
+    projects: [partition],
+    view: [1, 2],
+    named: () => [1, 2],
+    taken: () => ({ retained: true, dispatched: [] }),
+  });
+  assert.deepEqual(
+    { proposed: none.proposed, dispatched: none.dispatched },
+    { proposed: 0, dispatched: 0 },
+    "nothing was proposed, because nothing reached the relation",
+  );
+  assert.equal(none.failures.length, 2);
+});
+
+/**
+ * A replay writes no rows either, and it is not a partial write: the decision
+ * was already recorded by the run that took it, so its rows are where that run
+ * left them and reporting them lost would be a failure nothing can act on.
+ */
+test("a decision the relation had already retained is not a partial write", async () => {
+  const replayed = await sweep({
+    projects: [partition],
+    view: [1, 2],
+    named: () => [1, 2],
+    taken: () => ({ retained: false, dispatched: [] }),
+  });
+  assert.deepEqual(replayed.failures, []);
+  assert.equal(replayed.proposed, 0);
+});
+
+/**
+ * The relation keys one row per ticket, so a decision naming a ticket twice
+ * asks for one delivery and gets it. Counting entries here would report a loss
+ * that did not happen and re-offer a ticket that is already dispatched.
+ */
+test("a decision naming one ticket twice loses nothing when its row lands", async () => {
+  const repeated = await sweep({
+    projects: [partition],
+    view: [7],
+    named: () => [7, 7],
+    budget: 2,
+    taken: () => ({ retained: true, dispatched: [asTicketId(7)] }),
+  });
+  assert.deepEqual(repeated.failures, []);
+  assert.equal(repeated.dispatched, 1);
+});
+
+/**
+ * The M-of-N reconcile, against a reference model rather than examples: nothing
+ * in the runtime retries a dispatch the relation did not take, because a landed
+ * ticket leaves the observed view and an unlanded one stays in it, so the
+ * lead's next turn names exactly what is outstanding. The model holds each pass
+ * to the budget, to offering only tickets with no row, and to every ticket
+ * ending with exactly one delivery — over a run that is a pure function of its
+ * seed.
+ */
+test("a partial write is reconciled by the next pass and no landed ticket twice", async () => {
+  const random = randomOf(20_260_904);
+  for (let run = 0; run < 64; run += 1) {
+    const size = random.below(leadDispatchesMax) + 1;
+    const budget = random.below(leadDispatchesMax) + 1;
+    const all = Array.from({ length: size }, (_, index) => index + 1);
+    const landed: number[] = [];
+    const passes: {
+      readonly offered: readonly number[];
+      readonly taken: readonly number[];
+    }[] = [];
+    const label = `seed run ${String(run)}: view ${String(size)}, budget ${String(budget)}`;
+    for (let pass = 0; pass < 2 * size && landed.length < size; pass += 1) {
+      const outstanding = all.filter((ticket) => !landed.includes(ticket));
+      const last = pass >= size;
+      const result = await sweep({
+        projects: [partition],
+        view: outstanding,
+        named: () => outstanding.slice(0, budget),
+        budget,
+        taken: (proposals) => {
+          const offered = proposals.dispatches.map((dispatch) =>
+            Number(dispatch.ticket),
+          );
+          const taken = last ? offered : subsetFrom(random, offered);
+          passes.push({ offered, taken });
+          landed.push(...taken);
+          return { retained: true, dispatched: taken.map(asTicketId) };
+        },
+      });
+      const walked = passes.at(-1);
+      assert.equal(result.dispatched, walked?.taken.length, label);
+      assert.equal(
+        result.failures.length,
+        (walked?.offered.length ?? 0) - (walked?.taken.length ?? 0),
+        `${label}: every dispatch the relation refused is reported`,
+      );
+    }
+    for (const [pass, walked] of passes.entries()) {
+      assert.ok(
+        walked.offered.length <= budget,
+        `${label}: pass ${String(pass)} named more than the budget`,
+      );
+      const before = passes.slice(0, pass).flatMap((each) => each.taken);
+      assert.ok(
+        walked.offered.every((ticket) => !before.includes(ticket)),
+        `${label}: pass ${String(pass)} re-offered a landed ticket`,
+      );
+    }
+    assert.deepEqual(
+      [...landed].sort((left, right) => left - right),
+      all,
+      `${label}: every ticket ends with exactly one delivery`,
+    );
+  }
 });

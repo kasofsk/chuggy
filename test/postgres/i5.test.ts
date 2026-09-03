@@ -36,6 +36,7 @@ import { notificationPageLimitMax } from "../../src/interpreter/notifications.ts
 import type {
   SelectorDecisionProposals,
   SelectorDelivery,
+  SelectorRecordedDecision,
 } from "../../src/interpreter/selector.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
@@ -113,6 +114,13 @@ const selectorTestFence = {
   settingsRevision: 1,
   projectSettingsRevision: 0,
 } as const;
+
+/** How many delivery rows one record wrote, which is what a case counting them means. */
+async function wrote(
+  written: Promise<SelectorRecordedDecision>,
+): Promise<number> {
+  return (await written).dispatched.length;
+}
 
 function selectorTestProposal(
   partition: Partition,
@@ -736,12 +744,13 @@ test("a database-linearized pause suppresses proposal creation", async () => {
   assert.equal(paused.updated, true);
   const decision = `paused-${crypto.randomUUID()}`;
   try {
-    assert.equal(
+    assert.deepEqual(
       await state.record(
         selectorTestProposal(partition, decision),
         selectorTestState(partition, 0),
       ),
-      0,
+      { retained: true, dispatched: [] },
+      "the interaction is retained and its trigger drops every delivery row",
     );
     assert.equal((await state.history(partition, undefined, 10)).length, 1);
     assert.deepEqual(await state.pending(10), []);
@@ -750,6 +759,33 @@ test("a database-linearized pause suppresses proposal creation", async () => {
     await control.unpause(current.revision, selectorAdministrator);
     await selectorPool.end();
     await controlPool.end();
+  }
+});
+
+/**
+ * A replay writes no rows either, and the two are not the same answer: a paused
+ * installation retained the interaction and lost its deliveries, while a replay
+ * did neither. A caller that could not tell them apart would report a decision
+ * another run already recorded as a partial write, every sweep.
+ */
+test("a replayed decision is not the paused one, though neither writes a row", async () => {
+  const partition = await postgresHarnessProject(harness.store, "i5-replayed");
+  const pool = postgresPool(postgresHarnessUrl());
+  const state = postgresSelectorState(pool);
+  const decision = `replayed-${crypto.randomUUID()}`;
+  const proposals = selectorTestProposal(partition, decision, [1, 2]);
+  try {
+    assert.deepEqual(
+      await state.record(proposals, selectorTestState(partition, 0)),
+      { retained: true, dispatched: [asTicketId(1), asTicketId(2)] },
+    );
+    assert.deepEqual(
+      await state.record(proposals, selectorTestState(partition, 1)),
+      { retained: false, dispatched: [] },
+      "the decision was already recorded, so nothing here was lost",
+    );
+  } finally {
+    await pool.end();
   }
 });
 
@@ -916,17 +952,17 @@ test("review feedback cursors follow review order rather than proposal order", a
   };
   try {
     assert.equal(
-      await state.record(
+      await wrote(state.record(
         selectorTestProposal(partition, earlier),
         selectorTestState(partition, 0),
-      ),
+      )),
       1,
     );
     assert.equal(
-      await state.record(
+      await wrote(state.record(
         selectorTestProposal(partition, later),
         selectorTestState(partition, 1),
-      ),
+      )),
       1,
     );
     assert.equal(await reviews.approve(partition, later, reviewer), true);
@@ -965,17 +1001,17 @@ test("submitted proposal reconciliation claims do not starve later work", async 
   const secondDecision = `reconcile-b-${crypto.randomUUID()}`;
   try {
     assert.equal(
-      await state.record(
+      await wrote(state.record(
         selectorTestProposal(partition, firstDecision),
         selectorTestState(partition, 0),
-      ),
+      )),
       1,
     );
     assert.equal(
-      await state.record(
+      await wrote(state.record(
         selectorTestProposal(partition, secondDecision),
         selectorTestState(partition, 1),
-      ),
+      )),
       1,
     );
     assert.equal(
@@ -1195,10 +1231,10 @@ test("a stored delivery names the ticket its command dispatches", async () => {
   const decision = `ticketed-${crypto.randomUUID()}`;
   try {
     assert.equal(
-      await state.record(
+      await wrote(state.record(
         selectorTestProposal(partition, decision, [7]),
         selectorTestState(partition, 0),
-      ),
+      )),
       1,
     );
     assert.deepEqual(
@@ -1234,10 +1270,10 @@ test("a decision's dispatches are one row each, and neither key admits a second"
   const decision = `pair-${crypto.randomUUID()}`;
   try {
     assert.equal(
-      await state.record(
+      await wrote(state.record(
         selectorTestProposal(partition, decision, [4, 9]),
         selectorTestState(partition, 0),
-      ),
+      )),
       2,
     );
     assert.deepEqual(
@@ -1300,10 +1336,10 @@ test("a delivery of a ticket no journal could name is refused by the relation", 
   const state = postgresSelectorState(selectorPool);
   try {
     assert.equal(
-      await state.record(
+      await wrote(state.record(
         selectorTestProposal(partition, decision, [1]),
         selectorTestState(partition, 0),
-      ),
+      )),
       1,
     );
     for (const ticket of [0, -1]) {
@@ -1342,10 +1378,10 @@ test("a decision's two deliveries are claimed as two rows", async () => {
   try {
     await i5Drain((limit) => state.pending(limit));
     assert.equal(
-      await state.record(
+      await wrote(state.record(
         selectorTestProposal(partition, decision, [3, 8]),
         selectorTestState(partition, 0),
-      ),
+      )),
       2,
     );
     assert.equal(
@@ -1403,10 +1439,10 @@ test("the delivery claim's order is total over the whole key", async () => {
     let revision = 0;
     for (const decision of decisions) {
       assert.equal(
-        await state.record(
+        await wrote(state.record(
           selectorTestProposal(partition, decision, [12, 5]),
           selectorTestState(partition, revision),
-        ),
+        )),
         2,
       );
       revision += 1;
@@ -1449,10 +1485,10 @@ test("one delivery of a decision settles and its sibling is left alone", async (
   const decision = `partial-${crypto.randomUUID()}`;
   try {
     assert.equal(
-      await state.record(
+      await wrote(state.record(
         selectorTestProposal(partition, decision, [2, 6]),
         selectorTestState(partition, 0),
-      ),
+      )),
       2,
     );
     assert.equal(
@@ -1514,10 +1550,10 @@ test("approving a decision moves all of its rows and records one review", async 
   const decision = `approved-${crypto.randomUUID()}`;
   try {
     assert.equal(
-      await state.record(
+      await wrote(state.record(
         selectorTestProposal(partition, decision, [9, 5, 1]),
         selectorTestState(partition, 0),
-      ),
+      )),
       3,
     );
     assert.deepEqual(
@@ -1569,10 +1605,10 @@ test("rejecting a decision terminates all of its rows under one outcome", async 
   const decision = `rejected-${crypto.randomUUID()}`;
   try {
     assert.equal(
-      await state.record(
+      await wrote(state.record(
         selectorTestProposal(partition, decision, [2, 3]),
         selectorTestState(partition, 0),
-      ),
+      )),
       2,
     );
     assert.equal(
@@ -1620,10 +1656,10 @@ test("every row of a decision is stamped from one dispatch mode", async () => {
       const decision = `stamped-${mode}-${crypto.randomUUID()}`;
       try {
         assert.equal(
-          await state.record(
+          await wrote(state.record(
             selectorTestProposal(partition, decision, [1, 2]),
             selectorTestState(partition, revision),
-          ),
+          )),
           2,
         );
         revision += 1;
@@ -1657,10 +1693,10 @@ test("a paused installation admits none of a decision's deliveries", async () =>
   const decision = `paused-multi-${crypto.randomUUID()}`;
   try {
     assert.equal(
-      await state.record(
+      await wrote(state.record(
         selectorTestProposal(partition, decision, [1, 2, 3]),
         selectorTestState(partition, 0),
-      ),
+      )),
       0,
     );
     assert.deepEqual(await i5DeliveryRows(decision), []);
@@ -1692,10 +1728,10 @@ test("a delivery keyed by a ticket its command does not dispatch is unreadable",
   const decision = `disagreeing-${crypto.randomUUID()}`;
   try {
     assert.equal(
-      await state.record(
+      await wrote(state.record(
         selectorTestProposal(partition, decision, [5]),
         selectorTestState(partition, 0),
-      ),
+      )),
       1,
     );
     await harness.query(
@@ -1790,10 +1826,10 @@ test("a decision's submitted deliveries are reconciled one row at a time", async
   try {
     await i5Drain((limit) => state.submittedDeliveries(limit));
     assert.equal(
-      await state.record(
+      await wrote(state.record(
         selectorTestProposal(partition, decision, [40, 30, 20, 10]),
         selectorTestState(partition, 0),
-      ),
+      )),
       4,
     );
     assert.equal(

@@ -54,7 +54,10 @@ after(async () => {
   await rig.close();
 });
 
-function settingsFor(partition: Partition): SelectorResolvedSettings {
+function settingsFor(
+  partition: Partition,
+  dispatchesPerDecision = 1,
+): SelectorResolvedSettings {
   return {
     partition,
     revision: 1,
@@ -70,7 +73,7 @@ function settingsFor(partition: Partition): SelectorResolvedSettings {
       tokensPerDecision: 200_000,
       millisecondsPerDecision: 900_000,
       toolCallsPerDecision: 20,
-      dispatchesPerDecision: 1,
+      dispatchesPerDecision,
       inputBytesPerDecision: 1_048_576,
       candidatePagesPerDecision: 1,
       concurrentDecisions: 4,
@@ -208,6 +211,7 @@ async function runOneDecision(
   partition: Partition,
   label: string,
   observation: SelectorObservation,
+  dispatchesPerDecision = 1,
 ) {
   const store = postgresSelectorState(rig.selectorPool);
   const identity = {
@@ -216,7 +220,7 @@ async function runOneDecision(
     ),
     selectorDecisionReference: `selector-decision-${label}-${String(Date.now())}`,
   };
-  const settings = settingsFor(partition);
+  const settings = settingsFor(partition, dispatchesPerDecision);
   await store.allocateAttempt(
     identity.selectorDecisionReference,
     partition,
@@ -292,7 +296,7 @@ test("a moved project takes one turn, and the decision lands whole", async () =>
   await pod;
 
   assert.deepEqual(
-    proposal?.dispatches.map((dispatch) => dispatch.command.ticket),
+    proposal?.proposals.dispatches.map((dispatch) => dispatch.command.ticket),
     [41],
   );
   const interactions = await store.history(partition, undefined, 10);
@@ -320,6 +324,62 @@ test("a moved project takes one turn, and the decision lands whole", async () =>
       [identity.selectorDecisionReference],
     ),
     [{ deliveries: "1" }],
+  );
+});
+
+/**
+ * One interaction, two deliveries, one transaction. The rows are keyed by the
+ * decision and the ticket, so what the record answers is the tickets it took —
+ * and each command is fenced on the version its own candidate stood at, which
+ * the two differing versions here are what separate.
+ */
+test("one decision's dispatches are two rows under one interaction", async () => {
+  const { partition, session } = await leadProject("several");
+  const observation = observationOf(partition, 15);
+  const pod = leadRigPod(rig, partition, session, "several", () => ({
+    version: 1,
+    dispatches: [
+      { ticket: 41, expectedTicketVersion: 3 },
+      { ticket: 43, expectedTicketVersion: 1 },
+    ],
+    refusals: [],
+    lifts: [],
+    attention: "Monitoring",
+    handoffNote: {},
+  }));
+  const { proposal, store, identity } = await runOneDecision(
+    partition,
+    "several",
+    observation,
+    2,
+  );
+  await pod;
+
+  assert.deepEqual(
+    proposal?.dispatched.map(Number),
+    [41, 43],
+    "the record answers the tickets it wrote a row for",
+  );
+  assert.equal((await store.history(partition, undefined, 10)).length, 1);
+  assert.deepEqual(
+    await rig.sessions.harness.query(
+      `SELECT ticket::text AS ticket,operation,command::jsonb->>'expectedTicketVersion' AS fenced
+         FROM selector_proposal_delivery
+        WHERE selector_decision=$1 ORDER BY ticket`,
+      [identity.selectorDecisionReference],
+    ),
+    [
+      {
+        ticket: "41",
+        operation: `${identity.operation}-t41`,
+        fenced: "3",
+      },
+      {
+        ticket: "43",
+        operation: `${identity.operation}-t43`,
+        fenced: "1",
+      },
+    ],
   );
 });
 

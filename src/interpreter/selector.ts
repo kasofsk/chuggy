@@ -87,6 +87,37 @@ export interface SelectorDelivery {
   readonly attempts: number;
 }
 
+/**
+ * What one `record` left in the relation: whether it retained the interaction,
+ * and the tickets it wrote a delivery row for. A count could name neither the
+ * ticket a partial write lost nor a replay, which writes no rows and loses
+ * nothing.
+ */
+export interface SelectorRecordedDecision {
+  readonly retained: boolean;
+  readonly dispatched: readonly DispatchCandidate["ticket"][];
+}
+
+/** One decision the runtime recorded: what it asked for, and what the record took. */
+export interface SelectorProposedDecision {
+  readonly proposals: SelectorDecisionProposals;
+  readonly dispatched: readonly DispatchCandidate["ticket"][];
+}
+
+/**
+ * The tickets a decision named that its record did not take, which is what a
+ * partial write lost. Distinct tickets rather than entries: a decision that
+ * names one ticket twice asks for one delivery, so a single row is a whole
+ * write of it and re-offering it would dispatch a landed ticket twice.
+ */
+export function unwrittenDispatches(
+  recorded: SelectorProposedDecision,
+): readonly DispatchCandidate["ticket"][] {
+  return [
+    ...new Set(recorded.proposals.dispatches.map((dispatch) => dispatch.ticket)),
+  ].filter((ticket) => !recorded.dispatched.includes(ticket));
+}
+
 export interface SelectorStateStore {
   setAutomaticReadiness(ready: boolean): Promise<void>;
   allocateAttempt(
@@ -113,11 +144,10 @@ export interface SelectorStateStore {
     fence: SelectorSettingsFence,
     planningIntent?: JsonValue,
   ): Promise<boolean>;
-  /** Answers how many delivery rows it wrote, so a partial write is not a whole one. */
   record(
     proposals: SelectorDecisionProposals,
     state: SelectorProjectState,
-  ): Promise<number>;
+  ): Promise<SelectorRecordedDecision>;
   pending(limit: number): Promise<readonly SelectorDelivery[]>;
   submittedDeliveries(limit: number): Promise<readonly SelectorDelivery[]>;
   /** One delivery of one decision settles alone, which is what partial failure is. */
@@ -1341,7 +1371,7 @@ async function recordCompletedSelectorCycle(
   identity: SelectorCycleIdentity,
   settings: SelectorResolvedSettings,
   execution: SelectorPolicyExecution,
-): Promise<SelectorDecisionProposals | undefined> {
+): Promise<SelectorProposedDecision | undefined> {
   const result = execution.result;
   const interaction = selectorInteraction(
     execution,
@@ -1392,7 +1422,9 @@ async function recordCompletedSelectorCycle(
   };
   const recorded = await store.record(proposals, nextState);
   await recordDecisionRefusals(refusals, state.partition, identity, result);
-  return recorded === proposals.dispatches.length ? proposals : undefined;
+  return recorded.retained
+    ? { proposals, dispatched: recorded.dispatched }
+    : undefined;
 }
 
 /** Runs one independently timed selector observation and durably records waiting or delivery. */
@@ -1404,7 +1436,7 @@ export async function runSelectorCycle(
   policy: SelectorPolicyHost,
   identity: SelectorCycleIdentity,
   settings: SelectorResolvedSettings,
-): Promise<SelectorDecisionProposals | undefined> {
+): Promise<SelectorProposedDecision | undefined> {
   const observation = await observeSelectorProject(
     state,
     source,
@@ -1438,7 +1470,7 @@ export async function runObservedSelectorCycle(
   policy: SelectorPolicyHost,
   identity: SelectorCycleIdentity,
   settings: SelectorResolvedSettings,
-): Promise<SelectorDecisionProposals | undefined> {
+): Promise<SelectorProposedDecision | undefined> {
   if (!observationMatchesProject(observation, state.partition))
     throw new Error("selector observation crossed its project boundary");
   if (

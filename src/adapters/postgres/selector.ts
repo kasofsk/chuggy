@@ -1558,18 +1558,18 @@ async function replacePlanningIntent(
 
 /**
  * Writes all of a decision's delivery rows in the interaction's own transaction
- * and answers how many it wrote. A replayed decision conflicts on the key it is
- * written under and writes nothing, which is a count of zero rather than a
- * failure; a paused installation's trigger drops each row the same way, so the
- * count is what reached the relation and never what was offered it.
+ * and answers the tickets it wrote. A replayed decision conflicts on the key it
+ * is written under and writes nothing; a paused installation's trigger drops
+ * each row the same way, so the answer is what reached the relation and never
+ * what was offered it.
  */
 async function insertSelectorProposals(
   client: pg.PoolClient,
   proposals: SelectorDecisionProposals | undefined,
-): Promise<number> {
-  if (proposals === undefined) return 0;
+): Promise<readonly SelectorDelivery["ticket"][]> {
+  if (proposals === undefined) return [];
   const interaction = proposals.interaction;
-  let written = 0;
+  const written: SelectorDelivery["ticket"][] = [];
   for (const dispatch of proposals.dispatches) {
     const inserted = await client.query(
       sql`INSERT INTO selector_proposal_delivery
@@ -1581,7 +1581,7 @@ async function insertSelectorProposals(
                ${proposals.deliveryMode === "Automatic" ? "Pending" : "AwaitingApproval"})
        ON CONFLICT (selector_decision,ticket) DO NOTHING`,
     );
-    written += inserted.rowCount === 1 ? 1 : 0;
+    if (inserted.rowCount === 1) written.push(dispatch.ticket);
   }
   return written;
 }
@@ -1590,8 +1590,8 @@ async function insertSelectorProposals(
  * The one transaction a decision is written in: the interaction, the planning
  * intent, its delivery rows and the project's own next state. `recorded` is
  * false where the project moved under the write or the interaction was already
- * retained, and `deliveries` counts the rows this call wrote, which a replay
- * makes zero without making it a failure.
+ * retained, and `deliveries` names the tickets this call wrote a row for, which
+ * a replay leaves empty without making it a failure.
  */
 async function recordSelectorState(
   pool: pg.Pool,
@@ -1600,13 +1600,16 @@ async function recordSelectorState(
   fence: SelectorSettingsFence,
   planningIntent?: unknown,
   proposals?: SelectorDecisionProposals,
-): Promise<{ readonly recorded: boolean; readonly deliveries: number }> {
+): Promise<{
+  readonly recorded: boolean;
+  readonly deliveries: readonly SelectorDelivery["ticket"][];
+}> {
   return postgresTransaction(pool, async (client) => {
     if (!(await lockSelectorProject(client, state)))
-      return { recorded: false, deliveries: 0 };
+      return { recorded: false, deliveries: [] };
     await completeSelectorAttempt(client, interaction, fence);
     if (!(await insertSelectorInteraction(client, interaction)))
-      return { recorded: false, deliveries: 0 };
+      return { recorded: false, deliveries: [] };
     await replacePlanningIntent(client, interaction, planningIntent);
     const deliveries = await insertSelectorProposals(client, proposals);
     await writeSelectorProject(client, state);
@@ -1789,17 +1792,17 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
           planningIntent,
         )
       ).recorded,
-    record: async (proposals, state) =>
-      (
-        await recordSelectorState(
-          pool,
-          proposals.interaction,
-          state,
-          proposals.fence,
-          proposals.planningIntent,
-          proposals,
-        )
-      ).deliveries,
+    record: async (proposals, state) => {
+      const written = await recordSelectorState(
+        pool,
+        proposals.interaction,
+        state,
+        proposals.fence,
+        proposals.planningIntent,
+        proposals,
+      );
+      return { retained: written.recorded, dispatched: written.deliveries };
+    },
     pending: (limit) => pendingDeliveries(pool, limit),
     submittedDeliveries: (limit) => submittedDeliveries(pool, limit),
     submitted: (decision, ticket) => markSubmitted(pool, decision, ticket),
