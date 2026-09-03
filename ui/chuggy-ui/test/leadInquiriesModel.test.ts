@@ -12,6 +12,7 @@
 import { expect, test } from "vitest";
 
 import { inquiryQuestionCharsMax } from "../../../src/contract/http.ts";
+import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { leadInquirySchema } from "../../../src/contract/requests.ts";
 import {
   inquiryAskAnswered,
@@ -23,6 +24,7 @@ import {
   inquiryRefusalWordUnknown,
   inquiryRefusalWords,
 } from "../app/core/leadInquiries.ts";
+import type { InquiryDraw } from "../app/core/leadInquiries.ts";
 
 const drawn = "GxUhK1TgQ2iWm4bB0jvA5w";
 
@@ -119,6 +121,32 @@ test("a re-send keeps its pair and an edit takes a new one", () => {
     inquiryDraw(undefined, "why", partition, draw),
     "a pair the door has taken was sent again",
   ).toStrictEqual({ drawn: "drawn-3", question: "why", partition });
+});
+
+/**
+ * A DRAW NAMES THE PROJECT IT WAS ASKED FOR, WHICHEVER ARM ANSWERED. A fresh
+ * draw records the project it was drawn for and a held one is returned only
+ * after its own project was found equal, so a caller may address the send, the
+ * write of its answer and the re-read of its listing by the draw or by the
+ * project it pressed in and get the same door either way.
+ */
+test("a draw names the project it was asked for", () => {
+  const draw = drawing();
+  const elsewhere = { tenant: "acme", project: "beta" };
+  const asked: readonly PartitionIdentity[] = [
+    partition,
+    elsewhere,
+    { tenant: "acme/beta", project: "" },
+  ];
+  let held: InquiryDraw | undefined = undefined;
+  for (const at of asked)
+    for (const question of ["why", "why not"]) {
+      held = inquiryDraw(held, question, at, draw);
+      expect(
+        { tenant: held.partition.tenant, project: held.partition.project },
+        "a draw was sent to a door other than the one it was asked for",
+      ).toStrictEqual({ tenant: at.tenant, project: at.project });
+    }
 });
 
 /**

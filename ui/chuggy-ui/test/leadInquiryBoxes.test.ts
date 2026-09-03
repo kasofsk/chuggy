@@ -164,6 +164,10 @@ function walkStep(held: WalkHeld, step: WalkStep): WalkHeld {
       partition,
       walkMinting(held, name),
     );
+    expect(
+      inquiryBoxName(sent.partition),
+      "a draw was sent to a door other than the one it was pressed at",
+    ).toBe(name);
     held.outstanding.set(name, sent);
     held.sends.push({
       at: step.at,

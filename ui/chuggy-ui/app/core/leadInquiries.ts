@@ -108,7 +108,11 @@ function inquiryDrawnFor(
  * or refuse a name the installation has already used, leaving a box that
  * re-sends the refused pair on every press.
  *
- * Nothing is held past an accepted send, and the caller is what forgets it.
+ * Nothing is held past an accepted send, and the caller is what forgets it;
+ * either arm answers a draw naming the project it was asked for, which is what
+ * lets the send, the write of its answer and the re-read of its listing all be
+ * addressed by the draw rather than by whichever project is on screen when the
+ * door answers.
  */
 export function inquiryDraw(
   held: InquiryDraw | undefined,
