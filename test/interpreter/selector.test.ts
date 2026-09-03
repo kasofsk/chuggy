@@ -3019,13 +3019,14 @@ test("a decision naming one ticket twice asks for one delivery and loses one", a
 });
 
 /**
- * The M-of-N reconcile, against a reference model rather than examples: nothing
- * in the runtime retries a dispatch the relation did not take, because a landed
- * ticket leaves the observed view and an unlanded one stays in it, so the
- * lead's next turn names exactly what is outstanding. The model holds each pass
- * to the budget, to offering only tickets with no row, and to every ticket
- * ending with exactly one delivery — over a run that is a pure function of its
- * seed.
+ * The M-of-N reconcile, against a reference model rather than examples and over
+ * a run that is a pure function of its seed: nothing in the runtime retries a
+ * dispatch the relation did not take, so each pass's `dispatched` is the subset
+ * the store took, its failures are one per refused ticket, and every ticket ends
+ * with exactly one delivery. That a pass offers at most the budget and never
+ * re-offers a landed ticket is the harness's own `named` closure deciding rather
+ * than the code, so this case does not assert them; the budget is the control
+ * layer's and is held where the view and the budget are the inputs.
  */
 test("a partial write is reconciled by the next pass and no landed ticket twice", async () => {
   const random = randomOf(20_260_904);
@@ -3063,17 +3064,6 @@ test("a partial write is reconciled by the next pass and no landed ticket twice"
         result.failures.length,
         (walked?.offered.length ?? 0) - (walked?.taken.length ?? 0),
         `${label}: every dispatch the relation refused is reported`,
-      );
-    }
-    for (const [pass, walked] of passes.entries()) {
-      assert.ok(
-        walked.offered.length <= budget,
-        `${label}: pass ${String(pass)} named more than the budget`,
-      );
-      const before = passes.slice(0, pass).flatMap((each) => each.taken);
-      assert.ok(
-        walked.offered.every((ticket) => !before.includes(ticket)),
-        `${label}: pass ${String(pass)} re-offered a landed ticket`,
       );
     }
     assert.deepEqual(
