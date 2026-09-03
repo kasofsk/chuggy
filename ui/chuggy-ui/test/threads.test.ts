@@ -379,7 +379,7 @@ describe("what a press ended as", () => {
         code: "ThreadBacklogged",
         retryAfterSeconds: 9,
       }),
-    ).toStrictEqual({ send: "Waiting", why: "Backlogged" });
+    ).toStrictEqual({ send: "Waiting", why: "ThreadBacklogged" });
     expect(
       threadSendFrom({
         outcome: "Retryable",
@@ -427,14 +427,44 @@ describe("a door whose answer does not say what happened", () => {
     ).toContain("NotYourThread");
     expect(threadRefusalCode("NotYourThread")).toBe("NotYourThread");
   });
+});
 
-  test("every code the roster carries has a word, and one it does not is its own", () => {
-    for (const code of threadMessageRefusalCodes) {
+describe("the door's own vocabulary", () => {
+  /**
+   * THE WORDS ARE A SWITCH TOTAL OVER THE ROSTER, so a code the roster renames
+   * stops the module compiling — and one it grows has no word until somebody
+   * writes it. The case names each word, because a roster walk asserting only
+   * that a word exists would pass over two codes drawn as one noun.
+   */
+  test("every code the roster carries is drawn as its own word", () => {
+    const said = threadMessageRefusalCodes.map((code) => [
+      code,
+      threadRefusalWord(code),
+    ]);
+    expect(said).toStrictEqual([
+      ["NotYourThread", "Elsewhere"],
+      ["ThreadClosed", "Closed"],
+      ["ThreadOrphaned", "Orphaned"],
+      ["ThreadTurnTooLarge", "Oversize"],
+    ]);
+    expect(
+      new Set(said.map(([, word]) => word)).size,
+      "two of the door's codes are drawn as one word",
+    ).toBe(threadMessageRefusalCodes.length);
+  });
+
+  test("every code the roster carries is narrowed to itself", () => {
+    for (const code of threadMessageRefusalCodes)
       expect(threadRefusalCode(code)).toBe(code);
-      expect(threadRefusalWord(code).length).toBeGreaterThan(0);
+  });
+
+  /** A code the roster does not carry is one this console neither acts on nor
+   * has a noun for, so it is drawn as the name the server sent. */
+  test("a code outside the roster is its own word and narrows to nothing", () => {
+    for (const code of ["ThreadNotYours", "ThreadBacklogged"]) {
+      expect(threadRefusalCode(code)).toBeUndefined();
+      expect(threadRefusalWord(code)).toBe(code);
     }
-    expect(threadRefusalCode("ThreadNotYours")).toBeUndefined();
-    expect(threadRefusalWord("ThreadNotYours")).toBe("ThreadNotYours");
   });
 
   /** A door that renamed the code answers a rejection this console reports

@@ -48,6 +48,15 @@
  * that moved from `Queued` to `Answered` is the one worth drawing, and it keeps
  * the place its first copy had.
  *
+ * EVERY CODE THIS CONSOLE NAMES IS THE DOOR'S OWN ROSTER MEMBER.
+ * `threadMessageRefusalCodes` is every code the message door emits, and both
+ * things this module does with one go through it: the settlement narrows
+ * `NotYourThread` rather than comparing a literal, and the words are a switch
+ * total over the roster. So a door that renamed a code stops this module
+ * compiling instead of leaving a member told their message was refused for a
+ * turn the mailbox already holds. A code the roster does not carry is drawn as
+ * itself, which is what the fallback is for.
+ *
  * A `NotYourThread` IS NOT PROOF THE MESSAGE DID NOT LAND. The door resolves
  * the mailbox from the caller's own principal and compares the URL's session
  * afterwards, so in the close-and-reopen race the refusal can arrive after the
@@ -303,7 +312,6 @@ export type ThreadSend =
   | { readonly send: "Unsettled"; readonly why: string }
   | { readonly send: "Refused"; readonly reason: string };
 
-/**
 /** Whether the mailbox tail a read answered already holds this turn, which is
  * the only thing that settles a refusal the door may have raised after
  * enqueuing. */
@@ -314,16 +322,18 @@ export function threadHeldTurn(
   return thread.turns.find((held) => held.turn === turn);
 }
 
-/** The code the roster carries, and nothing where the door sent one it does
- * not — which is a code this console reports rather than acts on. */
+/**
+ * The refusal the door's own roster carries, and nothing where a code came back
+ * that it does not — a code this console reports rather than acts on or names.
+ */
 export function threadRefusalCode(
   code: string,
 ): ThreadMessageRefusalCode | undefined {
   return threadMessageRefusalCodes.find((known) => known === code);
 }
 
-/** The word one code the roster carries is drawn as, total over it so a code the
- * roster grows stops compiling here. */
+/** The word one code the roster carries is drawn as, total over it so a code
+ * the roster renames or grows stops compiling here. */
 function threadRosterWord(code: ThreadMessageRefusalCode): string {
   switch (code) {
     case "NotYourThread":
@@ -332,11 +342,13 @@ function threadRosterWord(code: ThreadMessageRefusalCode): string {
       return "Closed";
     case "ThreadOrphaned":
       return "Orphaned";
-    case "ThreadBacklogged":
-      return "Backlogged";
+    case "ThreadTurnTooLarge":
+      return "Oversize";
   }
 }
 
+/** The word a refusal is drawn as: the roster's own, or the code the server sent
+ * where the roster does not carry it. */
 export function threadRefusalWord(code: string): string {
   const known = threadRefusalCode(code);
   return known === undefined ? code : threadRosterWord(known);

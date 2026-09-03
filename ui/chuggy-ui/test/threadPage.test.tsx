@@ -228,7 +228,7 @@ test("a backlogged mailbox draws the notice, keeps the text and retries the same
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
   });
   await settled();
-  expect(screen.getByText("Backlogged")).toBeDefined();
+  expect(screen.getByText("ThreadBacklogged")).toBeDefined();
   expect(composer()?.value, "a backlogged press threw the typing away").toBe(
     "one more",
   );
@@ -291,12 +291,12 @@ test("a wait the reader has typed past is no longer said", async () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
   });
   await settled();
-  expect(screen.getByText("Backlogged")).toBeDefined();
+  expect(screen.getByText("ThreadBacklogged")).toBeDefined();
   await turned(() => {
     fireEvent.change(typing(), { target: { value: "one more" } });
   });
   expect(
-    screen.queryByText("Backlogged"),
+    screen.queryByText("ThreadBacklogged"),
     "a backlog was still reported over text that had never been sent",
   ).toBeNull();
 });
