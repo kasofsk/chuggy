@@ -20,7 +20,12 @@ import type pg from "pg";
 
 import { postgresLeadReads } from "../../src/adapters/postgres/leadReads.ts";
 import { leadTurnsAnsweredMax } from "../../src/contract/http.ts";
-import { apiRole } from "../../src/adapters/postgres/schema.ts";
+import {
+  apiRole,
+  boundaryOwnerRole,
+  selectorReviewRole,
+  selectorServiceRole,
+} from "../../src/adapters/postgres/schema.ts";
 import { leadOpenFunction } from "../../src/adapters/postgres/schema/shared.ts";
 import {
   asSessionId,
@@ -29,7 +34,7 @@ import {
 import { leadSessionCapabilities } from "../../src/interpreter/leadTools.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import { postgresHarnessRolePool } from "./harness.ts";
+import { postgresHarnessDenial, postgresHarnessRolePool } from "./harness.ts";
 import { leadRigOpen, leadRigProject, type LeadRig } from "./leadHarness.ts";
 import { sessionRigSession } from "./sessionHarness.ts";
 
@@ -297,19 +302,30 @@ test("the objectives door means the open lead, and answers NoLead without one", 
   );
 });
 
-test("the successor door is the selector's own and no other role's", async () => {
-  const granted = await apiPool.query<{ permitted: boolean | null }>(
-    `SELECT has_function_privilege($1,'EXECUTE')::boolean AS permitted`,
+test("the successor door is the selector service's own and no other role's", async () => {
+  const roster = (await rig.sessions.harness.query(
+    `SELECT r.rolname,
+            has_function_privilege(r.rolname,$1,'EXECUTE') AS permitted
+       FROM pg_roles r WHERE r.rolname LIKE 'chuggy\\_%'
+      ORDER BY r.rolname`,
     [`${leadOpenFunction}(text,text,text,text,text,text)`],
+  )) as readonly { rolname: string; permitted: boolean }[];
+  assert.ok(
+    roster.some(({ rolname }) => rolname === apiRole) &&
+      roster.some(({ rolname }) => rolname === selectorReviewRole),
+    "the sweep is the schema's own roster, so a role a later migration adds is swept without being named here",
   );
-  assert.equal(
-    granted.rows[0]?.permitted,
-    false,
-    "the API may not mint a lead: a role that could would be minting an authority",
+  assert.deepEqual(
+    roster.filter(({ permitted }) => permitted).map(({ rolname }) => rolname),
+    [boundaryOwnerRole, selectorServiceRole],
+    "minting a lead is minting an authority to act as a principal: the definer's owner holds it, one runtime role is granted it, and every other role of the installation — the API's two pools among them — is refused",
   );
-  const selector = await rig.selectorPool.query<{ permitted: boolean | null }>(
-    `SELECT has_function_privilege($1,'EXECUTE')::boolean AS permitted`,
-    [`${leadOpenFunction}(text,text,text,text,text,text)`],
+  assert.match(
+    (await rig.sessions.harness.attemptAs(
+      apiRole,
+      `SELECT ${leadOpenFunction}('t','p','s','principal','claude-code',NULL)`,
+    )) ?? "the API executed the door",
+    postgresHarnessDenial(leadOpenFunction),
+    "and the refusal is the server's, not a privilege the case only asked about",
   );
-  assert.equal(selector.rows[0]?.permitted, true);
 });
