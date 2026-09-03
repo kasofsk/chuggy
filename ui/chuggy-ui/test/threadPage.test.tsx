@@ -33,6 +33,7 @@ import {
 } from "../../../src/contract/http.ts";
 import {
   threadBody,
+  threadEntry,
   threadMineSession,
   threadOtherSession,
   threadPartition,
@@ -341,6 +342,17 @@ test("editing after a refusal posts under a turn of its own", async () => {
 /** A door that will take no more messages ends the composer and says which
  * refusal it was, so a thread whose owner is no longer a member is told apart
  * from one that was closed. */
+/** One message typed and sent, which every press case does the same way. */
+async function pressed(said: string): Promise<void> {
+  await turned(() => {
+    fireEvent.change(typing(), { target: { value: said } });
+  });
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  });
+  await settled();
+}
+
 async function pressedAgainst(code: string): Promise<void> {
   drawThread(
     () => ({ thread: threadBody({}) }),
@@ -355,6 +367,104 @@ async function pressedAgainst(code: string): Promise<void> {
   });
   await settled();
 }
+
+/**
+ * A 403 arrives when the URL's session is not the mailbox the caller's own
+ * principal resolves to — and the door resolves before it compares, so in the
+ * close-and-reopen race the turn is already enqueued in the mailbox that
+ * resolved. Sending again would put a second copy of one message in it.
+ */
+async function pressedAgainstDispute(holding: () => boolean): Promise<{
+  readonly sends: () => readonly unknown[];
+}> {
+  const sends: unknown[] = [];
+  const fetching = (
+    url: string,
+    init?: { readonly method?: string; readonly body?: string },
+  ): Promise<Response> => {
+    if (init?.method === "POST") {
+      const body = JSON.parse(init.body ?? "null") as { readonly turn: string };
+      sends.push(body);
+      if (url.includes(`/threads/${threadOtherSession}/messages`))
+        return Promise.resolve(
+          answer(
+            { error: { code: "NotYourThread", message: "elsewhere" } },
+            403,
+          ),
+        );
+      return Promise.resolve(answer({ turn: body.turn, ordinal: 7 }, 202));
+    }
+    if (url.includes("/transcript"))
+      return Promise.resolve(answer(threadTranscriptPage(1)));
+    if (url.endsWith("/threads")) {
+      return Promise.resolve(
+        answer({
+          threads: [
+            threadEntry({ session: threadMineSession, mine: true }),
+            threadEntry({ session: threadOtherSession }),
+          ],
+        }),
+      );
+    }
+    if (url.includes(`/threads/${threadMineSession}`))
+      return Promise.resolve(
+        answer(
+          threadBody({
+            session: threadMineSession,
+            turns: holding()
+              ? [
+                  threadTurn({
+                    turn: (sends[0] as { readonly turn: string }).turn,
+                    ordinal: 7,
+                  }),
+                ]
+              : [threadTurn({ turn: "thread-turn-other", ordinal: 6 })],
+          }),
+        ),
+      );
+    if (url.includes("/threads/"))
+      return Promise.resolve(
+        answer(
+          threadBody({
+            session: threadOtherSession,
+            mine: true,
+            owner: "geoff",
+          }),
+        ),
+      );
+    return Promise.resolve(
+      answer({ partition: threadPartition, sequence: 1, tickets: [] }),
+    );
+  };
+  vi.stubGlobal("fetch", fetching);
+  routed.session = threadOtherSession;
+  await mountThread();
+  await pressed("into the race");
+  return { sends: () => sends };
+}
+
+test("a NotYourThread whose message already landed is not sent again", async () => {
+  const run = await pressedAgainstDispute(() => true);
+  const sends = run.sends() as readonly { readonly turn: string }[];
+  expect(
+    sends.length,
+    "a message the resolved mailbox already held was sent a second time",
+  ).toBe(1);
+  expect(composer()?.value, "a message that landed was left in the box").toBe(
+    "",
+  );
+});
+
+test("a NotYourThread whose message did not land is sent again under the same turn", async () => {
+  const run = await pressedAgainstDispute(() => false);
+  const sends = run.sends() as readonly { readonly turn: string }[];
+  expect(sends.length).toBe(2);
+  expect(
+    sends[1]?.turn,
+    "the second send minted a fresh identity the door could not dedupe",
+  ).toBe(sends[0]?.turn);
+  expect(composer()?.value).toBe("");
+});
 
 test("a closed thread stops the composer taking typing", async () => {
   await pressedAgainst("ThreadClosed");

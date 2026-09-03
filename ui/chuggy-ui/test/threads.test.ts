@@ -17,7 +17,9 @@ import {
 } from "../../../src/contract/rosters.ts";
 import type { ThreadTurnResponse } from "../../../src/contract/responses.ts";
 import {
+  threadHeldTurn,
   threadMine,
+  threadNotYourThreadCode,
   threadOlderAsked,
   threadOlderEmpty,
   threadOlderGathered,
@@ -390,17 +392,43 @@ describe("what a press ended as", () => {
   test("a code the console has no word for is drawn as the code", () => {
     expect(threadRefusalWord("SomethingNew")).toBe("SomethingNew");
   });
+});
 
-  test("a door that refused another member's thread is one refusal with a reason", () => {
+describe("a door whose answer does not say what happened", () => {
+  /**
+   * The door resolves the mailbox from the caller's principal and compares the
+   * URL afterwards, so a 403 can arrive after the turn was enqueued. Reporting
+   * it as a refusal would drop a message the thread already holds.
+   */
+  test("a NotYourThread is unsettled rather than refused", () => {
+    expect(
+      threadSendFrom({
+        outcome: "Rejected",
+        code: threadNotYourThreadCode,
+        status: 403,
+        body: undefined,
+      }),
+      "a refusal the door may have raised after enqueuing was treated as final",
+    ).toStrictEqual({ send: "Unsettled", why: "NotYourThread" });
+  });
+
+  test("every other rejection is one refusal with a reason", () => {
     const refused = threadSendFrom({
       outcome: "Rejected",
-      code: "NotYourThread",
-      status: 403,
+      code: "MessageTooLong",
+      status: 400,
       body: undefined,
     });
     expect(refused.send).toBe("Refused");
     expect(refused.send === "Refused" ? refused.reason : "").toContain(
-      "NotYourThread",
+      "MessageTooLong",
     );
+  });
+
+  /** The mailbox tail is the only thing that says whether the turn landed. */
+  test("a mailbox holding the turn is what settles it", () => {
+    const turn = turnOf({ turn: "thread-turn-a", ordinal: 7 });
+    expect(threadHeldTurn({ turns: [turn] }, "thread-turn-a")?.ordinal).toBe(7);
+    expect(threadHeldTurn({ turns: [turn] }, "thread-turn-b")).toBeUndefined();
   });
 });

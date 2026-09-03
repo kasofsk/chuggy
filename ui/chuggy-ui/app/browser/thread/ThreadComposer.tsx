@@ -30,9 +30,8 @@ import type { ReactNode } from "react";
 
 import { threadMessageCharsMax } from "../../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import { apiSendThreadMessage } from "../../core/apiRoutes.ts";
+import { threadMessageSent } from "../../core/threadSendRun.ts";
 import {
-  threadSendFrom,
   threadTurnIdBytesCount,
   threadTurnMinted,
   threadTurnRetained,
@@ -61,6 +60,7 @@ function ThreadSendNote(props: { readonly send: ThreadSend }): ReactNode {
       return null;
     case "Waiting":
     case "Ended":
+    case "Unsettled":
       return <Notice tone="parked" inline detail={send.why} />;
     case "Refused":
       return (
@@ -90,12 +90,10 @@ export function ThreadComposer(props: {
       threadTurnRetained(held, text) ??
       threadTurnMinted(drawBytes(threadTurnIdBytesCount));
     setSend({ send: "Sending" });
-    const answered = threadSendFrom(
-      await apiSendThreadMessage(ports, partition, session, {
-        turn,
-        message: text,
-      }),
-    );
+    const answered = await threadMessageSent(ports, partition, session, {
+      turn,
+      message: text,
+    });
     setSend(answered);
     if (answered.send !== "Sent") {
       setHeld({ text, turn });

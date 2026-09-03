@@ -48,6 +48,14 @@
  * that moved from `Queued` to `Answered` is the one worth drawing, and it keeps
  * the place its first copy had.
  *
+ * A `NotYourThread` IS NOT PROOF THE MESSAGE DID NOT LAND. The door resolves
+ * the mailbox from the caller's own principal and compares the URL's session
+ * afterwards, so in the close-and-reopen race the refusal can arrive after the
+ * turn was enqueued in the mailbox that resolved. It is therefore `Unsettled`
+ * rather than `Refused`: the turn identity is kept, the mailbox is asked, and
+ * only a mailbox that does not hold the turn is sent to again — under the same
+ * identity, which is what makes that second send safe.
+ *
  * A WAIT IS NOT A REFUSAL AND A `Retryable` IS NOT ALWAYS A BACKLOG. `classify`
  * answers `Retryable` for 429 AND 503, so an outage would draw as a mailbox
  * that is full; the code is carried and drawn for the same reason it is on a
@@ -290,6 +298,7 @@ export type ThreadSend =
   | { readonly send: "Sent"; readonly ordinal: number }
   | { readonly send: "Waiting"; readonly why: string }
   | { readonly send: "Ended"; readonly why: string }
+  | { readonly send: "Unsettled"; readonly why: string }
   | { readonly send: "Refused"; readonly reason: string };
 
 /**
@@ -298,6 +307,23 @@ export type ThreadSend =
  * server sent — which is a fallback rather than a roster, so a refusal the door
  * grows says its own name instead of nothing.
  */
+/**
+ * The code the door raises where the session in the URL is not the mailbox the
+ * caller's own principal resolves to. It is named because the console acts on
+ * it rather than only reporting it.
+ */
+export const threadNotYourThreadCode = "NotYourThread";
+
+/** Whether the mailbox tail a read answered already holds this turn, which is
+ * the only thing that settles a refusal the door may have raised after
+ * enqueuing. */
+export function threadHeldTurn(
+  thread: Pick<ThreadResponse, "turns">,
+  turn: string,
+): ThreadTurnResponse | undefined {
+  return thread.turns.find((held) => held.turn === turn);
+}
+
 export function threadRefusalWord(code: string): string {
   const said: Readonly<Record<string, string>> = {
     ThreadBacklogged: "Backlogged",
@@ -322,9 +348,12 @@ export function threadSendFrom(
       return { send: "Waiting", why: threadRefusalWord(result.code) };
     case "Conflict":
       return { send: "Ended", why: threadRefusalWord(result.code) };
+    case "Rejected":
+      return result.code === threadNotYourThreadCode
+        ? { send: "Unsettled", why: threadRefusalWord(result.code) }
+        : { send: "Refused", reason: panelReason(result) };
     case "Absent":
     case "Unauthenticated":
-    case "Rejected":
     case "Fault":
     case "Unreachable":
     case "Unreadable":
