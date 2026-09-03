@@ -26,6 +26,7 @@ import {
   leadDecisionLanding,
   leadDecisionRefusedEvery,
   leadDecisionRefusing,
+  leadDecisionSettledOn,
   leadDecisionUnsaid,
   leadPartition,
   leadRefusals,
@@ -272,4 +273,29 @@ test("a dispatch settled with no readable outcome says so", async () => {
     { label: "Dispatch", tone: "parked", word: "Approval", note: "72" },
     { label: "Refused", tone: "fail", word: "Refused", note: "42" },
   ]);
+});
+
+/**
+ * A LANDING IS A CLOSED SET AND NOT "SETTLED ON NOTHING I RECOGNISE". The
+ * wire's `outcome` is a free string, and the words a settled dispatch reaches
+ * this reader on include an operation state (`Cancelled`, `Answered`) and the
+ * word the door accepted the command as (`IdempotencyConflict`,
+ * `InvalidCommand`) as well as a refusal code — so a predicate reading "not a
+ * refusal code" as a landing draws each of these `Dispatched` in the landing
+ * hue and counts it in the line.
+ */
+test.each([
+  "Cancelled",
+  "Answered",
+  "IdempotencyConflict",
+  "InvalidCommand",
+  "SelectionChanged",
+])("a dispatch settled on %s is not a landing", async (outcome) => {
+  await drawDecisions({ decisions: [leadDecisionSettledOn(outcome)] });
+  const group = groups()[0];
+  expect(rows(group)).toStrictEqual([
+    { label: "Dispatch", tone: "fail", word: outcome, note: "81" },
+  ]);
+  expect(group?.querySelectorAll(".pill-pass").length).toBe(0);
+  expect(group?.textContent).toContain("Monitoring · 0 of 1 dispatched");
 });

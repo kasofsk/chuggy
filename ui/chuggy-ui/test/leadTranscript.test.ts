@@ -720,6 +720,26 @@ test("a dispatch has landed exactly where the record says the writer took it", (
   expect(leadDispatchLanded({ ticket: 1, state: "Terminal" })).toBe(false);
 });
 
+/**
+ * THE ACCEPTANCE IS A CLOSED SET AND THE WIRE'S `outcome` IS NOT A ROSTER. It
+ * is a free string the writer fills from a command's refusal code, from its
+ * operation state or from the word the door accepted it as, so a predicate
+ * reading "settled and not a refusal code" as a landing counts a cancellation,
+ * an answer and a command the door would not read as dispatches that went.
+ */
+test.each([
+  "Cancelled",
+  "Answered",
+  "Refused",
+  "IdempotencyConflict",
+  "InvalidCommand",
+  "SelectionChanged",
+])("a dispatch settled on %s did not land", (outcome) => {
+  expect(leadDispatchLanded({ ticket: 1, state: "Terminal", outcome })).toBe(
+    false,
+  );
+});
+
 test("a refusal stands until the ticket is authored again", () => {
   expect(agenticRefusalStanding(refusalAt(false))).toBe("Standing");
   expect(agenticRefusalStanding(refusalAt(true))).toBe("Superseded");

@@ -266,6 +266,25 @@ export const leadDecisionUnsaid: SelectorHistoryResponse["decisions"][number] =
   };
 
 /**
+ * One decision, one settled dispatch on the word the caller names, and nothing
+ * refused or lifted. `outcome` is a free string on the wire and the writer
+ * fills it from a command's refusal code, its operation state or the word the
+ * door accepted it as, so the settled words are not one roster.
+ */
+export function leadDecisionSettledOn(
+  outcome: string,
+): SelectorHistoryResponse["decisions"][number] {
+  return {
+    ...leadDecisionLanding,
+    ordinal: 1_206,
+    decision: "selector-decision-6",
+    dispatches: [{ ticket: 81, state: "Terminal", outcome }],
+    refused: [],
+    lifted: [],
+  };
+}
+
+/**
  * The newest arm's own answer: descending ordinal, one bounded page, no cursor.
  * A panel that reordered it would draw the oldest decision it holds as the one
  * that just ran.
