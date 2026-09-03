@@ -61,6 +61,7 @@ import { migration060 } from "./060-a-hold-is-not-a-loss.ts";
 import { migration061 } from "./061-lead-tools.ts";
 import { migration062 } from "./062-threads.ts";
 import { migration063 } from "./063-lead-inquiries.ts";
+import { migration064 } from "./064-multi-dispatch-delivery.ts";
 import type { Migration } from "../shared.ts";
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -128,4 +129,5 @@ export const migrations: readonly Migration[] = [
   migration061,
   migration062,
   migration063,
+  migration064,
 ];

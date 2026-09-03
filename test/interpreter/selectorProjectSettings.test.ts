@@ -13,6 +13,7 @@ import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import type { ProjectAccess } from "../../src/interpreter/nativeWeb.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
+  leadDispatchesMax,
   resolvedSelectorSettings,
   selectorSettingsFence,
   selectorSettingsFenceHolds,
@@ -271,6 +272,21 @@ test("an unbounded history page is refused rather than asked for", async () => {
     () => administration.write(principal, partition, -1, {}),
     RangeError,
   );
+});
+
+/**
+ * The wire's own bound on the dispatch budget. A project asking for more than
+ * a decision may dispatch would be stored and then refused on every turn that
+ * spent it, which is a control reporting a number nothing applies.
+ */
+test("the override door refuses a dispatch budget above the parse ceiling", () => {
+  const admits = (dispatches: number) =>
+    selectorProjectSettingsSchema.safeParse({
+      expectedRevision: 0,
+      overrides: { limits: { dispatchesPerDecision: dispatches } },
+    }).success;
+  assert.equal(admits(leadDispatchesMax), true);
+  assert.equal(admits(leadDispatchesMax + 1), false);
 });
 
 /**

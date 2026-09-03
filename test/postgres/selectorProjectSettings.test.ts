@@ -36,8 +36,9 @@ import {
 import { selectorProjectOverridesSchema } from "../../src/contract/requests.ts";
 import {
   dispatchesPerDecisionUnstated,
-  type SelectorRuntimeSettings,
+  leadDispatchesMax,
 } from "../../src/interpreter/selector.ts";
+import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/064-multi-dispatch-delivery.ts";
 import type { SelectorProjectSettingsRecord } from "../../src/interpreter/selectorProjectSettings.ts";
 import {
   postgresHarnessDenial,
@@ -981,44 +982,122 @@ test("every limit the override door accepts is a column that reads back", async 
 });
 
 /**
- * A controls row written before `dispatchesPerDecision` existed. It resolves to
- * the number the installation that wrote it could deliver, rather than
- * refusing the row and stopping the selector, and a stated number is read as
- * stated.
+ * A controls row written before `dispatchesPerDecision` existed — a history
+ * revision, or the row an installation held before its migration. It resolves
+ * to the number the installation that wrote it could deliver, rather than
+ * refusing the row and stopping the selector, and the seeded row states the
+ * budget its own migration wrote.
  */
-test("an installation that never stated a dispatch budget reads the unstated one", async () => {
+test("an installation whose controls never stated a dispatch budget reads the unstated one", async () => {
   const pool = postgresHarnessRolePool(selectorControlRole);
   const control = postgresSelectorRuntimeControl(pool);
-  const controlsOf = (settings: SelectorRuntimeSettings) => ({
-    modelAllowlist: settings.modelAllowlist,
-    toolAllowlist: settings.toolAllowlist,
-    limits: settings.limits,
-    operationalContextMaxAgeMs: settings.operationalContextMaxAgeMs,
-  });
+  const stated = async (value: number) => {
+    await harness.query(
+      `UPDATE selector_runtime_settings SET controls=jsonb_set(
+         controls::jsonb,'{limits,dispatchesPerDecision}',to_jsonb($1::bigint))::text
+       WHERE singleton=1`,
+      [value],
+    );
+  };
   try {
-    const seeded = await control.settings();
     assert.equal(
-      seeded.limits.dispatchesPerDecision,
+      (await control.settings()).limits.dispatchesPerDecision,
+      leadDispatchesPerDecision,
+    );
+    await harness.query(
+      `UPDATE selector_runtime_settings
+          SET controls=(controls::jsonb #- '{limits,dispatchesPerDecision}')::text
+        WHERE singleton=1`,
+    );
+    assert.equal(
+      (await control.settings()).limits.dispatchesPerDecision,
       dispatchesPerDecisionUnstated,
     );
-    const stated = await control.updatePolicyControls(
-      seeded.revision,
-      {
-        ...controlsOf(seeded),
-        limits: { ...seeded.limits, dispatchesPerDecision: 4 },
-      },
-      administrator,
+    await stated(dispatchesPerDecisionUnstated + 1);
+    assert.equal(
+      (await control.settings()).limits.dispatchesPerDecision,
+      dispatchesPerDecisionUnstated + 1,
     );
-    assert.equal(stated.updated, true);
-    const read = await control.settings();
-    assert.equal(read.limits.dispatchesPerDecision, 4);
-    /** Every other suite in this database reads what it was seeded with. */
-    await control.updatePolicyControls(
-      read.revision,
-      controlsOf(seeded),
-      administrator,
+  } finally {
+    /** Every other suite in this database reads what its migration seeded. */
+    await stated(leadDispatchesPerDecision);
+    await pool.end();
+  }
+});
+
+/**
+ * The project's own dispatch budget: a column like every other override, so a
+ * value no decision could run under is refused by the column rather than only
+ * by the check in front of it, and clearing it puts the project back on the
+ * installation default.
+ */
+test("a project's dispatch budget is a column, and a budget of none is not one", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "selector-dispatch-budget",
+  );
+  const pool = postgresHarnessRolePool(apiRole);
+  const store = postgresSelectorProjectSettings(pool);
+  const write = (revision: number, dispatches: number | null) =>
+    harness.query(
+      `SELECT revision::text FROM update_selector_project_settings(
+         $1,$2,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,$4,
+         NULL,NULL,NULL,'User','selector-admin')`,
+      [partition.tenant, partition.project, revision, dispatches],
+    );
+  try {
+    await assert.rejects(
+      () => write(0, 0),
+      /selector_project_dispatches_are_bounded/,
+    );
+    assert.deepEqual(await write(0, 5), [{ revision: "1" }]);
+    const held = await store.read(partition);
+    assert.equal(held.overrides.limits?.dispatchesPerDecision, 5);
+    assert.equal(held.effective.limits.dispatchesPerDecision, 5);
+    assert.deepEqual(
+      await harness.query(
+        `SELECT dispatches_per_decision::text AS budget
+           FROM selector_project_settings_history
+          WHERE tenant=$1 AND project=$2 ORDER BY revision`,
+        [partition.tenant, partition.project],
+      ),
+      [{ budget: "5" }],
+    );
+    const cleared = writtenSettings(
+      await store.write(partition, 1, {}, administrator),
+    );
+    assert.equal(cleared.overrides.limits, undefined);
+    assert.equal(
+      cleared.effective.limits.dispatchesPerDecision,
+      leadDispatchesPerDecision,
     );
   } finally {
     await pool.end();
   }
+});
+
+/**
+ * The column's ceiling is the one a decision is parsed under, because a
+ * project holding more would have every decision that spent it refused before
+ * any of the document was read. The definer is driven rather than the door:
+ * the wire schema refuses first, and the column is what answers anything that
+ * reaches the row another way.
+ */
+test("a project's dispatch budget stops at the ceiling its decisions are parsed under", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "selector-dispatch-ceiling",
+  );
+  const write = (revision: number, dispatches: number) =>
+    harness.query(
+      `SELECT revision::text FROM update_selector_project_settings(
+         $1,$2,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,$4,
+         NULL,NULL,NULL,'User','selector-admin')`,
+      [partition.tenant, partition.project, revision, dispatches],
+    );
+  await assert.rejects(
+    () => write(0, leadDispatchesMax + 1),
+    /selector_project_dispatches_are_bounded/,
+  );
+  assert.deepEqual(await write(0, leadDispatchesMax), [{ revision: "1" }]);
 });

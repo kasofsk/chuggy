@@ -1,6 +1,6 @@
 /**
  * The project's selector settings, written whole under the revision they were
- * read at: the North Star, the base prompt, the two modes and the five limits a
+ * read at: the North Star, the base prompt, the two modes and the limits a
  * project may set for itself.
  *
  * A WRITE THE REVISION MOVED UNDER IS NOT RETRIED. The route answers `409` with

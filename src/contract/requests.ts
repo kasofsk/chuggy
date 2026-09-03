@@ -14,6 +14,7 @@ import {
   digestSchema,
   dispatchViewSchemaVersion,
   inquiryQuestionCharsMax,
+  leadDispatchesMax,
   selectorAllowlistNameCharsMax,
   selectorAllowlistNamesMax,
   selectorSettingsTextCharsMax,
@@ -132,6 +133,9 @@ export const selectorProjectOverridesSchema = z.strictObject({
       tokensPerDecision: selectorLimitSchema.optional(),
       millisecondsPerDecision: selectorLimitSchema.optional(),
       toolCallsPerDecision: selectorLimitSchema.optional(),
+      dispatchesPerDecision: selectorLimitSchema
+        .max(leadDispatchesMax)
+        .optional(),
       inputBytesPerDecision: selectorLimitSchema.optional(),
       candidatePagesPerDecision: selectorLimitSchema.optional(),
     })
