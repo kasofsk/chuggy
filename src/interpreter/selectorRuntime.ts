@@ -14,7 +14,7 @@ import {
   type SelectorPolicyHost,
   selectorProjectMoved,
   type SelectorProjectState,
-  type SelectorProposal,
+  type SelectorDecisionProposals,
   selectorSettingsFence,
   selectorSettingsFenceHolds,
   type SelectorResolvedSettings,
@@ -231,7 +231,7 @@ async function observeFencedProject(
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
   identity: SelectorCycleIdentity,
-): Promise<SelectorProposal | undefined> {
+): Promise<SelectorDecisionProposals | undefined> {
   const observation = await observeSelectorProject(
     state,
     source,
@@ -282,7 +282,7 @@ async function observePermittedProject(
   control: SelectorRuntimeSettingsSource,
 ): Promise<ProjectObservationResult> {
   const failures: SelectorRunFailure[] = [];
-  let proposal: SelectorProposal | undefined;
+  let proposal: SelectorDecisionProposals | undefined;
   let observed = false;
   let stop = false;
   try {

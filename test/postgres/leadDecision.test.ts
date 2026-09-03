@@ -70,6 +70,7 @@ function settingsFor(partition: Partition): SelectorResolvedSettings {
       tokensPerDecision: 200_000,
       millisecondsPerDecision: 900_000,
       toolCallsPerDecision: 20,
+      dispatchesPerDecision: 1,
       inputBytesPerDecision: 1_048_576,
       candidatePagesPerDecision: 1,
       concurrentDecisions: 4,
@@ -290,7 +291,10 @@ test("a moved project takes one turn, and the decision lands whole", async () =>
   );
   await pod;
 
-  assert.equal(proposal?.command.ticket, 41);
+  assert.deepEqual(
+    proposal?.dispatches.map((dispatch) => dispatch.command.ticket),
+    [41],
+  );
   const interactions = await store.history(partition, undefined, 10);
   assert.equal(interactions.length, 1);
   assert.deepEqual(interactions[0]?.context.changes, observation.changes);

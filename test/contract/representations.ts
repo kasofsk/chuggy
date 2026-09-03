@@ -319,6 +319,7 @@ export const selectorDefaults: SelectorRuntimeSettings = {
     tokensPerDecision: 8192,
     millisecondsPerDecision: 120_000,
     toolCallsPerDecision: 20,
+    dispatchesPerDecision: 1,
     inputBytesPerDecision: 1_048_576,
     candidatePagesPerDecision: 1,
     concurrentDecisions: 4,

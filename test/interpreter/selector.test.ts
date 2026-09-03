@@ -4,11 +4,15 @@ import { test } from "node:test";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   dryRunSelectorPolicy,
+  leadDispatchesMax,
   observeSelectorProject,
   runObservedSelectorCycle,
   runSelectorCycle,
   resolvedSelectorSettings,
   selectorBacklogsAdmitDispatch,
+  selectorDispatchOperation,
+  type SelectorDecisionProposals,
+  type SelectorInteraction,
   type SelectorProjectOverrides,
   type SelectorRuntimeControlStore,
   type SelectorRuntimeSettings,
@@ -27,10 +31,12 @@ import {
   type SelectorStateStore,
 } from "../../src/interpreter/selector.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { randomOf, subsetFrom } from "../random/random.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
   asOperationId,
+  operationIdentityCharsMax,
 } from "../../src/interpreter/operationInbox.ts";
 import { selectorRunOnce } from "../../src/interpreter/selectorRuntime.ts";
 import type { AgenticRefusalWrite } from "../../src/interpreter/agenticRefusal.ts";
@@ -48,6 +54,7 @@ const partition = {
 
 const delivery: SelectorDelivery = {
   decision: "decision",
+  ticket: asTicketId(1),
   partition,
   operation: asOperationId("operation"),
   attempts: 0,
@@ -98,6 +105,7 @@ const runtimeSettings: SelectorRuntimeSettings = {
     tokensPerDecision: 8192,
     millisecondsPerDecision: 120_000,
     toolCallsPerDecision: 20,
+    dispatchesPerDecision: 1,
     inputBytesPerDecision: 1_048_576,
     candidatePagesPerDecision: 1,
     concurrentDecisions: 4,
@@ -269,7 +277,7 @@ function stateStore(
     inventoryCursor: () => Promise.resolve(undefined),
     saveInventoryCursor: () => Promise.resolve(),
     recordInteraction: () => Promise.resolve(true),
-    record: () => Promise.resolve(true),
+    record: () => Promise.resolve(1),
     pending: () => Promise.resolve([]),
     submittedDeliveries: () => Promise.resolve([]),
     submitted: () => Promise.resolve(),
@@ -2074,7 +2082,7 @@ test("a decision's refusals are entered after the decision they name", async () 
       project: () => Promise.resolve(observedState(5)),
       record: () => {
         order.push("proposal");
-        return Promise.resolve(true);
+        return Promise.resolve(1);
       },
       recordInteraction: () => {
         order.push("interaction");
@@ -2182,7 +2190,7 @@ test("a dispatching decision's refusals are entered after its proposal", async (
       project: () => Promise.resolve(observedState(5)),
       record: () => {
         order.push("proposal");
-        return Promise.resolve(true);
+        return Promise.resolve(1);
       },
       recordInteraction: () => {
         order.push("interaction");
@@ -2266,4 +2274,249 @@ test("the trigger reads from the cursor the project's last turn stood on", async
     "a trigger that read from the start would replay every change on every pass",
   );
   assert.equal(started, 0, "nothing moved past that cursor, so nothing ran");
+});
+
+/** A source whose one page offers the candidates a case wants chosen among. */
+function candidateSource(candidates: readonly (typeof dispatchable)[]) {
+  return {
+    ...promptObservationSource(),
+    dispatchView: () =>
+      Promise.resolve({
+        result: "Page",
+        token: {
+          ...partition,
+          recoveryEpoch: "epoch",
+          schemaVersion: 1,
+          watermark: 1,
+          digest: "c".repeat(64),
+        },
+        candidates,
+        notificationCursor: 1,
+      } as const),
+  };
+}
+
+const offered = Array.from({ length: 4 }, (_, index) => ({
+  ...dispatchable,
+  ticket: asTicketId(index + 1),
+}));
+
+/** One cycle over the offered view, dispatching the tickets a case names. */
+async function cycleDispatching(
+  tickets: readonly number[],
+  limits: Partial<SelectorRuntimeSettings["limits"]> = {},
+  view: readonly (typeof dispatchable)[] = offered,
+) {
+  let interaction: SelectorInteraction | undefined;
+  let recorded: SelectorDecisionProposals | undefined;
+  const proposals = await runSelectorCycle(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Monitoring",
+      handoffNote: {},
+    },
+    candidateSource(view),
+    refusalWrites(),
+    {
+      ...stateStore(() => undefined),
+      recordInteraction: (written) => {
+        interaction = written;
+        return Promise.resolve(true);
+      },
+      record: (written) => {
+        recorded = written;
+        interaction = written.interaction;
+        return Promise.resolve(written.dispatches.length);
+      },
+    },
+    policyHost(() =>
+      Promise.resolve({
+        ...waitingExecution(),
+        result: {
+          ...waitingExecution().result,
+          dispatches: tickets.map((ticket) => ({
+            ticket: asTicketId(ticket),
+            expectedTicketVersion: 1,
+          })),
+        },
+      }),
+    ),
+    {
+      operation: asOperationId("cycle-operation"),
+      selectorDecisionReference: "cycle-decision",
+    },
+    resolved({
+      ...runtimeSettings,
+      limits: { ...runtimeSettings.limits, ...limits },
+    }),
+  );
+  return { proposals, recorded, interaction };
+}
+
+/**
+ * The policy control, judged on the finished turn beside the token and
+ * tool-call budgets. The whole decision is refused rather than truncated: a
+ * control that reported a bound it had not applied would be worse than none.
+ */
+test("a decision dispatching past its project's budget is a control violation", async () => {
+  const over = await cycleDispatching([1, 2, 3, 4], {
+    dispatchesPerDecision: 3,
+  });
+  assert.equal(over.proposals, undefined);
+  assert.equal(over.recorded, undefined, "nothing is dispatched");
+  assert.deepEqual(over.interaction?.result, {
+    outcome: "Failed",
+    code: "ControlViolation",
+  });
+});
+
+test("the same decision under a wider budget is accepted", async () => {
+  const within = await cycleDispatching([1, 2, 3, 4], {
+    dispatchesPerDecision: 4,
+  });
+  assert.deepEqual(
+    within.recorded?.dispatches.map((dispatch) => dispatch.ticket),
+    [asTicketId(1), asTicketId(2), asTicketId(3), asTicketId(4)],
+    "the control is a control and not a constant",
+  );
+});
+
+test("every dispatch a decision names is proposed under its own operation", async () => {
+  const three = await cycleDispatching([3, 1, 2], {
+    dispatchesPerDecision: 3,
+  });
+  assert.deepEqual(
+    three.recorded?.dispatches.map((dispatch) => dispatch.operation),
+    [3, 1, 2].map((ticket) =>
+      selectorDispatchOperation(
+        {
+          operation: asOperationId("cycle-operation"),
+          selectorDecisionReference: "cycle-decision",
+        },
+        asTicketId(ticket),
+      ),
+    ),
+  );
+  assert.deepEqual(
+    three.recorded?.dispatches.map((dispatch) => dispatch.command.ticket),
+    [asTicketId(3), asTicketId(1), asTicketId(2)],
+    "each command names its own candidate, in the order the lead named them",
+  );
+});
+
+/**
+ * Every member is checked, not the first. Before the walk was total a decision
+ * naming a carried ticket and an uncarried one dropped the second silently; now
+ * the cycle refuses, and the runtime's own catch records the failure.
+ */
+test("a dispatch of a ticket the view did not carry loses the whole decision", async () => {
+  await assert.rejects(
+    () => cycleDispatching([1, 99], { dispatchesPerDecision: 3 }),
+    /outside its observed view/,
+  );
+});
+
+test("a derived dispatch operation is one per ticket, and bounded", () => {
+  const identity = {
+    operation: asOperationId("selector-operation-instance-uuid"),
+    selectorDecisionReference: "decision",
+  };
+  assert.notEqual(
+    selectorDispatchOperation(identity, asTicketId(41)),
+    selectorDispatchOperation(identity, asTicketId(42)),
+  );
+  assert.equal(
+    selectorDispatchOperation(identity, asTicketId(41)),
+    selectorDispatchOperation(identity, asTicketId(41)),
+    "a redelivery of one decision's ticket is the same operation",
+  );
+  assert.throws(
+    () =>
+      selectorDispatchOperation(
+        {
+          ...identity,
+          operation: asOperationId("o".repeat(operationIdentityCharsMax)),
+        },
+        asTicketId(41),
+      ),
+    RangeError,
+    "an operation no stored row could hold is refused where it is built",
+  );
+});
+
+test("a project's dispatch budget resolves from its own row, or inherits", () => {
+  assert.equal(
+    resolvedSelectorSettings(partition, runtimeSettings, 0, {
+      limits: { dispatchesPerDecision: 5 },
+    }).limits.dispatchesPerDecision,
+    5,
+  );
+  assert.equal(
+    resolvedSelectorSettings(partition, runtimeSettings, 0, {}).limits
+      .dispatchesPerDecision,
+    runtimeSettings.limits.dispatchesPerDecision,
+  );
+});
+
+/**
+ * The budget and the walk, checked against a model rather than against
+ * examples: the count is judged first, on the finished turn, so a decision over
+ * its budget is a control violation whatever it named; one within it is refused
+ * only where a ticket it names is outside the view, and otherwise proposes
+ * exactly what it named, in order. The reference is a count then a set, which
+ * is what the two rules are and the order they run in; a run is a pure function
+ * of its seed, so a failure names the case that produced it.
+ */
+test("a decision is proposed exactly when the view holds it and the budget allows it", async () => {
+  const random = randomOf(20_260_903);
+  for (let run = 0; run < 128; run += 1) {
+    const size = random.below(leadDispatchesMax) + 1;
+    const view = Array.from({ length: size }, (_, index) => ({
+      ...dispatchable,
+      ticket: asTicketId(index + 1),
+    }));
+    const budget = random.below(leadDispatchesMax) + 1;
+    const named = subsetFrom(random, view).map((candidate) =>
+      Number(candidate.ticket),
+    );
+    const chosen = random.coin() ? [...named, size + 1] : named;
+    const carried = chosen.every((ticket) => ticket <= size);
+    const label = `seed run ${String(run)}: view ${String(size)}, budget ${String(budget)}, chosen ${chosen.join(",")}`;
+
+    if (chosen.length > budget) {
+      const over = await cycleDispatching(
+        chosen,
+        { dispatchesPerDecision: budget },
+        view,
+      );
+      assert.equal(over.recorded, undefined, label);
+      assert.deepEqual(
+        over.interaction?.result,
+        { outcome: "Failed", code: "ControlViolation" },
+        label,
+      );
+      continue;
+    }
+    if (!carried) {
+      await assert.rejects(
+        () => cycleDispatching(chosen, { dispatchesPerDecision: budget }, view),
+        /outside its observed view/,
+        label,
+      );
+      continue;
+    }
+    const cycle = await cycleDispatching(
+      chosen,
+      { dispatchesPerDecision: budget },
+      view,
+    );
+    assert.deepEqual(
+      cycle.recorded?.dispatches.map((dispatch) => Number(dispatch.ticket)) ??
+        [],
+      chosen,
+      label,
+    );
+  }
 });

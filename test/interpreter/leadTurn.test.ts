@@ -197,6 +197,7 @@ test("the effective budget is the smaller of the settings and the mailbox", () =
       tokensPerDecision: 1,
       millisecondsPerDecision: 1,
       toolCallsPerDecision: 1,
+      dispatchesPerDecision: 1,
       inputBytesPerDecision: leadObservationBytesMax * 2,
       candidatePagesPerDecision: 1,
       concurrentDecisions: 1,
@@ -400,6 +401,36 @@ test("a decision that names one ticket twice is refused at the door", () => {
   );
 });
 
+/**
+ * The arm that was unreachable while the bound was one. Two dispatches of one
+ * ticket would be two `Dispatch` events at their own prefixes, the second
+ * refused by enablement because the first left the ticket Working — a refusal
+ * the lead did not earn.
+ */
+test("a decision that dispatches one ticket twice is refused", () => {
+  const dispatch = { ticket: 41, expectedTicketVersion: 3 };
+  assert.throws(
+    () =>
+      parseLeadDecision(
+        decision({ dispatches: [dispatch, dispatch] }),
+        observation,
+        standing,
+      ),
+    TypeError,
+  );
+  assert.deepEqual(
+    parseLeadDecision(
+      decision({
+        dispatches: [dispatch, { ticket: 40, expectedTicketVersion: 2 }],
+      }),
+      parcelledObservation,
+      standing,
+    ).dispatches.map((chosen) => chosen.ticket),
+    [asTicketId(41), asTicketId(40)],
+    "two distinct tickets are what the raised bound is for",
+  );
+});
+
 test("a dispatch that names no version the observation showed is refused", () => {
   assert.throws(
     () =>
@@ -479,5 +510,69 @@ test("an observation over its bound, or missing a collection, is refused", () =>
         JSON.stringify({ ...document, candidates: undefined }),
       ),
     TypeError,
+  );
+});
+
+/**
+ * What the raised dispatch ceiling costs the document, measured rather than
+ * asserted: a decision at both choice ceilings — every dispatch and refusal the
+ * bounds allow, at the widest ticket ids and longest reasons — must still leave
+ * the handoff note room, because the note is a successor's only context. The
+ * remaining room is derived from the constants here, so raising a bound moves
+ * the figure rather than dating a comment.
+ */
+test("a decision at both choice ceilings still leaves the note room", () => {
+  const widest = (index: number) => Number.MAX_SAFE_INTEGER - index;
+  const dispatches = Array.from({ length: leadDispatchesMax }, (_, index) => ({
+    ticket: widest(index),
+    expectedTicketVersion: 3,
+  }));
+  const refusals = Array.from(
+    { length: leadRefusalsPerDecisionMax },
+    (_, index) => ({
+      ticket: widest(leadDispatchesMax + index),
+      ticketVersion: 3,
+      reason: "x".repeat(agenticRefusalReasonCharsMax),
+    }),
+  );
+  const widestObservation: SelectorObservation = {
+    ...observation,
+    candidates: [...dispatches, ...refusals].map((choice) => ({
+      ...candidate,
+      ticket: asTicketId(choice.ticket),
+    })),
+  };
+  const documentOf = (note: string) =>
+    JSON.stringify({
+      version: 1,
+      dispatches,
+      refusals,
+      lifts: [],
+      attention: "Monitoring",
+      handoffNote: { note },
+    });
+  const room =
+    leadDecisionBytesMax - new TextEncoder().encode(documentOf("")).byteLength;
+
+  assert.ok(
+    room > 0,
+    "the choices alone weigh the whole document the mailbox row holds",
+  );
+  const parsed = parseLeadDecision(
+    documentOf("x".repeat(room)),
+    widestObservation,
+    [],
+  );
+  assert.equal(parsed.dispatches.length, leadDispatchesMax);
+  assert.equal(parsed.refusals.length, leadRefusalsPerDecisionMax);
+  assert.throws(
+    () =>
+      parseLeadDecision(
+        documentOf("x".repeat(room + 1)),
+        widestObservation,
+        [],
+      ),
+    RangeError,
+    "the derived room is the document bound and not an approximation of it",
   );
 });

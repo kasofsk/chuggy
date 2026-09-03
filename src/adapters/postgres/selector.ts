@@ -15,7 +15,7 @@ import type {
   SelectorCandidateScan,
   SelectorInteraction,
   SelectorInteractionRecord,
-  SelectorProposal,
+  SelectorDecisionProposals,
   SelectorPlanningIntent,
   SelectorProjectState,
   SelectorReviewFeedback,
@@ -30,7 +30,10 @@ import type {
   SelectorSettingsRevision,
   SelectorStateStore,
 } from "../../interpreter/selector.ts";
-import { resolvedSelectorSettings } from "../../interpreter/selector.ts";
+import {
+  dispatchesPerDecisionUnstated,
+  resolvedSelectorSettings,
+} from "../../interpreter/selector.ts";
 import type {
   SelectorProjectSettingsRecord,
   SelectorProjectSettingsRefusal,
@@ -240,6 +243,11 @@ const selectorPolicyControlsSchema: z.ZodType<SelectorPolicyControls> = z
         tokensPerDecision: z.number().int().safe(),
         millisecondsPerDecision: z.number().int().safe(),
         toolCallsPerDecision: z.number().int().safe(),
+        dispatchesPerDecision: z
+          .number()
+          .int()
+          .safe()
+          .default(dispatchesPerDecisionUnstated),
         inputBytesPerDecision: z.number().int().safe(),
         candidatePagesPerDecision: z.number().int().safe(),
         concurrentDecisions: z.number().int().safe(),
@@ -375,6 +383,8 @@ function deliveryOf(row: DeliveryRow): SelectorDelivery {
     throw new Error("selector delivery contains an unreadable proposal");
   return {
     decision: row.selector_decision,
+    /** The command names it, which is what the rekeying backfills the column from. */
+    ticket: parsed.value.ticket,
     partition: {
       tenant: asTenantId(row.tenant),
       project: asProjectId(row.project),
@@ -1516,40 +1526,64 @@ async function replacePlanningIntent(
   );
 }
 
-async function insertSelectorProposal(
+/**
+ * Writes a decision's delivery rows and answers how many it wrote. Keyed on the
+ * decision alone until it is rekeyed on `(decision, ticket)`, the relation holds
+ * one row per decision, so a second dispatch is refused whole rather than
+ * colliding with the first — the relation stating what it can hold, not a second
+ * control.
+ */
+async function insertSelectorProposals(
   client: pg.PoolClient,
-  proposal: SelectorProposal | undefined,
-): Promise<boolean> {
-  if (proposal === undefined) return true;
-  const interaction = proposal.interaction;
-  const inserted = await client.query(
-    sql`INSERT INTO selector_proposal_delivery
-     (selector_decision,tenant,project,operation,command,state)
-     VALUES (${interaction.decision},${interaction.partition.tenant},
-             ${interaction.partition.project},${proposal.operation},
-             ${encode(proposal.command)},
-             ${proposal.deliveryMode === "Automatic" ? "Pending" : "AwaitingApproval"})
-     ON CONFLICT (selector_decision) DO NOTHING`,
-  );
-  return inserted.rowCount === 1;
+  proposals: SelectorDecisionProposals | undefined,
+): Promise<number> {
+  if (proposals === undefined) return 0;
+  if (proposals.dispatches.length > 1)
+    throw new RangeError(
+      "selector delivery holds one dispatch per decision until it is keyed by ticket",
+    );
+  const interaction = proposals.interaction;
+  let written = 0;
+  for (const dispatch of proposals.dispatches) {
+    const inserted = await client.query(
+      sql`INSERT INTO selector_proposal_delivery
+       (selector_decision,tenant,project,operation,command,state)
+       VALUES (${interaction.decision},${interaction.partition.tenant},
+               ${interaction.partition.project},${dispatch.operation},
+               ${encode(dispatch.command)},
+               ${proposals.deliveryMode === "Automatic" ? "Pending" : "AwaitingApproval"})
+       ON CONFLICT (selector_decision) DO NOTHING`,
+    );
+    written += inserted.rowCount === 1 ? 1 : 0;
+  }
+  return written;
 }
 
+/**
+ * The one transaction a decision is written in: the interaction, the planning
+ * intent, its delivery rows and the project's own next state. `recorded` is
+ * false where the project moved under the write or the interaction was already
+ * retained, and `deliveries` counts the rows this call wrote, which a replay
+ * makes zero without making it a failure.
+ */
 async function recordSelectorState(
   pool: pg.Pool,
   interaction: SelectorInteraction,
   state: SelectorProjectState,
   fence: SelectorSettingsFence,
   planningIntent?: unknown,
-  proposal?: SelectorProposal,
-): Promise<boolean> {
+  proposals?: SelectorDecisionProposals,
+): Promise<{ readonly recorded: boolean; readonly deliveries: number }> {
   return postgresTransaction(pool, async (client) => {
-    if (!(await lockSelectorProject(client, state))) return false;
+    if (!(await lockSelectorProject(client, state)))
+      return { recorded: false, deliveries: 0 };
     await completeSelectorAttempt(client, interaction, fence);
-    if (!(await insertSelectorInteraction(client, interaction))) return false;
+    if (!(await insertSelectorInteraction(client, interaction)))
+      return { recorded: false, deliveries: 0 };
     await replacePlanningIntent(client, interaction, planningIntent);
-    const proposalRecorded = await insertSelectorProposal(client, proposal);
+    const deliveries = await insertSelectorProposals(client, proposals);
     await writeSelectorProject(client, state);
-    return proposalRecorded;
+    return { recorded: true, deliveries };
   });
 }
 
@@ -1718,17 +1752,27 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
     quarantinedAttempts: (limit) => quarantinedAttempts(pool, limit),
     inventoryCursor: () => readInventoryCursor(pool),
     saveInventoryCursor: (cursor) => writeInventoryCursor(pool, cursor),
-    recordInteraction: (interaction, state, fence, planningIntent) =>
-      recordSelectorState(pool, interaction, state, fence, planningIntent),
-    record: (proposal, state) =>
-      recordSelectorState(
-        pool,
-        proposal.interaction,
-        state,
-        proposal.fence,
-        proposal.planningIntent,
-        proposal,
-      ),
+    recordInteraction: async (interaction, state, fence, planningIntent) =>
+      (
+        await recordSelectorState(
+          pool,
+          interaction,
+          state,
+          fence,
+          planningIntent,
+        )
+      ).recorded,
+    record: async (proposals, state) =>
+      (
+        await recordSelectorState(
+          pool,
+          proposals.interaction,
+          state,
+          proposals.fence,
+          proposals.planningIntent,
+          proposals,
+        )
+      ).deliveries,
     pending: (limit) => pendingDeliveries(pool, limit),
     submittedDeliveries: (limit) => submittedDeliveries(pool, limit),
     submitted: (decision) => markSubmitted(pool, decision),
