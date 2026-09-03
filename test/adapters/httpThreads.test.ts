@@ -28,15 +28,13 @@ import {
   threadTranscriptResponseSchema,
   threadsResponseSchema,
 } from "../../src/contract/responses.ts";
-import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
+import type { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import { leadTranscriptResponse } from "../../src/adapters/http/outcomes.ts";
-import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import {
   asSessionId,
   asSessionStoreStream,
   asSessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
-import { asInstallationId } from "../../src/domain/ids.ts";
 import {
   checkedThreadMailboxQuery,
   threadBacklogRetrySeconds,
@@ -44,7 +42,7 @@ import {
 import { checkedLeadTranscriptQuery } from "../../src/interpreter/leadRead.ts";
 import type { ThreadMessageSent } from "../../src/interpreter/threadRead.ts";
 import { threadTurnInputCharsMax } from "../../src/interpreter/thread.ts";
-import { unservedNativeWeb } from "./threadFixtures.ts";
+import { servedNativeHttpApp, unservedNativeWeb } from "./threadFixtures.ts";
 
 /** What the app takes, which is one boundary and not the five methods under test. */
 type NativeThreadWeb = Parameters<typeof createNativeHttpApp>[0];
@@ -174,27 +172,7 @@ function threadWeb(held: ThreadCase): NativeThreadWeb {
 }
 
 function appOf(held: ThreadCase) {
-  return createNativeHttpApp(
-    threadWeb(held),
-    {
-      authenticateBearer: (token) =>
-        Promise.resolve(
-          token === "valid"
-            ? {
-                authenticated: "Bearer" as const,
-                bearer: { principal: asPrincipal("issuer geoff") },
-              }
-            : { authenticated: "InvalidToken" as const },
-        ),
-    },
-    { ready: () => Promise.resolve(true) },
-    {
-      installationAuthority: () =>
-        Promise.resolve(
-          asInstallationId("018f84a1-4c2b-7def-8abc-0123456789ab"),
-        ),
-    },
-  );
+  return servedNativeHttpApp(threadWeb(held));
 }
 
 test("the project's threads are listed as the listing schema names them", async () => {

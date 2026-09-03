@@ -263,9 +263,9 @@ test("the API may read the session an operation came through and no more of it",
 });
 
 /**
- * The grant the session pass needs, which slice 3's migration 061 adds and this
- * tree does not carry. Until it lands this case is red, and a session placement
- * pass raises on the read and stops.
+ * The grant the session pass needs, which migration 061 adds. A pass that may
+ * not make the read raises on it and stops, so a grant lost is not a degraded
+ * checkout but a deployment whose session half never moves again.
  */
 test("the scheduler may read a project's repository binding, which its session pass needs", async () => {
   const refused = await harness.attemptAs(
@@ -275,6 +275,6 @@ test("the scheduler may read a project's repository binding, which its session p
   assert.equal(
     refused,
     undefined,
-    `${schedulerRole} cannot execute ${repositoryBindingReadFunction}: slice 3's migration 061 has not granted it, and until it does every session placement pass raises and stops`,
+    `${schedulerRole} cannot execute ${repositoryBindingReadFunction}: migration 061 is what grants it, and without that grant every session placement pass raises and stops`,
   );
 });

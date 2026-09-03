@@ -1,5 +1,9 @@
-import type { createNativeHttpApp } from "../../src/adapters/http/server.ts";
-import type { NativeWeb } from "../../src/interpreter/nativeWeb.ts";
+import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
+import { asInstallationId } from "../../src/domain/ids.ts";
+import {
+  asPrincipal,
+  type NativeWeb,
+} from "../../src/interpreter/nativeWeb.ts";
 import { unreadableLeadReads } from "./leadReadFixtures.ts";
 
 /**
@@ -30,12 +34,26 @@ export const unservedThreads: Pick<
 };
 
 /**
+ * The three inquiry methods a suite that never asks the lead still has to
+ * supply, for the same reason: the app takes one boundary and not three.
+ */
+export const unservedLeadInquiries: Pick<
+  NativeWeb,
+  "leadInquiries" | "leadInquiry" | "askLead"
+> = {
+  leadInquiries: unserved("lead inquiries"),
+  leadInquiry: unserved("lead inquiry"),
+  askLead: unserved("ask lead"),
+};
+
+/**
  * Every method the app takes, none of them served. A suite spreads it and then
  * writes the few methods its own cases are about, so what a case exercises is
  * exactly what it wrote.
  */
 export const unservedNativeWeb: Parameters<typeof createNativeHttpApp>[0] = {
   ...unservedThreads,
+  ...unservedLeadInquiries,
   ...unreadableLeadReads(),
   cancel: unserved("cancel"),
   configuration: unserved("configuration"),
@@ -66,3 +84,34 @@ export const unservedNativeWeb: Parameters<typeof createNativeHttpApp>[0] = {
   runTranscript: unserved("run transcript"),
   runConfiguration: unserved("run configuration"),
 };
+
+/**
+ * The app over one boundary, with the three ports every route suite supplies
+ * the same way: a bearer that authenticates one token, a readiness that is
+ * ready, and one installation. A suite about any of those composes its own.
+ */
+export function servedNativeHttpApp(
+  web: Parameters<typeof createNativeHttpApp>[0],
+) {
+  return createNativeHttpApp(
+    web,
+    {
+      authenticateBearer: (token) =>
+        Promise.resolve(
+          token === "valid"
+            ? {
+                authenticated: "Bearer" as const,
+                bearer: { principal: asPrincipal("issuer geoff") },
+              }
+            : { authenticated: "InvalidToken" as const },
+        ),
+    },
+    { ready: () => Promise.resolve(true) },
+    {
+      installationAuthority: () =>
+        Promise.resolve(
+          asInstallationId("018f84a1-4c2b-7def-8abc-0123456789ab"),
+        ),
+    },
+  );
+}

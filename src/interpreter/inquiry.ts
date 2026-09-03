@@ -195,8 +195,13 @@ function inquiryObjectives(leadPrompt: string): string {
   return [leadPrompt, inquiryInstructions].join("\n\n");
 }
 
-/** What this module contributes to an inquiry's objectives beyond the lead's own. */
-const inquiryObjectivesFixedChars = inquiryObjectives("").length;
+/**
+ * What this module contributes to an inquiry's objectives beyond the lead's
+ * own. It is exported because `sessionPromptCeilings` names the room the shared
+ * column leaves it and the contract cannot read this composition, so a case
+ * holds the two together rather than either trusting the other.
+ */
+export const inquiryObjectivesFixedChars = inquiryObjectives("").length;
 
 /**
  * The longest set of objectives one inquiry's session row holds, derived from

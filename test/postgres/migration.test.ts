@@ -34,6 +34,7 @@ import {
 } from "../../src/adapters/postgres/runtimeSchema.ts";
 import {
   agentSessionPromptCharsMax,
+  sessionSystemPromptCharsMax,
   sessionPromptCeilings,
   nativeHttpPathSegmentCharsMax,
   projectChangeResourceCharsMax,
@@ -52,6 +53,7 @@ import {
   sessionCapabilitiesMax,
 } from "../../src/interpreter/agentSession.ts";
 import { allSessionTurnFailures } from "../../src/interpreter/agentSession.ts";
+import { inquirySystemPrompt } from "../../src/interpreter/inquiry.ts";
 import { leadToolAllowlist } from "../../src/interpreter/leadTools.ts";
 import { leadToolCallsPerDecision } from "../../src/adapters/postgres/schema/migrations/061-lead-tools.ts";
 import { allSessionAttemptEvidences } from "../../src/interpreter/sessionScheduler.ts";
@@ -2538,9 +2540,87 @@ test("migration 61 moves the call bound as a floor, even where it narrows beside
   });
 });
 
+/**
+ * The column every kind's objectives share, on a database that ran 061 when the
+ * lead was the only kind that composed any. A fresh generation of 061 already
+ * writes the widened bound, so the narrow one is installed by hand — which is
+ * the only way to stand where a deployed installation stands, and is 062's own
+ * device for its roster.
+ */
+test("migration 63 widens an objectives bound installed before a fork composed any", async () => {
+  await migrationDatabase("inquiry_prompt_bound", async (subject) => {
+    await migrationSeedApplied(subject, 63);
+    await migrationNarrowedRoster(
+      subject,
+      "agent_session",
+      "agent_session_prompt_is_bounded",
+      `system_prompt IS NULL
+         OR length(system_prompt) BETWEEN 1 AND ${sessionSystemPromptCharsMax}`,
+    );
+    const widest = inquirySystemPrompt("o".repeat(sessionSystemPromptCharsMax));
+    await assert.rejects(
+      () => migrationOpenPrompted(subject, "before", widest),
+      /agent_session_prompt_is_bounded/u,
+      "a column installed before forks refuses the objectives one is opened with",
+    );
+
+    await applyMigration(subject, 63);
+
+    await migrationOpenPrompted(subject, "after", widest);
+    await assert.rejects(
+      () =>
+        migrationOpenPrompted(
+          subject,
+          "past",
+          "o".repeat(agentSessionPromptCharsMax + 1),
+        ),
+      /agent_session_prompt_is_bounded/u,
+      "the widened bound is still a bound",
+    );
+
+    await migrationDatabase("inquiry_prompt_bound_fresh", async (fresh) => {
+      await migrationSeedApplied(fresh, 64);
+      assert.equal(
+        await migrationPromptBound(subject),
+        await migrationPromptBound(fresh),
+        "a migrated installation and a fresh one hold one bound",
+      );
+    });
+  });
+});
+
+/** The objectives bound as the server renders it, for the two databases to compare. */
+async function migrationPromptBound(
+  subject: pg.Pool,
+): Promise<string | undefined> {
+  const found = await subject.query<{ definition: string }>(
+    `SELECT pg_get_constraintdef(c.oid) AS definition
+       FROM pg_constraint c
+      WHERE c.conrelid = 'agent_session'::regclass
+        AND c.conname = 'agent_session_prompt_is_bounded'`,
+  );
+  return found.rows[0]?.definition;
+}
+
+/** One lead opened with the objectives a case names, which is what the bound refuses. */
+async function migrationOpenPrompted(
+  subject: pg.Pool,
+  label: string,
+  prompt: string,
+): Promise<void> {
+  const store = postgresProjectStore(subject);
+  await postgresHarnessEpoch(store);
+  const partition = await postgresHarnessProject(store, `inquiry-${label}`);
+  await subject.query(
+    `SELECT open_agent_session($1,$2,$3,'Lead','principal-63',NULL,
+       ARRAY[]::text[],'claude-code',$4)`,
+    [partition.tenant, partition.project, `session-63-${label}`, prompt],
+  );
+}
+
 test("the objectives column holds the widest ceiling any kind of session composes", async () => {
   await migrationDatabase("lead_tool_prompt_bound", async (subject) => {
-    await migrationSeedApplied(subject, 62);
+    await migrationSeedApplied(subject, 64);
     const held = (
       await subject.query<{ definition: string }>(
         `SELECT pg_get_constraintdef(c.oid) AS definition
@@ -2655,7 +2735,7 @@ test("the session migrations compose into the schema a fresh generation renders"
 
 test("the ledger the api image reads accepts what the session migrations applied", async () => {
   await migrationDatabase("lead_ledger", async (subject) => {
-    await migrationSeedApplied(subject, 63);
+    await migrationSeedApplied(subject, 64);
     const applied = await postgresRuntimeSchema(subject).applied(
       new AbortController().signal,
     );
@@ -2666,7 +2746,7 @@ test("the ledger the api image reads accepts what the session migrations applied
     );
     assert.deepEqual(
       applied.map((each) => each.version).slice(-5),
-      [58, 59, 60, 61, 62],
+      [59, 60, 61, 62, 63],
       "the five apply in the order their filenames give them",
     );
     assert.ok(

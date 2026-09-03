@@ -61,22 +61,31 @@ test("an inquiry carries its question, its answer and what the turn cost", () =>
 /**
  * `asker` and `mine` are §1.4's whole answer to who asked and whether it is the
  * caller's, and the schema is not strict, so a body carrying them would parse
- * whether or not the schema declared them. Each is required here, which is what
- * makes deleting either from the shape red.
+ * whether or not the schema declared them. `mine` is required, which is what
+ * makes deleting it from the shape red; `asker` is not, because a membership
+ * that has been revoked leaves an inquiry the durable listing answers with no
+ * asker, and a required field would make that row unparseable rather than
+ * ownerless.
  */
 test("the listing names who asked and whether it is the caller's", () => {
   const parsed = leadInquiryResponseSchema.parse(entry);
   assert.equal(parsed.asker, entry.asker);
   assert.equal(parsed.mine, true);
 
-  for (const absent of ["asker", "mine"] as const) {
-    const rest: Record<string, unknown> = { ...entry };
-    delete rest[absent];
-    assert.ok(
-      !leadInquiryResponseSchema.safeParse(rest).success,
-      `an inquiry naming no ${absent} was accepted`,
-    );
-  }
+  const ownerless: Record<string, unknown> = { ...entry };
+  delete ownerless["asker"];
+  assert.equal(
+    leadInquiryResponseSchema.parse(ownerless).asker,
+    undefined,
+    "an inquiry whose asker's membership is gone was refused rather than listed",
+  );
+
+  const unowned: Record<string, unknown> = { ...entry };
+  delete unowned["mine"];
+  assert.ok(
+    !leadInquiryResponseSchema.safeParse(unowned).success,
+    "an inquiry saying nothing about whose it is was accepted",
+  );
 });
 
 test("an inquiry the pod has not answered carries neither answer nor measure", () => {

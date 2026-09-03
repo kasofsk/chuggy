@@ -28,6 +28,15 @@ import type {
   Submission,
 } from "./operationInbox.ts";
 import type { OperationInbox } from "./operationInbox.ts";
+import {
+  leadInquiryAsked,
+  leadInquiryEntry,
+  leadInquiryTurnInput,
+  type LeadInquiriesRead,
+  type LeadInquiryAsked,
+  type LeadInquiryRead,
+  type LeadInquiryStore,
+} from "./leadInquiry.ts";
 import type { Partition } from "./projectStore.ts";
 import type {
   NativeActionKind,
@@ -167,7 +176,7 @@ import {
   type ThreadStore,
   type ThreadsRead,
 } from "./threadRead.ts";
-import { threadsAnsweredMax } from "../contract/http.ts";
+import { inquiriesAnsweredMax, threadsAnsweredMax } from "../contract/http.ts";
 export { asPublicInstant, type PublicInstant } from "./publicResource.ts";
 export { asPrincipal, oidcPrincipal, type Principal } from "./principal.ts";
 export {
@@ -655,6 +664,24 @@ export interface NativeWeb {
       readonly message: string;
     },
   ): Promise<ThreadMessageSent>;
+  leadInquiries(
+    principal: Principal,
+    partition: Partition,
+  ): Promise<LeadInquiriesRead>;
+  leadInquiry(
+    principal: Principal,
+    partition: Partition,
+    session: SessionId,
+  ): Promise<LeadInquiryRead>;
+  askLead(
+    principal: Principal,
+    partition: Partition,
+    input: {
+      readonly session: SessionId;
+      readonly turn: SessionTurnId;
+      readonly question: string;
+    },
+  ): Promise<LeadInquiryAsked>;
 }
 
 function submissionAccess(command: TicketCommand): ProjectAccessKind {
@@ -1540,6 +1567,61 @@ function nativeLeadReadMethods(
   };
 }
 
+/**
+ * The three ways a member reaches the lead's inquiries, every one gated on
+ * `Read` because an inquiry holds a strict subset of what `Read` already
+ * permits — `./leadInquiry.ts`'s header carries the whole argument. THE ASKER
+ * IS THE AUTHORITY'S OWN SUBJECT and comes from the authorization this door
+ * already did, never from the body: a question whose asker the caller chose
+ * would name whoever they liked on a document the lead reads.
+ */
+function nativeLeadInquiryMethods(
+  access: ProjectAccess,
+  inquiries?: LeadInquiryStore,
+): Pick<NativeWeb, "leadInquiries" | "leadInquiry" | "askLead"> {
+  const composed = (): LeadInquiryStore => {
+    if (inquiries === undefined)
+      throw new Error("native web: no lead inquiry port was composed");
+    return inquiries;
+  };
+  return {
+    leadInquiries: async (principal, partition) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return { result: "NotFound" };
+      const found = await composed().inquiries(partition, inquiriesAnsweredMax);
+      return {
+        result: "Found",
+        inquiries: found.map((record) => leadInquiryEntry(record, principal)),
+      };
+    },
+    leadInquiry: async (principal, partition, session) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return { result: "NotFound" };
+      const found = await composed().inquiry(partition, session);
+      if (found === undefined) return { result: "NotFound" };
+      return { result: "Found", inquiry: leadInquiryEntry(found, principal) };
+    },
+    askLead: async (principal, partition, input) => {
+      const authority = await access.authorize(principal, partition, "Read");
+      if (authority === undefined) return { result: "NotFound" };
+      return leadInquiryAsked(
+        await composed().open({
+          partition,
+          principal,
+          session: input.session,
+          turn: input.turn,
+          question: leadInquiryTurnInput({
+            question: input.question,
+            asker: authority.subject,
+          }),
+        }),
+        input.session,
+        input.turn,
+      );
+    },
+  };
+}
+
 /** The thread side of the boundary, whose reads and whose two doors reach it as one. */
 function nativeThreadMethods(
   access: ProjectAccess,
@@ -1581,6 +1663,28 @@ function nativeProjectionMethods(
   };
 }
 
+/**
+ * Cancelling one operation, which is `Mutate` and answers `NotFound` alike for
+ * a project the caller may not write and an operation that is not there: which
+ * of the two it was is not a fact a caller who may not write is owed.
+ */
+function nativeCancelMethod(
+  access: ProjectAccess,
+  reads: NativeReadStore,
+  inbox: OperationInbox,
+): NativeWeb["cancel"] {
+  return async (principal, partition, operation) => {
+    const authority = await access.authorize(principal, partition, "Mutate");
+    if (authority === undefined) return { result: "NotFound" };
+    const resource = await reads.operation(partition, operation);
+    if (resource === undefined) return { result: "NotFound" };
+    return {
+      result: "Found",
+      cancellation: await inbox.cancel({ partition, operation, authority }),
+    };
+  };
+}
+
 /** Builds the application boundary from authorization, read, and inbox ports. */
 export function nativeWeb(
   access: ProjectAccess,
@@ -1599,11 +1703,13 @@ export function nativeWeb(
   runEvidenceContents?: RunEvidenceContentPort,
   leads?: NativeLeadPorts,
   threads?: NativeThreadPorts,
+  inquiries?: LeadInquiryStore,
 ): NativeWeb {
   return {
     ...nativeRunEvidenceMethods(access, runEvidenceReads, runEvidenceContents),
     ...nativeLeadReadMethods(access, reads, leads),
     ...nativeThreadMethods(access, threads),
+    ...nativeLeadInquiryMethods(access, inquiries),
     importRepositoryConfigurations: nativeRepositoryConfigurationImportMethod(
       access,
       repositoryConfigurationImports,
@@ -1618,16 +1724,7 @@ export function nativeWeb(
     ),
     submit: nativeSubmitMethod(access, inbox, backlog),
     ...nativeProjectionMethods(access, reads),
-    cancel: async (principal, partition, operation) => {
-      const authority = await access.authorize(principal, partition, "Mutate");
-      if (authority === undefined) return { result: "NotFound" };
-      const resource = await reads.operation(partition, operation);
-      if (resource === undefined) return { result: "NotFound" };
-      return {
-        result: "Found",
-        cancellation: await inbox.cancel({ partition, operation, authority }),
-      };
-    },
+    cancel: nativeCancelMethod(access, reads, inbox),
     notifications: async (principal, partition, cursor) =>
       (await access.authorize(principal, partition, "Read")) === undefined
         ? { result: "NotFound" }
