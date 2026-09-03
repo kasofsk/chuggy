@@ -491,6 +491,29 @@ test("two presses inside one turn ask once", async () => {
   expect(server.posts().length, "one press asked twice").toBe(1);
 });
 
+/**
+ * A door whose first answer does not reach the box and whose next one lands,
+ * which is the send a held pair exists for.
+ */
+function answerLostThenTaken(): () => {
+  readonly body: unknown;
+  readonly status: number;
+} {
+  let asks = 0;
+  return () => {
+    asks += 1;
+    return asks === 1
+      ? {
+          body: { error: { code: "InternalError", message: "no" } },
+          status: 500,
+        }
+      : {
+          body: { session: "inq-new", turn: "inq-turn-new", ordinal: 1 },
+          status: 202,
+        };
+  };
+}
+
 function refusal(code: string, status = 409) {
   return { body: { error: { code, message: code } }, status };
 }
@@ -592,21 +615,9 @@ test("a box that was refused can ask again", async () => {
  * press opens a second fork and spends the second of their two.
  */
 test("a re-send after a send that did not land carries the same pair", async () => {
-  let asks = 0;
   const server = await drawInquiries({
     listing: () => ({ inquiries: [] }),
-    asked: () => {
-      asks += 1;
-      return asks === 1
-        ? {
-            body: { error: { code: "InternalError", message: "no" } },
-            status: 500,
-          }
-        : {
-            body: { session: "inq-new", turn: "inq-turn-new", ordinal: 1 },
-            status: 202,
-          };
-    },
+    asked: answerLostThenTaken(),
   });
   await turned(() => {
     typed("why is ticket 41 waiting?");
@@ -699,21 +710,9 @@ function uniqueDoor(): (
  * not hold, or asks the installation for a session name it has already used.
  */
 test("a pair drawn for one project is not posted to another after a switch", async () => {
-  let asks = 0;
   const server = await drawInquiries({
     listing: () => ({ inquiries: [] }),
-    asked: () => {
-      asks += 1;
-      return asks === 1
-        ? {
-            body: { error: { code: "InternalError", message: "no" } },
-            status: 500,
-          }
-        : {
-            body: { session: "inq-new", turn: "inq-turn-new", ordinal: 1 },
-            status: 202,
-          };
-    },
+    asked: answerLostThenTaken(),
   });
   await turned(() => {
     typed("why is ticket 41 waiting?");
