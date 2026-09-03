@@ -170,10 +170,9 @@ export function leadTranscriptNextAfter(
  * cursor is what reaches them, and the read budget is what bounds that.
  */
 function leadTranscriptMore(
-  fold: LeadTranscriptFold,
   page: LeadTranscriptResponse,
+  asked: number,
 ): boolean {
-  const asked = fold.readTo ?? 0;
   return (
     page.nextAfter !== undefined &&
     page.entries.length > 0 &&
@@ -205,11 +204,20 @@ function leadTranscriptEntriesMerged(
  * draws nothing and still has batches above it, so a walk that jumped to the
  * high-water mark on an empty page would abandon the rest of the store.
  */
+/**
+ * A CURSOR THAT DOES NOT ADVANCE IS NOT A CURSOR: a page answered at one that
+ * hands the same one back leaves the walk nowhere to go, since asking again
+ * returns the page just read. The pane takes the mark it read against instead
+ * and stops, drawing what it has — a route misbehaving costs a reader a stale
+ * pane rather than a tab spending every read it has on one batch.
+ */
 function leadTranscriptReadTo(
   page: LeadTranscriptResponse,
   highWaterBatch: number,
+  asked: number,
 ): number {
-  return page.nextAfter ?? highWaterBatch;
+  if (page.nextAfter === undefined) return highWaterBatch;
+  return page.nextAfter > asked ? page.nextAfter : highWaterBatch;
 }
 
 /**
@@ -245,6 +253,7 @@ function leadTranscriptGathered(
   page: LeadTranscriptResponse,
   highWaterBatch: number,
 ): LeadTranscriptFold {
+  const asked = fold.readTo ?? 0;
   const merged = leadTranscriptEntriesMerged(fold.entries, page.entries);
   const kept = merged.slice(-leadTranscriptEntriesHeldMax);
   return {
@@ -259,8 +268,8 @@ function leadTranscriptGathered(
     truncated: fold.truncated || page.truncated,
     holdingUnknown: fold.holdingUnknown || page.held === undefined,
     entriesDropped: fold.entriesDropped + (merged.length - kept.length),
-    readTo: leadTranscriptReadTo(page, highWaterBatch),
-    more: leadTranscriptMore(fold, page),
+    readTo: leadTranscriptReadTo(page, highWaterBatch, asked),
+    more: leadTranscriptMore(page, asked),
   };
 }
 

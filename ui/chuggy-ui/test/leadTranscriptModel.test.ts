@@ -45,12 +45,20 @@ const modelCappedSequences = 6;
 const modelCappedEventsMax = 60;
 const modelCappedEntriesPerBatch = 60;
 
-/** A seeded generator, so a sequence that finds something can be run again. */
+/**
+ * A seeded generator, so a sequence that finds something can be run again. It
+ * is mulberry32 rather than a bare linear congruential step, whose first draw
+ * from a small seed spans a fraction of the unit interval — every sequence then
+ * opens on the same shape, and a generator that starts every run in one place
+ * explores far less than its seed count suggests.
+ */
 function modelRandom(seed: number): () => number {
-  let held = seed >>> 0;
+  let held = (seed + 0x6d_2b_79_f5) >>> 0;
   return () => {
-    held = (held * 1_664_525 + 1_013_904_223) >>> 0;
-    return held / 0x1_0000_0000;
+    held = (held + 0x6d_2b_79_f5) >>> 0;
+    let mixed = Math.imul(held ^ (held >>> 15), held | 1);
+    mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 0x1_0000_0000;
   };
 }
 
@@ -89,8 +97,9 @@ function modelChain(store: ModelStore): readonly string[] {
  * nothing is a full one whose every batch was elided or whose every entry was
  * meta — it carries a cursor and no entries, which is the shape a pane must not
  * read as the end of the stream or as a lead that has recorded nothing, while
- * one that `stalls` hands back the cursor it was asked with, which is a route
- * misbehaving and is what a pane must not be walked in circles by.
+ * one that `stalls` hands back the cursor it was asked with and one that
+ * `repeats` sends a batch below it again — the two ways a route can misbehave
+ * that the walk's cursor rule and the fold's dedupe are each there for.
  */
 function modelPage(
   store: ModelStore,
@@ -99,10 +108,15 @@ function modelPage(
     readonly decides: boolean;
     readonly draws: boolean;
     readonly stalls: boolean;
+    readonly repeats: boolean;
     readonly elided: number;
   },
 ): LeadTranscriptResponse {
-  const batch = shape.draws ? (store.batches[after] ?? []) : [];
+  const above = shape.draws ? (store.batches[after] ?? []) : [];
+  const batch =
+    shape.repeats && after > 0
+      ? [...(store.batches[after - 1] ?? []), ...above]
+      : above;
   const cut = store.cut;
   const held =
     cut === undefined
@@ -121,7 +135,9 @@ function modelPage(
     ...(shape.decides && cut !== undefined ? { cut } : {}),
     elided: shape.elided,
     truncated: !shape.decides,
-    ...(shape.draws && batch.length === 0 ? {} : { nextAfter: after + 1 }),
+    ...(shape.draws && above.length === 0
+      ? {}
+      : { nextAfter: shape.stalls ? after : after + 1 }),
   };
 }
 
@@ -266,6 +282,7 @@ function modelEvent(
       decides: random() > 0.15,
       draws: random() > 0.25,
       stalls: random() > 0.9,
+      repeats: random() > 0.8,
       elided: random() > 0.85 ? 1 : 0,
     }),
     highWaterBatch,
@@ -384,16 +401,41 @@ function modelChecked(
     ).toBeGreaterThan(0);
 }
 
-/** One run driven and checked at every step, answering how much of the store
- * the pane ever had to drop. */
-function modelDriven(seed: number, shape: ModelShape): number {
+/** What one driven run reached, so a case can say the shapes it is about were
+ * generated rather than assumed. */
+interface ModelReached {
+  readonly dropped: number;
+  /** Whether a pane ever dropped entries at the cap while a re-walk owed its
+   * reader a fold, which is the one seam the cap and the reset share. */
+  readonly droppedWhileRebuilding: boolean;
+  /** Whether a page ever arrived carrying an entry the fold already held, which
+   * is what the dedupe is for and what nothing was generating. */
+  readonly repeated: boolean;
+}
+
+/** One run driven and checked at every step, answering what it reached. */
+function modelDriven(seed: number, shape: ModelShape): ModelReached {
   const run = modelRun(seed, shape);
   let pane = leadTranscriptPaneEmpty;
   let everHadEntries = false;
   let dropped = 0;
+  let droppedWhileRebuilding = false;
+  let repeated = false;
   const applied: LeadTranscriptEvent[] = [];
   for (const event of run.events) {
     applied.push(event);
+    if (event.event === "Page") {
+      const before = new Set(
+        pane.fold.entries.flatMap((entry) =>
+          entry.uuid === undefined ? [] : [entry.uuid],
+        ),
+      );
+      repeated =
+        repeated ||
+        event.page.entries.some(
+          (entry) => entry.uuid !== undefined && before.has(entry.uuid),
+        );
+    }
     pane = leadTranscriptStep(pane, event);
     if (event.event === "StreamChange") everHadEntries = false;
     modelChecked(applied, run.chain, pane, {
@@ -402,14 +444,21 @@ function modelDriven(seed: number, shape: ModelShape): number {
       everHadEntries,
     });
     dropped = Math.max(dropped, pane.fold.entriesDropped);
+    if (pane.kept !== undefined && pane.kept.entriesDropped > 0)
+      droppedWhileRebuilding = true;
     if (drawnUuids(leadTranscriptDrawn(pane)).length > 0) everHadEntries = true;
   }
-  return dropped;
+  return { dropped, droppedWhileRebuilding, repeated };
 }
 
 test("the fold answers what a recompute over the whole history answers", () => {
+  let repeated = false;
   for (let seed = 1; seed <= modelSequences; seed += 1)
-    modelDriven(seed, modelShapeOrdinary);
+    repeated = modelDriven(seed, modelShapeOrdinary).repeated || repeated;
+  expect(
+    repeated,
+    "no page ever repeated an entry, so the dedupe was never exercised",
+  ).toBe(true);
 });
 
 /**
@@ -420,48 +469,97 @@ test("the fold answers what a recompute over the whole history answers", () => {
  */
 test("the invariants hold over a store past what a pane can keep", () => {
   let dropped = 0;
-  for (let seed = 1; seed <= modelCappedSequences; seed += 1)
-    dropped = Math.max(dropped, modelDriven(seed, modelShapeCapped));
+  let rebuilding = false;
+  for (let seed = 1; seed <= modelCappedSequences; seed += 1) {
+    const reached = modelDriven(seed, modelShapeCapped);
+    dropped = Math.max(dropped, reached.dropped);
+    rebuilding = rebuilding || reached.droppedWhileRebuilding;
+  }
   expect(
     dropped,
     "no sequence reached the cap, so the invariant over it never bound",
   ).toBeGreaterThan(0);
+  expect(
+    rebuilding,
+    "no sequence held a capped fold for a reader, so the seam was never reached",
+  ).toBe(true);
 });
 
 /**
  * THE WALK STOPS. Over a store that is not growing, a pane must run out of
- * cursor before it runs out of budget — a cursor it has already read, handed
- * back while the store stands still, is a walk that spends every read on one
- * batch and reports the rest of the stream as unread.
+ * cursor before it runs out of budget — including on a page whose cursor does
+ * not advance, which leaves the walk nowhere to go and must therefore end it
+ * rather than spend every read a reader is waiting on re-asking one batch.
  */
 test("a walk over a store that stands still stops before its budget", () => {
+  const shapes = new Set<string>();
+  let stalled = 0;
   for (let seed = 1; seed <= modelSequences; seed += 1) {
     const random = modelRandom(seed);
     const store = modelStore(
       1 + Math.floor(random() * modelBatchesMax),
       modelEntriesPerBatch,
     );
+    shapes.add(String(store.batches.length));
     let pane = leadTranscriptPaneEmpty;
     let reads = 0;
+    let stalls = false;
     for (let at = 0; at < leadTranscriptReadsMax; at += 1) {
       const after = leadTranscriptNextAfter(pane, store.batches.length);
       if (after === undefined) break;
       reads += 1;
+      const stalling = random() > 0.7;
+      stalls = stalls || stalling;
       pane = leadTranscriptStep(pane, {
         event: "Page",
         page: modelPage(store, after, {
           decides: true,
           draws: true,
-          stalls: random() > 0.7,
+          stalls: stalling,
+          repeats: false,
           elided: 0,
         }),
         highWaterBatch: store.batches.length,
       });
     }
+    if (stalls) stalled += 1;
     expect(
       leadTranscriptNextAfter(pane, store.batches.length),
       `seed ${String(seed)}: the walk was still asking when its budget ran out`,
     ).toBeUndefined();
-    expect(reads).toBeLessThan(leadTranscriptReadsMax);
+    expect(
+      reads,
+      `seed ${String(seed)}: the walk spent its whole budget`,
+    ).toBeLessThan(leadTranscriptReadsMax);
   }
+  expect(
+    shapes.size,
+    "every sequence walked one store, so the seeds explored one shape",
+  ).toBeGreaterThan(1);
+  expect(
+    stalled,
+    "no sequence met a cursor that did not advance",
+  ).toBeGreaterThan(0);
+});
+
+/** A cursor a page hands back unchanged ends the walk, because asking again
+ * returns the page that was just read. */
+test("a cursor that does not advance ends the walk where it stands", () => {
+  const store = modelStore(4, modelEntriesPerBatch);
+  const walked = leadTranscriptStep(leadTranscriptPaneEmpty, {
+    event: "Page",
+    page: modelPage(store, 0, {
+      decides: true,
+      draws: true,
+      stalls: true,
+      repeats: false,
+      elided: 0,
+    }),
+    highWaterBatch: 4,
+  });
+  expect(walked.fold.entries.length).toBe(modelEntriesPerBatch);
+  expect(
+    leadTranscriptNextAfter(walked, 4),
+    "the walk was sent back to the cursor the page would not move",
+  ).toBeUndefined();
 });
