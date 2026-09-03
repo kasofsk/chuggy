@@ -7,6 +7,7 @@ import { postgresDispatchViews } from "../../src/adapters/postgres/dispatchViews
 import { postgresNotifications } from "../../src/adapters/postgres/notifications.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
+  postgresSelectorProjectSettings,
   postgresSelectorProposalReviews,
   postgresSelectorRuntimeControl,
   postgresSelectorState,
@@ -18,6 +19,7 @@ import {
   selectorClaimFunction,
   selectorControlRole,
   selectorDeliveryFunction,
+  selectorProjectDispatchModeFunction,
   selectorProjectSettingsFunction,
   selectorInteractionsReadFunction,
   selectorReconcileClaimFunction,
@@ -1695,6 +1697,180 @@ test("every row of a decision is stamped from one dispatch mode", async () => {
   } finally {
     await selectorPool.end();
   }
+});
+
+/**
+ * Every pairing of a project's own dispatch mode with the installation default,
+ * and the state each stamps a delivery with. The writer names the opposite mode
+ * in every row, so a trigger that stopped stamping would be read here rather
+ * than agreed with.
+ */
+const i5DispatchModePairings: readonly (readonly [
+  "Automatic" | "ApprovalRequired" | undefined,
+  "Automatic" | "ApprovalRequired",
+  "Pending" | "AwaitingApproval",
+])[] = [
+  ["Automatic", "ApprovalRequired", "Pending"],
+  ["ApprovalRequired", "Automatic", "AwaitingApproval"],
+  [undefined, "Automatic", "Pending"],
+  [undefined, "ApprovalRequired", "AwaitingApproval"],
+];
+
+/**
+ * Sets one project's whole override set from revision zero, which is where a
+ * project this suite made stands. The write is the API role's, as the settings
+ * door makes it.
+ */
+async function i5HeldProjectDispatchMode(
+  partition: Partition,
+  mode: "Automatic" | "ApprovalRequired",
+): Promise<void> {
+  const pool = postgresRolePool(apiRole);
+  try {
+    const written = await postgresSelectorProjectSettings(pool).write(
+      partition,
+      0,
+      { dispatchMode: mode },
+      selectorAdministrator,
+    );
+    assert.equal(written.written, "Settings");
+  } finally {
+    await pool.end();
+  }
+}
+
+/**
+ * The project's mode is what a delivery is stamped from, and the installation's
+ * is what a project without one falls back to. The reverse pairing is the one
+ * that costs: a project asking for approval under an automatic installation was
+ * delivered without ever being offered to a reviewer.
+ */
+test("a delivery is stamped from its own project's dispatch mode", async () => {
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const state = postgresSelectorState(selectorPool);
+  await state.setAutomaticReadiness(true);
+  const stamped: (string | undefined)[] = [];
+  try {
+    for (const [project, installation, expected] of i5DispatchModePairings) {
+      const partition = await postgresHarnessProject(
+        harness.store,
+        `i5-mode-${String(project)}-${installation}`,
+      );
+      if (project !== undefined)
+        await i5HeldProjectDispatchMode(partition, project);
+      const restore = await i5HeldDispatchMode(installation);
+      const decision = `project-mode-${crypto.randomUUID()}`;
+      try {
+        assert.equal(
+          await wrote(
+            state.record(
+              {
+                ...selectorTestProposal(partition, decision),
+                deliveryMode:
+                  expected === "Pending" ? "ApprovalRequired" : "Automatic",
+              },
+              selectorTestState(partition, 0),
+            ),
+          ),
+          1,
+        );
+        for (const row of await i5DeliveryRows(decision))
+          stamped.push(row["state"] as string);
+      } finally {
+        await restore();
+      }
+    }
+    assert.deepEqual(
+      stamped,
+      i5DispatchModePairings.map(([, , expected]) => expected),
+    );
+  } finally {
+    await selectorPool.end();
+  }
+});
+
+/**
+ * The durable resolution and the interpreter's are one rule with two
+ * enforcers, and nothing but a case keeps them from drifting apart. Each
+ * pairing is read from both sides and the answers are required equal.
+ */
+test("the durable dispatch-mode resolution answers what the interpreter resolves", async () => {
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const apiPool = postgresRolePool(apiRole);
+  const state = postgresSelectorState(selectorPool);
+  await state.setAutomaticReadiness(true);
+  const durable: (string | undefined)[] = [];
+  const resolved: string[] = [];
+  try {
+    for (const [project, installation] of i5DispatchModePairings) {
+      const partition = await postgresHarnessProject(
+        harness.store,
+        `i5-resolve-${String(project)}-${installation}`,
+      );
+      if (project !== undefined)
+        await i5HeldProjectDispatchMode(partition, project);
+      const restore = await i5HeldDispatchMode(installation);
+      try {
+        for (const row of await harness.query(
+          `SELECT ${selectorProjectDispatchModeFunction}($1,$2) AS mode`,
+          [partition.tenant, partition.project],
+        ))
+          durable.push(row["mode"] as string);
+        resolved.push(
+          (await postgresSelectorProjectSettings(apiPool).read(partition))
+            .effective.dispatchMode,
+        );
+      } finally {
+        await restore();
+      }
+    }
+    assert.deepEqual(durable, resolved);
+    assert.deepEqual(
+      resolved,
+      i5DispatchModePairings.map(
+        ([project, installation]) => project ?? installation,
+      ),
+    );
+  } finally {
+    await apiPool.end();
+    await selectorPool.end();
+  }
+});
+
+/**
+ * The resolution is a definer like every other here: owned, `search_path`
+ * pinned and revoked from the world. It is granted to no role of its own,
+ * because its only caller is the trigger and that runs as the owner.
+ */
+test("the dispatch-mode resolution is owned, pinned and world-revoked", async () => {
+  const identity = `${selectorProjectDispatchModeFunction}(text,text)`;
+  assert.deepEqual(
+    await harness.query(
+      `SELECT prosecdef AS definer,pg_get_userbyid(proowner) AS owner,
+              array_to_string(proconfig,',') AS settings,
+              EXISTS(SELECT 1 FROM aclexplode(proacl) entry
+                      WHERE entry.grantee=0) AS world
+         FROM pg_proc WHERE oid=$1::regprocedure`,
+      [identity],
+    ),
+    [
+      {
+        definer: true,
+        owner: boundaryOwnerRole,
+        settings: "search_path=pg_catalog, public, pg_temp",
+        world: false,
+      },
+    ],
+  );
+  for (const role of i5SelectorRoles)
+    assert.deepEqual(
+      await harness.query(
+        `SELECT has_function_privilege($1,$2::regprocedure,'EXECUTE') AS held`,
+        [role, identity],
+      ),
+      [{ held: false }],
+      `${identity} to ${role}`,
+    );
 });
 
 /** A paused installation refuses each of a decision's rows, not merely its first. */
