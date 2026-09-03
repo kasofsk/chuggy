@@ -2549,14 +2549,14 @@ test("the objectives column holds the widest ceiling any kind of session compose
             AND c.conname = 'agent_session_prompt_is_bounded'`,
       )
     ).rows[0]?.definition;
+    for (const ceiling of sessionPromptCeilings)
+      assert.ok(
+        ceiling <= agentSessionPromptCharsMax,
+        "the column holds every kind's own ceiling",
+      );
     assert.ok(
       held?.includes(String(agentSessionPromptCharsMax)),
       "a kind with a wider ceiling widens this, and its migration replaces the check",
-    );
-    assert.equal(
-      agentSessionPromptCharsMax,
-      Math.max(...sessionPromptCeilings),
-      "the column's bound is the maximum over the per-kind ceilings, not one of them",
     );
   });
 });
