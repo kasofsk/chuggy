@@ -33,6 +33,7 @@ import {
   leadRouteAnswer,
 } from "./leadFixture.ts";
 import { pillTones } from "../app/core/tones.ts";
+import { operationRefusalCodes } from "../../../src/contract/rosters.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
@@ -280,25 +281,40 @@ test("a dispatch settled with no readable outcome says so", async () => {
  * wire's `outcome` is a free string, and the words a settled dispatch reaches
  * this reader on include an operation state (`Cancelled`, `Answered`) and the
  * word the door accepted the command as (`IdempotencyConflict`,
- * `InvalidCommand`) as well as a refusal code — so a predicate reading "not a
- * refusal code" as a landing draws each of these `Dispatched` in the landing
- * hue and counts it in the line.
+ * `InvalidCommand`) — so a predicate reading "not a refusal code" as a landing
+ * draws each of these `Dispatched` in the landing hue and counts it in the
+ * line.
  */
-test.each([
-  "Cancelled",
-  "Answered",
-  "IdempotencyConflict",
-  "InvalidCommand",
-  "SelectionChanged",
-])("a dispatch settled on %s is not a landing", async (outcome) => {
-  await drawDecisions({ decisions: [leadDecisionSettledOn(outcome)] });
-  const group = groups()[0];
-  expect(rows(group)).toStrictEqual([
-    { label: "Dispatch", tone: "fail", word: outcome, note: "81" },
-  ]);
-  expect(group?.querySelectorAll(".pill-pass").length).toBe(0);
-  expect(group?.textContent).toContain("Monitoring · 0 of 1 dispatched");
-});
+test.each(["Cancelled", "Answered", "IdempotencyConflict", "InvalidCommand"])(
+  "a dispatch settled on %s is not a landing",
+  async (outcome) => {
+    await drawDecisions({ decisions: [leadDecisionSettledOn(outcome)] });
+    const group = groups()[0];
+    expect(rows(group)).toStrictEqual([
+      { label: "Dispatch", tone: "fail", word: outcome, note: "81" },
+    ]);
+    expect(group?.querySelectorAll(".pill-pass").length).toBe(0);
+    expect(group?.textContent).toContain("Monitoring · 0 of 1 dispatched");
+  },
+);
+
+/**
+ * The other words a settled dispatch reaches this reader on, driven from the
+ * wire's roster rather than listed here: a landing widened by any one of them
+ * goes red, and a code the contract gains arrives with its own case instead of
+ * waiting for somebody to add it to a list.
+ */
+test.each(operationRefusalCodes)(
+  "a dispatch refused with %s is not a landing",
+  async (code) => {
+    await drawDecisions({ decisions: [leadDecisionSettledOn(code)] });
+    const group = groups()[0];
+    expect(rows(group)).toStrictEqual([
+      { label: "Dispatch", tone: "fail", word: code, note: "81" },
+    ]);
+    expect(group?.querySelectorAll(".pill-pass").length).toBe(0);
+  },
+);
 
 /** The ghost row stands where a decision did none of the three, so a decision
  * that dispatched and neither refused nor lifted draws its dispatch. */
