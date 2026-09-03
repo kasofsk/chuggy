@@ -339,9 +339,6 @@ test("editing after a refusal posts under a turn of its own", async () => {
   ).not.toBe(first.turn);
 });
 
-/** A door that will take no more messages ends the composer and says which
- * refusal it was, so a thread whose owner is no longer a member is told apart
- * from one that was closed. */
 /** One message typed and sent, which every press case does the same way. */
 async function pressed(said: string): Promise<void> {
   await turned(() => {
@@ -353,6 +350,9 @@ async function pressed(said: string): Promise<void> {
   await settled();
 }
 
+/** A door that will take no more messages ends the composer and says which
+ * refusal it was, so a thread whose owner is no longer a member is told apart
+ * from one that was closed. */
 async function pressedAgainst(code: string): Promise<void> {
   drawThread(
     () => ({ thread: threadBody({}) }),

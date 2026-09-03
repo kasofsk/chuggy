@@ -13,17 +13,18 @@ import { describe, expect, test } from "vitest";
 import {
   sessionTurnInputKinds,
   sessionTurnStates,
+  threadMessageRefusalCodes,
   threadStandings,
 } from "../../../src/contract/rosters.ts";
 import type { ThreadTurnResponse } from "../../../src/contract/responses.ts";
 import {
   threadHeldTurn,
   threadMine,
-  threadNotYourThreadCode,
   threadOlderAsked,
   threadOlderEmpty,
   threadOlderGathered,
   threadOlderHeld,
+  threadRefusalCode,
   threadRefusalWord,
   threadSendFrom,
   threadTakesMessages,
@@ -404,12 +405,49 @@ describe("a door whose answer does not say what happened", () => {
     expect(
       threadSendFrom({
         outcome: "Rejected",
-        code: threadNotYourThreadCode,
+        code: "NotYourThread",
         status: 403,
         body: undefined,
       }),
       "a refusal the door may have raised after enqueuing was treated as final",
-    ).toStrictEqual({ send: "Unsettled", why: "NotYourThread" });
+    ).toStrictEqual({ send: "Unsettled", why: "Elsewhere" });
+  });
+
+  /**
+   * THE SPELLING THIS CONSOLE ACTS ON IS THE CONTRACT'S AND NOT ITS OWN. A door
+   * that renamed the code while this compared the old one would tell a member
+   * their message was refused for a turn the mailbox already holds — so the
+   * literal the settlement turns on is asserted to be a member of the roster,
+   * and the roster is what the door reads too.
+   */
+  test("the code the settlement turns on is the roster's own member", () => {
+    expect(
+      threadMessageRefusalCodes as readonly string[],
+      "the console settles on a code the contract's roster does not carry",
+    ).toContain("NotYourThread");
+    expect(threadRefusalCode("NotYourThread")).toBe("NotYourThread");
+  });
+
+  test("every code the roster carries has a word, and one it does not is its own", () => {
+    for (const code of threadMessageRefusalCodes) {
+      expect(threadRefusalCode(code)).toBe(code);
+      expect(threadRefusalWord(code).length).toBeGreaterThan(0);
+    }
+    expect(threadRefusalCode("ThreadNotYours")).toBeUndefined();
+    expect(threadRefusalWord("ThreadNotYours")).toBe("ThreadNotYours");
+  });
+
+  /** A door that renamed the code answers a rejection this console reports
+   * rather than settles, which is the arm it must not silently take. */
+  test("a rejection whose code the roster lacks is refused, not unsettled", () => {
+    expect(
+      threadSendFrom({
+        outcome: "Rejected",
+        code: "ThreadNotYours",
+        status: 403,
+        body: undefined,
+      }).send,
+    ).toBe("Refused");
   });
 
   test("every other rejection is one refusal with a reason", () => {

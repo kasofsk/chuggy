@@ -78,9 +78,11 @@ import type {
   ThreadResponse,
   ThreadTurnResponse,
 } from "../../../../src/contract/responses.ts";
+import { threadMessageRefusalCodes } from "../../../../src/contract/rosters.ts";
 import type {
   SessionTurnFailure,
   SessionTurnInputKind,
+  ThreadMessageRefusalCode,
 } from "../../../../src/contract/rosters.ts";
 import type { ApiResult } from "./apiRequest.ts";
 import { base64urlFromBytes } from "./base64url.ts";
@@ -302,18 +304,6 @@ export type ThreadSend =
   | { readonly send: "Refused"; readonly reason: string };
 
 /**
- * The word one of the door's refusals is drawn as, the codes it states mapped
- * to the noun a reader already knows and anything else drawn as the code the
- * server sent — which is a fallback rather than a roster, so a refusal the door
- * grows says its own name instead of nothing.
- */
-/**
- * The code the door raises where the session in the URL is not the mailbox the
- * caller's own principal resolves to. It is named because the console acts on
- * it rather than only reporting it.
- */
-export const threadNotYourThreadCode = "NotYourThread";
-
 /** Whether the mailbox tail a read answered already holds this turn, which is
  * the only thing that settles a refusal the door may have raised after
  * enqueuing. */
@@ -324,13 +314,32 @@ export function threadHeldTurn(
   return thread.turns.find((held) => held.turn === turn);
 }
 
+/** The code the roster carries, and nothing where the door sent one it does
+ * not — which is a code this console reports rather than acts on. */
+export function threadRefusalCode(
+  code: string,
+): ThreadMessageRefusalCode | undefined {
+  return threadMessageRefusalCodes.find((known) => known === code);
+}
+
+/** The word one code the roster carries is drawn as, total over it so a code the
+ * roster grows stops compiling here. */
+function threadRosterWord(code: ThreadMessageRefusalCode): string {
+  switch (code) {
+    case "NotYourThread":
+      return "Elsewhere";
+    case "ThreadClosed":
+      return "Closed";
+    case "ThreadOrphaned":
+      return "Orphaned";
+    case "ThreadBacklogged":
+      return "Backlogged";
+  }
+}
+
 export function threadRefusalWord(code: string): string {
-  const said: Readonly<Record<string, string>> = {
-    ThreadBacklogged: "Backlogged",
-    ThreadClosed: "Closed",
-    ThreadOrphaned: "Orphaned",
-  };
-  return said[code] ?? code;
+  const known = threadRefusalCode(code);
+  return known === undefined ? code : threadRosterWord(known);
 }
 
 /**
@@ -349,7 +358,7 @@ export function threadSendFrom(
     case "Conflict":
       return { send: "Ended", why: threadRefusalWord(result.code) };
     case "Rejected":
-      return result.code === threadNotYourThreadCode
+      return threadRefusalCode(result.code) === "NotYourThread"
         ? { send: "Unsettled", why: threadRefusalWord(result.code) }
         : { send: "Refused", reason: panelReason(result) };
     case "Absent":
