@@ -23,7 +23,10 @@ import {
   postgresAgenticRefusalStanding,
   postgresAgenticRefusalWrites,
 } from "../../src/adapters/postgres/agenticRefusal.ts";
-import { postgresLeadMailbox } from "../../src/adapters/postgres/leadMailbox.ts";
+import {
+  postgresLeadMailbox,
+  postgresLeadSystemPrompt,
+} from "../../src/adapters/postgres/leadMailbox.ts";
 import {
   postgresLeadReads,
   type PostgresLeadReads,
@@ -39,6 +42,7 @@ import type {
   AgenticRefusalWrite,
 } from "../../src/interpreter/agenticRefusal.ts";
 import type {
+  LeadSystemPromptPort,
   SessionId,
   SessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
@@ -55,6 +59,7 @@ export interface LeadRig {
   readonly selectorPool: pg.Pool;
   readonly apiPool: pg.Pool;
   readonly mailbox: LeadMailbox;
+  readonly prompts: LeadSystemPromptPort;
   readonly writes: AgenticRefusalWrite;
   readonly selectorStanding: Pick<AgenticRefusalRead, "standing">;
   readonly apiRefusals: AgenticRefusalRead;
@@ -71,6 +76,7 @@ export async function leadRigOpen(): Promise<LeadRig> {
     selectorPool,
     apiPool,
     mailbox: postgresLeadMailbox(selectorPool),
+    prompts: postgresLeadSystemPrompt(selectorPool),
     writes: postgresAgenticRefusalWrites(selectorPool),
     selectorStanding: postgresAgenticRefusalStanding(selectorPool),
     apiRefusals: postgresAgenticRefusalReads(apiPool),

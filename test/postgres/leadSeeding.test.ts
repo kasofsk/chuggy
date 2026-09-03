@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
 import { postgresAgenticRefusalStanding } from "../../src/adapters/postgres/agenticRefusal.ts";
+import { leadSessionMint } from "../../src/adapters/crypto/leadSessionMint.ts";
 import { postgresLeadDecisionTail } from "../../src/adapters/postgres/leadReads.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
@@ -63,8 +64,14 @@ function seedingPolicy() {
     rig.mailbox,
     postgresAgenticRefusalStanding(rig.selectorPool),
     postgresLeadDecisionTail(rig.selectorPool),
+    leadSessionMint(),
     clock,
-    { pollIntervalMs: 5, implementationRevision: "selector-build" },
+    {
+      pollIntervalMs: 5,
+      implementationRevision: "selector-build",
+      principal: "principal-seeding-successor",
+      credentialSlot: "claude-code",
+    },
   );
 }
 

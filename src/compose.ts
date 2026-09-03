@@ -48,6 +48,7 @@ import {
 } from "./adapters/postgres/agenticRefusal.ts";
 import { postgresLeadMailbox } from "./adapters/postgres/leadMailbox.ts";
 import { postgresLeadDecisionTail } from "./adapters/postgres/leadReads.ts";
+import type { LeadSessionMint } from "./interpreter/leadMailbox.ts";
 import {
   leadSelectorPolicy,
   type LeadPolicyClock,
@@ -155,6 +156,7 @@ export function composeSelectorRuntime(
       postgresLeadMailbox(selectorPool),
       postgresAgenticRefusalStanding(selectorPool),
       postgresLeadDecisionTail(selectorPool),
+      lead.sessions,
       lead.clock,
       lead.policy,
     ),
@@ -177,6 +179,7 @@ export function composeSelectorRuntime(
 
 /** What the selector process answers the lead host's own ports with. */
 export interface SelectorLeadRuntime {
+  readonly sessions: LeadSessionMint;
   readonly clock: LeadPolicyClock;
   readonly deadline: SelectorHostDeadline;
   readonly policy: LeadPolicyConfig;

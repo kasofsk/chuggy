@@ -24,6 +24,7 @@ import {
 import {
   agenticRefusalRecordFunction,
   agenticRefusalStandingFunction,
+  leadOpenFunction,
   leadSessionFunction,
   leadTurnEnqueueFunction,
   leadTurnReadFunction,
@@ -113,6 +114,7 @@ test("the list names every door the selector's own role is granted", () => {
     leadTurnWithdrawFunction,
     selectorInteractionsReadFunction,
     sessionSystemPromptSetFunction,
+    leadOpenFunction,
   ])
     assert.ok(
       named.includes(door),

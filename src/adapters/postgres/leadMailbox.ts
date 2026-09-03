@@ -4,11 +4,13 @@
  * here is declared in `src/interpreter/`; this module says how PostgreSQL
  * answers them and declares nothing of its own.
  *
- * EVERY DOOR NAMES A PROJECT AND NEVER A SESSION. The bodies 059 grants this
- * role resolve the project's `Lead` session themselves, so a compromised
- * selector cannot put a turn in a member's thread or read one — which the
- * generic `enqueue_session_turn` would let it do, and which is why that one is
- * not granted here.
+ * NO DOOR NAMES A SESSION IT DID NOT CREATE. The bodies 059 grants this role
+ * resolve the project's `Lead` session themselves, so a compromised selector
+ * cannot put a turn in a member's thread or read one — which the generic
+ * `enqueue_session_turn` would let it do, and which is why that one is not
+ * granted here. `open_project_lead` names the identity it is about to write and
+ * no other: it inserts under a kind and a roster of its own, so an identity
+ * already taken is refused by the row rather than reached through.
  *
  * A TURN'S IDENTITY IS THE DECISION'S, so `offer` is idempotent without this
  * file doing anything: a retry of one decision finds the turn it already
@@ -34,15 +36,19 @@ import {
 } from "../../interpreter/agentSession.ts";
 import type {
   LeadMailbox,
+  LeadOpened,
+  LeadOpening,
   LeadSessionStanding,
   LeadTurnStanding,
   LeadTurnWithdrawn,
 } from "../../interpreter/leadMailbox.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
+  leadOpenFunction,
   selectorInteractionsReadFunction,
   sessionSystemPromptSetFunction,
 } from "./schema/shared.ts";
+import { leadOpenSignature } from "./schema/migrations/066-lead-successor.ts";
 import {
   interactionsReadSignature,
   selectorSignatures,
@@ -68,6 +74,9 @@ interface LeadTurnRow extends SessionTurnMeasureRow {
   readonly result: string | null;
   readonly failure: string | null;
 }
+
+/** The two arms opening a lead answers, both of which leave one open lead standing. */
+const openedArms = ["Opened", "AlreadyOpen"] as const;
 
 /** The arms the mailbox holds an ordinal for, and the arms it does not. */
 const offeredWithOrdinal = ["Enqueued", "AlreadyEnqueued"] as const;
@@ -120,6 +129,27 @@ function leadTurnOf(row: LeadTurnRow): LeadTurnStanding {
   };
 }
 
+/** One successor, opened through the door the selector's own role holds. */
+async function leadOpen(
+  pool: pg.Pool,
+  opening: LeadOpening,
+): Promise<LeadOpened> {
+  const opened = await pool.query<{
+    opened: string | null;
+    session: string | null;
+  }>(
+    sql`SELECT opened,session FROM open_project_lead(
+          ${opening.partition.tenant},${opening.partition.project},
+          ${opening.session},${opening.principal},
+          ${opening.credentialSlot},${opening.systemPrompt})`,
+  );
+  const row = opened.rows[0];
+  return {
+    opened: leadVerdict(openedArms, row?.opened, "opening a lead"),
+    session: asSessionId(sessionRowText(row?.session ?? null, "session")),
+  };
+}
+
 /** The lead's mailbox over the pool that holds the selector service's own role. */
 export function postgresLeadMailbox(pool: pg.Pool): LeadMailbox {
   return {
@@ -131,6 +161,8 @@ export function postgresLeadMailbox(pool: pg.Pool): LeadMailbox {
       const row = found.rows[0];
       return row === undefined ? undefined : leadSessionOf(row);
     },
+
+    openLead: (opening) => leadOpen(pool, opening),
 
     offer: async (input) => {
       const offered = await pool.query<{
@@ -224,6 +256,7 @@ export const leadDoorSignatures: readonly string[] = [
   ...selectorSignatures,
   [selectorInteractionsReadFunction, interactionsReadSignature],
   [sessionSystemPromptSetFunction, systemPromptSetSignature],
+  [leadOpenFunction, leadOpenSignature],
 ].map(([name, signature]) => `${String(name)}(${String(signature)})`);
 
 /**
