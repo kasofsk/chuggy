@@ -299,3 +299,21 @@ test.each([
   expect(group?.querySelectorAll(".pill-pass").length).toBe(0);
   expect(group?.textContent).toContain("Monitoring · 0 of 1 dispatched");
 });
+
+/** The ghost row stands where a decision did none of the three, so a decision
+ * that dispatched and neither refused nor lifted draws its dispatch. */
+test("a decision that only dispatched draws no ghost row", async () => {
+  await drawDecisions({ decisions: [leadDecisionSettledOn("Succeeded")] });
+  expect(rows(groups()[0])).toStrictEqual([
+    { label: "Dispatch", tone: "pass", word: "Dispatched", note: "81" },
+  ]);
+});
+
+/** The other half of the same condition: a decision that refused and
+ * dispatched nothing draws its refusal, and the ghost is not what stands in. */
+test("a decision that only refused draws no ghost row", async () => {
+  await drawDecisions({ decisions: [leadDecisionRefusing] });
+  expect(rows(groups()[0])).toStrictEqual([
+    { label: "Refused", tone: "fail", word: "Refused", note: "42" },
+  ]);
+});
