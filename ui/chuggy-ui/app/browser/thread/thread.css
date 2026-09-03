@@ -1,0 +1,129 @@
+/* The thread pages: the listing, one thread's head, its turns and its composer. */
+
+@layer page {
+  .threads,
+  .thread {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+
+  .thread-open {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    padding-bottom: var(--space-3);
+  }
+
+  .thread-absent {
+    color: var(--ink-3);
+  }
+
+  .thread-head {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .thread-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-4);
+  }
+
+  .thread-session {
+    color: var(--ink-3);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: var(--measure);
+  }
+
+  .thread-state {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .thread-turns {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+
+  .thread-turn {
+    display: grid;
+    gap: var(--space-2);
+    border-top: var(--hairline) solid var(--edge);
+    padding-top: var(--space-2);
+    min-width: 0;
+  }
+
+  .thread-turn-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .thread-measures {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    margin-left: auto;
+  }
+
+  .thread-wake {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+
+  .thread-said,
+  .thread-answer {
+    background: var(--surface-2);
+    border-radius: var(--radius-2);
+    color: var(--ink-1);
+    font-size: var(--mono-optical);
+    max-height: 24em;
+    overflow: auto;
+    padding: var(--space-2);
+    white-space: pre-wrap;
+  }
+
+  .thread-said {
+    border-left: var(--rail) solid var(--edge-strong);
+  }
+
+  .thread-answer {
+    border-left: var(--rail) solid var(--tone-live);
+  }
+
+  .thread-composer {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .thread-composer-field textarea {
+    width: 100%;
+  }
+
+  .thread-composer-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .thread-count {
+    color: var(--ink-3);
+    font-size: var(--text-xs);
+  }
+}
