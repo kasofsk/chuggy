@@ -22,12 +22,13 @@
  * `authenticate_session_bearer` is in. A selector-service pool inside the API
  * would be a second credential in a deployment that already has one.
  *
- * BOTH GENERATED CHECKS ARE REPLACED, NOT ONE. `project_change_kind_is_known`
- * and `session_turn_failure_is_known` are each generated from an interpreter
- * roster at the migration that last wrote them, so a fresh installation
- * already holds the wider constraint and one that ran 043 or 058 before these
- * members existed holds the narrower one for ever. Replacing both here is what
- * makes a migrated database and a fresh one end with the same constraint.
+ * EVERY GENERATED CHECK THIS ONE OUTGREW IS REPLACED. The change log's kind and
+ * resource checks and the mailbox's failure and input checks are each generated
+ * from a constant or a roster at the migration that last wrote them, so a fresh
+ * installation already holds the wider one and an installation that ran 038,
+ * 043 or 058 before these values moved holds the narrower one for ever.
+ * Replacing all four here is what makes a migrated database and a fresh one end
+ * with the same schema.
  *
  * A MEASUREMENT IS PROVENANCE AND NOT IDENTITY. `answer_session_turn` compares
  * a repeated answer on its result and its batches, exactly as it did, and not

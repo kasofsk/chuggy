@@ -286,8 +286,34 @@ export const leadSeededDecisionCharsMax = 4_096;
 /** What one notification in the observation's window weighs: an ordinal, a kind, a resource. */
 export const leadObservedChangeCharsMax = 1_024;
 
-/** What one dispatch candidate weighs, its program and its dependencies included. */
-export const leadObservedCandidateCharsMax = 8_192;
+/** The longest canonical configuration one revision holds, which 007's column checks. */
+export const configurationCanonicalCharsMax = 65_536;
+
+/**
+ * What one character of an already-JSON text weighs once it is embedded as a
+ * JSON string. It is two rather than six because a canonical configuration
+ * carries no control character, and one rather than two would be a bound the
+ * quotes in every JSON document already exceed.
+ */
+const jsonEmbeddedTextCharChars = 2;
+
+/**
+ * What one dispatch candidate weighs beyond the configuration it pins: its
+ * ticket, its version, its dependencies, its program, its pricing and the two
+ * identities naming the revision.
+ */
+export const leadObservedCandidateFixedCharsMax = 4_096;
+
+/**
+ * What one dispatch candidate weighs. The configuration it carries is the whole
+ * of its size — a candidate embeds the canonical text 007 bounds, not a
+ * reference to it — so a ceiling below that is a page the view composes and the
+ * mailbox refuses.
+ */
+export const leadObservedCandidateCharsMax =
+  leadObservedCandidateFixedCharsMax +
+  configurationCanonicalCharsMax * jsonEmbeddedTextCharChars +
+  2;
 
 /**
  * What one observation carries that is neither a text a project set nor a page

@@ -2114,6 +2114,14 @@ test("migration 59 widens a failure check installed before the withdrawal existe
       (await subject.query("SELECT state,failure FROM session_turn")).rows,
       [{ state: "Abandoned", failure: "TurnWithdrawn" }],
     );
+    await assert.rejects(
+      () =>
+        subject.query(
+          `UPDATE session_turn SET failure='Nowhere' WHERE turn='turn-59'`,
+        ),
+      /session_turn_failure_is_known/u,
+      "the widened check is still a check",
+    );
   });
 });
 
@@ -2134,6 +2142,19 @@ const leadApiDoors = [
   "read_lead_store(text,text,text,bigint,bigint)",
   "list_lead_store_streams(text,text,bigint)",
 ];
+
+/** Nobody but the one role a door is granted to may execute it, `PUBLIC` included. */
+async function migrationLeadDoorsAreStrangers(
+  executes: (role: string, signature: string) => Promise<boolean | undefined>,
+): Promise<void> {
+  for (const door of [...leadSelectorDoors, ...leadApiDoors])
+    for (const stranger of ["public", ticketServiceRole, finalizerRole])
+      assert.equal(
+        await executes(stranger, door),
+        false,
+        `${stranger} holds nothing on ${door}`,
+      );
+}
 
 test("migration 59 grants each lead door to exactly one role", async () => {
   await migrationDatabase("lead_grants", async (subject) => {
@@ -2170,6 +2191,7 @@ test("migration 59 grants each lead door to exactly one role", async () => {
       false,
       "a role that may name any session may put a turn in a member's thread",
     );
+    await migrationLeadDoorsAreStrangers(executes);
     for (const relation of [
       "agent_session",
       "session_turn",

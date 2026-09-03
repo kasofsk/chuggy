@@ -21,6 +21,8 @@ import {
   leadObservedCandidateCharsMax,
   leadObservationFixedCharsMax,
   leadObservedChangeCharsMax,
+  configurationCanonicalCharsMax,
+  leadObservedCandidateFixedCharsMax,
   leadSeededDecisionCharsMax,
   leadSeedingDecisionsMax,
   nativeHttpPathSegmentCharsMax,
@@ -43,6 +45,7 @@ import {
   asSessionTurnId,
   sessionIdentityCharsMax,
   type SessionId,
+  type SessionStoreStream,
   type SessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
@@ -51,6 +54,7 @@ import {
   sessionChangeResourceSchema,
 } from "../../src/contract/events.ts";
 import { postgresProjectChangeLog } from "../../src/adapters/postgres/projectChangeLog.ts";
+import type { ProjectChangeLog } from "../../src/interpreter/projectStream.ts";
 import {
   selectorServiceRole,
   workerPlaneRole,
@@ -568,28 +572,52 @@ test("the seeding read answers the newest decisions first", async () => {
   );
 });
 
+/**
+ * One claimed pod and one batch recorded beneath it, with the log's sequence
+ * read immediately before the record so a case sees only what the record made.
+ */
+async function recordedBatch(
+  partition: Partition,
+  session: SessionId,
+  label: string,
+  log: ProjectChangeLog,
+): Promise<{
+  readonly attempt: Awaited<ReturnType<typeof leadPod>>;
+  readonly stream: SessionStoreStream;
+  readonly before: number;
+}> {
+  const attempt = await leadPod(partition, session, label);
+  await rig.sessions.plane.claim({
+    secret: attempt.secret,
+    generation: attempt.attempt.generation,
+  });
+  const stream = asSessionStoreStream(`stream-${randomUUID()}`);
+  const before = await log.latest();
+  assert.equal(
+    await rig.sessions.plane.record({
+      secret: attempt.secret,
+      generation: attempt.attempt.generation,
+      stream,
+      batch: 1,
+      digest: "c".repeat(64),
+      bytes: 4,
+      events: 1,
+    }),
+    "Stored",
+  );
+  return { attempt, stream, before };
+}
+
 test("a turn answer and a batch record each append one session change", async () => {
   const { partition, session } = await leadProject("session-change");
   const log = postgresProjectChangeLog(rig.sessions.harness.pool);
   const turn = sessionRigTurnId("session-change");
   await rig.mailbox.offer({ partition, turn, input: anObservation });
-  const attempt = await leadPod(partition, session, "session-change");
-  await rig.sessions.plane.claim({
-    secret: attempt.secret,
-    generation: attempt.attempt.generation,
-  });
-
-  const stream = asSessionStoreStream(`stream-${randomUUID()}`);
-  const beforeBatch = await log.latest();
-  await rig.sessions.plane.record({
-    secret: attempt.secret,
-    generation: attempt.attempt.generation,
+  const {
+    attempt,
     stream,
-    batch: 1,
-    digest: "c".repeat(64),
-    bytes: 4,
-    events: 1,
-  });
+    before: beforeBatch,
+  } = await recordedBatch(partition, session, "session-change", log);
   assert.deepEqual(
     (await log.after(partition, beforeBatch, 10)).map((row) => [
       row.kind,
@@ -1017,6 +1045,32 @@ test("a model name past what the measure column holds is refused", async () => {
   );
 });
 
+/**
+ * One candidate at its ceiling: a canonical configuration of the length 007
+ * bounds, every character of which is a quote the embedding must escape, and a
+ * revision padded out to what the rest of the candidate is allowed.
+ */
+function maximalCandidate(ticket: number): Record<string, unknown> {
+  const fixed = {
+    ticket,
+    ticketVersion: 1,
+    dependencies: [],
+    workFanout: 1,
+    program: [],
+    reworkPolicy: { type: "BudgetedRework", value: 1 },
+    finalizationPricing: "DeadlineOnly",
+    resumePricing: "RetryCharged",
+    finalizer: "NoFinalizer",
+    configurationDigest: "c".repeat(64),
+    configurationCanonical: '"'.repeat(configurationCanonicalCharsMax),
+  };
+  const spare =
+    leadObservedCandidateFixedCharsMax -
+    (JSON.stringify({ ...fixed, configurationRevision: "" }).length -
+      JSON.stringify(fixed.configurationCanonical).length);
+  return { ...fixed, configurationRevision: "r".repeat(Math.max(spare, 0)) };
+}
+
 /** A text of that many characters, every one of which JSON must escape. */
 function escapedText(chars: number): string {
   return escapedCharacter.repeat(chars);
@@ -1057,8 +1111,9 @@ function widestObservation(partition: Partition, decision: string): string {
     changes: Array.from({ length: notificationPageLimitMax }, () =>
       escapedText(leadObservedChangeCharsMax / 6),
     ),
-    candidates: Array.from({ length: dispatchViewPageLimitMax }, () =>
-      escapedText(leadObservedCandidateCharsMax / 6),
+    candidates: Array.from(
+      { length: dispatchViewPageLimitMax },
+      (_unused, at) => maximalCandidate(at + 1),
     ),
     handoffNote: escapedText(selectorHandoffNoteBytesMax / 6),
     refusals,
@@ -1091,15 +1146,26 @@ test("the widest observation the parts admit is one the mailbox row holds", asyn
     { offered: "Enqueued", ordinal: 1 },
     "a document every bound admits is one the column must hold",
   );
-  assert.equal(
-    (
-      await rig.sessions.harness.query(
-        "SELECT length(input)::text AS held FROM session_turn WHERE turn=$1",
-        [turn],
-      )
-    )[0]?.["held"],
-    String(input.length),
-    "the row holds what was offered, whole",
+  const held = (
+    await rig.sessions.harness.query(
+      "SELECT input FROM session_turn WHERE turn=$1",
+      [turn],
+    )
+  )[0]?.["input"];
+  assert.equal(held, input, "the row claims back what was offered, whole");
+  const parsed = JSON.parse(String(held)) as { candidates: unknown[] };
+  assert.equal(parsed.candidates.length, dispatchViewPageLimitMax);
+});
+
+test("one candidate at its ceiling is one the derivation makes room for", () => {
+  const one = JSON.stringify(maximalCandidate(1)).length;
+  assert.ok(
+    one > configurationCanonicalCharsMax,
+    "a candidate embeds the canonical text rather than a reference to it",
+  );
+  assert.ok(
+    one <= leadObservedCandidateCharsMax,
+    `one candidate weighs ${String(one)} against a ceiling of ${String(leadObservedCandidateCharsMax)}`,
   );
 });
 
@@ -1118,22 +1184,12 @@ test("both resources the session triggers write parse as the shape the wire expo
     { session, kind: "Lead", turn },
   );
 
-  const attempt = await leadPod(partition, session, "resource-shape");
-  await rig.sessions.plane.claim({
-    secret: attempt.secret,
-    generation: attempt.attempt.generation,
-  });
-  const stream = asSessionStoreStream(`stream-${randomUUID()}`);
-  const beforeBatch = await log.latest();
-  await rig.sessions.plane.record({
-    secret: attempt.secret,
-    generation: attempt.attempt.generation,
-    stream,
-    batch: 1,
-    digest: "d".repeat(64),
-    bytes: 3,
-    events: 1,
-  });
+  const { stream, before: beforeBatch } = await recordedBatch(
+    partition,
+    session,
+    "resource-shape",
+    log,
+  );
   const batchChange = (await log.after(partition, beforeBatch, 10))[0];
   assert.ok(batchChange !== undefined, "the store trigger appended nothing");
   assert.deepEqual(
