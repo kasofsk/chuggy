@@ -40,6 +40,7 @@ import {
 } from "../../src/interpreter/finalizer.ts";
 import {
   projectTicketWriterRun,
+  projectionChanges,
   projectWriterDecide,
   projectWriterLoad,
   type ProjectDecided,
@@ -324,6 +325,7 @@ test("proposal validity ignores an unrelated journal-head advance", async () => 
 
 test("a proposal observed against another view identity is SelectionChanged", async () => {
   for (const mismatch of [
+    { tenant: asTenantId("other-tenant") },
     { project: asProjectId("other-project") },
     { recoveryEpoch: "old-epoch" },
     { schemaVersion: 2 },
@@ -368,33 +370,57 @@ test("a proposal whose observed digest no longer describes the view still dispat
   assert.equal(decision.outcome.outcome, "Journaled");
 });
 
-test("a proposal at a version the candidate has left is SelectionChanged", async () => {
-  const decision = await planned(releasedMemory(), {
-    version: 1,
-    command: "ProposeDispatch",
-    ticket: id(1),
-    expectedTicketVersion: 2,
-    observedViewToken: {
-      ...partition,
-      recoveryEpoch: "epoch",
-      schemaVersion: 1,
-      watermark: 1,
-      digest: dispatchViewDigest(
-        deriveDispatchCandidates(
-          refinementInstance,
-          releasedMemory().core,
-          releasedMemory().ticketVersions,
-          contracts,
-        ),
-      ),
-    },
-    selectorDecisionReference: "selector-decision",
+/** A candidate whose release landed at a later sequence, so a lower claim is a stale one. */
+function releasedAtVersion(version: number): ProjectMemory {
+  return {
+    ...releasedMemory(version),
+    ticketVersions: new Map([[id(1), version]]),
+  };
+}
+
+/** The digest of the page a memory's own candidates make, so no case is about the digest by accident. */
+function currentDigestOf(memory: ProjectMemory): string {
+  return dispatchViewDigest(
+    deriveDispatchCandidates(
+      refinementInstance,
+      memory.core,
+      memory.ticketVersions,
+      memory.dispatchContracts ?? new Map(),
+    ),
+  );
+}
+
+/**
+ * The version fence is an equality, so it is refused from both sides: a claim
+ * the candidate has not reached, and one it has already left. Only the second
+ * distinguishes equality from `>=`, and only the second is the stale read the
+ * fence exists to catch — a page the author read behind the authority.
+ */
+for (const claim of [
+  { name: "has not reached", memory: releasedMemory(), expected: 2 },
+  { name: "has already left", memory: releasedAtVersion(5), expected: 1 },
+]) {
+  test(`a proposal at a version the candidate ${claim.name} is SelectionChanged`, async () => {
+    const decision = await planned(claim.memory, {
+      version: 1,
+      command: "ProposeDispatch",
+      ticket: id(1),
+      expectedTicketVersion: claim.expected,
+      observedViewToken: {
+        ...partition,
+        recoveryEpoch: "epoch",
+        schemaVersion: 1,
+        watermark: 1,
+        digest: currentDigestOf(claim.memory),
+      },
+      selectorDecisionReference: "selector-decision",
+    });
+    assert.deepEqual(decision.outcome, {
+      outcome: "Refused",
+      code: "SelectionChanged",
+    });
   });
-  assert.deepEqual(decision.outcome, {
-    outcome: "Refused",
-    code: "SelectionChanged",
-  });
-});
+}
 
 /** The contract pins two independently dispatchable tickets were released under. */
 const twoContracts = new Map(
@@ -408,31 +434,35 @@ const twoContracts = new Map(
   ]),
 );
 
-/** Two Ready tickets with no dependency between them: what one decision may dispatch both of. */
+/**
+ * Two Ready tickets with no dependency between them: what one decision may
+ * dispatch both of. The versions are folded out of the steps the way
+ * `projectWriterLoad` folds them, so the fixture cannot drift from the writer.
+ */
 function twoReleasedMemory(): ProjectMemory {
-  let state = journalStep(
-    refinementInstance,
-    actorInit(),
-    releaseTicketEvent(id(1), plainAuthoring),
-  );
-  state = journalStep(
-    refinementInstance,
-    state,
-    releaseTicketEvent(id(2), plainAuthoring),
-  );
+  const tickets = [id(1), id(2)];
+  const ticketVersions = new Map<number, number>();
+  let state = actorInit();
+  for (const [index, ticket] of tickets.entries()) {
+    const before = memoryCore(state);
+    state = journalStep(
+      refinementInstance,
+      state,
+      releaseTicketEvent(ticket, plainAuthoring),
+    );
+    for (const row of projectionChanges(before, memoryCore(state)))
+      ticketVersions.set(row.ticket, index + 1);
+  }
   return {
     lease: {
       partition,
       owner: asOwnerId("owner"),
       fencingEpoch: 1,
       recoveryEpoch: asRecoveryEpoch("epoch"),
-      head: 2,
+      head: tickets.length,
     },
     core: memoryCore(state),
-    ticketVersions: new Map([
-      [id(1), 1],
-      [id(2), 2],
-    ]),
+    ticketVersions,
     dispatchContracts: twoContracts,
   };
 }
@@ -444,14 +474,7 @@ function observedTokenOf(memory: ProjectMemory) {
     recoveryEpoch: "epoch",
     schemaVersion: 1,
     watermark: memory.lease.head,
-    digest: dispatchViewDigest(
-      deriveDispatchCandidates(
-        refinementInstance,
-        memory.core,
-        memory.ticketVersions,
-        memory.dispatchContracts ?? new Map(),
-      ),
-    ),
+    digest: currentDigestOf(memory),
   };
 }
 
