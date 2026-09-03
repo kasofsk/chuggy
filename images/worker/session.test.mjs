@@ -675,28 +675,38 @@ test("an observation that called no decision tool still answers in the model's o
   );
 });
 
-test("a user's message is answered in text however many decision tools it called", async () => {
-  const plane = planeOf(
-    [{ ...observationTurn, inputKind: "UserMessage" }],
-    leadFacts,
-  );
-  const { query } = queryOf((_asked, _index, options) => [
-    async () => {
-      const tools = options.mcpServers.chuggy.tools;
-      await tools
-        .find((tool) => tool.name === "set_attention")
-        .handler({ attention: "Stopped" });
-    },
-    result("success", { result: "here is the plan" }),
-  ]);
+/**
+ * The kinds answered to a reader rather than to the selector. The roster here
+ * is a lead's, because a thread holds no decision tool at all and a turn that
+ * staged nothing would prove only that `document()` is empty: what is under
+ * test is that the branch is the INPUT KIND and not whether anything was
+ * staged, and only a staged turn can tell those two apart.
+ */
+test("a turn that is not an observation is answered in text however many decision tools it called", async () => {
+  for (const inputKind of ["UserMessage", "Wake"]) {
+    const plane = planeOf([{ ...observationTurn, inputKind }], leadFacts);
+    const { query } = queryOf((_asked, _index, options) => [
+      async () => {
+        const tools = options.mcpServers.chuggy.tools;
+        await tools
+          .find((tool) => tool.name === "set_attention")
+          .handler({ attention: "Stopped" });
+        await tools
+          .find((tool) => tool.name === "dispatch")
+          .handler({ ticket: 4, expectedTicketVersion: 2 });
+      },
+      result("success", { result: "here is the plan" }),
+    ]);
 
-  await run({ request: plane.request, query });
+    await run({ request: plane.request, query });
 
-  assert.equal(
-    plane.calls.find(({ path }) => path === "/v1/session/turn/answer").body
-      .result,
-    "here is the plan",
-  );
+    assert.equal(
+      plane.calls.find(({ path }) => path === "/v1/session/turn/answer").body
+        .result,
+      "here is the plan",
+      inputKind,
+    );
+  }
 });
 
 test("one turn's staging never reaches the next turn's answer", async () => {
@@ -819,4 +829,147 @@ test("a project tool reaches the API under the session's own bearer", async () =
     ["/api/v1/tenants/vteng/projects/chuggy/tickets/4"],
   );
   assert.equal(seenApi[0].apiBearer, bearer);
+});
+
+/**
+ * A member's thread as the plane hands one over. The roster is written out
+ * rather than imported: this image reaches nothing under `src/`, so
+ * `threadCapabilitiesDefault` is held to this copy by
+ * `test/contract/imageTools.test.mjs` and not by an import here.
+ */
+const threadFacts = {
+  ...facts,
+  kind: "Thread",
+  capabilities: [
+    "RepositoryRead",
+    "RunCommands",
+    "ProjectRead",
+    "DraftAuthor",
+    "DraftOriginate",
+  ],
+  systemPrompt:
+    "# Whose thread this is\n\nYou are geoff's thread on vteng/chuggy.",
+};
+
+const threadMessageTurn = {
+  turn: "turn-1",
+  ordinal: 1,
+  inputKind: "UserMessage",
+  input: "file me a draft for the footer",
+};
+
+test("a thread is served origination and the thread reads, and no decision tool", async () => {
+  const plane = planeOf([], threadFacts);
+  const { seen, query } = queryOf(() => []);
+
+  await run({ request: plane.request, query });
+
+  const registered = seen.options.mcpServers.chuggy.tools.map(
+    ({ name }) => name,
+  );
+  for (const tool of [
+    "create_draft",
+    "list_threads",
+    "read_thread",
+    "read_thread_transcript",
+  ]) {
+    assert.ok(registered.includes(tool), `${tool} was not served`);
+    assert.ok(
+      seen.options.allowedTools.includes(`${chuggyToolPrefix}${tool}`),
+      `${tool} was served and not allowed`,
+    );
+  }
+  for (const tool of [
+    "dispatch",
+    "refuse",
+    "lift",
+    "set_attention",
+    "set_handoff_note",
+    "set_planning_intent",
+  ]) {
+    assert.ok(!registered.includes(tool), `${tool} was served to a thread`);
+    assert.ok(
+      seen.options.disallowedTools.includes(`${chuggyToolPrefix}${tool}`),
+      `${tool} was left ungoverned for a thread`,
+    );
+  }
+  assert.equal(
+    seen.options.forkSession,
+    undefined,
+    "a thread was forked from its own session",
+  );
+});
+
+test("a lead is served no origination, and it is disallowed by name", async () => {
+  const plane = planeOf([], leadFacts);
+  const { seen, query } = queryOf(() => []);
+
+  await run({ request: plane.request, query });
+
+  const registered = seen.options.mcpServers.chuggy.tools.map(
+    ({ name }) => name,
+  );
+  assert.ok(
+    !registered.includes("create_draft"),
+    "a lead was served the tool that files from nothing",
+  );
+  assert.ok(
+    seen.options.disallowedTools.includes(`${chuggyToolPrefix}create_draft`),
+    "a lead was left ungoverned for origination",
+  );
+});
+
+test("a thread's own objectives ride on the preset prompt, recorded for the conversation", async () => {
+  const plane = planeOf([], threadFacts);
+  const { seen, query } = queryOf(() => []);
+
+  await run({ request: plane.request, query });
+
+  assert.deepEqual(seen.options.systemPrompt, {
+    type: "preset",
+    preset: "claude_code",
+    snapshot: true,
+    append: threadFacts.systemPrompt,
+  });
+});
+
+test("a thread originates through the API under its own session bearer, and answers in text", async () => {
+  const plane = planeOf([threadMessageTurn], threadFacts);
+  const seenApi = [];
+  const { query } = queryOf((_asked, _index, options) => [
+    async () => {
+      await options.mcpServers.chuggy.tools
+        .find((tool) => tool.name === "create_draft")
+        .handler({
+          configurationRevision: "r1",
+          configurationDigest: "d1",
+          expectedProjectSequence: 12,
+          authoring: { dependencies: [] },
+          brief: { title: "the footer" },
+        });
+    },
+    result("success", { result: "filed ticket 14" }),
+  ]);
+
+  await run({
+    request: plane.request,
+    query,
+    chuggyRequest: async (_task, apiBearer, path, init) => {
+      seenApi.push({ apiBearer, path, method: init?.method });
+      return { status: 201, text: async () => "{}" };
+    },
+  });
+
+  assert.deepEqual(seenApi, [
+    {
+      apiBearer: bearer,
+      path: "/api/v1/tenants/vteng/projects/chuggy/drafts",
+      method: "POST",
+    },
+  ]);
+  assert.equal(
+    plane.calls.find(({ path }) => path === "/v1/session/turn/answer").body
+      .result,
+    "filed ticket 14",
+  );
 });

@@ -16,6 +16,7 @@ import {
   nativeHttpBodyBytesMax,
   selectorSettingsTextCharsMax,
 } from "../../src/contract/http.ts";
+import type { SessionCapability } from "../../src/interpreter/agentSession.ts";
 import { allSessionCapabilities } from "../../src/interpreter/agentSession.ts";
 import {
   allChuggyTools,
@@ -34,6 +35,19 @@ import {
   sessionSystemPromptCharsMax,
 } from "../../src/interpreter/leadTools.ts";
 import type { SelectorResolvedSettings } from "../../src/interpreter/selector.ts";
+import { threadCapabilitiesDefault } from "../../src/interpreter/thread.ts";
+
+/**
+ * The roster this installation opens a lead with, written out because nothing
+ * in the tree names it: the provisioning root chooses it per session, so a test
+ * that derived it would be agreeing with whatever a caller last passed.
+ */
+const leadRoster: readonly SessionCapability[] = [
+  "RepositoryRead",
+  "ProjectRead",
+  "DraftAuthor",
+  "LeadDecision",
+];
 
 const settings = (
   basePrompt: string,
@@ -61,11 +75,15 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "read_execution",
     "read_run_transcript",
     "read_operation",
+    "list_threads",
+    "read_thread",
+    "read_thread_transcript",
     "initialize_draft",
     "file_dependent",
     "revise_draft",
     "delete_draft",
     "release_draft",
+    "create_draft",
     "dispatch",
     "refuse",
     "lift",
@@ -75,9 +93,8 @@ test("the roster names every tool the plan gives it, in roster order", () => {
   ]);
 });
 
-test("no tool creates a ticket from nothing, and none re-authors a released one", () => {
+test("no tool re-authors a released ticket, whatever roster holds it", () => {
   for (const refused of [
-    "create_draft",
     "revoke",
     "merge_tickets",
     "split_ticket",
@@ -88,6 +105,30 @@ test("no tool creates a ticket from nothing, and none re-authors a released one"
       !(allChuggyTools as readonly string[]).includes(refused),
       `the roster holds ${refused}`,
     );
+});
+
+/**
+ * The lead's derived-work rule as a fact about the capability map rather than
+ * about the roster: the one tool that files from nothing exists, and the lead's
+ * own roster is what does not admit it. Asserting membership of the thread's
+ * roster rather than absence from the whole is the point — a `create_draft`
+ * silently dropped from every capability would pass an absence check.
+ */
+test("origination is admitted for a thread's roster and refused for a lead's", () => {
+  const originating = `${chuggyToolPrefix}create_draft`;
+
+  assert.deepEqual(chuggyToolCapabilities.DraftOriginate, ["create_draft"]);
+  assert.ok(
+    chuggyToolNames(threadCapabilitiesDefault).includes(originating),
+    "a thread's own roster does not admit the tool it exists for",
+  );
+  assert.ok(!chuggyToolNames(leadRoster).includes(originating));
+  assert.deepEqual(
+    chuggyToolNames(leadRoster),
+    allChuggyTools
+      .filter((tool) => tool !== "create_draft")
+      .map((tool) => `${chuggyToolPrefix}${tool}`),
+  );
 });
 
 test("every capability is mapped and every tool is gated by exactly one", () => {
@@ -122,6 +163,9 @@ test("each capability admits the tools the roster gives it and no other", () => 
     "read_execution",
     "read_run_transcript",
     "read_operation",
+    "list_threads",
+    "read_thread",
+    "read_thread_transcript",
   ]);
   assert.deepEqual(chuggyToolCapabilities.DraftAuthor, [
     "initialize_draft",
@@ -130,6 +174,7 @@ test("each capability admits the tools the roster gives it and no other", () => 
     "delete_draft",
     "release_draft",
   ]);
+  assert.deepEqual(chuggyToolCapabilities.DraftOriginate, ["create_draft"]);
   assert.deepEqual(chuggyToolCapabilities.LeadDecision, [
     "dispatch",
     "refuse",
@@ -162,15 +207,10 @@ test("the qualified names are the roster's own, prefixed, and never repeated", (
       "set_planning_intent",
     ].map((tool) => `${chuggyToolPrefix}${tool}`),
   );
-  const lead = chuggyToolNames([
-    "RepositoryRead",
-    "ProjectRead",
-    "DraftAuthor",
-    "LeadDecision",
-  ]);
-  assert.equal(new Set(lead).size, lead.length);
+  const every = chuggyToolNames(allSessionCapabilities);
+  assert.equal(new Set(every).size, every.length);
   assert.deepEqual(
-    lead,
+    every,
     allChuggyTools.map((tool) => `${chuggyToolPrefix}${tool}`),
   );
   assert.deepEqual(

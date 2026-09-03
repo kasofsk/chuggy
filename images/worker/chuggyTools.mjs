@@ -28,10 +28,14 @@
  * text. No retry, no repair, no hiding a 409. A tool that decided what a refusal
  * meant would be deciding something the API decided.
  *
- * DERIVED WORK ONLY. There is no bare draft creation: `file_dependent` files
+ * DERIVED WORK ONLY IS WHAT `DraftAuthor` ADMITS. `file_dependent` files
  * against a parent that already exists and carries it in the draft's
- * dependencies. `Prerequisite` is admitted by the schema only so its refusal can
- * name the reason — a released ticket's dependencies are immutable in
+ * dependencies; a roster holding `DraftAuthor` alone cannot originate work.
+ * Origination is `create_draft` under `DraftOriginate`, which a member's thread
+ * holds and no lead roster does, so the lead's derived-work rule is which
+ * capability admits which tool rather than a sentence in a description.
+ * `Prerequisite` is admitted by the schema only so its refusal can name the
+ * reason — a released ticket's dependencies are immutable in
  * `model/domain.qnt`, which names re-authoring machinery as deliberately absent.
  *
  * `zod` IS A PEER DEPENDENCY OF THE AGENT SDK, NOT ONE OF ITS DEPENDENCIES, so
@@ -108,6 +112,9 @@ const projectReadTools = [
   "read_execution",
   "read_run_transcript",
   "read_operation",
+  "list_threads",
+  "read_thread",
+  "read_thread_transcript",
 ];
 
 const draftAuthorTools = [
@@ -117,6 +124,9 @@ const draftAuthorTools = [
   "delete_draft",
   "release_draft",
 ];
+
+/** The one tool that files work nothing derived, which a thread holds and a lead does not. */
+const draftOriginateTools = ["create_draft"];
 
 /**
  * Which capability admits which tool. A capability this image does not know
@@ -128,7 +138,7 @@ export const sessionCapabilityTools = {
   RunCommands: ["Bash"],
   ProjectRead: projectReadTools,
   DraftAuthor: draftAuthorTools,
-  DraftOriginate: [],
+  DraftOriginate: draftOriginateTools,
   LeadDecision: leadDecisionToolNames,
 };
 
@@ -136,6 +146,7 @@ export const sessionCapabilityTools = {
 export const allChuggyTools = [
   ...projectReadTools,
   ...draftAuthorTools,
+  ...draftOriginateTools,
   ...leadDecisionToolNames,
 ];
 
@@ -291,6 +302,12 @@ export const chuggyToolsNotYetServed = {
   read_lead: "The lead session cannot be read by this installation yet.",
   read_lead_transcript:
     "The lead's own transcript cannot be read by this installation yet.",
+  list_threads:
+    "This project's member threads cannot be listed by this installation yet.",
+  read_thread:
+    "Another member's thread cannot be read by this installation yet.",
+  read_thread_transcript:
+    "A thread's own transcript cannot be read by this installation yet.",
 };
 
 /**
@@ -502,6 +519,40 @@ export const chuggyProjectTools = [
       ),
   },
   {
+    name: "list_threads",
+    description:
+      "The member threads open on this project: whose each is, its state, and whether it is this session's own.",
+    shape: () => ({}),
+    call: (context) => read(context, `${partitionPath(context.task)}/threads`),
+  },
+  {
+    name: "read_thread",
+    description:
+      "One member thread: whose it is, its state, and the tail of its conversation.",
+    shape: (z) => ({ session: identity(z) }),
+    call: (context, { session }) =>
+      read(
+        context,
+        `${partitionPath(context.task)}/threads/${encodeURIComponent(session)}`,
+      ),
+  },
+  {
+    name: "read_thread_transcript",
+    description:
+      "One page of a thread's own raw transcript, which is how it reads past its own compaction.",
+    shape: (z) => ({
+      session: identity(z),
+      stream: identity(z).optional(),
+      after: count(z).optional(),
+      limit: limit(z, sessionStorePageBatchesMax),
+    }),
+    call: (context, { session, stream, after, limit: pageLimit }) =>
+      read(
+        context,
+        `${partitionPath(context.task)}/threads/${encodeURIComponent(session)}/transcript${search({ stream, after, limit: pageLimit })}`,
+      ),
+  },
+  {
     name: "initialize_draft",
     description:
       "The defaults, the dependency candidates and the fence a new draft is filed against, for one configuration revision.",
@@ -606,6 +657,26 @@ export const chuggyProjectTools = [
         { "idempotency-key": operation },
       );
     },
+  },
+  {
+    name: "create_draft",
+    description:
+      "Files a new draft for work your owner asked for, derived from nothing. The fence comes from initialize_draft.",
+    shape: (z) => ({
+      configurationRevision: identity(z),
+      configurationDigest: identity(z),
+      expectedProjectSequence: count(z),
+      authoring: anyObject(z),
+      brief: anyObject(z),
+    }),
+    call: (context, args) =>
+      write(context, `${partitionPath(context.task)}/drafts`, "POST", {
+        configurationRevision: args.configurationRevision,
+        configurationDigest: args.configurationDigest,
+        expectedProjectSequence: args.expectedProjectSequence,
+        authoring: args.authoring,
+        brief: args.brief,
+      }),
   },
 ];
 

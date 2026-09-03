@@ -165,6 +165,18 @@ test("a session placed with no API origin cannot call one", async () => {
   );
 });
 
+test("a session placed with no bearer never presents one it does not have", async () => {
+  for (const absent of [undefined, ""]) {
+    const { calls, transport } = transportOf([{ status: 200 }]);
+
+    await assert.rejects(
+      chuggyRequest(task, absent, "/p", {}, transport),
+      /no bearer/,
+    );
+    assert.equal(calls.length, 0, "a bearerless call reached the API");
+  }
+});
+
 test("a body over the bound is cut on a character and says it was cut", async () => {
   const whole = await chuggyBoundedBody(bodyOf("kestrel"), 1_024);
   assert.deepEqual(whole, { text: "kestrel", cut: false });

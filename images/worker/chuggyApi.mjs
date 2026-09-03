@@ -62,6 +62,11 @@ export async function chuggyRequest(
   const origin = task?.api?.url;
   if (typeof origin !== "string" || origin.length === 0)
     throw new Error("the session was placed with no API origin");
+  // A pod with no bearer would otherwise send `Bearer undefined` and read the
+  // API's 401 back as its own membership refusing it, which is the one thing a
+  // relayed answer must not let the model conclude.
+  if (typeof bearer !== "string" || bearer.length === 0)
+    throw new Error("the session was placed with no bearer");
   const retries = chuggyRequestIsRead(init) ? chuggyRequestAttemptsMax : 1;
   let refusal;
   for (let attempt = 1; attempt <= retries; attempt += 1) {
