@@ -61,6 +61,7 @@ import type {
   OperationId,
 } from "../../interpreter/operationInbox.ts";
 import type { NotificationBatch } from "../../interpreter/notifications.ts";
+import type { ThreadMessageRefusalCode } from "../../contract/rosters.ts";
 import type {
   ThreadMessageSent,
   ThreadOpening,
@@ -1089,6 +1090,26 @@ export function openThreadResponse(
 }
 
 /**
+ * Which code each of the door's refusals answers with, as one record over the
+ * roster the console reads. It is a record rather than six literals at the call
+ * sites so the compiler is what holds the two ends together: a code renamed on
+ * one side of the wire and not the other is the failure the roster exists to
+ * stop, and a literal is a rename nothing notices.
+ */
+const threadMessageRefusalCode: Readonly<
+  Record<
+    Exclude<ThreadMessageSent["result"], "NotFound" | "Sent" | "AlreadySent">,
+    ThreadMessageRefusalCode
+  >
+> = {
+  NotYourThread: "NotYourThread",
+  Closed: "ThreadClosed",
+  Orphaned: "ThreadOrphaned",
+  TooLarge: "ThreadTurnTooLarge",
+  Backlogged: "ThreadBacklogged",
+};
+
+/**
  * The message door's refusals, each naming which one it met: `NotYourThread` is
  * `403` rather than `404` because the thread is one this member may read, and
  * the honest answer is that it is not theirs to write to. `ThreadTurnTooLarge`
@@ -1104,28 +1125,41 @@ export function threadMessageResponse(
     case "NotYourThread":
       return response(
         403,
-        nativeHttpError("NotYourThread", "The thread is not yours to write."),
+        nativeHttpError(
+          threadMessageRefusalCode.NotYourThread,
+          "The thread is not yours to write.",
+        ),
       );
     case "Closed":
       return response(
         409,
-        nativeHttpError("ThreadClosed", "The thread takes no more turns."),
+        nativeHttpError(
+          threadMessageRefusalCode.Closed,
+          "The thread takes no more turns.",
+        ),
       );
     case "Orphaned":
       return response(
         409,
-        nativeHttpError("ThreadOrphaned", "The thread has no owner."),
+        nativeHttpError(
+          threadMessageRefusalCode.Orphaned,
+          "The thread has no owner.",
+        ),
       );
     case "TooLarge":
       return response(400, {
         ...nativeHttpError(
-          "ThreadTurnTooLarge",
+          threadMessageRefusalCode.TooLarge,
           "The project's own context and this message do not fit one turn.",
         ),
         charsMax: result.charsMax,
       });
     case "Backlogged":
-      return retry(429, result.retryAfterSeconds, "ThreadBacklogged");
+      return retry(
+        429,
+        result.retryAfterSeconds,
+        threadMessageRefusalCode.Backlogged,
+      );
     case "Sent":
     case "AlreadySent":
       return response(202, { turn: result.turn, ordinal: result.ordinal });

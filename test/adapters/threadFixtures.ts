@@ -47,6 +47,7 @@ export const unservedNativeWeb: Parameters<typeof createNativeHttpApp>[0] = {
   deleteDraft: unserved("delete draft"),
   dispatchView: unserved("dispatch view"),
   draft: unserved("draft"),
+  drafts: unserved("drafts"),
   notifications: unserved("notifications"),
   operation: unserved("operation"),
   project: unserved("project"),

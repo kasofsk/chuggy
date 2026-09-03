@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
+import { threadMessageRefusalCodes } from "../../src/contract/rosters.ts";
 import {
   nativeHttpMediaType,
   nativeHttpRoutes,
@@ -506,6 +507,12 @@ test("a message body outside the schema is refused at the door", async () => {
 });
 
 /**
+ * ONE WIRE VOCABULARY, ONE ROSTER, AND EVERY ARM IN IT: the console reads
+ * `threadMessageRefusalCodes`, so a door arm answering a lookalike literal — or
+ * a member the roster never heard of — is a drift no gate could see, which is
+ * why every arm's code is collected and held against the whole roster both ways,
+ * `NotFound` excepted as the general one every read answers with.
+ *
  * The refusal map is the whole of what a member is told, and each arm is a
  * different thing to do about it: someone else's thread is theirs to write, a
  * closed one is reopened, an ownerless one cannot be, and a full one waits.
@@ -520,6 +527,7 @@ test("every refusal the door can meet reaches the wire as its own status", async
     ["Backlogged", 429, String(threadBacklogRetrySeconds)],
   ] as const;
 
+  const codes: string[] = [];
   for (const [result, status, retry] of map) {
     const held: ThreadCase = {
       calls: [],
@@ -539,12 +547,21 @@ test("every refusal the door can meet reaches the wire as its own status", async
     });
     assert.equal(refused.statusCode, status, result);
     assert.equal(refused.headers["retry-after"], retry, result);
-    assert.notEqual(
-      refused.json<HttpErrorEnvelope>().error.code,
-      "InvalidRequest",
-      result,
-    );
+    const code = refused.json<HttpErrorEnvelope>().error.code;
+    assert.notEqual(code, "InvalidRequest", result);
+    codes.push(code);
   }
+
+  assert.deepEqual(
+    codes.filter((code) => code !== "NotFound").sort(),
+    [...threadMessageRefusalCodes].sort(),
+  );
+  for (const code of codes)
+    assert.ok(
+      code === "NotFound" ||
+        (threadMessageRefusalCodes as readonly string[]).includes(code),
+      `${code} is outside the roster the console reads`,
+    );
 });
 
 /**
