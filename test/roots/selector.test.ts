@@ -126,6 +126,11 @@ test("the wake bound defaults to the contract's own and may be lowered, not rais
   assert.equal(await read(undefined), String(threadWakesPerPassMax));
   assert.equal(await read(""), String(threadWakesPerPassMax));
   assert.equal(await read("1"), "1");
+  assert.equal(
+    await read(String(threadWakesPerPassMax)),
+    String(threadWakesPerPassMax),
+    "the ceiling the diagnostic names and the unset default runs at is a bound a deployment may write down",
+  );
   for (const refused of [
     "0",
     "-1",

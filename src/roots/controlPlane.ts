@@ -192,11 +192,13 @@ function processPreconditions(
 
 /**
  * Drives the selector's own pass and the thread wake pass in ONE tick of ONE
- * pacing loop, the runtime first. The wake pass turns rows this process's
- * runtime may just have written into turns in members' mailboxes, so the order
- * is what makes a refusal recorded this tick a notice this tick rather than the
- * next; and one loop is the whole of the pacing, because a second loop over the
- * same cursor would be a second writer to it.
+ * pacing loop, the runtime STRICTLY FIRST: the runtime pass ends by appending
+ * the change rows the wake pass exists to read, so a tick that started them
+ * together would read the log before this tick's refusals were in it, and one
+ * loop is the whole of the pacing because a second loop over the same cursor
+ * would be a second writer to it. A change whose fan-out one pass cannot read
+ * is the one arm in which a notice is dropped for good, so it reaches stderr
+ * the way a contained ticket service fault does.
  */
 export function selectorProcess(
   service: SelectorRuntimeService,
@@ -208,7 +210,11 @@ export function selectorProcess(
     {
       run: async () => {
         await service.runOnce();
-        await threadWakePass(wakes);
+        const report = await threadWakePass(wakes);
+        if (report.truncatedAt !== undefined)
+          process.stderr.write(
+            `thread wakes: change ${String(report.truncatedAt)} wakes more threads than one pass reads, and the pass moved past it\n`,
+          );
       },
     },
     systemPacing,

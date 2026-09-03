@@ -38,10 +38,19 @@
  * only where a page is a PREFIX of the window after the cursor, so a page that
  * is not in sequence order, or that is wider than the bound it was asked for,
  * raises rather than deriving a cursor from an order it does not have.
+ *
+ * A BOUND ABOVE `threadWakesPerPassMax` IS REFUSED, NOT CLAMPED. The candidate
+ * read caps what it is asked for at that ceiling, so a service carrying a wider
+ * bound would read a capped page, read it as short, and advance to a sequence
+ * it had not read whole — the drop this module exists to prevent, produced by
+ * the configuration rather than by the pagination. A clamp would run a bound
+ * other than the one it was given and say nothing; a refusal is the one answer
+ * that cannot be mistaken for the bound holding.
  */
 
 import { createHash } from "node:crypto";
 
+import { threadWakesPerPassMax } from "../contract/http.ts";
 import type { SessionId, SessionTurnId } from "./agentSession.ts";
 import { asSessionTurnId } from "./agentSession.ts";
 import type { Principal } from "./principal.ts";
@@ -177,6 +186,10 @@ export async function threadWakePass(
   if (!Number.isSafeInteger(limit) || limit < 1)
     throw new RangeError(
       `thread wake: ${String(limit)} is not a bound a pass can hold`,
+    );
+  if (limit > threadWakesPerPassMax)
+    throw new RangeError(
+      `thread wake: a bound of ${String(limit)} is above the ${String(threadWakesPerPassMax)} the candidate read caps itself at`,
     );
   const started = await service.store.cursor();
   const page = orderedPage(

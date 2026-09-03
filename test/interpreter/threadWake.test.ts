@@ -441,6 +441,20 @@ test("the pass reads its own bound and refuses a page wider than it", async () =
   assert.deepEqual(over.offers, [], "an unbounded page was acted on");
 });
 
+test("a bound above the ceiling the read caps itself at is refused, not clamped", async () => {
+  const store = referenceStore({ log: [candidateAt(1, "a")] });
+  await assert.rejects(
+    () => threadWakePass(serviceOf(store, threadWakesPerPassMax + 1)),
+    /is above the .* the candidate read caps itself at/u,
+  );
+  assert.deepEqual(store.offers, []);
+  assert.deepEqual(store.advances, []);
+
+  const held = referenceStore({ log: [candidateAt(1, "a")] });
+  const report = await threadWakePass(serviceOf(held, threadWakesPerPassMax));
+  assert.equal(report.woken, 1, "the ceiling itself is a bound a pass holds");
+});
+
 test("a bound no pass can hold is refused before anything is read", async () => {
   for (const bound of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
     const store = referenceStore({ log: [candidateAt(1, "a")] });
@@ -538,7 +552,9 @@ interface WalkTally {
   crashed: number;
   truncated: number;
   backlogged: number;
-  unreachable: number;
+  closed: number;
+  orphaned: number;
+  noThread: number;
   replayed: number;
   fullPages: number;
 }
@@ -644,13 +660,27 @@ function walkSettled(input: {
 const walkSeeds = 200;
 const walkPasses = 12;
 const walkSessions = ["one", "two", "three", "four"];
+/**
+ * Every standing a mailbox can be in when a wake reaches it. `Open` is drawn
+ * twice so a walk that only ever closed threads could not be mistaken for one
+ * that woke them.
+ */
+const walkStandings: readonly MailboxStanding[] = [
+  "Open",
+  "Open",
+  "Closed",
+  "Orphaned",
+  "NoThread",
+];
 
 test("a walk of passes wakes each candidate at most once and skips none silently", async () => {
   const tally: WalkTally = {
     crashed: 0,
     truncated: 0,
     backlogged: 0,
-    unreachable: 0,
+    closed: 0,
+    orphaned: 0,
+    noThread: 0,
     replayed: 0,
     fullPages: 0,
   };
@@ -671,11 +701,9 @@ test("a walk of passes wakes each candidate at most once and skips none silently
     for (let pass = 0; pass < walkPasses; pass += 1) {
       if (random.coin()) {
         const label = walkSessions[random.below(walkSessions.length)];
-        if (label !== undefined)
-          standings.set(
-            member(label).session,
-            random.coin() ? "Open" : "Closed",
-          );
+        const held = walkStandings[random.below(walkStandings.length)];
+        if (label !== undefined && held !== undefined)
+          standings.set(member(label).session, held);
       }
       const report = await walkPass({
         store,
@@ -692,8 +720,9 @@ test("a walk of passes wakes each candidate at most once and skips none silently
     walkSettled({ store, log, sessions: walkSessions, reports, cursor, seed });
     for (const offer of store.offers) {
       if (offer.offered === "Backlogged") tally.backlogged += 1;
-      if (offer.offered === "Closed" || offer.offered === "NoThread")
-        tally.unreachable += 1;
+      if (offer.offered === "Closed") tally.closed += 1;
+      if (offer.offered === "Orphaned") tally.orphaned += 1;
+      if (offer.offered === "NoThread") tally.noThread += 1;
       if (offer.offered === "AlreadyWoken") tally.replayed += 1;
     }
   }

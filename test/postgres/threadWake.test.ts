@@ -19,7 +19,10 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { threadTurnsAnsweredMax } from "../../src/contract/http.ts";
+import {
+  threadTurnsAnsweredMax,
+  threadWakesPerPassMax,
+} from "../../src/contract/http.ts";
 import {
   asConfigurationRevisionId,
   type ConfigurationRevisionId,
@@ -30,12 +33,17 @@ import {
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import { parseThreadWake } from "../../src/interpreter/thread.ts";
+import {
+  parseThreadWake,
+  threadWakeDocument,
+  threadWakeText,
+} from "../../src/interpreter/thread.ts";
 import {
   threadWakePass,
   threadWakeTurn,
   type ThreadWakeService,
 } from "../../src/interpreter/threadWake.ts";
+import { asSessionTurnId } from "../../src/interpreter/agentSession.ts";
 import { plainAuthoring } from "../actor/harness.ts";
 import {
   postgresHarnessBrief,
@@ -46,7 +54,9 @@ import {
   threadRigMember,
   threadRigOpen,
   threadRigProject,
+  threadRigRevoke,
   threadRigThread,
+  threadRigTurnId,
   type ThreadRig,
   type ThreadRigMember,
 } from "./threadHarness.ts";
@@ -147,7 +157,7 @@ test("a refusal against a member's own ticket becomes one Wake turn, once", asyn
   const started = await fromTheHead();
   await refuse(partition, "wakepass", ticket);
 
-  const report = await threadWakePass(service(threadTurnsAnsweredMax));
+  const report = await threadWakePass(service(threadWakesPerPassMax));
   assert.deepEqual(report, {
     read: 1,
     woken: 1,
@@ -182,7 +192,7 @@ test("a refusal against a member's own ticket becomes one Wake turn, once", asyn
   assert.equal(document.resource, String(ticket));
   assert.equal(document.at, instant);
 
-  const again = await threadWakePass(service(threadTurnsAnsweredMax));
+  const again = await threadWakePass(service(threadWakesPerPassMax));
   assert.deepEqual(again, {
     read: 0,
     woken: 0,
@@ -207,7 +217,7 @@ test("a pass whose cursor was not moved re-offers the same turn and is told so",
   await refuse(partition, "wakereplay", ticket);
 
   const raising: ThreadWakeService = {
-    ...service(threadTurnsAnsweredMax),
+    ...service(threadWakesPerPassMax),
     store: {
       ...rig.wakes,
       advance: () => {
@@ -224,7 +234,7 @@ test("a pass whose cursor was not moved re-offers the same turn and is told so",
     "a pass that raised out of the advance moved the cursor anyway",
   );
 
-  const resumed = await threadWakePass(service(threadTurnsAnsweredMax));
+  const resumed = await threadWakePass(service(threadWakesPerPassMax));
   assert.equal(resumed.read, 1);
   assert.equal(resumed.woken, 1);
   const standing = await rig.threads.standing({
@@ -249,10 +259,39 @@ test("a change for a closed thread is read by nobody and moves the cursor by its
   const started = await fromTheHead();
   await refuse(partition, "wakeclosed", ticket);
 
-  const report = await threadWakePass(service(threadTurnsAnsweredMax));
+  const report = await threadWakePass(service(threadWakesPerPassMax));
   assert.deepEqual(
     report,
     { read: 0, woken: 0, skipped: 0, cursor: started },
     "a closed thread is no candidate, so the pass has nothing to move past",
+  );
+});
+
+/**
+ * The one arm of the wake door the candidate read can never produce and the
+ * adapter must still map. The read requires a membership, so a member whose
+ * membership went between the read and the wake is a RACE — and an unmapped
+ * verdict is a raise out of the pass, which ends the selector's loop for good.
+ */
+test("a wake offered a thread whose owner's membership is gone is orphaned, not a raise", async () => {
+  const partition = await threadRigProject(rig, "wakeorphan");
+  const member = await threadRigMember(rig, partition, "wakeorphan");
+  await threadRigThread(rig, partition, member);
+  await threadRigRevoke(rig, partition, member);
+
+  assert.deepEqual(
+    await rig.wakes.wake({
+      partition,
+      principal: member.principal,
+      turn: asSessionTurnId(threadRigTurnId("wakeorphan")),
+      input: threadWakeText(
+        threadWakeDocument({
+          wake: "TicketRefused",
+          resource: "1",
+          at: instant,
+        }),
+      ),
+    }),
+    { woken: "Orphaned" },
   );
 });
