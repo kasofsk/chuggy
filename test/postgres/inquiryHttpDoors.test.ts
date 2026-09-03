@@ -13,10 +13,9 @@
  *
  * NO ROUTE HERE MAY ANSWER `500`, and that is the assertion each case leads
  * with rather than a shape it happens to imply. `composeNativeWeb` is what the
- * root calls, and it falls back to the API pool's own inquiry store, so a
- * bundle nobody passed is still a bundle — `nativeInquiryPorts` is the root's
- * own naming of the same thing, and `test/roots/nativeHttp.test.ts` observes
- * which pool it reached.
+ * root calls and it composes the inquiry store itself rather than taking one,
+ * so there is no boundary these routes can be missing from;
+ * `test/roots/nativeHttp.test.ts` observes which pool that composition reached.
  */
 
 import assert from "node:assert/strict";
@@ -69,10 +68,10 @@ const authorized = { authorization: "Bearer valid" };
 const versioned = { ...authorized, "content-type": nativeHttpMediaType };
 
 /**
- * The app the routes are driven through. It names NO inquiry bundle, because
- * what this suite has to hold is that a caller who names none still reaches the
- * database: the fallback inside `composeNativeWeb` is the control, and a
- * deployment that forgets the port is the failure it prevents.
+ * The app the routes are driven through, composed the way the root composes it
+ * and passing no inquiry port because there is none to pass. What this suite
+ * holds is that the routes reach the database anyway, which is what makes a
+ * deployment unable to forget them.
  */
 function inquiryApp(principal: Principal) {
   const pool = rig.apiPool;
