@@ -89,6 +89,15 @@ const inertSessions: SessionPlaneService = {
   pollsMax: 64,
 };
 
+/** One batch of the caller's own store, which the cases about a page's shape share. */
+const oneOwnBatch = {
+  batches: () =>
+    Promise.resolve([
+      { session: identity.session, batch: 1, digest: "d", bytes: 1 },
+    ]),
+  streams: () => Promise.resolve([]),
+};
+
 /** The attempt half of the plane, inert throughout: no case here is about a run. */
 const inertAttempt = inertWorkerPlane(sessionStoreBatchBytesMax * 2);
 
@@ -990,9 +999,9 @@ test("a store path, stream, batch or body the route does not hold never reaches 
 
 test("a page of a stream carries every batch's bytes, and marks the ones it has none for", async () => {
   const drawn = new Map([
-    [1, { read: "Content" as const, content: "one\n" }],
-    [2, { read: "NotFound" as const }],
-    [3, { read: "Corrupt" as const }],
+    ["session-1/1", { read: "Content" as const, content: "one\n" }],
+    ["session-1/2", { read: "NotFound" as const }],
+    ["session-1/3", { read: "Corrupt" as const }],
   ]);
   const asked: unknown[] = [];
   const app = sessionPlane({
@@ -1000,7 +1009,12 @@ test("a page of a stream carries every batch's bytes, and marks the ones it has 
       batches: (input) => {
         asked.push(input);
         return Promise.resolve(
-          [1, 2, 3].map((batch) => ({ batch, digest: "d", bytes: 4 })),
+          [1, 2, 3].map((batch) => ({
+            session: identity.session,
+            batch,
+            digest: "d",
+            bytes: 4,
+          })),
         );
       },
       streams: () => Promise.resolve([]),
@@ -1008,7 +1022,11 @@ test("a page of a stream carries every batch's bytes, and marks the ones it has 
     store: {
       storeBatch: () => Promise.resolve({ stored: "Stored" }),
       readBatch: (object) =>
-        Promise.resolve(drawn.get(object.batch) ?? { read: "NotFound" }),
+        Promise.resolve(
+          drawn.get(`${object.session}/${String(object.batch)}`) ?? {
+            read: "NotFound",
+          },
+        ),
     },
   });
   const page = await app.inject({
@@ -1037,12 +1055,67 @@ test("a page of a stream carries every batch's bytes, and marks the ones it has 
   await app.close();
 });
 
-test("a page shorter than its limit is the end of the stream", async () => {
+/**
+ * A fork's page is the case where the reader and the writer are two sessions,
+ * and the address of an object is the writer's. The store here holds the
+ * parent's objects and NOTHING under the caller's own session, so a route that
+ * addressed the caller reads a hole and reports every batch missing — which is
+ * what a live installation measured (kasofsk/chuggy#551).
+ */
+test("each object of a fork's page is read under the session its row names", async () => {
+  const parent = asSessionId("lead-1");
+  const forked: SessionPlaneIdentity = {
+    ...identity,
+    session: asSessionId("inquiry-1"),
+    kind: "Inquiry",
+    forkFrom: "1a2b",
+  };
+  const addressed: string[] = [];
   const app = sessionPlane({
+    authority: { authenticate: () => Promise.resolve(forked) },
     queries: {
-      batches: () => Promise.resolve([{ batch: 1, digest: "d", bytes: 1 }]),
+      batches: () =>
+        Promise.resolve(
+          [1, 2].map((batch) => ({
+            session: parent,
+            batch,
+            digest: "d",
+            bytes: 4,
+          })),
+        ),
       streams: () => Promise.resolve([]),
     },
+    store: {
+      storeBatch: () => Promise.resolve({ stored: "Stored" }),
+      readBatch: (object) => {
+        addressed.push(`${object.session}/${String(object.batch)}`);
+        return Promise.resolve(
+          object.session === parent
+            ? { read: "Content", content: `batch ${String(object.batch)}\n` }
+            : { read: "NotFound" },
+        );
+      },
+    },
+  });
+  const page = await app.inject({
+    method: "GET",
+    url: "/v1/session/store/1a2b",
+    headers: held,
+  });
+  assert.equal(page.statusCode, 200);
+  assert.deepEqual(page.json(), {
+    batches: [
+      { batch: 1, content: "batch 1\n" },
+      { batch: 2, content: "batch 2\n" },
+    ],
+  });
+  assert.deepEqual(addressed, ["lead-1/1", "lead-1/2"]);
+  await app.close();
+});
+
+test("a page shorter than its limit is the end of the stream", async () => {
+  const app = sessionPlane({
+    queries: oneOwnBatch,
     store: {
       storeBatch: () => Promise.resolve({ stored: "Stored" }),
       readBatch: () => Promise.resolve({ read: "Content", content: "one\n" }),
@@ -1061,10 +1134,7 @@ test("a page shorter than its limit is the end of the stream", async () => {
 
 test("an unreadable volume refuses the page rather than reporting batches that are there", async () => {
   const app = sessionPlane({
-    queries: {
-      batches: () => Promise.resolve([{ batch: 1, digest: "d", bytes: 1 }]),
-      streams: () => Promise.resolve([]),
-    },
+    queries: oneOwnBatch,
     store: {
       storeBatch: () => Promise.resolve({ stored: "Stored" }),
       readBatch: () =>

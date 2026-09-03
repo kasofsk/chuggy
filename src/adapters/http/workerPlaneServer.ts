@@ -1020,8 +1020,11 @@ function sessionStoreWriteRoute(
 }
 
 /**
- * One page of a stream read back. Only an outage refuses the page: a batch
- * whose object is gone or is not one this store can speak for is marked
+ * One page of a stream read back, each object under the session its ROW names
+ * and never the caller's — a fork's page is resolved through its parent, the
+ * store keys an object by the session that wrote it, and that read is the fence
+ * on which sessions may be addressed at all. Only an outage refuses the page: a
+ * batch whose object is gone or is not one this store can speak for is marked
  * missing, because a reader of either has the same nothing and the same one
  * thing to do about it, and the batches beside it are what the caller came for.
  */
@@ -1065,7 +1068,7 @@ function sessionStoreReadRoute(
     for (const row of rows) {
       const drawn = await sessions.store.readBatch({
         partition: caller.identity.partition,
-        session: caller.identity.session,
+        session: row.session,
         stream,
         batch: row.batch,
       });
