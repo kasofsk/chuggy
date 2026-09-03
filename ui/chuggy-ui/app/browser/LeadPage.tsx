@@ -39,6 +39,7 @@ import { usePanelList } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { LeadDecisions } from "./lead/LeadDecisions.tsx";
+import { LeadInquiries } from "./lead/LeadInquiries.tsx";
 import { LeadRefusals } from "./lead/LeadRefusals.tsx";
 import {
   LeadHolding,
@@ -205,6 +206,11 @@ function LeadBody(props: {
       <LeadLog held={held} stream={lead?.agentReference} listed={listed} />
       <LeadDecisions partition={props.partition} nowMs={props.nowMs} />
       <LeadRefusals partition={props.partition} nowMs={props.nowMs} />
+      <LeadInquiries
+        partition={props.partition}
+        head={lead?.agentReference}
+        nowMs={props.nowMs}
+      />
     </>
   );
 }

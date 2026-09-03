@@ -33,6 +33,7 @@ import {
 import {
   leadBody,
   leadHandoffNote,
+  leadInquiry,
   leadPartition,
   leadRefusals,
   leadRouteAnswer,
@@ -42,6 +43,7 @@ import {
   leadUnstarted,
 } from "./leadFixture.ts";
 import type { LeadServed } from "./leadFixture.ts";
+import type { LeadInquiriesResponse } from "../../../src/contract/responses.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
@@ -115,6 +117,12 @@ function logLines(): readonly HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>(".lead-log > li")];
 }
 
+function inquiryQuestions(): readonly string[] {
+  return [...document.querySelectorAll(".lead-inquiry-question")].map(
+    (question) => question.textContent ?? "",
+  );
+}
+
 test("the head names the session, its state and the cursor it stands on", async () => {
   await drawLead(() => opening);
   expect(screen.getByRole("heading", { name: "Lead" })).toBeDefined();
@@ -175,6 +183,10 @@ test("a lead with no store says so in the same word in both panels", async () =>
   expect(screen.getAllByText("No store").length).toBe(2);
   expect(screen.queryByText("Stream unlisted")).toBeNull();
   expect(screen.queryByText("Nothing held")).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Ask" }),
+    "a lead with no head to fork from was offered a question anyway",
+  ).toBeNull();
 });
 
 /** A read the route could not decide the held set for is not a lead that has
@@ -334,6 +346,54 @@ test("a Session frame moves the turn tail and walks the transcript on", async ()
   expect(screen.getByText("third decision")).toBeDefined();
   expect(logLines().length).toBe(8);
   expect(holdingEntries()).toStrictEqual(["Entry 5", "Entry 6", "Entry 7"]);
+});
+
+/**
+ * THE TWO PANELS ON THIS PAGE DIVIDE ONE KIND'S FRAMES: the lead's panels
+ * follow the session they name, and the inquiries panel follows the kind.
+ * A page whose lead predicate had been widened to cover the inquiries would
+ * re-read the head, the mailbox tail and the transcript walk on every question.
+ */
+test("the lead's own frame moves the lead alone, and an inquiry's the inquiries", async () => {
+  const asking = (at: number): LeadInquiriesResponse => ({
+    inquiries: [leadInquiry(at, { turnState: "Queued" })],
+  });
+  let served: LeadServed = { ...opening, inquiries: asking(1) };
+  const server = await drawLead(() => served);
+  expect(logLines().length).toBe(7);
+  expect(inquiryQuestions()).toStrictEqual(["question 1"]);
+  served = { ...served, batches: 4, turns: 2, inquiries: asking(2) };
+  await turned(() => {
+    server.push(
+      frame("Session", "80", {
+        version: 1,
+        resource: leadSessionResource(leadSession, "turn-2"),
+        representation: null,
+      }),
+    );
+  });
+  await settled();
+  expect(logLines().length).toBe(8);
+  expect(
+    inquiryQuestions(),
+    "the lead's own frame re-read the inquiries beside it",
+  ).toStrictEqual(["question 1"]);
+  served = { ...served, batches: 5, turns: 3, inquiries: asking(3) };
+  await turned(() => {
+    server.push(
+      frame("Session", "81", {
+        version: 1,
+        resource: leadSessionResource("inq-9", "turn-1", "Inquiry"),
+        representation: null,
+      }),
+    );
+  });
+  await settled();
+  expect(inquiryQuestions()).toStrictEqual(["question 3"]);
+  expect(
+    logLines().length,
+    "an inquiry's frame re-read the lead's own panels",
+  ).toBe(8);
 });
 
 /**

@@ -18,6 +18,7 @@ import {
   leadEntryText,
   leadEntryTools,
   leadSessionNamed,
+  sessionChangeKindNamed,
   leadStreamBatches,
   leadStreamListed,
   leadTranscriptDrawn,
@@ -603,6 +604,55 @@ test("a resource that is not a session pointer is ignored, not thrown on", () =>
     ),
   ).toBeUndefined();
   expect(leadSessionNamed(JSON.stringify([leadSession]))).toBeUndefined();
+});
+
+/**
+ * The kind is the SESSION's own, so a panel can watch one kind of session in a
+ * project holding several. A frame the lead's panel re-reads on is not one this
+ * answers `Inquiry` for, and vice versa: they are two questions about one
+ * resource and neither is the other's filter.
+ */
+test("a Session frame names what kind of session moved", () => {
+  expect(
+    sessionChangeKindNamed(
+      JSON.stringify({ session: leadSession, kind: "Lead", turn: "turn-7" }),
+    ),
+  ).toBe("Lead");
+  expect(
+    sessionChangeKindNamed(
+      JSON.stringify({ session: "inq-1", kind: "Inquiry", turn: "turn-1" }),
+    ),
+  ).toBe("Inquiry");
+  expect(
+    sessionChangeKindNamed(
+      JSON.stringify({
+        session: "inq-1",
+        kind: "Inquiry",
+        stream: leadStream,
+        batch: 3,
+      }),
+    ),
+  ).toBe("Inquiry");
+});
+
+/**
+ * BOTH ACCESSORS IGNORE THE SAME FRAMES. They share one parse, so a resource
+ * neither is a session pointer nor JSON at all is nothing to either — and a
+ * panel that threw on it would end the stream for every other kind.
+ */
+test("a resource neither accessor can read is ignored by both", () => {
+  for (const resource of [
+    leadSession,
+    "",
+    "{",
+    JSON.stringify({ session: leadSession }),
+    JSON.stringify({ session: leadSession, kind: "Lead", turn: 7 }),
+    JSON.stringify({ ticket: 42, version: 2 }),
+    JSON.stringify([leadSession]),
+  ]) {
+    expect(leadSessionNamed(resource), resource).toBeUndefined();
+    expect(sessionChangeKindNamed(resource), resource).toBeUndefined();
+  }
 });
 
 test("a decision says what it did, and says so when it did nothing", () => {
