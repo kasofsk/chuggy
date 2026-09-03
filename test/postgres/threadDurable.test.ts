@@ -1059,12 +1059,16 @@ async function wakeTicketPhase(
   );
 }
 
-/** One project, one member and the six changes that wake that member's thread. */
+/**
+ * One project, one member and a change for every reason the roster names. Two
+ * ticket phases map to `TicketAbandoned` and both are here: a fixture holding
+ * one of them agrees with a join deriving that reason from the other alone.
+ */
 async function wakeFixture(label: string): Promise<{
   readonly partition: Partition;
   readonly member: ThreadRigMember;
   readonly thread: string;
-  readonly reasons: ReadonlyMap<ThreadWakeReason, TicketId>;
+  readonly reasons: readonly (readonly [ThreadWakeReason, TicketId])[];
   /** The change-log high-water before the fixture, so a case reads its own rows alone. */
   readonly after: number;
 }> {
@@ -1084,6 +1088,7 @@ async function wakeFixture(label: string): Promise<{
   const escalated = await threadDraft(partition, revision, member);
   const done = await threadDraft(partition, revision, member);
   const abandoned = await threadDraft(partition, revision, member);
+  const revoked = await threadDraft(partition, revision, member);
 
   await wakeRefusals(partition, label, refused, lifted);
   const gone = await rig.sessions.harness.authoring.deleteDraft({
@@ -1098,6 +1103,7 @@ async function wakeFixture(label: string): Promise<{
     [escalated, "Escalated"],
     [done, "Done"],
     [abandoned, "Abandoned"],
+    [revoked, "Revoked"],
   ] as const)
     await wakeTicketPhase(partition, ticket, phase);
 
@@ -1106,14 +1112,15 @@ async function wakeFixture(label: string): Promise<{
     member,
     thread: thread.session,
     after,
-    reasons: new Map<ThreadWakeReason, TicketId>([
+    reasons: [
       ["TicketRefused", refused],
       ["RefusalLifted", lifted],
       ["DraftDeleted", deleted],
       ["TicketEscalated", escalated],
       ["TicketCompleted", done],
       ["TicketAbandoned", abandoned],
-    ]),
+      ["TicketAbandoned", revoked],
+    ],
   };
 }
 
@@ -1142,7 +1149,7 @@ test("every reason the roster names is a reason the join derives", async () => {
         (candidate) =>
           candidate.reason === reason && candidate.resource === String(ticket),
       ),
-      `${reason} names the ticket it is about`,
+      `${reason} names ticket ${String(ticket)}, which is a ticket it is about`,
     );
 });
 

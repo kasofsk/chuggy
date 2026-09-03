@@ -14,11 +14,18 @@
  * answer: whether the pass's derived turn identity is the identity the door
  * treats as already enqueued, and whether the document it composes is a
  * document the column takes and the reader parses back.
+ *
+ * WHERE A MAILBOX STARTS IS THIS SUITE'S TOO, because the cursor and the
+ * session row are two facts only a real candidate read distinguishes: the
+ * cursor says how far the pass has read, and 067's `opened_after_sequence` says
+ * what the thread was opened after. The case that separates them runs its pass
+ * over a window holding a change from each side of the opening.
  */
 
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
+import { boundaryOwnerRole } from "../../src/adapters/postgres/schema.ts";
 import {
   threadTurnsAnsweredMax,
   threadWakesPerPassMax,
@@ -48,6 +55,7 @@ import { plainAuthoring } from "../actor/harness.ts";
 import {
   postgresHarnessBrief,
   postgresHarnessConfiguration,
+  postgresHarnessStalled,
 } from "./harness.ts";
 import { leadRigDecision } from "./leadHarness.ts";
 import {
@@ -293,5 +301,198 @@ test("a wake offered a thread whose owner's membership is gone is orphaned, not 
       ),
     }),
     { woken: "Orphaned" },
+  );
+});
+
+/** Lifts the standing refusal on one of the member's tickets, which is a second change on it. */
+async function lift(
+  partition: Partition,
+  label: string,
+  ticket: TicketId,
+): Promise<void> {
+  const decision = await leadRigDecision(rig, partition, `${label}-lift`);
+  await rig.writes.record({
+    partition,
+    decision,
+    refusals: [],
+    lifts: [{ ticket }],
+  });
+}
+
+/**
+ * The window this case runs over holds BOTH changes on the same ticket, and the
+ * cursor is below both: what separates them is the log's position the thread
+ * was opened after. A pass that read the earlier one would be the rig's finding
+ * (kasofsk/chuggy#541) in miniature — a mailbox filled with what happened
+ * before its owner had one.
+ */
+test("a thread is woken by a change after it opened, and by none the log held before", async () => {
+  const partition = await threadRigProject(rig, "wakestart");
+  const member = await threadRigMember(rig, partition, "wakestart");
+  const revision = await configuration(partition);
+  const ticket = await draft(partition, revision, member);
+  const started = await fromTheHead();
+  await refuse(partition, "wakestart", ticket);
+  const thread = await threadRigThread(rig, partition, member);
+
+  const quiet = await threadWakePass(service(threadWakesPerPassMax));
+  assert.deepEqual(
+    quiet,
+    { read: 0, woken: 0, skipped: 0, cursor: started },
+    "a change from before the thread was opened is a candidate for it",
+  );
+  const opened = await rig.threads.standing({
+    partition,
+    session: thread.session,
+    query: { limit: threadTurnsAnsweredMax },
+  });
+  assert.equal(
+    opened?.turns.length,
+    0,
+    "the thread's mailbox holds a notice about something that happened before it existed",
+  );
+
+  await lift(partition, "wakestart", ticket);
+  const report = await threadWakePass(service(threadWakesPerPassMax));
+  assert.equal(report.read, 1, "the window holds both changes and read both");
+  assert.equal(report.woken, 1);
+  const standing = await rig.threads.standing({
+    partition,
+    session: thread.session,
+    query: { limit: threadTurnsAnsweredMax },
+  });
+  assert.equal(standing?.turns.length, 1);
+  const turn = standing?.turns[0];
+  assert.ok(turn !== undefined);
+  assert.equal(parseThreadWake(turn.input).wake, "RefusalLifted");
+});
+
+/**
+ * The negative space that keeps the position a fact about the opening: it is
+ * written by the INSERT `open_member_thread` makes and by nothing else, so the
+ * roster — read from `pg_roles`, because a list is the roles that existed the
+ * day it was written — holds no `UPDATE` on it. The column beside it that one
+ * role may move is swept the same way and asserted whole, so a pattern that
+ * stopped matching is a red rather than a green over an empty sweep.
+ */
+test("no role may move the log position a thread was opened after", async () => {
+  const roster = (await rig.sessions.harness.query(
+    `SELECT r.rolname,
+            has_column_privilege(r.rolname,'agent_session','opened_after_sequence','UPDATE') AS moves,
+            has_column_privilege(r.rolname,'agent_session','capabilities','UPDATE') AS reconfigures
+       FROM pg_roles r WHERE r.rolname LIKE 'chuggy\\_%'
+      ORDER BY r.rolname`,
+  )) as readonly {
+    rolname: string;
+    moves: boolean;
+    reconfigures: boolean;
+  }[];
+  assert.deepEqual(
+    roster.filter(({ moves }) => moves).map(({ rolname }) => rolname),
+    [],
+    "a role may rewrite the position a thread was opened after, so what its mailbox is filled from is settled somewhere other than its opening",
+  );
+  assert.deepEqual(
+    roster
+      .filter(({ reconfigures }) => reconfigures)
+      .map(({ rolname }) => rolname),
+    [boundaryOwnerRole],
+    "the sweep disagrees with 062's own grant on the column beside it, so an empty roster would have read as a clean negative space",
+  );
+});
+
+/**
+ * The other half of the column's negative space: a position below the log's own
+ * start is not a position, and the constraint says so where the grant cannot —
+ * the identity that owns the schema is not bound by a grant.
+ */
+test("a thread cannot be opened after a sequence the log never held", async () => {
+  const partition = await threadRigProject(rig, "wakenegative");
+  const member = await threadRigMember(rig, partition, "wakenegative");
+  const thread = await threadRigThread(rig, partition, member);
+
+  await assert.rejects(
+    () =>
+      rig.sessions.harness.query(
+        "UPDATE agent_session SET opened_after_sequence=-1 WHERE session=$1",
+        [thread.session],
+      ),
+    /agent_session_opens_after_a_sequence/u,
+  );
+});
+
+/**
+ * Reopens the member's thread against a close that holds their session row, and
+ * appends one change before that close commits. Waiting for the opening to
+ * stall is what puts the append after every read the door makes on its way in.
+ */
+async function openingAgainstAClose(
+  partition: Partition,
+  member: ThreadRigMember,
+  standing: string,
+): Promise<{ readonly session: string; readonly appended: number }> {
+  const closing = await rig.sessions.harness.begin();
+  let committed = false;
+  try {
+    await closing.query("SELECT close_agent_session($1,$2,$3)", [
+      partition.tenant,
+      partition.project,
+      standing,
+    ]);
+    let appended = 0;
+    const [reopened] = await Promise.all([
+      threadRigThread(rig, partition, member),
+      (async () => {
+        await postgresHarnessStalled(rig.sessions.harness.pool, 1);
+        appended = Number(
+          (
+            await closing.query(
+              "SELECT append_project_change($1,$2,'Ticket','1')::text AS sequence",
+              [partition.tenant, partition.project],
+            )
+          )[0]?.["sequence"],
+        );
+        await closing.commit();
+        committed = true;
+      })(),
+    ]);
+    return { session: reopened.session, appended };
+  } finally {
+    if (!committed) await closing.rollback();
+  }
+}
+
+/**
+ * The position is the head at the moment the row is WRITTEN, and the door's
+ * `FOR UPDATE` is what makes that a different fact from the head when the door
+ * was called: a change appended before the close holding the member's session
+ * row commits is sequenced above anything the opening read on its way in, and
+ * still happened before the thread existed. A door drawing the head before it
+ * waits would store the earlier one, and kasofsk/chuggy#541 would arrive again
+ * through the flow 062 names — close, then reopen.
+ */
+test("a change that commits while the door waits is a change the thread was opened after", async () => {
+  const partition = await threadRigProject(rig, "wakerace");
+  const member = await threadRigMember(rig, partition, "wakerace");
+  const standing = await threadRigThread(rig, partition, member);
+  const called = await fromTheHead();
+
+  const reopened = await openingAgainstAClose(
+    partition,
+    member,
+    standing.session,
+  );
+
+  assert.ok(
+    reopened.appended > called,
+    "the change landed while the door was waiting, or this case is not the race it names",
+  );
+  assert.deepEqual(
+    await rig.sessions.harness.query(
+      "SELECT opened_after_sequence::text AS opened FROM agent_session WHERE session=$1",
+      [reopened.session],
+    ),
+    [{ opened: String(reopened.appended) }],
+    "the thread was opened after the head the door read before it waited",
   );
 });

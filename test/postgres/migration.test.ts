@@ -2788,6 +2788,16 @@ test("the session migrations compose into the schema a fresh generation renders"
 });
 
 /**
+ * The versions no declared migration holds, and the chain currently has none:
+ * no version below the latest is unheld. It is written down rather than
+ * computed so that a hole nobody meant is a hole nobody can leave —
+ * renumbering a migration upward opens one this list does not name, and a
+ * branch numbered around a sibling still on its own branch names it here until
+ * that sibling merges.
+ */
+const declaredVersionsAwaited: readonly number[] = [];
+
+/**
  * The ledger a whole chain leaves is exactly the versions this image declares,
  * once each and in the order their filenames give them. It is compared against
  * the declaration rather than against a tail of it or against the highest
@@ -2805,6 +2815,13 @@ test("the ledger a migrated database leaves is what the api image declares", asy
       applied.map((each) => each.version),
       migrations.map((each) => each.version),
       "every declared version is applied once, in declaration order",
+    );
+    assert.deepEqual(
+      Array.from({ length: declaredLatest }, (_, index) => index + 1).filter(
+        (version) => !applied.some((each) => each.version === version),
+      ),
+      declaredVersionsAwaited,
+      "the versions below the latest that no row holds are the siblings this image is numbered around",
     );
     assert.ok(
       schemaContractAccepts(currentRuntimeSchemaContract, applied),
@@ -3122,5 +3139,52 @@ test("migration 62 retires the lead-only store reads for the session-keyed pair"
     assert.equal(await migrationHasFunction(subject, leadStreams), false);
     assert.equal(await migrationHasFunction(subject, sessionBatches), true);
     assert.equal(await migrationHasFunction(subject, sessionStreams), true);
+  });
+});
+
+/**
+ * What a migrated installation's own threads inherit. 067 reads a thread's
+ * mailbox from where the change log stood when it opened, and a thread opened
+ * before there was a column to write that in has no such position: the default
+ * is the one that changes nothing for it, because every sequence at or below
+ * the installation cursor has already been offered and the cursor only ever
+ * moves forward.
+ */
+test("migration 67 leaves a thread opened before it woken by whatever the cursor offers", async () => {
+  await migrationDatabase("thread_wake_start", async (subject) => {
+    await migrationSeedApplied(subject, 67);
+    const store = postgresProjectStore(subject);
+    await postgresHarnessEpoch(store);
+    const partition = await postgresHarnessProject(store, "wake-start");
+    await subject.query(
+      `SELECT open_agent_session($1,$2,'session-67','Thread','principal-67',
+         NULL,ARRAY[]::text[],'claude-code','a thread of their own')`,
+      [partition.tenant, partition.project],
+    );
+    await subject.query(
+      `SELECT ${projectChangeAppendFunction}($1,$2,'Ticket','1')`,
+      [partition.tenant, partition.project],
+    );
+    const head = await subject.query<{ head: string }>(
+      "SELECT coalesce(max(sequence),0)::text AS head FROM project_change",
+    );
+    assert.notEqual(
+      head.rows[0]?.head,
+      "0",
+      "the log is empty, so a default of its head would be indistinguishable from 0",
+    );
+
+    await applyMigration(subject, 67);
+
+    assert.deepEqual(
+      (
+        await subject.query<{ opened: string }>(
+          `SELECT opened_after_sequence::text AS opened
+             FROM agent_session WHERE session='session-67'`,
+        )
+      ).rows,
+      [{ opened: "0" }],
+      "a thread that was already open is answerable for less than it was",
+    );
   });
 });
