@@ -818,6 +818,9 @@ function sessionFactsRoute(
       ...(identity.systemPrompt === undefined
         ? {}
         : { systemPrompt: identity.systemPrompt }),
+      ...(identity.forkFrom === undefined
+        ? {}
+        : { forkFrom: identity.forkFrom }),
     };
   });
 }
