@@ -276,3 +276,9 @@ export function leadRouteAnswer(
 }
 
 export const leadPartition = { tenant: "acme", project: "atlas" };
+
+/** The resource a `Session` change frame carries: the session, and the turn or
+ * the batch that moved. */
+export function leadSessionResource(session: string, turn: string): string {
+  return JSON.stringify({ session, kind: "Turn", turn });
+}

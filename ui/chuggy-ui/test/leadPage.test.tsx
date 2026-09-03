@@ -37,6 +37,7 @@ import {
   leadRefusals,
   leadRouteAnswer,
   leadSession,
+  leadSessionResource,
   leadStream,
   leadUnstarted,
 } from "./leadFixture.ts";
@@ -199,6 +200,49 @@ test("a read that could not decide what is held says so, not nothing held", asyn
   expect(screen.queryByText("Nothing held")).toBeNull();
 });
 
+/** A project holds a session per thread beside its lead, so a page watching one
+ * must not re-read on another's frame. */
+test("a Session frame naming another session leaves the page alone", async () => {
+  let served: LeadServed = opening;
+  const server = await drawLead(() => served);
+  expect(logLines().length).toBe(7);
+  served = { ...opening, batches: 4, turns: 2 };
+  await turned(() => {
+    server.push(
+      frame("Session", "41", {
+        version: 1,
+        resource: leadSessionResource("session-elsewhere", "turn-2"),
+        representation: null,
+      }),
+    );
+  });
+  await settled();
+  expect(
+    logLines().length,
+    "another session's frame re-read this lead's page",
+  ).toBe(7);
+});
+
+/** A resource this console cannot read is a frame it ignores, rather than one
+ * that ends the stream and stops every other kind with it. */
+test("a Session frame with a resource this console cannot read is ignored", async () => {
+  let served: LeadServed = opening;
+  const server = await drawLead(() => served);
+  served = { ...opening, batches: 4, turns: 2 };
+  await turned(() => {
+    server.push(
+      frame("Session", "42", {
+        version: 1,
+        resource: leadSession,
+        representation: null,
+      }),
+    );
+  });
+  await settled();
+  expect(logLines().length).toBe(7);
+  expect(screen.queryByText(/^Failed · /u)).toBeNull();
+});
+
 test("a project with no lead is a page saying so, not five empty panels", async () => {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
@@ -227,8 +271,8 @@ test("a Session frame moves the turn tail and walks the transcript on", async ()
     server.push(
       frame("Session", "40", {
         version: 1,
-        resource: leadSession,
-        representation: leadBody(4, 2),
+        resource: leadSessionResource(leadSession, "turn-2"),
+        representation: null,
       }),
     );
   });
@@ -661,12 +705,8 @@ test("a lead that changes stream is walked as a new pane", async () => {
     server.push(
       frame("Session", "60", {
         version: 1,
-        resource: leadSession,
-        representation: {
-          ...leadBody(1, 1),
-          agentReference: stream,
-          streams: [{ stream, batches: 1 }],
-        },
+        resource: leadSessionResource(leadSession, "turn-2"),
+        representation: null,
       }),
     );
   });

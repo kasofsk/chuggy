@@ -9,6 +9,7 @@
  */
 
 import { useParams } from "@tanstack/react-router";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -24,11 +25,11 @@ import {
 } from "../core/figures.ts";
 import type { PanelState } from "../core/freshness.ts";
 import {
-  leadFolded,
+  leadSessionNamed,
   leadStreamBatches,
   leadStreamListed,
 } from "../core/leadTranscript.ts";
-import { projectListFolded } from "../core/projectQueryKeys.ts";
+import { projectListRereadNamed } from "../core/projectQueryKeys.ts";
 import {
   selectorAttentionTone,
   sessionStateTone,
@@ -54,20 +55,32 @@ import "./lead/lead.css";
 
 export const leadListName = "lead";
 
-/** The lead read, folded on the `Session` frame that names its own session. */
+/**
+ * The lead read, re-read on the `Session` frames that name its own session — a
+ * CHANGE FRAME BEING A POINTER AND NEVER A BODY, so the frame says which
+ * session moved, the route says what it moved to, and nothing here reads a
+ * representation. A frame naming another session leaves the panel alone,
+ * because a project may hold several sessions and this page draws one; which
+ * one is known only once the read has answered, and is adjusted during the
+ * render that learns it.
+ */
 export function useLead(
   partition: PartitionIdentity,
 ): PanelState<LeadResponse> {
-  return usePanelList(
-    projectListFolded<LeadResponse>(
+  const [session, setSession] = useState<string | undefined>(undefined);
+  const state = usePanelList(
+    projectListRereadNamed<LeadResponse>(
       partition,
       "Session",
       leadListName,
-      (previous, change) =>
-        leadFolded(previous, change.resource, change.representation),
+      (change) =>
+        session !== undefined && leadSessionNamed(change.resource) === session,
     ),
     (ports) => apiLead(ports, partition),
   );
+  const named = state.state === "Ready" ? state.value.session : undefined;
+  if (named !== session) setSession(named);
+  return state;
 }
 
 function LeadHead(props: { readonly lead: LeadResponse }): ReactNode {

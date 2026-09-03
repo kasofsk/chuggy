@@ -21,7 +21,7 @@ import {
   projectResourceKey,
 } from "../app/core/projectQueryKeys.ts";
 import { ticketAttemptKey } from "../app/core/ticketActions.ts";
-import { leadBody, leadSession } from "./leadFixture.ts";
+import { leadSession, leadSessionResource } from "./leadFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
 const partition = { tenant: "acme", project: "atlas" };
@@ -184,34 +184,34 @@ test("a refusal names its ticket and a session names itself", () => {
     resource: "42",
     representation: ledger,
   });
-  const lead = leadBody(2, 1);
+  const named = leadSessionResource(leadSession, "turn-7");
   const session = projectCacheCommands(
     partition,
     decoded({
       event: "Session",
       id: "31",
-      data: { version: 1, resource: leadSession, representation: lead },
+      data: { version: 1, resource: named, representation: null },
     }),
   );
   expect(session[1]).toEqual({
     command: "FoldLists",
     kind: "Session",
-    resource: leadSession,
-    representation: lead,
+    resource: named,
+    representation: null,
   });
 });
 
 /** The wire refuses a body its kind's schema rejects, so no cache decision is
  * taken over one. */
-test("a lead body the wire would not send never becomes an event", () => {
+test("a body the wire would not send never becomes an event", () => {
   expect(() =>
     decoded({
-      event: "Session",
+      event: "AgenticRefusal",
       id: "32",
       data: {
         version: 1,
-        resource: leadSession,
-        representation: { session: leadSession, state: "Wandering" },
+        resource: "42",
+        representation: { ticket: "forty-two" },
       },
     }),
   ).toThrow();

@@ -54,7 +54,9 @@
  * nothing that draws one may make it look actionable.
  */
 
-import { leadResponseSchema } from "../../../../src/contract/responses.ts";
+import { z } from "zod";
+
+import { countSchema, identitySchema } from "../../../../src/contract/http.ts";
 import type {
   AgenticRefusalResponse,
   LeadResponse,
@@ -462,19 +464,45 @@ export function leadStreamListed(lead: LeadResponse): boolean {
 }
 
 /**
- * A `Session` frame folded into the lead read. A frame naming another session
- * leaves the entry alone, because one project's page draws one lead.
+ * What a `Session` change frame names — the session, and the turn or the store
+ * batch that moved — which migration 059 writes as the resource, so it crosses
+ * the wire as the JSON text of this object inside one identity.
+ *
+ * DECLARED HERE UNTIL kasofsk/chuggy#505 EXPORTS IT from
+ * `src/contract/events.ts`, where a schema the durable side writes and the
+ * console reads belongs; this copy goes when that one lands.
  */
-export function leadFolded(
-  previous: LeadResponse | undefined,
-  resource: string,
-  representation: unknown,
-): LeadResponse | undefined {
-  if (previous === undefined) return previous;
-  if (previous.session !== resource) return previous;
-  if (representation === null) return previous;
-  const read = leadResponseSchema.safeParse(representation);
-  return read.success ? read.data : previous;
+const sessionChangeResourceSchema = z.union([
+  z.strictObject({
+    session: identitySchema,
+    kind: identitySchema,
+    turn: identitySchema,
+  }),
+  z.strictObject({
+    session: identitySchema,
+    kind: identitySchema,
+    stream: identitySchema,
+    batch: countSchema,
+  }),
+]);
+
+/**
+ * The session a `Session` frame is about, and nothing where the frame does not
+ * name one — a change frame being a pointer and never a body, so what a reader
+ * takes from it is which session to re-read, and a resource this console cannot
+ * parse is a frame it ignores rather than one it throws on, since a stream that
+ * ended on a shape a console did not expect would stop carrying every other
+ * kind with it.
+ */
+export function leadSessionNamed(resource: string): string | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(resource);
+  } catch {
+    return undefined;
+  }
+  const read = sessionChangeResourceSchema.safeParse(parsed);
+  return read.success ? read.data.session : undefined;
 }
 
 /**

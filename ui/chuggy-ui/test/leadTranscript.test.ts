@@ -17,7 +17,7 @@ import {
   leadDecisionSummary,
   leadEntryText,
   leadEntryTools,
-  leadFolded,
+  leadSessionNamed,
   leadStreamBatches,
   leadStreamListed,
   leadTranscriptDrawn,
@@ -534,15 +534,54 @@ test("the oldest entries leave at the cap, and the pane counts them going", () =
   expect(held.fold.holding).not.toContain("uuid-0");
 });
 
-test("a Session frame replaces the lead it names and leaves another alone", () => {
-  const held = leadBody(2, 1);
-  const arriving = leadBody(3, 2);
-  expect(leadFolded(held, leadSession, arriving)).toStrictEqual(arriving);
-  expect(leadFolded(held, "lead-other", arriving)).toStrictEqual(held);
-  expect(leadFolded(held, leadSession, { stream: leadStream })).toStrictEqual(
-    held,
+/**
+ * A CHANGE FRAME IS A POINTER AND NEVER A BODY. Migration 059 writes the
+ * `Session` resource as the JSON of the session and the turn or batch that
+ * moved, so what a reader takes from it is which session to re-read — and a
+ * page watching one session must not re-read on another's, because a project
+ * holds a session per thread beside its lead.
+ */
+test("a Session frame names the session that moved, and only that", () => {
+  expect(
+    leadSessionNamed(
+      JSON.stringify({ session: leadSession, kind: "Turn", turn: "turn-7" }),
+    ),
+  ).toBe(leadSession);
+  expect(
+    leadSessionNamed(
+      JSON.stringify({
+        session: leadSession,
+        kind: "Store",
+        stream: leadStream,
+        batch: 14,
+      }),
+    ),
+  ).toBe(leadSession);
+  expect(
+    leadSessionNamed(
+      JSON.stringify({ session: "lead-other", kind: "Turn", turn: "turn-1" }),
+    ),
+  ).toBe("lead-other");
+});
+
+/**
+ * A resource this console cannot read is a frame it ignores. Throwing would end
+ * the stream, and a page that stopped carrying every other kind because one
+ * frame changed shape is a worse answer than a panel that did not refresh.
+ */
+test("a resource that is not a session pointer is ignored, not thrown on", () => {
+  expect(leadSessionNamed(leadSession)).toBeUndefined();
+  expect(leadSessionNamed("")).toBeUndefined();
+  expect(leadSessionNamed("{")).toBeUndefined();
+  expect(leadSessionNamed(JSON.stringify({ session: leadSession }))).toBe(
+    undefined,
   );
-  expect(leadFolded(undefined, leadSession, arriving)).toBeUndefined();
+  expect(
+    leadSessionNamed(
+      JSON.stringify({ session: leadSession, kind: "Turn", turn: 7 }),
+    ),
+  ).toBeUndefined();
+  expect(leadSessionNamed(JSON.stringify([leadSession]))).toBeUndefined();
 });
 
 test("a decision says what it did, and says so when it did nothing", () => {
