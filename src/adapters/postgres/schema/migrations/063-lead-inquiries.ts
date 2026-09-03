@@ -159,7 +159,7 @@ export const appendedObjectives = ((): string => {
  * non-null exactly for an `Inquiry`, so the parent join IS the kind, and that
  * constraint is where a kind later carrying a parent widens this.
  */
-const readableSessions = `(
+export const readableSessions = `(
        SELECT k.session AS session,NULL::bigint AS ceiling
        UNION ALL
        SELECT s.parent_session,
