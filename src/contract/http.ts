@@ -155,6 +155,37 @@ export const resultReportCharsMax = 8_192;
  */
 export const resultReportSchemaVersionMin = 3;
 
+/**
+ * The longest message a member may put in their own thread. It is far below
+ * `sessionTurnInputCharsMax`, which is what the mailbox column holds and is
+ * sized for the widest observation a lead is ever given: a door a human types
+ * at is bounded by what a human types, not by what the column can hold.
+ */
+export const threadMessageCharsMax = 16_384;
+
+/**
+ * The longest block a thread's first turn carries in front of the member's
+ * message. It is the message's own bound, because the seeding says what the
+ * member already has open and no more, and the two together are what the
+ * mailbox row must hold.
+ */
+export const threadSeedingCharsMax = threadMessageCharsMax;
+
+/** How many turns one thread may have waiting, which is what stops a member queueing a day's work. */
+export const threadBacklogMax = 8;
+
+/** How many threads one listing answers with. */
+export const threadsAnsweredMax = 64;
+
+/** How many turns of one thread's mailbox a read answers with, newest last. */
+export const threadTurnsAnsweredMax = 32;
+
+/** What a wake document weighs, which is a roster member, a resource and one sentence. */
+export const threadWakeCharsMax = 2_048;
+
+/** How many wake candidates one pass of the wake runtime reads and enqueues. */
+export const threadWakesPerPassMax = 64;
+
 export const nativeHttpRoutes = {
   contract: `${nativeHttpBasePath}/contract`,
   installation: `${nativeHttpBasePath}/installation`,
@@ -190,6 +221,10 @@ export const nativeHttpRoutes = {
   draftInitialization: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/draft-initializations/:revision`,
   draft: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts/:ticket`,
   dispatchView: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/dispatch-view`,
+  threads: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads`,
+  thread: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session`,
+  threadTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/transcript`,
+  threadMessages: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/messages`,
 } as const;
 
 export type NativeHttpRoute = keyof typeof nativeHttpRoutes;

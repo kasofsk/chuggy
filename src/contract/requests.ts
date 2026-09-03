@@ -16,6 +16,7 @@ import {
   selectorAllowlistNameCharsMax,
   selectorAllowlistNamesMax,
   selectorSettingsTextCharsMax,
+  threadMessageCharsMax,
   ticketNumberSchema,
 } from "./http.ts";
 import { authoringSchema } from "./authoring.ts";
@@ -141,4 +142,15 @@ export const selectorProjectOverridesSchema = z.strictObject({
 export const selectorProjectSettingsSchema = z.strictObject({
   expectedRevision: countSchema,
   overrides: selectorProjectOverridesSchema,
+});
+
+/**
+ * What a member puts in their own thread: a turn identity they mint themselves
+ * and the text they typed. The turn is the body's rather than a header's for
+ * the reason `submissionSchema` gives — enqueuing is idempotent on it, so a
+ * retried post answers the ordinal it already has instead of a second turn.
+ */
+export const threadMessageSchema = z.strictObject({
+  turn: bodyIdentitySchema,
+  message: z.string().min(1).max(threadMessageCharsMax),
 });
