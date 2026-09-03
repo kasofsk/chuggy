@@ -29,6 +29,7 @@
     "start:ticket-service": "node --experimental-strip-types src/roots/ticketService.ts",
     "start:worker-plane": "node --experimental-strip-types src/roots/workerPlane.ts",
     "provision:project-access": "node --experimental-strip-types src/roots/provisionProjectAccess.ts",
+    "provision:session": "node --experimental-strip-types src/roots/provisionAgentSession.ts",
     "activate:project-repository": "node --experimental-strip-types src/roots/activateProjectRepository.ts",
     "import:repository-configurations": "node --experimental-strip-types src/roots/configurationImporter.ts",
     "start:selector": "node --experimental-strip-types src/roots/selector.ts"

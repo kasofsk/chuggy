@@ -174,7 +174,8 @@ provision() { # <action> [extra assignments as VAR=value ...]
 		CHUG_PROVISION_SESSION_PROJECT=drill \
 		CHUG_PROVISION_SESSION_SESSION="$session" \
 		CHUG_PROVISION_SESSION_KIND=Lead \
-		CHUG_PROVISION_SESSION_PRINCIPAL="21:https://auth.invaliddrill" \
+		CHUG_PROVISION_SESSION_ISSUER="https://auth.invalid" \
+		CHUG_PROVISION_SESSION_SUBJECT=drill \
 		CHUG_PROVISION_SESSION_CAPABILITIES=RepositoryRead \
 		CHUG_PROVISION_SESSION_CREDENTIAL_SLOT=claude-code \
 		"$@" node --experimental-strip-types src/roots/provisionAgentSession.ts

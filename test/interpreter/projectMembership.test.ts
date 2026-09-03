@@ -37,6 +37,16 @@ test("a grant carries exactly the access kinds it names", () => {
     "Read",
   ]);
   assert.deepEqual([...asProjectAccessGrant(["Read", "Read"])], ["Read"]);
+  assert.deepEqual(
+    [
+      ...checkedProjectMembership({
+        ...request,
+        access: "Read,Mutate,ProposeDispatch".split(","),
+      }).access,
+    ].sort(),
+    ["Mutate", "ProposeDispatch", "Read"],
+    "the lead's own grant is these three and nothing that dispatches or manages",
+  );
 });
 
 test("a grant that would set no access is refused before the row is", () => {

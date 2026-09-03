@@ -24,7 +24,10 @@ import {
   asAttemptId,
   asExecutionId,
 } from "../../interpreter/schedulerIdentity.ts";
-import { asConfigurationRevisionId } from "../../interpreter/authoring.ts";
+import {
+  asConfigurationRevisionId,
+  draftPageLimitDefault,
+} from "../../interpreter/authoring.ts";
 import type {
   ProjectStream,
   ProjectStreamHub,
@@ -48,6 +51,7 @@ import {
 } from "../../contract/http.ts";
 import {
   parseConfigurationCursor,
+  parseDraftCursor,
   parseExecutionCursor,
   parseInventoryCursor,
   parseNativeActionCursor,
@@ -72,6 +76,7 @@ import {
   draftDeletionResponse,
   draftResponse,
   draftRevisionResponse,
+  draftsResponse,
   failureResponse,
   inventoryResponse,
   nativeActionsResponse,
@@ -149,6 +154,7 @@ type InitialNativeWeb = Pick<
   | "deleteDraft"
   | "dispatchView"
   | "draft"
+  | "drafts"
   | "notifications"
   | "operation"
   | "project"
@@ -1021,6 +1027,18 @@ function registerDrafts(app: FastifyInstance, web: InitialNativeWeb): void {
       send(reply, draftInitializationResponse(result));
     },
   );
+  app.get(root, async (request, reply) => {
+    const query = fieldsOnly(request.query, ["cursor", "limit"]);
+    const cursor = query["cursor"];
+    const partition = partitionOf(request);
+    const result = await web.drafts(principalOf(request), partition, {
+      ...(cursor === undefined
+        ? {}
+        : { cursor: parseDraftCursor(textField(query, "cursor"), partition) }),
+      limit: integerField(query, "limit", draftPageLimitDefault),
+    });
+    send(reply, draftsResponse(result));
+  });
   app.post(
     root,
     { preValidation: requireVersionedJson },

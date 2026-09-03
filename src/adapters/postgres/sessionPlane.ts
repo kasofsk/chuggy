@@ -99,6 +99,7 @@ interface SessionAuthorityRow extends SessionIdentityRow {
   readonly capabilities: string[] | null;
   readonly credential_slot: string | null;
   readonly agent_reference: string | null;
+  readonly system_prompt: string | null;
   readonly live: boolean | null;
 }
 
@@ -142,6 +143,7 @@ function sessionAuthorityOf(row: SessionAuthorityRow): SessionPlaneIdentity {
     ...(row.agent_reference === null
       ? {}
       : { agentReference: row.agent_reference }),
+    ...(row.system_prompt === null ? {} : { systemPrompt: row.system_prompt }),
     live: row.live === true,
   };
 }
@@ -196,7 +198,8 @@ async function sessionPlaneAuthenticate(
 ): Promise<SessionPlaneIdentity | undefined> {
   const found = await pool.query<SessionAuthorityRow>(
     sql`SELECT tenant,project,session,attempt,generation::text AS generation,
-               kind,principal,capabilities,credential_slot,agent_reference,live
+               kind,principal,capabilities,credential_slot,agent_reference,
+               system_prompt,live
           FROM read_session_attempt(${sessionSecretDigest(secret)})`,
   );
   const row = found.rows[0];

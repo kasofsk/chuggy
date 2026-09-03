@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { nativeHttpPageItemsMax } from "../../src/contract/http.ts";
+
 import {
   asPrincipal,
   asProjectAccessKind,
@@ -140,6 +142,10 @@ function authoringStore(
     draft: () => {
       calls.push("read:draft");
       return Promise.resolve(undefined);
+    },
+    drafts: (_partition, query) => {
+      calls.push(`read:drafts:${String(query.limit)}`);
+      return Promise.resolve({ partition, drafts: [], more: false });
     },
     createConfiguration: () => Promise.resolve({ created: "ParentNotFound" }),
     createDraft: () => Promise.resolve({ created: "ConfigurationNotFound" }),
@@ -517,6 +523,32 @@ test("configuration pages authorize and enforce their bound before reading", asy
   await assert.rejects(
     allowed.web.configurations(principal, partition, { limit: 101 }),
     /configuration page limit/u,
+  );
+});
+
+test("draft pages authorize and enforce their bound before reading", async () => {
+  const denied = boundary(false);
+  assert.deepEqual(await denied.web.drafts(principal, partition, { limit: 10 }), {
+    result: "NotFound",
+  });
+  assert.deepEqual(denied.calls, ["authorize:Read"]);
+
+  const allowed = boundary(true);
+  assert.deepEqual(
+    await allowed.web.drafts(principal, partition, { limit: 10 }),
+    {
+      result: "Authorized",
+      value: { partition, drafts: [], more: false },
+    },
+  );
+  assert.deepEqual(allowed.calls, ["authorize:Read", "read:drafts:10"]);
+  await assert.rejects(
+    allowed.web.drafts(principal, partition, { limit: nativeHttpPageItemsMax + 1 }),
+    /draft page limit/u,
+  );
+  await assert.rejects(
+    allowed.web.drafts(principal, partition, { limit: 0 }),
+    /draft page limit/u,
   );
 });
 

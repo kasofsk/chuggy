@@ -8,6 +8,7 @@ import type {
   DraftCreated,
   DraftInitializationRead,
   DraftDeleted,
+  DraftPage,
   DraftResource,
   DraftRevised,
 } from "../../interpreter/authoring.ts";
@@ -66,6 +67,7 @@ import type { RepositoryConfigurationImportOutcome } from "../../interpreter/rep
 import { nativeHttpError, nativeHttpMediaType } from "../../contract/http.ts";
 import {
   encodeConfigurationCursor,
+  encodeDraftCursor,
   encodeExecutionCursor,
   encodeInventoryCursor,
   encodeNativeActionCursor,
@@ -745,6 +747,25 @@ export function draftResponse(
   return resource === undefined
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
     : response(200, draftBody(resource));
+}
+
+/**
+ * One page of open drafts. `nextCursor` is answered exactly where `more` is
+ * true, so a client reads one field or the other and never both.
+ */
+export function draftsResponse(
+  result: AuthorizedResult<DraftPage>,
+): NativeHttpResponse {
+  if (result.result === "NotFound")
+    return response(404, nativeHttpError("NotFound", "Resource not found."));
+  const page = result.value;
+  return response(200, {
+    drafts: page.drafts.map(draftBody),
+    ...(page.nextCursor === undefined
+      ? {}
+      : { nextCursor: encodeDraftCursor(page.partition, page.nextCursor) }),
+    more: page.more,
+  });
 }
 
 export function draftInitializationResponse(

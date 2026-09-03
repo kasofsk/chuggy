@@ -115,6 +115,7 @@ export interface SessionRigOpening {
   readonly principal?: string;
   readonly parent?: SessionId;
   readonly capabilities?: readonly SessionCapability[];
+  readonly systemPrompt?: string;
 }
 
 /** Opens one session, refusing anything but the arm the case expected. */
@@ -133,6 +134,9 @@ export async function sessionRigSession(
     ...(opening.parent === undefined ? {} : { parent: opening.parent }),
     capabilities: opening.capabilities ?? ["RepositoryRead"],
     credentialSlot: "claude-code",
+    ...(opening.systemPrompt === undefined
+      ? {}
+      : { systemPrompt: opening.systemPrompt }),
   });
   if (opened !== "Opened")
     throw new Error(`session rig: opening ${label} answered ${opened}`);

@@ -56,6 +56,7 @@ type ServedNativeWeb = Pick<
   | "deleteDraft"
   | "dispatchView"
   | "draft"
+  | "drafts"
   | "notifications"
   | "operation"
   | "project"
@@ -249,7 +250,12 @@ function fakeDrafts(
   calls: string[],
 ): Pick<
   NativeWeb,
-  "createDraft" | "initializeDraft" | "deleteDraft" | "reviseDraft" | "draft"
+  | "createDraft"
+  | "initializeDraft"
+  | "deleteDraft"
+  | "reviseDraft"
+  | "draft"
+  | "drafts"
 > {
   return {
     createDraft: () => {
@@ -271,6 +277,12 @@ function fakeDrafts(
     draft: (_principal, _partition, ticket) => {
       calls.push(`draft:${String(ticket)}`);
       return Promise.resolve(undefined);
+    },
+    drafts: (_principal, _partition, query) => {
+      calls.push(
+        `drafts:${String(query.cursor)}:${String(query.limit)}`,
+      );
+      return Promise.resolve({ result: "NotFound" });
     },
   };
 }
@@ -997,6 +1009,10 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     body: { commit: "a".repeat(40) },
   });
   await app.inject({
+    url: `${project}/drafts?limit=3`,
+    headers: { authorization: "Bearer valid" },
+  });
+  await app.inject({
     method: "POST",
     url: `${project}/drafts`,
     headers,
@@ -1027,6 +1043,7 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     "createConfiguration:revision",
     "configuration:revision",
     `importRepositoryConfigurations:${"a".repeat(40)}`,
+    "drafts:undefined:3",
     "createDraft",
     "reviseDraft:2",
     "deleteDraft:3",

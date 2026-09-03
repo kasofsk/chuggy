@@ -32,7 +32,7 @@ import {
   type SessionKind,
   type SessionTurnInputKind,
 } from "../interpreter/agentSession.ts";
-import { asPrincipal } from "../interpreter/principal.ts";
+import { asPrincipal, oidcPrincipal } from "../interpreter/principal.ts";
 import { asProjectId, asTenantId } from "../interpreter/projectStore.ts";
 
 const variables = {
@@ -43,9 +43,12 @@ const variables = {
   session: "CHUG_PROVISION_SESSION_SESSION",
   kind: "CHUG_PROVISION_SESSION_KIND",
   principal: "CHUG_PROVISION_SESSION_PRINCIPAL",
+  issuer: "CHUG_PROVISION_SESSION_ISSUER",
+  subject: "CHUG_PROVISION_SESSION_SUBJECT",
   parent: "CHUG_PROVISION_SESSION_PARENT",
   capabilities: "CHUG_PROVISION_SESSION_CAPABILITIES",
   credentialSlot: "CHUG_PROVISION_SESSION_CREDENTIAL_SLOT",
+  systemPrompt: "CHUG_PROVISION_SESSION_SYSTEM_PROMPT",
   turn: "CHUG_PROVISION_SESSION_TURN",
   inputKind: "CHUG_PROVISION_SESSION_INPUT_KIND",
   input: "CHUG_PROVISION_SESSION_INPUT",
@@ -111,6 +114,28 @@ function provisionCapabilities(
   );
 }
 
+/**
+ * Whose authority the session acts under, derived from the issuer and subject a
+ * membership is derived from or given already encoded — because a typed
+ * principal one character from the derived one authenticates and is then
+ * refused `NotFound` on every project call, with nothing saying why.
+ */
+function provisionPrincipal(environment: ProvisionSessionEnvironment) {
+  const encoded = environment[variables.principal];
+  const issuer = environment[variables.issuer];
+  const subject = environment[variables.subject];
+  const derived = issuer !== undefined || subject !== undefined;
+  if (derived && encoded !== undefined && encoded.length > 0)
+    throw new Error(
+      `name either ${variables.principal} or ${variables.issuer} with ${variables.subject}, not both`,
+    );
+  if (!derived) return asPrincipal(required(environment, variables.principal));
+  return oidcPrincipal(
+    required(environment, variables.issuer),
+    required(environment, variables.subject),
+  );
+}
+
 function provisionPartition(environment: ProvisionSessionEnvironment) {
   return {
     tenant: asTenantId(required(environment, variables.tenant)),
@@ -122,6 +147,7 @@ export function provisionSessionOpening(
   environment: ProvisionSessionEnvironment,
 ): AgentSessionOpening {
   const parent = environment[variables.parent];
+  const prompt = environment[variables.systemPrompt];
   return {
     partition: provisionPartition(environment),
     session: asSessionId(required(environment, variables.session)),
@@ -130,12 +156,15 @@ export function provisionSessionOpening(
       required(environment, variables.kind),
       variables.kind,
     ),
-    principal: asPrincipal(required(environment, variables.principal)),
+    principal: provisionPrincipal(environment),
     ...(parent === undefined || parent.length === 0
       ? {}
       : { parent: asSessionId(parent) }),
     capabilities: provisionCapabilities(environment),
     credentialSlot: required(environment, variables.credentialSlot),
+    ...(prompt === undefined || prompt.length === 0
+      ? {}
+      : { systemPrompt: prompt }),
   };
 }
 

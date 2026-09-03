@@ -44,11 +44,14 @@ import type {
   DraftCreated,
   DraftInitializationRead,
   DraftDeleted,
+  DraftPage,
+  DraftPageQuery,
   DraftResource,
   DraftRevised,
 } from "./authoring.ts";
 import {
   checkedConfigurationPageQuery,
+  checkedDraftPageQuery,
   draftInitializationPolicy,
   releaseConfigurationReadiness,
 } from "./authoring.ts";
@@ -595,6 +598,11 @@ export interface NativeWeb {
     partition: Partition,
     ticket: TicketId,
   ): Promise<DraftResource | undefined>;
+  drafts(
+    principal: Principal,
+    partition: Partition,
+    query: DraftPageQuery,
+  ): Promise<AuthorizedResult<DraftPage>>;
 }
 
 function submissionAccess(command: TicketCommand): ProjectAccessKind {
@@ -612,6 +620,7 @@ function checkedInventoryLimit(limit: number): number {
 type NativeAuthoringMethods = Pick<
   NativeWeb,
   | "draft"
+  | "drafts"
   | "createConfiguration"
   | "createDraft"
   | "reviseDraft"
@@ -725,6 +734,16 @@ function nativeAuthoringMethods(
       (await access.authorize(principal, partition, "Read")) === undefined
         ? undefined
         : authoring.draft(partition, ticket),
+    drafts: async (principal, partition, query) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? { result: "NotFound" }
+        : {
+            result: "Authorized",
+            value: await authoring.drafts(
+              partition,
+              checkedDraftPageQuery(query),
+            ),
+          },
     createConfiguration: async (principal, input) => {
       const authority = await access.authorize(
         principal,

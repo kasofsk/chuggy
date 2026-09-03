@@ -76,6 +76,7 @@ type ServedWeb = Pick<
   | "deleteDraft"
   | "dispatchView"
   | "draft"
+  | "drafts"
   | "notifications"
   | "operation"
   | "project"
@@ -116,6 +117,7 @@ function servedWeb(
     deleteDraft: notFound,
     dispatchView: notFound,
     draft: () => Promise.resolve(undefined),
+    drafts: notFound,
     notifications: () =>
       Promise.resolve({
         result: "Authorized",
