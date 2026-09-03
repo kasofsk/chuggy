@@ -37,16 +37,11 @@ import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
 import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
 import {
   postgresSelectorProjectSettings,
-  postgresSelectorProposalReviews,
   postgresSelectorRuntimeControl,
   postgresSelectorState,
 } from "./adapters/postgres/selector.ts";
 import { authorizedProjectInventory } from "./interpreter/projectInventory.ts";
-import type {
-  SelectorPolicyHost,
-  SelectorRuntimeSettingsSource,
-  SelectorStateStore,
-} from "./interpreter/selector.ts";
+import type { SelectorPolicyHost } from "./interpreter/selector.ts";
 import {
   selectorRunOnce,
   type SelectorIdentityFactory,
@@ -55,22 +50,9 @@ import {
   type SelectorRuntimeSource,
 } from "./interpreter/selectorRuntime.ts";
 import {
-  selectorRuntimeAdministration,
-  type SelectorAdministrationAccess,
-  type SelectorRuntimeAdministration,
-} from "./interpreter/selectorAdmin.ts";
-import {
   selectorProjectSettingsAdministration,
   type SelectorProjectSettingsAdministration,
 } from "./interpreter/selectorProjectSettings.ts";
-import {
-  selectorProposalReviews,
-  type SelectorProposalReviews,
-} from "./interpreter/selectorReview.ts";
-import {
-  selectorPlanning,
-  type SelectorPlanning,
-} from "./interpreter/selectorPlanning.ts";
 import { postgresFinalizer } from "./adapters/postgres/finalizer.ts";
 import { postgresTicketBrief } from "./adapters/postgres/ticketBrief.ts";
 import {
@@ -132,14 +114,6 @@ export interface TicketService {
   readonly projects: ProjectStore;
 }
 
-export interface SelectorService {
-  readonly state: SelectorStateStore;
-  readonly settings: SelectorRuntimeSettingsSource;
-  readonly administration: SelectorRuntimeAdministration;
-  readonly reviews: SelectorProposalReviews;
-  readonly planning: SelectorPlanning;
-}
-
 export interface SelectorRuntimeService {
   runOnce(): Promise<SelectorRunResult>;
 }
@@ -157,30 +131,6 @@ export function composeSelectorRuntime(
   return {
     runOnce: () =>
       selectorRunOnce(store, source, policy, identities, settings, config),
-  };
-}
-
-/** Wires selector-owned durability and project-authorized semantic history reads. */
-export function composeSelectorService(
-  selectorPool: pg.Pool,
-  selectorControlPool: pg.Pool,
-  selectorReviewPool: pg.Pool,
-  access: ProjectAccess,
-  administrationAccess: SelectorAdministrationAccess,
-): SelectorService {
-  const state = postgresSelectorState(selectorPool);
-  return {
-    state,
-    settings: postgresSelectorRuntimeControl(selectorPool),
-    administration: selectorRuntimeAdministration(
-      administrationAccess,
-      postgresSelectorRuntimeControl(selectorControlPool),
-    ),
-    reviews: selectorProposalReviews(
-      access,
-      postgresSelectorProposalReviews(selectorReviewPool),
-    ),
-    planning: selectorPlanning(access, state),
   };
 }
 

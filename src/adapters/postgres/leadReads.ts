@@ -141,25 +141,18 @@ function leadTurnRead(row: LeadStandingRow): LeadTurnRecord | undefined {
   };
 }
 
+/** The note as the interpreter reads it, narrowed like every other column here. */
+function leadHandoffNote(value: string | null): JsonValue {
+  return jsonValueSchema.parse(
+    JSON.parse(sessionRowText(value, "handoff note")),
+  );
+}
+
 /**
  * The lead the rows describe. Every row repeats the session's facts because
  * the tail is joined to them, so the first row answers them and the turn of
  * each row extends the tail.
  */
-/**
- * The note as the interpreter reads it. The column holds the text the lead
- * wrote, and a note no reader can parse is answered as absent rather than
- * refusing the whole read: the session's standing is what the page came for.
- */
-function leadHandoffNote(value: string | null): JsonValue {
-  if (value === null) return null;
-  try {
-    return jsonValueSchema.parse(JSON.parse(value));
-  } catch {
-    return null;
-  }
-}
-
 function leadReadOf(
   rows: readonly LeadStandingRow[],
 ): LeadStanding | undefined {
@@ -281,14 +274,14 @@ async function leadStoreBatches(
     readonly limit: number;
   },
 ): Promise<readonly SessionStoreBatchRow[]> {
-  const partition = query.partition;
   const found = await pool.query<{
     batch: string | null;
     digest: string | null;
     bytes: string | null;
   }>(
     sql`SELECT batch::text AS batch,digest,bytes::text AS bytes
-          FROM read_lead_store(${partition.tenant},${partition.project},
+          FROM read_lead_store(${query.partition.tenant},
+            ${query.partition.project},
             ${query.stream},${query.after},${query.limit})`,
   );
   return found.rows.map((row) => ({

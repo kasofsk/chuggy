@@ -37,7 +37,6 @@ import type { IdempotencyKeying } from "../adapters/postgres/keying.ts";
 import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
 import { postgresLeadReads } from "../adapters/postgres/leadReads.ts";
 import { postgresAgenticRefusalReads } from "../adapters/postgres/agenticRefusal.ts";
-import type pg from "pg";
 import type { NativeLeadPorts } from "../interpreter/nativeWeb.ts";
 import type { SessionStoreReadPort } from "../interpreter/sessionStore.ts";
 import {
@@ -383,19 +382,20 @@ async function nativeDatabasesReady(
 }
 
 /**
- * The lead's read side over the API pool and the artifact volume. The store the
- * transcript is drawn from is the same one the run evidence is read through, so
- * a deployment holds one artifact root and not two.
+ * The lead's read side over the API pool and the artifact volume, taking both
+ * pools and choosing for the reason `nativeAuthentication` does: only the API
+ * role holds `EXECUTE` on 059's doors, and choosing here is what lets a case
+ * observe which pool was reached.
  */
-function nativeLeadPorts(
-  pool: pg.Pool,
+export function nativeLeadPorts(
+  pools: NativePools,
   artifacts: SessionStoreReadPort,
 ): NativeLeadPorts {
-  const leads = postgresLeadReads(pool);
+  const leads = postgresLeadReads(pools.pool);
   return {
     leads,
     store: artifacts,
-    refusals: postgresAgenticRefusalReads(pool),
+    refusals: postgresAgenticRefusalReads(pools.pool),
     history: leads,
   };
 }
@@ -430,7 +430,7 @@ async function main(): Promise<void> {
     artifacts,
     selectorContextSource(pool, selectorReviewPool),
     repositoryConfigurationSnapshots(),
-    nativeLeadPorts(pool, artifacts),
+    nativeLeadPorts(pools, artifacts),
   );
   const hub = nativeStreamHub(pool, web);
   const app = createNativeHttpApp(

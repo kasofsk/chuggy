@@ -66,13 +66,23 @@ after(async () => {
 const issuer = "https://issuer.test";
 const authorized = { authorization: "Bearer token" };
 
-/** The bytes each recorded batch is answered with, keyed by its number. */
-const stored = new Map<number, string>();
+/** The bytes each recorded batch is answered with, keyed as the port addresses one. */
+const stored = new Map<string, string>();
+
+function storedKey(
+  partition: Partition,
+  stream: string,
+  batch: number,
+): string {
+  return [partition.tenant, partition.project, stream, batch].join("\u0000");
+}
 
 /** A store the batch rows point at, standing in for the artifact volume. */
 const storeReads: SessionStoreReadPort = {
   readBatch: (object) => {
-    const content = stored.get(object.batch);
+    const content = stored.get(
+      storedKey(object.partition, object.stream, object.batch),
+    );
     return Promise.resolve(
       content === undefined
         ? ({ read: "NotFound" } as const)
@@ -114,11 +124,12 @@ async function claimedLead(label: string) {
 
 /** One batch of one entry, recorded through the plane the pod actually uses. */
 async function recordBatch(
+  partition: Partition,
   attempt: Awaited<ReturnType<typeof claimedLead>>["attempt"],
   stream: string,
   batch: number,
 ): Promise<void> {
-  stored.set(batch, entryLine(batch));
+  stored.set(storedKey(partition, stream, batch), entryLine(batch));
   assert.equal(
     await rig.sessions.plane.record({
       secret: attempt.secret,
@@ -193,7 +204,7 @@ function pathOf(partition: Partition): string {
 test("the lead route reads a real lead, its mailbox tail and its streams", async () => {
   const { partition, session, turn, attempt } = await claimedLead("http-lead");
   const stream = asSessionStoreStream(`stream-${randomUUID()}`);
-  await recordBatch(attempt, stream, 1);
+  await recordBatch(partition, attempt, stream, 1);
   await rig.sessions.plane.answer({
     secret: attempt.secret,
     generation: attempt.attempt.generation,
@@ -252,7 +263,7 @@ async function pagedStream(label: string) {
   const opened = await claimedLead(label);
   const stream = asSessionStoreStream(`stream-${randomUUID()}`);
   for (let batch = 1; batch <= sessionStorePageBatchesMax + 2; batch += 1)
-    await recordBatch(opened.attempt, stream, batch);
+    await recordBatch(opened.partition, opened.attempt, stream, batch);
   return { partition: opened.partition, stream };
 }
 
@@ -356,11 +367,58 @@ test("the refusal routes page a real ledger and say when it is short", async () 
       })
     ).json(),
   );
-  assert.ok(standing.refusals.length <= agenticRefusalsAnsweredMax);
+  assert.deepEqual(
+    standing.refusals.map((each) => each.ticket),
+    [],
+    "the ledger's latest entry lifted it, so nothing stands",
+  );
+  assert.equal(standing.more, false);
+});
+
+test("standing_agentic_refusals answers one past its page, so more is a fact", async () => {
+  const partition = await readableProject("http-standing");
+  const decision = await leadRigDecision(rig, partition, "http-standing");
+  const tickets = Array.from(
+    { length: agenticRefusalsAnsweredMax + 1 },
+    (_unused, index) => asTicketId(index + 1),
+  );
+  await rig.writes.record({
+    partition,
+    decision,
+    refusals: tickets.map((ticket) => ({
+      ticket,
+      ticketVersion: 2,
+      reason: "the dependency fails",
+    })),
+    lifts: [],
+  });
+
+  const reads = postgresAgenticRefusalReads(rig.apiPool);
   assert.equal(
-    standing.more,
-    false,
-    "one ticket's ledger is one standing refusal",
+    (await reads.standing(partition, 1)).length,
+    1,
+    "the function answers the limit it was given",
+  );
+  assert.equal(
+    (await reads.standing(partition, agenticRefusalsAnsweredMax + 1)).length,
+    agenticRefusalsAnsweredMax + 1,
+    "and one past the page it answers, which is what makes more a fact",
+  );
+
+  await using app = leadApp("http-standing");
+  const page = agenticRefusalsResponseSchema.parse(
+    (
+      await app.inject({
+        url: `${pathOf(partition)}/agentic-refusals`,
+        headers: authorized,
+      })
+    ).json(),
+  );
+  assert.equal(page.refusals.length, agenticRefusalsAnsweredMax);
+  assert.equal(
+    page.more,
+    true,
+    "a project standing on more refusals than a page says so",
   );
 });
 
@@ -421,11 +479,17 @@ test("the decision log pages forward and answers its far end", async () => {
     headers: authorized,
   });
   assert.equal(refused.statusCode, 400);
-  assert.equal(
-    selectorHistoryLimitMax > 0,
-    true,
-    "the bound the route defaults to",
+
+  const unbounded = selectorHistoryResponseSchema.parse(
+    (
+      await app.inject({ url: `${root}?order=newest`, headers: authorized })
+    ).json(),
   );
+  assert.ok(
+    unbounded.decisions.length <= selectorHistoryLimitMax,
+    "asking for no limit answers at most the bound the route defaults to",
+  );
+  assert.equal(unbounded.decisions.length, decisions.length);
 });
 
 test("a project the reader has no membership in answers not found", async () => {

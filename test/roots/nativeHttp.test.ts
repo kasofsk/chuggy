@@ -17,6 +17,11 @@
  * `EXECUTE` on `authenticate_session_bearer`; over the selector review pool
  * every session bearer would be a 503 on a healthy deployment, and a double
  * that answered both pools alike could not see the difference.
+ *
+ * THE LEAD'S READ SIDE IS HELD TO THE SAME POOL FOR THE SAME REASON. Only the
+ * API role holds `EXECUTE` on 059's definer functions, so a lead port wired to
+ * the review pool answers all five lead routes 500 on a healthy deployment —
+ * which no other gate can see, because nothing may import a root.
  */
 
 import assert from "node:assert/strict";
@@ -85,6 +90,82 @@ interface Authenticated {
     readonly oidc: readonly string[];
   };
 }
+
+/**
+ * The root's own lead composition against two pools that answer no rows, each
+ * recording the statements it was handed.
+ */
+const leadPortsProgram = `
+  const root = await import('./src/roots/nativeHttp.ts');
+  const asked = { pool: [], selectorReviewPool: [] };
+  const pooled = (named) => ({
+    query: async (statement) => {
+      asked[named].push(statement.text ?? String(statement));
+      return { rows: [] };
+    },
+  });
+  const pools = {
+    pool: pooled('pool'),
+    selectorReviewPool: pooled('selectorReviewPool'),
+  };
+  const ports = root.nativeLeadPorts(pools, {
+    readBatch: async () => ({ read: 'NotFound' }),
+  });
+  const partition = { tenant: 'tenant', project: 'project' };
+  await ports.leads.standing(partition, 1);
+  await ports.leads.streams(partition, 1);
+  await ports.leads.batches({ partition, stream: 'stream', after: 0, limit: 1 });
+  await ports.history.history(partition, { limit: 1, order: 'oldest' });
+  await ports.refusals.standing(partition, 1);
+  await ports.refusals.ledger(partition, 1, 1);
+  process.stdout.write(JSON.stringify(asked));
+`;
+
+/** Which pool each of the lead reads was handed, and what it was asked. */
+interface LeadPortsAsked {
+  readonly pool: readonly string[];
+  readonly selectorReviewPool: readonly string[];
+}
+
+async function leadPortsAsked(): Promise<LeadPortsAsked> {
+  const ran = await execute(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--input-type=module",
+      "--eval",
+      leadPortsProgram,
+    ],
+    { cwd: process.cwd() },
+  );
+  return JSON.parse(ran.stdout) as LeadPortsAsked;
+}
+
+test("the lead's reads stand on the API pool and never the review pool", async () => {
+  const asked = await leadPortsAsked();
+  assert.deepEqual(
+    asked.selectorReviewPool,
+    [],
+    "no lead read may reach the pool with no grant on 059's doors",
+  );
+  assert.equal(asked.pool.length, 6, "every lead read was handed the API pool");
+});
+
+test("each lead read reaches the definer function the plan names for it", async () => {
+  const asked = await leadPortsAsked();
+  for (const named of [
+    "read_lead_standing",
+    "list_lead_store_streams",
+    "read_lead_store",
+    "read_selector_interactions",
+    "read_standing_agentic_refusals",
+    "read_agentic_refusals",
+  ])
+    assert.ok(
+      asked.pool.some((statement) => statement.includes(named)),
+      `${named} was reached over the API pool`,
+    );
+});
 
 async function authenticating(token: string): Promise<Authenticated> {
   const ran = await execute(
