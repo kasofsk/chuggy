@@ -25,8 +25,8 @@
  * what the selector refuses is the decision that used it. A control described
  * as stronger than it is, is worse than none.
  *
- * THE ROSTER NAMES READS THE TREE DOES NOT YET SERVE. The three thread reads
- * reach routes `./thread.ts` names and nothing serves yet. The image's
+ * THE ROSTER NAMES READS THE TREE DOES NOT YET SERVE, because a roster is what
+ * a session may ask for and a route is what answers. The image's
  * `chuggyToolsNotYetServed` is where each says so to a caller, and an entry
  * there is deleted by the change that registers its route.
  *

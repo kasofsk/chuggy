@@ -202,7 +202,8 @@ one, and runs as the same owner for the same reason: a session is an authority
 to act as a principal, so minting one is provisioning rather than work.
 
 Name the principal the way the membership above names it — from the issuer and
-the subject — so both sides derive the same string. The encoded form is still
+the subject, and from the same `CHUG_API_OIDC_ISSUER` the membership above
+reads — so both sides derive the same string. The encoded form is still
 accepted for a session that has no membership to match, and naming both is
 refused rather than resolved by a precedence.
 
@@ -211,7 +212,7 @@ export CHUG_PROVISION_SESSION_DATABASE_URL="$owner_url"
 export CHUG_PROVISION_SESSION_TENANT="tenant" CHUG_PROVISION_SESSION_PROJECT="project"
 export CHUG_PROVISION_SESSION_SESSION="an opaque session identity"
 export CHUG_PROVISION_SESSION_KIND=Lead
-export CHUG_PROVISION_SESSION_ISSUER="https://accounts.example.test"
+export CHUG_API_OIDC_ISSUER="https://accounts.example.test"
 export CHUG_PROVISION_SESSION_SUBJECT="the sub claim the provider issues"
 export CHUG_PROVISION_SESSION_CAPABILITIES="RepositoryRead,ProjectRead,DraftAuthor,LeadDecision"
 export CHUG_PROVISION_SESSION_CREDENTIAL_SLOT=claude-code

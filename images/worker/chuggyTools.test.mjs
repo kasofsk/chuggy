@@ -616,7 +616,6 @@ test("origination is registered for a thread's roster and for no lead's", () => 
  * an entry is a failure rather than a change of expectation.
  */
 const unservedOnThisInstallation = [
-  "list_drafts",
   "read_decision_log",
   "read_refusals",
   "read_ticket_refusals",

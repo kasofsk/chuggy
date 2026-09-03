@@ -296,8 +296,6 @@ const anyObject = (z) => z.looseObject({});
  * named here refuses before it makes a request, and no tool outside it does.
  */
 export const chuggyToolsNotYetServed = {
-  list_drafts:
-    "The project's open drafts cannot be listed by this installation yet. Read one you know the ticket of with read_draft.",
   read_decision_log:
     "This project's decision log cannot be read by this installation yet.",
   read_refusals:

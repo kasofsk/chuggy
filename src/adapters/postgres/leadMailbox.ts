@@ -184,8 +184,9 @@ const promptArms = [
 ] as const satisfies readonly LeadSystemPromptSet[];
 
 /**
- * The objectives door over the same pool. `Unchanged` is what makes a host that
- * compares on every pass cost one read rather than one write.
+ * The objectives door over the same pool, which the lead host calls before it
+ * offers a turn — a caller a later unit wires, so nothing in `src/` reaches this
+ * yet. `Unchanged` is what makes comparing on every pass cost one read.
  */
 export function postgresLeadSystemPrompt(pool: pg.Pool): LeadSystemPromptPort {
   return {
