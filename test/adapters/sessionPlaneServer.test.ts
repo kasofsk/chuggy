@@ -31,7 +31,10 @@ import {
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
+  sessionTurnModelCharsMax,
   sessionTurnResultCharsMax,
+  sessionTurnToolNameCharsMax,
+  sessionTurnToolsMax,
 } from "../../src/contract/http.ts";
 import {
   allPlatformTurnFailures,
@@ -624,6 +627,143 @@ test("a settlement body the row could not hold reaches no boundary", async () =>
       payload,
     });
     assert.equal(response.statusCode, 400, JSON.stringify(payload));
+  }
+  assert.equal(reached, 0);
+  await app.close();
+});
+
+/** What a pod measured of one turn, whole, which is the only way the row holds it. */
+const measured = {
+  model: "claude-haiku-4-5",
+  tokens: 48_182,
+  costMicros: 38_160,
+  durationMs: 5_195,
+  tools: ["Bash", "Read"],
+};
+
+test("what a pod measured of a turn is carried through whole, and absent where it is", async () => {
+  const settled: unknown[] = [];
+  const app = sessionPlane({
+    settlements: {
+      answer: (input) => {
+        settled.push(input);
+        return Promise.resolve("Answered");
+      },
+      fail: () => Promise.resolve("Failed"),
+    },
+  });
+  for (const payload of [
+    { turn: "turn-7", result: "done", measured },
+    { turn: "turn-7", result: "done" },
+  ]) {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/session/turn/answer",
+      headers: held,
+      payload,
+    });
+    assert.equal(response.statusCode, 204, JSON.stringify(payload));
+  }
+  assert.deepEqual(settled, [
+    { secret, generation: 3, turn: "turn-7", result: "done", measured },
+    { secret, generation: 3, turn: "turn-7", result: "done" },
+  ]);
+  await app.close();
+});
+
+/**
+ * The bound is the session's own identity bound and not a run usage row's. The
+ * read side answers a model of this length, so a write side refusing one would
+ * be a turn the pod cannot settle over an identity the console would have
+ * shown; only asserting the refusal above the bound would leave every tighter
+ * bound passing.
+ */
+test("a model as long as a stored row holds is taken, not refused", async () => {
+  const settled: unknown[] = [];
+  const app = sessionPlane({
+    settlements: {
+      answer: (input) => {
+        settled.push(input);
+        return Promise.resolve("Answered");
+      },
+      fail: () => Promise.resolve("Failed"),
+    },
+  });
+  const model = "m".repeat(sessionTurnModelCharsMax);
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/v1/session/turn/answer",
+    headers: held,
+    payload: {
+      turn: "turn-7",
+      result: "done",
+      measured: { ...measured, model },
+    },
+  });
+
+  assert.equal(response.statusCode, 204);
+  assert.deepEqual(settled, [
+    {
+      secret,
+      generation: 3,
+      turn: "turn-7",
+      result: "done",
+      measured: { ...measured, model },
+    },
+  ]);
+  await app.close();
+});
+
+/**
+ * The five are one measurement, so four of them is a hole rather than a partial
+ * answer, and every figure is a whole count and every text one a row holds — a
+ * body the boundary would refuse is refused here, where the pod has an arm for
+ * it.
+ */
+test("a measurement with a hole, a figure or a name no row holds reaches no boundary", async () => {
+  let reached = 0;
+  const app = sessionPlane({
+    settlements: {
+      answer: () => {
+        reached += 1;
+        return Promise.resolve("Answered");
+      },
+      fail: () => Promise.resolve("Failed"),
+    },
+  });
+  const without = (field: string) =>
+    Object.fromEntries(
+      Object.entries(measured).filter(([name]) => name !== field),
+    );
+  for (const offered of [
+    ...Object.keys(measured).map(without),
+    { ...measured, extra: 1 },
+    { ...measured, tokens: -1 },
+    { ...measured, tokens: 1.5 },
+    { ...measured, costMicros: "38160" },
+    { ...measured, durationMs: Number.MAX_SAFE_INTEGER + 2 },
+    { ...measured, model: "" },
+    { ...measured, model: "a".repeat(sessionTurnModelCharsMax + 1) },
+    { ...measured, model: "claude\u0000haiku" },
+    { ...measured, tools: [""] },
+    { ...measured, tools: ["Bash\ud800"] },
+    {
+      ...measured,
+      tools: ["t".repeat(sessionTurnToolNameCharsMax + 1)],
+    },
+    {
+      ...measured,
+      tools: Array.from({ length: sessionTurnToolsMax + 1 }, () => "Bash"),
+    },
+  ]) {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/session/turn/answer",
+      headers: held,
+      payload: { turn: "turn-7", result: "done", measured: offered },
+    });
+    assert.equal(response.statusCode, 400, JSON.stringify(offered));
   }
   assert.equal(reached, 0);
   await app.close();

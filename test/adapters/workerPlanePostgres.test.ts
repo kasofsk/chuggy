@@ -9,6 +9,11 @@ import {
   asExecutionId,
 } from "../../src/interpreter/executionScheduler.ts";
 import { postgresWorkerReportStore } from "../../src/adapters/postgres/workerPlane.ts";
+import { postgresSessionPlane } from "../../src/adapters/postgres/sessionPlane.ts";
+import {
+  asSessionBearerSecret,
+  asSessionTurnId,
+} from "../../src/interpreter/agentSession.ts";
 import { migration028 } from "../../src/adapters/postgres/schema/migrations/028-worker-plane-authority.ts";
 import { migration037 } from "../../src/adapters/postgres/schema/migrations/037-evaluation-work-reports.ts";
 import { migration049 } from "../../src/adapters/postgres/schema/migrations/049-run-evidence.ts";
@@ -281,4 +286,99 @@ test("run evidence grants the worker role four functions and no table", () => {
     ),
     [],
   );
+});
+
+/**
+ * The five measured parameters, in the order the contract declares them.
+ *
+ * `cost_micros` and `duration_ms` are both `bigint` and both counts, so a swap
+ * between them is type-clean: SafeQL under `check-queries` validates argument
+ * types and cannot see it, and the durable suites would write and read the
+ * swapped pair back unchanged. What refuses it is the position each value is
+ * bound at, which is what this reads — off the parameter array the driver would
+ * send, not off the source text.
+ */
+const measured = {
+  model: "claude-haiku-4-5",
+  tokens: 48_182,
+  costMicros: 38_160,
+  durationMs: 5_195,
+  tools: ["Bash", "Read"],
+};
+
+/** One statement as the driver would receive it: the text, and the values by position. */
+interface RecordedQuery {
+  readonly text: string;
+  readonly values: readonly unknown[];
+}
+
+function recordingPool(recorded: RecordedQuery[]): pg.Pool {
+  return {
+    query: (statement: RecordedQuery) => {
+      recorded.push({ text: statement.text, values: statement.values });
+      return Promise.resolve({ rows: [{ answered: "Answered" }] });
+    },
+  } as unknown as pg.Pool;
+}
+
+/** The one statement a recorded answer asked, refusing a run that asked any other number. */
+function only(recorded: readonly RecordedQuery[]): RecordedQuery {
+  const [statement, ...rest] = recorded;
+  assert.equal(
+    rest.length,
+    0,
+    "answering a turn asked more than one statement",
+  );
+  if (statement === undefined)
+    throw new Error("answering a turn asked nothing");
+  return statement;
+}
+
+/** One answer over a pool that records rather than connects, its measurement optional. */
+function recordedAnswer(
+  recorded: RecordedQuery[],
+  measurement?: typeof measured,
+): Promise<unknown> {
+  return postgresSessionPlane(recordingPool(recorded)).answer({
+    secret: asSessionBearerSecret(`chgs_${"a".repeat(32)}`),
+    generation: 3,
+    turn: asSessionTurnId("turn-7"),
+    result: "done",
+    batchFirst: 12,
+    batchLast: 14,
+    ...(measurement === undefined ? {} : { measured: measurement }),
+  });
+}
+
+test("a measured turn binds the five to the positions the contract declares", async () => {
+  const recorded: RecordedQuery[] = [];
+
+  assert.equal(await recordedAnswer(recorded, measured), "Answered");
+  const statement = only(recorded);
+  assert.match(statement.text, /answer_session_turn\(/u);
+  assert.deepEqual(statement.values.slice(4), [
+    12,
+    14,
+    measured.model,
+    measured.tokens,
+    measured.costMicros,
+    measured.durationMs,
+    measured.tools,
+  ]);
+});
+
+test("a turn with nothing measured binds the five as absent together", async () => {
+  const recorded: RecordedQuery[] = [];
+
+  await recordedAnswer(recorded);
+
+  assert.deepEqual(only(recorded).values.slice(4), [
+    12,
+    14,
+    null,
+    null,
+    null,
+    null,
+    null,
+  ]);
 });

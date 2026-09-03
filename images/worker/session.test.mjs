@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { z } from "zod";
-
 import {
   leadRoster,
   threadRoster,
@@ -11,157 +9,28 @@ import { chuggyToolPrefix, sessionBuiltInTools } from "./chuggyTools.mjs";
 import {
   checkedSessionBounds,
   sessionBoundNames,
-  sessionMain,
   sessionTurnFailure,
   sessionTurnResultCharsMax,
 } from "./session.mjs";
 import { observeRateLimit, rateLimitSightings } from "./rateLimit.mjs";
+import {
+  bearer,
+  environment,
+  facts,
+  planeOf,
+  queryOf,
+  rejection,
+  result,
+  run,
+  task,
+  token,
+  turnOne,
+} from "../../test/contract/sessionHarness.mjs";
 
 /** The sightings a turn that saw exactly these frames, in this order, ends with. */
 function seenBy(...events) {
   return events.reduce(observeRateLimit, rateLimitSightings());
 }
-
-/** The rejection frame kasofsk/chuggy#386 reports, as the runtime declares it. */
-const rejection = {
-  type: "rate_limit_event",
-  rate_limit_info: { status: "rejected", rateLimitType: "five_hour" },
-};
-
-const bearerFile = "/var/run/chuggy/session-capability/bearer";
-const credentialFile = "/var/run/chuggy/credentials/claude-code";
-const bearer = "chgs_0123456789abcdef0123456789abcdef";
-const token = "sk-ant-oat01-0123456789abcdefghijklmnop";
-
-const task = {
-  tenant: "vteng",
-  project: "chuggy",
-  session: "session-1",
-  kind: "Lead",
-  attempt: "attempt-1",
-  generation: 1,
-  workerPlane: {
-    url: "http://worker-plane.test:3001",
-    capabilityFile: bearerFile,
-  },
-  api: { url: "http://chuggy-api.test:3000" },
-  bounds: {
-    mailboxPollMs: 1,
-    idleMs: 1,
-    resultDrainMs: 50,
-    loadTimeoutMs: 1_000,
-    turnsMax: 200,
-    budgetUsd: 5,
-  },
-};
-
-const environment = {
-  CHUG_SESSION_TASK: JSON.stringify(task),
-  CHUG_WORKER_CREDENTIAL_FILES: JSON.stringify({
-    "claude-code": credentialFile,
-  }),
-  CHUG_WORKER_WORKSPACE: "/workspace",
-};
-
-function planeOf(turns, facts, refuse = () => undefined) {
-  const calls = [];
-  let claims = 0;
-  return {
-    calls,
-    request: async (_task, _bearer, path, init) => {
-      const refused = refuse(path);
-      if (refused !== undefined) {
-        calls.push({ path, method: init?.method });
-        return { status: refused, json: async () => ({}) };
-      }
-      const type = init?.headers?.["content-type"];
-      calls.push({
-        path,
-        method: init?.method,
-        body: type === "application/json" ? JSON.parse(init.body) : init?.body,
-      });
-      if (path === "/v1/session")
-        return { status: 200, json: async () => facts };
-      if (path === "/v1/session/turn") {
-        const turn = turns[claims];
-        claims += 1;
-        return turn === undefined
-          ? { status: 204 }
-          : { status: 200, json: async () => turn };
-      }
-      return { status: 204 };
-    },
-  };
-}
-
-function queryOf(script) {
-  const seen = {};
-  return {
-    seen,
-    query: ({ prompt, options }) => {
-      seen.options = options;
-      return (async function* messages() {
-        let index = 0;
-        for await (const asked of prompt) {
-          for (const message of script(asked, index, options)) {
-            if (typeof message === "function") await message();
-            else yield message;
-          }
-          index += 1;
-        }
-      })();
-    },
-  };
-}
-
-const facts = {
-  tenant: "vteng",
-  project: "chuggy",
-  session: "session-1",
-  kind: "Lead",
-  capabilities: ["RepositoryRead", "RunCommands"],
-  credentialSlot: "claude-code",
-};
-
-/**
- * The runtime as this pod resolves it, with the suite's own `query`. The other
- * three members are what the in-process server is built from, and `zod` is the
- * real one: a stub shape would prove the tools were registered and nothing about
- * whether their bounds hold.
- */
-function sdkOf(query) {
-  return {
-    query,
-    z,
-    tool: (name, description, shape, handler) => ({
-      name,
-      description,
-      shape,
-      handler,
-    }),
-    createSdkMcpServer: (options) => options,
-  };
-}
-
-function run(services) {
-  const { query, ...rest } = services;
-  return sessionMain({
-    environment,
-    read: async (path) => (path === bearerFile ? `${bearer}\n` : `${token}\n`),
-    ensureDirectory: async () => undefined,
-    warn: () => undefined,
-    ...(query === undefined ? {} : { sdk: sdkOf(query) }),
-    ...rest,
-  });
-}
-
-const turnOne = {
-  turn: "turn-1",
-  ordinal: 1,
-  inputKind: "UserMessage",
-  input: "ask",
-};
-const result = (subtype, extra = {}) => ({ type: "result", subtype, ...extra });
 
 test("a mirror_error after the result fails the turn and never answers it", async () => {
   const plane = planeOf([turnOne], facts);
