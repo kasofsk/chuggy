@@ -25,6 +25,7 @@ import {
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/064-multi-dispatch-delivery.ts";
+import { leadObservationTokensPerDecision } from "../../src/adapters/postgres/schema/migrations/070-lead-token-budget.ts";
 import {
   postgresMigrate,
   postgresMigrateCompatible,
@@ -3038,7 +3039,7 @@ test("migration 64 leaves an installation standing above its floor untouched", a
     const wider = leadDispatchesPerDecision + 1;
     await standingInstallationStates(subject, wider);
     const before = await standingInstallationBudget(subject);
-    await applyMigrationsAbove(subject, 63);
+    await applyMigration(subject, 64);
     assert.deepEqual(await standingInstallationBudget(subject), {
       budget: String(wider),
       revision: before.revision,
@@ -3057,7 +3058,7 @@ test("migration 64 raises an installation standing below its floor", async () =>
     const narrower = leadDispatchesPerDecision - 1;
     await standingInstallationStates(subject, narrower);
     const before = await standingInstallationBudget(subject);
-    await applyMigrationsAbove(subject, 63);
+    await applyMigration(subject, 64);
     assert.deepEqual(await standingInstallationBudget(subject), {
       budget: String(leadDispatchesPerDecision),
       revision: String(Number(before.revision) + 1),
@@ -3343,5 +3344,256 @@ test("migration 69 upgrades the read it re-creates and leaves the listing 063 ga
         "an upgraded installation and a fresh one disagree about a door's body",
       );
     });
+  });
+});
+
+/** What an installation's controls say a decision may spend, and at what revision. */
+async function standingTokenBudget(subject: pg.Pool): Promise<{
+  readonly budget: string | null;
+  readonly revision: string;
+  readonly recorded: string;
+}> {
+  const found = await subject.query<{
+    budget: string | null;
+    revision: string;
+    recorded: string;
+  }>(
+    `SELECT settings.controls::jsonb->'limits'->>'tokensPerDecision' AS budget,
+            settings.revision::text AS revision,
+            (SELECT count(*)::text FROM selector_runtime_settings_history) AS recorded
+       FROM selector_runtime_settings settings WHERE singleton=1`,
+  );
+  const row = found.rows[0];
+  assert.ok(row, "the installation states its controls");
+  return row;
+}
+
+/** States a token budget on an installation, as an administrator's write would. */
+async function standingTokenBudgetStates(
+  subject: pg.Pool,
+  budget: number,
+): Promise<void> {
+  await subject.query(
+    `UPDATE selector_runtime_settings
+        SET controls=jsonb_set(controls::jsonb,'{limits,tokensPerDecision}',
+              to_jsonb($1::bigint))::text
+      WHERE singleton=1`,
+    [budget],
+  );
+}
+
+/**
+ * The budget 059 left is what every lead turn the rig measured exceeded, so an
+ * installation that has stated nothing since is raised to one whole observation
+ * and the raise is a revision like any other administrator's.
+ */
+test("migration 70 raises a budget written before a lead turn was measured", async () => {
+  await migrationDatabase("lead_token_budget_raised", async (subject) => {
+    await migrationSeedApplied(subject, 70);
+    const before = await standingTokenBudget(subject);
+    assert.ok(
+      Number(before.budget) < leadObservationTokensPerDecision,
+      `the seeded budget is ${String(before.budget)}`,
+    );
+
+    await applyMigration(subject, 70);
+
+    assert.deepEqual(await standingTokenBudget(subject), {
+      budget: String(leadObservationTokensPerDecision),
+      revision: String(Number(before.revision) + 1),
+      recorded: String(Number(before.recorded) + 1),
+    });
+  });
+});
+
+/**
+ * The other arm of the same floor: an owner who already states a wider budget
+ * keeps what they state, and keeping it mints nothing — no revision, no history
+ * row — because the predicate that skips the write is where the floor lives.
+ */
+test("migration 70 moves a floor and never a value somebody raised", async () => {
+  await migrationDatabase("lead_token_budget_kept", async (subject) => {
+    await migrationSeedApplied(subject, 70);
+    const wider = leadObservationTokensPerDecision + 1;
+    await standingTokenBudgetStates(subject, wider);
+    const before = await standingTokenBudget(subject);
+
+    await applyMigration(subject, 70);
+
+    assert.deepEqual(await standingTokenBudget(subject), {
+      budget: String(wider),
+      revision: before.revision,
+      recorded: before.recorded,
+    });
+  });
+});
+
+/** Everything the installation states, the controls canonical so text compares. */
+async function standingSettings(subject: pg.Pool): Promise<{
+  readonly revision: string;
+  readonly mode: string;
+  readonly dispatch: string;
+  readonly prompt: string;
+  readonly controls: string;
+}> {
+  const found = await subject.query<{
+    revision: string;
+    mode: string;
+    dispatch: string;
+    prompt: string;
+    controls: string;
+  }>(
+    `SELECT revision::text AS revision, mode, dispatch_mode AS dispatch,
+            base_prompt AS prompt, controls::jsonb::text AS controls
+       FROM selector_runtime_settings WHERE singleton=1`,
+  );
+  const row = found.rows[0];
+  assert.ok(row, "the installation states its settings");
+  return row;
+}
+
+/** Every revision the settings history holds, oldest first. */
+async function recordedSettings(subject: pg.Pool): Promise<
+  readonly {
+    readonly revision: string;
+    readonly mode: string;
+    readonly dispatch: string;
+    readonly prompt: string;
+    readonly controls: string;
+    readonly kind: string;
+    readonly subject: string;
+  }[]
+> {
+  const found = await subject.query<{
+    revision: string;
+    mode: string;
+    dispatch: string;
+    prompt: string;
+    controls: string;
+    kind: string;
+    subject: string;
+  }>(
+    `SELECT revision::text AS revision, mode, dispatch_mode AS dispatch,
+            base_prompt AS prompt, controls::jsonb::text AS controls,
+            administrator_kind AS kind, administrator_subject AS subject
+       FROM selector_runtime_settings_history ORDER BY revision`,
+  );
+  return found.rows;
+}
+
+/** What the installation states apart from the one control 070 raises. */
+function settingsBesidesBudget(row: {
+  readonly mode: string;
+  readonly dispatch: string;
+  readonly prompt: string;
+  readonly controls: string;
+}): unknown {
+  const controls = JSON.parse(row.controls) as {
+    limits: Record<string, unknown>;
+  };
+  delete controls.limits["tokensPerDecision"];
+  return {
+    mode: row.mode,
+    dispatch: row.dispatch,
+    prompt: row.prompt,
+    controls,
+  };
+}
+
+/** Every limit the installation states. */
+async function standingLimits(
+  subject: pg.Pool,
+): Promise<Record<string, number>> {
+  const found = await subject.query<{ limits: Record<string, number> }>(
+    `SELECT controls::jsonb->'limits' AS limits
+       FROM selector_runtime_settings WHERE singleton=1`,
+  );
+  const row = found.rows[0];
+  assert.ok(row, "the installation states its limits");
+  return row.limits;
+}
+
+/** States limits beside the budget, as an administrator's write would. */
+async function standingLimitsState(
+  subject: pg.Pool,
+  stated: Record<string, number>,
+): Promise<void> {
+  await subject.query(
+    `UPDATE selector_runtime_settings
+        SET controls=jsonb_set(controls::jsonb,'{limits}',
+              (controls::jsonb->'limits') || $1::jsonb)::text
+      WHERE singleton=1`,
+    [JSON.stringify(stated)],
+  );
+}
+
+/**
+ * The raise moves one key and no other: every other limit, both allowlists, the
+ * mode, the dispatch mode and the prompt are what they were, and the revision
+ * it mints is recorded as the row now stands under the system's own hand.
+ */
+test("migration 70 raises one control and records the row it leaves", async () => {
+  await migrationDatabase("lead_token_budget_alone", async (subject) => {
+    await migrationSeedApplied(subject, 70);
+    const before = await standingSettings(subject);
+    const recorded = await recordedSettings(subject);
+
+    await applyMigration(subject, 70);
+
+    const after = await standingSettings(subject);
+    assert.deepEqual(
+      settingsBesidesBudget(after),
+      settingsBesidesBudget(before),
+    );
+    assert.deepEqual(await recordedSettings(subject), [
+      ...recorded,
+      { ...after, kind: "System", subject: "lead token budget migration" },
+    ]);
+  });
+});
+
+/**
+ * A limit an owner states is the owner's, whichever limit it is: the budget is
+ * raised under a decision deadline widened past 059's floor and a dispatch
+ * budget widened past 064's, and every limit beside the one 070 names is left
+ * exactly as stated.
+ */
+test("migration 70 raises the budget without touching a limit an owner states", async () => {
+  await migrationDatabase("lead_token_budget_beside", async (subject) => {
+    await migrationSeedApplied(subject, 70);
+    const stated = {
+      millisecondsPerDecision: leadMillisecondsPerDecision * 3,
+      toolCallsPerDecision: leadToolCallsPerDecision * 2,
+      dispatchesPerDecision: leadDispatchesPerDecision + 2,
+      inputBytesPerDecision: 2_000_000,
+      candidatePagesPerDecision: 3,
+      concurrentDecisions: 2,
+      selectionsPerMinute: 11,
+    };
+    await standingLimitsState(subject, stated);
+
+    await applyMigration(subject, 70);
+
+    assert.deepEqual(await standingLimits(subject), {
+      ...stated,
+      tokensPerDecision: leadObservationTokensPerDecision,
+    });
+  });
+});
+
+/**
+ * The floor is a floor at its own value too: an installation standing exactly
+ * on it has nothing to raise, and a write that raises nothing would still mint
+ * a revision and a history row a reader takes for an administrator's act.
+ */
+test("migration 70 mints nothing for an installation standing at the floor", async () => {
+  await migrationDatabase("lead_token_budget_exact", async (subject) => {
+    await migrationSeedApplied(subject, 70);
+    await standingTokenBudgetStates(subject, leadObservationTokensPerDecision);
+    const before = await standingTokenBudget(subject);
+
+    await applyMigration(subject, 70);
+
+    assert.deepEqual(await standingTokenBudget(subject), before);
   });
 });

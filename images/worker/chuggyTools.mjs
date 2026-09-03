@@ -92,6 +92,7 @@ export const sessionBuiltInTools = [
   "SlashCommand",
   "Task",
   "TodoWrite",
+  "ToolSearch",
   "WebFetch",
   "WebSearch",
   "Write",
