@@ -1369,3 +1369,96 @@ test("a record that counts nothing leaves the mark, so the next turn is a delta 
     assert.equal(next.costMicros, 150_000, what);
   }
 });
+
+/**
+ * The two records the pod keeps of one turn are orthogonal, and the seams they
+ * share are where that could stop being true. A hold is not a measurement's
+ * business and a measurement is not a hold's: the rate-limit sightings settle
+ * whether the account was refused, the measure settles what the turn spent, and
+ * both fold every message through the same `observe`.
+ */
+test("a turn the provider refused is held, and carries no measurement with it", async () => {
+  const plane = planeOf([turnOne, turnOne], facts);
+  const { query } = queryOf(() => [
+    {
+      type: "system",
+      subtype: "init",
+      session_id: "runtime-1",
+      model: "haiku",
+    },
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [{ type: "tool_use", name: "Bash" }],
+      },
+    },
+    rejection,
+    result("error_during_execution", {
+      terminal_reason: "api_error",
+      modelUsage: spent,
+      total_cost_usd: 0.3,
+      duration_ms: 5_195,
+    }),
+  ]);
+
+  const code = await run({ request: plane.request, query });
+
+  assert.equal(code, 0);
+  assert.equal(
+    plane.calls.filter(({ path }) => path === "/v1/session/held").length,
+    1,
+    "a turn the provider refused was not held",
+  );
+  assert.ok(
+    !plane.calls.some(({ path }) => path === "/v1/session/turn/answer"),
+    "a held turn was answered, measurement and all",
+  );
+});
+
+test("a measured turn still records what the runtime said about the account", async () => {
+  const plane = planeOf([turnOne, { ...turnOne, turn: "turn-2" }], facts);
+  const { query } = queryOf((_asked, index) => [
+    {
+      type: "system",
+      subtype: "init",
+      session_id: "runtime-1",
+      model: "haiku",
+    },
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [{ type: "tool_use", name: "Bash" }],
+      },
+    },
+    index === 0
+      ? { type: "rate_limit_event", rate_limit_info: { status: "allowed" } }
+      : rejection,
+    result("success", {
+      result: "ok",
+      modelUsage: index === 0 ? spent : spentAgain,
+      total_cost_usd: index === 0 ? 0.3 : 0.45,
+      duration_ms: 5_195,
+    }),
+  ]);
+
+  await run({ request: plane.request, query });
+
+  const answers = plane.calls.filter(
+    ({ path }) => path === "/v1/session/turn/answer",
+  );
+  assert.equal(answers.length, 1, "the refused turn was answered too");
+  assert.deepEqual(answers[0].body.measured, {
+    model: "haiku",
+    tokens: spentTokens,
+    costMicros: 300_000,
+    durationMs: 5_195,
+    tools: ["Bash"],
+  });
+  assert.equal(
+    plane.calls.filter(({ path }) => path === "/v1/session/held").length,
+    1,
+    "the sightings were not folded on a turn that was also measured",
+  );
+});
