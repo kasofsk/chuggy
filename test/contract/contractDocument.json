@@ -68,7 +68,11 @@
     "drafts": "/api/v1/tenants/:tenant/projects/:project/drafts",
     "draftInitialization": "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
     "draft": "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",
-    "dispatchView": "/api/v1/tenants/:tenant/projects/:project/dispatch-view"
+    "dispatchView": "/api/v1/tenants/:tenant/projects/:project/dispatch-view",
+    "threads": "/api/v1/tenants/:tenant/projects/:project/threads",
+    "thread": "/api/v1/tenants/:tenant/projects/:project/threads/:session",
+    "threadTranscript": "/api/v1/tenants/:tenant/projects/:project/threads/:session/transcript",
+    "threadMessages": "/api/v1/tenants/:tenant/projects/:project/threads/:session/messages"
   },
   "schemas": {
     "publicMutation": {
@@ -768,6 +772,16 @@
         }
       },
       "required": ["expectedRevision", "overrides"],
+      "additionalProperties": false
+    },
+    "threadMessage": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "turn": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 16384 }
+      },
+      "required": ["turn", "message"],
       "additionalProperties": false
     }
   }

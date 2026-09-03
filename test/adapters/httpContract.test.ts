@@ -69,6 +69,10 @@ test("the versioned route and media contracts move together", () => {
     "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
     "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",
     "/api/v1/tenants/:tenant/projects/:project/dispatch-view",
+    "/api/v1/tenants/:tenant/projects/:project/threads",
+    "/api/v1/tenants/:tenant/projects/:project/threads/:session",
+    "/api/v1/tenants/:tenant/projects/:project/threads/:session/transcript",
+    "/api/v1/tenants/:tenant/projects/:project/threads/:session/messages",
   ]);
 });
 

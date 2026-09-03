@@ -34,8 +34,13 @@ import {
   sessionStoreStreamsAnswered,
   sessionTranscriptEntriesMax,
   sessionTurnModelCharsMax,
+  sessionTurnResultCharsMax,
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
+  threadMessageCharsMax,
+  threadSeedingCharsMax,
+  threadTurnsAnsweredMax,
+  threadsAnsweredMax,
   ticketNumberSchema,
 } from "./http.ts";
 import {
@@ -851,6 +856,24 @@ export type AgenticRefusalsResponse = z.infer<
 >;
 
 /**
+ * What a pod measured of one turn and which batches it wrote, on a lead's turn
+ * and a member's alike. It is one shape rather than two copies, because a turn
+ * is measured the same way whatever kind of session took it.
+ */
+const sessionTurnMeasureShape = {
+  model: z.string().min(1).max(sessionTurnModelCharsMax).optional(),
+  tokens: countSchema.optional(),
+  costMicros: countSchema.optional(),
+  durationMs: countSchema.optional(),
+  tools: z
+    .array(z.string().min(1).max(sessionTurnToolNameCharsMax))
+    .max(sessionTurnToolsMax)
+    .optional(),
+  batchFirst: countSchema.optional(),
+  batchLast: countSchema.optional(),
+};
+
+/**
  * One turn of the lead's mailbox and what the pod measured of it. The turn's
  * input is absent: it is the observation document, the decision log already
  * holds it, and shipping it twice would double the page for nothing.
@@ -862,16 +885,7 @@ export const leadTurnResponseSchema = z.object({
   state: z.enum(sessionTurnStates),
   decision: identitySchema.optional(),
   failure: z.enum(sessionTurnFailures).optional(),
-  model: z.string().min(1).max(sessionTurnModelCharsMax).optional(),
-  tokens: countSchema.optional(),
-  costMicros: countSchema.optional(),
-  durationMs: countSchema.optional(),
-  tools: z
-    .array(z.string().min(1).max(sessionTurnToolNameCharsMax))
-    .max(sessionTurnToolsMax)
-    .optional(),
-  batchFirst: countSchema.optional(),
-  batchLast: countSchema.optional(),
+  ...sessionTurnMeasureShape,
 });
 export type LeadTurnResponse = z.infer<typeof leadTurnResponseSchema>;
 
@@ -956,3 +970,78 @@ export const selectorHistoryResponseSchema = z.object({
 export type SelectorHistoryResponse = z.infer<
   typeof selectorHistoryResponseSchema
 >;
+
+/**
+ * One member thread as a listing names it, `owner` being the membership's own
+ * authority subject and absent where that membership has been revoked — a
+ * thread its owner must still see and close rather than one to hide. `mine` is
+ * computed against the request's own principal, which is what lets a browser
+ * name "my thread" without ever decoding a token.
+ */
+export const threadEntryResponseSchema = z.object({
+  session: identitySchema,
+  owner: identitySchema.optional(),
+  state: z.enum(sessionStates),
+  mine: z.boolean(),
+  turns: countSchema,
+  agentReference: identitySchema.optional(),
+});
+export type ThreadEntryResponse = z.infer<typeof threadEntryResponseSchema>;
+
+export const threadsResponseSchema = z.object({
+  threads: z.array(threadEntryResponseSchema).max(threadsAnsweredMax),
+});
+export type ThreadsResponse = z.infer<typeof threadsResponseSchema>;
+
+/**
+ * One turn of a thread's mailbox, carrying its `input` and its `result` where
+ * `leadTurnResponseSchema` carries neither: a lead's are the observation and
+ * the decision its log already holds, and a member's are what they typed and
+ * the answer they are waiting for. Each is bounded by the column that holds it.
+ */
+export const threadTurnResponseSchema = z.object({
+  turn: identitySchema,
+  ordinal: countSchema,
+  inputKind: z.enum(sessionTurnInputKinds),
+  state: z.enum(sessionTurnStates),
+  input: z.string().max(threadMessageCharsMax + threadSeedingCharsMax),
+  result: z.string().max(sessionTurnResultCharsMax).optional(),
+  failure: z.enum(sessionTurnFailures).optional(),
+  ...sessionTurnMeasureShape,
+});
+export type ThreadTurnResponse = z.infer<typeof threadTurnResponseSchema>;
+
+/**
+ * One member thread: what it is, whose it is, and its mailbox tail. It is its
+ * own shape rather than the lead's reused, because `attention` and
+ * `notificationCursor` are facts about the project's selector state and neither
+ * is a fact about a thread.
+ */
+export const threadResponseSchema = z.object({
+  session: identitySchema,
+  owner: identitySchema.optional(),
+  state: z.enum(sessionStates),
+  mine: z.boolean(),
+  agentReference: identitySchema.optional(),
+  turns: z.array(threadTurnResponseSchema).max(threadTurnsAnsweredMax),
+  streams: z
+    .array(leadStoreStreamResponseSchema)
+    .max(sessionStoreStreamsAnswered),
+});
+export type ThreadResponse = z.infer<typeof threadResponseSchema>;
+
+/**
+ * A thread's transcript is the lead's page over a different session: the same
+ * walk, over the same store, answering the same chain. It is aliased rather
+ * than forked so the two cannot drift; the rename that makes the name
+ * session-keyed rather than lead-keyed belongs with the walk it renames.
+ */
+export const threadTranscriptResponseSchema = leadTranscriptResponseSchema;
+export type ThreadTranscriptResponse = LeadTranscriptResponse;
+
+/** What the message door answers: the turn it took, and where it sits in the mailbox. */
+export const threadMessageAcceptedSchema = z.object({
+  turn: identitySchema,
+  ordinal: countSchema,
+});
+export type ThreadMessageAccepted = z.infer<typeof threadMessageAcceptedSchema>;

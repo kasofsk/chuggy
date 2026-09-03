@@ -95,6 +95,14 @@ const chuggyToolRoster = {
     "delete_draft",
     "release_draft",
   ],
+  /**
+   * A member's own authorship, which no lead roster carries. It maps nothing
+   * yet: the tool that would admit it is the worker image's to serve, and until
+   * the image serves one this member admits nothing a session is given —
+   * exactly as the three project members above did before the chuggy server
+   * reached the image.
+   */
+  DraftOriginate: [],
   LeadDecision: [
     "dispatch",
     "refuse",

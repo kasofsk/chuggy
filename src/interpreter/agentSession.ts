@@ -186,6 +186,14 @@ export const allSessionCapabilities = [
   "ProjectRead",
   /** The chuggy server's authorship: drafts, and releasing one. */
   "DraftAuthor",
+  /**
+   * Originating a draft from nothing, which a member may do and the lead may
+   * not. It is its own member rather than part of `DraftAuthor` because
+   * `DraftAuthor` is where the derived-work rule sits — a dependent is filed
+   * against a parent that already exists, and there is no bare create —
+   * and widening it would hand the lead the one thing that rule withholds.
+   */
+  "DraftOriginate",
   /** The decision tools, which write nothing and compose the turn's answer. */
   "LeadDecision",
 ] as const;
