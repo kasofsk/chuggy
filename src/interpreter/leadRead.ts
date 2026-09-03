@@ -112,25 +112,25 @@ export interface SessionTranscriptSubject {
   readonly agentReference?: string;
 }
 
-/** The API's own door onto one project's lead and the rows of its store. */
-export interface LeadReadStore {
+/**
+ * The API's own door onto one project's lead and the rows of its store. It
+ * READS ROWS THROUGH THE SESSION-KEYED PORT rather than declaring a lead-only
+ * one, because 062 retired the two definers that were keyed on `kind='Lead'`:
+ * a thread's transcript is this walk over a different session, and two reads
+ * differing in one predicate is where a fix lands in only one of them.
+ */
+export interface LeadReadStore extends SessionStoreRowsRead {
   /** The lead's standing with at most `turnsMax` of its mailbox, newest last. */
   standing(
     partition: Partition,
     turnsMax: number,
   ): Promise<LeadStanding | undefined>;
-  /** Every stream the lead's store holds, with the batches standing under each. */
+  /** Every stream one session's store holds, with the batches standing under each. */
   streams(
     partition: Partition,
+    session: SessionId,
     limit: number,
   ): Promise<readonly SessionStoreStreamRow[]>;
-  /** One page of one stream's batch rows, without the bytes they point at. */
-  batches(input: {
-    readonly partition: Partition;
-    readonly stream: SessionStoreStream;
-    readonly after: number;
-    readonly limit: number;
-  }): Promise<readonly SessionStoreBatchRow[]>;
 }
 
 /** How large the handoff note is, and as much of it as the lead read carries. */

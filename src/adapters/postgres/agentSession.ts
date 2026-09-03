@@ -24,6 +24,7 @@ import type {
   AgentSessionOpened,
   AgentSessionOpening,
   AgentSessionStore,
+  SessionCapabilitiesSet,
   SessionId,
   SessionTurn,
   SessionTurnEnqueued,
@@ -128,6 +129,17 @@ async function agentSessionEnqueue(
   return sessionTurnEnqueued(row.enqueued, row.ordinal);
 }
 
+/** The verdict `set_session_capabilities` answered, refusing anything else. */
+function sessionCapabilitiesSet(
+  value: string | null | undefined,
+): SessionCapabilitiesSet {
+  if (value === "Set" || value === "Unchanged" || value === "NoSession")
+    return value;
+  throw new Error(
+    `postgres agent session: setting a roster answered ${String(value)}`,
+  );
+}
+
 async function agentSessionRead(
   pool: pg.Pool,
   partition: Partition,
@@ -194,6 +206,15 @@ export function postgresAgentSessions(pool: pg.Pool): AgentSessionStore {
     },
 
     enqueue: (offering) => agentSessionEnqueue(pool, offering),
+
+    setCapabilities: async (partition, session, capabilities) => {
+      const answered = await pool.query<{ answered: string | null }>(
+        sql`SELECT set_session_capabilities(
+          ${partition.tenant},${partition.project},${session},
+          ${[...capabilities]}::text[])::text AS answered`,
+      );
+      return sessionCapabilitiesSet(answered.rows[0]?.answered);
+    },
 
     session: (partition, session) => agentSessionRead(pool, partition, session),
 

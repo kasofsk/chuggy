@@ -517,6 +517,27 @@ test("a mailbox reopened under the caller between the two round trips is refused
   );
 });
 
+/**
+ * The durable side compares the session the URL named against the mailbox it
+ * resolved and refuses a mismatch itself, so the comparison here is the second
+ * of two. The door passes that refusal through rather than reading it as a
+ * mailbox that has gone.
+ */
+test("a mailbox the durable side says is not the caller's is refused as that", async () => {
+  const { web } = boundary({ enqueued: { enqueued: "NotYourThread" } });
+
+  assert.equal(
+    (
+      await web.sendThreadMessage(geoff, partition, {
+        session: mine,
+        turn: asSessionTurnId("thread-turn-1"),
+        message: "have a look at 42",
+      })
+    ).result,
+    "NotYourThread",
+  );
+});
+
 /** The same holds of a retry, whose ordinal is just as much a claim about a mailbox. */
 test("a retry whose mailbox has moved is refused rather than reported", async () => {
   const { web } = boundary({

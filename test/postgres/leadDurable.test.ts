@@ -410,12 +410,13 @@ test("the API reads the lead, its mailbox tail and the streams beneath it", asyn
   assert.equal(lead?.turns[0]?.batchFirst, 1);
 
   assert.deepEqual(
-    await rig.apiLead.streams(partition, sessionStoreStreamsAnswered),
+    await rig.apiLead.streams(partition, session, sessionStoreStreamsAnswered),
     [{ stream, batches: 1 }],
   );
   assert.deepEqual(
     await rig.apiLead.batches({
       partition,
+      session,
       stream,
       after: 0,
       limit: sessionStorePageBatchesMax,

@@ -137,7 +137,10 @@ export type ThreadMessageEnqueued =
       readonly session: SessionId;
       readonly ordinal: number;
     }
-  | { readonly enqueued: "NoThread" | "Closed" | "Orphaned" | "Backlogged" };
+  | {
+      readonly enqueued:
+        "NoThread" | "NotYourThread" | "Closed" | "Orphaned" | "Backlogged";
+    };
 
 /**
  * The durable thread authority migration 062 answers: the listing, the door
@@ -166,9 +169,16 @@ export interface ThreadStore {
     readonly session: SessionId;
     readonly query: ThreadMailboxQuery;
   }): Promise<ThreadStandingRecord | undefined>;
+  /**
+   * `session` is the one the caller NAMED, never the one the mailbox is found
+   * by: the durable side resolves the mailbox from the principal and refuses a
+   * session that is not the one it resolved, so a stale listing cannot put a
+   * message in a conversation the member is not reading.
+   */
   enqueueMessage(input: {
     readonly partition: Partition;
     readonly principal: Principal;
+    readonly session: SessionId;
     readonly turn: SessionTurnId;
     readonly input: string;
   }): Promise<ThreadMessageEnqueued>;
@@ -272,6 +282,8 @@ export function threadMessageSent(
   switch (enqueued.enqueued) {
     case "NoThread":
       return { result: "NotFound" };
+    case "NotYourThread":
+      return { result: "NotYourThread" };
     case "Closed":
     case "Orphaned":
       return { result: enqueued.enqueued };

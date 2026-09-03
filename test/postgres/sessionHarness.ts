@@ -16,7 +16,9 @@
  * asserting about whatever an earlier suite left running.
  */
 
+import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { promisify } from "node:util";
 
 import {
   asSessionAttemptId,
@@ -55,6 +57,7 @@ import {
   postgresHarnessOpen,
   postgresHarnessProject,
   postgresHarnessRolePool,
+  postgresHarnessUrl,
   type PostgresHarness,
 } from "./harness.ts";
 
@@ -262,4 +265,34 @@ export async function sessionRigAttemptState(
   if (row === undefined)
     throw new Error(`session rig: no attempt ${attempt.attempt} to read back`);
   return row;
+}
+
+const execute = promisify(execFile);
+
+/**
+ * The provisioning command, run against the harness server as the identity that
+ * owns the boundary. Two suites drive it, so it stands here rather than in
+ * either: a copy in each is a copy that stops answering the same way.
+ */
+export async function sessionRigProvision(
+  environment: Readonly<Record<string, string>>,
+): Promise<{ readonly code: number; readonly output: string }> {
+  try {
+    const ran = await execute(
+      process.execPath,
+      ["--experimental-strip-types", "src/roots/provisionAgentSession.ts"],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          CHUG_PROVISION_SESSION_DATABASE_URL: postgresHarnessUrl(),
+          ...environment,
+        },
+      },
+    );
+    return { code: 0, output: ran.stdout };
+  } catch (failure) {
+    const ran = failure as { code?: number; stderr?: string };
+    return { code: ran.code ?? 1, output: ran.stderr ?? "" };
+  }
 }

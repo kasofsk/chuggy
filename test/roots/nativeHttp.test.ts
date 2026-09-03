@@ -113,8 +113,14 @@ const leadPortsProgram = `
   });
   const partition = { tenant: 'tenant', project: 'project' };
   await ports.leads.standing(partition, 1);
-  await ports.leads.streams(partition, 1);
-  await ports.leads.batches({ partition, stream: 'stream', after: 0, limit: 1 });
+  await ports.leads.streams(partition, 'session', 1);
+  await ports.leads.batches({
+    partition,
+    session: 'session',
+    stream: 'stream',
+    after: 0,
+    limit: 1,
+  });
   await ports.history.history(partition, { limit: 1, order: 'oldest' });
   await ports.refusals.standing(partition, 1);
   await ports.refusals.ledger(partition, 1, 1);
@@ -155,8 +161,8 @@ test("each lead read reaches the definer function the plan names for it", async 
   const asked = await leadPortsAsked();
   for (const named of [
     "read_lead_standing",
-    "list_lead_store_streams",
-    "read_lead_store",
+    "list_session_store_streams",
+    "read_session_store_batches",
     "read_selector_interactions",
     "read_standing_agentic_refusals",
     "read_agentic_refusals",
@@ -165,6 +171,95 @@ test("each lead read reaches the definer function the plan names for it", async 
       asked.pool.some((statement) => statement.includes(named)),
       `${named} was reached over the API pool`,
     );
+});
+
+/**
+ * The root's own thread composition, over one pool that answers no rows. The
+ * credential slot is read from the environment because it is what a member's
+ * thread speaks through, and a default would open every member's thread on
+ * whatever the lead happens to use while reading as though somebody chose it.
+ */
+const threadPortsProgram = `
+  const root = await import('./src/roots/nativeHttp.ts');
+  const asked = [];
+  const pooled = () => ({
+    query: async (statement) => {
+      asked.push(statement.text ?? String(statement));
+      return { rows: [] };
+    },
+  });
+  const pools = { pool: pooled(), selectorReviewPool: pooled() };
+  const ports = root.nativeThreadPorts(pools, {
+    readBatch: async () => ({ read: 'NotFound' }),
+  });
+  const partition = { tenant: 'tenant', project: 'project' };
+  await ports.threads.threads(partition, 1);
+  await ports.seeding.northStar(partition);
+  await ports.rows.batches({
+    partition,
+    session: 'session',
+    stream: 'stream',
+    after: 0,
+    limit: 1,
+  });
+  process.stdout.write(JSON.stringify({
+    asked,
+    slot: ports.credentialSlot,
+    minted: ports.sessions.session(),
+  }));
+`;
+
+interface ThreadPortsComposed {
+  readonly asked: readonly string[];
+  readonly slot: string;
+  readonly minted: string;
+}
+
+async function threadPortsComposed(
+  slot: string | undefined,
+): Promise<{ readonly code: number; readonly out: string }> {
+  const environment = { ...process.env };
+  if (slot === undefined) delete environment["CHUG_API_THREAD_CREDENTIAL_SLOT"];
+  else environment["CHUG_API_THREAD_CREDENTIAL_SLOT"] = slot;
+  try {
+    const ran = await execute(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--input-type=module",
+        "--eval",
+        threadPortsProgram,
+      ],
+      { cwd: process.cwd(), env: environment },
+    );
+    return { code: 0, out: ran.stdout };
+  } catch (failure) {
+    const ran = failure as { code?: number; stderr?: string };
+    return { code: ran.code ?? 1, out: ran.stderr ?? "" };
+  }
+}
+
+test("the thread bundle the root composes reaches 062's own reads", async () => {
+  const ran = await threadPortsComposed("claude-code");
+  assert.equal(ran.code, 0, ran.out);
+  const composed = JSON.parse(ran.out) as ThreadPortsComposed;
+  for (const named of [
+    "read_project_threads",
+    "selector_project_settings",
+    "read_session_store_batches",
+  ])
+    assert.ok(
+      composed.asked.some((statement) => statement.includes(named)),
+      `${named} was reached over the API pool`,
+    );
+  assert.equal(composed.slot, "claude-code");
+  assert.ok(composed.minted.startsWith("thread-"));
+});
+
+test("a deployment that names no credential slot for a thread is refused", async () => {
+  const ran = await threadPortsComposed(undefined);
+  assert.equal(ran.code, 1);
+  assert.match(ran.out, /CHUG_API_THREAD_CREDENTIAL_SLOT/u);
 });
 
 async function authenticating(token: string): Promise<Authenticated> {

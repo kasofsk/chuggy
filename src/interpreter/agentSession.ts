@@ -353,6 +353,18 @@ export interface AgentSessionStore {
     session: SessionId,
   ): Promise<AgentSession | undefined>;
 
+  /**
+   * Sets one open session's capability roster. It is the one thing a session was
+   * opened with that a later write may move, and it is here rather than on a
+   * runtime port because a role that could rewrite a roster could widen the
+   * thread it acts through.
+   */
+  setCapabilities(
+    partition: Partition,
+    session: SessionId,
+    capabilities: readonly SessionCapability[],
+  ): Promise<SessionCapabilitiesSet>;
+
   /** The session's mailbox in ordinal order, at most `turnsMax` of it. */
   turns(
     partition: Partition,
@@ -360,6 +372,9 @@ export interface AgentSessionStore {
     turnsMax: number,
   ): Promise<readonly SessionTurn[]>;
 }
+
+/** What setting a roster answered: it moved, it was already that, or there is no such session. */
+export type SessionCapabilitiesSet = "Set" | "Unchanged" | "NoSession";
 
 /** Whose authority one session bearer carries, and which session carried it. */
 export interface SessionBearerIdentity {

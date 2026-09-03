@@ -25,7 +25,6 @@ import {
   allSessionTurnFailures,
   allSessionTurnInputKinds,
   asSessionId,
-  asSessionStoreStream,
   asSessionTurnId,
 } from "../../interpreter/agentSession.ts";
 import { allSessionTurnStates } from "../../interpreter/agentSession.ts";
@@ -38,16 +37,16 @@ import type {
   SelectorStateStore,
 } from "../../interpreter/selector.ts";
 import type {
-  SessionStoreBatchRow,
-  SessionStoreStreamRow,
-} from "../../interpreter/sessionPlane.ts";
-import type {
   LeadReadStore,
   LeadStanding,
   LeadTurnRecord,
 } from "../../interpreter/leadRead.ts";
 import type { SelectorHistoryStore } from "../../interpreter/selectorHistory.ts";
 import { projectRowCounter } from "./rows.ts";
+import {
+  sessionStoreBatchRows,
+  sessionStoreStreamRows,
+} from "./sessionStoreReads.ts";
 import {
   selectorInteractionRecord,
   type SelectorInteractionRow,
@@ -265,57 +264,6 @@ async function leadStanding(
   return leadReadOf(found.rows);
 }
 
-async function leadStoreBatches(
-  pool: pg.Pool,
-  query: {
-    readonly partition: Partition;
-    readonly stream: string;
-    readonly after: number;
-    readonly limit: number;
-  },
-): Promise<readonly SessionStoreBatchRow[]> {
-  const found = await pool.query<{
-    batch: string | null;
-    digest: string | null;
-    bytes: string | null;
-  }>(
-    sql`SELECT batch::text AS batch,digest,bytes::text AS bytes
-          FROM read_lead_store(${query.partition.tenant},
-            ${query.partition.project},
-            ${query.stream},${query.after},${query.limit})`,
-  );
-  return found.rows.map((row) => ({
-    batch: projectRowCounter(sessionRowText(row.batch, "batch"), "store batch"),
-    digest: sessionRowText(row.digest, "batch digest"),
-    bytes: projectRowCounter(
-      sessionRowText(row.bytes, "batch bytes"),
-      "store batch bytes",
-    ),
-  }));
-}
-
-async function leadStoreStreams(
-  pool: pg.Pool,
-  partition: Partition,
-  max: number,
-): Promise<readonly SessionStoreStreamRow[]> {
-  const found = await pool.query<{
-    stream: string | null;
-    batches: string | null;
-  }>(
-    sql`SELECT stream,batches::text AS batches
-          FROM list_lead_store_streams(
-                 ${partition.tenant},${partition.project},${max})`,
-  );
-  return found.rows.map((row) => ({
-    stream: asSessionStoreStream(sessionRowText(row.stream, "stream")),
-    batches: projectRowCounter(
-      sessionRowText(row.batches, "stream batches"),
-      "stream batches",
-    ),
-  }));
-}
-
 async function leadDecisionHistory(
   pool: pg.Pool,
   partition: Partition,
@@ -373,8 +321,9 @@ async function leadPlanningIntent(
 export function postgresLeadReads(pool: pg.Pool): PostgresLeadReads {
   return {
     standing: (partition, turnsMax) => leadStanding(pool, partition, turnsMax),
-    batches: (query) => leadStoreBatches(pool, query),
-    streams: (partition, limit) => leadStoreStreams(pool, partition, limit),
+    batches: (query) => sessionStoreBatchRows(pool, query),
+    streams: (partition, session, limit) =>
+      sessionStoreStreamRows(pool, partition, session, limit),
     history: (partition, query) =>
       leadDecisionHistory(
         pool,

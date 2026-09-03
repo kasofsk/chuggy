@@ -264,14 +264,19 @@ async function pagedStream(label: string) {
   const stream = asSessionStoreStream(`stream-${randomUUID()}`);
   for (let batch = 1; batch <= sessionStorePageBatchesMax + 2; batch += 1)
     await recordBatch(opened.partition, opened.attempt, stream, batch);
-  return { partition: opened.partition, stream };
+  return {
+    partition: opened.partition,
+    session: opened.session,
+    stream,
+  };
 }
 
-test("read_lead_store answers the limit it is given, never its own ceiling", async () => {
-  const { partition, stream } = await pagedStream("http-store");
+test("the row read answers the limit it is given, never its own ceiling", async () => {
+  const { partition, session, stream } = await pagedStream("http-store");
   const leads = postgresLeadReads(rig.apiPool);
   const asked = await leads.batches({
     partition,
+    session,
     stream,
     after: 0,
     limit: 2,
@@ -283,6 +288,7 @@ test("read_lead_store answers the limit it is given, never its own ceiling", asy
   );
   const capped = await leads.batches({
     partition,
+    session,
     stream,
     after: 0,
     limit: sessionStorePageBatchesMax + 5,

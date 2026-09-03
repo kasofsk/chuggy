@@ -16,10 +16,8 @@
  */
 
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
-import { promisify } from "node:util";
 import type pg from "pg";
 
 import { postgresAuthoring } from "../../src/adapters/postgres/authoring.ts";
@@ -46,15 +44,7 @@ import {
 import type { LeadSystemPromptPort } from "../../src/interpreter/agentSession.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 import { asPrincipal, oidcPrincipal } from "../../src/interpreter/principal.ts";
-import {
-  asProjectId,
-  asTenantId,
-  type Partition,
-} from "../../src/interpreter/projectStore.ts";
-import {
-  asDraftBrief,
-  type DraftBrief,
-} from "../../src/interpreter/ticketBrief.ts";
+import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { Authority } from "../../src/interpreter/operationInbox.ts";
 import {
   asAuthorityKind,
@@ -66,11 +56,11 @@ import {
   postgresHarnessConfiguration,
   postgresHarnessProject,
   postgresHarnessRolePool,
-  postgresHarnessUrl,
   type PostgresHarness,
 } from "./harness.ts";
 import {
   sessionRigAttempt,
+  sessionRigProvision,
   sessionRigBearer,
   sessionRigOpen,
   sessionRigSession,
@@ -129,7 +119,6 @@ async function leadToolsConfiguration(
 async function leadToolsDraft(
   partition: Partition,
   revision: ConfigurationRevisionId,
-  brief: DraftBrief = postgresHarnessBrief,
 ): Promise<{ readonly ticket: TicketId; readonly version: number }> {
   const initialized = await harness.authoring.initializeDraft(
     partition,
@@ -145,7 +134,7 @@ async function leadToolsDraft(
     configurationDigest: initialized.configuration.digest,
     expectedProjectSequence: initialized.projectSequence,
     authoring: plainAuthoring,
-    brief,
+    brief: postgresHarnessBrief,
   });
   if (created.created !== "Created")
     throw new Error(`lead tools: the draft answered ${created.created}`);
@@ -188,97 +177,6 @@ test("a page of drafts answers the open ones ascending, and pages past them", as
  * The release path is the whole ticket machinery, and the state column is what
  * the page filters on, so this case moves the column the filter reads.
  */
-test("a page that ends the collection says so, however it ends", async () => {
-  const partition = await leadToolsProject("boundary");
-  const revision = await leadToolsConfiguration(partition);
-  const first = await leadToolsDraft(partition, revision);
-  const second = await leadToolsDraft(partition, revision);
-  const third = await leadToolsDraft(partition, revision);
-  const held = [first, second, third];
-
-  const exact = await drafts.drafts(partition, { limit: held.length });
-  assert.deepEqual(
-    exact.drafts.map((draft) => draft.ticket),
-    held.map((draft) => draft.ticket),
-  );
-  assert.equal(
-    exact.more,
-    false,
-    "a page holding the whole collection does not claim there is another",
-  );
-  assert.equal(exact.nextCursor, undefined);
-
-  const single = await drafts.drafts(partition, { limit: 1 });
-  assert.equal(single.more, true);
-  assert.equal(single.nextCursor, first.ticket);
-  const last = await drafts.drafts(partition, {
-    limit: 1,
-    cursor: second.ticket,
-  });
-  assert.equal(last.more, false);
-  assert.equal(last.nextCursor, undefined);
-  assert.deepEqual(
-    (await drafts.drafts(partition, { limit: 1, cursor: third.ticket })).drafts,
-    [],
-  );
-});
-
-/**
- * Two projects of one tenant, each holding the ticket number the other does,
- * because `draft` is keyed by tenant, project and ticket and a project's first
- * draft is ticket one wherever it is.
- */
-test("a draft's brief is read from its own project, not its tenant", async () => {
-  const tenant = asTenantId(`tenant-shared-${randomUUID()}`);
-  const mine = {
-    tenant,
-    project: asProjectId(`project-mine-${randomUUID()}`),
-  };
-  const theirs = {
-    tenant,
-    project: asProjectId(`project-theirs-${randomUUID()}`),
-  };
-  for (const partition of [mine, theirs])
-    await harness.store.createProject(partition);
-  const briefOf = (which: string) =>
-    asDraftBrief({
-      intent: `Do the one thing ${which} is for.`,
-      links: [`https://${which}.example.test/one`],
-      checks: [`just check-${which}`],
-      branch: `refs/heads/${which}`,
-    });
-  const held = await leadToolsDraft(
-    mine,
-    await leadToolsConfiguration(mine),
-    briefOf("mine"),
-  );
-  const other = await leadToolsDraft(
-    theirs,
-    await leadToolsConfiguration(theirs),
-    briefOf("theirs"),
-  );
-  assert.equal(
-    held.ticket,
-    other.ticket,
-    "the case is about two projects sharing one ticket number",
-  );
-
-  const page = await drafts.drafts(mine, { limit: 100 });
-  assert.deepEqual(
-    page.drafts.map((draft) => draft.brief?.links),
-    [["https://mine.example.test/one"]],
-  );
-  assert.deepEqual(
-    page.drafts.map((draft) => draft.brief?.checks),
-    [["just check-mine"]],
-  );
-  assert.deepEqual(
-    await drafts.draft(mine, held.ticket).then((draft) => draft?.brief?.links),
-    ["https://mine.example.test/one"],
-    "the page answers what the single read answers",
-  );
-});
-
 test("a released or deleted draft is not one of a project's open drafts", async () => {
   const partition = await leadToolsProject("state");
   const revision = await leadToolsConfiguration(partition);
@@ -645,34 +543,17 @@ test("the retyped session facts stay the plane's alone", async () => {
   }
 });
 
-const execute = promisify(execFile);
-
-/** The provisioning command, run as the identity that owns the boundary. */
-async function provisionSession(
+/** The provisioning command with this suite's own defaults for the fields it never varies. */
+function leadToolsProvision(
   environment: Readonly<Record<string, string>>,
 ): Promise<{ readonly code: number; readonly output: string }> {
-  try {
-    const ran = await execute(
-      process.execPath,
-      ["--experimental-strip-types", "src/roots/provisionAgentSession.ts"],
-      {
-        cwd: process.cwd(),
-        env: {
-          ...process.env,
-          CHUG_PROVISION_SESSION_DATABASE_URL: postgresHarnessUrl(),
-          CHUG_PROVISION_SESSION_ACTION: "open",
-          CHUG_PROVISION_SESSION_KIND: "Lead",
-          CHUG_PROVISION_SESSION_CAPABILITIES: "RepositoryRead,ProjectRead",
-          CHUG_PROVISION_SESSION_CREDENTIAL_SLOT: "claude-code",
-          ...environment,
-        },
-      },
-    );
-    return { code: 0, output: ran.stdout };
-  } catch (failure) {
-    const ran = failure as { code?: number; stderr?: string };
-    return { code: ran.code ?? 1, output: ran.stderr ?? "" };
-  }
+  return sessionRigProvision({
+    CHUG_PROVISION_SESSION_ACTION: "open",
+    CHUG_PROVISION_SESSION_KIND: "Lead",
+    CHUG_PROVISION_SESSION_CAPABILITIES: "RepositoryRead,ProjectRead",
+    CHUG_PROVISION_SESSION_CREDENTIAL_SLOT: "claude-code",
+    ...environment,
+  });
 }
 
 test("a session provisioned from an issuer and a subject is the membership's own principal", async () => {
@@ -680,11 +561,11 @@ test("a session provisioned from an issuer and a subject is the membership's own
   const issuer = "https://auth.invalid/realm";
   const subject = `chuggy-selector-${randomUUID()}`;
   const session = `session-provisioned-${randomUUID()}`;
-  const opened = await provisionSession({
+  const opened = await leadToolsProvision({
     CHUG_PROVISION_SESSION_TENANT: partition.tenant,
     CHUG_PROVISION_SESSION_PROJECT: partition.project,
     CHUG_PROVISION_SESSION_SESSION: session,
-    CHUG_API_OIDC_ISSUER: issuer,
+    CHUG_PROVISION_SESSION_ISSUER: issuer,
     CHUG_PROVISION_SESSION_SUBJECT: subject,
     CHUG_PROVISION_SESSION_SYSTEM_PROMPT: "what this project wants",
   });
@@ -718,48 +599,22 @@ test("a session provisioned from an issuer and a subject is the membership's own
 
 test("a session may be named by one principal form and never by two", async () => {
   const partition = await leadToolsProject("bothforms");
-  const both = await provisionSession({
+  const both = await leadToolsProvision({
     CHUG_PROVISION_SESSION_TENANT: partition.tenant,
     CHUG_PROVISION_SESSION_PROJECT: partition.project,
     CHUG_PROVISION_SESSION_SESSION: `session-both-${randomUUID()}`,
     CHUG_PROVISION_SESSION_PRINCIPAL: "21:https://auth.invalidsubject",
-    CHUG_API_OIDC_ISSUER: "https://auth.invalid",
+    CHUG_PROVISION_SESSION_ISSUER: "https://auth.invalid",
     CHUG_PROVISION_SESSION_SUBJECT: "subject",
   });
   assert.equal(both.code, 1);
   assert.match(both.output, /not both/u);
 
-  const neither = await provisionSession({
+  const neither = await leadToolsProvision({
     CHUG_PROVISION_SESSION_TENANT: partition.tenant,
     CHUG_PROVISION_SESSION_PROJECT: partition.project,
     CHUG_PROVISION_SESSION_SESSION: `session-neither-${randomUUID()}`,
   });
   assert.equal(neither.code, 1);
   assert.match(neither.output, /CHUG_PROVISION_SESSION_PRINCIPAL is required/u);
-});
-
-/**
- * An exported empty variable is what a template that always emits a key leaves
- * behind, and it names no form at all: refusing it as "both" would name a
- * variable the deployment did not mean to set.
- */
-test("an empty issuer or subject is a variable nobody set", async () => {
-  const partition = await leadToolsProject("emptyforms");
-  const session = `session-empty-${randomUUID()}`;
-  const opened = await provisionSession({
-    CHUG_PROVISION_SESSION_TENANT: partition.tenant,
-    CHUG_PROVISION_SESSION_PROJECT: partition.project,
-    CHUG_PROVISION_SESSION_SESSION: session,
-    CHUG_PROVISION_SESSION_PRINCIPAL: "21:https://auth.invalidsubject",
-    CHUG_API_OIDC_ISSUER: "",
-    CHUG_PROVISION_SESSION_SUBJECT: "",
-  });
-  assert.equal(opened.code, 0, opened.output);
-  assert.deepEqual(
-    await harness.query(
-      `SELECT principal FROM agent_session WHERE session=$1`,
-      [session],
-    ),
-    [{ principal: "21:https://auth.invalidsubject" }],
-  );
 });

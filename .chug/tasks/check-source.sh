@@ -104,7 +104,22 @@ stage() { # <label> <command>...
 	fi
 }
 
+# A merge tool's leftovers under src/ or test/. The four static stages above
+# select `*.ts`, so a file named `nativeWeb.ts.orig` is source-shaped, is copied
+# into the API image by `COPY src/`, and is invisible to every one of them —
+# which is how 3,555 lines of stale duplicate reached a branch with a green
+# `ci.sh` (chuggy#530). The suffixes are exactly what `git merge`, `git apply`
+# and an editor leave behind, and none of them is ever a file somebody wrote.
+residue() {
+	found="$(git ls-files 'src/*' 'src/**' 'test/*' 'test/**' 2>/dev/null |
+		grep -E '(\.orig|\.rej|\.bak|~)$' || true)"
+	[ -z "$found" ] && return 0
+	printf '%s\n' "$found" | sed 's/^/tracked merge residue: /'
+	return 1
+}
+
 if [ "$run_static" -eq 1 ]; then
+	stage "  residue  " residue
 	stage "  typecheck" ./node_modules/.bin/tsc --noEmit
 	stage "  browser  " ./node_modules/.bin/tsc --noEmit -p tsconfig.contract.json
 	# Lint is the server-free half of the query checking: the SafeQL block in

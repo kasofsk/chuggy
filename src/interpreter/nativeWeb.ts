@@ -1094,14 +1094,6 @@ function composedLeadPorts(ports?: NativeLeadPorts): NativeLeadPorts {
   return ports;
 }
 
-/** The lead's own row reader as the session-keyed one, so the walk below reads one shape. */
-function leadStoreRows(ports: NativeLeadPorts): SessionStoreRowsRead {
-  return {
-    batches: ({ partition, stream, after, limit }) =>
-      ports.leads.batches({ partition, stream, after, limit }),
-  };
-}
-
 /** The stream a transcript read defaults to, which is the session's own agent reference. */
 function nativeSessionStream(
   subject: SessionTranscriptSubject,
@@ -1257,6 +1249,7 @@ function nativeLeadSessionMethods(
         lead: standing,
         streams: await ports.leads.streams(
           partition,
+          standing.session,
           sessionStoreStreamsAnswered,
         ),
       };
@@ -1271,7 +1264,7 @@ function nativeLeadSessionMethods(
       );
       if (standing === undefined) return { read: "NotFound" };
       return nativeSessionTranscriptPage(
-        leadStoreRows(ports),
+        ports.leads,
         ports.store,
         partition,
         standing,
@@ -1401,6 +1394,7 @@ function nativeSendThreadMessageMethod(
       await ports.threads.enqueueMessage({
         partition,
         principal,
+        session: input.session,
         turn: input.turn,
         input: turnInput,
       }),
