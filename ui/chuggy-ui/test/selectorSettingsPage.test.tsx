@@ -486,3 +486,145 @@ test("a limit a project set survives a save that edits the North Star", async ()
     },
   });
 });
+
+/**
+ * THE DISPATCH BUDGET INHERITS THE WHOLE-SET REPLACE, and this is the direction
+ * the other limit cases do not cover: the write is rebuilt from the boxes, so a
+ * save that edits only this one carries every other override or deletes it. A
+ * reader raising the budget would silently drop the project's North Star, its
+ * allowlists and its other limits, and nothing on the page would show it go.
+ */
+test("editing only the dispatch budget leaves every other override in place", async () => {
+  const server = await drawSettings(
+    () => ({ body: settingsBody(13, {}), status: 200 }),
+    settingsBody(12, {
+      northStar: "ship the console",
+      basePrompt: "choose the next ticket",
+      mode: "Running",
+      dispatchMode: "ApprovalRequired",
+      modelAllowlist: ["claude-opus-4"],
+      toolAllowlist: ["Read"],
+      operationalContextMaxAgeMs: 30_000,
+      limits: { tokensPerDecision: 100, dispatchesPerDecision: 2 },
+    }),
+  );
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("Dispatches"), {
+      target: { value: "5" },
+    });
+  });
+  await turned(save);
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 12,
+    overrides: {
+      northStar: "ship the console",
+      basePrompt: "choose the next ticket",
+      mode: "Running",
+      dispatchMode: "ApprovalRequired",
+      modelAllowlist: ["claude-opus-4"],
+      toolAllowlist: ["Read"],
+      operationalContextMaxAgeMs: 30_000,
+      limits: { tokensPerDecision: 100, dispatchesPerDecision: 5 },
+    },
+  });
+});
+
+/**
+ * THE DISPATCH BUDGET INHERITS THE EDITED-FIELDS REBASE. This reader raises the
+ * budget and never looks at the North Star; another administrator changes the
+ * North Star under them. The edited box keeps what was typed and every other
+ * box takes what now stands, so the next save does not write this reader's
+ * stale copy of somebody else's star back over it.
+ */
+test("a conflict keeps a typed dispatch budget and takes the rest", async () => {
+  let conflicting = true;
+  const server = await drawSettings(
+    () => {
+      if (conflicting) {
+        conflicting = false;
+        return {
+          body: {
+            error: { code: "SettingsRevisionConflict", message: "moved" },
+            settings: settingsBody(14, {
+              northStar: "somebody else's star",
+              limits: { dispatchesPerDecision: 2 },
+            }),
+          },
+          status: 409,
+        };
+      }
+      return { body: settingsBody(15, {}), status: 200 };
+    },
+    settingsBody(12, { limits: { dispatchesPerDecision: 1 } }),
+  );
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("Dispatches"), {
+      target: { value: "5" },
+    });
+  });
+  await turned(save);
+  await settled();
+  expect(screen.getByText("Conflict · 14")).toBeDefined();
+  expect(
+    screen.getByLabelText<HTMLInputElement>("Dispatches").value,
+    "the rebase took back a budget this reader had typed",
+  ).toBe("5");
+  expect(screen.getByLabelText<HTMLTextAreaElement>("North Star").value).toBe(
+    "somebody else's star",
+  );
+  await turned(save);
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 14,
+    overrides: {
+      northStar: "somebody else's star",
+      limits: { dispatchesPerDecision: 5 },
+    },
+  });
+});
+
+/**
+ * THE CEILING IS THE ROUTE'S AND THE PAGE SHOWS WHAT THE ROUTE SAID. What a
+ * decision may dispatch is bounded by the selector, and
+ * `console-reaches-no-source` is why no copy of that bound can be here: a
+ * second statement of it would refuse a budget the route takes, hiding a
+ * setting an owner is entitled to, and would still not catch one the route
+ * refuses. So the number is written as typed and the refusal is the one line
+ * the page says.
+ */
+const dispatchesPastTheCeiling = 99;
+
+test("a dispatch budget the route refuses is drawn and not judged here", async () => {
+  const server = await drawSettings(() => ({
+    body: {
+      error: { code: "InvalidRequest", message: "The request is invalid." },
+    },
+    status: 400,
+  }));
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("Dispatches"), {
+      target: { value: String(dispatchesPastTheCeiling) },
+    });
+  });
+  expect(
+    screen.getByLabelText("Dispatches").getAttribute("aria-invalid"),
+    "the form judged the ceiling itself instead of asking the route",
+  ).toBe("false");
+  expect(
+    screen.getByRole("button", { name: "Save" }).hasAttribute("disabled"),
+  ).toBe(false);
+  await turned(save);
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 12,
+    overrides: {
+      northStar: "ship the console",
+      limits: { dispatchesPerDecision: dispatchesPastTheCeiling },
+    },
+  });
+  expect(
+    screen.getByText(/^Failed · /).textContent,
+    "the route refused the budget and the page did not say so",
+  ).toContain("InvalidRequest");
+});
