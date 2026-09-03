@@ -128,6 +128,7 @@ export const sessionCapabilityTools = {
   RunCommands: ["Bash"],
   ProjectRead: projectReadTools,
   DraftAuthor: draftAuthorTools,
+  DraftOriginate: [],
   LeadDecision: leadDecisionToolNames,
 };
 
