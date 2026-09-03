@@ -23,8 +23,13 @@ import {
   publicMutationSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
+  threadMessageSchema,
   type PublicMutation,
 } from "../../contract/requests.ts";
+import {
+  asSessionTurnId,
+  type SessionTurnId,
+} from "../../interpreter/agentSession.ts";
 import type {
   SelectorProjectLimitOverrides,
   SelectorProjectOverrides,
@@ -531,4 +536,17 @@ export function parseSubmission(
     key: asIdempotencyKey(idempotencyKey),
     command: publicMutationCommand(publicMutationSchema.parse(body)),
   };
+}
+
+/**
+ * What a member put in their own thread: the turn identity they minted and the
+ * text they typed. The turn is the idempotency, exactly as `operation` is on a
+ * submission, so a retried post answers the ordinal it already has.
+ */
+export function parseThreadMessage(body: unknown): {
+  readonly turn: SessionTurnId;
+  readonly message: string;
+} {
+  const value = threadMessageSchema.parse(body);
+  return { turn: asSessionTurnId(value.turn), message: value.message };
 }

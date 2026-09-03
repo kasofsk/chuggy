@@ -42,6 +42,7 @@ import {
   asSessionId,
   sessionBearerPrefix,
 } from "../../src/interpreter/agentSession.ts";
+import { unservedThreads } from "./threadFixtures.ts";
 
 const authority = {
   installationAuthority: () =>
@@ -83,6 +84,11 @@ type ServedNativeWeb = Pick<
   | "runTurns"
   | "runTranscript"
   | "runConfiguration"
+  | "threads"
+  | "thread"
+  | "threadTranscript"
+  | "openThread"
+  | "sendThreadMessage"
 >;
 
 function fakeTicket(calls: string[]): NativeWeb["ticket"] {
@@ -292,6 +298,7 @@ function fakeDrafts(
 function fakeWeb(calls: string[]): ServedNativeWeb {
   return {
     ...unreadableLeadReads(),
+    ...unservedThreads,
     ...fakeOperations(calls),
     ...fakeConfigurations(calls),
     ...fakeDrafts(calls),

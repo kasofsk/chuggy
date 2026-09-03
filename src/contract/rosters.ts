@@ -301,6 +301,14 @@ export type AgenticRefusalEvent = (typeof agenticRefusalEvents)[number];
 export const sessionStates = ["Open", "Closed"] as const;
 export type SessionState = (typeof sessionStates)[number];
 
+/**
+ * Where one member thread stands, which is a session state or the membership it
+ * acts under being gone. It is wider than `sessionStates` because a thread with
+ * no owner is a thread a reader must still be told about.
+ */
+export const threadStandings = ["Open", "Closed", "Orphaned"] as const;
+export type ThreadStanding = (typeof threadStandings)[number];
+
 /** Who or what put a turn in a session's mailbox. */
 export const sessionTurnInputKinds = [
   "Observation",

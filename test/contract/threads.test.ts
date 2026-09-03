@@ -148,7 +148,24 @@ test("a thread entry names its owner, whether it is mine, and how much it holds"
     threadEntryResponseSchema.parse({ ...entry, mine: undefined }),
   );
   assert.throws(() =>
-    threadEntryResponseSchema.parse({ ...entry, state: "Orphaned" }),
+    threadEntryResponseSchema.parse({ ...entry, state: "Reaped" }),
+  );
+});
+
+/**
+ * A thread whose owner's membership is gone stands `Orphaned`, and the wire
+ * says so rather than reporting the session state alone: a reader deciding
+ * whether a thread still acts cannot get that from `Open` and an absent owner
+ * without knowing which of the two facts to fold.
+ */
+test("a thread whose owner is gone is named on the wire, not folded away", () => {
+  assert.equal(
+    threadEntryResponseSchema.parse({
+      ...entry,
+      owner: undefined,
+      state: "Orphaned",
+    }).state,
+    "Orphaned",
   );
 });
 
@@ -260,6 +277,54 @@ test("a thread read carries its mailbox tail and no more of it", () => {
     }),
   );
   assert.throws(() => threadResponseSchema.parse({ ...read, mine: undefined }));
+});
+
+/**
+ * One turn carries what the member typed and what came back, and either alone
+ * may weigh most of a body — so the mailbox is paged where the listing is not,
+ * and a page that has older turns behind it says which cursor reaches them.
+ */
+test("a mailbox page names the cursor an older page is asked for with", () => {
+  const read = {
+    session: "thread-geoff",
+    owner: "geoff",
+    state: "Open",
+    mine: true,
+    turns: [turn],
+    nextBefore: 1,
+    streams: [],
+  };
+
+  assert.equal(threadResponseSchema.parse(read).nextBefore, 1);
+  assert.equal(
+    threadResponseSchema.parse({ ...read, nextBefore: undefined }).nextBefore,
+    undefined,
+  );
+  assert.throws(() => threadResponseSchema.parse({ ...read, nextBefore: -1 }));
+});
+
+/**
+ * WHAT PAGING GUARANTEES IS THE PAGE, NOT A BYTE BOUND: one turn carries what
+ * the member typed and what came back, those two columns alone exceed what this
+ * server accepts as a REQUEST body, and so no page size makes a mailbox read fit
+ * that number. What paging buys is an answer bounded by the page asked for
+ * rather than by how long the conversation has become, with
+ * `chuggyToolResponseBytesMax` bounding the tool side by truncating.
+ */
+test("a mailbox answers the page asked for, however long the conversation is", () => {
+  assert.equal(
+    threadResponseSchema.parse({
+      session: "thread-geoff",
+      state: "Open",
+      mine: true,
+      turns: [],
+      streams: [],
+    }).turns.length,
+    0,
+  );
+  assert.ok(
+    threadMessageCharsMax + sessionTurnResultCharsMax > nativeHttpBodyBytesMax,
+  );
 });
 
 /** The walk is the lead's, over a different session, so the page is the same page. */

@@ -13,6 +13,7 @@ import {
   isSessionStoreStream,
   type SessionId,
   type SessionStoreStream,
+  type SessionTurnId,
 } from "./agentSession.ts";
 import type { Principal } from "./principal.ts";
 import type { EscalationReason, ResumePoint } from "../contract/rosters.ts";
@@ -101,6 +102,7 @@ import {
 import type { AttemptId, ExecutionId } from "./schedulerIdentity.ts";
 import { type PublicInstant } from "./publicResource.ts";
 import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
+import type { Authority } from "./operationInbox.ts";
 import type { SelectorOperationalContext } from "./selector.ts";
 import type { SelectorOperationalContextRead } from "./selectorOperationalContext.ts";
 import {
@@ -119,10 +121,11 @@ import {
   sessionHeldWalkAsks,
   type LeadRead,
   type LeadReadStore,
-  type LeadStanding,
   type LeadTranscriptQuery,
   type LeadTranscriptRead,
   type SessionHeldWalk,
+  type SessionStoreRowsRead,
+  type SessionTranscriptSubject,
 } from "./leadRead.ts";
 import {
   selectorHistory,
@@ -142,6 +145,29 @@ import {
   type RepositoryConfigurationImportOutcome,
   type RepositoryConfigurationImportPorts,
 } from "./repositoryConfiguration.ts";
+import {
+  threadStanding,
+  threadSystemPrompt,
+  threadTurnInput,
+  threadTurnInputCharsMax,
+} from "./thread.ts";
+import {
+  checkedThreadMailboxQuery,
+  checkedThreadMessage,
+  checkedThreadsLimit,
+  threadEntry,
+  threadMessageSent,
+  threadSeeding,
+  type ThreadMailboxQuery,
+  type ThreadMessageSent,
+  type ThreadOpening,
+  type ThreadRead,
+  type ThreadSeedingRead,
+  type ThreadSessionMint,
+  type ThreadStore,
+  type ThreadsRead,
+} from "./threadRead.ts";
+import { threadsAnsweredMax } from "../contract/http.ts";
 export { asPublicInstant, type PublicInstant } from "./publicResource.ts";
 export { asPrincipal, oidcPrincipal, type Principal } from "./principal.ts";
 export {
@@ -603,6 +629,32 @@ export interface NativeWeb {
     partition: Partition,
     query: DraftPageQuery,
   ): Promise<AuthorizedResult<DraftPage>>;
+  threads(principal: Principal, partition: Partition): Promise<ThreadsRead>;
+  thread(
+    principal: Principal,
+    partition: Partition,
+    session: SessionId,
+    query: ThreadMailboxQuery,
+  ): Promise<ThreadRead>;
+  threadTranscript(
+    principal: Principal,
+    partition: Partition,
+    session: SessionId,
+    query: LeadTranscriptQuery,
+  ): Promise<LeadTranscriptRead>;
+  openThread(
+    principal: Principal,
+    partition: Partition,
+  ): Promise<ThreadOpening>;
+  sendThreadMessage(
+    principal: Principal,
+    partition: Partition,
+    input: {
+      readonly session: SessionId;
+      readonly turn: SessionTurnId;
+      readonly message: string;
+    },
+  ): Promise<ThreadMessageSent>;
 }
 
 function submissionAccess(command: TicketCommand): ProjectAccessKind {
@@ -1042,11 +1094,19 @@ function composedLeadPorts(ports?: NativeLeadPorts): NativeLeadPorts {
   return ports;
 }
 
+/** The lead's own row reader as the session-keyed one, so the walk below reads one shape. */
+function leadStoreRows(ports: NativeLeadPorts): SessionStoreRowsRead {
+  return {
+    batches: ({ partition, stream, after, limit }) =>
+      ports.leads.batches({ partition, stream, after, limit }),
+  };
+}
+
 /** The stream a transcript read defaults to, which is the session's own agent reference. */
-function nativeLeadStream(
-  standing: LeadStanding,
+function nativeSessionStream(
+  subject: SessionTranscriptSubject,
 ): SessionStoreStream | undefined {
-  const reference = standing.agentReference;
+  const reference = subject.agentReference;
   return reference !== undefined && isSessionStoreStream(reference)
     ? asSessionStoreStream(reference)
     : undefined;
@@ -1058,10 +1118,11 @@ function nativeLeadStream(
  * of those: the page's own batches drew, so the page is answered, and only what
  * the walk was for goes unanswered.
  */
-async function nativeLeadHeldWalk(
-  ports: NativeLeadPorts,
+async function nativeSessionHeldWalk(
+  rows: SessionStoreRowsRead,
+  store: SessionStoreReadPort,
   partition: Partition,
-  standing: LeadStanding,
+  subject: SessionTranscriptSubject,
   stream: SessionStoreStream,
 ): Promise<SessionHeldWalk | "Undecided"> {
   const texts: { readonly batch: number; readonly content: string }[] = [];
@@ -1070,25 +1131,26 @@ async function nativeLeadHeldWalk(
   for (;;) {
     const asks = sessionHeldWalkAsks(batchesRead);
     if (asks === 0) return "Undecided";
-    const rows = await ports.leads.batches({
+    const page = await rows.batches({
       partition,
+      session: subject.session,
       stream,
       after,
       limit: asks,
     });
-    for (const row of rows) {
-      const read = await ports.store.readBatch({
+    for (const row of page) {
+      const read = await store.readBatch({
         partition,
-        session: standing.session,
+        session: subject.session,
         stream,
         batch: row.batch,
       });
       if (read.read !== "Content") return "Undecided";
       texts.push({ batch: row.batch, content: read.content });
     }
-    batchesRead += rows.length;
-    const last = rows.at(-1)?.batch;
-    if (rows.length < asks || last === undefined) return sessionHeldWalk(texts);
+    batchesRead += page.length;
+    const last = page.at(-1)?.batch;
+    if (page.length < asks || last === undefined) return sessionHeldWalk(texts);
     after = last;
   }
 }
@@ -1099,40 +1161,48 @@ async function nativeLeadHeldWalk(
  * beyond the page answers the page with no held set and `truncated`, and a batch
  * that is gone or fails its digest is elided and counted.
  */
-async function nativeLeadTranscriptBatches(
-  ports: NativeLeadPorts,
+async function nativeSessionTranscriptPage(
+  rows: SessionStoreRowsRead,
+  store: SessionStoreReadPort,
   partition: Partition,
-  standing: LeadStanding,
+  subject: SessionTranscriptSubject,
   query: LeadTranscriptQuery,
 ): Promise<LeadTranscriptRead> {
-  const stream = query.stream ?? nativeLeadStream(standing);
+  const stream = query.stream ?? nativeSessionStream(subject);
   if (stream === undefined) return { read: "NotFound" };
-  const rows = await ports.leads.batches({
+  const page = await rows.batches({
     partition,
+    session: subject.session,
     stream,
     after: query.after,
     limit: query.limit,
   });
   const drawn: SessionStoreRead[] = [];
-  for (const row of rows) {
-    const read = await ports.store.readBatch({
+  for (const row of page) {
+    const read = await store.readBatch({
       partition,
-      session: standing.session,
+      session: subject.session,
       stream,
       batch: row.batch,
     });
     if (read.read === "Unavailable") return read;
     drawn.push(read);
   }
-  const held = await nativeLeadHeldWalk(ports, partition, standing, stream);
-  const last = rows.at(-1)?.batch;
+  const held = await nativeSessionHeldWalk(
+    rows,
+    store,
+    partition,
+    subject,
+    stream,
+  );
+  const last = page.at(-1)?.batch;
   return {
     read: "Page",
     page: leadTranscriptPage({
       stream,
       drawn,
       ...(held === "Undecided" ? {} : { walk: held }),
-      ...(rows.length < query.limit || last === undefined
+      ...(page.length < query.limit || last === undefined
         ? {}
         : { nextAfter: last }),
     }),
@@ -1200,10 +1270,205 @@ function nativeLeadSessionMethods(
         leadTurnsAnsweredMax,
       );
       if (standing === undefined) return { read: "NotFound" };
-      return nativeLeadTranscriptBatches(
-        ports,
+      return nativeSessionTranscriptPage(
+        leadStoreRows(ports),
+        ports.store,
         partition,
         standing,
+        checkedLeadTranscriptQuery(query),
+      );
+    },
+  };
+}
+
+/**
+ * The ports one project's threads are read and written through, arriving
+ * together because a thread page needs all of them and a deployment that
+ * composed some would answer a page that is part blank without saying which
+ * part. `rows` and `store` are the lead's own two, session-keyed — a thread's
+ * transcript is drawn by the SAME walk over the SAME bytes, so one transcript
+ * has one page type and one wire answer — and `credentialSlot` is the
+ * installation's named mount for a member's thread, configuration rather than a
+ * port because what a thread speaks through is decided where a deployment is
+ * described and never by a caller.
+ */
+export interface NativeThreadPorts {
+  readonly threads: ThreadStore;
+  readonly sessions: ThreadSessionMint;
+  readonly seeding: ThreadSeedingRead;
+  readonly rows: SessionStoreRowsRead;
+  readonly store: SessionStoreReadPort;
+  readonly credentialSlot: string;
+}
+
+function composedThreadPorts(ports?: NativeThreadPorts): NativeThreadPorts {
+  if (ports === undefined)
+    throw new Error("native web: no thread ports were composed");
+  return ports;
+}
+
+/**
+ * What the member's first turn carries, which is the seeding block and no later
+ * turn's, or the ceiling it would not fit under. The overflow is a refusal
+ * rather than a raise because it is the project's North Star that is too long
+ * and not the member's request: a bare `InvalidRequest` would tell them their
+ * message was malformed, which is the one thing it was not.
+ */
+async function nativeThreadTurnInput(
+  ports: NativeThreadPorts,
+  partition: Partition,
+  authority: Authority,
+  seeded: boolean,
+  message: string,
+): Promise<string | { readonly charsMax: number }> {
+  if (!seeded) return threadTurnInput(message);
+  const seeding = await threadSeeding(ports.seeding, partition, authority);
+  try {
+    return threadTurnInput(message, seeding);
+  } catch (failure) {
+    if (failure instanceof RangeError)
+      return { charsMax: threadTurnInputCharsMax };
+    throw failure;
+  }
+}
+
+/**
+ * Opening the caller's own thread, which is `Mutate` and takes no session: a
+ * member has one thread per project, the definer is idempotent on that, and the
+ * roster it is opened with is the definer's own.
+ */
+function nativeOpenThreadMethod(
+  access: ProjectAccess,
+  threads?: NativeThreadPorts,
+): NativeWeb["openThread"] {
+  return async (principal, partition) => {
+    const authority = await access.authorize(principal, partition, "Mutate");
+    if (authority === undefined) return { result: "NotFound" };
+    const ports = composedThreadPorts(threads);
+    const northStar = await ports.seeding.northStar(partition);
+    const opened = await ports.threads.open({
+      partition,
+      principal,
+      session: ports.sessions.session(),
+      systemPrompt: threadSystemPrompt({
+        partition,
+        owner: authority.subject,
+        ...(northStar === undefined ? {} : { northStar }),
+      }),
+      credentialSlot: ports.credentialSlot,
+    });
+    return {
+      result: opened.opened,
+      thread: threadEntry(opened.thread, principal),
+    };
+  };
+}
+
+/**
+ * The message door, which is `Mutate` and reaches the caller's own mailbox
+ * alone: the session the URL names is checked against the one the caller's
+ * principal resolves to, so the page a member is reading and the mailbox their
+ * message lands in cannot come apart.
+ */
+function nativeSendThreadMessageMethod(
+  access: ProjectAccess,
+  threads?: NativeThreadPorts,
+): NativeWeb["sendThreadMessage"] {
+  return async (principal, partition, input) => {
+    const authority = await access.authorize(principal, partition, "Mutate");
+    if (authority === undefined) return { result: "NotFound" };
+    const ports = composedThreadPorts(threads);
+    const message = checkedThreadMessage(input.message);
+    const mine = await ports.threads.standing({
+      partition,
+      session: input.session,
+      query: { limit: 1 },
+    });
+    if (mine === undefined) return { result: "NotFound" };
+    if (mine.thread.principal !== principal) return { result: "NotYourThread" };
+    const standing = threadStanding(mine.thread);
+    if (standing !== "Open") return { result: standing };
+    const turnInput = await nativeThreadTurnInput(
+      ports,
+      partition,
+      authority,
+      mine.thread.agentReference === undefined,
+      message,
+    );
+    if (typeof turnInput !== "string")
+      return { result: "TooLarge", charsMax: turnInput.charsMax };
+    return threadMessageSent(
+      await ports.threads.enqueueMessage({
+        partition,
+        principal,
+        turn: input.turn,
+        input: turnInput,
+      }),
+      input.session,
+      input.turn,
+    );
+  };
+}
+
+/**
+ * The three reads every member of the project may make of every thread in it,
+ * each reauthorizing before it reaches a store. A thread that is not this
+ * project's own, and a session that is not a thread at all, answer alike:
+ * `standing` refuses both, and neither is a fact a reader is owed.
+ */
+function nativeThreadReadMethods(
+  access: ProjectAccess,
+  threads?: NativeThreadPorts,
+): Pick<NativeWeb, "threads" | "thread" | "threadTranscript"> {
+  return {
+    threads: async (principal, partition) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return { result: "NotFound" };
+      const ports = composedThreadPorts(threads);
+      const found = await ports.threads.threads(
+        partition,
+        checkedThreadsLimit(threadsAnsweredMax),
+      );
+      return {
+        result: "Found",
+        threads: found.map((record) => threadEntry(record, principal)),
+      };
+    },
+    thread: async (principal, partition, session, query) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return { result: "NotFound" };
+      const ports = composedThreadPorts(threads);
+      const found = await ports.threads.standing({
+        partition,
+        session,
+        query: checkedThreadMailboxQuery(query),
+      });
+      if (found === undefined) return { result: "NotFound" };
+      return {
+        result: "Found",
+        thread: threadEntry(found.thread, principal),
+        turns: found.turns,
+        ...(found.nextBefore === undefined
+          ? {}
+          : { nextBefore: found.nextBefore }),
+        streams: found.streams,
+      };
+    },
+    threadTranscript: async (principal, partition, session, query) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return { read: "NotFound" };
+      const ports = composedThreadPorts(threads);
+      const found = await ports.threads.standing({
+        partition,
+        session,
+        query: { limit: 1 },
+      });
+      if (found === undefined) return { read: "NotFound" };
+      return nativeSessionTranscriptPage(
+        ports.rows,
+        ports.store,
+        partition,
+        found.thread,
         checkedLeadTranscriptQuery(query),
       );
     },
@@ -1281,6 +1546,47 @@ function nativeLeadReadMethods(
   };
 }
 
+/** The thread side of the boundary, whose reads and whose two doors reach it as one. */
+function nativeThreadMethods(
+  access: ProjectAccess,
+  threads?: NativeThreadPorts,
+): Pick<
+  NativeWeb,
+  "threads" | "thread" | "threadTranscript" | "openThread" | "sendThreadMessage"
+> {
+  return {
+    ...nativeThreadReadMethods(access, threads),
+    openThread: nativeOpenThreadMethod(access, threads),
+    sendThreadMessage: nativeSendThreadMessageMethod(access, threads),
+  };
+}
+
+/**
+ * The reads answered from the projection rather than from a service, each
+ * reauthorizing before it reaches the store. They are one group because they
+ * are one store's reads and because a boundary listing them inline is a
+ * boundary nobody can see the shape of.
+ */
+function nativeProjectionMethods(
+  access: ProjectAccess,
+  reads: NativeReadStore,
+): Pick<
+  NativeWeb,
+  "operation" | "project" | "ticket" | "ticketNativeActions" | "nativeActions"
+> {
+  return {
+    operation: async (principal, partition, operation) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? undefined
+        : reads.operation(partition, operation),
+    project: async (principal, partition, query) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? { result: "NotFound" }
+        : reads.project(partition, checkedProjectReadQuery(query)),
+    ...nativeTicketMethods(access, reads),
+  };
+}
+
 /** Builds the application boundary from authorization, read, and inbox ports. */
 export function nativeWeb(
   access: ProjectAccess,
@@ -1298,10 +1604,12 @@ export function nativeWeb(
   runEvidenceReads?: RunEvidenceReadStore,
   runEvidenceContents?: RunEvidenceContentPort,
   leads?: NativeLeadPorts,
+  threads?: NativeThreadPorts,
 ): NativeWeb {
   return {
     ...nativeRunEvidenceMethods(access, runEvidenceReads, runEvidenceContents),
     ...nativeLeadReadMethods(access, reads, leads),
+    ...nativeThreadMethods(access, threads),
     importRepositoryConfigurations: nativeRepositoryConfigurationImportMethod(
       access,
       repositoryConfigurationImports,
@@ -1315,15 +1623,7 @@ export function nativeWeb(
       selectorContexts,
     ),
     submit: nativeSubmitMethod(access, inbox, backlog),
-    operation: async (principal, partition, operation) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? undefined
-        : reads.operation(partition, operation),
-    project: async (principal, partition, query) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? { result: "NotFound" }
-        : reads.project(partition, checkedProjectReadQuery(query)),
-    ...nativeTicketMethods(access, reads),
+    ...nativeProjectionMethods(access, reads),
     cancel: async (principal, partition, operation) => {
       const authority = await access.authorize(principal, partition, "Mutate");
       if (authority === undefined) return { result: "NotFound" };

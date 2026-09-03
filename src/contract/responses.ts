@@ -96,6 +96,7 @@ import {
   sessionTurnFailures,
   sessionTurnInputKinds,
   sessionTurnStates,
+  threadStandings,
 } from "./rosters.ts";
 
 const page = <T extends z.ZodType>(item: T) =>
@@ -994,7 +995,7 @@ export type SelectorHistoryResponse = z.infer<
 export const threadEntryResponseSchema = z.object({
   session: identitySchema,
   owner: identitySchema.optional(),
-  state: z.enum(sessionStates),
+  state: z.enum(threadStandings),
   mine: z.boolean(),
   turns: countSchema,
   agentReference: identitySchema.optional(),
@@ -1033,10 +1034,12 @@ export type ThreadTurnResponse = z.infer<typeof threadTurnResponseSchema>;
 export const threadResponseSchema = z.object({
   session: identitySchema,
   owner: identitySchema.optional(),
-  state: z.enum(sessionStates),
+  state: z.enum(threadStandings),
   mine: z.boolean(),
   agentReference: identitySchema.optional(),
   turns: z.array(threadTurnResponseSchema).max(threadTurnsAnsweredMax),
+  /** The cursor an older page is asked for with, absent where this page holds the first turn. */
+  nextBefore: countSchema.optional(),
   streams: z
     .array(leadStoreStreamResponseSchema)
     .max(sessionStoreStreamsAnswered),
