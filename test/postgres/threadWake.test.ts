@@ -14,11 +14,27 @@
  * answer: whether the pass's derived turn identity is the identity the door
  * treats as already enqueued, and whether the document it composes is a
  * document the column takes and the reader parses back.
+ *
+ * WHERE A MAILBOX STARTS IS THIS SUITE'S TOO, because the cursor and the
+ * session row are two facts only a real candidate read distinguishes: the
+ * cursor says how far the pass has read, and 067's `opened_after_sequence` says
+ * what the thread was opened after. The case that separates them runs its pass
+ * over a window holding a change from each side of the opening.
  */
 
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
+import {
+  apiRole,
+  boundaryOwnerRole,
+  configurationImporterRole,
+  finalizerRole,
+  schedulerRole,
+  selectorServiceRole,
+  ticketServiceRole,
+  workerPlaneRole,
+} from "../../src/adapters/postgres/schema.ts";
 import {
   threadTurnsAnsweredMax,
   threadWakesPerPassMax,
@@ -293,5 +309,125 @@ test("a wake offered a thread whose owner's membership is gone is orphaned, not 
       ),
     }),
     { woken: "Orphaned" },
+  );
+});
+
+/** Lifts the standing refusal on one of the member's tickets, which is a second change on it. */
+async function lift(
+  partition: Partition,
+  label: string,
+  ticket: TicketId,
+): Promise<void> {
+  const decision = await leadRigDecision(rig, partition, `${label}-lift`);
+  await rig.writes.record({
+    partition,
+    decision,
+    refusals: [],
+    lifts: [{ ticket }],
+  });
+}
+
+/**
+ * The window this case runs over holds BOTH changes on the same ticket, and the
+ * cursor is below both: what separates them is the log's position the thread
+ * was opened after. A pass that read the earlier one would be the rig's finding
+ * (kasofsk/chuggy#541) in miniature — a mailbox filled with what happened
+ * before its owner had one.
+ */
+test("a thread is woken by a change after it opened, and by none the log held before", async () => {
+  const partition = await threadRigProject(rig, "wakestart");
+  const member = await threadRigMember(rig, partition, "wakestart");
+  const revision = await configuration(partition);
+  const ticket = await draft(partition, revision, member);
+  const started = await fromTheHead();
+  await refuse(partition, "wakestart", ticket);
+  const thread = await threadRigThread(rig, partition, member);
+
+  const quiet = await threadWakePass(service(threadWakesPerPassMax));
+  assert.deepEqual(
+    quiet,
+    { read: 0, woken: 0, skipped: 0, cursor: started },
+    "a change from before the thread was opened is a candidate for it",
+  );
+  const opened = await rig.threads.standing({
+    partition,
+    session: thread.session,
+    query: { limit: threadTurnsAnsweredMax },
+  });
+  assert.equal(
+    opened?.turns.length,
+    0,
+    "the thread's mailbox holds a notice about something that happened before it existed",
+  );
+
+  await lift(partition, "wakestart", ticket);
+  const report = await threadWakePass(service(threadWakesPerPassMax));
+  assert.equal(report.read, 1, "the window holds both changes and read both");
+  assert.equal(report.woken, 1);
+  const standing = await rig.threads.standing({
+    partition,
+    session: thread.session,
+    query: { limit: threadTurnsAnsweredMax },
+  });
+  assert.equal(standing?.turns.length, 1);
+  const turn = standing?.turns[0];
+  assert.ok(turn !== undefined);
+  assert.equal(parseThreadWake(turn.input).wake, "RefusalLifted");
+});
+
+/**
+ * The negative space that keeps the position a fact about the opening. It is
+ * written by the INSERT `open_member_thread` makes and by nothing else, so no
+ * role holds `UPDATE` on it — the roster a thread holds is the column beside it
+ * that one role may move, and it is asked for here so a probe that could not
+ * see a privilege at all would be visible.
+ */
+test("no role may move the log position a thread was opened after", async () => {
+  const roles = [
+    boundaryOwnerRole,
+    apiRole,
+    selectorServiceRole,
+    schedulerRole,
+    workerPlaneRole,
+    ticketServiceRole,
+    finalizerRole,
+    configurationImporterRole,
+  ];
+  for (const role of roles) {
+    const rows = await rig.sessions.harness.query(
+      `SELECT has_column_privilege($1,'agent_session','opened_after_sequence','UPDATE') AS moves,
+              has_column_privilege($1,'agent_session','capabilities','UPDATE') AS reconfigures`,
+      [role],
+    );
+    assert.equal(
+      rows[0]?.["moves"],
+      false,
+      `${role} may rewrite what a thread is woken by`,
+    );
+    assert.equal(
+      rows[0]?.["reconfigures"],
+      role === boundaryOwnerRole,
+      `the probe disagrees with 062's own grant for ${role}`,
+    );
+  }
+});
+
+/**
+ * The other half of the column's negative space: a position below the log's own
+ * start is not a position, and the constraint says so where the grant cannot —
+ * the identity that owns the schema is not bound by a grant.
+ */
+test("a thread cannot be opened after a sequence the log never held", async () => {
+  const partition = await threadRigProject(rig, "wakenegative");
+  const member = await threadRigMember(rig, partition, "wakenegative");
+  const thread = await threadRigThread(rig, partition, member);
+
+  await assert.rejects(
+    () =>
+      rig.sessions.harness.query(
+        "UPDATE agent_session SET opened_after_sequence=-1 WHERE session=$1",
+        [thread.session],
+      ),
+    /agent_session_opens_after_a_sequence/u,
   );
 });
