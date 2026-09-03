@@ -701,6 +701,30 @@ test("every subset of the capabilities admits its tools and disallows the rest",
   }
 });
 
+/**
+ * The runtime's own tool-discovery tool is admitted by no capability, and a
+ * built-in the roster does not carry is in NEITHER list — governed by
+ * `permissionMode: "bypassPermissions"` alone, which is no roster at all. So a
+ * roster that merely declines to grant it still offers it, and a lead that
+ * reaches for it has the whole decision it was in refused against
+ * `toolAllowlist`, which is derived from the roster and cannot name it.
+ */
+test("the runtime's tool-discovery tool is denied by name to every roster", () => {
+  const discovery = "ToolSearch";
+
+  for (const [capability, tools] of Object.entries(sessionCapabilityTools))
+    assert.ok(!tools.includes(discovery), `${capability} admits it`);
+  for (const held of [[], [...leadRoster], everyCapability]) {
+    const { allowedTools, disallowedTools } = sessionAllowedTools(held);
+
+    assert.ok(
+      disallowedTools.includes(discovery),
+      `${held.join(",")} does not deny it by name`,
+    );
+    assert.ok(!allowedTools.includes(discovery), `${held.join(",")} allows it`);
+  }
+});
+
 test("a session with no ProjectRead disallows every chuggy read by name", () => {
   const { allowedTools, disallowedTools } = sessionAllowedTools([
     "RepositoryRead",
