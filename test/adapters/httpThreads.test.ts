@@ -507,28 +507,27 @@ test("a message body outside the schema is refused at the door", async () => {
 });
 
 /**
- * ONE WIRE VOCABULARY, ONE ROSTER, AND EVERY ARM IN IT: the console reads
- * `threadMessageRefusalCodes`, so a door arm answering a lookalike literal — or
- * a member the roster never heard of — is a drift no gate could see, which is
- * why every arm's code is collected and held against the whole roster both ways,
- * `NotFound` excepted as the general one every read answers with.
- *
- * The refusal map is the whole of what a member is told, and each arm is a
- * different thing to do about it: someone else's thread is theirs to write, a
- * closed one is reopened, an ownerless one cannot be, and a full one waits.
+ * ONE WIRE VOCABULARY, ONE ROSTER, EVERY ARM IN IT, AND EACH ARM ITS OWN CODE.
+ * The map carries the code it expects, because a set comparison against the
+ * roster stays green for two arms that swapped codes while each arm is a
+ * different thing for a member to do about it — someone else's thread is theirs
+ * to write, a closed one is reopened, an ownerless one cannot be, and a full one
+ * waits — and the set comparison stays beside it so no member of the roster goes
+ * unreached either, `NotFound` excepted as the general one every read answers
+ * with.
  */
 test("every refusal the door can meet reaches the wire as its own status", async () => {
   const map = [
-    ["NotYourThread", 403, undefined],
-    ["TooLarge", 400, undefined],
-    ["Closed", 409, undefined],
-    ["Orphaned", 409, undefined],
-    ["NotFound", 404, undefined],
-    ["Backlogged", 429, String(threadBacklogRetrySeconds)],
+    ["NotYourThread", 403, "NotYourThread", undefined],
+    ["TooLarge", 400, "ThreadTurnTooLarge", undefined],
+    ["Closed", 409, "ThreadClosed", undefined],
+    ["Orphaned", 409, "ThreadOrphaned", undefined],
+    ["NotFound", 404, "NotFound", undefined],
+    ["Backlogged", 429, "ThreadBacklogged", String(threadBacklogRetrySeconds)],
   ] as const;
 
-  const codes: string[] = [];
-  for (const [result, status, retry] of map) {
+  const answered: string[] = [];
+  for (const [result, status, code, retry] of map) {
     const held: ThreadCase = {
       calls: [],
       sent:
@@ -547,21 +546,14 @@ test("every refusal the door can meet reaches the wire as its own status", async
     });
     assert.equal(refused.statusCode, status, result);
     assert.equal(refused.headers["retry-after"], retry, result);
-    const code = refused.json<HttpErrorEnvelope>().error.code;
-    assert.notEqual(code, "InvalidRequest", result);
-    codes.push(code);
+    assert.equal(refused.json<HttpErrorEnvelope>().error.code, code, result);
+    answered.push(code);
   }
 
   assert.deepEqual(
-    codes.filter((code) => code !== "NotFound").sort(),
+    answered.filter((code) => code !== "NotFound").sort(),
     [...threadMessageRefusalCodes].sort(),
   );
-  for (const code of codes)
-    assert.ok(
-      code === "NotFound" ||
-        (threadMessageRefusalCodes as readonly string[]).includes(code),
-      `${code} is outside the roster the console reads`,
-    );
 });
 
 /**

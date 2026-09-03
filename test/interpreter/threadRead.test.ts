@@ -284,6 +284,33 @@ test("a member reads another member's thread, and it is not theirs", async () =>
   assert.equal(read.result === "Found" ? read.thread.owner : "", "geoff");
 });
 
+/**
+ * READING A THREAD IS `Read` AND NOTHING MORE. A member the listing showed a
+ * thread to must be able to open it, so a read narrowed to `Mutate` would hide
+ * from a reader exactly what it had just told them was there.
+ */
+test("a member with Read alone opens a thread and its transcript", async () => {
+  const one = boundary({}, ["Read"]);
+  const walk = boundary({}, ["Read"]);
+
+  const read = await one.web.thread(dana, partition, mine, { limit: 4 });
+  const page = await walk.web.threadTranscript(dana, partition, mine, {
+    after: 0,
+    limit: 2,
+  });
+
+  assert.equal(read.result, "Found");
+  assert.equal(page.read, "Page");
+  assert.deepEqual(
+    one.held.calls.filter((call) => call.startsWith("authorize:")),
+    ["authorize:Read"],
+  );
+  assert.deepEqual(
+    walk.held.calls.filter((call) => call.startsWith("authorize:")),
+    ["authorize:Read"],
+  );
+});
+
 /** A session of another project, and one that is not a thread at all, are one answer. */
 test("a session this project holds no thread for is not found", async () => {
   const { web } = boundary();
