@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { URL } from "node:url";
 
 import { z } from "zod";
 
@@ -208,6 +209,54 @@ test("each read reaches the route its roster names, and only it", async () => {
     assert.equal(
       api.calls[0].path,
       `/api/v1/tenants/vteng/projects/chuggy${suffix}`,
+      name,
+    );
+  }
+});
+
+/**
+ * Every identity a tool puts in a path segment, given one that carries the
+ * separator. A segment is model-chosen text bounded only by `identity(z)`, so
+ * an unencoded one is a tool that reaches a route its roster does not name:
+ * `new URL(path, origin)` resolves `..` before the request is made, which is
+ * how `…/threads/../lead/transcript` becomes the lead's route. The assertion is
+ * on the RESOLVED pathname rather than on the string this file built, because
+ * the string is not what the API is asked for.
+ */
+test("an identity carrying a separator stays inside the route its tool names", async () => {
+  const escaping = "../lead";
+  const escaped = "..%2Flead";
+  const partition = "/api/v1/tenants/vteng/projects/chuggy";
+  const cases = [
+    [
+      ["read_configuration", { revision: escaping }],
+      `/configurations/${escaped}`,
+    ],
+    [["read_execution", { execution: escaping }], `/executions/${escaped}`],
+    [
+      ["read_run_transcript", { execution: escaping, attempt: escaping }],
+      `/executions/${escaped}/attempts/${escaped}/transcript`,
+    ],
+    [["read_operation", { operation: escaping }], `/operations/${escaped}`],
+    [
+      ["initialize_draft", { revision: escaping }],
+      `/draft-initializations/${escaped}`,
+    ],
+    [["read_thread", { session: escaping }], `/threads/${escaped}`],
+    [
+      ["read_thread_transcript", { session: escaping }],
+      `/threads/${escaped}/transcript`,
+    ],
+  ];
+  for (const [[name, args], suffix] of cases) {
+    const api = apiOf();
+
+    await routeOf(name, args, api);
+
+    assert.equal(api.calls.length, 1, name);
+    assert.equal(
+      new URL(api.calls[0].path, "https://api.test").pathname,
+      `${partition}${suffix}`,
       name,
     );
   }

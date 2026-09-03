@@ -31,9 +31,11 @@
  * DERIVED WORK ONLY IS WHAT `DraftAuthor` ADMITS. `file_dependent` files
  * against a parent that already exists and carries it in the draft's
  * dependencies; a roster holding `DraftAuthor` alone cannot originate work.
- * Origination is `create_draft` under `DraftOriginate`, which a member's thread
- * holds and no lead roster does, so the lead's derived-work rule is which
- * capability admits which tool rather than a sentence in a description.
+ * Origination is `create_draft` under `DraftOriginate` alone. Which capability
+ * a session is opened with is the provisioning root's, not this image's, so
+ * what is true here is the mapping: a roster without `DraftOriginate` cannot
+ * reach the tool, and the derived-work rule is that mapping rather than a
+ * sentence in a description.
  * `Prerequisite` is admitted by the schema only so its refusal can name the
  * reason — a released ticket's dependencies are immutable in
  * `model/domain.qnt`, which names re-authoring machinery as deliberately absent.
@@ -304,8 +306,7 @@ export const chuggyToolsNotYetServed = {
     "The lead's own transcript cannot be read by this installation yet.",
   list_threads:
     "This project's member threads cannot be listed by this installation yet.",
-  read_thread:
-    "Another member's thread cannot be read by this installation yet.",
+  read_thread: "A member thread cannot be read by this installation yet.",
   read_thread_transcript:
     "A thread's own transcript cannot be read by this installation yet.",
 };

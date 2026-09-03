@@ -16,7 +16,6 @@ import {
   nativeHttpBodyBytesMax,
   selectorSettingsTextCharsMax,
 } from "../../src/contract/http.ts";
-import type { SessionCapability } from "../../src/interpreter/agentSession.ts";
 import { allSessionCapabilities } from "../../src/interpreter/agentSession.ts";
 import {
   allChuggyTools,
@@ -36,18 +35,7 @@ import {
 } from "../../src/interpreter/leadTools.ts";
 import type { SelectorResolvedSettings } from "../../src/interpreter/selector.ts";
 import { threadCapabilitiesDefault } from "../../src/interpreter/thread.ts";
-
-/**
- * The roster this installation opens a lead with, written out because nothing
- * in the tree names it: the provisioning root chooses it per session, so a test
- * that derived it would be agreeing with whatever a caller last passed.
- */
-const leadRoster: readonly SessionCapability[] = [
-  "RepositoryRead",
-  "ProjectRead",
-  "DraftAuthor",
-  "LeadDecision",
-];
+import { leadRoster } from "../contract/sessionRosterFixture.ts";
 
 const settings = (
   basePrompt: string,

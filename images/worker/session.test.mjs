@@ -3,6 +3,10 @@ import test from "node:test";
 
 import { z } from "zod";
 
+import {
+  leadRoster,
+  threadRoster,
+} from "../../test/contract/sessionRosterFixture.ts";
 import { chuggyToolPrefix, sessionBuiltInTools } from "./chuggyTools.mjs";
 import {
   checkedSessionBounds,
@@ -521,12 +525,7 @@ test("a reference bind the plane did not accept ends the session rather than run
 
 const leadFacts = {
   ...facts,
-  capabilities: [
-    "RepositoryRead",
-    "ProjectRead",
-    "DraftAuthor",
-    "LeadDecision",
-  ],
+  capabilities: [...leadRoster],
   systemPrompt: "# What this project wants\n\nShip the lead.",
 };
 
@@ -832,21 +831,15 @@ test("a project tool reaches the API under the session's own bearer", async () =
 });
 
 /**
- * A member's thread as the plane hands one over. The roster is written out
- * rather than imported: this image reaches nothing under `src/`, so
- * `threadCapabilitiesDefault` is held to this copy by
- * `test/contract/imageTools.test.mjs` and not by an import here.
+ * A member's thread as the plane hands one over, under the roster the fixture
+ * carries: `test/contract/imageTools.test.mjs` asserts that copy is
+ * `threadCapabilitiesDefault`, so a thread suite cannot stay green against a
+ * roster the tree no longer opens a thread with.
  */
 const threadFacts = {
   ...facts,
   kind: "Thread",
-  capabilities: [
-    "RepositoryRead",
-    "RunCommands",
-    "ProjectRead",
-    "DraftAuthor",
-    "DraftOriginate",
-  ],
+  capabilities: [...threadRoster],
   systemPrompt:
     "# Whose thread this is\n\nYou are geoff's thread on vteng/chuggy.",
 };

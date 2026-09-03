@@ -38,9 +38,11 @@
  * DERIVED WORK ONLY IS THE LEAD'S RULE, AND THE MODEL IS WHY. `DraftAuthor`
  * carries no bare create: a dependent is filed against a parent that already
  * exists, and a roster holding only it cannot originate work. `create_draft` is
- * admitted by `DraftOriginate` alone, which a member's thread holds and no lead
- * roster does, so the lead's rule is a fact about which capability admits which
- * tool rather than a sentence in a description. Neither member holds a tool that
+ * admitted by `DraftOriginate` alone — a member a thread is opened with
+ * (`./thread.ts`'s `threadCapabilitiesDefault`) and a lead is not — so the rule
+ * is a fact about which capability admits which tool rather than a sentence in
+ * a description. Which capabilities any one session is opened with is the
+ * provisioning root's, and nothing here can state it. Neither member holds a tool that
  * re-authors a released ticket — merge, split, supersede, re-point a
  * dependency — because a released ticket's dependencies are immutable in
  * `model/domain.qnt`, which names re-authoring machinery as deliberately absent.

@@ -54,14 +54,16 @@ import {
 import { threadCapabilitiesDefault } from "../../src/interpreter/thread.ts";
 import * as image from "../../images/worker/chuggyTools.mjs";
 import * as decision from "../../images/worker/leadDecision.mjs";
+import { leadRoster, threadRoster } from "./sessionRosterFixture.ts";
 
-/** The roster this installation opens a lead with, which nothing in the tree names. */
-const leadRoster = [
-  "RepositoryRead",
-  "ProjectRead",
-  "DraftAuthor",
-  "LeadDecision",
-];
+/**
+ * The one thing holding the roster the image's suites drive a thread with to
+ * the roster the control plane opens one with. Without it a capability added to
+ * the default leaves every thread suite green against a roster no thread has.
+ */
+test("the roster the image suites drive a thread with is the one a thread is opened with", () => {
+  assert.deepEqual([...threadRoster], [...threadCapabilitiesDefault]);
+});
 
 test("the image offers exactly the tools the roster declares, in the same order", () => {
   assert.deepEqual(image.allChuggyTools, [...allChuggyTools]);
@@ -135,7 +137,7 @@ test("the relations the image offers and refuses are the roster's own", () => {
 });
 
 test("either roster fits one measured turn's tool list", () => {
-  for (const roster of [leadRoster, [...threadCapabilitiesDefault]]) {
+  for (const roster of [[...leadRoster], [...threadRoster]]) {
     const names = [
       ...image.sessionBuiltInTools,
       ...image.chuggyToolNames(roster),
@@ -163,8 +165,8 @@ test("either roster fits one measured turn's tool list", () => {
  */
 test("a thread's roster allows origination by name and a lead's disallows it by name", () => {
   const originating = `${chuggyToolPrefix}create_draft`;
-  const thread = image.sessionAllowedTools([...threadCapabilitiesDefault]);
-  const lead = image.sessionAllowedTools(leadRoster);
+  const thread = image.sessionAllowedTools([...threadRoster]);
+  const lead = image.sessionAllowedTools([...leadRoster]);
 
   assert.ok(thread.allowedTools.includes(originating));
   assert.ok(!thread.disallowedTools.includes(originating));
@@ -178,7 +180,7 @@ test("a thread's roster allows origination by name and a lead's disallows it by 
  * that a lead does not is origination alone.
  */
 test("both rosters carry the thread reads, under ProjectRead", () => {
-  for (const roster of [leadRoster, [...threadCapabilitiesDefault]])
+  for (const roster of [[...leadRoster], [...threadRoster]])
     for (const tool of [
       "list_threads",
       "read_thread",
