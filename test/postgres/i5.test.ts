@@ -2043,6 +2043,57 @@ test("a paused installation admits none of a decision's deliveries", async () =>
 });
 
 /**
+ * An installation pause is the operator's kill switch and a project cannot
+ * lift it: `resolvedSelectorSettings` clamps `mode` to `Paused` whatever the
+ * project asked for, and the trigger's pause arm reads the installation for
+ * the same reason while the arm beside it reads the project. A project row
+ * saying `Running` is the input that tells those two arms apart, because with
+ * `mode` left NULL — as every pairing beside this one leaves it — a ceiling
+ * and a coalesce over the project's row answer identically.
+ */
+test("a paused installation admits no delivery of a project that calls itself running", async () => {
+  await i5HeldAutomaticReadiness();
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-paused-running",
+  );
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const controlPool = postgresRolePool(selectorControlRole);
+  const state = postgresSelectorState(selectorPool);
+  const control = postgresSelectorRuntimeControl(controlPool);
+  const initial = await control.settings();
+  const paused = await control.pause(initial.revision, selectorAdministrator);
+  assert.equal(paused.updated, true);
+  const decision = `paused-running-${crypto.randomUUID()}`;
+  try {
+    const written = await i5HeldProjectOverrides(partition, {
+      mode: "Running",
+      dispatchMode: "Automatic",
+    });
+    assert.deepEqual(
+      [written.overrides.mode, written.effective.mode],
+      ["Running", "Paused"],
+      "the project's row says Running and the resolution still says Paused",
+    );
+    assert.equal(
+      await wrote(
+        state.record(
+          selectorTestProposal(partition, decision, [1, 2]),
+          selectorTestState(partition, 0),
+        ),
+      ),
+      0,
+    );
+    assert.deepEqual(await i5DeliveryRows(decision), []);
+  } finally {
+    const current = await control.settings();
+    await control.unpause(current.revision, selectorAdministrator);
+    await selectorPool.end();
+    await controlPool.end();
+  }
+});
+
+/**
  * The row's key and the command it stores name one ticket between them. A row
  * where they disagree is not read as either: submitting it under the command's
  * ticket would settle the row keyed by that ticket, which is a sibling of the
