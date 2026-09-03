@@ -23,7 +23,6 @@ import { postgresThreadSeeding } from "../../src/adapters/postgres/thread.ts";
 import {
   postgresThreadWakes,
   postgresThreads,
-  type ThreadWakeStorePorts,
 } from "../../src/adapters/postgres/thread.ts";
 import { sessionStoreStreamsAnswered } from "../../src/contract/http.ts";
 import type { Authority } from "../../src/interpreter/operationInbox.ts";
@@ -44,6 +43,7 @@ import type {
   ThreadSessionMint,
   ThreadStore,
 } from "../../src/interpreter/threadRead.ts";
+import type { ThreadWakeStore } from "../../src/interpreter/threadWake.ts";
 import { leadRigOpen, leadRigProject, type LeadRig } from "./leadHarness.ts";
 
 /** One opened subject: the lead rig, and the three stores 062 answers. */
@@ -51,7 +51,7 @@ export interface ThreadRig extends LeadRig {
   readonly threads: ThreadStore;
   readonly minting: ThreadSessionMint;
   readonly seeding: ThreadSeedingRead;
-  readonly wakes: ThreadWakeStorePorts;
+  readonly wakes: ThreadWakeStore;
 }
 
 export async function threadRigOpen(): Promise<ThreadRig> {

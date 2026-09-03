@@ -42,8 +42,18 @@ test("every control-plane root reports an absent schema as could-not-run", async
     };
     const config = { idleIntervalMilliseconds: 1000, shutdownDrainMilliseconds: 1000 };
     const identity = { owner: 'owner', recoveryEpoch: 'epoch', cluster: 'cluster' };
+    const wakes = {
+      store: {
+        cursor: async () => { throw new Error('a process that could not run took a wake pass'); },
+        candidates: async () => [],
+        wake: async () => ({ woken: 'NoThread' }),
+        advance: async (sequence) => sequence,
+      },
+      clock: { nowIso: () => '2026-09-02T00:00:00.000Z' },
+      wakesPerPassMax: 1,
+    };
     const runtimes = [
-      roots.selectorProcess({}, requirements, config),
+      roots.selectorProcess({}, wakes, requirements, config),
       roots.schedulerProcess({}, {}, identity, requirements, config),
       roots.ticketServiceProcess(
         {},
@@ -100,7 +110,28 @@ const successfulProcessProgram = `
     const identity = { owner: 'owner', recoveryEpoch: 'epoch', cluster: 'cluster' };
     let selectorPasses = 0;
     let sessionPasses = 0;
-    const selectorService = { runOnce: async () => { selectorPasses += 1; return {}; } };
+    /** Appending after an await is what makes the ORDER observable: a tick that started the two together reads the log before this tick's rows are in it. */
+    let appended = 0;
+    const selectorService = {
+      runOnce: async () => {
+        selectorPasses += 1;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        appended += 1;
+        return {};
+      },
+    };
+    let wakePasses = 0;
+    const read = [];
+    const selectorWakes = {
+      store: {
+        cursor: async () => 0,
+        candidates: async () => { wakePasses += 1; read.push(appended); return []; },
+        wake: async () => { throw new Error('an empty page offered a wake'); },
+        advance: async () => { throw new Error('an empty page moved the cursor'); },
+      },
+      clock: { nowIso: () => '2026-09-02T00:00:00.000Z' },
+      wakesPerPassMax: 1,
+    };
     const schedulerService = {
       store: {
         fenceOldEpochAttempts: async () => 0,
@@ -149,7 +180,7 @@ const successfulProcessProgram = `
       metrics: finalizerTelemetry.silentFinalizerTelemetry,
     };
     const runtimes = [
-      roots.selectorProcess(selectorService, requirements, config),
+      roots.selectorProcess(selectorService, selectorWakes, requirements, config),
       roots.schedulerProcess(schedulerService, sessionService, identity, requirements, config),
       roots.ticketServiceProcess(
         ticketService,
@@ -164,7 +195,10 @@ const successfulProcessProgram = `
     await new Promise((resolve) => setTimeout(resolve, 10));
     const health = runtimes.map((runtime) => runtime.health());
     for (const runtime of runtimes) await runtime.stop();
-    process.stdout.write(JSON.stringify({ outcomes, health, selectorPasses, sessionPasses }));
+    process.stdout.write(JSON.stringify({
+      outcomes, health, selectorPasses, sessionPasses, wakePasses,
+      read: read.slice(0, 1),
+    }));
   `;
 
 test("every control-plane responsibility starts, passes and stops against its ports", async () => {
@@ -183,6 +217,8 @@ test("every control-plane responsibility starts, passes and stops against its po
     readonly health: readonly unknown[];
     readonly selectorPasses: number;
     readonly sessionPasses: number;
+    readonly wakePasses: number;
+    readonly read: readonly number[];
   };
   assert.deepEqual(
     found.outcomes,
@@ -201,6 +237,16 @@ test("every control-plane responsibility starts, passes and stops against its po
   assert.ok(
     found.sessionPasses > 0,
     "the scheduler process took a tick without a session pass in it",
+  );
+  assert.equal(
+    found.wakePasses,
+    found.selectorPasses,
+    "one loop drives both passes, so a tick that ran one ran the other",
+  );
+  assert.deepEqual(
+    found.read,
+    [1],
+    "the wake pass read the log before this tick's runtime pass had appended to it, so the two are not ordered",
   );
 });
 
@@ -305,6 +351,64 @@ const containedFaultProgram = `
     await runtime.stop();
     process.stdout.write(JSON.stringify(health));
   `;
+
+const truncatedWakeProgram = `
+    const roots = await import('./src/roots/controlPlane.ts');
+    const schema = await import('./src/adapters/postgres/runtimeSchema.ts');
+    const rows = schema.currentRuntimeSchemaContract.required;
+    const requirements = { pool: { query: async () => ({ rows }) } };
+    const config = { idleIntervalMilliseconds: 1000, shutdownDrainMilliseconds: 1000 };
+    /** A page that fills its bound with one sequence, the one arm in which the pass moves past candidates it never read. */
+    const candidate = (session) => ({
+      sequence: 7,
+      partition: { tenant: 'acme', project: 'web' },
+      reason: 'TicketRefused',
+      resource: '11',
+      principal: 'oidc:' + session,
+      session,
+    });
+    const wakes = {
+      store: {
+        cursor: async () => 0,
+        candidates: async () => [candidate('one'), candidate('two')],
+        wake: async () => ({ woken: 'Woken', ordinal: 1 }),
+        advance: async (sequence) => sequence,
+      },
+      clock: { nowIso: () => '2026-09-02T00:00:00.000Z' },
+      wakesPerPassMax: 2,
+    };
+    const runtime = roots.selectorProcess(
+      { runOnce: async () => ({}) },
+      wakes,
+      requirements,
+      config,
+    );
+    await runtime.start();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const health = runtime.health();
+    await runtime.stop();
+    process.stdout.write(JSON.stringify(health));
+  `;
+
+test("a change wider than one pass reads reaches an operator, and the loop lives", async () => {
+  const result = await execute(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--input-type=module",
+      "--eval",
+      truncatedWakeProgram,
+    ],
+    { cwd: process.cwd() },
+  );
+  assert.deepEqual(JSON.parse(result.stdout), { live: true, ready: true });
+  assert.ok(
+    result.stderr.includes(
+      "thread wakes: change 7 wakes more threads than one pass reads, and the pass moved past it",
+    ),
+    result.stderr,
+  );
+});
 
 test("a contained fault reaches an operator on stderr and leaves the loop live", async () => {
   const result = await execute(
