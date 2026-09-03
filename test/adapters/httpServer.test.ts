@@ -49,47 +49,12 @@ const authority = {
     Promise.resolve(asInstallationId("018f84a1-4c2b-7def-8abc-0123456789ab")),
 };
 
-type ServedNativeWeb = Pick<
-  NativeWeb,
-  | "cancel"
-  | "configuration"
-  | "configurations"
-  | "createConfiguration"
-  | "importRepositoryConfigurations"
-  | "createDraft"
-  | "initializeDraft"
-  | "deleteDraft"
-  | "dispatchView"
-  | "draft"
-  | "drafts"
-  | "notifications"
-  | "operation"
-  | "project"
-  | "projectInventory"
-  | "reviseDraft"
-  | "submit"
-  | "ticket"
-  | "ticketNativeActions"
-  | "nativeActions"
-  | "execution"
-  | "executions"
-  | "operationalStatus"
-  | "selectorOperationalContext"
-  | "lead"
-  | "leadTranscript"
-  | "agenticRefusals"
-  | "ticketAgenticRefusals"
-  | "selectorHistory"
-  | "outputContent"
-  | "runTurns"
-  | "runTranscript"
-  | "runConfiguration"
-  | "threads"
-  | "thread"
-  | "threadTranscript"
-  | "openThread"
-  | "sendThreadMessage"
->;
+/**
+ * What the app takes, read from the app rather than restated here: a suite
+ * holding its own copy of that roster is a second place for it to drift, and
+ * the boundary gains a method every slice or two.
+ */
+type ServedNativeWeb = Parameters<typeof createNativeHttpApp>[0];
 
 function fakeTicket(calls: string[]): NativeWeb["ticket"] {
   return (_principal, _partition, ticket) => {
