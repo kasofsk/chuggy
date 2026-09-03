@@ -78,7 +78,11 @@ async function git(args, options) {
 /**
  * What a clone that did not finish leaves. `git` cleans up after itself only
  * when it fails on its own; killed at the bound above it does not, and the
- * degraded arm would then hand the lead a half-tree where it reports none.
+ * degraded arm would then hand the lead a half-tree where it reports none. It
+ * removes a whole tree too, where `rev-parse` was what failed, because "no
+ * tree" is what that arm reports either way. The reason is logged before this
+ * runs: `rm` takes no bound, and a removal that stalled would otherwise take
+ * the message that says why the clone failed with it.
  */
 async function discard(directory, log) {
   try {
@@ -135,7 +139,6 @@ export async function sessionCheckout(
     log(`session checkout ${reference} at ${commit}\n`);
     return { directory, commit };
   } catch (failure) {
-    await discard(directory, log);
     log(
       scrub(
         `session checkout ${reference} failed: ${
@@ -143,6 +146,7 @@ export async function sessionCheckout(
         }\n`,
       ),
     );
+    await discard(directory, log);
     return undefined;
   }
 }

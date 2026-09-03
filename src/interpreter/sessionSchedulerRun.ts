@@ -58,7 +58,9 @@
  * reason: the read depends on nothing an attempt produces, and a raise after
  * `openAttempt` would leave an opened, unplaced attempt that nothing cancels
  * and that costs a whole lease window to reap — once per pass, per deployment,
- * for as long as the grant is missing.
+ * for as long as the grant is missing. It reads for a session whose attempt is
+ * then refused, which the older order did not; that is one definer call per
+ * refused session per pass, and simplicity over performance takes it.
  */
 
 import type { AgentSession, SessionAttemptId } from "./agentSession.ts";

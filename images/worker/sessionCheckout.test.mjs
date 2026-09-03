@@ -202,24 +202,26 @@ test("every git call the clone makes carries a wall-clock bound", async () => {
 });
 
 test("a git call that runs past its bound leaves the session with no tree", async () => {
-  const logged = [];
+  await scratch(async (root) => {
+    const logged = [];
 
-  const checkout = await sessionCheckout(
-    taskOf(),
-    repositories("/nowhere"),
-    credentialFiles,
-    "/workspace",
-    {
-      run: (_args, given) =>
-        Promise.reject(
-          new Error(`git was killed after ${String(given.timeout)}ms`),
-        ),
-      log: (text) => logged.push(text),
-    },
-  );
+    const checkout = await sessionCheckout(
+      taskOf(),
+      repositories("/nowhere"),
+      credentialFiles,
+      join(root, "workspace"),
+      {
+        run: (_args, given) =>
+          Promise.reject(
+            new Error(`git was killed after ${String(given.timeout)}ms`),
+          ),
+        log: (text) => logged.push(text),
+      },
+    );
 
-  assert.equal(checkout, undefined);
-  assert.match(logged[0], /killed after 300000ms/u);
+    assert.equal(checkout, undefined);
+    assert.match(logged[0], /killed after 300000ms/u);
+  });
 });
 
 /**

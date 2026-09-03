@@ -27,6 +27,8 @@ import { execFile } from "node:child_process";
 import { after, before, test } from "node:test";
 import { promisify } from "node:util";
 
+import { randomUUID } from "node:crypto";
+
 import { schedulerRole } from "../../src/adapters/postgres/schema.ts";
 import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
@@ -212,7 +214,9 @@ test("the scheduler root reads the binding its session pass places on", async ()
     harness.store,
     "scheduler-root-binding",
   );
-  const repository = asRepositoryId("scheduler-root-repository");
+  const repository = asRepositoryId(
+    `scheduler-root-repository-${randomUUID()}`,
+  );
   await harness.query(
     `INSERT INTO project_repository(tenant,project,repository,recovery_epoch)
      VALUES($1,$2,$3,$4)`,
