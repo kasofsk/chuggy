@@ -24,9 +24,16 @@
  * 059 derived from the widest observation the runtime may compose, and a project
  * may raise `inputBytesPerDecision` to it; a token is never fewer than one
  * character, so a budget under that is one an owner turns into this same defect
- * by widening the input alone, without touching the budget. Every lead turn the
- * rig measured sits an order of magnitude under it, and a decision that spent
- * more than a whole widest observation is the runaway the control is for.
+ * by widening the input alone, without touching the budget.
+ *
+ * WHAT IT GUARANTEES IS ONE READ AND NOT ONE TURN. No observation the mailbox
+ * admits is over budget for being read once, which is the defect above closed;
+ * a turn is another matter, because it is charged its whole context again at
+ * every model step, so enough steps pass any figure derived from the input and
+ * the turns release 19 measured sitting an order of magnitude under this one
+ * are headroom rather than an argument. When the budget does bite it bites
+ * after the answer, with the project tools that turn spent over the API already
+ * standing, so this control reports #552's shape rather than preventing it.
  *
  * A FLOOR AND NOT A VALUE, the shape 059, 061 and 064 wrote before it: an
  * installation already standing above it keeps what it states, the predicate is
