@@ -70,7 +70,8 @@ test("the listing names who asked and whether it is the caller's", () => {
   assert.equal(parsed.mine, true);
 
   for (const absent of ["asker", "mine"] as const) {
-    const { [absent]: _dropped, ...rest } = entry;
+    const rest: Record<string, unknown> = { ...entry };
+    delete rest[absent];
     assert.ok(
       !leadInquiryResponseSchema.safeParse(rest).success,
       `an inquiry naming no ${absent} was accepted`,
