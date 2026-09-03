@@ -72,6 +72,9 @@ import {
 export const leadToolCallsPerDecision = 200;
 
 /** The signature 058 opened a session under, and the one this migration retypes it to. */
+/** The objectives door's argument types, which its grant and its callers share. */
+export const systemPromptSetSignature = "text,text,text";
+
 const openSignature = "text,text,text,text,text,text,text[],text";
 const promptedOpenSignature = `${openSignature},text`;
 
@@ -168,11 +171,11 @@ const systemPrompt = [
           AND s.session=held.session;
        RETURN 'Set';
      END $$`,
-  `ALTER FUNCTION ${sessionSystemPromptSetFunction}(text,text,text)
+  `ALTER FUNCTION ${sessionSystemPromptSetFunction}(${systemPromptSetSignature})
      OWNER TO ${boundaryOwnerRole}`,
-  `REVOKE ALL ON FUNCTION ${sessionSystemPromptSetFunction}(text,text,text)
+  `REVOKE ALL ON FUNCTION ${sessionSystemPromptSetFunction}(${systemPromptSetSignature})
      FROM PUBLIC`,
-  `GRANT EXECUTE ON FUNCTION ${sessionSystemPromptSetFunction}(text,text,text)
+  `GRANT EXECUTE ON FUNCTION ${sessionSystemPromptSetFunction}(${systemPromptSetSignature})
      TO ${selectorServiceRole}`,
 ];
 

@@ -404,6 +404,16 @@ test("a decision this process never offered is still settled from the row", asyn
 });
 
 test("the parts a turn never sheds fit its mailbox row at their ceilings", () => {
+  const standing = Array.from(
+    { length: leadRefusalsObservedMax },
+    (_unused, index) => ({
+      ticket: asTicketId(index + 1),
+      ticketVersion: 1,
+      reason: "r".repeat(agenticRefusalReasonCharsMax),
+      recordedAt: "2026-09-01T12:00:00.000Z",
+      superseded: false,
+    }),
+  );
   const filled = leadTurnInput(
     {
       ...request,
@@ -420,16 +430,57 @@ test("the parts a turn never sheds fit its mailbox row at their ceilings", () =>
       },
     },
     partition,
-    Array.from({ length: leadRefusalsObservedMax }, (_unused, index) => ({
+    standing,
+    undefined,
+  );
+  const observed = parseLeadObservation(filled);
+  assert.deepEqual(
+    observed.refusals.map((refusal) => refusal.ticket),
+    standing.map((refusal) => refusal.ticket),
+    "every standing refusal survives, because a lead is judged on all of them",
+  );
+  assert.deepEqual(
+    observed.refusals.map((refusal) => refusal.reason.length),
+    standing.map((refusal) => refusal.reason.length),
+    "a refusal shown with its reason cut is a refusal the lead cannot weigh",
+  );
+  assert.deepEqual(observed.handoffNote, {
+    note: "h".repeat(selectorHandoffNoteBytesMax / 2),
+  });
+});
+
+test("a lift of a refusal the turn did not show is impossible", () => {
+  const standing = Array.from(
+    { length: leadRefusalsObservedMax },
+    (_unused, index) => ({
       ticket: asTicketId(index + 1),
       ticketVersion: 1,
       reason: "r".repeat(agenticRefusalReasonCharsMax),
       recordedAt: "2026-09-01T12:00:00.000Z",
       superseded: false,
-    })),
-    undefined,
+    }),
   );
-  assert.ok(filled.length > 0);
+  const shown = parseLeadObservation(
+    leadTurnInput(
+      {
+        ...request,
+        observation: {
+          ...observation,
+          candidates: [],
+          changes: [],
+          handoffNote: { note: "h".repeat(selectorHandoffNoteBytesMax / 2) },
+        },
+      },
+      partition,
+      standing,
+      undefined,
+    ),
+  ).refusals.map((refusal) => refusal.ticket);
+  for (const refusal of standing)
+    assert.ok(
+      shown.includes(refusal.ticket),
+      `${String(refusal.ticket)} is standing, so the lead must be shown it before it can be judged for lifting it`,
+    );
 });
 
 test("a document overflowed by a part nothing sheds is refused with what overflowed", () => {
@@ -533,6 +584,11 @@ test("a seeding block the mailbox could not hold sheds its oldest decisions", as
   await policy.execute(request, new AbortController().signal);
   const observed = parseLeadObservation(double.offers[0]?.input ?? "");
   const decisions = observed.seeding?.decisions ?? [];
+  assert.deepEqual(
+    observed.refusals.map((refusal) => refusal.ticket),
+    standingRefusals.map((refusal) => refusal.ticket),
+    "shedding a seeded tail never sheds the refusals the decision is judged on",
+  );
   assert.ok(decisions.length > 0, "the shed stops while something is left");
   assert.ok(decisions.length < 40, "an unholdable tail is shed, not offered");
   assert.equal(

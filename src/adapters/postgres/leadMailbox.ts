@@ -40,15 +40,14 @@ import type {
 } from "../../interpreter/leadMailbox.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
-  agenticRefusalRecordFunction,
-  agenticRefusalStandingFunction,
-  leadSessionFunction,
-  leadTurnEnqueueFunction,
-  leadTurnReadFunction,
-  leadTurnWithdrawFunction,
   selectorInteractionsReadFunction,
   sessionSystemPromptSetFunction,
 } from "./schema/shared.ts";
+import {
+  interactionsReadSignature,
+  selectorSignatures,
+} from "./schema/migrations/059-lead-decisions.ts";
+import { systemPromptSetSignature } from "./schema/migrations/061-lead-tools.ts";
 import {
   sessionRowMember,
   sessionRowText,
@@ -216,6 +215,29 @@ export function postgresLeadSystemPrompt(pool: pg.Pool): LeadSystemPromptPort {
 }
 
 /**
+ * Every door a decision opens, taken from the grants that create them rather
+ * than copied beside them. `has_function_privilege` resolves a signature
+ * exactly and raises on one no function has, so a hand-copied argument type is
+ * not a wrong answer here but a precondition that throws at every start.
+ */
+export const leadDoorSignatures: readonly string[] = [
+  ...selectorSignatures,
+  [selectorInteractionsReadFunction, interactionsReadSignature],
+  [sessionSystemPromptSetFunction, systemPromptSetSignature],
+].map(([name, signature]) => `${String(name)}(${String(signature)})`);
+
+/**
+ * Whether one privilege answer refuses the door. An answer the server did not
+ * give is a refusal and never a permit: a control that treats what it could not
+ * read as consent is worse than no control.
+ */
+export function leadDoorRefused(row: {
+  readonly permitted: boolean | null;
+}): boolean {
+  return row.permitted !== true;
+}
+
+/**
  * Which of the doors a decision opens this role may not execute. A readiness
  * check asks a host whether it feels able to answer; this asks the database
  * whether the role is allowed to ask at all, which is what a migration that
@@ -224,16 +246,7 @@ export function postgresLeadSystemPrompt(pool: pg.Pool): LeadSystemPromptPort {
 export async function postgresLeadDoorsRefused(
   pool: pg.Pool,
 ): Promise<readonly string[]> {
-  const doors = [
-    `${leadSessionFunction}(text,text)`,
-    `${leadTurnEnqueueFunction}(text,text,text,text)`,
-    `${leadTurnReadFunction}(text)`,
-    `${leadTurnWithdrawFunction}(text)`,
-    `${agenticRefusalRecordFunction}(text,text,text,jsonb,jsonb)`,
-    `${agenticRefusalStandingFunction}(text,text,bigint)`,
-    `${selectorInteractionsReadFunction}(text,text,bigint,integer,boolean)`,
-    `${sessionSystemPromptSetFunction}(text,text,text)`,
-  ];
+  const doors = [...leadDoorSignatures];
   const found = await pool.query<{
     door: string | null;
     permitted: boolean | null;
@@ -242,6 +255,6 @@ export async function postgresLeadDoorsRefused(
           FROM unnest(${doors}::text[]) AS door`,
   );
   return found.rows
-    .filter((row) => row.permitted !== true)
+    .filter(leadDoorRefused)
     .map((row) => row.door ?? "an unnamed door");
 }

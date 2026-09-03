@@ -2107,7 +2107,7 @@ test("a decision's refusals are entered after the decision they name", async () 
   );
 });
 
-test("a decision that refused nothing enters nothing in the ledger", async () => {
+test("a decision that neither refused nor lifted enters nothing", async () => {
   let entries = 0;
   await selectorRunOnce(
     refusalWrites(() => {
@@ -2123,6 +2123,36 @@ test("a decision that refused nothing enters nothing in the ledger", async () =>
     settingsSource(() => Promise.resolve(runtimeSettings)),
   );
   assert.equal(entries, 0);
+});
+
+test("a decision that only lifts still enters the lift", async () => {
+  const entered: Parameters<AgenticRefusalWrite["record"]>[0][] = [];
+  await selectorRunOnce(
+    refusalWrites((input) => entered.push(input)),
+    {
+      ...stateStore(() => undefined),
+      project: () => Promise.resolve(observedState(5)),
+    },
+    movedSource(6),
+    policyHost(() =>
+      Promise.resolve({
+        ...waitingExecution(),
+        result: {
+          ...waitingExecution().result,
+          refusals: [],
+          lifts: [{ ticket: 9 }],
+        },
+      }),
+    ),
+    perProjectIdentities(),
+    settingsSource(() => Promise.resolve(runtimeSettings)),
+  );
+  assert.deepEqual(
+    entered.map((input) => input.lifts.map((lift) => lift.ticket)),
+    [[9]],
+    "a lift is the lead clearing its own refusal, and dropping it leaves the ticket refused forever",
+  );
+  assert.deepEqual(entered[0]?.refusals, []);
 });
 
 /** One candidate a decision can actually choose, so the proposal path is reached. */
