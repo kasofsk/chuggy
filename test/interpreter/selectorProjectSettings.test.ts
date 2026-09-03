@@ -275,13 +275,6 @@ test("an unbounded history page is refused rather than asked for", async () => {
 });
 
 /**
- * A limit the runtime resolves and the wire door does not name is REFUSED
- * rather than dropped: the door is a strict object, so a caller asking for one
- * is told no instead of being answered 200 for an override no decision would
- * ever run under. The roster is the difference between the two, so a limit that
- * gains a door keeps the case honest without editing it.
- */
-/**
  * The wire's own bound on the dispatch budget. A project asking for more than
  * a decision may dispatch would be stored and then refused on every turn that
  * spent it, which is a control reporting a number nothing applies.
@@ -296,6 +289,13 @@ test("the override door refuses a dispatch budget above the parse ceiling", () =
   assert.equal(admits(leadDispatchesMax + 1), false);
 });
 
+/**
+ * A limit the runtime resolves and the wire door does not name is REFUSED
+ * rather than dropped: the door is a strict object, so a caller asking for one
+ * is told no instead of being answered 200 for an override no decision would
+ * ever run under. The roster is the difference between the two, so a limit that
+ * gains a door keeps the case honest without editing it.
+ */
 test("a limit the override door does not name is refused, never dropped", () => {
   const admitted = new Set(
     Object.keys(
