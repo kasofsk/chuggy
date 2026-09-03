@@ -71,6 +71,7 @@ import {
 import { postgresHarnessEntry } from "./harness.ts";
 import { postgresHarnessEpoch, postgresHarnessProject } from "./harness.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
+import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { asInstallationId, asTicketId } from "../../src/domain/ids.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import type { ProjectRead } from "../../src/interpreter/nativeWeb.ts";
@@ -3185,6 +3186,111 @@ test("migration 67 leaves a thread opened before it woken by whatever the cursor
       ).rows,
       [{ opened: "0" }],
       "a thread that was already open is answerable for less than it was",
+    );
+  });
+});
+
+/**
+ * One delivery offered to a migrated database and the state the initial-state
+ * trigger stamped it with. The interaction and the attempt beside it are what
+ * the relation's own key requires, and the state offered is neither of the two
+ * a case here expects.
+ */
+async function migrationOfferedDeliveryState(
+  subject: pg.Pool,
+  partition: Partition,
+  decision: string,
+  ticket: number,
+): Promise<string | undefined> {
+  await subject.query(
+    `INSERT INTO selector_attempt (attempt,tenant,project,state,settings_revision)
+     VALUES ($1,$2,$3,'Completed',1)`,
+    [decision, partition.tenant, partition.project],
+  );
+  await subject.query(
+    `INSERT INTO selector_interaction
+       (selector_decision,tenant,project,instructions_version,instructions,
+        observed_view,context,tool_activity,result,implementation_revision,
+        model_revision,policy_revision,accounting,started_at,completed_at)
+     VALUES ($1,$2,$3,'v1','choose','[]','{}','[]','{}',
+       'implementation','model','policy','{}',now(),now())`,
+    [decision, partition.tenant, partition.project],
+  );
+  const offered = await subject.query<{ state: string }>(
+    `INSERT INTO selector_proposal_delivery
+       (selector_decision,ticket,tenant,project,operation,command,state)
+     VALUES ($1,$2,$3,$4,$5,$6,'Submitted') RETURNING state`,
+    [
+      decision,
+      ticket,
+      partition.tenant,
+      partition.project,
+      `operation-${decision}`,
+      JSON.stringify({
+        version: 1,
+        command: "ProposeDispatch",
+        ticket,
+        expectedTicketVersion: 1,
+        observedViewToken: {
+          ...partition,
+          recoveryEpoch: "epoch",
+          schemaVersion: 1,
+          watermark: 0,
+          digest: "a".repeat(64),
+        },
+        selectorDecisionReference: decision,
+      }),
+    ],
+  );
+  return offered.rows[0]?.state;
+}
+
+/**
+ * What a migrated installation stamps a delivery with. Before 068 the trigger
+ * read `selector_runtime_settings` alone, so a project reading `Automatic`
+ * under an installation requiring approval had every delivery parked where
+ * nothing claims it; after it the project's own mode decides.
+ */
+test("migration 68 stamps a delivery from its project's dispatch mode", async () => {
+  await migrationDatabase("delivery_dispatch_mode", async (subject) => {
+    await migrationSeedApplied(subject, 68);
+    const store = postgresProjectStore(subject);
+    await postgresHarnessEpoch(store);
+    const partition = await postgresHarnessProject(store, "dispatch-mode");
+    await subject.query(
+      `UPDATE selector_runtime_settings SET dispatch_mode='ApprovalRequired'
+        WHERE singleton=1`,
+    );
+    await subject.query(
+      `UPDATE selector_runtime_readiness SET production_host=true WHERE singleton=1`,
+    );
+    await subject.query(
+      `INSERT INTO selector_project_settings (tenant,project,dispatch_mode)
+       VALUES ($1,$2,'Automatic')`,
+      [partition.tenant, partition.project],
+    );
+    assert.equal(
+      await migrationOfferedDeliveryState(subject, partition, "before-68", 1),
+      "AwaitingApproval",
+      "the installation's mode decided a project's delivery before 068",
+    );
+
+    await applyMigration(subject, 68);
+
+    assert.deepEqual(
+      (
+        await subject.query<{ state: string }>(
+          `SELECT state FROM selector_proposal_delivery
+            WHERE selector_decision='before-68'`,
+        )
+      ).rows,
+      [{ state: "AwaitingApproval" }],
+      "a delivery already standing keeps the state it was admitted under",
+    );
+    assert.equal(
+      await migrationOfferedDeliveryState(subject, partition, "after-68", 2),
+      "Pending",
+      "the project's own mode decides the deliveries admitted after it",
     );
   });
 });

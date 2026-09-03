@@ -15,6 +15,12 @@ export const selectorReviewRole = "chuggy_selector_review";
 export const selectorSettingsFunction = "update_selector_runtime_settings";
 export const selectorProjectSettingsFunction =
   "update_selector_project_settings";
+/** The durable resolution of one project's dispatch mode over the installation default. */
+export const selectorProjectDispatchModeFunction =
+  "selector_project_dispatch_mode";
+/** The trigger that stamps a delivery with the state its project resolves to. */
+export const selectorProposalInitialStateFunction =
+  "enforce_selector_proposal_initial_state";
 /** The SQLSTATE the automatic-dispatch readiness trigger refuses under. */
 export const selectorAutomaticReadinessErrorCode = "CHG01";
 
