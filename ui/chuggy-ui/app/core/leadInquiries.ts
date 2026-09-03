@@ -29,6 +29,7 @@
 import type { z } from "zod";
 
 import { inquiryQuestionCharsMax } from "../../../../src/contract/http.ts";
+import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { leadInquirySchema } from "../../../../src/contract/requests.ts";
 import type { LeadInquiryAccepted } from "../../../../src/contract/responses.ts";
 import type { ApiResult } from "./apiRequest.ts";
@@ -36,9 +37,9 @@ import { panelReason } from "./freshness.ts";
 
 /**
  * How much entropy an inquiry's pair is named with. It is its own constant
- * rather than a reuse of the operation id's, for the reason §6 D13 gives about
- * the two char bounds — they are different doors, and a shared constant would
- * move one when the other was retuned.
+ * rather than a reuse of the operation id's, for the reason the two char bounds
+ * are two constants — they are different doors, and one constant would move
+ * both when only one was retuned.
  */
 export const inquiryIdentityBytesCount = 16;
 
@@ -65,28 +66,48 @@ export function inquiryQuestionFault(question: string): string | undefined {
 }
 
 /**
- * A draw and the question it was drawn for, which travel together so that a
- * held pair cannot come to carry a different question than the one the door
- * would recognise it by.
+ * A draw and what it was drawn for, which travel together so that a held pair
+ * cannot come to be sent for something the door would not recognise it by —
+ * the question, and the project, because a session name is unique across the
+ * whole installation while the door that takes it is one project's.
  */
 export interface InquiryDraw {
   readonly drawn: string;
   readonly question: string;
+  readonly partition: PartitionIdentity;
+}
+
+function inquiryDrawnFor(
+  held: InquiryDraw,
+  question: string,
+  partition: PartitionIdentity,
+): boolean {
+  return (
+    held.question === question &&
+    held.partition.tenant === partition.tenant &&
+    held.partition.project === partition.project
+  );
 }
 
 /**
- * The draw a send goes out under: the held one where the question has not
- * changed, and a fresh one otherwise — an edited question being a different
- * question, which the door would answer with the held pair's own ordinal.
+ * The draw a send goes out under: the held one where it was drawn for this
+ * question and this project, and a fresh one otherwise — an edited question
+ * being one the door would answer with the held pair's own ordinal, and another
+ * project's door being one that would either answer for a fork it does not hold
+ * or refuse a name the installation has already used, leaving a box that
+ * re-sends the refused pair on every press.
+ *
  * Nothing is held past an accepted send, and the caller is what forgets it.
  */
 export function inquiryDraw(
   held: InquiryDraw | undefined,
   question: string,
+  partition: PartitionIdentity,
   draw: () => string,
 ): InquiryDraw {
-  if (held !== undefined && held.question === question) return held;
-  return { drawn: draw(), question };
+  if (held !== undefined && inquiryDrawnFor(held, question, partition))
+    return held;
+  return { drawn: draw(), question, partition };
 }
 
 /**

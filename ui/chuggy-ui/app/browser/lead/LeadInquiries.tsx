@@ -21,6 +21,15 @@
  * never settled a turn has nothing to fork from and the door would refuse; a
  * box that posted anyway would spend a reader's attention on a refusal this
  * page already knows about.
+ *
+ * A PROJECT SWITCH IS NOT A REMOUNT, so everything this page holds outlives the
+ * project it was held for: the lead route declares no `remountDeps` and the
+ * router sets no default, so a params-only navigation reconciles these
+ * components rather than replacing them. What the box holds is therefore scoped
+ * to a project by the box itself — the pair carries the project it was drawn
+ * for, a session name being unique across the whole installation while the door
+ * that takes it is one project's, and the box's last word is dropped when the
+ * project moves under it rather than read as the new project's.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -91,34 +100,41 @@ function LeadAskNotice(props: { readonly ask: InquiryAsk }): ReactNode {
  *
  * ONE PRESS IS ONE QUESTION, AND THE FLAG THAT SAYS SO IS A REF RATHER THAN THE
  * DRAWN STATE — two presses inside one render both read the render they were
- * drawn from, so the control being disabled by the next one stops neither; it
- * is released on every answer, a refusal that latched the box shut leaving a
- * reader nothing to try again with, and the pair is held until one is accepted,
- * so a re-send is the retry the door is idempotent on rather than a second
- * question spending the second of the asker's two.
+ * drawn from, so the control being disabled by the next one stops neither; it is
+ * released on every answer, a refusal that latched the box shut leaving a reader
+ * nothing to try again with, and the pair is held until one is accepted, so a
+ * re-send is the retry the door is idempotent on rather than a second question
+ * spending the second of the asker's two.
  */
 function LeadAsk(props: {
   readonly partition: PartitionIdentity;
   readonly onAsked: () => void;
 }): ReactNode {
   const ports = useApiPorts();
+  const partition = props.partition;
   const [typed, setTyped] = useState("");
   const [ask, setAsk] = useState<InquiryAsk>({ ask: "Idle" });
+  const [seen, setSeen] = useState<PartitionIdentity>(partition);
   const inFlight = useRef(false);
   const held = useRef<InquiryDraw | undefined>(undefined);
   const question = inquiryQuestion(typed);
   const fault = inquiryQuestionFault(question);
+  const shown = typed === "" ? undefined : fault;
+  if (seen.tenant !== partition.tenant || seen.project !== partition.project) {
+    setSeen(partition);
+    setAsk({ ask: "Idle" });
+  }
   const submit = () => {
     if (inFlight.current) return;
     inFlight.current = true;
     setAsk({ ask: "Asking" });
     void (async () => {
-      const draw = inquiryDraw(held.current, question, () =>
+      const draw = inquiryDraw(held.current, question, partition, () =>
         base64urlFromBytes(drawBytes(inquiryIdentityBytesCount)),
       );
       held.current = draw;
       const answered = inquiryAskAnswered(
-        await apiAskLead(ports, props.partition, inquiryAsking(draw)),
+        await apiAskLead(ports, partition, inquiryAsking(draw)),
       );
       inFlight.current = false;
       setAsk(answered);
@@ -136,14 +152,14 @@ function LeadAsk(props: {
           <textarea
             className="lead-ask-text"
             aria-label="Question"
-            aria-invalid={fault !== undefined}
+            aria-invalid={shown !== undefined}
             value={typed}
             onChange={(event) => {
               setTyped(event.target.value);
             }}
           />
           <span className="num">{`${String(question.length)} / ${String(inquiryQuestionCharsMax)}`}</span>
-          {fault === undefined ? null : <Pill tone="fail">{fault}</Pill>}
+          {shown === undefined ? null : <Pill tone="fail">{shown}</Pill>}
         </Field>
       </Fields>
       <Button
@@ -166,7 +182,11 @@ function LeadInquiryRollup(props: {
   readonly inquiry: LeadInquiryResponse;
 }): ReactNode {
   const inquiry = props.inquiry;
-  if (inquiry.costMicros === undefined && inquiry.tokens === undefined)
+  if (
+    inquiry.costMicros === undefined &&
+    inquiry.tokens === undefined &&
+    inquiry.durationMs === undefined
+  )
     return null;
   return (
     <>

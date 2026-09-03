@@ -26,8 +26,10 @@ import {
 
 const drawn = "GxUhK1TgQ2iWm4bB0jvA5w";
 
+const partition = { tenant: "acme", project: "atlas" };
+
 function asking(question: string): unknown {
-  return inquiryAsking({ drawn, question });
+  return inquiryAsking({ drawn, question, partition });
 }
 
 test("what is asked is what was typed, less the ends nobody meant to type", () => {
@@ -79,7 +81,7 @@ test("the bound is counted in the units the schema counts, not in characters", (
 /** One question is one draw, so a retry of the same ask is the same pair and the
  * definer is asked to reconcile nothing. */
 test("the fork and its turn are named from one draw", () => {
-  expect(inquiryAsking({ drawn, question: "why" })).toStrictEqual({
+  expect(inquiryAsking({ drawn, question: "why", partition })).toStrictEqual({
     session: `inq-${drawn}`,
     turn: `inq-turn-${drawn}`,
     question: "why",
@@ -92,27 +94,59 @@ test("the fork and its turn are named from one draw", () => {
  * question with the held pair's own ordinal, which is the first question's
  * answer under the second question's text.
  */
-test("a re-send keeps its pair and an edit takes a new one", () => {
+function drawing(): () => string {
   let draws = 0;
-  const draw = () => {
+  return () => {
     draws += 1;
     return `drawn-${String(draws)}`;
   };
-  const first = inquiryDraw(undefined, "why", draw);
-  expect(first).toStrictEqual({ drawn: "drawn-1", question: "why" });
+}
+
+test("a re-send keeps its pair and an edit takes a new one", () => {
+  const draw = drawing();
+  const first = inquiryDraw(undefined, "why", partition, draw);
+  expect(first).toStrictEqual({ drawn: "drawn-1", question: "why", partition });
   expect(
-    inquiryDraw(first, "why", draw),
+    inquiryDraw(first, "why", partition, draw),
     "a re-sent question asked the door a second question",
   ).toStrictEqual(first);
-  expect(draws).toBe(1);
-  expect(inquiryDraw(first, "why not", draw)).toStrictEqual({
+  expect(inquiryDraw(first, "why not", partition, draw)).toStrictEqual({
     drawn: "drawn-2",
     question: "why not",
+    partition,
   });
   expect(
-    inquiryDraw(undefined, "why", draw),
+    inquiryDraw(undefined, "why", partition, draw),
     "a pair the door has taken was sent again",
-  ).toStrictEqual({ drawn: "drawn-3", question: "why" });
+  ).toStrictEqual({ drawn: "drawn-3", question: "why", partition });
+});
+
+/**
+ * A SESSION NAME IS UNIQUE ACROSS THE INSTALLATION AND THE DOOR THAT TAKES IT
+ * IS ONE PROJECT'S, so the project is the other half of what a pair is
+ * recognised by. A pair carried to another project's door is answered for a
+ * fork that door does not hold, or refused as a name already used — and a
+ * refused pair still held is a box that re-sends it on every press.
+ */
+test("a pair drawn for one project is not sent to another's door", () => {
+  const draw = drawing();
+  const first = inquiryDraw(undefined, "why", partition, draw);
+  const elsewhere = { tenant: "acme", project: "beta" };
+  expect(
+    inquiryDraw(first, "why", elsewhere, draw),
+    "a pair drawn for one project was sent to another's door",
+  ).toStrictEqual({ drawn: "drawn-2", question: "why", partition: elsewhere });
+  expect(
+    inquiryDraw(first, "why", { tenant: "other", project: "atlas" }, draw),
+  ).toStrictEqual({
+    drawn: "drawn-3",
+    question: "why",
+    partition: { tenant: "other", project: "atlas" },
+  });
+  expect(
+    inquiryDraw(first, "why", { ...partition }, draw),
+    "a pair was re-drawn for the project it was already drawn for",
+  ).toStrictEqual(first);
 });
 
 test("the door's answer is drawn as the fork it opened", () => {

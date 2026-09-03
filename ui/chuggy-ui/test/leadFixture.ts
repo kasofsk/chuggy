@@ -254,7 +254,10 @@ export function leadInquiry(
     readonly mine?: boolean;
     readonly answer?: string;
     readonly failure?: LeadInquiriesResponse["inquiries"][number]["failure"];
-    readonly measured?: boolean;
+    readonly model?: string;
+    readonly tokens?: number;
+    readonly costMicros?: number;
+    readonly durationMs?: number;
   },
 ): LeadInquiriesResponse["inquiries"][number] {
   return {
@@ -268,14 +271,10 @@ export function leadInquiry(
     ...(held.answer === undefined ? {} : { answer: held.answer }),
     ...(held.failure === undefined ? {} : { failure: held.failure }),
     askedAt: "2026-09-01T11:00:00Z",
-    ...(held.measured === true
-      ? {
-          model: "claude-opus-4",
-          tokens: 12_400,
-          costMicros: 41_000,
-          durationMs: 21_000,
-        }
-      : {}),
+    ...(held.model === undefined ? {} : { model: held.model }),
+    ...(held.tokens === undefined ? {} : { tokens: held.tokens }),
+    ...(held.costMicros === undefined ? {} : { costMicros: held.costMicros }),
+    ...(held.durationMs === undefined ? {} : { durationMs: held.durationMs }),
   };
 }
 

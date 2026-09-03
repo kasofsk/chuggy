@@ -36,6 +36,7 @@ import {
 } from "../../../src/contract/http.ts";
 import { apiAttemptsMax } from "../app/core/apiRequest.ts";
 import { sessionTurnStates } from "../../../src/contract/rosters.ts";
+import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import type { LeadInquiriesResponse } from "../../../src/contract/responses.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
@@ -62,6 +63,13 @@ interface InquiryServer {
   readonly stream: ReturnType<typeof openedStream>;
   readonly reads: () => number;
   readonly posts: () => readonly unknown[];
+  readonly postUrls: () => readonly string[];
+  /**
+   * The same instance under another project's params, which is what a
+   * params-only navigation does: the route declares no `remountDeps`, so the
+   * box is reconciled rather than remounted and keeps everything it holds.
+   */
+  readonly moveTo: (partition: PartitionIdentity) => Promise<void>;
 }
 
 interface InquiryInit {
@@ -76,17 +84,23 @@ interface InquiryInit {
  */
 async function drawInquiries(served: {
   readonly listing: () => LeadInquiriesResponse;
-  readonly asked?: () => { readonly body: unknown; readonly status: number };
+  readonly asked?: (
+    body: unknown,
+    url: string,
+  ) => { readonly body: unknown; readonly status: number };
   readonly head?: string | undefined;
   /** Held open so a case can read the box while a press is still in flight. */
   readonly gate?: () => Promise<void>;
 }): Promise<InquiryServer> {
   let reads = 0;
   const posts: unknown[] = [];
-  const fetching = ((_url: string, init?: InquiryInit) => {
+  const postUrls: string[] = [];
+  const fetching = ((url: string, init?: InquiryInit) => {
     if (init?.method === "POST") {
-      posts.push(JSON.parse(init.body ?? "null"));
-      const found = served.asked?.() ?? {
+      const body = JSON.parse(init.body ?? "null") as unknown;
+      posts.push(body);
+      postUrls.push(url);
+      const found = served.asked?.(body, url) ?? {
         body: { session: "inq-new", turn: "inq-turn-new", ordinal: 1 },
         status: 202,
       };
@@ -98,21 +112,35 @@ async function drawInquiries(served: {
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", fetching);
   const stream = openedStream();
-  render(
+  const client = new QueryClient();
+  const head = "head" in served ? served.head : leadStream;
+  const panel = (partition: PartitionIdentity) => (
     <ScreenHarness
-      partition={leadPartition}
-      client={new QueryClient()}
+      partition={partition}
+      client={client}
       transport={stream.ports.fetch}
     >
       <LeadInquiries
-        partition={leadPartition}
-        head={"head" in served ? served.head : leadStream}
+        partition={partition}
+        head={head}
         nowMs={Date.parse("2026-09-01T12:00:00Z")}
       />
-    </ScreenHarness>,
+    </ScreenHarness>
   );
+  const drawn = render(panel(leadPartition));
   await settled();
-  return { stream, reads: () => reads, posts: () => posts };
+  return {
+    stream,
+    reads: () => reads,
+    posts: () => posts,
+    postUrls: () => postUrls,
+    moveTo: async (partition: PartitionIdentity) => {
+      await turned(() => {
+        drawn.rerender(panel(partition));
+      });
+      await settled();
+    },
+  };
 }
 
 function rows(): readonly string[] {
@@ -356,12 +384,56 @@ test("a measured inquiry draws what it cost", async () => {
   await drawInquiries({
     listing: () => ({
       inquiries: [
-        leadInquiry(1, { turnState: "Answered", answer: "a", measured: true }),
+        leadInquiry(1, {
+          turnState: "Answered",
+          answer: "a",
+          tokens: 12_400,
+          costMicros: 41_000,
+          durationMs: 21_000,
+        }),
       ],
     }),
   });
   expect(screen.getByText("$0.04")).toBeDefined();
   expect(screen.getByText("12k")).toBeDefined();
+});
+
+/**
+ * EACH MEASURE IS OPTIONAL ON ITS OWN, a failed inquiry being the obvious turn
+ * that was timed and billed nothing. A guard naming only the other two drops the
+ * one measure such a turn has.
+ */
+test("an inquiry that was timed and billed nothing draws its duration", async () => {
+  await drawInquiries({
+    listing: () => ({
+      inquiries: [
+        leadInquiry(1, {
+          turnState: "Failed",
+          failure: "AgentFailed",
+          durationMs: 21_000,
+        }),
+      ],
+    }),
+  });
+  expect(screen.getByText("21s")).toBeDefined();
+});
+
+/** A control nobody has touched is not one a reader got wrong, and marking it
+ * invalid on mount is the box saying so before they have typed. */
+test("an untouched box is not marked as a reader's mistake", async () => {
+  await drawInquiries({ listing: () => ({ inquiries: [] }) });
+  const box = screen.getByLabelText("Question");
+  expect(screen.queryByText("Empty")).toBeNull();
+  expect(box.getAttribute("aria-invalid")).toBe("false");
+  expect(
+    screen.getByRole("button", { name: "Ask" }).hasAttribute("disabled"),
+    "an untouched box offered a press that could only be refused",
+  ).toBe(true);
+  await turned(() => {
+    typed("   ");
+  });
+  expect(screen.getByText("Empty")).toBeDefined();
+  expect(box.getAttribute("aria-invalid")).toBe("true");
 });
 
 test("an empty box posts nothing", async () => {
@@ -582,6 +654,146 @@ test("a press in flight reports itself busy", async () => {
   expect(
     screen.getByRole("button", { name: "Ask" }).getAttribute("aria-busy"),
   ).not.toBe("true");
+});
+
+const elsewhere = { tenant: "acme", project: "beta" };
+
+/**
+ * A DOOR THAT HAS ALREADY SEEN A SESSION NAME REFUSES IT, which is what 058's
+ * installation-wide uniqueness on `session` makes true of every project's door
+ * at once. Answered here so a case can tell a pair carried across a project
+ * from one drawn for the project it is sent to.
+ */
+function uniqueDoor(): (
+  body: unknown,
+  url: string,
+) => { readonly body: unknown; readonly status: number } {
+  const seen = new Map<string, string>();
+  let answers = 0;
+  return (body, url) => {
+    const sent = body as { readonly session: string };
+    const held = seen.get(sent.session);
+    if (held !== undefined && held !== url)
+      return {
+        body: { error: { code: "InternalError", message: "session in use" } },
+        status: 500,
+      };
+    seen.set(sent.session, url);
+    answers += 1;
+    return answers === 1
+      ? {
+          body: { error: { code: "InternalError", message: "answer lost" } },
+          status: 500,
+        }
+      : {
+          body: { session: sent.session, turn: "inq-turn-new", ordinal: 1 },
+          status: 202,
+        };
+  };
+}
+
+/**
+ * A PROJECT SWITCH IS NOT A REMOUNT: the route declares no `remountDeps` and
+ * the router sets no default, so this box outlives the project it drew its pair
+ * for. Carrying that pair to the next project's door asks it for a fork it does
+ * not hold, or asks the installation for a session name it has already used.
+ */
+test("a pair drawn for one project is not posted to another after a switch", async () => {
+  let asks = 0;
+  const server = await drawInquiries({
+    listing: () => ({ inquiries: [] }),
+    asked: () => {
+      asks += 1;
+      return asks === 1
+        ? {
+            body: { error: { code: "InternalError", message: "no" } },
+            status: 500,
+          }
+        : {
+            body: { session: "inq-new", turn: "inq-turn-new", ordinal: 1 },
+            status: 202,
+          };
+    },
+  });
+  await turned(() => {
+    typed("why is ticket 41 waiting?");
+  });
+  await turned(ask);
+  await settled();
+  expect(screen.getByText(/^Failed · /u)).toBeDefined();
+  await server.moveTo(elsewhere);
+  expect(
+    screen.getByLabelText<HTMLTextAreaElement>("Question").value,
+    "the box was remounted after all, so this case proves nothing",
+  ).toBe("why is ticket 41 waiting?");
+  await turned(ask);
+  await settled();
+  const sent = server
+    .posts()
+    .map((post) => (post as { session: string }).session);
+  const urls = server.postUrls();
+  expect(urls[0]).toContain("/projects/atlas/lead/inquiries");
+  expect(urls[1]).toContain("/projects/beta/lead/inquiries");
+  expect(
+    sent[1],
+    "a pair drawn for one project was posted to another project's door",
+  ).not.toBe(sent[0]);
+});
+
+/**
+ * The second half of the same fault, and the worse one: a pair the installation
+ * has already used is refused, and a pair still held is re-sent on every press,
+ * so the box never recovers until the reader edits or reloads.
+ */
+test("a box carried into another project is not wedged", async () => {
+  const server = await drawInquiries({
+    listing: () => ({ inquiries: [] }),
+    asked: uniqueDoor(),
+  });
+  await turned(() => {
+    typed("why is ticket 41 waiting?");
+  });
+  await turned(ask);
+  await settled();
+  expect(
+    screen.getByText(/^Failed · /u),
+    "the door was meant to take the name and lose the answer",
+  ).toBeDefined();
+  await server.moveTo(elsewhere);
+  await turned(ask);
+  await settled();
+  expect(
+    screen.getByText("Asked"),
+    "the box was left re-sending a pair the installation had already used",
+  ).toBeDefined();
+  expect(screen.queryByText(/^Failed · /u)).toBeNull();
+  const sent = server
+    .posts()
+    .map((post) => (post as { session: string }).session);
+  expect(sent[1]).not.toBe(sent[0]);
+});
+
+/**
+ * WHAT THE BOX LAST SAID IS ABOUT ONE PROJECT'S DOOR. Carried to the next
+ * project it is a statement this panel would be making about a lead it never
+ * asked, and the reader has no way to tell which project it is about.
+ */
+test("one project's last word is not drawn on another's page", async () => {
+  const server = await drawInquiries({
+    listing: () => ({ inquiries: [] }),
+    asked: () => refusal("InquiriesInFlight"),
+  });
+  await turned(() => {
+    typed("why is ticket 41 waiting?");
+  });
+  await turned(ask);
+  await settled();
+  expect(screen.getByText("In flight")).toBeDefined();
+  await server.moveTo(elsewhere);
+  expect(
+    screen.queryByText("In flight"),
+    "one project's refusal was drawn on another project's page",
+  ).toBeNull();
 });
 
 /** An edited question is a different question, and the held pair would have the
