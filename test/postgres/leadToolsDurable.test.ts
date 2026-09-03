@@ -721,11 +721,6 @@ test("a session may be named by one principal form and never by two", async () =
 });
 
 /**
- * An exported empty variable is what a template that always emits a key leaves
- * behind, and it names no form at all: refusing it as "both" would name a
- * variable the deployment did not mean to set.
- */
-/**
  * ONE ISSUER VARIABLE ACROSS BOTH PROVISIONING ROOTS, because a session and the
  * membership authorizing it must derive the same principal and two names for
  * one issuer is the one-character difference the derived form exists to close.
@@ -777,6 +772,11 @@ test("both provisioning roots derive one principal from one issuer variable", as
   );
 });
 
+/**
+ * An exported empty variable is what a template that always emits a key leaves
+ * behind, and it names no form at all: refusing it as "both" would name a
+ * variable the deployment did not mean to set.
+ */
 test("an empty issuer or subject is a variable nobody set", async () => {
   const partition = await leadToolsProject("emptyforms");
   const session = `session-empty-${randomUUID()}`;
