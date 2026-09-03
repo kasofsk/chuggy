@@ -14,11 +14,12 @@
  * rows than that; the LIMIT states it rather than trusting it, because a page
  * of the log is answered under the API's own byte bound.
  *
- * A FUNCTION RE-CREATED WITHOUT ITS REVOKE IS PUBLIC-EXECUTABLE. The return
- * type changes, so this is a drop and a create, and dropping takes the owner,
- * the revoke and both grants with it — the API's and the selector service's,
- * which reads the same door for its own decision tail. All four are re-issued
- * below and asserted by a case.
+ * A FUNCTION RE-CREATED WITHOUT ITS REVOKE IS PUBLIC-EXECUTABLE, AND ONE
+ * RE-CREATED WITHOUT ITS PATH PIN RESOLVES ITS RELATIONS UNDER THE CALLER'S.
+ * The return type changes, so this is a drop and a create, and dropping takes
+ * the owner, the `search_path` pin, the revoke and both grants with it — the
+ * API's and the selector service's, which reads the same door for its own
+ * decision tail. All five are re-issued below and asserted by a case.
  */
 
 import {
