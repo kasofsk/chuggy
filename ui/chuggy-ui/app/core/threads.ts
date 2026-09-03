@@ -342,6 +342,8 @@ function threadRosterWord(code: ThreadMessageRefusalCode): string {
       return "Closed";
     case "ThreadOrphaned":
       return "Orphaned";
+    case "ThreadBacklogged":
+      return "Backlogged";
     case "ThreadTurnTooLarge":
       return "Oversize";
   }

@@ -379,7 +379,7 @@ describe("what a press ended as", () => {
         code: "ThreadBacklogged",
         retryAfterSeconds: 9,
       }),
-    ).toStrictEqual({ send: "Waiting", why: "ThreadBacklogged" });
+    ).toStrictEqual({ send: "Waiting", why: "Backlogged" });
     expect(
       threadSendFrom({
         outcome: "Retryable",
@@ -445,6 +445,7 @@ describe("the door's own vocabulary", () => {
       ["NotYourThread", "Elsewhere"],
       ["ThreadClosed", "Closed"],
       ["ThreadOrphaned", "Orphaned"],
+      ["ThreadBacklogged", "Backlogged"],
       ["ThreadTurnTooLarge", "Oversize"],
     ]);
     expect(
@@ -461,7 +462,7 @@ describe("the door's own vocabulary", () => {
   /** A code the roster does not carry is one this console neither acts on nor
    * has a noun for, so it is drawn as the name the server sent. */
   test("a code outside the roster is its own word and narrows to nothing", () => {
-    for (const code of ["ThreadNotYours", "ThreadBacklogged"]) {
+    for (const code of ["ThreadNotYours", "ThreadRetired"]) {
       expect(threadRefusalCode(code)).toBeUndefined();
       expect(threadRefusalWord(code)).toBe(code);
     }
