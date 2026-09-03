@@ -604,13 +604,20 @@ export async function runSessionTurns(context) {
 }
 
 /**
- * What an inquiry with nothing to fork from does instead of running: it claims
- * the turn it was opened for and fails it, so the refusal lands where the asker
- * reads every other answer. Exiting quietly would leave the member watching a
- * question that never settles.
+ * What a session the site placed but did not equip does instead of running: it
+ * claims the turn it was placed for and fails it, so the refusal lands where
+ * the reader reads every other answer. Exiting quietly would leave a member
+ * watching a turn that never settles, and would leave the attempt row carrying
+ * the reap label a pod that never started carries — which is the one thing a
+ * misconfigured site must not look like.
+ *
+ * The reason is a line in the pod's log rather than a field on the row:
+ * `allSessionTurnFailures` is a closed vocabulary a durable check is generated
+ * from, so a label here is never a payload and `AgentFailed` is the member a
+ * pod may name for a turn it could not run.
  */
-async function refuseUnforkedInquiry(context, warn) {
-  warn("an inquiry was placed with no transcript to fork from\n");
+async function refuseSession(context, warn, reason) {
+  warn(`${reason}\n`);
   const turns = context.mailbox.turns();
   if ((await turns.next()).done === false)
     await post(context, "/v1/session/turn/failure", {
@@ -651,8 +658,9 @@ async function sessionCredentials(environment, read, slot) {
 }
 
 /**
- * The tree this session reads, cloned before its runtime opens, or nothing
- * where the project bound no repository or the clone did not finish.
+ * The tree this session reads, cloned before its runtime opens; nothing where
+ * the project bound no repository or the clone did not finish; or the refusal
+ * where the site named a repository this session cannot reach.
  *
  * IT IS CLONED UNDER A RUNNING LEASE. A clone is the longest thing the pod does
  * before its first turn, so `sessionMain` starts the heartbeat first: an
@@ -758,7 +766,10 @@ async function sessionRuntime(
 /**
  * The session once everything it runs on is in hand: the store its kind decides
  * the mode of, the mailbox its turns arrive through, and either the runtime it
- * speaks with or the refusal that stands in place of one.
+ * speaks with or one of the refusals that stands in place of one. Both
+ * refusals are a session the site placed and did not equip — with no
+ * transcript to fork, or with no repository it can reach — and both are
+ * checked after the mailbox, because the refusal is a failed turn.
  */
 async function sessionRun(context, facts, opened) {
   const { pause, warn } = opened;
@@ -773,7 +784,13 @@ async function sessionRun(context, facts, opened) {
     now: context.now,
   });
   if (context.inquiry && sessionForkFrom(facts) === undefined)
-    return await refuseUnforkedInquiry(context, warn);
+    return await refuseSession(
+      context,
+      warn,
+      "an inquiry was placed with no transcript to fork from",
+    );
+  if (opened.checkout?.refused !== undefined)
+    return await refuseSession(context, warn, opened.checkout.refused);
   const stream = await sessionRuntime(context, { ...opened, facts });
   context.reader = messageReader(stream, pause);
   return await runSessionTurns(context);

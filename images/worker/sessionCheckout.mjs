@@ -18,13 +18,23 @@
  * is `./entrypoint.mjs`'s own. A second resolver would be a second set of rules
  * for the same site data.
  *
- * A MISCONFIGURED SITE IS LOUD AND A FAILED CLONE IS NOT. A reference the map
- * does not carry, or a credential the attempt's authority does not grant, is a
- * launcher that placed a pod it never gave a tree to: it raises, and the
- * session fails to start. A clone that reached git and did not finish is the
- * other case — the network, the remote, the disk — and it returns nothing: a
- * lead that cannot read the tree can still read the project through the API and
+ * A MISCONFIGURED SITE IS REFUSED AND A FAILED CLONE IS NOT. A reference the
+ * map does not carry, or a credential the attempt's authority does not grant,
+ * is a launcher that placed a pod it never gave a tree to, and the pod is the
+ * only witness to it: the site's map is the image's device and the scheduler
+ * passes it through unread. So it comes back as a refusal carrying its reason,
+ * which `./session.mjs` fails the placed turn with — a raise here left the
+ * reason on stderr and the attempt row carrying the label a pod that never
+ * started carries. A clone that reached git and did not finish is the other
+ * case — the network, the remote, the disk — and it returns nothing: a lead
+ * that cannot read the tree can still read the project through the API and
  * decide, and refusing to start would trade a degraded lead for none.
+ *
+ * THE REFERENCE IS WHAT THE PLACEMENT SAID AND IS NOT ALWAYS THE BINDING. A
+ * site that mirrors its projects in-cluster names the mirror for the binding in
+ * `CHUG_SCHEDULER_SESSION_POLICY`, and the scheduler resolves it before the
+ * placement; whichever URL arrives is resolved here against the same map, under
+ * the same rules, with its own credential.
  *
  * NOTHING WRITES TO THE CHECKOUT, AND THAT IS A POD-SIDE CONTROL. The lead's
  * roster does not carry `RepositoryWrite`, so `./chuggyTools.mjs` puts `Write`,
@@ -97,8 +107,33 @@ async function discard(directory, log) {
 }
 
 /**
- * The tree one session reads, or nothing where it has none: a project that
- * binds no repository, or a clone that did not finish.
+ * What the site says about the reference the placement bound: the resolved
+ * remote and the environment to reach it with, or the reason this session
+ * cannot reach it at all. Both arms are values, because both are things the
+ * reader of a refused session has to be told.
+ */
+function sessionRemote(task, repositories, credentialFiles, reference) {
+  let resolved;
+  try {
+    resolved = workerRepository(repositories, credentialFiles, reference);
+  } catch (failure) {
+    return {
+      refused: `session checkout cannot resolve ${reference}: ${
+        failure instanceof Error ? failure.message : String(failure)
+      }`,
+    };
+  }
+  if (!task.authority.credentials.includes(resolved.credential))
+    return {
+      refused: `session checkout ${reference} needs ${resolved.credential}, which this session's authority does not grant`,
+    };
+  return resolved;
+}
+
+/**
+ * The tree one session reads, nothing where it has none — a project that binds
+ * no repository, or a clone that did not finish — or the refusal where the site
+ * never gave this session a repository it can reach.
  *
  * `run` and `log` are seams so a suite can drive a real clone and still say
  * where its output went; the defaults are `git` itself and the pod's stderr.
@@ -117,13 +152,9 @@ export async function sessionCheckout(
   } = services;
   if (task.repository === undefined) return undefined;
   const reference = task.repository.reference;
-  const { repository, credential, environment } = workerRepository(
-    repositories,
-    credentialFiles,
-    reference,
-  );
-  if (!task.authority.credentials.includes(credential))
-    throw new Error(`session authority does not grant ${credential}`);
+  const remote = sessionRemote(task, repositories, credentialFiles, reference);
+  if (remote.refused !== undefined) return { refused: scrub(remote.refused) };
+  const { repository, environment } = remote;
   const directory = join(workspace, sessionCheckoutDirectory);
   try {
     await run(["clone", repository, directory], {
