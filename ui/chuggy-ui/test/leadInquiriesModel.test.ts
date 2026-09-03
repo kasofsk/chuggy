@@ -16,6 +16,8 @@ import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { leadInquirySchema } from "../../../src/contract/requests.ts";
 import {
   inquiryAskAnswered,
+  inquiryAskerAbsent,
+  inquiryAskerNamed,
   inquiryAsking,
   inquiryDraw,
   inquiryQuestion,
@@ -240,4 +242,19 @@ test("what never reached the lead is a failure with its reason, not a refusal", 
     const answered = inquiryAskAnswered(result);
     expect(answered.ask, result.outcome).toBe("Failed");
   }
+});
+
+/**
+ * THE LISTING MAY NAME NO ASKER. `asker` is the membership's own authority
+ * subject and the route omits it where that membership is gone, so a row that
+ * drew the field as it stands would put a blank where a person stood — and one
+ * that could not read the body at all would draw no inquiries whatever.
+ */
+test("an inquiry the listing names no asker for is drawn as absent", () => {
+  expect(inquiryAskerNamed("geoff")).toBe("geoff");
+  expect(inquiryAskerNamed(undefined)).toBe(inquiryAskerAbsent);
+  expect(
+    inquiryAskerAbsent.split(" ").length,
+    "the absent asker is a word",
+  ).toBe(1);
 });

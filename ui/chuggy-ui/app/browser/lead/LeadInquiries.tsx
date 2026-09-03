@@ -56,6 +56,7 @@ import {
 } from "../../core/figures.ts";
 import {
   inquiryAskAnswered,
+  inquiryAskerNamed,
   inquiryAsking,
   inquiryBoxAnswered,
   inquiryBoxName,
@@ -284,7 +285,9 @@ function LeadInquiryRow(props: {
   return (
     <li className="lead-inquiry">
       <div className="lead-inquiry-head">
-        <span className="lead-inquiry-asker">{inquiry.asker}</span>
+        <span className="lead-inquiry-asker">
+          {inquiryAskerNamed(inquiry.asker)}
+        </span>
         {inquiry.mine ? <Pill tone="neutral">Mine</Pill> : null}
         <span title={inquiry.failure}>
           <Pill tone={sessionTurnStateTone(inquiry.turnState)}>

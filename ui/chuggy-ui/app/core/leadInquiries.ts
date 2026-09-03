@@ -63,6 +63,18 @@ export const inquiryIdentityBytesCount = 16;
  */
 export const inquirySessionKind = "Inquiry";
 
+/**
+ * What a row names the asker as. The listing answers the membership's own
+ * authority subject and omits it where that membership is gone, so a row draws
+ * the word this console draws every absent identity as rather than a blank
+ * where a person's name stood.
+ */
+export const inquiryAskerAbsent = "None";
+
+export function inquiryAskerNamed(asker: string | undefined): string {
+  return asker ?? inquiryAskerAbsent;
+}
+
 /** What a question typed into a box is asked as, which is what it is bounded
  * as: the ends a reader did not mean to type are not part of it. */
 export function inquiryQuestion(typed: string): string {
