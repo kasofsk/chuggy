@@ -782,33 +782,6 @@ test("a database-linearized pause suppresses proposal creation", async () => {
   }
 });
 
-/**
- * A replay writes no rows either, and the two are not the same answer: a paused
- * installation retained the interaction and lost its deliveries, while a replay
- * did neither. A caller that could not tell them apart would report a decision
- * another run already recorded as a partial write, every sweep.
- */
-test("a replayed decision is not the paused one, though neither writes a row", async () => {
-  const partition = await postgresHarnessProject(harness.store, "i5-replayed");
-  const pool = postgresPool(postgresHarnessUrl());
-  const state = postgresSelectorState(pool);
-  const decision = `replayed-${crypto.randomUUID()}`;
-  const proposals = selectorTestProposal(partition, decision, [1, 2]);
-  try {
-    assert.deepEqual(
-      await state.record(proposals, selectorTestState(partition, 0)),
-      { retained: true, dispatched: [asTicketId(1), asTicketId(2)] },
-    );
-    assert.deepEqual(
-      await state.record(proposals, selectorTestState(partition, 1)),
-      { retained: false, dispatched: [] },
-      "the decision was already recorded, so nothing here was lost",
-    );
-  } finally {
-    await pool.end();
-  }
-});
-
 test("selector controls hot-reload with a revision fence", async () => {
   const pool = postgresRolePool(selectorControlRole);
   const control = postgresSelectorRuntimeControl(pool);
@@ -1329,8 +1302,8 @@ test("a decision's dispatches are one row each, and neither key admits a second"
 /**
  * A decision is written once. The interaction is what a replay conflicts on, so
  * a re-sent decision reaches the relation with rows it already holds and adds
- * none of them: the count a replay answers is zero, and zero rows written is
- * not the same answer as some of them written.
+ * none of them — and it says it retained nothing, which a paused installation's
+ * empty answer does not.
  */
 test("a decision re-sent writes its rows once and none of them twice", async () => {
   const partition = await postgresHarnessProject(harness.store, "i5-replayed");
@@ -1339,13 +1312,14 @@ test("a decision re-sent writes its rows once and none of them twice", async () 
   const decision = `replayed-${crypto.randomUUID()}`;
   const proposals = () => selectorTestProposal(partition, decision, [5, 6]);
   try {
-    assert.equal(
+    assert.deepEqual(
       await state.record(proposals(), selectorTestState(partition, 0)),
-      2,
+      { retained: true, dispatched: [asTicketId(5), asTicketId(6)] },
     );
-    assert.equal(
+    assert.deepEqual(
       await state.record(proposals(), selectorTestState(partition, 1)),
-      0,
+      { retained: false, dispatched: [] },
+      "the decision was already recorded, so nothing here was lost",
     );
     assert.deepEqual(
       (await i5DeliveryRows(decision)).map((row) => row["ticket"]),
