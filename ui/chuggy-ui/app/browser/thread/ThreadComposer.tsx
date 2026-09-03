@@ -14,6 +14,10 @@
  * releases the identity, so a correction is a turn of its own instead of an
  * ordinal the mailbox already answered for what was corrected.
  *
+ * WHAT THE LAST PRESS SAID IS ABOUT THE LAST PRESS. A wait or a refusal is
+ * cleared when the text changes, because the line under the box would otherwise
+ * report a backlog that a message nobody has sent yet has not met.
+ *
  * A SENT MESSAGE ARRIVES ON THE PAGE THE WAY EVERY OTHER TURN DOES. Enqueuing
  * writes a `Session` change, the frame stales the thread read, and the read
  * answers with the turn — so this clears the box and refreshes nothing itself.
@@ -111,6 +115,8 @@ export function ThreadComposer(props: {
           disabled={ended}
           onChange={(event) => {
             setText(event.target.value);
+            if (send.send === "Waiting" || send.send === "Refused")
+              setSend({ send: "Idle" });
           }}
         />
       </label>

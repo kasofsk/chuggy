@@ -49,6 +49,13 @@
     gap: var(--space-3);
   }
 
+  .thread-older {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
   .thread-turns {
     display: grid;
     gap: var(--space-4);

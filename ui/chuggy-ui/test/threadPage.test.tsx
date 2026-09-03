@@ -272,6 +272,34 @@ test("an identical message sent again is a turn of its own", async () => {
   ).not.toBe(posted[0]?.turn);
 });
 
+/** What the last press said is about the last press: a backlog line left under
+ * the box reports a refusal that the text now in it has never met. */
+test("a wait the reader has typed past is no longer said", async () => {
+  drawThread(
+    () => ({ thread: threadBody({}) }),
+    () => ({
+      body: { error: { code: "ThreadBacklogged", message: "wait" } },
+      status: 429,
+    }),
+  );
+  await mountThread();
+  await turned(() => {
+    fireEvent.change(typing(), { target: { value: "one" } });
+  });
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  });
+  await settled();
+  expect(screen.getByText("Backlogged")).toBeDefined();
+  await turned(() => {
+    fireEvent.change(typing(), { target: { value: "one more" } });
+  });
+  expect(
+    screen.queryByText("Backlogged"),
+    "a backlog was still reported over text that had never been sent",
+  ).toBeNull();
+});
+
 /** Editing the text releases the identity: posting a correction under the turn
  * the mailbox already answered would report the correction as landed. */
 test("editing after a refusal posts under a turn of its own", async () => {
@@ -532,6 +560,78 @@ test("Older walks back from the read's cursor and draws the mailbox in order", a
     screen.queryByRole("button", { name: "Older" }),
     "a page with no cursor still offered an older one",
   ).toBeNull();
+});
+
+/**
+ * A 40-turn thread answers its newest page with a cursor, the reader presses
+ * `Older`, and then a turn lands and the frame slides the tail forward by one.
+ * The turn that was the boundary falls into neither range, so a page drawing
+ * the union omits a turn from the middle of a member's own conversation and
+ * answers a cursor below the gathered set that no press can reach it through.
+ */
+test("a tail that slides while older pages are held leaves no turn unreachable", async () => {
+  const page = (from: number, to: number, before?: number): unknown => ({
+    ...threadBody({
+      ...(before === undefined ? {} : { nextBefore: before }),
+      turns: Array.from({ length: to - from + 1 }, (_unused, at) =>
+        threadTurn({
+          turn: `t-${String(from + at)}`,
+          ordinal: from + at,
+          input: `said ${String(from + at)}`,
+        }),
+      ),
+    }),
+  });
+  let slid = false;
+  const fetching = (url: string): Promise<Response> => {
+    if (url.includes("/transcript"))
+      return Promise.resolve(answer(threadTranscriptPage(1)));
+    if (url.includes("/threads/")) {
+      const asked = new URL(url, "https://console").searchParams.get("before");
+      if (asked === null)
+        return Promise.resolve(
+          answer(slid ? page(10, 41, 10) : page(9, 40, 9)),
+        );
+      return Promise.resolve(answer(page(1, Number(asked) - 1)));
+    }
+    return Promise.resolve(
+      answer({ partition: threadPartition, sequence: 1, tickets: [] }),
+    );
+  };
+  vi.stubGlobal("fetch", fetching);
+  const server = await mountThread();
+  const ordinals = (): readonly number[] =>
+    [...document.querySelectorAll(".thread-turn-head .num")].map((cell) =>
+      Number(cell.textContent),
+    );
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Older" }));
+  });
+  await settled();
+  expect(ordinals()[0]).toBe(1);
+  slid = true;
+  await turned(() => {
+    server.push(
+      frame("Session", "80", {
+        version: 1,
+        resource: threadSessionResource(threadMineSession, "t-41"),
+        representation: null,
+      }),
+    );
+  });
+  await settled();
+  const drawn = ordinals();
+  const gaps = drawn.flatMap((ordinal, at) =>
+    at > 0 && ordinal !== (drawn[at - 1] ?? 0) + 1 ? [ordinal] : [],
+  );
+  expect(
+    gaps,
+    "a turn fell between the tail and the pages behind it",
+  ).toStrictEqual([]);
+  expect(
+    screen.queryByRole("button", { name: "Older" }),
+    "the walk was left with no way back to what it dropped",
+  ).not.toBeNull();
 });
 
 /** A thread the read already says takes no more messages is not a box a member

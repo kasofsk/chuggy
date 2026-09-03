@@ -21,6 +21,7 @@ import {
   threadOlderAsked,
   threadOlderEmpty,
   threadOlderGathered,
+  threadOlderHeld,
   threadRefusalWord,
   threadSendFrom,
   threadTakesMessages,
@@ -146,19 +147,21 @@ describe("walking a mailbox backwards", () => {
     nextBefore: 9,
   };
 
-  test("the walk starts at the newest read's own cursor and follows the pages'", () => {
-    expect(threadOlderAsked(threadOlderEmpty, newest)).toBe(9);
-    const gathered = threadOlderGathered(threadOlderEmpty, {
-      turns: [turnOf({ turn: "t-8", ordinal: 8 })],
-      nextBefore: 8,
-    });
+  test("the walk follows the pages' own cursors once it has started", () => {
+    const gathered = threadOlderGathered(
+      threadOlderEmpty,
+      { turns: [turnOf({ turn: "t-8", ordinal: 8 })], nextBefore: 8 },
+      newest,
+    );
     expect(threadOlderAsked(gathered, newest)).toBe(8);
   });
 
   test("a page with no cursor is the first turn and stops the walk", () => {
-    const gathered = threadOlderGathered(threadOlderEmpty, {
-      turns: [turnOf({ turn: "t-1", ordinal: 1 })],
-    });
+    const gathered = threadOlderGathered(
+      threadOlderEmpty,
+      { turns: [turnOf({ turn: "t-1", ordinal: 1 })] },
+      newest,
+    );
     expect(threadOlderAsked(gathered, newest)).toBeUndefined();
   });
 
@@ -168,20 +171,123 @@ describe("walking a mailbox backwards", () => {
         turnOf({ turn: `older-${String(at)}`, ordinal: at + 1 }),
       ),
       before: 1,
+      seam: 9,
       failure: undefined,
     };
     expect(threadOlderAsked(many, newest)).toBeUndefined();
     expect(threadTurnsDrawn(many, newest).length).toBe(threadTurnsHeldMax + 1);
   });
 
+  /**
+   * ONLY THE NEWEST PAGE MOVES, AND MOVING SLIDES ITS CURSOR. Everything
+   * gathered sits below the cursor the walk began at, so a read whose cursor has
+   * moved leaves the turn that was the boundary in neither range — and drawing
+   * the union then omits a turn from the middle of a member's own conversation
+   * and offers no cursor that reaches it.
+   */
+  test("a tail that slid past the seam drops what was gathered behind it", () => {
+    const gathered = threadOlderGathered(
+      threadOlderEmpty,
+      { turns: [turnOf({ turn: "t-7", ordinal: 7 })], nextBefore: 7 },
+      newest,
+    );
+    const slid = {
+      turns: [turnOf({ turn: "t-10", ordinal: 10 })],
+      nextBefore: 10,
+    };
+    const held = threadOlderHeld(gathered, slid);
+    expect(held).toStrictEqual(threadOlderEmpty);
+    expect(
+      threadTurnsDrawn(held, slid).map((turn) => turn.ordinal),
+      "a tail that slid was drawn beside a set gathered behind the old seam",
+    ).toStrictEqual([10]);
+    expect(
+      threadOlderAsked(held, slid),
+      "a dropped walk was left with no cursor to re-ask from",
+    ).toBe(10);
+  });
+
+  test("a tail that has not moved keeps what was gathered behind it", () => {
+    const gathered = threadOlderGathered(
+      threadOlderEmpty,
+      { turns: [turnOf({ turn: "t-8", ordinal: 8 })], nextBefore: 8 },
+      newest,
+    );
+    expect(threadOlderHeld(gathered, newest)).toStrictEqual(gathered);
+  });
+
+  test("a walk that has gathered nothing asks from the newest read", () => {
+    expect(threadOlderAsked(threadOlderEmpty, newest)).toBe(9);
+  });
+});
+
+describe("a tail that slid under a walk", () => {
+  const newest = {
+    turns: [turnOf({ turn: "t-9", ordinal: 9 })],
+    nextBefore: 9,
+  };
+
+  test("a walk that has gathered nothing is never dropped", () => {
+    expect(threadOlderHeld(threadOlderEmpty, { nextBefore: 41 })).toStrictEqual(
+      threadOlderEmpty,
+    );
+  });
+
+  /** A page answered with a cursor and no turns has still moved the walk, so
+   * the seam and not the turn count is what says the walk has started. */
+  test("an empty page with a cursor still moves the walk on", () => {
+    const gathered = threadOlderGathered(
+      threadOlderEmpty,
+      { turns: [], nextBefore: 4 },
+      newest,
+    );
+    expect(threadOlderAsked(gathered, newest)).toBe(4);
+  });
+});
+
+describe("what the page draws of a walked mailbox", () => {
+  const newest = {
+    turns: [turnOf({ turn: "t-9", ordinal: 9 })],
+    nextBefore: 9,
+  };
+
+  /** The bound is on what the page HOLDS, and a turn in both pages is one turn.
+   * Adding the two lengths counts it twice and stops the reader a page early. */
+  test("the held bound counts a shared turn once", () => {
+    const shared = turnOf({ turn: "t-9", ordinal: 9 });
+    const nearly = {
+      turns: [
+        ...Array.from({ length: threadTurnsHeldMax - 2 }, (_unused, at) =>
+          turnOf({ turn: `older-${String(at)}`, ordinal: at + 1 }),
+        ),
+        shared,
+      ],
+      before: 1,
+      seam: 9,
+      failure: undefined,
+    };
+    const abutting = { turns: [shared], nextBefore: 9 };
+    expect(threadTurnsDrawn(nearly, abutting).length).toBe(
+      threadTurnsHeldMax - 1,
+    );
+    expect(
+      threadOlderAsked(nearly, abutting),
+      "a turn held by both pages was counted twice against the bound",
+    ).toBe(1);
+  });
+
   /** The newest page is re-read on a frame while a gathered page is not, so a
    * turn in both must be drawn as the later read left it — a page keeping the
    * gathered copy would show a turn answered hours ago as still queued. */
   test("a turn in both pages is drawn as the newest read has it", () => {
-    const gathered = threadOlderGathered(threadOlderEmpty, {
-      turns: [turnOf({ turn: "t-8", ordinal: 8, state: "Queued" })],
-      nextBefore: 7,
-    });
+    const gathered = threadOlderGathered(
+      threadOlderEmpty,
+      {
+        turns: [turnOf({ turn: "t-8", ordinal: 8, state: "Queued" })],
+        nextBefore: 7,
+      },
+      newest,
+    );
     const drawn = threadTurnsDrawn(gathered, {
       turns: [turnOf({ turn: "t-8", ordinal: 8, state: "Answered" })],
     });
@@ -189,13 +295,17 @@ describe("walking a mailbox backwards", () => {
   });
 
   test("every turn is drawn once and in the mailbox's own order", () => {
-    const gathered = threadOlderGathered(threadOlderEmpty, {
-      turns: [
-        turnOf({ turn: "t-7", ordinal: 7 }),
-        turnOf({ turn: "t-8", ordinal: 8 }),
-      ],
-      nextBefore: 7,
-    });
+    const gathered = threadOlderGathered(
+      threadOlderEmpty,
+      {
+        turns: [
+          turnOf({ turn: "t-7", ordinal: 7 }),
+          turnOf({ turn: "t-8", ordinal: 8 }),
+        ],
+        nextBefore: 7,
+      },
+      newest,
+    );
     const drawn = threadTurnsDrawn(gathered, {
       turns: [
         turnOf({ turn: "t-8", ordinal: 8 }),

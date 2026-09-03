@@ -517,11 +517,10 @@ export function leadStreamListed(session: SessionStreams): boolean {
  * here guesses at another's spelling.
  *
  * It is nothing where the frame does not name one — a change frame being a
- * pointer and never a body, so what a reader
- * takes from it is which session to re-read, and a resource this console cannot
- * parse is a frame it ignores rather than one it throws on, since a stream that
- * ended on a shape a console did not expect would stop carrying every other
- * kind with it.
+ * pointer and never a body, so what a reader takes from it is which session to
+ * re-read, and a resource this console cannot parse is a frame it ignores
+ * rather than one it throws on, since a stream that ended on a shape a console
+ * did not expect would stop carrying every other kind with it.
  */
 export function leadSessionNamed(resource: string): string | undefined {
   let parsed: unknown;

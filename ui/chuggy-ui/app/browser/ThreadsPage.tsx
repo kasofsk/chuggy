@@ -124,7 +124,7 @@ function ThreadTable(props: {
           <th scope="col">Thread</th>
           <th scope="col">Mine</th>
           <th scope="col">Owner</th>
-          <th scope="col">State</th>
+          <th scope="col">Standing</th>
           <th scope="col">Turns</th>
         </tr>
       </thead>

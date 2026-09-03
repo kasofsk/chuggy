@@ -9,9 +9,15 @@
  * THE READ IS THE NEWEST PAGE AND THE READER WALKS BACK FROM IT. The mailbox
  * is answered newest-last with a `nextBefore` cursor, so what is live is the
  * page a `Session` frame re-reads and what a reader gathers behind it is held
- * beside it. The two are drawn as one list ordered by the mailbox's own
- * ordinals, because a re-read of the newest page lands in the middle of what
- * has been gathered and arrival order would draw it at the end.
+ * beside it.
+ *
+ * A TAIL THAT SLID PAST THE SEAM DROPS WHAT WAS GATHERED BEHIND IT. Only the
+ * newest page moves, and it moves by a turn arriving — which slides its cursor
+ * forward and leaves the turn that was the boundary in neither range. Drawing
+ * the union then omits a turn from the middle of a member's own conversation
+ * and offers no way back to it, so the gathered set goes and the walk re-asks
+ * from the boundary the new read names. What a reader keeps meanwhile is the
+ * whole newest page, which is a contiguous conversation and not nothing.
  *
  * A WAKE IS DRAWN AS ITS POINTER. The input of a wake turn is the document the
  * runtime composed — a reason, a resource and the standing rule the agent is
@@ -40,6 +46,7 @@ import {
   threadOlderAsked,
   threadOlderEmpty,
   threadOlderGathered,
+  threadOlderHeld,
   threadTurnAnswer,
   threadTurnKindWord,
   threadTurnsDrawn,
@@ -167,8 +174,9 @@ export function ThreadTurns(props: {
   readonly thread: ThreadResponse;
 }): ReactNode {
   const ports = useApiPorts();
-  const [older, setOlder] = useState<ThreadOlder>(threadOlderEmpty);
+  const [gathered, setGathered] = useState<ThreadOlder>(threadOlderEmpty);
   const [walking, setWalking] = useState(false);
+  const older = threadOlderHeld(gathered, props.thread);
   const before = threadOlderAsked(older, props.thread);
   const turns = threadTurnsDrawn(older, props.thread);
   const walk = async (asked: number): Promise<void> => {
@@ -177,9 +185,9 @@ export function ThreadTurns(props: {
       before: asked,
     });
     setWalking(false);
-    setOlder(
+    setGathered(
       answered.outcome === "Ok"
-        ? threadOlderGathered(older, answered.value)
+        ? threadOlderGathered(older, answered.value, props.thread)
         : { ...older, failure: panelReason(answered) },
     );
   };

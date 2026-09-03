@@ -32,6 +32,14 @@
  * grows by drawing nothing — so the two the wire has get the standing word they
  * belong to and anything else is drawn as the code the server sent.
  *
+ * A GATHERED SET MEANS NOTHING WITHOUT THE SEAM IT SITS BEHIND. Everything a
+ * walk gathers is strictly below one boundary — the newest read's own cursor at
+ * the moment the walk began — so a newest read whose cursor has moved is a read
+ * that set no longer abuts, and `ThreadOlder.seam` is that boundary carried.
+ * The field is absent exactly while nothing has been gathered, which is why "is
+ * this walk started" is one field being present rather than a flag beside it
+ * that can disagree with the turns.
+ *
  * ORDER IS THE CONSTRUCTION'S AND NOT A SORT. Each older page is prepended
  * whole and the newest read appended, so what `threadTurnsDrawn` returns is
  * already the mailbox's sequence and a sort over it would be a control that has
@@ -196,48 +204,71 @@ export function threadTurnRetained(
 export const threadTurnsHeldMax = 400;
 
 /** One walk backwards through a mailbox: what it has gathered, the cursor the
- * next page is asked for, and what the last read failed with. */
+ * next page is asked for, the seam it was all gathered behind, and what the
+ * last read failed with. */
 export interface ThreadOlder {
   readonly turns: readonly ThreadTurnResponse[];
   readonly before: number | undefined;
+  readonly seam: number | undefined;
   readonly failure: string | undefined;
 }
 
 export const threadOlderEmpty: ThreadOlder = {
   turns: [],
   before: undefined,
+  seam: undefined,
   failure: undefined,
 };
 
 /**
- * One older page gathered. The page's own `nextBefore` becomes the cursor, and
- * its absence is the mailbox's first turn — which is why the cursor and the
- * turns are one value and not two pieces of state that can disagree about
- * whether there is more.
+ * One older page gathered, behind the boundary the walk began at. The page's
+ * own `nextBefore` becomes the cursor and its absence is the mailbox's first
+ * turn, which is why the cursor and the turns are one value and not two pieces
+ * of state that can disagree about whether there is more.
  */
 export function threadOlderGathered(
   older: ThreadOlder,
   page: Pick<ThreadResponse, "turns" | "nextBefore">,
+  newest: Pick<ThreadResponse, "nextBefore">,
 ): ThreadOlder {
   return {
     turns: [...page.turns, ...older.turns],
     before: page.nextBefore,
+    seam: older.seam ?? newest.nextBefore,
     failure: undefined,
   };
 }
 
 /**
+ * The gathered set a reader may still be shown, and nothing where the newest
+ * read has slid past the seam it was gathered behind. Dropping it is the
+ * discipline `leadTranscriptStep` takes on a compaction that moved: a set
+ * gathered against a boundary that no longer exists cannot be drawn beside the
+ * read that replaced it, and the union of two ranges that do not meet is a
+ * conversation with a turn missing from the middle of it.
+ */
+export function threadOlderHeld(
+  older: ThreadOlder,
+  newest: Pick<ThreadResponse, "nextBefore">,
+): ThreadOlder {
+  if (older.seam === undefined) return older;
+  return newest.nextBefore === older.seam ? older : threadOlderEmpty;
+}
+
+/**
  * The cursor an older page is asked for with, and nothing where there is none
- * to ask for or the page already holds what it will hold. The newest read's own
- * cursor starts the walk, so a reader who has pressed nothing asks from there.
+ * to ask for or the page already holds what it will hold. A walk that has
+ * gathered nothing asks from the newest read's own cursor, and one that has
+ * follows its own — the seam says which, because a page answered with a cursor
+ * and no turns has still moved the walk.
  */
 export function threadOlderAsked(
   older: ThreadOlder,
   newest: Pick<ThreadResponse, "turns" | "nextBefore">,
 ): number | undefined {
-  if (older.turns.length + newest.turns.length >= threadTurnsHeldMax)
+  if (threadTurnsDrawn(older, newest).length >= threadTurnsHeldMax)
     return undefined;
-  return older.turns.length === 0 ? newest.nextBefore : older.before;
+  return older.seam === undefined ? newest.nextBefore : older.before;
 }
 
 /** Every turn the page holds, each once, oldest first, and a turn in both
