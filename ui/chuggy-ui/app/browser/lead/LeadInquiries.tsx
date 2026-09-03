@@ -35,29 +35,35 @@ import type {
 } from "../../../../../src/contract/responses.ts";
 import { apiAskLead, apiLeadInquiries } from "../../core/apiRoutes.ts";
 import { base64urlFromBytes } from "../../core/base64url.ts";
-import { instantFigure } from "../../core/figures.ts";
+import {
+  costFigure,
+  durationFigure,
+  instantFigure,
+  tokenCountFigure,
+} from "../../core/figures.ts";
 import {
   inquiryAskAnswered,
   inquiryAsking,
+  inquiryDraw,
   inquiryIdentityBytesCount,
   inquiryQuestion,
   inquiryQuestionFault,
   inquirySessionKind,
 } from "../../core/leadInquiries.ts";
-import type { InquiryAsk } from "../../core/leadInquiries.ts";
+import type { InquiryAsk, InquiryDraw } from "../../core/leadInquiries.ts";
 import { sessionChangeKindNamed } from "../../core/leadTranscript.ts";
 import { projectListRereadNamed } from "../../core/projectQueryKeys.ts";
 import { sessionTurnStateTone } from "../../core/tones.ts";
 import { useApiPorts, usePanelList } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { drawBytes } from "../ports.ts";
+import { Button } from "../ui/Button.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { Button } from "../ui/Button.tsx";
 
 export const leadInquiriesListName = "inquiries";
 
@@ -84,9 +90,12 @@ function LeadAskNotice(props: { readonly ask: InquiryAsk }): ReactNode {
  * so a second check inside the press would be a control nothing can prove.
  *
  * ONE PRESS IS ONE QUESTION, AND THE FLAG THAT SAYS SO IS A REF RATHER THAN THE
- * DRAWN STATE: two presses inside one render both read the render they were
- * drawn from, so the control being disabled by the next one stops neither, and
- * each mints a pair of its own that the door's idempotence cannot recognise.
+ * DRAWN STATE — two presses inside one render both read the render they were
+ * drawn from, so the control being disabled by the next one stops neither; it
+ * is released on every answer, a refusal that latched the box shut leaving a
+ * reader nothing to try again with, and the pair is held until one is accepted,
+ * so a re-send is the retry the door is idempotent on rather than a second
+ * question spending the second of the asker's two.
  */
 function LeadAsk(props: {
   readonly partition: PartitionIdentity;
@@ -96,6 +105,7 @@ function LeadAsk(props: {
   const [typed, setTyped] = useState("");
   const [ask, setAsk] = useState<InquiryAsk>({ ask: "Idle" });
   const inFlight = useRef(false);
+  const held = useRef<InquiryDraw | undefined>(undefined);
   const question = inquiryQuestion(typed);
   const fault = inquiryQuestionFault(question);
   const submit = () => {
@@ -103,17 +113,17 @@ function LeadAsk(props: {
     inFlight.current = true;
     setAsk({ ask: "Asking" });
     void (async () => {
-      const drawn = base64urlFromBytes(drawBytes(inquiryIdentityBytesCount));
+      const draw = inquiryDraw(held.current, question, () =>
+        base64urlFromBytes(drawBytes(inquiryIdentityBytesCount)),
+      );
+      held.current = draw;
       const answered = inquiryAskAnswered(
-        await apiAskLead(
-          ports,
-          props.partition,
-          inquiryAsking(question, drawn),
-        ),
+        await apiAskLead(ports, props.partition, inquiryAsking(draw)),
       );
       inFlight.current = false;
       setAsk(answered);
       if (answered.ask !== "Asked") return;
+      held.current = undefined;
       setTyped("");
       props.onAsked();
     })();
@@ -122,7 +132,7 @@ function LeadAsk(props: {
     <div className="lead-ask">
       <LeadAskNotice ask={ask} />
       <Fields>
-        <Field name="Question" absent={question === ""}>
+        <Field name="Question">
           <textarea
             className="lead-ask-text"
             aria-label="Question"
@@ -138,12 +148,38 @@ function LeadAsk(props: {
       </Fields>
       <Button
         variant="primary"
+        busy={ask.ask === "Asking"}
         disabled={fault !== undefined || ask.ask === "Asking"}
         onClick={submit}
       >
         Ask
       </Button>
     </div>
+  );
+}
+
+/**
+ * What one question cost the account the whole project shares, which is the
+ * lead's own, so a reader can see what asking spends.
+ */
+function LeadInquiryRollup(props: {
+  readonly inquiry: LeadInquiryResponse;
+}): ReactNode {
+  const inquiry = props.inquiry;
+  if (inquiry.costMicros === undefined && inquiry.tokens === undefined)
+    return null;
+  return (
+    <>
+      {inquiry.costMicros === undefined ? null : (
+        <Figure figure={costFigure(inquiry.costMicros, "List")} />
+      )}
+      {inquiry.tokens === undefined ? null : (
+        <Figure figure={tokenCountFigure(inquiry.tokens)} />
+      )}
+      {inquiry.durationMs === undefined ? null : (
+        <Figure figure={durationFigure(inquiry.durationMs)} />
+      )}
+    </>
   );
 }
 
@@ -163,6 +199,7 @@ function LeadInquiryRow(props: {
           </Pill>
         </span>
         <Figure figure={instantFigure(inquiry.askedAt, props.nowMs)} />
+        <LeadInquiryRollup inquiry={inquiry} />
       </div>
       <p className="lead-inquiry-question">{inquiry.question}</p>
       {inquiry.answer === undefined ? null : (

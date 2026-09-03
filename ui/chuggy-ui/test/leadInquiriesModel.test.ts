@@ -16,6 +16,7 @@ import { leadInquirySchema } from "../../../src/contract/requests.ts";
 import {
   inquiryAskAnswered,
   inquiryAsking,
+  inquiryDraw,
   inquiryQuestion,
   inquiryQuestionFault,
   inquiryRefusalWordNoLead,
@@ -24,6 +25,10 @@ import {
 } from "../app/core/leadInquiries.ts";
 
 const drawn = "GxUhK1TgQ2iWm4bB0jvA5w";
+
+function asking(question: string): unknown {
+  return inquiryAsking({ drawn, question });
+}
 
 test("what is asked is what was typed, less the ends nobody meant to type", () => {
   expect(inquiryQuestion("  what is blocking ticket 41?\n")).toBe(
@@ -34,9 +39,9 @@ test("what is asked is what was typed, less the ends nobody meant to type", () =
 
 /**
  * THE BOX AND THE SCHEMA BOUND THE SAME QUESTION THE SAME WAY. A question at the
- * bound is asked and one character past it is refused, and the schema is asked
- * the same two questions — so a bound that moved on one side alone fails here
- * rather than at a reader's `400`.
+ * bound is asked and one unit past it is refused, and the schema is asked the
+ * same two questions — so a bound that moved on one side alone fails here rather
+ * than at a reader's `400`.
  */
 test("a question is refused at the bound the wire refuses it at", () => {
   const atBound = "q".repeat(inquiryQuestionCharsMax);
@@ -44,25 +49,70 @@ test("a question is refused at the bound the wire refuses it at", () => {
   expect(inquiryQuestionFault(atBound)).toBeUndefined();
   expect(inquiryQuestionFault(past)).toBe("Too long");
   expect(inquiryQuestionFault("")).toBe("Empty");
+  expect(leadInquirySchema.safeParse(asking(atBound)).success).toBe(true);
   expect(
-    leadInquirySchema.safeParse(inquiryAsking(atBound, drawn)).success,
-  ).toBe(true);
-  expect(
-    leadInquirySchema.safeParse(inquiryAsking(past, drawn)).success,
+    leadInquirySchema.safeParse(asking(past)).success,
     "the box would have sent a question the schema rejects",
   ).toBe(false);
+});
+
+/**
+ * THE ONLY WAY THE TWO MEASURES CAN DISAGREE IS OUTSIDE THE BASIC PLANE, so an
+ * ASCII case cannot tell them apart: an astral character is one code point and
+ * two of the units zod counts, so a question of half the bound's worth of them
+ * sits exactly at the bound and one more of them is past it.
+ */
+test("the bound is counted in the units the schema counts, not in characters", () => {
+  const astral = "\u{1f600}";
+  const atBound = astral.repeat(inquiryQuestionCharsMax / 2);
+  const past = `${atBound}${astral}`;
+  expect(atBound.length).toBe(inquiryQuestionCharsMax);
+  expect(inquiryQuestionFault(atBound)).toBeUndefined();
+  expect(leadInquirySchema.safeParse(asking(atBound)).success).toBe(true);
+  expect(
+    inquiryQuestionFault(past),
+    "a question the schema rejects was drawn as one the box would send",
+  ).toBe("Too long");
+  expect(leadInquirySchema.safeParse(asking(past)).success).toBe(false);
 });
 
 /** One question is one draw, so a retry of the same ask is the same pair and the
  * definer is asked to reconcile nothing. */
 test("the fork and its turn are named from one draw", () => {
-  const asked = inquiryAsking("why", drawn);
-  expect(asked).toStrictEqual({
+  expect(inquiryAsking({ drawn, question: "why" })).toStrictEqual({
     session: `inq-${drawn}`,
     turn: `inq-turn-${drawn}`,
     question: "why",
   });
-  expect(inquiryAsking("why", drawn)).toStrictEqual(asked);
+});
+
+/**
+ * THE PAIR IS THE KEY THE DOOR IS IDEMPOTENT ON, so a re-send of one question
+ * reuses it and an edited question does not — the door would answer an edited
+ * question with the held pair's own ordinal, which is the first question's
+ * answer under the second question's text.
+ */
+test("a re-send keeps its pair and an edit takes a new one", () => {
+  let draws = 0;
+  const draw = () => {
+    draws += 1;
+    return `drawn-${String(draws)}`;
+  };
+  const first = inquiryDraw(undefined, "why", draw);
+  expect(first).toStrictEqual({ drawn: "drawn-1", question: "why" });
+  expect(
+    inquiryDraw(first, "why", draw),
+    "a re-sent question asked the door a second question",
+  ).toStrictEqual(first);
+  expect(draws).toBe(1);
+  expect(inquiryDraw(first, "why not", draw)).toStrictEqual({
+    drawn: "drawn-2",
+    question: "why not",
+  });
+  expect(
+    inquiryDraw(undefined, "why", draw),
+    "a pair the door has taken was sent again",
+  ).toStrictEqual({ drawn: "drawn-3", question: "why" });
 });
 
 test("the door's answer is drawn as the fork it opened", () => {

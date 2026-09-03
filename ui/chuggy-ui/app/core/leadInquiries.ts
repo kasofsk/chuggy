@@ -10,14 +10,20 @@
  * one lead, so sorting on it would put every inquiry at ordinal 1 in whatever
  * order the sort happened to be stable in.
  *
- * THE QUESTION IS BOUNDED HERE IN THE MEASURE THE WIRE BOUNDS IT IN. The
- * schema's `max` counts the string's own units, so this counts the same ones:
- * a console refusing what the route accepts, or accepting what it refuses,
- * would be a bound that means something different on each side of the wire.
+ * THE QUESTION IS BOUNDED HERE IN THE MEASURE THE WIRE BOUNDS IT IN, which is
+ * `String.length` because that is what zod's `max` reads — so the case that
+ * proves it asks with characters outside the basic plane, the only way the two
+ * measures can disagree and so the only way a bound counted the other way
+ * reaches a reader as a rejection the box said would not happen.
  *
  * A QUESTION PAST THE BOUND IS SHOWN AND REFUSED, NEVER TRUNCATED. What a
  * reader pasted is theirs, and a box that silently dropped the end of it would
  * send a question they did not ask.
+ *
+ * A PAIR IS HELD UNTIL THE DOOR TAKES IT. The pair in the body is the whole of
+ * what makes a retried post a retry, so a send that did not land is re-sent
+ * under the pair it was sent under; a fresh draw would ask the door a second
+ * question and spend the second of the asker's two on it.
  */
 
 import type { z } from "zod";
@@ -28,7 +34,12 @@ import type { LeadInquiryAccepted } from "../../../../src/contract/responses.ts"
 import type { ApiResult } from "./apiRequest.ts";
 import { panelReason } from "./freshness.ts";
 
-/** How much entropy an inquiry is named with, which is an operation id's own. */
+/**
+ * How much entropy an inquiry's pair is named with. It is its own constant
+ * rather than a reuse of the operation id's, for the reason §6 D13 gives about
+ * the two char bounds — they are different doors, and a shared constant would
+ * move one when the other was retuned.
+ */
 export const inquiryIdentityBytesCount = 16;
 
 /**
@@ -54,16 +65,44 @@ export function inquiryQuestionFault(question: string): string | undefined {
 }
 
 /**
- * The fork and its one turn, named before either exists. Both are drawn from
- * one draw because they name one question: the door is idempotent on the pair,
- * so a retry that sent a fresh turn beside a held session would be asking the
+ * A draw and the question it was drawn for, which travel together so that a
+ * held pair cannot come to carry a different question than the one the door
+ * would recognise it by.
+ */
+export interface InquiryDraw {
+  readonly drawn: string;
+  readonly question: string;
+}
+
+/**
+ * The draw a send goes out under: the held one where the question has not
+ * changed, and a fresh one otherwise — an edited question being a different
+ * question, which the door would answer with the held pair's own ordinal.
+ * Nothing is held past an accepted send, and the caller is what forgets it.
+ */
+export function inquiryDraw(
+  held: InquiryDraw | undefined,
+  question: string,
+  draw: () => string,
+): InquiryDraw {
+  if (held !== undefined && held.question === question) return held;
+  return { drawn: draw(), question };
+}
+
+/**
+ * The fork and its one turn, named before either exists. Both come from one
+ * draw because they name one question: the door is idempotent on the pair, so a
+ * retry that sent a fresh turn beside a held session would be asking the
  * definer to reconcile two identities where it was promised one.
  */
 export function inquiryAsking(
-  question: string,
-  drawn: string,
+  draw: InquiryDraw,
 ): z.infer<typeof leadInquirySchema> {
-  return { session: `inq-${drawn}`, turn: `inq-turn-${drawn}`, question };
+  return {
+    session: `inq-${draw.drawn}`,
+    turn: `inq-turn-${draw.drawn}`,
+    question: draw.question,
+  };
 }
 
 /**

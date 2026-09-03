@@ -34,6 +34,7 @@ import {
   inquiriesAnsweredMax,
   inquiryQuestionCharsMax,
 } from "../../../src/contract/http.ts";
+import { apiAttemptsMax } from "../app/core/apiRequest.ts";
 import { sessionTurnStates } from "../../../src/contract/rosters.ts";
 import type { LeadInquiriesResponse } from "../../../src/contract/responses.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -77,6 +78,8 @@ async function drawInquiries(served: {
   readonly listing: () => LeadInquiriesResponse;
   readonly asked?: () => { readonly body: unknown; readonly status: number };
   readonly head?: string | undefined;
+  /** Held open so a case can read the box while a press is still in flight. */
+  readonly gate?: () => Promise<void>;
 }): Promise<InquiryServer> {
   let reads = 0;
   const posts: unknown[] = [];
@@ -87,7 +90,8 @@ async function drawInquiries(served: {
         body: { session: "inq-new", turn: "inq-turn-new", ordinal: 1 },
         status: 202,
       };
-      return Promise.resolve(answer(found.body, found.status));
+      const waited = served.gate?.() ?? Promise.resolve();
+      return waited.then(() => answer(found.body, found.status));
     }
     reads += 1;
     return Promise.resolve(answer(served.listing()));
@@ -320,6 +324,46 @@ test("a question past the bound is refused before it is posted", async () => {
   ).toBe(0);
 });
 
+/**
+ * THE ONLY WAY THE BOX AND THE WIRE CAN MEASURE ONE QUESTION DIFFERENTLY IS
+ * OUTSIDE THE BASIC PLANE. Counted in characters instead of the units zod
+ * counts, a question of astral characters twice the bound's length draws no
+ * fault and goes out to be rejected as `400` — drawn as the unrecognised-code
+ * word, telling the reader nothing about what was wrong.
+ */
+test("a question of astral characters is refused at the wire's own bound", async () => {
+  const astral = "\u{1f600}";
+  const server = await drawInquiries({ listing: () => ({ inquiries: [] }) });
+  await turned(() => {
+    typed(astral.repeat(inquiryQuestionCharsMax / 2));
+  });
+  expect(screen.queryByText("Too long")).toBeNull();
+  await turned(() => {
+    typed(astral.repeat(inquiryQuestionCharsMax / 2 + 1));
+  });
+  expect(
+    screen.getByText("Too long"),
+    "a question the wire will reject was drawn as one the box would send",
+  ).toBeDefined();
+  await turned(ask);
+  await settled();
+  expect(server.posts().length).toBe(0);
+});
+
+/** What the turn spent on the project's shared account, where the reader who
+ * asked can see it. */
+test("a measured inquiry draws what it cost", async () => {
+  await drawInquiries({
+    listing: () => ({
+      inquiries: [
+        leadInquiry(1, { turnState: "Answered", answer: "a", measured: true }),
+      ],
+    }),
+  });
+  expect(screen.getByText("$0.04")).toBeDefined();
+  expect(screen.getByText("12k")).toBeDefined();
+});
+
 test("an empty box posts nothing", async () => {
   const server = await drawInquiries({ listing: () => ({ inquiries: [] }) });
   await turned(() => {
@@ -375,6 +419,10 @@ test("two presses inside one turn ask once", async () => {
   expect(server.posts().length, "one press asked twice").toBe(1);
 });
 
+function refusal(code: string, status = 409) {
+  return { body: { error: { code, message: code } }, status };
+}
+
 /**
  * A refusal is the lead's own answer and is drawn as a word beside the box the
  * question is still in. A box that blanked would take the question away with
@@ -382,34 +430,219 @@ test("two presses inside one turn ask once", async () => {
  */
 test("a door that refuses is drawn as a word, not as a blank panel", async () => {
   const refusals = [
-    {
-      status: 429,
-      body: { error: { code: "InquiriesInFlight", message: "two open" } },
-      word: "In flight",
-    },
-    {
-      status: 409,
-      body: { error: { code: "LeadNotStarted", message: "no head" } },
-      word: "Not started",
-    },
+    { code: "InquiriesInFlight", word: "In flight" },
+    { code: "LeadNotStarted", word: "Not started" },
+    { code: "LeadClosed", word: "Closed" },
   ];
-  for (const refusal of refusals) {
+  for (const refused of refusals) {
     const server = await drawInquiries({
       listing: () => ({ inquiries: [leadInquiry(1, { turnState: "Queued" })] }),
-      asked: () => ({ body: refusal.body, status: refusal.status }),
+      asked: () => refusal(refused.code),
     });
     await turned(() => {
       typed("why is ticket 41 waiting?");
     });
     await turned(ask);
     await settled();
-    expect(screen.getByText(refusal.word), refusal.word).toBeDefined();
-    expect(rows(), refusal.word).toStrictEqual(["question 1"]);
+    expect(screen.getByText(refused.word), refused.word).toBeDefined();
+    expect(rows(), refused.word).toStrictEqual(["question 1"]);
     expect(
       screen.getByLabelText<HTMLTextAreaElement>("Question").value,
       "a refused question was taken away from the reader who typed it",
     ).toBe("why is ticket 41 waiting?");
-    expect(server.posts().length).toBeGreaterThan(0);
+    expect(
+      server.posts().length,
+      "a refusal the door states once cost more than one post",
+    ).toBe(1);
     cleanup();
   }
+});
+
+/**
+ * THE OPEN BOUND IS A REFUSAL AND NOT A DELAY, which is why the door answers it
+ * `409`: a `429` is a status this console's transport retries, so the same
+ * refusal would cost `apiAttemptsMax` posts and leave the box on `Asking` for
+ * two of the server's own waits before the word appeared.
+ */
+test("the open bound answered as retryable costs the transport's whole budget", async () => {
+  const server = await drawInquiries({
+    listing: () => ({ inquiries: [] }),
+    asked: () => refusal("InquiriesInFlight", 429),
+  });
+  await turned(() => {
+    typed("why is ticket 41 waiting?");
+  });
+  await turned(ask);
+  await settled();
+  expect(screen.getByText("In flight")).toBeDefined();
+  expect(server.posts().length).toBe(apiAttemptsMax);
+});
+
+/**
+ * A REFUSAL MUST NOT LATCH THE BOX SHUT. The whole reason a refused question
+ * stays in the textarea is so the reader can ask again once an inquiry settles,
+ * and a one-press flag that is only released on success makes trying again do
+ * nothing at all, with the control enabled and no notice changing.
+ */
+test("a box that was refused can ask again", async () => {
+  let asks = 0;
+  const server = await drawInquiries({
+    listing: () => ({ inquiries: [] }),
+    asked: () => {
+      asks += 1;
+      return asks === 1
+        ? refusal("InquiriesInFlight")
+        : {
+            body: { session: "inq-new", turn: "inq-turn-new", ordinal: 1 },
+            status: 202,
+          };
+    },
+  });
+  await turned(() => {
+    typed("why is ticket 41 waiting?");
+  });
+  await turned(ask);
+  await settled();
+  expect(screen.getByText("In flight")).toBeDefined();
+  await turned(ask);
+  await settled();
+  expect(
+    server.posts().length,
+    "a second press after a refusal posted nothing",
+  ).toBe(2);
+  expect(screen.getByText("Asked")).toBeDefined();
+});
+
+/**
+ * THE PAIR IN THE BODY IS THE ONLY THING THAT MAKES A RE-SEND A RETRY, this
+ * being the route with no idempotency key. A send that did not land leaves the
+ * asker unable to know whether the lead was forked, so a fresh pair on the next
+ * press opens a second fork and spends the second of their two.
+ */
+test("a re-send after a send that did not land carries the same pair", async () => {
+  let asks = 0;
+  const server = await drawInquiries({
+    listing: () => ({ inquiries: [] }),
+    asked: () => {
+      asks += 1;
+      return asks === 1
+        ? {
+            body: { error: { code: "InternalError", message: "no" } },
+            status: 500,
+          }
+        : {
+            body: { session: "inq-new", turn: "inq-turn-new", ordinal: 1 },
+            status: 202,
+          };
+    },
+  });
+  await turned(() => {
+    typed("why is ticket 41 waiting?");
+  });
+  await turned(ask);
+  await settled();
+  expect(screen.getByText(/^Failed · /u)).toBeDefined();
+  await turned(ask);
+  await settled();
+  const sent = server
+    .posts()
+    .map((post) => (post as { session: string }).session);
+  expect(sent.length).toBe(2);
+  expect(
+    sent[1],
+    "a re-sent question was asked under a second pair, so the door forked twice",
+  ).toBe(sent[0]);
+});
+
+/**
+ * A PRESS IN FLIGHT IS SAID AS BUSY AND NOT ONLY AS DISABLED, `disabled` alone
+ * telling a reader on assistive technology that the control is unavailable
+ * rather than that their question is on its way.
+ */
+test("a press in flight reports itself busy", async () => {
+  let release = (): void => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await drawInquiries({
+    listing: () => ({ inquiries: [] }),
+    gate: () => gate,
+  });
+  await turned(() => {
+    typed("why is ticket 41 waiting?");
+  });
+  await turned(ask);
+  expect(
+    screen.getByRole("button", { name: "Ask" }).getAttribute("aria-busy"),
+    "a press in flight said nothing about being in flight",
+  ).toBe("true");
+  expect(screen.getByText("Asking")).toBeDefined();
+  await turned(release);
+  await settled();
+  expect(
+    screen.getByRole("button", { name: "Ask" }).getAttribute("aria-busy"),
+  ).not.toBe("true");
+});
+
+/** An edited question is a different question, and the held pair would have the
+ * door answer it with the first question's own ordinal. */
+test("an edited question takes a pair of its own", async () => {
+  const server = await drawInquiries({
+    listing: () => ({ inquiries: [] }),
+    asked: () => ({
+      body: { error: { code: "InternalError", message: "no" } },
+      status: 500,
+    }),
+  });
+  await turned(() => {
+    typed("why is ticket 41 waiting?");
+  });
+  await turned(ask);
+  await settled();
+  await turned(() => {
+    typed("why is ticket 42 waiting?");
+  });
+  await turned(ask);
+  await settled();
+  const sent = server.posts() as readonly {
+    readonly session: string;
+    readonly question: string;
+  }[];
+  expect(sent.map((post) => post.question)).toStrictEqual([
+    "why is ticket 41 waiting?",
+    "why is ticket 42 waiting?",
+  ]);
+  expect(
+    sent[1]?.session,
+    "an edited question went out under the pair drawn for another one",
+  ).not.toBe(sent[0]?.session);
+});
+
+/** A pair the door has taken is spent, so the same question asked again is a
+ * new question and not a retry of the answered one. */
+test("a question asked again after it was answered takes a new pair", async () => {
+  const server = await drawInquiries({
+    listing: () => ({ inquiries: [] }),
+    asked: () => ({
+      body: { session: "inq-new", turn: "inq-turn-new", ordinal: 1 },
+      status: 202,
+    }),
+  });
+  const asking = async () => {
+    await turned(() => {
+      typed("why is ticket 41 waiting?");
+    });
+    await turned(ask);
+    await settled();
+  };
+  await asking();
+  await asking();
+  const sent = server
+    .posts()
+    .map((post) => (post as { session: string }).session);
+  expect(sent.length).toBe(2);
+  expect(
+    sent[1],
+    "a pair the door had already taken was sent a second time",
+  ).not.toBe(sent[0]);
 });
