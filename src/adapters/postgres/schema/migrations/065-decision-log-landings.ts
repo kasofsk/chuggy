@@ -32,12 +32,17 @@ import {
 } from "../shared.ts";
 import { interactionsReadSignature } from "./059-lead-decisions.ts";
 
-/** What one decision's deliveries weigh in the row that carries them, as JSON. */
+/**
+ * One decision's deliveries in the row that carries them, as JSON. A decision
+ * that dispatched nothing has no rows and so answers null, which is the reading
+ * every column of a set-returning function already has and one the reader has a
+ * case for.
+ */
 const deliveriesOfDecision = `
   LEFT JOIN LATERAL (
-    SELECT coalesce(json_agg(json_build_object(
+    SELECT json_agg(json_build_object(
              'ticket',landed.ticket,'state',landed.state,'outcome',landed.outcome)
-             ORDER BY landed.ticket),'[]'::json)::text AS dispatches
+             ORDER BY landed.ticket)::text AS dispatches
       FROM (SELECT d.ticket,d.state,d.outcome
               FROM selector_proposal_delivery d
              WHERE d.selector_decision=i.selector_decision

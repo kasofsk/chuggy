@@ -2994,16 +2994,28 @@ test("a decision the relation had already retained is not a partial write", asyn
  * asks for one delivery and gets it. Counting entries here would report a loss
  * that did not happen and re-offer a ticket that is already dispatched.
  */
-test("a decision naming one ticket twice loses nothing when its row lands", async () => {
-  const repeated = await sweep({
+test("a decision naming one ticket twice asks for one delivery and loses one", async () => {
+  const landed = await sweep({
     projects: [partition],
     view: [7],
     named: () => [7, 7],
     budget: 2,
     taken: () => ({ retained: true, dispatched: [asTicketId(7)] }),
   });
-  assert.deepEqual(repeated.failures, []);
-  assert.equal(repeated.dispatched, 1);
+  assert.deepEqual(landed.failures, []);
+  assert.equal(landed.dispatched, 1);
+  const lost = await sweep({
+    projects: [partition],
+    view: [7],
+    named: () => [7, 7],
+    budget: 2,
+    taken: () => ({ retained: true, dispatched: [] }),
+  });
+  assert.deepEqual(
+    lost.failures.map((failure: SelectorRunFailure) => failure.ticket),
+    [asTicketId(7)],
+    "one ticket lost is one thing to report, however often it was named",
+  );
 });
 
 /**
@@ -3070,4 +3082,50 @@ test("a partial write is reconciled by the next pass and no landed ticket twice"
       `${label}: every ticket ends with exactly one delivery`,
     );
   }
+});
+
+/**
+ * A delivery that will not go through is one row's failure, named by its
+ * ticket: the sibling rows of its decision are claimed and submitted beside
+ * it, and an operator reading "decision X failed to deliver" could not tell
+ * which of three tickets sat.
+ */
+test("one delivery failure names its own ticket and leaves the rest", async () => {
+  const stuck: SelectorDelivery = {
+    ...delivery,
+    ticket: asTicketId(9),
+    operation: asOperationId("operation-nine"),
+    command: { ...delivery.command, ticket: asTicketId(9) },
+  };
+  const result = await selectorRunOnce(
+    refusalWrites(),
+    {
+      ...stateStore(() => undefined),
+      pending: () => Promise.resolve([delivery, stuck]),
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [] }),
+      submit: (offered: SelectorDelivery) =>
+        offered.ticket === stuck.ticket
+          ? Promise.resolve({
+              accepted: "Backpressure" as const,
+              retryAfterSeconds: 30,
+            })
+          : Promise.resolve({ accepted: "Accepted" as const }),
+      operation: () => Promise.resolve(undefined),
+    },
+    policyHost(() => Promise.resolve(waitingExecution())),
+    perProjectIdentities(),
+    settingsSource(() => Promise.resolve(runtimeSettings)),
+  );
+  assert.equal(result.delivered, 1);
+  assert.deepEqual(result.failures, [
+    {
+      phase: "Delivery",
+      partition,
+      decision: stuck.decision,
+      ticket: stuck.ticket,
+    },
+  ]);
 });

@@ -192,7 +192,7 @@ function selectorInteractionRowOf(
     accounting: sessionRowText(row.accounting, "accounting"),
     started_at: interactionInstant(row.started_at, "a decision's start"),
     completed_at: interactionInstant(row.completed_at, "a decision's end"),
-    dispatches: sessionRowText(row.dispatches, "a decision's deliveries"),
+    dispatches: row.dispatches,
   };
 }
 

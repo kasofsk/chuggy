@@ -55,7 +55,6 @@ import type { ProjectNotification } from "../../interpreter/notifications.ts";
 import { parseTicketCommand } from "../../interpreter/wire.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
-import { sessionRowText } from "./sessionRows.ts";
 import {
   finalizationPricingSchema,
   reworkPolicySchema,
@@ -1692,8 +1691,8 @@ export interface SelectorInteractionRow {
   readonly accounting: string;
   readonly started_at: Date;
   readonly completed_at: Date;
-  /** The decision's delivery rows as JSON, which is what the log answers landed. */
-  readonly dispatches: string;
+  /** The decision's delivery rows as JSON, null where the decision dispatched nothing. */
+  readonly dispatches: string | null;
 }
 
 /** The chunked resources one interaction row's three manifests point at. */
@@ -1750,7 +1749,7 @@ export function selectorInteractionRecord(
     policyRevision: row.policy_revision,
     accounting: decoded(row.accounting, jsonValueSchema, "selector accounting"),
     deliveries: decoded(
-      row.dispatches,
+      row.dispatches ?? "[]",
       selectorDeliveryRecordsSchema,
       "selector decision deliveries",
     ),
@@ -1783,19 +1782,6 @@ async function selectorInteractionOf(
   });
 }
 
-/**
- * The aggregate the log read answers, which the query checker calls nullable
- * because an aggregate over no rows is. It is narrowed rather than defaulted:
- * a read that stopped answering the column would otherwise draw every decision
- * as having dispatched nothing.
- */
-interface SelectorHistoryRow extends Omit<
-  SelectorInteractionRow,
-  "dispatches"
-> {
-  readonly dispatches: string | null;
-}
-
 async function readSelectorHistory(
   pool: pg.Pool,
   partition: Partition,
@@ -1803,29 +1789,24 @@ async function readSelectorHistory(
   limit: number,
 ): Promise<readonly SelectorInteractionRecord[]> {
   checkedSelectorLimit(limit, "selector history");
-  const found = await pool.query<SelectorHistoryRow>(
+  const found = await pool.query<SelectorInteractionRow>(
     sql`SELECT selector_decision,ordinal::text,instructions_version,instructions,observed_view,
        observed_token,context,tool_activity,result,implementation_revision,model_revision,
        policy_revision,accounting,started_at,completed_at,
-       coalesce((SELECT json_agg(json_build_object(
-                  'ticket',landed.ticket,'state',landed.state,'outcome',landed.outcome)
-                  ORDER BY landed.ticket)
-                   FROM (SELECT d.ticket,d.state,d.outcome
-                           FROM selector_proposal_delivery d
-                          WHERE d.selector_decision=selector_interaction.selector_decision
-                          ORDER BY d.ticket LIMIT ${leadDispatchesMax}) landed),
-                '[]'::json)::text AS dispatches
+       (SELECT json_agg(json_build_object(
+                 'ticket',landed.ticket,'state',landed.state,'outcome',landed.outcome)
+                 ORDER BY landed.ticket)
+          FROM (SELECT d.ticket,d.state,d.outcome
+                  FROM selector_proposal_delivery d
+                 WHERE d.selector_decision=selector_interaction.selector_decision
+                 ORDER BY d.ticket LIMIT ${leadDispatchesMax}) landed)::text
+         AS dispatches
        FROM selector_interaction WHERE tenant=${partition.tenant}
          AND project=${partition.project} AND ordinal>${after ?? 0}
        ORDER BY ordinal LIMIT ${limit}`,
   );
   return Promise.all(
-    found.rows.map((row) =>
-      selectorInteractionOf(pool, partition, {
-        ...row,
-        dispatches: sessionRowText(row.dispatches, "a decision's deliveries"),
-      }),
-    ),
+    found.rows.map((row) => selectorInteractionOf(pool, partition, row)),
   );
 }
 
