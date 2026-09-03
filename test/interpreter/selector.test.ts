@@ -2997,31 +2997,25 @@ test("a decision the relation had already retained is not a partial write", asyn
 });
 
 /**
- * The relation keys one row per ticket, so a decision naming a ticket twice
- * asks for one delivery and gets it. Counting entries here would report a loss
- * that did not happen and re-offer a ticket that is already dispatched.
+ * The relation keys one row per ticket, so one ticket named twice is one row's
+ * worth of ask and one thing to report lost; counting entries would report a
+ * loss that did not happen. The control layer refuses a decision that repeats a
+ * ticket, so no sweep can carry this input to the runtime and the function that
+ * would have to survive it is driven directly.
  */
-test("a decision naming one ticket twice asks for one delivery and loses one", async () => {
-  const landed = await sweep({
-    projects: [partition],
-    view: [7],
-    named: () => [7, 7],
-    budget: 2,
-    taken: () => ({ retained: true, dispatched: [asTicketId(7)] }),
-  });
-  assert.deepEqual(landed.failures, []);
-  assert.equal(landed.dispatched, 1);
-  const lost = await sweep({
-    projects: [partition],
-    view: [7],
-    named: () => [7, 7],
-    budget: 2,
-    taken: () => ({ retained: true, dispatched: [] }),
-  });
+test("a ticket a decision named twice is one dispatch, written or lost", async () => {
+  const cycle = await cycleDispatching([1], { dispatchesPerDecision: 1 });
+  const proposals = cycle.proposals?.proposals;
+  const dispatch = proposals?.dispatches[0];
+  if (proposals === undefined || dispatch === undefined)
+    throw new Error("the cycle proposed nothing to name twice");
+  const twice = { ...proposals, dispatches: [dispatch, dispatch] };
+  assert.deepEqual(unwrittenDispatches({ proposals: twice, dispatched: [] }), [
+    asTicketId(1),
+  ]);
   assert.deepEqual(
-    lost.failures.map((failure: SelectorRunFailure) => failure.ticket),
-    [asTicketId(7)],
-    "one ticket lost is one thing to report, however often it was named",
+    unwrittenDispatches({ proposals: twice, dispatched: [asTicketId(1)] }),
+    [],
   );
 });
 
