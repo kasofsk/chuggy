@@ -48,6 +48,7 @@
 import {
   boundaryOwnerRole,
   selectorProjectDispatchModeFunction,
+  selectorProposalInitialStateFunction,
   type Migration,
 } from "../shared.ts";
 
@@ -71,10 +72,12 @@ const projectDispatchModeResolution = [
 /**
  * 010's trigger with its dispatch-mode arm asking the resolution instead of the
  * installation. It is replaced at the signature it holds, which keeps the
- * owner, the revoke and the trigger already bound to it.
+ * owner, the revoke and the trigger bound to it while taking everything else
+ * from this command — the `search_path` pin included, so the pin is restated
+ * here rather than inherited.
  */
 const initialStateAsksTheResolution = [
-  `CREATE OR REPLACE FUNCTION enforce_selector_proposal_initial_state() RETURNS trigger
+  `CREATE OR REPLACE FUNCTION ${selectorProposalInitialStateFunction}() RETURNS trigger
      LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
      DECLARE running_mode text;
      BEGIN
