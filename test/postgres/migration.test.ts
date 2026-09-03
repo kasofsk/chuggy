@@ -2788,14 +2788,14 @@ test("the session migrations compose into the schema a fresh generation renders"
 });
 
 /**
- * The versions no declared migration holds, which this branch has one of: 067
- * is numbered around kasofsk/chuggy#545, whose 066 is on its own branch until
- * it merges. It is written down rather than computed so that a hole nobody
- * meant is a hole nobody can leave — renumbering a migration upward opens one
- * this list does not name, and the day #545 lands this list is wrong until it
- * is emptied.
+ * The versions no declared migration holds, and the chain currently has none:
+ * no version below the latest is unheld. It is written down rather than
+ * computed so that a hole nobody meant is a hole nobody can leave —
+ * renumbering a migration upward opens one this list does not name, and a
+ * branch numbered around a sibling still on its own branch names it here until
+ * that sibling merges.
  */
-const declaredVersionsAwaited = [66];
+const declaredVersionsAwaited: readonly number[] = [];
 
 /**
  * The ledger a whole chain leaves is exactly the versions this image declares,
