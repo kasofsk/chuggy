@@ -25,6 +25,7 @@ import {
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/064-multi-dispatch-delivery.ts";
+import { leadObservationTokensPerDecision } from "../../src/adapters/postgres/schema/migrations/070-lead-token-budget.ts";
 import {
   postgresMigrate,
   postgresMigrateCompatible,
@@ -3342,6 +3343,87 @@ test("migration 69 upgrades the read it re-creates and leaves the listing 063 ga
         await migrationStoreDoorBodies(fresh),
         "an upgraded installation and a fresh one disagree about a door's body",
       );
+    });
+  });
+});
+
+/** What an installation's controls say a decision may spend, and at what revision. */
+async function standingTokenBudget(subject: pg.Pool): Promise<{
+  readonly budget: string | null;
+  readonly revision: string;
+  readonly recorded: string;
+}> {
+  const found = await subject.query<{
+    budget: string | null;
+    revision: string;
+    recorded: string;
+  }>(
+    `SELECT settings.controls::jsonb->'limits'->>'tokensPerDecision' AS budget,
+            settings.revision::text AS revision,
+            (SELECT count(*)::text FROM selector_runtime_settings_history) AS recorded
+       FROM selector_runtime_settings settings WHERE singleton=1`,
+  );
+  const row = found.rows[0];
+  assert.ok(row, "the installation states its controls");
+  return row;
+}
+
+/** States a token budget on an installation, as an administrator's write would. */
+async function standingTokenBudgetStates(
+  subject: pg.Pool,
+  budget: number,
+): Promise<void> {
+  await subject.query(
+    `UPDATE selector_runtime_settings
+        SET controls=jsonb_set(controls::jsonb,'{limits,tokensPerDecision}',
+              to_jsonb($1::bigint))::text
+      WHERE singleton=1`,
+    [budget],
+  );
+}
+
+/**
+ * The budget 059 left is what every lead turn the rig measured exceeded, so an
+ * installation that has stated nothing since is raised to one whole observation
+ * and the raise is a revision like any other administrator's.
+ */
+test("migration 70 raises a budget written before a lead turn was measured", async () => {
+  await migrationDatabase("lead_token_budget_raised", async (subject) => {
+    await migrationSeedApplied(subject, 70);
+    const before = await standingTokenBudget(subject);
+    assert.ok(
+      Number(before.budget) < leadObservationTokensPerDecision,
+      `the seeded budget is ${String(before.budget)}`,
+    );
+
+    await applyMigration(subject, 70);
+
+    assert.deepEqual(await standingTokenBudget(subject), {
+      budget: String(leadObservationTokensPerDecision),
+      revision: String(Number(before.revision) + 1),
+      recorded: String(Number(before.recorded) + 1),
+    });
+  });
+});
+
+/**
+ * The other arm of the same floor: an owner who already states a wider budget
+ * keeps what they state, and keeping it mints nothing — no revision, no history
+ * row — because the predicate that skips the write is where the floor lives.
+ */
+test("migration 70 moves a floor and never a value somebody raised", async () => {
+  await migrationDatabase("lead_token_budget_kept", async (subject) => {
+    await migrationSeedApplied(subject, 70);
+    const wider = leadObservationTokensPerDecision + 1;
+    await standingTokenBudgetStates(subject, wider);
+    const before = await standingTokenBudget(subject);
+
+    await applyMigration(subject, 70);
+
+    assert.deepEqual(await standingTokenBudget(subject), {
+      budget: String(wider),
+      revision: before.revision,
+      recorded: before.recorded,
     });
   });
 });
