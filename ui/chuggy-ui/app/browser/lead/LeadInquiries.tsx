@@ -105,7 +105,11 @@ function LeadAsk(props: {
     void (async () => {
       const drawn = base64urlFromBytes(drawBytes(inquiryIdentityBytesCount));
       const answered = inquiryAskAnswered(
-        await apiAskLead(ports, props.partition, inquiryAsking(question, drawn)),
+        await apiAskLead(
+          ports,
+          props.partition,
+          inquiryAsking(question, drawn),
+        ),
       );
       inFlight.current = false;
       setAsk(answered);

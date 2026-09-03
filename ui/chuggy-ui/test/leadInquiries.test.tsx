@@ -349,9 +349,10 @@ test("a question is posted under one minted fork and turn", async () => {
   expect(posted.question).toBe("what is blocking ticket 41?");
   expect(posted.session.startsWith("inq-")).toBe(true);
   expect(posted.turn.startsWith("inq-turn-")).toBe(true);
-  expect(rows(), "the panel was not re-read after the post landed").toStrictEqual(
-    ["question 1"],
-  );
+  expect(
+    rows(),
+    "the panel was not re-read after the post landed",
+  ).toStrictEqual(["question 1"]);
   expect(screen.getByLabelText<HTMLTextAreaElement>("Question").value).toBe("");
 });
 

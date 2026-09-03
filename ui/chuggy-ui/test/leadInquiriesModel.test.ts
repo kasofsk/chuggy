@@ -44,9 +44,9 @@ test("a question is refused at the bound the wire refuses it at", () => {
   expect(inquiryQuestionFault(atBound)).toBeUndefined();
   expect(inquiryQuestionFault(past)).toBe("Too long");
   expect(inquiryQuestionFault("")).toBe("Empty");
-  expect(leadInquirySchema.safeParse(inquiryAsking(atBound, drawn)).success).toBe(
-    true,
-  );
+  expect(
+    leadInquirySchema.safeParse(inquiryAsking(atBound, drawn)).success,
+  ).toBe(true);
   expect(
     leadInquirySchema.safeParse(inquiryAsking(past, drawn)).success,
     "the box would have sent a question the schema rejects",
@@ -96,7 +96,12 @@ test("each refusal the door states is drawn as one word", () => {
     }),
   ).toStrictEqual({ ask: "Refused", word: "In flight" });
   expect(
-    inquiryAskAnswered({ outcome: "Rejected", code: "X", status: 400, body: 1 }),
+    inquiryAskAnswered({
+      outcome: "Rejected",
+      code: "X",
+      status: 400,
+      body: 1,
+    }),
   ).toStrictEqual({ ask: "Refused", word: inquiryRefusalWordUnknown });
 });
 
