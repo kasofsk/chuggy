@@ -95,6 +95,20 @@ export function useLeadTranscript(
   return held;
 }
 
+/**
+ * The one word for a pane that cannot say what it has not reached: a walk
+ * waiting at a stalled cursor, or a read the route could not decide the held
+ * set for. Both panels draw it, because a range one of them calls unreached and
+ * the other draws as an empty log is two accounts of one state.
+ */
+function LeadUndecided(props: {
+  readonly held: LeadTranscriptHeld;
+  readonly drawn: number;
+}): ReactNode {
+  if (props.drawn === 0) return <EmptyState label="Undecided" />;
+  return <Notice tone="parked" inline detail="Undecided" />;
+}
+
 /** What one read could not draw, as the one line each is worth. */
 function LeadTranscriptNotes(props: {
   readonly held: LeadTranscriptHeld;
@@ -182,10 +196,12 @@ function LeadNote(props: {
 /**
  * What the lead is working from: the note it left itself and the chain from the
  * last seam on, one block per entry. Three things that are not an empty context
- * are said as themselves, in the same words the Log says them in — a lead with
- * no store, a stream the store's listing does not carry, and a read the route
- * could not decide the held set for — because "nothing held" beside a lead that
- * has plainly been deciding is a claim none of them makes.
+ * are said as themselves, IN THE SAME WORDS THE LOG SAYS THEM IN — a lead with
+ * no store, a stream the store's listing does not carry, and a range this pane
+ * has not reached — because "nothing held" beside a lead that has plainly been
+ * deciding is a claim none of them makes, and one panel calling a range
+ * unreached while the other draws it as an empty log is two accounts of one
+ * state.
  */
 export function LeadHolding(props: {
   readonly held: LeadTranscriptHeld;
@@ -203,11 +219,14 @@ export function LeadHolding(props: {
         <EmptyState label="No store" />
       ) : !props.listed ? (
         <EmptyState label="Stream unlisted" />
-      ) : props.held.holdingUnknown && lines.length === 0 ? (
-        <EmptyState label="Undecided" />
+      ) : props.held.holdingUnknown ? (
+        <LeadUndecided held={props.held} drawn={lines.length} />
       ) : lines.length === 0 ? (
         <EmptyState label="Nothing held" />
-      ) : (
+      ) : null}
+      {props.stream === undefined ||
+      !props.listed ||
+      lines.length === 0 ? null : (
         <Ledger>
           {lines.map((line) => (
             <LedgerBlock key={leadLineKey(line)}>
@@ -254,9 +273,9 @@ function LeadLogLine(props: { readonly line: LeadTranscriptLine }): ReactNode {
 
 /**
  * The whole chain this page holds, oldest first, the raw log beside what the
- * lead kept of it. A reference the store's own listing does not carry is said
- * as itself: nothing can be read for it, and drawing that as an empty log would
- * be indistinguishable from a lead that has recorded nothing.
+ * lead kept of it. What cannot be read for is said as itself and in the words
+ * the Holding panel says it in, because drawing an unreached range as an empty
+ * log is indistinguishable from a lead that has recorded nothing.
  */
 export function LeadLog(props: {
   readonly held: LeadTranscriptHeld;
@@ -275,15 +294,18 @@ export function LeadLog(props: {
       <LeadTranscriptNotes held={props.held} />
       {!props.listed ? (
         <EmptyState label="Stream unlisted" />
+      ) : props.held.holdingUnknown ? (
+        <LeadUndecided held={props.held} drawn={lines.length} />
       ) : lines.length === 0 ? (
         <EmptyState label="No entries" />
-      ) : (
+      ) : null}
+      {props.listed && lines.length > 0 ? (
         <ol className="lead-log">
           {lines.map((line) => (
             <LeadLogLine key={line.ordinal} line={line} />
           ))}
         </ol>
-      )}
+      ) : null}
     </Panel>
   );
 }

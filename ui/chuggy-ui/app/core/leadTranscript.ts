@@ -107,11 +107,10 @@ export interface LeadTranscriptFold {
   readonly elided: number;
   readonly truncated: boolean;
   /**
-   * Whether this fold has read enough to say what the lead holds: a page that
-   * answered no `held` did not decide it, and a walk waiting at a stalled
-   * cursor has not reached the rest of the stream. It stands for the life of
-   * the fold, because a later page deciding for its own entries says nothing
-   * about the page or the range that did not.
+   * Whether a page has answered no `held`, which is the route saying it could
+   * not decide what the lead holds rather than that it holds nothing. It stands
+   * for the life of the fold, because a later page deciding for its own entries
+   * says nothing about the page that could not.
    */
   readonly holdingUnknown: boolean;
   readonly entriesDropped: number;
@@ -285,10 +284,7 @@ function leadTranscriptGathered(
     compaction: page.compaction ?? fold.compaction,
     elided: fold.elided + page.elided,
     truncated: fold.truncated || page.truncated,
-    holdingUnknown:
-      fold.holdingUnknown ||
-      page.held === undefined ||
-      cursor.stalledAt !== undefined,
+    holdingUnknown: fold.holdingUnknown || page.held === undefined,
     entriesDropped: fold.entriesDropped + (merged.length - kept.length),
     readTo: cursor.readTo,
     stalledAt: cursor.stalledAt,
@@ -371,6 +367,16 @@ export function leadTranscriptStep(
 }
 
 /**
+ * Whether a fold can say what the lead holds. A page that answered no `held`
+ * did not decide it and nothing later can; a walk waiting at a stalled cursor
+ * has not reached the rest of the stream and the resumed walk clears that by
+ * reaching it.
+ */
+function leadTranscriptUndecided(fold: LeadTranscriptFold): boolean {
+  return fold.holdingUnknown || fold.stalledAt !== undefined;
+}
+
+/**
  * What a reader is shown: the walk's own fold, except while a re-walk owes them
  * one, when it is the fold they were already looking at with the one thing the
  * reset makes true said as itself — the chain still stands, and what the lead
@@ -382,12 +388,18 @@ export function leadTranscriptDrawn(
 ): LeadTranscriptHeld {
   const kept = pane.kept;
   if (kept === undefined)
-    return { ...pane.fold, stream: pane.stream, failure: pane.failure };
+    return {
+      ...pane.fold,
+      holdingUnknown: leadTranscriptUndecided(pane.fold),
+      stream: pane.stream,
+      failure: pane.failure,
+    };
   return {
     ...kept,
     holding: [],
     holdingUnknown: true,
     cut: pane.fold.cut,
+    stalledAt: pane.fold.stalledAt,
     stream: pane.stream,
     failure: pane.failure,
   };

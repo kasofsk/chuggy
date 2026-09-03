@@ -789,3 +789,54 @@ test("the reset carries the cut, and a cursor of nothing", () => {
     "the first page of a re-walk reset the pane a second time",
   ).toBe(1);
 });
+
+/**
+ * THE STALL RULE, BESIDE THE MODEL THAT GENERATES IT. A page that hands back the
+ * cursor it was asked with leaves the walk nowhere to go, so the pane waits at
+ * that cursor rather than skipping to the mark it read against — and says it
+ * cannot yet tell what the lead holds, because it has not reached the rest.
+ */
+test("a stalled page keeps its cursor, waits, and says it cannot yet tell", () => {
+  const walked = paged(
+    leadTranscriptPaneEmpty,
+    cutPage(1, ["uuid-a"], ["uuid-a"], 1),
+    9,
+  );
+  expect(walked.fold.readTo).toBe(1);
+  const stalled = paged(
+    walked,
+    { ...cutPage(1, ["uuid-b"], ["uuid-b"], 1), nextAfter: 1 },
+    9,
+  );
+  expect(stalled.fold.readTo, "the walk gave up the cursor it stalled at").toBe(
+    1,
+  );
+  expect(stalled.fold.stalledAt).toBe(9);
+  expect(leadTranscriptNextAfter(stalled, 9)).toBeUndefined();
+  expect(
+    leadTranscriptDrawn(stalled).holdingUnknown,
+    "a pane that has not reached the rest of the stream claimed to know",
+  ).toBe(true);
+});
+
+/** The store written past the mark carries the walk on from the cursor it
+ * stopped at, and reaching the rest is what lets it say what is held again. */
+test("a walk resumed past a stall stops calling itself undecided", () => {
+  const stalled = paged(
+    paged(leadTranscriptPaneEmpty, cutPage(1, ["uuid-a"], ["uuid-a"], 1), 9),
+    { ...cutPage(1, ["uuid-b"], ["uuid-b"], 1), nextAfter: 1 },
+    9,
+  );
+  expect(leadTranscriptNextAfter(stalled, 10)).toBe(1);
+  const resumed = paged(stalled, cutPage(1, ["uuid-c"], ["uuid-c"], 2), 10);
+  expect(resumed.fold.stalledAt).toBeUndefined();
+  expect(
+    leadTranscriptDrawn(resumed).holdingUnknown,
+    "a pane that reached the rest of the stream still called itself undecided",
+  ).toBe(false);
+  expect(holdingLines(resumed).map((line) => line.uuid)).toStrictEqual([
+    "uuid-a",
+    "uuid-b",
+    "uuid-c",
+  ]);
+});

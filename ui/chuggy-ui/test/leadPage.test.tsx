@@ -196,8 +196,12 @@ test("a read that could not decide what is held says so, not nothing held", asyn
   });
   vi.stubGlobal("fetch", api.fetch);
   await mountLead();
-  expect(screen.getByText("Undecided")).toBeDefined();
+  expect(
+    screen.getAllByText("Undecided").length,
+    "the two panels gave different accounts of one unreached range",
+  ).toBe(2);
   expect(screen.queryByText("Nothing held")).toBeNull();
+  expect(screen.queryByText("No entries")).toBeNull();
 });
 
 /** A project holds a session per thread beside its lead, so a page watching one
@@ -518,9 +522,9 @@ test("a cut that moves on the last read does not blank the log", async () => {
   expect(logLines().length).toBeGreaterThan(0);
   expect(screen.queryByText("Nothing held")).toBeNull();
   expect(
-    screen.getByText("Undecided"),
+    screen.getAllByText("Undecided").length,
     "what the lead holds was still claimed after the cut moved under the walk",
-  ).toBeDefined();
+  ).toBe(2);
 });
 
 /** A re-walk that finishes inside the budget draws what it rebuilt, and says
@@ -622,7 +626,7 @@ test("a re-walk that draws nothing keeps the chain the reader had", async () => 
   ).toBeNull();
   expect(screen.queryByText("Nothing held")).toBeNull();
   expect(logLines().length).toBeGreaterThan(0);
-  expect(screen.getByText("Undecided")).toBeDefined();
+  expect(screen.getAllByText("Undecided").length).toBe(2);
 });
 
 /** The two words a pane says when it really does hold nothing, drawn rather
@@ -763,4 +767,40 @@ test("a lead that changes stream is walked as a new pane", async () => {
     "one lead's chain was drawn as another stream's",
   ).toBeNull();
   expect(logLines().length).toBe(1);
+});
+
+/**
+ * A WALK WAITING AT A STALL HAS NOT REACHED THE REST OF THE STREAM, and the two
+ * panels have to say so in one word. The Log drawing "No entries" for the range
+ * the Holding panel calls undecided is two accounts of one state, and the one a
+ * reader believes is whichever they looked at first.
+ */
+test("a stalled walk says the same word in both panels", async () => {
+  scriptedStore((_read, after) =>
+    answer({
+      stream: leadStream,
+      entries: [
+        {
+          uuid: `uuid-${String(after)}`,
+          type: "assistant",
+          message: {
+            content: [{ type: "text", text: `batch ${String(after)}` }],
+          },
+        },
+      ],
+      held: [],
+      cut: 1,
+      elided: 0,
+      truncated: false,
+      nextAfter: after,
+    }),
+  );
+  await mountLead();
+  expect(screen.getByText("batch 0")).toBeDefined();
+  expect(
+    screen.getAllByText("Undecided").length,
+    "the Log and the Holding panel disagreed about one unreached range",
+  ).toBe(2);
+  expect(screen.queryByText("No entries")).toBeNull();
+  expect(screen.queryByText("Nothing held")).toBeNull();
 });

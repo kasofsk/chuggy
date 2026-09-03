@@ -143,7 +143,11 @@ interface ModelSegment {
   readonly entries: readonly string[];
   readonly holding: readonly string[];
   readonly cut: number | undefined;
-  readonly unknown: boolean;
+  /** Pages that answered no `held`, which nothing later undoes. */
+  readonly undecided: boolean;
+  /** The mark a page that would not move the cursor was read against, which the
+   * resumed walk clears by reaching it. */
+  readonly stalledAt: number | undefined;
   /** Where the run's walk stands, recomputed so a page that would not move the
    * cursor can be told from one that did. */
   readonly asked: number;
@@ -154,7 +158,8 @@ const modelSegmentEmpty: ModelSegment = {
   entries: [],
   holding: [],
   cut: undefined,
-  unknown: false,
+  undecided: false,
+  stalledAt: undefined,
   asked: 0,
   pages: 0,
 };
@@ -179,7 +184,8 @@ function modelGathered(
     entries: kept,
     holding,
     cut: page.held === undefined ? segment.cut : page.cut,
-    unknown: segment.unknown || page.held === undefined || stalls,
+    undecided: segment.undecided || page.held === undefined,
+    stalledAt: stalls ? highWaterBatch : undefined,
     asked:
       page.nextAfter === undefined
         ? highWaterBatch
@@ -245,7 +251,7 @@ function modelReference(
     return {
       entries: last.entries,
       holding: last.holding,
-      holdingUnknown: last.unknown,
+      holdingUnknown: last.undecided || last.stalledAt !== undefined,
       failure,
     };
   const kept = [...runs]
@@ -256,7 +262,7 @@ function modelReference(
     return {
       entries: [],
       holding: last.holding,
-      holdingUnknown: last.unknown,
+      holdingUnknown: last.undecided || last.stalledAt !== undefined,
       failure,
     };
   return {
@@ -423,8 +429,9 @@ interface ModelReached {
   /** Whether a pane ever dropped entries at the cap while a re-walk owed its
    * reader a fold, which is the one seam the cap and the reset share. */
   readonly droppedWhileRebuilding: boolean;
-  /** Whether a page ever arrived carrying an entry the fold already held, which
-   * is what the dedupe is for and what nothing was generating. */
+  /** Whether a page ever arrived carrying one of its own entries twice, which is
+   * the shape the fold's dedupe is for and the only one that reaches it now the
+   * walk refuses to re-ask a cursor. */
   readonly repeated: boolean;
 }
 
@@ -440,16 +447,16 @@ function modelDriven(seed: number, shape: ModelShape): ModelReached {
   for (const event of run.events) {
     applied.push(event);
     if (event.event === "Page") {
-      const before = new Set(
-        pane.fold.entries.flatMap((entry) =>
-          entry.uuid === undefined ? [] : [entry.uuid],
-        ),
+      const arriving = event.page.entries.flatMap((entry) =>
+        entry.uuid === undefined ? [] : [entry.uuid],
+      );
+      const held = pane.fold.entries.flatMap((entry) =>
+        entry.uuid === undefined ? [] : [entry.uuid],
       );
       repeated =
         repeated ||
-        event.page.entries.some(
-          (entry) => entry.uuid !== undefined && before.has(entry.uuid),
-        );
+        new Set(arriving).size !== arriving.length ||
+        arriving.some((uuid) => held.includes(uuid));
     }
     pane = leadTranscriptStep(pane, event);
     if (event.event === "StreamChange") everHadEntries = false;
