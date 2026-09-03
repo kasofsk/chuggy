@@ -4,8 +4,12 @@
  * and the cursor — and what a lead that has bound a runtime session is not.
  *
  * A SEEDING TURN IS THE ONE A SESSION HAS BOUND NO AGENT REFERENCE FOR. The
- * reference is bound by the pod's first answer, so the two cases here differ
- * only in whether a turn has been answered before the one under test.
+ * reference is bound by the pod's first answer, so the cases here differ only
+ * in whether a turn has been answered before the one under test.
+ *
+ * A SUCCESSOR IS DRIVEN THROUGH THE WHOLE PASS AND NOT THROUGH A DOUBLE. What
+ * the runtime opens is what a pod then runs, and only the two together say
+ * whether the record reached the lead that replaced the one it came from.
  */
 
 import assert from "node:assert/strict";
@@ -33,6 +37,7 @@ import {
   leadRigPodAttempt,
   leadRigPodTurn,
   leadRigProject,
+  leadRigSuccessor,
   type LeadRig,
 } from "./leadHarness.ts";
 import { sessionRigSession } from "./sessionHarness.ts";
@@ -272,5 +277,53 @@ test("a session that has bound a runtime session is not seeded again", async () 
     parseLeadObservation(await turnInput(second)).seeding,
     undefined,
     "a lead that holds its own transcript is not told the record again",
+  );
+});
+
+test("a successor the runtime opens is seeded, and records a transcript of its own", async () => {
+  const partition = await leadRigProject(rig, "successor");
+  const predecessor = await sessionRigSession(
+    rig.sessions,
+    partition,
+    "successor",
+    { kind: "Lead" },
+  );
+  const first = `selector-decision-successor-first-${String(Date.now())}`;
+  const ran = seedingPolicy().execute(
+    requestFor(partition, first),
+    new AbortController().signal,
+  );
+  const pod = await leadRigPodAttempt(rig, partition, predecessor, "successor");
+  await leadRigPodTurn(rig, pod, "predecessor", () => aDecision);
+  await ran;
+  assert.equal(
+    (await rig.mailbox.lead(partition))?.agentReference,
+    "agent-session-predecessor",
+    "the predecessor holds the transcript its pod bound, which is the state a close leaves behind",
+  );
+  assert.equal(
+    await rig.sessions.sessions.close(partition, predecessor),
+    true,
+    "and closing it is the position kasofsk/chuggy#543 measured",
+  );
+
+  const second = `selector-decision-successor-second-${String(Date.now())}`;
+  const deciding = seedingPolicy().execute(
+    requestFor(partition, second),
+    new AbortController().signal,
+  );
+  const successor = await leadRigSuccessor(rig, partition, predecessor);
+  const heir = await leadRigPodAttempt(rig, partition, successor, "heir");
+  assert.notEqual(
+    parseLeadObservation(await turnInput(second)).seeding,
+    undefined,
+    "a successor is told the record its predecessor left, which is the whole of what makes it sufficient",
+  );
+  await leadRigPodTurn(rig, heir, "heir", () => aDecision);
+  await deciding;
+  assert.equal(
+    (await rig.mailbox.lead(partition))?.agentReference,
+    "agent-session-heir",
+    "and the transcript it records is its own: a carried reference would leave its pod's bind refused",
   );
 });

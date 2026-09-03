@@ -181,6 +181,23 @@ async function leadRigWaited<T>(
   throw new Error(gaveUp);
 }
 
+/**
+ * The lead a project holds once the runtime has opened one, waited for because
+ * the successor's identity is minted in the pass rather than by the case.
+ */
+export function leadRigSuccessor(
+  rig: LeadRig,
+  partition: Partition,
+  replacing: SessionId,
+): Promise<SessionId> {
+  return leadRigWaited(async () => {
+    const standing = await rig.mailbox.lead(partition);
+    if (standing === undefined || standing.session === replacing)
+      throw new Error("no successor yet");
+    return standing.session;
+  }, `${replacing}: no successor was ever opened`);
+}
+
 /** One live pod attempt, waited for because the runtime enqueues from elsewhere. */
 export function leadRigPodAttempt(
   rig: LeadRig,
@@ -216,11 +233,15 @@ export async function leadRigPodTurn(
       await new Promise((resolve) => setTimeout(resolve, leadRigPollMs));
       continue;
     }
-    await rig.sessions.plane.bind({
+    const bound = await rig.sessions.plane.bind({
       secret: attempt.secret,
       generation: attempt.attempt.generation,
       reference: `agent-session-${label}`,
     });
+    if (bound !== "Bound" && bound !== "AlreadyBound")
+      throw new Error(
+        `${label}: the pod's own runtime session was ${bound}; a row already holding another's is what answers Conflict`,
+      );
     await rig.sessions.plane.answer({
       secret: attempt.secret,
       generation: attempt.attempt.generation,

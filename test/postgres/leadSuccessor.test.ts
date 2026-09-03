@@ -53,14 +53,25 @@ const successorOpening = {
   systemPrompt: "the successor's objectives",
 } as const;
 
-/** One project whose lead ran and was closed, which is where this suite starts. */
+/**
+ * One project whose lead ran and was closed, which is where this suite starts.
+ * A `reference` is what the predecessor's pod bound on its first answer, written
+ * here rather than run because `bind_session_reference` writes this column and
+ * nothing else.
+ */
 async function projectWithAClosedLead(
   label: string,
+  reference?: string,
 ): Promise<{ partition: Partition; closed: string }> {
   const partition = await leadRigProject(rig, label);
   const closed = await sessionRigSession(rig.sessions, partition, label, {
     kind: "Lead",
   });
+  if (reference !== undefined)
+    await rig.sessions.harness.query(
+      `UPDATE agent_session SET agent_reference=$2 WHERE session=$1`,
+      [closed, reference],
+    );
   assert.equal(
     await rig.sessions.sessions.close(partition, closed),
     true,
@@ -132,6 +143,32 @@ test("the successor holds the roster the door writes, and not the caller's", asy
       },
     ],
     "the roster is the definer's own, so the caller cannot widen what it opens",
+  );
+});
+
+/** The runtime session one row holds, which is the whole of what makes a turn a resumed one. */
+async function referenceOf(session: string) {
+  return rig.sessions.harness.query(
+    `SELECT agent_reference FROM agent_session WHERE session=$1`,
+    [session],
+  );
+}
+
+test("the successor holds no runtime session, and its predecessor keeps the one it ran", async () => {
+  const { partition, closed } = await projectWithAClosedLead(
+    "reference",
+    "agent-session-predecessor",
+  );
+  const opened = await openSuccessor(partition, `lead-reference-${Date.now()}`);
+  assert.deepEqual(
+    await referenceOf(opened.session),
+    [{ agent_reference: null }],
+    "a successor that carried one would be seeded with nothing and could bind nothing of its own",
+  );
+  assert.deepEqual(
+    await referenceOf(closed),
+    [{ agent_reference: "agent-session-predecessor" }],
+    "and the transcript the closed lead recorded is still the closed lead's",
   );
 });
 
