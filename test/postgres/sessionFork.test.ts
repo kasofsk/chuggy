@@ -30,7 +30,10 @@ import type { FastifyInstance } from "fastify";
 
 import { artifactStore } from "../../src/adapters/artifacts/artifactStore.ts";
 import { createWorkerPlaneApp } from "../../src/adapters/http/workerPlaneServer.ts";
-import { sessionStoreBatchBytesMax } from "../../src/contract/http.ts";
+import {
+  sessionStoreBatchBytesMax,
+  sessionStorePageBatchesMax,
+} from "../../src/contract/http.ts";
 import type {
   SessionBearerSecret,
   SessionId,
@@ -113,10 +116,12 @@ async function storePage(
   app: FastifyInstance,
   secret: SessionBearerSecret,
   stream: string,
+  after?: number,
 ): Promise<StorePage> {
+  const cursor = after === undefined ? "" : `?after=${String(after)}`;
   const answered = await app.inject({
     method: "GET",
-    url: `/v1/session/store/${encodeURIComponent(stream)}`,
+    url: `/v1/session/store/${encodeURIComponent(stream)}${cursor}`,
     headers: held(secret),
   });
   assert.equal(answered.statusCode, 200, answered.body);
@@ -134,6 +139,7 @@ async function forkRunLead(
   app: FastifyInstance,
   partition: Partition,
   label: string,
+  written: readonly string[] = leadBatches,
 ): Promise<{ readonly session: SessionId; readonly stream: string }> {
   const session = await sessionRigSession(rig, partition, label, {
     kind: "Lead",
@@ -155,7 +161,7 @@ async function forkRunLead(
     payload: { reference: stream },
   });
   assert.equal(bound.statusCode, 204, bound.body);
-  for (const [at, content] of leadBatches.entries()) {
+  for (const [at, content] of written.entries()) {
     const stored = await app.inject({
       method: "PUT",
       url: `/v1/session/store/${encodeURIComponent(stream)}/${String(at + 1)}`,
@@ -175,7 +181,7 @@ async function forkRunLead(
       turn,
       result: "ok",
       batchFirst: 1,
-      batchLast: leadBatches.length,
+      batchLast: written.length,
     },
   });
   assert.equal(answered.statusCode, 204, answered.body);
@@ -324,5 +330,111 @@ test("a fork's page is drawn inside its own project", async () => {
     assert.deepEqual(drive.addressed, []);
   } finally {
     await forkClosed(drive);
+  }
+});
+
+/**
+ * The succession 066 allows: a project holds one OPEN lead and every closed one
+ * before it, so a fork's parent has to be resolved by the column that declares
+ * it and never by the kind, which stopped being a key there.
+ */
+test("a fork of the standing lead reads nothing a retired lead wrote", async () => {
+  const rig = await sessionRigOpen();
+  const partition = await sessionRigProject(rig, "succession");
+  const { app, addressed } = forkPlane(rig);
+  try {
+    const retired = await forkRunLead(rig, app, partition, "retired");
+    assert.equal(
+      await rig.sessions.close(partition, retired.session),
+      true,
+      "the lead a successor follows is closed",
+    );
+    const standing = await forkRunLead(rig, app, partition, "standing");
+    const fork = await forkReader(rig, partition, "successor-inquiry", {
+      kind: "Inquiry",
+      parent: standing.session,
+    });
+
+    const listed = await app.inject({
+      method: "GET",
+      url: "/v1/session/store",
+      headers: held(fork.secret),
+    });
+    assert.equal(listed.statusCode, 200, listed.body);
+    assert.deepEqual(
+      JSON.parse(listed.body),
+      { streams: [{ stream: standing.stream, batches: leadBatches.length }] },
+      "a fork was told a stream its parent never wrote, and would resume over it",
+    );
+
+    addressed.length = 0;
+    assert.deepEqual(await storePage(app, fork.secret, retired.stream), {
+      batches: [],
+    });
+    assert.deepEqual(
+      addressed,
+      [],
+      "a retired lead's transcript was addressed for a session forked from another",
+    );
+    assert.deepEqual(
+      (await storePage(app, fork.secret, standing.stream)).batches,
+      leadBatches.map((content, at) => ({ batch: at + 1, content })),
+    );
+  } finally {
+    await app.close();
+    await rig.close();
+  }
+});
+
+/** A parent whose transcript is longer than one page, which every lead becomes. */
+const pagedBatches = Array.from(
+  { length: sessionStorePageBatchesMax + 2 },
+  (_unwritten, at) => `{"type":"user","uuid":"p-${String(at + 1)}"}\n`,
+);
+
+/**
+ * The cursor is a bound on the batch numbers the READ orders by, so it is
+ * carried whatever session wrote the last row. A page that answers none leaves
+ * the pod's loader believing the stream is exhausted, which is #551's silent
+ * hole again with no error on it.
+ */
+test("a fork pages through a parent transcript longer than one page", async () => {
+  const rig = await sessionRigOpen();
+  const partition = await sessionRigProject(rig, "paged");
+  const { app, addressed } = forkPlane(rig);
+  try {
+    const lead = await forkRunLead(rig, app, partition, "paged", pagedBatches);
+    const fork = await forkReader(rig, partition, "paged-inquiry", {
+      kind: "Inquiry",
+      parent: lead.session,
+    });
+
+    addressed.length = 0;
+    const first = await storePage(app, fork.secret, lead.stream);
+    assert.deepEqual(first, {
+      batches: pagedBatches
+        .slice(0, sessionStorePageBatchesMax)
+        .map((content, at) => ({ batch: at + 1, content })),
+      nextAfter: sessionStorePageBatchesMax,
+    });
+    assert.deepEqual(
+      await storePage(app, fork.secret, lead.stream, first.nextAfter),
+      {
+        batches: pagedBatches
+          .slice(sessionStorePageBatchesMax)
+          .map((content, at) => ({
+            batch: sessionStorePageBatchesMax + at + 1,
+            content,
+          })),
+      },
+    );
+    assert.deepEqual(
+      addressed,
+      pagedBatches.map((_content, at) => `${lead.session}/${String(at + 1)}`),
+      "the pages together addressed something other than the parent's whole stream",
+    );
+  } finally {
+    await app.close();
+    await rig.close();
   }
 });
