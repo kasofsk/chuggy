@@ -53,7 +53,9 @@ export interface SelectorIdentityFactory {
 /**
  * One quantum's account. `proposed` counts the decisions that reached the
  * relation and `dispatched` the delivery rows they left, so one decision with
- * three dispatches reads differently from three decisions with one.
+ * three dispatches reads differently from three decisions with one — and a
+ * decision the relation retained but took no row of reads as one proposal and
+ * no dispatch, which is what its failures are about.
  */
 export interface SelectorRunResult {
   readonly observed: number;
@@ -127,7 +129,7 @@ async function observeProjects(
     if (result.stop) break;
     scanned += 1;
     if (result.observed) observed += 1;
-    if (result.dispatched > 0) proposed += 1;
+    if (result.proposed) proposed += 1;
     dispatched += result.dispatched;
   }
   return { scanned, observed, proposed, dispatched, failures };
@@ -136,6 +138,8 @@ async function observeProjects(
 interface ProjectObservationResult {
   readonly stop: boolean;
   readonly observed: boolean;
+  /** Whether this project's turn left a decision in the relation for the writer to answer. */
+  readonly proposed: boolean;
   /** The delivery rows this project's decision left, which a decision that proposed nothing makes zero. */
   readonly dispatched: number;
   readonly failures: readonly SelectorRunFailure[];
@@ -213,6 +217,7 @@ async function observeProject(
 const emptyProjectObservation: ProjectObservationResult = {
   stop: false,
   observed: false,
+  proposed: false,
   dispatched: 0,
   failures: [],
 };
@@ -342,6 +347,7 @@ async function observePermittedProject(
   return {
     stop,
     observed,
+    proposed: proposal !== undefined,
     dispatched: proposal?.dispatched.length ?? 0,
     failures,
   };

@@ -2958,6 +2958,13 @@ test("a record that takes some of a decision's dispatches names the rest", async
   );
 });
 
+/**
+ * The two counts answer different questions, and an all-refusals turn is where
+ * they separate: the interaction is retained, so a decision was proposed, and no
+ * row was taken, so nothing was dispatched. Folding the first into the second
+ * would make this sweep read exactly like a quiet one, and the failures beside
+ * it would name a decision the account says never happened.
+ */
 test("a decision none of whose dispatches the relation took is reported whole", async () => {
   const none = await sweep({
     projects: [partition],
@@ -2967,8 +2974,8 @@ test("a decision none of whose dispatches the relation took is reported whole", 
   });
   assert.deepEqual(
     { proposed: none.proposed, dispatched: none.dispatched },
-    { proposed: 0, dispatched: 0 },
-    "nothing was proposed, because nothing reached the relation",
+    { proposed: 1, dispatched: 0 },
+    "the decision reached the relation and left no delivery row",
   );
   assert.equal(none.failures.length, 2);
 });
