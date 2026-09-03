@@ -96,6 +96,7 @@ const request: SelectorPolicyRequest = {
       tokensPerDecision: 200_000,
       millisecondsPerDecision: 900_000,
       toolCallsPerDecision: 20,
+      dispatchesPerDecision: 1,
       inputBytesPerDecision: 1_048_576,
       candidatePagesPerDecision: 1,
       concurrentDecisions: 4,

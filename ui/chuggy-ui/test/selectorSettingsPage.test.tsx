@@ -59,6 +59,7 @@ const effective = {
     tokensPerDecision: 200_000,
     millisecondsPerDecision: 900_000,
     toolCallsPerDecision: 40,
+    dispatchesPerDecision: 3,
     inputBytesPerDecision: 1_048_576,
     candidatePagesPerDecision: 4,
     concurrentDecisions: 2,

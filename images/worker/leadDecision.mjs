@@ -47,7 +47,7 @@
 import { Buffer } from "node:buffer";
 
 /** The bounds this module writes a second time; `test/contract/imageTools.test.mjs` holds them to the contract's. */
-export const leadDispatchesMax = 1;
+export const leadDispatchesMax = 8;
 export const leadRefusalsPerDecisionMax = 16;
 export const agenticRefusalReasonCharsMax = 1_024;
 export const selectorHandoffNoteBytesMax = 65_536;
@@ -197,7 +197,7 @@ const decisionTools = [
   {
     name: "dispatch",
     description:
-      "Stages the one ticket this decision dispatches, fenced on the version the observation showed. Writes nothing: the selector runtime delivers it.",
+      "Stages one ticket this decision dispatches, fenced on the version the observation showed. Writes nothing: the selector runtime delivers it, and a project's own budget may allow fewer than the ceiling.",
     shape: (z) => ({
       ticket: z.number().int().min(1),
       expectedTicketVersion: z.number().int().min(0),
@@ -208,13 +208,17 @@ const decisionTools = [
         throw new RangeError(
           `dispatch fences ticket ${String(ticket)} on version ${String(expectedTicketVersion)} and the observation showed ${String(candidate.ticketVersion)}`,
         );
-      if (state.dispatches.length >= leadDispatchesMax)
-        throw new RangeError(
-          `one decision dispatches at most ${String(leadDispatchesMax)} ticket(s)`,
-        );
       if (state.refusals.some((refusal) => refusal.ticket === ticket))
         throw new RangeError(
           `ticket ${String(ticket)} is already refused by this decision`,
+        );
+      if (state.dispatches.some((dispatch) => dispatch.ticket === ticket))
+        throw new RangeError(
+          `ticket ${String(ticket)} is already dispatched by this decision`,
+        );
+      if (state.dispatches.length >= leadDispatchesMax)
+        throw new RangeError(
+          `one decision dispatches at most ${String(leadDispatchesMax)} tickets`,
         );
       stage(
         state,

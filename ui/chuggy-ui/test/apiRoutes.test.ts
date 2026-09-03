@@ -331,6 +331,7 @@ test("the settings are read, written whole and paged for their revisions", async
         tokensPerDecision: 1,
         millisecondsPerDecision: 1,
         toolCallsPerDecision: 1,
+        dispatchesPerDecision: 3,
         inputBytesPerDecision: 1,
         candidatePagesPerDecision: 1,
         concurrentDecisions: 1,

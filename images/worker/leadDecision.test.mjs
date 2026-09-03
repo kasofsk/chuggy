@@ -154,17 +154,46 @@ test("the attention one turn set outlives every later turn that names none", asy
   );
 });
 
-test("a second dispatch is an error the model sees, not a silent drop", async () => {
+test("a ticket dispatched twice is an error the model sees, not a silent drop", async () => {
   const { staging, call } = stagingOn();
 
   await call("dispatch", { ticket: 4, expectedTicketVersion: 2 });
-  const second = await call("dispatch", {
-    ticket: 5,
-    expectedTicketVersion: 1,
-  });
+  const again = await call("dispatch", { ticket: 4, expectedTicketVersion: 2 });
 
-  assert.ok(errored(second));
-  assert.match(textOf(second), new RegExp(String(leadDispatchesMax)));
+  assert.ok(errored(again));
+  assert.match(textOf(again), /ticket 4 is already dispatched/);
+  assert.equal(staging.document().dispatches.length, 1);
+});
+
+test("a dispatch past the ceiling is an error, and the staging stops there", async () => {
+  const candidates = Array.from(
+    { length: leadDispatchesMax + 1 },
+    (_, index) => ({ ticket: index + 1, ticketVersion: 1 }),
+  );
+  const { staging, call } = stagingOn(observationOf({ candidates }));
+
+  let refused;
+  for (const { ticket } of candidates)
+    refused = await call("dispatch", { ticket, expectedTicketVersion: 1 });
+
+  assert.ok(errored(refused));
+  assert.match(textOf(refused), new RegExp(String(leadDispatchesMax)));
+  assert.equal(staging.document().dispatches.length, leadDispatchesMax);
+});
+
+test("a repeat at the ceiling is named a repeat, not a ceiling", async () => {
+  const candidates = Array.from({ length: leadDispatchesMax }, (_, index) => ({
+    ticket: index + 1,
+    ticketVersion: 1,
+  }));
+  const { staging, call } = stagingOn(observationOf({ candidates }));
+
+  for (const { ticket } of candidates)
+    await call("dispatch", { ticket, expectedTicketVersion: 1 });
+  const again = await call("dispatch", { ticket: 1, expectedTicketVersion: 1 });
+
+  assert.ok(errored(again));
+  assert.match(textOf(again), /ticket 1 is already dispatched/);
   assert.equal(staging.document().dispatches.length, leadDispatchesMax);
 });
 

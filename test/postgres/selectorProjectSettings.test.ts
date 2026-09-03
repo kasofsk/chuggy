@@ -33,6 +33,11 @@ import {
   asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
+import { selectorProjectOverridesSchema } from "../../src/contract/requests.ts";
+import {
+  dispatchesPerDecisionUnstated,
+  type SelectorRuntimeSettings,
+} from "../../src/interpreter/selector.ts";
 import type { SelectorProjectSettingsRecord } from "../../src/interpreter/selectorProjectSettings.ts";
 import {
   postgresHarnessDenial,
@@ -919,6 +924,101 @@ test("a deadlock between two projects' writes is a contention the caller is told
       await held.query("ROLLBACK").catch(() => undefined);
       held.release();
     }
+    await pool.end();
+  }
+});
+
+/**
+ * The override door and the columns behind it, held to each other: a key the
+ * door accepts and no column stores is an override a caller was told was
+ * written and no decision ever runs under. The roster is read from the schema
+ * rather than listed here, so a key added to the door without a column reds
+ * this.
+ */
+test("every limit the override door accepts is a column that reads back", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "selector-limit-roster",
+  );
+  const pool = postgresHarnessRolePool(apiRole);
+  const store = postgresSelectorProjectSettings(pool);
+  const accepted = Object.keys(
+    (
+      selectorProjectOverridesSchema.shape.limits.unwrap() as never as {
+        readonly shape: Readonly<Record<string, unknown>>;
+      }
+    ).shape,
+  );
+  try {
+    let revision = 0;
+    for (const limit of accepted) {
+      /** The one limit whose only legal value is one until multi-page tools land. */
+      const value = limit === "candidatePagesPerDecision" ? 1 : 7;
+      const written = writtenSettings(
+        await store.write(
+          partition,
+          revision,
+          { limits: { [limit]: value } },
+          administrator,
+        ),
+      );
+      revision = written.revision;
+      assert.deepEqual(written.overrides.limits, { [limit]: value }, limit);
+      assert.equal(
+        (await store.read(partition)).overrides.limits?.[
+          limit as keyof NonNullable<
+            Awaited<ReturnType<typeof store.read>>["overrides"]["limits"]
+          >
+        ],
+        value,
+        limit,
+      );
+    }
+    assert.ok(accepted.length > 0, "the door accepts no limit at all");
+  } finally {
+    await pool.end();
+  }
+});
+
+/**
+ * A controls row written before `dispatchesPerDecision` existed. It resolves to
+ * the number the installation that wrote it could deliver, rather than
+ * refusing the row and stopping the selector, and a stated number is read as
+ * stated.
+ */
+test("an installation that never stated a dispatch budget reads the unstated one", async () => {
+  const pool = postgresHarnessRolePool(selectorControlRole);
+  const control = postgresSelectorRuntimeControl(pool);
+  const controlsOf = (settings: SelectorRuntimeSettings) => ({
+    modelAllowlist: settings.modelAllowlist,
+    toolAllowlist: settings.toolAllowlist,
+    limits: settings.limits,
+    operationalContextMaxAgeMs: settings.operationalContextMaxAgeMs,
+  });
+  try {
+    const seeded = await control.settings();
+    assert.equal(
+      seeded.limits.dispatchesPerDecision,
+      dispatchesPerDecisionUnstated,
+    );
+    const stated = await control.updatePolicyControls(
+      seeded.revision,
+      {
+        ...controlsOf(seeded),
+        limits: { ...seeded.limits, dispatchesPerDecision: 4 },
+      },
+      administrator,
+    );
+    assert.equal(stated.updated, true);
+    const read = await control.settings();
+    assert.equal(read.limits.dispatchesPerDecision, 4);
+    /** Every other suite in this database reads what it was seeded with. */
+    await control.updatePolicyControls(
+      read.revision,
+      controlsOf(seeded),
+      administrator,
+    );
+  } finally {
     await pool.end();
   }
 });

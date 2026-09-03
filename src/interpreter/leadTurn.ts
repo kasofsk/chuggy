@@ -329,8 +329,10 @@ function leadDecisionLifts(
 
 /**
  * Refuses a decision that names one ticket twice. The ledger holds one row per
- * decision per ticket, so a second entry for one ticket is a decision the
- * database cannot commit, and the whole turn is lost rather than the extra one.
+ * decision per ticket, so a repeated entry is a decision the database cannot
+ * commit; a repeated dispatch is two `Dispatch` events at their own prefixes,
+ * the second refused by enablement for a ticket the first left Working — a
+ * refusal the lead did not earn.
  */
 function leadDecisionNamesEachTicketOnce(
   result: SelectorPolicyResult,
@@ -341,6 +343,9 @@ function leadDecisionNamesEachTicketOnce(
   ];
   if (new Set(entered).size !== entered.length)
     throw new TypeError("lead decision enters one ticket in its ledger twice");
+  const dispatched = result.dispatches.map((dispatch) => dispatch.ticket);
+  if (new Set(dispatched).size !== dispatched.length)
+    throw new TypeError("lead decision dispatches one ticket twice");
   for (const dispatch of result.dispatches)
     if (result.refusals.some((refusal) => refusal.ticket === dispatch.ticket))
       throw new TypeError("lead decision dispatches a ticket it also refuses");

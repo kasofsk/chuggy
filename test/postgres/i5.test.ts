@@ -25,6 +25,10 @@ import {
   type ProjectMemory,
 } from "../../src/interpreter/projectWriter.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import {
+  dispatchesPerDecisionUnstated,
+  type SelectorDecisionProposals,
+} from "../../src/interpreter/selector.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   asAuthorityKind,
@@ -68,6 +72,7 @@ const governedSelectorControls = {
     tokensPerDecision: 4096,
     millisecondsPerDecision: 60_000,
     toolCallsPerDecision: 10,
+    dispatchesPerDecision: 1,
     inputBytesPerDecision: 1_048_576,
     candidatePagesPerDecision: 1,
     concurrentDecisions: 2,
@@ -101,27 +106,34 @@ const selectorTestFence = {
   projectSettingsRevision: 0,
 } as const;
 
-function selectorTestProposal(partition: Partition, decision: string) {
+function selectorTestProposal(
+  partition: Partition,
+  decision: string,
+  tickets: readonly number[] = [1],
+): SelectorDecisionProposals {
   return {
     interaction: selectorTestInteraction(partition, decision),
     fence: selectorTestFence,
-    operation: asOperationId(`operation-${decision}`),
     deliveryMode: "ApprovalRequired",
-    command: {
-      version: 1,
-      command: "ProposeDispatch",
-      ticket: asTicketId(1),
-      expectedTicketVersion: 1,
-      observedViewToken: {
-        ...partition,
-        recoveryEpoch: "epoch",
-        schemaVersion: 1,
-        watermark: 0,
-        digest: "a".repeat(64),
+    dispatches: tickets.map((ticket) => ({
+      ticket: asTicketId(ticket),
+      operation: asOperationId(`operation-${decision}-t${String(ticket)}`),
+      command: {
+        version: 1,
+        command: "ProposeDispatch",
+        ticket: asTicketId(ticket),
+        expectedTicketVersion: 1,
+        observedViewToken: {
+          ...partition,
+          recoveryEpoch: "epoch",
+          schemaVersion: 1,
+          watermark: 0,
+          digest: "a".repeat(64),
+        },
+        selectorDecisionReference: decision,
       },
-      selectorDecisionReference: decision,
-    },
-  } as const;
+    })),
+  };
 }
 
 function selectorTestState(
@@ -555,7 +567,7 @@ test("a database-linearized pause suppresses proposal creation", async () => {
         selectorTestProposal(partition, decision),
         selectorTestState(partition, 0),
       ),
-      false,
+      0,
     );
     assert.equal((await state.history(partition, undefined, 10)).length, 1);
     assert.deepEqual(await state.pending(10), []);
@@ -734,14 +746,14 @@ test("review feedback cursors follow review order rather than proposal order", a
         selectorTestProposal(partition, earlier),
         selectorTestState(partition, 0),
       ),
-      true,
+      1,
     );
     assert.equal(
       await state.record(
         selectorTestProposal(partition, later),
         selectorTestState(partition, 1),
       ),
-      true,
+      1,
     );
     assert.equal(await reviews.approve(partition, later, reviewer), true);
     const first = await reviews.reviewFeedback(partition, undefined, 1);
@@ -783,14 +795,14 @@ test("submitted proposal reconciliation claims do not starve later work", async 
         selectorTestProposal(partition, firstDecision),
         selectorTestState(partition, 0),
       ),
-      true,
+      1,
     );
     assert.equal(
       await state.record(
         selectorTestProposal(partition, secondDecision),
         selectorTestState(partition, 1),
       ),
-      true,
+      1,
     );
     assert.equal(
       await reviews.approve(
@@ -971,5 +983,121 @@ test("dispatch acceptance refuses every command the wire parser cannot read", as
     }
   } finally {
     await pool.end();
+  }
+});
+
+/**
+ * What the delivery relation can hold, said by the relation rather than assumed
+ * by its caller: keyed on the decision alone it holds exactly
+ * `dispatchesPerDecisionUnstated` rows, which is why that constant is the
+ * budget a controls row without one resolves to. Raising the constant past what
+ * the relation holds reds the first half here rather than shipping a budget no
+ * decision could spend; the rekey on `(decision, ticket)` is what lifts both.
+ */
+test("the relation holds the unstated budget's rows and refuses the next", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-one-delivery",
+  );
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const state = postgresSelectorState(selectorPool);
+  const spent = Array.from(
+    { length: dispatchesPerDecisionUnstated },
+    (_, index) => index + 1,
+  );
+  const whole = `budget-${crypto.randomUUID()}`;
+  const over = `multi-${crypto.randomUUID()}`;
+  try {
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, whole, spent),
+        selectorTestState(partition, 0),
+      ),
+      dispatchesPerDecisionUnstated,
+    );
+    assert.equal(
+      (
+        await harness.query(
+          "SELECT selector_decision FROM selector_proposal_delivery WHERE selector_decision=$1",
+          [whole],
+        )
+      ).length,
+      dispatchesPerDecisionUnstated,
+    );
+    assert.ok(
+      dispatchesPerDecisionUnstated > 0,
+      "a budget no decision can spend is not a budget",
+    );
+    await assert.rejects(
+      () =>
+        state.record(
+          selectorTestProposal(partition, over, [...spent, spent.length + 1]),
+          selectorTestState(partition, 1),
+        ),
+      RangeError,
+    );
+    assert.deepEqual(
+      await harness.query(
+        "SELECT selector_decision FROM selector_proposal_delivery WHERE selector_decision=$1",
+        [over],
+      ),
+      [],
+    );
+    assert.equal((await state.history(partition, undefined, 10)).length, 1);
+  } finally {
+    await selectorPool.end();
+  }
+});
+
+/**
+ * The delivery a read answers names its own ticket, taken from the command the
+ * row stores — which is the column the rekeying backfills from, so the reader
+ * is right before and after it — and the operation is the one derived for that
+ * ticket rather than the decision's bare identity.
+ */
+test("a stored delivery names the ticket its command dispatches", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-delivery-ticket",
+  );
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const reviewPool = postgresRolePool(selectorReviewRole);
+  const controlPool = postgresRolePool(selectorControlRole);
+  const state = postgresSelectorState(selectorPool);
+  const reviews = postgresSelectorProposalReviews(reviewPool);
+  const control = postgresSelectorRuntimeControl(controlPool);
+  const original = await control.settings();
+  const held = await control.setDispatchMode(
+    original.revision,
+    "ApprovalRequired",
+    selectorAdministrator,
+  );
+  assert.equal(held.updated, true);
+  const decision = `ticketed-${crypto.randomUUID()}`;
+  try {
+    assert.equal(
+      await state.record(
+        selectorTestProposal(partition, decision, [7]),
+        selectorTestState(partition, 0),
+      ),
+      1,
+    );
+    assert.deepEqual(
+      (await reviews.awaitingApproval(partition, 10)).map((delivery) => [
+        delivery.ticket,
+        delivery.operation,
+      ]),
+      [[asTicketId(7), asOperationId(`operation-${decision}-t7`)]],
+    );
+  } finally {
+    const current = await control.settings();
+    await control.setDispatchMode(
+      current.revision,
+      original.dispatchMode,
+      selectorAdministrator,
+    );
+    await selectorPool.end();
+    await reviewPool.end();
+    await controlPool.end();
   }
 });

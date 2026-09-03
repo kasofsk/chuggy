@@ -7,10 +7,11 @@ import {
   sessionTurnResultCharsMax,
 } from "../contract/http.ts";
 import type { DispatchCandidate, DispatchViewToken } from "./dispatchView.ts";
-import type {
-  Authority,
-  OperationId,
-  TicketCommand,
+import {
+  asOperationId,
+  type Authority,
+  type OperationId,
+  type TicketCommand,
 } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import {
@@ -52,20 +53,30 @@ export interface SelectorInteraction {
   readonly completedAt: string;
 }
 
-export interface SelectorProposal {
+/** One decision's record and the dispatches it asks the runtime to deliver. */
+export interface SelectorDecisionProposals {
   readonly interaction: SelectorInteraction;
   readonly fence: SelectorSettingsFence;
+  readonly planningIntent?: JsonValue;
+  readonly deliveryMode: "Automatic" | "ApprovalRequired";
+  /** At most `leadDispatchesMax`, each naming a ticket the others do not, which
+   * `enforcePolicyControls` refuses the turn for breaking. */
+  readonly dispatches: readonly SelectorProposedDispatch[];
+}
+
+/** One ticket a decision asks to dispatch, and the operation it is submitted under. */
+export interface SelectorProposedDispatch {
+  readonly ticket: DispatchCandidate["ticket"];
   readonly operation: OperationId;
   readonly command: Extract<
     TicketCommand,
     { readonly command: "ProposeDispatch" }
   >;
-  readonly planningIntent?: JsonValue;
-  readonly deliveryMode: "Automatic" | "ApprovalRequired";
 }
 
 export interface SelectorDelivery {
   readonly decision: string;
+  readonly ticket: DispatchCandidate["ticket"];
   readonly partition: Partition;
   readonly operation: OperationId;
   readonly command: Extract<
@@ -101,10 +112,11 @@ export interface SelectorStateStore {
     fence: SelectorSettingsFence,
     planningIntent?: JsonValue,
   ): Promise<boolean>;
+  /** Answers how many delivery rows it wrote, so a partial write is not a whole one. */
   record(
-    proposal: SelectorProposal,
+    proposals: SelectorDecisionProposals,
     state: SelectorProjectState,
-  ): Promise<boolean>;
+  ): Promise<number>;
   pending(limit: number): Promise<readonly SelectorDelivery[]>;
   submittedDeliveries(limit: number): Promise<readonly SelectorDelivery[]>;
   submitted(decision: string): Promise<void>;
@@ -321,8 +333,22 @@ export interface SelectorPolicyResult {
   readonly planningIntent?: JsonValue;
 }
 
-/** How many tickets one decision may dispatch, which delivery keys one of. */
-export const leadDispatchesMax = 1;
+/**
+ * The most tickets any decision may dispatch, whatever a project asks for: the
+ * parse ceiling, refusing a document naming more before any of it is read. What
+ * a project may ask for inside it is `limits.dispatchesPerDecision`, judged on
+ * the finished turn — two bounds for two questions, and the project's may only
+ * narrow this one.
+ */
+export const leadDispatchesMax = 8;
+
+/**
+ * What a controls row written before `dispatchesPerDecision` existed resolves
+ * to: one, which is what a delivery record keyed by the decision alone can
+ * carry. A rollback to such a revision reads it the same way, so this outlives
+ * the migration that adds the key.
+ */
+export const dispatchesPerDecisionUnstated = 1;
 
 /** How many tickets one decision may refuse, and how many it may lift. */
 export const leadRefusalsPerDecisionMax = 16;
@@ -376,6 +402,7 @@ export interface SelectorRuntimeSettings {
     readonly tokensPerDecision: number;
     readonly millisecondsPerDecision: number;
     readonly toolCallsPerDecision: number;
+    readonly dispatchesPerDecision: number;
     readonly inputBytesPerDecision: number;
     readonly candidatePagesPerDecision: number;
     readonly concurrentDecisions: number;
@@ -486,6 +513,8 @@ export function resolvedSelectorSettings(
         defaults.limits.millisecondsPerDecision,
       toolCallsPerDecision:
         limits.toolCallsPerDecision ?? defaults.limits.toolCallsPerDecision,
+      dispatchesPerDecision:
+        limits.dispatchesPerDecision ?? defaults.limits.dispatchesPerDecision,
       inputBytesPerDecision:
         limits.inputBytesPerDecision ?? defaults.limits.inputBytesPerDecision,
       candidatePagesPerDecision:
@@ -685,6 +714,19 @@ function enforcePolicyControls(
   if (execution.toolActivity.length > settings.limits.toolCallsPerDecision)
     throw new SelectorControlViolation(
       "selector policy exceeded its tool-call budget",
+    );
+  if (
+    execution.result.dispatches.length > settings.limits.dispatchesPerDecision
+  )
+    throw new SelectorControlViolation(
+      "selector policy dispatched more tickets than its budget",
+    );
+  const dispatched = execution.result.dispatches.map(
+    (dispatch) => dispatch.ticket,
+  );
+  if (new Set(dispatched).size !== dispatched.length)
+    throw new SelectorControlViolation(
+      "selector policy dispatched one ticket twice",
     );
   for (const activity of execution.toolActivity) {
     if (
@@ -1166,23 +1208,26 @@ function observationMatchesProject(
 }
 
 /**
- * The candidate one decision's dispatch names. The version it fenced on is
- * checked where the document is read, and the command carries the observed
- * candidate's own version, so this refuses the one thing neither covers: a
- * ticket the view did not carry at all.
+ * The candidates a decision's dispatches name, in the order it named them, and
+ * total over the list rather than over its first member — one dropped here
+ * would be a ticket the lead believes it dispatched and no record mentions. The
+ * version each fenced on is checked where the document is read, so this refuses
+ * the one thing that check cannot: a ticket the view did not carry at all.
  */
-function selectedCandidate(
+function selectedCandidates(
   observation: SelectorObservation,
   dispatches: SelectorPolicyResult["dispatches"],
-): DispatchCandidate | undefined {
-  const dispatch = dispatches[0];
-  if (dispatch === undefined) return undefined;
-  const selected = observation.candidates.find(
-    (candidate) => candidate.ticket === dispatch.ticket,
-  );
-  if (selected === undefined)
-    throw new Error("selector policy chose a ticket outside its observed view");
-  return selected;
+): readonly DispatchCandidate[] {
+  return dispatches.map((dispatch) => {
+    const selected = observation.candidates.find(
+      (candidate) => candidate.ticket === dispatch.ticket,
+    );
+    if (selected === undefined)
+      throw new Error(
+        "selector policy chose a ticket outside its observed view",
+      );
+    return selected;
+  });
 }
 
 function policyFailureCode(error: unknown): string {
@@ -1294,7 +1339,7 @@ async function recordCompletedSelectorCycle(
   identity: SelectorCycleIdentity,
   settings: SelectorResolvedSettings,
   execution: SelectorPolicyExecution,
-): Promise<SelectorProposal | undefined> {
+): Promise<SelectorDecisionProposals | undefined> {
   const result = execution.result;
   const interaction = selectorInteraction(
     execution,
@@ -1303,7 +1348,7 @@ async function recordCompletedSelectorCycle(
     settings,
     state.partition,
   );
-  const selected = selectedCandidate(observation, result.dispatches);
+  const selected = selectedCandidates(observation, result.dispatches);
   const nextState: SelectorProjectState = {
     partition: state.partition,
     notificationCursor: observation.notificationCursor,
@@ -1312,11 +1357,11 @@ async function recordCompletedSelectorCycle(
     attention: result.attention,
     handoffNote: result.handoffNote,
     candidateScan:
-      selected === undefined
+      selected.length === 0
         ? observation.nextCandidateScan
         : { state: "Unstarted" },
   };
-  if (selected === undefined) {
+  if (selected.length === 0) {
     await store.recordInteraction(
       interaction,
       nextState,
@@ -1326,23 +1371,26 @@ async function recordCompletedSelectorCycle(
     await recordDecisionRefusals(refusals, state.partition, identity, result);
     return undefined;
   }
-  const proposal: SelectorProposal = {
+  const proposals: SelectorDecisionProposals = {
     interaction,
     fence: selectorSettingsFence(settings),
-    operation: identity.operation,
-    command: proposalCommand({
-      ticket: selected,
-      token: observation.token,
-      selectorDecisionReference: identity.selectorDecisionReference,
-    }),
     deliveryMode: settings.dispatchMode,
+    dispatches: selected.map((candidate) => ({
+      ticket: candidate.ticket,
+      operation: selectorDispatchOperation(identity, candidate.ticket),
+      command: proposalCommand({
+        ticket: candidate,
+        token: observation.token,
+        selectorDecisionReference: identity.selectorDecisionReference,
+      }),
+    })),
     ...(result.planningIntent === undefined
       ? {}
       : { planningIntent: result.planningIntent }),
   };
-  const recorded = await store.record(proposal, nextState);
+  const recorded = await store.record(proposals, nextState);
   await recordDecisionRefusals(refusals, state.partition, identity, result);
-  return recorded ? proposal : undefined;
+  return recorded === proposals.dispatches.length ? proposals : undefined;
 }
 
 /** Runs one independently timed selector observation and durably records waiting or delivery. */
@@ -1354,7 +1402,7 @@ export async function runSelectorCycle(
   policy: SelectorPolicyHost,
   identity: SelectorCycleIdentity,
   settings: SelectorResolvedSettings,
-): Promise<SelectorProposal | undefined> {
+): Promise<SelectorDecisionProposals | undefined> {
   const observation = await observeSelectorProject(
     state,
     source,
@@ -1388,7 +1436,7 @@ export async function runObservedSelectorCycle(
   policy: SelectorPolicyHost,
   identity: SelectorCycleIdentity,
   settings: SelectorResolvedSettings,
-): Promise<SelectorProposal | undefined> {
+): Promise<SelectorDecisionProposals | undefined> {
   if (!observationMatchesProject(observation, state.partition))
     throw new Error("selector observation crossed its project boundary");
   if (
@@ -1668,6 +1716,21 @@ export async function reconcileSelectorProposal(
     checkedJson(outcome, "selector operation outcome"),
   );
   return true;
+}
+
+/**
+ * The operation one decision's dispatch of one ticket is submitted under,
+ * derived rather than allocated: a minted list would have to be as long as the
+ * ceiling and drawn before the decision is known. Deriving it means a
+ * redelivery of the same decision's same ticket is the same operation, so
+ * idempotency absorbs the retry — which is an identity only because a decision
+ * names each ticket once, and is why that is a control rather than a hope.
+ */
+export function selectorDispatchOperation(
+  identity: SelectorCycleIdentity,
+  ticket: DispatchCandidate["ticket"],
+): OperationId {
+  return asOperationId(`${identity.operation}-t${String(ticket)}`);
 }
 
 export function proposalCommand(input: {

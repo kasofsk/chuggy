@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  selectorProjectOverridesSchema,
+  selectorProjectSettingsSchema,
+} from "../../src/contract/requests.ts";
+import {
   asAuthorityKind,
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
@@ -46,6 +50,7 @@ const defaults: SelectorRuntimeSettings = {
     tokensPerDecision: 8192,
     millisecondsPerDecision: 120_000,
     toolCallsPerDecision: 20,
+    dispatchesPerDecision: 1,
     inputBytesPerDecision: 1_048_576,
     candidatePagesPerDecision: 1,
     concurrentDecisions: 4,
@@ -266,4 +271,36 @@ test("an unbounded history page is refused rather than asked for", async () => {
     () => administration.write(principal, partition, -1, {}),
     RangeError,
   );
+});
+
+/**
+ * A limit the runtime resolves and the wire door does not name is REFUSED
+ * rather than dropped: the door is a strict object, so a caller asking for one
+ * is told no instead of being answered 200 for an override no decision would
+ * ever run under. The roster is the difference between the two, so a limit that
+ * gains a door keeps the case honest without editing it.
+ */
+test("a limit the override door does not name is refused, never dropped", () => {
+  const admitted = new Set(
+    Object.keys(
+      (
+        selectorProjectOverridesSchema.shape.limits.unwrap() as never as {
+          readonly shape: Readonly<Record<string, unknown>>;
+        }
+      ).shape,
+    ),
+  );
+  const unadmitted = Object.keys(defaults.limits).filter(
+    (limit) => !admitted.has(limit),
+  );
+  assert.ok(unadmitted.length > 0, "the door already names every limit");
+  for (const limit of unadmitted)
+    assert.equal(
+      selectorProjectSettingsSchema.safeParse({
+        expectedRevision: 0,
+        overrides: { limits: { [limit]: 2 } },
+      }).success,
+      false,
+      limit,
+    );
 });
