@@ -114,30 +114,82 @@ test("a project that binds no repository takes its turns with no tree", async ()
   assert.deepEqual(taken, [], "a session with no binding reached git");
 });
 
-test("a credential the attempt's authority does not grant is loud", async () => {
-  await assert.rejects(
-    sessionCheckout(
-      taskOf({ authority: { ...grant, credentials: ["claude-code"] } }),
-      repositories("/nowhere"),
-      credentialFiles,
-      "/workspace",
-      { log: () => undefined },
-    ),
-    /session authority does not grant chuggy-git/u,
+test("a credential the attempt's authority does not grant is refused, not raised", async () => {
+  const taken = [];
+  const checkout = await sessionCheckout(
+    taskOf({ authority: { ...grant, credentials: ["claude-code"] } }),
+    repositories("/nowhere"),
+    credentialFiles,
+    "/workspace",
+    { run: (args) => taken.push(args), log: () => undefined },
   );
+
+  assert.match(checkout.refused, /needs chuggy-git/u);
+  assert.deepEqual(taken, [], "an ungranted credential still reached git");
 });
 
-test("a reference the site's map does not carry is loud", async () => {
-  await assert.rejects(
-    sessionCheckout(
-      taskOf({ repository: { reference: "elsewhere" } }),
-      repositories("/nowhere"),
-      credentialFiles,
-      "/workspace",
-      { log: () => undefined },
-    ),
-    /no repository configuration for elsewhere/u,
+test("a reference the site's map does not carry is refused, not raised", async () => {
+  const checkout = await sessionCheckout(
+    taskOf({ repository: { reference: "elsewhere" } }),
+    repositories("/nowhere"),
+    credentialFiles,
+    "/workspace",
+    { log: () => undefined },
   );
+
+  assert.match(checkout.refused, /no repository configuration for elsewhere/u);
+});
+
+test("a refusal is scrubbed like every other line this pod would print", async () => {
+  const checkout = await sessionCheckout(
+    taskOf({ repository: { reference: "elsewhere" } }),
+    repositories("/nowhere"),
+    credentialFiles,
+    "/workspace",
+    {
+      log: () => undefined,
+      scrub: (text) => text.replace(/elsewhere/gu, "**"),
+    },
+  );
+
+  assert.match(checkout.refused, /no repository configuration for \*\*/u);
+});
+
+/**
+ * The mirror is a key of the site's map like any other, so the credential it is
+ * cloned with is the map's answer for the mirror and not for the binding the
+ * placement resolved it from.
+ */
+test("a mirror is resolved and granted from the site's map like any other reference", async () => {
+  await scratch(async (root) => {
+    const { url, head } = await remoteOf(root);
+    const workspace = join(root, "workspace");
+    const logged = [];
+
+    const checkout = await sessionCheckout(
+      taskOf({
+        repository: { reference: "mirror" },
+        authority: { ...grant, credentials: ["chuggy-git-mirror"] },
+      }),
+      {
+        ...repositories("/nowhere"),
+        mirror: {
+          url,
+          credential: "chuggy-git-mirror",
+          credentialUsername: "worker",
+        },
+      },
+      { ...credentialFiles, "chuggy-git-mirror": "/var/run/chuggy/mirror" },
+      workspace,
+      { log: (text) => logged.push(text) },
+    );
+
+    assert.deepEqual(checkout, {
+      directory: join(workspace, "repository"),
+      commit: head,
+    });
+    assert.deepEqual(logged, [`session checkout mirror at ${head}\n`]);
+  });
 });
 
 test("a clone that does not finish leaves the session with no tree rather than no session", async () => {

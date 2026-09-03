@@ -55,11 +55,14 @@ import {
   type SchedulerOwnerId,
 } from "../interpreter/executionScheduler.ts";
 import {
+  asRepositoryId,
   finalizerDefaults,
+  finalizerIdentityCharsMax,
   type FinalizerConfig,
 } from "../interpreter/finalizer.ts";
 import {
   sessionSchedulerDefaults,
+  type RepositoryMirrors,
   type SessionPolicy,
   type SessionSchedulerConfig,
 } from "../interpreter/sessionScheduler.ts";
@@ -151,11 +154,32 @@ const schedulerProfileSchema = z.strictObject({
   grant: schedulerGrantSchema,
 });
 
+/**
+ * A repository identity as this document may write one, bounded where
+ * `asRepositoryId` is bounded so an over-long entry is a configuration refusal
+ * naming the key rather than a raise from inside a placement.
+ */
+const schedulerRepositorySchema = schedulerTextSchema.max(
+  finalizerIdentityCharsMax,
+);
+
+/**
+ * Which read a session takes of a bound repository, keyed by the binding. It is
+ * optional and empty by default: an installation whose sessions can reach the
+ * remote its projects bind owes no mirror, and writing an empty object would be
+ * a second way to say nothing.
+ */
+const schedulerMirrorsSchema = z.record(
+  schedulerRepositorySchema,
+  schedulerRepositorySchema,
+);
+
 const schedulerSessionPolicySchema = z.strictObject({
   image: schedulerTextSchema.max(workerImageCharsMax),
   profile: schedulerTextSchema,
   runtimeVersion: schedulerTextSchema,
   grant: schedulerGrantSchema,
+  mirrors: schedulerMirrorsSchema.optional(),
 });
 
 const schedulerPolicyShape = {
@@ -635,7 +659,19 @@ function schedulerSessions(
   };
 }
 
-/** The one image, profile and grant every session of this site runs under. */
+/** Every mirror the document named, branded as the repository identities they are. */
+function schedulerMirrors(
+  named: Readonly<Record<string, string>> | undefined,
+): RepositoryMirrors {
+  return Object.fromEntries(
+    Object.entries(named ?? {}).map(([bound, mirror]) => [
+      asRepositoryId(bound),
+      asRepositoryId(mirror),
+    ]),
+  );
+}
+
+/** The one image, profile, grant and set of mirrors every session of this site runs under. */
 function schedulerSessionPolicy(
   environment: SchedulerEnvironment,
 ): SessionPolicy {
@@ -648,6 +684,7 @@ function schedulerSessionPolicy(
     image: parsed.image,
     profile: { profile: parsed.profile, runtimeVersion: parsed.runtimeVersion },
     grant: parsed.grant,
+    mirrors: schedulerMirrors(parsed.mirrors),
   };
 }
 

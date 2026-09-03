@@ -42,6 +42,7 @@ import {
 import {
   sessionSchedulerDefaults,
   type FencedSessionAttempt,
+  type RepositoryMirrors,
   type SessionAttemptEvidence,
   type SessionAttemptOpened,
   type SessionAttemptOpening,
@@ -92,6 +93,7 @@ const policy: SessionPolicy = {
     filesystem: "WriteWorkspace",
     mayCompleteTask: false,
   },
+  mirrors: {},
 };
 
 /** The mint a case is driven with, which draws the same values every time. */
@@ -176,20 +178,31 @@ function recordingStore(
 function bindingsOf(
   calls: StoreCall[],
   binding?: RepositoryBinding | Error | "PerProject",
+  answered?: RepositoryBinding[],
 ): ProjectRepositoryBindingRead {
   return {
     binding: (asked) => {
       calls.push(`binding ${asked.tenant}/${asked.project}`);
       if (binding instanceof Error) return Promise.reject(binding);
-      return Promise.resolve(
+      const answer =
         binding === "PerProject"
           ? {
               partition: asked,
               repository: asRepositoryId(asked.project),
               recoveryEpoch: epoch,
             }
-          : binding,
-      );
+          : binding;
+      /**
+       * Frozen, and handed to the caller afterwards, because the binding is the
+       * finalizer's value too: a pass that resolved a mirror by writing over
+       * what it read would move where pull requests are opened, and freezing is
+       * what makes that a failure here rather than a surprise on a rig.
+       */
+      if (answer !== undefined) {
+        Object.freeze(answer);
+        answered?.push(answer);
+      }
+      return Promise.resolve(answer);
     },
   };
 }
@@ -200,10 +213,14 @@ function service(
   answers: StoreAnswers,
   placement: SessionPlacementOutcome,
   placed?: (asked: SessionPlacement) => void,
+  site?: {
+    readonly mirrors: RepositoryMirrors;
+    answered?: RepositoryBinding[];
+  },
 ): SessionSchedulerService {
   return {
     store: recordingStore(calls, answers),
-    bindings: bindingsOf(calls, answers.binding),
+    bindings: bindingsOf(calls, answers.binding, site?.answered),
     placement: {
       place: (asked) => {
         calls.push(`place ${asked.attempt}`);
@@ -218,7 +235,7 @@ function service(
       },
     },
     bearers,
-    policy,
+    policy: site === undefined ? policy : { ...policy, mirrors: site.mirrors },
     config: sessionSchedulerDefaults,
   };
 }
@@ -420,6 +437,83 @@ test("a session is placed with the repository its project binds", async () => {
     calls.filter((call) => call.startsWith("binding ")),
     ["binding tenant/project"],
     "the session's own partition is not what the binding was read for",
+  );
+});
+
+/**
+ * The three cases below are one rule each: a bound repository the site put a
+ * read in front of, one it did not, and the binding itself, which is the
+ * finalizer's value and is not the session's to move.
+ */
+const bound = asRepositoryId("https://forge.invalid/chuggy.git");
+const mirror = asRepositoryId("http://git.invalid./chuggy.git");
+const boundBinding: RepositoryBinding = {
+  partition,
+  repository: bound,
+  recoveryEpoch: epoch,
+};
+
+test("a bound repository the site mirrors is what the session is placed to read", async () => {
+  const asked: SessionPlacement[] = [];
+  await sessionSchedulerPass(
+    service(
+      [],
+      { awaiting: [session], binding: boundBinding },
+      { placed: "Placed", placement: asPlacementId("chuggy-session-one") },
+      (placement) => asked.push(placement),
+      { mirrors: { [bound]: mirror } },
+    ),
+    epoch,
+  );
+  assert.equal(asked[0]?.repository, mirror);
+});
+
+test("a bound repository no mirror names is placed as the project bound it", async () => {
+  const asked: SessionPlacement[] = [];
+  await sessionSchedulerPass(
+    service(
+      [],
+      { awaiting: [session], binding: boundBinding },
+      { placed: "Placed", placement: asPlacementId("chuggy-session-one") },
+      (placement) => asked.push(placement),
+      {
+        mirrors: {
+          [asRepositoryId("https://forge.invalid/other.git")]: mirror,
+        },
+      },
+    ),
+    epoch,
+  );
+  assert.equal(
+    asked[0]?.repository,
+    bound,
+    "a site with mirrors it did not name this binding in moved the checkout anyway",
+  );
+});
+
+/**
+ * The finalizer opens pull requests against the binding, reading it from the
+ * same definer this pass reads. A mirror stands in front of the checkout and
+ * nowhere else, so the value the read answered is the value it answered.
+ */
+test("the mirror is the placement's and the binding it stands for is untouched", async () => {
+  const asked: SessionPlacement[] = [];
+  const answered: RepositoryBinding[] = [];
+  await sessionSchedulerPass(
+    service(
+      [],
+      { awaiting: [session], binding: boundBinding },
+      { placed: "Placed", placement: asPlacementId("chuggy-session-one") },
+      (placement) => asked.push(placement),
+      { mirrors: { [bound]: mirror }, answered },
+    ),
+    epoch,
+  );
+  assert.equal(asked[0]?.repository, mirror);
+  assert.deepEqual(
+    answered.map(({ repository }) => repository),
+    [bound],
+    "the binding a finalizer reads was rewritten to place a session",
   );
 });
 

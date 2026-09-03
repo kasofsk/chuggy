@@ -31,7 +31,10 @@ import {
 } from "../../src/adapters/kubernetes/sessionPod.ts";
 import { executionSchedulerDefaults } from "../../src/interpreter/executionScheduler.ts";
 import { sessionSchedulerDefaults } from "../../src/interpreter/sessionScheduler.ts";
-import { finalizerDefaults } from "../../src/interpreter/finalizer.ts";
+import {
+  finalizerDefaults,
+  finalizerIdentityCharsMax,
+} from "../../src/interpreter/finalizer.ts";
 import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
 import {
   admittedImagesMax,
@@ -225,6 +228,7 @@ const parsed = {
     image: workerImage,
     profile: { profile: "session", runtimeVersion: "1" },
     grant,
+    mirrors: {},
   },
 };
 
@@ -379,6 +383,61 @@ test("a session bound no configuration publishes is refused rather than ignored"
     ),
   ) as { readonly refused?: string };
   assert.match(found.refused ?? "", /SESSION_BOUNDS names an unknown bound/u);
+});
+
+/** The session policy as one case wrote it, parsed or refused. */
+async function parsedSessionPolicy(
+  policy: unknown,
+): Promise<{ readonly parsed?: unknown; readonly refused?: string }> {
+  return JSON.parse(
+    await schedulerProgram(
+      parseProgram({
+        ...environment,
+        CHUG_SCHEDULER_SESSION_POLICY: JSON.stringify(policy),
+      }),
+    ),
+  ) as { readonly parsed?: unknown; readonly refused?: string };
+}
+
+/**
+ * The mirrors are the session's whole answer to a binding it cannot reach, and
+ * they are site data like the grant beside them, so they are read from the same
+ * document and refused by the same parse.
+ */
+test("a session policy naming a mirror for a bound repository carries it", async () => {
+  const mirrors = {
+    "https://forge.invalid/chuggy.git": "http://git.invalid./chuggy.git",
+  };
+  const found = (await parsedSessionPolicy({
+    ...sessionPolicy,
+    mirrors,
+  })) as { readonly parsed?: { readonly sessionPolicy: unknown } };
+  assert.deepEqual(found.parsed?.sessionPolicy, {
+    ...parsed.sessionPolicy,
+    mirrors,
+  });
+});
+
+test("a session policy whose mirrors are not repositories is refused", async () => {
+  for (const mirrors of [
+    [],
+    { "https://forge.invalid/chuggy.git": 1 },
+    { "https://forge.invalid/chuggy.git": "" },
+    { "": "http://git.invalid./chuggy.git" },
+    {
+      "https://forge.invalid/chuggy.git": "m".repeat(
+        finalizerIdentityCharsMax + 1,
+      ),
+    },
+  ]) {
+    const found = await parsedSessionPolicy({ ...sessionPolicy, mirrors });
+    assert.equal(
+      found.parsed,
+      undefined,
+      `${JSON.stringify(mirrors)} was accepted`,
+    );
+    assert.match(found.refused ?? "", /SESSION_POLICY/u);
+  }
 });
 
 /** What one admitted-images list parses into: the images admitted and the catalog. */
@@ -730,7 +789,10 @@ function processFakes(reachable: boolean): string {
  * and the create. Both halves of the process are driven, because both are one
  * tick of one pacing loop.
  */
-function processProgram(reachable: boolean): string {
+function processProgram(
+  reachable: boolean,
+  mirrors: Readonly<Record<string, string>> = {},
+): string {
   return `
     const roots = await import('./src/roots/controlPlane.ts');
     const schema = await import('./src/adapters/postgres/runtimeSchema.ts');
@@ -775,6 +837,7 @@ function processProgram(reachable: boolean): string {
         image: ${JSON.stringify(workerImage)},
         profile: { profile: 'session', runtimeVersion: '1' },
         grant: sessionGrant,
+        mirrors: ${JSON.stringify(mirrors)},
       },
       config: sessions.sessionSchedulerDefaults,
     };
@@ -862,6 +925,21 @@ test("the session pod is handed the repository its project binds", async () => {
   ) as ProcessRan;
   assert.equal(found.sessionTasks.length, 1);
   assert.deepEqual(found.sessionTasks[0]?.repository, { reference: "chuggy" });
+});
+
+/**
+ * The other half of the same claim: what the pod is handed is the binding put
+ * through the site's mirrors, and the site is the only place that says so.
+ */
+test("the session pod is handed the mirror the site names for the binding", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(
+      processProgram(true, { chuggy: "http://git.invalid./chuggy.git" }),
+    ),
+  ) as ProcessRan;
+  assert.deepEqual(found.sessionTasks[0]?.repository, {
+    reference: "http://git.invalid./chuggy.git",
+  });
 });
 
 test("a cluster that does not answer is a named could-not-run and never readiness", async () => {

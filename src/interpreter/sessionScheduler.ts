@@ -18,6 +18,18 @@
  * a session has no ticket, so it has no decision to freeze one, and a standing
  * reader wants the tree as it is rather than as it was.
  *
+ * AND THE BINDING IS NOT ALWAYS THE REMOTE THE SESSION READS. One binding has
+ * two consumers wanting different remotes: the finalizer opens pull requests
+ * against it, so it names the forge, while a session only ever reads and wants
+ * whichever remote it can reach and hold a credential for. Repointing the
+ * binding would move the promotion path, and granting a reader the forge's
+ * credential would give it a push it has no use for, so the site says instead
+ * which read stands for which binding — `SessionPolicy.mirrors` — and the
+ * binding is left alone. A bound repository that map does not name is placed as
+ * it is bound, and whether this site can reach that remote is the pod's to find
+ * out: the credential of a repository is `CHUG_WORKER_REPOSITORIES`' to state,
+ * and that map is the image's device.
+ *
  * ITS EVIDENCE IS ITS OWN ROSTER rather than the execution scheduler's widened.
  * A session has no manifest, no verdict and no retry budget, so widening the
  * execution roster with `SessionIdle` would put a label on an execution attempt
@@ -75,9 +87,10 @@ export interface SessionPlacement extends FencedSessionAttempt {
   readonly authority: PolicyAuthorityGrant;
   readonly bearer: SessionBearer;
   /**
-   * The repository the session reads, from the project's binding. A project
-   * that binds none places a session with no checkout, which is the honest arm:
-   * the session reads the project through the API and has no tree.
+   * The repository the session reads, which is the project's binding resolved
+   * through the site's mirrors. A project that binds none places a session with
+   * no checkout, which is the honest arm: the session reads the project through
+   * the API and has no tree.
    */
   readonly repository?: RepositoryId;
 }
@@ -97,11 +110,28 @@ export interface SessionPlacementPort {
   >;
 }
 
-/** What a site resolves for every session it runs: one image, one profile, one grant. */
+/** Which read a session takes of a bound repository, keyed by the binding it stands for. */
+export type RepositoryMirrors = Readonly<Record<string, RepositoryId>>;
+
+/** What a site resolves for every session it runs: one image, one profile, one grant, one set of mirrors. */
 export interface SessionPolicy {
   readonly profile: ExecutionProfile;
   readonly image: string;
   readonly grant: PolicyAuthorityGrant;
+  readonly mirrors: RepositoryMirrors;
+}
+
+/**
+ * The repository a session actually clones: the read the site put in front of
+ * the binding, or the binding itself where it named none. `Object.hasOwn` is
+ * what asks, so a bound repository named `toString` resolves to itself rather
+ * than to a function off the prototype.
+ */
+export function sessionRepositoryRead(
+  mirrors: RepositoryMirrors,
+  bound: RepositoryId,
+): RepositoryId {
+  return Object.hasOwn(mirrors, bound) ? (mirrors[bound] ?? bound) : bound;
 }
 
 /**

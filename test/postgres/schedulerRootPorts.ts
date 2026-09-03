@@ -74,6 +74,7 @@ export const schedulerRootSessions: Omit<
       filesystem: "None",
       mayCompleteTask: false,
     },
+    mirrors: {},
   },
   config: sessionSchedulerDefaults,
 };

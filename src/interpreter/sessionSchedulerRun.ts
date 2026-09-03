@@ -45,7 +45,11 @@
  * project binds no repository, and one whose ROSTER DOES NOT READ ONE — an
  * inquiry holds the project's reads alone, and cloning a tree it may not open
  * is a cost per question with no consequence. Either way the session reads the
- * project through the API and has no tree. A binding read that *fails* stops
+ * project through the API and has no tree. What the placement carries is that
+ * binding put through the site's mirrors, because a session reads where the
+ * finalizer writes and the two want different remotes; the map is the site's
+ * and the binding is the project's, so neither is written in terms of the
+ * other. A binding read that *fails* stops
  * the pass instead, because placing every session with no checkout is how a
  * missing grant would look, and a control that degrades silently is one nobody
  * can tell from a working one.
@@ -71,6 +75,7 @@ import type { RecoveryEpoch } from "./projectStore.ts";
 import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
 import {
   checkedSessionSchedulerConfig,
+  sessionRepositoryRead,
   type FencedSessionAttempt,
   type SessionBearer,
   type SessionPlacementPort,
@@ -225,7 +230,12 @@ async function sessionPlaceOne(
       ...(binding === undefined ||
       !session.capabilities.includes("RepositoryRead")
         ? {}
-        : { repository: binding.repository }),
+        : {
+            repository: sessionRepositoryRead(
+              service.policy.mirrors,
+              binding.repository,
+            ),
+          }),
     }),
   );
 }

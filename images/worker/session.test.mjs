@@ -215,6 +215,65 @@ test("an inquiry with no transcript to fork from fails its turn and opens no que
   }
 });
 
+/**
+ * The site named a repository this session cannot reach. It is the pod that
+ * finds out, so it is the pod that says so — on the turn, where a reader sees
+ * every other answer, rather than by dying and leaving the attempt row saying
+ * what a pod that never started says.
+ */
+test("a repository the site placed and this session cannot reach fails the turn", async () => {
+  const plane = planeOf([turnOne], facts);
+  const { seen, query } = queryOf(() => [
+    result("success", { result: "ran with no tree" }),
+  ]);
+  const warned = [];
+
+  const code = await run({
+    request: plane.request,
+    query,
+    warn: (text) => warned.push(text),
+    checkout: () =>
+      Promise.resolve({
+        refused: "session checkout chuggy needs a-credential",
+      }),
+  });
+
+  assert.equal(code, 1);
+  assert.equal(
+    seen.options,
+    undefined,
+    "a session with no tree opened a query",
+  );
+  assert.deepEqual(
+    plane.calls.find(({ path }) => path === "/v1/session/turn/failure").body,
+    { turn: "turn-1", failure: "AgentFailed" },
+  );
+  assert.ok(
+    warned.includes("session checkout chuggy needs a-credential\n"),
+    "the reason the session was refused was never said",
+  );
+});
+
+test("a session whose clone did not finish takes its turns with no tree", async () => {
+  const plane = planeOf([turnOne], facts);
+  const { seen, query } = queryOf(() => [
+    result("success", { result: "ran with no tree" }),
+  ]);
+
+  const code = await run({
+    request: plane.request,
+    query,
+    checkout: () => Promise.resolve(undefined),
+  });
+
+  assert.equal(code, 0);
+  assert.ok(seen.options !== undefined, "a degraded session opened no query");
+  assert.ok(
+    plane.calls.some(({ path }) => path === "/v1/session/turn/answer"),
+    "a session with no tree answered nothing",
+  );
+});
+
 test("an inquiry answers as the turn's result and writes no batch of its own", async () => {
   const inquiryTurn = { ...turnOne, inputKind: "Inquiry", input: "why?" };
   const plane = planeOf([inquiryTurn, { ...inquiryTurn, turn: "turn-2" }], {
