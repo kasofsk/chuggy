@@ -69,6 +69,7 @@
  */
 
 import { sessionChangeResourceSchema } from "../../../../src/contract/events.ts";
+import type { SessionChangeResource } from "../../../../src/contract/events.ts";
 import type {
   AgenticRefusalResponse,
   LeadResponse,
@@ -512,17 +513,20 @@ export function leadStreamListed(session: SessionStreams): boolean {
 }
 
 /**
- * The session a `Session` frame is about, read with the contract's own
- * `sessionChangeResourceSchema` — the shape the trigger writes, so no reader
- * here guesses at another's spelling.
+ * What a `Session` frame names, and nothing where the frame does not name it —
+ * a change frame being a pointer and never a body, so what a reader takes from
+ * it is which session to re-read, and a resource this console cannot parse is a
+ * frame it ignores rather than one it throws on, since a stream that ended on a
+ * shape a console did not expect would stop carrying every other kind with it.
  *
- * It is nothing where the frame does not name one — a change frame being a
- * pointer and never a body, so what a reader takes from it is which session to
- * re-read, and a resource this console cannot parse is a frame it ignores
- * rather than one it throws on, since a stream that ended on a shape a console
- * did not expect would stop carrying every other kind with it.
+ * THE PARSE IS HERE ONCE AND THE TWO QUESTIONS ASKED OF IT ARE ACCESSORS, a
+ * panel watching the lead and a panel watching its inquiries reading one
+ * resource: two parses could disagree about whether a frame is one at all, and
+ * the panel that said no would be the one that never updated.
  */
-export function leadSessionNamed(resource: string): string | undefined {
+function sessionChangeNamed(
+  resource: string,
+): SessionChangeResource | undefined {
   let parsed: unknown;
   try {
     parsed = JSON.parse(resource);
@@ -530,7 +534,17 @@ export function leadSessionNamed(resource: string): string | undefined {
     return undefined;
   }
   const read = sessionChangeResourceSchema.safeParse(parsed);
-  return read.success ? read.data.session : undefined;
+  return read.success ? read.data : undefined;
+}
+
+/** The session a `Session` frame is about. */
+export function leadSessionNamed(resource: string): string | undefined {
+  return sessionChangeNamed(resource)?.session;
+}
+
+/** What kind of session a `Session` frame names, so a panel can watch one kind. */
+export function sessionChangeKindNamed(resource: string): string | undefined {
+  return sessionChangeNamed(resource)?.kind;
 }
 
 /**

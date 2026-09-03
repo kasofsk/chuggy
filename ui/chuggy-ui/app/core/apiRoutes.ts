@@ -21,6 +21,9 @@ import {
   executionResponseSchema,
   executionsResponseSchema,
   installationResponseSchema,
+  leadInquiriesResponseSchema,
+  leadInquiryAcceptedSchema,
+  leadInquiryResponseSchema,
   leadResponseSchema,
   leadTranscriptResponseSchema,
   notificationsResponseSchema,
@@ -56,6 +59,9 @@ import type {
   ExecutionResponse,
   ExecutionsResponse,
   InstallationResponse,
+  LeadInquiriesResponse,
+  LeadInquiryAccepted,
+  LeadInquiryResponse,
   LeadResponse,
   LeadTranscriptResponse,
   NotificationsResponse,
@@ -84,6 +90,7 @@ import type {
   configurationCreationSchema,
   draftCreationSchema,
   draftRevisionSchema,
+  leadInquirySchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
   submissionSchema,
@@ -562,6 +569,33 @@ export function apiThreadTranscript(
 }
 
 /**
+ * Every inquiry against this project's lead, newest first and bounded by the
+ * route. There is no page and no limit: the listing takes neither, so asking
+ * for one would be a query arm the route rejects the whole read for.
+ */
+export function apiLeadInquiries(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+): Promise<ApiResult<LeadInquiriesResponse>> {
+  return apiGet(ports, apiSegments(partition, "lead", "inquiries"), (value) =>
+    leadInquiriesResponseSchema.parse(value),
+  );
+}
+
+/** One inquiry: what was asked, and the answer where the fork has given one. */
+export function apiLeadInquiry(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  session: string,
+): Promise<ApiResult<LeadInquiryResponse>> {
+  return apiGet(
+    ports,
+    apiSegments(partition, "lead", "inquiries", session),
+    (value) => leadInquiryResponseSchema.parse(value),
+  );
+}
+
+/**
  * A message into the caller's own thread. The turn identity is in the body
  * rather than an idempotency header because enqueuing is idempotent on it, so a
  * retried post answers the ordinal it already has instead of a second turn.
@@ -580,6 +614,31 @@ export function apiSendThreadMessage(
       body: message,
     },
     (value) => threadMessageAcceptedSchema.parse(value),
+  );
+}
+
+/**
+ * A question asked aside, which opens one fork and one turn.
+ *
+ * The two identities are minted by the caller, the way an operation id is, and
+ * the door is idempotent on them — so a retried post answers the ordinal it
+ * already has rather than forking the lead again, which is why this is the one
+ * write here with no idempotency key: the key is in the body, and a header
+ * carrying a third identity would be a second account of one fact.
+ */
+export function apiAskLead(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  asked: z.infer<typeof leadInquirySchema>,
+): Promise<ApiResult<LeadInquiryAccepted>> {
+  return apiRead(
+    ports,
+    {
+      method: "POST",
+      path: apiSegments(partition, "lead", "inquiries"),
+      body: asked,
+    },
+    (value) => leadInquiryAcceptedSchema.parse(value),
   );
 }
 

@@ -11,6 +11,7 @@
 
 import type {
   AgenticRefusalsResponse,
+  LeadInquiriesResponse,
   LeadResponse,
   LeadTranscriptResponse,
   SelectorHistoryResponse,
@@ -242,12 +243,48 @@ export function leadRefusals(
   };
 }
 
+/**
+ * One inquiry as the listing carries it: the asker the membership audits, and
+ * the answer where the fork has given one.
+ */
+export function leadInquiry(
+  at: number,
+  held: {
+    readonly turnState: LeadInquiriesResponse["inquiries"][number]["turnState"];
+    readonly mine?: boolean;
+    readonly answer?: string;
+    readonly failure?: LeadInquiriesResponse["inquiries"][number]["failure"];
+    readonly model?: string;
+    readonly tokens?: number;
+    readonly costMicros?: number;
+    readonly durationMs?: number;
+  },
+): LeadInquiriesResponse["inquiries"][number] {
+  return {
+    session: `inq-${String(at)}`,
+    asker: `subject-${String(at)}`,
+    mine: held.mine ?? false,
+    state: held.turnState === "Answered" ? "Closed" : "Open",
+    turnState: held.turnState,
+    ordinal: 1,
+    question: `question ${String(at)}`,
+    ...(held.answer === undefined ? {} : { answer: held.answer }),
+    ...(held.failure === undefined ? {} : { failure: held.failure }),
+    askedAt: "2026-09-01T11:00:00Z",
+    ...(held.model === undefined ? {} : { model: held.model }),
+    ...(held.tokens === undefined ? {} : { tokens: held.tokens }),
+    ...(held.costMicros === undefined ? {} : { costMicros: held.costMicros }),
+    ...(held.durationMs === undefined ? {} : { durationMs: held.durationMs }),
+  };
+}
+
 /** What a case has the server holding, which is all that varies between them. */
 export interface LeadServed {
   readonly batches: number;
   readonly turns: number;
   readonly refusals: AgenticRefusalsResponse;
   readonly note?: LeadResponse["handoffNote"];
+  readonly inquiries?: LeadInquiriesResponse;
 }
 
 /** The body and status every route the lead page reads answers with, so a case
@@ -257,6 +294,8 @@ export function leadRouteAnswer(
   served: LeadServed,
 ): { readonly body: unknown; readonly status: number } {
   const found = (body: unknown, status = 200) => ({ body, status });
+  if (url.includes("/lead/inquiries"))
+    return found(served.inquiries ?? { inquiries: [] });
   if (url.includes("/lead/transcript")) {
     const asked = new URL(url, "https://console").searchParams.get("after");
     return found(leadTranscriptPage(Number(asked ?? "0"), served.batches));
@@ -277,8 +316,17 @@ export function leadRouteAnswer(
 
 export const leadPartition = { tenant: "acme", project: "atlas" };
 
-/** The resource a `Session` change frame carries: the session, and the turn or
- * the batch that moved. */
-export function leadSessionResource(session: string, turn: string): string {
-  return JSON.stringify({ session, kind: "Turn", turn });
+/**
+ * The resource a `Session` change frame carries: the session, what kind of
+ * session it is, and the turn that moved. The kind is the SESSION's own, read
+ * from its row by the trigger that writes the frame — not a name for what moved
+ * — which is what lets a panel watch one kind of session across a project that
+ * holds several.
+ */
+export function leadSessionResource(
+  session: string,
+  turn: string,
+  kind = "Lead",
+): string {
+  return JSON.stringify({ session, kind, turn });
 }

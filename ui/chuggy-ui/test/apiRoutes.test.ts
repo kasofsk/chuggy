@@ -11,10 +11,13 @@ import { expect, test } from "vitest";
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import {
   apiAgenticRefusals,
+  apiAskLead,
   apiConfiguration,
   apiDispatchView,
   apiExecutions,
   apiLead,
+  apiLeadInquiries,
+  apiLeadInquiry,
   apiLeadTranscript,
   apiNativeActions,
   apiProject,
@@ -246,6 +249,43 @@ test("the lead and its transcript hang from one segment, the store from two", as
   expect(held.urls[1]).toBe(
     `${partitionPath}/lead/transcript?stream=1a2b&after=4&limit=8`,
   );
+});
+
+/**
+ * The three doors of one question hang from the lead's own segment, and the
+ * listing takes no query at all — a limit or a cursor this console invented
+ * would be a query arm the route rejects the whole read for.
+ */
+test("the inquiries hang from the lead's segment and take no query", async () => {
+  const inquiry = {
+    session: "inq-1",
+    asker: "subject-1",
+    mine: true,
+    state: "Open",
+    turnState: "Queued",
+    ordinal: 1,
+    question: "why",
+    askedAt: "2026-09-01T11:00:00Z",
+  };
+  const held = recording((url) =>
+    url.endsWith("/inquiries") ? { inquiries: [] } : inquiry,
+  );
+  await apiLeadInquiries(held.ports, partition);
+  expect(held.urls[0]).toBe(`${partitionPath}/lead/inquiries`);
+  await apiLeadInquiry(held.ports, partition, "inq/1");
+  expect(held.urls[1]).toBe(`${partitionPath}/lead/inquiries/inq%2F1`);
+  const asking = recording(() => ({
+    session: "inq-1",
+    turn: "inq-turn-1",
+    ordinal: 1,
+  }));
+  const accepted = await apiAskLead(asking.ports, partition, {
+    session: "inq-1",
+    turn: "inq-turn-1",
+    question: "why",
+  });
+  expect(asking.urls[0]).toBe(`${partitionPath}/lead/inquiries`);
+  expect(accepted.outcome).toBe("Ok");
 });
 
 test("the standing refusals are read across the project", async () => {

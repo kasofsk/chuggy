@@ -6,6 +6,12 @@
  * moving rewrites the head and raises the batch count the transcript walks to
  * and the page is live by construction. A project with no lead answers `404`,
  * which is a page saying so rather than five empty panels.
+ *
+ * WHAT A READER HAS TYPED AT THE INQUIRY BOX IS NOT HELD HERE. This page is
+ * replaced outright by a click on any sibling screen, and the pair a box holds
+ * is the token that makes a re-send a retry rather than a second question — so
+ * it lives in `lead/inquiryBoxes.ts`, which no navigation reaches, and this
+ * page only reads it.
  */
 
 import { useParams } from "@tanstack/react-router";
@@ -39,6 +45,8 @@ import { usePanelList } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { LeadDecisions } from "./lead/LeadDecisions.tsx";
+import { LeadInquiries, useInquiryBoxes } from "./lead/LeadInquiries.tsx";
+import type { InquiryBoxesHeld } from "./lead/LeadInquiries.tsx";
 import { LeadRefusals } from "./lead/LeadRefusals.tsx";
 import {
   LeadHolding,
@@ -180,6 +188,7 @@ function LeadTurns(props: { readonly lead: LeadResponse }): ReactNode {
 function LeadBody(props: {
   readonly partition: PartitionIdentity;
   readonly state: PanelState<LeadResponse>;
+  readonly inquiries: InquiryBoxesHeld;
   readonly nowMs: number;
 }): ReactNode {
   const lead = props.state.state === "Ready" ? props.state.value : undefined;
@@ -205,6 +214,12 @@ function LeadBody(props: {
       <LeadLog held={held} stream={lead?.agentReference} listed={listed} />
       <LeadDecisions partition={props.partition} nowMs={props.nowMs} />
       <LeadRefusals partition={props.partition} nowMs={props.nowMs} />
+      <LeadInquiries
+        partition={props.partition}
+        head={lead?.agentReference}
+        held={props.inquiries}
+        nowMs={props.nowMs}
+      />
     </>
   );
 }
@@ -217,11 +232,17 @@ export function LeadPage(): ReactNode {
   };
   const nowMs = useNowMs();
   const state = useLead(partition);
+  const inquiries = useInquiryBoxes();
   if (state.state === "Absent")
     return <EmptyState label="No lead" variant="page" />;
   return (
     <div className="lead">
-      <LeadBody partition={partition} state={state} nowMs={nowMs} />
+      <LeadBody
+        partition={partition}
+        state={state}
+        inquiries={inquiries}
+        nowMs={nowMs}
+      />
     </div>
   );
 }
