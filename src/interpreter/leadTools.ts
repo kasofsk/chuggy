@@ -25,15 +25,17 @@
  * what the selector refuses is the decision that used it. A control described
  * as stronger than it is, is worse than none.
  *
- * THE ROSTER NAMES READS THE TREE DOES NOT YET SERVE. `list_drafts` reaches
- * `GET .../drafts`, whose page shapes are declared in `./authoring.ts` and whose
- * `AuthoringStore.drafts` and `NativeWeb.drafts` will be declared beside the
- * migration that gives them a definer to read through, because the tree's
- * production store is a postgres adapter that could not implement the method
- * before then, and the test double beside it is not what the port is for. The
- * three thread reads are the same case against the routes `./thread.ts` names.
- * The image's `chuggyToolsNotYetServed` is where each says so to a caller, and
- * an entry there is deleted by the change that registers its route.
+ * THE ROSTER NAMES READS THE TREE DOES NOT YET SERVE. The three thread reads
+ * reach routes `./thread.ts` names and nothing serves yet. The image's
+ * `chuggyToolsNotYetServed` is where each says so to a caller, and an entry
+ * there is deleted by the change that registers its route.
+ *
+ * A ROSTER IS ALSO AN ALLOWLIST, AND THE TWO ARE ONE LIST. What the pod may
+ * reach for is enforced inside the pod; what a finished decision may have used
+ * is `toolAllowlist`, which the installation is seeded with and which admitted
+ * everything until a lead held tools. The seeded list is therefore derived from
+ * the roster a lead is opened with rather than written beside it, and the
+ * runtime built-ins it also carries are held to the image's own.
  *
  * DERIVED WORK ONLY IS THE LEAD'S RULE, AND THE MODEL IS WHY. `DraftAuthor`
  * carries no bare create: a dependent is filed against a parent that already
@@ -157,6 +159,35 @@ export function chuggyToolNames(
     .filter((tool) => admitted.has(tool))
     .map((tool) => `${chuggyToolPrefix}${tool}`);
 }
+
+/**
+ * What a lead is opened holding: not `RunCommands`, because running the tree's
+ * own gates is what a thread is for, and not `RepositoryWrite`, because a lead
+ * that edited its checkout would be writing to a copy nothing reads.
+ */
+export const leadSessionCapabilities = [
+  "RepositoryRead",
+  "ProjectRead",
+  "DraftAuthor",
+  "LeadDecision",
+] as const satisfies readonly SessionCapability[];
+
+/**
+ * The agent runtime's own tools a lead's roster admits, written here because the
+ * image declares them and `images/worker/` is not reachable from `src/`; the
+ * copies are held together by `test/contract/imageTools.test.mjs`.
+ */
+export const leadBuiltInTools = ["Glob", "Grep", "Read"] as const;
+
+/**
+ * Every tool name a lead's decision may report, in roster order, which is what
+ * the installation narrows `toolAllowlist` to: a wildcard admits everything, so
+ * a lead holding tools would be judged by a control that checked nothing.
+ */
+export const leadToolAllowlist: readonly string[] = [
+  ...leadBuiltInTools,
+  ...chuggyToolNames(leadSessionCapabilities),
+];
 
 /**
  * The relation a filed dependent may carry, and the one it may not. A follow-up

@@ -330,6 +330,16 @@ export const leadObjectivesFixedCharsMax = 4_096;
 export const sessionSystemPromptCharsMax =
   selectorSettingsTextCharsMax * 2 + leadObjectivesFixedCharsMax;
 
+/**
+ * Every kind of session's own ceiling on the objectives it is opened with,
+ * which share one column: a kind added here widens what that column holds, and
+ * the check must then be replaced where it was last written.
+ */
+export const sessionPromptCeilings = [sessionSystemPromptCharsMax] as const;
+
+/** What `agent_session.system_prompt` holds, whichever kind of session wrote it. */
+export const agentSessionPromptCharsMax = Math.max(...sessionPromptCeilings);
+
 /** The most digits a cursor the observation carries may be written with. */
 export const cursorDigitsCharsMax = 20;
 
