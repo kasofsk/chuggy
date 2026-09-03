@@ -1775,10 +1775,12 @@ test("a delivery keyed by a ticket its command does not dispatch is unreadable",
 });
 
 /**
- * Every definer 064 dropped and re-created, with the roles it answers to. A
- * dropped function takes its owner, its revoke and its grants with it, and a
- * function re-created without its revoke is executable by the world — the
- * defect this tree has already found twice.
+ * Every definer 064 dropped and re-created, with the roles it answers to: a
+ * drop takes the owner, the `search_path` pin, the revoke and the grants with
+ * it, and a re-create that loses one of them is world-executable or is resolved
+ * under the caller's path. The pin is the arm no functional case can find,
+ * because an unpinned definer answers an ordinary caller exactly as a pinned one
+ * does and differs only for one that has shadowed a relation in `pg_temp`.
  */
 const i5SliceDefiners: readonly (readonly [
   string,
@@ -1808,18 +1810,26 @@ const i5SelectorRoles = [
   ticketServiceRole,
 ];
 
-test("each definer this slice re-created is owned, world-revoked and granted where it was", async () => {
+test("each definer this slice re-created is owned, pinned, world-revoked and granted where it was", async () => {
   for (const [name, signature, granted] of i5SliceDefiners) {
     const identity = `${name}(${signature})`;
     assert.deepEqual(
       await harness.query(
         `SELECT prosecdef AS definer,pg_get_userbyid(proowner) AS owner,
+                array_to_string(proconfig,',') AS settings,
                 EXISTS(SELECT 1 FROM aclexplode(proacl) entry
                         WHERE entry.grantee=0) AS world
            FROM pg_proc WHERE oid=$1::regprocedure`,
         [identity],
       ),
-      [{ definer: true, owner: boundaryOwnerRole, world: false }],
+      [
+        {
+          definer: true,
+          owner: boundaryOwnerRole,
+          settings: "search_path=pg_catalog, public, pg_temp",
+          world: false,
+        },
+      ],
       identity,
     );
     for (const role of i5SelectorRoles)
