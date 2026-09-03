@@ -37,12 +37,24 @@
  *
  * THE REPOSITORY IS RESOLVED PER SESSION AND A PROJECT THAT BINDS NONE IS
  * PLACED ANYWAY. Which repository a session reads is the project's own binding
- * rather than the site's policy, so it is read here, once per placement, and a
- * project with no binding places a session with no checkout: the session reads
- * the project through the API and has no tree. A binding read that *fails*
- * stops the pass instead, because placing every session with no checkout is
- * how a missing grant would look, and a control that degrades silently is one
- * nobody can tell from a working one.
+ * rather than the site's policy, so it is read here, once per placement — per
+ * *placement*, not per tenant: the binding is a project fact, one page of
+ * `awaitingPlacement` routinely carries several projects of one tenant, and a
+ * session handed another project's reference would clone another project's
+ * tree and `cwd` its model into it. A project with no binding places a session
+ * with no checkout: the session reads the project through the API and has no
+ * tree. A binding read that *fails* stops the pass instead, because placing
+ * every session with no checkout is how a missing grant would look, and a
+ * control that degrades silently is one nobody can tell from a working one.
+ *
+ * THAT READ NEEDS A GRANT THIS TREE DOES NOT YET CARRY. The pass runs as
+ * `chuggy_scheduler`, and every `GRANT EXECUTE ON FUNCTION
+ * read_project_repository_binding` in the ledger names some other role;
+ * slice 3's migration 061 adds the scheduler's. Until it lands, the first
+ * placement of every deployment raises `permission denied` and — by the
+ * paragraph above — stops the session half of the pass.
+ * `test/postgres/sessionPrivileges.test.ts` asserts the grant and is what says
+ * when this is no longer true.
  */
 
 import type { AgentSession, SessionAttemptId } from "./agentSession.ts";

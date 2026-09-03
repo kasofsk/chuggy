@@ -950,3 +950,56 @@ test("moving cwd to the checkout does not move the store stream a resumed sessio
   assert.deepEqual(written[0], ["/v1/session/store/runtime-1/1"]);
   assert.deepEqual(written[1], written[0]);
 });
+
+/**
+ * The clone is the longest thing the pod does before its first turn, and the
+ * attempt's lease is already running down when the pod starts. So the heartbeat
+ * must be beating while git runs: a clone slower than what is left of the lease
+ * is reaped mid-clone, and the pod then opens its runtime against a fenced
+ * attempt and is refused every call it makes.
+ */
+test("the lease is beating before the clone starts", async () => {
+  const plane = planeOf([], facts);
+  const { query } = queryOf(() => []);
+  const order = [];
+
+  await run({
+    request: plane.request,
+    query,
+    lease: () => {
+      order.push("lease");
+      return async () => undefined;
+    },
+    checkout: async () => {
+      order.push("checkout");
+      return undefined;
+    },
+  });
+
+  assert.deepEqual(order, ["lease", "checkout"]);
+});
+
+/**
+ * The scrub the checkout is handed must be the one built from this pod's
+ * secrets, not the identity function `sessionMain` starts with. Asserting it at
+ * the parameter would pass with either, so it is asserted at the wiring: what
+ * the checkout was actually given, redacting what a failed clone could print.
+ */
+test("the checkout is handed the scrub built from this pod's own secrets", async () => {
+  const plane = planeOf([], facts);
+  const { query } = queryOf(() => []);
+  let handed;
+
+  await run({
+    request: plane.request,
+    query,
+    checkout: async (_task, _repositories, _files, _workspace, logging) => {
+      handed = logging.scrub;
+      return undefined;
+    },
+  });
+
+  const printed = handed(`git failed: token ${token} bearer ${bearer}`);
+  assert.ok(!printed.includes(token), "a failed clone would print the token");
+  assert.ok(!printed.includes(bearer), "a failed clone would print the bearer");
+});

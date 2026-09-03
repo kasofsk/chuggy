@@ -19,6 +19,8 @@ import {
 } from "../../src/interpreter/executionScheduler.ts";
 import type { ExecutionSchedulerService } from "../../src/interpreter/executionSchedulerRun.ts";
 import { finalizerDefaults } from "../../src/interpreter/finalizer.ts";
+import { sessionSchedulerDefaults } from "../../src/interpreter/sessionScheduler.ts";
+import type { SessionSchedulerService } from "../../src/interpreter/sessionSchedulerRun.ts";
 import { blessedPracticeCatalog } from "../../src/interpreter/taskBriefing.ts";
 import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
 
@@ -45,4 +47,33 @@ export const schedulerRootService: Omit<
   ticketService: ticketServiceDefaults,
   finalizer: finalizerDefaults,
   metrics: silentSchedulerTelemetry,
+};
+
+/** Everything `schedulerProcessRootSessions` takes but the ports it opens for itself. */
+export const schedulerRootSessions: Omit<
+  SessionSchedulerService,
+  "store" | "bindings"
+> = {
+  placement: {
+    place: () =>
+      Promise.resolve({ placed: "Unavailable", retryAfterSeconds: 1 }),
+    cancel: () => Promise.resolve({ cancelled: "Accepted" }),
+  },
+  bearers: {
+    mint: () => {
+      throw new Error("the scheduler root suite mints no session bearer");
+    },
+  },
+  policy: {
+    profile: { profile: "session", runtimeVersion: "1" },
+    image: "registry.invalid/session:1",
+    grant: {
+      tools: [],
+      credentials: [],
+      network: false,
+      filesystem: "None",
+      mayCompleteTask: false,
+    },
+  },
+  config: sessionSchedulerDefaults,
 };

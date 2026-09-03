@@ -48,6 +48,20 @@ const sessionCheckoutDirectory = "repository";
 /** What one git call may print back, matching the worker's own ceiling. */
 const sessionCheckoutBufferBytesMax = 16 * 1024 * 1024;
 
+/**
+ * A hard wall-clock bound on one git call. `execFile` has none by default, so a
+ * remote that accepts the connection and then stalls would hang the pod before
+ * its first turn with nothing but the pod's `activeDeadlineSeconds` beneath it,
+ * and a hang before the first turn is a session that never reports why.
+ *
+ * IT IS THE IMAGE'S RATHER THAN THE LAUNCHER'S, which is the shape
+ * `chuggyToolTimeoutMs` already has: a ceiling on one call the pod makes, not a
+ * loop a deployment chose the size of, and the bounds `checkedSessionBounds`
+ * refuses to invent are the latter. Exceeding it is the degraded arm below, so
+ * a stalled remote is a lead with no tree rather than a pod nobody can settle.
+ */
+export const sessionCheckoutTimeoutMs = 300_000;
+
 async function git(args, options) {
   return executeFile("git", args, {
     maxBuffer: sessionCheckoutBufferBytesMax,
@@ -85,10 +99,14 @@ export async function sessionCheckout(
     throw new Error(`session authority does not grant ${credential}`);
   const directory = join(workspace, sessionCheckoutDirectory);
   try {
-    await run(["clone", repository, directory], { env: environment });
+    await run(["clone", repository, directory], {
+      env: environment,
+      timeout: sessionCheckoutTimeoutMs,
+    });
     const { stdout } = await run(["rev-parse", "HEAD"], {
       cwd: directory,
       env: environment,
+      timeout: sessionCheckoutTimeoutMs,
     });
     const commit = stdout.trim();
     log(`session checkout ${reference} at ${commit}\n`);

@@ -333,10 +333,17 @@ export function messageReader(stream, pause) {
  * checkout's `CLAUDE.md`, and `settingSources` must name `'project'` for it to.
  * A session with no checkout has no `CLAUDE.md` to load and the option is inert
  * for it — but naming the one source is narrower than omitting the option, which
- * loads the pod's user and local settings too. What the checkout's project
- * settings enable beyond that is measured rather than assumed: the plugins
- * `.claude/settings.json` names cannot be fetched from a pod, and the runtime
- * reports none loaded, with no warning and no start it delayed.
+ * loads the pod's user and local settings too.
+ *
+ * WHAT THAT ADMITS IS THE BOUND REPOSITORY'S OWN `.claude/settings.json`, all
+ * of it — hooks and permissions included, under `permissionMode:
+ * "bypassPermissions"`, beside this pod's credentials. That is the project's
+ * tree deciding what its own lead may do, which is the same authority the tree
+ * already has over the work attempts it runs; it is stated here because
+ * `settingSources` is where it is granted. Of what one tree happened to
+ * contain: plugins are measured rather than assumed — the marketplace a pod
+ * cannot reach means the runtime reports none loaded, with no warning and no
+ * start it delayed.
  *
  * `snapshot: true` RECORDS THE RENDERED PROMPT FOR THE CONVERSATION instead of
  * re-rendering it every request. A prompt changed mid-session therefore takes
@@ -707,6 +714,7 @@ export async function sessionMain(services = {}) {
     ensureDirectory = (path) => mkdir(path, { recursive: true }),
     warn = (text) => process.stderr.write(text),
     checkout: takeCheckout = sessionCheckout,
+    lease: startLease = sessionLease,
   } = services;
   let scrub = (text) => text;
   let stopLease = async () => undefined;
@@ -734,7 +742,7 @@ export async function sessionMain(services = {}) {
     context.scrub = scrub;
     const workspace = environment.CHUG_WORKER_WORKSPACE ?? defaultWorkspace;
     await ensureDirectory(sessionConfigDirectory(environment, workspace));
-    stopLease = sessionLease(task, bearer, request);
+    stopLease = startLease(task, bearer, request);
     const checkout = await sessionTree(
       takeCheckout,
       task,

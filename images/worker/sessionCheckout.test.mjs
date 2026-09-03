@@ -13,7 +13,10 @@ import { join } from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 
-import { sessionCheckout } from "./sessionCheckout.mjs";
+import {
+  sessionCheckout,
+  sessionCheckoutTimeoutMs,
+} from "./sessionCheckout.mjs";
 
 const run = promisify(execFile);
 
@@ -174,4 +177,47 @@ test("what a failed clone says is scrubbed before it is written", async () => {
     assert.ok(!logged[0].includes(secret), "a failed clone printed a secret");
     assert.ok(logged[0].includes("[redacted]"));
   });
+});
+
+test("every git call the clone makes carries a wall-clock bound", async () => {
+  const options = [];
+
+  await sessionCheckout(
+    taskOf(),
+    repositories("/nowhere"),
+    credentialFiles,
+    "/workspace",
+    {
+      run: (_args, given) => {
+        options.push(given);
+        return { stdout: `${"c".repeat(40)}\n` };
+      },
+      log: () => undefined,
+    },
+  );
+
+  assert.equal(options.length, 2);
+  for (const given of options)
+    assert.equal(given.timeout, sessionCheckoutTimeoutMs);
+});
+
+test("a git call that runs past its bound leaves the session with no tree", async () => {
+  const logged = [];
+
+  const checkout = await sessionCheckout(
+    taskOf(),
+    repositories("/nowhere"),
+    credentialFiles,
+    "/workspace",
+    {
+      run: (_args, given) =>
+        Promise.reject(
+          new Error(`git was killed after ${String(given.timeout)}ms`),
+        ),
+      log: (text) => logged.push(text),
+    },
+  );
+
+  assert.equal(checkout, undefined);
+  assert.match(logged[0], /killed after 300000ms/u);
 });

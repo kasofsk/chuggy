@@ -851,10 +851,14 @@ test("the same tick places the session waiting for a pod, after the worker", asy
 });
 
 /**
- * The binding reaches the pod, through the whole composition rather than
- * through the pass alone: the root is where the read is wired, so a root that
- * wired nothing would place every session with no tree and every unit test
- * below this one would still pass.
+ * The binding reaches the pod: the pass puts it on the placement and the
+ * adapter emits it into `CHUG_SESSION_TASK`, which neither tier alone can say.
+ *
+ * IT DOES NOT SAY THE ROOT WIRED THE READ. This case composes the session
+ * service by hand and calls `schedulerProcess` directly, so the `bindings` it
+ * proves is its own fake. What the real root reaches for is
+ * `test/postgres/schedulerRoot.test.ts`, against a real pool as the scheduler's
+ * own role.
  */
 test("the session pod is handed the repository its project binds", async () => {
   const found = JSON.parse(
