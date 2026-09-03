@@ -123,6 +123,7 @@ import {
 } from "./leadRead.ts";
 import {
   selectorHistory,
+  type SelectorHistoryQuery,
   type SelectorHistoryRead,
   type SelectorHistoryStore,
 } from "./selectorHistory.ts";
@@ -472,8 +473,7 @@ export interface NativeWeb {
   selectorHistory(
     principal: Principal,
     partition: Partition,
-    after: number | undefined,
-    limit: number,
+    query: SelectorHistoryQuery,
   ): Promise<SelectorHistoryRead>;
   executions(
     principal: Principal,
@@ -1231,12 +1231,11 @@ function nativeLeadRecordMethods(
           : { standing: found.standing }),
       };
     },
-    selectorHistory: (principal, partition, after, limit) =>
+    selectorHistory: (principal, partition, query) =>
       selectorHistory(access, composedLeadPorts(leads).history).read(
         principal,
         partition,
-        after,
-        limit,
+        query,
       ),
   };
 }

@@ -42,10 +42,6 @@ import {
   postgresSelectorState,
 } from "./adapters/postgres/selector.ts";
 import { authorizedProjectInventory } from "./interpreter/projectInventory.ts";
-import {
-  selectorHistory,
-  type SelectorHistory,
-} from "./interpreter/selectorHistory.ts";
 import type {
   SelectorPolicyHost,
   SelectorRuntimeSettingsSource,
@@ -138,7 +134,6 @@ export interface TicketService {
 
 export interface SelectorService {
   readonly state: SelectorStateStore;
-  readonly history: SelectorHistory;
   readonly settings: SelectorRuntimeSettingsSource;
   readonly administration: SelectorRuntimeAdministration;
   readonly reviews: SelectorProposalReviews;
@@ -176,7 +171,6 @@ export function composeSelectorService(
   const state = postgresSelectorState(selectorPool);
   return {
     state,
-    history: selectorHistory(access, state),
     settings: postgresSelectorRuntimeControl(selectorPool),
     administration: selectorRuntimeAdministration(
       administrationAccess,

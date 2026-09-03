@@ -10,11 +10,10 @@
  * service's role unnecessary, and a second credential in a deployment is a
  * second thing to leak.
  *
- * THE SHAPES ARE THIS FILE'S UNTIL THE READ SIDE IS ROUTED. `history` and
- * `planningIntent` answer the two members of `SelectorStateStore` the console's
- * decision log needs, so the port they satisfy is the narrowing that store
- * already declares; the lead's own standing has no interpreter port yet and
- * this module names what it answers rather than inventing one elsewhere.
+ * THE SHAPES ARE THE INTERPRETER'S. `LeadReadStore` and `SelectorHistoryStore`
+ * are declared beside the reads that need them, and this module answers them; a
+ * shape declared here would be an adapter telling the layer above it what it may
+ * ask for.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -28,13 +27,6 @@ import {
   asSessionId,
   asSessionStoreStream,
   asSessionTurnId,
-  type SessionId,
-  type SessionState,
-  type SessionTurnFailure,
-  type SessionTurnId,
-  type SessionTurnInputKind,
-  type SessionTurnMeasured,
-  type SessionTurnState,
 } from "../../interpreter/agentSession.ts";
 import { allSessionTurnStates } from "../../interpreter/agentSession.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
@@ -49,6 +41,12 @@ import type {
   SessionStoreBatchRow,
   SessionStoreStreamRow,
 } from "../../interpreter/sessionPlane.ts";
+import type {
+  LeadReadStore,
+  LeadStanding,
+  LeadTurnRecord,
+} from "../../interpreter/leadRead.ts";
+import type { SelectorHistoryStore } from "../../interpreter/selectorHistory.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
   selectorInteractionRecord,
@@ -61,50 +59,16 @@ import {
   type SessionTurnMeasureRow,
 } from "./sessionRows.ts";
 
-/** One turn of the lead's mailbox tail, with what the pod measured of it. */
-export interface LeadTurnRead {
-  readonly turn: SessionTurnId;
-  readonly ordinal: number;
-  readonly inputKind: SessionTurnInputKind;
-  readonly state: SessionTurnState;
-  readonly failure?: SessionTurnFailure;
-  readonly measured?: SessionTurnMeasured;
-  readonly batchFirst?: number;
-  readonly batchLast?: number;
-}
-
 /**
- * The project's lead as a reader sees it: the session, what the selector has
- * recorded about the project, and the tail of the mailbox, newest last.
+ * Every read the API has onto a lead and the decisions behind it: the ports the
+ * interpreter declares, plus the seeding tail and the planning intent no route
+ * answers yet.
  */
-export interface LeadRead {
-  readonly session: SessionId;
-  readonly state: SessionState;
-  readonly attention: SelectorProjectState["attention"];
-  readonly agentReference?: string;
-  readonly notificationCursor: number;
-  readonly handoffNote: string;
-  readonly turns: readonly LeadTurnRead[];
-}
-
-/** Every read the API has onto a lead and the decisions behind it. */
-export interface LeadReadStore extends Pick<
-  SelectorStateStore,
-  "history" | "planningIntent"
-> {
-  lead(partition: Partition, turnsMax: number): Promise<LeadRead | undefined>;
-  batches(
-    partition: Partition,
-    query: {
-      readonly stream: string;
-      readonly after: number;
-      readonly limit: number;
-    },
-  ): Promise<readonly SessionStoreBatchRow[]>;
-  streams(
-    partition: Partition,
-    max: number,
-  ): Promise<readonly SessionStoreStreamRow[]>;
+export interface PostgresLeadReads
+  extends
+    LeadReadStore,
+    SelectorHistoryStore,
+    Pick<SelectorStateStore, "planningIntent"> {
   /** The newest decisions first, which is what seeds a lead that has no transcript. */
   tail(
     partition: Partition,
@@ -139,7 +103,7 @@ const leadAttentions: readonly SelectorProjectState["attention"][] = [
 ];
 
 /** The turn a standing row carries, or nothing where the lead has taken none. */
-function leadTurnRead(row: LeadStandingRow): LeadTurnRead | undefined {
+function leadTurnRead(row: LeadStandingRow): LeadTurnRecord | undefined {
   if (row.turn === null) return undefined;
   const measured = sessionTurnMeasuredOf(row);
   return {
@@ -182,7 +146,23 @@ function leadTurnRead(row: LeadStandingRow): LeadTurnRead | undefined {
  * the tail is joined to them, so the first row answers them and the turn of
  * each row extends the tail.
  */
-function leadReadOf(rows: readonly LeadStandingRow[]): LeadRead | undefined {
+/**
+ * The note as the interpreter reads it. The column holds the text the lead
+ * wrote, and a note no reader can parse is answered as absent rather than
+ * refusing the whole read: the session's standing is what the page came for.
+ */
+function leadHandoffNote(value: string | null): JsonValue {
+  if (value === null) return null;
+  try {
+    return jsonValueSchema.parse(JSON.parse(value));
+  } catch {
+    return null;
+  }
+}
+
+function leadReadOf(
+  rows: readonly LeadStandingRow[],
+): LeadStanding | undefined {
   const head = rows[0];
   if (head === undefined) return undefined;
   return {
@@ -204,7 +184,7 @@ function leadReadOf(rows: readonly LeadStandingRow[]): LeadRead | undefined {
       sessionRowText(head.notification_cursor, "notification cursor"),
       "selector notification cursor",
     ),
-    handoffNote: sessionRowText(head.handoff_note, "handoff note"),
+    handoffNote: leadHandoffNote(head.handoff_note),
     turns: rows.flatMap((row) => {
       const turn = leadTurnRead(row);
       return turn === undefined ? [] : [turn];
@@ -277,7 +257,7 @@ async function leadStanding(
   pool: pg.Pool,
   partition: Partition,
   turnsMax: number,
-): Promise<LeadRead | undefined> {
+): Promise<LeadStanding | undefined> {
   const found = await pool.query<LeadStandingRow>(
     sql`SELECT session,session_state,agent_reference,attention,
                notification_cursor::text AS notification_cursor,handoff_note,
@@ -294,13 +274,14 @@ async function leadStanding(
 
 async function leadStoreBatches(
   pool: pg.Pool,
-  partition: Partition,
   query: {
+    readonly partition: Partition;
     readonly stream: string;
     readonly after: number;
     readonly limit: number;
   },
 ): Promise<readonly SessionStoreBatchRow[]> {
+  const partition = query.partition;
   const found = await pool.query<{
     batch: string | null;
     digest: string | null;
@@ -396,13 +377,19 @@ async function leadPlanningIntent(
 }
 
 /** Every read the API has onto a lead, over the API's own pool. */
-export function postgresLeadReads(pool: pg.Pool): LeadReadStore {
+export function postgresLeadReads(pool: pg.Pool): PostgresLeadReads {
   return {
-    lead: (partition, turnsMax) => leadStanding(pool, partition, turnsMax),
-    batches: (partition, query) => leadStoreBatches(pool, partition, query),
-    streams: (partition, max) => leadStoreStreams(pool, partition, max),
-    history: (partition, after, limit) =>
-      leadDecisionHistory(pool, partition, after, limit, false),
+    standing: (partition, turnsMax) => leadStanding(pool, partition, turnsMax),
+    batches: (query) => leadStoreBatches(pool, query),
+    streams: (partition, limit) => leadStoreStreams(pool, partition, limit),
+    history: (partition, query) =>
+      leadDecisionHistory(
+        pool,
+        partition,
+        query.after,
+        query.limit,
+        query.order === "newest",
+      ),
     tail: (partition, limit) =>
       leadDecisionHistory(pool, partition, undefined, limit, true),
     planningIntent: (partition) => leadPlanningIntent(pool, partition),

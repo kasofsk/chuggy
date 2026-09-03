@@ -34,10 +34,8 @@ import {
 } from "../../src/interpreter/nativeWeb.ts";
 import type { AgenticRefusalEntry } from "../../src/interpreter/agenticRefusal.ts";
 import type { LeadStanding } from "../../src/interpreter/leadRead.ts";
-import type {
-  SelectorInteractionRecord,
-  SelectorStateStore,
-} from "../../src/interpreter/selector.ts";
+import type { SelectorInteractionRecord } from "../../src/interpreter/selector.ts";
+import type { SelectorHistoryStore } from "../../src/interpreter/selectorHistory.ts";
 import type { SessionStoreRead } from "../../src/interpreter/sessionStore.ts";
 import { openExecutionBacklogGuard } from "../../src/interpreter/schedulerContext.ts";
 import {
@@ -179,6 +177,13 @@ const interaction: SelectorInteractionRecord = {
   completedAt: "2026-09-02T00:01:14.210Z",
 };
 
+/** Three decisions, oldest first, so both ends of the log are distinguishable. */
+const decisions: readonly SelectorInteractionRecord[] = [
+  { ...interaction, ordinal: 9, decision: "selector-decision-nine" },
+  { ...interaction, ordinal: 10, decision: "selector-decision-ten" },
+  interaction,
+];
+
 interface LeadCase {
   readonly allowed?: boolean;
   readonly standing?: LeadStanding | undefined;
@@ -234,8 +239,15 @@ function readStore(ticketVersion: number): NativeReadStore {
 
 function leadPorts(shape: LeadCase): NativeLeadPorts {
   const draws = shape.draws ?? [];
-  const history: Pick<SelectorStateStore, "history"> = {
-    history: () => Promise.resolve([interaction]),
+  const history: SelectorHistoryStore = {
+    history: (_partition, query) =>
+      Promise.resolve(
+        query.order === "newest"
+          ? [...decisions].reverse().slice(0, query.limit)
+          : decisions
+              .filter((each) => each.ordinal > (query.after ?? 0))
+              .slice(0, query.limit),
+      ),
   };
   return {
     leads: {
@@ -740,14 +752,70 @@ test("the decision log draws what a decision did, never what it saw", async () =
   });
   assert.equal(found.statusCode, 200);
   const body = selectorHistoryResponseSchema.parse(found.json());
-  const decision = body.decisions[0];
+  assert.equal(body.decisions.length, 1);
+  const decision = body.decisions.at(-1);
   assert.deepEqual(decision?.dispatched, [41]);
   assert.deepEqual(decision?.refused, [42]);
   assert.deepEqual(decision?.lifted, [40]);
   assert.equal(decision?.attention, "Attention");
   assert.equal(decision?.costMicros, 182_000);
-  assert.equal(body.nextAfter, 11);
+  assert.equal(
+    body.nextAfter,
+    9,
+    "a full page names where the next one starts",
+  );
   assert.ok(!found.body.includes(interaction.instructions));
+});
+
+test("the newest arm answers one page of the log, from its far end", async () => {
+  await using app = appOf();
+  const newest = selectorHistoryResponseSchema.parse(
+    (
+      await app.inject({
+        url: `${root}/selector-history?order=newest&limit=2`,
+        headers: authorized,
+      })
+    ).json(),
+  );
+  assert.deepEqual(
+    newest.decisions.map((each) => each.ordinal),
+    [11, 10],
+    "the last decisions, newest first",
+  );
+  assert.equal(
+    newest.nextAfter,
+    undefined,
+    "the newest page is one page and continues nowhere",
+  );
+  const oldest = selectorHistoryResponseSchema.parse(
+    (
+      await app.inject({
+        url: `${root}/selector-history?limit=2`,
+        headers: authorized,
+      })
+    ).json(),
+  );
+  assert.deepEqual(
+    oldest.decisions.map((each) => each.ordinal),
+    [9, 10],
+    "and the default arm still walks forward",
+  );
+  assert.equal(oldest.nextAfter, 10);
+});
+
+test("a cursor into the newest page, and an order nobody knows, are refused", async () => {
+  await using app = appOf();
+  for (const query of [
+    "order=newest&after=10",
+    "order=sideways",
+    "order=Newest",
+  ]) {
+    const found = await app.inject({
+      url: `${root}/selector-history?${query}`,
+      headers: authorized,
+    });
+    assert.equal(found.statusCode, 400, query);
+  }
 });
 
 test("a page bound the wire does not admit is refused, never clamped", async () => {

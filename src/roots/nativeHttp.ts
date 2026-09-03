@@ -35,6 +35,11 @@ import {
 } from "../compose.ts";
 import type { IdempotencyKeying } from "../adapters/postgres/keying.ts";
 import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
+import { postgresLeadReads } from "../adapters/postgres/leadReads.ts";
+import { postgresAgenticRefusalReads } from "../adapters/postgres/agenticRefusal.ts";
+import type pg from "pg";
+import type { NativeLeadPorts } from "../interpreter/nativeWeb.ts";
+import type { SessionStoreReadPort } from "../interpreter/sessionStore.ts";
 import {
   currentRuntimeSchemaContract,
   postgresRuntimeSchema,
@@ -377,6 +382,24 @@ async function nativeDatabasesReady(
   }
 }
 
+/**
+ * The lead's read side over the API pool and the artifact volume. The store the
+ * transcript is drawn from is the same one the run evidence is read through, so
+ * a deployment holds one artifact root and not two.
+ */
+function nativeLeadPorts(
+  pool: pg.Pool,
+  artifacts: SessionStoreReadPort,
+): NativeLeadPorts {
+  const leads = postgresLeadReads(pool);
+  return {
+    leads,
+    store: artifacts,
+    refusals: postgresAgenticRefusalReads(pool),
+    history: leads,
+  };
+}
+
 async function main(): Promise<void> {
   const keying = idempotencyKeying();
   const authenticationConfig = oidcConfig();
@@ -393,6 +416,9 @@ async function main(): Promise<void> {
     pools,
   );
   const access = postgresProjectAccess(pool);
+  const artifacts = artifactStore({
+    root: requiredEnvironment(artifactRootVariable),
+  });
   const web = composeNativeWeb(
     pool,
     keying,
@@ -401,9 +427,10 @@ async function main(): Promise<void> {
     undefined,
     undefined,
     undefined,
-    artifactStore({ root: requiredEnvironment(artifactRootVariable) }),
+    artifacts,
     selectorContextSource(pool, selectorReviewPool),
     repositoryConfigurationSnapshots(),
+    nativeLeadPorts(pool, artifacts),
   );
   const hub = nativeStreamHub(pool, web);
   const app = createNativeHttpApp(

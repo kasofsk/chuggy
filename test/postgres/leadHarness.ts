@@ -26,7 +26,7 @@ import {
 import { postgresLeadMailbox } from "../../src/adapters/postgres/leadMailbox.ts";
 import {
   postgresLeadReads,
-  type LeadReadStore,
+  type PostgresLeadReads,
 } from "../../src/adapters/postgres/leadReads.ts";
 import {
   apiRole,
@@ -53,7 +53,7 @@ export interface LeadRig {
   readonly writes: AgenticRefusalWrite;
   readonly selectorStanding: Pick<AgenticRefusalRead, "standing">;
   readonly apiRefusals: AgenticRefusalRead;
-  readonly apiLead: LeadReadStore;
+  readonly apiLead: PostgresLeadReads;
   readonly close: () => Promise<void>;
 }
 

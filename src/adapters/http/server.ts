@@ -33,6 +33,10 @@ import type { SelectorProjectSettingsAdministration } from "../../interpreter/se
 import { projectStreamSocket } from "./eventStream.ts";
 import { nativeHttpContractDocument } from "../../contract/document.ts";
 import {
+  selectorHistoryOrders,
+  type SelectorHistoryOrder,
+} from "../../contract/rosters.ts";
+import {
   agenticRefusalsAnsweredMax,
   nativeHttpBodyBytesMax,
   nativeHttpError,
@@ -564,6 +568,15 @@ function registerAgenticRefusals(
   );
 }
 
+/** Which end of the decision log a request asked for, defaulting to the oldest. */
+function selectorHistoryOrder(value: unknown): SelectorHistoryOrder {
+  if (value === undefined) return "oldest";
+  const order = selectorHistoryOrders.find((known) => known === value);
+  if (order === undefined)
+    throw new TypeError("selector history order is not a known order");
+  return order;
+}
+
 /** The decision log, beside the settings the decisions were made under. */
 function registerSelectorHistory(
   app: FastifyInstance,
@@ -571,18 +584,17 @@ function registerSelectorHistory(
   root: string,
 ): void {
   app.get(`${root}/selector-history`, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["after", "limit"]);
+    const query = fieldsOnly(request.query, ["after", "limit", "order"]);
     send(
       reply,
       selectorHistoryResponse(
-        await web.selectorHistory(
-          principalOf(request),
-          partitionOf(request),
-          query["after"] === undefined
-            ? undefined
-            : integerField(query, "after"),
-          integerField(query, "limit", selectorHistoryLimitMax),
-        ),
+        await web.selectorHistory(principalOf(request), partitionOf(request), {
+          ...(query["after"] === undefined
+            ? {}
+            : { after: integerField(query, "after") }),
+          limit: integerField(query, "limit", selectorHistoryLimitMax),
+          order: selectorHistoryOrder(query["order"]),
+        }),
       ),
     );
   });
