@@ -3,9 +3,10 @@
 The relations the PostgreSQL foundation owns, as the migrations that create
 them.
 
-issue #180 requires 5 things of every
-new mutable relation, so each one states them here rather than in a doc that
-would drift from the DDL beside it.
+issue #180 requires every new mutable relation to state, here, who owns it
+and which role writes it, its key and identity, what changes it and how
+unfinished work is found, rather than in a doc that would drift from the DDL
+beside it.
 
 `recovery_epoch` — the global, unpredictable, never-reused epoch a restore
 advances before it permits any mutation. Owned by the control plane; the
