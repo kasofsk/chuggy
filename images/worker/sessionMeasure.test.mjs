@@ -163,6 +163,110 @@ test("the tools a turn reports are the distinct ones its assistant named", async
   assert.deepEqual(answers, [["Bash", "Read"], []]);
 });
 
+/** One assistant message calling each of these, and the result for each id. */
+const calling = (...calls) => ({
+  type: "assistant",
+  message: {
+    role: "assistant",
+    content: calls.map(([id, name]) => ({ type: "tool_use", id, name })),
+  },
+});
+const answering = (...results) => ({
+  type: "user",
+  message: {
+    role: "user",
+    content: results.map(([id, content, isError]) => ({
+      type: "tool_result",
+      tool_use_id: id,
+      content,
+      ...(isError === undefined ? {} : { is_error: isError }),
+    })),
+  },
+});
+
+/** The refusal kasofsk/chuggy#561 was measured on, as the runtime wrote it. */
+const notServed =
+  "<tool_use_error>Error: No such tool available: ToolSearch. ToolSearch is disabled for this session, in subagents as well as here.</tool_use_error>";
+
+test("a tool the runtime refused to serve is not a tool the turn reports using", async () => {
+  for (const content of [notServed, [{ type: "text", text: notServed }]]) {
+    const plane = planeOf([turnOne], facts);
+    const { query } = queryOf(() => [
+      {
+        type: "system",
+        subtype: "init",
+        session_id: "runtime-1",
+        model: "haiku",
+      },
+      calling(["tu-1", "ToolSearch"], ["tu-2", "mcp__chuggy__dispatch"]),
+      answering(["tu-1", content, true], ["tu-2", "dispatched", undefined]),
+      result("success", { result: "ok", modelUsage: spent, duration_ms: 1 }),
+    ]);
+
+    await run({ request: plane.request, query });
+
+    assert.deepEqual(answerOf(plane).measured.tools, ["mcp__chuggy__dispatch"]);
+  }
+});
+
+test("a tool that ran and errored is a tool the turn used", async () => {
+  const plane = planeOf([turnOne], facts);
+  const { query } = queryOf(() => [
+    {
+      type: "system",
+      subtype: "init",
+      session_id: "runtime-1",
+      model: "haiku",
+    },
+    calling(["tu-1", "Bash"]),
+    answering(["tu-1", "bash: chuggy: command not found", true]),
+    result("success", { result: "ok", modelUsage: spent, duration_ms: 1 }),
+  ]);
+
+  await run({ request: plane.request, query });
+
+  assert.deepEqual(answerOf(plane).measured.tools, ["Bash"]);
+});
+
+test("a tool refused once and served once is a tool the turn used", async () => {
+  const plane = planeOf([turnOne], facts);
+  const { query } = queryOf(() => [
+    {
+      type: "system",
+      subtype: "init",
+      session_id: "runtime-1",
+      model: "haiku",
+    },
+    calling(["tu-1", "Bash"]),
+    answering(["tu-1", notServed, true]),
+    calling(["tu-2", "Bash"]),
+    answering(["tu-2", "ok"]),
+    result("success", { result: "ok", modelUsage: spent, duration_ms: 1 }),
+  ]);
+
+  await run({ request: plane.request, query });
+
+  assert.deepEqual(answerOf(plane).measured.tools, ["Bash"]);
+});
+
+test("a call the runtime has not answered yet is a tool the turn used", async () => {
+  const plane = planeOf([turnOne], facts);
+  const { query } = queryOf(() => [
+    {
+      type: "system",
+      subtype: "init",
+      session_id: "runtime-1",
+      model: "haiku",
+    },
+    calling(["tu-1", "Bash"]),
+    result("success", { result: "ok", modelUsage: spent, duration_ms: 1 }),
+  ]);
+
+  await run({ request: plane.request, query });
+
+  assert.deepEqual(answerOf(plane).measured.tools, ["Bash"]);
+});
+
 test("a turn naming more tools than a row holds reports the bound and no more", async () => {
   const plane = planeOf([turnOne], facts);
   const named = Array.from(

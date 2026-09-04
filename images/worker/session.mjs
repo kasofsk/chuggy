@@ -208,16 +208,60 @@ function measuredText(value, charsMax) {
   return value.replaceAll("\u0000", "").slice(0, charsMax).toWellFormed();
 }
 
-/** The tools one message called, which the runtime names in the assistant's own blocks. */
-function messageToolNames(message) {
+/**
+ * What the runtime answers a call to a tool it does not serve. It is the one
+ * refusal this pod reads, because it is the one that says the call never ran: a
+ * tool that ran and returned an error IS a tool the turn used, and treating
+ * every `is_error` result as a non-use would hide exactly the tools whose use
+ * the controls most want to see.
+ */
+const toolNotServed = "No such tool available";
+
+/**
+ * The tools one message called, which the runtime names in the assistant's own
+ * blocks, each under the id its result will answer.
+ */
+function messageToolCalls(message) {
   const content = message.message?.content;
   if (!Array.isArray(content)) return [];
   return content
     .filter(
       (block) => block?.type === "tool_use" && typeof block.name === "string",
     )
-    .map((block) => measuredText(block.name, sessionTurnToolNameCharsMax))
-    .filter((name) => name.length > 0);
+    .map((block) => ({
+      id: typeof block.id === "string" ? block.id : undefined,
+      name: measuredText(block.name, sessionTurnToolNameCharsMax),
+    }))
+    .filter(({ name }) => name.length > 0);
+}
+
+/** One tool result's text, whichever of the two shapes the runtime gave it. */
+function toolResultText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((block) => (typeof block?.text === "string" ? block.text : ""))
+    .join("");
+}
+
+/**
+ * What one message answers earlier calls with: the call's id, and whether the
+ * runtime refused to serve it at all.
+ */
+function messageToolResults(message) {
+  const content = message.message?.content;
+  if (!Array.isArray(content)) return [];
+  return content
+    .filter(
+      (block) =>
+        block?.type === "tool_result" && typeof block.tool_use_id === "string",
+    )
+    .map((block) => ({
+      id: block.tool_use_id,
+      refused:
+        block.is_error === true &&
+        toolResultText(block.content).includes(toolNotServed),
+    }));
 }
 
 /**
@@ -273,15 +317,25 @@ function runningTotal() {
  * and what it spent is charged to the next turn that answers. The session's
  * total is what stays true and per-turn attribution is what gives way, toward
  * over-reporting, which is the direction a budget refuses in.
+ *
+ * A TOOL THE RUNTIME REFUSED TO SERVE IS NOT A TOOL THE TURN USED. The model
+ * asks; the runtime is what decides, and a name it answered `No such tool
+ * available` for never ran. So a call is paired with its result by id, and a
+ * name reported is one with a call the runtime did not refuse — asking twice
+ * and being served once is still a use. A call whose result has not arrived is
+ * a use: the pod reports what it saw happen, and an unanswered call is the
+ * turn's own tool still running rather than one denied it.
  */
 export function sessionMeasure() {
   let model;
   const dollarsSince = runningTotal();
   const tokensSince = runningTotal();
-  let tools = [];
+  let calls = new Map();
+  let awaiting = new Map();
   return {
     startTurn() {
-      tools = [];
+      calls = new Map();
+      awaiting = new Map();
     },
     saw(message) {
       if (message.type === "system" && message.subtype === "init") {
@@ -291,10 +345,24 @@ export function sessionMeasure() {
             : "";
         if (named.length > 0) model = named;
       }
-      if (message.type !== "assistant") return;
-      for (const name of messageToolNames(message))
-        if (!tools.includes(name) && tools.length < sessionTurnToolsMax)
-          tools.push(name);
+      if (message.type === "assistant")
+        for (const { id, name } of messageToolCalls(message)) {
+          const call =
+            calls.get(name) ??
+            (calls.size < sessionTurnToolsMax
+              ? { made: 0, refused: 0 }
+              : undefined);
+          if (call === undefined) continue;
+          call.made += 1;
+          calls.set(name, call);
+          if (id !== undefined) awaiting.set(id, name);
+        }
+      if (message.type !== "user") return;
+      for (const { id, refused } of messageToolResults(message)) {
+        const name = awaiting.get(id);
+        awaiting.delete(id);
+        if (refused && name !== undefined) calls.get(name).refused += 1;
+      }
     },
     /** The turn's envelope, or nothing where the runtime accounted for nothing. */
     of(result) {
@@ -307,7 +375,9 @@ export function sessionMeasure() {
           dollarsSince(result.total_cost_usd) * microsPerDollar,
         ),
         durationMs: measuredCount(result.duration_ms),
-        tools: [...tools],
+        tools: [...calls]
+          .filter(([, call]) => call.refused < call.made)
+          .map(([name]) => name),
       };
     },
   };
