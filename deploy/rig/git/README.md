@@ -60,7 +60,7 @@ than by nothing.
 | `git-sync` | the sync reader, referenced by the `GitRepository` | read |
 | `git-operator` | the operator's break-glass | read and push |
 | `git-worker` | development workers | read and create-only under `chuggy/tickets/<ticket>/attempts/<attempt>` |
-| `git-mirror` | the mirror sync | read, and move `main` on every repository but `rig.git` |
+| `git-mirror` | the mirror sync | read, and move or rewrite `main` on every repository but `rig.git` |
 | `git-credentials` | what nginx validates against | — |
 
 `rig.git` is the mirror's exception because it mirrors nothing: it is what Flux

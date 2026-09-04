@@ -11,7 +11,9 @@
 #           cannot move a branch another party reads.
 #   mirror  may only update `refs/heads/main`, and never on `rig.git`. Creating
 #           it is an update: a mirror's first push to an empty repository is
-#           what makes the branch. Deleting it is not.
+#           what makes the branch. Deleting it is not. Rewriting it is: nothing
+#           here asks about ancestry, because a mirror follows a source whose
+#           own `main` can be rewritten.
 #   anyone  else is nginx's alone. The readers and writers files are the whole
 #           of what admits them and this adds nothing, which is what keeps the
 #           operator's break-glass a break-glass.

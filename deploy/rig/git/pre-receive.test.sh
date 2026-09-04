@@ -43,6 +43,16 @@ git -C "$SRC" add two
 git -C "$SRC" commit -qm two
 SECOND="$(git -C "$SRC" rev-parse HEAD)"
 
+# A commit on no shared history with either, fetched into the pusher's object
+# store: what a rewrite of the branch looks like from the serving side.
+REWRITE="$WORK/rewrite"
+fresh_repo "$REWRITE"
+: > "$REWRITE/rewritten"
+git -C "$REWRITE" add rewritten
+git -C "$REWRITE" commit -qm rewritten
+REWRITTEN="$(git -C "$REWRITE" rev-parse HEAD)"
+git -C "$SRC" fetch -q "$REWRITE" HEAD
+
 # The hook reads the attempt as sha256 hex, and this suite has no opinion about
 # what a real attempt identifier is, so an object name doubled and cut to
 # length does.
@@ -96,6 +106,15 @@ stand_up other.git
 push mirror other.git "$SECOND:refs/heads/main"
 check "the mirror creates main on an empty repository" 0 "$RC" \
 	"other.git afterwards: main is $SECOND"
+
+# A mirror follows its source, and a source's main can be rewritten, so the
+# hook asks nothing about ancestry. The refspec is forced because the pusher
+# refuses to send this one otherwise, and it is the server's answer that is
+# under test.
+stand_up other.git "$FIRST"
+push mirror other.git "+$REWRITTEN:refs/heads/main"
+check "the mirror rewrites main onto unrelated history" 0 "$RC" \
+	"other.git afterwards: main is $REWRITTEN"
 
 stand_up other.git "$FIRST"
 push mirror other.git "$SECOND:refs/heads/release"
@@ -156,6 +175,24 @@ stand_up other.git "$FIRST"
 git -C "$SRC" push -q "$SERVED/other.git" "$SECOND:$ATTEMPT_REF"
 push worker other.git ":$ATTEMPT_REF"
 check "the worker may not delete an attempt branch" 1 "$RC" \
+	"worker may only create an attempt-scoped ticket branch"
+
+# Create-only means the branch an attempt already made is closed to it, and
+# nothing else in this suite refuses a worker for that reason alone: the pushes
+# above are refused by their ref name as well.
+stand_up other.git "$FIRST"
+git -C "$SRC" push -q "$SERVED/other.git" "$FIRST:$ATTEMPT_REF"
+push worker other.git "$SECOND:$ATTEMPT_REF"
+check "the worker may not move an attempt branch it made" 1 "$RC" \
+	"worker may only create an attempt-scoped ticket branch"
+check "the attempt branch keeps what it was created at" 1 "$RC" \
+	"$ATTEMPT_REF $FIRST"
+
+# The attempt segment is a sha256, and a ref that is attempt-shaped without
+# being attempt-named is the shape a loosened pattern would admit.
+stand_up other.git "$FIRST"
+push worker other.git "$SECOND:refs/heads/chuggy/tickets/7/attempts/not-a-sha256"
+check "the worker may not name an attempt something else" 1 "$RC" \
 	"worker may only create an attempt-scoped ticket branch"
 
 # --- everyone else, whom nginx alone decides ---------------------------------
