@@ -40,26 +40,31 @@ installs `pre-receive.sh` on every repository the pod carries, and pushes
 credentials are read back rather than rotated, and the push is skipped when the
 served tree already matches.
 
-## The two credential classes
+## The credential classes
 
 Static, validated by nginx against htpasswd files with no other party standing.
-The sync reader may read; only the operator may move a branch. A push is any
+The sync reader may read; only the operator may move any branch. A push is any
 request `git-http-backend` would dispatch as one — a URL ending in
 `/git-receive-pack` — and nginx puts the writers file on exactly that location.
 The reader validates against writers there and against readers on every other
 path that reaches the backend; no query string enters the choice.
 
 nginx decides who may push at all and cannot see a ref. What an admitted
-credential may then do is `pre-receive.sh`'s: `seed.sh` installs that one file
-on every repository under the served root, so a repository pushed into the pod
-by hand is governed by the next seed rather than by nothing.
+credential may then do is `pre-receive.sh`'s, and it decides per repository:
+`seed.sh` installs that one file on every repository under the served root, so
+a repository pushed into the pod by hand is governed by the next seed rather
+than by nothing.
 
 | Secret | Who | May |
 |---|---|---|
 | `git-sync` | the sync reader, referenced by the `GitRepository` | read |
 | `git-operator` | the operator's break-glass | read and push |
 | `git-worker` | development workers | read and create-only under `chuggy/tickets/<ticket>/attempts/<attempt>` |
+| `git-mirror` | the mirror sync | read, and move `main` on every repository but `rig.git` |
 | `git-credentials` | what nginx validates against | — |
+
+`rig.git` is the mirror's exception because it mirrors nothing: it is what Flux
+reconciles the cluster from, and a push to its default branch is the deploy.
 
 Read a token back with:
 
@@ -72,8 +77,25 @@ not exist yet. Neither does the backup bundle on default-branch movement.
 
 `seed.sh` proves the wall on every run: `audit-credentials.sh` stands up a
 throwaway repository and shows the read credential refused a push at the write
-endpoint and at every nested and query-string disguise of one. Run it alone
-with `./deploy/rig/git/audit-credentials.sh`.
+endpoint and at every nested and query-string disguise of one, and the mirror
+credential accepted at that repository's `main`, refused at every other ref on
+it, and refused at `rig.git`'s. Run it alone with
+`./deploy/rig/git/audit-credentials.sh`.
+
+## Give a namespace a copy
+
+A workload in another namespace holds its own copy of a token, named
+`chuggy-git-<user>` with a `password` key: that is what the scheduler mounts
+for the worker, and what the mirror's CronJob projects. Make one from this
+namespace's Secret without the token passing through a command line, where it
+would be readable in `/proc` for that command's life:
+
+```sh
+kubectl -n chuggy-git get secret git-mirror -o jsonpath='{.data.password}' \
+  | base64 -d \
+  | kubectl -n chuggy-work create secret generic chuggy-git-mirror \
+      --from-file=password=/dev/stdin
+```
 
 ## Deploy something
 

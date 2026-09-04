@@ -86,7 +86,55 @@ push() { # <user> <repository> <refspec>...
 	git -C "$SERVED/$_repo" for-each-ref --format='%(refname) %(objectname)' >> "$OUT"
 }
 
-# --- the worker --------------------------------------------------------------
+# --- the mirror, on a repository that is not rig.git -------------------------
+
+stand_up other.git "$FIRST"
+push mirror other.git "$SECOND:refs/heads/main"
+check "the mirror moves main" 0 "$RC" "other.git afterwards: main is $SECOND"
+
+stand_up other.git
+push mirror other.git "$SECOND:refs/heads/main"
+check "the mirror creates main on an empty repository" 0 "$RC" \
+	"other.git afterwards: main is $SECOND"
+
+stand_up other.git "$FIRST"
+push mirror other.git "$SECOND:refs/heads/release"
+check "the mirror may not create a branch beside main" 1 "$RC" \
+	"mirror may only update main"
+check "the branch beside main is not there" 1 "$RC" \
+	"other.git afterwards: main is $FIRST"
+
+stand_up other.git "$FIRST"
+push mirror other.git ":refs/heads/main"
+check "the mirror may not delete main" 1 "$RC" "mirror may only update main"
+check "main survives the attempted delete" 1 "$RC" \
+	"other.git afterwards: main is $FIRST"
+
+stand_up other.git "$FIRST"
+push mirror other.git "$SECOND:refs/tags/v1"
+check "the mirror may not push a tag" 1 "$RC" "mirror may only update main"
+
+# The hook refuses the whole push, so a ref it would allow does not ride along
+# with one it would not.
+stand_up other.git "$FIRST"
+push mirror other.git "$SECOND:refs/heads/main" "$SECOND:refs/heads/release"
+check "one refused ref refuses the push whole" 1 "$RC" \
+	"other.git afterwards: main is $FIRST"
+
+# --- the mirror, on rig.git --------------------------------------------------
+
+stand_up rig.git "$FIRST"
+push mirror rig.git "$SECOND:refs/heads/main"
+check "the mirror may not move rig.git's main" 1 "$RC" \
+	"mirror may not push to rig.git"
+check "rig.git's main is where it was" 1 "$RC" "rig.git afterwards: main is $FIRST"
+
+stand_up rig.git "$FIRST"
+push mirror rig.git "$SECOND:refs/heads/side"
+check "the mirror may not push any ref to rig.git" 1 "$RC" \
+	"mirror may not push to rig.git"
+
+# --- the worker, which the mirror arm leaves alone ---------------------------
 
 stand_up other.git "$FIRST"
 push worker other.git "$SECOND:$ATTEMPT_REF"
@@ -110,13 +158,6 @@ push worker other.git ":$ATTEMPT_REF"
 check "the worker may not delete an attempt branch" 1 "$RC" \
 	"worker may only create an attempt-scoped ticket branch"
 
-# The hook refuses the whole push, so a ref it would allow does not ride along
-# with one it would not.
-stand_up other.git "$FIRST"
-push worker other.git "$SECOND:$ATTEMPT_REF" "$SECOND:refs/heads/main"
-check "one refused ref refuses the push whole" 1 "$RC" \
-	"other.git afterwards: main is $FIRST"
-
 # --- everyone else, whom nginx alone decides ---------------------------------
 
 stand_up rig.git "$FIRST"
@@ -126,7 +167,7 @@ check "a named user the hook says nothing about moves rig.git's main" 0 "$RC" \
 
 stand_up rig.git "$FIRST"
 push - rig.git "$SECOND:refs/heads/side"
-check "an unnamed pusher makes a branch beside main" 0 "$RC" \
+check "an unnamed pusher makes the branch the mirror may not" 0 "$RC" \
 	"refs/heads/side $SECOND"
 
 done_ pre-receive.test.sh

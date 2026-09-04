@@ -16,6 +16,7 @@ repository=rig.git
 sync_user=sync
 operator_user=operator
 worker_user=worker
+mirror_user=mirror
 
 for tool in kubectl git openssl base64 curl; do
 	command -v "$tool" > /dev/null 2>&1 || {
@@ -79,65 +80,64 @@ work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 
 # --- The static credential classes ------------------------------------------
-# The sync reader, the worker's create-only writer and the operator's
-# break-glass. The pre-receive hook below narrows the worker independently of
-# nginx admitting it to receive-pack.
-if kubectl -n "$namespace" get secret git-sync > /dev/null 2>&1; then
-	sync_token="$(secret_password git-sync)"
-	operator_token="$(secret_password git-operator)"
-	if kubectl -n "$namespace" get secret git-worker > /dev/null 2>&1; then
-		worker_token="$(secret_password git-worker)"
-	else
-		worker_token="$(openssl rand -hex 32)"
-		(
-			umask 077
-			printf '%s' "$worker_token" > "$work_dir/worker-token"
-		)
-		kubectl -n "$namespace" create secret generic git-worker \
-			--from-literal=username="$worker_user" \
-			--from-file=password="$work_dir/worker-token" > /dev/null
+# The sync reader, the worker's create-only writer, the mirror's main-only
+# writer and the operator's break-glass. `pre-receive.sh`, installed below,
+# narrows the worker and the mirror independently of nginx admitting them to
+# receive-pack.
+#
+# Each class is settled on its own: read back when its secret is there, minted
+# when it is not. A class this script gains after a rig was seeded has no
+# secret to read back — the mirror is one and the worker was — and the classes
+# beside it must not be rotated to give it one. The token comes back in a
+# variable rather than on stdout so that minting can say so on stdout.
+minted=0
+credential_token() { # <secret> <username>
+	if kubectl -n "$namespace" get secret "$1" > /dev/null 2>&1; then
+		token="$(secret_password "$1")"
+		return 0
 	fi
-	echo "seed: reusing the existing credentials"
-else
-	sync_token="$(openssl rand -hex 32)"
-	operator_token="$(openssl rand -hex 32)"
-	worker_token="$(openssl rand -hex 32)"
+	token="$(openssl rand -hex 32)"
 	(
 		umask 077
-		printf '%s' "$sync_token" > "$work_dir/sync-token"
-		printf '%s' "$operator_token" > "$work_dir/operator-token"
-		printf '%s' "$worker_token" > "$work_dir/worker-token"
+		printf '%s' "$token" > "$work_dir/$1"
 	)
-	kubectl -n "$namespace" create secret generic git-sync \
-		--from-literal=username="$sync_user" \
-		--from-file=password="$work_dir/sync-token" > /dev/null
-	kubectl -n "$namespace" create secret generic git-operator \
-		--from-literal=username="$operator_user" \
-		--from-file=password="$work_dir/operator-token" > /dev/null
-	kubectl -n "$namespace" create secret generic git-worker \
-		--from-literal=username="$worker_user" \
-		--from-file=password="$work_dir/worker-token" > /dev/null
-	echo "seed: minted the sync, worker and operator credentials"
-fi
+	kubectl -n "$namespace" create secret generic "$1" \
+		--from-literal=username="$2" \
+		--from-file=password="$work_dir/$1" > /dev/null
+	minted=1
+	echo "seed: minted the $2 credential"
+}
+
+credential_token git-sync "$sync_user"
+sync_token="$token"
+credential_token git-operator "$operator_user"
+operator_token="$token"
+credential_token git-worker "$worker_user"
+worker_token="$token"
+credential_token git-mirror "$mirror_user"
+mirror_token="$token"
 
 readers="$sync_user:{SHA}$(credential_digest "$sync_token")
 $operator_user:{SHA}$(credential_digest "$operator_token")
-$worker_user:{SHA}$(credential_digest "$worker_token")"
+$worker_user:{SHA}$(credential_digest "$worker_token")
+$mirror_user:{SHA}$(credential_digest "$mirror_token")"
 writers="$operator_user:{SHA}$(credential_digest "$operator_token")
-$worker_user:{SHA}$(credential_digest "$worker_token")"
+$worker_user:{SHA}$(credential_digest "$worker_token")
+$mirror_user:{SHA}$(credential_digest "$mirror_token")"
 
 kubectl -n "$namespace" create secret generic git-credentials \
 	--from-literal=readers="$readers" \
 	--from-literal=writers="$writers" \
 	--dry-run=client -o yaml | kubectl apply -f - > /dev/null
 
+# A Secret mounted as a directory reaches a running pod only on the kubelet's
+# next sync, and the audit below asks the pod about a credential this run may
+# have just minted. A restart is what makes the file the pod serves the file
+# this run wrote, and it is spent only when there is a new credential in it.
+if [ "$minted" -eq 1 ]; then
+	kubectl -n "$namespace" rollout restart deployment/git > /dev/null
+fi
 kubectl -n "$namespace" rollout status deployment/git --timeout=180s
-
-# --- The write wall ---------------------------------------------------------
-# A control that is not exercised is worse than none, so the read credential is
-# shown a push and refused before this run is trusted. The audit stands up its
-# own throwaway repository and needs nothing this script has yet pushed.
-"$root/deploy/rig/git/audit-credentials.sh"
 
 # --- The bare repository and the ref wall -----------------------------------
 # git-http-backend serves repositories; it does not create them, so the first
@@ -172,6 +172,15 @@ kubectl -n "$namespace" exec -i "$pod" -- sh -c '
 	done
 	rm -f "$hook"
 ' sh "$repository" < "$hook_source"
+
+# --- The write wall ---------------------------------------------------------
+# A control that is not exercised is worse than none, so the wall is shown the
+# pushes it must refuse before this run is trusted: the read credential at a
+# push endpoint, and the mirror at a ref and a repository that are not its. It
+# runs here rather than earlier because half of what it probes is the hook
+# above, and before the push below because a deploy this run cannot vouch for
+# is a deploy nobody asked for.
+"$root/deploy/rig/git/audit-credentials.sh"
 
 # --- The default branch -----------------------------------------------------
 # The token never outlives the command that carried it, and there are three
