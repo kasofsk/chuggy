@@ -87,14 +87,24 @@ it, and refused at `rig.git`'s. Run it alone with
 A workload in another namespace holds its own copy of a token, named
 `chuggy-git-<user>` with a `password` key: that is what the scheduler mounts
 for the worker, and what the mirror's CronJob projects. Make one from this
-namespace's Secret without the token passing through a command line, where it
-would be readable in `/proc` for that command's life:
+namespace's Secret with the token in a file rather than on a command line,
+where it would be readable in `/proc` for that command's life — and with the
+read checked before anything is created, because `base64 -d` exits 0 on the
+empty stdin a failed `kubectl get` leaves, and a Secret holding an empty
+password fails later as an authentication error rather than as the typo it
+was:
 
 ```sh
+token="$(mktemp)"   # private to you, removed at the end
 kubectl -n chuggy-git get secret git-mirror -o jsonpath='{.data.password}' \
-  | base64 -d \
-  | kubectl -n chuggy-work create secret generic chuggy-git-mirror \
-      --from-file=password=/dev/stdin
+  | base64 -d > "$token"
+if [ -s "$token" ]; then
+  kubectl -n chuggy-work create secret generic chuggy-git-mirror \
+    --from-file=password="$token"
+else
+  echo "no password read from git-mirror; nothing was created" >&2
+fi
+rm -f "$token"
 ```
 
 ## Deploy something

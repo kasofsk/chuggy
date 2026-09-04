@@ -116,6 +116,11 @@ credential_token git-worker "$worker_user"
 worker_token="$token"
 credential_token git-mirror "$mirror_user"
 mirror_token="$token"
+# Silence here would read as a block that did not run rather than one that read
+# every class back, so a run that minted nothing still says what it did.
+if [ "$minted" -eq 0 ]; then
+	echo "seed: reusing the existing credentials"
+fi
 
 readers="$sync_user:{SHA}$(credential_digest "$sync_token")
 $operator_user:{SHA}$(credential_digest "$operator_token")
@@ -161,10 +166,13 @@ kubectl -n "$namespace" exec -i "$pod" -- sh -c '
 	hook="$(mktemp)"
 	cat > "$hook"
 	for repo in /git/*.git; do
-		# A directory ending in .git that is no repository — the audit names
-		# its probe root that way — has no hooks directory and dispatches
-		# nothing.
-		[ -d "$repo/hooks" ] || continue
+		# Asked of git rather than inferred from what the directory contains: a
+		# .git name is a convention and a hooks directory is a directory, and
+		# the thing a hook is dispatched by is a bare repository. The audit
+		# names its probe root `probe.git` and it is neither.
+		[ "$(git -C "$repo" rev-parse --is-bare-repository 2> /dev/null || true)" \
+			= true ] || continue
+		mkdir -p "$repo/hooks"
 		# Removed first because the installed mode carries no write bit.
 		rm -f "$repo/hooks/pre-receive"
 		cp "$hook" "$repo/hooks/pre-receive"
