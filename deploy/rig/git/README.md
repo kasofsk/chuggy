@@ -34,8 +34,9 @@ kubectl apply -k deploy/rig/git/bootstrap
 
 The git pod stays unready until `seed.sh` creates the credential secret it
 mounts. `seed.sh` mints the credentials, creates the bare repository inside the
-pod — `git-http-backend` serves repositories and does not create them — and
-pushes `deploy/rig/git/repo/deploy/` onto `main`. It is safe to re-run: the
+pod — `git-http-backend` serves repositories and does not create them —
+installs `pre-receive.sh` on every repository the pod carries, and pushes
+`deploy/rig/git/repo/deploy/` onto `main`. It is safe to re-run: the
 credentials are read back rather than rotated, and the push is skipped when the
 served tree already matches.
 
@@ -47,6 +48,11 @@ request `git-http-backend` would dispatch as one — a URL ending in
 `/git-receive-pack` — and nginx puts the writers file on exactly that location.
 The reader validates against writers there and against readers on every other
 path that reaches the backend; no query string enters the choice.
+
+nginx decides who may push at all and cannot see a ref. What an admitted
+credential may then do is `pre-receive.sh`'s: `seed.sh` installs that one file
+on every repository under the served root, so a repository pushed into the pod
+by hand is governed by the next seed rather than by nothing.
 
 | Secret | Who | May |
 |---|---|---|

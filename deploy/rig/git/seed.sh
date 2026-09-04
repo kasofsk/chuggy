@@ -34,6 +34,11 @@ seed_tree="$root/deploy/rig/git/repo"
 	echo "seed: $seed_tree is missing, so there is nothing to push" >&2
 	exit 2
 }
+hook_source="$root/deploy/rig/git/pre-receive.sh"
+[ -f "$hook_source" ] || {
+	echo "seed: $hook_source is missing, so no repository could be given its ref wall" >&2
+	exit 2
+}
 
 # The push traverses the ingress, whose host is the one nip.io literal in the
 # manifests. Read it back from the applied Ingress rather than restating it, so
@@ -134,12 +139,18 @@ kubectl -n "$namespace" rollout status deployment/git --timeout=180s
 # own throwaway repository and needs nothing this script has yet pushed.
 "$root/deploy/rig/git/audit-credentials.sh"
 
-# --- The bare repository ----------------------------------------------------
+# --- The bare repository and the ref wall -----------------------------------
 # git-http-backend serves repositories; it does not create them, so the first
 # one is made in the pod that will serve it.
+#
+# The hook goes on every repository under /git rather than on this one alone.
+# They are served by one nginx and admit one set of credentials, so a
+# repository without it is a credential class with nothing behind it — which is
+# what `chuggy.git`, pushed into the pod by hand, was. Installing it on every
+# seed is what governs a repository that arrived since the last one.
 pod="$(kubectl -n "$namespace" get pod -l app.kubernetes.io/name=git \
 	-o jsonpath='{.items[0].metadata.name}')"
-kubectl -n "$namespace" exec "$pod" -- sh -c '
+kubectl -n "$namespace" exec -i "$pod" -- sh -c '
 	set -eu
 	repository="$1"
 	if [ ! -d "/git/$repository" ]; then
@@ -147,23 +158,20 @@ kubectl -n "$namespace" exec "$pod" -- sh -c '
 		git -C "/git/$repository" config http.receivepack true
 		git -C "/git/$repository" symbolic-ref HEAD refs/heads/main
 	fi
-	cat > "/git/$repository/hooks/pre-receive" <<'"'"'HOOK'"'"'
-#!/bin/sh
-set -eu
-
-[ "${REMOTE_USER:-}" = worker ] || exit 0
-zero=0000000000000000000000000000000000000000
-while read -r old new ref; do
-	if [ "$old" != "$zero" ] || [ "$new" = "$zero" ] || \
-		! printf '%s\n' "$ref" | grep -Eq \
-		'^refs/heads/chuggy/tickets/[0-9]+/attempts/[0-9a-f]{64}$'; then
-		echo "worker may only create an attempt-scoped ticket branch" >&2
-		exit 1
-	fi
-done
-HOOK
-	chmod 0555 "/git/$repository/hooks/pre-receive"
-' sh "$repository"
+	hook="$(mktemp)"
+	cat > "$hook"
+	for repo in /git/*.git; do
+		# A directory ending in .git that is no repository — the audit names
+		# its probe root that way — has no hooks directory and dispatches
+		# nothing.
+		[ -d "$repo/hooks" ] || continue
+		# Removed first because the installed mode carries no write bit.
+		rm -f "$repo/hooks/pre-receive"
+		cp "$hook" "$repo/hooks/pre-receive"
+		chmod 0555 "$repo/hooks/pre-receive"
+	done
+	rm -f "$hook"
+' sh "$repository" < "$hook_source"
 
 # --- The default branch -----------------------------------------------------
 # The token never outlives the command that carried it, and there are three
