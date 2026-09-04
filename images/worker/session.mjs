@@ -600,6 +600,21 @@ export async function runSessionTurn(context) {
  * uncharged. Stopping is the point — a held turn requeued under a live pod would
  * be claimed again at once, and the loop would spend the hold rather than wait
  * it out. The scheduler's placement backoff is what paces the next attempt.
+ *
+ * `Spent` IS THE SAME ARGUMENT ABOUT A BOUND THIS POD CANNOT OUTLAST. The
+ * runtime's budget is per attempt, so once it answers `error_max_budget_usd`
+ * every later turn on this query is answered the same way before a token is
+ * spent — and a pod that stays running claims the next queued turn and fails it
+ * at once, for as long as the session has anything to say. The turn IS failed
+ * first, unlike a held one: the runtime did answer it, and it is this attempt's
+ * budget rather than the account that is gone.
+ *
+ * WHAT THE PLANE IS LEFT HOLDING is that one turn `Failed`, every other turn
+ * still `Queued` and unclaimed, and an attempt row nobody ended — a hold is the
+ * only ending a pod may post, and a spent budget is not one. So the reaper is
+ * what collects the attempt, on the lapsed lease or on the idle that failing the
+ * turn stamped, and the scheduler places a fresh attempt after it, under a fresh
+ * budget, to drain the queue.
  */
 async function settleTurn(context, turn, result) {
   if (context.mirrored) {
@@ -619,7 +634,7 @@ async function settleTurn(context, turn, result) {
       turn: turn.turn,
       failure,
     });
-    return "Continue";
+    return failure === "AgentBudgetExhausted" ? "Spent" : "Continue";
   }
   const measured = context.measure.of(result);
   await post(context, "/v1/session/turn/answer", {
@@ -656,7 +671,7 @@ export async function runSessionTurns(context) {
     const turn = context.mailbox.claimed();
     if (turn === undefined) return context.mirrored ? 1 : 0;
     const verdict = await settleTurn(context, turn, result);
-    if (verdict === "Held") {
+    if (verdict === "Held" || verdict === "Spent") {
       context.mailbox.stop();
       return 0;
     }

@@ -455,6 +455,53 @@ test("a rate-limited turn is held, never failed, and the pod gives up its attemp
   );
 });
 
+test("a turn that spent the attempt's budget is failed, and then the pod ends the attempt", async () => {
+  const plane = planeOf([turnOne, { ...turnOne, turn: "turn-2" }], facts);
+  const { query } = queryOf(() => [
+    { type: "system", subtype: "init", session_id: "runtime-1" },
+    result("error_max_budget_usd"),
+  ]);
+
+  const code = await run({ request: plane.request, query });
+
+  assert.equal(code, 0, "a spent budget is not the pod failing");
+  assert.deepEqual(
+    plane.calls
+      .filter(({ path }) => path === "/v1/session/turn/failure")
+      .map(({ body }) => body),
+    [{ turn: "turn-1", failure: "AgentBudgetExhausted" }],
+    "the turn the budget ran out on was not failed exactly once",
+  );
+  assert.equal(
+    plane.calls.filter(({ path }) => path === "/v1/session/turn").length,
+    1,
+    "the pod claimed another turn on a budget it had already spent",
+  );
+  assert.ok(
+    !plane.calls.some(({ path }) => path === "/v1/session/held"),
+    "a spent budget was posted as a hold on the account",
+  );
+});
+
+test("a turn the runtime ran out of turns on leaves the attempt running", async () => {
+  const plane = planeOf([turnOne, { ...turnOne, turn: "turn-2" }], facts);
+  const { query } = queryOf(() => [
+    { type: "system", subtype: "init", session_id: "runtime-1" },
+    result("error_max_turns"),
+  ]);
+
+  const code = await run({ request: plane.request, query });
+
+  assert.equal(code, 0);
+  assert.deepEqual(
+    plane.calls
+      .filter(({ path }) => path === "/v1/session/turn/failure")
+      .map(({ body }) => body.turn),
+    ["turn-1", "turn-2"],
+    "a per-turn bound ended the whole attempt",
+  );
+});
+
 test("a mirror_error before the result fails the turn just as a late one does", async () => {
   const plane = planeOf([turnOne], facts);
   const { query } = queryOf(() => [
