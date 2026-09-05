@@ -47,7 +47,22 @@
  * passed over by name — `entryIdentityKeys`, and only at the two levels where
  * they mean the entry rather than a result. Deeper than that the same words are
  * the result's own: a `type` inside a `tool_result` block says what the block is,
- * and a `content` inside `toolUseResult` is exactly the bulk a clip is for.
+ * and a `content` inside `toolUseResult` is exactly the bulk a clip is for. The
+ * few names that mean the same thing at every depth — what a block is, which
+ * call it answers, what a tool was called, the path it reports, whether it
+ * failed, the signature over it — are `resultIdentityKeys` and are passed over
+ * wherever they sit.
+ *
+ * A CLIP SHORTENS ONLY WHAT DEGRADES GRACEFULLY. A head of a result is a smaller
+ * result: less is read, the note says so, and the tool can be run again. That is
+ * what makes clipping better than stopping, and it is not true of everything
+ * heavy. A thinking block is signed over its exact text, and the runtime replays
+ * both when it resumes an assistant turn: a head of either is not a smaller
+ * thinking block but one the API refuses, later, somewhere else, off a line
+ * already written. There is no tool to run again and nothing the note can say
+ * that helps. So `signedBlock` is not descended into at all, and an entry no clip
+ * can bring under the bound without it raises here at the write, which is the
+ * loud failure and the early one.
  *
  * SHARING IS WHY EVERY COPY IS CUT rather than only as many as it takes to fit:
  * the runtime writes one result several times over, a resume reads one of those
@@ -84,10 +99,11 @@ export const sessionStoreBatchBytesMax = 65_536;
  * What a clip has to spend on one line, its newline counted. It is under the
  * bound rather than at it, so a clipped entry does not fill a batch on its own
  * and the head it keeps is a courtesy to whatever resumes over it rather than the
- * whole of what a batch holds. It is a budget and not a maximum: a line whose
- * notes alone outweigh it is posted as those notes, over the budget and under the
- * bound, because a note is the least a cut value can be left as. The maximum is
- * `sessionStoreBatchBytesMax`, and `plannedBatches` is what holds a line to it.
+ * whole of what a batch holds. It is a budget and not a maximum: a note is the
+ * least a cut value can be left as, so a line whose notes alone outweigh the
+ * budget is posted as those notes, over it. The maximum is
+ * `sessionStoreBatchBytesMax`, and `plannedBatches` is what holds a line to it —
+ * where the notes reach that too, the entry raises rather than posting.
  */
 export const sessionStoreClipBudgetBytes = Math.floor(
   sessionStoreBatchBytesMax / 2,
@@ -249,6 +265,40 @@ const entryIdentityKeys = new Set([
 ]);
 
 /**
+ * The keys that name or bind a value at any depth rather than carry what a tool
+ * produced: what a block is, which call it answers, what a tool was called, the
+ * path a result reports, whether it failed, and the signature over a block. A
+ * clip passes these over wherever it meets them. They are few and they are
+ * narrow, which is why they can be read everywhere where `entryIdentityKeys`
+ * cannot: a `cwd` under a result is that result's own text and is bulk, but a
+ * `tool_use_id` is the same thing at every depth there is.
+ */
+const resultIdentityKeys = new Set([
+  "file_path",
+  "filePath",
+  "id",
+  "is_error",
+  "name",
+  "signature",
+  "tool_use_id",
+  "type",
+]);
+
+/**
+ * A block whose worth is its exactness, so nothing inside it is bulk. The
+ * runtime signs a thinking block and replays it with its signature when it
+ * resumes an assistant turn, and the signature is valid for that text and no
+ * other. A head of either is not a shorter thinking block, it is a thinking
+ * block the API will refuse — and refusing it happens later, somewhere else, on
+ * a line already durable. So a clip does not descend into one at all, and an
+ * entry no clip can bring under the bound without it raises instead, here, at
+ * the write.
+ */
+function signedBlock(value) {
+  return value.type === "thinking" || value.type === "redacted_thinking";
+}
+
+/**
  * Every clippable value the entry holds that is not the entry's name for itself,
  * and where it sits so a clip can replace it. Below the entry and its message the
  * shape is the runtime's and a producer this tree has never seen writes its bulk
@@ -256,25 +306,27 @@ const entryIdentityKeys = new Set([
  * tool's name is never asked for. A list of strings is taken whole and its
  * elements are not taken again: a diff's lines are bulk together and nothing
  * individually, and clipping them one at a time would replace each with something
- * longer than itself.
+ * longer than itself. `naming` is what makes the entry's own names a rule for the
+ * entry and its message and for nothing under them: it is set once at the top and
+ * survives one step, into `message`.
  */
 function entrySites(entry) {
   const found = [];
-  const walk = (held, key) => {
+  const walk = (held, key, naming) => {
     const value = held[key];
     if (clippable(value)) {
       found.push({ held, key, weight: escapedBytes(value) });
       return;
     }
-    if (value === null || typeof value !== "object") return;
-    for (const inner of Object.keys(value)) walk(value, inner);
+    if (value === null || typeof value !== "object" || signedBlock(value))
+      return;
+    for (const inner of Object.keys(value)) {
+      if (resultIdentityKeys.has(inner)) continue;
+      if (naming && entryIdentityKeys.has(inner)) continue;
+      walk(value, inner, naming && inner === "message");
+    }
   };
-  for (const key of Object.keys(entry))
-    if (!entryIdentityKeys.has(key) && key !== "message") walk(entry, key);
-  const message = entry.message;
-  if (message !== null && typeof message === "object")
-    for (const key of Object.keys(message))
-      if (!entryIdentityKeys.has(key)) walk(message, key);
+  walk({ entry }, "entry", true);
   return found;
 }
 
@@ -383,7 +435,7 @@ function plannedBatches(owed) {
     const size = lineBytes(owedLine.line);
     if (size > sessionStoreBatchBytesMax)
       throw new Error(
-        `the session store was given an entry of ${String(size - 1)} bytes, over the ${String(sessionStoreBatchBytesMax)} one batch holds: ${owedLine.cut === undefined ? "nothing in it can be clipped" : "clipping every value in it did not bring it under"}`,
+        `the session store was given an entry of ${String(size - 1)} bytes, over the ${String(sessionStoreBatchBytesMax)} one batch holds: ${owedLine.cut === undefined ? "nothing in it is a clip's to shorten" : "clipping every value in it did not bring it under"}`,
       );
     if (held.length > 0 && bytes + size > sessionStoreBatchBytesMax) {
       planned.push(held);

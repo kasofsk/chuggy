@@ -379,17 +379,6 @@ test("a result whose characters fit and whose bytes do not is still clipped", as
 });
 
 /**
- * A working directory long enough to weigh more than the note that would replace
- * it is still not a result, and a clip that spent its budget on the bulk puts it
- * back whole rather than leaving it a note.
- */
-/**
- * The working directory of a deep checkout, on an entry with cut sites enough
- * that no share would have covered it. It weighs more than the note that would
- * replace it, so weight alone would have taken it — but it is not a result, and
- * a resume handed a path the runtime never wrote is a resume in the wrong place.
- */
-/**
  * The bookkeeping entry, whose bulk is in neither a result nor a message: the
  * runtime writes attachments and summaries at the entry's own level, and weight
  * is what finds them there too. Passing a key over by name is an exclusion, not a
@@ -417,21 +406,27 @@ test("bulk the entry carries outside a result or a message is clipped too", asyn
   assert.equal(posted.uuid, given.uuid);
 });
 
+/**
+ * The working directory of a deep checkout, on an entry with cut sites enough
+ * that no share would have covered it. It weighs more than the note that would
+ * replace it, so weight alone would have taken it — but it is not a result, and
+ * a resume handed a path the runtime never wrote is a resume in the wrong place.
+ * The same word inside the result is that result's own text and is cut, which is
+ * the whole of what "at the entry and its message only" means.
+ */
 test("a long working directory is not a result, whatever it weighs", async () => {
   const { calls, store } = storeOf();
   const deep = `/workspace/${"a-long-directory-name/".repeat(10)}repo`;
   const given = editEntry("held\n".repeat(20), 120, 40);
   given.cwd = deep;
-  given.toolUseResult.aPathTheToolReported = deep;
+  given.toolUseResult.cwd = "held ".repeat(20_000);
 
   await store.append({ sessionId: "s" }, [given]);
 
   const [posted] = postedEntries(calls);
   assert.ok(
-    posted.toolUseResult.aPathTheToolReported.includes(
-      "the session store clipped",
-    ),
-    "the same text inside the result was not cut either, so the test proves nothing",
+    posted.toolUseResult.cwd.includes("the session store clipped"),
+    "a result's own text was passed over because of what the entry calls itself",
   );
   assert.equal(posted.cwd, deep, "the working directory was clipped");
   for (const field of ["uuid", "parentUuid", "type", "timestamp", "version"])
@@ -439,14 +434,166 @@ test("a long working directory is not a result, whatever it weighs", async () =>
 });
 
 /**
+ * The path a tool reported, on an entry whose bulk is elsewhere: it weighs more
+ * than the note that would replace it, so it is cut — and then it fits inside its
+ * share, so it goes back whole rather than spending the share on a head of a
+ * path. Cutting a value the budget could afford to keep spends the budget on
+ * nothing.
+ */
+test("a value a clip could shorten but does not need to is put back whole", async () => {
+  const { calls, store } = storeOf();
+  const reported = `/workspace/${"a-long-directory-name/".repeat(10)}repo`;
+  const given = bashEntry("held ".repeat(6_000), 3);
+  given.toolUseResult.aPathTheToolReported = reported;
+
+  await store.append({ sessionId: "s" }, [given]);
+
+  const [posted] = postedEntries(calls);
+  assert.ok(
+    posted.toolUseResult.stdout.includes("the session store clipped"),
+    "the fixture was posted whole, so nothing was shared and it proves nothing",
+  );
+  assert.equal(
+    posted.toolUseResult.aPathTheToolReported,
+    reported,
+    "a value that fits its share was left as a note",
+  );
+});
+
+/**
+ * A signed block. The runtime signs a thinking block over its exact text and
+ * replays both to resume the turn, so a head of either is a block the API
+ * refuses — later, somewhere else, off a line already durable. The tool call
+ * beside it is an ordinary result and is cut as one. The signature here is
+ * synthesised at the length real ones run to, not taken from a transcript.
+ */
+test("a signed block is never shortened, and the result beside it still is", async () => {
+  const { calls, store } = storeOf();
+  const signature = `Er${"UBCkYIBRgCKkC".repeat(3_500)}==`;
+  const thinking = "The store is what weighs the line. ".repeat(40);
+  const given = {
+    parentUuid: "3b1f6b6e-1f14-4a4f-9d4a-4d1f1a2b3c4d",
+    type: "assistant",
+    message: {
+      id: "msg_01Thinking",
+      role: "assistant",
+      model: "claude-opus-4-6",
+      content: [
+        { type: "thinking", thinking, signature },
+        {
+          type: "tool_use",
+          id: "toolu_01WriteTheFile",
+          name: "Write",
+          input: {
+            file_path: "/workspace/repo/held.ts",
+            content: "x".repeat(40_000),
+          },
+        },
+      ],
+    },
+    uuid: "7c2d9f10-58aa-4b2e-9a1c-2f3e4d5a6b7c",
+    timestamp: "2026-09-02T22:22:00.000Z",
+    cwd: "/workspace/repo",
+    sessionId: "fecadcca-7f72-478c-ab53-561e3a17110b",
+    version: "2.1.258",
+  };
+
+  await store.append({ sessionId: "s" }, [given]);
+
+  const [{ body }] = bodies(calls);
+  assert.ok(
+    Buffer.byteLength(body) <= sessionStoreBatchBytesMax,
+    `the body is ${String(Buffer.byteLength(body))} bytes`,
+  );
+  const [posted] = postedEntries(calls);
+  const [signed, called] = posted.message.content;
+  assert.equal(signed.signature, signature, "the signature was shortened");
+  assert.equal(signed.thinking, thinking, "the signed text was shortened");
+  assert.equal(signed.type, "thinking");
+  assert.ok(
+    called.input.content.includes("the session store clipped"),
+    "the call beside the signed block was not cut",
+  );
+  assert.equal(called.id, "toolu_01WriteTheFile");
+  assert.equal(called.name, "Write");
+  assert.equal(called.input.file_path, "/workspace/repo/held.ts");
+});
+
+/**
+ * The signed block that is itself over the bound. There is nothing else to cut
+ * and the block may not be, so the store raises where the write is rather than
+ * posting a line whose turn the API refuses on some later resume.
+ */
+test("an entry a signed block alone puts over the bound raises rather than posting", async () => {
+  const { calls, store } = storeOf();
+  const given = {
+    uuid: "a",
+    parentUuid: "p",
+    type: "assistant",
+    timestamp: "2026-09-02T22:23:00.000Z",
+    message: {
+      role: "assistant",
+      content: [
+        {
+          type: "thinking",
+          thinking: "held ",
+          signature: `Er${"UBCkYIBRgCKkC".repeat(6_000)}==`,
+        },
+      ],
+    },
+  };
+
+  await assert.rejects(
+    store.append({ sessionId: "s" }, [given]),
+    (raised) =>
+      /is a clip's to shorten/u.test(raised.message) &&
+      raised.message.includes(String(Buffer.byteLength(JSON.stringify(given)))),
+  );
+
+  assert.deepEqual(bodies(calls), [], "the over-long entry was posted anyway");
+});
+
+/**
+ * A message that is not an object at all. Nothing in the runtime writes one, but
+ * the clip's own claim is that weight finds bulk wherever a producer puts it, and
+ * a level the walk skips is a place that claim is not true.
+ */
+test("bulk standing where a message should be is clipped like any other", async () => {
+  const { calls, store } = storeOf();
+  const given = {
+    uuid: "a",
+    parentUuid: "p",
+    type: "user",
+    timestamp: "2026-09-02T22:24:00.000Z",
+    message: "held ".repeat(20_000),
+  };
+
+  await store.append({ sessionId: "s" }, [given]);
+
+  const [posted] = postedEntries(calls);
+  assert.ok(
+    posted.message.includes("the session store clipped"),
+    "the entry's whole bulk was left uncut",
+  );
+  assert.equal(posted.uuid, given.uuid);
+});
+
+/**
  * The entry with cut sites enough that their notes alone outweigh the budget.
  * There is nothing left to share, so every site keeps its bare note and the line
  * stands over the budget — under the bound, which is the only maximum, and posted
  * rather than raised, because a note-only line is still a line a resume can walk.
+ *
+ * It is also where nothing is put back, so it is the one shape that separates the
+ * two rules that keep a result's own identifiers: the path is long enough that
+ * only its name spares it, and the exit status is short enough that only the note
+ * floor does.
  */
 test("an entry whose notes outweigh the budget is posted over it and under the bound", async () => {
   const { calls, store } = storeOf();
   const given = editEntry("held\n".repeat(4_000), 300, 40);
+  given.toolUseResult.exitStatus = "ok";
+  given.toolUseResult.filePath = `/workspace/${"a-long-directory-name/".repeat(10)}held.ts`;
 
   await store.append({ sessionId: "s" }, [given]);
 
@@ -464,6 +611,19 @@ test("an entry whose notes outweigh the budget is posted over it and under the b
     posted.toolUseResult.content.startsWith("[the session store clipped"),
     "a site kept a head there was no budget for",
   );
+  assert.equal(
+    posted.toolUseResult.exitStatus,
+    "ok",
+    "a value lighter than its note was replaced by that note",
+  );
+  assert.equal(
+    posted.toolUseResult.filePath,
+    given.toolUseResult.filePath,
+    "the path the result reported did not survive",
+  );
+  const block = posted.message.content[0];
+  assert.equal(block.tool_use_id, given.message.content[0].tool_use_id);
+  assert.equal(block.type, "tool_result");
   assert.equal(posted.uuid, given.uuid);
 });
 
@@ -623,7 +783,7 @@ test("an entry with nothing to clip raises, naming what it weighs and that nothi
   await assert.rejects(
     store.append({ sessionId: "s" }, [given]),
     (raised) =>
-      /nothing in it can be clipped/u.test(raised.message) &&
+      /is a clip's to shorten/u.test(raised.message) &&
       raised.message.includes(String(Buffer.byteLength(JSON.stringify(given)))),
   );
 
@@ -665,7 +825,7 @@ test("an entry no clip can save still lets the unacknowledged batch be re-sent",
   refuse = false;
   await assert.rejects(
     store.append({ sessionId: "s" }, [entry("a"), denseEntry("b", 12_000)]),
-    /nothing in it can be clipped/u,
+    /is a clip's to shorten/u,
   );
 
   const written = bodies(calls);
