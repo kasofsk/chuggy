@@ -1688,9 +1688,11 @@ export async function observeSelectorProject(
  * The candidates a decision is asked about, which are the page's less the ones
  * the lead already answered: a refusal stands against the version it named, so
  * a ticket re-released or re-authored since is a new question and a lifted
- * refusal is no answer at all. What stands is read to the bound the lead's own
+ * refusal is no answer at all. The standing handed in is one page, bounded by
+ * `leadRefusalsObservedMax` and ordered by ticket — the same page the lead's own
  * document carries, so the page it is shown and the page it decides on name the
- * same refusals.
+ * same refusals, and a project standing on more than that page holds has its
+ * tail excluded from nothing and re-presented (kasofsk/chuggy#574).
  */
 function undecidedCandidates(
   candidates: readonly DispatchCandidate[],
