@@ -20,11 +20,22 @@
  * unacknowledged batch, because that would change the digest and the plane would
  * be right to call it a conflict.
  *
- * A LINE LONGER THAN A BATCH IS A FAULT AND NOT A BODY TO POST. Nothing splits
+ * A LINE LONGER THAN A BATCH IS CLIPPED HERE RATHER THAN POSTED. Nothing splits
  * a line, so an entry over the bound could only go as a body the plane refuses,
- * and a refusal there fails the turn `StoreRefused` and stops the session. It
- * raises here instead, naming what the entry weighed: bounding an entry is its
- * producer's, and `./chuggyTools.mjs` is where a served answer is held under it.
+ * and a refusal there fails the turn `StoreRefused` and stops the session. The
+ * producer is not where that can be held: a built-in tool's result never crosses
+ * `./chuggyTools.mjs`, and the caps the runtime does offer count characters
+ * where the line is charged escaped bytes, which one character can cost several
+ * of. So the store is the bound of last resort. It replaces the entry's heaviest
+ * values, heaviest first, each with a head of itself and a note naming what the
+ * original weighed, until the line fits a batch — never the uuids, the type, the
+ * timestamp or the ids the runtime walks a transcript by, because those are
+ * lighter than the note that would replace them. A list of strings is one such
+ * value: a diff's lines are bulk together and nothing apart, so the list is
+ * clipped rather than each line of it. What resumes over the entry parses it and
+ * reads that it is seeing less, so it can run the tool again. The pod's own file
+ * is untouched; this is what the store posts, not what happened. Only an entry
+ * no clip brings under the bound raises, naming what it weighs.
  *
  * DEDUPLICATION IS PER STREAM AND AN ENTRY WITHOUT A UUID IS NEVER DROPPED. A
  * fork re-appends the parent's entries under the fork's own key carrying the
@@ -50,6 +61,16 @@ import { sessionRequest } from "./sessionTransport.mjs";
 
 /** One store batch is one wire body's worth, mirroring the plane's own bound. */
 export const sessionStoreBatchBytesMax = 65_536;
+
+/**
+ * What a clipped line weighs at most, its newline counted. It is aimed under
+ * the bound rather than at it, so two clipped entries still share one batch and
+ * the head a clip keeps is a courtesy to whatever resumes over it rather than
+ * the whole of a batch's budget.
+ */
+export const sessionStoreClipLineBytesMax = Math.floor(
+  sessionStoreBatchBytesMax / 2,
+);
 
 /** The most batches one stream of a session's store holds. */
 export const sessionStoreBatchesMax = 65_536;
@@ -111,13 +132,161 @@ function entryUuid(entry) {
     : undefined;
 }
 
+/** What one entry weighs as a line of a batch: its own bytes and the newline after it. */
+function lineBytes(line) {
+  return Buffer.byteLength(line) + 1;
+}
+
+/** What a value weighs where it stands in the line, which is what escaping charges. */
+function escapedBytes(value) {
+  return Buffer.byteLength(JSON.stringify(value));
+}
+
+/** What the quotes around an escaped string cost, so what is left is the text's own. */
+const escapedQuotesBytes = escapedBytes("");
+
+/** The longest head of `text` whose escaped bytes stand within `bytes`. */
+function escapedHead(text, bytes) {
+  let head = "";
+  let weight = 0;
+  for (const character of text) {
+    const cost = escapedBytes(character) - escapedQuotesBytes;
+    if (weight + cost > bytes) break;
+    weight += cost;
+    head += character;
+  }
+  return head;
+}
+
+/** The longest prefix of `list` whose elements, commas counted, stand within `bytes`. */
+function escapedPrefix(list, bytes) {
+  const prefix = [];
+  let weight = 0;
+  for (const element of list) {
+    const cost = escapedBytes(element) + 1;
+    if (weight + cost > bytes) break;
+    weight += cost;
+    prefix.push(element);
+  }
+  return prefix;
+}
+
+/**
+ * What a clip leaves in place of what it cut. The reader is whatever resumes
+ * over the entry, and what it needs is to know it is seeing less, by how much,
+ * and that running the tool again is how to see the rest.
+ */
+function clipNote(value) {
+  const weight =
+    typeof value === "string" ? Buffer.byteLength(value) : escapedBytes(value);
+  return `[the session store clipped this to fit one store batch; the original was ${String(weight)} bytes, so run the tool again to read the rest]`;
+}
+
+/** A value a clip replaces as one thing: a list of strings is bulk the way a string is. */
+function clippable(value) {
+  return (
+    typeof value === "string" ||
+    (Array.isArray(value) &&
+      value.length > 0 &&
+      value.every((element) => typeof element === "string"))
+  );
+}
+
+/**
+ * Every clippable value in the entry, heaviest first, and where it sits so a
+ * clip can replace it. The entry's shape is the runtime's, and a producer this
+ * tree has never seen writes its bulk under whatever field names it likes — so
+ * weight is what finds a result, and a tool's name is never asked for. A list of
+ * strings is taken whole and its elements are not taken again: a diff's lines
+ * are bulk together and nothing individually, and clipping them one at a time
+ * would replace each with something longer than itself.
+ */
+function entrySites(entry) {
+  const found = [];
+  const walk = (held, key) => {
+    const value = held[key];
+    if (clippable(value)) {
+      found.push({ held, key, weight: escapedBytes(value) });
+      return;
+    }
+    if (value === null || typeof value !== "object") return;
+    for (const inner of Object.keys(value)) walk(value, inner);
+  };
+  walk({ entry }, "entry");
+  return found.sort((first, second) => second.weight - first.weight);
+}
+
+/** What a site weighs once nothing of the original is left in it but the note. */
+function siteFloor(value, note) {
+  return typeof value === "string" ? escapedBytes(note) : escapedBytes([note]);
+}
+
+/**
+ * The heaviest sites replaced by their notes, heaviest first, stopping as soon
+ * as what is left fits. A site no heavier than the note that would replace it is
+ * passed over rather than cut, which is why an entry's uuids, timestamps and ids
+ * survive a clip and why a clip never lengthens a line.
+ */
+function cutSites(clipped) {
+  const cut = [];
+  for (const site of entrySites(clipped)) {
+    const value = site.held[site.key];
+    const note = clipNote(value);
+    if (siteFloor(value, note) >= site.weight) continue;
+    site.held[site.key] = typeof value === "string" ? note : [note];
+    cut.push({ ...site, value, note });
+    if (lineBytes(JSON.stringify(clipped)) <= sessionStoreClipLineBytesMax)
+      break;
+  }
+  return cut;
+}
+
+/**
+ * The cut sites given back as much of their heads as the aim leaves, shared
+ * evenly so every copy of one result carries the same head. A share is spent in
+ * escaped bytes, because that is what the line is charged for a character.
+ */
+function growSites(clipped, cut) {
+  const spare =
+    sessionStoreClipLineBytesMax - lineBytes(JSON.stringify(clipped));
+  if (spare <= 0) return;
+  const share = Math.floor(spare / cut.length);
+  for (const site of cut) {
+    if (typeof site.value !== "string") {
+      site.held[site.key] = [...escapedPrefix(site.value, share), site.note];
+      continue;
+    }
+    const head = escapedHead(site.value, share - escapedQuotesBytes);
+    if (head.length > 0) site.held[site.key] = `${head}\n${site.note}`;
+  }
+}
+
+/**
+ * The line the store posts for one entry: the entry itself where a batch holds
+ * it, and a clipped copy of it where nothing else can. The heads are grown
+ * against the serialised line and the result is weighed again, because escaping
+ * and the copies are what a line is charged for and neither is visible in a
+ * character count.
+ */
+function storedLine(entry) {
+  const line = JSON.stringify(entry);
+  if (lineBytes(line) <= sessionStoreBatchBytesMax) return line;
+  const clipped = JSON.parse(line);
+  const cut = cutSites(clipped);
+  if (cut.length === 0) return line;
+  const notesOnly = JSON.stringify(clipped);
+  growSites(clipped, cut);
+  const grown = JSON.stringify(clipped);
+  return lineBytes(grown) <= sessionStoreBatchBytesMax ? grown : notesOnly;
+}
+
 /** The lines this call still owes the store, in order, with the settled ones dropped. */
 function owedLines(state, entries) {
   const owed = [];
   for (const entry of entries) {
     const uuid = entryUuid(entry);
     if (uuid !== undefined && state.confirmed.has(uuid)) continue;
-    const line = JSON.stringify(entry);
+    const line = storedLine(entry);
     if (state.pending?.lines.has(line)) continue;
     owed.push({ line, uuid });
   }
@@ -130,10 +299,10 @@ function plannedBatches(owed) {
   let held = [];
   let bytes = 0;
   for (const owedLine of owed) {
-    const size = Buffer.byteLength(owedLine.line) + 1;
+    const size = lineBytes(owedLine.line);
     if (size > sessionStoreBatchBytesMax)
       throw new Error(
-        `the session store was given an entry of ${String(size - 1)} bytes, which with its newline is over the ${String(sessionStoreBatchBytesMax)} one batch holds`,
+        `the session store was given an entry of ${String(size - 1)} bytes that clipping does not bring under the ${String(sessionStoreBatchBytesMax)} one batch holds`,
       );
     if (held.length > 0 && bytes + size > sessionStoreBatchBytesMax) {
       planned.push(held);

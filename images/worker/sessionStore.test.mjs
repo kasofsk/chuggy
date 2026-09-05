@@ -8,6 +8,137 @@ import {
   sessionStoreStream,
 } from "./sessionStore.mjs";
 
+/**
+ * A `Bash` result entry of the shape the runtime writes: the identity a
+ * transcript is walked by, and the output in the message's `tool_result` block
+ * and again in the entry's own `toolUseResult`. How many times a producer
+ * repeats its result is the runtime's business rather than this image's, so the
+ * count is a parameter and the third copy goes where a block of content parts
+ * would put it.
+ */
+function bashEntry(stdout, copies = 2) {
+  const result = { stdout, stderr: "", interrupted: false, isImage: false };
+  if (copies > 2) result.content = [{ type: "text", text: stdout }];
+  return {
+    parentUuid: "0d58b3dd-4b2f-42b9-9af5-bc1c23f8e254",
+    isSidechain: false,
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        {
+          tool_use_id: "toolu_019XZRLcSZRv7FHunqneCm3d",
+          type: "tool_result",
+          content: stdout,
+          is_error: false,
+        },
+      ],
+    },
+    uuid: "8becba21-e445-496f-bf38-c1fc7fb11506",
+    timestamp: "2026-09-02T22:18:44.130Z",
+    toolUseResult: result,
+    cwd: "/workspace/repo",
+    sessionId: "fecadcca-7f72-478c-ab53-561e3a17110b",
+    version: "2.1.258",
+    gitBranch: "HEAD",
+  };
+}
+
+/**
+ * An image read's entry, whose bulk sits under field names nothing here knows:
+ * it is the second producer the suite drives, so what finds a result's text is
+ * held to being its weight rather than a tool this image anticipated.
+ */
+function readEntry(data) {
+  return {
+    parentUuid: "6f9b6b17-6a26-4b4f-9a86-16a1ef7a1a0d",
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        {
+          tool_use_id: "toolu_01ReadImage",
+          type: "tool_result",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: "image/png", data },
+            },
+          ],
+        },
+      ],
+    },
+    uuid: "d3a7d0d7-6b0f-4f7c-9d3e-2c0e2b1f7a55",
+    timestamp: "2026-09-02T22:19:02.010Z",
+    toolUseResult: { type: "image", file: { base64: data, type: "image/png" } },
+    cwd: "/workspace/repo",
+    sessionId: "fecadcca-7f72-478c-ab53-561e3a17110b",
+    version: "2.1.258",
+  };
+}
+
+/**
+ * An `Edit` result entry: its bulk is the file it wrote and a structured patch
+ * whose lines are each far lighter than the note that would replace one. It is
+ * the shape a clip that only knew single strings cannot bring under the bound.
+ */
+function editEntry(content, patches, linesEach) {
+  return {
+    parentUuid: "b1f0a0e2-1a55-4f2a-8f27-5f2a6b3c9e10",
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        {
+          tool_use_id: "toolu_01EditTheFile",
+          type: "tool_result",
+          content: "The file was updated.",
+        },
+      ],
+    },
+    uuid: "9f21b6c4-4c5a-42f0-9a3e-70b1c2d3e4f5",
+    timestamp: "2026-09-02T22:20:11.500Z",
+    toolUseResult: {
+      filePath: "/workspace/repo/src/held.ts",
+      content,
+      structuredPatch: Array.from({ length: patches }, (_, patch) => ({
+        oldStart: patch * linesEach,
+        newStart: patch * linesEach,
+        oldLines: linesEach,
+        newLines: linesEach,
+        lines: Array.from(
+          { length: linesEach },
+          (_, line) =>
+            `+  const held${String(patch)}x${String(line)} = readTheLine(at);`,
+        ),
+      })),
+    },
+    cwd: "/workspace/repo",
+    sessionId: "fecadcca-7f72-478c-ab53-561e3a17110b",
+    version: "2.1.258",
+  };
+}
+
+/**
+ * Output a line is charged several bytes for every character of, as a shell
+ * redrawing its own progress writes: a control character has no short escape,
+ * so the line carries it as an escaped code point.
+ */
+function controlOutput(characters) {
+  const unit = String.fromCharCode(0, 1, 2, 3, 4, 5, 6, 7);
+  return unit.repeat(Math.ceil(characters / unit.length)).slice(0, characters);
+}
+
+/** The lines of every body a run posted, parsed. */
+function postedEntries(calls) {
+  return bodies(calls).flatMap(({ body }) =>
+    body
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line)),
+  );
+}
+
 const task = { workerPlane: { url: "http://worker-plane.test:3001" } };
 
 function planeOf(answer) {
@@ -39,6 +170,19 @@ function bodies(calls) {
   return calls
     .filter(({ init }) => init.method === "PUT")
     .map(({ path, init }) => ({ path, body: init.body.toString("utf8") }));
+}
+
+/**
+ * The entry a clip cannot save: its weight is in numbers, so there is no string
+ * in it heavier than the note that would replace one. It is the residue the
+ * store still raises on, and the store's own suite is the only place it exists.
+ */
+function denseEntry(uuid, numbers) {
+  return {
+    uuid,
+    type: "assistant",
+    data: Array.from({ length: numbers }, (_, at) => 1_000_000 + at),
+  };
 }
 
 test("a stream is the session id and its subpath, and the project key is not in it", async () => {
@@ -90,16 +234,202 @@ test("one append fills contiguous batches at the wire body's bound", async () =>
 });
 
 /**
- * The line nothing can split, at one byte over the body the plane accepts. It is
- * the producer's fault and it is named as one here, because posting it would be
- * a refusal the session reads as `StoreRefused` and a message naming nothing.
+ * The line nothing can split, several times over the body the plane accepts
+ * because the runtime charged it escaped bytes for every character of a shell's
+ * redraws and then wrote the result twice. It goes as a clipped entry: posting
+ * it whole is a refusal the session reads as `StoreRefused`, and raising on it
+ * is the same stop under another name.
  */
-test("an entry larger than one batch raises rather than posting a body the plane refuses", async () => {
+test("an entry no batch holds is clipped into one batch and keeps what walks the transcript", async () => {
+  const { calls, store } = storeOf();
+  const given = bashEntry(controlOutput(30_000));
+  const asGiven = JSON.stringify(given);
+
+  await store.append({ sessionId: "s" }, [given]);
+
+  assert.equal(
+    JSON.stringify(given),
+    asGiven,
+    "the clip reached the entry the runtime is still writing to its own file",
+  );
+
+  const written = bodies(calls);
+  assert.equal(written.length, 1, "the clipped entry did not go as one batch");
+  assert.ok(
+    Buffer.byteLength(written[0].body) <= sessionStoreBatchBytesMax,
+    `the clipped body is ${String(Buffer.byteLength(written[0].body))} bytes`,
+  );
+  const posted = postedEntries(calls);
+  assert.equal(posted.length, 1);
+  for (const field of [
+    "uuid",
+    "parentUuid",
+    "type",
+    "timestamp",
+    "sessionId",
+    "cwd",
+    "version",
+  ])
+    assert.equal(posted[0][field], given[field], `${field} did not survive`);
+  assert.equal(posted[0].message.role, given.message.role);
+  assert.equal(
+    posted[0].message.content[0].tool_use_id,
+    given.message.content[0].tool_use_id,
+  );
+  assert.equal(posted[0].message.content[0].type, "tool_result");
+});
+
+test("every copy of the clipped text carries a head of it and what the original weighed", async () => {
+  const { calls, store } = storeOf();
+  const stdout = controlOutput(30_000);
+  const weight = String(Buffer.byteLength(stdout));
+
+  await store.append({ sessionId: "s" }, [bashEntry(stdout, 3)]);
+
+  const [posted] = postedEntries(calls);
+  const copies = [
+    posted.message.content[0].content,
+    posted.toolUseResult.stdout,
+    posted.toolUseResult.content[0].text,
+  ];
+  for (const copy of copies) {
+    assert.ok(copy.includes("the session store clipped"), "a copy was not cut");
+    assert.ok(copy.includes(weight), "a copy does not say what was cut");
+    assert.ok(
+      stdout.startsWith(copy.slice(0, copy.indexOf("\n["))),
+      "a copy is not a head of the original",
+    );
+    assert.ok(copy.indexOf("\n[") > 0, "a copy kept no head at all");
+  }
+});
+
+/**
+ * The producer this image has never seen: an image read puts its bulk under
+ * field names nothing here knows, and it is clipped all the same because weight
+ * is what the store looks for.
+ */
+test("a result under field names nothing anticipated is clipped by weight", async () => {
   const { calls, store } = storeOf();
 
+  await store.append({ sessionId: "s" }, [readEntry("QUJDRA".repeat(20_000))]);
+
+  const [posted] = postedEntries(calls);
+  const source = posted.message.content[0].content[0].source;
+  assert.equal(source.media_type, "image/png");
+  for (const copy of [source.data, posted.toolUseResult.file.base64])
+    assert.ok(copy.includes("the session store clipped"), "a copy was not cut");
+});
+
+/**
+ * The entry whose bulk is a list rather than a text: no line of a diff is
+ * heavier than the note that would replace it, so a clip that took only single
+ * strings would leave this one over the bound and stop the session.
+ */
+test("a result whose bulk is a list of lines is clipped as a list", async () => {
+  const { calls, store } = storeOf();
+  const given = editEntry("held\n".repeat(4_000), 30, 80);
+
+  await store.append({ sessionId: "s" }, [given]);
+
+  const written = bodies(calls);
+  assert.equal(written.length, 1);
+  assert.ok(
+    Buffer.byteLength(written[0].body) <= sessionStoreBatchBytesMax,
+    `the clipped body is ${String(Buffer.byteLength(written[0].body))} bytes`,
+  );
+  const [posted] = postedEntries(calls);
+  assert.equal(posted.uuid, given.uuid);
+  assert.equal(
+    posted.toolUseResult.filePath,
+    given.toolUseResult.filePath,
+    "the path the edit named did not survive",
+  );
+  const patched = posted.toolUseResult.structuredPatch;
+  assert.equal(patched.length, given.toolUseResult.structuredPatch.length);
+  for (const patch of patched)
+    assert.ok(Array.isArray(patch.lines), "a patch stopped being a list");
+  assert.ok(
+    patched.some(({ lines }) =>
+      lines.at(-1).includes("the session store clipped"),
+    ),
+    "no list of lines was cut, so nothing but the file's text was",
+  );
+});
+
+test("an entry at the bound is posted as the bytes it arrived as", async () => {
+  const { calls, store } = storeOf();
+  const envelope = Buffer.byteLength(JSON.stringify(entry("a", 0)));
+  const given = entry("a", sessionStoreBatchBytesMax - envelope - 1);
+
+  await store.append({ sessionId: "s" }, [given]);
+
+  const written = bodies(calls);
+  assert.equal(
+    Buffer.byteLength(written[0].body),
+    sessionStoreBatchBytesMax,
+    "the entry at the bound was not the batch",
+  );
+  assert.equal(written[0].body, `${JSON.stringify(given)}\n`);
+});
+
+test("a clipped entry loads back off the store as an entry", async () => {
+  const { calls, store } = storeOf();
+  await store.append({ sessionId: "s" }, [bashEntry(controlOutput(30_000))]);
+  const [{ body }] = bodies(calls);
+
+  const reader = storeOf((path) =>
+    path.startsWith("/v1/session/store/s?")
+      ? { status: 200, body: { batches: [{ batch: 1, content: body }] } }
+      : { status: 204 },
+  );
+  const loaded = await reader.store.load({ sessionId: "s" });
+
+  assert.equal(loaded.length, 1);
+  assert.equal(loaded[0].uuid, bashEntry("").uuid);
+  assert.equal(loaded[0].parentUuid, bashEntry("").parentUuid);
+  assert.ok(loaded[0].toolUseResult.stdout.includes("clipped"));
+});
+
+test("two entries no batch holds both land, in order, with the entries around them", async () => {
+  const { calls, store } = storeOf();
+  const big = (uuid) => ({
+    ...bashEntry(controlOutput(30_000)),
+    uuid,
+  });
+
+  await store.append({ sessionId: "s" }, [
+    entry("a"),
+    big("b"),
+    entry("c"),
+    big("d"),
+    entry("e"),
+  ]);
+
+  for (const { path, body } of bodies(calls))
+    assert.ok(
+      Buffer.byteLength(body) <= sessionStoreBatchBytesMax,
+      `${path} is ${String(Buffer.byteLength(body))} bytes`,
+    );
+  assert.deepEqual(
+    postedEntries(calls).map(({ uuid }) => uuid),
+    ["a", "b", "c", "d", "e"],
+  );
+});
+
+/**
+ * The residue: an entry whose weight is not in any string a clip could shorten.
+ * It still raises, and it still names what the entry weighs, because a body the
+ * plane refuses is the one outcome the store may not produce.
+ */
+test("an entry no clip brings under the bound raises, naming what it weighs", async () => {
+  const { calls, store } = storeOf();
+  const given = denseEntry("a", 12_000);
+
   await assert.rejects(
-    store.append({ sessionId: "s" }, [entry("a", sessionStoreBatchBytesMax)]),
-    /one batch holds/,
+    store.append({ sessionId: "s" }, [given]),
+    (raised) =>
+      /clipping does not bring under/u.test(raised.message) &&
+      raised.message.includes(String(Buffer.byteLength(JSON.stringify(given)))),
   );
 
   assert.deepEqual(bodies(calls), [], "the over-long entry was posted anyway");
@@ -111,7 +441,7 @@ test("an entry larger than one batch raises rather than posting a body the plane
  * batch is; a raise that ran first would open it in the one case where the
  * transcript is already losing an entry.
  */
-test("an entry larger than one batch still lets the unacknowledged batch be re-sent", async () => {
+test("an entry no clip can save still lets the unacknowledged batch be re-sent", async () => {
   let refuse = true;
   const { calls, store } = storeOf(() =>
     refuse ? new Error("plane unreachable") : { status: 204 },
@@ -120,11 +450,8 @@ test("an entry larger than one batch still lets the unacknowledged batch be re-s
   await assert.rejects(store.append({ sessionId: "s" }, [entry("a")]));
   refuse = false;
   await assert.rejects(
-    store.append({ sessionId: "s" }, [
-      entry("a"),
-      entry("b", sessionStoreBatchBytesMax),
-    ]),
-    /one batch holds/,
+    store.append({ sessionId: "s" }, [entry("a"), denseEntry("b", 12_000)]),
+    /clipping does not bring under/u,
   );
 
   const written = bodies(calls);
