@@ -601,6 +601,120 @@ test("a paused runtime creates no new observations but still drains durable work
   assert.equal(pendingReads, 1);
 });
 
+const exhaustedScanToken = {
+  ...partition,
+  recoveryEpoch: "epoch",
+  schemaVersion: 1,
+  watermark: 7,
+  digest: "a".repeat(64),
+} as const;
+
+/** A project whose last turn read the view to its end and stopped at that token. */
+const exhaustedProjectState: SelectorProjectState = {
+  partition,
+  notificationCursor: 3,
+  revision: 1,
+  attention: "Monitoring",
+  handoffNote: {},
+  candidateScan: { state: "Exhausted", token: exhaustedScanToken },
+};
+
+/** A page of changes past the cursor that project's last turn stood on. */
+const movedTicketPage = {
+  result: "Events",
+  cursor: 9,
+  events: [{ ordinal: 9, kind: "Ticket", resource: "35" }],
+} as const;
+
+/**
+ * The trigger and the observation ask different questions, and only the second
+ * one is whether there is anything to decide about. The notification cursor
+ * moves with every change row and is saved by a completed cycle alone, so a
+ * project appending changes that leave the dispatch view where it was triggers
+ * on every pass for good — and a permit taken on the trigger charges each of
+ * those a decision reference, a `selector_interaction` row and a
+ * selections-per-minute slot for an attempt with nothing to observe.
+ */
+test("a pass whose view has not moved takes no permit and leaves no attempt", async () => {
+  const allocated: string[] = [];
+  const terminated: string[] = [];
+  const result = await selectorRunOnce(
+    refusalWrites(),
+    {
+      ...stateStore(() => undefined),
+      project: () => Promise.resolve(exhaustedProjectState),
+      allocateAttempt: (attempt) => {
+        allocated.push(attempt);
+        return Promise.resolve(true);
+      },
+      terminateAttempt: (attempt) => {
+        terminated.push(attempt);
+        return Promise.resolve();
+      },
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [partition] }),
+      moved: () => Promise.resolve(movedTicketPage),
+      dispatchView: () =>
+        Promise.resolve({
+          result: "Page",
+          token: exhaustedScanToken,
+          candidates: [],
+          notificationCursor: 9,
+        } as const),
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    policyHost(() => Promise.reject(new Error("the lead was asked to decide"))),
+    perProjectIdentities(),
+    settingsSource(() => Promise.resolve(runtimeSettings)),
+    { projectsMax: 1, deliveriesMax: 1, reconciliationsMax: 1 },
+  );
+  assert.deepEqual(allocated, []);
+  assert.deepEqual(terminated, []);
+  assert.equal(result.observed, 0);
+  assert.deepEqual(result.failures, []);
+});
+
+test("a pass whose view has moved still takes its permit and decides", async () => {
+  const allocated: string[] = [];
+  let views = 0;
+  const result = await selectorRunOnce(
+    refusalWrites(),
+    {
+      ...stateStore(() => undefined),
+      project: () => Promise.resolve(exhaustedProjectState),
+      allocateAttempt: (attempt) => {
+        allocated.push(attempt);
+        return Promise.resolve(true);
+      },
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [partition] }),
+      moved: () => Promise.resolve(movedTicketPage),
+      dispatchView: () => {
+        views += 1;
+        return Promise.resolve(
+          views === 1
+            ? ({ result: "Reset" } as const)
+            : emptyDispatchPage(partition, "b".repeat(64)),
+        );
+      },
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    policyHost(() => Promise.resolve(waitingExecution())),
+    perProjectIdentities(),
+    settingsSource(() => Promise.resolve(runtimeSettings)),
+    { projectsMax: 1, deliveriesMax: 1, reconciliationsMax: 1 },
+  );
+  assert.deepEqual(allocated, [`decision-${partition.project}`]);
+  assert.equal(result.observed, 1);
+  assert.deepEqual(result.failures, []);
+});
+
 test("inventory progress follows scanned projects when a permit is unavailable", async () => {
   const first = { tenant: partition.tenant, project: asProjectId("first") };
   const second = { tenant: partition.tenant, project: asProjectId("second") };

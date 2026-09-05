@@ -1,4 +1,3 @@
-import type { NotificationBatch } from "./notifications.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ProjectInventoryPage } from "./nativeWeb.ts";
 import {
@@ -9,6 +8,7 @@ import {
   type SelectorRefusalLedger,
   type SelectorCycleIdentity,
   selectorNotificationPageLimit,
+  type SelectorObservation,
   type SelectorObservationSource,
   type SelectorOperationSource,
   type SelectorPolicyHost,
@@ -146,13 +146,15 @@ interface ProjectObservationResult {
 }
 
 /**
- * Runs one swept project, taking its permit only after its change log is seen
- * to have moved past the cursor its last turn stood on — allocating first
- * spends a permit and a selections-per-minute slot on a project with nothing
- * new, which is the whole of what a change-driven runtime exists to stop. A
- * quiet project therefore costs one bounded notification read and nothing
- * else — no permit, no decision reference, no turn and no quota — and the sweep
- * still counts it as scanned, so discovery goes on.
+ * Runs one swept project, taking its permit only once the observation the
+ * decision would stand on exists — a change log that moved is not by itself
+ * something to decide about, and the notification cursor is saved by a
+ * completed cycle alone, so allocating on the trigger charges a decision
+ * reference, a `selector_interaction` row and a selections-per-minute slot to
+ * every pass of a project whose changes leave the dispatch view where it was.
+ * A project with nothing to decide therefore costs its bounded reads and
+ * nothing else — no permit, no decision reference, no turn and no quota — and
+ * the sweep still counts it as scanned, so discovery goes on.
  */
 async function observeProject(
   partition: Partition,
@@ -172,18 +174,14 @@ async function observeProject(
   if (settings.installationMode === "Paused") return stoppedProjectObservation;
   if (settings.mode === "Paused") return emptyProjectObservation;
   let state: SelectorProjectState;
-  let changes: NotificationBatch;
+  let observation: SelectorObservation | undefined;
   try {
     state = (await store.project(partition)) ?? initialState(partition);
-    changes = await source.moved(
-      partition,
-      state.notificationCursor,
-      selectorNotificationPageLimit,
-    );
+    observation = await projectObservation(state, source, settings);
   } catch {
     return projectObservationFailure("Observation", partition);
   }
-  if (!selectorProjectMoved(state, changes)) return emptyProjectObservation;
+  if (observation === undefined) return emptyProjectObservation;
   const identity = identities.next(partition);
   let allocated: boolean;
   try {
@@ -204,13 +202,38 @@ async function observeProject(
     partition,
     settings,
     state,
-    changes,
+    observation,
     refusals,
     store,
     source,
     policy,
     identity,
     control,
+  );
+}
+
+/**
+ * What this project has to decide about, or nothing. The notification page is
+ * read once and handed to the observation, so a row cannot arrive between two
+ * reads and be counted as the trigger for a window that does not contain it.
+ */
+async function projectObservation(
+  state: SelectorProjectState,
+  source: SelectorRuntimeSource,
+  settings: SelectorResolvedSettings,
+): Promise<SelectorObservation | undefined> {
+  const changes = await source.moved(
+    state.partition,
+    state.notificationCursor,
+    selectorNotificationPageLimit,
+  );
+  if (!selectorProjectMoved(state, changes)) return undefined;
+  return observeSelectorProject(
+    state,
+    source,
+    changes,
+    selectorNotificationPageLimit,
+    Math.floor(leadInputBytesMax(settings) / 2),
   );
 }
 
@@ -232,34 +255,20 @@ function projectObservationFailure(
 
 /**
  * Runs one decision under settings the fence has just been re-read against, on
- * the state and the notification page the trigger already read. The page is not
- * read again: a second read would let a row arrive between the two and be
- * counted as the trigger for a window that does not contain it.
+ * the state and the observation the trigger already built. Neither is read
+ * again: the observation the permit was taken for is the one the decision
+ * stands on, and re-reading it would let the view move between the two.
  */
 async function observeFencedProject(
   settings: SelectorResolvedSettings,
   state: SelectorProjectState,
-  changes: NotificationBatch,
+  observation: SelectorObservation,
   refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
   policy: SelectorPolicyHost,
   identity: SelectorCycleIdentity,
 ): Promise<SelectorProposedDecision | undefined> {
-  const observation = await observeSelectorProject(
-    state,
-    source,
-    changes,
-    selectorNotificationPageLimit,
-    Math.floor(leadInputBytesMax(settings) / 2),
-  );
-  if (observation === undefined) {
-    await store.terminateAttempt(
-      identity.selectorDecisionReference,
-      "no current observation",
-    );
-    return undefined;
-  }
   await store.runningAttempt(
     identity.selectorDecisionReference,
     observation,
@@ -287,7 +296,7 @@ async function observePermittedProject(
   partition: Partition,
   expectedSettings: SelectorResolvedSettings,
   state: SelectorProjectState,
-  changes: NotificationBatch,
+  observation: SelectorObservation,
   refusals: SelectorRefusalLedger,
   store: SelectorStateStore,
   source: SelectorRuntimeSource,
@@ -317,7 +326,7 @@ async function observePermittedProject(
       proposal = await observeFencedProject(
         settings,
         state,
-        changes,
+        observation,
         refusals,
         store,
         source,
