@@ -26,6 +26,13 @@
  * where the model can ask for a smaller one, never cut: a cut JSON document is
  * a page nothing can parse and nothing can resume from.
  *
+ * THE TRANSCRIPT READS ARE THE ONE EXCEPTION, and `./transcriptPage.mjs` states
+ * why: their route pages by store batch, a batch is bounded by the store's own
+ * line bound, and one line is what a whole answer must fit inside. So no page
+ * bound a caller could lower makes one of those pages answerable, and a refusal
+ * there is a walk that cannot continue. They answer whole entries under the
+ * bound and a cursor instead.
+ *
  * AN ANSWER IS BOUNDED BY WHAT THE TRANSCRIPT HOLDS, and that is a much tighter
  * bound than the body drawn off the wire. Every answer becomes one `tool_result`
  * entry, `./sessionStore.mjs` mirrors an entry as one line it never splits, and
@@ -38,8 +45,7 @@
  * after the fixed envelope, divided by the copies — and an answer is weighed as
  * the entry escapes it rather than as it reads, because escaping is what the
  * line is charged for. The entry's shape is the runtime's and this image never
- * composes one, which is why the suite reads a captured entry rather than
- * writing one: a guard that invents the shape cannot see a copy it forgot.
+ * composes one, so the suite holds the bound against a captured entry.
  *
  * A WRITE RELAYS THE API'S OUTCOME UNALTERED — the status and the error body, as
  * text. No retry, no repair, no hiding a 409. A tool that decided what a refusal
@@ -74,6 +80,7 @@ import {
 } from "./chuggyApi.mjs";
 import { leadDecisionStaging, leadDecisionToolNames } from "./leadDecision.mjs";
 import { sessionStoreBatchBytesMax } from "./sessionStore.mjs";
+import { transcriptPageAnswer } from "./transcriptPage.mjs";
 
 /** The one MCP server every session is given, and the prefix its tool names carry. */
 export const chuggyToolServerName = "chuggy";
@@ -114,6 +121,22 @@ export const chuggyToolAnswerBytesMax = Math.floor(
 
 /** The argument a paged tool's shape declares, and the only page bound a model can lower. */
 export const chuggyToolPageArgument = "limit";
+
+/** The smallest page there is, past which a refusal has nothing left to ask for. */
+export const chuggyToolPageItemsMin = 1;
+
+/** The cursors a tool's shape declares, in the order a refusal offers them. */
+export const chuggyToolCursorArguments = ["after", "before", "cursor"];
+
+/** How many store batches one transcript read asks for, which is what its answers are cut from. */
+export const chuggyTranscriptBatchesRead = 1;
+
+/**
+ * What one transcript page may weigh off the wire: that batch re-emitted as
+ * entries, and room around it. It is wider than any other read draws because
+ * the pod holds this one only long enough to cut it into answers.
+ */
+export const chuggyTranscriptBodyBytesMax = 4 * sessionStoreBatchBytesMax;
 
 /** What one answer's text weighs as the entry escapes it, which is what the line is charged. */
 export function chuggyToolAnswerBytes(text) {
@@ -264,19 +287,28 @@ function answered(text, isError) {
 }
 
 /**
- * What an answer too large to store is refused with. It ends in what the model
- * can actually do, which for a tool with no page bound to lower is nothing:
- * saying "ask for a smaller page" there is a dead end dressed as an instruction,
- * and a model reads it as one and asks again.
+ * What an answer too large to store is refused with. It ends in what this
+ * caller can actually do, which is nothing for a tool with no page bound and
+ * nothing again for one already asking for a single item: "ask for a smaller
+ * page" is then a dead end dressed as an instruction, and a model reads it as
+ * one and asks the same question again.
  */
-function answerTooLarge(name, paged) {
-  const remedy = paged
-    ? `ask again with a smaller ${chuggyToolPageArgument}`
-    : `${name} takes no ${chuggyToolPageArgument}, so this one cannot be answered`;
+function answerTooLarge(name, fields, args) {
   return answered(
-    `this answer is larger than the ${String(chuggyToolAnswerBytesMax)} bytes one tool answer holds in the transcript; ${remedy}.`,
+    `this answer is larger than the ${String(chuggyToolAnswerBytesMax)} bytes one tool answer holds in the transcript; ${answerTooLargeRemedy(name, fields, args)}.`,
     true,
   );
+}
+
+function answerTooLargeRemedy(name, fields, args) {
+  if (!(chuggyToolPageArgument in fields))
+    return `${name} takes no ${chuggyToolPageArgument}, so this one cannot be answered`;
+  if (args?.[chuggyToolPageArgument] !== chuggyToolPageItemsMin)
+    return `ask again with a smaller ${chuggyToolPageArgument}`;
+  const cursor = chuggyToolCursorArguments.find((one) => one in fields);
+  return cursor === undefined
+    ? `${name} is already asking for one, so this one cannot be answered`
+    : `${name} is already asking for one; move past it with ${cursor}`;
 }
 
 /**
@@ -304,6 +336,44 @@ async function relay(context, path, init) {
 
 function read(context, path) {
   return relay(context, path, { method: "GET" });
+}
+
+/**
+ * One transcript page, cut to the whole entries this answer can carry. The
+ * route's own body is parsed rather than relayed, which is what lets the answer
+ * be smaller than the batch the route pages by.
+ */
+async function readTranscript(context, path, cursor) {
+  const response = await context.request(context.task, context.bearer, path, {
+    method: "GET",
+  });
+  const { text, cut } = await chuggyBoundedBody(
+    response,
+    chuggyTranscriptBodyBytesMax,
+  );
+  if (response.status >= 400)
+    return answered(`HTTP ${String(response.status)}\n${text}`, true);
+  if (cut)
+    return answered(
+      `this transcript page is larger than the ${String(chuggyTranscriptBodyBytesMax)} bytes one read draws off the wire, so it cannot be answered.`,
+      true,
+    );
+  let page;
+  try {
+    page = JSON.parse(text);
+  } catch {
+    return answered(
+      "the transcript route answered a body this read could not parse.",
+      true,
+    );
+  }
+  return answered(
+    transcriptPageAnswer(
+      page,
+      cursor,
+      (composed) => chuggyToolAnswerBytes(composed) <= chuggyToolAnswerBytesMax,
+    ),
+  );
 }
 
 function write(context, path, method, body, headers = {}) {
@@ -521,16 +591,17 @@ export const chuggyProjectTools = [
   {
     name: "read_lead_transcript",
     description:
-      "One page of the lead's own raw transcript, which is how it reads past its own compaction.",
+      "One page of the lead's own raw transcript, which is how it reads past its own compaction. Answers whole entries and a `next` cursor; pass its `after` and `entry` back for the page after this one.",
     shape: (z) => ({
       stream: identity(z).optional(),
       after: count(z).optional(),
-      limit: limit(z, sessionStorePageBatchesMax),
+      entry: count(z).optional(),
     }),
-    call: (context, { stream, after, limit: pageLimit }) =>
-      read(
+    call: (context, { stream, after, entry }) =>
+      readTranscript(
         context,
-        `${partitionPath(context.task)}/lead/transcript${search({ stream, after, limit: pageLimit })}`,
+        `${partitionPath(context.task)}/lead/transcript${search({ stream, after, limit: chuggyTranscriptBatchesRead })}`,
+        { after: after ?? 0, entry: entry ?? 0 },
       ),
   },
   {
@@ -611,17 +682,18 @@ export const chuggyProjectTools = [
   {
     name: "read_thread_transcript",
     description:
-      "One page of a thread's own raw transcript, which is how it reads past its own compaction.",
+      "One page of a thread's own raw transcript, which is how it reads past its own compaction. Answers whole entries and a `next` cursor; pass its `after` and `entry` back for the page after this one.",
     shape: (z) => ({
       session: identity(z),
       stream: identity(z).optional(),
       after: count(z).optional(),
-      limit: limit(z, sessionStorePageBatchesMax),
+      entry: count(z).optional(),
     }),
-    call: (context, { session, stream, after, limit: pageLimit }) =>
-      read(
+    call: (context, { session, stream, after, entry }) =>
+      readTranscript(
         context,
-        `${partitionPath(context.task)}/threads/${encodeURIComponent(session)}/transcript${search({ stream, after, limit: pageLimit })}`,
+        `${partitionPath(context.task)}/threads/${encodeURIComponent(session)}/transcript${search({ stream, after, limit: chuggyTranscriptBatchesRead })}`,
+        { after: after ?? 0, entry: entry ?? 0 },
       ),
   },
   {
@@ -783,13 +855,13 @@ export function chuggyToolDefinitions(context) {
  * not fit one of the store's lines. Refusing here is what keeps the answer the
  * model reads and the line the store writes the same thing.
  */
-function storableAnswer(name, paged, answer) {
+function storableAnswer(definition, fields, args, answer) {
   const text = (answer.content ?? [])
     .map((block) => (typeof block?.text === "string" ? block.text : ""))
     .join("");
   return chuggyToolAnswerBytes(text) <= chuggyToolAnswerBytesMax
     ? answer
-    : answerTooLarge(name, paged);
+    : answerTooLarge(definition.name, fields, args);
 }
 
 /**
@@ -816,24 +888,27 @@ function storableAnswer(name, paged, answer) {
  * not hold.
  */
 export function chuggyToolHandler(definition, z) {
+  // The shape the model is given is also what says whether this tool pages and
+  // what it is paged by: a roster stating that beside it would be a second
+  // answer to a question the shape answers, and the two would part.
   const fields = definition.shape(z);
   const shape = z.object(fields);
-  // Read off the shape the model is given rather than declared beside it: a
-  // roster that said which tools page would be a second answer to a question
-  // the shape already answers, and the two would part.
-  const paged = chuggyToolPageArgument in fields;
   return async (args) => {
+    let given = args ?? {};
     try {
-      const answer = await definition.call(shape.parse(args ?? {}));
+      given = shape.parse(given);
+      const answer = await definition.call(given);
       return storableAnswer(
-        definition.name,
-        paged,
+        definition,
+        fields,
+        given,
         typeof answer === "string" ? answered(answer) : answer,
       );
     } catch (failure) {
       return storableAnswer(
-        definition.name,
-        paged,
+        definition,
+        fields,
+        given,
         answered(
           failure instanceof Error ? failure.message : String(failure),
           true,
