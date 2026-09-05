@@ -36,8 +36,10 @@
  * AN ANSWER IS BOUNDED BY WHAT THE TRANSCRIPT HOLDS, and that is a much tighter
  * bound than the body drawn off the wire. Every answer becomes one `tool_result`
  * entry, `./sessionStore.mjs` mirrors an entry as one line it never splits, and
- * a line over `sessionStoreBatchBytesMax` is a body the plane refuses — which
- * fails the turn `StoreRefused` and ends the attempt.
+ * a line over `sessionStoreBatchBytesMax` is a body the plane refuses. The store
+ * clips such a line rather than post it, and that is the bound of last resort:
+ * the bound here stays because an answer the model can ask again for in pages is
+ * a better answer than one the store cut to fit.
  *
  * THE ENTRY CARRIES THE ANSWER TWICE. The line is the on-disk transcript
  * format, and it holds the text in the message's `tool_result` block and again
