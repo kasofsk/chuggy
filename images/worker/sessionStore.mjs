@@ -27,11 +27,11 @@
  * `./chuggyTools.mjs`, and the caps the runtime does offer count characters
  * where the line is charged escaped bytes, which one character can cost several
  * of. So the store is the bound of last resort. It replaces every value a clip
- * can shorten with a head of itself and a note naming what the original weighed,
- * and shares what a batch leaves evenly between them, a value that fits inside
- * its share going back whole. A list of strings is one value rather than many: a
- * diff's lines are bulk together and nothing apart, so the list is taken as a
- * whole. What resumes over the entry parses it and reads that it is seeing
+ * can shorten with a note naming what the original weighed, keeping a head of it
+ * where a head of it is worth anything, and shares what a batch leaves evenly
+ * between them, a value that fits inside its share going back whole. What a
+ * value is decides which of those it gets, and the four answers are below. What
+ * resumes over the entry parses it and reads that it is seeing
  * less, so it can run the tool again. The pod's own file is untouched; this is
  * what the store posts, not what happened. Only an entry no clip brings under the
  * bound raises, naming what it weighs and whether a clip reached it.
@@ -57,7 +57,7 @@
  * OTHER WAY. A head of a result is a smaller result: less is read, the note says
  * so, and the tool can be run again. That is what makes clipping better than
  * stopping, and it is not true of everything heavy, so a value is taken by how it
- * survives being made smaller and there are four answers:
+ * survives being made smaller and there are five answers:
  *
  *   - TEXT IS CUT TO A HEAD, which is the ordinary case above.
  *   - A LIST OF STRINGS GOES WHOLE OR NOT AT ALL. A head of prose is prose; the
@@ -70,13 +70,14 @@
  *     saying nothing as a value that has to stay a list of strings can get.
  *   - AN ENCODED VALUE IS DROPPED WHOLE. Base64 is worth exactly what it decodes
  *     to: a head of it decodes to nothing, and the note appended to it is not
- *     even in the alphabet. So `encodedString` is never cut. Where one is the
- *     worth of a content block — an image, a document — the block itself is
- *     replaced by a `text` block saying what was dropped and how much of it, so
- *     the content array is still one the API accepts and whatever resumes reads
- *     what it is missing. Dropping rather than raising is deliberate: reading a
- *     large image is an ordinary thing for a session to do, and a session that
- *     stops every time it does one is the defect this module exists to fix.
+ *     even in the alphabet. So `encodedString` is never cut.
+ *   - A MEDIA BLOCK IS DROPPED WHOLE, whatever its source is. An image or a
+ *     document block is the source it names, so it is replaced by a `text` block
+ *     saying what was dropped and how much of it: the content array is still one
+ *     the API accepts and whatever resumes reads what it is missing. Dropping
+ *     rather than raising is deliberate — reading a large image is an ordinary
+ *     thing for a session to do, and a session that stops every time it does one
+ *     is the defect this module exists to fix.
  *   - A SIGNED BLOCK IS ATOMIC. A thinking block is signed over its exact text
  *     and the runtime replays both to resume an assistant turn, so a head of
  *     either is not a smaller thinking block but one the API refuses — later,
@@ -238,39 +239,23 @@ function encodedString(held, key) {
   return key === "base64" || (key === "data" && held.type === "base64");
 }
 
-/**
- * Whether the value's own worth is something carried encoded. The walk stops at
- * a list, because a list under a block is that block's own blocks: a
- * `tool_result` holding an image among its content is not itself an image, and
- * dropping it would take the call it answers and the text beside it with it.
- */
-function encodedPayload(value) {
-  if (value === null || typeof value !== "object" || Array.isArray(value))
-    return false;
-  return Object.keys(value).some(
-    (key) => encodedString(value, key) || encodedPayload(value[key]),
-  );
-}
-
 /** The media type a block declares for what it carries, where it declares one. */
-function encodedMediaType(value) {
+function declaredMediaType(value) {
   if (value === null || typeof value !== "object") return undefined;
   if (typeof value.media_type === "string") return value.media_type;
   for (const key of Object.keys(value)) {
-    const found = encodedMediaType(value[key]);
+    const found = declaredMediaType(value[key]);
     if (found !== undefined) return found;
   }
   return undefined;
 }
 
 /** What a dropped value was, for the reader that will never see it. */
-function encodedName(value) {
+function droppedName(value) {
   if (typeof value === "string") return "an encoded payload";
-  const media = encodedMediaType(value);
+  const media = declaredMediaType(value);
   if (media !== undefined) return `an ${media}`;
-  return typeof value.type === "string"
-    ? `a ${value.type}`
-    : "an encoded block";
+  return value.type === "image" ? "an image" : "a document";
 }
 
 /**
@@ -282,8 +267,10 @@ function encodedName(value) {
 function siteNote({ value, kind }) {
   const weight =
     typeof value === "string" ? Buffer.byteLength(value) : escapedBytes(value);
-  if (kind === "dropped" || kind === "block")
-    return `[the session store dropped ${encodedName(value)} of ${String(weight)} bytes to fit one store batch; it is encoded, so no part of it would be readable]`;
+  if (kind === "dropped")
+    return `[the session store dropped ${droppedName(value)} of ${String(weight)} bytes to fit one store batch; it is encoded, so no part of it would be readable]`;
+  if (kind === "block")
+    return `[the session store dropped ${droppedName(value)} of ${String(weight)} bytes to fit one store batch; a block is its source, and part of a source is no source at all]`;
   if (kind === "list")
     return `[the session store dropped the ${String(value.length)} values here, ${String(weight)} bytes; part of a list reads as all of it, so run the tool again]`;
   return `[the session store clipped this to fit one store batch; the original was ${String(weight)} bytes, so run the tool again to read the rest]`;
@@ -366,14 +353,20 @@ function signedBlock(value) {
 }
 
 /**
- * A block whose whole worth is the payload it carries. Replacing one with text
- * saying what went costs the reader the payload and nothing else, and leaves the
+ * A block whose whole worth is the source it names. Replacing one with text
+ * saying what went costs the reader that source and nothing else, and leaves the
  * content list a list the API still accepts. That is true of a media block and
- * of nothing else, so the two are named here rather than inferred from carrying
- * something encoded: a `tool_use` block carrying an encoded argument is a call
- * the turn is built around, its `tool_result` on the next line names its id, and
- * deleting it is a request the API refuses off a line already frozen in a batch.
- * The payload inside such a block is dropped where it sits and the block stays.
+ * of nothing else, so the two are named here rather than inferred: a `tool_use`
+ * block carrying an encoded argument is a call the turn is built around, its
+ * `tool_result` on the next line names its id, and deleting it is a request the
+ * API refuses off a line already frozen in a batch. The payload inside such a
+ * block is dropped where it sits and the block stays.
+ *
+ * Which kind of source it is decides nothing. Base64 is unreadable cut, a url
+ * cut is a url that fetches nothing, and a document assembled from part of its
+ * pages is a different document — the block is what the API validates and half
+ * of one is not a smaller one. Deciding by the source instead is the structural
+ * guess that took a `tool_use` block once already.
  */
 function mediaBlock(value) {
   return value.type === "image" || value.type === "document";
@@ -408,8 +401,7 @@ function entrySites(entry) {
       return take(held, key, typeof value === "string" ? "text" : "list");
     if (value === null || typeof value !== "object" || signedBlock(value))
       return;
-    if (blocked && mediaBlock(value) && encodedPayload(value))
-      return take(held, key, "block");
+    if (blocked && mediaBlock(value)) return take(held, key, "block");
     for (const inner of Object.keys(value)) {
       if (resultIdentityKeys.has(inner)) continue;
       if (naming && entryIdentityKeys.has(inner)) continue;

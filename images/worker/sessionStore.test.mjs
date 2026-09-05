@@ -80,6 +80,35 @@ function readEntry(data, beside = "The image was read.") {
 }
 
 /**
+ * A tool answering with a media block: the block the API validates, inside the
+ * `tool_result` that answers the call, with the entry's own record beside it.
+ * What the block carries is the caller's business, which is the point — the
+ * store is not allowed to decide by it.
+ */
+function mediaEntry(block, held = {}) {
+  return {
+    parentUuid: "8f7e6d5c-4b3a-4291-8180-7f6e5d4c3b2a",
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        {
+          tool_use_id: "toolu_01ReadTheDocument",
+          type: "tool_result",
+          content: [block],
+        },
+      ],
+    },
+    uuid: "7e6d5c4b-3a29-4180-9f8e-7d6c5b4a3928",
+    timestamp: "2026-09-02T22:27:00.000Z",
+    toolUseResult: held,
+    cwd: "/workspace/repo",
+    sessionId: "fecadcca-7f72-478c-ab53-561e3a17110b",
+    version: "2.1.258",
+  };
+}
+
+/**
  * The turn that calls a tool with an image in its arguments, and the line that
  * answers it. Two entries, because what the clip must not break is the pair: the
  * answer names the call by id, and the call is only a call while its block is on
@@ -970,6 +999,86 @@ test("an image block is dropped whole and replaced by text, never cut", async ()
 });
 
 /**
+ * The document block, which is an image by another name: the same rule, the same
+ * failure if it is not applied. A `document` source the API cannot decode is a
+ * request it refuses on replay, off a line already frozen in a numbered batch.
+ */
+test("a document block is dropped whole, not left a source nothing can read", async () => {
+  const { calls, store } = storeOf();
+  const data = "QUJDRA".repeat(20_000);
+  const given = mediaEntry({
+    type: "document",
+    source: { type: "base64", media_type: "application/pdf", data },
+  });
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(given)) > sessionStoreBatchBytesMax,
+    "the fixture is not over the bound, so no clip runs and it proves nothing",
+  );
+
+  await store.append({ sessionId: "s" }, [given]);
+
+  const [posted] = postedEntries(calls);
+  const blocks = posted.message.content[0].content;
+  assert.deepEqual(
+    blocks.map(({ type }) => type),
+    ["text"],
+    "a document block was posted where the store cannot keep one",
+  );
+  assert.ok(blocks[0].text.includes("application/pdf"));
+  assert.equal(
+    posted.message.content[0].tool_use_id,
+    "toolu_01ReadTheDocument",
+  );
+  for (const value of sourceDataIn(posted))
+    assert.equal(
+      value,
+      Buffer.from(value, "base64").toString("base64"),
+      "a base64 source was posted that no longer decodes",
+    );
+});
+
+/**
+ * The media block whose source is a url rather than bytes. Nothing about it is
+ * encoded, so weight would take the url as text and leave a head of it — a
+ * source that fetches nothing, which is the same block the API refuses. What a
+ * block carries decides nothing: it is a block, and a block goes whole. The
+ * fixture leaves no share to give back, which is the only state in which a url
+ * is short enough to be cut at all.
+ */
+test("a media block with a url source is dropped whole rather than cut", async () => {
+  const { calls, store } = storeOf();
+  const url = `https://example.invalid/frames/${"a-long-path-segment/".repeat(15)}held.png`;
+  const given = editEntry("held\n".repeat(4_000), 300, 40);
+  given.message.content[0].content = [
+    { type: "image", source: { type: "url", url } },
+  ];
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(given)) > sessionStoreBatchBytesMax,
+    "the fixture is not over the bound, so no clip runs and it proves nothing",
+  );
+
+  await store.append({ sessionId: "s" }, [given]);
+
+  const [{ body }] = bodies(calls);
+  assert.ok(
+    Buffer.byteLength(body) > sessionStoreClipBudgetBytes,
+    "the fixture has spare, so the url is never near being cut",
+  );
+  const [posted] = postedEntries(calls);
+  const blocks = posted.message.content[0].content;
+  assert.deepEqual(
+    blocks.map(({ type }) => type),
+    ["text"],
+    "an image block was posted with a source the store had cut",
+  );
+  assert.ok(blocks[0].text.includes("the session store dropped an image"));
+  assert.ok(
+    !JSON.stringify(posted).includes(url.slice(0, 40)),
+    "a head of the url was posted, which fetches nothing",
+  );
+});
+
+/**
  * The tool called with an encoded argument. A base64 string in a call's input is
  * not a content source — the API never decodes it — and the block around it is
  * the call the turn is built on: its id is what the next line's `tool_result`
@@ -1109,9 +1218,9 @@ test("a result whose bulk is a list of lines goes whole or goes entirely", async
     );
     assert.ok(
       patch.lines[0].includes(
-        `the session store dropped the ${String(held.length)} values here`,
+        `the session store dropped the ${String(held.length)} values here, ${String(Buffer.byteLength(JSON.stringify(held)))} bytes`,
       ),
-      "the one element left does not say what went",
+      "the one element left does not say what went, or misstates what it weighed",
     );
   }
   assert.ok(dropped > 0, "no list was clipped, so the fixture proves nothing");
