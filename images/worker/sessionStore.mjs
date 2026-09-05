@@ -30,7 +30,7 @@
  * can shorten with a note naming what the original weighed, keeping a head of it
  * where a head of it is worth anything, and shares what a batch leaves evenly
  * between them, a value that fits inside its share going back whole. What a
- * value is decides which of those it gets, and the four answers are below. What
+ * value is decides which of those it gets, and the answers are below. What
  * resumes over the entry parses it and reads that it is seeing
  * less, so it can run the tool again. The pod's own file is untouched; this is
  * what the store posts, not what happened. Only an entry no clip brings under the
@@ -57,7 +57,7 @@
  * OTHER WAY. A head of a result is a smaller result: less is read, the note says
  * so, and the tool can be run again. That is what makes clipping better than
  * stopping, and it is not true of everything heavy, so a value is taken by how it
- * survives being made smaller and there are five answers:
+ * survives being made smaller, and these are the answers:
  *
  *   - TEXT IS CUT TO A HEAD, which is the ordinary case above.
  *   - A LIST OF STRINGS GOES WHOLE OR NOT AT ALL. A head of prose is prose; the
@@ -239,9 +239,15 @@ function encodedString(held, key) {
   return key === "base64" || (key === "data" && held.type === "base64");
 }
 
-/** The media type a block declares for what it carries, where it declares one. */
+/**
+ * The media type a block declares for what it carries, where it declares one. The
+ * walk stops at a list, because a list inside a block is that block's own blocks
+ * and what they are is not what it is: a document whose pages are images declares
+ * nothing, and calling it an image would tell the reader it lost the wrong thing.
+ */
 function declaredMediaType(value) {
-  if (value === null || typeof value !== "object") return undefined;
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    return undefined;
   if (typeof value.media_type === "string") return value.media_type;
   for (const key of Object.keys(value)) {
     const found = declaredMediaType(value[key]);
@@ -382,7 +388,11 @@ function mediaBlock(value) {
  * individually, and clipping them one at a time would replace each with something
  * longer than itself. `naming` is what makes the entry's own names a rule for the
  * entry and its message and for nothing under them: it is set once at the top and
- * survives one step, into `message`.
+ * survives one step, into `message`. `blocked` says the value is an element of a
+ * list, which is what makes a media block replaceable: a `text` block is a legal
+ * thing to stand in a content list and nothing else is a legal thing to stand
+ * under a key, so a media record outside a list keeps its shape and loses only
+ * its payload.
  */
 function entrySites(entry) {
   const found = [];

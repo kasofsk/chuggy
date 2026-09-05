@@ -1038,6 +1038,49 @@ test("a document block is dropped whole, not left a source nothing can read", as
 });
 
 /**
+ * The document whose source is its own pages. What those pages are is not what
+ * the document is, so the note names the document rather than the first media
+ * type anywhere inside it: a reader told an image went looks for an image.
+ */
+test("a dropped block is named by what it declares, not by what it contains", async () => {
+  const { calls, store } = storeOf();
+  const page = {
+    type: "image",
+    source: {
+      type: "base64",
+      media_type: "image/png",
+      data: "QUJDRA".repeat(4_000),
+    },
+  };
+  const given = mediaEntry({
+    type: "document",
+    source: { type: "content", content: [page, page, page] },
+  });
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(given)) > sessionStoreBatchBytesMax,
+    "the fixture is not over the bound, so no clip runs and it proves nothing",
+  );
+
+  await store.append({ sessionId: "s" }, [given]);
+
+  const [posted] = postedEntries(calls);
+  const [stood] = posted.message.content[0].content;
+  assert.equal(
+    stood.type,
+    "text",
+    "the document was taken apart rather than dropped",
+  );
+  assert.ok(
+    stood.text.includes("the session store dropped a document"),
+    "the note does not name what was dropped",
+  );
+  assert.ok(
+    !stood.text.includes("image/png"),
+    "the note names a media type the document never declared",
+  );
+});
+
+/**
  * The media block whose source is a url rather than bytes. Nothing about it is
  * encoded, so weight would take the url as text and leave a head of it — a
  * source that fetches nothing, which is the same block the API refuses. What a
