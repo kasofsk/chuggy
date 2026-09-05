@@ -23,8 +23,14 @@
  * reaches standing through `read_standing_agentic_refusals`, a definer of its
  * own, so the console's page is untouched.
  *
- * STANDING IS STILL THE LATEST ROW PER TICKET, derived here as 059 derives it.
- * A second reading of what standing means would be a second authority on it.
+ * STANDING IS THE LATEST ROW PER TICKET, AND THIS BODY IS A SECOND PLACE THAT
+ * IS WRITTEN. The derivation below is a copy of the one in
+ * `standing_agentic_refusals`, and nothing in this tree holds the two equal, so
+ * a change to what standing means in 059 leaves this body on the old meaning
+ * with no gate to say so. Composing one over the other is not open to either —
+ * 059's is project-wide and unbounded by ticket, this one is bounded by its
+ * argument — so sharing a body means a third definer both call, which is
+ * kasofsk/chuggy#581 and not this migration.
  *
  * SUPERSESSION IS STILL THE READER'S. The row carries the version the lead
  * refused, and whether the candidate shows that version is a comparison the
