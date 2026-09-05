@@ -32,7 +32,7 @@ import {
   type Migration,
 } from "../shared.ts";
 
-export const standingAmongSignature = "text,text,bigint[]";
+const standingAmongSignature = "text,text,bigint[]";
 
 /** How many tickets one read may name, which is the candidate page it is asked about. */
 const standingAmongTicketsMax = dispatchViewPageLimitMax;
