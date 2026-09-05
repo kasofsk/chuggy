@@ -97,6 +97,21 @@ test("an entry larger than any answer is given as a marked preview and the walk 
   );
 });
 
+test("a preview is cut to what the answer has room for rather than to its ceiling", () => {
+  const page = pageOf([entryOf(1, bytesMax * 2)]);
+  page.stream = "s".repeat(bytesMax - transcriptEntryPreviewCharsMax);
+
+  const text = transcriptPageAnswer(page, { after: 0, entry: 0 }, fits);
+
+  assert.ok(fits(text), "a preview at its ceiling went out over the bound");
+  const [preview] = JSON.parse(text).entries;
+  assert.ok(preview.preview.length > 0, "nothing of the entry was shown");
+  assert.ok(
+    preview.preview.length < transcriptEntryPreviewCharsMax,
+    "the preview was not cut below its ceiling",
+  );
+});
+
 test("the page's own facts are carried and its held set is narrowed to the entries given", () => {
   const page = pageOf([entryOf(1, 8), entryOf(2, 8)]);
   page.held = ["u-2", "u-9"];
@@ -120,14 +135,42 @@ test("the page's own facts are carried and its held set is narrowed to the entri
 });
 
 /**
- * The window the answer's own cursor opens: entries are weighed against this
- * page's cursor and the answer may be composed with the wider one that names
- * the next batch. A page of one entry has nothing to give back, so what has to
- * hold is that it is previewed rather than answered over the bound.
+ * The window the two cursors open between them: an entry heavy enough that the
+ * answer carrying it is over the bound once the wider cursor naming the next
+ * batch is composed onto it, and light enough that the same entry with this
+ * page's own cursor still fits. It is a function of the bound, of what
+ * `entryOf` and `pageOf` weigh and of what the two cursors differ by, so it is
+ * measured here rather than written down — a window written down drifts to
+ * covering nothing when any of them changes.
  */
-test("an answer that fits only without its cursor gives a preview rather than going out over the bound", () => {
-  for (let bytes = 3_860; bytes <= 3_890; bytes += 1) {
-    const page = pageOf([entryOf(1, bytes)], 65_536);
+const windowNextAfter = 65_536;
+const windowCursorBytes =
+  Buffer.byteLength(JSON.stringify({ after: windowNextAfter, entry: 0 })) -
+  Buffer.byteLength(JSON.stringify({ after: 0, entry: 1 }));
+const windowAnswerBytes = (bytes) =>
+  Buffer.byteLength(
+    transcriptPageAnswer(
+      pageOf([entryOf(1, bytes)], windowNextAfter),
+      { after: 0, entry: 0 },
+      () => true,
+    ),
+  );
+const windowFixedBytes = windowAnswerBytes(0);
+
+test("an entry that fits under this page's own cursor is given whole rather than previewed", () => {
+  assert.equal(
+    windowAnswerBytes(1) - windowFixedBytes,
+    1,
+    "an entry's bytes are not what the answer carrying it grows by",
+  );
+  assert.ok(windowCursorBytes > 0, "the two cursors weigh the same");
+
+  for (
+    let bytes = bytesMax - windowFixedBytes + 1;
+    bytes <= bytesMax - windowFixedBytes + windowCursorBytes;
+    bytes += 1
+  ) {
+    const page = pageOf([entryOf(1, bytes)], windowNextAfter);
 
     const text = transcriptPageAnswer(page, { after: 0, entry: 0 }, fits);
 
@@ -136,12 +179,20 @@ test("an answer that fits only without its cursor gives a preview rather than go
       `an entry of ${String(bytes)} answered over the bound`,
     );
     const answer = JSON.parse(text);
-    assert.equal(answer.entries.length, 1, String(bytes));
-    assert.notDeepEqual(
+    assert.deepEqual(
+      answer.entries,
+      [entryOf(1, bytes)],
+      `an entry of ${String(bytes)} was not answered whole`,
+    );
+    assert.deepEqual(
       answer.next,
-      { after: 0, entry: 0 },
+      { after: 0, entry: 1 },
       `an entry of ${String(bytes)} answered a cursor that does not move`,
     );
+
+    const beyond = JSON.parse(transcriptPageAnswer(page, answer.next, fits));
+    assert.deepEqual(beyond.entries, [], String(bytes));
+    assert.deepEqual(beyond.next, { after: windowNextAfter, entry: 0 });
   }
 });
 

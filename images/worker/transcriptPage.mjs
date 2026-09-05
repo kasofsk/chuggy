@@ -15,10 +15,19 @@
  * skips what was read. Every answer either gives an entry, moves `after` on, or
  * names no next at all, which is what makes a walk terminate.
  *
- * AN ENTRY LARGER THAN AN ANSWER IS PREVIEWED, NEVER REFUSED. A stored tool
- * result can be most of a line on its own, and a refusal there would stop a
- * walk on an entry the caller cannot make smaller. Its kind, its weight and the
- * head of it go instead, under `preview`, and the cursor moves past it.
+ * WHAT GOES OUT IS A COMPOSITION ALREADY WEIGHED. Entries are taken while the
+ * answer that carries them fits, each measured against the cursor that would
+ * name it; where the page is exhausted the answer is composed instead with the
+ * wider cursor that names the next batch, and where that does not fit the
+ * narrower one goes out — the same cursor the next call resumes at either way.
+ * The only weight this cannot answer for is the route's own fields, which go
+ * through unread.
+ *
+ * AN ENTRY THE ANSWER HAS NO ROOM FOR IS PREVIEWED, NEVER REFUSED. A stored
+ * tool result can be most of a line on its own, and a refusal there would stop
+ * a walk on an entry the caller cannot make smaller. Its kind, its weight and
+ * the head of it go instead, under `preview`, the head shrinking until the
+ * answer fits, and the cursor moves past it.
  *
  * THE HELD SET IS NARROWED TO THE ENTRIES ANSWERED. The route decides it over
  * the whole stream and then answers the part of it this page's entries are in,
@@ -31,20 +40,24 @@
 
 import { Buffer } from "node:buffer";
 
-/** How much of an entry too large to answer whole is shown in its place. */
+/**
+ * The most of an entry shown in its place. It is a ceiling and not a promise:
+ * the head shrinks from it until the answer carrying it fits, because what the
+ * answer may weigh is the caller's and this cannot be larger than that.
+ */
 export const transcriptEntryPreviewCharsMax = 1_024;
 
 /** What this answer states for itself rather than repeating from the page. */
 const transcriptPageAnswerReplaces = ["entries", "nextAfter", "held"];
 
 /** One entry nothing can answer whole: what it is, what it weighs, and its head. */
-function transcriptEntryPreview(entry) {
+function transcriptEntryPreview(entry, charsMax) {
   const whole = JSON.stringify(entry);
   return {
     ...(typeof entry?.uuid === "string" ? { uuid: entry.uuid } : {}),
     ...(typeof entry?.type === "string" ? { type: entry.type } : {}),
     bytes: Buffer.byteLength(whole),
-    preview: whole.slice(0, transcriptEntryPreviewCharsMax),
+    preview: whole.slice(0, charsMax),
   };
 }
 
@@ -76,19 +89,27 @@ export function transcriptPageAnswer(page, cursor, fits) {
       entries: given,
       ...(next === undefined ? {} : { next }),
     });
+  const previewed = (entry, next) => {
+    let chars = transcriptEntryPreviewCharsMax;
+    let text = composed([transcriptEntryPreview(entry, chars)], next);
+    while (!fits(text) && chars > 0) {
+      chars = Math.floor(chars / 2);
+      text = composed([transcriptEntryPreview(entry, chars)], next);
+    }
+    return text;
+  };
 
   let given = [];
   let stop;
+  let previewFrom;
   for (let index = from; index < entries.length; index += 1) {
     const candidate = [...given, entries[index]];
     if (fits(composed(candidate, { after, entry: index + 1 }))) {
       given = candidate;
       continue;
     }
-    if (given.length === 0) {
-      given = [transcriptEntryPreview(entries[index])];
-      stop = index + 1;
-    } else stop = index;
+    if (given.length === 0) previewFrom = index;
+    stop = given.length === 0 ? index + 1 : index;
     break;
   }
 
@@ -96,21 +117,10 @@ export function transcriptPageAnswer(page, cursor, fits) {
     nextAfter === undefined || nextAfter === null
       ? undefined
       : { after: nextAfter, entry: 0 };
-  let next = stop === undefined ? beyond : { after, entry: stop };
-  let text = composed(given, next);
-  // The entries were weighed against this page's own cursor, and the answer may
-  // be composed with the wider one that names the next batch, so a page filled
-  // to the byte can be over by the cursor's own width. Entries go back until it
-  // fits, and the last of them goes as a preview rather than as nothing, so an
-  // answer that gives no whole entry still moves the walk on.
-  while (!fits(text) && given.length > 0) {
-    given = given.slice(0, -1);
-    next = { after, entry: from + given.length };
-    text = composed(given, next);
-  }
-  if (given.length === 0 && from < entries.length) {
-    next = { after, entry: from + 1 };
-    text = composed([transcriptEntryPreview(entries[from])], next);
-  }
-  return text;
+  const next = stop === undefined ? beyond : { after, entry: stop };
+  if (previewFrom !== undefined) return previewed(entries[previewFrom], next);
+  const text = composed(given, next);
+  return fits(text) || given.length === 0
+    ? text
+    : composed(given, { after, entry: from + given.length });
 }
