@@ -5,7 +5,7 @@ import test from "node:test";
 import {
   sessionStoreAdapter,
   sessionStoreBatchBytesMax,
-  sessionStoreClipLineBytesMax,
+  sessionStoreClipBudgetBytes,
   sessionStoreStream,
 } from "./sessionStore.mjs";
 
@@ -383,31 +383,98 @@ test("a result whose characters fit and whose bytes do not is still clipped", as
  * it is still not a result, and a clip that spent its budget on the bulk puts it
  * back whole rather than leaving it a note.
  */
-test("a field a clip could shorten but does not need to is put back whole", async () => {
+/**
+ * The working directory of a deep checkout, on an entry with cut sites enough
+ * that no share would have covered it. It weighs more than the note that would
+ * replace it, so weight alone would have taken it — but it is not a result, and
+ * a resume handed a path the runtime never wrote is a resume in the wrong place.
+ */
+/**
+ * The bookkeeping entry, whose bulk is in neither a result nor a message: the
+ * runtime writes attachments and summaries at the entry's own level, and weight
+ * is what finds them there too. Passing a key over by name is an exclusion, not a
+ * list of the places a clip is allowed to look.
+ */
+test("bulk the entry carries outside a result or a message is clipped too", async () => {
   const { calls, store } = storeOf();
-  const given = bashEntry("held ".repeat(6_000), 3);
-  given.cwd = `/workspace/${"a-long-directory-name/".repeat(10)}repo`;
+  const given = {
+    uuid: "a",
+    parentUuid: "p",
+    type: "attachment",
+    timestamp: "2026-09-02T22:21:00.000Z",
+    cwd: `/workspace/${"a-long-directory-name/".repeat(10)}repo`,
+    attachment: { text: "held ".repeat(20_000) },
+  };
 
-  assert.ok(
-    Buffer.byteLength(JSON.stringify(given)) > sessionStoreBatchBytesMax,
-    "the fixture is not over the bound, so no clip runs and it proves nothing",
-  );
   await store.append({ sessionId: "s" }, [given]);
 
   const [posted] = postedEntries(calls);
   assert.ok(
-    posted.toolUseResult.stdout.includes("the session store clipped"),
-    "the fixture was posted whole",
+    posted.attachment.text.includes("the session store clipped"),
+    "the entry's own bulk was not cut",
   );
   assert.equal(posted.cwd, given.cwd, "the working directory was clipped");
+  assert.equal(posted.uuid, given.uuid);
+});
+
+test("a long working directory is not a result, whatever it weighs", async () => {
+  const { calls, store } = storeOf();
+  const deep = `/workspace/${"a-long-directory-name/".repeat(10)}repo`;
+  const given = editEntry("held\n".repeat(20), 120, 40);
+  given.cwd = deep;
+  given.toolUseResult.aPathTheToolReported = deep;
+
+  await store.append({ sessionId: "s" }, [given]);
+
+  const [posted] = postedEntries(calls);
+  assert.ok(
+    posted.toolUseResult.aPathTheToolReported.includes(
+      "the session store clipped",
+    ),
+    "the same text inside the result was not cut either, so the test proves nothing",
+  );
+  assert.equal(posted.cwd, deep, "the working directory was clipped");
+  for (const field of ["uuid", "parentUuid", "type", "timestamp", "version"])
+    assert.equal(posted[field], given[field], `${field} did not survive`);
 });
 
 /**
- * The bound itself, over the shapes and sizes the suite drives: whatever the
- * clip does, the body it produces is one a batch holds and one the aim leaves
- * room in. Nothing else weighs the result of a clip, so this is what holds it.
+ * The entry with cut sites enough that their notes alone outweigh the budget.
+ * There is nothing left to share, so every site keeps its bare note and the line
+ * stands over the budget — under the bound, which is the only maximum, and posted
+ * rather than raised, because a note-only line is still a line a resume can walk.
  */
-test("every clipped entry posts within the bound and within the aim", async () => {
+test("an entry whose notes outweigh the budget is posted over it and under the bound", async () => {
+  const { calls, store } = storeOf();
+  const given = editEntry("held\n".repeat(4_000), 300, 40);
+
+  await store.append({ sessionId: "s" }, [given]);
+
+  const [{ body }] = bodies(calls);
+  assert.ok(
+    Buffer.byteLength(body) > sessionStoreClipBudgetBytes,
+    "the fixture leaves spare to share, so it does not drive this at all",
+  );
+  assert.ok(
+    Buffer.byteLength(body) <= sessionStoreBatchBytesMax,
+    `the body is ${String(Buffer.byteLength(body))} bytes`,
+  );
+  const [posted] = postedEntries(calls);
+  assert.ok(
+    posted.toolUseResult.content.startsWith("[the session store clipped"),
+    "a site kept a head there was no budget for",
+  );
+  assert.equal(posted.uuid, given.uuid);
+});
+
+/**
+ * The budget itself, over the shapes and sizes the suite drives: where a clip
+ * has anything to share, whatever it does with it comes back inside the budget.
+ * Nothing else weighs what a clip spends, so this is what holds it. The other
+ * regime — notes alone outweighing the budget — has its own test, because there
+ * is nothing to share there and the bound is the only thing left holding.
+ */
+test("every clipped entry with spare to share posts within the budget", async () => {
   for (const given of [
     bashEntry(controlOutput(30_000)),
     bashEntry("held ".repeat(6_000), 3),
@@ -425,7 +492,7 @@ test("every clipped entry posts within the bound and within the aim", async () =
     await store.append({ sessionId: "s" }, [given]);
     const [{ body }] = bodies(calls);
     assert.ok(
-      Buffer.byteLength(body) <= sessionStoreClipLineBytesMax,
+      Buffer.byteLength(body) <= sessionStoreClipBudgetBytes,
       `a clipped body of ${String(Buffer.byteLength(body))} bytes is over the aim`,
     );
   }
@@ -570,9 +637,9 @@ test("an entry with nothing to clip raises, naming what it weighs and that nothi
  */
 test("an entry every clip leaves over the bound raises, saying the clip did not save it", async () => {
   const { calls, store } = storeOf();
-  const given = { uuid: "a", type: "assistant" };
+  const given = { uuid: "a", type: "assistant", toolUseResult: {} };
   for (let field = 0; field < 700; field += 1)
-    given[`field${String(field)}`] = "held ".repeat(60);
+    given.toolUseResult[`field${String(field)}`] = "held ".repeat(60);
 
   await assert.rejects(
     store.append({ sessionId: "s" }, [given]),

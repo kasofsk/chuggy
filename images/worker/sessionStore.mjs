@@ -28,19 +28,32 @@
  * where the line is charged escaped bytes, which one character can cost several
  * of. So the store is the bound of last resort. It replaces every value a clip
  * can shorten with a head of itself and a note naming what the original weighed,
- * and shares what one batch leaves evenly between them — never the uuids, the
- * type, the timestamp or the ids the runtime walks a transcript by, because
- * those are lighter than the note that would replace them, and a value that fits
- * inside its share goes back whole. A list of strings is one such value: a diff's
- * lines are bulk together and nothing apart, so the list is clipped rather than
- * each line of it. SHARING IS WHY EVERY COPY IS CUT rather than only as many as
- * it takes to fit: the runtime writes one result several times over, a resume
- * reads one of those copies and never the others, and a clip that stopped at the
- * first fit would leave a copy nothing reads whole and starve the copy that is
- * read to pay for it. What resumes over the entry parses it and reads that it is
- * seeing less, so it can run the tool again. The pod's own file is untouched;
- * this is what the store posts, not what happened. Only an entry no clip brings
- * under the bound raises, naming what it weighs and whether a clip reached it.
+ * and shares what a batch leaves evenly between them, a value that fits inside
+ * its share going back whole. A list of strings is one such value: a diff's lines
+ * are bulk together and nothing apart, so the list is clipped rather than each
+ * line of it. What resumes over the entry parses it and reads that it is seeing
+ * less, so it can run the tool again. The pod's own file is untouched; this is
+ * what the store posts, not what happened. Only an entry no clip brings under the
+ * bound raises, naming what it weighs and whether a clip reached it.
+ *
+ * WHAT NAMES THE ENTRY IS NOT BULK, HOWEVER MUCH IT WEIGHS. Weight is what finds
+ * a result — a producer this tree has never seen writes one under whatever field
+ * it likes, and asking which tool ran would cover only the tools already known.
+ * But weight cannot tell a result from the entry's own name for itself: an
+ * entry's identity, the session it reopens as and the directory it reopens in are
+ * strings like any other, and a working directory deep enough to outweigh the
+ * note that would replace it would be taken by weight alone. A resume handed a
+ * path the runtime never wrote is a resume in the wrong place, so those keys are
+ * passed over by name — `entryIdentityKeys`, and only at the two levels where
+ * they mean the entry rather than a result. Deeper than that the same words are
+ * the result's own: a `type` inside a `tool_result` block says what the block is,
+ * and a `content` inside `toolUseResult` is exactly the bulk a clip is for.
+ *
+ * SHARING IS WHY EVERY COPY IS CUT rather than only as many as it takes to fit:
+ * the runtime writes one result several times over, a resume reads one of those
+ * copies and never the others, and a clip that stopped at the first fit would
+ * leave a copy nothing reads whole and starve the copy that is read to pay for
+ * it.
  *
  * DEDUPLICATION IS PER STREAM AND AN ENTRY WITHOUT A UUID IS NEVER DROPPED. A
  * fork re-appends the parent's entries under the fork's own key carrying the
@@ -68,12 +81,15 @@ import { sessionRequest } from "./sessionTransport.mjs";
 export const sessionStoreBatchBytesMax = 65_536;
 
 /**
- * What a clipped line weighs at most, its newline counted. It is aimed under
- * the bound rather than at it, so two clipped entries still share one batch and
- * the head a clip keeps is a courtesy to whatever resumes over it rather than
- * the whole of a batch's budget.
+ * What a clip has to spend on one line, its newline counted. It is under the
+ * bound rather than at it, so a clipped entry does not fill a batch on its own
+ * and the head it keeps is a courtesy to whatever resumes over it rather than the
+ * whole of what a batch holds. It is a budget and not a maximum: a line whose
+ * notes alone outweigh it is posted as those notes, over the budget and under the
+ * bound, because a note is the least a cut value can be left as. The maximum is
+ * `sessionStoreBatchBytesMax`, and `plannedBatches` is what holds a line to it.
  */
-export const sessionStoreClipLineBytesMax = Math.floor(
+export const sessionStoreClipBudgetBytes = Math.floor(
   sessionStoreBatchBytesMax / 2,
 );
 
@@ -198,13 +214,49 @@ function clippable(value) {
 }
 
 /**
- * Every clippable value in the entry, and where it sits so a clip can replace
- * it. The entry's shape is the runtime's, and a producer this tree has never
- * seen writes its bulk under whatever field names it likes — so weight is what
- * finds a result, and a tool's name is never asked for. A list of strings is
- * taken whole and its elements are not taken again: a diff's lines are bulk
- * together and nothing individually, and clipping them one at a time would
- * replace each with something longer than itself.
+ * What an entry and its message call themselves: the identity a resume walks the
+ * transcript by, the session and version it reopens as, and the directory it
+ * reopens in. A clip passes these over by name, because weight cannot tell them
+ * from a result. The set is read at those two levels only, so the same words
+ * deeper down are the result's own and are weighed like anything else.
+ */
+const entryIdentityKeys = new Set([
+  "agentId",
+  "cwd",
+  "entrypoint",
+  "gitBranch",
+  "id",
+  "isSidechain",
+  "leafUuid",
+  "model",
+  "parentUuid",
+  "promptId",
+  "requestId",
+  "role",
+  "sessionId",
+  "session_id",
+  "sessionKind",
+  "slug",
+  "sourceToolAssistantUUID",
+  "stop_reason",
+  "stop_sequence",
+  "subtype",
+  "timestamp",
+  "type",
+  "userType",
+  "uuid",
+  "version",
+]);
+
+/**
+ * Every clippable value the entry holds that is not the entry's name for itself,
+ * and where it sits so a clip can replace it. Below the entry and its message the
+ * shape is the runtime's and a producer this tree has never seen writes its bulk
+ * under whatever field names it likes — so weight is what finds a result, and a
+ * tool's name is never asked for. A list of strings is taken whole and its
+ * elements are not taken again: a diff's lines are bulk together and nothing
+ * individually, and clipping them one at a time would replace each with something
+ * longer than itself.
  */
 function entrySites(entry) {
   const found = [];
@@ -217,7 +269,12 @@ function entrySites(entry) {
     if (value === null || typeof value !== "object") return;
     for (const inner of Object.keys(value)) walk(value, inner);
   };
-  walk({ entry }, "entry");
+  for (const key of Object.keys(entry))
+    if (!entryIdentityKeys.has(key) && key !== "message") walk(entry, key);
+  const message = entry.message;
+  if (message !== null && typeof message === "object")
+    for (const key of Object.keys(message))
+      if (!entryIdentityKeys.has(key)) walk(message, key);
   return found;
 }
 
@@ -270,7 +327,7 @@ function growSite(site, bytes) {
  * in escaped bytes, because that is what the line is charged for a character.
  */
 function growSites(clipped, cut) {
-  let spare = sessionStoreClipLineBytesMax - lineBytes(JSON.stringify(clipped));
+  let spare = sessionStoreClipBudgetBytes - lineBytes(JSON.stringify(clipped));
   let sharing = cut;
   while (spare > 0 && sharing.length > 0) {
     const share = Math.floor(spare / sharing.length);
