@@ -18,26 +18,40 @@
  * survives on the row or nowhere, and standing rule 3 is about a copy of a fact
  * a reader can still derive.
  *
- * THE APPEND IS WHERE IT CAN BE RECORDED, and every writer already goes through
- * it: the notification bridge, the execution and artifact triggers, the
- * run-evidence trigger and the refusal trigger all reach
- * `append_project_change`, and each of them appends AFTER writing the state its
- * change is about — the draft doors publish once the draft row is updated, the
- * decision transaction publishes a ticket's notification once its projection is
- * written, and the refusal trigger fires after the ledger entry. So what this
- * function reads is the state the change produced, and a reason computed per
- * writer would be that one reading copied to every site.
+ * THERE ARE TWO APPEND DOORS BECAUSE THERE ARE TWO KINDS OF APPENDER. A
+ * publication says only that a resource moved — `project_notification` carries
+ * a kind and a resource and no phase — so the bridge's door reads what the
+ * resource moved TO, and its arms are exactly the two publication kinds a
+ * thread is woken by. Every other appender knows what happened without a read,
+ * so the second door records what it is told: 059's refusal trigger says its
+ * own row's event, and 049's run-evidence trigger says nothing.
+ *
+ * THE READING DOOR DEPENDS ON THE ORDER ITS PUBLISHERS PUBLISH IN, and that is
+ * load-bearing rather than incidental. The draft doors update `draft` and then
+ * publish inside one body; `decisionApplyJournaled` in
+ * `src/adapters/postgres/decision.ts` runs `decisionProject` before
+ * `notifyDecision`, and that is a call order across two modules. It is held by
+ * `test/postgres/ticketProjection.test.ts`'s case that drives a ticket to the
+ * rework wall through the real writer and reads the reason off the row that
+ * decision appended.
+ *
+ * A RUN-EVIDENCE `Ticket` CHANGE IS NOT A PHASE MOVE. 049 appends one so a
+ * consumer re-reads the ticket when its run totals land, from a transaction
+ * that writes no ticket state at all — so a door that read the projection would
+ * give that row the ticket's standing phase, which is the reading this
+ * migration exists to remove. Its trigger is re-rendered to record no reason,
+ * and a thread is not woken because a worker reported what a run cost.
+ *
+ * THE REFUSAL TRIGGER SAYS ITS OWN ROW'S EVENT rather than the ledger's head
+ * for that ticket, so the reason cannot be a fact about which entry committed
+ * last. That is why the derivation below has no `AgenticRefusal` arm: no
+ * publication carries that kind, and the one writer that appends it names its
+ * reason.
  *
  * THE READS TAKE NO LOCK, which is what 038's header rests on. They are plain
  * selects over relations the boundary owner already reads to answer the wake
  * join, so an append still waits on nothing and still names no relation in the
  * lock order `src/adapters/postgres/scheduler.ts` declares.
- *
- * WHAT A REFUSAL ROW READS IS THE LEDGER'S HEAD FOR ITS TICKET, which the
- * appending transaction has just extended and which no concurrent writer's
- * uncommitted entry is part of. The ledger is the selector's own and its
- * entries for one ticket come from decisions taken in turn, so the head under
- * the trigger is the entry the trigger fired for.
  *
  * THE COLUMN IS NAMED FOR ITS CONSUMER because the roster is the consumer's.
  * `allThreadWakeReasons` is what a woken thread is told, and a column named for
@@ -59,7 +73,10 @@ import {
 } from "../../../../interpreter/projectChange.ts";
 import { allThreadWakeReasons } from "../../../../interpreter/thread.ts";
 import {
+  boundaryOwnerRole,
+  projectChangeAgenticRefusalFunction,
   projectChangeAppendFunction,
+  projectChangeRunFunction,
   schemaTextSet,
   threadWakeCandidatesFunction,
   type Migration,
@@ -74,20 +91,38 @@ const reasonColumn = [
        OR wake_reason IN (${schemaTextSet([...allThreadWakeReasons])}))`,
 ];
 
+/** The reasoned door, by the argument types it is named by. */
+const reasonedSignature = `${projectChangeAppendFunction}(text,text,text,text,text)`;
+
 /**
- * 062's three arms, asked of the change being appended rather than of a row in
- * the log. A ticket is still matched as `ticket::text = resource`, so a kind
- * whose resource is no number at all records no reason instead of raising
+ * The door an appender that knows what happened writes through. It is granted
+ * to no runtime role: a role that could name a reason could tell a member's
+ * thread anything, and every caller is a trigger the boundary owner owns.
+ */
+const reasonedAppend = [
+  `CREATE FUNCTION ${projectChangeAppendFunction}(
+      in_tenant text,in_project text,in_kind text,in_resource text,
+      in_wake_reason text) RETURNS bigint
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE appended bigint;
+     BEGIN
+       INSERT INTO project_change (tenant,project,kind,resource,wake_reason)
+       VALUES (in_tenant,in_project,in_kind,in_resource,in_wake_reason)
+       RETURNING sequence INTO appended;
+       PERFORM pg_notify('${projectChangeChannel}','${projectChangePayload}');
+       RETURN appended;
+     END $$`,
+  `ALTER FUNCTION ${reasonedSignature} OWNER TO ${boundaryOwnerRole}`,
+  `REVOKE ALL ON FUNCTION ${reasonedSignature} FROM PUBLIC`,
+];
+
+/**
+ * What a publication's change row is called, read from the resource the
+ * publication names. A ticket is matched as `ticket::text = resource`, so a
+ * kind whose resource is no number at all records no reason instead of raising
  * inside the transaction that was appending.
  */
 const reasonAtAppend = `CASE in_kind
-    WHEN 'AgenticRefusal' THEN
-      (SELECT CASE f.event WHEN 'Refused' THEN 'TicketRefused'
-                           WHEN 'Lifted' THEN 'RefusalLifted' END
-         FROM selector_agentic_refusal f
-        WHERE f.tenant=in_tenant AND f.project=in_project
-          AND f.ticket::text=in_resource
-        ORDER BY f.ordinal DESC LIMIT 1)
     WHEN 'Draft' THEN
       (SELECT 'DraftDeleted' FROM draft d
         WHERE d.tenant=in_tenant AND d.project=in_project
@@ -102,18 +137,55 @@ const reasonAtAppend = `CASE in_kind
           AND p.ticket::text=in_resource)
   END`;
 
-/** 038's append, writing the reason as part of the row rather than leaving it to be re-read. */
-const recordingAppend = [
+/**
+ * 038's append, which every publication still reaches unchanged, reading the
+ * reason and handing it to the door above. Its grants and its callers are
+ * exactly what they were.
+ */
+const readingAppend = [
   `CREATE OR REPLACE FUNCTION ${projectChangeAppendFunction}(
       in_tenant text,in_project text,in_kind text,in_resource text) RETURNS bigint
      LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
-     DECLARE appended bigint;
      BEGIN
-       INSERT INTO project_change (tenant,project,kind,resource,wake_reason)
-       VALUES (in_tenant,in_project,in_kind,in_resource,${reasonAtAppend})
-       RETURNING sequence INTO appended;
-       PERFORM pg_notify('${projectChangeChannel}','${projectChangePayload}');
-       RETURN appended;
+       RETURN ${projectChangeAppendFunction}(
+         in_tenant,in_project,in_kind,in_resource,(${reasonAtAppend})::text);
+     END $$`,
+];
+
+/**
+ * 059's trigger, naming the event of the row it fired for. Its body is
+ * otherwise 059's, because a migration is a snapshot rather than a shared
+ * fragment.
+ */
+const refusalNamesItsEvent = [
+  `CREATE OR REPLACE FUNCTION ${projectChangeAgenticRefusalFunction}() RETURNS trigger
+     LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $$
+     BEGIN
+       PERFORM ${projectChangeAppendFunction}(
+         NEW.tenant,NEW.project,'AgenticRefusal',NEW.ticket::text,
+         CASE NEW.event WHEN 'Refused' THEN 'TicketRefused'
+                        WHEN 'Lifted' THEN 'RefusalLifted' END);
+       RETURN NULL;
+     END $$`,
+];
+
+/**
+ * 049's trigger, whose `Ticket` row now records nothing. Its `Execution` row is
+ * left on the reading door, where no arm names that kind and the row is
+ * unreasoned either way.
+ */
+const runEvidenceNamesNothing = [
+  `CREATE OR REPLACE FUNCTION ${projectChangeRunFunction}() RETURNS trigger
+     LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $$
+     BEGIN
+       PERFORM ${projectChangeAppendFunction}(
+         NEW.tenant,NEW.project,'Execution',NEW.execution);
+       PERFORM ${projectChangeAppendFunction}(NEW.tenant,NEW.project,'Ticket',
+         (SELECT named.ticket::text FROM execution AS named
+           WHERE named.tenant=NEW.tenant AND named.project=NEW.project
+             AND named.execution=NEW.execution),
+         NULL::text);
+       RETURN NULL;
      END $$`,
 ];
 
@@ -157,5 +229,12 @@ const candidatesReadTheRecord = [
 export const migration072: Migration = {
   version: 72,
   name: "a change row records the reason it wakes a thread with",
-  statements: [...reasonColumn, ...recordingAppend, ...candidatesReadTheRecord],
+  statements: [
+    ...reasonColumn,
+    ...reasonedAppend,
+    ...readingAppend,
+    ...refusalNamesItsEvent,
+    ...runEvidenceNamesNothing,
+    ...candidatesReadTheRecord,
+  ],
 };

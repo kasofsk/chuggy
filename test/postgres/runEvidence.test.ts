@@ -618,6 +618,41 @@ test("a batch appends one execution change and the totals append a ticket change
   assert.equal(await changeCount(project.partition, "Ticket"), tickets + 1);
 });
 
+/**
+ * The ticket change run totals append is a re-read and not a phase move: this
+ * transaction writes no ticket state, so a reason read off the projection would
+ * be the ticket's standing phase rather than anything that just happened
+ * (kasofsk/chuggy#542). The ticket is stood in a terminal phase first, because
+ * that is the only phase such a reason would name.
+ */
+test("the ticket change a run's totals append carries no reason and wakes nobody", async () => {
+  const { attempt, project } = await placedAttempt("run-change-reason");
+  await rig.harness.query(
+    `UPDATE ticket_projection SET phase='Done'
+      WHERE tenant=$1 AND project=$2`,
+    [project.partition.tenant, project.partition.project],
+  );
+  const before = await changeCount(project.partition, "Ticket");
+  assert.equal(
+    await totals.record({
+      secret: attempt.capability.secret,
+      generation: attempt.generation,
+      totals: runTotalsFixture(11),
+    }),
+    "Stored",
+  );
+  assert.equal(await changeCount(project.partition, "Ticket"), before + 1);
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT wake_reason FROM project_change
+        WHERE tenant=$1 AND project=$2 AND kind='Ticket'
+        ORDER BY sequence DESC LIMIT 1`,
+      [project.partition.tenant, project.partition.project],
+    ),
+    [{ wake_reason: null }],
+  );
+});
+
 test("a run may narrow its own ending to the label its failure names", async () => {
   const { attempt } = await placedAttempt("run-ended");
   assert.equal(

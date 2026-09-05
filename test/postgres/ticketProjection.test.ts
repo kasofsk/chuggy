@@ -1,6 +1,7 @@
 /**
  * The resume point and the accounts, driven onto a real ticket by real
- * decisions and read back off the durable projection and the public read.
+ * decisions and read back off the durable projection, the public read and the
+ * change row the same decision appended.
  *
  * THE JOURNAL IS THE ORACLE. Every step compares the stored row with the core
  * the same decision left behind, because the projection's whole claim is that
@@ -197,6 +198,38 @@ test("the projection carries the wall's resume point and the accounts behind it"
     finalization_left: "1",
   });
   assert.deepEqual(await projected(partition), carried(memory));
+});
+
+/**
+ * The change row the SAME decision appended, which is a third reader of the
+ * post-state. `append_project_change` reads `ticket_projection` to name a
+ * publication's reason, so what a thread is told rests on `decisionProject`
+ * running before `notifyDecision` in `src/adapters/postgres/decision.ts` — a
+ * call order across two modules that no other case here would notice moving
+ * (kasofsk/chuggy#542).
+ */
+test("the change row a decision appends records the phase that decision produced", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "projection-change",
+  );
+  await walled(partition, "projection-change");
+  const rows = (await harness.query(
+    `SELECT wake_reason FROM project_change
+      WHERE tenant=$1 AND project=$2 AND kind='Ticket' AND resource=$3
+      ORDER BY sequence`,
+    [partition.tenant, partition.project, String(subject)],
+  )) as readonly { wake_reason: string | null }[];
+  assert.deepEqual(
+    rows.map((row) => row.wake_reason).filter((reason) => reason !== null),
+    ["TicketEscalated"],
+    "the wall's own change row is not the row that records the wall",
+  );
+  assert.equal(
+    rows[rows.length - 1]?.wake_reason,
+    "TicketEscalated",
+    "the escalating decision published before it projected, so its row names the phase it left",
+  );
 });
 
 test("the public read serves the resume point and the accounts the row holds", async () => {
