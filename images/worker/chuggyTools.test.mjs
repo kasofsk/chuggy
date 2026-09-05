@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { URL } from "node:url";
 
@@ -11,6 +12,7 @@ import {
   chuggyOperationIdentity,
   chuggyToolAnswerBytes,
   chuggyToolAnswerBytesMax,
+  chuggyToolAnswerCopiesInEntry,
   chuggyProjectTools,
   chuggyToolContext,
   chuggyToolDefinitions,
@@ -173,6 +175,10 @@ test("every read answers one page, relays the route's own body and names its cur
 });
 
 test("a page larger than the pod draws is refused rather than answered cut", async () => {
+  assert.ok(
+    chuggyToolAnswerBytesMax < chuggyToolResponseBytesMax,
+    "a body cut at the draw bound is over the answer bound, which is what refuses it",
+  );
   const { call } = toolsOf({}, () => ({
     status: 200,
     body: "x".repeat(70_000),
@@ -181,13 +187,41 @@ test("a page larger than the pod draws is refused rather than answered cut", asy
   const answer = await call("read_ticket", { ticket: 7 });
 
   assert.equal(answer.isError, true);
-  assert.match(textOf(answer), /ask again for a smaller page/);
-  assert.match(
-    textOf(answer),
-    new RegExp(`${String(chuggyToolResponseBytesMax)} bytes one answer draws`),
-    "a cut page is refused as a page too large to draw, not weighed as an answer",
-  );
+  assert.match(textOf(answer), /larger than the/);
   assert.ok(!textOf(answer).includes("xxx"), "a cut body was answered anyway");
+});
+
+/**
+ * What the refusal tells the model to do, which for a tool with no page bound is
+ * nothing it can do. Eight served reads take one whole object, and a remedy they
+ * cannot follow is a loop.
+ */
+test("the refusal names the page argument where there is one, and says there is none where there is not", async () => {
+  const body = "x".repeat(70_000);
+  for (const [name, args, paged] of [
+    ["list_executions", { limit: 100 }, true],
+    ["read_thread_transcript", { session: "t-1" }, true],
+    ["read_execution", { execution: "e-1" }, false],
+    ["read_run_transcript", { execution: "e-1", attempt: "a-1" }, false],
+  ]) {
+    const answer = await routeOf(
+      name,
+      args,
+      apiOf(() => ({ status: 200, body })),
+    );
+
+    assert.equal(answer.isError, true, name);
+    if (paged)
+      assert.match(textOf(answer), /ask again with a smaller limit\.$/, name);
+    else
+      assert.match(
+        textOf(answer),
+        new RegExp(
+          `${name} takes no limit, so this one cannot be answered\\.$`,
+        ),
+        name,
+      );
+  }
 });
 
 /**
@@ -220,19 +254,55 @@ test("an answer at the bound is served and one over it never reaches the model",
       name,
     );
     assert.equal(over.isError, true, name);
-    assert.match(textOf(over), /ask again for a smaller page/, name);
+    assert.match(textOf(over), /larger than the/, name);
     assert.ok(!textOf(over).includes("xxx"), name);
   }
 });
 
+test("a raise too large to store is refused like any other answer", async () => {
+  const huge = "x".repeat(chuggyToolAnswerBytesMax);
+  const api = {
+    request: async () => {
+      throw new Error(huge);
+    },
+  };
+
+  const answer = await routeOf("read_ticket", { ticket: 7 }, api);
+
+  assert.equal(answer.isError, true);
+  assert.ok(!textOf(answer).includes("xxx"), "the raise was answered whole");
+  assert.match(textOf(answer), /larger than the/);
+});
+
 /**
- * The tool's bound held against the store's, through the entry the runtime
- * writes around an answer. The envelope is written here because the runtime owns
- * its shape and this image never sees one, so what is checked is that the
- * reserve covers a generous one rather than that it is the true size.
+ * The entry a tool answer becomes, captured off a real transcript rather than
+ * composed here: an entry this suite wrote could not show a copy this suite
+ * forgot, and the copy in `toolUseResult` is the one that was forgotten.
  */
-test("a maximal answer inside a transcript entry is one batch the store can post", async () => {
-  const uuid = "0f9c1a3e-6d24-4c8b-9a7e-1b2c3d4e5f60";
+function capturedEntry() {
+  return JSON.parse(
+    readFileSync(new URL("./toolAnswerEntry.fixture.json", import.meta.url)),
+  );
+}
+
+test("the captured entry carries one answer as many times as the bound divides by", () => {
+  const entry = capturedEntry();
+  const inMessage = entry.message.content[0].content[0].text;
+
+  assert.equal(entry.toolUseResult[0].text, inMessage, "the copies differ");
+  assert.equal(
+    JSON.stringify(entry).split(JSON.stringify(inMessage).slice(1, -1)).length -
+      1,
+    chuggyToolAnswerCopiesInEntry,
+    "the entry carries the answer a different number of times than the bound divides by",
+  );
+});
+
+/**
+ * The tool's bound held against the store's, through that entry. The answer at
+ * the bound goes into both copies, because that is where the runtime puts it.
+ */
+test("a maximal answer inside the captured entry is one batch the store can post", async () => {
   const posted = [];
   const store = sessionStoreAdapter(
     { workerPlane: { url: "http://worker-plane.test:3001" } },
@@ -244,35 +314,16 @@ test("a maximal answer inside a transcript entry is one batch the store can post
       },
     },
   );
-  const text = "x".repeat(
+  const entry = capturedEntry();
+  const text = `HTTP 200\n${"x".repeat(
     chuggyToolAnswerBytesMax - chuggyToolAnswerBytes("HTTP 200\n"),
-  );
+  )}`;
+  entry.message.content[0].content[0].text = text;
+  entry.toolUseResult[0].text = text;
 
-  await store.append({ sessionId: uuid }, [
-    {
-      parentUuid: uuid,
-      isSidechain: false,
-      userType: "external",
-      cwd: "/workspace/repository/checkout",
-      sessionId: uuid,
-      version: "2.0.44",
-      gitBranch: "main",
-      type: "user",
-      message: {
-        role: "user",
-        content: [
-          {
-            tool_use_id: `toolu_01${"a".repeat(22)}`,
-            type: "tool_result",
-            content: [{ type: "text", text: `HTTP 200\n${text}` }],
-          },
-        ],
-      },
-      uuid,
-      timestamp: "2026-09-04T12:00:00.000Z",
-    },
-  ]);
+  await store.append({ sessionId: entry.sessionId }, [entry]);
 
+  assert.equal(chuggyToolAnswerBytes(text), chuggyToolAnswerBytesMax);
   assert.equal(posted.length, 1);
   assert.ok(
     posted[0].length <= sessionStoreBatchBytesMax,

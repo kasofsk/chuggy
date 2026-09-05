@@ -26,15 +26,20 @@
  * where the model can ask for a smaller one, never cut: a cut JSON document is
  * a page nothing can parse and nothing can resume from.
  *
- * AN ANSWER IS BOUNDED BY WHAT THE TRANSCRIPT HOLDS, and that is a tighter
+ * AN ANSWER IS BOUNDED BY WHAT THE TRANSCRIPT HOLDS, and that is a much tighter
  * bound than the body drawn off the wire. Every answer becomes one `tool_result`
  * entry, `./sessionStore.mjs` mirrors an entry as one line it never splits, and
  * a line over `sessionStoreBatchBytesMax` is a body the plane refuses — which
- * fails the turn `StoreRefused` and ends the attempt. So `chuggyToolAnswerBytesMax`
- * is that line's bound less the envelope the runtime writes around the text, and
- * an answer is weighed as the entry escapes it rather than as it reads, because
- * escaping is what the line is charged for. The reserve is what this image
- * cannot measure: the entry's shape is the runtime's.
+ * fails the turn `StoreRefused` and ends the attempt.
+ *
+ * THE ENTRY CARRIES THE ANSWER TWICE. The line is the on-disk transcript
+ * format, and it holds the text in the message's `tool_result` block and again
+ * in the entry's own `toolUseResult`. So the bound is what is left of the line
+ * after the fixed envelope, divided by the copies — and an answer is weighed as
+ * the entry escapes it rather than as it reads, because escaping is what the
+ * line is charged for. The entry's shape is the runtime's and this image never
+ * composes one, which is why the suite reads a captured entry rather than
+ * writing one: a guard that invents the shape cannot see a copy it forgot.
  *
  * A WRITE RELAYS THE API'S OUTCOME UNALTERED — the status and the error body, as
  * text. No retry, no repair, no hiding a 409. A tool that decided what a refusal
@@ -85,17 +90,30 @@ export const sessionStorePageBatchesMax = 8;
 export const threadTurnsAnsweredMax = 32;
 
 /**
- * What the runtime writes around one answer's text in the entry it mirrors: the
- * `tool_result` block and the call it answers, the entry's own uuids, its
- * timestamp, and the session and working directory it names. The image never
- * sees that entry, so the reserve is deliberately wider than one, and
- * `chuggyTools.test.mjs` drives a maximal answer inside one to hold it so.
+ * How many times the entry the runtime mirrors carries one answer's text. The
+ * entry is the on-disk transcript line, and it holds the answer twice: in the
+ * `tool_result` block of the message, and again in the entry's own
+ * `toolUseResult`. `toolAnswerEntry.fixture.json` is a captured one, and the
+ * suite reads the count off it rather than off this line.
+ */
+export const chuggyToolAnswerCopiesInEntry = 2;
+
+/**
+ * What the runtime writes in that entry beside the copies: the call's id, the
+ * entry's own uuids, its timestamp, and the session, version, branch and
+ * working directory it names. The image never composes that entry, so the
+ * reserve is wider than the captured one by more than the whole of it.
  */
 export const chuggyToolAnswerEnvelopeBytesMax = 4_096;
 
-/** What one tool answer may weigh where the store holds it, which is one line of one batch. */
-export const chuggyToolAnswerBytesMax =
-  sessionStoreBatchBytesMax - chuggyToolAnswerEnvelopeBytesMax;
+/** What one tool answer may weigh, so the entry it becomes is one line of one batch. */
+export const chuggyToolAnswerBytesMax = Math.floor(
+  (sessionStoreBatchBytesMax - chuggyToolAnswerEnvelopeBytesMax - 1) /
+    chuggyToolAnswerCopiesInEntry,
+);
+
+/** The argument a paged tool's shape declares, and the only page bound a model can lower. */
+export const chuggyToolPageArgument = "limit";
 
 /** What one answer's text weighs as the entry escapes it, which is what the line is charged. */
 export function chuggyToolAnswerBytes(text) {
@@ -245,15 +263,28 @@ function answered(text, isError) {
   return { content: [{ type: "text", text }], ...(isError ? { isError } : {}) };
 }
 
-/** What a page too large to answer is refused with, which names the way to a smaller one. */
-function pageTooLarge(weighed) {
+/**
+ * What an answer too large to store is refused with. It ends in what the model
+ * can actually do, which for a tool with no page bound to lower is nothing:
+ * saying "ask for a smaller page" there is a dead end dressed as an instruction,
+ * and a model reads it as one and asks again.
+ */
+function answerTooLarge(name, paged) {
+  const remedy = paged
+    ? `ask again with a smaller ${chuggyToolPageArgument}`
+    : `${name} takes no ${chuggyToolPageArgument}, so this one cannot be answered`;
   return answered(
-    `${weighed}, and one tool answer holds ${String(chuggyToolAnswerBytesMax)} bytes in the transcript; ask again for a smaller page.`,
+    `this answer is larger than the ${String(chuggyToolAnswerBytesMax)} bytes one tool answer holds in the transcript; ${remedy}.`,
     true,
   );
 }
 
-/** One route's answer as the model reads it: its status, and its body verbatim. */
+/**
+ * One route's answer as the model reads it: its status, and its body verbatim.
+ * A body larger than this draws is cut here and weighed by the handler, which
+ * refuses it: the cut text is never answered, because a cut JSON document is a
+ * page nothing can parse and nothing can resume from.
+ */
 async function relay(context, path, init) {
   const response = await context.request(
     context.task,
@@ -261,14 +292,10 @@ async function relay(context, path, init) {
     path,
     init,
   );
-  const { text, cut } = await chuggyBoundedBody(
+  const { text } = await chuggyBoundedBody(
     response,
     chuggyToolResponseBytesMax,
   );
-  if (cut)
-    return pageTooLarge(
-      `this page is larger than the ${String(chuggyToolResponseBytesMax)} bytes one answer draws off the wire`,
-    );
   return answered(
     `HTTP ${String(response.status)}\n${text}`,
     response.status >= 400,
@@ -756,14 +783,13 @@ export function chuggyToolDefinitions(context) {
  * not fit one of the store's lines. Refusing here is what keeps the answer the
  * model reads and the line the store writes the same thing.
  */
-function storableAnswer(answer) {
+function storableAnswer(name, paged, answer) {
   const text = (answer.content ?? [])
     .map((block) => (typeof block?.text === "string" ? block.text : ""))
     .join("");
-  const bytes = chuggyToolAnswerBytes(text);
-  return bytes <= chuggyToolAnswerBytesMax
+  return chuggyToolAnswerBytes(text) <= chuggyToolAnswerBytesMax
     ? answer
-    : pageTooLarge(`this answer weighs ${String(bytes)} bytes`);
+    : answerTooLarge(name, paged);
 }
 
 /**
@@ -784,21 +810,34 @@ function storableAnswer(answer) {
  * not happen.
  *
  * AND IT IS WHERE AN ANSWER IS WEIGHED, because it is the one boundary every
- * tool's answer crosses. A relay knows its page was cut and refuses on that; an
- * answer that fits the wire and not the transcript is only visible here.
+ * tool's answer crosses and the one place the tool that produced it is known.
+ * Both returns go through the weighing: a raise the model reads is an answer
+ * like any other, and the header would otherwise claim a property the code does
+ * not hold.
  */
 export function chuggyToolHandler(definition, z) {
-  const shape = z.object(definition.shape(z));
+  const fields = definition.shape(z);
+  const shape = z.object(fields);
+  // Read off the shape the model is given rather than declared beside it: a
+  // roster that said which tools page would be a second answer to a question
+  // the shape already answers, and the two would part.
+  const paged = chuggyToolPageArgument in fields;
   return async (args) => {
     try {
       const answer = await definition.call(shape.parse(args ?? {}));
       return storableAnswer(
+        definition.name,
+        paged,
         typeof answer === "string" ? answered(answer) : answer,
       );
     } catch (failure) {
-      return answered(
-        failure instanceof Error ? failure.message : String(failure),
-        true,
+      return storableAnswer(
+        definition.name,
+        paged,
+        answered(
+          failure instanceof Error ? failure.message : String(failure),
+          true,
+        ),
       );
     }
   };
