@@ -352,11 +352,18 @@ export interface SelectorRefusalChoice {
   readonly reason: string;
 }
 
+/** A ticket whose latest ledger entry is a refusal, and the version it named. */
+export interface SelectorStandingRefusal {
+  readonly ticket: DispatchCandidate["ticket"];
+  readonly ticketVersion: number;
+}
+
 /**
- * Where one decision's refusals and lifts are entered. It is declared here
- * rather than taken from the ledger's own module because the ledger's module
- * takes its vocabulary from this one, and a port pointing back would be a
- * cycle.
+ * The door onto the lead's refusal ledger: where one decision's refusals and
+ * lifts are entered, and what an observation reads back to know which of them
+ * still stand. It is declared here rather than taken from the ledger's own
+ * module because the ledger's module takes its vocabulary from this one, and a
+ * port pointing back would be a cycle.
  */
 export interface SelectorRefusalLedger {
   /** Appends one decision's refusals and lifts as one transaction, idempotent on the decision. */
@@ -366,6 +373,11 @@ export interface SelectorRefusalLedger {
     readonly refusals: readonly SelectorRefusalChoice[];
     readonly lifts: readonly SelectorLiftChoice[];
   }): Promise<"Recorded" | "AlreadyRecorded">;
+  /** The tickets standing refused, oldest ticket first and bounded by the limit given. */
+  standing(
+    partition: Partition,
+    limit: number,
+  ): Promise<readonly SelectorStandingRefusal[]>;
 }
 
 /** One ticket a decision cleared a standing refusal from. */
@@ -1452,6 +1464,7 @@ export async function runSelectorCycle(
   const observation = await observeSelectorProject(
     state,
     source,
+    refusals,
     await source.notifications(state.partition, {
       after: state.notificationCursor,
       limit: selectorNotificationPageLimit,
@@ -1582,6 +1595,24 @@ export function selectorProjectMoved(
 }
 
 /**
+ * The view page one scan state asks for: a fresh page, the continuation of a
+ * page, or the single row that says whether an exhausted scan's view has moved.
+ */
+function candidateScanQuery(
+  scan: SelectorCandidateScan,
+  pageLimit: number,
+): DispatchViewQuery {
+  if (scan.state === "Unstarted") return { limit: pageLimit };
+  if (scan.state === "Exhausted")
+    return { limit: 1, watermark: scan.token.watermark };
+  return {
+    limit: pageLimit,
+    after: scan.after,
+    watermark: scan.token.watermark,
+  };
+}
+
+/**
  * Polls current state after every wake-up or cursor reset and never mixes view
  * watermarks. The notification page is read by the caller and handed in, so it
  * is read once per cycle: reading it here as well would let a row arrive
@@ -1594,6 +1625,7 @@ export async function observeSelectorProject(
     SelectorObservationSource,
     "dispatchView" | "operationalContext"
   >,
+  refusals: Pick<SelectorRefusalLedger, "standing">,
   notifications: NotificationBatch,
   pageLimit = 100,
   candidateBytesMax = 524_288,
@@ -1601,16 +1633,7 @@ export async function observeSelectorProject(
   if (!selectorProjectMoved(state, notifications)) return undefined;
   const changes = notifications.result === "Events" ? notifications.events : [];
   const scan = state.candidateScan ?? ({ state: "Unstarted" } as const);
-  const query =
-    scan.state === "Unstarted"
-      ? { limit: pageLimit }
-      : scan.state === "Exhausted"
-        ? { limit: 1, watermark: scan.token.watermark }
-        : {
-            limit: pageLimit,
-            after: scan.after,
-            watermark: scan.token.watermark,
-          };
+  const query = candidateScanQuery(scan, pageLimit);
   let page =
     scan.state === "Exhausted"
       ? await source.dispatchView(state.partition, query)
@@ -1646,7 +1669,10 @@ export async function observeSelectorProject(
         }
       : {
           token: page.token,
-          candidates: page.candidates,
+          candidates: undecidedCandidates(
+            page.candidates,
+            await refusals.standing(state.partition, leadRefusalsObservedMax),
+          ),
           notificationCursor: notifications.cursor,
           changes,
           operationalContext: await source.operationalContext(state.partition),
@@ -1656,6 +1682,28 @@ export async function observeSelectorProject(
               ? { state: "Exhausted", token: page.token }
               : { state: "Continue", token: page.token, after: page.nextAfter },
         };
+}
+
+/**
+ * The candidates a decision is asked about, which are the page's less the ones
+ * the lead already answered: a refusal stands against the version it named, so
+ * a ticket re-released or re-authored since is a new question and a lifted
+ * refusal is no answer at all. What stands is read to the bound the lead's own
+ * document carries, so the page it is shown and the page it decides on name the
+ * same refusals.
+ */
+function undecidedCandidates(
+  candidates: readonly DispatchCandidate[],
+  standing: readonly SelectorStandingRefusal[],
+): readonly DispatchCandidate[] {
+  return candidates.filter(
+    (candidate) =>
+      !standing.some(
+        (refusal) =>
+          refusal.ticket === candidate.ticket &&
+          refusal.ticketVersion === candidate.ticketVersion,
+      ),
+  );
 }
 
 type BoundedCandidatePage =

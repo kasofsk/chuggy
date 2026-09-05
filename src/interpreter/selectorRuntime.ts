@@ -177,7 +177,7 @@ async function observeProject(
   let observation: SelectorObservation | undefined;
   try {
     state = (await store.project(partition)) ?? initialState(partition);
-    observation = await projectObservation(state, source, settings);
+    observation = await projectObservation(state, refusals, source, settings);
   } catch {
     return projectObservationFailure("Observation", partition);
   }
@@ -219,6 +219,7 @@ async function observeProject(
  */
 async function projectObservation(
   state: SelectorProjectState,
+  refusals: SelectorRefusalLedger,
   source: SelectorRuntimeSource,
   settings: SelectorResolvedSettings,
 ): Promise<SelectorObservation | undefined> {
@@ -231,6 +232,7 @@ async function projectObservation(
   return observeSelectorProject(
     state,
     source,
+    refusals,
     changes,
     selectorNotificationPageLimit,
     Math.floor(leadInputBytesMax(settings) / 2),

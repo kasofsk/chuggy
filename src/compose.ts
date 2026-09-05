@@ -44,7 +44,7 @@ import {
 import { authorizedProjectInventory } from "./interpreter/projectInventory.ts";
 import {
   postgresAgenticRefusalStanding,
-  postgresAgenticRefusalWrites,
+  postgresAgenticRefusalLedger,
 } from "./adapters/postgres/agenticRefusal.ts";
 import { postgresLeadMailbox } from "./adapters/postgres/leadMailbox.ts";
 import { postgresLeadDecisionTail } from "./adapters/postgres/leadReads.ts";
@@ -150,7 +150,7 @@ export function composeSelectorRuntime(
 ): SelectorRuntimeService {
   const store = postgresSelectorState(selectorPool);
   const settings = postgresSelectorRuntimeControl(selectorPool);
-  const refusals = postgresAgenticRefusalWrites(selectorPool);
+  const refusals = postgresAgenticRefusalLedger(selectorPool);
   const policy = selectorPolicyHost(
     leadSelectorPolicy(
       postgresLeadMailbox(selectorPool),
