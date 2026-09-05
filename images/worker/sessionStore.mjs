@@ -133,7 +133,7 @@ function plannedBatches(owed) {
     const size = Buffer.byteLength(owedLine.line) + 1;
     if (size > sessionStoreBatchBytesMax)
       throw new Error(
-        `the session store was given an entry of ${String(size)} bytes and one batch holds ${String(sessionStoreBatchBytesMax)}`,
+        `the session store was given an entry of ${String(size - 1)} bytes, which with its newline is over the ${String(sessionStoreBatchBytesMax)} one batch holds`,
       );
     if (held.length > 0 && bytes + size > sessionStoreBatchBytesMax) {
       planned.push(held);
@@ -192,12 +192,15 @@ async function sendBatch(held, stream, frozen) {
 async function appendOnce(held, stream, entries) {
   const state = streamState(held.streams, stream);
   const resent = state.pending;
-  const planned = plannedBatches(owedLines(state, entries));
+  // Owed before the resend, because what the pending batch already carries is
+  // read off it; planned after, because planning may raise on an entry nothing
+  // can post and the unacknowledged batch is still owed either way.
+  const owed = owedLines(state, entries);
   if (resent !== undefined) {
     await sendBatch(held, stream, resent);
     confirm(held, state, stream, resent);
   }
-  for (const batch of planned) {
+  for (const batch of plannedBatches(owed)) {
     const frozen = frozenBatch(state, batch);
     state.pending = frozen;
     await sendBatch(held, stream, frozen);

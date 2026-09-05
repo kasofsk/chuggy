@@ -105,6 +105,34 @@ test("an entry larger than one batch raises rather than posting a body the plane
   assert.deepEqual(bodies(calls), [], "the over-long entry was posted anyway");
 });
 
+/**
+ * The entry nothing can post, arriving in the same call as a batch the plane
+ * never acknowledged. The resend is what closes the hole the unacknowledged
+ * batch is; a raise that ran first would open it in the one case where the
+ * transcript is already losing an entry.
+ */
+test("an entry larger than one batch still lets the unacknowledged batch be re-sent", async () => {
+  let refuse = true;
+  const { calls, store } = storeOf(() =>
+    refuse ? new Error("plane unreachable") : { status: 204 },
+  );
+
+  await assert.rejects(store.append({ sessionId: "s" }, [entry("a")]));
+  refuse = false;
+  await assert.rejects(
+    store.append({ sessionId: "s" }, [
+      entry("a"),
+      entry("b", sessionStoreBatchBytesMax),
+    ]),
+    /one batch holds/,
+  );
+
+  const written = bodies(calls);
+  assert.equal(written.length, 2, "the unacknowledged batch was not re-sent");
+  assert.equal(written[1].path, "/v1/session/store/s/1");
+  assert.equal(written[0].body, written[1].body);
+});
+
 test("a batch the plane never acknowledged is re-sent as the same bytes under the same number", async () => {
   let refuse = true;
   const { calls, store } = storeOf(() =>
