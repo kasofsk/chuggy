@@ -8,7 +8,10 @@
 
 import { expect, test } from "vitest";
 
-import { nativeHttpBasePath } from "../../../src/contract/http.ts";
+import {
+  nativeHttpBasePath,
+  nativeHttpMediaType,
+} from "../../../src/contract/http.ts";
 import {
   apiAgenticRefusals,
   apiAskLead,
@@ -20,6 +23,7 @@ import {
   apiLeadInquiry,
   apiLeadTranscript,
   apiNativeActions,
+  apiOpenThread,
   apiProject,
   apiProjectInventory,
   apiProjectInventoryAll,
@@ -31,7 +35,7 @@ import {
   apiWriteSelectorSettings,
   projectInventoryPagesMax,
 } from "../app/core/apiRoutes.ts";
-import type { ApiPorts } from "../app/core/apiRequest.ts";
+import type { ApiFetchInit, ApiPorts } from "../app/core/apiRequest.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
 const partition = { tenant: "acme", project: "at las" };
@@ -50,6 +54,29 @@ function recording(bodyFor: (url: string) => unknown): {
           status: 200,
           headers: { get: () => null },
           text: () => Promise.resolve(JSON.stringify(bodyFor(url))),
+        } as unknown as Response);
+      },
+      bearer: () => Promise.resolve("token"),
+      sleepMs: () => Promise.resolve(),
+    },
+  };
+}
+
+/** Every request as it left, for the routes whose shape is the finding. */
+function recordingRequests(body: unknown): {
+  readonly ports: ApiPorts;
+  readonly requests: { readonly url: string; readonly init: ApiFetchInit }[];
+} {
+  const requests: { readonly url: string; readonly init: ApiFetchInit }[] = [];
+  return {
+    requests,
+    ports: {
+      fetch: (url, init) => {
+        requests.push({ url, init });
+        return Promise.resolve({
+          status: 201,
+          headers: { get: () => null },
+          text: () => Promise.resolve(JSON.stringify(body)),
         } as unknown as Response);
       },
       bearer: () => Promise.resolve("token"),
@@ -354,4 +381,27 @@ test("the settings are read, written whole and paged for their revisions", async
   expect(held.urls[2]).toBe(
     `${partitionPath}/selector-settings/history?after=3`,
   );
+});
+
+/** The thread door takes only versioned JSON, and a request with no body has
+ * no media type to be versioned: an open that posts nothing is refused before
+ * it reaches the caller's identity. */
+test("opening a thread posts the versioned empty object", async () => {
+  const held = recordingRequests({
+    session: "thread-1",
+    state: "Open",
+    mine: true,
+    turns: 0,
+    owner: "geoff",
+  });
+  const opened = await apiOpenThread(held.ports, partition);
+  expect(opened.outcome).toBe("Ok");
+  expect(held.requests).toHaveLength(1);
+  const request = held.requests[0];
+  expect(request?.url).toBe(`${partitionPath}/threads`);
+  expect(request?.init.method).toBe("POST");
+  expect(request?.init.body).toBe("{}");
+  expect(
+    (request?.init.headers as Record<string, string>)["content-type"],
+  ).toBe(nativeHttpMediaType);
 });
