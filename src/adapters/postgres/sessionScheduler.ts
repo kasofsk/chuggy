@@ -17,15 +17,18 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import {
+  allSessionTurnFailures,
   asSessionAttemptId,
   asSessionId,
   type AgentSession,
+  type SessionTurnFailure,
 } from "../../interpreter/agentSession.ts";
 import type { RecoveryEpoch } from "../../interpreter/projectStore.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
 import type { PlacementId } from "../../interpreter/schedulerIdentity.ts";
 import type {
   FencedSessionAttempt,
+  ObservableSessionAttempt,
   SessionAttemptEvidence,
   SessionAttemptOpened,
   SessionAttemptOpening,
@@ -33,6 +36,7 @@ import type {
 } from "../../interpreter/sessionScheduler.ts";
 import {
   agentSessionRowOf,
+  sessionRowMember,
   sessionRowText,
   type AgentSessionRow,
 } from "./sessionRows.ts";
@@ -59,6 +63,28 @@ function fencedSessionAttemptOf(row: SessionAttemptRow): FencedSessionAttempt {
       sessionRowText(row.generation, "generation"),
       "session attempt generation",
     ),
+  };
+}
+
+/** One live attempt as the observation read names it, its last turn's failure and all. */
+interface SessionObservationRow extends SessionAttemptRow {
+  readonly turn_failure: string | null;
+}
+
+function observableSessionAttemptOf(
+  row: SessionObservationRow,
+): ObservableSessionAttempt {
+  return {
+    ...fencedSessionAttemptOf(row),
+    ...(row.turn_failure === null
+      ? {}
+      : {
+          turnFailure: sessionRowMember<SessionTurnFailure>(
+            [...allSessionTurnFailures],
+            row.turn_failure,
+            "session turn failure",
+          ),
+        }),
   };
 }
 
@@ -150,6 +176,20 @@ async function sessionOpenAttempt(
   );
 }
 
+async function sessionAwaitingObservation(
+  pool: pg.Pool,
+  epoch: RecoveryEpoch,
+  attemptsMax: number,
+): Promise<readonly ObservableSessionAttempt[]> {
+  sessionRequirePositive(attemptsMax, "the observation bound");
+  const found = await pool.query<SessionObservationRow>(
+    sql`SELECT tenant,project,session,attempt,generation::text AS generation,
+               turn_failure
+          FROM session_attempts_awaiting_observation(${epoch},${attemptsMax})`,
+  );
+  return found.rows.map(observableSessionAttemptOf);
+}
+
 /** How many rows one bounded sweep moved, refusing an answer that is not a count. */
 function sessionSweptCount(value: string | null | undefined): number {
   if (value === null || value === undefined)
@@ -186,6 +226,9 @@ export function postgresSessionScheduler(pool: pg.Pool): SessionSchedulerStore {
       );
       return ended.rows[0]?.ended === true;
     },
+
+    attemptsAwaitingObservation: (epoch, attemptsMax) =>
+      sessionAwaitingObservation(pool, epoch, attemptsMax),
 
     reapLapsedAttempts: async (epoch, attemptsMax) => {
       sessionRequirePositive(attemptsMax, "the reap bound");

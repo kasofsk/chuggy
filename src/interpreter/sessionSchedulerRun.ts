@@ -14,6 +14,13 @@
  * the pass safe to run at all, and it is idempotent, so a pass with nothing
  * left to fence fences nothing.
  *
+ * AN ENDED POD ENDS ITS ATTEMPT, AND THE REAPS ARE WHAT IS LEFT. A terminated
+ * pod will claim nothing further, so waiting out its lease costs the session a
+ * whole lease window and records `LeaseExpired` over whatever actually
+ * happened. The pass asks the placement port instead, and ends the attempt on
+ * the pod's own reason; the lapse and the idle window still collect a pod the
+ * plane cannot observe at all.
+ *
  * AN IDLE SESSION COSTS NO POD. A session is the truth and its pod is a cache,
  * so an attempt that has claimed nothing for `idleSecsMax` is ended and its pod
  * deleted; the next turn opens a new attempt, and the runtime session it
@@ -75,6 +82,7 @@ import type { RecoveryEpoch } from "./projectStore.ts";
 import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
 import {
   checkedSessionSchedulerConfig,
+  sessionPodEvidence,
   sessionRepositoryRead,
   type FencedSessionAttempt,
   type SessionBearer,
@@ -111,6 +119,7 @@ export interface SessionSchedulerService {
 export interface SessionPassReport {
   readonly fenced: number;
   readonly cleaned: number;
+  readonly observed: number;
   readonly reaped: number;
   readonly idled: number;
   readonly placed: number;
@@ -141,6 +150,34 @@ export async function sessionSchedulerCleanup(
     if (await service.store.attemptCleanupCompleted(attempt)) cleaned += 1;
   }
   return cleaned;
+}
+
+/**
+ * Ends a bounded batch of attempts whose pod has terminated, each on the pod's
+ * own reason. It runs before the reaps because it is the sharper answer for the
+ * same attempts: an attempt this step ends names what happened to its pod, and
+ * one left standing is what the lease and the idle window are still for.
+ */
+export async function sessionSchedulerObserve(
+  service: SessionSchedulerService,
+  epoch: RecoveryEpoch,
+): Promise<number> {
+  const config = checkedSessionSchedulerConfig(service.config);
+  const attempts = await service.store.attemptsAwaitingObservation(
+    epoch,
+    config.attemptsPerPassMax,
+  );
+  let observed = 0;
+  for (const attempt of attempts) {
+    const pod = await service.placement.observe(attempt);
+    if (pod.observed !== "Ended") continue;
+    const ended = await service.store.attemptEnded(
+      attempt,
+      sessionPodEvidence(pod.phase, attempt.turnFailure),
+    );
+    if (ended) observed += 1;
+  }
+  return observed;
 }
 
 /** Ends a bounded batch of attempts whose lease has run out, returning their turns. */
@@ -264,8 +301,9 @@ export async function sessionSchedulerPass(
 ): Promise<SessionPassReport> {
   const fenced = await sessionSchedulerFence(service, epoch);
   const cleaned = await sessionSchedulerCleanup(service);
+  const observed = await sessionSchedulerObserve(service, epoch);
   const reaped = await sessionSchedulerReap(service, epoch);
   const idled = await sessionSchedulerIdle(service, epoch);
   const placed = await sessionSchedulerPlace(service, epoch);
-  return { fenced, cleaned, reaped, idled, placed };
+  return { fenced, cleaned, observed, reaped, idled, placed };
 }

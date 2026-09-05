@@ -13,8 +13,12 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
 import type { AgentSession } from "../../src/interpreter/agentSession.ts";
+import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import { asPlacementId } from "../../src/interpreter/schedulerIdentity.ts";
-import type { FencedSessionAttempt } from "../../src/interpreter/sessionScheduler.ts";
+import type {
+  FencedSessionAttempt,
+  ObservableSessionAttempt,
+} from "../../src/interpreter/sessionScheduler.ts";
 import { postgresHarnessNewEpoch, postgresHarnessProject } from "./harness.ts";
 import {
   sessionRigAttempt,
@@ -415,6 +419,117 @@ test("a placement recorded after a claim leaves the working attempt exempt from 
     true,
   );
   await stillWorking(held);
+});
+
+/**
+ * What the observation read says about one attempt, or nothing where it does
+ * not offer it. The suites of one worker share a database, so a case reads the
+ * whole bounded page and picks its own attempt out of it.
+ */
+async function observed(
+  attempt: FencedSessionAttempt,
+): Promise<ObservableSessionAttempt | undefined> {
+  const offered = await rig.scheduler.attemptsAwaitingObservation(
+    rig.epoch,
+    sessionRigBoundless,
+  );
+  return offered.find((one) => one.attempt === attempt.attempt);
+}
+
+test("only a placed, live attempt of this epoch has a pod to observe", async () => {
+  const { partition, session } = await launchable("observable");
+  const held = await sessionRigAttempt(rig, partition, session, "observable");
+  assert.equal(await observed(held.attempt), undefined);
+  await rig.scheduler.attemptPlaced(
+    held.attempt,
+    asPlacementId("placement-observable"),
+  );
+  assert.deepEqual(await observed(held.attempt), held.attempt);
+  assert.equal(
+    (
+      await rig.scheduler.attemptsAwaitingObservation(
+        asRecoveryEpoch("epoch-nobody-restored"),
+        sessionRigBoundless,
+      )
+    ).length,
+    0,
+  );
+  await rig.scheduler.attemptEnded(held.attempt, "TurnFailed");
+  assert.equal(await observed(held.attempt), undefined);
+});
+
+/** Places one attempt and claims the turn its session is holding for it. */
+async function working(label: string) {
+  const { partition, session } = await launchable(label);
+  const held = await sessionRigAttempt(rig, partition, session, label);
+  await rig.scheduler.attemptPlaced(
+    held.attempt,
+    asPlacementId(`placement-${label}`),
+  );
+  const claimed = await rig.plane.claim({
+    secret: held.secret,
+    generation: held.attempt.generation,
+  });
+  if (claimed === undefined)
+    throw new Error(`session attempt: ${label} claimed no turn`);
+  return { partition, session, held, turn: claimed.turn };
+}
+
+test("the observation read carries the failure of the last turn the attempt ended", async () => {
+  const { held, turn } = await working("refused");
+  assert.equal((await observed(held.attempt))?.turnFailure, undefined);
+  assert.equal(
+    await rig.plane.fail({
+      secret: held.secret,
+      generation: held.attempt.generation,
+      turn,
+      failure: "StoreRefused",
+    }),
+    "Failed",
+  );
+  assert.equal((await observed(held.attempt))?.turnFailure, "StoreRefused");
+});
+
+test("an attempt whose last turn was answered carries no failure", async () => {
+  const { held, turn } = await working("answered");
+  assert.equal(
+    await rig.plane.answer({
+      secret: held.secret,
+      generation: held.attempt.generation,
+      turn,
+      result: "the answer",
+    }),
+    "Answered",
+  );
+  assert.equal((await observed(held.attempt))?.turnFailure, undefined);
+});
+
+/**
+ * A failed turn releases its attempt, so the read finds the attempt's own turns
+ * by when they ended rather than by a column. What that has to get right is the
+ * boundary: a turn an earlier attempt failed is not this one's evidence.
+ */
+test("a turn a previous attempt failed is not the successor's failure", async () => {
+  const { partition, session, held, turn } = await working("successor");
+  await rig.plane.fail({
+    secret: held.secret,
+    generation: held.attempt.generation,
+    turn,
+    failure: "AgentFailed",
+  });
+  await rig.scheduler.attemptEnded(held.attempt, "TurnFailed");
+  await sessionRigTurn(rig, partition, session, "successor-next");
+  const next = await sessionRigAttempt(
+    rig,
+    partition,
+    session,
+    "successor-next",
+  );
+  await rig.scheduler.attemptPlaced(
+    next.attempt,
+    asPlacementId("placement-successor-next"),
+  );
+  assert.equal((await observed(next.attempt))?.turnFailure, undefined);
 });
 
 test("a restore fences every attempt an older epoch issued, and the sweep is bounded", async () => {

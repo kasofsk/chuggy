@@ -58,6 +58,7 @@ export const schedulerRootSessions: Omit<
     place: () =>
       Promise.resolve({ placed: "Unavailable", retryAfterSeconds: 1 }),
     cancel: () => Promise.resolve({ cancelled: "Accepted" }),
+    observe: () => Promise.resolve({ observed: "Unended" }),
   },
   bearers: {
     mint: () => {

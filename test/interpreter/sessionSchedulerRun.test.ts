@@ -22,6 +22,7 @@ import {
   asSessionBearerSecret,
   asSessionId,
   type AgentSession,
+  type SessionTurnFailure,
 } from "../../src/interpreter/agentSession.ts";
 import {
   asRepositoryId,
@@ -43,8 +44,10 @@ import {
 import {
   sessionSchedulerDefaults,
   type FencedSessionAttempt,
+  type ObservableSessionAttempt,
   type RepositoryMirrors,
   type SessionAttemptEvidence,
+  type SessionPodObserved,
   type SessionAttemptOpened,
   type SessionAttemptOpening,
   type SessionPlacement,
@@ -120,6 +123,8 @@ interface StoreAnswers {
   readonly cleanup?: readonly FencedSessionAttempt[];
   readonly cancelled?: "Accepted" | "Unavailable";
   readonly binding?: RepositoryBinding | Error | "PerProject";
+  readonly observable?: readonly ObservableSessionAttempt[];
+  readonly observed?: SessionPodObserved;
 }
 
 /** A store that records the bound of every move asked of it and takes none. */
@@ -145,6 +150,10 @@ function recordingStore(
     attemptEnded: (_attempt, evidence: SessionAttemptEvidence) => {
       calls.push(`attemptEnded ${evidence}`);
       return Promise.resolve(true);
+    },
+    attemptsAwaitingObservation: (_epoch, attemptsMax) => {
+      calls.push(`attemptsAwaitingObservation ${String(attemptsMax)}`);
+      return Promise.resolve(answers.observable ?? []);
     },
     reapLapsedAttempts: (_epoch, attemptsMax) => {
       calls.push(`reapLapsedAttempts ${String(attemptsMax)}`);
@@ -234,6 +243,10 @@ function service(
           cancelled: answers.cancelled ?? "Accepted",
         });
       },
+      observe: (asked) => {
+        calls.push(`observe ${asked.attempt}`);
+        return Promise.resolve(answers.observed ?? { observed: "Unended" });
+      },
     },
     bearers,
     policy: site === undefined ? policy : { ...policy, mirrors: site.mirrors },
@@ -250,6 +263,7 @@ test("every step of one pass is asked for at most the bound this deployment name
   assert.deepEqual(calls, [
     `fenceOldEpochAttempts ${String(sessionSchedulerDefaults.attemptsPerPassMax)}`,
     `attemptsAwaitingCleanup ${String(sessionSchedulerDefaults.attemptsPerPassMax)}`,
+    `attemptsAwaitingObservation ${String(sessionSchedulerDefaults.attemptsPerPassMax)}`,
     `reapLapsedAttempts ${String(sessionSchedulerDefaults.attemptsPerPassMax)}`,
     `reapIdleAttempts ${String(sessionSchedulerDefaults.idleSecsMax)} ${String(sessionSchedulerDefaults.attemptsPerPassMax)}`,
     `awaitingPlacement ${String(sessionSchedulerDefaults.placementsPerPassMax)}`,
@@ -257,10 +271,79 @@ test("every step of one pass is asked for at most the bound this deployment name
   assert.deepEqual(report, {
     fenced: 0,
     cleaned: 0,
+    observed: 0,
     reaped: 0,
     idled: 0,
     placed: 0,
   });
+});
+
+/**
+ * One live attempt the pass may look at, carrying the failure of the last turn
+ * it ended where a case gives it one.
+ */
+function observable(
+  turnFailure?: SessionTurnFailure,
+): ObservableSessionAttempt {
+  return turnFailure === undefined ? attempt : { ...attempt, turnFailure };
+}
+
+/**
+ * The pod's end is what ends the attempt, and the reason is the pod's. A case
+ * asserting `attemptEnded LeaseExpired` would be asserting about the reaper,
+ * which never ran: the pass ends the attempt before it reaps anything, so an
+ * evidence here is one the observation chose.
+ */
+const podEndings: readonly (readonly [
+  SessionPodObserved,
+  SessionTurnFailure | undefined,
+  string,
+])[] = [
+  [{ observed: "Ended", phase: "Failed" }, "StoreRefused", "StoreRefused"],
+  [
+    { observed: "Ended", phase: "Succeeded" },
+    "AgentBudgetExhausted",
+    "TurnFailed",
+  ],
+  [{ observed: "Ended", phase: "Failed" }, undefined, "TurnFailed"],
+  [{ observed: "Ended", phase: "Succeeded" }, undefined, "SessionIdle"],
+];
+
+for (const [observed, turnFailure, evidence] of podEndings) {
+  test(`a pod that ended ${observed.observed === "Ended" ? observed.phase : ""} after ${String(turnFailure)} ends its attempt ${evidence}`, async () => {
+    const calls: StoreCall[] = [];
+    const report = await sessionSchedulerPass(
+      service(
+        calls,
+        { observable: [observable(turnFailure)], observed },
+        { placed: "Unavailable", retryAfterSeconds: 1 },
+      ),
+      epoch,
+    );
+    assert.equal(report.observed, 1);
+    assert.deepEqual(calls.slice(2, 5), [
+      `attemptsAwaitingObservation ${String(sessionSchedulerDefaults.attemptsPerPassMax)}`,
+      `observe ${attempt.attempt}`,
+      `attemptEnded ${evidence}`,
+    ]);
+  });
+}
+
+test("a pod the plane could not observe is left to the lease and ends nothing", async () => {
+  const calls: StoreCall[] = [];
+  const report = await sessionSchedulerPass(
+    service(
+      calls,
+      {
+        observable: [observable("StoreRefused")],
+        observed: { observed: "Unended" },
+      },
+      { placed: "Unavailable", retryAfterSeconds: 1 },
+    ),
+    epoch,
+  );
+  assert.equal(report.observed, 0);
+  assert.ok(!calls.some((call) => call.startsWith("attemptEnded")));
 });
 
 test("a session with a turn waiting is opened under this deployment's ceilings and placed", async () => {
