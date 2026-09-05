@@ -35,6 +35,13 @@
  * execution roster with `SessionIdle` would put a label on an execution attempt
  * that no execution can reach.
  *
+ * ITS POD'S END IS OBSERVED, AND THE LEASE IS WHAT IS LEFT. A pod that has
+ * terminated has said everything it is going to say, so the placement port is
+ * asked whether it has, and the attempt ends on the answer. The lease and the
+ * idle window still stand behind that: a pod nothing can be learned about — one
+ * deleted out from under the plane, or on a cluster that cannot be reached — is
+ * exactly what they were written for.
+ *
  * A DENIED SESSION PLACEMENT RECORDS BARE `PlacementDenied`, AND ITS REASON IS
  * DISCARDED. The placement outcome is the execution scheduler's unchanged, so
  * its `Denied` arm carries a `BlockedReason` — and a `BlockedReason` exists to
@@ -52,6 +59,7 @@ import type {
   SessionCapability,
   SessionId,
   SessionKind,
+  SessionTurnFailure,
 } from "./agentSession.ts";
 import type {
   AttemptPlacementOutcome,
@@ -98,6 +106,16 @@ export interface SessionPlacement extends FencedSessionAttempt {
 /** The three arms an execution placement already has, reused unchanged. */
 export type SessionPlacementOutcome = AttemptPlacementOutcome;
 
+/**
+ * What one look at a placed session's workload found. `Unended` is every other
+ * answer together — still running, not there, or a backend that could not be
+ * reached — because the lease is the fallback for all of them and a pass that
+ * told them apart would still do the same thing.
+ */
+export type SessionPodObserved =
+  | { readonly observed: "Ended"; readonly phase: "Succeeded" | "Failed" }
+  | { readonly observed: "Unended" };
+
 /** Session placement, behind the same backend-neutral port an execution attempt is placed through. */
 export interface SessionPlacementPort {
   place(placement: SessionPlacement): Promise<SessionPlacementOutcome>;
@@ -108,6 +126,9 @@ export interface SessionPlacementPort {
   ): Promise<
     { readonly cancelled: "Accepted" } | { readonly cancelled: "Unavailable" }
   >;
+
+  /** Whether the workload placed for this attempt has ended, and how it ended. */
+  observe(attempt: FencedSessionAttempt): Promise<SessionPodObserved>;
 }
 
 /** Which read a session takes of a bound repository, keyed by the binding it stands for. */
@@ -160,6 +181,23 @@ export const allSessionAttemptEvidences = [
 ] as const;
 export type SessionAttemptEvidence =
   (typeof allSessionAttemptEvidences)[number];
+
+/**
+ * What an ended pod ends its attempt as. The turn row already names why the
+ * turn ended, so the evidence says which of the three things happened to the
+ * POD rather than repeating that failure: its store was refused and its
+ * transcript has a hole, a turn it held ended without an answer, or it drained
+ * the mailbox and stopped — which is `SessionIdle`, the same label the idle
+ * reaper would have written for the same attempt one idle window later.
+ */
+export function sessionPodEvidence(
+  phase: "Succeeded" | "Failed",
+  turnFailure: SessionTurnFailure | undefined,
+): SessionAttemptEvidence {
+  if (turnFailure === "StoreRefused") return "StoreRefused";
+  if (turnFailure !== undefined || phase === "Failed") return "TurnFailed";
+  return "SessionIdle";
+}
 
 /**
  * What opening the next attempt for a session is asked for. The attempt's
@@ -220,6 +258,20 @@ export interface SessionSchedulerStore {
     attempt: FencedSessionAttempt,
     evidence: SessionAttemptEvidence,
   ): Promise<boolean>;
+
+  /** At most `attemptsMax` placed, live attempts of this epoch, which are the ones with a pod. */
+  attemptsAwaitingObservation(
+    epoch: RecoveryEpoch,
+    attemptsMax: number,
+  ): Promise<readonly FencedSessionAttempt[]>;
+
+  /**
+   * The failure of the last turn this attempt ended, asked only once its pod
+   * has stopped writing, because until then the answer is a row that moves.
+   */
+  attemptTurnFailure(
+    attempt: FencedSessionAttempt,
+  ): Promise<SessionTurnFailure | undefined>;
 
   /** Ends at most `attemptsMax` attempts whose lease has run out. */
   reapLapsedAttempts(

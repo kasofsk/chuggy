@@ -720,6 +720,10 @@ function processCluster(reachable: boolean): string {
     const fetcher = (input, init) => {
       asked.push(((init && init.method) || 'GET') + ' ' + String(input) + half(init));
       if (!${String(reachable)}) return Promise.reject(new Error('connection refused'));
+      const path = new URL(String(input)).pathname;
+      if ((!init || (init.method || 'GET') === 'GET')
+          && path.includes('/pods/' + sessionSite.podNamePrefix))
+        return Promise.resolve(Response.json({ status: { phase: 'Failed' } }));
       if (init && init.method === 'POST' && String(input).endsWith('/pods')) {
         const submitted = JSON.parse(init.body);
         if (submitted.metadata.name.startsWith(sessionSite.podNamePrefix))
@@ -772,8 +776,12 @@ function processExecutionFakes(): string {
   `;
 }
 
-/** The durable rows the session half of the same pass is given to move. */
-function processSessionFakes(): string {
+/**
+ * The durable rows the session half of the same pass is given to move. A case
+ * that is not about observation offers no attempt to observe, so the exchange
+ * every other case asserts is the placement's alone.
+ */
+function processSessionFakes(observing: boolean): string {
   return `
     const sessionGrant = { ...${JSON.stringify(grant)}, credentials: ['claude-code'] };
     const agentSession = {
@@ -786,16 +794,19 @@ function processSessionFakes(): string {
       partition, session: 'session-one', attempt: 'session-attempt-one', generation: 1,
     };
     const sessionPlaced = [];
+    const sessionEnded = [];
     const sessionStore = {
       fenceOldEpochAttempts: async () => 0,
       attemptsAwaitingCleanup: async () => [],
       attemptCleanupCompleted: async () => true,
+      attemptsAwaitingObservation: async () => ${observing ? "[sessionFence]" : "[]"},
+      attemptTurnFailure: async () => ${observing ? "'StoreRefused'" : "undefined"},
       reapLapsedAttempts: async () => 0,
       reapIdleAttempts: async () => 0,
       awaitingPlacement: async () => [agentSession],
       openAttempt: async () => ({ opened: 'Opened', attempt: sessionFence }),
       attemptPlaced: async (_attempt, placement) => { sessionPlaced.push(placement); return true; },
-      attemptEnded: async () => true,
+      attemptEnded: async (_attempt, evidence) => { sessionEnded.push(evidence); return true; },
     };
     const sessionBindings = {
       binding: async (asked) => ({
@@ -806,11 +817,11 @@ function processSessionFakes(): string {
 }
 
 /** Everything one driven pass calls out through, cluster and rows alike. */
-function processFakes(reachable: boolean): string {
+function processFakes(reachable: boolean, observing: boolean): string {
   return `
     ${processCluster(reachable)}
     ${processExecutionFakes()}
-    ${processSessionFakes()}
+    ${processSessionFakes(observing)}
   `;
 }
 
@@ -823,6 +834,7 @@ function processFakes(reachable: boolean): string {
 function processProgram(
   reachable: boolean,
   mirrors: Readonly<Record<string, string>> = {},
+  observing = false,
 ): string {
   return `
     const roots = await import('./src/roots/controlPlane.ts');
@@ -836,7 +848,7 @@ function processProgram(
     const briefing = await import('./src/interpreter/taskBriefing.ts');
     const tickets = await import('./src/interpreter/ticketService.ts');
     const finalizer = await import('./src/interpreter/finalizer.ts');
-    ${processFakes(reachable)}
+    ${processFakes(reachable, observing)}
     const service = {
       store,
       placement: launch.kubernetesWorkerLaunch(cluster, fetcher),
@@ -885,7 +897,7 @@ function processProgram(
     const health = runtime.health();
     const stopped = await runtime.stop();
     process.stdout.write(JSON.stringify({
-      started, health, stopped, placed, sessionPlaced, sessionTasks, asked,
+      started, health, stopped, placed, sessionPlaced, sessionEnded, sessionTasks, asked,
     }));
   `;
 }
@@ -901,6 +913,7 @@ interface ProcessRan {
   readonly stopped?: unknown;
   readonly placed: readonly string[];
   readonly sessionPlaced: readonly string[];
+  readonly sessionEnded: readonly string[];
   readonly sessionTasks: readonly {
     readonly repository?: { readonly reference: string };
   }[];
@@ -971,6 +984,26 @@ test("the session pod is handed the mirror the site names for the binding", asyn
   assert.deepEqual(found.sessionTasks[0]?.repository, {
     reference: "http://git.invalid./chuggy.git",
   });
+});
+
+/**
+ * The pod's end reaches the durable row through the whole process. The cluster
+ * is what says the pod finished — the case answers the read of that pod with a
+ * `Failed` phase — and the evidence recorded is the refusal the last turn
+ * named, which is the defect: an attempt that stood until its lease lapsed and
+ * then recorded `LeaseExpired` over a store refusal (kasofsk/chuggy#509).
+ */
+test("a session pod the cluster says failed ends its attempt on the turn's own reason", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(processProgram(true, {}, true)),
+  ) as ProcessRan;
+  assert.deepEqual(found.sessionEnded, ["StoreRefused"]);
+  assert.deepEqual(
+    found.asked.filter(
+      (one) => one.startsWith("GET") && one.includes("/pods/"),
+    ),
+    [`GET ${namespaceUrl}/pods/${found.sessionPlaced[0] ?? ""}`],
+  );
 });
 
 test("a cluster that does not answer is a named could-not-run and never readiness", async () => {

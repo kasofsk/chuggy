@@ -160,6 +160,8 @@ const successfulProcessProgram = `
         fenceOldEpochAttempts: async () => 0,
         attemptsAwaitingCleanup: async () => [],
         attemptCleanupCompleted: async () => true,
+        attemptsAwaitingObservation: async () => [],
+        attemptTurnFailure: async () => undefined,
         reapLapsedAttempts: async () => 0,
         reapIdleAttempts: async () => 0,
         awaitingPlacement: async () => { sessionPasses += 1; return []; },

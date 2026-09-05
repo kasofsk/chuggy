@@ -7,6 +7,12 @@
  * pod, and every other answer describes the cluster at this moment and holds.
  * A placement the renderer itself denies must reach no cluster at all.
  *
+ * AN OBSERVATION SAYS ONLY WHAT THE CLUSTER SAID. Two phases are ends and the
+ * rest of what a read can answer with is not, so a pod still running, a pod
+ * that is gone, a status line that is not an answer and a cluster that cannot
+ * be reached are one arm: none of them is the cluster saying the workload
+ * finished, and the lease is what stands behind all of them.
+ *
  * A POD WITH NO BEARER IS WORSE THAN NO POD. The Secret is owned by the pod, so
  * it can only be made after the pod exists; a Secret that could not be made
  * therefore has to take the pod with it, or a container that can reach nothing
@@ -254,4 +260,72 @@ test("cancelling deletes the pod this attempt derives, and a pod already gone is
       `DELETE /api/v1/namespaces/chuggy-work/pods/${podName}`,
     ]);
   }
+});
+
+/** A cluster answering one pod read with the phase a case names, or with nothing. */
+function podPhase(
+  acts: ClusterAct[],
+  body: unknown,
+  status = 200,
+): typeof fetch {
+  return (input, init) => {
+    const url = input instanceof URL ? input.href : (input as string);
+    acts.push(`${init?.method ?? "GET"} ${new URL(url).pathname}`);
+    return Promise.resolve(
+      body === undefined
+        ? new Response(null, { status })
+        : Response.json(body, { status }),
+    );
+  };
+}
+
+test("a terminated pod is observed as ended on the phase its own status carries", async () => {
+  for (const phase of ["Succeeded", "Failed"] as const) {
+    const acts: ClusterAct[] = [];
+    assert.deepEqual(
+      await kubernetesSessionLaunch(
+        config,
+        podPhase(acts, { status: { phase } }),
+      ).observe(placement),
+      { observed: "Ended", phase },
+    );
+    assert.deepEqual(acts, [
+      `GET /api/v1/namespaces/chuggy-work/pods/${podName}`,
+    ]);
+  }
+});
+
+/**
+ * Every answer that is not the cluster saying the workload finished, which the
+ * lease is still what collects: a pod still running, a phase this adapter does
+ * not read, a pod that is not there, a status line that is not an answer, and a
+ * body that is not a document.
+ */
+test("a pod that has not ended, is gone, or cannot be read is unended", async () => {
+  for (const [body, status] of [
+    [{ status: { phase: "Pending" } }, 200],
+    [{ status: { phase: "Running" } }, 200],
+    [{ status: { phase: "Unknown" } }, 200],
+    [{ metadata: { name: podName } }, 200],
+    [{ status: { phase: "Failed" } }, 404],
+    [{ status: { phase: "Failed" } }, 500],
+    [undefined, 200],
+  ] as const) {
+    assert.deepEqual(
+      await kubernetesSessionLaunch(config, podPhase([], body, status)).observe(
+        placement,
+      ),
+      { observed: "Unended" },
+      `${JSON.stringify(body)} ${String(status)}`,
+    );
+  }
+});
+
+test("a cluster that does not answer ends no attempt", async () => {
+  assert.deepEqual(
+    await kubernetesSessionLaunch(config, () =>
+      Promise.reject(new Error("no route to host")),
+    ).observe(placement),
+    { observed: "Unended" },
+  );
 });

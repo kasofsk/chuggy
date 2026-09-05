@@ -228,6 +228,41 @@ export async function kubernetesCreatePod(
   });
 }
 
+/**
+ * Whether one pod has finished, as its own status line says. Kubernetes names
+ * five phases and only two of them are ends; every other answer — a pod still
+ * pending or running, a phase this module does not recognise, a pod that is not
+ * there, and a cluster that could not be reached — is `Unended`, because none
+ * of them is the cluster saying the workload finished.
+ */
+export type KubernetesPodEnd = "Succeeded" | "Failed" | "Unended";
+
+/** Reads one named pod, which is how the plane learns a workload has finished. */
+export async function kubernetesReadPod(
+  site: KubernetesPodSite,
+  fetcher: typeof fetch,
+  name: string,
+): Promise<KubernetesReached> {
+  return kubernetesReach(site, fetcher, {
+    method: "GET",
+    path: `${kubernetesPodsPath(site)}/${encodeURIComponent(name)}`,
+  });
+}
+
+export function kubernetesPodEnd(reached: KubernetesReached): KubernetesPodEnd {
+  if (reached.reached !== "Status" || reached.status !== 200) return "Unended";
+  try {
+    const document = JSON.parse(reached.body) as {
+      readonly status?: { readonly phase?: unknown };
+    };
+    const phase = document.status?.phase;
+    if (phase === "Succeeded" || phase === "Failed") return phase;
+    return "Unended";
+  } catch {
+    return "Unended";
+  }
+}
+
 /** Deletes one named pod, which is what both cancellation and a failed placement do. */
 export async function kubernetesDeletePod(
   site: KubernetesPodSite,

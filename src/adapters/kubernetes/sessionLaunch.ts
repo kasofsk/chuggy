@@ -1,8 +1,9 @@
 /**
- * The Kubernetes adapter behind `SessionPlacementPort`: the one request that
- * asks a cluster for a placed session's pod, and the one that asks it to go
- * away. The port is backend-neutral, so a cluster fact reaches no caller: what
- * leaves here is an opaque placement identity and the three placement arms.
+ * The Kubernetes adapter behind `SessionPlacementPort`: the request that asks a
+ * cluster for a placed session's pod, the one that asks it to go away, and the
+ * one that asks whether it has finished. The port is backend-neutral, so a
+ * cluster fact reaches no caller: what leaves here is an opaque placement
+ * identity, the three placement arms, and whether a pod ended.
  *
  * IT IS THE WORKER LAUNCHER'S SHAPE BECAUSE IT IS THE SAME CLUSTER. Reaching
  * the API, bounding the request, telling a refused document apart from an
@@ -15,8 +16,14 @@
 import type {
   SessionPlacementOutcome,
   SessionPlacementPort,
+  SessionPodObserved,
 } from "../../interpreter/sessionScheduler.ts";
-import { kubernetesCancelPod, kubernetesPlacePod } from "./clusterReach.ts";
+import {
+  kubernetesCancelPod,
+  kubernetesPlacePod,
+  kubernetesPodEnd,
+  kubernetesReadPod,
+} from "./clusterReach.ts";
 import {
   checkedKubernetesSessionLaunchConfig,
   kubernetesSessionPodName,
@@ -46,5 +53,18 @@ export function kubernetesSessionLaunch(
         fetcher,
         kubernetesSessionPodName(config, attempt.partition, attempt.attempt),
       ),
+
+    observe: async (attempt): Promise<SessionPodObserved> => {
+      const phase = kubernetesPodEnd(
+        await kubernetesReadPod(
+          config,
+          fetcher,
+          kubernetesSessionPodName(config, attempt.partition, attempt.attempt),
+        ),
+      );
+      return phase === "Unended"
+        ? { observed: "Unended" }
+        : { observed: "Ended", phase };
+    },
   };
 }
