@@ -204,20 +204,6 @@ test("the objectives state whose the thread is, what it is for, then the two sta
  * The rule is enforceable nowhere, so the only thing that can be checked of it
  * is that the two places saying it say the same thing.
  */
-/**
- * The purpose is enforceable nowhere either: the pod holds a shell, and a
- * shell writes. What can be checked is that the sentence says the thing the
- * first live thread got wrong — that the draft is the work, and the tree is
- * read, not changed.
- */
-test("the purpose says the draft is the job and the checkout is for reading", () => {
-  assert.match(threadPurposeStanding, /into tickets/u);
-  assert.match(threadPurposeStanding, /draft tools/u);
-  assert.match(threadPurposeStanding, /never do the work yourself/u);
-  assert.match(threadPurposeStanding, /change nothing/u);
-  assert.match(threadPurposeStanding, /what you filed/u);
-});
-
 test("the wake document and the objectives carry one sentence and not two", () => {
   const carried = parseThreadWake(threadWakeText(wake())).standing;
 
@@ -226,6 +212,19 @@ test("the wake document and the objectives carry one sentence and not two", () =
     threadSystemPrompt({ partition, owner: "geoff" }).includes(carried),
     "the prompt does not carry the sentence the wake does",
   );
+});
+
+/**
+ * The purpose is enforceable nowhere: the pod holds a shell, and a shell
+ * writes. What can be checked is that the sentence names the draft as the
+ * work, the tree as read and not changed, and the filing as how a turn ends.
+ */
+test("the purpose says the draft is the job and the checkout is for reading", () => {
+  assert.match(threadPurposeStanding, /into tickets/u);
+  assert.match(threadPurposeStanding, /draft tools/u);
+  assert.match(threadPurposeStanding, /never do the work yourself/u);
+  assert.match(threadPurposeStanding, /change nothing/u);
+  assert.match(threadPurposeStanding, /what you filed/u);
 });
 
 test("a North Star is named where there is one and no heading where there is none", () => {

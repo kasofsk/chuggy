@@ -15,6 +15,13 @@
  * point: the roster below is the weaker of the two, and a control described as
  * stronger than it is, is worse than none.
  *
+ * THE DRAFT IS THE THREAD'S WORK, AND THE TREE IS READ, NOT CHANGED. The
+ * runtime a thread runs on presents it as a coding agent in a checkout before
+ * its objectives are read, so the objectives state the purpose first: a
+ * request for a change is a request for a draft, and the shell is for reading
+ * the tree well enough to draft against it. No roster enforces that either —
+ * a shell writes — so it is prose, held to one sentence written once.
+ *
  * A WAKE IS A NOTICE, NOT AN INSTRUCTION. A woken thread reports what happened
  * to its owner and stops. No roster can enforce that, because the same tools are
  * held on a message turn, so it is written the only two ways prose can be: the
@@ -39,8 +46,8 @@ import type { Partition } from "./projectStore.ts";
 /**
  * The roster a thread is opened with when nothing has configured one, generous
  * because a thread exists to find out what is going on — reading the tree,
- * running things in it, and authoring the drafts its owner asks for. It is
- * generous against the pod alone, for the reason the header gives.
+ * running what it takes to read it, and authoring the drafts its owner asks
+ * for. It is generous against the pod alone, for the reason the header gives.
  */
 export const threadCapabilitiesDefault = [
   "RepositoryRead",
@@ -247,8 +254,9 @@ export const threadSystemPromptCharsMax =
 /**
  * The thread's objectives as one recorded prefix, in the order that decides
  * what a reader takes first: whose thread this is, that its acts are its
- * owner's, that it may do only what its owner may, which channel it acts
- * through, and what a wake is.
+ * owner's, that it may do only what its owner may, what it is for, the
+ * project's North Star where there is one, which channel it acts through, and
+ * what a wake is.
  */
 export function threadSystemPrompt(input: {
   readonly partition: Partition;
