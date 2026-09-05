@@ -123,8 +123,8 @@ const attemptsAwaitingObservation = [
 ];
 
 /** An attempt whose pod may have ended, and the reason its last turn gave. */
-export const migration073: Migration = {
-  version: 73,
+export const migration072: Migration = {
+  version: 72,
   name: "the attempts whose pods the scheduler may observe",
   statements: attemptsAwaitingObservation,
 };
