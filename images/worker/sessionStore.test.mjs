@@ -46,11 +46,11 @@ function bashEntry(stdout, copies = 2) {
 }
 
 /**
- * An image read's entry, whose bulk sits under field names nothing here knows:
- * it is the second producer the suite drives, so what finds a result's text is
- * held to being its weight rather than a tool this image anticipated.
+ * An image read's entry: the payload sits base64 in the block the API is sent
+ * and again in the entry's own record, with a text block beside it for whatever
+ * the tool said in words.
  */
-function readEntry(data) {
+function readEntry(data, beside = "The image was read.") {
   return {
     parentUuid: "6f9b6b17-6a26-4b4f-9a86-16a1ef7a1a0d",
     type: "user",
@@ -65,6 +65,7 @@ function readEntry(data) {
               type: "image",
               source: { type: "base64", media_type: "image/png", data },
             },
+            { type: "text", text: beside },
           ],
         },
       ],
@@ -76,6 +77,44 @@ function readEntry(data) {
     sessionId: "fecadcca-7f72-478c-ab53-561e3a17110b",
     version: "2.1.258",
   };
+}
+
+/**
+ * A producer nothing in this tree anticipates: plain text under field names no
+ * rule here knows, in the two places a result is written. It is what holds the
+ * store to finding a result by weight rather than by a name it was taught.
+ */
+function unknownEntry(markup) {
+  return {
+    parentUuid: "2a5c8d31-9e77-4f0b-8b21-7c3d9e0a1b62",
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        {
+          tool_use_id: "toolu_01RenderThing",
+          type: "tool_result",
+          content: [{ rendering: { dialect: "markdown", body: markup } }],
+        },
+      ],
+    },
+    uuid: "5e1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8",
+    timestamp: "2026-09-02T22:19:44.000Z",
+    toolUseResult: { rendered: { markup } },
+    cwd: "/workspace/repo",
+    sessionId: "fecadcca-7f72-478c-ab53-561e3a17110b",
+    version: "2.1.258",
+  };
+}
+
+/** Every base64 source the entry still carries, which is what the API is sent. */
+function sourceDataIn(value) {
+  if (value === null || typeof value !== "object") return [];
+  return Object.keys(value).flatMap((key) => {
+    const held = value[key];
+    if (typeof held === "object") return sourceDataIn(held);
+    return key === "data" && value.type === "base64" ? [held] : [];
+  });
 }
 
 /**
@@ -804,20 +843,68 @@ test("every clipped entry with spare to share posts within the budget", async ()
 });
 
 /**
- * The producer this image has never seen: an image read puts its bulk under
- * field names nothing here knows, and it is clipped all the same because weight
- * is what the store looks for.
+ * The producer this image has never seen: it puts its text under field names
+ * nothing here knows, and it is cut all the same because weight is what the
+ * store looks for.
  */
 test("a result under field names nothing anticipated is clipped by weight", async () => {
   const { calls, store } = storeOf();
 
-  await store.append({ sessionId: "s" }, [readEntry("QUJDRA".repeat(20_000))]);
+  await store.append({ sessionId: "s" }, [unknownEntry("held ".repeat(8_000))]);
 
   const [posted] = postedEntries(calls);
-  const source = posted.message.content[0].content[0].source;
-  assert.equal(source.media_type, "image/png");
-  for (const copy of [source.data, posted.toolUseResult.file.base64])
+  const rendered = posted.message.content[0].content[0].rendering;
+  assert.equal(rendered.dialect, "markdown");
+  for (const copy of [rendered.body, posted.toolUseResult.rendered.markup])
     assert.ok(copy.includes("the session store clipped"), "a copy was not cut");
+});
+
+/**
+ * The image read, which is the commonest over-bound result there is. Base64 is
+ * worth what it decodes to and nothing else, so a head of it followed by a note
+ * is not a smaller image — it is a block the API refuses, off a line already
+ * durable. The block goes instead, replaced by text saying what stood there, so
+ * the content array is still one the API takes; and the text beside it is cut
+ * the ordinary way, because the entry is not a lost cause, only the image is.
+ */
+test("an image block is dropped whole and replaced by text, never cut", async () => {
+  const { calls, store } = storeOf();
+  const data = "QUJDRA".repeat(20_000);
+  const beside = "held ".repeat(6_000);
+
+  await store.append({ sessionId: "s" }, [readEntry(data, beside)]);
+
+  const [{ body }] = bodies(calls);
+  assert.ok(
+    Buffer.byteLength(body) <= sessionStoreBatchBytesMax,
+    `the body is ${String(Buffer.byteLength(body))} bytes`,
+  );
+  const [posted] = postedEntries(calls);
+  const blocks = posted.message.content[0].content;
+  assert.deepEqual(
+    blocks.map(({ type }) => type),
+    ["text", "text"],
+    "an image block was posted where the store cannot keep one",
+  );
+  assert.ok(blocks[0].text.includes("the session store dropped"));
+  assert.ok(
+    blocks[0].text.includes("image/png"),
+    "the reader is not told what it was",
+  );
+  assert.ok(
+    beside.startsWith(blocks[1].text.slice(0, blocks[1].text.indexOf("\n["))),
+    "the text beside the image lost its head",
+  );
+  for (const value of sourceDataIn(posted))
+    assert.equal(
+      value,
+      Buffer.from(value, "base64").toString("base64"),
+      "a base64 source was posted that no longer decodes",
+    );
+  assert.ok(
+    posted.toolUseResult.file.base64.includes("the session store dropped"),
+    "the record's own copy of the payload was cut rather than dropped",
+  );
 });
 
 /**

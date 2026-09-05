@@ -53,16 +53,30 @@
  * failed, the signature over it — are `resultIdentityKeys` and are passed over
  * wherever they sit.
  *
- * A CLIP SHORTENS ONLY WHAT DEGRADES GRACEFULLY. A head of a result is a smaller
- * result: less is read, the note says so, and the tool can be run again. That is
- * what makes clipping better than stopping, and it is not true of everything
- * heavy. A thinking block is signed over its exact text, and the runtime replays
- * both when it resumes an assistant turn: a head of either is not a smaller
- * thinking block but one the API refuses, later, somewhere else, off a line
- * already written. There is no tool to run again and nothing the note can say
- * that helps. So `signedBlock` is not descended into at all, and an entry no clip
- * can bring under the bound without it raises here at the write, which is the
- * loud failure and the early one.
+ * A CLIP SHORTENS ONLY WHAT DEGRADES GRACEFULLY, AND WHAT DOES NOT DEGRADES SOME
+ * OTHER WAY. A head of a result is a smaller result: less is read, the note says
+ * so, and the tool can be run again. That is what makes clipping better than
+ * stopping, and it is not true of everything heavy, so a value is taken by how it
+ * survives being made smaller and there are four answers:
+ *
+ *   - TEXT AND LISTS ARE CUT TO A HEAD, which is the ordinary case above.
+ *   - AN ENCODED VALUE IS DROPPED WHOLE. Base64 is worth exactly what it decodes
+ *     to: a head of it decodes to nothing, and the note appended to it is not
+ *     even in the alphabet. So `encodedString` is never cut. Where one is the
+ *     worth of a content block — an image, a document — the block itself is
+ *     replaced by a `text` block saying what was dropped and how much of it, so
+ *     the content array is still one the API accepts and whatever resumes reads
+ *     what it is missing. Dropping rather than raising is deliberate: reading a
+ *     large image is an ordinary thing for a session to do, and a session that
+ *     stops every time it does one is the defect this module exists to fix.
+ *   - A SIGNED BLOCK IS ATOMIC. A thinking block is signed over its exact text
+ *     and the runtime replays both to resume an assistant turn, so a head of
+ *     either is not a smaller thinking block but one the API refuses — later,
+ *     somewhere else, off a line already written. It cannot be dropped either:
+ *     nothing stands in for it. So `signedBlock` is not descended into, and an
+ *     entry no clip can bring under the bound without it raises here at the
+ *     write, which is the loud failure and the early one.
+ *   - IDENTITY IS PASSED OVER BY NAME, which is the section above.
  *
  * SHARING IS WHY EVERY COPY IS CUT rather than only as many as it takes to fit:
  * the runtime writes one result several times over, a resume reads one of those
@@ -208,17 +222,6 @@ function escapedPrefix(list, bytes) {
   return prefix;
 }
 
-/**
- * What a clip leaves in place of what it cut. The reader is whatever resumes
- * over the entry, and what it needs is to know it is seeing less, by how much,
- * and that running the tool again is how to see the rest.
- */
-function clipNote(value) {
-  const weight =
-    typeof value === "string" ? Buffer.byteLength(value) : escapedBytes(value);
-  return `[the session store clipped this to fit one store batch; the original was ${String(weight)} bytes, so run the tool again to read the rest]`;
-}
-
 /** A value a clip replaces as one thing: a list of strings is bulk the way a string is. */
 function clippable(value) {
   return (
@@ -227,6 +230,73 @@ function clippable(value) {
       value.length > 0 &&
       value.every((element) => typeof element === "string"))
   );
+}
+
+/**
+ * A string the line carries encoded rather than as itself: the `data` of a
+ * base64 source, or a payload written under the name of its encoding. A head of
+ * one decodes to nothing, and a note appended to one is not even in the
+ * alphabet, so weight must not reach it.
+ */
+function encodedString(held, key) {
+  if (typeof held[key] !== "string") return false;
+  return key === "base64" || (key === "data" && held.type === "base64");
+}
+
+/**
+ * Whether the value's own worth is something carried encoded. The walk stops at
+ * a list, because a list under a block is that block's own blocks: a
+ * `tool_result` holding an image among its content is not itself an image, and
+ * dropping it would take the call it answers and the text beside it with it.
+ */
+function encodedPayload(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    return false;
+  return Object.keys(value).some(
+    (key) => encodedString(value, key) || encodedPayload(value[key]),
+  );
+}
+
+/** The media type a block declares for what it carries, where it declares one. */
+function encodedMediaType(value) {
+  if (value === null || typeof value !== "object") return undefined;
+  if (typeof value.media_type === "string") return value.media_type;
+  for (const key of Object.keys(value)) {
+    const found = encodedMediaType(value[key]);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+/** What a dropped value was, for the reader that will never see it. */
+function encodedName(value) {
+  if (typeof value === "string") return "an encoded payload";
+  const media = encodedMediaType(value);
+  if (media !== undefined) return `an ${media}`;
+  return typeof value.type === "string"
+    ? `a ${value.type}`
+    : "an encoded block";
+}
+
+/**
+ * What a clip leaves in place of what it took. A shortened value says how much of
+ * it is missing and that the tool can be run again for the rest; a dropped one
+ * says what it was, because there is no head of it to read and its type is the
+ * only thing left that describes it.
+ */
+function siteNote({ value, kind }) {
+  if (kind === "dropped" || kind === "block")
+    return `[the session store dropped ${encodedName(value)} of ${String(escapedBytes(value))} bytes to fit one store batch; it is encoded, so no part of it would be readable]`;
+  const weight =
+    typeof value === "string" ? Buffer.byteLength(value) : escapedBytes(value);
+  return `[the session store clipped this to fit one store batch; the original was ${String(weight)} bytes, so run the tool again to read the rest]`;
+}
+
+/** What stands in the line where a cut site was, before any of it is given back. */
+function siteStandIn({ kind }, note) {
+  if (kind === "list") return [note];
+  if (kind === "block") return { type: "text", text: note };
+  return note;
 }
 
 /**
@@ -312,32 +382,41 @@ function signedBlock(value) {
  */
 function entrySites(entry) {
   const found = [];
-  const walk = (held, key, naming) => {
+  const take = (held, key, kind) =>
+    found.push({
+      held,
+      key,
+      kind,
+      value: held[key],
+      weight: escapedBytes(held[key]),
+    });
+  const walk = (held, key, naming, blocked) => {
     const value = held[key];
-    if (clippable(value)) {
-      found.push({ held, key, weight: escapedBytes(value) });
-      return;
-    }
+    if (encodedString(held, key)) return take(held, key, "dropped");
+    if (clippable(value))
+      return take(held, key, typeof value === "string" ? "text" : "list");
     if (value === null || typeof value !== "object" || signedBlock(value))
       return;
+    if (blocked && typeof value.type === "string" && encodedPayload(value))
+      return take(held, key, "block");
     for (const inner of Object.keys(value)) {
       if (resultIdentityKeys.has(inner)) continue;
       if (naming && entryIdentityKeys.has(inner)) continue;
-      walk(value, inner, naming && inner === "message");
+      walk(value, inner, naming && inner === "message", Array.isArray(value));
     }
   };
-  walk({ entry }, "entry", true);
+  walk({ entry }, "entry", true, false);
   return found;
 }
 
 /** What a site weighs once nothing of the original is left in it but the note. */
-function siteFloor(value, note) {
-  return typeof value === "string" ? escapedBytes(note) : escapedBytes([note]);
+function siteFloor(site, note) {
+  return escapedBytes(siteStandIn(site, note));
 }
 
 /** What putting a cut site back whole costs the line over leaving it a note. */
 function siteRestoreBytes(site) {
-  return site.weight - siteFloor(site.value, site.note);
+  return site.weight - siteFloor(site, site.note);
 }
 
 /**
@@ -351,18 +430,22 @@ function siteRestoreBytes(site) {
 function cutSites(clipped) {
   const cut = [];
   for (const site of entrySites(clipped)) {
-    const value = site.held[site.key];
-    const note = clipNote(value);
-    if (siteFloor(value, note) >= site.weight) continue;
-    site.held[site.key] = typeof value === "string" ? note : [note];
-    cut.push({ ...site, value, note });
+    const note = siteNote(site);
+    if (siteFloor(site, note) >= site.weight) continue;
+    site.held[site.key] = siteStandIn(site, note);
+    cut.push({ ...site, note });
   }
   return cut;
 }
 
-/** One cut site given back as much of itself as `bytes` of the line allows. */
+/**
+ * One cut site given back as much of itself as `bytes` of the line allows. A
+ * dropped one is given back nothing: it goes whole or not at all, and `growSites`
+ * is where whole is still reached.
+ */
 function growSite(site, bytes) {
-  if (typeof site.value !== "string") {
+  if (site.kind === "dropped" || site.kind === "block") return;
+  if (site.kind === "list") {
     site.held[site.key] = [...escapedPrefix(site.value, bytes), site.note];
     return;
   }
