@@ -16,11 +16,11 @@
  * decided the row is a thread. The turns the thread still held are abandoned as
  * `SessionClosed`, which is the failure 058 reserved for a close.
  *
- * A CLOSE IS TERMINAL. `session_reference_is_written_once` refuses a closed
- * session moving off `Closed`, and `open_member_thread`'s partial index admits a
- * new thread for the same member, so a member whose thread was closed opens
- * another rather than reopening this one — a closed thread stays readable as
- * what it was.
+ * A CLOSE IS TERMINAL. `agent_session_is_written_once` refuses a closed session
+ * moving off `Closed`, and `agent_session_one_thread_per_member` is partial on
+ * `state='Open'` and so admits a new thread for the same member, so a member
+ * whose thread was closed opens another rather than reopening this one — a
+ * closed thread stays readable as what it was.
  *
  * THE STATE MOVE IS A `Session` FRAME LIKE A TURN'S. 059 writes a frame when a
  * turn lands or moves and when a batch is stored, and a page watching a session
