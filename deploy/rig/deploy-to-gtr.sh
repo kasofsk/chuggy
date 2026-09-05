@@ -184,10 +184,15 @@ if [ "$merge" -eq 1 ]; then
 	# pods in the namespace the scheduler stamps with these labels; anything
 	# else there has no heartbeat for a rollout to drop. A selector is
 	# conjunctive, so each label is asked for on its own.
+	newline='
+'
 	live_pods=""
 	for label in chuggy.dev/worker chuggy.dev/session; do
 		labelled_pods="$(kube -n chuggy-work get pods -l "$label=true" -o name 2>/dev/null)" || refuse "the work namespace could not be read, so whether an attempt is live is unknown"
-		live_pods="$live_pods$labelled_pods"
+		# An answer of nothing adds nothing, so an empty gathering stays empty
+		# and the test below is a test of what was found.
+		[ -n "$labelled_pods" ] || continue
+		live_pods="${live_pods:+$live_pods$newline}$labelled_pods"
 	done
 	[ -z "$live_pods" ] || fail "an attempt is live in chuggy-work; a rollout would drop its heartbeats"
 	live_rows="$(sql 'select count(*) from execution where terminal_at is null' 2>/dev/null || true)"
