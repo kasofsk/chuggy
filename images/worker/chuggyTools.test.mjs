@@ -124,6 +124,28 @@ test("the server the runtime is handed carries exactly the tools the roster admi
     assert.ok(description.length > 0, "a registered tool describes nothing");
 });
 
+/**
+ * The decision channel through the server's own registration, which is where a
+ * staged answer meets the protocol. The tools' own suite holds each answer's
+ * text; this holds the bridge that carries it.
+ */
+test("a decision tool the server registers answers a well-formed result", async () => {
+  const staging = leadDecisionStaging();
+  staging.reset(
+    JSON.stringify({ candidates: [{ ticket: 4, ticketVersion: 2 }] }),
+  );
+  const { api, call } = toolsOf({ staging });
+
+  const answer = await call("dispatch", { ticket: 4, expectedTicketVersion: 2 });
+
+  assert.deepEqual(answer.content, [
+    { type: "text", text: "dispatch staged for ticket 4" },
+  ]);
+  assert.ok(answer.isError === undefined);
+  assert.equal(api.calls.length, 0, "a decision tool wrote something");
+  assert.equal(staging.document().dispatches.length, 1);
+});
+
 test("every read answers one page, relays the route's own body and names its cursor", async () => {
   const body = JSON.stringify({ tickets: [], nextAfter: 41 });
   const { api, call } = toolsOf({}, () => ({ status: 200, body }));

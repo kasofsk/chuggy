@@ -9,6 +9,7 @@ import {
   agenticRefusalReasonCharsMax,
   leadDecisionBytesMax,
   leadDecisionStaging,
+  leadDecisionToolNames,
   leadDispatchesMax,
   leadRefusalsPerDecisionMax,
   leadTurnDocumentVersion,
@@ -51,6 +52,50 @@ function stagingOn(input = observationOf()) {
 
 const errored = (answer) => answer.isError === true;
 const textOf = (answer) => answer.content[0].text;
+
+/**
+ * Every decision tool's answer as the model is handed it, rather than as the
+ * staging holds it. The protocol admits one shape, and a bare string is reported
+ * to the model as an invalid tool result after the call has already staged its
+ * change — a lead told its dispatch errored over a dispatch that landed.
+ */
+test("every decision tool answers the model a result carrying its own answer", async () => {
+  const cases = [
+    [
+      "dispatch",
+      { ticket: 4, expectedTicketVersion: 2 },
+      "dispatch staged for ticket 4",
+    ],
+    [
+      "refuse",
+      { ticket: 5, ticketVersion: 1, reason: "later" },
+      "refusal staged for ticket 5",
+    ],
+    ["lift", { ticket: 5 }, "lift staged for ticket 5"],
+    ["set_attention", { attention: "Attention" }, "attention set to Attention"],
+    ["set_handoff_note", { note: { a: 1 } }, "handoff note set"],
+    [
+      "set_planning_intent",
+      { intent: { next: "ticket 6" } },
+      "planning intent set",
+    ],
+  ];
+
+  assert.deepEqual(
+    cases.map(([name]) => name),
+    [...leadDecisionToolNames],
+    "a decision tool nothing here answers for",
+  );
+  for (const [name, args, text] of cases) {
+    const { staging, call } = stagingOn();
+
+    const answer = await call(name, args);
+
+    assert.deepEqual(answer.content, [{ type: "text", text }], name);
+    assert.ok(answer.isError === undefined || answer.isError === false, name);
+    assert.equal(staging.staged(), true, name);
+  }
+});
 
 test("a turn that called no decision tool composes no document", () => {
   const { staging } = stagingOn();

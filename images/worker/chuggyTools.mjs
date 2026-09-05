@@ -717,12 +717,20 @@ export function chuggyToolDefinitions(context) {
  * publishes and what it validates against, but a bound enforced only by the
  * thing being controlled is a bound this tree does not count; parsing here is
  * what makes the bound a property a suite can drive.
+ *
+ * A DECISION TOOL ANSWERS TEXT AND THE PROTOCOL ANSWERS AN OBJECT, so text is
+ * wrapped here rather than at each call. A bare string reaches the model as an
+ * invalid tool result naming a type mismatch — and it reaches it after the
+ * call's side effect is staged, so the lead is told its dispatch errored by the
+ * very call that staged it, and may dispatch again or report a failure that did
+ * not happen.
  */
 export function chuggyToolHandler(definition, z) {
   const shape = z.object(definition.shape(z));
   return async (args) => {
     try {
-      return await definition.call(shape.parse(args ?? {}));
+      const answer = await definition.call(shape.parse(args ?? {}));
+      return typeof answer === "string" ? answered(answer) : answer;
     } catch (failure) {
       return answered(
         failure instanceof Error ? failure.message : String(failure),
