@@ -77,7 +77,11 @@ args=" $* "
 case "$args" in
 *' get service registry '*) printf '10.0.0.1' ;;
 *' kustomize '*) exit "${CHUG_STUB_RENDER_RC:-0}" ;;
-*' -n chuggy-work get pods '*) printf '%s' "${CHUG_STUB_WORK_PODS:-}" ;;
+# The work namespace answers by selector: the attempt labels see the pods a
+# case says are attempts, and an unselected listing sees everything else there.
+*' -n chuggy-work get pods -l chuggy.dev/worker=true '*) printf '%s%s' "${CHUG_STUB_WORK_PODS:-}" "${CHUG_STUB_WORKER_PODS:-}" ;;
+*' -n chuggy-work get pods -l chuggy.dev/session=true '*) printf '%s%s' "${CHUG_STUB_WORK_PODS:-}" "${CHUG_STUB_SESSION_PODS:-}" ;;
+*' -n chuggy-work get pods '*) printf '%s' "${CHUG_STUB_UNLABELLED_PODS:-}" ;;
 *'terminal_at is null'*) printf '%s' "${CHUG_STUB_LIVE_ROWS-0}" ;;
 *'max(version)'*) printf '52' ;;
 *' pg_dump '*) printf '%s' "${CHUG_STUB_DUMP:-PGDMP-archive}" ;;
@@ -232,6 +236,7 @@ fresh_case() {
 	unset CHUG_RIG_SSH CHUG_RIG_ARCHIVE CHUG_RELEASE_GATE CHUG_IMAGE_PREFIX
 	unset CHUG_STUB_DIGEST CHUG_STUB_PUSH_RC CHUG_STUB_GATE_RC CHUG_STUB_BUILD_RC CHUG_STUB_CONSISTENCY_RC
 	unset CHUG_STUB_RENDER_RC CHUG_STUB_WORK_PODS CHUG_STUB_LIVE_ROWS CHUG_STUB_PR_HEAD CHUG_STUB_PR_URL
+	unset CHUG_STUB_WORKER_PODS CHUG_STUB_SESSION_PODS CHUG_STUB_UNLABELLED_PODS
 	unset CHUG_STUB_MERGE_RC CHUG_STUB_MERGED CHUG_STUB_JOB_RC CHUG_STUB_ROLLOUT_RC CHUG_STUB_STALE CHUG_STUB_BRANCH
 	unset CHUG_STUB_DUMP CHUG_STUB_NODE_RC CHUG_STUB_PUSH_DENIED
 	export CHUG_RIG_SSH=nobody@no-such-host
@@ -519,6 +524,24 @@ export CHUG_STUB_WORK_PODS=pod/attempt-1
 run --merge
 check "a live attempt refuses the rollout" 1 "$RC" "an attempt is live in chuggy-work"
 check "a live attempt is not merged over" 1 "$RC" "merges attempted: 0"
+
+# Each label is asked for on its own, so a pod carrying either one is an
+# attempt, and a pod carrying neither is not the rollout's business.
+open_release src/a.ts
+export CHUG_STUB_SESSION_PODS=pod/chuggy-session-1
+run --merge
+check "a session pod refuses the rollout" 1 "$RC" "an attempt is live in chuggy-work"
+
+open_release src/a.ts
+export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1
+run --merge
+check "a worker pod refuses the rollout" 1 "$RC" "an attempt is live in chuggy-work"
+
+open_release src/a.ts
+export CHUG_STUB_UNLABELLED_PODS=pod/chuggy-git-mirror-1
+run --merge
+check "a pod that is no attempt does not refuse the rollout" 0 "$RC" "the rig is at $TAG; ledger at 52"
+check "a pod that is no attempt is merged over" 0 "$RC" "merges attempted: 1"
 
 open_release src/a.ts
 export CHUG_STUB_LIVE_ROWS=1
