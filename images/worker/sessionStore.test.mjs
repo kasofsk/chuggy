@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   sessionStoreAdapter,
   sessionStoreBatchBytesMax,
+  sessionStoreClipLineBytesMax,
   sessionStoreStream,
 } from "./sessionStore.mjs";
 
@@ -279,27 +280,154 @@ test("an entry no batch holds is clipped into one batch and keeps what walks the
   assert.equal(posted[0].message.content[0].type, "tool_result");
 });
 
+/** The clipped copies of a `Bash` result, in the order the entry writes them. */
+function bashCopies(posted) {
+  return [
+    posted.message.content[0].content,
+    posted.toolUseResult.stdout,
+    posted.toolUseResult.content[0].text,
+  ];
+}
+
+/**
+ * Plain text rather than a shell's redraws, and that is the point: an entry of
+ * ordinary output goes only a little over the bound, so cutting until the line
+ * fits would cut one copy and leave the next whole. The copy a resume reads is
+ * one of them and it is not the last, so every copy is cut and the heads are
+ * shared.
+ */
 test("every copy of the clipped text carries a head of it and what the original weighed", async () => {
   const { calls, store } = storeOf();
-  const stdout = controlOutput(30_000);
+  const stdout = "held ".repeat(6_000);
   const weight = String(Buffer.byteLength(stdout));
 
   await store.append({ sessionId: "s" }, [bashEntry(stdout, 3)]);
 
   const [posted] = postedEntries(calls);
-  const copies = [
-    posted.message.content[0].content,
-    posted.toolUseResult.stdout,
-    posted.toolUseResult.content[0].text,
-  ];
-  for (const copy of copies) {
+  const heads = [];
+  for (const copy of bashCopies(posted)) {
     assert.ok(copy.includes("the session store clipped"), "a copy was not cut");
     assert.ok(copy.includes(weight), "a copy does not say what was cut");
+    const head = copy.slice(0, copy.indexOf("\n["));
+    assert.ok(stdout.startsWith(head), "a copy is not a head of the original");
+    assert.ok(head.length > 0, "a copy kept no head at all");
+    heads.push(head.length);
+  }
+  assert.ok(
+    Math.max(...heads) - Math.min(...heads) <= 1,
+    `the copies kept ${heads.join(", ")} characters, so one was starved for another`,
+  );
+});
+
+/**
+ * The head a clip keeps falls as the entry grows and never jumps back up. A cut
+ * that stopped at the first fit did the opposite: the copy a resume reads kept
+ * less of a larger entry than of a smaller one, until the entry grew far enough
+ * for the cut to reach every copy.
+ */
+test("the head a clipped copy keeps only falls as the entry it came from grows", async () => {
+  const kept = [];
+  for (const characters of [23_000, 25_000, 30_000, 40_000, 60_000]) {
+    const { calls, store } = storeOf();
+    const stdout = "held ".repeat(characters / 5);
+    await store.append({ sessionId: "s" }, [bashEntry(stdout, 3)]);
+    const [posted] = postedEntries(calls);
+    const read = posted.message.content[0].content;
     assert.ok(
-      stdout.startsWith(copy.slice(0, copy.indexOf("\n["))),
-      "a copy is not a head of the original",
+      read.includes("the session store clipped"),
+      `the fixture of ${String(characters)} characters was posted whole`,
     );
-    assert.ok(copy.indexOf("\n[") > 0, "a copy kept no head at all");
+    kept.push(read.slice(0, read.indexOf("\n[")).length);
+  }
+
+  for (let at = 1; at < kept.length; at += 1)
+    assert.ok(
+      kept[at] <= kept[at - 1],
+      `the head grew back from ${String(kept[at - 1])} to ${String(kept[at])} characters`,
+    );
+  assert.ok(Math.min(...kept) > 0, "a copy a resume reads kept nothing");
+});
+
+/**
+ * The line only a byte count sees as over the bound. Its characters fit; its
+ * bytes do not, because the runtime charges a line the escaped UTF-8 of every
+ * copy. A store that weighed characters would post this body and the plane would
+ * refuse it.
+ */
+test("a result whose characters fit and whose bytes do not is still clipped", async () => {
+  const { calls, store } = storeOf();
+  const stdout = "漢".repeat(20_000);
+  const given = bashEntry(stdout);
+
+  assert.ok(
+    JSON.stringify(given).length <= sessionStoreBatchBytesMax,
+    "the fixture is over the bound in characters, so it proves nothing",
+  );
+  await store.append({ sessionId: "s" }, [given]);
+
+  const [{ body }] = bodies(calls);
+  assert.ok(
+    Buffer.byteLength(body) <= sessionStoreBatchBytesMax,
+    `the body is ${String(Buffer.byteLength(body))} bytes`,
+  );
+  const [posted] = postedEntries(calls);
+  for (const copy of [
+    posted.message.content[0].content,
+    posted.toolUseResult.stdout,
+  ])
+    assert.ok(copy.includes("the session store clipped"), "a copy was not cut");
+});
+
+/**
+ * A working directory long enough to weigh more than the note that would replace
+ * it is still not a result, and a clip that spent its budget on the bulk puts it
+ * back whole rather than leaving it a note.
+ */
+test("a field a clip could shorten but does not need to is put back whole", async () => {
+  const { calls, store } = storeOf();
+  const given = bashEntry("held ".repeat(6_000), 3);
+  given.cwd = `/workspace/${"a-long-directory-name/".repeat(10)}repo`;
+
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(given)) > sessionStoreBatchBytesMax,
+    "the fixture is not over the bound, so no clip runs and it proves nothing",
+  );
+  await store.append({ sessionId: "s" }, [given]);
+
+  const [posted] = postedEntries(calls);
+  assert.ok(
+    posted.toolUseResult.stdout.includes("the session store clipped"),
+    "the fixture was posted whole",
+  );
+  assert.equal(posted.cwd, given.cwd, "the working directory was clipped");
+});
+
+/**
+ * The bound itself, over the shapes and sizes the suite drives: whatever the
+ * clip does, the body it produces is one a batch holds and one the aim leaves
+ * room in. Nothing else weighs the result of a clip, so this is what holds it.
+ */
+test("every clipped entry posts within the bound and within the aim", async () => {
+  for (const given of [
+    bashEntry(controlOutput(30_000)),
+    bashEntry("held ".repeat(6_000), 3),
+    bashEntry("漢".repeat(20_000)),
+    readEntry("QUJDRA".repeat(20_000)),
+    editEntry("held\n".repeat(4_000), 30, 80),
+    editEntry("held\n".repeat(20), 120, 40),
+    bashEntry("x".repeat(sessionStoreBatchBytesMax)),
+  ]) {
+    const { calls, store } = storeOf();
+    assert.ok(
+      Buffer.byteLength(JSON.stringify(given)) > sessionStoreBatchBytesMax,
+      "a fixture is not over the bound, so no clip runs and it proves nothing",
+    );
+    await store.append({ sessionId: "s" }, [given]);
+    const [{ body }] = bodies(calls);
+    assert.ok(
+      Buffer.byteLength(body) <= sessionStoreClipLineBytesMax,
+      `a clipped body of ${String(Buffer.byteLength(body))} bytes is over the aim`,
+    );
   }
 });
 
@@ -346,14 +474,13 @@ test("a result whose bulk is a list of lines is clipped as a list", async () => 
   );
   const patched = posted.toolUseResult.structuredPatch;
   assert.equal(patched.length, given.toolUseResult.structuredPatch.length);
-  for (const patch of patched)
+  for (const patch of patched) {
     assert.ok(Array.isArray(patch.lines), "a patch stopped being a list");
-  assert.ok(
-    patched.some(({ lines }) =>
-      lines.at(-1).includes("the session store clipped"),
-    ),
-    "no list of lines was cut, so nothing but the file's text was",
-  );
+    assert.ok(
+      patch.lines.at(-1).includes("the session store clipped"),
+      "a list of lines was left whole while another was cut",
+    );
+  }
 });
 
 test("an entry at the bound is posted as the bytes it arrived as", async () => {
@@ -417,19 +544,39 @@ test("two entries no batch holds both land, in order, with the entries around th
 });
 
 /**
- * The residue: an entry whose weight is not in any string a clip could shorten.
+ * The residue: an entry whose weight is not in any value a clip could shorten.
  * It still raises, and it still names what the entry weighs, because a body the
- * plane refuses is the one outcome the store may not produce.
+ * plane refuses is the one outcome the store may not produce. The message says a
+ * clip never reached it rather than that a clip failed, because no clip ran.
  */
-test("an entry no clip brings under the bound raises, naming what it weighs", async () => {
+test("an entry with nothing to clip raises, naming what it weighs and that nothing was cut", async () => {
   const { calls, store } = storeOf();
   const given = denseEntry("a", 12_000);
 
   await assert.rejects(
     store.append({ sessionId: "s" }, [given]),
     (raised) =>
-      /clipping does not bring under/u.test(raised.message) &&
+      /nothing in it can be clipped/u.test(raised.message) &&
       raised.message.includes(String(Buffer.byteLength(JSON.stringify(given)))),
+  );
+
+  assert.deepEqual(bodies(calls), [], "the over-long entry was posted anyway");
+});
+
+/**
+ * The other residue, and the one the message must tell apart: every value in the
+ * entry was cut, and the notes alone are still over the bound. Here a clip did
+ * run and did not save it.
+ */
+test("an entry every clip leaves over the bound raises, saying the clip did not save it", async () => {
+  const { calls, store } = storeOf();
+  const given = { uuid: "a", type: "assistant" };
+  for (let field = 0; field < 700; field += 1)
+    given[`field${String(field)}`] = "held ".repeat(60);
+
+  await assert.rejects(
+    store.append({ sessionId: "s" }, [given]),
+    /clipping every value in it did not bring it under/u,
   );
 
   assert.deepEqual(bodies(calls), [], "the over-long entry was posted anyway");
@@ -451,7 +598,7 @@ test("an entry no clip can save still lets the unacknowledged batch be re-sent",
   refuse = false;
   await assert.rejects(
     store.append({ sessionId: "s" }, [entry("a"), denseEntry("b", 12_000)]),
-    /clipping does not bring under/u,
+    /nothing in it can be clipped/u,
   );
 
   const written = bodies(calls);

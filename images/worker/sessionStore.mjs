@@ -26,16 +26,21 @@
  * producer is not where that can be held: a built-in tool's result never crosses
  * `./chuggyTools.mjs`, and the caps the runtime does offer count characters
  * where the line is charged escaped bytes, which one character can cost several
- * of. So the store is the bound of last resort. It replaces the entry's heaviest
- * values, heaviest first, each with a head of itself and a note naming what the
- * original weighed, until the line fits a batch — never the uuids, the type, the
- * timestamp or the ids the runtime walks a transcript by, because those are
- * lighter than the note that would replace them. A list of strings is one such
- * value: a diff's lines are bulk together and nothing apart, so the list is
- * clipped rather than each line of it. What resumes over the entry parses it and
- * reads that it is seeing less, so it can run the tool again. The pod's own file
- * is untouched; this is what the store posts, not what happened. Only an entry
- * no clip brings under the bound raises, naming what it weighs.
+ * of. So the store is the bound of last resort. It replaces every value a clip
+ * can shorten with a head of itself and a note naming what the original weighed,
+ * and shares what one batch leaves evenly between them — never the uuids, the
+ * type, the timestamp or the ids the runtime walks a transcript by, because
+ * those are lighter than the note that would replace them, and a value that fits
+ * inside its share goes back whole. A list of strings is one such value: a diff's
+ * lines are bulk together and nothing apart, so the list is clipped rather than
+ * each line of it. SHARING IS WHY EVERY COPY IS CUT rather than only as many as
+ * it takes to fit: the runtime writes one result several times over, a resume
+ * reads one of those copies and never the others, and a clip that stopped at the
+ * first fit would leave a copy nothing reads whole and starve the copy that is
+ * read to pay for it. What resumes over the entry parses it and reads that it is
+ * seeing less, so it can run the tool again. The pod's own file is untouched;
+ * this is what the store posts, not what happened. Only an entry no clip brings
+ * under the bound raises, naming what it weighs and whether a clip reached it.
  *
  * DEDUPLICATION IS PER STREAM AND AN ENTRY WITHOUT A UUID IS NEVER DROPPED. A
  * fork re-appends the parent's entries under the fork's own key carrying the
@@ -193,13 +198,13 @@ function clippable(value) {
 }
 
 /**
- * Every clippable value in the entry, heaviest first, and where it sits so a
- * clip can replace it. The entry's shape is the runtime's, and a producer this
- * tree has never seen writes its bulk under whatever field names it likes — so
- * weight is what finds a result, and a tool's name is never asked for. A list of
- * strings is taken whole and its elements are not taken again: a diff's lines
- * are bulk together and nothing individually, and clipping them one at a time
- * would replace each with something longer than itself.
+ * Every clippable value in the entry, and where it sits so a clip can replace
+ * it. The entry's shape is the runtime's, and a producer this tree has never
+ * seen writes its bulk under whatever field names it likes — so weight is what
+ * finds a result, and a tool's name is never asked for. A list of strings is
+ * taken whole and its elements are not taken again: a diff's lines are bulk
+ * together and nothing individually, and clipping them one at a time would
+ * replace each with something longer than itself.
  */
 function entrySites(entry) {
   const found = [];
@@ -213,7 +218,7 @@ function entrySites(entry) {
     for (const inner of Object.keys(value)) walk(value, inner);
   };
   walk({ entry }, "entry");
-  return found.sort((first, second) => second.weight - first.weight);
+  return found;
 }
 
 /** What a site weighs once nothing of the original is left in it but the note. */
@@ -221,11 +226,18 @@ function siteFloor(value, note) {
   return typeof value === "string" ? escapedBytes(note) : escapedBytes([note]);
 }
 
+/** What putting a cut site back whole costs the line over leaving it a note. */
+function siteRestoreBytes(site) {
+  return site.weight - siteFloor(site.value, site.note);
+}
+
 /**
- * The heaviest sites replaced by their notes, heaviest first, stopping as soon
- * as what is left fits. A site no heavier than the note that would replace it is
- * passed over rather than cut, which is why an entry's uuids, timestamps and ids
- * survive a clip and why a clip never lengthens a line.
+ * Every site a clip can shorten, replaced by its note. A site no heavier than
+ * the note that would replace it is passed over rather than cut, which is why an
+ * entry's uuids, timestamps and ids survive a clip and why a clip never lengthens
+ * a line. Cutting stops at no earlier point: a clip that stopped as soon as the
+ * line fitted would leave one copy of a result whole and starve the copy a
+ * resume reads to pay for it, and what it kept would shrink as the entry grew.
  */
 function cutSites(clipped) {
   const cut = [];
@@ -235,49 +247,61 @@ function cutSites(clipped) {
     if (siteFloor(value, note) >= site.weight) continue;
     site.held[site.key] = typeof value === "string" ? note : [note];
     cut.push({ ...site, value, note });
-    if (lineBytes(JSON.stringify(clipped)) <= sessionStoreClipLineBytesMax)
-      break;
   }
   return cut;
 }
 
+/** One cut site given back as much of itself as `bytes` of the line allows. */
+function growSite(site, bytes) {
+  if (typeof site.value !== "string") {
+    site.held[site.key] = [...escapedPrefix(site.value, bytes), site.note];
+    return;
+  }
+  const head = escapedHead(site.value, bytes - escapedQuotesBytes);
+  if (head.length > 0) site.held[site.key] = `${head}\n${site.note}`;
+}
+
 /**
- * The cut sites given back as much of their heads as the aim leaves, shared
- * evenly so every copy of one result carries the same head. A share is spent in
- * escaped bytes, because that is what the line is charged for a character.
+ * The cut sites given back what the aim leaves, an even share each: every copy
+ * of one result keeps the same head, so the copy a resume reads is as long as
+ * the copy nothing reads, and a head falls smoothly as the entry grows. A site
+ * that fits inside its share is put back whole and its note with it, and what it
+ * did not spend is shared again among the sites that cannot be. A share is spent
+ * in escaped bytes, because that is what the line is charged for a character.
  */
 function growSites(clipped, cut) {
-  const spare =
-    sessionStoreClipLineBytesMax - lineBytes(JSON.stringify(clipped));
-  if (spare <= 0) return;
-  const share = Math.floor(spare / cut.length);
-  for (const site of cut) {
-    if (typeof site.value !== "string") {
-      site.held[site.key] = [...escapedPrefix(site.value, share), site.note];
-      continue;
+  let spare = sessionStoreClipLineBytesMax - lineBytes(JSON.stringify(clipped));
+  let sharing = cut;
+  while (spare > 0 && sharing.length > 0) {
+    const share = Math.floor(spare / sharing.length);
+    const whole = sharing.filter((site) => siteRestoreBytes(site) <= share);
+    if (whole.length === 0) {
+      for (const site of sharing) growSite(site, share);
+      return;
     }
-    const head = escapedHead(site.value, share - escapedQuotesBytes);
-    if (head.length > 0) site.held[site.key] = `${head}\n${site.note}`;
+    for (const site of whole) {
+      site.held[site.key] = site.value;
+      spare -= siteRestoreBytes(site);
+    }
+    sharing = sharing.filter((site) => siteRestoreBytes(site) > share);
   }
 }
 
 /**
  * The line the store posts for one entry: the entry itself where a batch holds
- * it, and a clipped copy of it where nothing else can. The heads are grown
- * against the serialised line and the result is weighed again, because escaping
- * and the copies are what a line is charged for and neither is visible in a
- * character count.
+ * it, and a clipped copy of it where nothing else can. The clip is computed
+ * against the serialised line rather than against a character count, because
+ * escaping and the copies are what a line is charged for and neither is visible
+ * in one.
  */
 function storedLine(entry) {
   const line = JSON.stringify(entry);
-  if (lineBytes(line) <= sessionStoreBatchBytesMax) return line;
+  if (lineBytes(line) <= sessionStoreBatchBytesMax) return { line };
   const clipped = JSON.parse(line);
   const cut = cutSites(clipped);
-  if (cut.length === 0) return line;
-  const notesOnly = JSON.stringify(clipped);
+  if (cut.length === 0) return { line };
   growSites(clipped, cut);
-  const grown = JSON.stringify(clipped);
-  return lineBytes(grown) <= sessionStoreBatchBytesMax ? grown : notesOnly;
+  return { line: JSON.stringify(clipped), cut: cut.length };
 }
 
 /** The lines this call still owes the store, in order, with the settled ones dropped. */
@@ -286,9 +310,9 @@ function owedLines(state, entries) {
   for (const entry of entries) {
     const uuid = entryUuid(entry);
     if (uuid !== undefined && state.confirmed.has(uuid)) continue;
-    const line = storedLine(entry);
+    const { line, cut } = storedLine(entry);
     if (state.pending?.lines.has(line)) continue;
-    owed.push({ line, uuid });
+    owed.push({ line, uuid, cut });
   }
   return owed;
 }
@@ -302,7 +326,7 @@ function plannedBatches(owed) {
     const size = lineBytes(owedLine.line);
     if (size > sessionStoreBatchBytesMax)
       throw new Error(
-        `the session store was given an entry of ${String(size - 1)} bytes that clipping does not bring under the ${String(sessionStoreBatchBytesMax)} one batch holds`,
+        `the session store was given an entry of ${String(size - 1)} bytes, over the ${String(sessionStoreBatchBytesMax)} one batch holds: ${owedLine.cut === undefined ? "nothing in it can be clipped" : "clipping every value in it did not bring it under"}`,
       );
     if (held.length > 0 && bytes + size > sessionStoreBatchBytesMax) {
       planned.push(held);
