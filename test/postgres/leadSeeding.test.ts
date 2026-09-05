@@ -15,7 +15,6 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { postgresAgenticRefusalStanding } from "../../src/adapters/postgres/agenticRefusal.ts";
 import { leadSessionMint } from "../../src/adapters/crypto/leadSessionMint.ts";
 import { postgresLeadDecisionTail } from "../../src/adapters/postgres/leadReads.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
@@ -28,6 +27,7 @@ import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type {
   SelectorObservation,
   SelectorPolicyRequest,
+  SelectorStandingRefusal,
 } from "../../src/interpreter/selector.ts";
 import { postgresHarnessSelectorContext } from "./harness.ts";
 import { postgresSelectorState } from "../../src/adapters/postgres/selector.ts";
@@ -67,7 +67,6 @@ const clock: LeadPolicyClock = {
 function seedingPolicy() {
   return leadSelectorPolicy(
     rig.mailbox,
-    postgresAgenticRefusalStanding(rig.selectorPool),
     postgresLeadDecisionTail(rig.selectorPool),
     leadSessionMint(),
     clock,
@@ -83,6 +82,7 @@ function seedingPolicy() {
 function requestFor(
   partition: Partition,
   decision: string,
+  refusals: readonly SelectorStandingRefusal[] = [],
 ): SelectorPolicyRequest {
   const token = {
     ...partition,
@@ -94,6 +94,7 @@ function requestFor(
   const observation: SelectorObservation = {
     token,
     candidates: [],
+    refusals,
     notificationCursor: 1_204,
     changes: [],
     operationalContext: postgresHarnessSelectorContext,
@@ -221,7 +222,11 @@ test("a session with no agent reference is seeded from the record", async () => 
     () => aDecision,
   );
   await seedingPolicy().execute(
-    requestFor(partition, decision),
+    requestFor(
+      partition,
+      decision,
+      await rig.selectorStanding.standingAmong(partition, [asTicketId(42)]),
+    ),
     new AbortController().signal,
   );
   await answering;

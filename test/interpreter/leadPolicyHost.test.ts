@@ -79,9 +79,28 @@ const operationalContext = selectorOperationalContext;
 /** A second candidate, so one decision can dispatch one ticket and refuse another. */
 const declined = { ...candidate, ticket: asTicketId(43), ticketVersion: 1 };
 
+/** One refusal on a ticket the view still carries, and one on a ticket it does not. */
+const standingRefusals: readonly AgenticRefusalRecord[] = [
+  {
+    ticket: asTicketId(41),
+    ticketVersion: 1,
+    reason: "the brief named no acceptance",
+    decision: "selector-decision-zero",
+    recordedAt: "2026-09-01T12:00:00.000Z",
+  },
+  {
+    ticket: asTicketId(42),
+    ticketVersion: 2,
+    reason: "its dependency is unfinished",
+    decision: "selector-decision-zero",
+    recordedAt: "2026-09-01T12:00:00.000Z",
+  },
+];
+
 const observation: SelectorObservation = {
   token,
   candidates: [candidate, declined],
+  refusals: standingRefusals,
   notificationCursor: 12,
   changes: [{ ordinal: 12, kind: "Ticket", resource: "41" }],
   operationalContext,
@@ -108,24 +127,6 @@ const request: SelectorPolicyRequest = {
     },
   },
 };
-
-/** One refusal on a ticket the view still carries, and one on a ticket it does not. */
-const standingRefusals: readonly AgenticRefusalRecord[] = [
-  {
-    ticket: asTicketId(41),
-    ticketVersion: 1,
-    reason: "the brief named no acceptance",
-    decision: "selector-decision-zero",
-    recordedAt: "2026-09-01T12:00:00.000Z",
-  },
-  {
-    ticket: asTicketId(42),
-    ticketVersion: 2,
-    reason: "its dependency is unfinished",
-    decision: "selector-decision-zero",
-    recordedAt: "2026-09-01T12:00:00.000Z",
-  },
-];
 
 const measured: SessionTurnMeasured = {
   model: "claude-opus-5",
@@ -234,15 +235,6 @@ function mailboxDouble(options: MailboxOptions = {}): MailboxDouble {
   };
 }
 
-function refusalRead(
-  records: readonly AgenticRefusalRecord[] = standingRefusals,
-) {
-  return {
-    standing: () => Promise.resolve(records),
-    ledger: () => Promise.resolve([]),
-  };
-}
-
 /** The tail port answers newest first, which is what the door it stands for does. */
 function decisionTail(
   newestFirst: readonly SelectorInteractionRecord[] = [],
@@ -299,7 +291,6 @@ const leadPolicyConfig = {
 function policyOf(double: MailboxDouble) {
   return leadSelectorPolicy(
     double.mailbox,
-    refusalRead(),
     decisionTail(),
     sessionMint(),
     clock(),
@@ -352,7 +343,6 @@ test("a turn that measured nothing spends the host's own wall clock", async () =
   const double = mailboxDouble({ agentReference: "agent-session-9" });
   const policy = leadSelectorPolicy(
     double.mailbox,
-    refusalRead(),
     decisionTail(),
     sessionMint(),
     clock([1_788_000_000_000, 1_788_000_150_000]),
@@ -650,7 +640,6 @@ test("a session with no agent reference is seeded and one with a reference is no
   const seeded = mailboxDouble();
   const policy = leadSelectorPolicy(
     seeded.mailbox,
-    refusalRead(),
     decisionTail([
       interactionRecord(2, {
         dispatches: [{ ticket: 40 }],
@@ -701,7 +690,6 @@ test("a seeding block the mailbox could not hold sheds its oldest decisions", as
   const double = mailboxDouble();
   const policy = leadSelectorPolicy(
     double.mailbox,
-    refusalRead(),
     decisionTail(
       Array.from({ length: 40 }, (_unused, index) => ({
         ...interactionRecord(40 - index, {
@@ -780,7 +768,6 @@ test("a poll interval that could never fire is refused at construction", () => {
     () =>
       leadSelectorPolicy(
         mailboxDouble().mailbox,
-        refusalRead(),
         decisionTail(),
         sessionMint(),
         clock(),
@@ -810,7 +797,6 @@ test("the turn's identity is the decision's", async () => {
         return double.mailbox.offer(input);
       },
     },
-    refusalRead(),
     decisionTail(),
     sessionMint(),
     clock(),

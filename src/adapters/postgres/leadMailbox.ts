@@ -55,6 +55,10 @@ import {
 } from "./schema/migrations/059-lead-decisions.ts";
 import { systemPromptSetSignature } from "./schema/migrations/061-lead-tools.ts";
 import {
+  standingAmongDoorClosed,
+  standingAmongDoorOpened,
+} from "./schema/migrations/073-refusals-among-a-candidate-page.ts";
+import {
   sessionRowMember,
   sessionRowText,
   sessionTurnMeasuredOf,
@@ -246,18 +250,30 @@ export function postgresLeadSystemPrompt(pool: pg.Pool): LeadSystemPromptPort {
   };
 }
 
+/** One door as `has_function_privilege` resolves it: a name and its argument types. */
+function leadDoorNamed(door: readonly [string, string]): string {
+  return `${door[0]}(${door[1]})`;
+}
+
 /**
  * Every door a decision opens, taken from the grants that create them rather
- * than copied beside them. `has_function_privilege` resolves a signature
+ * than copied beside them: 059's doors less the one 073 revokes from this role,
+ * plus the one 073 grants it. `has_function_privilege` resolves a signature
  * exactly and raises on one no function has, so a hand-copied argument type is
- * not a wrong answer here but a precondition that throws at every start.
+ * not a wrong answer here but a precondition that throws at every start — and a
+ * door listed after its grant is gone refuses a process that is whole.
  */
-export const leadDoorSignatures: readonly string[] = [
-  ...selectorSignatures,
-  [selectorInteractionsReadFunction, interactionsReadSignature],
-  [sessionSystemPromptSetFunction, systemPromptSetSignature],
-  [leadOpenFunction, leadOpenSignature],
-].map(([name, signature]) => `${String(name)}(${String(signature)})`);
+export const leadDoorSignatures: readonly string[] = (
+  [
+    ...selectorSignatures,
+    standingAmongDoorOpened,
+    [selectorInteractionsReadFunction, interactionsReadSignature],
+    [sessionSystemPromptSetFunction, systemPromptSetSignature],
+    [leadOpenFunction, leadOpenSignature],
+  ] as readonly (readonly [string, string])[]
+)
+  .map(leadDoorNamed)
+  .filter((door) => door !== leadDoorNamed(standingAmongDoorClosed));
 
 /**
  * Whether one privilege answer refuses the door. An answer the server did not

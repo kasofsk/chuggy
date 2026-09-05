@@ -24,7 +24,10 @@ import type { TicketId } from "../domain/ids.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
-import type { SelectorRefusalLedger } from "./selector.ts";
+import type {
+  SelectorRefusalLedger,
+  SelectorStandingRefusal,
+} from "./selector.ts";
 
 /** What the lead did about one ticket, in the order it did it. */
 export const allAgenticRefusalEvents = ["Refused", "Lifted"] as const;
@@ -45,14 +48,11 @@ export interface AgenticRefusalEntry {
   readonly recordedAt: string;
 }
 
-/** A ticket whose latest entry is a refusal, which is what standing means. */
-export interface AgenticRefusalRecord {
-  readonly ticket: TicketId;
-  readonly ticketVersion: number;
-  readonly reason: string;
-  readonly decision: string;
-  readonly recordedAt: string;
-}
+/**
+ * A ticket whose latest entry is a refusal, which is what standing means. It is
+ * the selector's own row shape, declared beside the port that answers it.
+ */
+export type AgenticRefusalRecord = SelectorStandingRefusal;
 
 /**
  * The reads the API has onto the ledger. A caller may ask for one past the bound
@@ -75,6 +75,15 @@ export interface AgenticRefusalRead {
 
 /** The ledger's own name for the door the runtime holds, which is one shape. */
 export type AgenticRefusalWrite = SelectorRefusalLedger;
+
+/**
+ * The one read the selector's own role holds: the standing among a named ticket
+ * set, which is the page an observation both excludes against and shows.
+ */
+export type AgenticRefusalSelectorRead = Pick<
+  AgenticRefusalWrite,
+  "standingAmong"
+>;
 
 export type AgenticRefusalsResult =
   | { readonly result: "NotFound" }

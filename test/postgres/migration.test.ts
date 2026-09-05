@@ -2140,10 +2140,13 @@ test("migration 59 widens a failure check installed before the withdrawal existe
   });
 });
 
+/** The door 059 grants the selector and 073 takes back, named once for both facts. */
+const leadSelectorDoorsPaged = "standing_agentic_refusals(text,text,bigint)";
+
 /** Every door 059 opens, beside the one role it is granted to. */
 const leadSelectorDoors = [
   "record_agentic_refusals(text,text,text,jsonb,jsonb)",
-  "standing_agentic_refusals(text,text,bigint)",
+  leadSelectorDoorsPaged,
   "lead_session(text,text)",
   "enqueue_lead_turn(text,text,text,text)",
   "read_lead_turn(text)",
@@ -2162,15 +2165,30 @@ const leadApiDoors = [
   "list_lead_store_streams(text,text,bigint)",
 ];
 
+/** The door 073 opens beside them, granted to the same role 059 grants its own to. */
+const leadSelectorDoorsAdded = [
+  "standing_agentic_refusals_among(text,text,bigint[])",
+];
+
+/** Whether one role may execute one door of the database given. */
+function migrationDoorExecutes(
+  subject: pg.Pool,
+): (role: string, signature: string) => Promise<boolean | undefined> {
+  return async (role, signature) =>
+    (
+      await subject.query<{ granted: boolean }>(
+        "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
+        [role, signature],
+      )
+    ).rows[0]?.granted;
+}
+
 /** Nobody but the one role a door is granted to may execute it, `PUBLIC` included. */
 async function migrationLeadDoorsAreStrangers(
   executes: (role: string, signature: string) => Promise<boolean | undefined>,
+  doors: readonly string[],
 ): Promise<void> {
-  for (const door of [
-    ...leadSelectorDoors,
-    ...leadApiDoors,
-    ...leadSharedDoors,
-  ])
+  for (const door of doors)
     for (const stranger of ["public", ticketServiceRole, finalizerRole])
       assert.equal(
         await executes(stranger, door),
@@ -2182,13 +2200,7 @@ async function migrationLeadDoorsAreStrangers(
 test("migration 59 grants each lead door to exactly one role", async () => {
   await migrationDatabase("lead_grants", async (subject) => {
     await migrationSeedApplied(subject, 60);
-    const executes = async (role: string, signature: string) =>
-      (
-        await subject.query<{ granted: boolean }>(
-          "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
-          [role, signature],
-        )
-      ).rows[0]?.granted;
+    const executes = migrationDoorExecutes(subject);
     for (const door of leadSelectorDoors) {
       assert.equal(await executes(selectorServiceRole, door), true, door);
       assert.equal(await executes(apiRole, door), false, door);
@@ -2212,7 +2224,11 @@ test("migration 59 grants each lead door to exactly one role", async () => {
       false,
       "a role that may name any session may put a turn in a member's thread",
     );
-    await migrationLeadDoorsAreStrangers(executes);
+    await migrationLeadDoorsAreStrangers(executes, [
+      ...leadSelectorDoors,
+      ...leadApiDoors,
+      ...leadSharedDoors,
+    ]);
     for (const relation of [
       "agent_session",
       "session_turn",
@@ -3640,5 +3656,122 @@ test("migration 71 leaves the rows an installation already appended unreasoned",
       ],
       "the row appended before the column existed was given the reason its ticket carries today",
     );
+  });
+});
+
+test("migration 73 grants the ticket-set standing door to the selector alone", async () => {
+  await migrationDatabase("standing_among_grants", async (subject) => {
+    await migrationSeedApplied(subject, 74);
+    const executes = migrationDoorExecutes(subject);
+    for (const door of leadSelectorDoorsAdded) {
+      assert.equal(await executes(selectorServiceRole, door), true, door);
+      assert.equal(await executes(apiRole, door), false, door);
+    }
+    await migrationLeadDoorsAreStrangers(executes, leadSelectorDoorsAdded);
+  });
+});
+
+test("migration 73 takes the paged standing back off the selector", async () => {
+  await migrationDatabase("standing_paged_revoked", async (subject) => {
+    await migrationSeedApplied(subject, 74);
+    const executes = migrationDoorExecutes(subject);
+    assert.equal(
+      await executes(selectorServiceRole, leadSelectorDoorsPaged),
+      false,
+      "no selector read opens it, and a grant nothing opens is one a check cannot tell from a grant something needs",
+    );
+    assert.equal(
+      await executes(
+        apiRole,
+        "read_standing_agentic_refusals(text,text,bigint)",
+      ),
+      true,
+      "the console still draws a project's standing refusals",
+    );
+  });
+});
+
+/** The same lead turn against the session door as the whole chain leaves it. */
+async function migrationPromptedLeadTurn(subject: pg.Pool): Promise<void> {
+  const store = postgresProjectStore(subject);
+  await postgresHarnessEpoch(store);
+  const partition = await postgresHarnessProject(store, "observed-refusals");
+  const values = [partition.tenant, partition.project];
+  await subject.query(
+    `SELECT open_agent_session($1,$2,'session-74','Lead','principal-74',
+       NULL,ARRAY[]::text[],'claude-code',NULL)`,
+    values,
+  );
+  await subject.query(
+    `SELECT enqueue_session_turn($1,$2,'session-74','turn-74','Observation','{}')`,
+    values,
+  );
+}
+
+/**
+ * An observation shows a refusal for every candidate its page held, so the row
+ * it is written into is wider than the one an installation already holds.
+ */
+test("migration 74 widens a turn's input check installed before a refusal per candidate", async () => {
+  await migrationDatabase("observed_refusal_input", async (subject) => {
+    await migrationSeedApplied(subject, 74);
+    const narrower = sessionTurnInputCharsMax - 1;
+    await migrationNarrowedRoster(
+      subject,
+      "session_turn",
+      "session_turn_text_is_bounded",
+      `length(input) BETWEEN 1 AND ${narrower}
+         AND coalesce(length(result), 0) <= ${sessionTurnResultCharsMax}`,
+    );
+    await migrationPromptedLeadTurn(subject);
+    const widen = `UPDATE session_turn SET input=repeat('o',$1) WHERE turn='turn-74'`;
+    await assert.rejects(
+      () => subject.query(widen, [sessionTurnInputCharsMax]),
+      /session_turn_text_is_bounded/u,
+      "a mailbox installed before the refusals grew refuses the widest observation",
+    );
+
+    await applyMigration(subject, 74);
+
+    await subject.query(widen, [sessionTurnInputCharsMax]);
+    await assert.rejects(
+      () => subject.query(widen, [sessionTurnInputCharsMax + 1]),
+      /session_turn_text_is_bounded/u,
+      "the widened check is still a check",
+    );
+  });
+});
+
+/** 070's floor is one whole legal observation, and this is what widened one. */
+test("migration 74 raises the token budget to the observation it just widened", async () => {
+  await migrationDatabase("observed_refusal_budget", async (subject) => {
+    await migrationSeedApplied(subject, 74);
+    await standingTokenBudgetStates(subject, 1);
+    const before = await standingTokenBudget(subject);
+
+    await applyMigration(subject, 74);
+
+    assert.deepEqual(await standingTokenBudget(subject), {
+      budget: String(leadObservationTokensPerDecision),
+      revision: String(Number(before.revision) + 1),
+      recorded: String(Number(before.recorded) + 1),
+    });
+  });
+});
+
+test("migration 74 moves a floor and never a budget somebody raised", async () => {
+  await migrationDatabase("observed_refusal_budget_kept", async (subject) => {
+    await migrationSeedApplied(subject, 74);
+    const wider = leadObservationTokensPerDecision + 1;
+    await standingTokenBudgetStates(subject, wider);
+    const before = await standingTokenBudget(subject);
+
+    await applyMigration(subject, 74);
+
+    assert.deepEqual(await standingTokenBudget(subject), {
+      budget: String(wider),
+      revision: before.revision,
+      recorded: before.recorded,
+    });
   });
 });

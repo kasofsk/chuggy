@@ -194,7 +194,11 @@ export function leadObservationText(document: LeadObservationDocument): string {
   );
 }
 
-/** Every standing refusal as one observation shows it, superseded against the view. */
+/**
+ * Every standing refusal as one observation shows it, superseded against the
+ * view. The refusals given are the standing among the tickets the page held, so
+ * every candidate the observation excluded is one of these.
+ */
 export function leadObservedRefusals(
   refusals: readonly AgenticRefusalRecord[],
   candidates: readonly DispatchCandidate[],
@@ -308,6 +312,10 @@ function leadDecisionRefusals(
   });
 }
 
+/**
+ * A lift names a refusal the observation showed, which is the standing among the
+ * page's own tickets. Nothing excluded from the candidates is outside it.
+ */
 function leadDecisionLifts(
   value: unknown,
   refusals: readonly AgenticRefusalRecord[],
@@ -360,7 +368,6 @@ function leadDecisionNamesEachTicketOnce(
 export function parseLeadDecision(
   text: string,
   observation: SelectorObservation,
-  refusals: readonly AgenticRefusalRecord[],
 ): SelectorPolicyResult {
   const found = leadTurnDocument(text, "lead decision", leadDecisionBytesMax);
   const attention = found["attention"];
@@ -375,7 +382,7 @@ export function parseLeadDecision(
   return leadDecisionNamesEachTicketOnce({
     dispatches: leadDecisionDispatches(found["dispatches"], observation),
     refusals: leadDecisionRefusals(found["refusals"], observation),
-    lifts: leadDecisionLifts(found["lifts"], refusals),
+    lifts: leadDecisionLifts(found["lifts"], observation.refusals),
     attention,
     handoffNote: found["handoffNote"] as JsonValue,
     ...(found["planningIntent"] === undefined

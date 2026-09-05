@@ -449,9 +449,13 @@ const leadObservedRefusalChars =
   leadObservedRefusalEnvelopeCharsMax +
   jsonStringChars(agenticRefusalReasonCharsMax);
 
-/** Every standing refusal one observation carries, as one array. */
+/**
+ * Every standing refusal one observation carries, as one array. It is the
+ * standing among the candidates the same document shows, so one page of them is
+ * one refusal per candidate at most.
+ */
 const leadObservedRefusalsChars = stringifiedArrayChars(
-  agenticRefusalsAnsweredMax,
+  dispatchViewPageLimitMax,
   leadObservedRefusalChars,
 );
 

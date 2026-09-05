@@ -1085,6 +1085,7 @@ test("attempt reconciliation cannot claim another runtime's active attempt", asy
       {
         token,
         candidates: [],
+        refusals: [],
         notificationCursor: 0,
         changes: [],
         operationalContext: selectorInteractionContext.operationalContext,

@@ -1,7 +1,14 @@
 /**
  * The startup privilege check, against a real migrated database: every door a
- * decision opens answers for the selector's own role, and nothing it names is
- * a signature no function has.
+ * decision opens answers for the selector's own role, nothing it names is a
+ * signature no function has, and the list is that role's decision grants
+ * exactly rather than some of them.
+ *
+ * A LOWER BOUND IS NOT A CHECK. A list that merely contains the doors somebody
+ * wrote down passes while it omits the door a new migration granted, and passes
+ * while it names one a migration took away; the first starts a process that
+ * throws on its first pass, the second refuses a process that is whole. So the
+ * case below reads the grants out of the catalogue and compares sets.
  *
  * IT IS DRIVEN ON THE SELECTOR'S POOL AND NOT THE OWNER'S. The migration owner
  * holds EXECUTE on everything, so a case run as the owner would be green over
@@ -22,15 +29,17 @@ import {
   postgresLeadDoorsRefused,
 } from "../../src/adapters/postgres/leadMailbox.ts";
 import {
-  agenticRefusalRecordFunction,
-  agenticRefusalStandingFunction,
-  leadOpenFunction,
-  leadSessionFunction,
-  leadTurnEnqueueFunction,
-  leadTurnReadFunction,
-  leadTurnWithdrawFunction,
-  selectorInteractionsReadFunction,
+  selectorAttemptAdvanceFunction,
+  selectorAttemptAllocateFunction,
+  selectorAttemptReconcileFunction,
+  selectorClaimFunction,
+  selectorDeliveryFunction,
+  selectorHostReadinessFunction,
+  selectorReconcileClaimFunction,
   sessionSystemPromptSetFunction,
+  threadWakeCandidatesFunction,
+  threadWakeCursorAdvanceFunction,
+  threadWakeFunction,
 } from "../../src/adapters/postgres/schema/shared.ts";
 import {
   apiRole,
@@ -101,25 +110,52 @@ test("an answer the server did not give is refused rather than permitted", () =>
   );
 });
 
-test("the list names every door the selector's own role is granted", () => {
-  const named = leadDoorSignatures.map((door) =>
-    door.slice(0, door.indexOf("(")),
+/**
+ * Every function this role is granted EXECUTE on that no decision opens: the
+ * attempts, deliveries and thread wakes the same process drives, each named
+ * where its own schema names it. It is what lets the case below compare sets
+ * rather than test membership, and a door granted to this role that is in
+ * neither it nor `leadDoorSignatures` reds that case until somebody says which
+ * of the two it belongs in.
+ */
+const selectorDoorsBesideADecision: readonly string[] = [
+  selectorAttemptAdvanceFunction,
+  selectorAttemptAllocateFunction,
+  selectorAttemptReconcileFunction,
+  selectorClaimFunction,
+  selectorDeliveryFunction,
+  selectorHostReadinessFunction,
+  selectorReconcileClaimFunction,
+  threadWakeCandidatesFunction,
+  threadWakeCursorAdvanceFunction,
+  threadWakeFunction,
+];
+
+/** The function a door names, which is what classes it without its argument types. */
+function leadDoorFunction(door: string): string {
+  return door.slice(0, door.indexOf("("));
+}
+
+test("the list is every decision door this role is granted and no other", async () => {
+  const granted = await selectorPool.query<{ door: string | null }>(
+    `SELECT p.oid::regprocedure::text AS door
+       FROM pg_proc p
+       JOIN pg_namespace n ON n.oid=p.pronamespace,
+            LATERAL aclexplode(p.proacl) held
+      WHERE n.nspname='public' AND held.privilege_type='EXECUTE'
+        AND held.grantee=$1::regrole`,
+    [selectorServiceRole],
   );
-  for (const door of [
-    agenticRefusalRecordFunction,
-    agenticRefusalStandingFunction,
-    leadSessionFunction,
-    leadTurnEnqueueFunction,
-    leadTurnReadFunction,
-    leadTurnWithdrawFunction,
-    selectorInteractionsReadFunction,
-    sessionSystemPromptSetFunction,
-    leadOpenFunction,
-  ])
-    assert.ok(
-      named.includes(door),
-      `${door} is granted to the selector, so a check that omits it passes a role that cannot start`,
+  const doors = granted.rows
+    .map((row) => row.door ?? "")
+    .filter(
+      (door) => !selectorDoorsBesideADecision.includes(leadDoorFunction(door)),
     );
+  assert.deepEqual(
+    doors.toSorted(),
+    [...leadDoorSignatures].toSorted(),
+    "a door granted and unlisted starts a process that cannot decide, and a door listed and revoked stops one that can",
+  );
 });
 
 /** The connection string the selector process itself would be given. */

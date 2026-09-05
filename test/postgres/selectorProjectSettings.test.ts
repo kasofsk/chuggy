@@ -297,6 +297,7 @@ function fenceObservation(partition: Partition) {
   return {
     token,
     candidates: [],
+    refusals: [],
     notificationCursor: 0,
     changes: [],
     operationalContext: postgresHarnessSelectorContext,
