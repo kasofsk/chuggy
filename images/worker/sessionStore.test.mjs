@@ -121,6 +121,50 @@ function editEntry(content, patches, linesEach) {
 }
 
 /**
+ * The assistant entry of a many-part edit: the bulk is in the call the model
+ * made rather than in a result, spread over the strings of every edit, and the
+ * message around it carries the names a resume replays. Enough edits and their
+ * notes alone outweigh the budget, which is the only shape where nothing goes
+ * back whole.
+ */
+function multiEditEntry(edits, linesEach) {
+  return {
+    parentUuid: "5c2a1d3e-6b7f-4a08-9c1d-2e3f4a5b6c7d",
+    type: "assistant",
+    message: {
+      id: "msg_01MultiEditTheFile",
+      role: "assistant",
+      model: "claude-opus-4-6",
+      content: [
+        {
+          type: "tool_use",
+          id: "toolu_01MultiEditTheFile",
+          name: "MultiEdit",
+          input: {
+            file_path: "/workspace/repo/src/held.ts",
+            edits: Array.from({ length: edits }, (_, edit) => ({
+              old_string:
+                `  const held${String(edit)} = readTheLine(at);\n`.repeat(
+                  linesEach,
+                ),
+              new_string:
+                `  const held${String(edit)} = readTheLine(at, twice);\n`.repeat(
+                  linesEach,
+                ),
+            })),
+          },
+        },
+      ],
+    },
+    uuid: "1a2b3c4d-5e6f-4708-8192-a3b4c5d6e7f8",
+    timestamp: "2026-09-02T22:24:00.000Z",
+    cwd: "/workspace/repo",
+    sessionId: "fecadcca-7f72-478c-ab53-561e3a17110b",
+    version: "2.1.258",
+  };
+}
+
+/**
  * Output a line is charged several bytes for every character of, as a shell
  * redrawing its own progress writes: a control character has no short escape,
  * so the line carries it as an escaped code point.
@@ -463,14 +507,16 @@ test("a value a clip could shorten but does not need to is put back whole", asyn
 /**
  * A signed block. The runtime signs a thinking block over its exact text and
  * replays both to resume the turn, so a head of either is a block the API
- * refuses — later, somewhere else, off a line already durable. The tool call
- * beside it is an ordinary result and is cut as one. The signature here is
- * synthesised at the length real ones run to, not taken from a transcript.
+ * refuses — later, somewhere else, off a line already durable. A redacted
+ * thinking block is the same bargain with the text withheld: its payload is
+ * signed too. The tool call beside them is an ordinary result and is cut as
+ * one. Both payloads here are synthesised rather than taken from a transcript.
  */
 test("a signed block is never shortened, and the result beside it still is", async () => {
   const { calls, store } = storeOf();
-  const signature = `Er${"UBCkYIBRgCKkC".repeat(3_500)}==`;
+  const signature = `Er${"UBCkYIBRgCKkC".repeat(1_500)}==`;
   const thinking = "The store is what weighs the line. ".repeat(40);
+  const redacted = "EvgBCoYBGAIqYJ".repeat(1_500);
   const given = {
     parentUuid: "3b1f6b6e-1f14-4a4f-9d4a-4d1f1a2b3c4d",
     type: "assistant",
@@ -480,6 +526,7 @@ test("a signed block is never shortened, and the result beside it still is", asy
       model: "claude-opus-4-6",
       content: [
         { type: "thinking", thinking, signature },
+        { type: "redacted_thinking", data: redacted },
         {
           type: "tool_use",
           id: "toolu_01WriteTheFile",
@@ -506,10 +553,16 @@ test("a signed block is never shortened, and the result beside it still is", asy
     `the body is ${String(Buffer.byteLength(body))} bytes`,
   );
   const [posted] = postedEntries(calls);
-  const [signed, called] = posted.message.content;
+  const [signed, hidden, called] = posted.message.content;
   assert.equal(signed.signature, signature, "the signature was shortened");
   assert.equal(signed.thinking, thinking, "the signed text was shortened");
   assert.equal(signed.type, "thinking");
+  assert.equal(hidden.type, "redacted_thinking");
+  assert.equal(
+    hidden.data,
+    redacted,
+    "the redacted signed payload was shortened",
+  );
   assert.ok(
     called.input.content.includes("the session store clipped"),
     "the call beside the signed block was not cut",
@@ -625,6 +678,98 @@ test("an entry whose notes outweigh the budget is posted over it and under the b
   assert.equal(block.tool_use_id, given.message.content[0].tool_use_id);
   assert.equal(block.type, "tool_result");
   assert.equal(posted.uuid, given.uuid);
+});
+
+/**
+ * Every name a result keeps its identity under, one entry each. They are read at
+ * whatever depth they are written, because below a message the shape is the
+ * runtime.s and a tool_use_id is a tool_use_id wherever it lands, so each is put
+ * a level further down than the store has ever been shown one. Each value is
+ * stretched past the note that would replace it, on the fixture that has nothing
+ * to share: the note floor cannot be what spares it and a whole restore cannot
+ * be either, so the name is all that is left holding.
+ */
+test("a result keeps its own identifiers at depth, whatever they weigh", async () => {
+  for (const key of [
+    "file_path",
+    "filePath",
+    "id",
+    "is_error",
+    "name",
+    "signature",
+    "tool_use_id",
+    "type",
+  ]) {
+    const { calls, store } = storeOf();
+    const kept = `${key}-${"a-value-nothing-shortens-".repeat(40)}`;
+    const given = editEntry("held\n".repeat(4_000), 300, 40);
+    given.toolUseResult.theToolAlsoReported = { [key]: kept };
+    assert.ok(
+      Buffer.byteLength(JSON.stringify(given)) > sessionStoreBatchBytesMax,
+      `the ${key} fixture is not over the bound, so no clip runs and it proves nothing`,
+    );
+
+    await store.append({ sessionId: "s" }, [given]);
+
+    const [{ body }] = bodies(calls);
+    assert.ok(
+      Buffer.byteLength(body) > sessionStoreClipBudgetBytes,
+      `the ${key} fixture has spare, so a whole restore could be what keeps it`,
+    );
+    const [posted] = postedEntries(calls);
+    assert.ok(
+      posted.toolUseResult.content.startsWith("[the session store clipped"),
+      `the ${key} fixture was posted with nothing cut`,
+    );
+    assert.equal(
+      posted.toolUseResult.theToolAlsoReported[key],
+      kept,
+      `${key} was cut`,
+    );
+  }
+});
+
+/**
+ * The names the entry calls itself by, one step down. A message carries its own
+ * id, role and model, a resume replays them, and none of them is the message’s
+ * bulk however long the string happens to be. The model here is stretched past
+ * its note on a call with nothing to share, because a real one is short enough
+ * that the note floor alone would spare it and that separates nothing.
+ */
+test("what a message calls itself by is identity, whatever it weighs", async () => {
+  const { calls, store } = storeOf();
+  const model = `claude-opus-4-6-${"a-long-model-name-".repeat(40)}`;
+  const given = multiEditEntry(200, 4);
+  given.message.model = model;
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(given)) > sessionStoreBatchBytesMax,
+    "the fixture is not over the bound, so no clip runs and it proves nothing",
+  );
+
+  await store.append({ sessionId: "s" }, [given]);
+
+  const [{ body }] = bodies(calls);
+  assert.ok(
+    Buffer.byteLength(body) > sessionStoreClipBudgetBytes,
+    "the fixture has spare, so a whole restore could be what keeps the model",
+  );
+  assert.ok(
+    Buffer.byteLength(body) <= sessionStoreBatchBytesMax,
+    `the body is ${String(Buffer.byteLength(body))} bytes`,
+  );
+  const [posted] = postedEntries(calls);
+  const [called] = posted.message.content;
+  assert.ok(
+    called.input.edits[0].old_string.includes("the session store clipped"),
+    "the edits beside the model were not cut, so nothing was at risk",
+  );
+  assert.equal(
+    posted.message.model,
+    model,
+    "the model the message named was cut",
+  );
+  assert.equal(posted.message.id, given.message.id);
+  assert.equal(posted.message.role, "assistant");
 });
 
 /**
