@@ -13,10 +13,13 @@ import {
 import {
   checkedSessionBounds,
   sessionBoundNames,
+  sessionCommandOutputCharsMax,
+  sessionCommandOutputCopiesInEntry,
   sessionTurnFailure,
   sessionTurnResultCharsMax,
 } from "./session.mjs";
 import { observeRateLimit, rateLimitSightings } from "./rateLimit.mjs";
+import { sessionStoreBatchBytesMax } from "./sessionStore.mjs";
 import {
   bearer,
   credentialFile,
@@ -153,6 +156,28 @@ test("the query is opened eagerly against the store, with the session's own boun
   assert.ok(options.disallowedTools.includes("Write"));
   assert.ok(!("resume" in options), "a session that never ran was resumed");
   assert.ok(!("forkSession" in options), "a lead was forked");
+});
+
+/**
+ * The one bound a built-in's answer is held under. A command's output crosses
+ * no boundary this image owns, so what keeps its entry inside one store line is
+ * the runtime's own output bound, and the pod is what sets it.
+ */
+test("the runtime is opened with a command output bound its entry fits a store line under", async () => {
+  const plane = planeOf([], facts);
+  const { seen, query } = queryOf(() => []);
+
+  await run({ request: plane.request, query });
+
+  assert.equal(
+    seen.options.env.BASH_MAX_OUTPUT_LENGTH,
+    String(sessionCommandOutputCharsMax),
+  );
+  assert.ok(
+    sessionCommandOutputCharsMax * sessionCommandOutputCopiesInEntry <=
+      sessionStoreBatchBytesMax,
+    "a command filling its output bound writes an entry no batch can hold",
+  );
 });
 
 test("a session that has run before resumes its own reference and is not forked", async () => {
