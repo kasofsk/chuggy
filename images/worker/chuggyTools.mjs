@@ -18,11 +18,23 @@
  * what the selector refuses is the decision that used it. A control described as
  * stronger than it is, is worse than none.
  *
- * A READ ANSWERS ONE PAGE. Nothing here walks a collection: the caller's page
- * bound and cursor go through, the route's own body comes back verbatim as JSON
- * text cut at `chuggyToolResponseBytesMax`, and the cursor is in the answer for
+ * A READ ANSWERS ONE PAGE, WHOLE OR NOT AT ALL. Nothing here walks a
+ * collection: the caller's page bound and cursor go through, the route's own
+ * body comes back verbatim as JSON text, and the cursor is in the answer for
  * the model to ask again with. A tool that walked would spend the turn's whole
- * token budget on a project's history.
+ * token budget on a project's history. A page too large to answer is refused
+ * where the model can ask for a smaller one, never cut: a cut JSON document is
+ * a page nothing can parse and nothing can resume from.
+ *
+ * AN ANSWER IS BOUNDED BY WHAT THE TRANSCRIPT HOLDS, and that is a tighter
+ * bound than the body drawn off the wire. Every answer becomes one `tool_result`
+ * entry, `./sessionStore.mjs` mirrors an entry as one line it never splits, and
+ * a line over `sessionStoreBatchBytesMax` is a body the plane refuses — which
+ * fails the turn `StoreRefused` and ends the attempt. So `chuggyToolAnswerBytesMax`
+ * is that line's bound less the envelope the runtime writes around the text, and
+ * an answer is weighed as the entry escapes it rather than as it reads, because
+ * escaping is what the line is charged for. The reserve is what this image
+ * cannot measure: the entry's shape is the runtime's.
  *
  * A WRITE RELAYS THE API'S OUTCOME UNALTERED — the status and the error body, as
  * text. No retry, no repair, no hiding a 409. A tool that decided what a refusal
@@ -45,6 +57,7 @@
  * resolves, and the image's build probe is what proves the peer is installed.
  */
 
+import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { URLSearchParams } from "node:url";
 
@@ -55,6 +68,7 @@ import {
   chuggyRequest,
 } from "./chuggyApi.mjs";
 import { leadDecisionStaging, leadDecisionToolNames } from "./leadDecision.mjs";
+import { sessionStoreBatchBytesMax } from "./sessionStore.mjs";
 
 /** The one MCP server every session is given, and the prefix its tool names carry. */
 export const chuggyToolServerName = "chuggy";
@@ -69,6 +83,24 @@ export const selectorHistoryLimitMax = 50;
 export const agenticRefusalsAnsweredMax = 32;
 export const sessionStorePageBatchesMax = 8;
 export const threadTurnsAnsweredMax = 32;
+
+/**
+ * What the runtime writes around one answer's text in the entry it mirrors: the
+ * `tool_result` block and the call it answers, the entry's own uuids, its
+ * timestamp, and the session and working directory it names. The image never
+ * sees that entry, so the reserve is deliberately wider than one, and
+ * `chuggyTools.test.mjs` drives a maximal answer inside one to hold it so.
+ */
+export const chuggyToolAnswerEnvelopeBytesMax = 4_096;
+
+/** What one tool answer may weigh where the store holds it, which is one line of one batch. */
+export const chuggyToolAnswerBytesMax =
+  sessionStoreBatchBytesMax - chuggyToolAnswerEnvelopeBytesMax;
+
+/** What one answer's text weighs as the entry escapes it, which is what the line is charged. */
+export function chuggyToolAnswerBytes(text) {
+  return Buffer.byteLength(JSON.stringify(text));
+}
 
 /** The relation a filed dependent may carry, and the one it may not. */
 export const allDependentRelations = ["FollowUp", "Prerequisite"];
@@ -213,6 +245,14 @@ function answered(text, isError) {
   return { content: [{ type: "text", text }], ...(isError ? { isError } : {}) };
 }
 
+/** What a page too large to answer is refused with, which names the way to a smaller one. */
+function pageTooLarge(weighed) {
+  return answered(
+    `${weighed}, and one tool answer holds ${String(chuggyToolAnswerBytesMax)} bytes in the transcript; ask again for a smaller page.`,
+    true,
+  );
+}
+
 /** One route's answer as the model reads it: its status, and its body verbatim. */
 async function relay(context, path, init) {
   const response = await context.request(
@@ -225,11 +265,14 @@ async function relay(context, path, init) {
     response,
     chuggyToolResponseBytesMax,
   );
-  const head = `HTTP ${String(response.status)}`;
-  const tail = cut
-    ? `\n\n[cut at ${String(chuggyToolResponseBytesMax)} bytes]`
-    : "";
-  return answered(`${head}\n${text}${tail}`, response.status >= 400);
+  if (cut)
+    return pageTooLarge(
+      `this page is larger than the ${String(chuggyToolResponseBytesMax)} bytes one answer draws off the wire`,
+    );
+  return answered(
+    `HTTP ${String(response.status)}\n${text}`,
+    response.status >= 400,
+  );
 }
 
 function read(context, path) {
@@ -709,6 +752,21 @@ export function chuggyToolDefinitions(context) {
 }
 
 /**
+ * One answer, or the refusal that replaces it where the entry it becomes would
+ * not fit one of the store's lines. Refusing here is what keeps the answer the
+ * model reads and the line the store writes the same thing.
+ */
+function storableAnswer(answer) {
+  const text = (answer.content ?? [])
+    .map((block) => (typeof block?.text === "string" ? block.text : ""))
+    .join("");
+  const bytes = chuggyToolAnswerBytes(text);
+  return bytes <= chuggyToolAnswerBytesMax
+    ? answer
+    : pageTooLarge(`this answer weighs ${String(bytes)} bytes`);
+}
+
+/**
  * One tool's handler: its input checked against its own shape, then the call,
  * with every raise answered as text the model reads rather than thrown into the
  * runtime.
@@ -724,13 +782,19 @@ export function chuggyToolDefinitions(context) {
  * call's side effect is staged, so the lead is told its dispatch errored by the
  * very call that staged it, and may dispatch again or report a failure that did
  * not happen.
+ *
+ * AND IT IS WHERE AN ANSWER IS WEIGHED, because it is the one boundary every
+ * tool's answer crosses. A relay knows its page was cut and refuses on that; an
+ * answer that fits the wire and not the transcript is only visible here.
  */
 export function chuggyToolHandler(definition, z) {
   const shape = z.object(definition.shape(z));
   return async (args) => {
     try {
       const answer = await definition.call(shape.parse(args ?? {}));
-      return typeof answer === "string" ? answered(answer) : answer;
+      return storableAnswer(
+        typeof answer === "string" ? answered(answer) : answer,
+      );
     } catch (failure) {
       return answered(
         failure instanceof Error ? failure.message : String(failure),

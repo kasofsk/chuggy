@@ -89,6 +89,22 @@ test("one append fills contiguous batches at the wire body's bound", async () =>
   assert.equal(written[1].body.trimEnd().split("\n").length, 1);
 });
 
+/**
+ * The line nothing can split, at one byte over the body the plane accepts. It is
+ * the producer's fault and it is named as one here, because posting it would be
+ * a refusal the session reads as `StoreRefused` and a message naming nothing.
+ */
+test("an entry larger than one batch raises rather than posting a body the plane refuses", async () => {
+  const { calls, store } = storeOf();
+
+  await assert.rejects(
+    store.append({ sessionId: "s" }, [entry("a", sessionStoreBatchBytesMax)]),
+    /one batch holds/,
+  );
+
+  assert.deepEqual(bodies(calls), [], "the over-long entry was posted anyway");
+});
+
 test("a batch the plane never acknowledged is re-sent as the same bytes under the same number", async () => {
   let refuse = true;
   const { calls, store } = storeOf(() =>

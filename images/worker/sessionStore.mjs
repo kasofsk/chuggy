@@ -20,6 +20,12 @@
  * unacknowledged batch, because that would change the digest and the plane would
  * be right to call it a conflict.
  *
+ * A LINE LONGER THAN A BATCH IS A FAULT AND NOT A BODY TO POST. Nothing splits
+ * a line, so an entry over the bound could only go as a body the plane refuses,
+ * and a refusal there fails the turn `StoreRefused` and stops the session. It
+ * raises here instead, naming what the entry weighed: bounding an entry is its
+ * producer's, and `./chuggyTools.mjs` is where a served answer is held under it.
+ *
  * DEDUPLICATION IS PER STREAM AND AN ENTRY WITHOUT A UUID IS NEVER DROPPED. A
  * fork re-appends the parent's entries under the fork's own key carrying the
  * parent's uuids, so an index wider than one stream would discard most of every
@@ -125,6 +131,10 @@ function plannedBatches(owed) {
   let bytes = 0;
   for (const owedLine of owed) {
     const size = Buffer.byteLength(owedLine.line) + 1;
+    if (size > sessionStoreBatchBytesMax)
+      throw new Error(
+        `the session store was given an entry of ${String(size)} bytes and one batch holds ${String(sessionStoreBatchBytesMax)}`,
+      );
     if (held.length > 0 && bytes + size > sessionStoreBatchBytesMax) {
       planned.push(held);
       held = [];

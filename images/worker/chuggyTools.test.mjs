@@ -9,11 +9,14 @@ import { z } from "zod";
 import {
   allChuggyTools,
   chuggyOperationIdentity,
+  chuggyToolAnswerBytes,
+  chuggyToolAnswerBytesMax,
   chuggyProjectTools,
   chuggyToolContext,
   chuggyToolDefinitions,
   chuggyToolHandler,
   chuggyToolPrefix,
+  chuggyToolResponseBytesMax,
   chuggyToolServer,
   chuggyToolsNotYetServed,
   chuggyToolTimeoutMs,
@@ -22,6 +25,10 @@ import {
   sessionCapabilityTools,
 } from "./chuggyTools.mjs";
 import { leadDecisionStaging } from "./leadDecision.mjs";
+import {
+  sessionStoreAdapter,
+  sessionStoreBatchBytesMax,
+} from "./sessionStore.mjs";
 
 const task = {
   tenant: "vteng",
@@ -136,7 +143,10 @@ test("a decision tool the server registers answers a well-formed result", async 
   );
   const { api, call } = toolsOf({ staging });
 
-  const answer = await call("dispatch", { ticket: 4, expectedTicketVersion: 2 });
+  const answer = await call("dispatch", {
+    ticket: 4,
+    expectedTicketVersion: 2,
+  });
 
   assert.deepEqual(answer.content, [
     { type: "text", text: "dispatch staged for ticket 4" },
@@ -162,7 +172,7 @@ test("every read answers one page, relays the route's own body and names its cur
   assert.ok(answer.isError === undefined);
 });
 
-test("a read cut at the bound says so rather than answering a broken body", async () => {
+test("a page larger than the pod draws is refused rather than answered cut", async () => {
   const { call } = toolsOf({}, () => ({
     status: 200,
     body: "x".repeat(70_000),
@@ -170,7 +180,104 @@ test("a read cut at the bound says so rather than answering a broken body", asyn
 
   const answer = await call("read_ticket", { ticket: 7 });
 
-  assert.match(textOf(answer), /\[cut at 65536 bytes\]$/);
+  assert.equal(answer.isError, true);
+  assert.match(textOf(answer), /ask again for a smaller page/);
+  assert.match(
+    textOf(answer),
+    new RegExp(`${String(chuggyToolResponseBytesMax)} bytes one answer draws`),
+    "a cut page is refused as a page too large to draw, not weighed as an answer",
+  );
+  assert.ok(!textOf(answer).includes("xxx"), "a cut body was answered anyway");
+});
+
+/**
+ * The bound at its own edge, over one relay that pages by items and one that
+ * pages by store batches. The weight is the escaped one because that is what the
+ * entry's line is charged, and a page under the wire bound can be over this one.
+ */
+test("an answer at the bound is served and one over it never reaches the model", async () => {
+  const head = "HTTP 200\n";
+  const room = chuggyToolAnswerBytesMax - chuggyToolAnswerBytes(head);
+  for (const [name, args] of [
+    ["list_executions", { limit: 100 }],
+    ["read_thread_transcript", { session: "t-1", limit: 8 }],
+  ]) {
+    const at = await routeOf(
+      name,
+      args,
+      apiOf(() => ({ status: 200, body: "x".repeat(room) })),
+    );
+    const over = await routeOf(
+      name,
+      args,
+      apiOf(() => ({ status: 200, body: "x".repeat(room + 1) })),
+    );
+
+    assert.ok(at.isError === undefined, name);
+    assert.equal(
+      chuggyToolAnswerBytes(textOf(at)),
+      chuggyToolAnswerBytesMax,
+      name,
+    );
+    assert.equal(over.isError, true, name);
+    assert.match(textOf(over), /ask again for a smaller page/, name);
+    assert.ok(!textOf(over).includes("xxx"), name);
+  }
+});
+
+/**
+ * The tool's bound held against the store's, through the entry the runtime
+ * writes around an answer. The envelope is written here because the runtime owns
+ * its shape and this image never sees one, so what is checked is that the
+ * reserve covers a generous one rather than that it is the true size.
+ */
+test("a maximal answer inside a transcript entry is one batch the store can post", async () => {
+  const uuid = "0f9c1a3e-6d24-4c8b-9a7e-1b2c3d4e5f60";
+  const posted = [];
+  const store = sessionStoreAdapter(
+    { workerPlane: { url: "http://worker-plane.test:3001" } },
+    "chgs_b",
+    {
+      request: async (_task, _bearer, _path, init) => {
+        posted.push(init.body);
+        return { status: 204 };
+      },
+    },
+  );
+  const text = "x".repeat(
+    chuggyToolAnswerBytesMax - chuggyToolAnswerBytes("HTTP 200\n"),
+  );
+
+  await store.append({ sessionId: uuid }, [
+    {
+      parentUuid: uuid,
+      isSidechain: false,
+      userType: "external",
+      cwd: "/workspace/repository/checkout",
+      sessionId: uuid,
+      version: "2.0.44",
+      gitBranch: "main",
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          {
+            tool_use_id: `toolu_01${"a".repeat(22)}`,
+            type: "tool_result",
+            content: [{ type: "text", text: `HTTP 200\n${text}` }],
+          },
+        ],
+      },
+      uuid,
+      timestamp: "2026-09-04T12:00:00.000Z",
+    },
+  ]);
+
+  assert.equal(posted.length, 1);
+  assert.ok(
+    posted[0].length <= sessionStoreBatchBytesMax,
+    `the entry posted ${String(posted[0].length)} bytes and one batch holds ${String(sessionStoreBatchBytesMax)}`,
+  );
 });
 
 /** One tool's route, driven past the unserved table so every path is covered. */
