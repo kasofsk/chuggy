@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { URL } from "node:url";
 
@@ -9,11 +11,16 @@ import { z } from "zod";
 import {
   allChuggyTools,
   chuggyOperationIdentity,
+  chuggyToolAnswerBytes,
+  chuggyToolAnswerBytesMax,
+  chuggyToolAnswerCopiesInEntry,
+  chuggyToolAnswerEnvelopeBytesMax,
   chuggyProjectTools,
   chuggyToolContext,
   chuggyToolDefinitions,
   chuggyToolHandler,
   chuggyToolPrefix,
+  chuggyToolResponseBytesMax,
   chuggyToolServer,
   chuggyToolsNotYetServed,
   chuggyToolTimeoutMs,
@@ -22,6 +29,10 @@ import {
   sessionCapabilityTools,
 } from "./chuggyTools.mjs";
 import { leadDecisionStaging } from "./leadDecision.mjs";
+import {
+  sessionStoreAdapter,
+  sessionStoreBatchBytesMax,
+} from "./sessionStore.mjs";
 
 const task = {
   tenant: "vteng",
@@ -124,6 +135,31 @@ test("the server the runtime is handed carries exactly the tools the roster admi
     assert.ok(description.length > 0, "a registered tool describes nothing");
 });
 
+/**
+ * The decision channel through the server's own registration, which is where a
+ * staged answer meets the protocol. The tools' own suite holds each answer's
+ * text; this holds the bridge that carries it.
+ */
+test("a decision tool the server registers answers a well-formed result", async () => {
+  const staging = leadDecisionStaging();
+  staging.reset(
+    JSON.stringify({ candidates: [{ ticket: 4, ticketVersion: 2 }] }),
+  );
+  const { api, call } = toolsOf({ staging });
+
+  const answer = await call("dispatch", {
+    ticket: 4,
+    expectedTicketVersion: 2,
+  });
+
+  assert.deepEqual(answer.content, [
+    { type: "text", text: "dispatch staged for ticket 4" },
+  ]);
+  assert.ok(answer.isError === undefined);
+  assert.equal(api.calls.length, 0, "a decision tool wrote something");
+  assert.equal(staging.document().dispatches.length, 1);
+});
+
 test("every read answers one page, relays the route's own body and names its cursor", async () => {
   const body = JSON.stringify({ tickets: [], nextAfter: 41 });
   const { api, call } = toolsOf({}, () => ({ status: 200, body }));
@@ -140,7 +176,11 @@ test("every read answers one page, relays the route's own body and names its cur
   assert.ok(answer.isError === undefined);
 });
 
-test("a read cut at the bound says so rather than answering a broken body", async () => {
+test("a page larger than the pod draws is refused rather than answered cut", async () => {
+  assert.ok(
+    chuggyToolAnswerBytesMax < chuggyToolResponseBytesMax,
+    "a body cut at the draw bound is over the answer bound, which is what refuses it",
+  );
   const { call } = toolsOf({}, () => ({
     status: 200,
     body: "x".repeat(70_000),
@@ -148,7 +188,219 @@ test("a read cut at the bound says so rather than answering a broken body", asyn
 
   const answer = await call("read_ticket", { ticket: 7 });
 
-  assert.match(textOf(answer), /\[cut at 65536 bytes\]$/);
+  assert.equal(answer.isError, true);
+  assert.match(textOf(answer), /larger than the/);
+  assert.ok(!textOf(answer).includes("xxx"), "a cut body was answered anyway");
+});
+
+/**
+ * What the refusal tells the model to do, which is nothing it can do for a tool
+ * with no page bound and nothing again for one already asking for a single item.
+ * A remedy the caller has already taken is a loop.
+ */
+test("the refusal names what this caller can lower, and says so where there is nothing", async () => {
+  const body = "x".repeat(70_000);
+  for (const [name, args, remedy] of [
+    ["list_executions", { limit: 100 }, /ask again with a smaller limit\.$/],
+    [
+      "read_thread",
+      { session: "t-1", limit: 1 },
+      /read_thread is already asking for one; move past it with before\.$/,
+    ],
+    [
+      "read_execution",
+      { execution: "e-1" },
+      /read_execution takes no limit, so this one cannot be answered\.$/,
+    ],
+    [
+      "read_run_transcript",
+      { execution: "e-1", attempt: "a-1" },
+      /read_run_transcript takes no limit, so this one cannot be answered\.$/,
+    ],
+  ]) {
+    const answer = await routeOf(
+      name,
+      args,
+      apiOf(() => ({ status: 200, body })),
+    );
+
+    assert.equal(answer.isError, true, name);
+    assert.match(textOf(answer), remedy, name);
+  }
+});
+
+/**
+ * The bound at its own edge, over the relays that answer a route's body. The
+ * weight is the escaped one because that is what the entry's line is charged,
+ * and a page under the wire bound can be over this one.
+ */
+test("an answer at the bound is served and one over it never reaches the model", async () => {
+  const head = "HTTP 200\n";
+  const room = chuggyToolAnswerBytesMax - chuggyToolAnswerBytes(head);
+  for (const [name, args] of [
+    ["list_executions", { limit: 100 }],
+    ["read_thread", { session: "t-1", limit: 32 }],
+  ]) {
+    const at = await routeOf(
+      name,
+      args,
+      apiOf(() => ({ status: 200, body: "x".repeat(room) })),
+    );
+    const over = await routeOf(
+      name,
+      args,
+      apiOf(() => ({ status: 200, body: "x".repeat(room + 1) })),
+    );
+
+    assert.ok(at.isError === undefined, name);
+    assert.equal(
+      chuggyToolAnswerBytes(textOf(at)),
+      chuggyToolAnswerBytesMax,
+      name,
+    );
+    assert.equal(over.isError, true, name);
+    assert.match(textOf(over), /larger than the/, name);
+    assert.ok(!textOf(over).includes("xxx"), name);
+  }
+});
+
+/**
+ * The tool #569 was filed on, against a batch of the size the plane refused
+ * that session for. The route pages by store batch and a batch is bounded by
+ * the store's own line bound, so the answer has to be cut below the page.
+ */
+test("a thread transcript of one full batch is read whole, page by page, under the bound", async () => {
+  const entries = Array.from({ length: 89 }, (_, index) => ({
+    uuid: `u-${String(index)}`,
+    type: "assistant",
+    message: { role: "assistant", content: "x".repeat(700) },
+  }));
+  const body = JSON.stringify({
+    stream: "t-1",
+    entries,
+    held: ["u-1"],
+    elided: 0,
+    truncated: false,
+  });
+  assert.ok(
+    chuggyToolAnswerBytes(body) > chuggyToolAnswerBytesMax,
+    "the batch under test is smaller than one answer",
+  );
+  const { api, call } = toolsOf({}, () => ({ status: 200, body }));
+  const read = [];
+  let cursor = {};
+
+  for (let page = 0; page < 64; page += 1) {
+    const answer = await call("read_thread_transcript", {
+      session: "t-1",
+      ...cursor,
+    });
+
+    assert.ok(answer.isError === undefined, `page ${String(page)} was refused`);
+    assert.ok(
+      chuggyToolAnswerBytes(textOf(answer)) <= chuggyToolAnswerBytesMax,
+      `page ${String(page)} is over the bound`,
+    );
+    const given = JSON.parse(textOf(answer));
+    read.push(...given.entries.map(({ uuid }) => uuid));
+    if (given.next === undefined) break;
+    cursor = given.next;
+  }
+
+  assert.deepEqual(
+    read,
+    entries.map(({ uuid }) => uuid),
+    "the transcript was not read whole",
+  );
+  assert.ok(api.calls.length > 1, "one answer carried a whole batch");
+  assert.ok(
+    api.calls.every(({ path }) => path.includes("limit=1")),
+    "a transcript read asked for more than the batch it cuts from",
+  );
+});
+
+test("a raise too large to store is refused like any other answer", async () => {
+  const huge = "x".repeat(chuggyToolAnswerBytesMax);
+  const api = {
+    request: async () => {
+      throw new Error(huge);
+    },
+  };
+
+  const answer = await routeOf("read_ticket", { ticket: 7 }, api);
+
+  assert.equal(answer.isError, true);
+  assert.ok(!textOf(answer).includes("xxx"), "the raise was answered whole");
+  assert.match(textOf(answer), /larger than the/);
+});
+
+/**
+ * The entry a tool answer becomes, captured off a transcript the pinned runtime
+ * wrote rather than composed here. An entry this suite composed would hold the
+ * shape this suite believes in, which is what the bound is derived from.
+ */
+function capturedEntry() {
+  return JSON.parse(
+    readFileSync(new URL("./toolAnswerEntry.fixture.json", import.meta.url)),
+  );
+}
+
+test("the captured entry carries one answer as many times as the bound divides by", () => {
+  const entry = capturedEntry();
+  const inMessage = entry.message.content[0].content[0].text;
+
+  assert.equal(entry.toolUseResult[0].text, inMessage, "the copies differ");
+  assert.equal(
+    JSON.stringify(entry).split(JSON.stringify(inMessage).slice(1, -1)).length -
+      1,
+    chuggyToolAnswerCopiesInEntry,
+    "the entry carries the answer a different number of times than the bound divides by",
+  );
+});
+
+test("the reserve is wider than the captured envelope by more than the whole of it", () => {
+  const entry = capturedEntry();
+  entry.message.content[0].content[0].text = "";
+  entry.toolUseResult[0].text = "";
+
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(entry)) * 2 <=
+      chuggyToolAnswerEnvelopeBytesMax,
+    `the captured envelope weighs ${String(Buffer.byteLength(JSON.stringify(entry)))} bytes against a reserve of ${String(chuggyToolAnswerEnvelopeBytesMax)}`,
+  );
+});
+
+/**
+ * The tool's bound held against the store's, through that entry. The answer at
+ * the bound goes into both copies, because that is where the runtime puts it.
+ */
+test("a maximal answer inside the captured entry is one batch the store can post", async () => {
+  const posted = [];
+  const store = sessionStoreAdapter(
+    { workerPlane: { url: "http://worker-plane.test:3001" } },
+    "chgs_b",
+    {
+      request: async (_task, _bearer, _path, init) => {
+        posted.push(init.body);
+        return { status: 204 };
+      },
+    },
+  );
+  const entry = capturedEntry();
+  const text = `HTTP 200\n${"x".repeat(
+    chuggyToolAnswerBytesMax - chuggyToolAnswerBytes("HTTP 200\n"),
+  )}`;
+  entry.message.content[0].content[0].text = text;
+  entry.toolUseResult[0].text = text;
+
+  await store.append({ sessionId: entry.sessionId }, [entry]);
+
+  assert.equal(chuggyToolAnswerBytes(text), chuggyToolAnswerBytesMax);
+  assert.equal(posted.length, 1);
+  assert.ok(
+    posted[0].length <= sessionStoreBatchBytesMax,
+    `the entry posted ${String(posted[0].length)} bytes and one batch holds ${String(sessionStoreBatchBytesMax)}`,
+  );
 });
 
 /** One tool's route, driven past the unserved table so every path is covered. */
@@ -182,8 +434,8 @@ test("each read reaches the route its roster names, and only it", async () => {
     [["read_ticket_refusals", { ticket: 9 }], "/tickets/9/agentic-refusals"],
     [["read_lead", {}], "/lead"],
     [
-      ["read_lead_transcript", { after: 2, limit: 8 }],
-      "/lead/transcript?after=2&limit=8",
+      ["read_lead_transcript", { after: 2, entry: 3 }],
+      "/lead/transcript?after=2&limit=1",
     ],
     [
       ["list_executions", { ticket: 3, state: ["Running"] }],
@@ -203,8 +455,8 @@ test("each read reaches the route its roster names, and only it", async () => {
       "/threads/thread-1?before=7&limit=32",
     ],
     [
-      ["read_thread_transcript", { session: "thread-1", after: 2, limit: 8 }],
-      "/threads/thread-1/transcript?after=2&limit=8",
+      ["read_thread_transcript", { session: "thread-1", after: 2, entry: 3 }],
+      "/threads/thread-1/transcript?after=2&limit=1",
     ],
   ];
   for (const [[name, args], suffix] of cases) {
@@ -280,8 +532,7 @@ test("a thread read past its bound is refused before it asks, and within it asks
     ["read_thread", { session: "t-1", limit: 0 }],
     ["read_thread", { session: "t-1", limit: 33 }],
     ["read_thread", { session: "t-1", before: 0 }],
-    ["read_thread_transcript", { session: "t-1", limit: 0 }],
-    ["read_thread_transcript", { session: "t-1", limit: 9 }],
+    ["read_thread_transcript", { session: "t-1", entry: -1 }],
     ["read_thread_transcript", { session: "" }],
   ]) {
     const api = apiOf();
@@ -293,9 +544,9 @@ test("a thread read past its bound is refused before it asks, and within it asks
   }
   const api = apiOf();
 
-  await routeOf("read_thread_transcript", { session: "t-1", limit: 8 }, api);
+  await routeOf("read_thread_transcript", { session: "t-1", entry: 0 }, api);
 
-  assert.equal(api.calls.length, 1, "a transcript at its bound was refused");
+  assert.equal(api.calls.length, 1, "a transcript at its cursor was refused");
 });
 
 test("the project inventory is read outside the project's own path", async () => {
@@ -314,7 +565,7 @@ test("an argument past its bound is refused before any call is made", async () =
     ["list_tickets", { limit: 101 }],
     ["read_decision_log", { limit: 51 }],
     ["read_refusals", { limit: 33 }],
-    ["read_lead_transcript", { limit: 9 }],
+    ["read_lead_transcript", { after: -1 }],
     ["read_execution", { execution: "" }],
   ]) {
     const answer = await call(name, args);

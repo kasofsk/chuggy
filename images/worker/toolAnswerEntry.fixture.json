@@ -1,0 +1,36 @@
+{
+  "parentUuid": "0d58b3dd-4b2f-42b9-9af5-bc1c23f8e254",
+  "isSidechain": false,
+  "promptId": "552ae3c4-7371-4cb0-9aed-6cba63ac4637",
+  "type": "user",
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "tool_use_id": "toolu_019XZRLcSZRv7FHunqneCm3d",
+        "type": "tool_result",
+        "content": [
+          {
+            "type": "text",
+            "text": "HTTP 200\n{\"ticket\":4,\"ticketVersion\":2,\"phase\":\"Released\",\"brief\":{\"title\":\"Wire the lead's tools\"}}"
+          }
+        ]
+      }
+    ]
+  },
+  "uuid": "8becba21-e445-496f-bf38-c1fc7fb11506",
+  "timestamp": "2026-09-02T22:18:44.130Z",
+  "toolUseResult": [
+    {
+      "type": "text",
+      "text": "HTTP 200\n{\"ticket\":4,\"ticketVersion\":2,\"phase\":\"Released\",\"brief\":{\"title\":\"Wire the lead's tools\"}}"
+    }
+  ],
+  "sourceToolAssistantUUID": "0d58b3dd-4b2f-42b9-9af5-bc1c23f8e254",
+  "userType": "external",
+  "entrypoint": "sdk-cli",
+  "cwd": "/tmp/claude-1000/-home-geoff-claude-chuggy/f088112d-4cd9-4920-b4d5-04cbf0e56c11/scratchpad/effort/slice3-unit-3/sdk-run",
+  "sessionId": "fecadcca-7f72-478c-ab53-561e3a17110b",
+  "version": "2.1.258",
+  "gitBranch": "HEAD"
+}

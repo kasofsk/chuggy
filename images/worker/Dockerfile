@@ -81,6 +81,7 @@ COPY images/worker/snapshot.mjs /usr/local/lib/chuggy/snapshot.mjs
 COPY images/worker/source.mjs /usr/local/lib/chuggy/source.mjs
 COPY images/worker/toolListing.mjs /usr/local/lib/chuggy/toolListing.mjs
 COPY images/worker/toolProbe.mjs /usr/local/lib/chuggy/toolProbe.mjs
+COPY images/worker/transcriptPage.mjs /usr/local/lib/chuggy/transcriptPage.mjs
 COPY images/worker/transport.mjs /usr/local/lib/chuggy/transport.mjs
 COPY --chmod=0555 images/worker/git-askpass.sh /usr/local/lib/chuggy/git-askpass.sh
 
