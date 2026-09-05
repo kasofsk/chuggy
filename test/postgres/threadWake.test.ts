@@ -64,6 +64,7 @@ import {
   threadRigProject,
   threadRigRevoke,
   threadRigThread,
+  threadRigTicketPhase,
   threadRigTurnId,
   type ThreadRig,
   type ThreadRigMember,
@@ -213,6 +214,37 @@ test("a refusal against a member's own ticket becomes one Wake turn, once", asyn
     query: { limit: threadTurnsAnsweredMax },
   });
   assert.equal(settled?.turns.length, 1, "a second pass wrote a second turn");
+});
+
+/**
+ * The turn identity is derived from the sequence, so two changes on one ticket
+ * are two turns however they read. What each of them says is what
+ * kasofsk/chuggy#542 was about, and both are in one window here.
+ */
+test("a ticket that moves twice wakes a thread with what each move was", async () => {
+  const partition = await threadRigProject(rig, "wakemoves");
+  const member = await threadRigMember(rig, partition, "wakemoves");
+  const thread = await threadRigThread(rig, partition, member);
+  const revision = await configuration(partition);
+  const ticket = await draft(partition, revision, member);
+  await fromTheHead();
+  await threadRigTicketPhase(rig, partition, ticket, "Escalated");
+  await threadRigTicketPhase(rig, partition, ticket, "Done");
+
+  const report = await threadWakePass(service(threadWakesPerPassMax));
+  assert.equal(report.read, 2);
+  assert.equal(report.woken, 2);
+
+  const standing = await rig.threads.standing({
+    partition,
+    session: thread.session,
+    query: { limit: threadTurnsAnsweredMax },
+  });
+  assert.deepEqual(
+    standing?.turns.map((turn) => parseThreadWake(turn.input).wake),
+    ["TicketEscalated", "TicketCompleted"],
+    "both wakes name the move the ticket made last, so a mailbox says one thing twice",
+  );
 });
 
 test("a pass whose cursor was not moved re-offers the same turn and is told so", async () => {

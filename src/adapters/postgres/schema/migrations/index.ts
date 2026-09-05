@@ -68,6 +68,7 @@ import { migration067 } from "./067-thread-wake-start.ts";
 import { migration068 } from "./068-project-dispatch-mode.ts";
 import { migration069 } from "./069-store-rows-name-their-writer.ts";
 import { migration070 } from "./070-lead-token-budget.ts";
+import { migration071 } from "./071-change-row-reason.ts";
 import type { Migration } from "../shared.ts";
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -142,4 +143,5 @@ export const migrations: readonly Migration[] = [
   migration068,
   migration069,
   migration070,
+  migration071,
 ];

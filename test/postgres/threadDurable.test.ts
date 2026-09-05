@@ -96,6 +96,7 @@ import {
   threadRigSiblingProject,
   threadRigSlot,
   threadRigThread,
+  threadRigTicketPhase,
   threadRigTurnId,
   type ThreadRig,
   type ThreadRigMember,
@@ -1038,25 +1039,13 @@ async function wakeRefusals(
   });
 }
 
-/**
- * A ticket standing in one phase, with the change that says so. The projection
- * is written straight because how a phase is reached is the actor's business
- * and this suite is about the join that reads it.
- */
-async function wakeTicketPhase(
+/** One ticket standing in one phase, with the change that says so. */
+function wakeTicketPhase(
   partition: Partition,
   ticket: TicketId,
   phase: string,
 ): Promise<void> {
-  await rig.sessions.harness.query(
-    `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
-     VALUES ($1,$2,$3,$4,1)`,
-    [partition.tenant, partition.project, ticket, phase],
-  );
-  await rig.sessions.harness.query(
-    `SELECT append_project_change($1,$2,'Ticket',$3)`,
-    [partition.tenant, partition.project, String(ticket)],
-  );
+  return threadRigTicketPhase(rig, partition, ticket, phase);
 }
 
 /**
@@ -1151,6 +1140,101 @@ test("every reason the roster names is a reason the join derives", async () => {
       ),
       `${reason} names ticket ${String(ticket)}, which is a ticket it is about`,
     );
+});
+
+/**
+ * A ticket's changes are events, and a later one may not rewrite what an
+ * earlier one meant. Every arm of the derivation had that defect, so each has a
+ * case (kasofsk/chuggy#542).
+ */
+test("a ticket's earlier moves keep their own reasons after it is revoked", async () => {
+  const partition = await project("ticketreasons");
+  const after = await changeLogHead();
+  const member = await threadRigMember(rig, partition, "ticketreasons");
+  await threadRigThread(rig, partition, member);
+  const revision = await threadConfiguration(partition);
+  const ticket = await threadDraft(partition, revision, member);
+
+  for (const phase of ["Escalated", "Done", "Revoked"])
+    await wakeTicketPhase(partition, ticket, phase);
+
+  const mine = (
+    await rig.wakes.candidates(after, threadWakesPerPassMax)
+  ).filter((candidate) => candidate.partition.project === partition.project);
+  assert.deepEqual(
+    mine.map((candidate) => candidate.reason),
+    ["TicketEscalated", "TicketCompleted", "TicketAbandoned"],
+    "a revoked ticket's whole history reads as the revoke, so the reason is still the projection's",
+  );
+});
+
+test("a deleted draft's earlier changes are not deletions", async () => {
+  const partition = await project("draftreasons");
+  const after = await changeLogHead();
+  const member = await threadRigMember(rig, partition, "draftreasons");
+  await threadRigThread(rig, partition, member);
+  const revision = await threadConfiguration(partition);
+  const ticket = await threadDraft(partition, revision, member);
+
+  const revised = await rig.sessions.harness.authoring.reviseDraft({
+    partition,
+    authority: member.authority,
+    ticket,
+    expectedVersion: 1,
+    configurationRevision: revision,
+    authoring: plainAuthoring,
+    brief: postgresHarnessBrief,
+  });
+  if (revised.revised !== "Revised")
+    throw new Error(`thread durable: revising answered ${revised.revised}`);
+  const gone = await rig.sessions.harness.authoring.deleteDraft({
+    partition,
+    authority: member.authority,
+    ticket,
+    expectedVersion: 2,
+  });
+  if (gone.deleted !== "Deleted")
+    throw new Error(`thread durable: the draft answered ${gone.deleted}`);
+
+  const mine = (
+    await rig.wakes.candidates(after, threadWakesPerPassMax)
+  ).filter((candidate) => candidate.partition.project === partition.project);
+  assert.deepEqual(
+    mine.map((candidate) => candidate.reason),
+    ["DraftDeleted"],
+    "the changes that authored the draft read as its deletion",
+  );
+});
+
+test("a lift does not turn the refusal before it into a second lift", async () => {
+  const partition = await project("refusalreasons");
+  const after = await changeLogHead();
+  const member = await threadRigMember(rig, partition, "refusalreasons");
+  await threadRigThread(rig, partition, member);
+  const revision = await threadConfiguration(partition);
+  const ticket = await threadDraft(partition, revision, member);
+
+  await rig.writes.record({
+    partition,
+    decision: await leadRigDecision(rig, partition, "refusalreasons-refused"),
+    refusals: [{ ticket, ticketVersion: 1, reason: "not yet" }],
+    lifts: [],
+  });
+  await rig.writes.record({
+    partition,
+    decision: await leadRigDecision(rig, partition, "refusalreasons-lifted"),
+    refusals: [],
+    lifts: [{ ticket }],
+  });
+
+  const mine = (
+    await rig.wakes.candidates(after, threadWakesPerPassMax)
+  ).filter((candidate) => candidate.partition.project === partition.project);
+  assert.deepEqual(
+    mine.map((candidate) => candidate.reason),
+    ["TicketRefused", "RefusalLifted"],
+    "the refusal reads as the lift that came after it",
+  );
 });
 
 test("a wake follows whoever wrote the ticket, once, and nobody else", async () => {

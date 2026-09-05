@@ -454,6 +454,55 @@ test("the change log is written through its own boundary and read by the API alo
   );
 });
 
+/** Every runtime credential this installation deploys, none of which owns the boundary. */
+const changeLogRuntimeRoles = [
+  apiRole,
+  schedulerRole,
+  workerPlaneRole,
+  ticketServiceRole,
+  finalizerRole,
+  selectorServiceRole,
+  configurationImporterRole,
+];
+
+/** Which of those roles may execute one door, read off the catalogue by signature. */
+async function changeLogExecutors(
+  signature: string,
+): Promise<readonly string[]> {
+  const held = (await harness.query(
+    `SELECT r.rolname FROM unnest($1::text[]) AS r(rolname)
+      WHERE has_function_privilege(r.rolname,$2,'EXECUTE')
+      ORDER BY r.rolname`,
+    [changeLogRuntimeRoles, signature],
+  )) as readonly { rolname: string }[];
+  return held.map((row) => row.rolname);
+}
+
+/**
+ * 071 splits the append in two so that what a change row SAYS is the boundary's
+ * to decide: the reading door names a reason the resource's own state supports,
+ * and the reasoned door would let its caller wake a member's thread with a
+ * sentence no state supports at all. `has_function_privilege` answers for a
+ * grant to PUBLIC as well as to the role, so both ways of widening it are read
+ * here.
+ */
+test("no runtime role may name the reason a change row wakes a thread with", async () => {
+  assert.deepEqual(
+    await changeLogExecutors(
+      `${projectChangeAppendFunction}(text,text,text,text,text)`,
+    ),
+    [],
+    "a runtime credential may write a wake reason of its own choosing",
+  );
+  assert.deepEqual(
+    await changeLogExecutors(
+      `${projectChangeAppendFunction}(text,text,text,text)`,
+    ),
+    [schedulerRole, ticketServiceRole],
+    "the sweep disagrees with 038's and 043's own grants, so an empty roster would have read as a clean negative space",
+  );
+});
+
 test("the API read credential cannot inspect private operation columns", async () => {
   for (const column of [
     "command",
