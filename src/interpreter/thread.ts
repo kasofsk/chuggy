@@ -15,6 +15,14 @@
  * point: the roster below is the weaker of the two, and a control described as
  * stronger than it is, is worse than none.
  *
+ * THE DRAFT IS THE THREAD'S WORK, AND THE TREE IS READ, NOT CHANGED. The
+ * runtime a thread runs on presents it as a coding agent, in a checkout where
+ * the project bound one, before its objectives are read, so the objectives
+ * state the purpose before the rules: a request for a change is a request for
+ * a draft, and the shell is for reading the tree well enough to draft against
+ * it. No roster enforces that either — a shell writes — so it is prose,
+ * written once, in one place.
+ *
  * A WAKE IS A NOTICE, NOT AN INSTRUCTION. A woken thread reports what happened
  * to its owner and stops. No roster can enforce that, because the same tools are
  * held on a message turn, so it is written the only two ways prose can be: the
@@ -39,8 +47,8 @@ import type { Partition } from "./projectStore.ts";
 /**
  * The roster a thread is opened with when nothing has configured one, generous
  * because a thread exists to find out what is going on — reading the tree,
- * running things in it, and authoring the drafts its owner asks for. It is
- * generous against the pod alone, for the reason the header gives.
+ * running what it takes to read it, and authoring the drafts its owner asks
+ * for. It is generous against the pod alone, for the reason the header gives.
  */
 export const threadCapabilitiesDefault = [
   "RepositoryRead",
@@ -195,6 +203,17 @@ export function parseThreadWake(text: string): ThreadWakeDocument {
   };
 }
 
+/**
+ * What a thread is for, written once because the runtime it runs on tells it
+ * something else first: the preset it is opened with is a coding agent's, a
+ * checkout where the project bound one is its working directory, and that
+ * tree's own instructions load with it, so a request for a change reads as a
+ * task unless the objectives say otherwise. They say the task is the draft,
+ * and the checkout is what makes the draft accurate.
+ */
+export const threadPurposeStanding =
+  "Your job is to turn what your owner asks for into tickets, and nothing else. A request for a change is a request for a draft: file it through the draft tools this session holds, one draft per piece of work small enough for one work attempt, with a brief that names the real files and an acceptance check that can be run, and release it unless your owner asked to see it first. The lead dispatches what is released and the fabric does the work; you never do the work yourself. The checkout and the shell are for reading the tree so a draft is accurate: change nothing in it, commit nothing, and run no build or gate. A question is answered from what you read. End every turn by saying what you filed, or why you filed nothing.";
+
 /** What a thread is told about itself, beside the project's own North Star. */
 function threadObjectives(
   tenant: string,
@@ -208,6 +227,9 @@ function threadObjectives(
 You are ${owner}'s thread on ${tenant}/${project}. Every
 command you issue is recorded as their act, under their membership and through
 this session, so you may do exactly what they may do and nothing further.`,
+    `# What you are for
+
+${threadPurposeStanding}`,
     ...(northStar === undefined ? [] : [`# North Star\n\n${northStar}`]),
     `# How you act on this project
 
@@ -233,8 +255,9 @@ export const threadSystemPromptCharsMax =
 /**
  * The thread's objectives as one recorded prefix, in the order that decides
  * what a reader takes first: whose thread this is, that its acts are its
- * owner's, that it may do only what its owner may, which channel it acts
- * through, and what a wake is.
+ * owner's, that it may do only what its owner may, what it is for, the
+ * project's North Star where there is one, which channel it acts through, and
+ * what a wake is.
  */
 export function threadSystemPrompt(input: {
   readonly partition: Partition;

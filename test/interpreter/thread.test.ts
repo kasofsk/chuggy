@@ -29,6 +29,7 @@ import {
   parseThreadWake,
   threadCapabilitiesDefault,
   threadChannelStanding,
+  threadPurposeStanding,
   threadSeedingText,
   threadStanding,
   threadSystemPrompt,
@@ -176,16 +177,22 @@ test("the widest wake a change row can name fits the document bound", () => {
   }
 });
 
-test("the objectives state whose the thread is, then the two standing rules", () => {
+test("the objectives state whose the thread is, what it is for, then the two standing rules", () => {
   const prompt = threadSystemPrompt({ partition, owner: "geoff" });
 
   assert.ok(prompt.includes("geoff"));
   assert.ok(prompt.includes("acme/atlas"));
+  assert.ok(prompt.includes(threadPurposeStanding));
   assert.ok(prompt.includes(threadChannelStanding));
   assert.ok(prompt.includes(threadWakeStanding));
   assert.ok(
-    prompt.indexOf("geoff") < prompt.indexOf(threadChannelStanding),
-    "the owner is named before the rules",
+    prompt.indexOf("geoff") < prompt.indexOf(threadPurposeStanding),
+    "the owner is named before the purpose",
+  );
+  assert.ok(
+    prompt.indexOf(threadPurposeStanding) <
+      prompt.indexOf(threadChannelStanding),
+    "the purpose stands before the rules",
   );
   assert.ok(
     prompt.indexOf(threadChannelStanding) < prompt.indexOf(threadWakeStanding),
@@ -205,6 +212,19 @@ test("the wake document and the objectives carry one sentence and not two", () =
     threadSystemPrompt({ partition, owner: "geoff" }).includes(carried),
     "the prompt does not carry the sentence the wake does",
   );
+});
+
+/**
+ * The purpose is enforceable nowhere: the pod holds a shell, and a shell
+ * writes. What can be checked is that the sentence names the draft as the
+ * work, the tree as read and not changed, and the filing as how a turn ends.
+ */
+test("the purpose says the draft is the job and the checkout is for reading", () => {
+  assert.match(threadPurposeStanding, /into tickets/u);
+  assert.match(threadPurposeStanding, /draft tools/u);
+  assert.match(threadPurposeStanding, /never do the work yourself/u);
+  assert.match(threadPurposeStanding, /change nothing/u);
+  assert.match(threadPurposeStanding, /what you filed/u);
 });
 
 test("a North Star is named where there is one and no heading where there is none", () => {
