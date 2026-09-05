@@ -2792,14 +2792,14 @@ test("the session migrations compose into the schema a fresh generation renders"
 });
 
 /**
- * The versions no declared migration holds, which is the sibling this image is
- * numbered around until that branch merges. It is written down rather than
+ * The versions no declared migration holds, and the chain currently has none:
+ * no version below the latest is unheld. It is written down rather than
  * computed so that a hole nobody meant is a hole nobody can leave —
  * renumbering a migration upward opens one this list does not name, and a
  * branch numbered around a sibling still on its own branch names it here until
  * that sibling merges.
  */
-const declaredVersionsAwaited: readonly number[] = [71];
+const declaredVersionsAwaited: readonly number[] = [];
 
 /**
  * The ledger a whole chain leaves is exactly the versions this image declares,
@@ -3600,12 +3600,12 @@ test("migration 70 mints nothing for an installation standing at the floor", asy
 
 /**
  * What a migrated installation's own change rows say. A reason backfilled from
- * the present state is the reading 072 removes, written down permanently, so a
+ * the present state is the reading 071 removes, written down permanently, so a
  * row appended before the column existed carries none and wakes nobody.
  */
-test("migration 72 leaves the rows an installation already appended unreasoned", async () => {
+test("migration 71 leaves the rows an installation already appended unreasoned", async () => {
   await migrationDatabase("change_row_reason", async (subject) => {
-    await migrationSeedApplied(subject, 72);
+    await migrationSeedApplied(subject, 71);
     const store = postgresProjectStore(subject);
     await postgresHarnessEpoch(store);
     const partition = await postgresHarnessProject(store, "change-reason");
@@ -3620,7 +3620,7 @@ test("migration 72 leaves the rows an installation already appended unreasoned",
     );
     const earlier = before.rows[0]?.sequence;
 
-    await applyMigration(subject, 72);
+    await applyMigration(subject, 71);
 
     const after = await subject.query<{ sequence: string }>(
       `SELECT ${projectChangeAppendFunction}($1,$2,'Ticket','1')::text AS sequence`,

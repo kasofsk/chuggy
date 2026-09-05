@@ -479,7 +479,7 @@ async function changeLogExecutors(
 }
 
 /**
- * 072 splits the append in two so that what a change row SAYS is the boundary's
+ * 071 splits the append in two so that what a change row SAYS is the boundary's
  * to decide: the reading door names a reason the resource's own state supports,
  * and the reasoned door would let its caller wake a member's thread with a
  * sentence no state supports at all. `has_function_privilege` answers for a

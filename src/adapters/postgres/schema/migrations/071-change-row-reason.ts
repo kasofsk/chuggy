@@ -226,8 +226,8 @@ const candidatesReadTheRecord = [
 ];
 
 /** A change says what happened when it happened, and a sequence means what it meant. */
-export const migration072: Migration = {
-  version: 72,
+export const migration071: Migration = {
+  version: 71,
   name: "a change row records the reason it wakes a thread with",
   statements: [
     ...reasonColumn,
