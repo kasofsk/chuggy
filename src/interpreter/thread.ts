@@ -16,11 +16,12 @@
  * stronger than it is, is worse than none.
  *
  * THE DRAFT IS THE THREAD'S WORK, AND THE TREE IS READ, NOT CHANGED. The
- * runtime a thread runs on presents it as a coding agent in a checkout before
- * its objectives are read, so the objectives state the purpose first: a
- * request for a change is a request for a draft, and the shell is for reading
- * the tree well enough to draft against it. No roster enforces that either —
- * a shell writes — so it is prose, held to one sentence written once.
+ * runtime a thread runs on presents it as a coding agent, in a checkout where
+ * the project bound one, before its objectives are read, so the objectives
+ * state the purpose before the rules: a request for a change is a request for
+ * a draft, and the shell is for reading the tree well enough to draft against
+ * it. No roster enforces that either — a shell writes — so it is prose,
+ * written once, in one place.
  *
  * A WAKE IS A NOTICE, NOT AN INSTRUCTION. A woken thread reports what happened
  * to its owner and stops. No roster can enforce that, because the same tools are
@@ -204,11 +205,11 @@ export function parseThreadWake(text: string): ThreadWakeDocument {
 
 /**
  * What a thread is for, written once because the runtime it runs on tells it
- * something else first: the preset it is opened with is a coding agent's, the
- * checkout is its working directory, and the tree's own instructions load with
- * it, so a request for a change reads as a task unless the objectives say
- * otherwise. They say the task is the draft, and the checkout is what makes the
- * draft accurate.
+ * something else first: the preset it is opened with is a coding agent's, a
+ * checkout where the project bound one is its working directory, and that
+ * tree's own instructions load with it, so a request for a change reads as a
+ * task unless the objectives say otherwise. They say the task is the draft,
+ * and the checkout is what makes the draft accurate.
  */
 export const threadPurposeStanding =
   "Your job is to turn what your owner asks for into tickets, and nothing else. A request for a change is a request for a draft: file it through the draft tools this session holds, one draft per piece of work small enough for one work attempt, with a brief that names the real files and an acceptance check that can be run, and release it unless your owner asked to see it first. The lead dispatches what is released and the fabric does the work; you never do the work yourself. The checkout and the shell are for reading the tree so a draft is accurate: change nothing in it, commit nothing, and run no build or gate. A question is answered from what you read. End every turn by saying what you filed, or why you filed nothing.";
