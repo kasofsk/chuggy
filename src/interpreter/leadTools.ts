@@ -161,9 +161,11 @@ export function chuggyToolNames(
 }
 
 /**
- * What a lead is opened holding: not `RunCommands`, because running the tree's
- * own gates is what a thread is for, and not `RepositoryWrite`, because a lead
- * that edited its checkout would be writing to a copy nothing reads.
+ * What a lead is opened holding: not `RunCommands`, because a lead judges a
+ * ticket from the view it is given and the tree it can read, and the gates
+ * that decide a ticket are the fabric's to run; and not `RepositoryWrite`,
+ * because a lead that edited its checkout would be writing to a copy nothing
+ * reads.
  */
 export const leadSessionCapabilities = [
   "RepositoryRead",
