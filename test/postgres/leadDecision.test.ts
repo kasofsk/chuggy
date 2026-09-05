@@ -12,7 +12,6 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { postgresAgenticRefusalStanding } from "../../src/adapters/postgres/agenticRefusal.ts";
 import { leadSessionMint } from "../../src/adapters/crypto/leadSessionMint.ts";
 import { postgresLeadDecisionTail } from "../../src/adapters/postgres/leadReads.ts";
 import { postgresSelectorState } from "../../src/adapters/postgres/selector.ts";
@@ -108,7 +107,6 @@ function leadPolicy() {
   return selectorPolicyHost(
     leadSelectorPolicy(
       rig.mailbox,
-      postgresAgenticRefusalStanding(rig.selectorPool),
       postgresLeadDecisionTail(rig.selectorPool),
       leadSessionMint(),
       clock,
@@ -174,6 +172,7 @@ function observationOf(
         configurationCanonical: "{}",
       },
     ],
+    refusals: [],
     notificationCursor: cursor,
     changes: [{ ordinal: cursor, kind: "Ticket", resource: "41" }],
     operationalContext: {
@@ -418,7 +417,10 @@ test("the refusal reaches the stream and the project's standing read", async () 
     [{ kind: "AgenticRefusal", resource: "43" }],
     "the console is live for free because the ledger publishes its own kind",
   );
-  const standing = await rig.selectorStanding.standing(partition, 10);
+  const standing = await rig.selectorStanding.standingAmong(partition, [
+    asTicketId(41),
+    asTicketId(43),
+  ]);
   assert.deepEqual(
     standing.map((refusal) => [refusal.ticket, refusal.reason]),
     [[43, "waiting on 41"]],

@@ -3667,3 +3667,88 @@ test("migration 73 grants the ticket-set standing door to the selector alone", a
     await migrationLeadDoorsAreStrangers(executes, leadSelectorDoorsAdded);
   });
 });
+
+/** The same lead turn against the session door as the whole chain leaves it. */
+async function migrationPromptedLeadTurn(subject: pg.Pool): Promise<void> {
+  const store = postgresProjectStore(subject);
+  await postgresHarnessEpoch(store);
+  const partition = await postgresHarnessProject(store, "observed-refusals");
+  const values = [partition.tenant, partition.project];
+  await subject.query(
+    `SELECT open_agent_session($1,$2,'session-74','Lead','principal-74',
+       NULL,ARRAY[]::text[],'claude-code',NULL)`,
+    values,
+  );
+  await subject.query(
+    `SELECT enqueue_session_turn($1,$2,'session-74','turn-74','Observation','{}')`,
+    values,
+  );
+}
+
+/**
+ * An observation shows a refusal for every candidate its page held, so the row
+ * it is written into is wider than the one an installation already holds.
+ */
+test("migration 74 widens a turn's input check installed before a refusal per candidate", async () => {
+  await migrationDatabase("observed_refusal_input", async (subject) => {
+    await migrationSeedApplied(subject, 74);
+    const narrower = sessionTurnInputCharsMax - 1;
+    await migrationNarrowedRoster(
+      subject,
+      "session_turn",
+      "session_turn_text_is_bounded",
+      `length(input) BETWEEN 1 AND ${narrower}
+         AND coalesce(length(result), 0) <= ${sessionTurnResultCharsMax}`,
+    );
+    await migrationPromptedLeadTurn(subject);
+    const widen = `UPDATE session_turn SET input=repeat('o',$1) WHERE turn='turn-74'`;
+    await assert.rejects(
+      () => subject.query(widen, [sessionTurnInputCharsMax]),
+      /session_turn_text_is_bounded/u,
+      "a mailbox installed before the refusals grew refuses the widest observation",
+    );
+
+    await applyMigration(subject, 74);
+
+    await subject.query(widen, [sessionTurnInputCharsMax]);
+    await assert.rejects(
+      () => subject.query(widen, [sessionTurnInputCharsMax + 1]),
+      /session_turn_text_is_bounded/u,
+      "the widened check is still a check",
+    );
+  });
+});
+
+/** 070's floor is one whole legal observation, and this is what widened one. */
+test("migration 74 raises the token budget to the observation it just widened", async () => {
+  await migrationDatabase("observed_refusal_budget", async (subject) => {
+    await migrationSeedApplied(subject, 74);
+    await standingTokenBudgetStates(subject, 1);
+    const before = await standingTokenBudget(subject);
+
+    await applyMigration(subject, 74);
+
+    assert.deepEqual(await standingTokenBudget(subject), {
+      budget: String(leadObservationTokensPerDecision),
+      revision: String(Number(before.revision) + 1),
+      recorded: String(Number(before.recorded) + 1),
+    });
+  });
+});
+
+test("migration 74 moves a floor and never a budget somebody raised", async () => {
+  await migrationDatabase("observed_refusal_budget_kept", async (subject) => {
+    await migrationSeedApplied(subject, 74);
+    const wider = leadObservationTokensPerDecision + 1;
+    await standingTokenBudgetStates(subject, wider);
+    const before = await standingTokenBudget(subject);
+
+    await applyMigration(subject, 74);
+
+    assert.deepEqual(await standingTokenBudget(subject), {
+      budget: String(wider),
+      revision: before.revision,
+      recorded: before.recorded,
+    });
+  });
+});

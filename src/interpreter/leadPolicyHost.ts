@@ -49,10 +49,6 @@ import {
   type SessionTurnState,
 } from "./agentSession.ts";
 import type {
-  AgenticRefusalRead,
-  AgenticRefusalRecord,
-} from "./agenticRefusal.ts";
-import type {
   LeadMailbox,
   LeadSessionMint,
   LeadSessionStanding,
@@ -71,12 +67,11 @@ import {
   type LeadSeedingDecision,
 } from "./leadTurn.ts";
 import { asProjectId, asTenantId, type Partition } from "./projectStore.ts";
-import {
-  leadRefusalsObservedMax,
-  type SelectorInteractionRecord,
-  type SelectorPolicyExecution,
-  type SelectorPolicyRequest,
-  type SelectorTerminationResult,
+import type {
+  SelectorInteractionRecord,
+  SelectorPolicyExecution,
+  SelectorPolicyRequest,
+  SelectorTerminationResult,
 } from "./selector.ts";
 import type { SelectorPolicy } from "./selectorPolicyHost.ts";
 
@@ -297,7 +292,6 @@ function leadTurnAccounting(
 /** What one lead session's mailbox and record answer for one project. */
 interface LeadPolicyPorts {
   readonly mailbox: LeadMailbox;
-  readonly refusals: Pick<AgenticRefusalRead, "standing">;
   readonly decisions: LeadDecisionTail;
   readonly sessions: LeadSessionMint;
   readonly clock: LeadPolicyClock;
@@ -369,11 +363,10 @@ async function leadTurnOffer(
   ports: LeadPolicyPorts,
   request: SelectorPolicyRequest,
   partition: Partition,
-  standing: readonly AgenticRefusalRecord[],
   agentReference: string | undefined,
 ): Promise<SessionTurnId> {
   const observed = leadObservedRefusals(
-    standing,
+    request.observation.refusals,
     request.observation.candidates,
   );
   const input = leadTurnInput(
@@ -422,16 +415,11 @@ async function leadDecision(
 ): Promise<SelectorPolicyExecution> {
   const partition = leadPartition(request);
   const lead = await leadStanding(ports, request, partition);
-  const standing = await ports.refusals.standing(
-    partition,
-    leadRefusalsObservedMax,
-  );
   const started = await ports.clock.now();
   const turn = await leadTurnOffer(
     ports,
     request,
     partition,
-    standing,
     lead.agentReference,
   );
   const answered = await leadTurnSettled(ports, turn, pollIntervalMs, signal);
@@ -439,7 +427,7 @@ async function leadDecision(
   if (answered.state !== "Answered" || answered.result === undefined)
     throw leadTurnUnanswered(answered);
   return {
-    result: parseLeadDecision(answered.result, request.observation, standing),
+    result: parseLeadDecision(answered.result, request.observation),
     implementationRevision: ports.config.implementationRevision,
     modelRevision: answered.measured?.model ?? leadTurnUnmeasured,
     policyRevision: lead.agentReference ?? leadSessionUnbound,
@@ -453,7 +441,6 @@ async function leadDecision(
 /** A decision is a turn on the project's lead, and the turn's result is the decision. */
 export function leadSelectorPolicy(
   mailbox: LeadMailbox,
-  refusals: Pick<AgenticRefusalRead, "standing">,
   decisions: LeadDecisionTail,
   sessions: LeadSessionMint,
   clock: LeadPolicyClock,
@@ -461,7 +448,6 @@ export function leadSelectorPolicy(
 ): SelectorPolicy {
   const ports: LeadPolicyPorts = {
     mailbox,
-    refusals,
     decisions,
     sessions,
     clock,

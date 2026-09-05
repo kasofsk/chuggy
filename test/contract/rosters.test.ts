@@ -467,7 +467,7 @@ test("the attention roster is the union the selector's own state carries", () =>
 
 test("every bound the wire restates holds the value its source does", () => {
   assert.equal(sessionTurnModelCharsMax, sessionIdentityCharsMax);
-  assert.equal(leadRefusalsObservedMax, agenticRefusalsAnsweredMax);
+  assert.equal(leadRefusalsObservedMax, dispatchViewPageLimitMax);
   assert.equal(leadObservationBytesMax, sessionTurnInputCharsMax);
   assert.equal(leadDecisionBytesMax, sessionTurnResultCharsMax);
 });

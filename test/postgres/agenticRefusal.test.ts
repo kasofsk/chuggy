@@ -3,10 +3,10 @@
  * what standing is derived from, what a second recording of one decision does,
  * and what reaches the change log.
  *
- * EVERY CASE DRIVES THE DOOR ITS ROLE HOLDS. The write and the selector's
- * standing read run as the selector service; the ledger and the project's
- * standing run as the API. A case that drove either as the migration owner
- * would pass over a grant that was never made.
+ * EVERY CASE DRIVES THE DOOR ITS ROLE HOLDS. The write and the standing among a
+ * ticket set run as the selector service; the ledger and the page of the
+ * project's standing run as the API. A case that drove either as the migration
+ * owner would pass over a grant that was never made.
  */
 
 import assert from "node:assert/strict";
@@ -54,10 +54,10 @@ test("a decision's refusals become the project's standing refusals", async () =>
     "Recorded",
   );
 
-  const standing = await rig.selectorStanding.standing(
-    partition,
-    refusalsBoundless,
-  );
+  const standing = await rig.selectorStanding.standingAmong(partition, [
+    asTicketId(41),
+    asTicketId(42),
+  ]);
   assert.deepEqual(
     standing.map((refusal) => [refusal.ticket, refusal.ticketVersion]),
     [
@@ -100,7 +100,7 @@ test("a lift is a row and the ticket stops standing refused", async () => {
   );
 
   assert.deepEqual(
-    await rig.selectorStanding.standing(partition, refusalsBoundless),
+    await rig.selectorStanding.standingAmong(partition, [asTicketId(7)]),
     [],
     "the latest entry is a lift, so nothing stands refused",
   );
@@ -192,9 +192,12 @@ test("a second recording of one decision writes nothing", async () => {
     "AlreadyRecorded",
   );
   assert.deepEqual(
-    (await rig.selectorStanding.standing(partition, refusalsBoundless)).map(
-      (refusal) => refusal.ticket,
-    ),
+    (
+      await rig.selectorStanding.standingAmong(partition, [
+        asTicketId(11),
+        asTicketId(12),
+      ])
+    ).map((refusal) => refusal.ticket),
     [11],
     "the retry appended nothing, so the second ticket never stood refused",
   );
@@ -290,7 +293,7 @@ test("a decision that refused and lifted nothing writes nothing", async () => {
     "Recorded",
   );
   assert.deepEqual(
-    await rig.selectorStanding.standing(partition, refusalsBoundless),
+    await rig.selectorStanding.standingAmong(partition, [asTicketId(1)]),
     [],
     "the rows are the marker, so a decision with none leaves none",
   );
@@ -341,10 +344,7 @@ test("the standing among a ticket set answers past the page standing fills", asy
   );
   await refusalsAmongRecorded(partition, "among-tail", tickets);
 
-  const paged = await rig.selectorStanding.standing(
-    partition,
-    refusalsBoundless,
-  );
+  const paged = await rig.apiRefusals.standing(partition, refusalsBoundless);
   const tail = tickets.slice(paged.length);
   assert.ok(
     tail.length > 0,
@@ -391,6 +391,19 @@ test("the standing among a ticket set answers no lift and no ticket it was not g
     [[12, 3]],
     "the lifted ticket stands on nothing and the one never named is not answered",
   );
+});
+
+/** A page with no candidates on it names no tickets, which is a read and not a fault. */
+test("the standing among no tickets at all answers nothing and raises nothing", async () => {
+  const partition = await leadRigProject(rig, "among-none");
+  const decision = await leadRigDecision(rig, partition, "among-none");
+  await rig.writes.record({
+    partition,
+    decision,
+    refusals: [{ ticket: asTicketId(21), ticketVersion: 1, reason: "later" }],
+    lifts: [],
+  });
+  assert.deepEqual(await rig.selectorStanding.standingAmong(partition, []), []);
 });
 
 test("a standing read naming more tickets than a candidate page holds is refused", async () => {

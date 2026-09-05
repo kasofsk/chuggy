@@ -159,6 +159,7 @@ function exhaustedObservation(): SelectorObservation {
   return {
     token,
     candidates: [],
+    refusals: [],
     notificationCursor: 0,
     changes: [],
     operationalContext,
@@ -226,28 +227,36 @@ function policyHost(
 
 const movedPage = { result: "Events", cursor: 1, events: [] } as const;
 
-/**
- * A ledger standing on the refusals it is given, recording what a decision
- * enters. Its paged read answers `standingPage`, which a case shortens to stand
- * a project on more refusals than one page of them reaches.
- */
+/** A ledger standing on the refusals it is given, recording what a decision enters. */
 function refusalWrites(
   onRecord: (
     input: Parameters<AgenticRefusalWrite["record"]>[0],
   ) => void = () => undefined,
   standing: readonly SelectorStandingRefusal[] = [],
-  standingPage: readonly SelectorStandingRefusal[] = standing,
 ): AgenticRefusalWrite {
   return {
     record: (input) => {
       onRecord(input);
       return Promise.resolve("Recorded");
     },
-    standing: () => Promise.resolve(standingPage),
     standingAmong: (_partition, tickets) =>
       Promise.resolve(
         standing.filter((refusal) => tickets.includes(refusal.ticket)),
       ),
+  };
+}
+
+/** One standing refusal of the ticket and version named, as the ledger answers it. */
+function standingRefusalOf(
+  ticket: DispatchCandidate["ticket"],
+  ticketVersion: number,
+): SelectorStandingRefusal {
+  return {
+    ticket,
+    ticketVersion,
+    reason: "its dependency has not passed",
+    decision: "selector-decision-refusing",
+    recordedAt: "2026-09-02T11:00:00.000Z",
   };
 }
 
@@ -566,33 +575,40 @@ test("an observation drops a candidate refused at the version it shows", async (
   const observe = (standing: readonly SelectorStandingRefusal[]) =>
     observeAgainstRefusals(refusalWrites(() => undefined, standing));
   assert.deepEqual(
-    (await observe([{ ticket: viewCandidate.ticket, ticketVersion: 4 }]))
-      ?.candidates,
+    (await observe([standingRefusalOf(viewCandidate.ticket, 4)]))?.candidates,
     [],
   );
   assert.deepEqual(
-    (await observe([{ ticket: viewCandidate.ticket, ticketVersion: 3 }]))
-      ?.candidates,
+    (await observe([standingRefusalOf(viewCandidate.ticket, 3)]))?.candidates,
     [viewCandidate],
   );
   assert.deepEqual((await observe([]))?.candidates, [viewCandidate]);
 });
 
 /**
- * The exclusion is a question about the candidates the page holds, so a project
- * standing on more refusals than one page of its standing reaches still has
- * every answered candidate excluded (kasofsk/chuggy#574).
+ * The exclusion and the refusals the observation carries are one read, so a
+ * candidate removed from the page is one the lead is still shown and may lift
+ * (kasofsk/chuggy#574).
  */
-test("an observation excludes a refusal no page of the project's standing carries", async () => {
-  const refused = { ticket: viewCandidate.ticket, ticketVersion: 4 };
-  assert.deepEqual(
-    (
-      await observeAgainstRefusals(
-        refusalWrites(() => undefined, [refused], []),
-      )
-    )?.candidates,
-    [],
+test("an observation carries the refusals it excluded its candidates against", async () => {
+  const refused = standingRefusalOf(viewCandidate.ticket, 4);
+  const observed = await observeAgainstRefusals(
+    refusalWrites(() => undefined, [refused]),
   );
+  assert.deepEqual(observed?.candidates, []);
+  assert.deepEqual(observed?.refusals, [refused]);
+});
+
+test("an observation asks the ledger only about the tickets its page held", async () => {
+  const asked: (readonly DispatchCandidate["ticket"][])[] = [];
+  await observeAgainstRefusals({
+    record: () => Promise.resolve("Recorded"),
+    standingAmong: (_partition, tickets) => {
+      asked.push(tickets);
+      return Promise.resolve([]);
+    },
+  });
+  assert.deepEqual(asked, [[viewCandidate.ticket]]);
 });
 
 test("ambiguous proposal delivery retries through ordinary operation idempotency", async () => {
