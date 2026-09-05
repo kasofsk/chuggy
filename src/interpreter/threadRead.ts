@@ -11,13 +11,13 @@
  * caller's own mailbox and no other; the close door is `Mutate` and reaches
  * any thread, because a thread files drafts and does nothing else, so ending
  * one takes nothing its owner cannot file again from a new one. What enforces
- * the second
- * half is `enqueue_thread_message` taking no session at all and resolving one
- * from the authenticated principal: the URL's session is compared with the one
- * that resolved, AFTER the enqueue, so a mismatch is refused on what the
- * durable side actually did rather than on a row read a round trip earlier. The
- * standing read before it is a fast refusal and the seeding decision, not the
- * control — between the two, a thread can be closed and reopened.
+ * the owner-alone half is `enqueue_thread_message` taking no session at all
+ * and resolving one from the authenticated principal: the URL's session is
+ * compared with the one that resolved, AFTER the enqueue, so a mismatch is
+ * refused on what the durable side actually did rather than on a row read a
+ * round trip earlier. The standing read before it is a fast refusal and the
+ * seeding decision, not the control — between the two, a thread can be closed
+ * and another opened.
  *
  * THE MAILBOX IS PAGED AND THE LISTING IS NOT. One thread turn carries what the
  * member typed and what came back, and either alone may weigh most of a wire

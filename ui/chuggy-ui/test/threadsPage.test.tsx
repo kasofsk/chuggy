@@ -168,6 +168,19 @@ test("a member with a thread is offered no Open", async () => {
   ).toBeNull();
 });
 
+/** The falsifying twin of the case above: a member who closed their own thread
+ * has a `mine` row on the listing and no thread, and must be offered another. */
+test("a member whose only thread is closed is offered Open", async () => {
+  drawThreads(() => ({
+    threads: [
+      ...threadsBodyWithoutMine().threads,
+      threadEntry({ session: threadMineSession, mine: true, state: "Closed" }),
+    ],
+  }));
+  await mountThreads();
+  expect(screen.getByRole("button", { name: "Open" })).toBeDefined();
+});
+
 test("a member with no thread opens one and is taken to it", async () => {
   const server = drawThreads(threadsBodyWithoutMine);
   await mountThreads();

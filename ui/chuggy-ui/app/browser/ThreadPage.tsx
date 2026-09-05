@@ -3,9 +3,9 @@
  * and what its session has recorded.
  *
  * THIS PAGE RE-READS ON A `Session` FRAME AND FOLDS NOTHING. The frame is a
- * pointer: migration 059 writes a JSON object naming the session and the turn or
- * the batch that moved, and the change log answers no representation for the
- * kind. So there is no body to fold — a page that tried would keep the turn it
+ * pointer: migrations 059 and 075 write a JSON object naming the session and
+ * the turn, the batch or the state that moved, and the change log answers no
+ * representation for the kind. So there is no body to fold — a page that tried would keep the turn it
  * opened with while the thread went on answering — and what the frame supplies
  * is only which session to ask about again.
  *

@@ -1414,7 +1414,7 @@ test("one candidate at its ceiling is one the derivation makes room for", () => 
   );
 });
 
-test("both resources the session triggers write parse as the shape the wire exports", async () => {
+test("every resource the session triggers write parses as the shape the wire exports", async () => {
   const { partition, session } = await leadProject("resource-shape");
   const log = postgresProjectChangeLog(rig.sessions.harness.pool);
   const turn = sessionRigTurnId("resource-shape");
@@ -1442,5 +1442,19 @@ test("both resources the session triggers write parse as the shape the wire expo
       JSON.parse(batchChange.resource) as unknown,
     ),
     { session, kind: "Lead", stream, batch: 1 },
+  );
+
+  const beforeClose = await log.latest();
+  assert.equal(await rig.sessions.sessions.close(partition, session), true);
+  const closeChanges = await log.after(partition, beforeClose, 10);
+  assert.deepEqual(
+    closeChanges.map((change) =>
+      sessionChangeResourceSchema.parse(JSON.parse(change.resource) as unknown),
+    ),
+    [
+      { session, kind: "Lead", turn },
+      { session, kind: "Lead", state: "Closed" },
+    ],
+    "a close abandons the turn still waiting, then says the session closed",
   );
 });

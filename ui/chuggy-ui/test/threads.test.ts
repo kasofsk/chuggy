@@ -100,6 +100,20 @@ describe("the listing's order", () => {
     expect(threadsMineFirst(others)).toEqual(others);
     expect(threadMine(others)).toBeUndefined();
   });
+
+  /** A closed thread is readable and still mine, but it is not the thread an
+   * Open is withheld for: the member's next thread is a new session. */
+  test("a closed thread of mine is not the one I hold", () => {
+    const ended = threadEntry({
+      session: "thread-geoff-old",
+      mine: true,
+      state: "Closed",
+    });
+    expect(threadMine([ended, ...listed.filter((t) => !t.mine)])).toBe(
+      undefined,
+    );
+    expect(threadMine([ended, ...listed])?.session).toBe("thread-geoff");
+  });
 });
 
 describe("what a turn is waiting for", () => {

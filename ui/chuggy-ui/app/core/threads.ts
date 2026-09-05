@@ -143,11 +143,13 @@ export function threadsMineFirst(
   ];
 }
 
-/** The reader's own thread, where the listing carried one. */
+/** The reader's own thread that still stands, where the listing carried one:
+ * a closed thread of theirs is one they open another beside, so it is not the
+ * one an `Open` is withheld for or a message is settled against. */
 export function threadMine(
   threads: readonly ThreadEntryResponse[],
 ): ThreadEntryResponse | undefined {
-  return threads.find((thread) => thread.mine);
+  return threads.find((thread) => thread.mine && thread.state !== "Closed");
 }
 
 /**
