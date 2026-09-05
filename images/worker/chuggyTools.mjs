@@ -591,7 +591,7 @@ export const chuggyProjectTools = [
   {
     name: "read_lead_transcript",
     description:
-      "One page of the lead's own raw transcript, which is how it reads past its own compaction. Answers whole entries and a `next` cursor; pass its `after` and `entry` back for the page after this one.",
+      "One page of the lead's own raw transcript, which is how it reads past its own compaction. Answers JSON: `entries` whole where they fit, an entry too large as {uuid, type, bytes, preview}, and `next` — pass its `after` and `entry` back for the page after this one.",
     shape: (z) => ({
       stream: identity(z).optional(),
       after: count(z).optional(),
@@ -682,7 +682,7 @@ export const chuggyProjectTools = [
   {
     name: "read_thread_transcript",
     description:
-      "One page of a thread's own raw transcript, which is how it reads past its own compaction. Answers whole entries and a `next` cursor; pass its `after` and `entry` back for the page after this one.",
+      "One page of a thread's own raw transcript, which is how it reads past its own compaction. Answers JSON: `entries` whole where they fit, an entry too large as {uuid, type, bytes, preview}, and `next` — pass its `after` and `entry` back for the page after this one.",
     shape: (z) => ({
       session: identity(z),
       stream: identity(z).optional(),

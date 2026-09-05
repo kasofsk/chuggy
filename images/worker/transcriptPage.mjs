@@ -20,10 +20,13 @@
  * walk on an entry the caller cannot make smaller. Its kind, its weight and the
  * head of it go instead, under `preview`, and the cursor moves past it.
  *
- * THE PAGE'S OWN `held` IS DROPPED. It is decided over the whole stream and
- * weighs with the page rather than with the entries answered, so a slice of a
- * page cannot state it; everything else the route said about the page is
- * carried through.
+ * THE HELD SET IS NARROWED TO THE ENTRIES ANSWERED. The route decides it over
+ * the whole stream and then answers the part of it this page's entries are in,
+ * so a slice states its own part by the same filter; carried whole it would be
+ * the page's set beside an answer's entries, and it weighs enough to crowd them
+ * out. Everything else the route said about the page goes through unaltered,
+ * `cut` and `truncated` included, which is what a reader needs the held set to
+ * be about.
  */
 
 import { Buffer } from "node:buffer";
@@ -31,7 +34,7 @@ import { Buffer } from "node:buffer";
 /** How much of an entry too large to answer whole is shown in its place. */
 export const transcriptEntryPreviewCharsMax = 1_024;
 
-/** What this answer states for itself: the entries it gives, the cursor, and the held set it cannot. */
+/** What this answer states for itself rather than repeating from the page. */
 const transcriptPageAnswerReplaces = ["entries", "nextAfter", "held"];
 
 /** One entry nothing can answer whole: what it is, what it weighs, and its head. */
@@ -59,9 +62,17 @@ export function transcriptPageAnswer(page, cursor, fits) {
   );
   const after = cursor?.after ?? 0;
   const from = cursor?.entry ?? 0;
+  const heldOf = (given) => {
+    if (!Array.isArray(page?.held)) return {};
+    const answered = new Set(
+      given.map(({ uuid }) => uuid).filter((uuid) => typeof uuid === "string"),
+    );
+    return { held: page.held.filter((uuid) => answered.has(uuid)) };
+  };
   const composed = (given, next) =>
     JSON.stringify({
       ...rest,
+      ...heldOf(given),
       entries: given,
       ...(next === undefined ? {} : { next }),
     });
@@ -87,13 +98,19 @@ export function transcriptPageAnswer(page, cursor, fits) {
       : { after: nextAfter, entry: 0 };
   let next = stop === undefined ? beyond : { after, entry: stop };
   let text = composed(given, next);
-  // The cursor is composed after the entries were weighed without it, so a page
-  // filled to the byte can be over by the cursor's own width. Giving one entry
-  // back is what makes the bound hold rather than nearly hold.
-  while (!fits(text) && given.length > 1) {
+  // The entries were weighed against this page's own cursor, and the answer may
+  // be composed with the wider one that names the next batch, so a page filled
+  // to the byte can be over by the cursor's own width. Entries go back until it
+  // fits, and the last of them goes as a preview rather than as nothing, so an
+  // answer that gives no whole entry still moves the walk on.
+  while (!fits(text) && given.length > 0) {
     given = given.slice(0, -1);
     next = { after, entry: from + given.length };
     text = composed(given, next);
+  }
+  if (given.length === 0 && from < entries.length) {
+    next = { after, entry: from + 1 };
+    text = composed([transcriptEntryPreview(entries[from])], next);
   }
   return text;
 }

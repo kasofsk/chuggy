@@ -97,15 +97,52 @@ test("an entry larger than any answer is given as a marked preview and the walk 
   );
 });
 
-test("the page's own facts are carried and the held set is not", () => {
+test("the page's own facts are carried and its held set is narrowed to the entries given", () => {
+  const page = pageOf([entryOf(1, 8), entryOf(2, 8)]);
+  page.held = ["u-2", "u-9"];
+
   const answer = JSON.parse(
-    transcriptPageAnswer(pageOf([entryOf(1, 8)]), { after: 0 }, fits),
+    transcriptPageAnswer(page, { after: 0, entry: 1 }, fits),
   );
 
   assert.equal(answer.stream, "s-1");
   assert.equal(answer.elided, 0);
   assert.equal(answer.truncated, false);
-  assert.equal(answer.held, undefined);
+  assert.deepEqual(
+    answer.entries.map(({ uuid }) => uuid),
+    ["u-2"],
+  );
+  assert.deepEqual(
+    answer.held,
+    ["u-2"],
+    "the held set names entries this answer did not give",
+  );
+});
+
+/**
+ * The window the answer's own cursor opens: entries are weighed against this
+ * page's cursor and the answer may be composed with the wider one that names
+ * the next batch. A page of one entry has nothing to give back, so what has to
+ * hold is that it is previewed rather than answered over the bound.
+ */
+test("an answer that fits only without its cursor gives a preview rather than going out over the bound", () => {
+  for (let bytes = 3_860; bytes <= 3_890; bytes += 1) {
+    const page = pageOf([entryOf(1, bytes)], 65_536);
+
+    const text = transcriptPageAnswer(page, { after: 0, entry: 0 }, fits);
+
+    assert.ok(
+      fits(text),
+      `an entry of ${String(bytes)} answered over the bound`,
+    );
+    const answer = JSON.parse(text);
+    assert.equal(answer.entries.length, 1, String(bytes));
+    assert.notDeepEqual(
+      answer.next,
+      { after: 0, entry: 0 },
+      `an entry of ${String(bytes)} answered a cursor that does not move`,
+    );
+  }
 });
 
 test("a cursor past the page's entries answers none and does not name itself again", () => {
