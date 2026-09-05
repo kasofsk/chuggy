@@ -378,6 +378,15 @@ export interface SelectorRefusalLedger {
     partition: Partition,
     limit: number,
   ): Promise<readonly SelectorStandingRefusal[]>;
+  /**
+   * Which of the tickets named stand refused, oldest ticket first. It is exact
+   * for that set rather than a page of the project's, which is what lets an
+   * observation exclude every candidate the lead already answered.
+   */
+  standingAmong(
+    partition: Partition,
+    tickets: readonly DispatchCandidate["ticket"][],
+  ): Promise<readonly SelectorStandingRefusal[]>;
 }
 
 /** One ticket a decision cleared a standing refusal from. */
@@ -1625,7 +1634,7 @@ export async function observeSelectorProject(
     SelectorObservationSource,
     "dispatchView" | "operationalContext"
   >,
-  refusals: Pick<SelectorRefusalLedger, "standing">,
+  refusals: Pick<SelectorRefusalLedger, "standingAmong">,
   notifications: NotificationBatch,
   pageLimit = 100,
   candidateBytesMax = 524_288,
@@ -1671,7 +1680,10 @@ export async function observeSelectorProject(
           token: page.token,
           candidates: undecidedCandidates(
             page.candidates,
-            await refusals.standing(state.partition, leadRefusalsObservedMax),
+            await refusals.standingAmong(
+              state.partition,
+              page.candidates.map((candidate) => candidate.ticket),
+            ),
           ),
           notificationCursor: notifications.cursor,
           changes,
@@ -1688,11 +1700,9 @@ export async function observeSelectorProject(
  * The candidates a decision is asked about, which are the page's less the ones
  * the lead already answered: a refusal stands against the version it named, so
  * a ticket re-released or re-authored since is a new question and a lifted
- * refusal is no answer at all. The standing handed in is one page, bounded by
- * `leadRefusalsObservedMax` and ordered by ticket — the same page the lead's own
- * document carries, so the page it is shown and the page it decides on name the
- * same refusals, and a project standing on more than that page holds has its
- * tail excluded from nothing and re-presented (kasofsk/chuggy#574).
+ * refusal is no answer at all. The standing handed in is exact for the page's
+ * own tickets, so what is excluded does not depend on how many refusals the
+ * project stands on.
  */
 function undecidedCandidates(
   candidates: readonly DispatchCandidate[],

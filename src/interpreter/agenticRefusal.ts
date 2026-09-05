@@ -76,6 +76,14 @@ export interface AgenticRefusalRead {
 /** The ledger's own name for the door the runtime holds, which is one shape. */
 export type AgenticRefusalWrite = SelectorRefusalLedger;
 
+/**
+ * The reads the selector's own role holds: a page of the project's standing for
+ * the document a lead is shown, and the exact standing of a named ticket set
+ * for the candidates an observation excludes.
+ */
+export type AgenticRefusalSelectorRead = Pick<AgenticRefusalRead, "standing"> &
+  Pick<AgenticRefusalWrite, "standingAmong">;
+
 export type AgenticRefusalsResult =
   | { readonly result: "NotFound" }
   | {

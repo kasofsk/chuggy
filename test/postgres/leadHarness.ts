@@ -39,6 +39,7 @@ import { postgresSelectorState } from "../../src/adapters/postgres/selector.ts";
 import { sessionRigAttempt, type SessionRigAttempt } from "./sessionHarness.ts";
 import type {
   AgenticRefusalRead,
+  AgenticRefusalSelectorRead,
   AgenticRefusalWrite,
 } from "../../src/interpreter/agenticRefusal.ts";
 import type {
@@ -61,7 +62,7 @@ export interface LeadRig {
   readonly mailbox: LeadMailbox;
   readonly prompts: LeadSystemPromptPort;
   readonly writes: AgenticRefusalWrite;
-  readonly selectorStanding: Pick<AgenticRefusalRead, "standing">;
+  readonly selectorStanding: AgenticRefusalSelectorRead;
   readonly apiRefusals: AgenticRefusalRead;
   readonly apiLead: PostgresLeadReads;
   readonly close: () => Promise<void>;

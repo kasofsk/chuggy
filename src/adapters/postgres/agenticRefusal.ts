@@ -1,7 +1,8 @@
 /**
- * The lead's refusal ledger as PostgreSQL answers it: one write door for the
- * selector's own role and two reads for the API's, each a `SECURITY DEFINER`
- * function 059 declares. Every port here is
+ * The lead's refusal ledger as PostgreSQL answers it: one write door and two
+ * standing reads for the selector's own role, and two reads for the API's, each
+ * a `SECURITY DEFINER` function 059 declares but the ticket-set read, which is
+ * 073's. Every port here is
  * `src/interpreter/agenticRefusal.ts`'s and this module declares none of its own.
  *
  * THE WRITE AND THE READS STAND ON DIFFERENT POOLS. `record_agentic_refusals`
@@ -25,6 +26,7 @@ import {
   type AgenticRefusalEntry,
   type AgenticRefusalRead,
   type AgenticRefusalRecord,
+  type AgenticRefusalSelectorRead,
   type AgenticRefusalWrite,
 } from "../../interpreter/agenticRefusal.ts";
 import { projectRowCounter } from "./rows.ts";
@@ -105,14 +107,14 @@ export function postgresAgenticRefusalLedger(
 }
 
 /**
- * The one read the selector's own role holds: which tickets stand refused, so
- * a decision can be shown what it has already declined. The ledger is not part
- * of it — a whole ticket's history is what a person reads, and the role that
- * decides needs the standing and nothing else.
+ * The two reads the selector's own role holds: which tickets stand refused as a
+ * page, and which of a named set of them do. The ledger is not part of it — a
+ * whole ticket's history is what a person reads, and the role that decides
+ * needs the standing and nothing else.
  */
 export function postgresAgenticRefusalStanding(
   pool: pg.Pool,
-): Pick<AgenticRefusalRead, "standing"> {
+): AgenticRefusalSelectorRead {
   return {
     standing: async (partition, limit) => {
       const found = await pool.query<StandingRefusalRow>(
@@ -120,6 +122,17 @@ export function postgresAgenticRefusalStanding(
                    reason,selector_decision,recorded_at
               FROM standing_agentic_refusals(
                      ${partition.tenant},${partition.project},${limit})`,
+      );
+      return found.rows.map(standingRefusalOf);
+    },
+
+    standingAmong: async (partition, tickets) => {
+      const found = await pool.query<StandingRefusalRow>(
+        sql`SELECT ticket::text AS ticket,ticket_version::text AS ticket_version,
+                   reason,selector_decision,recorded_at
+              FROM standing_agentic_refusals_among(
+                     ${partition.tenant},${partition.project},
+                     ${[...tickets]}::bigint[])`,
       );
       return found.rows.map(standingRefusalOf);
     },

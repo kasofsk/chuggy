@@ -226,19 +226,28 @@ function policyHost(
 
 const movedPage = { result: "Events", cursor: 1, events: [] } as const;
 
-/** A ledger standing on the refusals it is given, recording what a decision enters. */
+/**
+ * A ledger standing on the refusals it is given, recording what a decision
+ * enters. Its paged read answers `standingPage`, which a case shortens to stand
+ * a project on more refusals than one page of them reaches.
+ */
 function refusalWrites(
   onRecord: (
     input: Parameters<AgenticRefusalWrite["record"]>[0],
   ) => void = () => undefined,
   standing: readonly SelectorStandingRefusal[] = [],
+  standingPage: readonly SelectorStandingRefusal[] = standing,
 ): AgenticRefusalWrite {
   return {
     record: (input) => {
       onRecord(input);
       return Promise.resolve("Recorded");
     },
-    standing: () => Promise.resolve(standing),
+    standing: () => Promise.resolve(standingPage),
+    standingAmong: (_partition, tickets) =>
+      Promise.resolve(
+        standing.filter((refusal) => tickets.includes(refusal.ticket)),
+      ),
   };
 }
 
@@ -512,6 +521,40 @@ const viewCandidate: DispatchCandidate = {
   configurationCanonical: "canonical",
 };
 
+/** One observation of a page holding the one candidate, against the ledger given. */
+function observeAgainstRefusals(
+  refusals: AgenticRefusalWrite,
+): Promise<SelectorObservation | undefined> {
+  return observeSelectorProject(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Monitoring",
+      handoffNote: {},
+      candidateScan: { state: "Unstarted" },
+    },
+    {
+      ...promptObservationSource(),
+      dispatchView: () =>
+        Promise.resolve({
+          result: "Page",
+          token: {
+            ...partition,
+            recoveryEpoch: "epoch",
+            schemaVersion: 1,
+            watermark: 11,
+            digest: "c".repeat(64),
+          },
+          candidates: [viewCandidate],
+          notificationCursor: 1,
+        } as const),
+    },
+    refusals,
+    movedPage,
+  );
+}
+
 /**
  * A refusal is a standing answer about one version of one ticket, so a
  * candidate still at that version is a question the lead already answered and
@@ -521,34 +564,7 @@ const viewCandidate: DispatchCandidate = {
  */
 test("an observation drops a candidate refused at the version it shows", async () => {
   const observe = (standing: readonly SelectorStandingRefusal[]) =>
-    observeSelectorProject(
-      {
-        partition,
-        notificationCursor: 0,
-        revision: 0,
-        attention: "Monitoring",
-        handoffNote: {},
-        candidateScan: { state: "Unstarted" },
-      },
-      {
-        ...promptObservationSource(),
-        dispatchView: () =>
-          Promise.resolve({
-            result: "Page",
-            token: {
-              ...partition,
-              recoveryEpoch: "epoch",
-              schemaVersion: 1,
-              watermark: 11,
-              digest: "c".repeat(64),
-            },
-            candidates: [viewCandidate],
-            notificationCursor: 1,
-          } as const),
-      },
-      refusalWrites(() => undefined, standing),
-      movedPage,
-    );
+    observeAgainstRefusals(refusalWrites(() => undefined, standing));
   assert.deepEqual(
     (await observe([{ ticket: viewCandidate.ticket, ticketVersion: 4 }]))
       ?.candidates,
@@ -560,6 +576,23 @@ test("an observation drops a candidate refused at the version it shows", async (
     [viewCandidate],
   );
   assert.deepEqual((await observe([]))?.candidates, [viewCandidate]);
+});
+
+/**
+ * The exclusion is a question about the candidates the page holds, so a project
+ * standing on more refusals than one page of its standing reaches still has
+ * every answered candidate excluded (kasofsk/chuggy#574).
+ */
+test("an observation excludes a refusal no page of the project's standing carries", async () => {
+  const refused = { ticket: viewCandidate.ticket, ticketVersion: 4 };
+  assert.deepEqual(
+    (
+      await observeAgainstRefusals(
+        refusalWrites(() => undefined, [refused], []),
+      )
+    )?.candidates,
+    [],
+  );
 });
 
 test("ambiguous proposal delivery retries through ordinary operation idempotency", async () => {
