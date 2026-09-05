@@ -12,7 +12,10 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import type { AgentSession } from "../../src/interpreter/agentSession.ts";
+import type {
+  AgentSession,
+  SessionTurnId,
+} from "../../src/interpreter/agentSession.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import { asPlacementId } from "../../src/interpreter/schedulerIdentity.ts";
 import type {
@@ -530,6 +533,58 @@ test("a turn a previous attempt failed is not the successor's failure", async ()
     asPlacementId("placement-successor-next"),
   );
   assert.equal((await observed(next.attempt))?.turnFailure, undefined);
+});
+
+/**
+ * Withdraws one turn by identity, which is what the selector's own door does
+ * and what no attempt is party to. `withdraw_lead_turn` is driven directly
+ * because the withdrawal is the subject: what a session's other turns do to
+ * this attempt's row is a claim about the definer, not about a port.
+ */
+async function withdrawn(turn: SessionTurnId): Promise<void> {
+  const answered = await rig.harness.query(
+    `SELECT withdraw_lead_turn($1) AS withdrawn`,
+    [turn],
+  );
+  assert.equal(answered[0]?.["withdrawn"], "Withdrawn");
+}
+
+/**
+ * A turn the platform abandons is not a turn any attempt ended, and it is the
+ * higher ordinal: a claim takes the LOWEST queued turn, so a withdrawal of a
+ * turn behind the one being worked would win an ordering by ordinal alone and
+ * turn a pod that answered everything it held into `TurnFailed`.
+ */
+test("a turn withdrawn while the attempt worked another is not the attempt's failure", async () => {
+  const { partition, session, held, turn } = await working("withdrawn");
+  const behind = await sessionRigTurn(
+    rig,
+    partition,
+    session,
+    "withdrawn-next",
+  );
+  await withdrawn(behind);
+  await rig.plane.answer({
+    secret: held.secret,
+    generation: held.attempt.generation,
+    turn,
+    result: "the answer",
+  });
+  assert.equal((await observed(held.attempt))?.turnFailure, undefined);
+});
+
+/** The same mechanism in the other direction: a withdrawal must mask no refusal. */
+test("a withdrawal after a refused turn leaves the refusal standing", async () => {
+  const { partition, session, held, turn } = await working("masked");
+  const behind = await sessionRigTurn(rig, partition, session, "masked-next");
+  await rig.plane.fail({
+    secret: held.secret,
+    generation: held.attempt.generation,
+    turn,
+    failure: "StoreRefused",
+  });
+  await withdrawn(behind);
+  assert.equal((await observed(held.attempt))?.turnFailure, "StoreRefused");
 });
 
 test("a restore fences every attempt an older epoch issued, and the sweep is bounded", async () => {

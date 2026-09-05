@@ -14,10 +14,29 @@
  * THE TURN FAILURE IS READ HERE BECAUSE IT CANNOT BE READ LATER. A turn that
  * ends releases its attempt — `fail_session_turn` writes `attempt=NULL` — so
  * there is no column joining a failed turn to the attempt that failed it. What
- * stands in its place is the session's own order: at most one attempt of a
- * session is live at a time, so the last turn to end at or after this attempt
- * opened is the last turn this attempt ended, and its `failure` is null exactly
- * when that turn was answered.
+ * stands in its place is the turn's own end state and the session's order: at
+ * most one attempt of a session is live at a time, and every writer of
+ * `Answered` or `Failed` is either the claiming attempt, fenced on its bearer
+ * and generation, or `release_session_attempt_turns` at that attempt's own
+ * ending. So a turn in one of those two states that ended at or after this
+ * attempt opened is a turn this attempt ended, and no column recording which
+ * attempt ended a turn would say anything the pair does not.
+ *
+ * `Abandoned` IS THE THIRD END AND IT IS NOT THE ATTEMPT'S. `withdraw_lead_turn`
+ * and `close_agent_session` abandon every live turn of a session by identity
+ * alone — queued ones the attempt never held, and the claimed one it has not
+ * finished — so a turn withdrawn while the attempt worked a lower ordinal both
+ * ends without the attempt and wins an ordering by ordinal. Reading it as this
+ * attempt's failure turns a pod that answered everything it held into
+ * `TurnFailed`, and masks a `StoreRefused` behind a later withdrawal. It is the
+ * platform ending a turn the pod was never told about, so it is not the pod's
+ * reason and the state bound is what excludes it. An attempt whose OWN claimed
+ * turn is abandoned therefore reads no failure, which is right for the same
+ * reason: the pod finds nothing to claim and exits having reported nothing.
+ *
+ * THE ORDER IS THE END AND THE ORDINAL BEHIND IT. One attempt claims one turn
+ * at a time in ordinal order, so for the turns it ended the two agree; the end
+ * is what the row is about and the ordinal is what makes the answer total.
  *
  * IT IS A READ AND NOT AN ENDING. Which evidence the failure becomes is the
  * pass's, and `end_session_attempt` is still the one body that ends an attempt
@@ -36,14 +55,17 @@ const observationSignature = "text,bigint";
 /** The epoch a live authority must have been issued under, as every fence reads it. */
 const currentEpoch = `(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`;
 
+/** The two end states an attempt writes, which no platform withdrawal reaches. */
+const attemptEndedStates = "('Answered','Failed')";
+
 /**
- * The failure of the last turn this attempt ended, which is the last turn of
- * its session to end at or after the attempt opened.
+ * The failure of the last turn this attempt ended: the last turn of its session
+ * to reach one of the attempt's own end states at or after the attempt opened.
  */
 const lastTurnFailure = `(SELECT t.failure FROM session_turn t
      WHERE t.tenant=a.tenant AND t.project=a.project AND t.session=a.session
-       AND t.ended_at IS NOT NULL AND t.ended_at>=a.opened_at
-     ORDER BY t.ordinal DESC LIMIT 1)`;
+       AND t.state IN ${attemptEndedStates} AND t.ended_at>=a.opened_at
+     ORDER BY t.ended_at DESC,t.ordinal DESC LIMIT 1)`;
 
 const attemptsAwaitingObservation = [
   `CREATE FUNCTION ${sessionAttemptObservationFunction}(

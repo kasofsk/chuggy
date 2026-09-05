@@ -19,7 +19,10 @@
  * whole lease window and records `LeaseExpired` over whatever actually
  * happened. The pass asks the placement port instead, and ends the attempt on
  * the pod's own reason; the lapse and the idle window still collect a pod the
- * plane cannot observe at all.
+ * plane cannot observe at all. That is one backend request per placed attempt,
+ * bounded by `attemptsPerPassMax` and taken one at a time as the cleanup above
+ * takes its deletions, so a backend that hangs holds the rest of the pass for
+ * that bound times its own request deadline.
  *
  * AN IDLE SESSION COSTS NO POD. A session is the truth and its pod is a cache,
  * so an attempt that has claimed nothing for `idleSecsMax` is ended and its pod
