@@ -51,7 +51,6 @@ import { join } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
 
 import {
-  chuggyToolAnswerEnvelopeBytesMax,
   chuggyToolContext,
   chuggyToolServer,
   chuggyToolServerName,
@@ -68,28 +67,11 @@ import { workerRepositories } from "./repository.mjs";
 import { credentialScrub } from "./runEvidence.mjs";
 import { sessionCheckout } from "./sessionCheckout.mjs";
 import { sessionMailbox } from "./sessionMailbox.mjs";
-import {
-  sessionStoreAdapter,
-  sessionStoreBatchBytesMax,
-} from "./sessionStore.mjs";
+import { sessionStoreAdapter } from "./sessionStore.mjs";
 import { sessionRequest, sessionStopped } from "./sessionTransport.mjs";
 
 /** The longest result text the plane stores for one turn. */
 export const sessionTurnResultCharsMax = 65_536;
-
-/**
- * How many times the entry the runtime mirrors carries a command's own output:
- * the `tool_result` block, and the command's streams again inside
- * `toolUseResult`. A built-in's answer crosses no boundary this image owns, so
- * the runtime's own output bound is where it can be held under one store line.
- */
-export const sessionCommandOutputCopiesInEntry = 3;
-
-/** What a command's output may weigh, so the entry it becomes is one line of one batch. */
-export const sessionCommandOutputCharsMax = Math.floor(
-  (sessionStoreBatchBytesMax - chuggyToolAnswerEnvelopeBytesMax - 1) /
-    sessionCommandOutputCopiesInEntry,
-);
 
 /** The most tool names one turn's measurement reports, distinct and in no order. */
 export const sessionTurnToolsMax = 64;
@@ -517,7 +499,6 @@ export function sessionQueryOptions(
     cwd: checkout?.directory ?? workspace,
     env: {
       ...environment,
-      BASH_MAX_OUTPUT_LENGTH: String(sessionCommandOutputCharsMax),
       CLAUDE_CODE_OAUTH_TOKEN: token,
       CLAUDE_CONFIG_DIR: sessionConfigDirectory(environment, workspace),
     },
