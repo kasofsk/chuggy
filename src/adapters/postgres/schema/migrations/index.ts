@@ -70,6 +70,7 @@ import { migration069 } from "./069-store-rows-name-their-writer.ts";
 import { migration070 } from "./070-lead-token-budget.ts";
 import { migration071 } from "./071-change-row-reason.ts";
 import { migration072 } from "./072-session-attempt-observation.ts";
+import { migration073 } from "./073-refusals-among-a-candidate-page.ts";
 import type { Migration } from "../shared.ts";
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -146,4 +147,5 @@ export const migrations: readonly Migration[] = [
   migration070,
   migration071,
   migration072,
+  migration073,
 ];

@@ -2162,15 +2162,30 @@ const leadApiDoors = [
   "list_lead_store_streams(text,text,bigint)",
 ];
 
+/** The door 073 opens beside them, granted to the same role 059 grants its own to. */
+const leadSelectorDoorsAdded = [
+  "standing_agentic_refusals_among(text,text,bigint[])",
+];
+
+/** Whether one role may execute one door of the database given. */
+function migrationDoorExecutes(
+  subject: pg.Pool,
+): (role: string, signature: string) => Promise<boolean | undefined> {
+  return async (role, signature) =>
+    (
+      await subject.query<{ granted: boolean }>(
+        "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
+        [role, signature],
+      )
+    ).rows[0]?.granted;
+}
+
 /** Nobody but the one role a door is granted to may execute it, `PUBLIC` included. */
 async function migrationLeadDoorsAreStrangers(
   executes: (role: string, signature: string) => Promise<boolean | undefined>,
+  doors: readonly string[],
 ): Promise<void> {
-  for (const door of [
-    ...leadSelectorDoors,
-    ...leadApiDoors,
-    ...leadSharedDoors,
-  ])
+  for (const door of doors)
     for (const stranger of ["public", ticketServiceRole, finalizerRole])
       assert.equal(
         await executes(stranger, door),
@@ -2182,13 +2197,7 @@ async function migrationLeadDoorsAreStrangers(
 test("migration 59 grants each lead door to exactly one role", async () => {
   await migrationDatabase("lead_grants", async (subject) => {
     await migrationSeedApplied(subject, 60);
-    const executes = async (role: string, signature: string) =>
-      (
-        await subject.query<{ granted: boolean }>(
-          "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
-          [role, signature],
-        )
-      ).rows[0]?.granted;
+    const executes = migrationDoorExecutes(subject);
     for (const door of leadSelectorDoors) {
       assert.equal(await executes(selectorServiceRole, door), true, door);
       assert.equal(await executes(apiRole, door), false, door);
@@ -2212,7 +2221,11 @@ test("migration 59 grants each lead door to exactly one role", async () => {
       false,
       "a role that may name any session may put a turn in a member's thread",
     );
-    await migrationLeadDoorsAreStrangers(executes);
+    await migrationLeadDoorsAreStrangers(executes, [
+      ...leadSelectorDoors,
+      ...leadApiDoors,
+      ...leadSharedDoors,
+    ]);
     for (const relation of [
       "agent_session",
       "session_turn",
@@ -3640,5 +3653,17 @@ test("migration 71 leaves the rows an installation already appended unreasoned",
       ],
       "the row appended before the column existed was given the reason its ticket carries today",
     );
+  });
+});
+
+test("migration 73 grants the ticket-set standing door to the selector alone", async () => {
+  await migrationDatabase("standing_among_grants", async (subject) => {
+    await migrationSeedApplied(subject, 74);
+    const executes = migrationDoorExecutes(subject);
+    for (const door of leadSelectorDoorsAdded) {
+      assert.equal(await executes(selectorServiceRole, door), true, door);
+      assert.equal(await executes(apiRole, door), false, door);
+    }
+    await migrationLeadDoorsAreStrangers(executes, leadSelectorDoorsAdded);
   });
 });

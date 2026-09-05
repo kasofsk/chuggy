@@ -119,6 +119,8 @@ export const sessionSystemPromptSetFunction = "set_session_system_prompt";
 export const projectDraftsReadFunction = "read_project_drafts";
 export const agenticRefusalRecordFunction = "record_agentic_refusals";
 export const agenticRefusalStandingFunction = "standing_agentic_refusals";
+export const agenticRefusalStandingAmongFunction =
+  "standing_agentic_refusals_among";
 export const leadOpenFunction = "open_project_lead";
 export const leadSessionFunction = "lead_session";
 export const leadTurnEnqueueFunction = "enqueue_lead_turn";
