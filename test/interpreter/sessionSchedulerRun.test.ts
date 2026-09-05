@@ -44,7 +44,6 @@ import {
 import {
   sessionSchedulerDefaults,
   type FencedSessionAttempt,
-  type ObservableSessionAttempt,
   type RepositoryMirrors,
   type SessionAttemptEvidence,
   type SessionPodObserved,
@@ -123,8 +122,17 @@ interface StoreAnswers {
   readonly cleanup?: readonly FencedSessionAttempt[];
   readonly cancelled?: "Accepted" | "Unavailable";
   readonly binding?: RepositoryBinding | Error | "PerProject";
-  readonly observable?: readonly ObservableSessionAttempt[];
+  readonly observable?: readonly FencedSessionAttempt[];
   readonly observed?: SessionPodObserved;
+  /**
+   * The failure the store answers with, and when it starts answering with it.
+   * `"AfterTheObservation"` is a turn the pod wrote while the pass was working
+   * through the rows ahead of this one: a pass that read the failure with the
+   * batch sees nothing, and one that reads it after the pod has been seen to
+   * have ended sees it.
+   */
+  readonly turnFailure?: SessionTurnFailure;
+  readonly turnFailureFrom?: "AfterTheObservation";
 }
 
 /** A store that records the bound of every move asked of it and takes none. */
@@ -154,6 +162,15 @@ function recordingStore(
     attemptsAwaitingObservation: (_epoch, attemptsMax) => {
       calls.push(`attemptsAwaitingObservation ${String(attemptsMax)}`);
       return Promise.resolve(answers.observable ?? []);
+    },
+    attemptTurnFailure: (asked) => {
+      calls.push(`attemptTurnFailure ${asked.attempt}`);
+      return Promise.resolve(
+        answers.turnFailureFrom === "AfterTheObservation" &&
+          !calls.includes(`observe ${asked.attempt}`)
+          ? undefined
+          : answers.turnFailure,
+      );
     },
     reapLapsedAttempts: (_epoch, attemptsMax) => {
       calls.push(`reapLapsedAttempts ${String(attemptsMax)}`);
@@ -279,16 +296,6 @@ test("every step of one pass is asked for at most the bound this deployment name
 });
 
 /**
- * One live attempt the pass may look at, carrying the failure of the last turn
- * it ended where a case gives it one.
- */
-function observable(
-  turnFailure?: SessionTurnFailure,
-): ObservableSessionAttempt {
-  return turnFailure === undefined ? attempt : { ...attempt, turnFailure };
-}
-
-/**
  * The pod's end is what ends the attempt, and the reason is the pod's. A case
  * asserting `attemptEnded LeaseExpired` would be asserting about the reaper,
  * which never ran: the pass ends the attempt before it reaps anything, so an
@@ -315,19 +322,49 @@ for (const [observed, turnFailure, evidence] of podEndings) {
     const report = await sessionSchedulerPass(
       service(
         calls,
-        { observable: [observable(turnFailure)], observed },
+        {
+          observable: [attempt],
+          observed,
+          ...(turnFailure === undefined ? {} : { turnFailure }),
+        },
         { placed: "Unavailable", retryAfterSeconds: 1 },
       ),
       epoch,
     );
     assert.equal(report.observed, 1);
-    assert.deepEqual(calls.slice(2, 5), [
+    assert.deepEqual(calls.slice(2, 6), [
       `attemptsAwaitingObservation ${String(sessionSchedulerDefaults.attemptsPerPassMax)}`,
       `observe ${attempt.attempt}`,
+      `attemptTurnFailure ${attempt.attempt}`,
       `attemptEnded ${evidence}`,
     ]);
   });
 }
+
+/**
+ * The turn the pod failed on its way out is written after the batch of
+ * attempts was answered and before this attempt's pod is asked about — the
+ * window every backend round trip ahead of it opens. The evidence is the
+ * refusal, which is only true of a pass that reads the failure once the pod
+ * has answered.
+ */
+test("a turn failed while the pass worked the rows ahead is still the attempt's reason", async () => {
+  const calls: StoreCall[] = [];
+  await sessionSchedulerPass(
+    service(
+      calls,
+      {
+        observable: [attempt],
+        observed: { observed: "Ended", phase: "Failed" },
+        turnFailure: "StoreRefused",
+        turnFailureFrom: "AfterTheObservation",
+      },
+      { placed: "Unavailable", retryAfterSeconds: 1 },
+    ),
+    epoch,
+  );
+  assert.ok(calls.includes("attemptEnded StoreRefused"), calls.join(", "));
+});
 
 test("a pod the plane could not observe is left to the lease and ends nothing", async () => {
   const calls: StoreCall[] = [];
@@ -335,7 +372,8 @@ test("a pod the plane could not observe is left to the lease and ends nothing", 
     service(
       calls,
       {
-        observable: [observable("StoreRefused")],
+        observable: [attempt],
+        turnFailure: "StoreRefused",
         observed: { observed: "Unended" },
       },
       { placed: "Unavailable", retryAfterSeconds: 1 },

@@ -200,16 +200,6 @@ export function sessionPodEvidence(
 }
 
 /**
- * One live attempt whose pod may be looked at, with the failure of the last
- * turn it ended where that turn failed. The failure is read with the attempt
- * because the pod's phase alone cannot tell a refused store from a spent
- * budget, and the pod is gone by the time the plane asks.
- */
-export interface ObservableSessionAttempt extends FencedSessionAttempt {
-  readonly turnFailure?: SessionTurnFailure;
-}
-
-/**
  * What opening the next attempt for a session is asked for. The attempt's
  * identity, its bearer and that bearer's digest are minted by the caller,
  * because the secret itself is what the launcher needs and is not a value the
@@ -269,11 +259,19 @@ export interface SessionSchedulerStore {
     evidence: SessionAttemptEvidence,
   ): Promise<boolean>;
 
-  /** At most `attemptsMax` placed, live attempts of this epoch, newest turn failure and all. */
+  /** At most `attemptsMax` placed, live attempts of this epoch, which are the ones with a pod. */
   attemptsAwaitingObservation(
     epoch: RecoveryEpoch,
     attemptsMax: number,
-  ): Promise<readonly ObservableSessionAttempt[]>;
+  ): Promise<readonly FencedSessionAttempt[]>;
+
+  /**
+   * The failure of the last turn this attempt ended, asked only once its pod
+   * has stopped writing, because until then the answer is a row that moves.
+   */
+  attemptTurnFailure(
+    attempt: FencedSessionAttempt,
+  ): Promise<SessionTurnFailure | undefined>;
 
   /** Ends at most `attemptsMax` attempts whose lease has run out. */
   reapLapsedAttempts(

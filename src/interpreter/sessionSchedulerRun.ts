@@ -24,6 +24,14 @@
  * takes its deletions, so a backend that hangs holds the rest of the pass for
  * that bound times its own request deadline.
  *
+ * AND THE POD'S REASON IS READ AFTER THE POD, NOT WITH THE BATCH. A phase of
+ * `Succeeded` or `Failed` is reported once every container has terminated, so a
+ * pod that answered it can write no further turn and the read that follows is
+ * the last word. Read with the batch instead, the answer would be as old as
+ * every backend round trip taken since — a pod that failed a turn `StoreRefused`
+ * while the pass worked through the rows ahead of it would end `TurnFailed`,
+ * which is the reason this step exists to record.
+ *
  * AN IDLE SESSION COSTS NO POD. A session is the truth and its pod is a cache,
  * so an attempt that has claimed nothing for `idleSecsMax` is ended and its pod
  * deleted; the next turn opens a new attempt, and the runtime session it
@@ -176,7 +184,10 @@ export async function sessionSchedulerObserve(
     if (pod.observed !== "Ended") continue;
     const ended = await service.store.attemptEnded(
       attempt,
-      sessionPodEvidence(pod.phase, attempt.turnFailure),
+      sessionPodEvidence(
+        pod.phase,
+        await service.store.attemptTurnFailure(attempt),
+      ),
     );
     if (ended) observed += 1;
   }

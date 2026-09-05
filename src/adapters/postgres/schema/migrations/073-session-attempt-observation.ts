@@ -11,7 +11,20 @@
  * instead. It offers only `Running` attempts with a placement, because an
  * attempt with no placement has no pod to have ended.
  *
- * THE TURN FAILURE IS READ HERE BECAUSE IT CANNOT BE READ LATER. A turn that
+ * THE FAILURE IS A SECOND READ BECAUSE THE FIRST ONE IS TOO EARLY. A batch of
+ * attempts is answered before any of their pods is asked anything, and the
+ * pass then asks the backend once per row; a turn written inside that window is
+ * invisible to a failure carried on the batch. So the batch says only which
+ * attempts have a pod, and `session_attempt_turn_failure` says why, asked for
+ * one attempt whose pod has already been seen to have terminated — at which
+ * point every container of it has stopped and the row cannot move again.
+ *
+ * THAT SECOND READ IS UNFENCED, AND `end_session_attempt` IS WHY. A read of a
+ * globally unique attempt identity decides nothing; the generation, the live
+ * state and the epoch are all conditions of the move that follows, so a read
+ * that repeated them would be a fence nothing rests on.
+ *
+ * THE FAILURE CANNOT BE READ FROM A COLUMN. A turn that
  * ends releases its attempt — `fail_session_turn` writes `attempt=NULL` — so
  * there is no column joining a failed turn to the attempt that failed it. What
  * stands in its place is the turn's own end state and the session's order: at
@@ -47,10 +60,12 @@ import {
   boundaryOwnerRole,
   schedulerRole,
   sessionAttemptObservationFunction,
+  sessionAttemptTurnFailureFunction,
   type Migration,
 } from "../shared.ts";
 
 const observationSignature = "text,bigint";
+const turnFailureSignature = "text";
 
 /** The epoch a live authority must have been issued under, as every fence reads it. */
 const currentEpoch = `(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)`;
@@ -67,28 +82,44 @@ const lastTurnFailure = `(SELECT t.failure FROM session_turn t
        AND t.state IN ${attemptEndedStates} AND t.ended_at>=a.opened_at
      ORDER BY t.ended_at DESC,t.ordinal DESC LIMIT 1)`;
 
+/** The two boundaries beside their argument types, once. */
+const observationSignatures: readonly (readonly [string, string])[] = [
+  [sessionAttemptObservationFunction, observationSignature],
+  [sessionAttemptTurnFailureFunction, turnFailureSignature],
+];
+
 const attemptsAwaitingObservation = [
   `CREATE FUNCTION ${sessionAttemptObservationFunction}(
      in_epoch text,in_max bigint)
      RETURNS TABLE(tenant text,project text,session text,attempt text,
-                   generation bigint,turn_failure text)
+                   generation bigint)
      LANGUAGE sql STABLE SECURITY DEFINER
      SET search_path=pg_catalog,public,pg_temp AS $$
-       SELECT a.tenant,a.project,a.session,a.attempt,a.generation,
-              ${lastTurnFailure}
+       SELECT a.tenant,a.project,a.session,a.attempt,a.generation
          FROM session_attempt a
         WHERE a.state='Running' AND a.placement IS NOT NULL
           AND a.recovery_epoch=in_epoch AND in_epoch=${currentEpoch}
         ORDER BY a.tenant,a.project,a.session,a.attempt
         LIMIT in_max
      $$`,
-  `ALTER FUNCTION ${sessionAttemptObservationFunction}(${observationSignature})
-     OWNER TO ${boundaryOwnerRole}`,
-  `REVOKE ALL ON FUNCTION
-     ${sessionAttemptObservationFunction}(${observationSignature}) FROM PUBLIC`,
-  `GRANT EXECUTE ON FUNCTION
-     ${sessionAttemptObservationFunction}(${observationSignature})
-     TO ${schedulerRole}`,
+  `CREATE FUNCTION ${sessionAttemptTurnFailureFunction}(in_attempt text)
+     RETURNS text LANGUAGE sql STABLE SECURITY DEFINER
+     SET search_path=pg_catalog,public,pg_temp AS $$
+       SELECT ${lastTurnFailure} FROM session_attempt a
+        WHERE a.attempt=in_attempt
+     $$`,
+  ...observationSignatures.map(
+    ([name, signature]) =>
+      `ALTER FUNCTION ${name}(${signature}) OWNER TO ${boundaryOwnerRole}`,
+  ),
+  ...observationSignatures.map(
+    ([name, signature]) =>
+      `REVOKE ALL ON FUNCTION ${name}(${signature}) FROM PUBLIC`,
+  ),
+  ...observationSignatures.map(
+    ([name, signature]) =>
+      `GRANT EXECUTE ON FUNCTION ${name}(${signature}) TO ${schedulerRole}`,
+  ),
 ];
 
 /** An attempt whose pod may have ended, and the reason its last turn gave. */

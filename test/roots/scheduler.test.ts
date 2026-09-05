@@ -799,9 +799,8 @@ function processSessionFakes(observing: boolean): string {
       fenceOldEpochAttempts: async () => 0,
       attemptsAwaitingCleanup: async () => [],
       attemptCleanupCompleted: async () => true,
-      attemptsAwaitingObservation: async () => ${
-        observing ? "[{ ...sessionFence, turnFailure: 'StoreRefused' }]" : "[]"
-      },
+      attemptsAwaitingObservation: async () => ${observing ? "[sessionFence]" : "[]"},
+      attemptTurnFailure: async () => ${observing ? "'StoreRefused'" : "undefined"},
       reapLapsedAttempts: async () => 0,
       reapIdleAttempts: async () => 0,
       awaitingPlacement: async () => [agentSession],

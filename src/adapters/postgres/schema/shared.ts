@@ -94,6 +94,7 @@ export const sessionAttemptCleanupFunction =
   "session_attempts_awaiting_cleanup";
 export const sessionAttemptObservationFunction =
   "session_attempts_awaiting_observation";
+export const sessionAttemptTurnFailureFunction = "session_attempt_turn_failure";
 export const sessionAttemptCleanupCompletedFunction =
   "session_attempt_cleanup_completed";
 export const sessionAttemptBindingFunction = "session_attempt_binding";
