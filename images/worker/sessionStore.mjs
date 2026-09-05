@@ -366,6 +366,20 @@ function signedBlock(value) {
 }
 
 /**
+ * A block whose whole worth is the payload it carries. Replacing one with text
+ * saying what went costs the reader the payload and nothing else, and leaves the
+ * content list a list the API still accepts. That is true of a media block and
+ * of nothing else, so the two are named here rather than inferred from carrying
+ * something encoded: a `tool_use` block carrying an encoded argument is a call
+ * the turn is built around, its `tool_result` on the next line names its id, and
+ * deleting it is a request the API refuses off a line already frozen in a batch.
+ * The payload inside such a block is dropped where it sits and the block stays.
+ */
+function mediaBlock(value) {
+  return value.type === "image" || value.type === "document";
+}
+
+/**
  * Every clippable value the entry holds that is not the entry's name for itself,
  * and where it sits so a clip can replace it. Below the entry and its message the
  * shape is the runtime's and a producer this tree has never seen writes its bulk
@@ -394,7 +408,7 @@ function entrySites(entry) {
       return take(held, key, typeof value === "string" ? "text" : "list");
     if (value === null || typeof value !== "object" || signedBlock(value))
       return;
-    if (blocked && typeof value.type === "string" && encodedPayload(value))
+    if (blocked && mediaBlock(value) && encodedPayload(value))
       return take(held, key, "block");
     for (const inner of Object.keys(value)) {
       if (resultIdentityKeys.has(inner)) continue;

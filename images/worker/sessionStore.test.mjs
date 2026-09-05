@@ -80,6 +80,62 @@ function readEntry(data, beside = "The image was read.") {
 }
 
 /**
+ * The turn that calls a tool with an image in its arguments, and the line that
+ * answers it. Two entries, because what the clip must not break is the pair: the
+ * answer names the call by id, and the call is only a call while its block is on
+ * the assistant line.
+ */
+function uploadEntries(data) {
+  const call = {
+    parentUuid: "c1d2e3f4-a5b6-4708-8192-a3b4c5d6e7f8",
+    type: "assistant",
+    message: {
+      id: "msg_01UploadTheFrame",
+      role: "assistant",
+      model: "claude-opus-4-6",
+      stop_reason: "tool_use",
+      content: [
+        { type: "text", text: "Uploading the failing frame." },
+        {
+          type: "tool_use",
+          id: "toolu_01Upload",
+          name: "upload_screenshot",
+          input: {
+            caption: "the failing frame",
+            source: { type: "base64", media_type: "image/png", data },
+          },
+        },
+      ],
+    },
+    uuid: "d4e5f6a7-b8c9-4a0b-8c1d-2e3f4a5b6c7d",
+    timestamp: "2026-09-02T22:26:00.000Z",
+    cwd: "/workspace/repo",
+    sessionId: "fecadcca-7f72-478c-ab53-561e3a17110b",
+    version: "2.1.258",
+  };
+  const answer = {
+    parentUuid: call.uuid,
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        {
+          tool_use_id: "toolu_01Upload",
+          type: "tool_result",
+          content: "uploaded",
+        },
+      ],
+    },
+    uuid: "e5f6a7b8-c9d0-4b1c-8d2e-3f4a5b6c7d8e",
+    timestamp: "2026-09-02T22:26:01.000Z",
+    cwd: "/workspace/repo",
+    sessionId: "fecadcca-7f72-478c-ab53-561e3a17110b",
+    version: "2.1.258",
+  };
+  return [call, answer];
+}
+
+/**
  * A producer nothing in this tree anticipates: plain text under field names no
  * rule here knows, in the two places a result is written. It is what holds the
  * store to finding a result by weight rather than by a name it was taught.
@@ -910,6 +966,52 @@ test("an image block is dropped whole and replaced by text, never cut", async ()
       `of ${String(Buffer.byteLength(data))} bytes`,
     ),
     "the note names a size that is not the payload's",
+  );
+});
+
+/**
+ * The tool called with an encoded argument. A base64 string in a call's input is
+ * not a content source — the API never decodes it — and the block around it is
+ * the call the turn is built on: its id is what the next line's `tool_result`
+ * answers, and a message that stops for a tool call with no tool call in it is a
+ * request the API refuses. So the payload is dropped where it sits and the block
+ * stays, which is the whole difference between an encoded value and a block whose
+ * only worth is one.
+ */
+test("a call carrying an encoded argument keeps its block and loses the argument", async () => {
+  const { calls, store } = storeOf();
+  const data = "QUJDRA".repeat(20_000);
+  const [call, answer] = uploadEntries(data);
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(call)) > sessionStoreBatchBytesMax,
+    "the fixture is not over the bound, so no clip runs and it proves nothing",
+  );
+
+  await store.append({ sessionId: "s" }, [call, answer]);
+
+  const [posted, replied] = postedEntries(calls);
+  const called = posted.message.content.find(({ type }) => type === "tool_use");
+  assert.ok(called !== undefined, "the call the turn stopped for was deleted");
+  assert.equal(called.id, "toolu_01Upload");
+  assert.equal(called.name, "upload_screenshot");
+  assert.equal(posted.message.stop_reason, "tool_use");
+  assert.equal(
+    replied.message.content[0].tool_use_id,
+    called.id,
+    "the answer names a call the posted turn does not make",
+  );
+  assert.equal(
+    called.input.source.type,
+    "base64",
+    "the source stopped saying how it was encoded",
+  );
+  assert.ok(
+    called.input.source.data.startsWith("[the session store dropped"),
+    "the encoded argument was cut rather than dropped",
+  );
+  assert.ok(
+    !JSON.stringify(posted).includes(data.slice(0, 120)),
+    "a head of the payload was posted",
   );
 });
 
