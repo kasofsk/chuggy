@@ -517,14 +517,16 @@ export function apiThreads(
 }
 
 /** The caller's own thread, opened where they have none and answered where they
- * have: the route is idempotent, so this is safe to press twice. */
+ * have: the route is idempotent, so this is safe to press twice. The body is
+ * an empty object rather than nothing, because the door takes only versioned
+ * JSON and a request with no body carries no media type to be versioned. */
 export function apiOpenThread(
   ports: ApiPorts,
   partition: PartitionIdentity,
 ): Promise<ApiResult<ThreadEntryResponse>> {
   return apiRead(
     ports,
-    { method: "POST", path: apiSegments(partition, "threads") },
+    { method: "POST", path: apiSegments(partition, "threads"), body: {} },
     (value) => threadEntryResponseSchema.parse(value),
   );
 }
