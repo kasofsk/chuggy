@@ -22,6 +22,7 @@ import {
   type SelectorPolicyHost,
   type SelectorPolicyRequest,
   type SelectorObservation,
+  type SelectorStandingRefusal,
   type SelectorProjectState,
   type JsonValue,
 } from "../../src/interpreter/selector.ts";
@@ -225,17 +226,19 @@ function policyHost(
 
 const movedPage = { result: "Events", cursor: 1, events: [] } as const;
 
-/** A ledger that answers, and records what one decision entered in it. */
+/** A ledger standing on the refusals it is given, recording what a decision enters. */
 function refusalWrites(
   onRecord: (
     input: Parameters<AgenticRefusalWrite["record"]>[0],
   ) => void = () => undefined,
+  standing: readonly SelectorStandingRefusal[] = [],
 ): AgenticRefusalWrite {
   return {
     record: (input) => {
       onRecord(input);
       return Promise.resolve("Recorded");
     },
+    standing: () => Promise.resolve(standing),
   };
 }
 
@@ -348,6 +351,7 @@ test("selector observation resumes from a reset cursor and pins every view page"
         } as const);
       },
     },
+    refusalWrites(),
     { result: "Reset", cursor: 12 },
   );
   assert.equal(observed?.notificationCursor, 12);
@@ -369,6 +373,7 @@ test("an observation carries the notification page that triggered it", async () 
       handoffNote: {},
     },
     promptObservationSource(),
+    refusalWrites(),
     { result: "Events", cursor: 5, events },
   );
   assert.deepEqual(observed?.changes, events);
@@ -415,6 +420,7 @@ test("selector observation restarts a continued scan when its view resets", asyn
         } as const);
       },
     },
+    refusalWrites(),
     movedPage,
   );
   assert.equal(observed?.token.watermark, 2);
@@ -462,6 +468,7 @@ test("an oversized final candidate advances the scan to Exhausted", async () => 
       candidateScan: { state: "Unstarted" },
     },
     source,
+    refusalWrites(),
     movedPage,
     10,
     100,
@@ -480,12 +487,79 @@ test("an oversized final candidate advances the scan to Exhausted", async () => 
         candidateScan: observation?.nextCandidateScan,
       },
       source,
+      refusalWrites(),
       { result: "Events", cursor: 2, events: [] },
       10,
       100,
     ),
     undefined,
   );
+});
+
+/** One released ticket as the dispatch view carries it. */
+const viewCandidate: DispatchCandidate = {
+  ticket: asTicketId(35),
+  ticketVersion: 4,
+  dependencies: [],
+  workFanout: 1,
+  program: [{ fanout: 1, combinator: "UnanimousPass" }],
+  reworkPolicy: { type: "BudgetedRework", value: 1 },
+  finalizationPricing: "DeadlineOnly",
+  resumePricing: "RetryCharged",
+  finalizer: "NoFinalizer",
+  configurationRevision: "revision",
+  configurationDigest: "d".repeat(64),
+  configurationCanonical: "canonical",
+};
+
+/**
+ * A refusal is a standing answer about one version of one ticket, so a
+ * candidate still at that version is a question the lead already answered and
+ * presenting it again spends a decision on saying nothing has changed. A
+ * version the standing refusal does not name is a new question, and a lift
+ * leaves no answer standing at all.
+ */
+test("an observation drops a candidate refused at the version it shows", async () => {
+  const observe = (standing: readonly SelectorStandingRefusal[]) =>
+    observeSelectorProject(
+      {
+        partition,
+        notificationCursor: 0,
+        revision: 0,
+        attention: "Monitoring",
+        handoffNote: {},
+        candidateScan: { state: "Unstarted" },
+      },
+      {
+        ...promptObservationSource(),
+        dispatchView: () =>
+          Promise.resolve({
+            result: "Page",
+            token: {
+              ...partition,
+              recoveryEpoch: "epoch",
+              schemaVersion: 1,
+              watermark: 11,
+              digest: "c".repeat(64),
+            },
+            candidates: [viewCandidate],
+            notificationCursor: 1,
+          } as const),
+      },
+      refusalWrites(() => undefined, standing),
+      movedPage,
+    );
+  assert.deepEqual(
+    (await observe([{ ticket: viewCandidate.ticket, ticketVersion: 4 }]))
+      ?.candidates,
+    [],
+  );
+  assert.deepEqual(
+    (await observe([{ ticket: viewCandidate.ticket, ticketVersion: 3 }]))
+      ?.candidates,
+    [viewCandidate],
+  );
+  assert.deepEqual((await observe([]))?.candidates, [viewCandidate]);
 });
 
 test("ambiguous proposal delivery retries through ordinary operation idempotency", async () => {
@@ -599,6 +673,120 @@ test("a paused runtime creates no new observations but still drains durable work
     failures: [],
   });
   assert.equal(pendingReads, 1);
+});
+
+const exhaustedScanToken = {
+  ...partition,
+  recoveryEpoch: "epoch",
+  schemaVersion: 1,
+  watermark: 7,
+  digest: "a".repeat(64),
+} as const;
+
+/** A project whose last turn read the view to its end and stopped at that token. */
+const exhaustedProjectState: SelectorProjectState = {
+  partition,
+  notificationCursor: 3,
+  revision: 1,
+  attention: "Monitoring",
+  handoffNote: {},
+  candidateScan: { state: "Exhausted", token: exhaustedScanToken },
+};
+
+/** A page of changes past the cursor that project's last turn stood on. */
+const movedTicketPage = {
+  result: "Events",
+  cursor: 9,
+  events: [{ ordinal: 9, kind: "Ticket", resource: "35" }],
+} as const;
+
+/**
+ * The trigger and the observation ask different questions, and only the second
+ * one is whether there is anything to decide about. The notification cursor
+ * moves with every change row and is saved by a completed cycle alone, so a
+ * project appending changes that leave the dispatch view where it was triggers
+ * on every pass for good — and a permit taken on the trigger charges each of
+ * those a decision reference, a `selector_interaction` row and a
+ * selections-per-minute slot for an attempt with nothing to observe.
+ */
+test("a pass whose view has not moved takes no permit and leaves no attempt", async () => {
+  const allocated: string[] = [];
+  const terminated: string[] = [];
+  const result = await selectorRunOnce(
+    refusalWrites(),
+    {
+      ...stateStore(() => undefined),
+      project: () => Promise.resolve(exhaustedProjectState),
+      allocateAttempt: (attempt) => {
+        allocated.push(attempt);
+        return Promise.resolve(true);
+      },
+      terminateAttempt: (attempt) => {
+        terminated.push(attempt);
+        return Promise.resolve();
+      },
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [partition] }),
+      moved: () => Promise.resolve(movedTicketPage),
+      dispatchView: () =>
+        Promise.resolve({
+          result: "Page",
+          token: exhaustedScanToken,
+          candidates: [],
+          notificationCursor: 9,
+        } as const),
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    policyHost(() => Promise.reject(new Error("the lead was asked to decide"))),
+    perProjectIdentities(),
+    settingsSource(() => Promise.resolve(runtimeSettings)),
+    { projectsMax: 1, deliveriesMax: 1, reconciliationsMax: 1 },
+  );
+  assert.deepEqual(allocated, []);
+  assert.deepEqual(terminated, []);
+  assert.equal(result.observed, 0);
+  assert.deepEqual(result.failures, []);
+});
+
+test("a pass whose view has moved still takes its permit and decides", async () => {
+  const allocated: string[] = [];
+  let views = 0;
+  const result = await selectorRunOnce(
+    refusalWrites(),
+    {
+      ...stateStore(() => undefined),
+      project: () => Promise.resolve(exhaustedProjectState),
+      allocateAttempt: (attempt) => {
+        allocated.push(attempt);
+        return Promise.resolve(true);
+      },
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [partition] }),
+      moved: () => Promise.resolve(movedTicketPage),
+      dispatchView: () => {
+        views += 1;
+        return Promise.resolve(
+          views === 1
+            ? ({ result: "Reset" } as const)
+            : emptyDispatchPage(partition, "b".repeat(64)),
+        );
+      },
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    policyHost(() => Promise.resolve(waitingExecution())),
+    perProjectIdentities(),
+    settingsSource(() => Promise.resolve(runtimeSettings)),
+    { projectsMax: 1, deliveriesMax: 1, reconciliationsMax: 1 },
+  );
+  assert.deepEqual(allocated, [`decision-${partition.project}`]);
+  assert.equal(result.observed, 1);
+  assert.deepEqual(result.failures, []);
 });
 
 test("inventory progress follows scanned projects when a permit is unavailable", async () => {
@@ -985,6 +1173,7 @@ test("a stale persisted observation releases its permit without starting policy"
       handoffNote: {},
     },
     promptObservationSource(),
+    refusalWrites(),
     movedPage,
   );
   assert.ok(observation !== undefined);

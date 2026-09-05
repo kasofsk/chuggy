@@ -69,11 +69,16 @@ function standingRefusalOf(row: StandingRefusalRow): AgenticRefusalRecord {
   };
 }
 
-/** The write door, over the pool that holds the selector service's own role. */
-export function postgresAgenticRefusalWrites(
+/**
+ * The ledger door the selector runtime holds, over the pool carrying the
+ * service's own role: the one write, and the standing read its observations are
+ * built against.
+ */
+export function postgresAgenticRefusalLedger(
   pool: pg.Pool,
 ): AgenticRefusalWrite {
   return {
+    ...postgresAgenticRefusalStanding(pool),
     record: async (input) => {
       const recorded = await pool.query<{ recorded: string | null }>(
         sql`SELECT record_agentic_refusals(

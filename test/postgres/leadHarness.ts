@@ -21,7 +21,7 @@ import type pg from "pg";
 import { postgresAgenticRefusalReads } from "../../src/adapters/postgres/agenticRefusal.ts";
 import {
   postgresAgenticRefusalStanding,
-  postgresAgenticRefusalWrites,
+  postgresAgenticRefusalLedger,
 } from "../../src/adapters/postgres/agenticRefusal.ts";
 import {
   postgresLeadMailbox,
@@ -77,7 +77,7 @@ export async function leadRigOpen(): Promise<LeadRig> {
     apiPool,
     mailbox: postgresLeadMailbox(selectorPool),
     prompts: postgresLeadSystemPrompt(selectorPool),
-    writes: postgresAgenticRefusalWrites(selectorPool),
+    writes: postgresAgenticRefusalLedger(selectorPool),
     selectorStanding: postgresAgenticRefusalStanding(selectorPool),
     apiRefusals: postgresAgenticRefusalReads(apiPool),
     apiLead: postgresLeadReads(apiPool),
