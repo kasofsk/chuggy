@@ -2792,14 +2792,14 @@ test("the session migrations compose into the schema a fresh generation renders"
 });
 
 /**
- * The versions no declared migration holds, and the chain currently has none:
- * no version below the latest is unheld. It is written down rather than
+ * The versions no declared migration holds, which is the sibling this image is
+ * numbered around until that branch merges. It is written down rather than
  * computed so that a hole nobody meant is a hole nobody can leave —
  * renumbering a migration upward opens one this list does not name, and a
  * branch numbered around a sibling still on its own branch names it here until
  * that sibling merges.
  */
-const declaredVersionsAwaited: readonly number[] = [];
+const declaredVersionsAwaited: readonly number[] = [71];
 
 /**
  * The ledger a whole chain leaves is exactly the versions this image declares,
@@ -3595,5 +3595,50 @@ test("migration 70 mints nothing for an installation standing at the floor", asy
     await applyMigration(subject, 70);
 
     assert.deepEqual(await standingTokenBudget(subject), before);
+  });
+});
+
+/**
+ * What a migrated installation's own change rows say. A reason backfilled from
+ * the present state is the reading 072 removes, written down permanently, so a
+ * row appended before the column existed carries none and wakes nobody.
+ */
+test("migration 72 leaves the rows an installation already appended unreasoned", async () => {
+  await migrationDatabase("change_row_reason", async (subject) => {
+    await migrationSeedApplied(subject, 72);
+    const store = postgresProjectStore(subject);
+    await postgresHarnessEpoch(store);
+    const partition = await postgresHarnessProject(store, "change-reason");
+    await subject.query(
+      `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+       VALUES ($1,$2,1,'Revoked',1)`,
+      [partition.tenant, partition.project],
+    );
+    const before = await subject.query<{ sequence: string }>(
+      `SELECT ${projectChangeAppendFunction}($1,$2,'Ticket','1')::text AS sequence`,
+      [partition.tenant, partition.project],
+    );
+    const earlier = before.rows[0]?.sequence;
+
+    await applyMigration(subject, 72);
+
+    const after = await subject.query<{ sequence: string }>(
+      `SELECT ${projectChangeAppendFunction}($1,$2,'Ticket','1')::text AS sequence`,
+      [partition.tenant, partition.project],
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ sequence: string; wake_reason: string | null }>(
+          `SELECT sequence::text AS sequence,wake_reason FROM project_change
+            WHERE sequence>=$1 ORDER BY sequence`,
+          [earlier],
+        )
+      ).rows,
+      [
+        { sequence: earlier, wake_reason: null },
+        { sequence: after.rows[0]?.sequence, wake_reason: "TicketAbandoned" },
+      ],
+      "the row appended before the column existed was given the reason its ticket carries today",
+    );
   });
 });

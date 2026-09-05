@@ -19,6 +19,7 @@
 import { randomUUID } from "node:crypto";
 
 import { threadSessionMint } from "../../src/adapters/crypto/threadSessionMint.ts";
+import type { TicketId } from "../../src/domain/ids.ts";
 import { postgresThreadSeeding } from "../../src/adapters/postgres/thread.ts";
 import {
   postgresThreadWakes,
@@ -192,4 +193,28 @@ export async function threadRigThread(
 /** A turn identity no other case is using. */
 export function threadRigTurnId(label: string): string {
   return `thread-turn-${label}-${randomUUID()}`;
+}
+
+/**
+ * A ticket standing in one phase, with the change that says so. The projection
+ * is written straight because how a phase is reached is the actor's business
+ * and these suites are about what the change beside it records.
+ */
+export async function threadRigTicketPhase(
+  rig: ThreadRig,
+  partition: Partition,
+  ticket: TicketId,
+  phase: string,
+): Promise<void> {
+  await rig.sessions.harness.query(
+    `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+     VALUES ($1,$2,$3,$4,1)
+     ON CONFLICT (tenant,project,ticket)
+       DO UPDATE SET phase=EXCLUDED.phase,seq=ticket_projection.seq+1`,
+    [partition.tenant, partition.project, ticket, phase],
+  );
+  await rig.sessions.harness.query(
+    `SELECT append_project_change($1,$2,'Ticket',$3)`,
+    [partition.tenant, partition.project, String(ticket)],
+  );
 }
