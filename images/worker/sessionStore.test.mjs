@@ -905,14 +905,68 @@ test("an image block is dropped whole and replaced by text, never cut", async ()
     posted.toolUseResult.file.base64.includes("the session store dropped"),
     "the record's own copy of the payload was cut rather than dropped",
   );
+  assert.ok(
+    posted.toolUseResult.file.base64.includes(
+      `of ${String(Buffer.byteLength(data))} bytes`,
+    ),
+    "the note names a size that is not the payload's",
+  );
+});
+
+/**
+ * Bulk under a key called `data` that is not a base64 source. Only a `data`
+ * beside a `type` saying `base64` is encoded; anything else under the name is
+ * text like any other and is cut to a head a reader can read, because telling
+ * someone their prose was unreadable is a lie that costs them the head of it.
+ */
+test("bulk under a data field that is not a base64 source is cut, not dropped", async () => {
+  const { calls, store } = storeOf();
+  const prose = "The store is what weighs the line. ".repeat(2_000);
+  const given = {
+    uuid: "0b1c2d3e-4f50-4617-8829-9a0b1c2d3e4f",
+    parentUuid: "9a8b7c6d-5e4f-4302-9188-7a6b5c4d3e2f",
+    type: "user",
+    timestamp: "2026-09-02T22:25:00.000Z",
+    cwd: "/workspace/repo",
+    sessionId: "fecadcca-7f72-478c-ab53-561e3a17110b",
+    version: "2.1.258",
+    toolUseResult: { payload: { type: "text", data: prose } },
+  };
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(given)) > sessionStoreBatchBytesMax,
+    "the fixture is not over the bound, so no clip runs and it proves nothing",
+  );
+
+  await store.append({ sessionId: "s" }, [given]);
+
+  const [posted] = postedEntries(calls);
+  const { data } = posted.toolUseResult.payload;
+  assert.equal(posted.toolUseResult.payload.type, "text");
+  assert.ok(
+    prose.startsWith(data.slice(0, data.indexOf("\n["))),
+    "the prose lost its head to a drop",
+  );
+  assert.ok(
+    data.includes("the session store clipped"),
+    "the prose was not cut at all",
+  );
+  assert.ok(
+    !data.includes("the session store dropped"),
+    "readable prose was called an encoded payload and thrown away",
+  );
 });
 
 /**
  * The entry whose bulk is a list rather than a text: no line of a diff is
  * heavier than the note that would replace it, so a clip that took only single
- * strings would leave this one over the bound and stop the session.
+ * strings would leave this one over the bound and stop the session. A list goes
+ * whole or goes entirely: a prefix of it is a shorter list that reads as a
+ * complete one, and where the list is a set of legal values — a schema's `enum`
+ * — that is a constraint the record states wrongly rather than a text a reader
+ * can see is short. So every list here is either what it was, byte for byte, or
+ * one element saying it is gone.
  */
-test("a result whose bulk is a list of lines is clipped as a list", async () => {
+test("a result whose bulk is a list of lines goes whole or goes entirely", async () => {
   const { calls, store } = storeOf();
   const given = editEntry("held\n".repeat(4_000), 30, 80);
 
@@ -933,13 +987,32 @@ test("a result whose bulk is a list of lines is clipped as a list", async () => 
   );
   const patched = posted.toolUseResult.structuredPatch;
   assert.equal(patched.length, given.toolUseResult.structuredPatch.length);
-  for (const patch of patched) {
+  let dropped = 0;
+  for (const [at, patch] of patched.entries()) {
+    const held = given.toolUseResult.structuredPatch[at].lines;
     assert.ok(Array.isArray(patch.lines), "a patch stopped being a list");
+    if (patch.lines.length === held.length && patch.lines[0] === held[0]) {
+      assert.deepEqual(
+        patch.lines,
+        held,
+        "a list came back neither whole nor gone",
+      );
+      continue;
+    }
+    dropped += 1;
+    assert.deepEqual(
+      patch.lines.length,
+      1,
+      "a prefix of a list was posted, which reads as the whole list",
+    );
     assert.ok(
-      patch.lines.at(-1).includes("the session store clipped"),
-      "a list of lines was left whole while another was cut",
+      patch.lines[0].includes(
+        `the session store dropped the ${String(held.length)} values here`,
+      ),
+      "the one element left does not say what went",
     );
   }
+  assert.ok(dropped > 0, "no list was clipped, so the fixture proves nothing");
 });
 
 test("an entry at the bound is posted as the bytes it arrived as", async () => {

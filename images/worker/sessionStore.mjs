@@ -29,9 +29,9 @@
  * of. So the store is the bound of last resort. It replaces every value a clip
  * can shorten with a head of itself and a note naming what the original weighed,
  * and shares what a batch leaves evenly between them, a value that fits inside
- * its share going back whole. A list of strings is one such value: a diff's lines
- * are bulk together and nothing apart, so the list is clipped rather than each
- * line of it. What resumes over the entry parses it and reads that it is seeing
+ * its share going back whole. A list of strings is one value rather than many: a
+ * diff's lines are bulk together and nothing apart, so the list is taken as a
+ * whole. What resumes over the entry parses it and reads that it is seeing
  * less, so it can run the tool again. The pod's own file is untouched; this is
  * what the store posts, not what happened. Only an entry no clip brings under the
  * bound raises, naming what it weighs and whether a clip reached it.
@@ -59,7 +59,15 @@
  * stopping, and it is not true of everything heavy, so a value is taken by how it
  * survives being made smaller and there are four answers:
  *
- *   - TEXT AND LISTS ARE CUT TO A HEAD, which is the ordinary case above.
+ *   - TEXT IS CUT TO A HEAD, which is the ordinary case above.
+ *   - A LIST OF STRINGS GOES WHOLE OR NOT AT ALL. A head of prose is prose; the
+ *     first few elements of a list are a different list, and nothing in one says
+ *     which kind it is. The elements of a JSON-Schema `enum` are the values a
+ *     field may take, so a prefix of them plus a note is a shorter set of legal
+ *     values with an illegal one added, and it reads as complete. So a list is
+ *     either put back whole, where its share reaches, or replaced by a list whose
+ *     one element is the note. The note is still an element, which is as close to
+ *     saying nothing as a value that has to stay a list of strings can get.
  *   - AN ENCODED VALUE IS DROPPED WHOLE. Base64 is worth exactly what it decodes
  *     to: a head of it decodes to nothing, and the note appended to it is not
  *     even in the alphabet. So `encodedString` is never cut. Where one is the
@@ -209,19 +217,6 @@ function escapedHead(text, bytes) {
   return head;
 }
 
-/** The longest prefix of `list` whose elements, commas counted, stand within `bytes`. */
-function escapedPrefix(list, bytes) {
-  const prefix = [];
-  let weight = 0;
-  for (const element of list) {
-    const cost = escapedBytes(element) + 1;
-    if (weight + cost > bytes) break;
-    weight += cost;
-    prefix.push(element);
-  }
-  return prefix;
-}
-
 /** A value a clip replaces as one thing: a list of strings is bulk the way a string is. */
 function clippable(value) {
   return (
@@ -285,10 +280,12 @@ function encodedName(value) {
  * only thing left that describes it.
  */
 function siteNote({ value, kind }) {
-  if (kind === "dropped" || kind === "block")
-    return `[the session store dropped ${encodedName(value)} of ${String(escapedBytes(value))} bytes to fit one store batch; it is encoded, so no part of it would be readable]`;
   const weight =
     typeof value === "string" ? Buffer.byteLength(value) : escapedBytes(value);
+  if (kind === "dropped" || kind === "block")
+    return `[the session store dropped ${encodedName(value)} of ${String(weight)} bytes to fit one store batch; it is encoded, so no part of it would be readable]`;
+  if (kind === "list")
+    return `[the session store dropped the ${String(value.length)} values here, ${String(weight)} bytes; part of a list reads as all of it, so run the tool again]`;
   return `[the session store clipped this to fit one store batch; the original was ${String(weight)} bytes, so run the tool again to read the rest]`;
 }
 
@@ -439,16 +436,12 @@ function cutSites(clipped) {
 }
 
 /**
- * One cut site given back as much of itself as `bytes` of the line allows. A
- * dropped one is given back nothing: it goes whole or not at all, and `growSites`
- * is where whole is still reached.
+ * One cut site given back as much of itself as `bytes` of the line allows, which
+ * is text and only text. Everything else goes back whole or not at all, and
+ * `growSites` is where whole is still reached.
  */
 function growSite(site, bytes) {
-  if (site.kind === "dropped" || site.kind === "block") return;
-  if (site.kind === "list") {
-    site.held[site.key] = [...escapedPrefix(site.value, bytes), site.note];
-    return;
-  }
+  if (site.kind !== "text") return;
   const head = escapedHead(site.value, bytes - escapedQuotesBytes);
   if (head.length > 0) site.held[site.key] = `${head}\n${site.note}`;
 }
@@ -457,8 +450,8 @@ function growSite(site, bytes) {
  * The cut sites given back what the aim leaves, an even share each: every copy
  * of one result keeps the same head, so the copy a resume reads is as long as
  * the copy nothing reads, and a head falls smoothly as the entry grows. A site
- * that fits inside its share is put back whole and its note with it, and what it
- * did not spend is shared again among the sites that cannot be. A share is spent
+ * that fits inside its share is put back whole, with no note left in it, and
+ * what it did not spend is shared again among the sites that cannot be. A share is spent
  * in escaped bytes, because that is what the line is charged for a character.
  */
 function growSites(clipped, cut) {
