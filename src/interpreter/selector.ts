@@ -1,6 +1,6 @@
 import {
   agenticRefusalReasonCharsMax,
-  agenticRefusalsAnsweredMax,
+  dispatchViewPageLimitMax,
   leadDispatchesMax,
   selectorHandoffNoteBytesMax,
   selectorSettingsTextCharsMax,
@@ -326,6 +326,12 @@ export function selectorBacklogsAdmitDispatch(
 export interface SelectorObservation {
   readonly token: DispatchViewToken;
   readonly candidates: readonly DispatchCandidate[];
+  /**
+   * The standing refusals among the tickets the page held, which is both what
+   * removed a candidate from the list above and what the lead is shown. They are
+   * one list so that everything excluded is something a decision can still lift.
+   */
+  readonly refusals: readonly SelectorStandingRefusal[];
   readonly notificationCursor: number;
   /** What moved since the last turn: kinds and resources, never bodies. */
   readonly changes: readonly ProjectNotification[];
@@ -352,10 +358,18 @@ export interface SelectorRefusalChoice {
   readonly reason: string;
 }
 
-/** A ticket whose latest ledger entry is a refusal, and the version it named. */
+/**
+ * A ticket whose latest ledger entry is a refusal, as the ledger answers it. It
+ * is declared here rather than in the ledger's own module for the reason the
+ * port below is, and the observation carries it so the document the lead reads
+ * and the exclusion are the same rows.
+ */
 export interface SelectorStandingRefusal {
   readonly ticket: DispatchCandidate["ticket"];
   readonly ticketVersion: number;
+  readonly reason: string;
+  readonly decision: string;
+  readonly recordedAt: string;
 }
 
 /**
@@ -373,10 +387,14 @@ export interface SelectorRefusalLedger {
     readonly refusals: readonly SelectorRefusalChoice[];
     readonly lifts: readonly SelectorLiftChoice[];
   }): Promise<"Recorded" | "AlreadyRecorded">;
-  /** The tickets standing refused, oldest ticket first and bounded by the limit given. */
-  standing(
+  /**
+   * Which of the tickets named stand refused, oldest ticket first. It is exact
+   * for that set rather than a page of the project's, which is what lets one
+   * observation both exclude and show every candidate the lead has answered.
+   */
+  standingAmong(
     partition: Partition,
-    limit: number,
+    tickets: readonly DispatchCandidate["ticket"][],
   ): Promise<readonly SelectorStandingRefusal[]>;
 }
 
@@ -409,8 +427,12 @@ export const dispatchesPerDecisionUnstated = 1;
 /** How many tickets one decision may refuse, and how many it may lift. */
 export const leadRefusalsPerDecisionMax = 16;
 
-/** How many standing refusals one observation carries, which is what a read of them answers. */
-export const leadRefusalsObservedMax = agenticRefusalsAnsweredMax;
+/**
+ * How many standing refusals one observation carries, which is one per
+ * candidate on the page it is about: the refusals are the standing among that
+ * page's own tickets, so no page produces more of them than it holds tickets.
+ */
+export const leadRefusalsObservedMax = dispatchViewPageLimitMax;
 
 /** What one lead turn's observation may weigh, which is what its mailbox row holds. */
 export const leadObservationBytesMax = sessionTurnInputCharsMax;
@@ -1066,21 +1088,6 @@ export async function dryRunSelectorPolicy(
   return execution.result;
 }
 
-export function recordedSelectorObservation(
-  interaction: SelectorInteraction,
-): SelectorObservation | undefined {
-  if (interaction.observedToken === undefined) return undefined;
-  return {
-    token: interaction.observedToken,
-    candidates: interaction.observedView,
-    notificationCursor: 0,
-    changes: [],
-    operationalContext: interaction.context.operationalContext,
-    handoffNote: interaction.context.handoffNote,
-    nextCandidateScan: { state: "Exhausted", token: interaction.observedToken },
-  };
-}
-
 export interface SelectorCycleIdentity {
   readonly operation: OperationId;
   readonly selectorDecisionReference: string;
@@ -1207,6 +1214,7 @@ function persistablePolicyObservation(
         instructions: settings.basePrompt,
         northStar: settings.northStar ?? null,
         candidates: observation.candidates,
+        refusals: observation.refusals,
         changes: observation.changes,
         context: {
           operationalContext: observation.operationalContext,
@@ -1217,6 +1225,7 @@ function persistablePolicyObservation(
       leadInputBytesMax(settings),
     ) as unknown as {
       readonly candidates: readonly DispatchCandidate[];
+      readonly refusals: readonly SelectorStandingRefusal[];
       readonly changes: readonly ProjectNotification[];
       readonly context: SelectorInteraction["context"];
       readonly token: DispatchViewToken;
@@ -1224,6 +1233,7 @@ function persistablePolicyObservation(
     return {
       token: persistedInput.token,
       candidates: persistedInput.candidates,
+      refusals: persistedInput.refusals,
       notificationCursor: observation.notificationCursor,
       changes: persistedInput.changes,
       operationalContext: persistedInput.context.operationalContext,
@@ -1625,7 +1635,7 @@ export async function observeSelectorProject(
     SelectorObservationSource,
     "dispatchView" | "operationalContext"
   >,
-  refusals: Pick<SelectorRefusalLedger, "standing">,
+  refusals: Pick<SelectorRefusalLedger, "standingAmong">,
   notifications: NotificationBatch,
   pageLimit = 100,
   candidateBytesMax = 524_288,
@@ -1651,48 +1661,48 @@ export async function observeSelectorProject(
       { limit: pageLimit },
       candidateBytesMax,
     );
-  return page.result === "Reset"
-    ? undefined
-    : page.result === "Oversized"
-      ? {
-          token: page.token,
-          candidates: [],
-          notificationCursor: notifications.cursor,
-          changes,
-          operationalContext: await source.operationalContext(state.partition),
-          handoffNote: state.handoffNote,
-          nextCandidateScan:
-            page.nextAfter === undefined
-              ? { state: "Exhausted", token: page.token }
-              : { state: "Continue", token: page.token, after: page.candidate },
-          resourceLimit: "CandidateTooLarge",
-        }
-      : {
-          token: page.token,
-          candidates: undecidedCandidates(
-            page.candidates,
-            await refusals.standing(state.partition, leadRefusalsObservedMax),
-          ),
-          notificationCursor: notifications.cursor,
-          changes,
-          operationalContext: await source.operationalContext(state.partition),
-          handoffNote: state.handoffNote,
-          nextCandidateScan:
-            page.nextAfter === undefined
-              ? { state: "Exhausted", token: page.token }
-              : { state: "Continue", token: page.token, after: page.nextAfter },
-        };
+  if (page.result === "Reset") return undefined;
+  const observed = {
+    notificationCursor: notifications.cursor,
+    changes,
+    operationalContext: await source.operationalContext(state.partition),
+    handoffNote: state.handoffNote,
+  };
+  if (page.result === "Oversized")
+    return {
+      ...observed,
+      token: page.token,
+      candidates: [],
+      refusals: [],
+      nextCandidateScan:
+        page.nextAfter === undefined
+          ? { state: "Exhausted", token: page.token }
+          : { state: "Continue", token: page.token, after: page.candidate },
+      resourceLimit: "CandidateTooLarge",
+    };
+  const standing = await refusals.standingAmong(
+    state.partition,
+    page.candidates.map((candidate) => candidate.ticket),
+  );
+  return {
+    ...observed,
+    token: page.token,
+    candidates: undecidedCandidates(page.candidates, standing),
+    refusals: standing,
+    nextCandidateScan:
+      page.nextAfter === undefined
+        ? { state: "Exhausted", token: page.token }
+        : { state: "Continue", token: page.token, after: page.nextAfter },
+  };
 }
 
 /**
  * The candidates a decision is asked about, which are the page's less the ones
  * the lead already answered: a refusal stands against the version it named, so
  * a ticket re-released or re-authored since is a new question and a lifted
- * refusal is no answer at all. The standing handed in is one page, bounded by
- * `leadRefusalsObservedMax` and ordered by ticket — the same page the lead's own
- * document carries, so the page it is shown and the page it decides on name the
- * same refusals, and a project standing on more than that page holds has its
- * tail excluded from nothing and re-presented (kasofsk/chuggy#574).
+ * refusal is no answer at all. The standing handed in is exact for the page's
+ * own tickets and is the same list the observation carries to the lead, so
+ * every candidate this removes is one the decision is still shown and may lift.
  */
 function undecidedCandidates(
   candidates: readonly DispatchCandidate[],

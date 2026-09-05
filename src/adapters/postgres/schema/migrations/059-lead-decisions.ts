@@ -422,7 +422,7 @@ const podNamedFailure = [
 ];
 
 const refusalRecordSignature = "text,text,text,jsonb,jsonb";
-const refusalStandingSignature = "text,text,bigint";
+export const refusalStandingSignature = "text,text,bigint";
 const leadSessionSignature = "text,text";
 const leadEnqueueSignature = "text,text,text,text";
 const leadTurnSignature = "text";

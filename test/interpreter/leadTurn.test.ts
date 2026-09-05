@@ -30,8 +30,10 @@ import {
   leadRefusalsObservedMax,
   leadRefusalsPerDecisionMax,
   leadInputBytesMax,
+  observeSelectorProject,
   resolvedSelectorSettings,
   type SelectorObservation,
+  type SelectorRefusalLedger,
   type SelectorRuntimeSettings,
 } from "../../src/interpreter/selector.ts";
 
@@ -83,16 +85,6 @@ const operationalContext = {
   },
 } as const;
 
-const observation: SelectorObservation = {
-  token,
-  candidates: [candidate],
-  notificationCursor: 1_204,
-  changes: [{ ordinal: 1_205, kind: "Ticket", resource: "41" }],
-  operationalContext,
-  handoffNote: { watching: "41" },
-  nextCandidateScan: { state: "Exhausted", token },
-};
-
 const standingRefusal: AgenticRefusalRecord = {
   ticket: asTicketId(40),
   ticketVersion: 2,
@@ -103,13 +95,28 @@ const standingRefusal: AgenticRefusalRecord = {
 
 const standing: readonly AgenticRefusalRecord[] = [standingRefusal];
 
-/** The same view with ticket 40 in it, so a decision may name 40 and 41 alike. */
+const observation: SelectorObservation = {
+  token,
+  candidates: [candidate],
+  refusals: standing,
+  notificationCursor: 1_204,
+  changes: [{ ordinal: 1_205, kind: "Ticket", resource: "41" }],
+  operationalContext,
+  handoffNote: { watching: "41" },
+  nextCandidateScan: { state: "Exhausted", token },
+};
+
+/**
+ * The same view with ticket 40 in it and a refusal of 39 standing, so a decision
+ * may name 40 and 41 alike and lift one the page's standing carries.
+ */
 const parcelledObservation: SelectorObservation = {
   ...observation,
   candidates: [
     candidate,
     { ...candidate, ticket: asTicketId(40), ticketVersion: 2 },
   ],
+  refusals: [...standing, { ...standingRefusal, ticket: asTicketId(39) }],
 };
 
 const document: LeadObservationDocument = {
@@ -229,7 +236,6 @@ test("a decision names what it chose, refused and lifted", () => {
       handoffNote: { watching: "41" },
     }),
     parcelledObservation,
-    [...standing, { ...standingRefusal, ticket: asTicketId(39) }],
   );
   assert.deepEqual(parsed.dispatches, [
     { ticket: candidate.ticket, expectedTicketVersion: 3 },
@@ -242,7 +248,7 @@ test("a decision names what it chose, refused and lifted", () => {
 });
 
 test("a decision that chose nothing is the free one and parses", () => {
-  const parsed = parseLeadDecision(decision({}), observation, standing);
+  const parsed = parseLeadDecision(decision({}), observation);
   assert.deepEqual(parsed.dispatches, []);
   assert.deepEqual(parsed.refusals, []);
   assert.deepEqual(parsed.lifts, []);
@@ -253,7 +259,7 @@ test("a decision the pod truncated is refused rather than half-accepted", () => 
     dispatches: [{ ticket: 41, expectedTicketVersion: 3 }],
   });
   assert.throws(() =>
-    parseLeadDecision(whole.slice(0, whole.length - 8), observation, standing),
+    parseLeadDecision(whole.slice(0, whole.length - 8), observation),
   );
 });
 
@@ -267,7 +273,6 @@ test("a decision of another version, or over its bound, is refused", () => {
           handoffNote: {},
         }),
         observation,
-        standing,
       ),
     TypeError,
   );
@@ -278,7 +283,6 @@ test("a decision of another version, or over its bound, is refused", () => {
           handoffNote: { padding: "x".repeat(leadDecisionBytesMax) },
         }),
         observation,
-        standing,
       ),
     RangeError,
   );
@@ -290,7 +294,6 @@ test("a decision naming a ticket or a version the view did not show is refused",
       parseLeadDecision(
         decision({ dispatches: [{ ticket: 99, expectedTicketVersion: 3 }] }),
         observation,
-        standing,
       ),
     TypeError,
   );
@@ -299,7 +302,6 @@ test("a decision naming a ticket or a version the view did not show is refused",
       parseLeadDecision(
         decision({ dispatches: [{ ticket: 41, expectedTicketVersion: 2 }] }),
         observation,
-        standing,
       ),
     TypeError,
   );
@@ -310,7 +312,6 @@ test("a decision naming a ticket or a version the view did not show is refused",
           refusals: [{ ticket: 41, ticketVersion: 9, reason: "not yet" }],
         }),
         observation,
-        standing,
       ),
     TypeError,
   );
@@ -322,7 +323,7 @@ test("a decision naming more choices than its bounds is refused", () => {
     expectedTicketVersion: 3,
   }));
   assert.throws(
-    () => parseLeadDecision(decision({ dispatches }), observation, standing),
+    () => parseLeadDecision(decision({ dispatches }), observation),
     RangeError,
   );
   const refusals = Array.from(
@@ -330,14 +331,14 @@ test("a decision naming more choices than its bounds is refused", () => {
     () => ({ ticket: 41, ticketVersion: 3, reason: "not yet" }),
   );
   assert.throws(
-    () => parseLeadDecision(decision({ refusals }), observation, standing),
+    () => parseLeadDecision(decision({ refusals }), observation),
     RangeError,
   );
   const lifts = Array.from({ length: leadRefusalsPerDecisionMax + 1 }, () => ({
     ticket: 40,
   }));
   assert.throws(
-    () => parseLeadDecision(decision({ lifts }), observation, standing),
+    () => parseLeadDecision(decision({ lifts }), observation),
     RangeError,
   );
 });
@@ -349,7 +350,6 @@ test("a refusal reason longer than its bound, or empty, is refused", () => {
         parseLeadDecision(
           decision({ refusals: [{ ticket: 41, ticketVersion: 3, reason }] }),
           observation,
-          standing,
         ),
       TypeError,
     );
@@ -362,7 +362,6 @@ test("a decision that names one ticket twice is refused at the door", () => {
       parseLeadDecision(
         decision({ refusals: [refusal, refusal] }),
         observation,
-        standing,
       ),
     TypeError,
   );
@@ -371,7 +370,6 @@ test("a decision that names one ticket twice is refused at the door", () => {
       parseLeadDecision(
         decision({ lifts: [{ ticket: 40 }, { ticket: 40 }] }),
         observation,
-        standing,
       ),
     TypeError,
   );
@@ -383,7 +381,6 @@ test("a decision that names one ticket twice is refused at the door", () => {
           lifts: [{ ticket: 40 }],
         }),
         parcelledObservation,
-        standing,
       ),
     TypeError,
   );
@@ -395,7 +392,6 @@ test("a decision that names one ticket twice is refused at the door", () => {
           refusals: [refusal],
         }),
         observation,
-        standing,
       ),
     TypeError,
   );
@@ -414,7 +410,6 @@ test("a decision that dispatches one ticket twice is refused", () => {
       parseLeadDecision(
         decision({ dispatches: [dispatch, dispatch] }),
         observation,
-        standing,
       ),
     TypeError,
   );
@@ -424,7 +419,6 @@ test("a decision that dispatches one ticket twice is refused", () => {
         dispatches: [dispatch, { ticket: 40, expectedTicketVersion: 2 }],
       }),
       parcelledObservation,
-      standing,
     ).dispatches.map((chosen) => chosen.ticket),
     [asTicketId(41), asTicketId(40)],
     "two distinct tickets are what the raised bound is for",
@@ -437,7 +431,6 @@ test("a dispatch that names no version the observation showed is refused", () =>
       parseLeadDecision(
         decision({ dispatches: [{ ticket: 41 }] }),
         observation,
-        standing,
       ),
     TypeError,
   );
@@ -464,12 +457,7 @@ test("an observation carrying more than one turn is shown is refused", () => {
 
 test("a lift of a refusal that is not standing is refused", () => {
   assert.throws(
-    () =>
-      parseLeadDecision(
-        decision({ lifts: [{ ticket: 39 }] }),
-        observation,
-        standing,
-      ),
+    () => parseLeadDecision(decision({ lifts: [{ ticket: 39 }] }), observation),
     TypeError,
   );
 });
@@ -480,7 +468,6 @@ test("a decision with no handoff note and no attention is refused", () => {
       parseLeadDecision(
         JSON.stringify({ version: 1, attention: "Monitoring" }),
         observation,
-        standing,
       ),
     TypeError,
   );
@@ -489,7 +476,6 @@ test("a decision with no handoff note and no attention is refused", () => {
       parseLeadDecision(
         JSON.stringify({ version: 1, handoffNote: {} }),
         observation,
-        standing,
       ),
     TypeError,
   );
@@ -541,6 +527,7 @@ test("a decision at both choice ceilings still leaves the note room", () => {
       ...candidate,
       ticket: asTicketId(choice.ticket),
     })),
+    refusals: [],
   };
   const documentOf = (note: string) =>
     JSON.stringify({
@@ -561,18 +548,78 @@ test("a decision at both choice ceilings still leaves the note room", () => {
   const parsed = parseLeadDecision(
     documentOf("x".repeat(room)),
     widestObservation,
-    [],
   );
   assert.equal(parsed.dispatches.length, leadDispatchesMax);
   assert.equal(parsed.refusals.length, leadRefusalsPerDecisionMax);
   assert.throws(
     () =>
-      parseLeadDecision(
-        documentOf("x".repeat(room + 1)),
-        widestObservation,
-        [],
-      ),
+      parseLeadDecision(documentOf("x".repeat(room + 1)), widestObservation),
     RangeError,
     "the derived room is the document bound and not an approximation of it",
+  );
+});
+
+/** A ledger standing on the refusals it is given, answering the tickets it is asked. */
+function refusalsStandingAmong(
+  standing: readonly AgenticRefusalRecord[],
+): Pick<SelectorRefusalLedger, "standingAmong"> {
+  return {
+    standingAmong: (_partition, tickets) =>
+      Promise.resolve(
+        standing.filter((refusal) => tickets.includes(refusal.ticket)),
+      ),
+  };
+}
+
+/**
+ * A candidate the observation excluded is one the lead is shown and may lift,
+ * whatever the project's own standing runs to: the exclusion and the document
+ * are one read of the page's own tickets (kasofsk/chuggy#574).
+ */
+test("a candidate excluded past a page of standing is shown and can be lifted", async () => {
+  const tail = asTicketId(dispatchViewPageLimitMax * 2);
+  const refused: AgenticRefusalRecord = {
+    ...standingRefusal,
+    ticket: tail,
+    ticketVersion: 5,
+  };
+  const observed = await observeSelectorProject(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Monitoring",
+      handoffNote: {},
+      candidateScan: { state: "Unstarted" },
+    },
+    {
+      dispatchView: () =>
+        Promise.resolve({
+          result: "Page",
+          token,
+          candidates: [{ ...candidate, ticket: tail, ticketVersion: 5 }],
+          notificationCursor: 1,
+        } as const),
+      operationalContext: () => Promise.resolve(operationalContext),
+    },
+    refusalsStandingAmong([refused]),
+    { result: "Events", cursor: 1, events: [] },
+  );
+  assert.ok(observed, "a moved view is an observation");
+  assert.deepEqual(
+    observed.candidates,
+    [],
+    "the refused candidate is excluded",
+  );
+  assert.deepEqual(
+    leadObservedRefusals(observed.refusals, observed.candidates).map(
+      (refusal) => [refusal.ticket, refusal.superseded],
+    ),
+    [[tail, false]],
+    "what the exclusion removed is what the document names",
+  );
+  assert.deepEqual(
+    parseLeadDecision(decision({ lifts: [{ ticket: tail }] }), observed).lifts,
+    [{ ticket: tail }],
   );
 });

@@ -3,10 +3,10 @@
  * what standing is derived from, what a second recording of one decision does,
  * and what reaches the change log.
  *
- * EVERY CASE DRIVES THE DOOR ITS ROLE HOLDS. The write and the selector's
- * standing read run as the selector service; the ledger and the project's
- * standing run as the API. A case that drove either as the migration owner
- * would pass over a grant that was never made.
+ * EVERY CASE DRIVES THE DOOR ITS ROLE HOLDS. The write and the standing among a
+ * ticket set run as the selector service; the ledger and the page of the
+ * project's standing run as the API. A case that drove either as the migration
+ * owner would pass over a grant that was never made.
  */
 
 import assert from "node:assert/strict";
@@ -16,9 +16,13 @@ import {
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
   agenticRefusalsAnsweredMax,
+  dispatchViewPageLimitMax,
 } from "../../src/contract/http.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { leadRefusalsPerDecisionMax } from "../../src/interpreter/selector.ts";
 import { leadRigDecision, leadRigOpen, leadRigProject } from "./leadHarness.ts";
+import type { TicketId } from "../../src/domain/ids.ts";
+import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { LeadRig } from "./leadHarness.ts";
 
 let rig: LeadRig;
@@ -50,10 +54,10 @@ test("a decision's refusals become the project's standing refusals", async () =>
     "Recorded",
   );
 
-  const standing = await rig.selectorStanding.standing(
-    partition,
-    refusalsBoundless,
-  );
+  const standing = await rig.selectorStanding.standingAmong(partition, [
+    asTicketId(41),
+    asTicketId(42),
+  ]);
   assert.deepEqual(
     standing.map((refusal) => [refusal.ticket, refusal.ticketVersion]),
     [
@@ -96,7 +100,7 @@ test("a lift is a row and the ticket stops standing refused", async () => {
   );
 
   assert.deepEqual(
-    await rig.selectorStanding.standing(partition, refusalsBoundless),
+    await rig.selectorStanding.standingAmong(partition, [asTicketId(7)]),
     [],
     "the latest entry is a lift, so nothing stands refused",
   );
@@ -188,9 +192,12 @@ test("a second recording of one decision writes nothing", async () => {
     "AlreadyRecorded",
   );
   assert.deepEqual(
-    (await rig.selectorStanding.standing(partition, refusalsBoundless)).map(
-      (refusal) => refusal.ticket,
-    ),
+    (
+      await rig.selectorStanding.standingAmong(partition, [
+        asTicketId(11),
+        asTicketId(12),
+      ])
+    ).map((refusal) => refusal.ticket),
     [11],
     "the retry appended nothing, so the second ticket never stood refused",
   );
@@ -286,8 +293,134 @@ test("a decision that refused and lifted nothing writes nothing", async () => {
     "Recorded",
   );
   assert.deepEqual(
-    await rig.selectorStanding.standing(partition, refusalsBoundless),
+    await rig.selectorStanding.standingAmong(partition, [asTicketId(1)]),
     [],
     "the rows are the marker, so a decision with none leaves none",
+  );
+});
+
+/** Tickets counted up from the first, which is the shape of a candidate page. */
+function ticketsCounted(length: number): readonly TicketId[] {
+  return Array.from({ length }, (_unused, index) => asTicketId(index + 1));
+}
+
+/** Every ticket refused, in batches no larger than one decision may refuse. */
+async function refusalsAmongRecorded(
+  partition: Partition,
+  label: string,
+  tickets: readonly TicketId[],
+): Promise<void> {
+  for (
+    let start = 0;
+    start < tickets.length;
+    start += leadRefusalsPerDecisionMax
+  ) {
+    const decision = await leadRigDecision(
+      rig,
+      partition,
+      `${label}-${String(start)}`,
+      { notificationCursor: start },
+    );
+    await rig.writes.record({
+      partition,
+      decision,
+      refusals: tickets
+        .slice(start, start + leadRefusalsPerDecisionMax)
+        .map((ticket) => ({ ticket, ticketVersion: 1, reason: "no capacity" })),
+      lifts: [],
+    });
+  }
+}
+
+/**
+ * The read an observation excludes against is bounded by the tickets it names
+ * and not by the project's refusal count, so the tail no page of the project's
+ * standing reaches is answered exactly (kasofsk/chuggy#574).
+ */
+test("the standing among a ticket set answers past the page standing fills", async () => {
+  const partition = await leadRigProject(rig, "among-tail");
+  const tickets = ticketsCounted(
+    agenticRefusalsAnsweredMax + leadRefusalsPerDecisionMax,
+  );
+  await refusalsAmongRecorded(partition, "among-tail", tickets);
+
+  const paged = await rig.apiRefusals.standing(partition, refusalsBoundless);
+  const tail = tickets.slice(paged.length);
+  assert.ok(
+    tail.length > 0,
+    "the page stops short of what the project stands on",
+  );
+  assert.deepEqual(
+    (await rig.selectorStanding.standingAmong(partition, tail)).map(
+      (refusal) => refusal.ticket,
+    ),
+    [...tail],
+  );
+});
+
+test("the standing among a ticket set answers no lift and no ticket it was not given", async () => {
+  const partition = await leadRigProject(rig, "among-exact");
+  const refused = await leadRigDecision(rig, partition, "among-refuse");
+  await rig.writes.record({
+    partition,
+    decision: refused,
+    refusals: [
+      { ticket: asTicketId(11), ticketVersion: 2, reason: "no capacity" },
+      { ticket: asTicketId(12), ticketVersion: 3, reason: "needs a brief" },
+      { ticket: asTicketId(13), ticketVersion: 4, reason: "waiting on review" },
+    ],
+    lifts: [],
+  });
+  const lifted = await leadRigDecision(rig, partition, "among-lift", {
+    notificationCursor: 1,
+  });
+  await rig.writes.record({
+    partition,
+    decision: lifted,
+    refusals: [],
+    lifts: [{ ticket: asTicketId(11) }],
+  });
+
+  assert.deepEqual(
+    (
+      await rig.selectorStanding.standingAmong(partition, [
+        asTicketId(11),
+        asTicketId(12),
+      ])
+    ).map((refusal) => [refusal.ticket, refusal.ticketVersion]),
+    [[12, 3]],
+    "the lifted ticket stands on nothing and the one never named is not answered",
+  );
+});
+
+/** A page with no candidates on it names no tickets, which is a read and not a fault. */
+test("the standing among no tickets at all answers nothing and raises nothing", async () => {
+  const partition = await leadRigProject(rig, "among-none");
+  const decision = await leadRigDecision(rig, partition, "among-none");
+  await rig.writes.record({
+    partition,
+    decision,
+    refusals: [{ ticket: asTicketId(21), ticketVersion: 1, reason: "later" }],
+    lifts: [],
+  });
+  assert.deepEqual(await rig.selectorStanding.standingAmong(partition, []), []);
+});
+
+test("a standing read naming more tickets than a candidate page holds is refused", async () => {
+  const partition = await leadRigProject(rig, "among-oversized");
+  await assert.rejects(
+    rig.selectorStanding.standingAmong(
+      partition,
+      ticketsCounted(dispatchViewPageLimitMax + 1),
+    ),
+    /names at most/u,
+  );
+  assert.deepEqual(
+    await rig.selectorStanding.standingAmong(
+      partition,
+      ticketsCounted(dispatchViewPageLimitMax),
+    ),
+    [],
+    "the page it is bounded by is a size it answers",
   );
 });

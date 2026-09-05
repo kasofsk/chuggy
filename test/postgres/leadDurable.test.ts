@@ -16,7 +16,6 @@ import { randomUUID } from "node:crypto";
 import {
   leadTurnsAnsweredMax,
   agenticRefusalReasonCharsMax,
-  agenticRefusalsAnsweredMax,
   dispatchViewPageLimitMax,
   leadObservedCandidateCharsMax,
   leadObservationFixedCharsMax,
@@ -70,6 +69,7 @@ import {
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
+import { leadRefusalsObservedMax } from "../../src/interpreter/selector.ts";
 import type { SelectorDecisionProposals } from "../../src/interpreter/selector.ts";
 import { postgresHarnessRolePool } from "./harness.ts";
 import {
@@ -1317,7 +1317,7 @@ function escapedText(chars: number): string {
  */
 function widestObservation(partition: Partition, decision: string): string {
   const refusals = Array.from(
-    { length: agenticRefusalsAnsweredMax },
+    { length: leadRefusalsObservedMax },
     (_unused, at) => ({
       ticket: at + 1,
       ticketVersion: 1,

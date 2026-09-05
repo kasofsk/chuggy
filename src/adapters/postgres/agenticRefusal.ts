@@ -1,13 +1,16 @@
 /**
- * The lead's refusal ledger as PostgreSQL answers it: one write door for the
- * selector's own role and two reads for the API's, each a `SECURITY DEFINER`
- * function 059 declares. Every port here is
- * `src/interpreter/agenticRefusal.ts`'s and this module declares none of its own.
+ * The lead's refusal ledger as PostgreSQL answers it, every port
+ * `src/interpreter/agenticRefusal.ts`'s and none declared here. Each door is a
+ * `SECURITY DEFINER` function 059 declares, but the ticket-set read, which is
+ * 073's.
  *
- * THE WRITE AND THE READS STAND ON DIFFERENT POOLS. `record_agentic_refusals`
- * is granted to the selector service and the two reads to the API, so a caller
- * that holds one credential cannot reach the other's door. Handing both to one
- * pool here would make that separation a comment rather than a grant.
+ * THE SELECTOR'S POOL AND THE API'S OPEN DIFFERENT DOORS.
+ * `postgresAgenticRefusalLedger` and `postgresAgenticRefusalStanding` run on the
+ * selector service's pool and reach `record_agentic_refusals` and
+ * `standing_agentic_refusals_among`; `postgresAgenticRefusalReads` runs on the
+ * API's and reaches `read_standing_agentic_refusals` and
+ * `read_agentic_refusals`. Neither role is granted the other's, so handing both
+ * to one pool here would make that separation a comment rather than a grant.
  *
  * STANDING IS NOT SELECTED, IT IS ANSWERED. Which tickets currently stand
  * refused is the latest row per ticket, and the server is where that is
@@ -25,6 +28,7 @@ import {
   type AgenticRefusalEntry,
   type AgenticRefusalRead,
   type AgenticRefusalRecord,
+  type AgenticRefusalSelectorRead,
   type AgenticRefusalWrite,
 } from "../../interpreter/agenticRefusal.ts";
 import { projectRowCounter } from "./rows.ts";
@@ -105,21 +109,23 @@ export function postgresAgenticRefusalLedger(
 }
 
 /**
- * The one read the selector's own role holds: which tickets stand refused, so
- * a decision can be shown what it has already declined. The ledger is not part
- * of it — a whole ticket's history is what a person reads, and the role that
- * decides needs the standing and nothing else.
+ * The refusal read the selector's own role is granted and the whole of it:
+ * which of a named set of tickets stand refused, 073 having revoked the paged
+ * standing 059 granted that role. The ledger was never part of it — a whole
+ * ticket's history is what a person reads, and the role that decides needs the
+ * standing and nothing else.
  */
 export function postgresAgenticRefusalStanding(
   pool: pg.Pool,
-): Pick<AgenticRefusalRead, "standing"> {
+): AgenticRefusalSelectorRead {
   return {
-    standing: async (partition, limit) => {
+    standingAmong: async (partition, tickets) => {
       const found = await pool.query<StandingRefusalRow>(
         sql`SELECT ticket::text AS ticket,ticket_version::text AS ticket_version,
                    reason,selector_decision,recorded_at
-              FROM standing_agentic_refusals(
-                     ${partition.tenant},${partition.project},${limit})`,
+              FROM standing_agentic_refusals_among(
+                     ${partition.tenant},${partition.project},
+                     ${[...tickets]}::bigint[])`,
       );
       return found.rows.map(standingRefusalOf);
     },
