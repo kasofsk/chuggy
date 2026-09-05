@@ -1,6 +1,7 @@
 /**
  * The project's threads: which one is the reader's own, what an owner nobody
- * has any more is drawn as, and who is offered a thread to open.
+ * has any more is drawn as, who is offered a thread to open, and which rows
+ * offer a close.
  *
  * THE `Open` CONTROL IS OFFERED FROM THE LISTING'S OWN `mine` AND NOTHING ELSE.
  * A page that worked out whose thread was whose in the browser would offer a
@@ -25,6 +26,7 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import {
+  threadEntry,
   threadMineSession,
   threadOrphanSession,
   threadOtherSession,
@@ -72,14 +74,16 @@ function drawThreads(
     },
     status: 201,
   }),
-): { readonly posts: () => number } {
+): { readonly posts: () => number; readonly posted: () => readonly string[] } {
   let posts = 0;
+  const posted: string[] = [];
   const fetching = (
     url: string,
     init?: { readonly method?: string },
   ): Promise<Response> => {
     if (init?.method === "POST") {
       posts += 1;
+      posted.push(url);
       const answered = opening();
       return Promise.resolve(answer(answered.body, answered.status));
     }
@@ -90,7 +94,7 @@ function drawThreads(
     );
   };
   vi.stubGlobal("fetch", fetching);
-  return { posts: () => posts };
+  return { posts: () => posts, posted: () => posted };
 }
 
 async function mountThreads(): Promise<void> {
@@ -192,6 +196,51 @@ test("an open the server refused says so and navigates nowhere", async () => {
   await settled();
   expect(screen.getByText(/^Refused · /u)).toBeDefined();
   expect(navigations.length, "a refused open navigated anyway").toBe(0);
+});
+
+/**
+ * The control is per row and the row it is pressed in is the one closed, so the
+ * case presses the orphaned row's — the one nobody owns and nobody else's page
+ * would offer — and reads the session out of the URL the press went to.
+ */
+test("every row not closed offers Close, and a press closes that row's thread", async () => {
+  const server = drawThreads(
+    () => ({
+      threads: [
+        ...threadsBody().threads,
+        threadEntry({ session: "thread-done", state: "Closed", turns: 9 }),
+      ],
+    }),
+    () => ({
+      body: threadEntry({ session: threadOrphanSession, state: "Closed" }),
+      status: 200,
+    }),
+  );
+  await mountThreads();
+  const offered = [...document.querySelectorAll("tbody tr")].map((row) => [
+    row.querySelector("td")?.textContent,
+    row.querySelector("button")?.textContent ?? null,
+  ]);
+  expect(offered).toStrictEqual([
+    [threadMineSession, "Close"],
+    [threadOtherSession, "Close"],
+    [threadOrphanSession, "Close"],
+    ["thread-done", null],
+  ]);
+  const orphanRow = [...document.querySelectorAll("tbody tr")].find((row) =>
+    row.textContent?.includes(threadOrphanSession),
+  );
+  const close = orphanRow?.querySelector("button");
+  if (close === null || close === undefined)
+    throw new Error("the orphaned row offered no Close");
+  await turned(() => {
+    fireEvent.click(close);
+  });
+  await settled();
+  expect(server.posted()).toStrictEqual([
+    `/api/v1/tenants/acme/projects/atlas/threads/${threadOrphanSession}/close`,
+  ]);
+  expect(navigations.length, "a close navigated somewhere").toBe(0);
 });
 
 test("a project with no threads says so", async () => {

@@ -140,6 +140,7 @@ export const sessionStoreStreamListFunction = "list_session_store_streams";
 export const sessionCapabilitiesSetFunction = "set_session_capabilities";
 export const threadOpenFunction = "open_member_thread";
 export const threadMessageEnqueueFunction = "enqueue_thread_message";
+export const threadCloseFunction = "close_member_thread";
 export const threadWakeFunction = "wake_member_thread";
 export const projectThreadsReadFunction = "read_project_threads";
 export const threadStandingReadFunction = "read_thread_standing";
@@ -155,6 +156,8 @@ export const projectChangeAgenticRefusalFunction = "selector_refusal_change";
 export const projectChangeSessionTurnFunction = "session_turn_appends_a_change";
 export const projectChangeSessionStoreFunction =
   "session_store_batch_appends_a_change";
+export const projectChangeSessionStateFunction =
+  "session_state_appends_a_change";
 export const finalizerRole = "chuggy_finalizer";
 export const completionFunction = "submit_task_completion";
 export const finalizationFunction = "submit_finalization_result";

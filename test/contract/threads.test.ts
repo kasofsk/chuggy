@@ -1,5 +1,5 @@
 /**
- * The thread wire: the four routes it adds, the bounds those routes are sized
+ * The thread wire: the five routes it adds, the bounds those routes are sized
  * against, and the schemas a browser runs over the bodies.
  *
  * The bounds are asserted as ARITHMETIC rather than as values, the way the
@@ -71,6 +71,7 @@ test("every thread route hangs from the project it is scoped to", () => {
     nativeHttpRoutes.thread,
     nativeHttpRoutes.threadTranscript,
     nativeHttpRoutes.threadMessages,
+    nativeHttpRoutes.threadClose,
   ];
 
   assert.equal(new Set(routes).size, routes.length);
@@ -86,6 +87,7 @@ test("every thread route hangs from the project it is scoped to", () => {
     nativeHttpRoutes.thread,
     nativeHttpRoutes.threadTranscript,
     nativeHttpRoutes.threadMessages,
+    nativeHttpRoutes.threadClose,
   ])
     assert.ok(route.startsWith(`${nativeHttpRoutes.threads}/:session`), route);
 });

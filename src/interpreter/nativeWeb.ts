@@ -167,6 +167,7 @@ import {
   threadEntry,
   threadMessageSent,
   threadSeeding,
+  type ThreadClosing,
   type ThreadMailboxQuery,
   type ThreadMessageSent,
   type ThreadOpening,
@@ -664,6 +665,11 @@ export interface NativeWeb {
       readonly message: string;
     },
   ): Promise<ThreadMessageSent>;
+  closeThread(
+    principal: Principal,
+    partition: Partition,
+    session: SessionId,
+  ): Promise<ThreadClosing>;
   leadInquiries(
     principal: Principal,
     partition: Partition,
@@ -1432,6 +1438,30 @@ function nativeSendThreadMessageMethod(
 }
 
 /**
+ * The close door, which is `Mutate` and reaches any thread the project holds:
+ * a thread files drafts and does nothing else, so ending one takes nothing its
+ * owner cannot file again from a new one, and the durable side is what refuses
+ * a session that is not a thread. The turns it still held are abandoned, the
+ * lead is told nothing, and the thread stays readable.
+ */
+function nativeCloseThreadMethod(
+  access: ProjectAccess,
+  threads?: NativeThreadPorts,
+): NativeWeb["closeThread"] {
+  return async (principal, partition, session) => {
+    if ((await access.authorize(principal, partition, "Mutate")) === undefined)
+      return { result: "NotFound" };
+    const ports = composedThreadPorts(threads);
+    const closed = await ports.threads.close({ partition, session });
+    if (closed.closed === "NoThread") return { result: "NotFound" };
+    return {
+      result: closed.closed,
+      thread: threadEntry(closed.thread, principal),
+    };
+  };
+}
+
+/**
  * The three reads every member of the project may make of every thread in it,
  * each reauthorizing before it reaches a store. A thread that is not this
  * project's own, and a session that is not a thread at all, answer alike:
@@ -1622,18 +1652,24 @@ function nativeLeadInquiryMethods(
   };
 }
 
-/** The thread side of the boundary, whose reads and whose two doors reach it as one. */
+/** The thread side of the boundary, whose reads and whose three doors reach it as one. */
 function nativeThreadMethods(
   access: ProjectAccess,
   threads?: NativeThreadPorts,
 ): Pick<
   NativeWeb,
-  "threads" | "thread" | "threadTranscript" | "openThread" | "sendThreadMessage"
+  | "threads"
+  | "thread"
+  | "threadTranscript"
+  | "openThread"
+  | "sendThreadMessage"
+  | "closeThread"
 > {
   return {
     ...nativeThreadReadMethods(access, threads),
     openThread: nativeOpenThreadMethod(access, threads),
     sendThreadMessage: nativeSendThreadMessageMethod(access, threads),
+    closeThread: nativeCloseThreadMethod(access, threads),
   };
 }
 

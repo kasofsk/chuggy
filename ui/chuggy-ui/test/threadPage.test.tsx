@@ -3,6 +3,10 @@
  * answered, what a wake is drawn as, and whether the page moves when its session
  * does.
  *
+ * THE CLOSE IS PRESSED ON ANOTHER MEMBER'S THREAD, because the door is the
+ * project's and a page that offered it on the reader's own alone would look
+ * right there and hide the orphaned thread's control.
+ *
  * THE LIVE CASE AND THE COMPOSER CASE BOTH HAVE A FALSIFYING TWIN. A page that
  * re-read on every `Session` frame would look right in the live case and would
  * re-read every thread's page on every other thread's turn, so the twin pushes
@@ -110,14 +114,19 @@ function drawThread(
     body: { turn: "thread-turn-x", ordinal: 4 },
     status: 202,
   }),
-): { readonly posts: () => readonly unknown[] } {
+): {
+  readonly posts: () => readonly unknown[];
+  readonly posted: () => readonly string[];
+} {
   const posts: unknown[] = [];
+  const posted: string[] = [];
   const fetching = (
     url: string,
     init?: { readonly method?: string; readonly body?: string },
   ): Promise<Response> => {
     if (init?.method === "POST") {
       posts.push(JSON.parse(init.body ?? "null"));
+      posted.push(url);
       const sent = posting();
       return Promise.resolve(answer(sent.body, sent.status));
     }
@@ -125,7 +134,7 @@ function drawThread(
     return Promise.resolve(answer(found.body, found.status));
   };
   vi.stubGlobal("fetch", fetching);
-  return { posts: () => posts };
+  return { posts: () => posts, posted: () => posted };
 }
 
 function composer(): HTMLTextAreaElement | null {
@@ -154,6 +163,68 @@ test("the head names the thread, its standing and whose it is", async () => {
   expect(screen.getByText("Open")).toBeDefined();
   expect(screen.getByText("Mine")).toBeDefined();
   expect(screen.getByText("geoff")).toBeDefined();
+});
+
+/**
+ * The close is any reader's, so the case presses it on ANOTHER member's thread;
+ * and the page refreshes nothing itself — the frame does — so what is asserted
+ * is the one post and where it went.
+ */
+test("Close on any open thread posts to its close route and nothing else", async () => {
+  routed.session = threadOtherSession;
+  const server = drawThread(
+    () => ({
+      thread: threadBody({
+        session: threadOtherSession,
+        mine: false,
+        owner: "ada",
+      }),
+    }),
+    () => ({
+      body: threadEntry({ session: threadOtherSession, state: "Closed" }),
+      status: 200,
+    }),
+  );
+  await mountThread();
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  });
+  await settled();
+  expect(server.posted()).toStrictEqual([
+    `/api/v1/tenants/acme/projects/atlas/threads/${threadOtherSession}/close`,
+  ]);
+  expect(server.posts()).toStrictEqual([{}]);
+  expect(screen.queryByText(/^Refused · /u)).toBeNull();
+});
+
+test("a closed thread offers no Close, and an orphaned one does", async () => {
+  drawThread(() => ({ thread: threadBody({ state: "Closed" }) }));
+  await mountThread();
+  expect(
+    screen.queryByRole("button", { name: "Close" }),
+    "a thread already closed was offered a close",
+  ).toBeNull();
+  cleanup();
+  drawThread(() => ({ thread: threadBody({ orphaned: true }) }));
+  await mountThread();
+  expect(screen.getByRole("button", { name: "Close" })).toBeDefined();
+});
+
+test("a close the server refused says so and leaves the standing alone", async () => {
+  drawThread(
+    () => ({ thread: threadBody({}) }),
+    () => ({
+      body: { error: { code: "Forbidden", message: "no" } },
+      status: 403,
+    }),
+  );
+  await mountThread();
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  });
+  await settled();
+  expect(screen.getByText(/^Refused · /u)).toBeDefined();
+  expect(screen.getByText("Open")).toBeDefined();
 });
 
 test("my thread draws a composer", async () => {

@@ -17,6 +17,10 @@
  * Nothing under `ui/chuggy-ui/` names a principal or decodes a token, so whose
  * thread this is can only be the server's answer — and the message door refuses
  * another member's thread whatever this page draws.
+ *
+ * THE CLOSE IS OFFERED FROM THE READ'S OWN STANDING AND TO ANY READER, because
+ * the door is the project's `Mutate` and not the thread's owner. A frame from
+ * the close is what takes the control away again.
  */
 
 import { useParams } from "@tanstack/react-router";
@@ -32,7 +36,7 @@ import {
   leadStreamListed,
 } from "../core/leadTranscript.ts";
 import { projectListRereadNamed } from "../core/projectQueryKeys.ts";
-import { threadTakesMessages } from "../core/threads.ts";
+import { threadClosable, threadTakesMessages } from "../core/threads.ts";
 import { threadStandingTone } from "../core/tones.ts";
 import { usePanelList } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
@@ -42,6 +46,7 @@ import {
   LeadLog,
   useLeadTranscript,
 } from "./lead/LeadTranscript.tsx";
+import { ThreadClose } from "./thread/ThreadClose.tsx";
 import { ThreadComposer } from "./thread/ThreadComposer.tsx";
 import { ThreadTurns } from "./thread/ThreadTurns.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
@@ -75,7 +80,10 @@ export function useThread(
   );
 }
 
-function ThreadHead(props: { readonly thread: ThreadResponse }): ReactNode {
+function ThreadHead(props: {
+  readonly partition: PartitionIdentity;
+  readonly thread: ThreadResponse;
+}): ReactNode {
   const thread = props.thread;
   return (
     <div className="thread-head">
@@ -88,6 +96,13 @@ function ThreadHead(props: { readonly thread: ThreadResponse }): ReactNode {
           {thread.state}
         </Pill>
         {thread.mine ? <Pill tone="live">Mine</Pill> : null}
+        {threadClosable(thread) ? (
+          <ThreadClose
+            partition={props.partition}
+            session={thread.session}
+            variant="danger"
+          />
+        ) : null}
       </div>
       <Fields variant="inline">
         <Field name="Owner" absent={thread.owner === undefined}>
@@ -117,7 +132,9 @@ function ThreadBody(props: {
   });
   return (
     <>
-      {thread === undefined ? null : <ThreadHead thread={thread} />}
+      {thread === undefined ? null : (
+        <ThreadHead partition={props.partition} thread={thread} />
+      )}
       <DataPanel title="Turns" state={props.state}>
         {(value) => (
           <ThreadTurns

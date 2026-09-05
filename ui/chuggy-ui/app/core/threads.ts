@@ -104,6 +104,14 @@ export function threadTakesMessages(
   return thread.state === "Open";
 }
 
+/** Whether a thread can still be closed, which every standing but `Closed` can:
+ * an orphaned thread still acts, and is the one most worth ending. */
+export function threadClosable(
+  thread: Pick<ThreadEntryResponse, "state">,
+): boolean {
+  return thread.state !== "Closed";
+}
+
 /**
  * The word one turn's kind is drawn as, total over the wire's roster so a kind
  * it grows stops compiling here. `UserMessage` is what the mailbox calls a

@@ -1,6 +1,7 @@
 /**
- * The boundary's five thread methods against doubles: which access each asks
- * for, what it answers when it is refused, and what it puts in a mailbox.
+ * The boundary's six thread methods against doubles: which access each asks
+ * for, what it answers when it is refused, what it puts in a mailbox and what
+ * it closes.
  *
  * MIGRATION 062 IS NOT WRITTEN YET, so the store below is a double and every
  * claim here is about the boundary rather than about a definer. What that can
@@ -37,6 +38,7 @@ import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   checkedThreadsLimit,
   threadBacklogRetrySeconds,
+  type ThreadClosed,
   type ThreadMessageEnqueued,
   type ThreadRecord,
   type ThreadStore,
@@ -95,6 +97,8 @@ interface ThreadDoubles {
   readonly calls: string[];
   readonly threads: readonly ThreadRecord[];
   readonly enqueued: ThreadMessageEnqueued;
+  /** What the close door answers where a case sets it; else the record named, closed. */
+  readonly closed?: ThreadClosed;
   readonly northStar?: string;
   /** The identity the mint answers, which the definer opens the thread under. */
   readonly minted?: SessionId;
@@ -134,6 +138,16 @@ function threadStore(doubles: ThreadDoubles): ThreadStore {
     enqueueMessage: (input) => {
       doubles.calls.push(`enqueue:${input.turn}:${input.input}`);
       return Promise.resolve(doubles.enqueued);
+    },
+    close: ({ session }) => {
+      doubles.calls.push(`close:${session}`);
+      if (doubles.closed !== undefined) return Promise.resolve(doubles.closed);
+      const found = doubles.threads.find((held) => held.session === session);
+      return Promise.resolve(
+        found === undefined
+          ? { closed: "NoThread" }
+          : { closed: "Closed", thread: { ...found, state: "Closed" } },
+      );
     },
   };
 }
@@ -404,6 +418,67 @@ test("opening a thread is a mutation, and the roster is never the caller's", asy
     (await boundary({}, ["Read"]).web.openThread(geoff, partition)).result,
     "NotFound",
   );
+});
+
+/**
+ * Closing reaches any thread the project holds and not the caller's own alone:
+ * a thread files drafts and does nothing else, so the door is `Mutate` over the
+ * project rather than ownership of the thread, and the case closes another
+ * member's to hold that.
+ */
+test("any member who may mutate closes any thread, and is answered it closed", async () => {
+  const { web, held } = boundary();
+
+  const closed = await web.closeThread(geoff, partition, hers);
+
+  assert.deepEqual(closed, {
+    result: "Closed",
+    thread: {
+      session: hers,
+      owner: "dana",
+      state: "Closed",
+      mine: false,
+      turns: 2,
+      agentReference: "1a2b",
+    },
+  });
+  assert.deepEqual(held.calls, ["authorize:Mutate", `close:${hers}`]);
+});
+
+test("a member with Read alone cannot close a thread, and no door is reached", async () => {
+  const { web, held } = boundary({}, ["Read"]);
+
+  assert.deepEqual(await web.closeThread(geoff, partition, mine), {
+    result: "NotFound",
+  });
+  assert.deepEqual(held.calls, ["authorize:Mutate"]);
+});
+
+test("closing a thread that is already closed is answered as that, not refused", async () => {
+  const { web } = boundary({
+    closed: {
+      closed: "AlreadyClosed",
+      thread: record(mine, geoff, { state: "Closed" }),
+    },
+  });
+
+  const closed = await web.closeThread(geoff, partition, mine);
+
+  assert.equal(closed.result, "AlreadyClosed");
+  assert.equal(
+    closed.result === "AlreadyClosed" ? closed.thread.state : "",
+    "Closed",
+  );
+});
+
+test("closing a session that is no thread of this project's is not found", async () => {
+  const { web, held } = boundary();
+
+  assert.deepEqual(
+    await web.closeThread(geoff, partition, asSessionId("lead-atlas")),
+    { result: "NotFound" },
+  );
+  assert.ok(held.calls.includes("close:lead-atlas"));
 });
 
 /**
