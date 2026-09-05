@@ -16,6 +16,13 @@
  * is refused rather than served, so the read is finite without a `LIMIT` — and
  * it is a `LIMIT` that would make the answer partial again.
  *
+ * THE PAGED READ IS CLOSED TO THE SELECTOR IN THE SAME BREATH. 059 granted it
+ * to that role because the exclusion read it, and no selector read opens it
+ * once the exclusion is asked about a ticket set; a grant nothing opens is a
+ * privilege the startup check cannot tell from one something needs. The API
+ * reaches standing through `read_standing_agentic_refusals`, a definer of its
+ * own, so the console's page is untouched.
+ *
  * STANDING IS STILL THE LATEST ROW PER TICKET, derived here as 059 derives it.
  * A second reading of what standing means would be a second authority on it.
  *
@@ -27,12 +34,30 @@
 import { dispatchViewPageLimitMax } from "../../../../contract/http.ts";
 import {
   agenticRefusalStandingAmongFunction,
+  agenticRefusalStandingFunction,
   boundaryOwnerRole,
   selectorServiceRole,
   type Migration,
 } from "../shared.ts";
+import { refusalStandingSignature } from "./059-lead-decisions.ts";
 
 const standingAmongSignature = "text,text,bigint[]";
+
+/**
+ * The door this migration opens to the selector role and the door it closes to
+ * it, named here beside the grant and the revoke that make them so. The startup
+ * privilege check is built from these rather than from a copy of them, because
+ * a check listing a door the role no longer holds refuses a healthy process and
+ * one omitting a door it opens passes a process that cannot observe.
+ */
+export const standingAmongDoorOpened: readonly [string, string] = [
+  agenticRefusalStandingAmongFunction,
+  standingAmongSignature,
+];
+export const standingAmongDoorClosed: readonly [string, string] = [
+  agenticRefusalStandingFunction,
+  refusalStandingSignature,
+];
 
 /** How many tickets one read may name, which is the candidate page it is asked about. */
 const standingAmongTicketsMax = dispatchViewPageLimitMax;
@@ -71,9 +96,12 @@ const refusalsAmongACandidatePage = [
   `GRANT EXECUTE ON FUNCTION
      ${agenticRefusalStandingAmongFunction}(${standingAmongSignature})
      TO ${selectorServiceRole}`,
+  `REVOKE EXECUTE ON FUNCTION
+     ${agenticRefusalStandingFunction}(${refusalStandingSignature})
+     FROM ${selectorServiceRole}`,
 ];
 
-/** The standing refusals among a ticket set, as the selector's own role reads them. */
+/** The standing refusals among a ticket set, as the only such read that role keeps. */
 export const migration073: Migration = {
   version: 73,
   name: "the standing refusals among a candidate page",

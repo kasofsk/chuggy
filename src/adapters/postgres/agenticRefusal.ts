@@ -109,9 +109,11 @@ export function postgresAgenticRefusalLedger(
 }
 
 /**
- * The one read the selector's own role holds: which of a named set of tickets
- * stand refused. The ledger is not part of it — a whole ticket's history is what
- * a person reads, and the role that decides needs the standing and nothing else.
+ * The refusal read the selector's own role is granted and the whole of it:
+ * which of a named set of tickets stand refused, 073 having revoked the paged
+ * standing 059 granted that role. The ledger was never part of it — a whole
+ * ticket's history is what a person reads, and the role that decides needs the
+ * standing and nothing else.
  */
 export function postgresAgenticRefusalStanding(
   pool: pg.Pool,

@@ -2140,10 +2140,13 @@ test("migration 59 widens a failure check installed before the withdrawal existe
   });
 });
 
+/** The door 059 grants the selector and 073 takes back, named once for both facts. */
+const leadSelectorDoorsPaged = "standing_agentic_refusals(text,text,bigint)";
+
 /** Every door 059 opens, beside the one role it is granted to. */
 const leadSelectorDoors = [
   "record_agentic_refusals(text,text,text,jsonb,jsonb)",
-  "standing_agentic_refusals(text,text,bigint)",
+  leadSelectorDoorsPaged,
   "lead_session(text,text)",
   "enqueue_lead_turn(text,text,text,text)",
   "read_lead_turn(text)",
@@ -3665,6 +3668,26 @@ test("migration 73 grants the ticket-set standing door to the selector alone", a
       assert.equal(await executes(apiRole, door), false, door);
     }
     await migrationLeadDoorsAreStrangers(executes, leadSelectorDoorsAdded);
+  });
+});
+
+test("migration 73 takes the paged standing back off the selector", async () => {
+  await migrationDatabase("standing_paged_revoked", async (subject) => {
+    await migrationSeedApplied(subject, 74);
+    const executes = migrationDoorExecutes(subject);
+    assert.equal(
+      await executes(selectorServiceRole, leadSelectorDoorsPaged),
+      false,
+      "no selector read opens it, and a grant nothing opens is one a check cannot tell from a grant something needs",
+    );
+    assert.equal(
+      await executes(
+        apiRole,
+        "read_standing_agentic_refusals(text,text,bigint)",
+      ),
+      true,
+      "the console still draws a project's standing refusals",
+    );
   });
 });
 
