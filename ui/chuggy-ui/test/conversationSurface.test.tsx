@@ -115,6 +115,71 @@ test("no work draws no disclosure", () => {
   styleless();
 });
 
+test("the meta line omits a measure no turn recorded", () => {
+  render(
+    <Conversation
+      exchanges={[
+        exchangeOf({ answer: "done", measures: { durationMs: 4200 } }),
+      ]}
+      empty="No conversation"
+    />,
+  );
+  expect(screen.getByText("Answered")).toBeDefined();
+  expect(screen.queryByText(/tok/)).toBeNull();
+  expect(screen.queryByText("—")).toBeNull();
+  styleless();
+});
+
+test("a failed exchange draws its reason where the answer would be", () => {
+  render(
+    <Conversation
+      exchanges={[
+        exchangeOf({
+          standing: { standing: "Failed", failure: "AgentFailed" },
+        }),
+      ]}
+      empty="No conversation"
+    />,
+  );
+  expect(screen.getByText("Failed")).toBeDefined();
+  expect(screen.getByText("AgentFailed")).toBeDefined();
+  styleless();
+});
+
+test("a tool result that failed marks the row and draws no pill", () => {
+  const failed = exchangeOf({
+    answer: "done",
+    work: [
+      {
+        step: "ToolCall",
+        id: "call-2",
+        name: "Bash",
+        input: { command: "just check" },
+        result: { text: "exit 1", isError: true },
+      },
+    ],
+  });
+  render(<Conversation exchanges={[failed]} empty="No conversation" />);
+  fireEvent.click(screen.getByRole("button", { name: /tool/ }));
+  expect(screen.getByText("Bash").className).toContain("text-tone-fail");
+  expect(document.querySelectorAll(".pill")).toHaveLength(0);
+  styleless();
+});
+
+test("a running exchange's card says Working", () => {
+  const running = exchangeOf({
+    id: "x4",
+    standing: { standing: "Running", state: "Claimed" },
+    work: [{ step: "Thinking", text: "weighing it" }],
+  });
+  render(<Conversation exchanges={[running]} empty="No conversation" />);
+  const trigger = screen.getByRole("button", { name: "Working" });
+  fireEvent.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByText("weighing it")).toBeDefined();
+  styleless();
+});
+
 test("a running exchange draws its state word and no answer", () => {
   const running = exchangeOf({
     id: "x2",

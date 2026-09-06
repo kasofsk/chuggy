@@ -115,7 +115,7 @@ function conversationMetaFigures(
  */
 export function ConversationMetaLine(props: {
   readonly standing: ConversationStandingDrawn;
-  readonly measures?: ConversationMeasures;
+  readonly measures: ConversationMeasures | undefined;
 }): ReactNode {
   return (
     <p className="text-ink-3 flex flex-wrap items-baseline gap-2 text-xs">
