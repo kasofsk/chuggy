@@ -1,0 +1,8 @@
+/* ToggleGroup: the row a set of items sits in; the item look is Button's. */
+
+@layer ui {
+  .toggle-group {
+    display: inline-flex;
+    gap: var(--space-1);
+  }
+}

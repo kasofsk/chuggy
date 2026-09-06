@@ -34,7 +34,8 @@
     );
   }
 
-  .btn[aria-pressed="true"] {
+  .btn[aria-pressed="true"],
+  .btn[aria-checked="true"] {
     background: var(--surface-inverse);
     color: var(--ink-inverse);
     border-color: var(--surface-inverse);
