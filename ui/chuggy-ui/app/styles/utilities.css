@@ -11,6 +11,8 @@
   --color-surface-2: var(--surface-2);
   --color-surface-inverse: var(--surface-inverse);
 
+  --color-bubble: var(--bubble);
+
   --color-ink-1: var(--ink-1);
   --color-ink-2: var(--ink-2);
   --color-ink-3: var(--ink-3);
@@ -65,4 +67,8 @@
 
   --radius-1: var(--radius-1);
   --radius-2: var(--radius-2);
+  --radius-3: var(--radius-3);
+
+  --container-column: var(--width-column);
+  --container-rail: var(--width-rail);
 }
