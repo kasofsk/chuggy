@@ -67,7 +67,10 @@ import {
 import { postgresExecutionScheduler } from "../adapters/postgres/scheduler.ts";
 import { postgresSessionScheduler } from "../adapters/postgres/sessionScheduler.ts";
 import { postgresThreadWakes } from "../adapters/postgres/thread.ts";
-import { postgresPriorWorkReports } from "../adapters/postgres/evaluationReports.ts";
+import {
+  postgresPriorEvaluationReports,
+  postgresPriorWorkReports,
+} from "../adapters/postgres/evaluationReports.ts";
 import { postgresTicketBrief } from "../adapters/postgres/ticketBrief.ts";
 import { postgresPinnedConfigurations } from "../adapters/postgres/pinnedConfigurations.ts";
 import {
@@ -470,7 +473,11 @@ export interface SchedulerProcessRootConfig {
   };
   readonly service: Omit<
     ExecutionSchedulerService,
-    "store" | "configurations" | "priorWorkReports" | "ticketBriefs"
+    | "store"
+    | "configurations"
+    | "priorWorkReports"
+    | "priorEvaluationReports"
+    | "ticketBriefs"
   >;
   /**
    * The session half of the same process; its own store and its binding read
@@ -491,6 +498,7 @@ export function schedulerProcessRootService(
     store: postgresExecutionScheduler(pool),
     configurations: postgresPinnedConfigurations(pool),
     priorWorkReports: postgresPriorWorkReports(pool),
+    priorEvaluationReports: postgresPriorEvaluationReports(pool),
     ticketBriefs: postgresTicketBrief(pool),
   };
 }

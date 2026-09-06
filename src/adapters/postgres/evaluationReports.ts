@@ -2,7 +2,10 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import {
+  priorEvaluationReportsMax,
   priorWorkReportsMax,
+  type PriorEvaluationReportsPort,
+  type PriorEvaluationReportsRead,
   type PriorWorkReportsRead,
   type PriorWorkReportsPort,
 } from "../../interpreter/taskBriefing.ts";
@@ -44,6 +47,69 @@ export function postgresPriorWorkReports(pool: pg.Pool): PriorWorkReportsPort {
       if (found.rows.length > priorWorkReportsMax) {
         throw new Error(
           "postgres evaluation reports: work reports exceed their bound",
+        );
+      }
+      return {
+        read: "Reports",
+        reports: { reports: found.rows.map((row) => row.report) },
+      };
+    },
+  };
+}
+
+interface EvaluationReportRow {
+  readonly report: string;
+}
+
+/**
+ * Reads the reports of the failed executions of the evaluation spawned last
+ * before this work task — the one its ticket is being reworked for — and none
+ * for a first attempt, which follows no evaluation. The rows are the same
+ * immutable report rows a review reads, so a failed read is `Unavailable` for
+ * the same reason.
+ */
+export function postgresPriorEvaluationReports(
+  pool: pg.Pool,
+): PriorEvaluationReportsPort {
+  return {
+    reports: async (
+      partition,
+      execution,
+    ): Promise<PriorEvaluationReportsRead> => {
+      let found: pg.QueryResult<EvaluationReportRow>;
+      try {
+        found = await pool.query<EvaluationReportRow>(
+          sql`WITH latest AS (
+                SELECT f.source_request AS request
+                  FROM execution e
+                  JOIN execution f
+                    ON f.tenant=e.tenant AND f.project=e.project
+                   AND f.ticket=e.ticket AND f.task<e.task
+                  JOIN execution_request q
+                    ON q.tenant=f.tenant AND q.project=f.project
+                   AND q.request=f.source_request
+                 WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
+                   AND e.execution=${execution}
+                   AND q.kind='SpawnEvaluation'
+                 ORDER BY f.task DESC
+                 LIMIT 1)
+              SELECT r.report
+                FROM execution f
+                JOIN latest ON latest.request=f.source_request
+                JOIN execution_result_report r
+                  ON r.tenant=f.tenant AND r.project=f.project
+                 AND r.manifest=f.result_manifest
+               WHERE f.tenant=${partition.tenant} AND f.project=${partition.project}
+                 AND f.outcome='Failed'
+               ORDER BY f.task
+               LIMIT ${priorEvaluationReportsMax + 1}`,
+        );
+      } catch {
+        return { read: "Unavailable" };
+      }
+      if (found.rows.length > priorEvaluationReportsMax) {
+        throw new Error(
+          "postgres evaluation reports: evaluation reports exceed their bound",
         );
       }
       return {

@@ -16,6 +16,16 @@
  * could not run and a gate that found something are both a failed stage and are
  * not the same fact.
  *
+ * THE REPORT OF A FAILED STAGE CARRIES THE END OF WHAT THE FAILING COMMAND
+ * WROTE. The report is what a rework of the ticket is briefed with, and the
+ * diagnostic artifact is not; a report that says only the exit status sends
+ * the next attempt to guess what the gate found. The tail is taken because a
+ * gate names what it found after it ran. It is the tail of the capture, which
+ * ends where the capture's bound did, so an excerpt of a truncated capture says
+ * so rather than passing for the end of the run. What it keeps is printable:
+ * the report row it becomes refuses a control character, so each is replaced
+ * before the excerpt is measured.
+ *
  * WHAT A COMMAND WRITES GOES TWO PLACES. It is streamed to the worker's own
  * stdout as it arrives, so a stage that dies mid-run leaves the pod log the
  * account it reached; and it is captured, bounded, for the diagnostic artifact
@@ -60,6 +70,23 @@ export const workerCheckOutputCharsMax = 262_144;
 
 /** The characters one stage's report keeps, mirroring the manifest's `resultReportCharsMax`. */
 export const workerCheckReportCharsMax = 8_192;
+
+/** What the report says before the failing command's output, which is what makes the excerpt readable as one. */
+const checkReportExcerptLabel = "; last output of ";
+
+/** The escape that introduces a terminal control sequence, spelled by code because it is not printable. */
+const checkEscape = String.fromCodePoint(0x1b);
+
+/**
+ * One terminal control sequence, or any lone control character, which the
+ * report row refuses. Built from the escape's code rather than written into a
+ * pattern, because a control character spelled in a literal is what the lint
+ * rule against them refuses, and here the control character is the point.
+ */
+const checkControlSequence = new RegExp(
+  `${checkEscape}\\[[0-?]*[ -/]*[@-~]|\\p{Cc}`,
+  "gu",
+);
 
 /** The resolved command lines this task runs itself, or nothing when an agent runs it. */
 export function workerCheckCommands(task) {
@@ -113,14 +140,36 @@ function checkReportLine(ran) {
     : `${ran.command} exited ${String(ran.exitStatus)}`;
 }
 
-/** The stage's report: every command that ran, and the status it ended with. */
+/** What a command wrote, as one printable line: escapes and control characters become spaces. */
+function checkPrintable(output) {
+  return output.replace(checkControlSequence, " ").replace(/\s+/gu, " ").trim();
+}
+
+/**
+ * The end of what the failing command wrote, in the room the status lines
+ * leave. Nothing is appended where there is no room for the label and at
+ * least one character, or where the command wrote nothing printable.
+ */
+function checkReportExcerpt(failed, room) {
+  const printable = checkPrintable(failed.output);
+  const capture = failed.truncated ? " (capture truncated)" : "";
+  const label = `${checkReportExcerptLabel}${failed.command}${capture}: `;
+  const kept = room - label.length;
+  if (printable.length === 0 || kept < 1) return "";
+  return `${label}${printable.slice(-kept)}`;
+}
+
+/** The stage's report: every command that ran, its status, and the end of what the failing one wrote. */
 function checkReport(commands, ran) {
   const skipped = commands.length - ran.length;
   const lines = [
     ...ran.map(checkReportLine),
     ...(skipped > 0 ? [`${String(skipped)} later command(s) did not run`] : []),
   ];
-  return lines.join("; ").slice(0, workerCheckReportCharsMax);
+  const status = lines.join("; ").slice(0, workerCheckReportCharsMax);
+  const failed = ran.find((outcome) => !checkPassed(outcome));
+  if (failed === undefined) return status;
+  return `${status}${checkReportExcerpt(failed, workerCheckReportCharsMax - status.length)}`;
 }
 
 /**

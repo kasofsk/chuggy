@@ -31,6 +31,12 @@
  * reorder its neighbours: filtering preserves relative order, so the rendered
  * sequence is always this one with members removed.
  *
+ * A REWORK IS TOLD WHAT FAILED, IN WORDING THE TEMPLATE OWNS. The section that
+ * carries a failed evaluation's reports opens with a standing preface, so the
+ * fact that a task is a rework is stated by this module and not inferred from
+ * a report a worker wrote. The preface renders only when there is a report to
+ * follow it, which is what keeps a first attempt from being told it failed.
+ *
  * THE ROLE VOCABULARY IS `Work` AND `Review`, and it is the same one
  * `./taskBriefing.ts` scopes a practice by and `./executionScheduler.ts` maps a
  * task kind onto. One spelling serves all three, so a practice scoped `Review`
@@ -69,6 +75,7 @@ export type BriefingSectionId =
   | "TicketLinks"
   | "WhyItMatters"
   | "AcceptanceAndConstraints"
+  | "PriorEvaluationReports"
   | "PriorWorkReports"
   | "PurposeInstructions"
   | "CheckCommands"
@@ -83,6 +90,7 @@ export const briefingSectionOrder: readonly BriefingSectionId[] = [
   "TicketLinks",
   "WhyItMatters",
   "AcceptanceAndConstraints",
+  "PriorEvaluationReports",
   "PriorWorkReports",
   "PurposeInstructions",
   "CheckCommands",
@@ -98,7 +106,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 4;
+export const briefingTemplateVersion = 5;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -117,6 +125,8 @@ export function briefingHeading(
       return "Why this ticket matters";
     case "AcceptanceAndConstraints":
       return "Acceptance criteria and constraints";
+    case "PriorEvaluationReports":
+      return "What the last evaluation found";
     case "PriorWorkReports":
       return "Reports from the work tasks";
     case "PurposeInstructions":
@@ -146,7 +156,17 @@ export const briefingLabels = {
   changedFiles: "Changed files:",
   handoff: "Handoff from the earlier task:",
   workReports: "Worker reports:",
+  evaluationReports: "Evaluation reports:",
 } as const;
+
+/**
+ * What a work task is told before the reports of the evaluation its ticket
+ * failed, which is the only way a task learns it is a rework.
+ */
+export const briefingReworkPreface: readonly string[] = [
+  "This task is a rework: the change made for this ticket failed the evaluation reported below.",
+  "Fix what the reports name before anything else; where a report names a command, run it before you report.",
+];
 
 /** What a commanded stage is, stated rather than addressed to anyone. */
 const briefingCommandedRole: readonly string[] = [

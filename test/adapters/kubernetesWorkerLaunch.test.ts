@@ -181,6 +181,7 @@ function taskInvocation(
     configuration,
     runtime: { changedFiles: [], handoff: [] },
     priorWorkReports: { reports: [] },
+    priorEvaluationReports: { reports: [] },
     grant: authorityGrant,
   });
   if (composed.composed !== "Composed")
@@ -1101,6 +1102,7 @@ function heaviestTaskInvocation(): TaskInvocation | undefined {
           "x".repeat(resultReportCharsMax),
         ),
       },
+      priorEvaluationReports: { reports: [] },
       grant,
     });
     if (composed.composed !== "Composed") break;

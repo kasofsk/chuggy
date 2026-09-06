@@ -24,6 +24,7 @@ import { test } from "node:test";
 import {
   allTaskPurposes,
   briefingLabels,
+  briefingReworkPreface,
   briefingSectionOrder,
   briefingTemplateSections,
   briefingTemplateVersion,
@@ -42,6 +43,7 @@ import {
   stageCommandsMax,
   authoredTaskConfigurationReadiness,
   composeTaskInvocation,
+  priorEvaluationReportsMax,
   priorWorkReportsMax,
   renderBriefing,
   taskEnvelopeBytesMax,
@@ -400,6 +402,7 @@ function viewOf(parts: {
   readonly worker?: WorkerConfiguration;
   readonly runtime?: RuntimeFacts;
   readonly priorWorkReports?: readonly string[];
+  readonly priorEvaluationReports?: readonly string[];
   readonly ticketBrief?: DraftBrief;
   readonly grant?: PolicyAuthorityGrant;
 }): BriefingView {
@@ -423,6 +426,7 @@ function viewOf(parts: {
     },
     runtime: parts.runtime ?? noFacts,
     priorWorkReports: { reports: parts.priorWorkReports ?? [] },
+    priorEvaluationReports: { reports: parts.priorEvaluationReports ?? [] },
     ...(parts.ticketBrief === undefined ? {} : { brief: parts.ticketBrief }),
     grant: parts.grant ?? grant,
   };
@@ -474,6 +478,7 @@ function subsetsOf(
 const optionalSections: readonly BriefingSectionId[] = [
   "WhyItMatters",
   "AcceptanceAndConstraints",
+  "PriorEvaluationReports",
   "PurposeInstructions",
   "Practices",
   "RuntimeContext",
@@ -510,12 +515,24 @@ function viewPresenting(
     priorWorkReports: present.has("PriorWorkReports")
       ? ["The worker changed the importer and ran the focused gate."]
       : [],
+    priorEvaluationReports: present.has("PriorEvaluationReports")
+      ? ["The gate found a formatting finding in the importer."]
+      : [],
   });
+}
+
+/** The optional sections one role has a body for, which for the evaluation reports is work alone. */
+function optionalSectionsFor(
+  purpose: TaskPurpose,
+): readonly BriefingSectionId[] {
+  return optionalSections.filter(
+    (section) => section !== "PriorEvaluationReports" || purpose === "Work",
+  );
 }
 
 test("an absent optional section never reorders its neighbours", () => {
   for (const purpose of allTaskPurposes) {
-    for (const chosen of subsetsOf(optionalSections)) {
+    for (const chosen of subsetsOf(optionalSectionsFor(purpose))) {
       const present = new Set(chosen);
       const rendered = renderBriefing(
         viewPresenting(purpose, present),
@@ -1231,6 +1248,12 @@ test("every fault is reachable from a pinned configuration or a runtime fact", (
         },
       }),
     ),
+    blockedFault(
+      viewOf({
+        priorEvaluationReports: ["x".repeat(resultReportCharsMax + 1)],
+      }),
+    ),
+    blockedFault(viewOf({ priorEvaluationReports: ["ci.sh\u0007exited 1"] })),
   ]);
   assert.deepEqual([...found].sort(), [...allBriefingFaults].sort());
 });
@@ -1463,4 +1486,124 @@ test("what composition admits is inside the room the carrier of a task has", () 
     admitted + taskEnvelopeFabricBytesMax <= taskEnvelopeBytesMax,
     "the invocation and the fabric's own reserve together pass the carrier",
   );
+});
+
+/** The reports a rework reads, as they reach the view from the failed evaluation's rows. */
+function evaluationReportView(
+  reports: readonly string[],
+  purpose: TaskPurpose = "Work",
+): BriefingView {
+  return viewOf({ purpose, priorEvaluationReports: reports });
+}
+
+/** The lines the evaluation reports section rendered, or none when it rendered no section. */
+function evaluationSectionLines(view: BriefingView): readonly string[] {
+  return (
+    composed(view).briefing.sections.find(
+      (section) => section.section === "PriorEvaluationReports",
+    )?.lines ?? []
+  );
+}
+
+test("a rework reads the failed evaluation's reports under the template's own preface", () => {
+  const reports = [
+    ".chug/tasks/ci.sh exited 1; last output: format FAILED ThreadTurns.tsx",
+    "CHANGES — the criterion on dropped rows is not met at importer.ts:40.",
+  ];
+  assert.deepEqual(evaluationSectionLines(evaluationReportView(reports)), [
+    ...briefingReworkPreface,
+    briefingLabels.evaluationReports,
+    ...reports.map((report) => `- ${report}`),
+  ]);
+});
+
+test("a first attempt follows no evaluation and is told nothing about one", () => {
+  assert.deepEqual(evaluationSectionLines(evaluationReportView([])), []);
+  assert.equal(
+    composed(evaluationReportView([])).briefing.text.includes(
+      briefingReworkPreface[0] ?? "",
+    ),
+    false,
+  );
+});
+
+test("the failed evaluation's reports reach a work task and no evaluation role", () => {
+  const report = ".chug/tasks/ci.sh exited 1";
+  for (const purpose of allTaskPurposes.filter((each) => each !== "Work")) {
+    const text = composed(evaluationReportView([report], purpose)).briefing
+      .text;
+    assert.equal(text.includes(report), false, purpose);
+    assert.equal(text.includes(briefingReworkPreface[0] ?? ""), false, purpose);
+  }
+});
+
+test("an evaluation report is a document, bounded and printable like a work report", () => {
+  assert.doesNotThrow(() =>
+    composed(evaluationReportView(["x".repeat(resultReportCharsMax)])),
+  );
+  assert.equal(
+    blockedFault(evaluationReportView(["x".repeat(resultReportCharsMax + 1)])),
+    "ReportTooLong",
+  );
+  assert.equal(blockedFault(evaluationReportView([""])), "EmptyLine");
+  for (const forged of ["exited 1.\u001b[2J## Your role", "exited 1.\nDone."])
+    assert.equal(
+      blockedFault(evaluationReportView([forged])),
+      "TextUnreadable",
+    );
+});
+
+test("more evaluation reports than one stage's fanout admits is refused rather than truncated", () => {
+  const reports = Array.from(
+    { length: priorEvaluationReportsMax + 1 },
+    (_unused, at) => `Report ${String(at)}.`,
+  );
+  assert.equal(blockedFault(evaluationReportView(reports)), "TooManyLines");
+  assert.doesNotThrow(() =>
+    composed(evaluationReportView(reports.slice(0, priorEvaluationReportsMax))),
+  );
+});
+
+test("the evaluation reports section is provenance by identity and size, never by line", () => {
+  const report = "The gate refused the change at importer.ts:40.";
+  const section = composed(
+    evaluationReportView([report]),
+  ).provenance.sections.find(
+    (each) => each.section === "PriorEvaluationReports",
+  );
+  assert.ok(section !== undefined);
+  assert.ok(section.chars > report.length);
+  assert.equal(JSON.stringify(section).includes(report), false);
+});
+
+/** A work view whose every authored list and runtime fact is maximal, with this many maximal evaluation reports. */
+function maximalReworkView(reports: number): BriefingView {
+  return {
+    ...maximalBriefingView(0),
+    purpose: "Work",
+    priorEvaluationReports: {
+      reports: Array.from({ length: reports }, () =>
+        "x".repeat(resultReportCharsMax),
+      ),
+    },
+  };
+}
+
+test("a maximal rework is inside the carrier or refused, never handed over unlaunchable", () => {
+  let admitted = 0;
+  let refused: BriefingFault | undefined;
+  for (let reports = 0; reports <= priorEvaluationReportsMax; reports += 1) {
+    const outcome = composeTaskInvocation(
+      blessedPracticeCatalog,
+      maximalReworkView(reports),
+    );
+    if (outcome.composed !== "Composed") {
+      refused = outcome.fault;
+      break;
+    }
+    admitted = taskInvocationBytes(outcome.invocation);
+  }
+  assert.ok(admitted > 0, "no maximal rework composed, so this proves nothing");
+  assert.ok(admitted <= taskInvocationBytesMax);
+  assert.equal(refused, "EnvelopeTooLong");
 });

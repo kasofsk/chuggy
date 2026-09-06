@@ -825,6 +825,10 @@ function processFakes(reachable: boolean, observing: boolean): string {
   `;
 }
 
+/** A report port that answers no reports, as the program spells one for both report kinds. */
+const reportsNone =
+  "{ reports: async () => ({ read: 'Reports', reports: { reports: [] } }) }";
+
 /**
  * One scheduler process against fakes for the two authorities it does not own:
  * a pool that answers the schema query, and a cluster that answers the probe
@@ -863,7 +867,7 @@ function processProgram(
         configuration: async () => ({ read: 'Configuration', configuration }),
       },
       runtimeFacts: supplied.suppliedRuntimeFacts({ workspace: '/workspace' }),
-      priorWorkReports: { reports: async () => ({ read: 'Reports', reports: { reports: [] } }) },
+      priorWorkReports: ${reportsNone}, priorEvaluationReports: ${reportsNone},
       ticketBriefs: { brief: async () => undefined },
       practices: briefing.blessedPracticeCatalog,
       config: scheduler.executionSchedulerDefaults,
