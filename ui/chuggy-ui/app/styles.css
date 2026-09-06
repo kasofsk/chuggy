@@ -43,12 +43,6 @@
 /* The project table: dense rows, one line each, and a badge that is read
  * before the row it sits in. */
 
-.table-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-
 .filters {
   display: flex;
   gap: var(--space-2);
@@ -60,19 +54,10 @@
   color: var(--ink-1);
 }
 
-.more {
-  justify-self: start;
-}
-
 .ticket-table {
   width: 100%;
   border-collapse: collapse;
   font-variant-numeric: tabular-nums;
-}
-
-.ticket-table-scroll {
-  max-width: 100%;
-  overflow-x: auto;
 }
 
 .ticket-table th,
@@ -104,10 +89,6 @@
   outline-offset: 2px;
 }
 
-.cell-dim {
-  color: var(--ink-3);
-}
-
 /* An inline block, because a `td` clips only under a fixed table layout and
  * this table sizes its columns from what is in them. */
 .clipped {
@@ -127,7 +108,6 @@
   font-size: var(--text-xs);
 }
 
-.action-panel,
 .configuration {
   display: grid;
   gap: var(--space-2);
@@ -248,12 +228,6 @@
 
 /* The inbox: a badge on the nav item that leads to it, and answers that sit in
  * the row they are about. */
-
-.row-actions-inner {
-  display: flex;
-  gap: var(--space-2);
-  align-items: baseline;
-}
 
 .row-action {
   padding: 0 0.4rem;

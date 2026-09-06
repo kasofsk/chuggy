@@ -134,7 +134,7 @@ function TicketRow(props: {
   return (
     <tr>
       <TicketNumberCell partition={props.partition} ticket={row.ticket} />
-      <td className="cell-dim">
+      <td className="text-ink-3">
         <Tooltip text={row.configuration?.title}>
           <span className="clipped">
             {ticketRowExecutionCell(row, row.configuration?.text)}
@@ -144,20 +144,20 @@ function TicketRow(props: {
       <td>{row.phase}</td>
       <td>
         {row.badge === undefined ? (
-          <span className="cell-dim">{cellAbsent}</span>
+          <span className="text-ink-3">{cellAbsent}</span>
         ) : (
           <span className="badge">{row.badge}</span>
         )}
       </td>
       <td>{ticketRowExecutionCell(row, status)}</td>
-      <td className="cell-dim">
+      <td className="text-ink-3">
         <Tooltip text={row.runsOn?.title}>
           <span className="clipped">
             {ticketRowExecutionCell(row, row.runsOn?.text)}
           </span>
         </Tooltip>
       </td>
-      <td className="cell-dim">
+      <td className="text-ink-3">
         {row.sequence}
         {row.activityAt === undefined ? "" : ` · ${row.activityAt}`}
       </td>
@@ -170,7 +170,7 @@ function TicketTable(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   return (
-    <div className="ticket-table-scroll">
+    <div className="max-w-full overflow-x-auto">
       <table className="ticket-table">
         <thead>
           <tr>
@@ -258,7 +258,7 @@ export function ProjectTable(): ReactNode {
     tickets.state.state === "Ready" ? tickets.state.value.failure : undefined;
   return (
     <>
-      <div className="table-head">
+      <div className="flex items-center gap-4">
         <TicketFilters filter={filter} onChange={setFilter} />
         <ButtonLink to="/$tenant/$project/tickets/new" params={partition}>
           New ticket
@@ -290,7 +290,11 @@ export function ProjectTable(): ReactNode {
         />
       ))}
       {tickets.readMore === undefined ? null : (
-        <button type="button" className="more" onClick={tickets.readMore}>
+        <button
+          type="button"
+          className="justify-self-start"
+          onClick={tickets.readMore}
+        >
           more
         </button>
       )}
