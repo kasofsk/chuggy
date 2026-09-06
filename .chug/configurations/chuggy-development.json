@@ -17,7 +17,7 @@
         "agent": "Claude",
         "arguments": ["--allowedTools=Bash,Edit,Read,Write,Glob,Grep"]
       },
-      "setup": [],
+      "setup": ["npm ci"],
       "files": []
     },
     "brief": {
