@@ -16,8 +16,10 @@ interface WorkReportRow {
 
 /**
  * Reads only the immutable work manifests pinned into this evaluation's input
- * bundle. A failed read is `Unavailable` rather than a throw, because the
- * scheduler holds an attempt it could not brief instead of losing its loop.
+ * bundle, one more than the briefing renders so a list past its bound is
+ * answered and refused there. A failed read is `Unavailable` rather than a
+ * throw, because the scheduler holds an attempt it could not brief instead of
+ * losing its loop.
  */
 export function postgresPriorWorkReports(pool: pg.Pool): PriorWorkReportsPort {
   return {
@@ -44,11 +46,6 @@ export function postgresPriorWorkReports(pool: pg.Pool): PriorWorkReportsPort {
       } catch {
         return { read: "Unavailable" };
       }
-      if (found.rows.length > priorWorkReportsMax) {
-        throw new Error(
-          "postgres evaluation reports: work reports exceed their bound",
-        );
-      }
       return {
         read: "Reports",
         reports: { reports: found.rows.map((row) => row.report) },
@@ -63,10 +60,10 @@ interface EvaluationReportRow {
 
 /**
  * Reads the reports of the failed executions of the evaluation spawned last
- * before this work task — the one its ticket is being reworked for — and none
- * for a first attempt, which follows no evaluation. The rows are the same
- * immutable report rows a review reads, so a failed read is `Unavailable` for
- * the same reason.
+ * before this work task, and none for a first attempt, which follows no
+ * evaluation. The rows are the same immutable report rows a review reads, read
+ * one past the bound the same way, so a failed read is `Unavailable` for the
+ * same reason.
  */
 export function postgresPriorEvaluationReports(
   pool: pg.Pool,
@@ -106,11 +103,6 @@ export function postgresPriorEvaluationReports(
         );
       } catch {
         return { read: "Unavailable" };
-      }
-      if (found.rows.length > priorEvaluationReportsMax) {
-        throw new Error(
-          "postgres evaluation reports: evaluation reports exceed their bound",
-        );
       }
       return {
         read: "Reports",

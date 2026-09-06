@@ -7,6 +7,10 @@ import {
   postgresPriorWorkReports,
 } from "../../src/adapters/postgres/evaluationReports.ts";
 import { asExecutionId } from "../../src/interpreter/executionScheduler.ts";
+import {
+  priorEvaluationReportsMax,
+  priorWorkReportsMax,
+} from "../../src/interpreter/taskBriefing.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 
 const partition = {
@@ -81,4 +85,24 @@ test("an evaluation read the database refuses is unavailable rather than a throw
     ),
     { read: "Unavailable" },
   );
+});
+
+test("a list past its bound is answered as read, for composition to refuse rather than a throw", async () => {
+  for (const [port, bound] of [
+    [postgresPriorWorkReports, priorWorkReportsMax],
+    [postgresPriorEvaluationReports, priorEvaluationReportsMax],
+  ] as const) {
+    const rows = Array.from({ length: bound + 1 }, (_unused, at) => ({
+      report: `report ${String(at)}`,
+    }));
+    const pool = {
+      query: () => Promise.resolve({ rows }),
+    } as unknown as pg.Pool;
+    const read = await port(pool).reports(partition, asExecutionId("task"));
+    assert.equal(read.read, "Reports");
+    assert.equal(
+      read.read === "Reports" ? read.reports.reports.length : 0,
+      bound + 1,
+    );
+  }
 });

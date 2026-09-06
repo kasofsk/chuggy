@@ -181,6 +181,33 @@ test("an excerpt of a truncated capture says so", async () => {
   assert.equal(result.summary.length, workerCheckReportCharsMax);
 });
 
+test("the report is scrubbed before it is measured, so the entrypoint's scrub cannot lengthen it", async () => {
+  const secret = "hunter2-hunter2-hunter2-hunter2";
+  const scrub = credentialScrub([secret]);
+  const command = `yes ${secret} | head -c ${String(workerCheckReportCharsMax * 2)}; exit 1`;
+  const { result } = await ran([command], { scrub });
+
+  assert.equal(result.summary.includes(secret), false);
+  assert.ok(result.summary.includes("[redacted credential]"));
+  assert.equal(result.summary.length, workerCheckReportCharsMax);
+  assert.equal(scrub(result.summary), result.summary);
+  assert.ok(result.summary.length <= resultReportCharsMax);
+});
+
+test("a cut through astral output lands on a code point, so the report is well formed", async () => {
+  const wide = "\u{1F600}";
+  const excerpt = `printf '%s' "$(yes ${wide} | head -c ${String(workerCheckReportCharsMax * 8)})"; exit 1`;
+  const status = `: ${wide.repeat(workerCheckReportCharsMax)}; exit 1`;
+  for (const command of [excerpt, status]) {
+    const { result } = await ran([command]);
+
+    assert.ok(result.summary.isWellFormed(), command.slice(0, 40));
+    assert.ok(result.summary.length <= workerCheckReportCharsMax);
+    assert.ok(result.summary.length >= workerCheckReportCharsMax - 1);
+    assert.equal(/\p{Cc}/u.test(result.summary), false);
+  }
+});
+
 test("a stage whose status lines fill the report carries no excerpt", async () => {
   const command = `printf out; : ${"x".repeat(workerCheckReportCharsMax)}; exit 1`;
   const { result, output } = await ran([command]);

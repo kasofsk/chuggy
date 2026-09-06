@@ -22,9 +22,16 @@
  * the next attempt to guess what the gate found. The tail is taken because a
  * gate names what it found after it ran. It is the tail of the capture, which
  * ends where the capture's bound did, so an excerpt of a truncated capture says
- * so rather than passing for the end of the run. What it keeps is printable:
- * the report row it becomes refuses a control character, so each is replaced
- * before the excerpt is measured.
+ * so rather than passing for the end of the run.
+ *
+ * THE REPORT IS MEASURED AFTER EVERYTHING THAT CAN CHANGE ITS LENGTH. The row
+ * it becomes refuses a control character, a lone surrogate and any length past
+ * its bound, and a refused report is a lost attempt rather than the verdict
+ * the stage reached. So the credential scrub runs here, before the cut, since
+ * a replacement is longer than what it replaces; control characters become
+ * spaces and lone surrogates the replacement character before anything is
+ * measured; and every cut lands on a code point. The scrub the entrypoint
+ * applies afterwards finds nothing left to replace.
  *
  * WHAT A COMMAND WRITES GOES TWO PLACES. It is streamed to the worker's own
  * stdout as it arrives, so a stage that dies mid-run leaves the pod log the
@@ -73,6 +80,9 @@ export const workerCheckReportCharsMax = 8_192;
 
 /** What the report says before the failing command's output, which is what makes the excerpt readable as one. */
 const checkReportExcerptLabel = "; last output of ";
+
+/** What a scrub is where the caller hands none, which is the suite's case and never the worker's. */
+const checkNoScrub = (text) => text;
 
 /** The escape that introduces a terminal control sequence, spelled by code because it is not printable. */
 const checkEscape = String.fromCodePoint(0x1b);
@@ -140,47 +150,82 @@ function checkReportLine(ran) {
     : `${ran.command} exited ${String(ran.exitStatus)}`;
 }
 
-/** What a command wrote, as one printable line: escapes and control characters become spaces. */
-function checkPrintable(output) {
-  return output.replace(checkControlSequence, " ").replace(/\s+/gu, " ").trim();
+/** Text as the report row accepts it: well formed, with escapes and control characters made spaces. */
+function checkClean(text) {
+  return text.toWellFormed().replace(checkControlSequence, " ");
+}
+
+/** What a command wrote, as one printable line with its whitespace collapsed. */
+function checkPrintable(text) {
+  return checkClean(text).replace(/\s+/gu, " ").trim();
+}
+
+/** The longest head of a well-formed text within this many code units that ends on a code point. */
+function checkHead(text, units) {
+  let head = "";
+  for (const point of text) {
+    if (head.length + point.length > units) break;
+    head += point;
+  }
+  return head;
+}
+
+/** The longest tail of a well-formed text within this many code units that starts on a code point. */
+function checkTail(text, units) {
+  let tail = "";
+  for (const point of [...text].reverse()) {
+    if (tail.length + point.length > units) break;
+    tail = point + tail;
+  }
+  return tail;
 }
 
 /**
- * The end of what the failing command wrote, in the room the status lines
- * leave. Nothing is appended where there is no room for the label and at
- * least one character, or where the command wrote nothing printable.
+ * The end of what the failing command wrote, scrubbed and printable, in the
+ * room the status lines leave. Nothing is appended where there is no room for
+ * the label and at least one character, or where nothing printable was written.
  */
-function checkReportExcerpt(failed, room) {
-  const printable = checkPrintable(failed.output);
+function checkReportExcerpt(failed, room, scrub) {
+  const printable = checkPrintable(scrub(failed.output));
   const capture = failed.truncated ? " (capture truncated)" : "";
-  const label = `${checkReportExcerptLabel}${failed.command}${capture}: `;
+  const label = checkClean(
+    scrub(`${checkReportExcerptLabel}${failed.command}${capture}: `),
+  );
   const kept = room - label.length;
   if (printable.length === 0 || kept < 1) return "";
-  return `${label}${printable.slice(-kept)}`;
+  return `${label}${checkTail(printable, kept)}`;
 }
 
 /** The stage's report: every command that ran, its status, and the end of what the failing one wrote. */
-function checkReport(commands, ran) {
+function checkReport(commands, ran, scrub) {
   const skipped = commands.length - ran.length;
   const lines = [
     ...ran.map(checkReportLine),
     ...(skipped > 0 ? [`${String(skipped)} later command(s) did not run`] : []),
   ];
-  const status = lines.join("; ").slice(0, workerCheckReportCharsMax);
+  const status = checkHead(
+    checkClean(scrub(lines.join("; "))),
+    workerCheckReportCharsMax,
+  );
   const failed = ran.find((outcome) => !checkPassed(outcome));
   if (failed === undefined) return status;
-  return `${status}${checkReportExcerpt(failed, workerCheckReportCharsMax - status.length)}`;
+  const room = workerCheckReportCharsMax - status.length;
+  return `${status}${checkReportExcerpt(failed, room, scrub)}`;
 }
 
 /**
  * Runs one check stage: every command in order, stopping at the first that does
- * not exit cleanly, and reporting each command's own status.
+ * not exit cleanly, and reporting each command's own status through the
+ * caller's credential scrub.
  */
 export async function runChecks(context, commands, services = {}) {
   if (commands.length === 0)
     throw new Error("check stage was handed no commands to run");
-  const { spawnProcess = spawn, write = (text) => process.stdout.write(text) } =
-    services;
+  const {
+    spawnProcess = spawn,
+    write = (text) => process.stdout.write(text),
+    scrub = checkNoScrub,
+  } = services;
   const ran = [];
   let kept = 0;
   for (const command of commands) {
@@ -198,7 +243,7 @@ export async function runChecks(context, commands, services = {}) {
     output: { checks: ran },
     result: {
       verdict: passed ? "Pass" : "Fail",
-      summary: checkReport(commands, ran),
+      summary: checkReport(commands, ran, scrub),
     },
   };
 }

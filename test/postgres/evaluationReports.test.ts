@@ -217,6 +217,23 @@ async function registered(
   assert.equal(outcome.registered, "Registered");
 }
 
+/** Opens an attempt on one already admitted execution. */
+async function openedAttempt(
+  project: SchedulerProject,
+  execution: PhysicalAttempt["execution"],
+): Promise<PhysicalAttempt> {
+  const opened = await rig.store.openAttempt({
+    partition: project.partition,
+    execution,
+    epoch: project.epoch,
+    leaseSecs: 300,
+    retriesMax: 3,
+    placementBackoffSecs: 1,
+  });
+  assert.ok(opened.opened === "Opened", `attempt was ${opened.opened}`);
+  return opened.attempt;
+}
+
 /** Admits the next execution, opens its attempt and settles it with this report. */
 async function settled(
   project: SchedulerProject,
@@ -248,8 +265,9 @@ test("the scheduler role reads the failed reports of the evaluation a rework fol
   const failed = ".chug/tasks/ci.sh exited 1; last output: format FAILED";
   await settled(project, failed, "Fail");
   await settled(project, "APPROVE — every criterion is met.", "Pass");
-  const rework = await furtherSpawn(project, "SpawnWork", [4], 2);
+  const rework = await furtherSpawn(project, "SpawnWork", [4, 5], 2);
   await registered(project, rework, "prior-eval-rework");
+  await settled(project, "The first of two reworkers gave up.", "Fail");
   const reworking = await rig.store.admit(project.cluster);
   assert.ok(reworking.admitted === "Admitted");
 
@@ -259,5 +277,32 @@ test("the scheduler role reads the failed reports of the evaluation a rework fol
       reworking.execution,
     ),
     { read: "Reports", reports: { reports: [failed] } },
+    "the sibling work task's failure is not an evaluation report",
+  );
+
+  await rig.store.terminalize(
+    reportingManifest(
+      await openedAttempt(project, reworking.execution),
+      "Reworked.",
+      "Pass",
+    ),
+  );
+  const later = await furtherSpawn(project, "SpawnEvaluation", [6], 3);
+  await registered(project, later, "prior-eval-later-stage");
+  const laterFailed =
+    "CHANGES — importer.ts:40 drops a row and reports success.";
+  await settled(project, laterFailed, "Fail");
+  const second = await furtherSpawn(project, "SpawnWork", [7], 4);
+  await registered(project, second, "prior-eval-second-rework");
+  const secondReworking = await rig.store.admit(project.cluster);
+  assert.ok(secondReworking.admitted === "Admitted");
+
+  assert.deepEqual(
+    await postgresPriorEvaluationReports(rig.pool).reports(
+      project.partition,
+      secondReworking.execution,
+    ),
+    { read: "Reports", reports: { reports: [laterFailed] } },
+    "only the evaluation spawned last is read, never an earlier one",
   );
 });

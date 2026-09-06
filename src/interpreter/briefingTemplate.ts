@@ -31,11 +31,13 @@
  * reorder its neighbours: filtering preserves relative order, so the rendered
  * sequence is always this one with members removed.
  *
- * A REWORK IS TOLD WHAT FAILED, IN WORDING THE TEMPLATE OWNS. The section that
- * carries a failed evaluation's reports opens with a standing preface, so the
- * fact that a task is a rework is stated by this module and not inferred from
- * a report a worker wrote. The preface renders only when there is a report to
- * follow it, which is what keeps a first attempt from being told it failed.
+ * A WORK TASK IS TOLD WHAT EVALUATORS FOUND, IN WORDING THE TEMPLATE OWNS. The
+ * section that carries their failed reports opens with a standing preface, so
+ * what the reports are is stated by this module and not inferred from a report
+ * a worker wrote. The preface claims only what the rows carry — evaluators of
+ * an earlier change reported findings — because a stage can pass with a failed
+ * member, and a task after such a stage is not a rework of a failed
+ * evaluation. It renders only when a report follows it.
  *
  * THE ROLE VOCABULARY IS `Work` AND `Review`, and it is the same one
  * `./taskBriefing.ts` scopes a practice by and `./executionScheduler.ts` maps a
@@ -160,12 +162,12 @@ export const briefingLabels = {
 } as const;
 
 /**
- * What a work task is told before the reports of the evaluation its ticket
- * failed, which is the only way a task learns it is a rework.
+ * What a work task is told before the failed reports of the evaluation before
+ * it, which is the only way a task learns that an earlier change was judged.
  */
 export const briefingReworkPreface: readonly string[] = [
-  "This task is a rework: the change made for this ticket failed the evaluation reported below.",
-  "Fix what the reports name before anything else; where a report names a command, run it before you report.",
+  "Evaluators of an earlier change made for this ticket reported the findings below, and that change was not accepted.",
+  "Address what the reports name before anything else; where a report names a command, run it before you report.",
 ];
 
 /** What a commanded stage is, stated rather than addressed to anyone. */

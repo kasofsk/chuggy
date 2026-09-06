@@ -68,13 +68,21 @@
  * authored criterion has. It is held to the same printable rule as the row it
  * came from, so what a manifest may carry a briefing may render.
  *
- * A REWORK READS THE EVALUATION IT FAILED THE WAY A REVIEW READS THE WORK. The
- * reports of the failed executions of the evaluation spawned last before a
- * work task reach its briefing through a port of the same shape as the work
- * reports, under the same document bound and the same fanout bound, and render
- * under a section of their own that only a work task has a body for. A first
- * attempt has no such evaluation and renders no section, so nothing here has
- * to know whether a task is a rework: the rows say.
+ * A WORK TASK READS THE FAILED REPORTS OF THE EVALUATION BEFORE IT, THE WAY A
+ * REVIEW READS THE WORK. The reports of the failed executions of the evaluation
+ * spawned last before a work task reach its briefing through a port of the
+ * same shape as the work reports, under the same document bound and a count
+ * bound of the same figure, and render under a section of their own that only
+ * a work task has a body for. A first attempt has no such evaluation and
+ * renders no section. What the rows say is that evaluators reported findings,
+ * not that the stage failed — a stage combined by any pass can pass with a
+ * failed member — so that is what the section's wording says.
+ *
+ * A REPORT LIST PAST ITS COUNT BOUND IS A REFUSAL, NOT A THROW. A fanout is
+ * bounded by the instance and not by this module, so a port answers what it
+ * read, bounded by one more than the count it renders, and composition refuses
+ * the list as `TooManyLines`; the ticket is blocked with that fault written
+ * beside it rather than the scheduler losing its loop.
  *
  * WHAT COMPOSITION HANDS OVER IS BOUNDED AS ONE VALUE, NOT LIST BY LIST. Every
  * input has a bound of its own, and their sum is larger than an exec
@@ -273,10 +281,10 @@ export interface PriorWorkReportsPort {
   ): Promise<PriorWorkReportsRead>;
 }
 
-/** Work fanout is bounded to this many reports by the release contract. */
+/** The most work reports a review is briefed with; a fanout past it is refused, not truncated. */
 export const priorWorkReportsMax = 8;
 
-/** One evaluation stage's fanout is bounded by the same figure, so its failed reports are too. */
+/** The most failed evaluation reports a work task is briefed with, refused past it the same way. */
 export const priorEvaluationReportsMax = priorWorkReportsMax;
 
 /** The most changed files a runtime context may name before it stops being context. */
@@ -611,7 +619,7 @@ function briefingLabelled(
   return lines.length === 0 ? [] : [label, ...lines.map(briefingBullet)];
 }
 
-/** The failed evaluation's reports as a work task reads them, prefaced by what they mean. */
+/** The evaluators' failed reports as a work task reads them, prefaced by what they mean. */
 function briefingEvaluationReportLines(
   priorEvaluationReports: PriorEvaluationReports,
 ): readonly string[] {
