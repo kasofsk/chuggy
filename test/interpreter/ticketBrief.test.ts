@@ -14,6 +14,7 @@ import test from "node:test";
 
 import {
   briefBranchCharsMax,
+  briefBranchPrefix,
   briefChecksMax,
   briefIntentCharsMax,
   briefIntentLinesMax,
@@ -116,6 +117,13 @@ test("a branch is a reference name by the grammar the handoff already states", (
     `refs/heads/${"a".repeat(briefBranchCharsMax)}`,
   ])
     assert.throws(() => asBriefBranch(value), RangeError, `refused: ${value}`);
+});
+
+test("a branch's bound counts code points, matching the schema in front of it", () => {
+  const atBound = `${briefBranchPrefix}${"😀".repeat(briefBranchCharsMax - briefBranchPrefix.length)}`;
+  assert.equal(asBriefBranch(atBound), atBound);
+  const overBound = `${briefBranchPrefix}${"😀".repeat(briefBranchCharsMax - briefBranchPrefix.length + 1)}`;
+  assert.throws(() => asBriefBranch(overBound), RangeError);
 });
 
 test("a whole brief brands each of its parts and omits the branch it has none of", () => {
