@@ -23,6 +23,7 @@ import {
 import {
   checkedSelectorProjectOverrides,
   selectorProjectSettingsAdministration,
+  selectorProjectSettingsTextCharsMax,
   type SelectorProjectSettingsRecord,
   type SelectorProjectSettingsStore,
   type SelectorProjectSettingsWriteOutcome,
@@ -210,6 +211,18 @@ test("an override no column would hold is refused before the row is offered one"
   assert.deepEqual(checkedSelectorProjectOverrides({ northStar: "Ship it." }), {
     northStar: "Ship it.",
   });
+});
+
+test("the override door's text bound counts code points, matching the schema in front of it", () => {
+  const atBound = "😀".repeat(selectorProjectSettingsTextCharsMax);
+
+  assert.deepEqual(checkedSelectorProjectOverrides({ basePrompt: atBound }), {
+    basePrompt: atBound,
+  });
+  assert.throws(
+    () => checkedSelectorProjectOverrides({ basePrompt: atBound + "😀" }),
+    RangeError,
+  );
 });
 
 test("reading and writing a project's settings needs selector administration", async () => {

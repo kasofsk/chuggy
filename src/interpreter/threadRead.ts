@@ -43,6 +43,7 @@
 import {
   agenticRefusalsAnsweredMax,
   nativeHttpPageItemsMax,
+  textCodePointsCount,
   threadMessageCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
@@ -410,7 +411,7 @@ export function checkedThreadMailboxQuery(
 export function checkedThreadMessage(message: string): string {
   if (message.length === 0)
     throw new RangeError("a thread message must not be empty");
-  if (message.length > threadMessageCharsMax)
+  if (textCodePointsCount(message) > threadMessageCharsMax)
     throw new RangeError(
       `a thread message must be at most ${String(threadMessageCharsMax)} characters`,
     );

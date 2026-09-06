@@ -40,7 +40,10 @@
 
 import type { z } from "zod";
 
-import { inquiryQuestionCharsMax } from "../../../../src/contract/http.ts";
+import {
+  inquiryQuestionCharsMax,
+  textCodePointsCount,
+} from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { leadInquirySchema } from "../../../../src/contract/requests.ts";
 import type { LeadInquiryAccepted } from "../../../../src/contract/responses.ts";
@@ -80,12 +83,6 @@ export function inquiryAskerNamed(asker: string | undefined): string {
  * as: the ends a reader did not mean to type are not part of it. */
 export function inquiryQuestion(typed: string): string {
   return typed.trim();
-}
-
-/** How many code points `text` holds, which is what zod's `.max()` reads on a
- * string past its bound — not `String.length`'s UTF-16 units. */
-export function textCodePointsCount(text: string): number {
-  return [...text].length;
 }
 
 /** Why a question cannot be asked, in the one word the box refuses it with. */
