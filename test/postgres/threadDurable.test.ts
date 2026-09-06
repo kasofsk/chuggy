@@ -394,6 +394,69 @@ test("the close door closes a thread and nothing else the project holds", async 
 });
 
 /**
+ * The door decides the row is a thread in the predicate its lock is taken
+ * under, so a close aimed at the lead's session contends with nothing the
+ * scheduler or the worker plane holds on the lead's row. The lead's row is held
+ * locked by another transaction for the whole of the call, and the door must
+ * answer inside a lock timeout rather than wait on it.
+ */
+test("the close door waits on no row that is not a thread's", async () => {
+  const partition = await project("close-lock");
+  const lead = await sessionRigSession(rig.sessions, partition, "close-lock", {
+    kind: "Lead",
+  });
+  const held = await rig.sessions.harness.begin();
+  const api = await rig.apiPool.connect();
+  try {
+    await held.query(
+      `SELECT 1 FROM agent_session WHERE tenant=$1 AND project=$2 AND session=$3
+         FOR UPDATE`,
+      [partition.tenant, partition.project, lead],
+    );
+    await api.query("BEGIN");
+    await api.query("SET LOCAL lock_timeout='500ms'");
+    const answered = await api.query<{ closed: string }>(
+      `SELECT close_member_thread($1,$2,$3)::text AS closed`,
+      [partition.tenant, partition.project, lead],
+    );
+    assert.equal(answered.rows[0]?.closed, "NoThread");
+  } finally {
+    await api.query("ROLLBACK").catch(() => undefined);
+    api.release();
+    await held.rollback().catch(() => undefined);
+  }
+});
+
+/**
+ * The listing is one bounded page and a close is terminal, so a listing that
+ * answered the oldest threads first would fill with closed ones and drop the
+ * live ones off its end. Open threads come first and the rest newest first,
+ * which the smallest page shows: it holds the live thread and no closed one.
+ */
+test("a closed thread displaces no live one from the listing", async () => {
+  const partition = await project("listing-order");
+  const first = await threadRigMember(rig, partition, "listing-first");
+  const second = await threadRigMember(rig, partition, "listing-second");
+  const ended = await threadRigThread(rig, partition, first);
+  await rig.threads.close({ partition, session: ended.session });
+  const live = await threadRigThread(rig, partition, first);
+  const later = await threadRigThread(rig, partition, second);
+  await rig.threads.close({ partition, session: later.session });
+
+  const smallest = await rig.threads.threads(partition, 1);
+  assert.deepEqual(
+    smallest.map((record) => record.session),
+    [live.session],
+    "the page of one holds a closed thread over the live one",
+  );
+  const whole = await rig.threads.threads(partition, threadsAnsweredMax);
+  assert.deepEqual(
+    whole.map((record) => record.session),
+    [live.session, later.session, ended.session],
+  );
+});
+
+/**
  * A close with no turn waiting moves no turn and stores no batch, so without a
  * frame of its own the pages watching the thread would go on drawing it open.
  * The frame is the third shape the wire's schema admits, and it is asserted

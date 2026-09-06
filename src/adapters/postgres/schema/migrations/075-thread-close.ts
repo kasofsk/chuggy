@@ -7,7 +7,9 @@
  * its owner cannot file again from a new one; the door therefore takes a
  * session and no principal, and the boundary's `Mutate` authorization is the
  * whole of the control (kasofsk/chuggy#585). It admits `kind='Thread'` alone,
- * so the API's grant reaches no lead and no inquiry through it.
+ * in the predicate the row lock is taken under, so the API's grant reaches no
+ * lead and no inquiry through it — not their state, and not their row lock,
+ * which the scheduler and the worker plane contend for.
  *
  * CLOSING IS 058's OWN CLOSE, REACHED THROUGH A NARROWER DOOR.
  * `close_agent_session` is granted to no runtime role because a role that could
@@ -28,13 +30,23 @@
  * page would go on drawing the thread as open. The trigger fires on the state
  * column alone, for every kind of session, because a lead's page is owed the
  * same fact.
+ *
+ * A CLOSED THREAD DISPLACES NO LIVE ONE FROM THE LISTING. 062's listing answers
+ * the oldest page of every thread the project holds, and a close is terminal,
+ * so once closing was one press per row every close would have added a row at
+ * the front of that page for good and a live thread would have fallen off its
+ * end — a member with a thread offered `Open`, a settlement told there was no
+ * mailbox. The listing is replaced to answer open threads first, of which a
+ * project holds at most one per member, and the rest newest first.
  */
 
+import { threadsAnsweredMax } from "../../../../contract/http.ts";
 import {
   apiRole,
   boundaryOwnerRole,
   projectChangeAppendFunction,
   projectChangeSessionStateFunction,
+  projectThreadsReadFunction,
   sessionCloseFunction,
   threadCloseFunction,
   type Migration,
@@ -44,13 +56,14 @@ const memberThreadClose = [
   `CREATE FUNCTION ${threadCloseFunction}(
      in_tenant text,in_project text,in_session text) RETURNS text
      LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
-     DECLARE held record;
+     DECLARE held text;
      BEGIN
-       SELECT s.kind,s.state INTO held FROM agent_session s
+       SELECT s.state INTO held FROM agent_session s
         WHERE s.tenant=in_tenant AND s.project=in_project AND s.session=in_session
+          AND s.kind='Thread'
         FOR UPDATE;
-       IF NOT FOUND OR held.kind<>'Thread' THEN RETURN 'NoThread'; END IF;
-       IF held.state<>'Open' THEN RETURN 'AlreadyClosed'; END IF;
+       IF NOT FOUND THEN RETURN 'NoThread'; END IF;
+       IF held<>'Open' THEN RETURN 'AlreadyClosed'; END IF;
        PERFORM ${sessionCloseFunction}(in_tenant,in_project,in_session);
        RETURN 'Closed';
      END $$`,
@@ -76,9 +89,34 @@ const sessionStateChange = [
      EXECUTE FUNCTION ${projectChangeSessionStateFunction}()`,
 ];
 
+const threadListingOpenFirst = [
+  `CREATE OR REPLACE FUNCTION ${projectThreadsReadFunction}(
+     in_tenant text,in_project text,in_max bigint)
+     RETURNS TABLE(session text,principal text,owner text,state text,
+                   agent_reference text,turns bigint)
+     LANGUAGE sql STABLE SECURITY DEFINER
+     SET search_path=pg_catalog,public,pg_temp AS $$
+       SELECT s.session,s.principal,m.authority_subject,s.state,s.agent_reference,
+              (SELECT count(*) FROM session_turn t
+                WHERE t.tenant=s.tenant AND t.project=s.project
+                  AND t.session=s.session)
+         FROM agent_session s
+         LEFT JOIN project_membership m
+                ON m.tenant=s.tenant AND m.project=s.project
+               AND m.principal=s.principal
+        WHERE s.tenant=in_tenant AND s.project=in_project AND s.kind='Thread'
+        ORDER BY (s.state='Open') DESC,s.opened_at DESC,s.session
+        LIMIT least(coalesce(in_max,${threadsAnsweredMax}),${threadsAnsweredMax})
+     $$`,
+];
+
 /** A member's thread closed through the API, and the frame that says so. */
 export const migration075: Migration = {
   version: 75,
   name: "a member thread is closed through the API, and a state move is a frame",
-  statements: [...memberThreadClose, ...sessionStateChange],
+  statements: [
+    ...memberThreadClose,
+    ...sessionStateChange,
+    ...threadListingOpenFirst,
+  ],
 };
