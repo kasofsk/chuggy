@@ -203,11 +203,6 @@
   word-break: break-word;
 }
 
-.actions {
-  display: flex;
-  gap: var(--space-2);
-}
-
 .intent {
   margin: 0;
   white-space: pre-wrap;

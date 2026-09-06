@@ -5,7 +5,8 @@ TypeScript through Vite, with TanStack Query holding the cache a live frame is
 written into and TanStack Router carrying the partition in the path. Hand CSS,
 dark, dense; Radix's headless primitives behind the controls a browser does
 not supply — a menu, a tooltip, a disclosure — and no styled component
-library.
+library; Tailwind generates the utilities over those same tokens and nothing
+else, with no preflight and no default theme.
 
 It is an npm workspace of this repository, declared in the root `package.json`,
 so `npm ci` at the root installs it and `ui/chuggy-ui/package.json` pins what it
@@ -28,9 +29,10 @@ builds with.
   in `browser/`, which is the rule `chuggy-ui-primitives-reach-no-effect`
   states and is why each mounts in a suite with no provider around it.
 - `ui/chuggy-ui/app/styles/` — `tokens.css`, the one file that states a colour
-  or a size, and `base.css`, the element defaults. Both themes are defined in
-  the same line through `light-dark()`, and the shell's control chooses between
-  them by putting `data-theme` on the document element.
+  or a size, `base.css`, the element defaults, and `utilities.css`, which maps
+  Tailwind's namespaces onto those tokens by reference. Both themes are
+  defined in the same line through `light-dark()`, and the shell's control
+  chooses between them by putting `data-theme` on the document element.
 - `ui/chuggy-ui/app/browser/ticket/` — the ticket page's own compositions and
   its one `@layer page` sheet: the head, the situation column, the ledger, the
   usage panel and the main body. `ticketPageFacts.ts` derives what the page

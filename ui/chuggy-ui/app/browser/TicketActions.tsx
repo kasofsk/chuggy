@@ -244,7 +244,7 @@ function ActionButtons(props: {
   if (props.actions.length === 0)
     return <EmptyState label="No action in this phase" />;
   return (
-    <div className="actions">
+    <div className="flex gap-2">
       {props.actions.map((action) => {
         const effect = ticketActionEffect(
           action.action,

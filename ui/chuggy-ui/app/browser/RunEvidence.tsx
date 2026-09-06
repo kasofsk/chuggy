@@ -140,7 +140,7 @@ function RunTurns(props: {
           ) : (
             <RunTurnRows page={page} />
           )}
-          <div className="actions">
+          <div className="flex gap-2">
             <button
               type="button"
               disabled={walked.length === 0}
@@ -303,7 +303,7 @@ function RunEvidenceReads(props: {
       ) : (
         <RunTotalsLine totals={run.totals} />
       )}
-      <div className="actions">
+      <div className="flex gap-2">
         <button
           type="button"
           aria-expanded={turns}
