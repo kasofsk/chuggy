@@ -10,7 +10,6 @@
 
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { Collapsible } from "radix-ui";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
@@ -39,6 +38,7 @@ import { usePanelResource } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { MarkdownReport } from "./MarkdownReport.tsx";
 import { RunTranscript } from "./RunTranscript.tsx";
+import { Disclosure } from "./ui/Disclosure.tsx";
 
 /** The most turn pages one reader may walk through in one sitting. */
 export const runTurnPagesMax = 32;
@@ -186,16 +186,13 @@ function RunConfigurationFileRow(props: {
         <span className="panel-absent">{sentence}</span>
       )}
       {file.content === undefined ? null : (
-        <Collapsible.Root
-          className="disclosure"
+        <Disclosure
           open={shown}
           onOpenChange={setShown}
+          label={shown ? "hide" : "show"}
         >
-          <Collapsible.Trigger>{shown ? "hide" : "show"}</Collapsible.Trigger>
-          <Collapsible.Content asChild>
-            <pre className="preview">{file.content}</pre>
-          </Collapsible.Content>
-        </Collapsible.Root>
+          <pre className="preview">{file.content}</pre>
+        </Disclosure>
       )}
     </li>
   );

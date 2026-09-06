@@ -180,13 +180,6 @@
   display: contents;
 }
 
-/* A Collapsible.Root wraps a trigger and a body that were siblings before it
- * existed, so it draws as neither box and leaves them to the layout they
- * already had. */
-.disclosure {
-  display: contents;
-}
-
 .legacy-fields dt {
   color: var(--ink-3);
 }

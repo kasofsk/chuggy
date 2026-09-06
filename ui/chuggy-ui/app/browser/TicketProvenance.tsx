@@ -10,7 +10,6 @@
 
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { Collapsible } from "radix-ui";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { TicketBriefBody } from "../../../../src/contract/brief.ts";
@@ -20,6 +19,7 @@ import type { PanelState } from "../core/freshness.ts";
 import { configurationLabel } from "../core/labels.ts";
 import { usePanelResource } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
+import { Disclosure } from "./ui/Disclosure.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
 function Field(props: {
@@ -195,18 +195,13 @@ function TicketConfiguration(props: {
               <Field name="parent">{configuration.parent}</Field>
             )}
           </dl>
-          <Collapsible.Root
-            className="disclosure"
+          <Disclosure
             open={open}
             onOpenChange={setOpen}
+            label={open ? "hide canonical" : "show canonical"}
           >
-            <Collapsible.Trigger>
-              {open ? "hide canonical" : "show canonical"}
-            </Collapsible.Trigger>
-            <Collapsible.Content asChild>
-              <pre className="canonical">{configuration.canonical}</pre>
-            </Collapsible.Content>
-          </Collapsible.Root>
+            <pre className="canonical">{configuration.canonical}</pre>
+          </Disclosure>
         </div>
       )}
     </DataPanel>

@@ -13,7 +13,11 @@ import { Disclosure } from "../app/browser/ui/Disclosure.tsx";
 function Held(): ReactNode {
   const [open, setOpen] = useState(false);
   return (
-    <Disclosure open={open} onOpenChange={setOpen} label={open ? "hide" : "show"}>
+    <Disclosure
+      open={open}
+      onOpenChange={setOpen}
+      label={open ? "hide" : "show"}
+    >
       <pre>canonical</pre>
     </Disclosure>
   );

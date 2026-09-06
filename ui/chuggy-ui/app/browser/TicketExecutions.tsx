@@ -10,7 +10,6 @@
 
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { Collapsible } from "radix-ui";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ExecutionResponse } from "../../../../src/contract/responses.ts";
@@ -19,6 +18,7 @@ import { artifactPreviewOffer } from "../core/artifactPreview.ts";
 import { usePanelResource } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { RunEvidence } from "./RunEvidence.tsx";
+import { Disclosure } from "./ui/Disclosure.tsx";
 
 type ResultArtifact = NonNullable<
   ExecutionResponse["result"]
@@ -63,24 +63,19 @@ function Artifact(props: {
       {offer.offer === "Unpreviewable" ? (
         <span className="panel-absent">{offer.reason}</span>
       ) : (
-        <Collapsible.Root
-          className="disclosure"
+        <Disclosure
           open={shown}
           onOpenChange={setShown}
+          label={shown ? "hide" : `preview as ${offer.renderer}`}
         >
-          <Collapsible.Trigger>
-            {shown ? "hide" : `preview as ${offer.renderer}`}
-          </Collapsible.Trigger>
-          <Collapsible.Content asChild>
-            <div className="artifact-preview">
-              <ArtifactPreview
-                partition={props.partition}
-                execution={props.execution}
-                ordinal={props.artifact.ordinal}
-              />
-            </div>
-          </Collapsible.Content>
-        </Collapsible.Root>
+          <div className="artifact-preview">
+            <ArtifactPreview
+              partition={props.partition}
+              execution={props.execution}
+              ordinal={props.artifact.ordinal}
+            />
+          </div>
+        </Disclosure>
       )}
     </li>
   );
