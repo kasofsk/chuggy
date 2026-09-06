@@ -19,6 +19,7 @@ import {
   consoleCascadeFindings,
   consoleCascadeLayers,
   consoleCascadeNames,
+  consoleCollisionFindings,
   consolePolicyFetchingAttributes,
   consolePolicyFindings,
   consolePolicyStylesheetHrefs,
@@ -253,6 +254,49 @@ test("the named colours are the roster the sheet gate states", () => {
       .trim()
       .split(/\s+/u),
     [...consoleRawColourNames],
+  );
+});
+
+test("a class the utilities layer emits and a layered sheet selects is a finding", () => {
+  const findings = consoleCollisionFindings(
+    "@layer utilities{.table{display:table}}@layer ui{.table{width:100%}}",
+  );
+  assert.match(
+    findings.join(" "),
+    /a class `\.table` the utilities layer emits and a layered sheet selects/u,
+  );
+});
+
+test("a class in the utilities layer alone carries no collision finding", () => {
+  assert.deepEqual(
+    consoleCollisionFindings("@layer utilities{.hidden{display:none}}"),
+    [],
+  );
+});
+
+test("a class in a layered sheet alone carries no collision finding", () => {
+  assert.deepEqual(
+    consoleCollisionFindings("@layer ui{.table{width:100%}}"),
+    [],
+  );
+});
+
+test("no utilities layer at all carries no collision finding", () => {
+  assert.deepEqual(
+    consoleCollisionFindings(
+      "@layer tokens{:root{--ink-1:#151a17}}@layer ui{.table{width:100%}}",
+    ),
+    [],
+  );
+});
+
+test("an escaped arbitrary-value name cannot collide and is skipped", () => {
+  assert.deepEqual(
+    consoleCollisionFindings(
+      "@layer utilities{.grid-cols-\\[1fr\\]{grid-template-columns:1fr}}" +
+        "@layer ui{.grid-cols-\\[1fr\\]{color:red}}",
+    ),
+    [],
   );
 });
 
