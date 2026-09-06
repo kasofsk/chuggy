@@ -25,6 +25,12 @@
 # as it walks; a pass that wrote no tally is a could-not-run, because a clean
 # line with no account of the run is not a verdict.
 #
+# A GATE THAT HANGS ENFORCES NOTHING, so the run is capped and an overrun is a
+# could-not-run rather than a wait with no end. `timeout` applies the cap and is
+# probed functionally, because a name on PATH is not a working binary and macOS
+# ships none; with no working one the walk runs uncapped and says so, since
+# announcing a bound that is not being applied is worse than having none.
+#
 # Env:
 #   CHUG_WALK_SAMPLES    runs per instance; the default below matches the
 #                        model gate's --max-samples
@@ -33,6 +39,8 @@
 #                        set together: reproduce exactly one named run
 #   CHUG_WALK_DIR        where a counterexample is written; the default is a
 #                        fresh temp directory the failure names
+#   CHUG_RANDOM_TIMEOUT_SECS
+#                        wall-clock cap on the walk; an overrun exits 2
 #
 # Usage:
 #   .chug/tasks/check-random.sh
@@ -75,12 +83,40 @@ set -- $suites
 unset IFS
 set +f
 
+cap_secs="${CHUG_RANDOM_TIMEOUT_SECS:-300}"
+timeout_cmd=""
+if timeout 5 true >/dev/null 2>&1; then
+	timeout_cmd="timeout"
+elif gtimeout 5 true >/dev/null 2>&1; then
+	timeout_cmd="gtimeout"
+else
+	echo "check-random: WARNING — no working \`timeout\` or \`gtimeout\`, so the walk"
+	echo "check-random:           runs UNCAPPED. Install coreutils for the cap."
+fi
+
 set +e
-CHUG_WALK_SAMPLES="${CHUG_WALK_SAMPLES:-2000}" \
-	CHUG_WALK_TALLY="$work/tally" \
-	node --test --test-reporter=dot "$@" >"$work/out" 2>&1
+if [ -n "$timeout_cmd" ]; then
+	CHUG_WALK_SAMPLES="${CHUG_WALK_SAMPLES:-2000}" \
+		CHUG_WALK_TALLY="$work/tally" \
+		"$timeout_cmd" "$cap_secs" node --test --test-reporter=dot "$@" >"$work/out" 2>&1
+else
+	CHUG_WALK_SAMPLES="${CHUG_WALK_SAMPLES:-2000}" \
+		CHUG_WALK_TALLY="$work/tally" \
+		node --test --test-reporter=dot "$@" >"$work/out" 2>&1
+fi
 rc=$?
 set -e
+
+# 124 is what `timeout` reports when it killed the command, and node's runner
+# has no such exit of its own.
+if [ -n "$timeout_cmd" ] && [ "$rc" -eq 124 ]; then
+	sed 's/^/    /' "$work/out"
+	echo "check-random: LINTER ERROR — the walk did not finish inside ${cap_secs}s and was killed"
+	echo "check-random: a walk that outruns its cap is not a verdict. Run this gate alone;"
+	echo "check-random: if the sweep is honestly that long, lower CHUG_WALK_SAMPLES or raise"
+	echo "check-random: CHUG_RANDOM_TIMEOUT_SECS."
+	exit 2
+fi
 
 if [ "$rc" -ne 0 ]; then
 	sed 's/^/    /' "$work/out"

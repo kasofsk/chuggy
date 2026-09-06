@@ -137,4 +137,20 @@ set -e
 check "the restored tree replays the counterexample red at the divergence" 1 "$RC" \
 	"the step record diverged"
 
+# --- The cap: an overrun is a could-not-run ----------------------------------
+#
+# The sweep this case asks for cannot finish inside the cap it sets, so what is
+# under test is the cap firing rather than anything the walk found. The driver
+# carries its own bound too, because a gate that ignored the cap would hang
+# this suite instead of failing it.
+
+OUT="$WORK/.out"
+set +e
+(cd "$ROOT" && CHUG_WALK_SAMPLES=200000 CHUG_RANDOM_TIMEOUT_SECS=2 \
+	timeout 60 "$SUT") >"$OUT" 2>&1
+RC=$?
+set -e
+check "a walk that outruns its cap exits 2, not 0 or 1" 2 "$RC" "did not finish inside 2s"
+check "the overrun names the knob that widens the cap" 2 "$RC" "CHUG_RANDOM_TIMEOUT_SECS"
+
 done_ "check-random.test.sh"
