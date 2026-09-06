@@ -64,8 +64,4 @@
 
   --radius-1: var(--radius-1);
   --radius-2: var(--radius-2);
-
-  --breakpoint-narrow: 40em;
-  --breakpoint-two-column: 60em;
-  --breakpoint-desk: 80em;
 }
