@@ -45,8 +45,13 @@
 # one closing brace in the wrong place silently promotes part of a primitive
 # over the whole system and nothing about the sheet looks wrong. Prettier
 # formats it, the bundler ships it, and the page it breaks is a page nobody has
-# opened yet. At the top level of a sheet only `@layer`, `@charset`, `@import`
-# and `@namespace` may appear; everything else belongs under a layer.
+# opened yet. At the top level of a sheet only `@layer`, `@charset`, `@import`,
+# `@namespace` and `@theme` may appear; everything else belongs under a layer.
+# `@theme` is Tailwind's, resolved at build time and emitting no rule of its
+# own, and it is admitted at the top level because nesting it inside `@layer`
+# makes Tailwind write a bare `@layer` statement into the built sheet — the
+# text `scripts/console-policy.ts` reads the cascade order from. Every other
+# Tailwind at-rule is a rule outside the layer like any other.
 #
 # SCOPE: tracked `*.css` under `ui/chuggy-ui/app/`, less two files. The token
 # file is where a colour and a length are stated, so clause 1 does not judge
@@ -204,7 +209,7 @@ FNR == 1 {
 	sub(/[ \t]*\{.*$/, "", trimmed)
 	sub(/[ \t]+$/, "", trimmed)
 	if (depth == 0 && bare != "" && bare != "}" &&
-		trimmed !~ /^@(layer|charset|import|namespace)([ \t{;]|$)/)
+		trimmed !~ /^@(layer|charset|import|namespace|theme)([ \t{;]|$)/)
 		print "ERROR " FILENAME ":" FNR ": " trimmed " — a rule outside the layer this sheet declares"
 	opened = gsub(/\{/, "{", low)
 	closed = gsub(/\}/, "}", low)
