@@ -233,7 +233,7 @@ function RunConfigurationBody(props: { readonly content: string }): ReactNode {
           <dt>command line</dt>
           <dd>
             {argv ?? (
-              <code className="m-0 border border-edge bg-surface-2 p-2 whitespace-pre-wrap break-words rounded-2">
+              <code className="border border-edge bg-surface-2 p-2 whitespace-pre-wrap break-words rounded-2">
                 {snapshot.argv.join(" ")}
               </code>
             )}
@@ -374,9 +374,7 @@ function RunAttempt(props: {
       <p className="flex flex-wrap items-baseline gap-4">
         <span className="text-ink-1 font-strong">run {attempt.number}</span>
         <span className="text-ink-3">{attempt.state}</span>
-        <span className="m-0 text-ink-3 text-xs">
-          opened {attempt.openedAt}
-        </span>
+        <span className="text-ink-3 text-xs">opened {attempt.openedAt}</span>
       </p>
       <RunSummary attempt={attempt} result={props.execution.result} />
       <RunEvidenceReads
