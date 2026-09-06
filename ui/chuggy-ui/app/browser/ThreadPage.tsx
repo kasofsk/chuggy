@@ -5,9 +5,9 @@
  * THIS PAGE RE-READS ON A `Session` FRAME AND FOLDS NOTHING. The frame is a
  * pointer: migrations 059 and 075 write a JSON object naming the session and
  * the turn, the batch or the state that moved, and the change log answers no
- * representation for the kind. So there is no body to fold — a page that tried would keep the turn it
- * opened with while the thread went on answering — and what the frame supplies
- * is only which session to ask about again.
+ * representation for the kind. So there is no body to fold — a page that tried
+ * would keep the turn it opened with while the thread went on answering — and
+ * what the frame supplies is only which session to ask about again.
  *
  * A FRAME NAMING ANOTHER SESSION LEAVES THIS PAGE ALONE. A project holds a
  * session per member beside its lead, so a page that re-read on every `Session`
