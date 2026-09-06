@@ -56,6 +56,7 @@ import {
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Field, Fields } from "./ui/Fields.tsx";
 import { Figure } from "./ui/Figure.tsx";
+import { PageHead } from "./ui/PageHead.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
 
@@ -92,19 +93,18 @@ export function useLead(
 function LeadHead(props: { readonly lead: LeadResponse }): ReactNode {
   const lead = props.lead;
   return (
-    <div className="lead-head">
-      <div className="lead-title">
-        <h1>Lead</h1>
-        <p className="lead-session">{lead.session}</p>
-      </div>
-      <div className="lead-state">
+    <>
+      <PageHead
+        title="Lead"
+        identity={{ text: lead.session, title: lead.session }}
+      >
         <Pill tone={sessionStateTone(lead.state)} emphasis>
           {lead.state}
         </Pill>
         <Pill tone={selectorAttentionTone(lead.attention)}>
           {lead.attention}
         </Pill>
-      </div>
+      </PageHead>
       <Fields variant="inline">
         <Field name="Reference" absent={lead.agentReference === undefined}>
           {lead.agentReference ?? "None"}
@@ -113,7 +113,7 @@ function LeadHead(props: { readonly lead: LeadResponse }): ReactNode {
           <span className="num">{lead.notificationCursor}</span>
         </Field>
       </Fields>
-    </div>
+    </>
   );
 }
 

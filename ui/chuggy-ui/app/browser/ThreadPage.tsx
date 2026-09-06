@@ -51,6 +51,7 @@ import { ThreadComposer } from "./thread/ThreadComposer.tsx";
 import { ThreadTurns } from "./thread/ThreadTurns.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Field, Fields } from "./ui/Fields.tsx";
+import { PageHead } from "./ui/PageHead.tsx";
 import { Pill } from "./ui/Pill.tsx";
 
 import "./lead/lead.css";
@@ -86,12 +87,11 @@ function ThreadHead(props: {
 }): ReactNode {
   const thread = props.thread;
   return (
-    <div className="thread-head">
-      <div className="thread-title">
-        <h1>Thread</h1>
-        <p className="thread-session">{thread.session}</p>
-      </div>
-      <div className="thread-state">
+    <>
+      <PageHead
+        title="Thread"
+        identity={{ text: thread.session, title: thread.session }}
+      >
         <Pill tone={threadStandingTone(thread.state)} emphasis>
           {thread.state}
         </Pill>
@@ -103,7 +103,7 @@ function ThreadHead(props: {
             variant="danger"
           />
         ) : null}
-      </div>
+      </PageHead>
       <Fields variant="inline">
         <Field name="Owner" absent={thread.owner === undefined}>
           {thread.owner ?? "None"}
@@ -112,7 +112,7 @@ function ThreadHead(props: {
           {thread.agentReference ?? "None"}
         </Field>
       </Fields>
-    </div>
+    </>
   );
 }
 
