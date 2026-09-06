@@ -75,17 +75,8 @@ import type {
   AgenticRefusalResponse,
   LeadResponse,
   LeadTranscriptResponse,
-  LeadTurnResponse,
   SelectorDecisionResponse,
 } from "../../../../src/contract/responses.ts";
-import { conversationBlocksOf } from "./conversation.ts";
-import type {
-  ConversationEntry,
-  ConversationItem,
-  ConversationMarker,
-  ConversationRole,
-  ConversationTurn,
-} from "./conversation.ts";
 
 /** As much of the note the lead left its successor as the lead read carries. */
 export type LeadHandoffNote = LeadResponse["handoffNote"];
@@ -490,130 +481,6 @@ export function leadTranscriptHolding(
   held: LeadTranscriptHeld,
 ): readonly LeadTranscriptLine[] {
   return leadTranscriptLines(held).filter((line) => line.holding);
-}
-
-/** The role a transcript entry's own type is drawn as, and nothing for a type
- * that is neither — a compaction summary line stands for its own marker and is
- * never drawn as an entry of its own. */
-function leadConversationRole(type: string): ConversationRole | undefined {
-  if (type === "user") return "User";
-  if (type === "assistant") return "Assistant";
-  return undefined;
-}
-
-/** What a fold's own shortfalls are, in the words the Holding and Log panels
- * already said them in: a failed read, entries the record could not draw, and
- * the oldest entries a pane stopped holding. */
-function leadConversationShortfalls(
-  held: LeadTranscriptHeld,
-): readonly ConversationMarker[] {
-  const failure: readonly ConversationMarker[] =
-    held.failure === undefined
-      ? []
-      : [{ marker: "Failure", reason: held.failure }];
-  const truncated: readonly ConversationMarker[] =
-    held.truncated && !held.holdingUnknown ? [{ marker: "Truncated" }] : [];
-  const elided: readonly ConversationMarker[] =
-    held.elided === 0 ? [] : [{ marker: "Elision", bytes: held.elided }];
-  const dropped: readonly ConversationMarker[] =
-    held.entriesDropped === 0
-      ? []
-      : [{ marker: "Dropped", count: held.entriesDropped }];
-  return [...failure, ...truncated, ...elided, ...dropped];
-}
-
-function leadConversationMarkerItems(
-  markers: readonly ConversationMarker[],
-): readonly ConversationItem[] {
-  return markers.map((marker) => ({ item: "Marker", marker }));
-}
-
-/**
- * The chain this pane holds, as the conversation surface takes it: the
- * shortfalls a read could not draw, the compaction seam above the entry it cut
- * at, and each user or assistant entry in the record's own order. `stream` is
- * the session's own reference rather than `held.stream` — which the pane
- * learns only once a page or a stream change has run, so a walk that has only
- * failed carries none — and, with `listed`, decides whether a stream not yet
- * named or not on the store's own listing is said as itself and nothing else.
- */
-export function leadConversationItems(
-  held: LeadTranscriptHeld,
-  stream: string | undefined,
-  listed: boolean,
-): readonly ConversationItem[] {
-  if (stream === undefined)
-    return [{ item: "Marker", marker: { marker: "NoStore" } }];
-  const shortfalls = leadConversationShortfalls(held);
-  if (!listed)
-    return leadConversationMarkerItems([...shortfalls, { marker: "Unlisted" }]);
-  const boundary = held.compaction?.boundary;
-  const entries = held.entries.flatMap((entry, at): ConversationItem[] => {
-    const compaction: readonly ConversationItem[] =
-      boundary === undefined || entry.uuid !== boundary
-        ? []
-        : [
-            {
-              item: "Marker",
-              marker: {
-                marker: "Compaction",
-                ...(held.compaction?.at === undefined
-                  ? {}
-                  : { at: held.compaction.at }),
-              },
-            },
-          ];
-    const role = leadConversationRole(entry.type);
-    const drawn: readonly ConversationItem[] =
-      role === undefined
-        ? []
-        : [
-            {
-              item: "Entry",
-              entry: {
-                id: entry.uuid ?? `ordinal-${String(at + 1)}`,
-                role,
-                ...(entry.timestamp === undefined
-                  ? {}
-                  : { at: entry.timestamp }),
-                blocks: conversationBlocksOf(entry.message),
-              } satisfies ConversationEntry,
-            },
-          ];
-    return [...compaction, ...drawn];
-  });
-  return [
-    ...leadConversationMarkerItems(shortfalls),
-    ...(held.holdingUnknown
-      ? leadConversationMarkerItems([{ marker: "Unreached" }])
-      : []),
-    ...entries,
-  ];
-}
-
-/**
- * The lead's mailbox turns, as the conversation's overlay takes them: the
- * transcript is where a turn's own ask lives, so every turn but one already
- * answered is handed an empty input — enough for `Observation`, `Wake` and
- * `Inquiry` to draw their kind word, since none of the three reads the text,
- * and never enough to match a transcript exchange whose own ask is not itself
- * empty. An answered turn is left with none at all, so it neither matches nor
- * appends a second account of the exchange it already opened.
- */
-export function leadConversationTurns(
-  turns: readonly LeadTurnResponse[],
-): readonly ConversationTurn[] {
-  return turns.map((turn) => ({
-    turn: turn.turn,
-    ordinal: turn.ordinal,
-    inputKind: turn.inputKind,
-    state: turn.state,
-    ...(turn.state === "Answered" ? {} : { input: "" }),
-    ...(turn.failure === undefined ? {} : { failure: turn.failure }),
-    ...(turn.tokens === undefined ? {} : { tokens: turn.tokens }),
-    ...(turn.costMicros === undefined ? {} : { costMicros: turn.costMicros }),
-    ...(turn.durationMs === undefined ? {} : { durationMs: turn.durationMs }),
-  }));
 }
 
 /**

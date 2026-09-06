@@ -13,7 +13,10 @@
  * loop of its own.
  */
 
-import type { ThreadTurnResponse } from "../../../../src/contract/responses.ts";
+import type {
+  LeadTurnResponse,
+  ThreadTurnResponse,
+} from "../../../../src/contract/responses.ts";
 import { conversationBlocksOf } from "./conversation.ts";
 import type {
   ConversationEntry,
@@ -61,10 +64,9 @@ function sessionConversationMarkers(
   read: SessionConversationRead,
 ): readonly ConversationMarker[] {
   if (read.stream === undefined) return [{ marker: "NoStore" }];
-  if (!read.listed) return [{ marker: "Unlisted" }];
   const held = read.held;
   const shortfall = sessionConversationShortfall(held);
-  return [
+  const shortfalls: readonly ConversationMarker[] = [
     ...(held.failure === undefined
       ? []
       : [{ marker: "Failure", reason: held.failure } as const]),
@@ -74,6 +76,7 @@ function sessionConversationMarkers(
       ? []
       : [{ marker: "Dropped", count: held.entriesDropped } as const]),
   ];
+  return read.listed ? shortfalls : [...shortfalls, { marker: "Unlisted" }];
 }
 
 /** One entry, keyed by the uuid the store gave it and by its place in the chain
@@ -112,18 +115,20 @@ export function sessionConversationItems(
 }
 
 /**
- * One thread's mailbox tail as the overlay reads it. It lives beside the walk's
- * own derivation rather than in `threads.ts` because `conversation.ts` already
- * reads that module, and a module that read it back would be a cycle.
+ * One session's mailbox tail as the overlay reads it, a lead's turns and a
+ * thread's alike; it lives beside the walk's own derivation rather than in
+ * `threads.ts`, since `conversation.ts` already reads that module. A lead's
+ * turn carries no input of its own — the decision log already holds it — so
+ * none is invented, and `conversationAskOf` draws the kind's word instead.
  */
-export function threadConversationTurns(
-  turns: readonly ThreadTurnResponse[],
+export function sessionConversationTurns(
+  turns: readonly (ThreadTurnResponse | LeadTurnResponse)[],
 ): readonly ConversationTurn[] {
   return turns.map((turn) => ({
     turn: turn.turn,
     ordinal: turn.ordinal,
     inputKind: turn.inputKind,
-    input: turn.input,
+    ...("input" in turn ? { input: turn.input } : {}),
     state: turn.state,
     ...(turn.failure === undefined ? {} : { failure: turn.failure }),
     ...(turn.tokens === undefined ? {} : { tokens: turn.tokens }),

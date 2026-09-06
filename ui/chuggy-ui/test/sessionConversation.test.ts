@@ -20,8 +20,9 @@ import type {
 } from "../app/core/leadTranscript.ts";
 import {
   sessionConversationItems,
-  threadConversationTurns,
+  sessionConversationTurns,
 } from "../app/core/sessionConversation.ts";
+import type { LeadTurnResponse } from "../../../src/contract/responses.ts";
 import { threadTurn } from "./threadFixture.ts";
 
 const stream = "9f8e7d";
@@ -155,6 +156,39 @@ test("a stream the listing does not carry says so and still draws what was gathe
   });
 });
 
+/**
+ * A SHORTFALL IS A FACT ABOUT THE READ WHETHER OR NOT THE STREAM IS LISTED.
+ * The `Unlisted` marker withholds nothing else the walk found out.
+ */
+test("an unlisted stream's shortfalls stand beside the marker and what was gathered", () => {
+  const items = sessionConversationItems({
+    held: heldOf({
+      entries: [entryOf({ type: "user", message: said("hi") })],
+      failure: "the API failed with InternalError",
+      truncated: true,
+      elided: 2,
+      entriesDropped: 1,
+    }),
+    stream,
+    listed: false,
+  });
+  expect(markers(items)).toStrictEqual([
+    "Failure",
+    "Truncated",
+    "Capped",
+    "Dropped",
+    "Unlisted",
+  ]);
+  expect(items.map((item) => item.item)).toStrictEqual([
+    "Marker",
+    "Marker",
+    "Marker",
+    "Marker",
+    "Marker",
+    "Entry",
+  ]);
+});
+
 test("a read that failed, an unreached tail, elided batches and dropped entries each say themselves", () => {
   const items = itemsOf({
     failure: "Fault · 500",
@@ -205,7 +239,7 @@ test("a chain and the turn that matches it make one measured exchange", () => {
   });
   const exchanges = conversationExchanges(
     items,
-    threadConversationTurns([
+    sessionConversationTurns([
       threadTurn({ turn: "thread-turn-1", input: "what of 41" }),
     ]),
   );
@@ -224,7 +258,7 @@ test("a chain and the turn that matches it make one measured exchange", () => {
 });
 
 test("a turn carries every measure it was answered with and invents none", () => {
-  const turns = threadConversationTurns([
+  const turns = sessionConversationTurns([
     threadTurn({
       turn: "thread-turn-1",
       state: "Failed",
@@ -244,4 +278,44 @@ test("a turn carries every measure it was answered with and invents none", () =>
       failure: "AgentRateLimited",
     },
   ]);
+});
+
+/** A lead's turn carries no `input` at all — the decision log already holds
+ * it — so none is invented for it, whatever the turn's state. */
+test("a lead's turn carries no input of its own", () => {
+  const turn: LeadTurnResponse = {
+    turn: "turn-1",
+    ordinal: 1,
+    inputKind: "Observation",
+    state: "Answered",
+    tokens: 900,
+  };
+  expect(sessionConversationTurns([turn])).toStrictEqual([
+    {
+      turn: "turn-1",
+      ordinal: 1,
+      inputKind: "Observation",
+      state: "Answered",
+      tokens: 900,
+    },
+  ]);
+});
+
+/** What `TASK-lead.md` asked for end to end: a lead turn nobody has claimed
+ * appends a running exchange that draws its kind word and no text, because a
+ * lead's turn has no input for the overlay to have carried in the first place. */
+test("a Queued lead turn with no input appends a running exchange with its kind word", () => {
+  const turn: LeadTurnResponse = {
+    turn: "turn-9",
+    ordinal: 9,
+    inputKind: "Observation",
+    state: "Queued",
+  };
+  const exchanges = conversationExchanges([], sessionConversationTurns([turn]));
+  expect(exchanges).toHaveLength(1);
+  expect(exchanges[0]?.ask).toEqual({ ask: "Observation" });
+  expect(exchanges[0]?.standing).toEqual({
+    standing: "Running",
+    state: "Queued",
+  });
 });
