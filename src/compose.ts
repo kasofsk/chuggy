@@ -44,7 +44,6 @@ import {
 import { authorizedProjectInventory } from "./interpreter/projectInventory.ts";
 import { postgresAgenticRefusalLedger } from "./adapters/postgres/agenticRefusal.ts";
 import { postgresLeadMailbox } from "./adapters/postgres/leadMailbox.ts";
-import { postgresLeadDecisionTail } from "./adapters/postgres/leadReads.ts";
 import type { LeadSessionMint } from "./interpreter/leadMailbox.ts";
 import {
   leadSelectorPolicy,
@@ -151,7 +150,7 @@ export function composeSelectorRuntime(
   const policy = selectorPolicyHost(
     leadSelectorPolicy(
       postgresLeadMailbox(selectorPool),
-      postgresLeadDecisionTail(selectorPool),
+      store,
       lead.sessions,
       lead.clock,
       lead.policy,

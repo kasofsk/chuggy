@@ -16,7 +16,6 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
 import { leadSessionMint } from "../../src/adapters/crypto/leadSessionMint.ts";
-import { postgresLeadDecisionTail } from "../../src/adapters/postgres/leadReads.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   leadSelectorPolicy,
@@ -67,7 +66,7 @@ const clock: LeadPolicyClock = {
 function seedingPolicy() {
   return leadSelectorPolicy(
     rig.mailbox,
-    postgresLeadDecisionTail(rig.selectorPool),
+    postgresSelectorState(rig.selectorPool),
     leadSessionMint(),
     clock,
     {
@@ -330,5 +329,78 @@ test("a successor the runtime opens is seeded, and records a transcript of its o
     (await rig.mailbox.lead(partition))?.agentReference,
     "agent-session-heir",
     "and the transcript it records is its own: a carried reference would leave its pod's bind refused",
+  );
+});
+
+test("the store's decision tail is read newest first, and its history oldest first", async () => {
+  const partition = await leadRigProject(rig, "tailed");
+  const first = await seedingDecision(partition, "tailed-first", 100);
+  const second = await seedingDecision(partition, "tailed-second", 200);
+  const third = await seedingDecision(partition, "tailed-third", 300);
+  const store = postgresSelectorState(rig.selectorPool);
+  assert.deepEqual(
+    (await store.tail(partition, 2)).map((record) => record.decision),
+    [third, second],
+  );
+  assert.deepEqual(
+    (await store.history(partition, undefined, 3)).map(
+      (record) => record.decision,
+    ),
+    [first, second, third],
+  );
+});
+
+test("a failed decision's record answers the view token it was written with", async () => {
+  const partition = await leadRigProject(rig, "failed-token");
+  const store = postgresSelectorState(rig.selectorPool);
+  const token = {
+    ...partition,
+    recoveryEpoch: "epoch-failed",
+    schemaVersion: 1,
+    watermark: 7,
+    digest: "d".repeat(64),
+  };
+  const decision = `selector-decision-failed-${String(Date.now())}`;
+  await store.recordInteraction(
+    {
+      decision,
+      partition,
+      instructionsVersion: "1.0",
+      instructions: "choose one",
+      observedView: [],
+      observedToken: token,
+      context: {
+        operationalContext: postgresHarnessSelectorContext,
+        handoffNote: {},
+      },
+      toolActivity: [],
+      result: { outcome: "Failed", code: "AgentBudgetExhausted" },
+      implementationRevision: "Unavailable",
+      modelRevision: "Unavailable",
+      policyRevision: "Unavailable",
+      accounting: { tokens: 0, durationMs: 0 },
+      startedAt: "2026-09-06T02:16:59.000Z",
+      completedAt: "2026-09-06T02:16:59.000Z",
+    },
+    {
+      partition,
+      notificationCursor: 0,
+      revision: (await store.project(partition))?.revision ?? 0,
+      attention: "Attention",
+      handoffNote: {},
+    },
+    { settingsRevision: 1, projectSettingsRevision: 0 },
+  );
+  const [newest] = await store.tail(partition, 1);
+  assert.equal(newest?.decision, decision);
+  assert.deepEqual(
+    newest?.result,
+    { outcome: "Failed", code: "AgentBudgetExhausted" },
+    "the failure is read back as one, not as a decision that chose nothing",
+  );
+  assert.deepEqual(
+    newest?.observedToken,
+    token,
+    "and the token comes back whole, since a field the read drops is a failure the bound cannot count",
   );
 });

@@ -69,6 +69,7 @@ import {
 import { asProjectId, asTenantId, type Partition } from "./projectStore.ts";
 import type {
   SelectorInteractionRecord,
+  SelectorStateStore,
   SelectorPolicyExecution,
   SelectorPolicyRequest,
   SelectorTerminationResult,
@@ -76,17 +77,10 @@ import type {
 import type { SelectorPolicy } from "./selectorPolicyHost.ts";
 
 /**
- * The tail of the decision log a seeding turn carries, newest last. It is a
- * port of its own rather than `SelectorStateStore.history`, which pages forward
- * from a cursor and so answers a project's oldest decisions rather than its
- * latest.
+ * The tail of the decision log a seeding turn carries, newest first, which is
+ * the one read of the store this host holds.
  */
-export interface LeadDecisionTail {
-  tail(
-    partition: Partition,
-    limit: number,
-  ): Promise<readonly SelectorInteractionRecord[]>;
-}
+export type LeadDecisionTail = Pick<SelectorStateStore, "tail">;
 
 /**
  * One reading of the host's clock. The instant is what a turn is stamped with

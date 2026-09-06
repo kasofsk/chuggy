@@ -2,6 +2,7 @@ import {
   agenticRefusalReasonCharsMax,
   dispatchViewPageLimitMax,
   leadDispatchesMax,
+  selectorFailedDecisionsPerViewMax,
   selectorHandoffNoteBytesMax,
   selectorSettingsTextCharsMax,
   sessionTurnInputCharsMax,
@@ -166,6 +167,11 @@ export interface SelectorStateStore {
   history(
     partition: Partition,
     after: number | undefined,
+    limit: number,
+  ): Promise<readonly SelectorInteractionRecord[]>;
+  /** The newest decisions first: the end a lead is seeded from and a run of failures is counted from. */
+  tail(
+    partition: Partition,
     limit: number,
   ): Promise<readonly SelectorInteractionRecord[]>;
   project(partition: Partition): Promise<SelectorProjectState | undefined>;
@@ -1344,6 +1350,65 @@ function failedSelectorInteraction(
   };
 }
 
+function dispatchViewTokenEquals(
+  left: DispatchViewToken,
+  right: DispatchViewToken,
+): boolean {
+  return (
+    left.tenant === right.tenant &&
+    left.project === right.project &&
+    left.recoveryEpoch === right.recoveryEpoch &&
+    left.schemaVersion === right.schemaVersion &&
+    left.watermark === right.watermark &&
+    left.digest === right.digest
+  );
+}
+
+/** Whether one recorded decision failed while standing on exactly this view. */
+function selectorInteractionFailedOn(
+  record: SelectorInteractionRecord,
+  token: DispatchViewToken,
+): boolean {
+  const result: unknown = record.result;
+  return (
+    typeof result === "object" &&
+    result !== null &&
+    !Array.isArray(result) &&
+    (result as Record<string, unknown>)["outcome"] === "Failed" &&
+    record.observedToken !== undefined &&
+    dispatchViewTokenEquals(record.observedToken, token)
+  );
+}
+
+/**
+ * Whether this failure is the last one the view is allowed, counted off the
+ * newest recorded decisions rather than off a counter the state would carry.
+ * The run ends at the first decision that did not fail on this very token, so a
+ * view that moved starts its own count.
+ */
+async function selectorViewFailuresExhausted(
+  store: SelectorStateStore,
+  partition: Partition,
+  token: DispatchViewToken,
+): Promise<boolean> {
+  const earlierMax = selectorFailedDecisionsPerViewMax - 1;
+  if (earlierMax < 1) return true;
+  const tail = await store.tail(partition, earlierMax);
+  let failed = 0;
+  for (const record of tail) {
+    if (!selectorInteractionFailedOn(record, token)) break;
+    failed += 1;
+  }
+  return failed >= earlierMax;
+}
+
+/**
+ * A failed decision is recorded but the view it failed on is left standing:
+ * the state kept is the one the observation was built from, so the next poll
+ * re-reads the same window and offers the same page to a fresh attempt.
+ * Only a view that has failed every decision it is allowed is consumed as a
+ * completed decision would consume it, which is what bounds the retries.
+ */
 async function recordFailedSelectorCycle(
   store: SelectorStateStore,
   state: SelectorProjectState,
@@ -1353,6 +1418,11 @@ async function recordFailedSelectorCycle(
   error: unknown,
   completedAt: string,
 ): Promise<void> {
+  const consumed = await selectorViewFailuresExhausted(
+    store,
+    state.partition,
+    observation.token,
+  );
   await store.recordInteraction(
     failedSelectorInteraction(
       observation,
@@ -1362,15 +1432,17 @@ async function recordFailedSelectorCycle(
       error,
       completedAt,
     ),
-    {
-      partition: state.partition,
-      notificationCursor: observation.notificationCursor,
-      revision: state.revision,
-      recoveryEpoch: observation.token.recoveryEpoch,
-      attention: "Attention",
-      handoffNote: observation.handoffNote,
-      candidateScan: observation.nextCandidateScan,
-    },
+    consumed
+      ? {
+          partition: state.partition,
+          notificationCursor: observation.notificationCursor,
+          revision: state.revision,
+          recoveryEpoch: observation.token.recoveryEpoch,
+          attention: "Attention",
+          handoffNote: observation.handoffNote,
+          candidateScan: observation.nextCandidateScan,
+        }
+      : { ...state, attention: "Attention" },
     selectorSettingsFence(settings),
   );
 }

@@ -349,6 +349,9 @@ export const dispatchViewPageLimitMax = 100;
 /** How many of its own past decisions a fresh lead is seeded with. */
 export const leadSeedingDecisionsMax = 16;
 
+/** How many decisions may fail on one dispatch view, the last of which consumes it unanswered. */
+export const selectorFailedDecisionsPerViewMax = 3;
+
 /** The most a lead's objectives weigh beyond the two texts a project sets. */
 export const leadObjectivesFixedCharsMax = 4_096;
 
