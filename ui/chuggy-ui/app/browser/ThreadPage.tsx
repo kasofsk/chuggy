@@ -29,6 +29,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ThreadResponse } from "../../../../src/contract/responses.ts";
 import { apiThread } from "../core/apiRoutes.ts";
+import { conversationExchanges } from "../core/conversation.ts";
 import type { PanelState } from "../core/freshness.ts";
 import {
   leadSessionNamed,
@@ -36,25 +37,23 @@ import {
   leadStreamListed,
 } from "../core/leadTranscript.ts";
 import { projectListRereadNamed } from "../core/projectQueryKeys.ts";
+import {
+  sessionConversationItems,
+  sessionConversationTurns,
+} from "../core/sessionConversation.ts";
 import { threadClosable, threadTakesMessages } from "../core/threads.ts";
 import { threadStandingTone } from "../core/tones.ts";
 import { usePanelList } from "./api.ts";
-import { DataPanel } from "./DataPanel.tsx";
-import { useNowMs } from "./Freshness.tsx";
-import {
-  LeadHolding,
-  LeadLog,
-  useLeadTranscript,
-} from "./lead/LeadTranscript.tsx";
+import { Conversation } from "./conversation/Conversation.tsx";
+import { PanelUnready } from "./DataPanel.tsx";
+import { useLeadTranscript } from "./lead/LeadTranscript.tsx";
 import { ThreadClose } from "./thread/ThreadClose.tsx";
-import { ThreadComposer } from "./thread/ThreadComposer.tsx";
-import { ThreadTurns } from "./thread/ThreadTurns.tsx";
+import { useThreadSend } from "./thread/threadSend.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Field, Fields } from "./ui/Fields.tsx";
 import { PageHead } from "./ui/PageHead.tsx";
 import { Pill } from "./ui/Pill.tsx";
 
-import "./lead/lead.css";
 import "./thread/thread.css";
 
 /** The list entry one thread page keeps, named by the session it draws so two
@@ -116,49 +115,45 @@ function ThreadHead(props: {
   );
 }
 
+/**
+ * THE CONVERSATION IS THE TRANSCRIPT WITH THE MAILBOX OVER IT. The store holds
+ * everything that was said and the mailbox holds what the transcript cannot —
+ * a turn nobody has claimed, the word a failure ended on, the measures — and
+ * the two meet by the input text the worker handed the runtime verbatim.
+ */
 function ThreadBody(props: {
   readonly partition: PartitionIdentity;
   readonly session: string;
   readonly state: PanelState<ThreadResponse>;
-  readonly nowMs: number;
 }): ReactNode {
   const thread = props.state.state === "Ready" ? props.state.value : undefined;
-  const listed = thread !== undefined && leadStreamListed(thread);
   const held = useLeadTranscript({
     partition: props.partition,
     session: props.session,
     stream: thread?.agentReference,
     highWaterBatch: thread === undefined ? 0 : leadStreamBatches(thread),
   });
+  const composer = useThreadSend({
+    partition: props.partition,
+    session: props.session,
+    takes: thread !== undefined && threadTakesMessages(thread),
+  });
+  if (thread === undefined) return <PanelUnready state={props.state} />;
   return (
     <>
-      {thread === undefined ? null : (
-        <ThreadHead partition={props.partition} thread={thread} />
-      )}
-      <DataPanel title="Turns" state={props.state}>
-        {(value) => (
-          <ThreadTurns
-            partition={props.partition}
-            session={props.session}
-            thread={value}
-          />
+      <ThreadHead partition={props.partition} thread={thread} />
+      <Conversation
+        exchanges={conversationExchanges(
+          sessionConversationItems({
+            held,
+            stream: thread.agentReference,
+            listed: leadStreamListed(thread),
+          }),
+          sessionConversationTurns(thread.turns),
         )}
-      </DataPanel>
-      {thread?.mine === true ? (
-        <ThreadComposer
-          partition={props.partition}
-          session={props.session}
-          takes={threadTakesMessages(thread)}
-        />
-      ) : null}
-      <LeadHolding
-        held={held}
-        note={undefined}
-        stream={thread?.agentReference}
-        listed={listed}
-        nowMs={props.nowMs}
+        {...(thread.mine ? { composer } : {})}
+        empty="Nothing said"
       />
-      <LeadLog held={held} stream={thread?.agentReference} listed={listed} />
     </>
   );
 }
@@ -170,7 +165,6 @@ export function ThreadPage(): ReactNode {
     project: params.project,
   };
   const session = params.session;
-  const nowMs = useNowMs();
   const state = useThread(partition, session);
   if (state.state === "Absent")
     return <EmptyState label="No thread" variant="page" />;
@@ -181,7 +175,6 @@ export function ThreadPage(): ReactNode {
         partition={partition}
         session={session}
         state={state}
-        nowMs={nowMs}
       />
     </div>
   );

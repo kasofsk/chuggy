@@ -14,6 +14,7 @@
  * entry out of a list by it.
  */
 
+import { textCodePointsCount } from "../contract/http.ts";
 import { asRepositoryConfigurationName } from "./repositoryConfigurationIdentity.ts";
 
 /** The label an image carries in front of a reader, as the catalog holds it. */
@@ -40,7 +41,7 @@ export function asWorkerName(value: unknown): string | undefined {
 export function asWorkerVersion(value: unknown): string | undefined {
   return typeof value === "string" &&
     value.length > 0 &&
-    value.length <= workerVersionCharsMax &&
+    textCodePointsCount(value) <= workerVersionCharsMax &&
     value.isWellFormed()
     ? value
     : undefined;

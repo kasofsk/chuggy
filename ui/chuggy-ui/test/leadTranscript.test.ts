@@ -16,8 +16,6 @@ import {
   leadDecisionsNewestFirst,
   leadDecisionSummary,
   leadDispatchLanded,
-  leadEntryText,
-  leadEntryTools,
   leadSessionNamed,
   sessionChangeKindNamed,
   leadStreamBatches,
@@ -26,13 +24,11 @@ import {
   leadTranscriptEntriesHeldMax,
   leadTranscriptPaneEmpty,
   leadTranscriptStep,
-  leadTranscriptHolding,
-  leadTranscriptLines,
   leadTranscriptNextAfter,
   leadTranscriptReadsMax,
 } from "../app/core/leadTranscript.ts";
 import type {
-  LeadTranscriptLine,
+  LeadTranscriptEntry,
   LeadTranscriptPane,
 } from "../app/core/leadTranscript.ts";
 import type {
@@ -69,12 +65,19 @@ function paged(
 }
 
 /** What a reader is shown of a pane, which is what every case here asserts over. */
-function lines(pane: LeadTranscriptPane): readonly LeadTranscriptLine[] {
-  return leadTranscriptLines(leadTranscriptDrawn(pane));
+function lines(pane: LeadTranscriptPane): readonly LeadTranscriptEntry[] {
+  return leadTranscriptDrawn(pane).entries;
 }
 
-function holdingLines(pane: LeadTranscriptPane): readonly LeadTranscriptLine[] {
-  return leadTranscriptHolding(leadTranscriptDrawn(pane));
+/** The subset the lead is working from, which is a filter and not a fetch. */
+function holdingLines(
+  pane: LeadTranscriptPane,
+): readonly LeadTranscriptEntry[] {
+  const held = leadTranscriptDrawn(pane);
+  const holding = new Set(held.holding);
+  return held.entries.filter(
+    (entry) => entry.uuid !== undefined && holding.has(entry.uuid),
+  );
 }
 
 function refusalAt(superseded: boolean): AgenticRefusalResponse {
@@ -177,11 +180,9 @@ test("what the lead holds is the chain from the seam on and nothing above it", (
   expect(holdingLines(held).map((line) => line.uuid)).toEqual([
     leadBoundaryUuid,
   ]);
-  expect(
-    lines(held)
-      .filter((line) => line.seam)
-      .map((line) => line.uuid),
-  ).toEqual([leadBoundaryUuid]);
+  expect(leadTranscriptDrawn(held).compaction?.boundary).toEqual(
+    leadBoundaryUuid,
+  );
 });
 
 /**
@@ -487,19 +488,6 @@ test("a page that decided nothing does not move the cut or the walk", () => {
   expect(holdingLines(outage).map((line) => line.uuid)).toStrictEqual([
     "uuid-a",
   ]);
-});
-
-test("an entry is its text and the tools it named, and never a reference", () => {
-  const message = {
-    content: [
-      { type: "text", text: "resume from /tmp/claude-resume-9" },
-      { type: "tool_use", name: "Read" },
-    ],
-  };
-  expect(leadEntryText(message)).toBe("resume from /tmp/claude-resume-9");
-  expect(leadEntryTools(message)).toEqual(["Read"]);
-  expect(leadEntryText({ content: "plain" })).toBe("plain");
-  expect(leadEntryText(null)).toBe("");
 });
 
 test("the transcript reads the stream the session's own reference names", () => {

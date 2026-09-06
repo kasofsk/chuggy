@@ -65,14 +65,15 @@ test("a question is refused at the bound the wire refuses it at", () => {
 /**
  * THE ONLY WAY THE TWO MEASURES CAN DISAGREE IS OUTSIDE THE BASIC PLANE, so an
  * ASCII case cannot tell them apart: an astral character is one code point and
- * two of the units zod counts, so a question of half the bound's worth of them
- * sits exactly at the bound and one more of them is past it.
+ * two of the UTF-16 units `String.length` counts, so a question of the
+ * bound's worth of them sits exactly at the code-point bound zod counts and
+ * one more of them is past it.
  */
 test("the bound is counted in the units the schema counts, not in characters", () => {
   const astral = "\u{1f600}";
-  const atBound = astral.repeat(inquiryQuestionCharsMax / 2);
+  const atBound = astral.repeat(inquiryQuestionCharsMax);
   const past = `${atBound}${astral}`;
-  expect(atBound.length).toBe(inquiryQuestionCharsMax);
+  expect(atBound.length).toBe(inquiryQuestionCharsMax * 2);
   expect(inquiryQuestionFault(atBound)).toBeUndefined();
   expect(leadInquirySchema.safeParse(asking(atBound)).success).toBe(true);
   expect(

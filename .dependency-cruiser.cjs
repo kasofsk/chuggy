@@ -320,6 +320,51 @@ module.exports = {
       },
     },
     {
+      name: "chuggy-ui-conversation-owns-assistant-ui",
+      comment:
+        "ui/chuggy-ui/app/browser/conversation/ is the only module that " +
+        "names @assistant-ui, so the console holds one account of what a " +
+        "conversation is: the thread page, the run's transcript and the " +
+        "lead's dispatches draw the same component rather than three " +
+        "readings of the same records, and replacing the vendor — or " +
+        "meeting a breaking version of it — is one directory's work. " +
+        "Stated as an import rather than as reachability, which is the " +
+        "exception in this file and is the point of the rule: every page " +
+        "that draws a conversation MOUNTS this directory and so reaches the " +
+        "package through it, and a reachable rule would refuse the adoption " +
+        "this exists to protect. Nothing is given up by it, because the " +
+        "shape reachability catches elsewhere — a relay between a page and " +
+        "the package — is itself a module naming @assistant-ui, and is " +
+        "either in this directory or is what this refuses.",
+      severity: "error",
+      from: {
+        path: "^ui/chuggy-ui/app/",
+        pathNot: "^ui/chuggy-ui/app/browser/conversation/",
+      },
+      to: { path: "node_modules/@assistant-ui/" },
+    },
+    {
+      name: "chuggy-ui-conversation-reaches-only-primitives",
+      comment:
+        "ui/chuggy-ui/app/browser/conversation/ draws what it is handed: it " +
+        "reaches its own files, the decision layer, the primitives under " +
+        "browser/ui/, the contract and a package, and no other module of " +
+        "browser/ — not the query client, the router adapters, the stream " +
+        "or the ports. What it buys is that the surface three pages share " +
+        "mounts in a suite with render() and no provider, so what a " +
+        "conversation draws is asserted without a scripted API; a surface " +
+        "that read for itself would also be a second place the pages' own " +
+        "reads are decided, and the two would answer differently on the " +
+        "day one of them was changed. Reachability, because the shape that " +
+        "breaks it is a hook this directory grows to fetch one more turn.",
+      severity: "error",
+      from: { path: "^ui/chuggy-ui/app/browser/conversation/" },
+      to: {
+        reachable: true,
+        path: "^ui/chuggy-ui/app/browser/(?!ui/|conversation/)",
+      },
+    },
+    {
       name: "no-circular-dependency",
       comment: "A cycle makes the layer a module belongs to unanswerable.",
       severity: "error",

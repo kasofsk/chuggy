@@ -1,17 +1,24 @@
 /**
  * A run's transcript as a pane holds it: which batches are still missing, how
- * they merge with what is held, and what each recorded line is as a step.
+ * they merge with what is held, and what each recorded line is as a
+ * conversation item.
  *
  * The high-water mark rides the `Execution` frame the browser already receives,
  * so the only question here is which batches sit above the highest one held —
- * nothing polls and nothing follows. Every line is drawn, a line this console
- * cannot read is drawn as it stands rather than dropped or thrown on, and a
- * batch whose bytes are gone or fail their digest is a step naming the gap it
- * leaves, in the place the record puts it.
+ * nothing polls and nothing follows. An assistant or user line becomes the
+ * entry the surface's own block parser reads it as; a payload the run elided,
+ * a cap the run hit or a line this console cannot parse becomes the marker the
+ * surface has a place for; a batch whose bytes are gone or fail their digest
+ * is the same marker naming the gap it leaves, in the place the record puts
+ * it. A line whose own type carries none of that — this console holds no
+ * marker for the runtime's bookkeeping types — is not drawn, though a payload
+ * it elided still is.
  */
 
 import type { RunTranscriptResponse } from "../../../../src/contract/responses.ts";
 
+import type { ConversationItem } from "./conversation.ts";
+import { conversationBlocksOf } from "./conversation.ts";
 import { freshnessLabel, panelObservedAtMs } from "./freshness.ts";
 import { runCountLabel } from "./runTotals.ts";
 
@@ -117,52 +124,6 @@ export function runTranscriptFreshnessSentence(
   return `as of ${freshnessLabel(nowMs, panelObservedAtMs(held, undefined))}`;
 }
 
-export type RunTranscriptStep =
-  | {
-      readonly step: "Assistant";
-      readonly ordinal: number;
-      readonly type: string;
-      readonly text: string;
-      readonly tools: readonly string[];
-      readonly elided: readonly number[];
-    }
-  | {
-      readonly step: "User";
-      readonly ordinal: number;
-      readonly type: string;
-      readonly toolResults: number;
-      readonly elided: readonly number[];
-    }
-  | {
-      readonly step: "Capped";
-      readonly ordinal: number;
-      readonly type: string;
-      readonly sentence: string;
-    }
-  | {
-      readonly step: "Event";
-      readonly ordinal: number;
-      readonly type: string;
-      readonly elided: readonly number[];
-    }
-  | {
-      readonly step: "Unreadable";
-      readonly ordinal: number;
-      readonly line: string;
-    }
-  | {
-      readonly step: "Unavailable";
-      readonly ordinal: number;
-      readonly batch: number;
-      readonly read: RunTranscriptBatchRead;
-      readonly sentence: string;
-    };
-
-/** What a payload replaced by its own reference is worth saying about it. */
-export function runTranscriptElisionSentence(bytes: number): string {
-  return `payload elided (${runCountLabel(bytes)} bytes)`;
-}
-
 function elisionBytes(node: unknown, found: number[], depth: number): void {
   if (depth > runTranscriptEventDepthMax) return;
   if (node === null || typeof node !== "object") return;
@@ -179,37 +140,6 @@ function elisionBytes(node: unknown, found: number[], depth: number): void {
   }
 }
 
-function contentBlocks(event: Record<string, unknown>): readonly unknown[] {
-  const message = event["message"];
-  if (message === null || typeof message !== "object") return [];
-  const content = (message as Record<string, unknown>)["content"];
-  return Array.isArray(content) ? content : [];
-}
-
-function blockKind(block: unknown): string | undefined {
-  if (block === null || typeof block !== "object") return undefined;
-  const type = (block as Record<string, unknown>)["type"];
-  return typeof type === "string" ? type : undefined;
-}
-
-function assistantText(blocks: readonly unknown[]): string {
-  return blocks
-    .flatMap((block) => {
-      if (blockKind(block) !== "text") return [];
-      const text = (block as Record<string, unknown>)["text"];
-      return typeof text === "string" ? [text] : [];
-    })
-    .join("\n");
-}
-
-function assistantTools(blocks: readonly unknown[]): readonly string[] {
-  return blocks.flatMap((block) => {
-    if (blockKind(block) !== "tool_use") return [];
-    const name = (block as Record<string, unknown>)["name"];
-    return typeof name === "string" ? [name] : [];
-  });
-}
-
 function cappedSentence(type: string, event: Record<string, unknown>): string {
   const batches = event["batches"];
   const turns = event["turns"];
@@ -218,56 +148,76 @@ function cappedSentence(type: string, event: Record<string, unknown>): string {
   return `the per-turn series reached its cap and stopped after ${runCountLabel(typeof turns === "number" ? turns : 0)} turns`;
 }
 
-/** One recorded line as the step it stands for, whatever it turns out to be. */
+/** The elisions a raw event holds, wherever in it they fall, as the markers
+ * the surface draws them by. */
+function runTranscriptElisionItems(
+  event: Record<string, unknown>,
+): readonly ConversationItem[] {
+  const elided: number[] = [];
+  elisionBytes(event, elided, 0);
+  return elided.map((bytes) => ({
+    item: "Marker",
+    marker: { marker: "Elision", bytes },
+  }));
+}
+
+/** The entry id a line's own message carries, or the line's place in the
+ * record where it names none. */
+function runTranscriptEntryId(ordinal: number, message: unknown): string {
+  const record =
+    typeof message === "object" && message !== null
+      ? (message as Record<string, unknown>)
+      : undefined;
+  const id = record?.["id"];
+  return typeof id === "string" && id.length > 0 ? id : String(ordinal);
+}
+
+/** One recorded line as the conversation items it stands for: an assistant or
+ * user line is an entry, a cap or an unreadable line is the marker the
+ * surface has for it, and every other type is bookkeeping the surface has no
+ * place for — its elisions still are, because those are a fact about the
+ * bytes rather than about the type that carried them. */
 export function runTranscriptStep(
   ordinal: number,
   line: string,
-): RunTranscriptStep {
+): readonly ConversationItem[] {
   let parsed: unknown;
   try {
     parsed = JSON.parse(line);
   } catch {
-    return { step: "Unreadable", ordinal, line };
+    return [{ item: "Marker", marker: { marker: "Unreadable" } }];
   }
   if (parsed === null || typeof parsed !== "object")
-    return { step: "Unreadable", ordinal, line };
+    return [{ item: "Marker", marker: { marker: "Unreadable" } }];
   const event = parsed as Record<string, unknown>;
   const type = event["type"];
-  if (typeof type !== "string") return { step: "Unreadable", ordinal, line };
+  if (typeof type !== "string")
+    return [{ item: "Marker", marker: { marker: "Unreadable" } }];
   if (type === transcriptTruncatedType || type === turnsTruncatedType)
-    return {
-      step: "Capped",
-      ordinal,
-      type,
-      sentence: cappedSentence(type, event),
-    };
-  const elided: number[] = [];
-  elisionBytes(event, elided, 0);
-  const blocks = contentBlocks(event);
-  if (type === "assistant")
-    return {
-      step: "Assistant",
-      ordinal,
-      type,
-      text: assistantText(blocks),
-      tools: assistantTools(blocks),
-      elided,
-    };
-  if (type === "user")
-    return {
-      step: "User",
-      ordinal,
-      type,
-      toolResults: blocks.filter((block) => blockKind(block) === "tool_result")
-        .length,
-      elided,
-    };
-  return { step: "Event", ordinal, type, elided };
+    return [
+      {
+        item: "Marker",
+        marker: { marker: "Capped", sentence: cappedSentence(type, event) },
+      },
+    ];
+  const elisions = runTranscriptElisionItems(event);
+  if (type !== "assistant" && type !== "user") return elisions;
+  return [
+    ...elisions,
+    {
+      item: "Entry",
+      entry: {
+        id: runTranscriptEntryId(ordinal, event["message"]),
+        role: type === "assistant" ? "Assistant" : "User",
+        blocks: conversationBlocksOf(event["message"]),
+      },
+    },
+  ];
 }
 
-/** The steps a pane draws, and how many earlier ones it is not drawing. */
+/** The items a pane draws, and how many earlier lines it is not drawing. */
 export interface RunTranscriptReading {
-  readonly steps: readonly RunTranscriptStep[];
+  readonly items: readonly ConversationItem[];
   readonly stepsBefore: number;
 }
 
@@ -306,45 +256,52 @@ function runTranscriptLines(
     : drawn.map((line) => ({ batch: batch.batch, read: batch.read, line }));
 }
 
-/** Every held batch's lines in order, capped from the end. */
+/** One held line as its items, or the gap marker naming the batch a line was
+ * never recorded for. */
+function runTranscriptLineItems(
+  ordinal: number,
+  held: RunTranscriptLine,
+): readonly ConversationItem[] {
+  return held.line === undefined
+    ? [
+        {
+          item: "Marker",
+          marker: {
+            marker: "Capped",
+            sentence: runTranscriptGapSentence(held.batch, held.read),
+          },
+        },
+      ]
+    : runTranscriptStep(ordinal, held.line);
+}
+
+/**
+ * Every held batch's lines as conversation items, windowed from the end. What
+ * the window cut and what the batch cap evicted are named ahead of what
+ * remains, so a pane short of either says so rather than drawing a transcript
+ * that looks whole.
+ */
 export function runTranscriptRead(
   held: RunTranscriptHeld,
 ): RunTranscriptReading {
   const lines = held.batches.flatMap(runTranscriptLines);
   const from = Math.max(lines.length - runTranscriptStepsMax, 0);
-  return {
-    steps: lines.slice(from).map((held, at) => {
-      const ordinal = from + at + 1;
-      return held.line === undefined
-        ? {
-            step: "Unavailable" as const,
-            ordinal,
-            batch: held.batch,
-            read: held.read,
-            sentence: runTranscriptGapSentence(held.batch, held.read),
-          }
-        : runTranscriptStep(ordinal, held.line);
-    }),
-    stepsBefore: from,
-  };
-}
-
-/**
- * What the pane is short of, when it is short of anything: earlier steps it
- * stopped drawing and earlier batches it stopped holding.
- */
-export function runTranscriptCoverageSentence(
-  held: RunTranscriptHeld,
-  reading: RunTranscriptReading,
-): string | undefined {
-  const said: string[] = [];
-  if (reading.stepsBefore > 0)
-    said.push(
-      `${runCountLabel(reading.stepsBefore)} earlier steps are not drawn`,
-    );
+  const leading: ConversationItem[] = [];
+  if (from > 0)
+    leading.push({
+      item: "Marker",
+      marker: { marker: "Dropped", count: from },
+    });
   if (held.batchesDropped > 0)
-    said.push(
-      `${runCountLabel(held.batchesDropped)} earlier batches are no longer held`,
-    );
-  return said.length === 0 ? undefined : `${said.join("; ")}.`;
+    leading.push({
+      item: "Marker",
+      marker: {
+        marker: "Capped",
+        sentence: `${runCountLabel(held.batchesDropped)} earlier batches are no longer held`,
+      },
+    });
+  const items = lines
+    .slice(from)
+    .flatMap((line, at) => runTranscriptLineItems(from + at + 1, line));
+  return { items: [...leading, ...items], stepsBefore: from };
 }

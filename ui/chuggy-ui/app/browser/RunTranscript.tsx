@@ -1,22 +1,21 @@
 /**
- * One run's transcript, drawn as the ordered steps the agent runtime recorded.
+ * One run's transcript, drawn as the conversation surface.
  *
  * The pane fetches the batches above the highest it holds, and it does so when
  * the high-water mark on the `Execution` frame the browser already receives
  * rises — there is no poll and no follow control, because neither would learn
- * anything the frame does not already carry. Every step is drawn as characters
- * and nothing in a transcript is interpreted.
+ * anything the frame does not already carry. It is read-only: no turn overlay
+ * and no composer, because a run's own mailbox is not this pane's to send into.
  */
 
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import { panelReason } from "../core/freshness.ts";
 import { apiRunTranscript } from "../core/apiRoutes.ts";
+import { conversationExchanges } from "../core/conversation.ts";
+import { panelReason } from "../core/freshness.ts";
 import {
-  runTranscriptCoverageSentence,
-  runTranscriptElisionSentence,
   runTranscriptFailed,
   runTranscriptFreshnessSentence,
   runTranscriptHeldEmpty,
@@ -25,83 +24,10 @@ import {
   runTranscriptRead,
   runTranscriptReadsMax,
 } from "../core/runTranscript.ts";
-import type {
-  RunTranscriptHeld,
-  RunTranscriptStep,
-} from "../core/runTranscript.ts";
+import type { RunTranscriptHeld } from "../core/runTranscript.ts";
 import { useApiPorts } from "./api.ts";
+import { Conversation } from "./conversation/Conversation.tsx";
 import { useNowMs } from "./Freshness.tsx";
-
-function Elisions(props: { readonly elided: readonly number[] }): ReactNode {
-  return props.elided.length === 0 ? null : (
-    <span className="col-start-2 text-tone-parked text-xs">
-      {props.elided
-        .map((bytes) => runTranscriptElisionSentence(bytes))
-        .join(" ")}
-    </span>
-  );
-}
-
-function Step(props: { readonly step: RunTranscriptStep }): ReactNode {
-  const step = props.step;
-  switch (step.step) {
-    case "Assistant":
-      return (
-        <li className="step" data-step={step.type}>
-          <span className="text-ink-3">{step.type}</span>
-          {step.tools.length === 0 ? null : (
-            <span className="text-tone-live">{step.tools.join(", ")}</span>
-          )}
-          <pre className="col-start-2">{step.text}</pre>
-          <Elisions elided={step.elided} />
-        </li>
-      );
-    case "User":
-      return (
-        <li className="step" data-step={step.type}>
-          <span className="text-ink-3">{step.type}</span>
-          <span className="text-tone-live">
-            {step.toolResults === 0
-              ? "no tool result"
-              : `${String(step.toolResults)} tool results`}
-          </span>
-          <Elisions elided={step.elided} />
-        </li>
-      );
-    case "Capped":
-      return (
-        <li className="step" data-step={step.type}>
-          <span className="text-ink-3">{step.type}</span>
-          <span className="col-start-2 text-tone-parked text-xs">
-            {step.sentence}
-          </span>
-        </li>
-      );
-    case "Event":
-      return (
-        <li className="step" data-step={step.type}>
-          <span className="text-ink-3">{step.type}</span>
-          <Elisions elided={step.elided} />
-        </li>
-      );
-    case "Unavailable":
-      return (
-        <li className="step" data-step="unavailable">
-          <span className="text-ink-3">batch</span>
-          <span className="col-start-2 text-tone-parked text-xs">
-            {step.sentence}
-          </span>
-        </li>
-      );
-    case "Unreadable":
-      return (
-        <li className="step" data-step="unreadable">
-          <span className="text-ink-3">unreadable</span>
-          <pre className="col-start-2">{step.line}</pre>
-        </li>
-      );
-  }
-}
 
 /** The read walk: batches above what is held, a bounded number of pages at a
  * time, abandoned when the pane goes away. */
@@ -156,7 +82,7 @@ export function RunTranscript(props: {
   const held = useRunTranscript(props);
   const now = useNowMs();
   const reading = runTranscriptRead(held);
-  const coverage = runTranscriptCoverageSentence(held, reading);
+  const exchanges = conversationExchanges(reading.items);
   return (
     <section className="panel transcript">
       <header className="panel-head">
@@ -168,16 +94,10 @@ export function RunTranscript(props: {
       {held.failure === undefined ? null : (
         <p className="panel-failed">could not be read — {held.failure}</p>
       )}
-      {coverage === undefined ? null : <p className="panel-note">{coverage}</p>}
-      {reading.steps.length === 0 && held.failure === undefined ? (
-        <p className="panel-note">no transcript has been recorded yet</p>
-      ) : (
-        <ol className="steps">
-          {reading.steps.map((step) => (
-            <Step key={step.ordinal} step={step} />
-          ))}
-        </ol>
-      )}
+      <Conversation
+        exchanges={exchanges}
+        empty="no transcript has been recorded yet"
+      />
     </section>
   );
 }

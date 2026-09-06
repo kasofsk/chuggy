@@ -131,6 +131,25 @@ const noAmbientDraws = (subject) => [
   },
 ];
 
+// A `*CharsMax` bound is a count of code points, the way zod's `.max()` and
+// PostgreSQL's `length()` both count it; `String.length` counts UTF-16 units,
+// so a comparison against one is always a different measure than the name
+// promises, whichever side of the operator it sits on.
+const charsMaxComparedByLength = [
+  {
+    selector:
+      "BinaryExpression[operator=/^(<|<=|>|>=)$/][left.type='MemberExpression'][left.property.name='length'][right.type='Identifier'][right.name=/[cC]harsMax$/]",
+    message:
+      "a *CharsMax bound counts code points: compare textCodePointsCount(value), not .length.",
+  },
+  {
+    selector:
+      "BinaryExpression[operator=/^(<|<=|>|>=)$/][right.type='MemberExpression'][right.property.name='length'][left.type='Identifier'][left.name=/[cC]harsMax$/]",
+    message:
+      "a *CharsMax bound counts code points: compare textCodePointsCount(value), not .length.",
+  },
+];
+
 // A query the checker cannot see is a claim nothing checks: an untagged
 // string reaches the server as SQL and never reaches SafeQL, and so does a
 // tagged one on a handle the checker's wrapper pattern does not name. A
@@ -310,19 +329,36 @@ export default tseslint.config(
       "no-restricted-properties": noAmbientDraws("the public contract"),
     },
   },
+  // The one measure, everywhere under src/ a bound of this shape could be
+  // compared: postgres's adapter files carry their own no-restricted-syntax
+  // entries below and fold this list into theirs instead of losing it to the
+  // later, more specific block.
+  {
+    files: ["src/**/*.ts"],
+    ignores: ["src/adapters/postgres/**/*.ts"],
+    rules: { "no-restricted-syntax": ["error", ...charsMaxComparedByLength] },
+  },
   // Untagged query strings and unread handles are findings everywhere in the
   // adapter; only the migration executor's own file may hand `.query` its
   // named variables.
   {
     files: ["src/adapters/postgres/**/*.ts"],
-    rules: { "no-restricted-syntax": adapterQueriesTagged("") },
+    rules: {
+      "no-restricted-syntax": [
+        ...adapterQueriesTagged(""),
+        ...charsMaxComparedByLength,
+      ],
+    },
   },
   {
     files: ["src/adapters/postgres/pool.ts"],
     rules: {
-      "no-restricted-syntax": adapterQueriesTagged(
-        ":not([arguments.0.name=/^(statement|migrationLedger)$/])",
-      ),
+      "no-restricted-syntax": [
+        ...adapterQueriesTagged(
+          ":not([arguments.0.name=/^(statement|migrationLedger)$/])",
+        ),
+        ...charsMaxComparedByLength,
+      ],
     },
   },
   // The adapter's queries, verified against the database the variable names.

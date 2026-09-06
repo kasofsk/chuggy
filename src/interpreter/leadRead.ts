@@ -46,6 +46,7 @@ import {
   sessionTranscriptEntriesMax,
   sessionTranscriptHeldBatchesMax,
   selectorHandoffNotePreviewCharsMax,
+  textCodePointsCount,
 } from "../contract/http.ts";
 import type {
   SessionId,
@@ -182,8 +183,8 @@ export function handoffNotePreview(note: JsonValue): HandoffNotePreview {
   const text = JSON.stringify(note ?? null) ?? "null";
   return {
     bytes: new TextEncoder().encode(text).byteLength,
-    preview: text.slice(0, selectorHandoffNotePreviewCharsMax),
-    truncated: text.length > selectorHandoffNotePreviewCharsMax,
+    preview: [...text].slice(0, selectorHandoffNotePreviewCharsMax).join(""),
+    truncated: textCodePointsCount(text) > selectorHandoffNotePreviewCharsMax,
   };
 }
 

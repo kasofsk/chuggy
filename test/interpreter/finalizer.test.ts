@@ -231,6 +231,11 @@ test("an identity past its column width, empty, or unpaired is refused", () => {
   );
 });
 
+test("a ref name's bound counts code points, matching the column it protects", () => {
+  const value = "😀".repeat(200);
+  assert.equal(asGitRefName(value), value);
+});
+
 test("an object id is one of the widths git addresses an object at", () => {
   for (const chars of populated(allGitObjectIdChars, "allGitObjectIdChars")) {
     assert.equal(asGitObjectId("f".repeat(chars)).length, chars);

@@ -24,6 +24,7 @@ import type {
   LeadTurnResponse,
 } from "../../../../src/contract/responses.ts";
 import { apiLead } from "../core/apiRoutes.ts";
+import { conversationExchanges } from "../core/conversation.ts";
 import {
   costFigure,
   durationFigure,
@@ -37,26 +38,28 @@ import {
 } from "../core/leadTranscript.ts";
 import { projectListRereadNamed } from "../core/projectQueryKeys.ts";
 import {
+  sessionConversationItems,
+  sessionConversationTurns,
+} from "../core/sessionConversation.ts";
+import {
   selectorAttentionTone,
   sessionStateTone,
   sessionTurnStateTone,
 } from "../core/tones.ts";
 import { usePanelList } from "./api.ts";
+import { Conversation } from "./conversation/Conversation.tsx";
 import { DataPanel } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { LeadDecisions } from "./lead/LeadDecisions.tsx";
 import { LeadInquiries, useInquiryBoxes } from "./lead/LeadInquiries.tsx";
 import type { InquiryBoxesHeld } from "./lead/LeadInquiries.tsx";
 import { LeadRefusals } from "./lead/LeadRefusals.tsx";
-import {
-  LeadHolding,
-  LeadLog,
-  useLeadTranscript,
-} from "./lead/LeadTranscript.tsx";
+import { LeadNote, useLeadTranscript } from "./lead/LeadTranscript.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Field, Fields } from "./ui/Fields.tsx";
 import { Figure } from "./ui/Figure.tsx";
 import { PageHead } from "./ui/PageHead.tsx";
+import { Panel } from "./ui/Panel.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
@@ -201,20 +204,20 @@ function LeadBody(props: {
     stream: lead?.agentReference,
     highWaterBatch: lead === undefined ? 0 : leadStreamBatches(lead),
   });
+  const exchanges = conversationExchanges(
+    sessionConversationItems({ held, stream: lead?.agentReference, listed }),
+    sessionConversationTurns(lead?.turns ?? []),
+  );
   return (
     <>
       {lead === undefined ? null : <LeadHead lead={lead} />}
       <DataPanel title="Turns" state={props.state}>
         {(value) => <LeadTurns lead={value} />}
       </DataPanel>
-      <LeadHolding
-        held={held}
-        note={lead?.handoffNote}
-        stream={lead?.agentReference}
-        listed={listed}
-        nowMs={props.nowMs}
-      />
-      <LeadLog held={held} stream={lead?.agentReference} listed={listed} />
+      <LeadNote note={lead?.handoffNote} />
+      <Panel title="Conversation">
+        <Conversation exchanges={exchanges} empty="No conversation" />
+      </Panel>
       <LeadDecisions partition={props.partition} nowMs={props.nowMs} />
       <LeadRefusals partition={props.partition} nowMs={props.nowMs} />
       <LeadInquiries

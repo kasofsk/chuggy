@@ -28,6 +28,7 @@
  */
 
 import { assertNever } from "../domain/assertNever.ts";
+import { textCodePointsCount } from "../contract/http.ts";
 import { asBoundedText } from "./boundedText.ts";
 import type { GitObjectId, GitRefName, RepositoryId } from "./finalizer.ts";
 import { finalizerIdentityCharsMax } from "./finalizer.ts";
@@ -439,7 +440,10 @@ export function changeProposalRequest(
     "proposal title",
     proposalTitleCharsMax,
   );
-  if (input.body.length > proposalBodyCharsMax || !input.body.isWellFormed())
+  if (
+    textCodePointsCount(input.body) > proposalBodyCharsMax ||
+    !input.body.isWellFormed()
+  )
     throw new RangeError("proposal body is not bounded text");
   return {
     binding: input.binding,

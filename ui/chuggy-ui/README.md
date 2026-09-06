@@ -28,6 +28,12 @@ builds with.
   stylesheet beside it, drawing values it is handed and reaching nothing else
   in `browser/`, which is the rule `chuggy-ui-primitives-reach-no-effect`
   states and is why each mounts in a suite with no provider around it.
+- `ui/chuggy-ui/app/browser/conversation/` — the one conversation surface,
+  shared by the thread page, a run's transcript and the lead's dispatches.
+  `chuggy-ui-conversation-owns-assistant-ui` makes it the only module that
+  names `@assistant-ui`; `chuggy-ui-conversation-reaches-only-primitives`
+  bounds it to itself, `browser/ui/`, the decision layer and the contract, so
+  it too mounts in a suite with no provider.
 - `ui/chuggy-ui/app/styles/` — `tokens.css`, the one file that states a colour
   or a size, `base.css`, the element defaults, and `utilities.css`, which maps
   Tailwind's namespaces onto those tokens by reference. Both themes are

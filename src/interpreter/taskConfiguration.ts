@@ -1,5 +1,6 @@
 /** The authored task-briefing contract shared by release and scheduling. */
 
+import { textCodePointsCount } from "../contract/http.ts";
 import type { AuthorityRequest } from "./taskAuthority.ts";
 
 /** The claim a ticket makes about itself, which both roles are briefed with unchanged. */
@@ -223,7 +224,7 @@ export function taskConfigurationLineFault(
   line: string,
 ): BriefingTextFault | undefined {
   if (line.length === 0) return "EmptyLine";
-  if (line.length > briefingLineCharsMax) return "TextTooLong";
+  if (textCodePointsCount(line) > briefingLineCharsMax) return "TextTooLong";
   if (!line.isWellFormed()) return "TextUnreadable";
   for (const character of line) {
     const code = character.codePointAt(0) ?? 0;
@@ -353,7 +354,7 @@ function authoredWorkerConfiguration(
     const fields = file as Record<string, unknown>;
     return typeof fields["path"] === "string" &&
       typeof fields["content"] === "string" &&
-      fields["content"].length <= workerContentCharsMax
+      textCodePointsCount(fields["content"]) <= workerContentCharsMax
       ? { path: fields["path"], content: fields["content"] }
       : undefined;
   });

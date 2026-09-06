@@ -36,7 +36,7 @@ import {
 } from "../core/runTotals.ts";
 import { usePanelResource } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
-import { MarkdownReport } from "./MarkdownReport.tsx";
+import { MarkdownReport } from "./ui/MarkdownReport.tsx";
 import { RunTranscript } from "./RunTranscript.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
 

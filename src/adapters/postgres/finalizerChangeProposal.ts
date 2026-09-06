@@ -63,6 +63,7 @@ import type pg from "pg";
 import { z } from "zod";
 
 import { assertNever } from "../../domain/assertNever.ts";
+import { textCodePointsCount } from "../../contract/http.ts";
 import {
   allChangeProposalContradictions,
   allChangeProposalCreationsStored,
@@ -480,7 +481,7 @@ function changeProposalStoredEvidence(
     }
     return value;
   });
-  return holdable && document.length <= proposalEvidenceCharsMax
+  return holdable && textCodePointsCount(document) <= proposalEvidenceCharsMax
     ? document
     : undefined;
 }

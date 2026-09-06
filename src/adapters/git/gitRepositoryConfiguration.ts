@@ -1,5 +1,6 @@
 /** Git-backed immutable repository configuration snapshots, read without a checkout. */
 
+import { textCodePointsCount } from "../../contract/http.ts";
 import { assertNever } from "../../domain/assertNever.ts";
 import type {
   RepositoryCredential,
@@ -175,7 +176,8 @@ async function gitRepositoryConfigurationFile(
     outputBytesMax: gitRepositoryConfigurationBlobOutputBytesMax,
   });
   if (!gitRepositoryConfigurationExited(ran)) return undefined;
-  if (ran.stdout.length > repositoryConfigurationFileCharsMax) return undefined;
+  if (textCodePointsCount(ran.stdout) > repositoryConfigurationFileCharsMax)
+    return undefined;
   return {
     path: entry.path,
     kind: entry.mode === "120000" ? "Symlink" : "File",

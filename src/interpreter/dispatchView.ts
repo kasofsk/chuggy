@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   dispatchViewPageLimitMax,
   dispatchViewSchemaVersion,
+  textCodePointsCount,
 } from "../contract/http.ts";
 
 import { decisionEventEnabled } from "../actor/decisionEvent.ts";
@@ -224,7 +225,7 @@ export function checkedDispatchViewQuery(
 export function checkedSelectorDecisionReference(value: string): string {
   if (
     value.length === 0 ||
-    value.length > selectorDecisionReferenceCharsMax ||
+    textCodePointsCount(value) > selectorDecisionReferenceCharsMax ||
     !value.isWellFormed()
   )
     throw new RangeError(

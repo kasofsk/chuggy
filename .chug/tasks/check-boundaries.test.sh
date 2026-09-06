@@ -525,4 +525,57 @@ printf '%s\n' 'import { draw } from "./ui/Pill.ts"' 'export const page = () => d
 seal
 check "a page may reach a primitive, and a primitive the decisions" 0 "$RC" "graph clean"
 
+# One directory names the conversation vendor. Stated per import rather than as
+# reachability, so the fixture is the module that names it: a page of its own
+# reading @assistant-ui is the second account of a conversation the rule is
+# about, and a relay put between them is caught as the same shape.
+fixture
+mkdir -p "$R/ui/chuggy-ui/app/browser/conversation"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { ThreadPrimitive } from "@assistant-ui/react"' 'export const draw = () => ThreadPrimitive' > "$R/ui/chuggy-ui/app/browser/conversation/Conversation.ts"
+printf '%s\n' 'import { MessagePrimitive } from "@assistant-ui/react"' 'export const turn = () => MessagePrimitive' > "$R/ui/chuggy-ui/app/browser/ThreadPage.ts"
+seal
+check "a page may not read the conversation vendor itself" 1 "$RC" "chuggy-ui-conversation-owns-assistant-ui:"
+
+# The adoption the rule exists to leave open, and the reason it is not stated
+# as reachability: a page mounts the surface and so REACHES the package through
+# it, which a reachable rule would refuse.
+fixture
+mkdir -p "$R/ui/chuggy-ui/app/browser/conversation"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { ThreadPrimitive } from "@assistant-ui/react"' 'export const draw = () => ThreadPrimitive' > "$R/ui/chuggy-ui/app/browser/conversation/Conversation.ts"
+printf '%s\n' 'import { draw } from "./conversation/Conversation.ts"' 'export const page = () => draw()' > "$R/ui/chuggy-ui/app/browser/ThreadPage.ts"
+seal
+check "a page may mount the surface that names the vendor" 0 "$RC" "graph clean"
+
+# The surface draws what it is handed, and only reachability catches this tree
+# under this rule: the relay is a primitive, which is a module the surface may
+# import, so every edge the surface itself has is one the rule permits. The
+# primitive's own rule answers for the second hop and this one answers for the
+# surface, which is the point — the finding is reported where the module that
+# should not have reached the port is.
+fixture
+mkdir -p "$R/ui/chuggy-ui/app/browser/conversation" "$R/ui/chuggy-ui/app/browser/ui"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'export const nowMs = () => Date.now()' > "$R/ui/chuggy-ui/app/browser/ports.ts"
+printf '%s\n' 'import { nowMs } from "../ports.ts"' 'export const relay = nowMs' > "$R/ui/chuggy-ui/app/browser/ui/relay.ts"
+printf '%s\n' 'import { relay } from "../ui/relay.ts"' 'export const draw = () => relay()' > "$R/ui/chuggy-ui/app/browser/conversation/Conversation.ts"
+seal
+check "the surface may not REACH a port" 1 "$RC" "chuggy-ui-conversation-reaches-only-primitives:"
+
+# The direction that rule leaves open: the surface reaches a primitive and the
+# decisions, which is everything it needs to draw an exchange.
+fixture
+mkdir -p "$R/ui/chuggy-ui/app/browser/conversation" "$R/ui/chuggy-ui/app/browser/ui" "$R/ui/chuggy-ui/app/core"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'export const label = () => "Answered"' > "$R/ui/chuggy-ui/app/core/labels.ts"
+printf '%s\n' 'import { label } from "../../core/labels.ts"' 'export const draw = () => label()' > "$R/ui/chuggy-ui/app/browser/ui/Pill.ts"
+printf '%s\n' 'import { draw } from "../ui/Pill.ts"' 'export const turn = () => draw()' > "$R/ui/chuggy-ui/app/browser/conversation/Conversation.ts"
+seal
+check "the surface may reach a primitive and the decisions" 0 "$RC" "graph clean"
+
 done_ "check-boundaries.test.sh"

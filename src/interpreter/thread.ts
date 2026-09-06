@@ -37,6 +37,7 @@
 import {
   nativeHttpPathSegmentCharsMax,
   selectorSettingsTextCharsMax,
+  textCodePointsCount,
   threadMessageCharsMax,
   threadSeedingCharsMax,
   threadWakeCharsMax,
@@ -151,7 +152,7 @@ export function threadWakeDocument(input: {
  */
 export function threadWakeText(document: ThreadWakeDocument): string {
   const text = JSON.stringify(document);
-  if (text.length > threadWakeCharsMax)
+  if (textCodePointsCount(text) > threadWakeCharsMax)
     throw new RangeError(
       `a wake document must be at most ${String(threadWakeCharsMax)} characters`,
     );
@@ -176,7 +177,7 @@ function wakeField(
  * notice it was asked to deliver.
  */
 export function parseThreadWake(text: string): ThreadWakeDocument {
-  if (text.length > threadWakeCharsMax)
+  if (textCodePointsCount(text) > threadWakeCharsMax)
     throw new RangeError("wake document: larger than one is written at");
   let parsed: unknown;
   try {
@@ -272,7 +273,7 @@ export function threadSystemPrompt(input: {
     input.owner,
     input.northStar,
   );
-  if (prompt.length > threadSystemPromptCharsMax)
+  if (textCodePointsCount(prompt) > threadSystemPromptCharsMax)
     throw new RangeError(
       `a thread system prompt must be at most ${String(threadSystemPromptCharsMax)} characters`,
     );
@@ -345,7 +346,7 @@ export function threadTurnInput(
   seeding?: ThreadSeeding,
 ): string {
   if (seeding === undefined) {
-    if (message.length > threadTurnInputCharsMax)
+    if (textCodePointsCount(message) > threadTurnInputCharsMax)
       throw new RangeError(
         `a thread turn's input must be at most ${String(threadTurnInputCharsMax)} characters`,
       );
@@ -355,7 +356,7 @@ export function threadTurnInput(
   let refusals = seeding.refusals;
   for (;;) {
     const input = `${threadSeedingText({ ...seeding, drafts, refusals })}\n\n${message}`;
-    if (input.length <= threadTurnInputCharsMax) return input;
+    if (textCodePointsCount(input) <= threadTurnInputCharsMax) return input;
     if (drafts.length > 0) drafts = drafts.slice(1);
     else if (refusals.length > 0) refusals = refusals.slice(1);
     else

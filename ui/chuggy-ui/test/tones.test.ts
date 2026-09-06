@@ -11,6 +11,7 @@ import { expect, test } from "vitest";
 
 import { phaseRoster } from "../../../src/contract/rosters.ts";
 import {
+  conversationStandingArm,
   pillTones,
   phaseTone,
   stageArm,
@@ -74,4 +75,28 @@ test("each arm a stage has without a set is its own word and its own tone", () =
       },
     }),
   ).toEqual({ word: "Failed", tone: "fail" });
+});
+
+test("each standing the arm draws is its own word and its own tone", () => {
+  expect(conversationStandingArm({ standing: "Answered" })).toEqual({
+    word: "Answered",
+    tone: "pass",
+  });
+  expect(
+    conversationStandingArm({ standing: "Running", state: "Queued" }),
+  ).toEqual({ word: "Queued", tone: "queued" });
+  expect(
+    conversationStandingArm({ standing: "Running", state: "Claimed" }),
+  ).toEqual({ word: "Claimed", tone: "live" });
+  expect(
+    conversationStandingArm({ standing: "Failed", failure: "AgentFailed" }),
+  ).toEqual({ word: "Failed", tone: "fail" });
+  expect(conversationStandingArm({ standing: "Abandoned" })).toEqual({
+    word: "Abandoned",
+    tone: "retired",
+  });
+  expect(conversationStandingArm({ standing: "Open" })).toEqual({
+    word: "Open",
+    tone: "live",
+  });
 });

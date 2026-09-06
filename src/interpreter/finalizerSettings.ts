@@ -19,6 +19,7 @@
  * layer that owns each bound stays the one place its default is written.
  */
 
+import { textCodePointsCount } from "../contract/http.ts";
 import {
   asForgeBindingId,
   asForgeCredentialReference,
@@ -253,7 +254,7 @@ function finalizerSettingsField(
   if (
     typeof value !== "string" ||
     value.length === 0 ||
-    value.length > charsMax
+    textCodePointsCount(value) > charsMax
   )
     throw new Error(`${forgeBindingsVariable} has an invalid entry`);
   return value;

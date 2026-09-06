@@ -1,7 +1,7 @@
 /**
- * One member's thread: who may type into it, what a turn draws before it is
- * answered, what a wake is drawn as, and whether the page moves when its session
- * does.
+ * One member's thread as a conversation: what the store's chain draws, what the
+ * mailbox adds to it, who may type into it, and whether the page moves when its
+ * session does.
  *
  * THE CLOSE IS PRESSED ON ANOTHER MEMBER'S THREAD, because the door is the
  * project's and a page that offered it on the reader's own alone would look
@@ -19,10 +19,11 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { ThreadPage } from "../app/browser/ThreadPage.tsx";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
   answer,
   openedStream,
@@ -30,11 +31,13 @@ import {
   settled,
   turned,
 } from "./screenHarness.tsx";
+import { elementScrollToStubbed } from "./scrolling.ts";
 import { frame } from "./streamDouble.ts";
 import {
   threadMessageCharsMax,
   threadTurnsAnsweredMax,
 } from "../../../src/contract/http.ts";
+import type { ThreadTranscriptResponse } from "../../../src/contract/responses.ts";
 import {
   threadBody,
   threadEntry,
@@ -43,6 +46,7 @@ import {
   threadPartition,
   threadSessionResource,
   threadTranscriptPage,
+  threadTranscriptSaid,
   threadTurn,
   threadWakeInput,
   threadWakeStandingSaid,
@@ -65,6 +69,11 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
+beforeEach(() => {
+  resizeObserverStubbed();
+  elementScrollToStubbed();
+});
+
 afterEach(() => {
   cleanup();
   routed.session = threadMineSession;
@@ -73,6 +82,8 @@ afterEach(() => {
 
 interface ThreadServed {
   readonly thread: ReturnType<typeof threadBody>;
+  /** The store this thread has written, where a case needs one of its own. */
+  readonly transcript?: (after: number) => ThreadTranscriptResponse;
 }
 
 /** The body and status every route this page reads answers with. */
@@ -82,7 +93,8 @@ function threadRouteAnswer(
 ): { readonly body: unknown; readonly status: number } {
   if (url.includes("/transcript")) {
     const asked = new URL(url, "https://console").searchParams.get("after");
-    return { body: threadTranscriptPage(Number(asked ?? "0")), status: 200 };
+    const walked = served.transcript ?? threadTranscriptPage;
+    return { body: walked(Number(asked ?? "0")), status: 200 };
   }
   if (url.includes("/threads/")) return { body: served.thread, status: 200 };
   return {
@@ -138,9 +150,7 @@ function drawThread(
 }
 
 function composer(): HTMLTextAreaElement | null {
-  return document.querySelector<HTMLTextAreaElement>(
-    ".thread-composer textarea",
-  );
+  return screen.queryByRole<HTMLTextAreaElement>("textbox");
 }
 
 /** The box, insisted on: a case that meant to type into a composer and found
@@ -151,8 +161,15 @@ function typing(): HTMLTextAreaElement {
   return box;
 }
 
-function turnBlocks(): readonly HTMLElement[] {
-  return [...document.querySelectorAll<HTMLElement>(".thread-turn")];
+/** One message typed and sent, which every press case does the same way. */
+async function pressed(said: string): Promise<void> {
+  await turned(() => {
+    fireEvent.change(typing(), { target: { value: said } });
+  });
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  });
+  await settled();
 }
 
 test("the head names the thread, its standing and whose it is", async () => {
@@ -259,14 +276,7 @@ test("another member's thread draws no composer at all", async () => {
 test("Send posts the typed message under a minted turn and clears on 202", async () => {
   const server = drawThread(() => ({ thread: threadBody({}) }));
   await mountThread();
-  const box = typing();
-  await turned(() => {
-    fireEvent.change(box, { target: { value: "look at ticket 41" } });
-  });
-  await turned(() => {
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  });
-  await settled();
+  await pressed("look at ticket 41");
   const posted = server.posts()[0] as {
     readonly turn: string;
     readonly message: string;
@@ -281,7 +291,8 @@ test("Send posts the typed message under a minted turn and clears on 202", async
  * A backlogged mailbox keeps the text, because the reader has to be able to
  * press again — and the press that follows must reach the SAME row, since
  * enqueuing is idempotent on the turn and a fresh identity would put a second
- * copy of one message in the mailbox.
+ * copy of one message in the mailbox. The box clears at dispatch, so keeping it
+ * is the page handing the characters back.
  */
 test("a backlogged mailbox draws the notice, keeps the text and retries the same turn", async () => {
   const server = drawThread(
@@ -292,13 +303,7 @@ test("a backlogged mailbox draws the notice, keeps the text and retries the same
     }),
   );
   await mountThread();
-  await turned(() => {
-    fireEvent.change(typing(), { target: { value: "one more" } });
-  });
-  await turned(() => {
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  });
-  await settled();
+  await pressed("one more");
   expect(screen.getByText("Backlogged")).toBeDefined();
   expect(composer()?.value, "a backlogged press threw the typing away").toBe(
     "one more",
@@ -325,17 +330,8 @@ test("a backlogged mailbox draws the notice, keeps the text and retries the same
 test("an identical message sent again is a turn of its own", async () => {
   const server = drawThread(() => ({ thread: threadBody({}) }));
   await mountThread();
-  const press = async (said: string): Promise<void> => {
-    await turned(() => {
-      fireEvent.change(typing(), { target: { value: said } });
-    });
-    await turned(() => {
-      fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    });
-    await settled();
-  };
-  await press("ping");
-  await press("ping");
+  await pressed("ping");
+  await pressed("ping");
   const posted = server.posts() as readonly { readonly turn: string }[];
   expect(posted.length).toBe(2);
   expect(
@@ -355,13 +351,7 @@ test("a wait the reader has typed past is no longer said", async () => {
     }),
   );
   await mountThread();
-  await turned(() => {
-    fireEvent.change(typing(), { target: { value: "one" } });
-  });
-  await turned(() => {
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  });
-  await settled();
+  await pressed("one");
   expect(screen.getByText("Backlogged")).toBeDefined();
   await turned(() => {
     fireEvent.change(typing(), { target: { value: "one more" } });
@@ -387,21 +377,9 @@ test("editing after a refusal posts under a turn of its own", async () => {
         : { body: { turn: "thread-turn-x", ordinal: 4 }, status: 202 },
   );
   await mountThread();
-  await turned(() => {
-    fireEvent.change(typing(), { target: { value: "first" } });
-  });
-  await turned(() => {
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  });
-  await settled();
+  await pressed("first");
   refusing = false;
-  await turned(() => {
-    fireEvent.change(typing(), { target: { value: "second" } });
-  });
-  await turned(() => {
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  });
-  await settled();
+  await pressed("second");
   const first = server.posts()[0] as { readonly turn: string };
   const later = server.posts().at(-1) as { readonly turn: string };
   expect(
@@ -410,33 +388,19 @@ test("editing after a refusal posts under a turn of its own", async () => {
   ).not.toBe(first.turn);
 });
 
-/** One message typed and sent, which every press case does the same way. */
-async function pressed(said: string): Promise<void> {
-  await turned(() => {
-    fireEvent.change(typing(), { target: { value: said } });
-  });
-  await turned(() => {
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  });
-  await settled();
-}
-
 /** A door that will take no more messages ends the composer and says which
  * refusal it was, so a thread whose owner is no longer a member is told apart
  * from one that was closed. */
-async function pressedAgainst(code: string): Promise<void> {
-  drawThread(
+async function pressedAgainst(code: string): Promise<{
+  readonly posts: () => readonly unknown[];
+}> {
+  const server = drawThread(
     () => ({ thread: threadBody({}) }),
     () => ({ body: { error: { code, message: "no" } }, status: 409 }),
   );
   await mountThread();
-  await turned(() => {
-    fireEvent.change(typing(), { target: { value: "anything" } });
-  });
-  await turned(() => {
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  });
-  await settled();
+  await pressed("anything");
+  return server;
 }
 
 /**
@@ -537,19 +501,24 @@ test("a NotYourThread whose message did not land is sent again under the same tu
   expect(composer()?.value).toBe("");
 });
 
-test("a closed thread stops the composer taking typing", async () => {
-  await pressedAgainst("ThreadClosed");
+test("a closed thread stops the composer sending", async () => {
+  const server = await pressedAgainst("ThreadClosed");
   expect(screen.getByText("Closed")).toBeDefined();
-  expect(composer()?.disabled).toBe(true);
+  await pressed("shouting at a closed door");
+  expect(
+    server.posts().length,
+    "a door that answered Closed was posted to again",
+  ).toBe(1);
 });
 
 test("a thread whose owner is gone stops it too, and says which", async () => {
-  await pressedAgainst("ThreadOrphaned");
+  const server = await pressedAgainst("ThreadOrphaned");
   expect(
     screen.getByText("Orphaned"),
     "one refusal was drawn as another",
   ).toBeDefined();
-  expect(composer()?.disabled).toBe(true);
+  await pressed("shouting at an orphan");
+  expect(server.posts().length).toBe(1);
 });
 
 test("the composer bounds what one message may carry", async () => {
@@ -558,13 +527,25 @@ test("the composer bounds what one message may carry", async () => {
   expect(composer()?.maxLength).toBe(threadMessageCharsMax);
 });
 
+/** A thread the read already says takes no more messages is not a box a member
+ * types into to earn the refusal. */
+test("a thread already standing Closed draws a composer that takes nothing", async () => {
+  const server = drawThread(() => ({
+    thread: threadBody({ state: "Closed" }),
+  }));
+  await mountThread();
+  await pressed("into a closed thread");
+  expect(server.posts().length).toBe(0);
+});
+
 /**
- * A second turn landing in the mailbox, announced by one frame. What differs
- * between the three cases below is only what the frame's resource says, so the
- * page that must move and the two that must not are one arrangement asked three
- * questions.
+ * A second turn landing in the mailbox, announced by one frame; it is queued,
+ * because an answered turn lives in the transcript and the mailbox adds nothing
+ * to it. What differs between the three cases below is only what the frame's
+ * resource says, so the page that must move and the two that must not are one
+ * arrangement asked three questions.
  */
-async function afterFrame(sequence: string, resource: string): Promise<number> {
+async function afterFrame(sequence: string, resource: string): Promise<void> {
   let served: ThreadServed = { thread: threadBody({}) };
   drawThread(() => served);
   const server = await mountThread();
@@ -575,8 +556,8 @@ async function afterFrame(sequence: string, resource: string): Promise<number> {
         threadTurn({
           turn: "thread-turn-2",
           ordinal: 2,
+          state: "Queued",
           input: "and 42?",
-          result: "42 is done",
         }),
       ],
     }),
@@ -591,7 +572,6 @@ async function afterFrame(sequence: string, resource: string): Promise<number> {
     );
   });
   await settled();
-  return turnBlocks().length;
 }
 
 /**
@@ -600,37 +580,39 @@ async function afterFrame(sequence: string, resource: string): Promise<number> {
  * the kind would sit on the turn it opened with while the thread went on
  * answering, and would look exactly like a thread with nothing to report.
  */
-test("a Session frame naming this thread moves the turn tail", async () => {
-  const drawn = await afterFrame(
+test("a Session frame naming this thread draws the turn that arrived", async () => {
+  await afterFrame(
     "70",
     threadSessionResource(threadMineSession, "thread-turn-2"),
   );
-  expect(drawn).toBe(2);
-  expect(screen.getByText("42 is done")).toBeDefined();
+  expect(screen.getByText("and 42?")).toBeDefined();
+  expect(screen.getByText("Queued")).toBeDefined();
 });
 
 /** The falsifying twin: a project holds a session per member beside its lead,
  * so a page watching one must not re-read on another's frame. */
 test("a Session frame naming another session leaves the page alone", async () => {
+  await afterFrame(
+    "71",
+    threadSessionResource(threadOtherSession, "thread-turn-9"),
+  );
   expect(
-    await afterFrame(
-      "71",
-      threadSessionResource(threadOtherSession, "thread-turn-9"),
-    ),
+    screen.queryByText("and 42?"),
     "another member's thread moving re-read this one's page",
-  ).toBe(1);
+  ).toBeNull();
 });
 
 /** A resource this console cannot read is a frame it ignores, rather than one
  * that ends the stream and stops every other kind with it. */
 test("a Session frame carrying a bare session id is ignored", async () => {
-  expect(await afterFrame("72", threadMineSession)).toBe(1);
+  await afterFrame("72", threadMineSession);
+  expect(screen.queryByText("and 42?")).toBeNull();
   expect(screen.queryByText(/^Failed to load · /u)).toBeNull();
 });
 
 /** An empty answer block below a question reads as an answer of nothing, which
  * is the one thing a page must not say about a turn still in the mailbox. */
-test("a turn still queued draws its state and no answer block", async () => {
+test("a turn still queued draws as a running exchange with the typed text", async () => {
   drawThread(() => ({
     thread: threadBody({
       turns: [
@@ -639,7 +621,6 @@ test("a turn still queued draws its state and no answer block", async () => {
           state: "Queued",
           input: "waiting on this",
           result: "an answer no queued turn has",
-          model: undefined,
         }),
       ],
     }),
@@ -648,19 +629,19 @@ test("a turn still queued draws its state and no answer block", async () => {
   expect(screen.getByText("Queued")).toBeDefined();
   expect(screen.getByText("waiting on this")).toBeDefined();
   expect(
-    document.querySelectorAll(".quoted-text-answer").length,
-    "a turn nobody has claimed was drawn with an answer block",
-  ).toBe(0);
-  expect(screen.queryByText("an answer no queued turn has")).toBeNull();
+    screen.queryByText("an answer no queued turn has"),
+    "a turn nobody has claimed was drawn with an answer",
+  ).toBeNull();
 });
 
-test("a claimed turn draws no answer block either", async () => {
+test("a claimed turn draws no answer either", async () => {
   drawThread(() => ({
     thread: threadBody({
       turns: [
         threadTurn({
           turn: "thread-turn-1",
           state: "Claimed",
+          input: "still going",
           result: "an answer no claimed turn has",
         }),
       ],
@@ -668,178 +649,48 @@ test("a claimed turn draws no answer block either", async () => {
   }));
   await mountThread();
   expect(screen.getByText("Claimed")).toBeDefined();
-  expect(document.querySelectorAll(".quoted-text-answer").length).toBe(0);
+  expect(screen.queryByText("an answer no claimed turn has")).toBeNull();
 });
 
-/** `UserMessage` is what the mailbox calls a member's turn and `Message` is
- * what a member calls it; the wire's word reaching the page is the console's
- * nouns-only standard broken by the one roster nothing mapped. */
-test("a member's own turn is drawn as a Message", async () => {
+/**
+ * Everything between the ask and the answer sits behind one collapsed line. A
+ * page that drew the calls beside the answer would bury a member's own
+ * conversation under the agent's working.
+ */
+test("a transcript tool call sits inside the collapsed work disclosure", async () => {
   drawThread(() => ({ thread: threadBody({}) }));
   await mountThread();
-  expect(
-    document.querySelector(".thread-turn-head .eyebrow")?.textContent,
-    "the wire's own word for a member's turn reached the reader",
-  ).toBe("Message");
+  expect(screen.getByText("a member's question")).toBeDefined();
+  expect(screen.getByText("it waits on 40")).toBeDefined();
+  expect(screen.queryByText("41 waits on 40")).toBeNull();
+  const work = screen.getByRole("button", { name: /Tools/u });
+  fireEvent.click(work);
+  const call = screen.getByRole("button", { name: /Read/u });
+  expect(screen.queryByText("41 waits on 40")).toBeNull();
+  fireEvent.click(call);
+  expect(screen.getByText("41 waits on 40")).toBeDefined();
 });
 
 /**
- * The read is the newest page and the reader walks back from it. A page that
- * ignored `nextBefore` would leave the top of a long conversation unreachable,
- * and one that drew the pages in arrival order would put the older page after
- * the newer.
- */
-test("Older walks back from the read's cursor and draws the mailbox in order", async () => {
-  const asked: string[] = [];
-  const fetching = (url: string): Promise<Response> => {
-    if (url.includes("/transcript"))
-      return Promise.resolve(answer(threadTranscriptPage(1)));
-    if (url.includes("/threads/")) {
-      const before = new URL(url, "https://console").searchParams.get("before");
-      if (before === null)
-        return Promise.resolve(
-          answer(
-            threadBody({
-              nextBefore: 8,
-              turns: [
-                threadTurn({ turn: "t-8", ordinal: 8, input: "the newer" }),
-              ],
-            }),
-          ),
-        );
-      asked.push(before);
-      return Promise.resolve(
-        answer(
-          threadBody({
-            turns: [
-              threadTurn({ turn: "t-7", ordinal: 7, input: "the older" }),
-            ],
-          }),
-        ),
-      );
-    }
-    return Promise.resolve(
-      answer({ partition: threadPartition, sequence: 1, tickets: [] }),
-    );
-  };
-  vi.stubGlobal("fetch", fetching);
-  await mountThread();
-  expect(screen.queryByText("the older")).toBeNull();
-  await turned(() => {
-    fireEvent.click(screen.getByRole("button", { name: "Older" }));
-  });
-  await settled();
-  expect(
-    asked,
-    "the walk asked from somewhere other than the read's cursor",
-  ).toStrictEqual(["8"]);
-  const said = [...document.querySelectorAll(".quoted-text-said")].map(
-    (block) => block.textContent,
-  );
-  expect(said).toStrictEqual(["the older", "the newer"]);
-  expect(
-    screen.queryByRole("button", { name: "Older" }),
-    "a page with no cursor still offered an older one",
-  ).toBeNull();
-});
-
-/**
- * A 40-turn thread answers its newest page with a cursor, the reader presses
- * `Older`, and then a turn lands and the frame slides the tail forward by one.
- * The turn that was the boundary falls into neither range, so a page drawing
- * the union omits a turn from the middle of a member's own conversation and
- * answers a cursor below the gathered set that no press can reach it through.
- */
-test("a tail that slides while older pages are held leaves no turn unreachable", async () => {
-  const page = (from: number, to: number, before?: number): unknown => ({
-    ...threadBody({
-      ...(before === undefined ? {} : { nextBefore: before }),
-      turns: Array.from({ length: to - from + 1 }, (_unused, at) =>
-        threadTurn({
-          turn: `t-${String(from + at)}`,
-          ordinal: from + at,
-          input: `said ${String(from + at)}`,
-        }),
-      ),
-    }),
-  });
-  let slid = false;
-  const fetching = (url: string): Promise<Response> => {
-    if (url.includes("/transcript"))
-      return Promise.resolve(answer(threadTranscriptPage(1)));
-    if (url.includes("/threads/")) {
-      const asked = new URL(url, "https://console").searchParams.get("before");
-      if (asked === null)
-        return Promise.resolve(
-          answer(slid ? page(10, 41, 10) : page(9, 40, 9)),
-        );
-      return Promise.resolve(answer(page(1, Number(asked) - 1)));
-    }
-    return Promise.resolve(
-      answer({ partition: threadPartition, sequence: 1, tickets: [] }),
-    );
-  };
-  vi.stubGlobal("fetch", fetching);
-  const server = await mountThread();
-  const ordinals = (): readonly number[] =>
-    [...document.querySelectorAll(".thread-turn-head .num")].map((cell) =>
-      Number(cell.textContent),
-    );
-  await turned(() => {
-    fireEvent.click(screen.getByRole("button", { name: "Older" }));
-  });
-  await settled();
-  expect(ordinals()[0]).toBe(1);
-  slid = true;
-  await turned(() => {
-    server.push(
-      frame("Session", "80", {
-        version: 1,
-        resource: threadSessionResource(threadMineSession, "t-41"),
-        representation: null,
-      }),
-    );
-  });
-  await settled();
-  const drawn = ordinals();
-  const gaps = drawn.flatMap((ordinal, at) =>
-    at > 0 && ordinal !== (drawn[at - 1] ?? 0) + 1 ? [ordinal] : [],
-  );
-  expect(
-    gaps,
-    "a turn fell between the tail and the pages behind it",
-  ).toStrictEqual([]);
-  expect(
-    screen.queryByRole("button", { name: "Older" }),
-    "the walk was left with no way back to what it dropped",
-  ).not.toBeNull();
-});
-
-/** A thread the read already says takes no more messages is not a box a member
- * types into to earn the refusal. */
-test("a thread already standing Closed draws a composer that takes nothing", async () => {
-  drawThread(() => ({ thread: threadBody({ state: "Closed" }) }));
-  await mountThread();
-  expect(composer()?.disabled).toBe(true);
-});
-
-/**
- * A wake's input is the document the runtime composed. The standing sentence in
- * it is an instruction to the agent and the JSON is not something a member
- * typed, so what a reader gets is the reason and the resource.
+ * A wake's input is the document the runtime composed, and the worker hands the
+ * runtime that document verbatim — so the transcript holds it as the entry the
+ * turn pairs with. The standing sentence in it is an instruction to the agent
+ * and the JSON is not something a member typed, so what a reader gets is the
+ * reason and the resource.
  */
 test("a wake draws its reason and its resource and not its document", async () => {
+  const woken = threadWakeInput("TicketRefused", "41");
   drawThread(() => ({
     thread: threadBody({
       turns: [
         threadTurn({
           turn: "thread-turn-1",
           inputKind: "Wake",
-          input: threadWakeInput("TicketRefused", "41"),
-          result: "the lead refused 41",
+          input: woken,
         }),
       ],
     }),
+    transcript: (after) => threadTranscriptSaid(after, woken),
   }));
   await mountThread();
   expect(screen.getByText("TicketRefused")).toBeDefined();
@@ -864,10 +715,10 @@ test("a wake whose document will not parse draws no input block", async () => {
           turn: "thread-turn-1",
           inputKind: "Wake",
           input: "not a document",
-          result: "reported",
         }),
       ],
     }),
+    transcript: (after) => threadTranscriptSaid(after, "not a document"),
   }));
   await mountThread();
   expect(screen.getByText("Wake")).toBeDefined();

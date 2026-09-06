@@ -13,7 +13,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { inquiryQuestionCharsMax } from "../../src/contract/http.ts";
+import {
+  inquiryQuestionCharsMax,
+  textCodePointsCount,
+} from "../../src/contract/http.ts";
 import { leadInquirySchema } from "../../src/contract/requests.ts";
 import { allSessionCapabilities } from "../../src/interpreter/agentSession.ts";
 import {
@@ -64,14 +67,14 @@ test("a question the door would refuse is refused where the document is made", (
     () =>
       inquiryDocument({
         ...asked,
-        question: "q".repeat(inquiryQuestionCharsMax + 1),
+        question: "😀".repeat(inquiryQuestionCharsMax + 1),
       }),
     /at most/u,
   );
   assert.doesNotThrow(() =>
     inquiryDocument({
       ...asked,
-      question: "q".repeat(inquiryQuestionCharsMax),
+      question: "😀".repeat(inquiryQuestionCharsMax),
     }),
   );
 });
@@ -110,12 +113,16 @@ test("a document is refused rather than repaired", () => {
  * the member's inquiry is spent on a failure that names no reason.
  */
 test("a question at exactly the bound survives the door and the reader alike", () => {
-  const widest = { ...asked, question: "q".repeat(inquiryQuestionCharsMax) };
+  const widest = {
+    ...asked,
+    question: "😀".repeat(inquiryQuestionCharsMax),
+  };
   const text = inquiryText(inquiryDocument(widest));
 
   assert.equal(
-    leadInquirySchema.parse({ ...door, question: widest.question }).question
-      .length,
+    textCodePointsCount(
+      leadInquirySchema.parse({ ...door, question: widest.question }).question,
+    ),
     inquiryQuestionCharsMax,
   );
   assert.equal(parseInquiry(text).question, widest.question);

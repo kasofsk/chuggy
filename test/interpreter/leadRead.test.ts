@@ -55,6 +55,18 @@ test("the handoff note crosses as its size and its leading characters", () => {
   assert.ok(large.bytes > selectorHandoffNotePreviewCharsMax);
 });
 
+test("a note's bound counts code points, matching the schema in front of it", () => {
+  const atBound = "😀".repeat(selectorHandoffNotePreviewCharsMax - 2);
+  const whole = handoffNotePreview(atBound);
+  const text = JSON.stringify(atBound);
+  assert.equal(whole.truncated, false);
+  assert.equal(whole.preview, text);
+  const overBound = "😀".repeat(selectorHandoffNotePreviewCharsMax - 1);
+  const cut = handoffNotePreview(overBound);
+  assert.equal(cut.truncated, true);
+  assert.equal([...cut.preview].length, selectorHandoffNotePreviewCharsMax);
+});
+
 test("a note the cut did not reach is whole, whatever it weighs in bytes", () => {
   const note = { watching: "依存関係がまだ失敗しています".repeat(110) };
   const whole = handoffNotePreview(note);

@@ -8,6 +8,12 @@
 
 import { z } from "zod";
 
+/** How many code points `text` holds, which is what zod's `.max()` reads on a
+ * string past its bound — not `String.length`'s UTF-16 units. */
+export function textCodePointsCount(text: string): number {
+  return [...text].length;
+}
+
 export const nativeHttpVersion = 1;
 export const nativeHttpBasePath = "/api/v1";
 export const nativeHttpMediaType = "application/vnd.chuggy.v1+json";
@@ -624,8 +630,8 @@ export function partitionPath(partition: PartitionIdentity): string {
   const tenant = encodeURIComponent(partition.tenant);
   const project = encodeURIComponent(partition.project);
   if (
-    tenant.length > nativeHttpPathSegmentCharsMax ||
-    project.length > nativeHttpPathSegmentCharsMax
+    textCodePointsCount(tenant) > nativeHttpPathSegmentCharsMax ||
+    textCodePointsCount(project) > nativeHttpPathSegmentCharsMax
   )
     throw new RangeError("a partition segment is longer than the wire accepts");
   return `${nativeHttpBasePath}/tenants/${tenant}/projects/${project}`;

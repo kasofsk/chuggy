@@ -11,8 +11,14 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { LeadPage } from "../app/browser/LeadPage.tsx";
@@ -24,6 +30,8 @@ import {
   settled,
   turned,
 } from "./screenHarness.tsx";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { elementScrollToStubbed } from "./scrolling.ts";
 import { frame } from "./streamDouble.ts";
 import { inquiryBoxesHeld } from "../app/browser/lead/inquiryBoxes.ts";
 import { sessionStorePageBatchesMax } from "../../../src/contract/http.ts";
@@ -65,6 +73,11 @@ vi.mock("@tanstack/react-router", () => ({
 /** Which project the router says this page is for, which a case moves the way a
  * params-only navigation does. */
 let drawnPartition = { ...leadPartition };
+
+beforeEach(() => {
+  resizeObserverStubbed();
+  elementScrollToStubbed();
+});
 
 afterEach(() => {
   cleanup();
@@ -110,19 +123,10 @@ const opening: LeadServed = {
   refusals: leadRefusals(false),
 };
 
-/** The rows of the Holding panel alone, the decision log drawing rows of its
- * own under the same primitive. */
-function holdingEntries(): readonly string[] {
-  const panel = screen
-    .getByRole("heading", { name: "Holding" })
-    .closest(".panel");
-  return [...(panel?.querySelectorAll(".ledger-row .ledger-label") ?? [])].map(
-    (label) => label.textContent ?? "",
-  );
-}
-
-function logLines(): readonly HTMLElement[] {
-  return [...document.querySelectorAll<HTMLElement>(".lead-log > li")];
+/** How many exchanges the conversation surface drew: each holds one ask
+ * message, whichever half of it is empty. */
+function exchangeCount(): number {
+  return document.querySelectorAll('[data-message-id$="-ask"]').length;
 }
 
 function inquiryQuestions(): readonly string[] {
@@ -142,41 +146,152 @@ test("the head names the session, its state and the cursor it stands on", async 
 
 test("the mailbox tail draws what the pod measured of each turn", async () => {
   await drawLead(() => opening);
-  expect(screen.getByText("claude-opus-4")).toBeDefined();
-  expect(screen.getByText("Answered")).toBeDefined();
-  expect(screen.getByText("52k")).toBeDefined();
-  expect(screen.getByText("$0.21")).toBeDefined();
+  const turns = screen
+    .getByRole("heading", { name: "Turns" })
+    .closest("section");
+  expect(within(turns as HTMLElement).getByText("claude-opus-4")).toBeDefined();
+  expect(within(turns as HTMLElement).getByText("Answered")).toBeDefined();
+  expect(within(turns as HTMLElement).getByText("52k")).toBeDefined();
+  expect(within(turns as HTMLElement).getByText("$0.21")).toBeDefined();
 });
 
 /**
- * The Holding panel's whole claim. The store read carries four entries and the
- * lead holds the two from the compaction boundary on, so a page that drew the
- * read as the held would put two conversations the lead has forgotten in front
- * of a reader as what it is working from.
+ * The transcript's own chain is the conversation's spine: a user entry opens
+ * an exchange and the assistant entries that follow it are the exchange's
+ * answer, so the store's four batches of this fixture draw as three exchanges
+ * rather than one bubble per entry.
  */
-test("what the lead holds is a marked subset of the log and not the whole of it", async () => {
+test("the transcript's entries draw as exchanges", async () => {
   await drawLead(() => opening);
-  expect(holdingEntries()).toStrictEqual(["Entry 5", "Entry 6"]);
-  expect(logLines().length).toBe(7);
+  expect(screen.getByText("an observation before the cut")).toBeDefined();
+  expect(screen.getByText("first observation")).toBeDefined();
+  expect(screen.getByText("compaction summary")).toBeDefined();
+  expect(exchangeCount()).toBe(3);
 });
 
-/** The seam sits above the entry the compaction cut at, so the entries below it
- * read as gone and the ones after it as held. */
-test("the seam is drawn once, above the boundary entry and nowhere else", async () => {
+/** The seam stands once, above the exchange the compaction boundary opened. */
+test("a compaction draws its divider", async () => {
   await drawLead(() => opening);
-  const lines = logLines();
-  const seams = lines.flatMap((line, at) =>
-    line.className === "lead-seam" ? [at] : [],
-  );
-  expect(seams).toStrictEqual([4]);
-  expect(lines[5]?.dataset["holding"]).toBe("true");
-  expect(lines[0]?.dataset["holding"]).toBeUndefined();
-  expect(lines[3]?.dataset["holding"]).toBeUndefined();
+  expect(screen.getAllByText("Compaction").length).toBe(1);
 });
 
-/** One state, one word. A lead with no store yet is the same fact in both
- * panels, and two words for it would read as two different situations. */
-test("a lead with no store says so in the same word in both panels", async () => {
+/** Everything between the ask and the answer sits behind one collapsed line,
+ * and a tool call inside it opens on its own arguments and result. */
+test("a tool call sits inside the collapsed work disclosure", async () => {
+  const api = apiDouble({
+    operation: { operation: "op-one", state: "Pending" },
+    route: (url) => {
+      if (url.includes("/lead/transcript")) {
+        const asked = new URL(url, "https://console").searchParams.get("after");
+        if (asked !== null && asked !== "0")
+          return answer({
+            stream: leadStream,
+            entries: [],
+            held: [],
+            elided: 0,
+            truncated: false,
+          });
+        return answer({
+          stream: leadStream,
+          entries: [
+            {
+              uuid: "uuid-a",
+              type: "user",
+              message: { content: [{ type: "text", text: "check the build" }] },
+            },
+            {
+              uuid: "uuid-b",
+              type: "assistant",
+              message: {
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "call-1",
+                    name: "Read",
+                    input: { path: "ThreadPage.tsx" },
+                  },
+                  {
+                    type: "tool_result",
+                    tool_use_id: "call-1",
+                    content: "bytes",
+                  },
+                ],
+              },
+            },
+          ],
+          held: [],
+          elided: 0,
+          truncated: false,
+        });
+      }
+      const found = leadRouteAnswer(url, { ...opening, batches: 1 });
+      return answer(found.body, found.status);
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  await mountLead();
+  const trigger = screen.getByRole("button", { name: /Tools/ });
+  expect(screen.queryByText("bytes")).toBeNull();
+  fireEvent.click(trigger);
+  expect(screen.queryByText("bytes")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /Read/ }));
+  expect(screen.getByText("bytes")).toBeDefined();
+});
+
+/** A turn nobody has claimed appends a running exchange that draws its kind
+ * word and no text — the lead's mailbox carries no input of its own. */
+test("a Queued lead turn appends a running exchange with the kind word and no text", async () => {
+  const api = apiDouble({
+    operation: { operation: "op-one", state: "Pending" },
+    route: (url) => {
+      if (url.includes("/lead/transcript"))
+        return answer({
+          stream: leadStream,
+          entries: [],
+          held: [],
+          elided: 0,
+          truncated: false,
+        });
+      if (
+        url.includes("/lead") &&
+        !url.includes("/transcript") &&
+        !url.includes("/inquiries")
+      )
+        return answer({
+          session: leadSession,
+          state: "Open",
+          attention: "Monitoring",
+          agentReference: leadStream,
+          notificationCursor: 1,
+          handoffNote: { bytes: 0, preview: "", truncated: false },
+          turns: [
+            {
+              turn: "turn-1",
+              ordinal: 1,
+              inputKind: "Observation",
+              state: "Queued",
+            },
+          ],
+          streams: [{ stream: leadStream, batches: 1 }],
+        });
+      const found = leadRouteAnswer(url, opening);
+      return answer(found.body, found.status);
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  await mountLead();
+  expect(exchangeCount()).toBe(1);
+  const conversation = screen
+    .getByRole("heading", { name: "Conversation" })
+    .closest("section");
+  expect(
+    within(conversation as HTMLElement).getByText("Observation"),
+  ).toBeDefined();
+  expect(within(conversation as HTMLElement).getByText("Queued")).toBeDefined();
+});
+
+/** One state, one word. A lead with no store yet says so once. */
+test("a lead with no store says so", async () => {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
@@ -188,9 +303,8 @@ test("a lead with no store says so in the same word in both panels", async () =>
   });
   vi.stubGlobal("fetch", api.fetch);
   await mountLead();
-  expect(screen.getAllByText("No store").length).toBe(2);
+  expect(screen.getByText("No store")).toBeDefined();
   expect(screen.queryByText("Stream unlisted")).toBeNull();
-  expect(screen.queryByText("Nothing held")).toBeNull();
   expect(
     screen.queryByRole("button", { name: "Ask" }),
     "a lead with no head to fork from was offered a question anyway",
@@ -216,15 +330,11 @@ test("a read that could not decide what is held says so, not nothing held", asyn
   });
   vi.stubGlobal("fetch", api.fetch);
   await mountLead();
-  expect(
-    screen.getAllByText("Undecided").length,
-    "the two panels gave different accounts of one undecided held set",
-  ).toBe(2);
-  expect(screen.queryByText("Nothing held")).toBeNull();
-  expect(screen.queryByText("No entries")).toBeNull();
+  expect(screen.getByText("Not reached")).toBeDefined();
+  expect(screen.queryByText("No conversation")).toBeNull();
   expect(
     screen.queryByText("Truncated"),
-    "one server fact was said in two words at once",
+    "an undecided held set was also drawn as a short page",
   ).toBeNull();
 });
 
@@ -233,7 +343,7 @@ test("a read that could not decide what is held says so, not nothing held", asyn
 test("a Session frame naming another session leaves the page alone", async () => {
   let served: LeadServed = opening;
   const server = await drawLead(() => served);
-  expect(logLines().length).toBe(7);
+  expect(exchangeCount()).toBe(3);
   served = { ...opening, batches: 4, turns: 2 };
   await turned(() => {
     server.push(
@@ -246,9 +356,9 @@ test("a Session frame naming another session leaves the page alone", async () =>
   });
   await settled();
   expect(
-    logLines().length,
+    exchangeCount(),
     "another session's frame re-read this lead's page",
-  ).toBe(7);
+  ).toBe(3);
 });
 
 /**
@@ -313,7 +423,7 @@ test("a Session frame with a resource this console cannot read is ignored", asyn
     );
   });
   await settled();
-  expect(logLines().length).toBe(7);
+  expect(exchangeCount()).toBe(3);
   expect(screen.queryByText(/^Failed · /u)).toBeNull();
 });
 
@@ -339,7 +449,7 @@ test("a project with no lead is a page saying so, not five empty panels", async 
 test("a Session frame moves the turn tail and walks the transcript on", async () => {
   let served: LeadServed = opening;
   const server = await drawLead(() => served);
-  expect(logLines().length).toBe(7);
+  expect(exchangeCount()).toBe(3);
   served = { ...opening, batches: 4, turns: 2 };
   await turned(() => {
     server.push(
@@ -351,9 +461,11 @@ test("a Session frame moves the turn tail and walks the transcript on", async ()
     );
   });
   await settled();
-  expect(screen.getByText("third decision")).toBeDefined();
-  expect(logLines().length).toBe(8);
-  expect(holdingEntries()).toStrictEqual(["Entry 5", "Entry 6", "Entry 7"]);
+  expect(screen.getByText(/third decision/)).toBeDefined();
+  expect(
+    exchangeCount(),
+    "an assistant entry with no ask ahead of it opened a bubble of its own",
+  ).toBe(3);
 });
 
 /**
@@ -368,7 +480,7 @@ test("the lead's own frame moves the lead alone, and an inquiry's the inquiries"
   });
   let served: LeadServed = { ...opening, inquiries: asking(1) };
   const server = await drawLead(() => served);
-  expect(logLines().length).toBe(7);
+  expect(exchangeCount()).toBe(3);
   expect(inquiryQuestions()).toStrictEqual(["question 1"]);
   served = { ...served, batches: 4, turns: 2, inquiries: asking(2) };
   await turned(() => {
@@ -381,7 +493,7 @@ test("the lead's own frame moves the lead alone, and an inquiry's the inquiries"
     );
   });
   await settled();
-  expect(logLines().length).toBe(8);
+  expect(screen.getByText(/third decision/)).toBeDefined();
   expect(
     inquiryQuestions(),
     "the lead's own frame re-read the inquiries beside it",
@@ -399,9 +511,9 @@ test("the lead's own frame moves the lead alone, and an inquiry's the inquiries"
   await settled();
   expect(inquiryQuestions()).toStrictEqual(["question 3"]);
   expect(
-    logLines().length,
+    exchangeCount(),
     "an inquiry's frame re-read the lead's own panels",
-  ).toBe(8);
+  ).toBe(3);
 });
 
 /**
@@ -507,7 +619,8 @@ test("a transcript read that failed says so rather than drawing an empty log", a
 });
 
 /** A reference the bounded stream listing does not carry has nothing to walk,
- * and saying "No entries" would report that as a lead that has said nothing. */
+ * and saying "No conversation" would report that as a lead that has said
+ * nothing. */
 test("a stream the store's listing does not carry is named, not drawn as empty", async () => {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
@@ -520,7 +633,7 @@ test("a stream the store's listing does not carry is named, not drawn as empty",
           elided: 0,
           truncated: false,
         });
-      if (url.includes("/lead"))
+      if (url.includes("/lead") && !url.includes("/inquiries"))
         return answer({ ...leadBody(0, 1), streams: [] });
       const found = leadRouteAnswer(url, opening);
       return answer(found.body, found.status);
@@ -528,12 +641,8 @@ test("a stream the store's listing does not carry is named, not drawn as empty",
   });
   vi.stubGlobal("fetch", api.fetch);
   await mountLead();
-  expect(
-    screen.getAllByText("Stream unlisted").length,
-    "a panel drawing a stream nothing can be read for said nothing about it",
-  ).toBe(2);
-  expect(screen.queryByText("No entries")).toBeNull();
-  expect(screen.queryByText("Nothing held")).toBeNull();
+  expect(screen.getByText("Stream unlisted")).toBeDefined();
+  expect(screen.queryByText("No conversation")).toBeNull();
 });
 
 /**
@@ -588,15 +697,14 @@ test("a cut that moves on the last read does not blank the log", async () => {
   await mountLead();
   expect(store.reads()).toBe(leadTranscriptReadsMax);
   expect(
-    screen.queryByText("No entries"),
+    screen.queryByText("No conversation"),
     "the walk's own reset was drawn as a lead that has recorded nothing",
   ).toBeNull();
-  expect(logLines().length).toBeGreaterThan(0);
-  expect(screen.queryByText("Nothing held")).toBeNull();
+  expect(exchangeCount()).toBeGreaterThan(0);
   expect(
-    screen.getAllByText("Undecided").length,
+    screen.getByText("Not reached"),
     "what the lead holds was still claimed after the cut moved under the walk",
-  ).toBe(2);
+  ).toBeDefined();
 });
 
 /** A re-walk that finishes inside the budget draws what it rebuilt, and says
@@ -604,9 +712,9 @@ test("a cut that moves on the last read does not blank the log", async () => {
 test("a cut that moves early is rebuilt inside the budget and drawn", async () => {
   compactingStore(2);
   await mountLead();
-  expect(logLines().length).toBeGreaterThan(0);
-  expect(screen.queryByText("No entries")).toBeNull();
-  expect(screen.queryByText("Undecided")).toBeNull();
+  expect(exchangeCount()).toBeGreaterThan(0);
+  expect(screen.queryByText("No conversation")).toBeNull();
+  expect(screen.queryByText("Not reached")).toBeNull();
 });
 
 /** A store whose pages the case decides, so a probe can move the cut, fail a
@@ -669,7 +777,7 @@ test("a read that fails after a cut moved still draws its reason", async () => {
     screen.getByText(/^Failed · /u),
     "a read that failed across a re-walk said nothing to the reader",
   ).toBeDefined();
-  expect(screen.queryByText("No entries")).toBeNull();
+  expect(screen.queryByText("No conversation")).toBeNull();
 });
 
 /**
@@ -693,17 +801,16 @@ test("a re-walk that draws nothing keeps the chain the reader had", async () => 
   });
   await mountLead();
   expect(
-    screen.queryByText("No entries"),
+    screen.queryByText("No conversation"),
     "a re-walk drawing nothing said the lead had recorded nothing",
   ).toBeNull();
-  expect(screen.queryByText("Nothing held")).toBeNull();
-  expect(logLines().length).toBeGreaterThan(0);
-  expect(screen.getAllByText("Undecided").length).toBe(2);
+  expect(exchangeCount()).toBeGreaterThan(0);
+  expect(screen.getByText("Not reached")).toBeDefined();
 });
 
-/** The two words a pane says when it really does hold nothing, drawn rather
- * than merely absent. */
-test("a lead that has recorded nothing says so in both panels", async () => {
+/** The word a pane says when it really does hold nothing, drawn rather than
+ * merely absent. */
+test("a lead that has recorded nothing says so", async () => {
   scriptedStore((_read, after) =>
     answer({
       stream: leadStream,
@@ -716,8 +823,7 @@ test("a lead that has recorded nothing says so in both panels", async () => {
     }),
   );
   await mountLead();
-  expect(screen.getByText("No entries")).toBeDefined();
-  expect(screen.getByText("Nothing held")).toBeDefined();
+  expect(screen.getByText("No conversation")).toBeDefined();
 });
 
 /** What the read could not draw is drawn as itself, in the words the counts
@@ -746,7 +852,7 @@ test("what a read could not draw is said beside what it did", async () => {
         }),
   );
   await mountLead();
-  expect(screen.getByText("Elided · 2")).toBeDefined();
+  expect(screen.getByText("Elided · 2 batches")).toBeDefined();
   expect(screen.getAllByText("Truncated").length).toBeGreaterThan(0);
 });
 
@@ -838,16 +944,12 @@ test("a lead that changes stream is walked as a new pane", async () => {
     screen.queryByText(`on ${leadStream}`),
     "one lead's chain was drawn as another stream's",
   ).toBeNull();
-  expect(logLines().length).toBe(1);
+  expect(exchangeCount()).toBe(1);
 });
 
-/**
- * A WALK WAITING AT A STALL HAS NOT REACHED THE REST OF THE STREAM, and the two
- * panels have to say so in one word. The Log drawing "No entries" for the range
- * the Holding panel calls undecided is two accounts of one state, and the one a
- * reader believes is whichever they looked at first.
- */
-test("a stalled walk says the same word in both panels", async () => {
+/** A walk waiting at a stall has not reached the rest of the stream, so the
+ * entry it did draw stands beside the marker for the range it did not. */
+test("an unreached tail draws its marker", async () => {
   scriptedStore((_read, after) =>
     answer({
       stream: leadStream,
@@ -869,24 +971,8 @@ test("a stalled walk says the same word in both panels", async () => {
   );
   await mountLead();
   expect(screen.getByText("batch 0")).toBeDefined();
-  const said = screen.getAllByText("Undecided");
-  expect(
-    said.length,
-    "the Log and the Holding panel disagreed about one unreached range",
-  ).toBe(2);
-  const drawn = said.map((element) => ({
-    panel: element.closest(".panel")?.querySelector("h2")?.textContent,
-    kind: element.className.includes("notice-inline") ? "beside" : "in place",
-  }));
-  expect(
-    drawn,
-    "the word did not stand beside what a panel has and replace what it lacks",
-  ).toStrictEqual([
-    { panel: "Holding", kind: "in place" },
-    { panel: "Log", kind: "beside" },
-  ]);
-  expect(screen.queryByText("No entries")).toBeNull();
-  expect(screen.queryByText("Nothing held")).toBeNull();
+  expect(screen.getAllByText("Not reached").length).toBe(1);
+  expect(screen.queryByText("No conversation")).toBeNull();
 });
 
 /**

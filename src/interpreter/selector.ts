@@ -7,6 +7,7 @@ import {
   selectorSettingsTextCharsMax,
   sessionTurnInputCharsMax,
   sessionTurnResultCharsMax,
+  textCodePointsCount,
 } from "../contract/http.ts";
 import type { SelectorDeliveryState } from "../contract/rosters.ts";
 import type { DispatchCandidate, DispatchViewToken } from "./dispatchView.ts";
@@ -943,7 +944,7 @@ function policyRefusal(value: unknown, index: number): SelectorRefusalChoice {
   if (
     typeof reason !== "string" ||
     reason.length < 1 ||
-    reason.length > agenticRefusalReasonCharsMax
+    textCodePointsCount(reason) > agenticRefusalReasonCharsMax
   )
     throw new TypeError("selector refusal reason must be bounded text");
   return {
@@ -1211,7 +1212,7 @@ function persistablePolicyObservation(
   try {
     if (
       settings.basePrompt.length < 1 ||
-      settings.basePrompt.length > selectorSettingsTextCharsMax
+      textCodePointsCount(settings.basePrompt) > selectorSettingsTextCharsMax
     )
       throw new RangeError("selector instructions must be bounded");
     const persistedInput = checkedJson(
