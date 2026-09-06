@@ -143,7 +143,21 @@ check "the restored tree replays the counterexample red at the divergence" 1 "$R
 # under test is the cap firing rather than anything the walk found. The driver
 # carries its own bound too, because a gate that ignored the cap would hang
 # this suite instead of failing it.
+#
+# AND THE KILL HAS TO REACH THE RUNNER'S FORKED CHILDREN. Node runs each test
+# file in a process of its own and hands it --test-timeout=0, so a cap that
+# signalled only the runner would exit 2 with the walk still running and the
+# box no quieter than before. Survivors are counted against the set standing
+# before the case, because another walk may be running on the same machine.
 
+# Matched on the suite paths rather than on the reporter, because node strips
+# --test-reporter out of the argv of every process it forks, and those are the
+# processes this case is about.
+walk_processes() {
+	pgrep -f -- 'test/random[/]' 2>/dev/null | sort || true
+}
+
+walk_processes >"$WORK/walkers-before"
 OUT="$WORK/.out"
 set +e
 (cd "$ROOT" && CHUG_WALK_SAMPLES=200000 CHUG_RANDOM_TIMEOUT_SECS=2 \
@@ -152,6 +166,31 @@ RC=$?
 set -e
 check "a walk that outruns its cap exits 2, not 0 or 1" 2 "$RC" "did not finish inside 2s"
 check "the overrun names the knob that widens the cap" 2 "$RC" "CHUG_RANDOM_TIMEOUT_SECS"
+
+# Polled rather than slept on: a kill that lands is seen at once, and one that
+# never lands is still reported.
+WAITED=0
+while [ "$WAITED" -lt 5 ]; do
+	walk_processes | grep -vxF -f "$WORK/walkers-before" >"$WORK/strays" || true
+	[ -s "$WORK/strays" ] || break
+	WAITED=$((WAITED + 1))
+	sleep 1
+done
+STRAYS="$(grep -c . "$WORK/strays" || true)"
+OUT="$WORK/.out"
+{
+	echo "walk processes surviving the cap: $STRAYS"
+	cat "$WORK/strays"
+} >"$OUT"
+check "the cap kills the runner's forked children, not just the runner" 0 "$STRAYS" \
+	"walk processes surviving the cap: 0"
+
+# Counted first, then cleaned up: a suite that leaves a walk running has made
+# the box worse for whatever runs next, and that includes this suite's own
+# driver timing out before the gate's cap does.
+while IFS= read -r STRAY; do
+	kill "$STRAY" 2>/dev/null || true
+done <"$WORK/strays"
 
 # --- A cap the timer cannot apply is a could-not-run, not a finding ----------
 #
