@@ -203,18 +203,6 @@
   word-break: break-word;
 }
 
-.intent {
-  margin: 0;
-  white-space: pre-wrap;
-}
-
-.links,
-.checks {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
 .executions,
 .artifacts {
   list-style: none;
@@ -343,11 +331,6 @@
   width: auto;
 }
 
-.creation-configuration {
-  margin: 0;
-  color: var(--ink-3);
-}
-
 .creation-row {
   display: grid;
   grid-template-columns: 10rem 1fr auto;
@@ -361,12 +344,6 @@
 
 .creation-intent textarea {
   resize: vertical;
-}
-
-.creation-hint {
-  grid-column: 2 / -1;
-  color: var(--ink-3);
-  font-size: var(--text-xs);
 }
 
 .creation-set {
@@ -415,11 +392,6 @@
 .creation-advanced > summary {
   cursor: pointer;
   color: var(--ink-3);
-}
-
-.creation-fault {
-  margin: 0;
-  color: var(--tone-fail);
 }
 
 /* Run evidence: the stage breakdown above the executions it groups, and the
