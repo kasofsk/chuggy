@@ -19,6 +19,7 @@ import type { PanelState } from "../core/freshness.ts";
 import { configurationLabel } from "../core/labels.ts";
 import { usePanelResource } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
+import { Tooltip } from "./ui/Tooltip.tsx";
 
 function Field(props: {
   readonly name: string;
@@ -116,7 +117,9 @@ export function TicketBrief(props: {
               <Brief brief={draft.brief} />
             )}
             <Field name="released under">
-              <span title={released.title}>{released.text}</span>
+              <Tooltip text={released.title}>
+                <span>{released.text}</span>
+              </Tooltip>
             </Field>
             <Field name="draft">
               {draft.state} at version {draft.authoringVersion}

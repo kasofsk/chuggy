@@ -4,13 +4,14 @@
  * images and workers.
  *
  * Total over `identityForms`: inline beside a label, or a block a reader
- * selects whole. The full value is always the `title`, because a shortened
+ * selects whole. The full value is always in the tooltip, because a shortened
  * identity a reader cannot recover is one they have to go elsewhere for.
  */
 
 import type { ReactNode } from "react";
 
 import type { Label } from "../../core/labels.ts";
+import { Tooltip } from "./Tooltip.tsx";
 
 import "./Identity.css";
 
@@ -24,8 +25,8 @@ export function Identity(props: {
 }): ReactNode {
   const form = props.block === true ? "identity identity-block" : "identity";
   return (
-    <code className={form} title={props.label.title}>
-      {props.label.text}
-    </code>
+    <Tooltip text={props.label.title}>
+      <code className={form}>{props.label.text}</code>
+    </Tooltip>
   );
 }

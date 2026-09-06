@@ -1,0 +1,13 @@
+/* Tooltip: inverse surface, small text, bounded by the measure. */
+
+@layer ui {
+  .tooltip {
+    max-width: var(--measure);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-1);
+    background: var(--surface-inverse);
+    color: var(--ink-inverse);
+    font-size: var(--text-sm);
+    line-height: var(--leading-dense);
+  }
+}

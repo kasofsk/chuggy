@@ -1,7 +1,7 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
@@ -53,6 +53,17 @@ vi.mock("@tanstack/react-router", () => ({
  * asserted through the ISO it hovers, because the clock face is the reader's
  * own zone and a suite that pinned it would pin the machine it ran on.
  */
+
+beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    },
+  );
+});
 
 afterEach(() => {
   cleanup();
@@ -640,10 +651,12 @@ test("the wall says when the ticket entered it, from the journal's own instant",
     ticket: parkedTicket,
   });
   const when = container.querySelector(".notice-parked .notice-when .fig");
-  expect(when?.getAttribute("title")).toBe(
+  if (when === null) throw new Error("no wall instant figure drawn");
+  fireEvent.focus(when);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
     new Date(ticketInstants.changedAt).toISOString(),
   );
-  expect(when?.textContent).not.toBe("");
+  expect(when.textContent).not.toBe("");
 });
 
 test("a live phase is dated the same way", async () => {
@@ -651,11 +664,12 @@ test("a live phase is dated the same way", async () => {
     shapes: ticket21Resumed,
     ticket: resumedTicket,
   });
-  expect(
-    container
-      .querySelector(".notice-live .notice-when .fig")
-      ?.getAttribute("title"),
-  ).toBe(new Date(ticketInstants.changedAt).toISOString());
+  const when = container.querySelector(".notice-live .notice-when .fig");
+  if (when === null) throw new Error("no wall instant figure drawn");
+  fireEvent.focus(when);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    new Date(ticketInstants.changedAt).toISOString(),
+  );
 });
 
 /**
@@ -668,8 +682,12 @@ test("the head's span begins at the release and not at the first run", async () 
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  const span = container.querySelector(".ticket-figures .fig[title*='→']");
-  expect(span?.getAttribute("title")).toContain(
+  const span = [...container.querySelectorAll(".ticket-figures .fig")].find(
+    (figure) => figure.textContent?.includes("→") === true,
+  );
+  if (span === undefined) throw new Error("no span figure drawn");
+  fireEvent.focus(span);
+  expect((await screen.findByRole("tooltip")).textContent).toContain(
     new Date(ticketInstants.releasedAt).toISOString(),
   );
 });
