@@ -32,13 +32,15 @@ import {
 } from "../core/figures.ts";
 import type { PanelState } from "../core/freshness.ts";
 import {
-  leadConversationItems,
-  leadConversationTurns,
   leadSessionNamed,
   leadStreamBatches,
   leadStreamListed,
 } from "../core/leadTranscript.ts";
 import { projectListRereadNamed } from "../core/projectQueryKeys.ts";
+import {
+  sessionConversationItems,
+  sessionConversationTurns,
+} from "../core/sessionConversation.ts";
 import {
   selectorAttentionTone,
   sessionStateTone,
@@ -203,8 +205,8 @@ function LeadBody(props: {
     highWaterBatch: lead === undefined ? 0 : leadStreamBatches(lead),
   });
   const exchanges = conversationExchanges(
-    leadConversationItems(held, lead?.agentReference, listed),
-    leadConversationTurns(lead?.turns ?? []),
+    sessionConversationItems({ held, stream: lead?.agentReference, listed }),
+    sessionConversationTurns(lead?.turns ?? []),
   );
   return (
     <>

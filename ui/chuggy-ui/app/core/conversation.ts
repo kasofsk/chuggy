@@ -292,15 +292,18 @@ export function conversationArgumentSummary(
     : { argument: "Size", chars: text.length };
 }
 
+/** What a turn's own kind asks for, with or without the text: the one place
+ * this is decided, so an appended turn nobody has spoken text for still draws
+ * its kind's word rather than nothing. Only a message with no text has none. */
 function conversationAskOf(
   kind: SessionTurnInputKind,
-  text: string,
-): ConversationAsk {
+  text: string | undefined,
+): ConversationAsk | undefined {
   switch (kind) {
     case "UserMessage":
-      return { ask: "Message", text };
+      return text === undefined ? undefined : { ask: "Message", text };
     case "Wake": {
-      const wake = threadWakeDrawn(text);
+      const wake = text === undefined ? undefined : threadWakeDrawn(text);
       return wake === undefined
         ? { ask: "Document", kind }
         : { ask: "Wake", wake: wake.wake, resource: wake.resource };
@@ -382,6 +385,7 @@ function conversationCappedMarker(
 function conversationOpened(
   builder: ConversationBuilder,
   id: string,
+  standing: ConversationStanding = { standing: "Open" },
 ): ConversationBuilt {
   const built: ConversationBuilt = {
     id,
@@ -389,7 +393,7 @@ function conversationOpened(
     ask: undefined,
     work: [],
     answer: undefined,
-    standing: { standing: "Open" },
+    standing,
     measures: undefined,
     before: builder.pending,
     matched: false,
@@ -574,10 +578,8 @@ function conversationAppended(
   built.matched = true;
   built.standing = conversationStandingOf(turn);
   built.measures = conversationMeasuresOf(turn);
-  if (turn.input !== undefined) {
-    built.askText = turn.input;
-    built.ask = conversationAskOf(turn.inputKind, turn.input);
-  }
+  built.askText = turn.input;
+  built.ask = conversationAskOf(turn.inputKind, turn.input);
 }
 
 function conversationOverlaid(
@@ -602,18 +604,6 @@ function conversationOverlaid(
   }
 }
 
-/** Whether a built exchange carries nothing a conversation would: no ask, no
- * work, no answer and no measures. Only the trailing exchange opened to carry
- * markers nothing follows is ever this empty. */
-function conversationBuiltEmpty(built: ConversationBuilt): boolean {
-  return (
-    built.ask === undefined &&
-    built.work.length === 0 &&
-    built.answer === undefined &&
-    built.measures === undefined
-  );
-}
-
 function conversationDrawn(built: ConversationBuilt): ConversationExchange {
   const before =
     built.stepsCut === 0
@@ -626,8 +616,8 @@ function conversationDrawn(built: ConversationBuilt): ConversationExchange {
     ...(built.answer === undefined ? {} : { answer: built.answer }),
     standing: built.matched
       ? built.standing
-      : conversationBuiltEmpty(built)
-        ? { standing: "Markers" }
+      : built.standing.standing === "Markers"
+        ? built.standing
         : built.answer === undefined
           ? { standing: "Open" }
           : { standing: "Answered" },
@@ -661,7 +651,9 @@ export function conversationExchanges(
   }
   if (turns !== undefined) conversationOverlaid(builder, turns);
   if (builder.pending.length > 0)
-    conversationOpened(builder, conversationTrailingId);
+    conversationOpened(builder, conversationTrailingId, {
+      standing: "Markers",
+    });
   const first = builder.built[0];
   if (first !== undefined && builder.exchangesCut > 0)
     first.before.unshift(

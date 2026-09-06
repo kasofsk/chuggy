@@ -77,7 +77,7 @@ test("each arm a stage has without a set is its own word and its own tone", () =
   ).toEqual({ word: "Failed", tone: "fail" });
 });
 
-test("each standing an exchange can be in is its own word and its own tone", () => {
+test("each standing the arm draws is its own word and its own tone", () => {
   expect(conversationStandingArm({ standing: "Answered" })).toEqual({
     word: "Answered",
     tone: "pass",

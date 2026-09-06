@@ -39,7 +39,7 @@ import {
 import { projectListRereadNamed } from "../core/projectQueryKeys.ts";
 import {
   sessionConversationItems,
-  threadConversationTurns,
+  sessionConversationTurns,
 } from "../core/sessionConversation.ts";
 import { threadClosable, threadTakesMessages } from "../core/threads.ts";
 import { threadStandingTone } from "../core/tones.ts";
@@ -149,7 +149,7 @@ function ThreadBody(props: {
             stream: thread.agentReference,
             listed: leadStreamListed(thread),
           }),
-          threadConversationTurns(thread.turns),
+          sessionConversationTurns(thread.turns),
         )}
         {...(thread.mine ? { composer } : {})}
         empty="Nothing said"

@@ -11,39 +11,29 @@
 
 import { expect, test } from "vitest";
 
-import { conversationExchanges } from "../app/core/conversation.ts";
 import {
   agenticRefusalStanding,
-  leadConversationItems,
-  leadConversationTurns,
   leadDecisionsNewestFirst,
   leadDecisionSummary,
   leadDispatchLanded,
-  leadEntryText,
-  leadEntryTools,
   leadSessionNamed,
   sessionChangeKindNamed,
   leadStreamBatches,
   leadStreamListed,
   leadTranscriptDrawn,
   leadTranscriptEntriesHeldMax,
-  leadTranscriptFoldEmpty,
   leadTranscriptPaneEmpty,
   leadTranscriptStep,
-  leadTranscriptHolding,
-  leadTranscriptLines,
   leadTranscriptNextAfter,
   leadTranscriptReadsMax,
 } from "../app/core/leadTranscript.ts";
 import type {
-  LeadTranscriptHeld,
-  LeadTranscriptLine,
+  LeadTranscriptEntry,
   LeadTranscriptPane,
 } from "../app/core/leadTranscript.ts";
 import type {
   AgenticRefusalResponse,
   LeadTranscriptResponse,
-  LeadTurnResponse,
 } from "../../../src/contract/responses.ts";
 import {
   leadBody,
@@ -75,12 +65,19 @@ function paged(
 }
 
 /** What a reader is shown of a pane, which is what every case here asserts over. */
-function lines(pane: LeadTranscriptPane): readonly LeadTranscriptLine[] {
-  return leadTranscriptLines(leadTranscriptDrawn(pane));
+function lines(pane: LeadTranscriptPane): readonly LeadTranscriptEntry[] {
+  return leadTranscriptDrawn(pane).entries;
 }
 
-function holdingLines(pane: LeadTranscriptPane): readonly LeadTranscriptLine[] {
-  return leadTranscriptHolding(leadTranscriptDrawn(pane));
+/** The subset the lead is working from, which is a filter and not a fetch. */
+function holdingLines(
+  pane: LeadTranscriptPane,
+): readonly LeadTranscriptEntry[] {
+  const held = leadTranscriptDrawn(pane);
+  const holding = new Set(held.holding);
+  return held.entries.filter(
+    (entry) => entry.uuid !== undefined && holding.has(entry.uuid),
+  );
 }
 
 function refusalAt(superseded: boolean): AgenticRefusalResponse {
@@ -183,11 +180,9 @@ test("what the lead holds is the chain from the seam on and nothing above it", (
   expect(holdingLines(held).map((line) => line.uuid)).toEqual([
     leadBoundaryUuid,
   ]);
-  expect(
-    lines(held)
-      .filter((line) => line.seam)
-      .map((line) => line.uuid),
-  ).toEqual([leadBoundaryUuid]);
+  expect(leadTranscriptDrawn(held).compaction?.boundary).toEqual(
+    leadBoundaryUuid,
+  );
 });
 
 /**
@@ -493,19 +488,6 @@ test("a page that decided nothing does not move the cut or the walk", () => {
   expect(holdingLines(outage).map((line) => line.uuid)).toStrictEqual([
     "uuid-a",
   ]);
-});
-
-test("an entry is its text and the tools it named, and never a reference", () => {
-  const message = {
-    content: [
-      { type: "text", text: "resume from /tmp/claude-resume-9" },
-      { type: "tool_use", name: "Read" },
-    ],
-  };
-  expect(leadEntryText(message)).toBe("resume from /tmp/claude-resume-9");
-  expect(leadEntryTools(message)).toEqual(["Read"]);
-  expect(leadEntryText({ content: "plain" })).toBe("plain");
-  expect(leadEntryText(null)).toBe("");
 });
 
 test("the transcript reads the stream the session's own reference names", () => {
@@ -969,167 +951,6 @@ test("a stalled page keeps its cursor, waits, and says it cannot yet tell", () =
     leadTranscriptDrawn(stalled).holdingUnknown,
     "a pane that has not reached the rest of the stream claimed to know",
   ).toBe(true);
-});
-
-/** A held with no stream, and every override needed to build one directly
- * rather than through a walked pane. */
-function heldOf(overrides: Partial<LeadTranscriptHeld>): LeadTranscriptHeld {
-  return {
-    ...leadTranscriptFoldEmpty,
-    stream: leadStream,
-    failure: undefined,
-    ...overrides,
-  };
-}
-
-test("a lead with no stream draws only that marker", () => {
-  expect(
-    leadConversationItems(heldOf({ stream: undefined }), undefined, false),
-  ).toEqual([{ item: "Marker", marker: { marker: "NoStore" } }]);
-});
-
-/**
- * AN UNLISTED STREAM STILL DRAWS ITS SHORTFALLS, because a failed read or a
- * short page is a fact about the read whether or not the stream is on the
- * listing; only the entries are withheld, because there is nothing behind an
- * unlisted stream to draw them from.
- */
-test("an unlisted stream draws its shortfalls and its own marker, and no entries", () => {
-  const held = heldOf({
-    entries: [{ uuid: "uuid-a", type: "user", message: { content: [] } }],
-    failure: "the API failed with InternalError",
-    truncated: true,
-    elided: 2,
-    entriesDropped: 1,
-  });
-  expect(leadConversationItems(held, leadStream, false)).toEqual([
-    { item: "Marker", marker: { marker: "Failure", reason: held.failure } },
-    { item: "Marker", marker: { marker: "Truncated" } },
-    { item: "Marker", marker: { marker: "Elision", bytes: 2 } },
-    { item: "Marker", marker: { marker: "Dropped", count: 1 } },
-    { item: "Marker", marker: { marker: "Unlisted" } },
-  ]);
-});
-
-/**
- * A TYPE NEITHER USER NOR ASSISTANT IS READ FOR ITS MARKER AND NEVER AS AN
- * ENTRY. The compaction seam stands on the entry the boundary names, whichever
- * position it falls at, and an entry with no uuid keeps the fallback identity
- * the old Log line used.
- */
-test("entries draw as User or Assistant, a third type is skipped, and the seam stands on the boundary", () => {
-  const held = heldOf({
-    entries: [
-      {
-        uuid: "uuid-a",
-        type: "user",
-        message: { content: [{ type: "text", text: "hello" }] },
-      },
-      {
-        uuid: "boundary",
-        type: "user",
-        message: { content: [{ type: "text", text: "compaction summary" }] },
-      },
-      { uuid: "uuid-c", type: "system", message: { content: [] } },
-      {
-        type: "assistant",
-        message: { content: [{ type: "text", text: "hi" }] },
-      },
-    ],
-    compaction: { boundary: "boundary", at: "2026-09-01T10:00:00Z" },
-  });
-  expect(leadConversationItems(held, leadStream, true)).toEqual([
-    {
-      item: "Entry",
-      entry: {
-        id: "uuid-a",
-        role: "User",
-        blocks: [{ block: "Text", text: "hello" }],
-      },
-    },
-    {
-      item: "Marker",
-      marker: { marker: "Compaction", at: "2026-09-01T10:00:00Z" },
-    },
-    {
-      item: "Entry",
-      entry: {
-        id: "boundary",
-        role: "User",
-        blocks: [{ block: "Text", text: "compaction summary" }],
-      },
-    },
-    {
-      item: "Entry",
-      entry: {
-        id: "ordinal-4",
-        role: "Assistant",
-        blocks: [{ block: "Text", text: "hi" }],
-      },
-    },
-  ]);
-});
-
-/** The word the Holding and Log panels shared for a range this pane has not
- * reached, carried as the marker every entry it did read still stands beside. */
-test("a pane that cannot say what it holds draws Unreached before its entries", () => {
-  const held = heldOf({
-    entries: [{ uuid: "uuid-a", type: "assistant", message: { content: [] } }],
-    holdingUnknown: true,
-  });
-  const items = leadConversationItems(held, leadStream, true);
-  expect(items[0]).toEqual({ item: "Marker", marker: { marker: "Unreached" } });
-  expect(items).toHaveLength(2);
-});
-
-/**
- * THE LEAD'S MAILBOX CARRIES NO INPUT. A turn already answered is left with
- * none at all, so it neither matches a transcript exchange nor is appended
- * beside one; every other turn is handed an empty one, which is enough for its
- * kind word and never enough to match a real exchange's ask.
- */
-test("a lead turn carries an empty input unless it is already answered", () => {
-  const turns: readonly LeadTurnResponse[] = [
-    { turn: "turn-1", ordinal: 1, inputKind: "Observation", state: "Queued" },
-    {
-      turn: "turn-2",
-      ordinal: 2,
-      inputKind: "Observation",
-      state: "Answered",
-      tokens: 900,
-    },
-  ];
-  expect(leadConversationTurns(turns)).toEqual([
-    {
-      turn: "turn-1",
-      ordinal: 1,
-      inputKind: "Observation",
-      state: "Queued",
-      input: "",
-    },
-    {
-      turn: "turn-2",
-      ordinal: 2,
-      inputKind: "Observation",
-      state: "Answered",
-      tokens: 900,
-    },
-  ]);
-});
-
-/** What `TASK-lead.md` asks for end to end: a turn nobody has claimed appends
- * a running exchange that draws its kind word and no text. */
-test("a Queued lead turn appends a running exchange with its kind word and no text", () => {
-  const turns = leadConversationTurns([
-    { turn: "turn-9", ordinal: 9, inputKind: "Observation", state: "Queued" },
-  ]);
-  const exchanges = conversationExchanges([], turns);
-  expect(exchanges).toHaveLength(1);
-  expect(exchanges[0]?.ask).toEqual({ ask: "Observation" });
-  expect(exchanges[0]?.standing).toEqual({
-    standing: "Running",
-    state: "Queued",
-  });
 });
 
 /** The store written past the mark carries the walk on from the cursor it

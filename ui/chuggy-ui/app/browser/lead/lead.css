@@ -30,38 +30,6 @@
     gap: var(--space-2);
   }
 
-  .lead-log {
-    display: grid;
-    gap: var(--space-3);
-    min-width: 0;
-  }
-
-  .lead-line {
-    display: grid;
-    gap: var(--space-1);
-    border-top: var(--hairline) solid var(--edge);
-    padding-top: var(--space-2);
-    min-width: 0;
-  }
-
-  .lead-line[data-holding="true"] {
-    border-left: var(--rail) solid var(--tone-live);
-    padding-left: var(--space-3);
-  }
-
-  .lead-line-type,
-  .lead-line-tools {
-    color: var(--ink-3);
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-  }
-
-  .lead-seam {
-    border-top: var(--rail) solid var(--edge-strong);
-    padding-top: var(--space-2);
-    margin-top: var(--space-3);
-  }
-
   .lead-ask {
     display: grid;
     gap: var(--space-2);
