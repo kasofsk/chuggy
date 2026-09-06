@@ -11,6 +11,7 @@
   "dependencies": {
     "@tanstack/react-query": "^5.102.5",
     "@tanstack/react-router": "^1.170.32",
+    "radix-ui": "^1.6.7",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zod": "^4.4.3"

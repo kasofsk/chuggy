@@ -3,7 +3,9 @@
 The console born against the project event stream. It builds: React and
 TypeScript through Vite, with TanStack Query holding the cache a live frame is
 written into and TanStack Router carrying the partition in the path. Hand CSS,
-dark, dense; no component library.
+dark, dense; Radix's headless primitives behind the controls a browser does
+not supply — a menu, a tooltip, a disclosure — and no styled component
+library.
 
 It is an npm workspace of this repository, declared in the root `package.json`,
 so `npm ci` at the root installs it and `ui/chuggy-ui/package.json` pins what it
