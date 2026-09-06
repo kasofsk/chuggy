@@ -81,7 +81,7 @@ function Fault(props: {
 }): ReactNode {
   const found = props.faults.find((fault) => fault.field === props.field);
   return found === undefined ? null : (
-    <p className="m-0 text-tone-fail">{found.reason}</p>
+    <p className="text-tone-fail">{found.reason}</p>
   );
 }
 
@@ -280,7 +280,7 @@ function CreationFields(
   return (
     <>
       <Tooltip text={shaping.title}>
-        <p className="m-0 text-ink-3">{shaping.text}</p>
+        <p className="text-ink-3">{shaping.text}</p>
       </Tooltip>
       <Intent form={form} onChange={onChange} />
       <Fault field="intent" faults={faults} />
