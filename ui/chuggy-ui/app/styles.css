@@ -377,20 +377,3 @@
 .configuration-file .preview {
   flex-basis: 100%;
 }
-
-.steps {
-  list-style: none;
-  margin: 0;
-  padding: var(--space-2) var(--space-4);
-  display: grid;
-  gap: var(--space-2);
-  max-height: 32rem;
-  overflow: auto;
-}
-
-.step {
-  display: grid;
-  grid-template-columns: 7rem 1fr;
-  gap: 0 var(--space-4);
-  align-items: baseline;
-}
