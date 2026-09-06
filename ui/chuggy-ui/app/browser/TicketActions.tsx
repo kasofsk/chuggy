@@ -490,7 +490,7 @@ function TicketActionsPanel(props: TicketActionsProps): ReactNode {
       {(value) => {
         const offers = ticketOffers(props.openState, value, dispatch);
         return (
-          <div className="action-panel">
+          <div className="grid gap-2 px-4 py-2">
             {offers.offers === "Unread" ? (
               <PanelUnready state={props.openState} />
             ) : (
