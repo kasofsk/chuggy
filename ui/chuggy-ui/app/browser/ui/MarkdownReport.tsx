@@ -13,7 +13,7 @@ import {
   type MarkdownBlock,
   type MarkdownInline,
   type MarkdownLines,
-} from "../core/markdownReport.ts";
+} from "../../core/markdownReport.ts";
 
 function MarkdownInlineRun(props: {
   readonly nodes: readonly MarkdownInline[];
