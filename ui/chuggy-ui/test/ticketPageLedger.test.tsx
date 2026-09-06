@@ -12,6 +12,7 @@ import {
   openedStream,
   ScreenHarness,
   settled,
+  turned,
 } from "./screenHarness.tsx";
 import {
   ledgerPage,
@@ -302,6 +303,24 @@ test("every section of the main body has an anchor pointing at it", async () => 
   for (const anchor of anchors)
     expect(container.querySelector(`section${String(anchor)}`)).not.toBeNull();
   expect(screen.getByText("3 · 7 runs")).toBeDefined();
+});
+
+test("the canonical configuration is closed until asked for, and its trigger names what it opens", async () => {
+  await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
+  const trigger = screen.getByRole("button", { name: "show canonical" });
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("{}")).toBeNull();
+  await turned(() => {
+    trigger.click();
+  });
+  const body = screen.getByText("{}");
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(trigger.getAttribute("aria-controls")).toBe(body.id);
+  expect(screen.getByRole("button", { name: "hide canonical" })).toBe(trigger);
+  await turned(() => {
+    trigger.click();
+  });
+  expect(screen.queryByText("{}")).toBeNull();
 });
 
 test("the usage panel names the basis once and breaks the spend down twice", async () => {

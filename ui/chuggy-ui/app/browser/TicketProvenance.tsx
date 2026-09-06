@@ -10,6 +10,7 @@
 
 import { useState } from "react";
 import type { ReactNode } from "react";
+import { Collapsible } from "radix-ui";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { TicketBriefBody } from "../../../../src/contract/brief.ts";
@@ -191,18 +192,18 @@ function TicketConfiguration(props: {
               <Field name="parent">{configuration.parent}</Field>
             )}
           </dl>
-          <button
-            type="button"
-            aria-expanded={open}
-            onClick={() => {
-              setOpen(!open);
-            }}
+          <Collapsible.Root
+            className="disclosure"
+            open={open}
+            onOpenChange={setOpen}
           >
-            {open ? "hide canonical" : "show canonical"}
-          </button>
-          {open ? (
-            <pre className="canonical">{configuration.canonical}</pre>
-          ) : null}
+            <Collapsible.Trigger>
+              {open ? "hide canonical" : "show canonical"}
+            </Collapsible.Trigger>
+            <Collapsible.Content asChild>
+              <pre className="canonical">{configuration.canonical}</pre>
+            </Collapsible.Content>
+          </Collapsible.Root>
         </div>
       )}
     </DataPanel>
