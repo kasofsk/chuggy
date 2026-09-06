@@ -392,7 +392,9 @@ check "a query on an unnamed handle is a finding" 1 "$RC" "one on another handle
 # `.length` is a finding on either side of the operator, and the same
 # comparison through `textCodePointsCount` is not. Placed in src/interpreter/
 # rather than src/domain/, whose own rule refuses any relative import leaving
-# it and would otherwise fail this fixture for an unrelated reason.
+# it and would otherwise fail this fixture for an unrelated reason. Each case
+# below carries only the one shape its selector names, so a case can pass only
+# by that selector firing rather than by another one sharing the fixture.
 fixture
 clean_source
 mkdir -p "$R/src/interpreter"
@@ -401,13 +403,34 @@ mkdir -p "$R/src/interpreter"
 	printf '%s\n' 'export function tooLong(value: string): boolean {'
 	printf '%s\n' '  return value.length > fooCharsMax;'
 	printf '%s\n' '}'
-	printf '%s\n' 'export function tooLongReversed(value: string): boolean {'
-	printf '%s\n' '  return fooCharsMax < value.length;'
-	printf '%s\n' '}'
 } > "$R/src/interpreter/charsMax.ts"
 seal
 check "a *CharsMax bound compared to .length is a finding" 1 "$RC" "compare textCodePointsCount(value), not .length"
+
+fixture
+clean_source
+mkdir -p "$R/src/interpreter"
+{
+	printf '%s\n' 'const fooCharsMax = 4;'
+	printf '%s\n' 'export function tooLongReversed(value: string): boolean {'
+	printf '%s\n' '  return fooCharsMax < value.length;'
+	printf '%s\n' '}'
+} > "$R/src/interpreter/charsMaxReversed.ts"
+seal
 check "the reversed operand order is a finding too" 1 "$RC" "compare textCodePointsCount(value), not .length"
+
+# The regex's lowercase alternative exists because a bound is sometimes a bare
+# parameter, not a `*CharsMax` constant, and the fixture above never names one.
+fixture
+clean_source
+mkdir -p "$R/src/interpreter"
+{
+	printf '%s\n' 'export function f(value: string, charsMax: number): boolean {'
+	printf '%s\n' '  return value.length > charsMax;'
+	printf '%s\n' '}'
+} > "$R/src/interpreter/charsMaxLowercase.ts"
+seal
+check "a bare lowercase charsMax parameter is a finding too" 1 "$RC" "compare textCodePointsCount(value), not .length"
 
 fixture
 clean_source
