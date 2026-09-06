@@ -852,7 +852,7 @@ test("what a read could not draw is said beside what it did", async () => {
         }),
   );
   await mountLead();
-  expect(screen.getByText("Elided · 2")).toBeDefined();
+  expect(screen.getByText("Elided · 2 batches")).toBeDefined();
   expect(screen.getAllByText("Truncated").length).toBeGreaterThan(0);
 });
 

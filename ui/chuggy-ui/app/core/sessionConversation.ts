@@ -57,7 +57,10 @@ function sessionConversationShortfall(
  * be a measurement nothing took.
  */
 function sessionConversationElision(count: number): ConversationMarker {
-  return { marker: "Capped", sentence: `Elided · ${runCountLabel(count)}` };
+  return {
+    marker: "Capped",
+    sentence: `Elided · ${runCountLabel(count)} batches`,
+  };
 }
 
 function sessionConversationMarkers(

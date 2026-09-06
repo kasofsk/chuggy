@@ -207,7 +207,7 @@ test("a read that failed, an unreached tail, elided batches and dropped entries 
   ).toStrictEqual([
     { marker: "Failure", reason: "Fault · 500" },
     { marker: "Unreached" },
-    { marker: "Capped", sentence: "Elided · 2" },
+    { marker: "Capped", sentence: "Elided · 2 batches" },
     { marker: "Dropped", count: 3 },
   ]);
 });
