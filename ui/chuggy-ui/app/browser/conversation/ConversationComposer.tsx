@@ -24,6 +24,10 @@ export interface ConversationComposerProps {
   readonly onSend: (text: string) => Promise<ConversationSent>;
   /** The one line the last press is reported as, worded by the page. */
   readonly note?: ReactNode;
+  /** Called when the reader changes the text, so the page can drop a note
+   * about a press this text has since moved past. Fired on the box's own
+   * change event, not on a programmatic restore of a kept message. */
+  readonly onEdit?: () => void;
 }
 
 export function ConversationComposer(
@@ -38,6 +42,9 @@ export function ConversationComposer(
         maxLength={props.charsMax}
         submitMode="enter"
         aria-label="Message"
+        onChange={
+          props.onEdit === undefined ? undefined : () => props.onEdit?.()
+        }
       />
       <div className="flex flex-wrap items-center gap-3">
         <span className="num text-ink-3 text-xs">
