@@ -32,22 +32,6 @@
  * grows by drawing nothing — so the two the wire has get the standing word they
  * belong to and anything else is drawn as the code the server sent.
  *
- * A GATHERED SET MEANS NOTHING WITHOUT THE SEAM IT SITS BEHIND. Everything a
- * walk gathers is strictly below one boundary — the newest read's own cursor at
- * the moment the walk began — so a newest read whose cursor has moved is a read
- * that set no longer abuts, and `ThreadOlder.seam` is that boundary carried.
- * The field is absent exactly while nothing has been gathered, which is why "is
- * this walk started" is one field being present rather than a flag beside it
- * that can disagree with the turns.
- *
- * ORDER IS THE CONSTRUCTION'S AND NOT A SORT. Each older page is prepended
- * whole and the newest read appended, so what `threadTurnsDrawn` returns is
- * already the mailbox's sequence and a sort over it would be a control that has
- * never had anything to correct. A turn in both is the later read's: the newest
- * page is re-read on a `Session` frame while a gathered page is not, so the copy
- * that moved from `Queued` to `Answered` is the one worth drawing, and it keeps
- * the place its first copy had.
- *
  * EVERY CODE THIS CONSOLE NAMES IS THE DOOR'S OWN ROSTER MEMBER.
  * `threadMessageRefusalCodes` is every code the message door emits, and both
  * things this module does with one go through it: the settlement narrows
@@ -89,7 +73,6 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import { threadMessageRefusalCodes } from "../../../../src/contract/rosters.ts";
 import type {
-  SessionTurnFailure,
   SessionTurnInputKind,
   ThreadMessageRefusalCode,
 } from "../../../../src/contract/rosters.ts";
@@ -153,34 +136,6 @@ export function threadMine(
 }
 
 /**
- * What a turn is waiting for, or what it ended with. Total over the turn states
- * the wire has: A TURN THAT HAS NOT BEEN ANSWERED DRAWS NO ANSWER BLOCK, because
- * an empty answer block reads as an answer of nothing, which is a claim the page
- * has no grounds to make about a turn still in the mailbox.
- */
-export type ThreadAnswer =
-  | { readonly answer: "Awaiting" }
-  | { readonly answer: "Result"; readonly text: string }
-  | { readonly answer: "Failure"; readonly failure: SessionTurnFailure }
-  | { readonly answer: "None" };
-
-export function threadTurnAnswer(turn: ThreadTurnResponse): ThreadAnswer {
-  switch (turn.state) {
-    case "Queued":
-    case "Claimed":
-      return { answer: "Awaiting" };
-    case "Answered":
-    case "Failed":
-    case "Abandoned":
-      if (turn.result !== undefined)
-        return { answer: "Result", text: turn.result };
-      return turn.failure === undefined
-        ? { answer: "None" }
-        : { answer: "Failure", failure: turn.failure };
-  }
-}
-
-/**
  * The two fields a wake document is drawn from. Unknown keys are dropped rather
  * than refused, so a document carrying more than this reads as the notice it is.
  */
@@ -223,93 +178,6 @@ export function threadTurnRetained(
   text: string,
 ): string | undefined {
   return held !== undefined && held.text === text ? held.turn : undefined;
-}
-
-/**
- * The most turns one page holds while a reader walks backwards, past which it
- * stops offering older ones. Dropping what it holds instead would be a page
- * that loses the top of the conversation as the reader reaches for it.
- */
-export const threadTurnsHeldMax = 400;
-
-/** One walk backwards through a mailbox: what it has gathered, the cursor the
- * next page is asked for, the seam it was all gathered behind, and what the
- * last read failed with. */
-export interface ThreadOlder {
-  readonly turns: readonly ThreadTurnResponse[];
-  readonly before: number | undefined;
-  readonly seam: number | undefined;
-  readonly failure: string | undefined;
-}
-
-export const threadOlderEmpty: ThreadOlder = {
-  turns: [],
-  before: undefined,
-  seam: undefined,
-  failure: undefined,
-};
-
-/**
- * One older page gathered, behind the boundary the walk began at. The page's
- * own `nextBefore` becomes the cursor and its absence is the mailbox's first
- * turn, which is why the cursor and the turns are one value and not two pieces
- * of state that can disagree about whether there is more.
- */
-export function threadOlderGathered(
-  older: ThreadOlder,
-  page: Pick<ThreadResponse, "turns" | "nextBefore">,
-  newest: Pick<ThreadResponse, "nextBefore">,
-): ThreadOlder {
-  return {
-    turns: [...page.turns, ...older.turns],
-    before: page.nextBefore,
-    seam: older.seam ?? newest.nextBefore,
-    failure: undefined,
-  };
-}
-
-/**
- * The gathered set a reader may still be shown, and nothing where the newest
- * read has slid past the seam it was gathered behind. Dropping it is the
- * discipline `leadTranscriptStep` takes on a compaction that moved: a set
- * gathered against a boundary that no longer exists cannot be drawn beside the
- * read that replaced it, and the union of two ranges that do not meet is a
- * conversation with a turn missing from the middle of it.
- */
-export function threadOlderHeld(
-  older: ThreadOlder,
-  newest: Pick<ThreadResponse, "nextBefore">,
-): ThreadOlder {
-  if (older.seam === undefined) return older;
-  return newest.nextBefore === older.seam ? older : threadOlderEmpty;
-}
-
-/**
- * The cursor an older page is asked for with, and nothing where there is none
- * to ask for or the page already holds what it will hold. A walk that has
- * gathered nothing asks from the newest read's own cursor, and one that has
- * follows its own — the seam says which, because a page answered with a cursor
- * and no turns has still moved the walk.
- */
-export function threadOlderAsked(
-  older: ThreadOlder,
-  newest: Pick<ThreadResponse, "turns" | "nextBefore">,
-): number | undefined {
-  if (threadTurnsDrawn(older, newest).length >= threadTurnsHeldMax)
-    return undefined;
-  return older.seam === undefined ? newest.nextBefore : older.before;
-}
-
-/** Every turn the page holds, each once, oldest first, and a turn in both
- * pages as the later read has it. */
-export function threadTurnsDrawn(
-  older: ThreadOlder,
-  newest: Pick<ThreadResponse, "turns">,
-): readonly ThreadTurnResponse[] {
-  const held = new Map<string, ThreadTurnResponse>();
-  for (const turn of [...older.turns, ...newest.turns])
-    held.set(turn.turn, turn);
-  return [...held.values()];
 }
 
 /** Where one press of `Send` got to. */
