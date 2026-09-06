@@ -8,35 +8,6 @@
     min-width: 0;
   }
 
-  .lead-head {
-    display: grid;
-    gap: var(--space-2);
-  }
-
-  .lead-title {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--space-4);
-  }
-
-  .lead-session {
-    color: var(--ink-3);
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: var(--measure);
-  }
-
-  .lead-state {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3);
-  }
-
   .lead-note {
     color: var(--ink-3);
   }
