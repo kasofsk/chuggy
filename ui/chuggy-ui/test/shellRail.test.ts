@@ -1,0 +1,122 @@
+/** The rail's sections, derived with no renderer. */
+
+import { expect, test } from "vitest";
+
+import type { PartitionIdentity } from "../../../src/contract/http.ts";
+import { threadsAnsweredMax } from "../../../src/contract/http.ts";
+import type { ThreadEntryResponse } from "../../../src/contract/responses.ts";
+import { railRoutes, shellRailSections } from "../app/core/shellRail.ts";
+import type { RailEntry } from "../app/core/shellRail.ts";
+
+const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
+
+function thread(entry: Partial<ThreadEntryResponse>): ThreadEntryResponse {
+  return {
+    session: "s-one",
+    owner: "owner-one",
+    state: "Open",
+    mine: false,
+    turns: 1,
+    ...entry,
+  };
+}
+
+function conversations(
+  input: Parameters<typeof shellRailSections>[0],
+): readonly RailEntry[] {
+  const section = shellRailSections(input).find(
+    (held) => held.id === "conversations",
+  );
+  return section === undefined ? [] : section.entries;
+}
+
+test("a listing that has not answered draws the lead and nothing else", () => {
+  expect(
+    conversations({ partition: atlas, threads: undefined }).map(
+      (entry) => entry.label,
+    ),
+  ).toEqual(["Lead"]);
+});
+
+test("an answered listing with no thread of the reader's offers a new one", () => {
+  expect(
+    conversations({ partition: atlas, threads: [] }).map((entry) => entry.id),
+  ).toEqual(["lead", "thread-new"]);
+});
+
+test("the reader's own thread is labelled, first, and withholds the offer", () => {
+  const entries = conversations({
+    partition: atlas,
+    threads: [
+      thread({ session: "s-two" }),
+      thread({ session: "s-mine", mine: true }),
+    ],
+  });
+  expect(entries.map((entry) => entry.label)).toEqual([
+    "Lead",
+    "Your thread",
+    "owner-one",
+  ]);
+  expect(entries[1]?.mine).toBe(true);
+});
+
+test("a thread whose owner is gone is labelled by its session", () => {
+  const entries = conversations({
+    partition: atlas,
+    threads: [
+      thread({ session: "s-orphan", owner: undefined, state: "Orphaned" }),
+    ],
+  });
+  expect(entries[1]?.label).toBe("s-orphan");
+  expect(entries[1]?.standing).toEqual({ word: "Orphaned", tone: "parked" });
+});
+
+test("a thread entry carries its session in the params its route needs", () => {
+  const entries = conversations({
+    partition: atlas,
+    threads: [thread({ session: "s-two" })],
+  });
+  expect(entries[1]?.to).toBe(railRoutes.thread);
+  expect(entries[1]?.params).toEqual({
+    tenant: "acme",
+    project: "atlas",
+    session: "s-two",
+  });
+});
+
+test("the lead carries the standing it was handed and the inbox its count", () => {
+  const sections = shellRailSections({
+    partition: atlas,
+    threads: [],
+    leadStanding: { word: "Closed", tone: "retired" },
+    inboxCount: "3",
+  });
+  expect(sections[0]?.entries[0]?.standing).toEqual({
+    word: "Closed",
+    tone: "retired",
+  });
+  const project = sections.find((section) => section.id === "project");
+  expect(project?.entries.map((entry) => entry.label)).toEqual([
+    "Overview",
+    "Inbox",
+    "Selector",
+    "New ticket",
+  ]);
+  expect(project?.entries[1]?.count).toBe("3");
+});
+
+test("the conversations heading links to the full listing", () => {
+  const sections = shellRailSections({ partition: atlas, threads: undefined });
+  expect(sections[0]?.to).toBe(railRoutes.threads);
+  expect(sections[1]?.to).toBeUndefined();
+});
+
+test("the rail holds no more threads than the listing may answer", () => {
+  const many = Array.from({ length: threadsAnsweredMax * 2 }, (_unused, at) =>
+    thread({ session: `s-${String(at)}` }),
+  );
+  const entries = conversations({ partition: atlas, threads: many });
+  expect(entries.filter((entry) => entry.mine === false).length).toBe(
+    threadsAnsweredMax,
+  );
+});
