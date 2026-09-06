@@ -385,6 +385,7 @@ function conversationCappedMarker(
 function conversationOpened(
   builder: ConversationBuilder,
   id: string,
+  standing: ConversationStanding = { standing: "Open" },
 ): ConversationBuilt {
   const built: ConversationBuilt = {
     id,
@@ -392,7 +393,7 @@ function conversationOpened(
     ask: undefined,
     work: [],
     answer: undefined,
-    standing: { standing: "Open" },
+    standing,
     measures: undefined,
     before: builder.pending,
     matched: false,
@@ -603,18 +604,6 @@ function conversationOverlaid(
   }
 }
 
-/** Whether a built exchange carries nothing a conversation would: no ask, no
- * work, no answer and no measures. Only the trailing exchange opened to carry
- * markers nothing follows is ever this empty. */
-function conversationBuiltEmpty(built: ConversationBuilt): boolean {
-  return (
-    built.ask === undefined &&
-    built.work.length === 0 &&
-    built.answer === undefined &&
-    built.measures === undefined
-  );
-}
-
 function conversationDrawn(built: ConversationBuilt): ConversationExchange {
   const before =
     built.stepsCut === 0
@@ -627,8 +616,8 @@ function conversationDrawn(built: ConversationBuilt): ConversationExchange {
     ...(built.answer === undefined ? {} : { answer: built.answer }),
     standing: built.matched
       ? built.standing
-      : conversationBuiltEmpty(built)
-        ? { standing: "Markers" }
+      : built.standing.standing === "Markers"
+        ? built.standing
         : built.answer === undefined
           ? { standing: "Open" }
           : { standing: "Answered" },
@@ -662,7 +651,9 @@ export function conversationExchanges(
   }
   if (turns !== undefined) conversationOverlaid(builder, turns);
   if (builder.pending.length > 0)
-    conversationOpened(builder, conversationTrailingId);
+    conversationOpened(builder, conversationTrailingId, {
+      standing: "Markers",
+    });
   const first = builder.built[0];
   if (first !== undefined && builder.exchangesCut > 0)
     first.before.unshift(

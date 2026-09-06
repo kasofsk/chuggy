@@ -304,6 +304,16 @@ describe("markers", () => {
     expect(exchanges[1]?.standing).toEqual({ standing: "Markers" });
   });
 
+  test("an entry with no readable blocks still opens an exchange, and only the trailing carrier stands as markers", () => {
+    const exchanges = conversationExchanges([
+      entryOf("u1", "User", []),
+      { item: "Marker", marker: { marker: "Truncated" } },
+    ]);
+    expect(exchanges).toHaveLength(2);
+    expect(exchanges[0]?.standing).toEqual({ standing: "Open" });
+    expect(exchanges[1]?.standing).toEqual({ standing: "Markers" });
+  });
+
   test("a trailing marker set becomes the before of the first turn the overlay appends", () => {
     const exchanges = conversationExchanges(
       [askOf("u1", "before"), answerOf("a1", "done"), compaction],
