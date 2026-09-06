@@ -28,6 +28,7 @@ import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { leadRefusals } from "./leadFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -43,16 +44,7 @@ vi.mock("@tanstack/react-router", () => ({
   useParams: () => atlas,
 }));
 
-beforeEach(() => {
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    },
-  );
-});
+beforeEach(resizeObserverStubbed);
 
 /** The stubbed global goes back whatever a case did with it, including a case
  * that stops partway; the rendered tree is the testing library's own cleanup. */

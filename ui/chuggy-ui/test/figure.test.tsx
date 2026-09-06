@@ -12,17 +12,9 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Figure as FigureValue } from "../app/core/figures.ts";
 import { figureKinds } from "../app/core/figures.ts";
 import { Figure, figureBasisTitle } from "../app/browser/ui/Figure.tsx";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 
-beforeEach(() => {
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    },
-  );
-});
+beforeEach(resizeObserverStubbed);
 
 afterEach(() => {
   cleanup();

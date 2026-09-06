@@ -29,18 +29,10 @@ import {
   creationPartition,
 } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 
 /** The runner has no globals, so each case tears down the tree it rendered. */
-beforeEach(() => {
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    },
-  );
-});
+beforeEach(resizeObserverStubbed);
 
 afterEach(() => {
   cleanup();

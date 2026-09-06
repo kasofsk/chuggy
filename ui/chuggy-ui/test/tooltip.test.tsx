@@ -8,17 +8,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { Tooltip } from "../app/browser/ui/Tooltip.tsx";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 
-beforeEach(() => {
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    },
-  );
-});
+beforeEach(resizeObserverStubbed);
 
 afterEach(() => {
   cleanup();

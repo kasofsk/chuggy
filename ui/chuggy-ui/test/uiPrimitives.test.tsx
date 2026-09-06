@@ -15,17 +15,9 @@ import { EmptyState, emptyVariants } from "../app/browser/ui/EmptyState.tsx";
 import { Identity, identityForms } from "../app/browser/ui/Identity.tsx";
 import { SectionList } from "../app/browser/ui/SectionList.tsx";
 import { Table } from "../app/browser/ui/Table.tsx";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 
-beforeEach(() => {
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    },
-  );
-});
+beforeEach(resizeObserverStubbed);
 
 afterEach(() => {
   cleanup();

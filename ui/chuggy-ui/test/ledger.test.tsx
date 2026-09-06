@@ -13,6 +13,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { Figure as FigureValue, Spend } from "../app/core/figures.ts";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
   Ledger,
   LedgerBlock,
@@ -28,16 +29,7 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 
-beforeEach(() => {
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    },
-  );
-});
+beforeEach(resizeObserverStubbed);
 
 afterEach(() => {
   cleanup();
