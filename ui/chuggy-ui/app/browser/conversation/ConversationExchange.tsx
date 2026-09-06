@@ -21,7 +21,6 @@ import {
 import type {
   ConversationArgument,
   ConversationExchange,
-  ConversationMarker,
   ConversationMeasures,
   ConversationStep,
 } from "../../core/conversation.ts";
@@ -39,6 +38,10 @@ import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { QuotedText } from "../ui/QuotedText.tsx";
+import {
+  ConversationSystemLine,
+  conversationMarkerWords,
+} from "./ConversationLines.tsx";
 
 /** What one message carries of the exchange it is half of. */
 export interface ConversationCustom {
@@ -57,90 +60,25 @@ function useConversationExchange(): ConversationExchange | undefined {
   );
 }
 
-const ConversationSaid: TextMessagePartComponent = (props) => (
-  <QuotedText rail="said">{props.text}</QuotedText>
-);
+const ConversationSaid: TextMessagePartComponent = (props) => <>{props.text}</>;
 
 const ConversationReport: TextMessagePartComponent = (props) => (
   <MarkdownReport text={props.text} />
 );
 
-/** One marker in the words the lead's panels already say them in. */
-function ConversationMarkerLine(props: {
-  readonly marker: ConversationMarker;
-}): ReactNode {
-  const marker = props.marker;
-  switch (marker.marker) {
-    case "Compaction":
-      return (
-        <p className="border-edge-strong border-t pt-1">
-          <span className="eyebrow">Compaction</span>
-        </p>
-      );
-    case "Elision":
-      return (
-        <Notice
-          tone="parked"
-          inline
-          detail={`Elided · ${runCountLabel(marker.bytes)} bytes`}
-        />
-      );
-    case "Capped":
-      return <Notice tone="parked" inline detail={marker.sentence} />;
-    case "Unreadable":
-      return <Notice tone="parked" inline detail="Unreadable" />;
-    case "Failure":
-      return (
-        <Notice tone="danger" inline detail={`Failed · ${marker.reason}`} />
-      );
-    case "Truncated":
-      return <Notice tone="parked" inline detail="Truncated" />;
-    case "Dropped":
-      return (
-        <Notice
-          tone="parked"
-          inline
-          detail={`Dropped · ${runCountLabel(marker.count)}`}
-        />
-      );
-    case "Unreached":
-      return <Notice tone="parked" inline detail="Not reached" />;
-    case "Unlisted":
-      return <Notice tone="parked" inline detail="Stream unlisted" />;
-    case "NoStore":
-      return <Notice tone="parked" inline detail="No store" />;
-  }
-}
-
-function ConversationMarkers(props: {
-  readonly markers: readonly ConversationMarker[];
-}): ReactNode {
-  if (props.markers.length === 0) return null;
+/** The member's own words, on the right, as they were typed. */
+function ConversationBubble(): ReactNode {
   return (
-    <div className="grid gap-1">
-      {props.markers.map((marker, at) => (
-        <ConversationMarkerLine key={at} marker={marker} />
-      ))}
+    <div className="grid min-w-0 justify-items-end">
+      <div className="bg-bubble rounded-3 max-w-3/4 px-4 py-3 whitespace-pre-wrap">
+        <MessagePrimitive.Parts components={{ Text: ConversationSaid }} />
+      </div>
     </div>
   );
 }
 
-/** The pointer a wake, an observation or an inquiry is drawn as, which is its
- * kind and what it is about — never the document the runtime composed. */
-function ConversationPointer(props: {
-  readonly kind: string;
-  readonly resource?: string;
-}): ReactNode {
-  return (
-    <p className="flex flex-wrap items-baseline gap-2">
-      <span className="eyebrow">{props.kind}</span>
-      {props.resource === undefined ? null : (
-        <span className="num">{props.resource}</span>
-      )}
-    </p>
-  );
-}
-
+/** The ask half of one exchange: the member's bubble, or the centred line a
+ * turn the runtime opened is drawn as — never the document it composed. */
 function ConversationAskBody(props: {
   readonly exchange: ConversationExchange;
 }): ReactNode {
@@ -148,26 +86,31 @@ function ConversationAskBody(props: {
   if (ask === undefined) return null;
   switch (ask.ask) {
     case "Message":
-      return <MessagePrimitive.Parts components={{ Text: ConversationSaid }} />;
+      return <ConversationBubble />;
     case "Wake":
-      return <ConversationPointer kind={ask.wake} resource={ask.resource} />;
+      return <ConversationSystemLine words={`${ask.wake} · ${ask.resource}`} />;
     case "Document":
-      return <ConversationPointer kind={threadTurnKindWord(ask.kind)} />;
+      return <ConversationSystemLine words={threadTurnKindWord(ask.kind)} />;
     case "Observation":
-      return <ConversationPointer kind="Observation" />;
+      return <ConversationSystemLine words="Observation" />;
     case "Inquiry":
-      return <ConversationPointer kind="Inquiry" />;
+      return <ConversationSystemLine words="Inquiry" />;
   }
 }
 
-/** The ask half of one exchange, with whatever the record could not draw
- * standing above it. */
+/** The ask, with whatever the record could not draw standing above it. */
 export function ConversationAskMessage(): ReactNode {
   const exchange = useConversationExchange();
   if (exchange === undefined) return null;
   return (
-    <MessagePrimitive.Root className="border-edge grid min-w-0 gap-2 border-t pt-2">
-      <ConversationMarkers markers={exchange.before} />
+    <MessagePrimitive.Root className="grid min-w-0 gap-3">
+      {exchange.before.map((marker, at) => (
+        <ConversationSystemLine
+          key={at}
+          words={conversationMarkerWords(marker)}
+          ruled
+        />
+      ))}
       <ConversationAskBody exchange={exchange} />
     </MessagePrimitive.Root>
   );

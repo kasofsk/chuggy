@@ -163,14 +163,26 @@ test("a markers-only exchange draws its markers and no pill", () => {
   styleless();
 });
 
-test("a wake draws its pointer and never its document", () => {
+test("a wake draws one system line and never its document", () => {
   const woken = exchangeOf({
     ask: { ask: "Wake", wake: "TicketDone", resource: "ticket-44" },
     answer: "done",
   });
   render(<Conversation exchanges={[woken]} empty="No conversation" />);
-  expect(screen.getByText("TicketDone")).toBeDefined();
-  expect(screen.getByText("ticket-44")).toBeDefined();
+  expect(screen.getByText("TicketDone · ticket-44")).toBeDefined();
+  styleless();
+});
+
+test("no exchanges draws the empty title above its one sentence", () => {
+  render(
+    <Conversation
+      exchanges={[]}
+      empty="Ask for a draft"
+      emptyTitle="Your thread"
+    />,
+  );
+  expect(screen.getByRole("heading", { name: "Your thread" })).toBeDefined();
+  expect(screen.getByText("Ask for a draft")).toBeDefined();
   styleless();
 });
 
