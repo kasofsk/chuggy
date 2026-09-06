@@ -47,6 +47,12 @@
     },
     "evaluations": [
       {
+        "purpose": "Check",
+        "checks": [
+          ".chug/tasks/ci.sh"
+        ]
+      },
+      {
         "purpose": "Review",
         "instructions": [
           "Read .chug/tasks/review-change.md and review the change exactly as that brief requires."
@@ -54,12 +60,6 @@
         "practices": [
           "ChangedCallPaths",
           "AcceptanceCriteria"
-        ]
-      },
-      {
-        "purpose": "Check",
-        "checks": [
-          ".chug/tasks/ci.sh"
         ]
       }
     ]

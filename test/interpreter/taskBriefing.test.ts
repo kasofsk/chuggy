@@ -811,10 +811,19 @@ test("a released revision's agentic Check stage still parses beside this tree's 
   };
   const parsed = authoredTaskConfigurationReadiness({
     ...configuration,
-    evaluations: [...configuration.evaluations.slice(0, -1), released],
+    evaluations: configuration.evaluations.map((block) =>
+      typeof block === "object" && block !== null && "checks" in block
+        ? released
+        : block,
+    ),
   });
   if (parsed.readiness !== "Ready") assert.fail(parsed.fault);
-  assert.deepEqual(parsed.configuration.evaluations?.at(-1), released);
+  assert.deepEqual(
+    parsed.configuration.evaluations?.filter(
+      (block) => block.purpose === "Check",
+    ),
+    [released],
+  );
 });
 
 test("a narrowing a commanded stage cannot honour is refused, never dropped", () => {
@@ -1032,7 +1041,7 @@ test("the provenance says how many of a stage's command lines the ticket added",
   );
 });
 
-test("this tree's own configurations name a check stage the worker runs itself", () => {
+test("this tree's own configurations run their commanded check stage before any agent judges", () => {
   for (const name of ["chuggy-development", "basic-coding"]) {
     const document: unknown = JSON.parse(
       readFileSync(`.chug/configurations/${name}.json`, "utf8"),
@@ -1041,10 +1050,11 @@ test("this tree's own configurations name a check stage the worker runs itself",
       (document as { readonly configuration: unknown }).configuration,
     );
     if (parsed.readiness !== "Ready") assert.fail(`${name}: ${parsed.fault}`);
-    assert.deepEqual(parsed.configuration.evaluations?.at(-1), {
-      purpose: "Check",
-      checks: [".chug/tasks/ci.sh"],
-    });
+    assert.deepEqual(
+      parsed.configuration.evaluations?.at(0),
+      { purpose: "Check", checks: [".chug/tasks/ci.sh"] },
+      `${name}: the shell gate is the first stage, so a model never reviews a change the gates refuse`,
+    );
   }
 });
 
