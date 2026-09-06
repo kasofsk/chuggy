@@ -194,6 +194,22 @@ test("a task carrying commands runs them and never reaches for an agent", async 
   assert.equal(run.result.summary, "exit 2 exited 2");
 });
 
+test("a check stage's report is scrubbed with the context's own scrub before it is measured", async () => {
+  const context = {
+    directory: process.cwd(),
+    scrub: credentialScrub([secret]),
+    get agent() {
+      throw new Error("the agent was consulted for a check stage");
+    },
+  };
+
+  const run = await runWorkerTask(context, [`echo ${secret}; exit 1`]);
+
+  assert.equal(run.result.verdict, "Fail");
+  assert.ok(!run.result.summary.includes(secret), run.result.summary);
+  assert.ok(run.result.summary.includes("[redacted credential]"));
+});
+
 test("a check stage's captured output is the run's own diagnostic artifact", async () => {
   const { calls, request } = planeCalls();
 

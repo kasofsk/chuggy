@@ -69,6 +69,7 @@ export type BriefingSectionId =
   | "TicketLinks"
   | "WhyItMatters"
   | "AcceptanceAndConstraints"
+  | "PriorEvaluationReports"
   | "PriorWorkReports"
   | "PurposeInstructions"
   | "CheckCommands"
@@ -83,6 +84,7 @@ export const briefingSectionOrder: readonly BriefingSectionId[] = [
   "TicketLinks",
   "WhyItMatters",
   "AcceptanceAndConstraints",
+  "PriorEvaluationReports",
   "PriorWorkReports",
   "PurposeInstructions",
   "CheckCommands",
@@ -98,7 +100,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 4;
+export const briefingTemplateVersion = 5;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -117,6 +119,8 @@ export function briefingHeading(
       return "Why this ticket matters";
     case "AcceptanceAndConstraints":
       return "Acceptance criteria and constraints";
+    case "PriorEvaluationReports":
+      return "What the last evaluation found";
     case "PriorWorkReports":
       return "Reports from the work tasks";
     case "PurposeInstructions":
@@ -146,7 +150,17 @@ export const briefingLabels = {
   changedFiles: "Changed files:",
   handoff: "Handoff from the earlier task:",
   workReports: "Worker reports:",
+  evaluationReports: "Evaluation reports:",
 } as const;
+
+/**
+ * What a work task is told before the failed reports of the evaluation before
+ * it, which is the only way a task learns that an earlier change was judged.
+ */
+export const briefingReworkPreface: readonly string[] = [
+  "Evaluators of an earlier change made for this ticket reported the findings below.",
+  "Address what the reports name before anything else; where a report names a command, run it before you report.",
+];
 
 /** What a commanded stage is, stated rather than addressed to anyone. */
 const briefingCommandedRole: readonly string[] = [

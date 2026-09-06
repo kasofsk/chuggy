@@ -113,6 +113,8 @@ import {
   type PinnedConfigurationPort,
   type PinnedTaskConfiguration,
   type PracticeCatalog,
+  type PriorEvaluationReports,
+  type PriorEvaluationReportsPort,
   type PriorWorkReports,
   type PriorWorkReportsPort,
   type RuntimeFacts,
@@ -132,6 +134,7 @@ export interface ExecutionSchedulerService {
   readonly configurations: PinnedConfigurationPort;
   readonly runtimeFacts: RuntimeFactsPort;
   readonly priorWorkReports: PriorWorkReportsPort;
+  readonly priorEvaluationReports: PriorEvaluationReportsPort;
   readonly ticketBriefs: TicketBriefPort;
   readonly practices: PracticeCatalog;
   readonly config: ExecutionSchedulerConfig;
@@ -459,6 +462,28 @@ async function schedulerPriorWorkReports(
   }
 }
 
+/**
+ * Reads the reports of the failed evaluation a work task follows. Only a work
+ * task renders them, so no other kind is asked; an evaluation or a first
+ * attempt is briefed with none.
+ */
+async function schedulerPriorEvaluationReports(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+): Promise<PriorEvaluationReports | BriefingUnready> {
+  if (execution.taskKind !== "Work") return { reports: [] };
+  const read = await service.priorEvaluationReports.reports(
+    execution.partition,
+    execution.execution,
+  );
+  switch (read.read) {
+    case "Reports":
+      return read.reports;
+    case "Unavailable":
+      return { gathered: "Unavailable" };
+  }
+}
+
 /** What a placement needs before it may be asked for: the profile, and the composed invocation. */
 interface TaskLaunch {
   readonly profile: ExecutionProfile;
@@ -500,6 +525,14 @@ async function schedulerPrepare(
     await schedulerUnready(service, execution, attempt, priorWorkReports);
     return undefined;
   }
+  const priorEvaluationReports = await schedulerPriorEvaluationReports(
+    service,
+    execution,
+  );
+  if ("gathered" in priorEvaluationReports) {
+    await schedulerUnready(service, execution, attempt, priorEvaluationReports);
+    return undefined;
+  }
   const brief = await service.ticketBriefs.brief(
     execution.partition,
     execution.ticket,
@@ -511,6 +544,7 @@ async function schedulerPrepare(
     configuration,
     runtime,
     priorWorkReports,
+    priorEvaluationReports,
     ...(brief === undefined ? {} : { brief }),
     grant: policy.grant,
   });

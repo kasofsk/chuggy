@@ -2,8 +2,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type pg from "pg";
 
-import { postgresPriorWorkReports } from "../../src/adapters/postgres/evaluationReports.ts";
+import {
+  postgresPriorEvaluationReports,
+  postgresPriorWorkReports,
+} from "../../src/adapters/postgres/evaluationReports.ts";
 import { asExecutionId } from "../../src/interpreter/executionScheduler.ts";
+import {
+  priorEvaluationReportsMax,
+  priorWorkReportsMax,
+} from "../../src/interpreter/taskBriefing.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 
 const partition = {
@@ -42,4 +49,60 @@ test("a read the database refuses is unavailable rather than a throw", async () 
     ),
     { read: "Unavailable" },
   );
+});
+
+test("the failed rows of the evaluation a rework follows are its reports in their order", async () => {
+  const pool = {
+    query: () =>
+      Promise.resolve({
+        rows: [{ report: "ci.sh exited 1" }, { report: "CHANGES at a.ts:1" }],
+      }),
+  } as unknown as pg.Pool;
+  assert.deepEqual(
+    await postgresPriorEvaluationReports(pool).reports(
+      partition,
+      asExecutionId("rework"),
+    ),
+    {
+      read: "Reports",
+      reports: { reports: ["ci.sh exited 1", "CHANGES at a.ts:1"] },
+    },
+  );
+});
+
+test("an evaluation read the database refuses is unavailable rather than a throw", async () => {
+  const refused = Object.assign(
+    new Error("permission denied for table execution_result_report"),
+    { code: "42501" },
+  );
+  const pool = {
+    query: () => Promise.reject(refused),
+  } as unknown as pg.Pool;
+  assert.deepEqual(
+    await postgresPriorEvaluationReports(pool).reports(
+      partition,
+      asExecutionId("rework"),
+    ),
+    { read: "Unavailable" },
+  );
+});
+
+test("a list past its bound is answered as read, for composition to refuse rather than a throw", async () => {
+  for (const [port, bound] of [
+    [postgresPriorWorkReports, priorWorkReportsMax],
+    [postgresPriorEvaluationReports, priorEvaluationReportsMax],
+  ] as const) {
+    const rows = Array.from({ length: bound + 1 }, (_unused, at) => ({
+      report: `report ${String(at)}`,
+    }));
+    const pool = {
+      query: () => Promise.resolve({ rows }),
+    } as unknown as pg.Pool;
+    const read = await port(pool).reports(partition, asExecutionId("task"));
+    assert.equal(read.read, "Reports");
+    assert.equal(
+      read.read === "Reports" ? read.reports.reports.length : 0,
+      bound + 1,
+    );
+  }
 });

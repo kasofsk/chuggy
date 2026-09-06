@@ -140,6 +140,7 @@ import {
   briefingHeading,
   briefingLabels,
   briefingRequiredResult,
+  briefingReworkPreface,
   briefingRoleInstructions,
   briefingSectionOrder,
   briefingTemplateVersion,
@@ -235,6 +236,23 @@ export interface PriorWorkReports {
   readonly reports: readonly string[];
 }
 
+/** The bounded reports of the failed executions of the evaluation a work task follows. */
+export interface PriorEvaluationReports {
+  readonly reports: readonly string[];
+}
+
+/** What reading the failed evaluation's reports found, an outage kept apart from a first attempt. */
+export type PriorEvaluationReportsRead =
+  | { readonly read: "Reports"; readonly reports: PriorEvaluationReports }
+  | { readonly read: "Unavailable" };
+
+export interface PriorEvaluationReportsPort {
+  reports(
+    partition: Partition,
+    execution: ExecutionId,
+  ): Promise<PriorEvaluationReportsRead>;
+}
+
 /** What reading the pinned work reports found, an outage kept apart from no prior work. */
 export type PriorWorkReportsRead =
   | { readonly read: "Reports"; readonly reports: PriorWorkReports }
@@ -247,8 +265,11 @@ export interface PriorWorkReportsPort {
   ): Promise<PriorWorkReportsRead>;
 }
 
-/** Work fanout is bounded to this many reports by the release contract. */
+/** The most work reports a review is briefed with; a fanout past it is refused, not truncated. */
 export const priorWorkReportsMax = 8;
+
+/** The most failed evaluation reports a work task is briefed with, refused past it the same way. */
+export const priorEvaluationReportsMax = priorWorkReportsMax;
 
 /** The most changed files a runtime context may name before it stops being context. */
 export const runtimeChangedFilesMax = 64;
@@ -425,6 +446,7 @@ export interface BriefingView {
   readonly configuration: PinnedTaskConfiguration;
   readonly runtime: RuntimeFacts;
   readonly priorWorkReports: PriorWorkReports;
+  readonly priorEvaluationReports: PriorEvaluationReports;
   readonly brief?: DraftBrief;
   readonly grant: PolicyAuthorityGrant;
 }
@@ -542,13 +564,13 @@ function briefingReportFault(report: string): BriefingFault | undefined {
   return undefined;
 }
 
-/** What the reports gathered for a review have to be, which is bounded and made of renderable reports. */
+/** What a gathered list of reports has to be, which is bounded and made of renderable reports. */
 function briefingReportsFault(
-  priorWorkReports: PriorWorkReports,
+  reports: readonly string[],
+  reportsMax: number,
 ): BriefingFault | undefined {
-  if (priorWorkReports.reports.length > priorWorkReportsMax)
-    return "TooManyLines";
-  for (const report of priorWorkReports.reports) {
+  if (reports.length > reportsMax) return "TooManyLines";
+  for (const report of reports) {
     const fault = briefingReportFault(report);
     if (fault !== undefined) return fault;
   }
@@ -579,6 +601,17 @@ function briefingLabelled(
   lines: readonly string[],
 ): readonly string[] {
   return lines.length === 0 ? [] : [label, ...lines.map(briefingBullet)];
+}
+
+/** The evaluators' failed reports as a work task reads them, prefaced by what they mean. */
+function briefingEvaluationReportLines(
+  priorEvaluationReports: PriorEvaluationReports,
+): readonly string[] {
+  const labelled = briefingLabelled(
+    briefingLabels.evaluationReports,
+    priorEvaluationReports.reports,
+  );
+  return labelled.length === 0 ? [] : [...briefingReworkPreface, ...labelled];
 }
 
 /** The acceptance criteria and the constraints, each labelled and each free to be absent. */
@@ -619,6 +652,10 @@ function briefingBodies(
       view.brief === undefined ? [] : view.brief.links.map(briefingBullet),
     WhyItMatters: view.configuration.brief.motivation,
     AcceptanceAndConstraints: briefingCriteriaLines(view.configuration.brief),
+    PriorEvaluationReports:
+      view.purpose === "Work"
+        ? briefingEvaluationReportLines(view.priorEvaluationReports)
+        : [],
     PriorWorkReports:
       view.purpose === "Review"
         ? briefingLabelled(
@@ -838,7 +875,11 @@ export function composeTaskInvocation(
   const fault =
     briefingConfigurationFault(view) ??
     briefingRuntimeFault(view.runtime) ??
-    briefingReportsFault(view.priorWorkReports) ??
+    briefingReportsFault(view.priorWorkReports.reports, priorWorkReportsMax) ??
+    briefingReportsFault(
+      view.priorEvaluationReports.reports,
+      priorEvaluationReportsMax,
+    ) ??
     briefingTicketBriefFault(view.brief);
   if (fault !== undefined) return { composed: "Blocked", fault };
   const resolved = resolvePractices(

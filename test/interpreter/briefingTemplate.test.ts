@@ -19,6 +19,7 @@ import {
   briefingHeading,
   briefingLabels,
   briefingRequiredResult,
+  briefingReworkPreface,
   briefingRoleInstructions,
   briefingSectionOrder,
   briefingTemplateSections,
@@ -30,6 +31,7 @@ function templateWording(): readonly string[] {
   const wording: string[] = [
     ...briefingSectionOrder,
     ...briefingTemplateSections,
+    ...briefingReworkPreface,
   ];
   for (const [label, text] of Object.entries(briefingLabels).sort()) {
     wording.push(label, text);
@@ -61,7 +63,7 @@ function templateDigest(): string {
 test("the template version moves with the wording it names", () => {
   assert.deepEqual(
     [briefingTemplateVersion, templateDigest()],
-    [4, "e09439604a55846ee74f5508b07a5fa00cdabeef67707721040124ef515cf0bc"],
+    [5, "cb2f1c91ac2ef9d5ba24113040fd1f774a297c67462785b251573297fcea99cd"],
     "the template wording changed: move briefingTemplateVersion and repin this digest",
   );
 });
@@ -84,7 +86,10 @@ test("the digest reads every string the template states", () => {
       }
     }
   }
-  for (const text of Object.values(briefingLabels)) {
+  for (const text of [
+    ...Object.values(briefingLabels),
+    ...briefingReworkPreface,
+  ]) {
     assert.ok(wording.includes(text), `${text} is outside the pin`);
   }
 });

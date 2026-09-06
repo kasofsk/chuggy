@@ -136,6 +136,87 @@ test("a command killed by a signal stops the stage like any other failure", asyn
   );
 });
 
+test("a failed stage's report ends with what the failing command wrote", async () => {
+  const command = "printf 'format FAILED\\n  [warn] a.tsx\\n'; exit 1";
+  const { result } = await ran([command]);
+
+  assert.equal(
+    result.summary,
+    `${command} exited 1; last output of ${command}: format FAILED [warn] a.tsx`,
+  );
+});
+
+test("a passing stage's report carries no output", async () => {
+  const { result } = await ran(["printf chatter"]);
+
+  assert.equal(result.summary, "printf chatter exited 0");
+});
+
+test("the excerpt is one printable line: escapes and control characters become spaces", async () => {
+  const command = "printf 'a\\nb\\033[31mc\\033[0m\\td'; exit 1";
+  const { result } = await ran([command]);
+
+  assert.ok(result.summary.endsWith(": a b c d"), result.summary);
+  assert.equal(/\p{Cc}/u.test(result.summary), false);
+});
+
+test("the excerpt fills the report's room and keeps the end of the output", async () => {
+  const command = `yes chatter | head -c ${String(workerCheckReportCharsMax * 2)}; printf END; exit 1`;
+  const { result } = await ran([command]);
+
+  assert.equal(result.summary.length, workerCheckReportCharsMax);
+  assert.ok(result.summary.endsWith("chatter END"), result.summary.slice(-40));
+  assert.ok(result.summary.startsWith(`${command} exited 1; last output of `));
+});
+
+test("an excerpt of a truncated capture says so", async () => {
+  const command = `${chatty}; exit 1`;
+  const { result, output } = await ran([command]);
+
+  assert.equal(output.checks[0].truncated, true);
+  assert.ok(
+    result.summary.includes(`last output of ${command} (capture truncated): `),
+    result.summary.slice(0, 200),
+  );
+  assert.equal(result.summary.length, workerCheckReportCharsMax);
+});
+
+test("the report is scrubbed before it is measured, so the entrypoint's scrub cannot lengthen it", async () => {
+  const secret = "hunter2-hunter2-hunter2-hunter2";
+  const scrub = credentialScrub([secret]);
+  const command = `yes ${secret} | head -c ${String(workerCheckReportCharsMax * 2)}; exit 1`;
+  const { result } = await ran([command], { scrub });
+
+  assert.equal(result.summary.includes(secret), false);
+  assert.ok(result.summary.includes("[redacted credential]"));
+  assert.equal(result.summary.length, workerCheckReportCharsMax);
+  assert.equal(scrub(result.summary), result.summary);
+  assert.ok(result.summary.length <= resultReportCharsMax);
+});
+
+test("a cut through astral output lands on a code point, so the report is well formed", async () => {
+  const wide = "\u{1F600}";
+  const excerpt = `printf '%s' "$(yes ${wide} | head -c ${String(workerCheckReportCharsMax * 8)})"; exit 1`;
+  const status = `: ${wide.repeat(workerCheckReportCharsMax)}; exit 1`;
+  for (const command of [excerpt, status]) {
+    const { result } = await ran([command]);
+
+    assert.ok(result.summary.isWellFormed(), command.slice(0, 40));
+    assert.ok(result.summary.length <= workerCheckReportCharsMax);
+    assert.ok(result.summary.length >= workerCheckReportCharsMax - 1);
+    assert.equal(/\p{Cc}/u.test(result.summary), false);
+  }
+});
+
+test("a stage whose status lines fill the report carries no excerpt", async () => {
+  const command = `printf out; : ${"x".repeat(workerCheckReportCharsMax)}; exit 1`;
+  const { result, output } = await ran([command]);
+
+  assert.equal(output.checks[0].output, "out");
+  assert.equal(result.summary.length, workerCheckReportCharsMax);
+  assert.equal(result.summary.includes("last output of"), false);
+});
+
 test("both streams are captured and a chatty command is bounded", async () => {
   const { output } = await ran(["printf out; printf err >&2", chatty]);
 

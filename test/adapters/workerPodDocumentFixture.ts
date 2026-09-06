@@ -46,6 +46,7 @@ function goldenInvocation(): AttemptPlacement["invocation"] {
     configuration: pinnedConfiguration,
     runtime: { changedFiles: [], handoff: [] },
     priorWorkReports: { reports: [] },
+    priorEvaluationReports: { reports: [] },
     grant: {
       tools: ["editor"],
       credentials: ["forge", "workspace"],

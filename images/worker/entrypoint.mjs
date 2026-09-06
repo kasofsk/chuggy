@@ -283,7 +283,9 @@ async function admitWorkerTask(task, agent) {
 /** What ran and what it found: one agent's result, or one check stage's. */
 export async function runWorkerTask(context, commands) {
   if (commands === undefined) return runAgent(context);
-  const run = await runChecks({ directory: context.directory }, commands);
+  const run = await runChecks({ directory: context.directory }, commands, {
+    scrub: context.scrub,
+  });
   return { ...run, diagnosticPath: checkDiagnosticPath };
 }
 

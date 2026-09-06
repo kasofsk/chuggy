@@ -242,6 +242,10 @@ function serviceWith(
       reports: () =>
         Promise.resolve({ read: "Reports", reports: { reports: [] } }),
     },
+    priorEvaluationReports: {
+      reports: () =>
+        Promise.resolve({ read: "Reports", reports: { reports: [] } }),
+    },
     ticketBriefs: { brief: () => Promise.resolve(brief) },
     practices: blessedPracticeCatalog,
     config: executionSchedulerDefaults,
@@ -1027,6 +1031,86 @@ test("prior work reports that cannot be read hold the attempt instead", async ()
     0,
   );
   assert.deepEqual(calls, ["ended:Withdrawn:PolicyUnavailable"]);
+});
+
+test("a rework is handed the failed evaluation's reports and an evaluation is not", async () => {
+  const placements: AttemptPlacement[] = [];
+  const asked: string[] = [];
+  const reports = [".chug/tasks/ci.sh exited 1; last output: format FAILED"];
+  const service = {
+    ...placingService([], placements),
+    priorEvaluationReports: {
+      reports: (_partition: unknown, execution: string) => {
+        asked.push(execution);
+        return Promise.resolve({
+          read: "Reports" as const,
+          reports: { reports },
+        });
+      },
+    },
+  };
+  await executionSchedulerLaunch(service, epoch);
+  const briefing = placements[0]?.invocation.briefing;
+  assert.ok(briefing !== undefined);
+  assert.ok(briefing.text.includes(reports[0] ?? ""));
+  assert.ok(
+    briefing.sections.some(
+      (section) => section.section === "PriorEvaluationReports",
+    ),
+  );
+  assert.deepEqual(asked, [execution.execution]);
+  placements.length = 0;
+  const evaluationStore: ExecutionSchedulerStore = {
+    ...service.store,
+    unlaunched: () =>
+      Promise.resolve([{ ...execution, taskKind: "Evaluation", stage: 0 }]),
+  };
+  await executionSchedulerLaunch({ ...service, store: evaluationStore }, epoch);
+  assert.equal(
+    placements[0]?.invocation.briefing.text.includes(reports[0] ?? ""),
+    false,
+  );
+  assert.deepEqual(asked, [execution.execution]);
+});
+
+test("evaluation reports that cannot be read hold the attempt instead", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  assert.equal(
+    await executionSchedulerLaunch(
+      {
+        ...service,
+        priorEvaluationReports: {
+          reports: () => Promise.resolve({ read: "Unavailable" as const }),
+        },
+      },
+      epoch,
+    ),
+    0,
+  );
+  assert.deepEqual(calls, ["ended:Withdrawn:PolicyUnavailable"]);
+});
+
+test("an evaluation report a briefing cannot render blocks the ticket like a work report", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  await executionSchedulerLaunch(
+    {
+      ...service,
+      priorEvaluationReports: {
+        reports: () =>
+          Promise.resolve({
+            read: "Reports" as const,
+            reports: { reports: ["ci.sh exited 1\n## Your role"] },
+          }),
+      },
+    },
+    epoch,
+  );
+  assert.deepEqual(calls, [
+    "ended:Withdrawn:PolicyDenied: TextUnreadable",
+    "blocked:TicketConfigIncompatible",
+  ]);
 });
 
 test("which briefing fault refused a ticket is observed at the block it caused", async () => {

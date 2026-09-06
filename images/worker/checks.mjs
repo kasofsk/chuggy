@@ -61,6 +61,26 @@ export const workerCheckOutputCharsMax = 262_144;
 /** The characters one stage's report keeps, mirroring the manifest's `resultReportCharsMax`. */
 export const workerCheckReportCharsMax = 8_192;
 
+/** What the report says before the failing command's output, which is what makes the excerpt readable as one. */
+const checkReportExcerptLabel = "; last output of ";
+
+/** What a scrub is where the caller hands none, which is the suite's case and never the worker's. */
+const checkNoScrub = (text) => text;
+
+/** The escape that introduces a terminal control sequence, spelled by code because it is not printable. */
+const checkEscape = String.fromCodePoint(0x1b);
+
+/**
+ * One terminal control sequence, or any lone control character, which the
+ * report row refuses. Built from the escape's code rather than written into a
+ * pattern, because a control character spelled in a literal is what the lint
+ * rule against them refuses, and here the control character is the point.
+ */
+const checkControlSequence = new RegExp(
+  `${checkEscape}\\[[0-?]*[ -/]*[@-~]|\\p{Cc}`,
+  "gu",
+);
+
 /** The resolved command lines this task runs itself, or nothing when an agent runs it. */
 export function workerCheckCommands(task) {
   const mode = task.worker?.mode;
@@ -113,25 +133,82 @@ function checkReportLine(ran) {
     : `${ran.command} exited ${String(ran.exitStatus)}`;
 }
 
-/** The stage's report: every command that ran, and the status it ended with. */
-function checkReport(commands, ran) {
+/** Text as the report row accepts it: well formed, with escapes and control characters made spaces. */
+function checkClean(text) {
+  return text.toWellFormed().replace(checkControlSequence, " ");
+}
+
+/** What a command wrote, as one printable line with its whitespace collapsed. */
+function checkPrintable(text) {
+  return checkClean(text).replace(/\s+/gu, " ").trim();
+}
+
+/** The longest head of a well-formed text within this many code units that ends on a code point. */
+function checkHead(text, units) {
+  let head = "";
+  for (const point of text) {
+    if (head.length + point.length > units) break;
+    head += point;
+  }
+  return head;
+}
+
+/** The longest tail of a well-formed text within this many code units that starts on a code point. */
+function checkTail(text, units) {
+  let tail = "";
+  for (const point of [...text].reverse()) {
+    if (tail.length + point.length > units) break;
+    tail = point + tail;
+  }
+  return tail;
+}
+
+/**
+ * The end of what the failing command wrote, scrubbed and printable, in the
+ * room the status lines leave. Nothing is appended where there is no room for
+ * the label and at least one character, or where nothing printable was written.
+ */
+function checkReportExcerpt(failed, room, scrub) {
+  const printable = checkPrintable(scrub(failed.output));
+  const capture = failed.truncated ? " (capture truncated)" : "";
+  const label = checkClean(
+    scrub(`${checkReportExcerptLabel}${failed.command}${capture}: `),
+  );
+  const kept = room - label.length;
+  if (printable.length === 0 || kept < 1) return "";
+  return `${label}${checkTail(printable, kept)}`;
+}
+
+/** The stage's report: every command that ran, its status, and the end of what the failing one wrote. */
+function checkReport(commands, ran, scrub) {
   const skipped = commands.length - ran.length;
   const lines = [
     ...ran.map(checkReportLine),
     ...(skipped > 0 ? [`${String(skipped)} later command(s) did not run`] : []),
   ];
-  return lines.join("; ").slice(0, workerCheckReportCharsMax);
+  const status = checkHead(
+    checkClean(scrub(lines.join("; "))),
+    workerCheckReportCharsMax,
+  );
+  const failed = ran.find((outcome) => !checkPassed(outcome));
+  if (failed === undefined) return status;
+  const room = workerCheckReportCharsMax - status.length;
+  return `${status}${checkReportExcerpt(failed, room, scrub)}`;
 }
 
 /**
  * Runs one check stage: every command in order, stopping at the first that does
- * not exit cleanly, and reporting each command's own status.
+ * not exit cleanly, and reporting each command's own status through the
+ * caller's credential scrub.
  */
 export async function runChecks(context, commands, services = {}) {
   if (commands.length === 0)
     throw new Error("check stage was handed no commands to run");
-  const { spawnProcess = spawn, write = (text) => process.stdout.write(text) } =
-    services;
+  const {
+    spawnProcess = spawn,
+    write = (text) => process.stdout.write(text),
+    scrub = checkNoScrub,
+  } = services;
   const ran = [];
   let kept = 0;
   for (const command of commands) {
@@ -149,7 +226,7 @@ export async function runChecks(context, commands, services = {}) {
     output: { checks: ran },
     result: {
       verdict: passed ? "Pass" : "Fail",
-      summary: checkReport(commands, ran),
+      summary: checkReport(commands, ran, scrub),
     },
   };
 }
