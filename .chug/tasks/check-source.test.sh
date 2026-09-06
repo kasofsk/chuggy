@@ -388,6 +388,46 @@ check "a query on an unnamed handle is a finding" 1 "$RC" "one on another handle
 # "a clean tree passes every stage" pins that the exemption exists and the case
 # above pins its width.
 
+# A *CharsMax bound is a count of code points, so a comparison against
+# `.length` is a finding on either side of the operator, and the same
+# comparison through `textCodePointsCount` is not. Placed in src/interpreter/
+# rather than src/domain/, whose own rule refuses any relative import leaving
+# it and would otherwise fail this fixture for an unrelated reason.
+fixture
+clean_source
+mkdir -p "$R/src/interpreter"
+{
+	printf '%s\n' 'const fooCharsMax = 4;'
+	printf '%s\n' 'export function tooLong(value: string): boolean {'
+	printf '%s\n' '  return value.length > fooCharsMax;'
+	printf '%s\n' '}'
+	printf '%s\n' 'export function tooLongReversed(value: string): boolean {'
+	printf '%s\n' '  return fooCharsMax < value.length;'
+	printf '%s\n' '}'
+} > "$R/src/interpreter/charsMax.ts"
+seal
+check "a *CharsMax bound compared to .length is a finding" 1 "$RC" "compare textCodePointsCount(value), not .length"
+check "the reversed operand order is a finding too" 1 "$RC" "compare textCodePointsCount(value), not .length"
+
+fixture
+clean_source
+mkdir -p "$R/src/interpreter"
+{
+	printf '%s\n' 'export function textCodePointsCount(text: string): number {'
+	printf '%s\n' '  return [...text].length;'
+	printf '%s\n' '}'
+} > "$R/src/contract/textCodePoints.ts"
+{
+	printf '%s\n' 'import { textCodePointsCount } from "../contract/textCodePoints.ts";'
+	printf '%s\n' ''
+	printf '%s\n' 'const fooCharsMax = 4;'
+	printf '%s\n' 'export function tooLong(value: string): boolean {'
+	printf '%s\n' '  return textCodePointsCount(value) > fooCharsMax;'
+	printf '%s\n' '}'
+} > "$R/src/interpreter/charsMax.ts"
+seal
+check "the same bound measured by textCodePointsCount is not a finding" 0 "$RC" "0 stage(s) failed"
+
 # --- The stages that are not the linter's ------------------------------------
 
 fixture
