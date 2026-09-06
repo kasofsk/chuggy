@@ -344,18 +344,18 @@ export const consoleRawColourNames = [
   "yellowgreen",
 ] as const;
 
-const utilitiesOpens = /@layer\s+utilities\s*\{/giu;
-const hex = /#[0-9a-f]+/giu;
-const colourFunction =
-  /(?<![\w-])(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/giu;
-const length = /(?<![\d.\w])-?[0-9]+(?:\.[0-9]+)?(px|rem)(?![\w-])/giu;
-const word = /[a-z-]+/giu;
+interface ConsoleLayerBlock {
+  readonly name: string;
+  readonly body: string;
+}
 
-/** The text of every `@layer utilities` block, matched brace for brace. */
-function consoleUtilitiesBlocks(stylesheet: string): readonly string[] {
-  const blocks: string[] = [];
-  utilitiesOpens.lastIndex = 0;
-  for (let at = utilitiesOpens.exec(stylesheet); at !== null;) {
+const anyLayerOpens = /@layer\s+([A-Za-z][\w-]*)\s*\{/gu;
+
+/** Every named layer block, brace-matched, in the order it opens. */
+function consoleLayerBlocks(stylesheet: string): readonly ConsoleLayerBlock[] {
+  const blocks: ConsoleLayerBlock[] = [];
+  anyLayerOpens.lastIndex = 0;
+  for (let at = anyLayerOpens.exec(stylesheet); at !== null;) {
     let depth = 1;
     let read = at.index + at[0].length;
     const from = read;
@@ -365,11 +365,27 @@ function consoleUtilitiesBlocks(stylesheet: string): readonly string[] {
       else if (here === "}") depth -= 1;
       read += 1;
     }
-    blocks.push(stylesheet.slice(from, depth === 0 ? read - 1 : read));
-    utilitiesOpens.lastIndex = read;
-    at = utilitiesOpens.exec(stylesheet);
+    blocks.push({
+      name: at[1] ?? "",
+      body: stylesheet.slice(from, depth === 0 ? read - 1 : read),
+    });
+    anyLayerOpens.lastIndex = read;
+    at = anyLayerOpens.exec(stylesheet);
   }
   return blocks;
+}
+
+const hex = /#[0-9a-f]+/giu;
+const colourFunction =
+  /(?<![\w-])(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/giu;
+const length = /(?<![\d.\w])-?[0-9]+(?:\.[0-9]+)?(px|rem)(?![\w-])/giu;
+const word = /[a-z-]+/giu;
+
+/** The text of every `@layer utilities` block, matched brace for brace. */
+function consoleUtilitiesBlocks(stylesheet: string): readonly string[] {
+  return consoleLayerBlocks(stylesheet)
+    .filter((block) => block.name === "utilities")
+    .map((block) => block.body);
 }
 
 /** A zero names no step of any scale, and a hairline is rounded for you. */
@@ -415,37 +431,6 @@ export function consoleUtilitiesFindings(
   return consoleUtilitiesBlocks(stylesheet).flatMap(
     consoleUtilitiesBlockFindings,
   );
-}
-
-interface ConsoleLayerBlock {
-  readonly name: string;
-  readonly body: string;
-}
-
-const anyLayerOpens = /@layer\s+([A-Za-z][\w-]*)\s*\{/gu;
-
-/** Every named layer block, brace-matched, in the order it opens. */
-function consoleLayerBlocks(stylesheet: string): readonly ConsoleLayerBlock[] {
-  const blocks: ConsoleLayerBlock[] = [];
-  anyLayerOpens.lastIndex = 0;
-  for (let at = anyLayerOpens.exec(stylesheet); at !== null;) {
-    let depth = 1;
-    let read = at.index + at[0].length;
-    const from = read;
-    while (read < stylesheet.length && depth > 0) {
-      const here = stylesheet[read];
-      if (here === "{") depth += 1;
-      else if (here === "}") depth -= 1;
-      read += 1;
-    }
-    blocks.push({
-      name: at[1] ?? "",
-      body: stylesheet.slice(from, depth === 0 ? read - 1 : read),
-    });
-    anyLayerOpens.lastIndex = read;
-    at = anyLayerOpens.exec(stylesheet);
-  }
-  return blocks;
 }
 
 const classSelector = /\.((?:[\w-]|\\.)+)/gu;
