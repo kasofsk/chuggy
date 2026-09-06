@@ -423,7 +423,7 @@ describe("the mailbox overlay, on a turn with no exchange of its own", () => {
     expect(exchanges[0]?.id).toBe("u1");
   });
 
-  test("a turn carrying no input can only append", () => {
+  test("a turn carrying no input can only append, and draws its kind's ask", () => {
     const exchanges = conversationExchanges(
       [askOf("u1", "read")],
       [
@@ -435,11 +435,29 @@ describe("the mailbox overlay, on a turn with no exchange of its own", () => {
       ],
     );
     expect(exchanges).toHaveLength(2);
-    expect(exchanges[1]?.ask).toBeUndefined();
+    expect(exchanges[1]?.ask).toEqual({ ask: "Observation" });
     expect(exchanges[1]?.standing).toEqual({
       standing: "Running",
       state: "Claimed",
     });
+  });
+
+  test("a Queued Observation turn with no input draws the Observation ask; a UserMessage with no input draws none", () => {
+    const observed = conversationExchanges(
+      [],
+      [turnOf({ turn: "t1", inputKind: "Observation", state: "Queued" })],
+    );
+    expect(observed[0]?.ask).toEqual({ ask: "Observation" });
+    expect(observed[0]?.standing).toEqual({
+      standing: "Running",
+      state: "Queued",
+    });
+
+    const messaged = conversationExchanges(
+      [],
+      [turnOf({ turn: "t2", inputKind: "UserMessage", state: "Queued" })],
+    );
+    expect(messaged[0]?.ask).toBeUndefined();
   });
 
   test("an abandoned turn keeps its own word", () => {

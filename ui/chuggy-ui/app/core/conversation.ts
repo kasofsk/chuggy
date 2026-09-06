@@ -292,15 +292,18 @@ export function conversationArgumentSummary(
     : { argument: "Size", chars: text.length };
 }
 
+/** What a turn's own kind asks for, with or without the text: the one place
+ * this is decided, so an appended turn nobody has spoken text for still draws
+ * its kind's word rather than nothing. Only a message with no text has none. */
 function conversationAskOf(
   kind: SessionTurnInputKind,
-  text: string,
-): ConversationAsk {
+  text: string | undefined,
+): ConversationAsk | undefined {
   switch (kind) {
     case "UserMessage":
-      return { ask: "Message", text };
+      return text === undefined ? undefined : { ask: "Message", text };
     case "Wake": {
-      const wake = threadWakeDrawn(text);
+      const wake = text === undefined ? undefined : threadWakeDrawn(text);
       return wake === undefined
         ? { ask: "Document", kind }
         : { ask: "Wake", wake: wake.wake, resource: wake.resource };
@@ -574,10 +577,8 @@ function conversationAppended(
   built.matched = true;
   built.standing = conversationStandingOf(turn);
   built.measures = conversationMeasuresOf(turn);
-  if (turn.input !== undefined) {
-    built.askText = turn.input;
-    built.ask = conversationAskOf(turn.inputKind, turn.input);
-  }
+  built.askText = turn.input;
+  built.ask = conversationAskOf(turn.inputKind, turn.input);
 }
 
 function conversationOverlaid(
