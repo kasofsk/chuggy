@@ -48,16 +48,7 @@ async function admittedAttempt(
     admitted.admitted === "Admitted",
     `admission was ${admitted.admitted}`,
   );
-  const opened = await rig.store.openAttempt({
-    partition: project.partition,
-    execution: admitted.execution,
-    epoch: project.epoch,
-    leaseSecs: 300,
-    retriesMax: 3,
-    placementBackoffSecs: 1,
-  });
-  assert.ok(opened.opened === "Opened", `attempt was ${opened.opened}`);
-  return opened.attempt;
+  return openedAttempt(project, admitted.execution);
 }
 
 /** A worker's report sealed by the acceptance a real ingress applies, summary and all. */

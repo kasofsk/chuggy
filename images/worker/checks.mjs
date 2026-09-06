@@ -28,7 +28,7 @@
  * it becomes refuses a control character, a lone surrogate and any length past
  * its bound, and a refused report is a lost attempt rather than the verdict
  * the stage reached. So the credential scrub runs here, before the cut, since
- * a replacement is longer than what it replaces; control characters become
+ * a replacement can be longer than what it replaces; control characters become
  * spaces and lone surrogates the replacement character before anything is
  * measured; and every cut lands on a code point. The scrub the entrypoint
  * applies afterwards finds nothing left to replace.
