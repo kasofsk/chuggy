@@ -51,6 +51,7 @@ import { Ledger, LedgerBlock, LedgerRow } from "../ui/Ledger.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import { QuotedText } from "../ui/QuotedText.tsx";
 
 export interface LeadTranscriptRead {
   readonly partition: PartitionIdentity;
@@ -200,7 +201,7 @@ function LeadEntryRow(props: {
         onToggle: () => {
           props.onToggle(line);
         },
-        children: <pre className="lead-entry-text">{line.text}</pre>,
+        children: <QuotedText>{line.text}</QuotedText>,
       }}
     />
   );
@@ -220,7 +221,7 @@ function LeadNote(props: {
         <span className="num">{note.bytes}</span>
         {note.truncated ? <Pill tone="parked">Truncated</Pill> : null}
       </p>
-      <pre className="lead-entry-text">{note.preview}</pre>
+      <QuotedText>{note.preview}</QuotedText>
     </div>
   );
 }
@@ -297,7 +298,7 @@ function LeadLogLine(props: { readonly line: LeadTranscriptLine }): ReactNode {
         {line.tools.length === 0 ? null : (
           <span className="lead-line-tools">{line.tools.join(", ")}</span>
         )}
-        <pre className="lead-entry-text">{line.text}</pre>
+        <QuotedText>{line.text}</QuotedText>
       </li>
     </>
   );

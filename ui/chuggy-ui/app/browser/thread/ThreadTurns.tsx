@@ -60,6 +60,7 @@ import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import { QuotedText } from "../ui/QuotedText.tsx";
 
 /** What the pod measured of one turn, each absent measure said as an absence. */
 function ThreadTurnMeasures(props: {
@@ -99,7 +100,7 @@ function ThreadTurnInput(props: {
 }): ReactNode {
   const turn = props.turn;
   if (turn.inputKind !== "Wake")
-    return <pre className="thread-said">{turn.input}</pre>;
+    return <QuotedText rail="said">{turn.input}</QuotedText>;
   const wake = threadWakeDrawn(turn.input);
   return wake === undefined ? null : (
     <p className="thread-wake">
@@ -118,7 +119,7 @@ function ThreadTurnAnswer(props: {
     case "None":
       return null;
     case "Result":
-      return <pre className="thread-answer">{answer.text}</pre>;
+      return <QuotedText rail="answer">{answer.text}</QuotedText>;
     case "Failure":
       return <Notice tone="danger" inline detail={answer.failure} />;
   }
