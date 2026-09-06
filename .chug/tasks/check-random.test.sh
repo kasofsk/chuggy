@@ -241,5 +241,6 @@ rm -f "$R/test/random/shrink.test.ts"
 run_gate "$R"
 check "a child that dies outside a test still says what it printed" 1 "$RC" \
 	"the walk child died before it could report"
+git -C "$R" checkout -- test/random
 
 done_ "check-random.test.sh"

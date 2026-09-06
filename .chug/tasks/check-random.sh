@@ -111,7 +111,7 @@ fi
 
 # The reporter is `spec` rather than `dot` because `dot` drops the runner's
 # stderr, and a walk child that exits without reporting a test has nothing else
-# to say. Output is re-printed only on a failure, so its length costs nothing.
+# to say.
 set +e
 if [ -n "$timeout_cmd" ]; then
 	CHUG_WALK_SAMPLES="${CHUG_WALK_SAMPLES:-2000}" \
