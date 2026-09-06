@@ -25,6 +25,7 @@
     --surface-1: light-dark(#f7f8f5, #151a17); /* a panel */
     --surface-2: light-dark(#e2e6de, #0a0d0b); /* inset: code, meters */
     --surface-inverse: light-dark(#151a17, #eef2ee); /* a filled control */
+    --bubble: light-dark(#dfe5da, #1b221d); /* the member's own message */
 
     /* ink */
     --ink-1: light-dark(#151a17, #eef2ee); /* headings, values, figures */
@@ -110,6 +111,7 @@
     /* shape and lines */
     --radius-1: 2px; /* pills, meter cells */
     --radius-2: 4px; /* buttons, panels, inputs */
+    --radius-3: 1.125rem; /* bubbles, work cards, the composer */
     --hairline: 1px;
     --rail: 2px; /* the standing rail of a ledger group and a notice */
 
@@ -124,6 +126,8 @@
 
     /* layout */
     --width-page: 96rem;
+    --width-rail: 16rem; /* the shell's navigation */
+    --width-column: 48rem; /* a conversation's reading column */
     --width-aside: 22rem;
     --width-aside-min: 18rem;
     --col-label: 8.5rem; /* ledger: the row's label */
