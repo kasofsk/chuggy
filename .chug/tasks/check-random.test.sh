@@ -153,4 +153,20 @@ set -e
 check "a walk that outruns its cap exits 2, not 0 or 1" 2 "$RC" "did not finish inside 2s"
 check "the overrun names the knob that widens the cap" 2 "$RC" "CHUG_RANDOM_TIMEOUT_SECS"
 
+# --- A child that dies outside a test still says what it printed -------------
+#
+# The runner reports a file whose process exits without reporting a test as a
+# bare failure, and everything the child said about why is on its stderr. A
+# reporter that drops stderr leaves the gate printing a rerun recipe whose seed
+# was never named.
+
+cat >"$R/test/random/walk.test.ts" <<'FIXTURE'
+process.stderr.write("the walk child died before it could report\n")
+process.exit(1)
+FIXTURE
+rm -f "$R/test/random/shrink.test.ts"
+run_gate "$R"
+check "a child that dies outside a test still says what it printed" 1 "$RC" \
+	"the walk child died before it could report"
+
 done_ "check-random.test.sh"

@@ -94,15 +94,18 @@ else
 	echo "check-random:           runs UNCAPPED. Install coreutils for the cap."
 fi
 
+# The reporter is `spec` rather than `dot` because `dot` drops the runner's
+# stderr, and a walk child that exits without reporting a test has nothing else
+# to say. Output is re-printed only on a failure, so its length costs nothing.
 set +e
 if [ -n "$timeout_cmd" ]; then
 	CHUG_WALK_SAMPLES="${CHUG_WALK_SAMPLES:-2000}" \
 		CHUG_WALK_TALLY="$work/tally" \
-		"$timeout_cmd" "$cap_secs" node --test --test-reporter=dot "$@" >"$work/out" 2>&1
+		"$timeout_cmd" "$cap_secs" node --test --test-reporter=spec "$@" >"$work/out" 2>&1
 else
 	CHUG_WALK_SAMPLES="${CHUG_WALK_SAMPLES:-2000}" \
 		CHUG_WALK_TALLY="$work/tally" \
-		node --test --test-reporter=dot "$@" >"$work/out" 2>&1
+		node --test --test-reporter=spec "$@" >"$work/out" 2>&1
 fi
 rc=$?
 set -e
