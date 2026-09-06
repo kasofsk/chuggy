@@ -18,7 +18,7 @@ export function Table(props: {
 }): ReactNode {
   return (
     <div className="table-scroll">
-      <table className="table">
+      <table className="tabular">
         {props.caption === undefined ? null : (
           <caption className="visually-hidden">{props.caption}</caption>
         )}
