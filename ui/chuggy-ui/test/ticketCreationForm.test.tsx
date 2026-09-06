@@ -17,7 +17,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { briefChecksMax, briefLinksMax } from "../../../src/contract/brief.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
@@ -31,7 +31,21 @@ import {
 import { ticketInstants } from "./ticketInstants.ts";
 
 /** The runner has no globals, so each case tears down the tree it rendered. */
-afterEach(cleanup);
+beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    },
+  );
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 interface Sent {
   readonly method: string;
@@ -172,11 +186,12 @@ function drafts(sent: readonly Sent[]): readonly Sent[] {
 
 /** The sentence names the configuration nobody was asked about, so the revision
  * it names it instead of has nowhere else on this screen to be. */
-test("the shaping sentence keeps the revision behind the name it draws", () => {
+test("the shaping sentence keeps the revision behind the name it draws", async () => {
   const held = api({ state: "Succeeded" });
   draw(held.ports, []);
   const sentence = screen.getByText(/^shaped by configuration chuggy #12,/u);
-  expect(sentence.getAttribute("title")).toBe(
+  fireEvent.focus(sentence);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
     creationInitialization.configuration.revision,
   );
 });

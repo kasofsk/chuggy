@@ -6,14 +6,28 @@
  * each is a fact the reader would otherwise have to take on trust.
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, expect, test } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import type { Figure as FigureValue } from "../app/core/figures.ts";
 import { figureKinds } from "../app/core/figures.ts";
 import { Figure, figureBasisTitle } from "../app/browser/ui/Figure.tsx";
 
-afterEach(cleanup);
+beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    },
+  );
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const everyKind: readonly FigureValue[] = [
   { kind: "Cost", text: "$0.42", basis: "list" },
@@ -46,27 +60,34 @@ test("every kind draws in the figure cell and emits no style attribute", () => {
   }
 });
 
-test("a dollar carries its basis, and the tag says what a list price is not", () => {
+test("a dollar carries its basis, and the tag says what a list price is not", async () => {
   render(<Figure figure={{ kind: "Cost", text: "$0.42", basis: "list" }} />);
   const tag = screen.getByText("list");
   expect(tag.classList.contains("fig-basis")).toBe(true);
-  expect(tag.getAttribute("title")).toBe(figureBasisTitle);
+  fireEvent.focus(tag);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    figureBasisTitle,
+  );
 });
 
-test("an instant hovers its full ISO and an absence hovers its reason", () => {
-  const { container } = render(
+test("an instant hovers its full ISO and an absence hovers its reason", async () => {
+  render(
     <Figure
       figure={{ kind: "Instant", text: "10:12", iso: "2026-08-27T10:12:00Z" }}
     />,
   );
-  expect(container.querySelector(".fig")?.getAttribute("title")).toBe(
+  fireEvent.focus(screen.getByText("10:12"));
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
     "2026-08-27T10:12:00Z",
   );
   cleanup();
   render(<Figure figure={{ kind: "Absent", why: "No run figures yet" }} />);
-  const absent = screen.getByTitle("No run figures yet");
-  expect(absent.textContent).toBe("—");
+  const absent = screen.getByText("—");
   expect(absent.classList.contains("fig-dim")).toBe(true);
+  fireEvent.focus(absent);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "No run figures yet",
+  );
 });
 
 test("an open span is drawn live and a closed one is not", () => {

@@ -117,6 +117,7 @@ import {
 } from "./TicketCells.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Pill } from "./ui/Pill.tsx";
+import { Tooltip } from "./ui/Tooltip.tsx";
 
 const inboxListName = "inbox";
 
@@ -363,9 +364,11 @@ function InboxRefusal(props: { readonly entry: InboxEntry }): ReactNode {
   if (refusal === undefined) return null;
   const standing = agenticRefusalStanding(refusal);
   return (
-    <span title={refusal.reason}>
-      <Pill tone={agenticRefusalStandingTone(standing)}>{standing}</Pill>
-    </span>
+    <Tooltip text={refusal.reason}>
+      <span>
+        <Pill tone={agenticRefusalStandingTone(standing)}>{standing}</Pill>
+      </span>
+    </Tooltip>
   );
 }
 
