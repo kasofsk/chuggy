@@ -59,8 +59,8 @@ test("an intent no briefing could print is refused before it is stored", () => {
     );
 });
 
-test("the intent's bound counts code points, matching the schema in front of it", () => {
-  const line = "😀".repeat(briefLineCharsMax / 2);
+test("the intent's per-line bound counts code points, matching the schema in front of it", () => {
+  const line = "😀".repeat(briefLineCharsMax - 1);
   const atBound = Array.from({ length: briefIntentLinesMax }, () => line).join(
     "\n",
   );
@@ -174,6 +174,11 @@ test("a check line is branded by the rule one briefing line is, and bounded in n
       }),
     RangeError,
   );
+});
+
+test("a check line's bound counts code points, matching the schema in front of it", () => {
+  const line = "😀".repeat(briefLineCharsMax);
+  assert.equal(asBriefCheckLine(line), line);
 });
 
 test("a finalization target takes the branch's own grammar and no other mode lands", () => {
