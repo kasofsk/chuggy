@@ -125,8 +125,72 @@ export function threadBody(input: {
   };
 }
 
-/** One page of the thread's store, answered whole on the first read. */
+type ThreadTranscriptEntry = ThreadTranscriptResponse["entries"][number];
+
+/** The store's own line for one entry, timestamped alike so a case asserting on
+ * text is not asserting on a clock. */
+function threadStoreEntry(
+  uuid: string,
+  type: string,
+  content: readonly unknown[],
+): ThreadTranscriptEntry {
+  return {
+    uuid,
+    type,
+    timestamp: "2026-09-02T10:00:00Z",
+    message: { content },
+  };
+}
+
+/** The tool call the store's chain holds, named here so a case can assert the
+ * result reached the call that asked for it. */
+export const threadToolCall = "toolu_thread_read";
+
+/** One page of the thread's store, answered whole on the first read: a member's
+ * question, the call the agent made answering it, its result, and the answer.
+ * A chain rather than a line, because the surface groups an exchange out of one
+ * and a single entry would prove nothing about the grouping. */
 export function threadTranscriptPage(after: number): ThreadTranscriptResponse {
+  return threadTranscriptOf(after, [
+    threadStoreEntry("uuid-thread-a", "user", [
+      { type: "text", text: "a member's question" },
+    ]),
+    threadStoreEntry("uuid-thread-b", "assistant", [
+      {
+        type: "tool_use",
+        id: threadToolCall,
+        name: "Read",
+        input: { path: "ticket-41.md" },
+      },
+    ]),
+    threadStoreEntry("uuid-thread-c", "user", [
+      {
+        type: "tool_result",
+        tool_use_id: threadToolCall,
+        content: "41 waits on 40",
+      },
+    ]),
+    threadStoreEntry("uuid-thread-d", "assistant", [
+      { type: "text", text: "it waits on 40" },
+    ]),
+  ]);
+}
+
+/** A store holding one member entry, which is what a case pairing a mailbox turn
+ * to the transcript by its input text needs. */
+export function threadTranscriptSaid(
+  after: number,
+  text: string,
+): ThreadTranscriptResponse {
+  return threadTranscriptOf(after, [
+    threadStoreEntry("uuid-thread-a", "user", [{ type: "text", text }]),
+  ]);
+}
+
+function threadTranscriptOf(
+  after: number,
+  entries: readonly ThreadTranscriptEntry[],
+): ThreadTranscriptResponse {
   if (after > 0)
     return {
       stream: threadStream,
@@ -138,15 +202,10 @@ export function threadTranscriptPage(after: number): ThreadTranscriptResponse {
     };
   return {
     stream: threadStream,
-    entries: [
-      {
-        uuid: "uuid-thread-a",
-        type: "user",
-        timestamp: "2026-09-02T10:00:00Z",
-        message: { content: [{ type: "text", text: "a member's question" }] },
-      },
-    ],
-    held: ["uuid-thread-a"],
+    entries: [...entries],
+    held: entries.flatMap((entry) =>
+      entry.uuid === undefined ? [] : [entry.uuid],
+    ),
     cut: 1,
     elided: 0,
     truncated: false,
