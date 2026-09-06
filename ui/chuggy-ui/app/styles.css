@@ -129,11 +129,6 @@
   color: var(--tone-fail);
 }
 
-.ticket-sequence {
-  color: var(--ink-3);
-  font-size: var(--text-xs);
-}
-
 .ticket-reason {
   grid-column: 1 / -1;
   margin: 0;
@@ -177,14 +172,6 @@
   border-radius: var(--radius-2);
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-.executions {
-  list-style: none;
-  margin: 0;
-  padding: var(--space-2) var(--space-4);
-  display: grid;
-  gap: var(--space-2);
 }
 
 .execution {
@@ -336,33 +323,7 @@
   color: var(--ink-3);
 }
 
-/* Run evidence: the stage breakdown above the executions it groups, and the
- * four panes an expanded run draws. */
-
-.stages {
-  list-style: none;
-  margin: 0;
-  padding: var(--space-2) var(--space-4);
-  display: grid;
-  gap: var(--space-2);
-}
-
-.stage {
-  display: grid;
-  grid-template-columns: 12rem 1fr;
-  gap: 0 var(--space-4);
-  align-items: baseline;
-}
-
-.stage-label {
-  color: var(--ink-1);
-  font-weight: 600;
-}
-
-.stage .run-totals,
-.stage .panel-note {
-  grid-column: 1 / -1;
-}
+/* Run evidence: the four panes an expanded run draws. */
 
 .run-report {
   margin: 0;
