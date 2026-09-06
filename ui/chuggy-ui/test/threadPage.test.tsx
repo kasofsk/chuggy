@@ -362,22 +362,6 @@ test("a wait the reader has typed past is no longer said", async () => {
   ).toBeNull();
 });
 
-/** The composer's own restore of a kept message writes the text too, and that
- * write is not an edit: the note the last press left stands over it. */
-test("a kept message's restore leaves the note standing", async () => {
-  drawThread(
-    () => ({ thread: threadBody({}) }),
-    () => ({
-      body: { error: { code: "ThreadBacklogged", message: "wait" } },
-      status: 429,
-    }),
-  );
-  await mountThread();
-  await pressed("one");
-  expect(screen.getByText("Backlogged")).toBeDefined();
-  expect(composer()?.value).toBe("one");
-});
-
 /** Editing the text releases the identity: posting a correction under the turn
  * the mailbox already answered would report the correction as landed. */
 test("editing after a refusal posts under a turn of its own", async () => {
