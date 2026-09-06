@@ -29,7 +29,10 @@
 # could-not-run rather than a wait with no end. `timeout` applies the cap and is
 # probed functionally, because a name on PATH is not a working binary and macOS
 # ships none; with no working one the walk runs uncapped and says so, since
-# announcing a bound that is not being applied is worse than having none.
+# announcing a bound that is not being applied is worse than having none. The
+# cap is a whole number of seconds and is refused otherwise — a zero included,
+# which turns the timer off — because a timer that cannot apply the bound it
+# was handed has walked nothing and has found nothing.
 #
 # Env:
 #   CHUG_WALK_SAMPLES    runs per instance; the default below matches the
@@ -40,7 +43,8 @@
 #   CHUG_WALK_DIR        where a counterexample is written; the default is a
 #                        fresh temp directory the failure names
 #   CHUG_RANDOM_TIMEOUT_SECS
-#                        wall-clock cap on the walk; an overrun exits 2
+#                        wall-clock cap on the walk, a whole number of
+#                        seconds; an overrun exits 2
 #
 # Usage:
 #   .chug/tasks/check-random.sh
@@ -84,6 +88,17 @@ unset IFS
 set +f
 
 cap_secs="${CHUG_RANDOM_TIMEOUT_SECS:-300}"
+case "$cap_secs" in
+*[!0-9]*)
+	echo "check-random: LINTER ERROR — CHUG_RANDOM_TIMEOUT_SECS=$cap_secs is not a count of seconds, so no cap can be applied"
+	exit 2
+	;;
+esac
+if [ "$cap_secs" -lt 1 ]; then
+	echo "check-random: LINTER ERROR — CHUG_RANDOM_TIMEOUT_SECS=$cap_secs turns the cap off, and an uncapped walk is not a verdict"
+	exit 2
+fi
+
 timeout_cmd=""
 if timeout 5 true >/dev/null 2>&1; then
 	timeout_cmd="timeout"
@@ -110,15 +125,26 @@ fi
 rc=$?
 set -e
 
-# 124 is what `timeout` reports when it killed the command, and node's runner
-# has no such exit of its own.
-if [ -n "$timeout_cmd" ] && [ "$rc" -eq 124 ]; then
-	sed 's/^/    /' "$work/out"
-	echo "check-random: LINTER ERROR — the walk did not finish inside ${cap_secs}s and was killed"
-	echo "check-random: a walk that outruns its cap is not a verdict. Run this gate alone;"
-	echo "check-random: if the sweep is honestly that long, lower CHUG_WALK_SAMPLES or raise"
-	echo "check-random: CHUG_RANDOM_TIMEOUT_SECS."
-	exit 2
+# The timer reports a command it killed as 124, and one it could not run at
+# all as 125, 126 or 127. Node's runner has none of those exits of its own, and
+# neither the kill nor the failure to start is a finding about the tree.
+if [ -n "$timeout_cmd" ]; then
+	case "$rc" in
+	124)
+		sed 's/^/    /' "$work/out"
+		echo "check-random: LINTER ERROR — the walk did not finish inside ${cap_secs}s and was killed"
+		echo "check-random: a walk that outruns its cap is not a verdict. Run this gate alone;"
+		echo "check-random: if the sweep is honestly that long, lower CHUG_WALK_SAMPLES or raise"
+		echo "check-random: CHUG_RANDOM_TIMEOUT_SECS."
+		exit 2
+		;;
+	125 | 126 | 127)
+		sed 's/^/    /' "$work/out"
+		echo "check-random: LINTER ERROR — \`$timeout_cmd\` could not apply the cap CHUG_RANDOM_TIMEOUT_SECS=$cap_secs (rc=$rc)"
+		echo "check-random: the walk never ran, so there is nothing here to call a finding."
+		exit 2
+		;;
+	esac
 fi
 
 if [ "$rc" -ne 0 ]; then

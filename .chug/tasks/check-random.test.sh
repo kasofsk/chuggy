@@ -153,6 +153,40 @@ set -e
 check "a walk that outruns its cap exits 2, not 0 or 1" 2 "$RC" "did not finish inside 2s"
 check "the overrun names the knob that widens the cap" 2 "$RC" "CHUG_RANDOM_TIMEOUT_SECS"
 
+# --- A cap the timer cannot apply is a could-not-run, not a finding ----------
+#
+# The overrun's own remedy tells a reader to raise the knob, so what they type
+# is what the timer is handed. A value it cannot parse leaves the walk with no
+# bound, and a zero turns the timer off; neither is a red against the tree, and
+# each names the value it was given so the reader can see what they typed.
+
+run_gate "$ROOT" CHUG_WALK_SAMPLES=1 CHUG_RANDOM_TIMEOUT_SECS=abc
+check "a cap that is not a count of seconds exits 2, not 1" 2 "$RC" \
+	"CHUG_RANDOM_TIMEOUT_SECS=abc"
+
+run_gate "$ROOT" CHUG_WALK_SAMPLES=1 CHUG_RANDOM_TIMEOUT_SECS=0
+check "a cap of no seconds at all exits 2, not 0" 2 "$RC" \
+	"CHUG_RANDOM_TIMEOUT_SECS=0"
+
+# The probe before the run answers for a timer that cannot start at all, so
+# what is left is a timer that starts and then cannot run the command it was
+# given, which it reports with an exit of its own.
+
+mkdir -p "$WORK/bin"
+cat >"$WORK/bin/timeout" <<'FAKE'
+#!/bin/sh
+# Answers the gate's probe, then refuses the command it is handed.
+[ "$2" = "true" ] && exit 0
+exit 127
+FAKE
+chmod +x "$WORK/bin/timeout"
+OUT="$WORK/.out"
+set +e
+(cd "$ROOT" && timeout 60 env "PATH=$WORK/bin:$PATH" CHUG_WALK_SAMPLES=1 "$SUT") >"$OUT" 2>&1
+RC=$?
+set -e
+check "a timer that cannot run the walk exits 2, not 1" 2 "$RC" "could not apply the cap"
+
 # --- A child that dies outside a test still says what it printed -------------
 #
 # The runner reports a file whose process exits without reporting a test as a
