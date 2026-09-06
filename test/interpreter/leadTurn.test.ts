@@ -355,6 +355,29 @@ test("a refusal reason longer than its bound, or empty, is refused", () => {
     );
 });
 
+test("the refusal reason's bound counts code points, matching the schema in front of it", () => {
+  const atBound = "😀".repeat(agenticRefusalReasonCharsMax);
+  const parsed = parseLeadDecision(
+    decision({
+      refusals: [{ ticket: 41, ticketVersion: 3, reason: atBound }],
+    }),
+    observation,
+  );
+  assert.deepEqual(parsed.refusals, [
+    { ticket: asTicketId(41), ticketVersion: 3, reason: atBound },
+  ]);
+  assert.throws(
+    () =>
+      parseLeadDecision(
+        decision({
+          refusals: [{ ticket: 41, ticketVersion: 3, reason: atBound + "😀" }],
+        }),
+        observation,
+      ),
+    TypeError,
+  );
+});
+
 test("a decision that names one ticket twice is refused at the door", () => {
   const refusal = { ticket: 41, ticketVersion: 3, reason: "not yet" };
   assert.throws(

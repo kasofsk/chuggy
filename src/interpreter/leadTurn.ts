@@ -23,7 +23,10 @@
  * already holds.
  */
 
-import { agenticRefusalReasonCharsMax } from "../contract/http.ts";
+import {
+  agenticRefusalReasonCharsMax,
+  textCodePointsCount,
+} from "../contract/http.ts";
 import {
   agenticRefusalIsSuperseded,
   type AgenticRefusalRecord,
@@ -297,7 +300,7 @@ function leadDecisionRefusals(
     if (
       typeof reason !== "string" ||
       reason.length < 1 ||
-      reason.length > agenticRefusalReasonCharsMax
+      textCodePointsCount(reason) > agenticRefusalReasonCharsMax
     )
       throw new TypeError("lead refusal reason must be bounded text");
     if (found["ticketVersion"] !== candidate.ticketVersion)

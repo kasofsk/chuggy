@@ -34,6 +34,7 @@
 import {
   inquiryQuestionCharsMax,
   nativeHttpPathSegmentCharsMax,
+  textCodePointsCount,
 } from "../contract/http.ts";
 import type { SessionCapability } from "./agentSession.ts";
 import { sessionSystemPromptCharsMax } from "./leadTools.ts";
@@ -90,7 +91,7 @@ export function inquiryDocument(input: {
 }): InquiryDocument {
   if (input.question.length === 0)
     throw new RangeError("inquiry document: the question is empty");
-  if (input.question.length > inquiryQuestionCharsMax)
+  if (textCodePointsCount(input.question) > inquiryQuestionCharsMax)
     throw new RangeError(
       `an inquiry question must be at most ${String(inquiryQuestionCharsMax)} characters`,
     );
@@ -177,7 +178,7 @@ export function parseInquiry(text: string): InquiryDocument {
       "inquiry document: a version this release does not write",
     );
   const question = inquiryField(fields, "question");
-  if (question.length > inquiryQuestionCharsMax)
+  if (textCodePointsCount(question) > inquiryQuestionCharsMax)
     throw new RangeError("inquiry document: a question past the door's bound");
   const standing = inquiryField(fields, "standing");
   if (standing !== inquiryStanding)

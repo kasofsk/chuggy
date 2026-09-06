@@ -59,6 +59,18 @@ test("an intent no briefing could print is refused before it is stored", () => {
     );
 });
 
+test("the intent's bound counts code points, matching the schema in front of it", () => {
+  const line = "😀".repeat(briefLineCharsMax / 2);
+  const atBound = Array.from({ length: briefIntentLinesMax }, () => line).join(
+    "\n",
+  );
+  const intent = asBriefIntent(atBound);
+  assert.deepEqual(
+    briefIntentLines(intent),
+    Array.from({ length: briefIntentLinesMax }, () => line),
+  );
+});
+
 test("a link is read over one scheme and printed on one line", () => {
   assert.equal(
     asBriefLinkUrl("https://example.test/issues/340"),
