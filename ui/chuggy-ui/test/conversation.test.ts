@@ -291,7 +291,7 @@ describe("markers", () => {
     expect(exchanges[1]?.before).toEqual([compaction.marker]);
   });
 
-  test("a marker with nothing after it lands on a trailing exchange", () => {
+  test("a marker with nothing after it lands on a trailing exchange, which stands as markers and not as Open", () => {
     const exchanges = conversationExchanges([
       askOf("u1", "before"),
       answerOf("a1", "done"),
@@ -301,6 +301,25 @@ describe("markers", () => {
     expect(exchanges[1]?.ask).toBeUndefined();
     expect(exchanges[1]?.work).toEqual([]);
     expect(exchanges[1]?.before).toEqual([{ marker: "Truncated" }]);
+    expect(exchanges[1]?.standing).toEqual({ standing: "Markers" });
+  });
+
+  test("a trailing marker set becomes the before of the first turn the overlay appends", () => {
+    const exchanges = conversationExchanges(
+      [askOf("u1", "before"), answerOf("a1", "done"), compaction],
+      [
+        turnOf({ turn: "t1", ordinal: 1, input: "queued", state: "Queued" }),
+        turnOf({ turn: "t2", ordinal: 2, input: "claimed", state: "Claimed" }),
+      ],
+    );
+    expect(exchanges).toHaveLength(3);
+    expect(exchanges[1]?.before).toEqual([compaction.marker]);
+    expect(exchanges[1]?.ask).toEqual({ ask: "Message", text: "queued" });
+    expect(exchanges[1]?.standing).toEqual({
+      standing: "Running",
+      state: "Queued",
+    });
+    expect(exchanges[2]?.before).toEqual([]);
   });
 });
 

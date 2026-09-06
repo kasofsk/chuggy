@@ -325,6 +325,7 @@ export function ConversationAnswerMessage(): ReactNode {
   const exchange = useConversationExchange();
   if (exchange === undefined) return null;
   const standing = exchange.standing;
+  if (standing.standing === "Markers") return null;
   const arm = conversationStandingArm(standing);
   return (
     <MessagePrimitive.Root className="grid min-w-0 gap-2">

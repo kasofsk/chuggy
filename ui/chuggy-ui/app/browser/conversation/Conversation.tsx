@@ -58,6 +58,7 @@ function conversationStatus(exchange: ConversationExchange): MessageStatus {
     case "Abandoned":
       return { type: "incomplete", reason: "cancelled" };
     case "Open":
+    case "Markers":
       return { type: "incomplete", reason: "other" };
   }
 }

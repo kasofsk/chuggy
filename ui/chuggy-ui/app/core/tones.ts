@@ -212,10 +212,11 @@ export interface ConversationStandingArm {
 }
 
 /**
- * Where one exchange stands, in the one word and hue it is drawn in. `Open` is
+ * Where one exchange stands, in the one word and hue it is drawn in: `Open` is
  * the arm the mailbox has no word for — a transcript exchange no turn speaks
- * for — and it takes the live hue because what it describes is a conversation
- * still being written.
+ * for — and takes the live hue because what it describes is a conversation
+ * still being written. `Markers` never reaches a pill, since the surface draws
+ * that exchange as its markers alone, but the map stays total.
  */
 export function conversationStandingArm(
   standing: ConversationStanding,
@@ -234,5 +235,7 @@ export function conversationStandingArm(
       return { word: "Abandoned", tone: sessionTurnStateTone("Abandoned") };
     case "Open":
       return { word: "Open", tone: "live" };
+    case "Markers":
+      return { word: "Markers", tone: "neutral" };
   }
 }

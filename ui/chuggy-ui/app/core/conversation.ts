@@ -199,8 +199,9 @@ export type ConversationStep =
     }
   | { readonly step: "Other"; readonly kind: string };
 
-/** Where one exchange stands. `Open` is a transcript exchange with no answer
- * that no turn speaks for, which is what a run still going looks like. */
+/** Where one exchange stands: `Open` is a transcript exchange with no answer
+ * that no turn speaks for, a run still going; `Markers` carries only the
+ * markers ahead of it, with no ask, work, answer or measures. */
 export type ConversationStanding =
   | { readonly standing: "Answered" }
   | {
@@ -209,7 +210,8 @@ export type ConversationStanding =
     }
   | { readonly standing: "Failed"; readonly failure?: SessionTurnFailure }
   | { readonly standing: "Abandoned" }
-  | { readonly standing: "Open" };
+  | { readonly standing: "Open" }
+  | { readonly standing: "Markers" };
 
 export interface ConversationMeasures {
   readonly tokens?: number;
@@ -600,6 +602,18 @@ function conversationOverlaid(
   }
 }
 
+/** Whether a built exchange carries nothing a conversation would: no ask, no
+ * work, no answer and no measures. Only the trailing exchange opened to carry
+ * markers nothing follows is ever this empty. */
+function conversationBuiltEmpty(built: ConversationBuilt): boolean {
+  return (
+    built.ask === undefined &&
+    built.work.length === 0 &&
+    built.answer === undefined &&
+    built.measures === undefined
+  );
+}
+
 function conversationDrawn(built: ConversationBuilt): ConversationExchange {
   const before =
     built.stepsCut === 0
@@ -612,19 +626,22 @@ function conversationDrawn(built: ConversationBuilt): ConversationExchange {
     ...(built.answer === undefined ? {} : { answer: built.answer }),
     standing: built.matched
       ? built.standing
-      : built.answer === undefined
-        ? { standing: "Open" }
-        : { standing: "Answered" },
+      : conversationBuiltEmpty(built)
+        ? { standing: "Markers" }
+        : built.answer === undefined
+          ? { standing: "Open" }
+          : { standing: "Answered" },
     ...(built.measures === undefined ? {} : { measures: built.measures }),
     before,
   };
 }
 
 /**
- * The exchanges a surface draws. Markers between entries land on the exchange
- * they precede, and markers with nothing after them on a trailing exchange of
- * their own, so a shortfall is never attributed to a conversation it is not
- * about.
+ * The exchanges a surface draws: markers between entries land on the exchange
+ * they precede. Markers with nothing after them land on the first exchange the
+ * mailbox overlay appends, or open a trailing exchange of their own when the
+ * overlay appends none, so a shortfall is never attributed to a conversation
+ * it is not about.
  */
 export function conversationExchanges(
   items: readonly ConversationItem[],
@@ -642,9 +659,9 @@ export function conversationExchanges(
       conversationUserEntry(builder, item.entry);
     else conversationAssistantEntry(builder, item.entry);
   }
+  if (turns !== undefined) conversationOverlaid(builder, turns);
   if (builder.pending.length > 0)
     conversationOpened(builder, conversationTrailingId);
-  if (turns !== undefined) conversationOverlaid(builder, turns);
   const first = builder.built[0];
   if (first !== undefined && builder.exchangesCut > 0)
     first.before.unshift(
