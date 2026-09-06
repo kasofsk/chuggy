@@ -1,7 +1,7 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
@@ -14,6 +14,8 @@ import {
   settled,
   turned,
 } from "./screenHarness.tsx";
+import { elementScrollToStubbed } from "./scrolling.ts";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketInstants } from "./ticketInstants.ts";
@@ -33,6 +35,11 @@ vi.mock("@tanstack/react-router", () => ({
   useParams: () => ({ ...atlas, ticket: "11" }),
 }));
 // jscpd:ignore-end
+
+beforeEach(() => {
+  resizeObserverStubbed();
+  elementScrollToStubbed();
+});
 
 afterEach(() => {
   cleanup();
@@ -233,7 +240,9 @@ test("a rising high-water mark reads exactly the batches above what is held", as
   await settled();
 
   expect(transcriptReads(rendered.reads)).toEqual(["?after=0", "?after=2"]);
-  expect(screen.getByText("batch 4")).toBeTruthy();
+  expect(
+    rendered.container.querySelector(".transcript")?.textContent,
+  ).toContain("batch 4");
   expect(
     rendered.container.querySelector(".transcript .freshness")?.textContent,
   ).toMatch(/^as of /);
