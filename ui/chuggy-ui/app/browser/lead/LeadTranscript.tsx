@@ -209,7 +209,7 @@ function LeadEntryRow(props: {
 
 /** The note a lead leaves a successor that has no transcript, as much of it as
  * the lead read carries. */
-function LeadNote(props: {
+export function LeadNote(props: {
   readonly note: LeadHandoffNote | undefined;
 }): ReactNode {
   const note = props.note;
