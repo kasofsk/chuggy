@@ -88,6 +88,7 @@ import {
   briefIntentLinesMax,
   briefLinksMax,
 } from "../contract/brief.ts";
+import { textCodePointsCount } from "../contract/http.ts";
 import type { ConfigurationPin } from "./projectDecision.ts";
 import {
   resultReportCharsMax,
@@ -558,7 +559,8 @@ function briefingRuntimeFault(
 /** What one earlier work task's report has to be to render, which is a document's bound. */
 function briefingReportFault(report: string): BriefingFault | undefined {
   if (report.length === 0) return "EmptyLine";
-  if (report.length > resultReportCharsMax) return "ReportTooLong";
+  if (textCodePointsCount(report) > resultReportCharsMax)
+    return "ReportTooLong";
   if (!report.isWellFormed() || resultTextControlCharacter(report))
     return "TextUnreadable";
   return undefined;

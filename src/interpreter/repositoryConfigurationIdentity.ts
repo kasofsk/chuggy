@@ -1,4 +1,7 @@
-import { repositoryConfigurationNameCharsMax } from "../contract/http.ts";
+import {
+  repositoryConfigurationNameCharsMax,
+  textCodePointsCount,
+} from "../contract/http.ts";
 declare const repositoryConfigurationNameBrand: unique symbol;
 declare const repositoryConfigurationPathBrand: unique symbol;
 
@@ -31,7 +34,7 @@ export function asRepositoryConfigurationName(
 ): RepositoryConfigurationName | undefined {
   return typeof value === "string" &&
     value.length > 0 &&
-    value.length <= repositoryConfigurationNameCharsMax &&
+    textCodePointsCount(value) <= repositoryConfigurationNameCharsMax &&
     value.isWellFormed() &&
     /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/u.test(value)
     ? (value as RepositoryConfigurationName)
@@ -56,7 +59,7 @@ export function asRepositoryConfigurationPath(
 ): RepositoryConfigurationPath | undefined {
   if (
     value.length === 0 ||
-    value.length > repositoryConfigurationPathCharsMax ||
+    textCodePointsCount(value) > repositoryConfigurationPathCharsMax ||
     !value.isWellFormed() ||
     value.includes("\\") ||
     value.includes("\0")

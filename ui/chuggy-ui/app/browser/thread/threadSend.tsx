@@ -97,6 +97,10 @@ export function useThreadSend(input: {
       setHeld({ text, turn });
       return "Kept";
     },
+    onEdit: () => {
+      if (send.send === "Waiting" || send.send === "Refused")
+        setSend({ send: "Idle" });
+    },
     note: <ThreadSendNote send={send} />,
   };
 }

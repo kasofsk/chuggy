@@ -62,6 +62,7 @@ import {
   briefLinkScheme,
   briefLinksMax,
 } from "../contract/brief.ts";
+import { textCodePointsCount } from "../contract/http.ts";
 import {
   briefFinalizationModes,
   type BriefFinalizationMode,
@@ -132,7 +133,10 @@ function briefIntentNormalized(value: string): string {
  */
 export function asBriefIntent(value: string): BriefIntent {
   const normalized = briefIntentNormalized(value);
-  if (normalized.length === 0 || normalized.length > briefIntentCharsMax)
+  if (
+    normalized.length === 0 ||
+    textCodePointsCount(normalized) > briefIntentCharsMax
+  )
     throw new RangeError("ticket intent: the statement is empty or too long");
   const lines = briefIntentLines(normalized as BriefIntent);
   if (lines.length === 0 || lines.length > briefIntentLinesMax)
@@ -172,7 +176,9 @@ export function asBriefCheckLine(value: string): BriefCheckLine {
 /** Brands a branch through the one reference-name grammar this tree states. */
 export function asBriefBranch(value: string): GitRefName {
   const ref =
-    value.length > briefBranchCharsMax ? undefined : handoffRef(value);
+    textCodePointsCount(value) > briefBranchCharsMax
+      ? undefined
+      : handoffRef(value);
   if (ref === undefined)
     throw new RangeError("ticket branch: the value is not a reference name");
   return ref;

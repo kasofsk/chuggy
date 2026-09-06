@@ -139,6 +139,16 @@ test("a marker stands above the exchange it precedes", () => {
   styleless();
 });
 
+test("an elision marker says the unit its count is in", () => {
+  const marked = exchangeOf({
+    before: [{ marker: "Elision", bytes: 2 }],
+    answer: "done",
+  });
+  render(<Conversation exchanges={[marked]} empty="No conversation" />);
+  expect(screen.getByText("Elided · 2 bytes")).toBeDefined();
+  styleless();
+});
+
 test("a markers-only exchange draws its markers and no pill", () => {
   const markersOnly: ConversationExchange = {
     id: "x9",

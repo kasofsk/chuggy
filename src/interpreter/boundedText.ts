@@ -8,6 +8,8 @@
  * the shape rather than a preference.
  */
 
+import { textCodePointsCount } from "../contract/http.ts";
+
 /** Why one string is not text a bounded column holds, or nothing where it is. */
 type BoundedTextRefusal =
   | { readonly refused: "Empty" }
@@ -31,9 +33,8 @@ function boundedTextRefusal(
   if (value.length === 0) return { refused: "Empty" };
   if (!value.isWellFormed()) return { refused: "Unpaired" };
   if (value.includes("\u0000")) return { refused: "Nul" };
-  return value.length > charsMax
-    ? { refused: "TooLong", chars: value.length }
-    : undefined;
+  const chars = textCodePointsCount(value);
+  return chars > charsMax ? { refused: "TooLong", chars } : undefined;
 }
 
 /**

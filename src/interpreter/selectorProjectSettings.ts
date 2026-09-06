@@ -16,6 +16,7 @@
  * replay of a historical revision rather than a second verb.
  */
 
+import { textCodePointsCount } from "../contract/http.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import type { Principal, ProjectAccess } from "./nativeWeb.ts";
 import type { Authority } from "./operationInbox.ts";
@@ -140,7 +141,10 @@ export const selectorProjectSettingsNameCharsMax = 256;
 
 function checkedText(value: string | undefined, what: string): void {
   if (value === undefined) return;
-  if (value.length < 1 || value.length > selectorProjectSettingsTextCharsMax)
+  if (
+    value.length < 1 ||
+    textCodePointsCount(value) > selectorProjectSettingsTextCharsMax
+  )
     throw new RangeError(`${what} must be bounded text`);
 }
 
@@ -153,7 +157,8 @@ function checkedAllowlist(
     values.length > selectorProjectSettingsAllowlistNamesMax ||
     values.some(
       (value) =>
-        value.length < 1 || value.length > selectorProjectSettingsNameCharsMax,
+        value.length < 1 ||
+        textCodePointsCount(value) > selectorProjectSettingsNameCharsMax,
     )
   )
     throw new RangeError(`${what} must contain bounded names`);

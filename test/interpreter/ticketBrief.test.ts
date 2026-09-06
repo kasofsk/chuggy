@@ -14,6 +14,7 @@ import test from "node:test";
 
 import {
   briefBranchCharsMax,
+  briefBranchPrefix,
   briefChecksMax,
   briefIntentCharsMax,
   briefIntentLinesMax,
@@ -57,6 +58,18 @@ test("an intent no briefing could print is refused before it is stored", () => {
       RangeError,
       `an intent is refused: ${JSON.stringify(value).slice(0, 40)}`,
     );
+});
+
+test("the intent's per-line bound counts code points, matching the schema in front of it", () => {
+  const line = "😀".repeat(briefLineCharsMax - 1);
+  const atBound = Array.from({ length: briefIntentLinesMax }, () => line).join(
+    "\n",
+  );
+  const intent = asBriefIntent(atBound);
+  assert.deepEqual(
+    briefIntentLines(intent),
+    Array.from({ length: briefIntentLinesMax }, () => line),
+  );
 });
 
 test("a link is read over one scheme and printed on one line", () => {
@@ -104,6 +117,13 @@ test("a branch is a reference name by the grammar the handoff already states", (
     `refs/heads/${"a".repeat(briefBranchCharsMax)}`,
   ])
     assert.throws(() => asBriefBranch(value), RangeError, `refused: ${value}`);
+});
+
+test("a branch's bound counts code points, matching the schema in front of it", () => {
+  const atBound = `${briefBranchPrefix}${"😀".repeat(briefBranchCharsMax - briefBranchPrefix.length)}`;
+  assert.equal(asBriefBranch(atBound), atBound);
+  const overBound = `${briefBranchPrefix}${"😀".repeat(briefBranchCharsMax - briefBranchPrefix.length + 1)}`;
+  assert.throws(() => asBriefBranch(overBound), RangeError);
 });
 
 test("a whole brief brands each of its parts and omits the branch it has none of", () => {
@@ -162,6 +182,11 @@ test("a check line is branded by the rule one briefing line is, and bounded in n
       }),
     RangeError,
   );
+});
+
+test("a check line's bound counts code points, matching the schema in front of it", () => {
+  const line = "😀".repeat(briefLineCharsMax);
+  assert.equal(asBriefCheckLine(line), line);
 });
 
 test("a finalization target takes the branch's own grammar and no other mode lands", () => {

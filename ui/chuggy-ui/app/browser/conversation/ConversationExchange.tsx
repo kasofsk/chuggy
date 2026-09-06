@@ -82,7 +82,7 @@ function ConversationMarkerLine(props: {
         <Notice
           tone="parked"
           inline
-          detail={`Elided · ${runCountLabel(marker.bytes)}`}
+          detail={`Elided · ${runCountLabel(marker.bytes)} bytes`}
         />
       );
     case "Capped":

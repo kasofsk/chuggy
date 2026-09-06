@@ -22,6 +22,7 @@ import {
   sessionTurnResultCharsMax,
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
+  textCodePointsCount,
 } from "../../contract/http.ts";
 import {
   runModelUsageSchema,
@@ -603,7 +604,7 @@ function workerReportRoute(
       return reply.code(401).send({ action: "stop" });
     if (
       typeof request.body !== "string" ||
-      request.body.length > resultManifestTextCharsMax
+      textCodePointsCount(request.body) > resultManifestTextCharsMax
     )
       return reply.code(400).send({ action: "stop" });
     const ingested = await service.reports.report(secret, {

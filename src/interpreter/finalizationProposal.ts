@@ -40,6 +40,7 @@
  * now.
  */
 
+import { textCodePointsCount } from "../contract/http.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import type { TicketId } from "../domain/ids.ts";
 import {
@@ -214,13 +215,9 @@ export function finalizationProposalReadingRecording(
 
 /** The longest prefix of a value that is at most `charsMax` and is still well formed. */
 function finalizationProposalBounded(value: string, charsMax: number): string {
-  if (value.length <= charsMax) return value;
-  let bounded = "";
-  for (const point of value) {
-    if (bounded.length + point.length > charsMax) break;
-    bounded += point;
-  }
-  return bounded;
+  return textCodePointsCount(value) <= charsMax
+    ? value
+    : [...value].slice(0, charsMax).join("");
 }
 
 /** The one line a proposal is titled with: the ticket it is for, and what it was asked for. */

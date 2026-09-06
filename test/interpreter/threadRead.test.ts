@@ -709,6 +709,31 @@ test("a message outside the door's bound is refused before a mailbox is reached"
   );
 });
 
+test("the door's bound counts code points, matching the schema in front of it", async () => {
+  const { web, held } = boundary();
+  const atBound = "😀".repeat(threadMessageCharsMax);
+
+  const sent = await web.sendThreadMessage(geoff, partition, {
+    session: mine,
+    turn: asSessionTurnId("thread-turn-1"),
+    message: atBound,
+  });
+
+  assert.equal(sent.result, "Sent");
+  assert.equal(
+    held.calls.filter((call) => call.startsWith("enqueue:")).length,
+    1,
+  );
+  await assert.rejects(
+    web.sendThreadMessage(geoff, partition, {
+      session: mine,
+      turn: asSessionTurnId("thread-turn-1"),
+      message: atBound + "😀",
+    }),
+    new RegExp(`at most ${String(threadMessageCharsMax)} characters`, "u"),
+  );
+});
+
 test("a closed thread and an ownerless one each refuse the message they cannot take", async () => {
   const closed = boundary({
     threads: [record(mine, geoff, { state: "Closed" })],

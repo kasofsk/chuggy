@@ -340,6 +340,28 @@ test("an identical message sent again is a turn of its own", async () => {
   ).not.toBe(posted[0]?.turn);
 });
 
+/** What the last press said is about the last press: a backlog line left under
+ * the box reports a refusal that the text now in it has never met. */
+test("a wait the reader has typed past is no longer said", async () => {
+  drawThread(
+    () => ({ thread: threadBody({}) }),
+    () => ({
+      body: { error: { code: "ThreadBacklogged", message: "wait" } },
+      status: 429,
+    }),
+  );
+  await mountThread();
+  await pressed("one");
+  expect(screen.getByText("Backlogged")).toBeDefined();
+  await turned(() => {
+    fireEvent.change(typing(), { target: { value: "one more" } });
+  });
+  expect(
+    screen.queryByText("Backlogged"),
+    "a backlog was still reported over text that had never been sent",
+  ).toBeNull();
+});
+
 /** Editing the text releases the identity: posting a correction under the turn
  * the mailbox already answered would report the correction as landed. */
 test("editing after a refusal posts under a turn of its own", async () => {

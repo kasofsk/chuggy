@@ -12,9 +12,9 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import { apiRunTranscript } from "../core/apiRoutes.ts";
 import { conversationExchanges } from "../core/conversation.ts";
 import { panelReason } from "../core/freshness.ts";
-import { apiRunTranscript } from "../core/apiRoutes.ts";
 import {
   runTranscriptFailed,
   runTranscriptFreshnessSentence,

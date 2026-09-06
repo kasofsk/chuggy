@@ -26,6 +26,7 @@
  * merge commit and a second identity for the same work.
  */
 
+import { textCodePointsCount } from "../../contract/http.ts";
 import { assertNever } from "../../domain/assertNever.ts";
 import {
   candidateBytesMax,
@@ -64,9 +65,10 @@ const candidateReservedDirectory = ".git";
 
 /** Refuses a path the index format cannot carry, or one naming something outside the tree. */
 function candidateAssertPath(path: string): void {
-  if (path.length === 0 || path.length > candidatePathCharsMax) {
+  const chars = textCodePointsCount(path);
+  if (path.length === 0 || chars > candidatePathCharsMax) {
     throw new RangeError(
-      `candidate path: ${String(path.length)} characters is not a path one tree entry takes`,
+      `candidate path: ${String(chars)} characters is not a path one tree entry takes`,
     );
   }
   if (/[\0\n\t]/u.test(path)) {
