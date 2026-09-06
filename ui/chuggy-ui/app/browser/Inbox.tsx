@@ -307,20 +307,23 @@ function InboxActions(props: {
   return (
     <>
       {actions.map((action) => (
-        <button
+        <Tooltip
           key={action.action}
-          type="button"
-          className="row-action"
-          disabled={inboxAnswerInFlight(props.step)}
-          title={ticketActionSentence(action.action, {
+          text={ticketActionSentence(action.action, {
             reason: props.entry.held?.reason,
           })}
-          onClick={() => {
-            props.onAnswer(action);
-          }}
         >
-          {action.action.toLowerCase()}
-        </button>
+          <button
+            type="button"
+            className="row-action"
+            disabled={inboxAnswerInFlight(props.step)}
+            onClick={() => {
+              props.onAnswer(action);
+            }}
+          >
+            {action.action.toLowerCase()}
+          </button>
+        </Tooltip>
       ))}
     </>
   );
@@ -346,14 +349,11 @@ function InboxWhy(props: {
     );
   const reason = held.reason;
   return (
-    <span
-      className="badge"
-      title={
-        reason === undefined ? undefined : escalationReasonSentence(reason)
-      }
+    <Tooltip
+      text={reason === undefined ? undefined : escalationReasonSentence(reason)}
     >
-      {row.badge ?? row.phase}
-    </span>
+      <span className="badge">{row.badge ?? row.phase}</span>
+    </Tooltip>
   );
 }
 
