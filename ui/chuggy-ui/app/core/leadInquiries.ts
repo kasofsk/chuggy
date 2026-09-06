@@ -11,10 +11,11 @@
  * order the sort happened to be stable in.
  *
  * THE QUESTION IS BOUNDED HERE IN THE MEASURE THE WIRE BOUNDS IT IN, which is
- * `String.length` because that is what zod's `max` reads — so the case that
- * proves it asks with characters outside the basic plane, the only way the two
- * measures can disagree and so the only way a bound counted the other way
- * reaches a reader as a rejection the box said would not happen.
+ * code points because that is what zod's `max` reads on a string past its
+ * bound — so the case that proves it asks with characters outside the basic
+ * plane, the only way code points and `String.length`'s UTF-16 units can
+ * disagree and so the only way a bound counted the other way reaches a reader
+ * as a rejection the box said would not happen.
  *
  * A QUESTION PAST THE BOUND IS SHOWN AND REFUSED, NEVER TRUNCATED. What a
  * reader pasted is theirs, and a box that silently dropped the end of it would
@@ -81,10 +82,17 @@ export function inquiryQuestion(typed: string): string {
   return typed.trim();
 }
 
+/** How many code points `text` holds, which is what zod's `.max()` reads on a
+ * string past its bound — not `String.length`'s UTF-16 units. */
+export function textCodePointsCount(text: string): number {
+  return [...text].length;
+}
+
 /** Why a question cannot be asked, in the one word the box refuses it with. */
 export function inquiryQuestionFault(question: string): string | undefined {
   if (question === "") return "Empty";
-  if (question.length > inquiryQuestionCharsMax) return "Too long";
+  if (textCodePointsCount(question) > inquiryQuestionCharsMax)
+    return "Too long";
   return undefined;
 }
 

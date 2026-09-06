@@ -387,20 +387,20 @@ test("a question past the bound is refused before it is posted", async () => {
 
 /**
  * THE ONLY WAY THE BOX AND THE WIRE CAN MEASURE ONE QUESTION DIFFERENTLY IS
- * OUTSIDE THE BASIC PLANE. Counted in characters instead of the units zod
- * counts, a question of astral characters twice the bound's length draws no
- * fault and goes out to be rejected as `400` — drawn as the unrecognised-code
- * word, telling the reader nothing about what was wrong.
+ * OUTSIDE THE BASIC PLANE, so an astral character is one code point and two
+ * of the UTF-16 units `String.length` counts: a question of the bound's worth
+ * of them sits exactly at the code-point bound zod counts and one more of
+ * them is past it.
  */
 test("a question of astral characters is refused at the wire's own bound", async () => {
   const astral = "\u{1f600}";
   const server = await drawInquiries({ listing: () => ({ inquiries: [] }) });
   await turned(() => {
-    typed(astral.repeat(inquiryQuestionCharsMax / 2));
+    typed(astral.repeat(inquiryQuestionCharsMax));
   });
   expect(screen.queryByText("Too long")).toBeNull();
   await turned(() => {
-    typed(astral.repeat(inquiryQuestionCharsMax / 2 + 1));
+    typed(`${astral.repeat(inquiryQuestionCharsMax)}${astral}`);
   });
   expect(
     screen.getByText("Too long"),
