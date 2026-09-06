@@ -301,9 +301,9 @@ test("a lead's turn carries no input of its own", () => {
   ]);
 });
 
-/** What `TASK-lead.md` asked for end to end: a lead turn nobody has claimed
- * appends a running exchange that draws its kind word and no text, because a
- * lead's turn has no input for the overlay to have carried in the first place. */
+/** A lead turn nobody has claimed appends a running exchange that draws its
+ * kind word and no text, because a lead's turn has no input for the overlay
+ * to have carried in the first place. */
 test("a Queued lead turn with no input appends a running exchange with its kind word", () => {
   const turn: LeadTurnResponse = {
     turn: "turn-9",
