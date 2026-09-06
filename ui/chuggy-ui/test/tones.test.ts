@@ -89,7 +89,7 @@ test("each standing an exchange can be in is its own word and its own tone", () 
     conversationStandingArm({ standing: "Running", state: "Claimed" }),
   ).toEqual({ word: "Claimed", tone: "live" });
   expect(
-    conversationStandingArm({ standing: "Failed", failure: "exit 1" }),
+    conversationStandingArm({ standing: "Failed", failure: "AgentFailed" }),
   ).toEqual({ word: "Failed", tone: "fail" });
   expect(conversationStandingArm({ standing: "Abandoned" })).toEqual({
     word: "Abandoned",
