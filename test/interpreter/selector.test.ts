@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/064-multi-dispatch-delivery.ts";
-import { selectorFailedDecisionsPerViewMax } from "../../src/contract/http.ts";
+import {
+  agenticRefusalReasonCharsMax,
+  selectorFailedDecisionsPerViewMax,
+  selectorSettingsTextCharsMax,
+} from "../../src/contract/http.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   dryRunSelectorPolicy,
@@ -2154,6 +2158,29 @@ test("the grown result's refusals and lifts reach the runtime intact", async () 
   assert.equal(result.attention, "Attention");
 });
 
+test("the refusal reason's bound counts code points, matching the schema in front of it", async () => {
+  const atBound = "😀".repeat(agenticRefusalReasonCharsMax);
+  const result = await policyAnswer({
+    attention: "Attention",
+    handoffNote: {},
+    dispatches: [],
+    refusals: [{ ticket: 42, ticketVersion: 2, reason: atBound }],
+    lifts: [],
+  });
+  assert.deepEqual(result.refusals, [
+    { ticket: asTicketId(42), ticketVersion: 2, reason: atBound },
+  ]);
+  await assert.rejects(() =>
+    policyAnswer({
+      attention: "Attention",
+      handoffNote: {},
+      dispatches: [],
+      refusals: [{ ticket: 42, ticketVersion: 2, reason: atBound + "😀" }],
+      lifts: [],
+    }),
+  );
+});
+
 test("a result naming its dispatch two ways is refused rather than half-read", async () => {
   await assert.rejects(() =>
     policyAnswer({
@@ -2187,6 +2214,32 @@ test("a host answering the pre-slice-2 spelling still names one dispatch", async
   assert.deepEqual(result.dispatches, [{ ticket: asTicketId(7) }]);
   assert.deepEqual(result.refusals, []);
   assert.deepEqual(result.lifts, []);
+});
+
+test("the base prompt's bound counts code points, matching the schema in front of it", async () => {
+  const atBound = "😀".repeat(selectorSettingsTextCharsMax);
+  const source = {
+    decisionDeadline: () => new Promise<never>(() => undefined),
+  };
+
+  const result = await dryRunSelectorPolicy(
+    policyHost(() => Promise.resolve(waitingExecution())),
+    source,
+    exhaustedObservation(),
+    resolved({ ...runtimeSettings, basePrompt: atBound }),
+  );
+  assert.deepEqual(result, waitingExecution().result);
+
+  await assert.rejects(
+    () =>
+      dryRunSelectorPolicy(
+        policyHost(() => Promise.resolve(waitingExecution())),
+        source,
+        exhaustedObservation(),
+        resolved({ ...runtimeSettings, basePrompt: `${atBound}😀` }),
+      ),
+    /selector input exceeds its byte budget/u,
+  );
 });
 
 /** A source whose one project moved to the cursor a case names. */
