@@ -50,7 +50,7 @@
  * materializer is the one that earns the rule.
  */
 
-import { artifactDigestChars } from "../contract/http.ts";
+import { artifactDigestChars, textCodePointsCount } from "../contract/http.ts";
 import type { Verdict } from "../domain/generated/modelTypes.ts";
 import {
   asGitObjectId,
@@ -349,7 +349,7 @@ export function artifactPathRejection(
 ): ArtifactPathRejection | undefined {
   if (!value.isWellFormed()) return "PathNotWellFormed";
   if (value.length === 0) return "PathEmpty";
-  if (value.length > artifactPathCharsMax) return "PathTooLong";
+  if (textCodePointsCount(value) > artifactPathCharsMax) return "PathTooLong";
   if (value.normalize("NFC") !== value) return "PathNotNormalForm";
   if (resultTextControlCharacter(value)) return "PathHasControlCharacter";
   if (value.includes("\\")) return "PathHasBackslash";
@@ -360,7 +360,11 @@ export function artifactPathRejection(
   if (segments.some((segment) => segment === "." || segment === ".."))
     return "PathDotSegment";
   if (segments.length > artifactPathSegmentsMax) return "PathTooDeep";
-  if (segments.some((segment) => segment.length > artifactPathSegmentCharsMax))
+  if (
+    segments.some(
+      (segment) => textCodePointsCount(segment) > artifactPathSegmentCharsMax,
+    )
+  )
     return "PathSegmentTooLong";
   if (artifactPathEdgeWhitespace(segments)) return "PathHasEdgeWhitespace";
   return undefined;
@@ -551,7 +555,7 @@ function manifestEnvelopeKeysRejection(
 function manifestEnvelope(
   text: string,
 ): { readonly value: Record<string, unknown> } | ManifestAccepted {
-  if (text.length > resultManifestTextCharsMax)
+  if (textCodePointsCount(text) > resultManifestTextCharsMax)
     return manifestRejected("TextTooLong");
   let parsed: unknown;
   try {
@@ -585,7 +589,7 @@ function manifestReport(
   if (
     typeof report !== "string" ||
     report.length === 0 ||
-    report.length > resultReportCharsMax ||
+    textCodePointsCount(report) > resultReportCharsMax ||
     !report.isWellFormed() ||
     resultTextControlCharacter(report)
   ) {

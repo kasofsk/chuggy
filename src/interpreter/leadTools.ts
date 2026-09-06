@@ -53,6 +53,7 @@
 import {
   nativeHttpBodyBytesMax,
   sessionSystemPromptCharsMax,
+  textCodePointsCount,
 } from "../contract/http.ts";
 import type { SessionCapability } from "./agentSession.ts";
 import type { SelectorResolvedSettings } from "./selector.ts";
@@ -272,7 +273,7 @@ export function leadSystemPrompt(
   settings: Pick<SelectorResolvedSettings, "basePrompt" | "northStar">,
 ): string {
   const prompt = leadObjectives(settings.basePrompt, settings.northStar);
-  if (prompt.length > sessionSystemPromptCharsMax)
+  if (textCodePointsCount(prompt) > sessionSystemPromptCharsMax)
     throw new RangeError(
       `lead system prompt must be at most ${String(sessionSystemPromptCharsMax)} characters`,
     );

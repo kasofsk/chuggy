@@ -13,6 +13,7 @@ import type { ReleaseAuthoring } from "../../actor/decisionEvent.ts";
 import {
   nativeHttpCursorCharsMax,
   nativeHttpVersion,
+  textCodePointsCount,
 } from "../../contract/http.ts";
 import type { ReleaseAuthoringBody } from "../../contract/authoring.ts";
 import type { TicketBriefBody } from "../../contract/brief.ts";
@@ -280,7 +281,10 @@ export function encodeTicketActivityCursor(
  * `JSON.parse` raises and no handler can tell from a corrupt stored document.
  */
 function decodedCursor(value: string, what: string): unknown {
-  if (value.length === 0 || value.length > nativeHttpCursorCharsMax)
+  if (
+    value.length === 0 ||
+    textCodePointsCount(value) > nativeHttpCursorCharsMax
+  )
     throw new RangeError(`${what} cursor is empty or too long`);
   try {
     return JSON.parse(Buffer.from(value, "base64url").toString());

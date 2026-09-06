@@ -135,7 +135,7 @@ export const inquiryDocumentCharsMax =
  */
 export function inquiryText(document: InquiryDocument): string {
   const text = JSON.stringify(document);
-  if (text.length > inquiryDocumentCharsMax)
+  if (textCodePointsCount(text) > inquiryDocumentCharsMax)
     throw new RangeError(
       `an inquiry document must be at most ${String(inquiryDocumentCharsMax)} characters`,
     );
@@ -162,7 +162,7 @@ function inquiryField(
  * a different rule is a turn nobody wrote.
  */
 export function parseInquiry(text: string): InquiryDocument {
-  if (text.length > inquiryDocumentCharsMax)
+  if (textCodePointsCount(text) > inquiryDocumentCharsMax)
     throw new RangeError("inquiry document: larger than one is written at");
   let parsed: unknown;
   try {
@@ -223,7 +223,7 @@ export function inquirySystemPrompt(leadPrompt: string): string {
   if (leadPrompt.length === 0)
     throw new RangeError("inquiry system prompt: the lead's prompt is empty");
   const prompt = inquiryObjectives(leadPrompt);
-  if (prompt.length > inquirySystemPromptCharsMax)
+  if (textCodePointsCount(prompt) > inquirySystemPromptCharsMax)
     throw new RangeError(
       `an inquiry system prompt must be at most ${String(inquirySystemPromptCharsMax)} characters`,
     );

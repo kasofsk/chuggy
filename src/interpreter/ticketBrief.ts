@@ -176,7 +176,9 @@ export function asBriefCheckLine(value: string): BriefCheckLine {
 /** Brands a branch through the one reference-name grammar this tree states. */
 export function asBriefBranch(value: string): GitRefName {
   const ref =
-    value.length > briefBranchCharsMax ? undefined : handoffRef(value);
+    textCodePointsCount(value) > briefBranchCharsMax
+      ? undefined
+      : handoffRef(value);
   if (ref === undefined)
     throw new RangeError("ticket branch: the value is not a reference name");
   return ref;

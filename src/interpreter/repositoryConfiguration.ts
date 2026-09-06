@@ -17,6 +17,7 @@ import type {
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import { assertNever } from "../domain/assertNever.ts";
+import { textCodePointsCount } from "../contract/http.ts";
 import {
   asRepositoryConfigurationName,
   asRepositoryConfigurationPath,
@@ -244,7 +245,7 @@ function repositoryConfigurationEnvelope(
   if (path === undefined) return { path: file.path, fault: "PathInvalid" };
   if (file.kind === "Symlink")
     return { path: file.path, fault: "SymlinkRefused" };
-  if (file.content.length > repositoryConfigurationFileCharsMax)
+  if (textCodePointsCount(file.content) > repositoryConfigurationFileCharsMax)
     return { path: file.path, fault: "ContentTooLarge" };
   let value: unknown;
   try {

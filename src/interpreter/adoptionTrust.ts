@@ -1,3 +1,4 @@
+import { textCodePointsCount } from "../contract/http.ts";
 import { assertNever } from "../domain/assertNever.ts";
 
 declare const canonicalAdoptionStatementBrand: unique symbol;
@@ -86,7 +87,7 @@ export interface AdoptionTrustDecision {
 function adoptionIdentityWellFormed(value: string): boolean {
   return (
     value.length > 0 &&
-    value.length <= adoptionIdentityCharsMax &&
+    textCodePointsCount(value) <= adoptionIdentityCharsMax &&
     /^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/u.test(value)
   );
 }
@@ -105,7 +106,10 @@ function adoptionObjectCanonical(adopted: AdoptionObject): object {
 export function canonicalAdoptionStatement(
   value: AdoptionStatement,
 ): CanonicalAdoptionStatement {
-  if (value.source.length === 0 || value.source.length > adoptionSourceCharsMax)
+  if (
+    value.source.length === 0 ||
+    textCodePointsCount(value.source) > adoptionSourceCharsMax
+  )
     throw new Error("adoption source is outside its configured bound");
   if (
     (value.adopted.object === "Git" &&
@@ -136,7 +140,7 @@ function adoptionPublisherKeyValid(key: AdoptionPublisherKey): boolean {
     adoptionIdentityWellFormed(key.publisher) &&
     adoptionIdentityWellFormed(key.key) &&
     key.publicKey.length > 0 &&
-    key.publicKey.length <= adoptionPublicKeyCharsMax &&
+    textCodePointsCount(key.publicKey) <= adoptionPublicKeyCharsMax &&
     adoptionTimestampValid(key.validFromEpochSecs) &&
     (key.expiresAtEpochSecs === undefined ||
       (adoptionTimestampValid(key.expiresAtEpochSecs) &&
@@ -231,7 +235,7 @@ export function decideAdoptionTrust(
       !adoptionIdentityWellFormed(signature.publisher) ||
       !adoptionIdentityWellFormed(signature.key) ||
       signature.signature.length === 0 ||
-      signature.signature.length > adoptionSignatureCharsMax
+      textCodePointsCount(signature.signature) > adoptionSignatureCharsMax
     )
       throw new Error("adoption signature is malformed");
   }

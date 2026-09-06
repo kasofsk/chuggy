@@ -1,5 +1,6 @@
 /** Pinned configuration and deterministic rendering for a direct Git handoff. */
 
+import { textCodePointsCount } from "../contract/http.ts";
 import type { GitObjectId, GitRefName, RepositoryId } from "./finalizer.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 import {
@@ -53,7 +54,7 @@ export function asHandoffConfigurationRevision(
 ): HandoffConfigurationRevision {
   if (
     value.length === 0 ||
-    value.length > handoffConfigurationRevisionCharsMax ||
+    textCodePointsCount(value) > handoffConfigurationRevisionCharsMax ||
     !value.isWellFormed()
   )
     throw new RangeError("handoff configuration revision is not bounded text");
@@ -157,7 +158,7 @@ function handoffRecord(value: unknown): Record<string, unknown> | undefined {
 function handoffBoundedText(value: unknown): string | undefined {
   return typeof value === "string" &&
     value.length > 0 &&
-    value.length <= handoffParameterCharsMax &&
+    textCodePointsCount(value) <= handoffParameterCharsMax &&
     value.isWellFormed()
     ? value
     : undefined;
@@ -165,7 +166,8 @@ function handoffBoundedText(value: unknown): string | undefined {
 
 function handoffCredential(value: unknown): CredentialReference | undefined {
   const text = handoffBoundedText(value);
-  return text === undefined || text.length > finalizerIdentityCharsMax
+  return text === undefined ||
+    textCodePointsCount(text) > finalizerIdentityCharsMax
     ? undefined
     : (text as CredentialReference);
 }
@@ -233,7 +235,7 @@ function handoffPath(value: unknown): HandoffPath | undefined {
   if (
     typeof value !== "string" ||
     value.length === 0 ||
-    value.length > handoffPathCharsMax ||
+    textCodePointsCount(value) > handoffPathCharsMax ||
     !value.isWellFormed() ||
     value.startsWith("/") ||
     value.endsWith("/") ||

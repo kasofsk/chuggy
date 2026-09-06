@@ -16,6 +16,7 @@ import {
   briefLineCharsMax,
 } from "../../src/contract/brief.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { textCodePointsCount } from "../../src/contract/http.ts";
 import {
   allFinalizationHoldKinds,
   asGitObjectId,
@@ -310,12 +311,12 @@ test("a bound falling inside a character keeps the words well formed", () => {
   const title = finalizationProposalTitle(asTicketId(70), paired);
   assert.equal(
     title,
-    `ticket 70: ${emoji.repeat((proposalTitleCharsMax - "ticket 70: ".length - 1) / 2)}`,
-    "the title stops one character short rather than half of one",
+    `ticket 70: ${emoji.repeat(proposalTitleCharsMax - "ticket 70: ".length)}`,
+    "the title fills exactly to the code-point bound",
   );
   assert.equal(title.isWellFormed(), true);
   const body = finalizationProposalBody(paired, marker);
   assert.equal(body.isWellFormed(), true);
-  assert.ok(body.length <= proposalBodyCharsMax);
+  assert.ok(textCodePointsCount(body) <= proposalBodyCharsMax);
   assert.equal(body.endsWith(`\n\n${marker}`), true);
 });

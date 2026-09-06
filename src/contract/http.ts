@@ -630,8 +630,8 @@ export function partitionPath(partition: PartitionIdentity): string {
   const tenant = encodeURIComponent(partition.tenant);
   const project = encodeURIComponent(partition.project);
   if (
-    tenant.length > nativeHttpPathSegmentCharsMax ||
-    project.length > nativeHttpPathSegmentCharsMax
+    textCodePointsCount(tenant) > nativeHttpPathSegmentCharsMax ||
+    textCodePointsCount(project) > nativeHttpPathSegmentCharsMax
   )
     throw new RangeError("a partition segment is longer than the wire accepts");
   return `${nativeHttpBasePath}/tenants/${tenant}/projects/${project}`;
