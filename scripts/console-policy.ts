@@ -1,6 +1,6 @@
 /**
- * What a built console's document may carry, and the cascade order the
- * stylesheet it loads must be emitted in.
+ * What a built console's document may carry, the cascade order the stylesheet
+ * it loads must be emitted in, and the values its utilities layer may state.
  *
  * The policy `images/web/nginx.conf` serves a console under is
  * `default-src 'none'` with `script-src 'self'` and `style-src 'self'` — no
@@ -8,8 +8,8 @@
  * loads in a dev server and is blank in production, and a subresource from
  * another origin is a page missing a piece of itself.
  *
- * THE CASCADE IS THE SECOND DECISION AND IT IS READ FROM THE SAME BUILD. The
- * design system orders its layers `tokens, base, ui, page`, and the production
+ * THE CASCADE IS THE SECOND DECISION AND IT IS READ FROM THE SAME BUILD.
+ * `consoleCascadeLayers` below is the order, and the production
  * minifier drops a bare `@layer` statement whenever the order it emits the
  * blocks in already satisfies it — so the order the browser gets comes from
  * the order the entry imports the sheets in, and nothing about that order is
@@ -20,7 +20,7 @@
  * SO THE DECISION IS OVER WHAT THE DOCUMENT LOADS, IN THE ORDER IT LOADS IT.
  * Layers are the document's and not a file's, so the sheets are read as one
  * text in href order — which is the order a browser applies them in — and
- * decided once. With no statement the blocks must be ALL FOUR LAYERS IN THE
+ * decided once. With no statement the blocks must be EVERY LAYER IN THE
  * SYSTEM'S ORDER: a missing one is a sheet that did not reach the bundle, and
  * a layer the appearance order never establishes is one nothing can say a
  * place for. With a statement, that statement must name exactly the order and
@@ -36,7 +36,13 @@
  * bundler's business and not a property this may depend on. A rule outside
  * every layer is invisible to the cascade half — the console still serves one
  * unlayered sheet by design — and `.chug/tasks/check-console-sheets.sh` is
- * what reads the sheets a rule may not leave.
+ * what reads the sheets a rule may not leave. The layer scan skips a quoted
+ * string, so a brace inside one no longer closes a layer early; a brace inside
+ * an unquoted `url()` still does. The value scans read a layer's whole body,
+ * so a length or a colour inside a `var()` fallback or a data URI is read like
+ * any other, and a percent-encoded one is not read at all. The class scan
+ * starts a name where an ASCII identifier starts, so a decimal in a value is
+ * not one and a class named in another script is not read.
  */
 
 /** Every attribute that makes a browser fetch something, and no others. */
@@ -91,8 +97,22 @@ export function consolePolicyFindings(markup: string): readonly string[] {
   return findings;
 }
 
-/** The order the design system's layers take, weakest first. */
-export const consoleCascadeLayers = ["tokens", "base", "ui", "page"] as const;
+/**
+ * The order the design system's layers take, weakest first: `properties` is
+ * Tailwind's `@supports` fallback setting its own `--tw-*` to `initial` on
+ * `*`, and the utilities layer is what sets them, so above it the fallback
+ * wins and the utility draws nothing. Tailwind writes the block only when a
+ * utility needs it, so a build carrying neither the block nor the statement
+ * reads here as a layer that never reached the bundle.
+ */
+export const consoleCascadeLayers = [
+  "properties",
+  "tokens",
+  "base",
+  "ui",
+  "page",
+  "utilities",
+] as const;
 
 export type ConsoleCascadeLayer = (typeof consoleCascadeLayers)[number];
 
@@ -169,4 +189,305 @@ export function consolePolicyStylesheetHrefs(
     if (value !== "") hrefs.push(value);
   }
   return hrefs;
+}
+
+/**
+ * CSS Color Level 4's named colours, the roster
+ * `.chug/tasks/check-console-sheets.sh` states over the sources;
+ * `test/scripts/consolePolicy.test.ts` reads that gate and is what holds the
+ * two copies to each other.
+ */
+export const consoleRawColourNames = [
+  "aliceblue",
+  "antiquewhite",
+  "aqua",
+  "aquamarine",
+  "azure",
+  "beige",
+  "bisque",
+  "black",
+  "blanchedalmond",
+  "blue",
+  "blueviolet",
+  "brown",
+  "burlywood",
+  "cadetblue",
+  "chartreuse",
+  "chocolate",
+  "coral",
+  "cornflowerblue",
+  "cornsilk",
+  "crimson",
+  "cyan",
+  "darkblue",
+  "darkcyan",
+  "darkgoldenrod",
+  "darkgray",
+  "darkgreen",
+  "darkgrey",
+  "darkkhaki",
+  "darkmagenta",
+  "darkolivegreen",
+  "darkorange",
+  "darkorchid",
+  "darkred",
+  "darksalmon",
+  "darkseagreen",
+  "darkslateblue",
+  "darkslategray",
+  "darkslategrey",
+  "darkturquoise",
+  "darkviolet",
+  "deeppink",
+  "deepskyblue",
+  "dimgray",
+  "dimgrey",
+  "dodgerblue",
+  "firebrick",
+  "floralwhite",
+  "forestgreen",
+  "fuchsia",
+  "gainsboro",
+  "ghostwhite",
+  "gold",
+  "goldenrod",
+  "gray",
+  "green",
+  "greenyellow",
+  "grey",
+  "honeydew",
+  "hotpink",
+  "indianred",
+  "indigo",
+  "ivory",
+  "khaki",
+  "lavender",
+  "lavenderblush",
+  "lawngreen",
+  "lemonchiffon",
+  "lightblue",
+  "lightcoral",
+  "lightcyan",
+  "lightgoldenrodyellow",
+  "lightgray",
+  "lightgreen",
+  "lightgrey",
+  "lightpink",
+  "lightsalmon",
+  "lightseagreen",
+  "lightskyblue",
+  "lightslategray",
+  "lightslategrey",
+  "lightsteelblue",
+  "lightyellow",
+  "lime",
+  "limegreen",
+  "linen",
+  "magenta",
+  "maroon",
+  "mediumaquamarine",
+  "mediumblue",
+  "mediumorchid",
+  "mediumpurple",
+  "mediumseagreen",
+  "mediumslateblue",
+  "mediumspringgreen",
+  "mediumturquoise",
+  "mediumvioletred",
+  "midnightblue",
+  "mintcream",
+  "mistyrose",
+  "moccasin",
+  "navajowhite",
+  "navy",
+  "oldlace",
+  "olive",
+  "olivedrab",
+  "orange",
+  "orangered",
+  "orchid",
+  "palegoldenrod",
+  "palegreen",
+  "paleturquoise",
+  "palevioletred",
+  "papayawhip",
+  "peachpuff",
+  "peru",
+  "pink",
+  "plum",
+  "powderblue",
+  "purple",
+  "rebeccapurple",
+  "red",
+  "rosybrown",
+  "royalblue",
+  "saddlebrown",
+  "salmon",
+  "sandybrown",
+  "seagreen",
+  "seashell",
+  "sienna",
+  "silver",
+  "skyblue",
+  "slateblue",
+  "slategray",
+  "slategrey",
+  "snow",
+  "springgreen",
+  "steelblue",
+  "tan",
+  "teal",
+  "thistle",
+  "tomato",
+  "turquoise",
+  "violet",
+  "wheat",
+  "white",
+  "whitesmoke",
+  "yellow",
+  "yellowgreen",
+] as const;
+
+interface ConsoleLayerBlock {
+  readonly name: string;
+  readonly body: string;
+}
+
+const anyLayerOpens = /@layer\s+([A-Za-z][\w-]*)\s*\{/gu;
+
+/** Where a quoted value closes, so a brace inside one counts as text. */
+function consoleLayerBlocksQuoted(stylesheet: string, opened: number): number {
+  const quote = stylesheet[opened];
+  let read = opened + 1;
+  while (read < stylesheet.length) {
+    if (stylesheet[read] === "\\") read += 2;
+    else if (stylesheet[read] === quote) return read;
+    else read += 1;
+  }
+  return stylesheet.length;
+}
+
+/** Every named layer block, brace-matched, in the order it opens. */
+function consoleLayerBlocks(stylesheet: string): readonly ConsoleLayerBlock[] {
+  const blocks: ConsoleLayerBlock[] = [];
+  anyLayerOpens.lastIndex = 0;
+  for (let at = anyLayerOpens.exec(stylesheet); at !== null;) {
+    let depth = 1;
+    let read = at.index + at[0].length;
+    const from = read;
+    while (read < stylesheet.length && depth > 0) {
+      const here = stylesheet[read];
+      if (here === '"' || here === "'")
+        read = consoleLayerBlocksQuoted(stylesheet, read);
+      else if (here === "{") depth += 1;
+      else if (here === "}") depth -= 1;
+      read += 1;
+    }
+    blocks.push({
+      name: at[1] ?? "",
+      body: stylesheet.slice(from, depth === 0 ? read - 1 : read),
+    });
+    anyLayerOpens.lastIndex = read;
+    at = anyLayerOpens.exec(stylesheet);
+  }
+  return blocks;
+}
+
+const hex = /#[0-9a-f]+/giu;
+const colourFunction =
+  /(?<![\w-])(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/giu;
+const length =
+  /(?<![\w.\\])-?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(px|rem)(?![\w-])/giu;
+const word = /[a-z-]+/giu;
+
+/** The text of every `@layer utilities` block, matched brace for brace. */
+function consoleUtilitiesBlocks(stylesheet: string): readonly string[] {
+  return consoleLayerBlocks(stylesheet)
+    .filter((block) => block.name === "utilities")
+    .map((block) => block.body);
+}
+
+/** A zero names no step of any scale, and a hairline is rounded for you. */
+function consoleUtilitiesStatesLength(written: string): boolean {
+  if (written === "1px") return false;
+  return Number(written.replace(/(px|rem)$/u, "")) !== 0;
+}
+
+function consoleUtilitiesBlockFindings(block: string): readonly string[] {
+  const findings: string[] = [];
+  const said = (raw: string, what: string): void => {
+    findings.push(
+      `${raw} in the utilities layer, a raw ${what} the tokens state`,
+    );
+  };
+  for (const [found] of block.matchAll(hex))
+    if ([4, 5, 7, 9].includes(found.length)) said(found, "colour");
+  for (const [, name] of block.matchAll(colourFunction))
+    said(`${(name ?? "").toLowerCase()}()`, "colour");
+  for (const found of block.matchAll(word)) {
+    const name = found[0].toLowerCase();
+    if (block[found.index + name.length] === "(") continue;
+    if ((consoleRawColourNames as readonly string[]).includes(name))
+      said(name, "colour");
+  }
+  for (const [found] of block.matchAll(length))
+    if (consoleUtilitiesStatesLength(found)) said(found, "length");
+  return findings;
+}
+
+/**
+ * The built utilities layer, held to the clause
+ * `.chug/tasks/check-console-sheets.sh` holds the sources to: a utility class
+ * is the tokens under another name, never a second way to state a value.
+ *
+ * It is read from the build because the two ways a raw value reaches this
+ * layer are both invisible in a source sheet — a default theme imported by a
+ * later change, and an arbitrary value written into a class in TSX.
+ */
+export function consoleUtilitiesFindings(
+  stylesheet: string,
+): readonly string[] {
+  return consoleUtilitiesBlocks(stylesheet).flatMap(
+    consoleUtilitiesBlockFindings,
+  );
+}
+
+const classSelector = /\.((?:[A-Za-z_]|-(?![0-9])|\\.)(?:[\w-]|\\.)*)/gu;
+
+/**
+ * A block's class names, each starting where an identifier may — a decimal
+ * written without its leading zero is a value, not a class — and skipping an
+ * escaped one, which names no plain word.
+ */
+function consoleLayerClassNames(body: string): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const found of body.matchAll(classSelector)) {
+    const name = found[1] ?? "";
+    if (!name.includes("\\")) names.add(name);
+  }
+  return names;
+}
+
+/**
+ * A class the generated utilities layer emits under a plain name a layered
+ * sheet also selects: the utilities layer is strongest, so it silently wins
+ * that element regardless of what the layered rule intended.
+ */
+export function consoleCollisionFindings(
+  stylesheet: string,
+): readonly string[] {
+  const utilities = new Set<string>();
+  const layered = new Set<string>();
+  for (const block of consoleLayerBlocks(stylesheet)) {
+    const names = consoleLayerClassNames(block.body);
+    const into = block.name === "utilities" ? utilities : layered;
+    for (const name of names) into.add(name);
+  }
+  const findings: string[] = [];
+  for (const name of utilities)
+    if (layered.has(name))
+      findings.push(
+        `a class \`.${name}\` the utilities layer emits and a layered sheet selects`,
+      );
+  return findings;
 }

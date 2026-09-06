@@ -1,0 +1,68 @@
+/* Tailwind's utilities, generated over the tokens and nothing else: no
+ * preflight, no default palette, no default scales. `reference` is what keeps
+ * `@theme` from emitting the names it is given — several of them are the
+ * console's own token names, and a variable defined as itself is invalid. */
+
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@theme inline reference {
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-inverse: var(--surface-inverse);
+
+  --color-ink-1: var(--ink-1);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-inverse: var(--ink-inverse);
+
+  --color-edge: var(--edge);
+  --color-edge-strong: var(--edge-strong);
+  --color-edge-control: var(--edge-control);
+
+  --color-tone-pass: var(--tone-pass);
+  --color-tone-fail: var(--tone-fail);
+  --color-tone-live: var(--tone-live);
+  --color-tone-parked: var(--tone-parked);
+  --color-tone-queued: var(--tone-queued);
+  --color-tone-retired: var(--tone-retired);
+  --color-tone-danger: var(--tone-danger);
+  --color-tone-on-danger: var(--tone-on-danger);
+
+  --color-wash-pass: var(--wash-pass);
+  --color-wash-fail: var(--wash-fail);
+  --color-wash-live: var(--wash-live);
+  --color-wash-parked: var(--wash-parked);
+
+  --spacing-0: 0;
+  --spacing-1: var(--space-1);
+  --spacing-2: var(--space-2);
+  --spacing-3: var(--space-3);
+  --spacing-4: var(--space-4);
+  --spacing-5: var(--space-5);
+  --spacing-6: var(--space-6);
+  --spacing-7: var(--space-7);
+
+  --font-prose: var(--font-prose);
+  --font-mono: var(--font-mono);
+
+  --text-xs: var(--text-xs);
+  --text-sm: var(--text-sm);
+  --text-md: var(--text-md);
+  --text-lg: var(--text-lg);
+  --text-xl: var(--text-xl);
+  --text-2xl: var(--text-2xl);
+
+  --font-weight-regular: var(--weight-regular);
+  --font-weight-medium: var(--weight-medium);
+  --font-weight-strong: var(--weight-strong);
+
+  --leading-tight: var(--leading-tight);
+  --leading-dense: var(--leading-dense);
+  --leading-prose: var(--leading-prose);
+
+  --tracking-label: var(--tracking-label);
+
+  --radius-1: var(--radius-1);
+  --radius-2: var(--radius-2);
+}

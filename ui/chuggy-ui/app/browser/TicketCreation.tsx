@@ -81,7 +81,7 @@ function Fault(props: {
 }): ReactNode {
   const found = props.faults.find((fault) => fault.field === props.field);
   return found === undefined ? null : (
-    <p className="creation-fault">{found.reason}</p>
+    <p className="text-tone-fail">{found.reason}</p>
   );
 }
 
@@ -208,7 +208,9 @@ function Branch(props: FormEdit): ReactNode {
           onChange({ ...form, branchName: event.target.value });
         }}
       />
-      <span className="creation-hint">{creationBranchHint}</span>
+      <span className="col-start-2 -col-end-1 text-ink-3 text-xs">
+        {creationBranchHint}
+      </span>
     </label>
   );
 }
@@ -226,7 +228,9 @@ function TargetBranch(props: FormEdit): ReactNode {
           onChange({ ...form, targetBranchName: event.target.value });
         }}
       />
-      <span className="creation-hint">{creationTargetBranchHint}</span>
+      <span className="col-start-2 -col-end-1 text-ink-3 text-xs">
+        {creationTargetBranchHint}
+      </span>
     </label>
   );
 }
@@ -276,7 +280,7 @@ function CreationFields(
   return (
     <>
       <Tooltip text={shaping.title}>
-        <p className="creation-configuration">{shaping.text}</p>
+        <p className="text-ink-3">{shaping.text}</p>
       </Tooltip>
       <Intent form={form} onChange={onChange} />
       <Fault field="intent" faults={faults} />

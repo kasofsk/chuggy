@@ -58,13 +58,13 @@ function Brief(props: { readonly brief: TicketBriefBody }): ReactNode {
   return (
     <>
       <Field name="intent">
-        <p className="intent">{intent}</p>
+        <p className="whitespace-pre-wrap">{intent}</p>
       </Field>
       <Field name="links">
         {links.length === 0 ? (
           "none"
         ) : (
-          <ul className="links">
+          <ul>
             {links.map((link) => (
               <li key={link}>
                 <a href={link} rel="noopener noreferrer" target="_blank">
@@ -79,7 +79,7 @@ function Brief(props: { readonly brief: TicketBriefBody }): ReactNode {
         {checks === undefined || checks.length === 0 ? (
           "none"
         ) : (
-          <ul className="checks">
+          <ul>
             {checks.map((check) => (
               <li key={check}>{check}</li>
             ))}

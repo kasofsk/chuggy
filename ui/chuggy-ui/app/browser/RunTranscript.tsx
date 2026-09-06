@@ -34,7 +34,7 @@ import { useNowMs } from "./Freshness.tsx";
 
 function Elisions(props: { readonly elided: readonly number[] }): ReactNode {
   return props.elided.length === 0 ? null : (
-    <span className="step-elided">
+    <span className="col-start-2 text-tone-parked text-xs">
       {props.elided
         .map((bytes) => runTranscriptElisionSentence(bytes))
         .join(" ")}
@@ -48,19 +48,19 @@ function Step(props: { readonly step: RunTranscriptStep }): ReactNode {
     case "Assistant":
       return (
         <li className="step" data-step={step.type}>
-          <span className="step-type">{step.type}</span>
+          <span className="text-ink-3">{step.type}</span>
           {step.tools.length === 0 ? null : (
-            <span className="step-tools">{step.tools.join(", ")}</span>
+            <span className="text-tone-live">{step.tools.join(", ")}</span>
           )}
-          <pre className="step-text">{step.text}</pre>
+          <pre className="col-start-2">{step.text}</pre>
           <Elisions elided={step.elided} />
         </li>
       );
     case "User":
       return (
         <li className="step" data-step={step.type}>
-          <span className="step-type">{step.type}</span>
-          <span className="step-tools">
+          <span className="text-ink-3">{step.type}</span>
+          <span className="text-tone-live">
             {step.toolResults === 0
               ? "no tool result"
               : `${String(step.toolResults)} tool results`}
@@ -71,29 +71,33 @@ function Step(props: { readonly step: RunTranscriptStep }): ReactNode {
     case "Capped":
       return (
         <li className="step" data-step={step.type}>
-          <span className="step-type">{step.type}</span>
-          <span className="step-capped">{step.sentence}</span>
+          <span className="text-ink-3">{step.type}</span>
+          <span className="col-start-2 text-tone-parked text-xs">
+            {step.sentence}
+          </span>
         </li>
       );
     case "Event":
       return (
         <li className="step" data-step={step.type}>
-          <span className="step-type">{step.type}</span>
+          <span className="text-ink-3">{step.type}</span>
           <Elisions elided={step.elided} />
         </li>
       );
     case "Unavailable":
       return (
         <li className="step" data-step="unavailable">
-          <span className="step-type">batch</span>
-          <span className="step-capped">{step.sentence}</span>
+          <span className="text-ink-3">batch</span>
+          <span className="col-start-2 text-tone-parked text-xs">
+            {step.sentence}
+          </span>
         </li>
       );
     case "Unreadable":
       return (
         <li className="step" data-step="unreadable">
-          <span className="step-type">unreadable</span>
-          <pre className="step-text">{step.line}</pre>
+          <span className="text-ink-3">unreadable</span>
+          <pre className="col-start-2">{step.line}</pre>
         </li>
       );
   }

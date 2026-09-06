@@ -302,7 +302,7 @@ function InboxActions(props: {
   const actions = inboxEntryActions(props.entry);
   if (actions.length === 0)
     return (
-      <span className="cell-dim">no action can be sent from here yet</span>
+      <span className="text-ink-3">no action can be sent from here yet</span>
     );
   return (
     <>
@@ -405,12 +405,12 @@ function InboxRow(props: {
           ? cellExecutionUnread
           : ticketRowExecutionCell(row, projectTableExecutionPhrase(row))}
       </td>
-      <td className="cell-dim">
+      <td className="text-ink-3">
         {row === undefined ? cellAbsent : row.sequence}
         {row?.activityAt === undefined ? "" : ` · ${row.activityAt}`}
       </td>
       <td className="row-actions">
-        <div className="row-actions-inner">
+        <div className="flex gap-2 items-baseline">
           <InboxActions
             entry={props.entry}
             step={props.step}
@@ -418,7 +418,7 @@ function InboxRow(props: {
           />
         </div>
       </td>
-      <td className="cell-dim">
+      <td className="text-ink-3">
         {props.step === undefined ? cellAbsent : inboxStepSentence(props.step)}
       </td>
     </tr>
@@ -582,7 +582,11 @@ export function InboxScreen(props: {
         }
       </DataPanel>
       {inbox.readMore === undefined ? null : (
-        <button type="button" className="more" onClick={inbox.readMore}>
+        <button
+          type="button"
+          className="justify-self-start"
+          onClick={inbox.readMore}
+        >
           more
         </button>
       )}

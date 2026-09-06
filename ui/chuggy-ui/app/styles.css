@@ -43,12 +43,6 @@
 /* The project table: dense rows, one line each, and a badge that is read
  * before the row it sits in. */
 
-.table-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-
 .filters {
   display: flex;
   gap: var(--space-2);
@@ -60,19 +54,10 @@
   color: var(--ink-1);
 }
 
-.more {
-  justify-self: start;
-}
-
 .ticket-table {
   width: 100%;
   border-collapse: collapse;
   font-variant-numeric: tabular-nums;
-}
-
-.ticket-table-scroll {
-  max-width: 100%;
-  overflow-x: auto;
 }
 
 .ticket-table th,
@@ -104,10 +89,6 @@
   outline-offset: 2px;
 }
 
-.cell-dim {
-  color: var(--ink-3);
-}
-
 /* An inline block, because a `td` clips only under a fixed table layout and
  * this table sizes its columns from what is in them. */
 .clipped {
@@ -127,10 +108,7 @@
   font-size: var(--text-xs);
 }
 
-.action-panel,
-.configuration,
-.execution-detail,
-.result {
+.configuration {
   display: grid;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
@@ -149,13 +127,6 @@
 .phase-revoked,
 .phase-abandoned {
   color: var(--tone-fail);
-}
-
-.ticket-sequence,
-.execution-source,
-.artifact-bytes {
-  color: var(--ink-3);
-  font-size: var(--text-xs);
 }
 
 .ticket-reason {
@@ -203,32 +174,6 @@
   word-break: break-word;
 }
 
-.actions {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.intent {
-  margin: 0;
-  white-space: pre-wrap;
-}
-
-.links,
-.checks {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.executions,
-.artifacts {
-  list-style: none;
-  margin: 0;
-  padding: var(--space-2) var(--space-4);
-  display: grid;
-  gap: var(--space-2);
-}
-
 .execution {
   border-top: 1px solid var(--edge);
   padding-top: var(--space-2);
@@ -250,10 +195,6 @@
   color: var(--ink-3);
 }
 
-.execution-source {
-  margin: 0;
-}
-
 .attempts {
   border-collapse: collapse;
   width: 100%;
@@ -272,37 +213,8 @@
   font-size: var(--text-xs);
 }
 
-.artifact {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2);
-}
-
-.artifact-role {
-  color: var(--ink-3);
-}
-
-.artifact-preview {
-  flex-basis: 100%;
-}
-
-.verdict-pass {
-  color: var(--tone-live);
-}
-
-.verdict-fail {
-  color: var(--tone-fail);
-}
-
 /* The inbox: a badge on the nav item that leads to it, and answers that sit in
  * the row they are about. */
-
-.row-actions-inner {
-  display: flex;
-  gap: var(--space-2);
-  align-items: baseline;
-}
 
 .row-action {
   padding: 0 0.4rem;
@@ -348,11 +260,6 @@
   width: auto;
 }
 
-.creation-configuration {
-  margin: 0;
-  color: var(--ink-3);
-}
-
 .creation-row {
   display: grid;
   grid-template-columns: 10rem 1fr auto;
@@ -366,12 +273,6 @@
 
 .creation-intent textarea {
   resize: vertical;
-}
-
-.creation-hint {
-  grid-column: 2 / -1;
-  color: var(--ink-3);
-  font-size: var(--text-xs);
 }
 
 .creation-set {
@@ -422,86 +323,9 @@
   color: var(--ink-3);
 }
 
-.creation-fault {
-  margin: 0;
-  color: var(--tone-fail);
-}
+/* Run evidence: the four panes an expanded run draws. */
 
-/* Run evidence: the stage breakdown above the executions it groups, and the
- * four panes an expanded run draws. */
-
-.stages,
-.runs {
-  list-style: none;
-  margin: 0;
-  padding: var(--space-2) var(--space-4);
-  display: grid;
-  gap: var(--space-2);
-}
-
-.stage {
-  display: grid;
-  grid-template-columns: 12rem 1fr;
-  gap: 0 var(--space-4);
-  align-items: baseline;
-}
-
-.stage-label {
-  color: var(--ink-1);
-  font-weight: 600;
-}
-
-.stage .run-totals,
-.stage .panel-note {
-  grid-column: 1 / -1;
-}
-
-.run-totals {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-4);
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-}
-
-.run-cost {
-  color: var(--ink-1);
-}
-
-.run-tokens,
-.run-turns,
-.run-duration {
-  color: var(--ink-3);
-  font-size: var(--text-xs);
-}
-
-.run {
-  border-top: 1px solid var(--edge);
-  padding-top: var(--space-2);
-  display: grid;
-  gap: var(--space-2);
-}
-
-.run-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-4);
-  margin: 0;
-}
-
-.run-number {
-  color: var(--ink-1);
-  font-weight: 600;
-}
-
-.run-state {
-  color: var(--ink-3);
-}
-
-.run-report,
-.argv {
+.run-report {
   margin: 0;
   padding: var(--space-2);
   background: var(--surface-2);
@@ -522,11 +346,6 @@
 .run-report pre {
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-.run-reads {
-  display: grid;
-  gap: var(--space-2);
 }
 
 .turns {
@@ -574,26 +393,4 @@
   grid-template-columns: 7rem 1fr;
   gap: 0 var(--space-4);
   align-items: baseline;
-}
-
-.step-type {
-  color: var(--ink-3);
-}
-
-.step-tools {
-  color: var(--tone-live);
-}
-
-.step-capped,
-.step-elided {
-  grid-column: 2;
-  color: var(--tone-parked);
-  font-size: var(--text-xs);
-}
-
-.step-text {
-  grid-column: 2;
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
 }

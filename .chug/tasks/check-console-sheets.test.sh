@@ -172,6 +172,14 @@ check "keyframes outside a layer is a finding" 1 "$RC" "@keyframes pill-pulse �
 sheet_verbatim '@font-face {' '  font-family: Chuggy;' '}'
 check "a font face outside a layer is a finding" 1 "$RC" "@font-face — a rule outside the layer"
 
+# Tailwind's theme block is the fifth name on the allowlist, and the only one:
+# it emits no rule, while `@utility` and the rest each write one.
+sheet_verbatim '@theme inline reference {' '  --color-ink-1: var(--ink-1);' '}'
+check "a theme block may sit at the top level" 0 "$RC" "0 finding(s)"
+
+sheet_verbatim '@utility pill-inline {' '  color: var(--ink-1);' '}'
+check "another tailwind at-rule is still a finding" 1 "$RC" "@utility pill-inline — a rule outside the layer"
+
 # The at-rules that may lead a sheet, and the statement that orders the layers.
 sheet_verbatim '@charset "utf-8";' '@layer tokens, base, ui, page;' \
 	'@layer ui {' '  .pill {' '    color: var(--ink-1);' '  }' '}'
