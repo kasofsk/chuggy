@@ -1,0 +1,22 @@
+/* Quote: a scroll-capped block of quoted text, with an optional tone rail. */
+
+@layer ui {
+  .quote {
+    background: var(--surface-2);
+    border-radius: var(--radius-2);
+    color: var(--ink-1);
+    font-size: var(--mono-optical);
+    max-height: 24em;
+    overflow: auto;
+    padding: var(--space-2);
+    white-space: pre-wrap;
+  }
+
+  .quote-said {
+    border-left: var(--rail) solid var(--edge-strong);
+  }
+
+  .quote-answer {
+    border-left: var(--rail) solid var(--tone-live);
+  }
+}

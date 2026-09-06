@@ -83,6 +83,7 @@ import { Figure } from "../ui/Figure.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import { Quote } from "../ui/Quote.tsx";
 
 export const leadInquiriesListName = "inquiries";
 
@@ -263,9 +264,7 @@ function LeadInquiryRow(props: {
         <LeadInquiryRollup inquiry={inquiry} />
       </div>
       <p className="lead-inquiry-question">{inquiry.question}</p>
-      {inquiry.answer === undefined ? null : (
-        <pre className="lead-entry-text">{inquiry.answer}</pre>
-      )}
+      {inquiry.answer === undefined ? null : <Quote>{inquiry.answer}</Quote>}
     </li>
   );
 }
