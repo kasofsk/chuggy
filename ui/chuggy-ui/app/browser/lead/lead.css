@@ -113,14 +113,4 @@
   .lead-inquiry-question {
     max-width: var(--measure);
   }
-
-  .lead-entry-text {
-    background: var(--surface-2);
-    border-radius: var(--radius-2);
-    color: var(--ink-1);
-    font-size: var(--mono-optical);
-    max-height: 24em;
-    overflow: auto;
-    padding: var(--space-2);
-  }
 }
