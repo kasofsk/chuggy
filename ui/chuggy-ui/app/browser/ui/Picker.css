@@ -2,6 +2,8 @@
 
 @layer ui {
   .picker {
+    max-height: var(--radix-dropdown-menu-content-available-height);
+    overflow-y: auto;
     display: grid;
     gap: var(--space-1);
     padding: var(--space-1);

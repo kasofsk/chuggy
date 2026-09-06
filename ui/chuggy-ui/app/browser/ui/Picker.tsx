@@ -29,11 +29,9 @@ export function Picker(props: {
   );
   return (
     <DropdownMenu.Root modal={false}>
-      <DropdownMenu.Trigger
-        className={buttonLookClassName({ size: "sm" })}
-        aria-label={props.label}
-      >
-        {chosen?.text ?? props.value}
+      <DropdownMenu.Trigger className={buttonLookClassName({ size: "sm" })}>
+        <span className="visually-hidden">{props.label}</span>
+        {` ${chosen?.text ?? props.value}`}
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content

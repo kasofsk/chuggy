@@ -34,8 +34,8 @@ test("the trigger carries the label and shows the chosen option's text", () => {
       onChoose={() => undefined}
     />,
   );
-  const trigger = screen.getByRole("button", { name: "Project" });
-  expect(trigger.textContent).toBe("acme / beta");
+  const trigger = screen.getByRole("button", { name: "Project acme / beta" });
+  expect(trigger).toBeDefined();
   expect(view.container.querySelector("[style]")).toBeNull();
 });
 
@@ -48,7 +48,7 @@ test("an open menu is radio items with one checked, and appends no style", async
       onChoose={() => undefined}
     />,
   );
-  fireEvent.keyDown(screen.getByRole("button", { name: "Project" }), {
+  fireEvent.keyDown(screen.getByRole("button", { name: /^Project / }), {
     key: "ArrowDown",
   });
   await screen.findByRole("menu");
@@ -77,7 +77,7 @@ test("choosing another option reaches the caller with its value", async () => {
       }}
     />,
   );
-  fireEvent.keyDown(screen.getByRole("button", { name: "Project" }), {
+  fireEvent.keyDown(screen.getByRole("button", { name: /^Project / }), {
     key: "ArrowDown",
   });
   await screen.findByRole("menu");
