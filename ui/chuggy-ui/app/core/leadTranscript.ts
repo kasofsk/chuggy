@@ -62,10 +62,6 @@
  * `truncated`. Drawing that as "nothing held" would tell a reader the lead has
  * forgotten everything at exactly the moment the server said it could not
  * tell.
- *
- * ENTRY TEXT IS TEXT. A compaction summary embeds a resume path that names
- * nothing durable, so no derivation here turns an entry into a reference and
- * nothing that draws one may make it look actionable.
  */
 
 import { sessionChangeResourceSchema } from "../../../../src/contract/events.ts";
@@ -409,78 +405,6 @@ export function leadTranscriptDrawn(
     stream: pane.stream,
     failure: pane.failure,
   };
-}
-
-/** One entry as the page draws it, with its place in the chain marked. */
-export interface LeadTranscriptLine {
-  readonly ordinal: number;
-  readonly uuid: string | undefined;
-  readonly type: string;
-  readonly at: string | undefined;
-  readonly text: string;
-  readonly tools: readonly string[];
-  readonly holding: boolean;
-  readonly seam: boolean;
-}
-
-function leadEntryBlocks(message: unknown): readonly unknown[] {
-  if (message === null || typeof message !== "object") return [];
-  const content = (message as Record<string, unknown>)["content"];
-  return Array.isArray(content) ? content : [];
-}
-
-function leadEntryBlockKind(block: unknown): string | undefined {
-  if (block === null || typeof block !== "object") return undefined;
-  const kind = (block as Record<string, unknown>)["type"];
-  return typeof kind === "string" ? kind : undefined;
-}
-
-/** The characters of an entry, which is its text blocks or the string itself. */
-export function leadEntryText(message: unknown): string {
-  if (message === null || typeof message !== "object") return "";
-  const content = (message as Record<string, unknown>)["content"];
-  if (typeof content === "string") return content;
-  return leadEntryBlocks(message)
-    .flatMap((block) => {
-      if (leadEntryBlockKind(block) !== "text") return [];
-      const text = (block as Record<string, unknown>)["text"];
-      return typeof text === "string" ? [text] : [];
-    })
-    .join("\n");
-}
-
-/** What an entry called for, named and never invoked from here. */
-export function leadEntryTools(message: unknown): readonly string[] {
-  return leadEntryBlocks(message).flatMap((block) => {
-    if (leadEntryBlockKind(block) !== "tool_use") return [];
-    const name = (block as Record<string, unknown>)["name"];
-    return typeof name === "string" ? [name] : [];
-  });
-}
-
-/** The whole chain this pane holds, oldest first, with the seam on its boundary. */
-export function leadTranscriptLines(
-  held: LeadTranscriptHeld,
-): readonly LeadTranscriptLine[] {
-  const holding = new Set(held.holding);
-  const boundary = held.compaction?.boundary;
-  return held.entries.map((entry, at) => ({
-    ordinal: at + 1,
-    uuid: entry.uuid,
-    type: entry.type,
-    at: entry.timestamp,
-    text: leadEntryText(entry.message),
-    tools: leadEntryTools(entry.message),
-    holding: entry.uuid !== undefined && holding.has(entry.uuid),
-    seam: entry.uuid !== undefined && entry.uuid === boundary,
-  }));
-}
-
-/** The subset the lead is working from, which is a filter and not a fetch. */
-export function leadTranscriptHolding(
-  held: LeadTranscriptHeld,
-): readonly LeadTranscriptLine[] {
-  return leadTranscriptLines(held).filter((line) => line.holding);
 }
 
 /**
