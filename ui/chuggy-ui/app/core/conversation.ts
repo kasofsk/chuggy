@@ -66,16 +66,20 @@ function conversationBlockText(
 }
 
 /** A tool result's characters, which the runtime writes either as the string
- * itself or as the text blocks of a nested content array. */
+ * itself or as the text blocks of a nested content array, read no further than
+ * the sibling block list is and never cut in silence. */
 function conversationBlockResultText(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
-  return content
-    .flatMap((part) => {
-      const text = conversationRecord(part)?.["text"];
-      return typeof text === "string" ? [text] : [];
-    })
-    .join("\n");
+  const read = content.slice(0, conversationBlocksMax);
+  const texts = read.flatMap((part) => {
+    const text = conversationRecord(part)?.["text"];
+    return typeof text === "string" ? [text] : [];
+  });
+  const cut = content.length - read.length;
+  return cut === 0
+    ? texts.join("\n")
+    : [...texts, conversationCappedSentence("Result", cut)].join("\n");
 }
 
 function conversationBlockOf(value: unknown): ConversationBlock {
@@ -358,11 +362,19 @@ interface ConversationBuilder {
 /** The identity of the exchange that carries markers nothing follows. */
 const conversationTrailingId = "trailing";
 
+/** The one sentence a cut is ever said in, wherever the cut happens. */
+function conversationCappedSentence(noun: string, count: number): string {
+  return `${noun} cut · ${String(count)}`;
+}
+
 function conversationCappedMarker(
   noun: string,
   count: number,
 ): ConversationMarker {
-  return { marker: "Capped", sentence: `${noun} cut · ${String(count)}` };
+  return {
+    marker: "Capped",
+    sentence: conversationCappedSentence(noun, count),
+  };
 }
 
 function conversationOpened(

@@ -131,6 +131,27 @@ describe("the block parser, on a result and an unknown kind", () => {
     expect(blocks).toHaveLength(conversationBlocksMax + 1);
     expect(blocks.at(-1)).toEqual({ block: "Capped", count: 3 });
   });
+
+  test("a result's own nested content is bounded the same way", () => {
+    const nested = Array.from({ length: conversationBlocksMax + 2 }, () => ({
+      type: "text",
+      text: "part",
+    }));
+    const blocks = conversationBlocksOf({
+      content: [
+        { type: "tool_result", tool_use_id: "call-1", content: nested },
+      ],
+    });
+    const result = blocks[0];
+    expect(result?.block).toBe("ToolResult");
+    const expected = [
+      ...Array.from({ length: conversationBlocksMax }, () => "part"),
+      "Result cut · 2",
+    ].join("\n");
+    expect(result?.block === "ToolResult" ? result.text : undefined).toBe(
+      expected,
+    );
+  });
 });
 
 describe("grouping", () => {
