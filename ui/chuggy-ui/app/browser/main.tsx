@@ -15,6 +15,7 @@
 
 import "../styles/tokens.css";
 import "../styles/base.css";
+import "../styles/utilities.css";
 
 import { QueryClient } from "@tanstack/react-query";
 import { StrictMode } from "react";

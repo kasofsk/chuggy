@@ -11,7 +11,7 @@
  * order it emits the blocks in already satisfies it, so the order is a
  * property of the build and is read there. */
 
-@layer tokens, base, ui, page;
+@layer tokens, base, ui, page, utilities;
 
 @layer tokens {
   :root {

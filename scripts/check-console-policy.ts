@@ -1,7 +1,7 @@
 /**
  * A built console's document and the stylesheet it loads, held to the policy
- * `images/web/nginx.conf` serves it under and to the cascade order the design
- * system is built on.
+ * `images/web/nginx.conf` serves it under, to the cascade order the design
+ * system is built on, and to the values its utilities layer may state.
  *
  * It reads what the build wrote rather than what the sources say, because the
  * inline script this is really about is one a bundler injects and the layer
@@ -34,6 +34,7 @@ import {
   consoleCascadeNames,
   consolePolicyFindings,
   consolePolicyStylesheetHrefs,
+  consoleUtilitiesFindings,
 } from "./console-policy.ts";
 
 const root = process.argv[2];
@@ -97,7 +98,10 @@ if (declared.length === 0) {
   );
   process.exit(2);
 }
-for (const finding of consoleCascadeFindings(cascade)) {
+for (const finding of [
+  ...consoleCascadeFindings(cascade),
+  ...consoleUtilitiesFindings(cascade),
+]) {
   process.stdout.write(
     `check-console-policy: ${loaded.join(", ")} carries ${finding}\n`,
   );

@@ -17,6 +17,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
+import { consoleCascadeLayers } from "../../scripts/console-policy.ts";
+
 const script = join(process.cwd(), "scripts/check-console-policy.ts");
 const built: string[] = [];
 
@@ -24,9 +26,10 @@ after(() => {
   for (const root of built) rmSync(root, { recursive: true, force: true });
 });
 
-/** One layer with one rule in it, which is all the cascade check reads. */
+/** One layer with one rule in it, which is all the cascade check reads. The
+ * rule draws from a token, because the utilities layer may state no value. */
 function layer(name: string): string {
-  return `@layer ${name}{.a{color:red}}`;
+  return `@layer ${name}{.a{color:var(--ink-1)}}`;
 }
 
 /**
@@ -71,11 +74,15 @@ function ran(root: string): { readonly code: number; readonly said: string } {
 }
 
 test("a build whose layers are in order passes, and says which order", () => {
-  const done = ran(
-    dist([["tokens", "base", "ui", "page"].map(layer).join("")]),
-  );
+  const done = ran(dist([consoleCascadeLayers.map(layer).join("")]));
   assert.equal(done.code, 0);
-  assert.match(done.said, /declares tokens, base, ui, page in that order/u);
+  assert.match(
+    done.said,
+    new RegExp(
+      `declares ${consoleCascadeLayers.join(", ")} in that order`,
+      "u",
+    ),
+  );
 });
 
 test("a build whose layers are emitted in the wrong order exits 1", () => {
@@ -99,7 +106,7 @@ test("the sheets are one text in the order the document loads them", () => {
   const split = ran(
     dist([
       ["tokens", "base"].map(layer).join(""),
-      ["ui", "page"].map(layer).join(""),
+      ["ui", "page", "utilities"].map(layer).join(""),
     ]),
   );
   assert.equal(split.code, 0);
@@ -143,7 +150,7 @@ test("a stylesheet the build did not write exits 2, not 0", () => {
 test("the policy half still reaches the exit code beside the cascade", () => {
   const done = ran(
     dist(
-      [["tokens", "base", "ui", "page"].map(layer).join("")],
+      [consoleCascadeLayers.map(layer).join("")],
       (links) =>
         `${links}<script type="module" src="https://cdn.example.invalid/x.js"></script>`,
     ),
@@ -156,4 +163,20 @@ test("a document root that was never built exits 2, not 0", () => {
   const done = ran(join(tmpdir(), "chuggy-console-policy-absent"));
   assert.equal(done.code, 2);
   assert.match(done.said, /could not be read/u);
+});
+
+test("a raw value in the built utilities layer reaches the exit code", () => {
+  const done = ran(
+    dist([
+      consoleCascadeLayers
+        .map((name) =>
+          name === "utilities"
+            ? `@layer utilities{.text-\\[x\\]{color:#fff}}`
+            : layer(name),
+        )
+        .join(""),
+    ]),
+  );
+  assert.equal(done.code, 1);
+  assert.match(done.said, /#fff in the utilities layer/u);
 });

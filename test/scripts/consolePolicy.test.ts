@@ -12,6 +12,7 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -21,6 +22,8 @@ import {
   consolePolicyFetchingAttributes,
   consolePolicyFindings,
   consolePolicyStylesheetHrefs,
+  consoleRawColourNames,
+  consoleUtilitiesFindings,
 } from "../../scripts/console-policy.ts";
 
 const served = [
@@ -156,7 +159,7 @@ test("a layer the system does not order is a finding wherever it sits", () => {
 test("a statement kept by a build must name the order, and lead", () => {
   assert.deepEqual(
     consoleCascadeFindings(
-      `@layer tokens, base, ui, page;${emitted(["ui", "tokens"])}`,
+      `@layer ${consoleCascadeLayers.join(", ")};${emitted(["ui", "tokens"])}`,
     ),
     [],
   );
@@ -168,8 +171,8 @@ test("a statement kept by a build must name the order, and lead", () => {
   );
   assert.match(
     consoleCascadeFindings(
-      `@layer ui{a{b:c}}@layer tokens, base, ui, page;`,
-    )[0] ?? "",
+      `@layer ui{a{b:c}}@layer ${consoleCascadeLayers.join(", ")};`,
+    ).join(" "),
     /a layer opened above the statement/u,
   );
 });
@@ -181,5 +184,89 @@ test("the stylesheets a document loads are the ones read", () => {
   assert.deepEqual(
     consolePolicyStylesheetHrefs('<link rel="icon" href="/favicon.ico">'),
     [],
+  );
+});
+
+const utilities = (rules: string): string =>
+  `@layer tokens{:root{--ink-1:#151a17}}@layer utilities{${rules}}`;
+
+test("a utilities layer drawing from the tokens carries no finding", () => {
+  assert.deepEqual(
+    consoleUtilitiesFindings(
+      utilities(
+        ".text-ink-1{color:var(--ink-1)}.p-0{padding:0}.b{border-width:1px}" +
+          ".w-\\[50\\%\\]{width:50%}.text-\\[1\\.2em\\]{font-size:1.2em}" +
+          ".truncate{white-space:nowrap}.m-0{margin:0px}",
+      ),
+    ),
+    [],
+  );
+});
+
+test("a raw colour in the utilities layer is a finding, however written", () => {
+  for (const [rules, said] of [
+    [".text-\\[x\\]{color:#fff}", /#fff in the utilities layer/u],
+    [".bg-x{background:rgb(1 2 3)}", /rgb\(\) in the utilities layer/u],
+    [".bg-y{background:red}", /red in the utilities layer/u],
+  ] as const) {
+    const findings = consoleUtilitiesFindings(utilities(rules));
+    assert.match(findings.join(" "), said);
+  }
+});
+
+test("a raw length in the utilities layer is a finding, and 0 and 1px are not", () => {
+  assert.match(
+    consoleUtilitiesFindings(utilities(".max-w-\\[x\\]{max-width:34rem}")).join(
+      " ",
+    ),
+    /34rem in the utilities layer, a raw length/u,
+  );
+  assert.match(
+    consoleUtilitiesFindings(utilities(".sr{margin:-1px}")).join(" "),
+    /-1px in the utilities layer, a raw length/u,
+  );
+});
+
+test("only the utilities layer is judged, so the tokens may state values", () => {
+  assert.deepEqual(
+    consoleUtilitiesFindings(
+      "@layer tokens{:root{--ink-1:#151a17;--space-2:0.5rem}}" +
+        "@layer ui{.pill{color:var(--ink-1)}}",
+    ),
+    [],
+  );
+  assert.match(
+    consoleUtilitiesFindings(
+      `@layer utilities{@media (width >= 40em){.narrow\\:x{color:#fff}}}`,
+    ).join(" "),
+    /#fff in the utilities layer/u,
+  );
+});
+
+test("the named colours are the roster the sheet gate states", () => {
+  const gate = readFileSync(".chug/tasks/check-console-sheets.sh", "utf8");
+  const stated = /split\("([^;]*?)", *\\\n\t\tname, " "\)/u.exec(gate);
+  assert.notEqual(stated, null);
+  assert.deepEqual(
+    (stated?.[1] ?? "")
+      .replace(/" *\\\n\t*"/gu, "")
+      .trim()
+      .split(/\s+/u),
+    [...consoleRawColourNames],
+  );
+});
+
+test("the layer tailwind writes beside its utilities takes no place", () => {
+  assert.deepEqual(
+    consoleCascadeFindings(
+      `${emitted(consoleCascadeLayers)}@layer properties{*{--tw-x:initial}}`,
+    ),
+    [],
+  );
+  assert.match(
+    consoleCascadeFindings(
+      `${emitted(consoleCascadeLayers)}@layer vendor{a{b:c}}`,
+    )[0] ?? "",
+    /a layer named vendor/u,
   );
 });
