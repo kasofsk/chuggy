@@ -648,7 +648,7 @@ test("a turn still queued draws its state and no answer block", async () => {
   expect(screen.getByText("Queued")).toBeDefined();
   expect(screen.getByText("waiting on this")).toBeDefined();
   expect(
-    document.querySelectorAll(".thread-answer").length,
+    document.querySelectorAll(".quote-answer").length,
     "a turn nobody has claimed was drawn with an answer block",
   ).toBe(0);
   expect(screen.queryByText("an answer no queued turn has")).toBeNull();
@@ -668,7 +668,7 @@ test("a claimed turn draws no answer block either", async () => {
   }));
   await mountThread();
   expect(screen.getByText("Claimed")).toBeDefined();
-  expect(document.querySelectorAll(".thread-answer").length).toBe(0);
+  expect(document.querySelectorAll(".quote-answer").length).toBe(0);
 });
 
 /** `UserMessage` is what the mailbox calls a member's turn and `Message` is
@@ -733,7 +733,7 @@ test("Older walks back from the read's cursor and draws the mailbox in order", a
     asked,
     "the walk asked from somewhere other than the read's cursor",
   ).toStrictEqual(["8"]);
-  const said = [...document.querySelectorAll(".thread-said")].map(
+  const said = [...document.querySelectorAll(".quote-said")].map(
     (block) => block.textContent,
   );
   expect(said).toStrictEqual(["the older", "the newer"]);
