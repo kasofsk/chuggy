@@ -245,6 +245,50 @@ export function conversationWorkSummary(
   };
 }
 
+/** The most characters a tool call's one-line argument summary carries. The
+ * whole of the arguments is one disclosure away, so this clips a summary rather
+ * than truncating the record. */
+export const conversationArgumentSummaryCharsMax = 80;
+
+/**
+ * The one line a tool call is recognised by: the first string its arguments
+ * hold — a path, a pattern, a command — or their size where they hold none.
+ */
+export type ConversationArgument =
+  | { readonly argument: "Text"; readonly text: string }
+  | { readonly argument: "Size"; readonly chars: number }
+  | { readonly argument: "None" };
+
+/** Whatever a value serialises to, and nothing where it will not. */
+export function conversationArgumentText(input: unknown): string {
+  if (input === undefined) return "";
+  try {
+    return JSON.stringify(input, undefined, 2) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function conversationArgumentSummary(
+  input: unknown,
+): ConversationArgument {
+  const first =
+    typeof input === "string"
+      ? input
+      : Object.values(conversationRecord(input) ?? {}).find(
+          (value) => typeof value === "string" && value.length > 0,
+        );
+  if (typeof first === "string" && first.length > 0)
+    return {
+      argument: "Text",
+      text: first.slice(0, conversationArgumentSummaryCharsMax),
+    };
+  const text = conversationArgumentText(input);
+  return text.length === 0
+    ? { argument: "None" }
+    : { argument: "Size", chars: text.length };
+}
+
 function conversationAskOf(
   kind: SessionTurnInputKind,
   text: string,
@@ -321,7 +365,7 @@ function conversationCappedMarker(
   noun: string,
   count: number,
 ): ConversationMarker {
-  return { marker: "Capped", sentence: `${noun} · ${String(count)}` };
+  return { marker: "Capped", sentence: `${noun} cut · ${String(count)}` };
 }
 
 function conversationOpened(

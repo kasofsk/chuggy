@@ -6,6 +6,9 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  conversationArgumentSummary,
+  conversationArgumentSummaryCharsMax,
+  conversationArgumentText,
   conversationBlocksMax,
   conversationBlocksOf,
   conversationBlockUnreadable,
@@ -81,7 +84,9 @@ describe("the block parser", () => {
       { block: "ToolResult", toolUse: "call-1", text: "bytes", isError: true },
     ]);
   });
+});
 
+describe("the block parser, on a result and an unknown kind", () => {
   test("a result's characters are read out of its own content array", () => {
     const blocks = conversationBlocksOf({
       content: [
@@ -194,7 +199,9 @@ describe("grouping", () => {
       },
     ]);
   });
+});
 
+describe("grouping, past the first exchange", () => {
   test("a text followed by work demotes into the work", () => {
     const exchanges = conversationExchanges([
       askOf("u1", "go"),
@@ -314,7 +321,9 @@ describe("the mailbox overlay", () => {
     );
     expect(exchanges[0]?.ask).toEqual({ ask: "Document", kind: "Wake" });
   });
+});
 
+describe("the mailbox overlay, on turns the transcript does not hold", () => {
   test("two identical inputs match newest to newest", () => {
     const exchanges = conversationExchanges(
       [
@@ -362,7 +371,9 @@ describe("the mailbox overlay", () => {
     });
     expect(exchanges[2]?.work).toEqual([]);
   });
+});
 
+describe("the mailbox overlay, on a turn with no exchange of its own", () => {
   test("an unmatched answered turn contributes nothing", () => {
     const exchanges = conversationExchanges(
       [askOf("u1", "read")],
@@ -417,7 +428,7 @@ describe("bounds", () => {
     const exchanges = conversationExchanges([askOf("u1", "go"), ...calls]);
     expect(exchanges[0]?.work).toHaveLength(conversationStepsMax);
     expect(exchanges[0]?.before).toEqual([
-      { marker: "Capped", sentence: "Steps · 2" },
+      { marker: "Capped", sentence: "Steps cut · 2" },
     ]);
   });
 
@@ -429,7 +440,7 @@ describe("bounds", () => {
     const exchanges = conversationExchanges(asks);
     expect(exchanges).toHaveLength(conversationExchangesMax);
     expect(exchanges[0]?.before).toEqual([
-      { marker: "Capped", sentence: "Exchanges · 2" },
+      { marker: "Capped", sentence: "Exchanges cut · 2" },
     ]);
   });
 
@@ -440,7 +451,7 @@ describe("bounds", () => {
     ];
     const exchanges = conversationExchanges([entryOf("u1", "User", blocks)]);
     expect(exchanges[0]?.before).toEqual([
-      { marker: "Capped", sentence: "Blocks · 4" },
+      { marker: "Capped", sentence: "Blocks cut · 4" },
     ]);
   });
 });
@@ -498,5 +509,48 @@ describe("a real store's bytes", () => {
     ]);
     expect(exchanges[0]?.measures).toEqual({ costMicros: 3400 });
     expect(exchanges).toHaveLength(8);
+  });
+});
+
+describe("the argument summary", () => {
+  test("the first string the arguments hold is the line", () => {
+    expect(
+      conversationArgumentSummary({ path: "ThreadPage.tsx", limit: 20 }),
+    ).toEqual({ argument: "Text", text: "ThreadPage.tsx" });
+  });
+
+  test("a string argument is its own line", () => {
+    expect(conversationArgumentSummary("just this")).toEqual({
+      argument: "Text",
+      text: "just this",
+    });
+  });
+
+  test("a long line is clipped to the bound", () => {
+    const summary = conversationArgumentSummary({
+      command: "x".repeat(conversationArgumentSummaryCharsMax * 2),
+    });
+    expect(summary).toEqual({
+      argument: "Text",
+      text: "x".repeat(conversationArgumentSummaryCharsMax),
+    });
+  });
+
+  test("arguments holding no string are said by their size", () => {
+    const summary = conversationArgumentSummary({ lines: 4, wrap: true });
+    expect(summary.argument).toBe("Size");
+  });
+
+  test("nothing at all is None", () => {
+    expect(conversationArgumentSummary(undefined)).toEqual({
+      argument: "None",
+    });
+  });
+
+  test("what will not serialise reads as nothing rather than throwing", () => {
+    const cycle: Record<string, unknown> = {};
+    cycle["self"] = cycle;
+    expect(conversationArgumentText(cycle)).toBe("");
+    expect(conversationArgumentSummary(cycle)).toEqual({ argument: "None" });
   });
 });
