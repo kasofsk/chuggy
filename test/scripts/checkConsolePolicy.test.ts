@@ -26,10 +26,11 @@ after(() => {
   for (const root of built) rmSync(root, { recursive: true, force: true });
 });
 
-/** One layer with one rule in it, which is all the cascade check reads. The
- * rule draws from a token, because the utilities layer may state no value. */
+/** One layer with one rule in it, its class named for the layer so the
+ * fixtures do not collide; it draws from a token because the utilities
+ * layer may state no value. */
 function layer(name: string): string {
-  return `@layer ${name}{.a{color:var(--ink-1)}}`;
+  return `@layer ${name}{.${name}-a{color:var(--ink-1)}}`;
 }
 
 /**
@@ -163,6 +164,27 @@ test("a document root that was never built exits 2, not 0", () => {
   const done = ran(join(tmpdir(), "chuggy-console-policy-absent"));
   assert.equal(done.code, 2);
   assert.match(done.said, /could not be read/u);
+});
+
+test("a class the utilities layer emits and a layered sheet selects reaches the exit code", () => {
+  const done = ran(
+    dist([
+      consoleCascadeLayers
+        .map((name) =>
+          name === "utilities"
+            ? `@layer utilities{.table{display:table}}`
+            : name === "ui"
+              ? `@layer ui{.table{width:100%}}`
+              : layer(name),
+        )
+        .join(""),
+    ]),
+  );
+  assert.equal(done.code, 1);
+  assert.match(
+    done.said,
+    /a class `\.table` the utilities layer emits and a layered sheet selects/u,
+  );
 });
 
 test("a raw value in the built utilities layer reaches the exit code", () => {

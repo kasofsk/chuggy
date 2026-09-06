@@ -416,3 +416,70 @@ export function consoleUtilitiesFindings(
     consoleUtilitiesBlockFindings,
   );
 }
+
+interface ConsoleLayerBlock {
+  readonly name: string;
+  readonly body: string;
+}
+
+const anyLayerOpens = /@layer\s+([A-Za-z][\w-]*)\s*\{/gu;
+
+/** Every named layer block, brace-matched, in the order it opens. */
+function consoleLayerBlocks(stylesheet: string): readonly ConsoleLayerBlock[] {
+  const blocks: ConsoleLayerBlock[] = [];
+  anyLayerOpens.lastIndex = 0;
+  for (let at = anyLayerOpens.exec(stylesheet); at !== null;) {
+    let depth = 1;
+    let read = at.index + at[0].length;
+    const from = read;
+    while (read < stylesheet.length && depth > 0) {
+      const here = stylesheet[read];
+      if (here === "{") depth += 1;
+      else if (here === "}") depth -= 1;
+      read += 1;
+    }
+    blocks.push({
+      name: at[1] ?? "",
+      body: stylesheet.slice(from, depth === 0 ? read - 1 : read),
+    });
+    anyLayerOpens.lastIndex = read;
+    at = anyLayerOpens.exec(stylesheet);
+  }
+  return blocks;
+}
+
+const classSelector = /\.((?:[\w-]|\\.)+)/gu;
+
+/** A block's class names, skipping an escaped one — it names no plain word. */
+function consoleLayerClassNames(body: string): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const found of body.matchAll(classSelector)) {
+    const name = found[1] ?? "";
+    if (!name.includes("\\")) names.add(name);
+  }
+  return names;
+}
+
+/**
+ * A class the generated utilities layer emits under a plain name a layered
+ * sheet also selects: the utilities layer is strongest, so it silently wins
+ * that element regardless of what the layered rule intended.
+ */
+export function consoleCollisionFindings(
+  stylesheet: string,
+): readonly string[] {
+  const utilities = new Set<string>();
+  const layered = new Set<string>();
+  for (const block of consoleLayerBlocks(stylesheet)) {
+    const names = consoleLayerClassNames(block.body);
+    const into = block.name === "utilities" ? utilities : layered;
+    for (const name of names) into.add(name);
+  }
+  const findings: string[] = [];
+  for (const name of utilities)
+    if (layered.has(name))
+      findings.push(
+        `a class \`.${name}\` the utilities layer emits and a layered sheet selects`,
+      );
+  return findings;
+}

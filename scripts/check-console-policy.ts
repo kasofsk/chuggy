@@ -32,6 +32,7 @@ import { resolve } from "node:path";
 import {
   consoleCascadeFindings,
   consoleCascadeNames,
+  consoleCollisionFindings,
   consolePolicyFindings,
   consolePolicyStylesheetHrefs,
   consoleUtilitiesFindings,
@@ -101,6 +102,7 @@ if (declared.length === 0) {
 for (const finding of [
   ...consoleCascadeFindings(cascade),
   ...consoleUtilitiesFindings(cascade),
+  ...consoleCollisionFindings(cascade),
 ]) {
   process.stdout.write(
     `check-console-policy: ${loaded.join(", ")} carries ${finding}\n`,
