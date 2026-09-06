@@ -98,12 +98,12 @@ export function consolePolicyFindings(markup: string): readonly string[] {
 }
 
 /**
- * The order the design system's layers take, weakest first. `properties` is
+ * The order the design system's layers take, weakest first: `properties` is
  * Tailwind's `@supports` fallback setting its own `--tw-*` to `initial` on
- * `*`; the utilities layer is what sets them, so above it the fallback wins
- * and the utility draws nothing. Tailwind writes the block only when a utility
- * needs it, so a build carrying neither the block nor the statement reads here
- * as a layer that never reached the bundle.
+ * `*`, and the utilities layer is what sets them, so above it the fallback
+ * wins and the utility draws nothing. Tailwind writes the block only when a
+ * utility needs it, so a build carrying neither the block nor the statement
+ * reads here as a layer that never reached the bundle.
  */
 export const consoleCascadeLayers = [
   "properties",
