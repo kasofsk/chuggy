@@ -1,7 +1,4 @@
 /**
- * The one place a runtime message's content blocks are read, and the one place
- * they are grouped into the exchanges a conversation is drawn as.
- *
  * The transcript is the spine and the mailbox is an overlay: a turn contributes
  * what the transcript cannot — a pending exchange nobody has claimed, the word a
  * failure ended on, the measures — and it finds its exchange by the input text
