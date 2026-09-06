@@ -10,6 +10,7 @@
 
 import { useState } from "react";
 import type { ReactNode } from "react";
+import { Collapsible } from "radix-ui";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
@@ -185,19 +186,17 @@ function RunConfigurationFileRow(props: {
         <span className="panel-absent">{sentence}</span>
       )}
       {file.content === undefined ? null : (
-        <button
-          type="button"
-          aria-expanded={shown}
-          onClick={() => {
-            setShown(!shown);
-          }}
+        <Collapsible.Root
+          className="disclosure"
+          open={shown}
+          onOpenChange={setShown}
         >
-          {shown ? "hide" : "show"}
-        </button>
+          <Collapsible.Trigger>{shown ? "hide" : "show"}</Collapsible.Trigger>
+          <Collapsible.Content asChild>
+            <pre className="preview">{file.content}</pre>
+          </Collapsible.Content>
+        </Collapsible.Root>
       )}
-      {shown && file.content !== undefined ? (
-        <pre className="preview">{file.content}</pre>
-      ) : null}
     </li>
   );
 }

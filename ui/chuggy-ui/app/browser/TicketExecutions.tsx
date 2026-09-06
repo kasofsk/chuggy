@@ -10,6 +10,7 @@
 
 import { useState } from "react";
 import type { ReactNode } from "react";
+import { Collapsible } from "radix-ui";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ExecutionResponse } from "../../../../src/contract/responses.ts";
@@ -62,25 +63,25 @@ function Artifact(props: {
       {offer.offer === "Unpreviewable" ? (
         <span className="panel-absent">{offer.reason}</span>
       ) : (
-        <button
-          type="button"
-          aria-expanded={shown}
-          onClick={() => {
-            setShown(!shown);
-          }}
+        <Collapsible.Root
+          className="disclosure"
+          open={shown}
+          onOpenChange={setShown}
         >
-          {shown ? "hide" : `preview as ${offer.renderer}`}
-        </button>
+          <Collapsible.Trigger>
+            {shown ? "hide" : `preview as ${offer.renderer}`}
+          </Collapsible.Trigger>
+          <Collapsible.Content asChild>
+            <div className="artifact-preview">
+              <ArtifactPreview
+                partition={props.partition}
+                execution={props.execution}
+                ordinal={props.artifact.ordinal}
+              />
+            </div>
+          </Collapsible.Content>
+        </Collapsible.Root>
       )}
-      {shown ? (
-        <div className="artifact-preview">
-          <ArtifactPreview
-            partition={props.partition}
-            execution={props.execution}
-            ordinal={props.artifact.ordinal}
-          />
-        </div>
-      ) : null}
     </li>
   );
 }
