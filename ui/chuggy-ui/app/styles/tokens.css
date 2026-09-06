@@ -9,9 +9,12 @@
  * The cascade order below is asserted over the stylesheet the build emits, by
  * `scripts/console-policy.ts`: the minifier drops a statement whenever the
  * order it emits the blocks in already satisfies it, so the order is a
- * property of the build and is read there. */
+ * property of the build and is read there. `properties` is Tailwind's, holding
+ * the `@supports` fallback that sets its own `--tw-*` to `initial` on `*`; it
+ * is ordered first because the utilities layer is what sets those, and above
+ * them the fallback wins. */
 
-@layer tokens, base, ui, page, utilities;
+@layer properties, tokens, base, ui, page, utilities;
 
 @layer tokens {
   :root {

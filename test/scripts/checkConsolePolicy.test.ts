@@ -93,20 +93,20 @@ test("a build whose layers are emitted in the wrong order exits 1", () => {
   assert.equal(done.code, 1);
   assert.match(
     done.said,
-    /layers emitted as ui, page, tokens, base, not tokens, base, ui, page/u,
+    /layers emitted as ui, page, tokens, base, not properties, tokens, base, ui, page, utilities/u,
   );
 });
 
 test("a layer the bundle never carried is the same finding", () => {
   const done = ran(dist([["tokens", "base", "ui"].map(layer).join("")]));
   assert.equal(done.code, 1);
-  assert.match(done.said, /not tokens, base, ui, page/u);
+  assert.match(done.said, /not properties, tokens, base, ui, page, utilities/u);
 });
 
 test("the sheets are one text in the order the document loads them", () => {
   const split = ran(
     dist([
-      ["tokens", "base"].map(layer).join(""),
+      ["properties", "tokens", "base"].map(layer).join(""),
       ["ui", "page", "utilities"].map(layer).join(""),
     ]),
   );

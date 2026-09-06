@@ -36,7 +36,13 @@
  * bundler's business and not a property this may depend on. A rule outside
  * every layer is invisible to the cascade half — the console still serves one
  * unlayered sheet by design — and `.chug/tasks/check-console-sheets.sh` is
- * what reads the sheets a rule may not leave.
+ * what reads the sheets a rule may not leave. The layer scan skips a quoted
+ * string, so a brace inside one no longer closes a layer early; a brace inside
+ * an unquoted `url()` still does. The value scans read a layer's whole body,
+ * so a length or a colour inside a `var()` fallback or a data URI is read like
+ * any other, and a percent-encoded one is not read at all. The class scan
+ * starts a name where an ASCII identifier starts, so a decimal in a value is
+ * not one and a class named in another script is not read.
  */
 
 /** Every attribute that makes a browser fetch something, and no others. */
@@ -91,8 +97,16 @@ export function consolePolicyFindings(markup: string): readonly string[] {
   return findings;
 }
 
-/** The order the design system's layers take, weakest first. */
+/**
+ * The order the design system's layers take, weakest first. `properties` is
+ * Tailwind's `@supports` fallback setting its own `--tw-*` to `initial` on
+ * `*`; the utilities layer is what sets them, so above it the fallback wins
+ * and the utility draws nothing. Tailwind writes the block only when a utility
+ * needs it, so a build carrying neither the block nor the statement reads here
+ * as a layer that never reached the bundle.
+ */
 export const consoleCascadeLayers = [
+  "properties",
   "tokens",
   "base",
   "ui",
@@ -101,13 +115,6 @@ export const consoleCascadeLayers = [
 ] as const;
 
 export type ConsoleCascadeLayer = (typeof consoleCascadeLayers)[number];
-
-/**
- * The layer Tailwind writes beside its utilities: `@supports`-guarded initial
- * values for its own `--tw-*` properties, on `*`. Nothing else declares those,
- * so where it lands decides nothing and the system gives it no place.
- */
-export const consoleCascadeGeneratedLayers = ["properties"] as const;
 
 const layerStatement = /@layer\s+([^;{]+);/u;
 const layerBlock = /@layer\s+([A-Za-z][\w-]*)\s*\{/gu;
@@ -146,10 +153,7 @@ export function consoleCascadeFindings(stylesheet: string): readonly string[] {
   const findings: string[] = [];
   const blocks = consoleCascadeBlocks(stylesheet);
   for (const name of blocks)
-    if (
-      !consoleCascadeOrders(name) &&
-      !(consoleCascadeGeneratedLayers as readonly string[]).includes(name)
-    )
+    if (!consoleCascadeOrders(name))
       findings.push(`a layer named ${name}, which the system does not order`);
   const stated = consoleCascadeStatement(stylesheet);
   if (stated.length > 0) {
@@ -189,9 +193,9 @@ export function consolePolicyStylesheetHrefs(
 
 /**
  * CSS Color Level 4's named colours, the roster
- * `.chug/tasks/check-console-sheets.sh` states over the sources.
- * `consolePolicyRosterMatchesTheSheetGate` in the suite is what holds the two
- * copies to each other.
+ * `.chug/tasks/check-console-sheets.sh` states over the sources;
+ * `test/scripts/consolePolicy.test.ts` reads that gate and is what holds the
+ * two copies to each other.
  */
 export const consoleRawColourNames = [
   "aliceblue",
@@ -351,6 +355,18 @@ interface ConsoleLayerBlock {
 
 const anyLayerOpens = /@layer\s+([A-Za-z][\w-]*)\s*\{/gu;
 
+/** Where a quoted value closes, so a brace inside one counts as text. */
+function consoleLayerBlocksQuoted(stylesheet: string, opened: number): number {
+  const quote = stylesheet[opened];
+  let read = opened + 1;
+  while (read < stylesheet.length) {
+    if (stylesheet[read] === "\\") read += 2;
+    else if (stylesheet[read] === quote) return read;
+    else read += 1;
+  }
+  return stylesheet.length;
+}
+
 /** Every named layer block, brace-matched, in the order it opens. */
 function consoleLayerBlocks(stylesheet: string): readonly ConsoleLayerBlock[] {
   const blocks: ConsoleLayerBlock[] = [];
@@ -361,7 +377,9 @@ function consoleLayerBlocks(stylesheet: string): readonly ConsoleLayerBlock[] {
     const from = read;
     while (read < stylesheet.length && depth > 0) {
       const here = stylesheet[read];
-      if (here === "{") depth += 1;
+      if (here === '"' || here === "'")
+        read = consoleLayerBlocksQuoted(stylesheet, read);
+      else if (here === "{") depth += 1;
       else if (here === "}") depth -= 1;
       read += 1;
     }
@@ -378,7 +396,8 @@ function consoleLayerBlocks(stylesheet: string): readonly ConsoleLayerBlock[] {
 const hex = /#[0-9a-f]+/giu;
 const colourFunction =
   /(?<![\w-])(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/giu;
-const length = /(?<![\d.\w])-?[0-9]+(?:\.[0-9]+)?(px|rem)(?![\w-])/giu;
+const length =
+  /(?<![\w.\\])-?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(px|rem)(?![\w-])/giu;
 const word = /[a-z-]+/giu;
 
 /** The text of every `@layer utilities` block, matched brace for brace. */
@@ -433,9 +452,13 @@ export function consoleUtilitiesFindings(
   );
 }
 
-const classSelector = /\.((?:[\w-]|\\.)+)/gu;
+const classSelector = /\.((?:[A-Za-z_]|-(?![0-9])|\\.)(?:[\w-]|\\.)*)/gu;
 
-/** A block's class names, skipping an escaped one — it names no plain word. */
+/**
+ * A block's class names, each starting where an identifier may — a decimal
+ * written without its leading zero is a value, not a class — and skipping an
+ * escaped one, which names no plain word.
+ */
 function consoleLayerClassNames(body: string): ReadonlySet<string> {
   const names = new Set<string>();
   for (const found of body.matchAll(classSelector)) {

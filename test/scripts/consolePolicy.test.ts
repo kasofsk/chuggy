@@ -116,7 +116,7 @@ test("the order the minifier emits the layers in is the order asserted", () => {
   assert.deepEqual(consoleCascadeFindings(emitted(consoleCascadeLayers)), []);
   assert.match(
     consoleCascadeFindings(emitted(["ui", "page", "tokens", "base"]))[0] ?? "",
-    /layers emitted as ui, page, tokens, base, not tokens, base, ui, page/u,
+    /layers emitted as ui, page, tokens, base, not properties, tokens, base, ui, page, utilities/u,
   );
 });
 
@@ -132,7 +132,7 @@ test("a layer reopened later keeps the place it first took", () => {
 test("a layer the bundle never carried is a finding, not a shorter order", () => {
   assert.match(
     consoleCascadeFindings(emitted(["tokens", "base", "ui"]))[0] ?? "",
-    /layers emitted as tokens, base, ui, not tokens, base, ui, page/u,
+    /layers emitted as tokens, base, ui, not properties, tokens, base, ui, page, utilities/u,
   );
 });
 
@@ -228,6 +228,34 @@ test("a raw length in the utilities layer is a finding, and 0 and 1px are not", 
   );
 });
 
+test("a length the minifier stripped its leading zero from is still one", () => {
+  assert.deepEqual(
+    consoleUtilitiesFindings(utilities(".p-\\[0\\.5rem\\]{padding:.5rem}")),
+    [".5rem in the utilities layer, a raw length the tokens state"],
+  );
+  assert.deepEqual(
+    consoleUtilitiesFindings(utilities(".m-\\[-0\\.25rem\\]{margin:-.25rem}")),
+    ["-.25rem in the utilities layer, a raw length the tokens state"],
+  );
+});
+
+test("a brace inside a string does not close the layer it sits in", () => {
+  assert.deepEqual(
+    consoleUtilitiesFindings(
+      '@layer utilities{.q:before{content:"}"}.z{color:#fff}}' +
+        "@layer page{.p{color:red}}",
+    ),
+    ["#fff in the utilities layer, a raw colour the tokens state"],
+  );
+  assert.deepEqual(
+    consoleUtilitiesFindings(
+      '@layer utilities{.q:before{content:"\\""}.z{color:#fff}}' +
+        "@layer page{.p{color:red}}",
+    ),
+    ["#fff in the utilities layer, a raw colour the tokens state"],
+  );
+});
+
 test("only the utilities layer is judged, so the tokens may state values", () => {
   assert.deepEqual(
     consoleUtilitiesFindings(
@@ -290,6 +318,28 @@ test("no utilities layer at all carries no collision finding", () => {
   );
 });
 
+test("a decimal in a value is a value, and a class starting in one is not", () => {
+  assert.deepEqual(
+    consoleCollisionFindings(
+      "@layer utilities{.a{gap:.5rem}}@layer ui{.b{margin:.5rem}}",
+    ),
+    [],
+  );
+  assert.match(
+    consoleCollisionFindings(
+      "@layer utilities{.a5{gap:0}}@layer ui{.a5{margin:0}}",
+    ).join(" "),
+    /a class `\.a5` the utilities layer emits and a layered sheet selects/u,
+  );
+  assert.match(
+    consoleCollisionFindings(
+      "@layer utilities{.-col-end-1{grid-column-end:-1}}" +
+        "@layer ui{.-col-end-1{color:red}}",
+    ).join(" "),
+    /a class `\.-col-end-1` the utilities layer emits/u,
+  );
+});
+
 test("an escaped arbitrary-value name cannot collide and is skipped", () => {
   assert.deepEqual(
     consoleCollisionFindings(
@@ -300,17 +350,34 @@ test("an escaped arbitrary-value name cannot collide and is skipped", () => {
   );
 });
 
-test("the layer tailwind writes beside its utilities takes no place", () => {
+const written = ["tokens", "base", "ui", "page", "utilities"] as const;
+
+test("the layer tailwind writes for its own properties is ordered under them", () => {
+  assert.equal(consoleCascadeLayers[0], "properties");
   assert.deepEqual(
     consoleCascadeFindings(
-      `${emitted(consoleCascadeLayers)}@layer properties{*{--tw-x:initial}}`,
+      `@layer ${consoleCascadeLayers.join(", ")};${emitted(written)}` +
+        `@layer properties{*{--tw-x:initial}}`,
     ),
     [],
   );
   assert.match(
     consoleCascadeFindings(
-      `${emitted(consoleCascadeLayers)}@layer vendor{a{b:c}}`,
+      `${emitted(written)}@layer properties{*{--tw-x:initial}}`,
     )[0] ?? "",
-    /a layer named vendor/u,
+    /layers emitted as tokens, base, ui, page, utilities, properties, not properties, tokens/u,
+  );
+});
+
+test("with no statement a build writing no properties layer is short one", () => {
+  assert.deepEqual(
+    consoleCascadeFindings(
+      `@layer ${consoleCascadeLayers.join(", ")};${emitted(written)}`,
+    ),
+    [],
+  );
+  assert.match(
+    consoleCascadeFindings(emitted(written))[0] ?? "",
+    /layers emitted as tokens, base, ui, page, utilities, not properties, tokens/u,
   );
 });
