@@ -48,11 +48,6 @@
     gap: var(--space-3);
   }
 
-  .shell-theme {
-    display: inline-flex;
-    gap: var(--space-1);
-  }
-
   .shell-body {
     flex: 1;
     min-width: 0;

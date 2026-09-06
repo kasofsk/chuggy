@@ -33,7 +33,7 @@ interface ButtonLook {
   readonly size?: ButtonSize | undefined;
 }
 
-function buttonLookClassName(look: ButtonLook): string {
+export function buttonLookClassName(look: ButtonLook): string {
   const variant = look.variant ?? "default";
   const size = look.size ?? "md";
   return `btn btn-${variant}${size === "sm" ? " btn-sm" : ""}`;
