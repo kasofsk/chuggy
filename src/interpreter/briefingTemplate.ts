@@ -31,15 +31,6 @@
  * reorder its neighbours: filtering preserves relative order, so the rendered
  * sequence is always this one with members removed.
  *
- * A WORK TASK IS TOLD WHAT EVALUATORS FOUND, IN WORDING THE TEMPLATE OWNS. The
- * section that carries their failed reports opens with a standing preface, so
- * what the reports are is stated by this module and not inferred from a report
- * a worker wrote. The preface claims only what the rows carry — evaluators of
- * an earlier change reported findings — and not that the change was refused,
- * because a stage can pass with a failed member and the task after it is then
- * not a rework of a failed evaluation. It renders only when a report follows
- * it.
- *
  * THE ROLE VOCABULARY IS `Work` AND `Review`, and it is the same one
  * `./taskBriefing.ts` scopes a practice by and `./executionScheduler.ts` maps a
  * task kind onto. One spelling serves all three, so a practice scoped `Review`

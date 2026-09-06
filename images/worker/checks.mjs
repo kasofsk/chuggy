@@ -16,23 +16,6 @@
  * could not run and a gate that found something are both a failed stage and are
  * not the same fact.
  *
- * THE REPORT OF A FAILED STAGE CARRIES THE END OF WHAT THE FAILING COMMAND
- * WROTE. The report is what a rework of the ticket is briefed with, and the
- * diagnostic artifact is not; a report that says only the exit status sends
- * the next attempt to guess what the gate found. The tail is taken because a
- * gate names what it found after it ran. It is the tail of the capture, which
- * ends where the capture's bound did, so an excerpt of a truncated capture says
- * so rather than passing for the end of the run.
- *
- * THE REPORT IS MEASURED AFTER EVERYTHING THAT CAN CHANGE ITS LENGTH. The row
- * it becomes refuses a control character, a lone surrogate and any length past
- * its bound, and a refused report is a lost attempt rather than the verdict
- * the stage reached. So the credential scrub runs here, before the cut, since
- * a replacement can be longer than what it replaces; control characters become
- * spaces and lone surrogates the replacement character before anything is
- * measured; and every cut lands on a code point. The scrub the entrypoint
- * applies afterwards finds nothing left to replace.
- *
  * WHAT A COMMAND WRITES GOES TWO PLACES. It is streamed to the worker's own
  * stdout as it arrives, so a stage that dies mid-run leaves the pod log the
  * account it reached; and it is captured, bounded, for the diagnostic artifact

@@ -68,22 +68,6 @@
  * authored criterion has. It is held to the same printable rule as the row it
  * came from, so what a manifest may carry a briefing may render.
  *
- * A WORK TASK READS THE FAILED REPORTS OF THE EVALUATION BEFORE IT, THE WAY A
- * REVIEW READS THE WORK. The reports of the failed executions of the evaluation
- * spawned last before a work task reach its briefing through a port of the
- * same shape as the work reports, under the same document bound and a count
- * bound of the same figure, and render under a section of their own that only
- * a work task has a body for. A first attempt has no such evaluation and
- * renders no section. What the rows say is that evaluators reported findings,
- * not that the stage failed — a stage combined by any pass can pass with a
- * failed member — so that is what the section's wording says.
- *
- * A REPORT LIST PAST ITS COUNT BOUND IS A REFUSAL, NOT A THROW. A fanout is
- * bounded by the instance and not by this module, so a port answers what it
- * read, bounded by one more than the count it renders, and composition refuses
- * the list as `TooManyLines`; the ticket is blocked with that fault written
- * beside it rather than the scheduler losing its loop.
- *
  * WHAT COMPOSITION HANDS OVER IS BOUNDED AS ONE VALUE, NOT LIST BY LIST. Every
  * input has a bound of its own, and their sum is larger than an exec
  * environment string holds — which is how a launched fabric carries the task —
