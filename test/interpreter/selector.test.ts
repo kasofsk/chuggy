@@ -1684,6 +1684,17 @@ test("a rejected measured execution retains its available provenance", async () 
   });
   assert.equal(interaction?.startedAt, "2026-08-21T12:00:00.000Z");
   assert.equal(interaction?.completedAt, "2026-08-21T12:00:01.000Z");
+  assert.deepEqual(
+    interaction?.observedToken,
+    {
+      ...partition,
+      recoveryEpoch: "epoch",
+      schemaVersion: 1,
+      watermark: 1,
+      digest: "c".repeat(64),
+    },
+    "a failed record names the view it failed on, which is what a later failure is counted against",
+  );
 });
 
 test("structurally invalid JSON is audited instead of reaching persistence", async () => {
