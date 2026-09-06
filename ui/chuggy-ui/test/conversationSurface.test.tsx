@@ -344,7 +344,7 @@ test("a running exchange still takes a message, because the mailbox queues", asy
   styleless();
 });
 
-test("a closed door draws a composer that sends nothing", async () => {
+test("a closed door draws no box to type into", () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
   render(
     <Conversation
@@ -353,9 +353,36 @@ test("a closed door draws a composer that sends nothing", async () => {
       empty="No conversation"
     />,
   );
-  const box = await typed("shouted at a closed door");
-  fireEvent.keyDown(box, { key: "Enter" });
-  expect(onSend).not.toHaveBeenCalled();
-  expect(box.value).toBe("shouted at a closed door");
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.getByText("Closed")).toBeDefined();
+  styleless();
+});
+
+test("the counter appears only once the text nears the bound", async () => {
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  render(
+    <Conversation
+      exchanges={[answered]}
+      composer={composerOf({ onSend })}
+      empty="No conversation"
+    />,
+  );
+  await typed("short");
+  expect(screen.queryByText(/\/ 40/)).toBeNull();
+  await typed("a".repeat(33));
+  expect(screen.getByText("33 / 40")).toBeDefined();
+  styleless();
+});
+
+test("the note the page worded stands under the field", () => {
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  render(
+    <Conversation
+      exchanges={[answered]}
+      composer={{ ...composerOf({ onSend }), note: "Queued" }}
+      empty="No conversation"
+    />,
+  );
+  expect(screen.getByText("Queued")).toBeDefined();
   styleless();
 });

@@ -18,6 +18,20 @@
     border-radius: 50%;
   }
 
+  /* The ring is the field's, not the textarea's: a box drawn around a box is
+   * two rings, and the outer one is the control the reader sees. */
+  .conversation-field:focus-within {
+    box-shadow: var(--ring-focus);
+  }
+
+  .conversation-input {
+    background: transparent;
+  }
+
+  .conversation-input:focus-visible {
+    box-shadow: none;
+  }
+
   .conversation-chevron {
     transition: rotate var(--duration-1) var(--ease-out);
   }

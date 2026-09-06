@@ -11,7 +11,9 @@
 import { ComposerPrimitive, useAuiState } from "@assistant-ui/react";
 import type { ReactNode } from "react";
 
-import { buttonLookClassName } from "../ui/Button.tsx";
+import { textCodePointsCount } from "../../../../../src/contract/http.ts";
+
+import "./conversation.css";
 
 /** Whether the page took the message, or handed it back. */
 export type ConversationSent = "Sent" | "Kept";
@@ -30,34 +32,64 @@ export interface ConversationComposerProps {
   readonly onEdit?: () => void;
 }
 
+/** The most rows the box grows to before it scrolls itself. */
+const conversationRowsMax = 8;
+
+/** The share of the bound past which the counter appears: a member typing a
+ * sentence is answering, not spending a budget. */
+const conversationCounterShare = 0.8;
+
+function ConversationSendGlyph(): ReactNode {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3">
+      <path
+        d="M8 13 L8 3 M4 7 L8 3 L12 7"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function ConversationComposer(
   props: ConversationComposerProps & { readonly busy: boolean },
 ): ReactNode {
-  const length = useAuiState((state) => state.composer.text.length);
+  const written = useAuiState((state) => state.composer.text);
+  const count = textCodePointsCount(written);
+  if (!props.takes) return <p className="text-ink-3 text-center">Closed</p>;
   return (
-    <ComposerPrimitive.Root className="grid min-w-0 gap-2">
-      <ComposerPrimitive.Input
-        className="w-full"
-        rows={4}
-        maxLength={props.charsMax}
-        submitMode="enter"
-        aria-label="Message"
-        onChange={
-          props.onEdit === undefined ? undefined : () => props.onEdit?.()
-        }
-      />
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="num text-ink-3 text-xs">
-          {length} / {props.charsMax}
-        </span>
+    <ComposerPrimitive.Root className="grid min-w-0 gap-1">
+      <div className="conversation-field bg-surface-1 border-edge-control rounded-3 grid min-w-0 gap-2 border p-3">
+        <ComposerPrimitive.Input
+          className="conversation-input w-full min-w-0 resize-none border-0"
+          minRows={1}
+          maxRows={conversationRowsMax}
+          maxLength={props.charsMax}
+          submitMode="enter"
+          aria-label="Message"
+          onChange={
+            props.onEdit === undefined ? undefined : () => props.onEdit?.()
+          }
+        />
         <ComposerPrimitive.Send
-          className={buttonLookClassName({ variant: "primary" })}
+          className="conversation-round bg-surface-inverse text-ink-inverse disabled:bg-surface-2 disabled:text-ink-3 ml-auto flex size-6 items-center justify-center border-0"
           aria-busy={props.busy}
         >
-          Send
+          <ConversationSendGlyph />
+          <span className="visually-hidden">Send</span>
         </ComposerPrimitive.Send>
-        {props.note}
       </div>
+      <p className="text-ink-3 flex flex-wrap items-baseline gap-3 text-xs">
+        {props.note}
+        {count < props.charsMax * conversationCounterShare ? null : (
+          <span className="num ml-auto">
+            {count} / {props.charsMax}
+          </span>
+        )}
+      </p>
     </ComposerPrimitive.Root>
   );
 }
