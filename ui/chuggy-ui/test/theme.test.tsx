@@ -74,18 +74,18 @@ test("the attribute carries the choice, and System takes it off", () => {
   expect(root.hasAttribute("data-theme")).toBe(false);
 });
 
-test("the control presses one toggle at a time and writes what it applied", () => {
+test("the control checks one radio at a time and writes what it applied", () => {
   render(<ThemeControl />);
-  fireEvent.click(screen.getByRole("button", { name: "Dark" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
   expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   expect(localStorage.getItem(themeStoreKey)).toBe("Dark");
   expect(
-    screen.getByRole("button", { name: "Dark" }).getAttribute("aria-pressed"),
+    screen.getByRole("radio", { name: "Dark" }).getAttribute("aria-checked"),
   ).toBe("true");
   expect(
-    screen.getByRole("button", { name: "System" }).getAttribute("aria-pressed"),
+    screen.getByRole("radio", { name: "System" }).getAttribute("aria-checked"),
   ).toBe("false");
-  fireEvent.click(screen.getByRole("button", { name: "System" }));
+  fireEvent.click(screen.getByRole("radio", { name: "System" }));
   expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
   expect(localStorage.getItem(themeStoreKey)).toBeNull();
 });

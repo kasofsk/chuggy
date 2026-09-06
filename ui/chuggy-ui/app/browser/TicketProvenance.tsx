@@ -19,6 +19,8 @@ import type { PanelState } from "../core/freshness.ts";
 import { configurationLabel } from "../core/labels.ts";
 import { usePanelResource } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
+import { Disclosure } from "./ui/Disclosure.tsx";
+import { Tooltip } from "./ui/Tooltip.tsx";
 
 function Field(props: {
   readonly name: string;
@@ -116,7 +118,9 @@ export function TicketBrief(props: {
               <Brief brief={draft.brief} />
             )}
             <Field name="released under">
-              <span title={released.title}>{released.text}</span>
+              <Tooltip text={released.title}>
+                <span>{released.text}</span>
+              </Tooltip>
             </Field>
             <Field name="draft">
               {draft.state} at version {draft.authoringVersion}
@@ -191,18 +195,13 @@ function TicketConfiguration(props: {
               <Field name="parent">{configuration.parent}</Field>
             )}
           </dl>
-          <button
-            type="button"
-            aria-expanded={open}
-            onClick={() => {
-              setOpen(!open);
-            }}
+          <Disclosure
+            open={open}
+            onOpenChange={setOpen}
+            label={open ? "hide canonical" : "show canonical"}
           >
-            {open ? "hide canonical" : "show canonical"}
-          </button>
-          {open ? (
             <pre className="canonical">{configuration.canonical}</pre>
-          ) : null}
+          </Disclosure>
         </div>
       )}
     </DataPanel>

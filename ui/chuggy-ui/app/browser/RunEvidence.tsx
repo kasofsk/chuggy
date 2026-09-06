@@ -38,6 +38,7 @@ import { usePanelResource } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { MarkdownReport } from "./MarkdownReport.tsx";
 import { RunTranscript } from "./RunTranscript.tsx";
+import { Disclosure } from "./ui/Disclosure.tsx";
 
 /** The most turn pages one reader may walk through in one sitting. */
 export const runTurnPagesMax = 32;
@@ -185,19 +186,14 @@ function RunConfigurationFileRow(props: {
         <span className="panel-absent">{sentence}</span>
       )}
       {file.content === undefined ? null : (
-        <button
-          type="button"
-          aria-expanded={shown}
-          onClick={() => {
-            setShown(!shown);
-          }}
+        <Disclosure
+          open={shown}
+          onOpenChange={setShown}
+          label={shown ? "hide" : "show"}
         >
-          {shown ? "hide" : "show"}
-        </button>
+          <pre className="preview">{file.content}</pre>
+        </Disclosure>
       )}
-      {shown && file.content !== undefined ? (
-        <pre className="preview">{file.content}</pre>
-      ) : null}
     </li>
   );
 }

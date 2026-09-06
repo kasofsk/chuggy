@@ -9,10 +9,11 @@
  */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { Figure as FigureValue, Spend } from "../app/core/figures.ts";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
   Ledger,
   LedgerBlock,
@@ -28,7 +29,12 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 
-afterEach(cleanup);
+beforeEach(resizeObserverStubbed);
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const when: FigureValue = {
   kind: "Span",
@@ -69,7 +75,7 @@ test("both standings draw a group that is a disclosure, open where it is told", 
   }
 });
 
-test("a row draws its label, its status, its window and its spend", () => {
+test("a row draws its label, its status, its window and its spend", async () => {
   const { container } = render(
     <LedgerBlock eyebrow="Evaluation" pill={{ tone: "live", text: "Current" }}>
       <LedgerRow
@@ -84,7 +90,11 @@ test("a row draws its label, its status, its window and its spend", () => {
   );
   expect(screen.getByText("Stage 1 of 2")).toBeDefined();
   expect(screen.getByText("Failed")).toBeDefined();
-  expect(screen.getByTitle("execution-b8bdfdd4-7").textContent).toBe("b8bd…-7");
+  const identity = screen.getByText("b8bd…-7");
+  fireEvent.focus(identity);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "execution-b8bdfdd4-7",
+  );
   expect(container.querySelector(".ledger-when")?.textContent).toContain(
     "17m 40s",
   );

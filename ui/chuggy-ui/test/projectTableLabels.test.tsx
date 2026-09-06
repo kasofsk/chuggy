@@ -1,7 +1,7 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
@@ -15,6 +15,7 @@ import {
 } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -43,6 +44,8 @@ vi.mock("@tanstack/react-router", () => ({
  * reference, and the reason the class is there — take the column apart. Neither
  * shows up in a row's own value, so neither is provable above this tier.
  */
+
+beforeEach(resizeObserverStubbed);
 
 afterEach(() => {
   cleanup();
@@ -106,13 +109,15 @@ async function drawTable(): Promise<void> {
 test("the configuration cell keeps the revision, and keeps clipping it", async () => {
   await drawTable();
   const cell = screen.getByText("chuggy #12");
-  expect(cell.getAttribute("title")).toBe(revision);
   expect(cell.className).toContain("clipped");
+  fireEvent.focus(cell);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(revision);
 });
 
 test("the runs-on cell keeps the image reference, and keeps clipping it", async () => {
   await drawTable();
   const cell = screen.getByText("chuggy-worker v3");
-  expect(cell.getAttribute("title")).toBe(image);
   expect(cell.className).toContain("clipped");
+  fireEvent.focus(cell);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(image);
 });

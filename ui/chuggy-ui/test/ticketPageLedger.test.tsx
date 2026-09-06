@@ -1,7 +1,7 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
@@ -12,6 +12,7 @@ import {
   openedStream,
   ScreenHarness,
   settled,
+  turned,
 } from "./screenHarness.tsx";
 import {
   ledgerPage,
@@ -23,6 +24,7 @@ import type { ExecutionShape } from "./ticketLedgerFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import type { TicketAuthoring } from "../app/core/ticketLedger.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 
 const atlas: PartitionIdentity = { tenant: "vteng", project: "chuggy" };
 
@@ -53,6 +55,8 @@ vi.mock("@tanstack/react-router", () => ({
  * asserted through the ISO it hovers, because the clock face is the reader's
  * own zone and a suite that pinned it would pin the machine it ran on.
  */
+
+beforeEach(resizeObserverStubbed);
 
 afterEach(() => {
   cleanup();
@@ -302,6 +306,24 @@ test("every section of the main body has an anchor pointing at it", async () => 
   for (const anchor of anchors)
     expect(container.querySelector(`section${String(anchor)}`)).not.toBeNull();
   expect(screen.getByText("3 · 7 runs")).toBeDefined();
+});
+
+test("the canonical configuration is closed until asked for, and its trigger names what it opens", async () => {
+  await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
+  const trigger = screen.getByRole("button", { name: "show canonical" });
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("{}")).toBeNull();
+  await turned(() => {
+    trigger.click();
+  });
+  const body = screen.getByText("{}");
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(trigger.getAttribute("aria-controls")).toBe(body.id);
+  expect(screen.getByRole("button", { name: "hide canonical" })).toBe(trigger);
+  await turned(() => {
+    trigger.click();
+  });
+  expect(screen.queryByText("{}")).toBeNull();
 });
 
 test("the usage panel names the basis once and breaks the spend down twice", async () => {
@@ -640,10 +662,12 @@ test("the wall says when the ticket entered it, from the journal's own instant",
     ticket: parkedTicket,
   });
   const when = container.querySelector(".notice-parked .notice-when .fig");
-  expect(when?.getAttribute("title")).toBe(
+  if (when === null) throw new Error("no wall instant figure drawn");
+  fireEvent.focus(when);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
     new Date(ticketInstants.changedAt).toISOString(),
   );
-  expect(when?.textContent).not.toBe("");
+  expect(when.textContent).not.toBe("");
 });
 
 test("a live phase is dated the same way", async () => {
@@ -651,11 +675,12 @@ test("a live phase is dated the same way", async () => {
     shapes: ticket21Resumed,
     ticket: resumedTicket,
   });
-  expect(
-    container
-      .querySelector(".notice-live .notice-when .fig")
-      ?.getAttribute("title"),
-  ).toBe(new Date(ticketInstants.changedAt).toISOString());
+  const when = container.querySelector(".notice-live .notice-when .fig");
+  if (when === null) throw new Error("no wall instant figure drawn");
+  fireEvent.focus(when);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    new Date(ticketInstants.changedAt).toISOString(),
+  );
 });
 
 /**
@@ -668,8 +693,12 @@ test("the head's span begins at the release and not at the first run", async () 
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  const span = container.querySelector(".ticket-figures .fig[title*='→']");
-  expect(span?.getAttribute("title")).toContain(
+  const span = [...container.querySelectorAll(".ticket-figures .fig")].find(
+    (figure) => figure.textContent?.includes("→") === true,
+  );
+  if (span === undefined) throw new Error("no span figure drawn");
+  fireEvent.focus(span);
+  expect((await screen.findByRole("tooltip")).textContent).toContain(
     new Date(ticketInstants.releasedAt).toISOString(),
   );
 });

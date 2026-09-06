@@ -84,6 +84,7 @@ import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { QuotedText } from "../ui/QuotedText.tsx";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 export const leadInquiriesListName = "inquiries";
 
@@ -255,11 +256,13 @@ function LeadInquiryRow(props: {
           {inquiryAskerNamed(inquiry.asker)}
         </span>
         {inquiry.mine ? <Pill tone="neutral">Mine</Pill> : null}
-        <span title={inquiry.failure}>
-          <Pill tone={sessionTurnStateTone(inquiry.turnState)}>
-            {inquiry.turnState}
-          </Pill>
-        </span>
+        <Tooltip text={inquiry.failure}>
+          <span>
+            <Pill tone={sessionTurnStateTone(inquiry.turnState)}>
+              {inquiry.turnState}
+            </Pill>
+          </span>
+        </Tooltip>
         <Figure figure={instantFigure(inquiry.askedAt, props.nowMs)} />
         <LeadInquiryRollup inquiry={inquiry} />
       </div>

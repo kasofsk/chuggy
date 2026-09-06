@@ -1,0 +1,46 @@
+/* Picker: the panel a choice is made in, and the roster inside it. */
+
+@layer ui {
+  .picker {
+    max-height: var(--radix-dropdown-menu-content-available-height);
+    overflow-y: auto;
+    display: grid;
+    gap: var(--space-1);
+    padding: var(--space-1);
+    background: var(--surface-1);
+    color: var(--ink-1);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+    font: var(--weight-regular) var(--text-sm) / var(--leading-dense)
+      var(--font-mono);
+  }
+
+  .picker-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-1);
+    cursor: pointer;
+    outline: none;
+    white-space: nowrap;
+  }
+
+  .picker-item[data-highlighted] {
+    background: color-mix(in srgb, var(--ink-1) var(--wash), var(--surface-1));
+  }
+
+  .picker-gutter {
+    display: inline-flex;
+    justify-content: center;
+    width: 1ch;
+  }
+
+  .picker-mark {
+    display: block;
+    width: 0.4em;
+    height: 0.4em;
+    border-radius: 50%;
+    background: currentColor;
+  }
+}

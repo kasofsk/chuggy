@@ -18,6 +18,7 @@ import { artifactPreviewOffer } from "../core/artifactPreview.ts";
 import { usePanelResource } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { RunEvidence } from "./RunEvidence.tsx";
+import { Disclosure } from "./ui/Disclosure.tsx";
 
 type ResultArtifact = NonNullable<
   ExecutionResponse["result"]
@@ -62,25 +63,20 @@ function Artifact(props: {
       {offer.offer === "Unpreviewable" ? (
         <span className="panel-absent">{offer.reason}</span>
       ) : (
-        <button
-          type="button"
-          aria-expanded={shown}
-          onClick={() => {
-            setShown(!shown);
-          }}
+        <Disclosure
+          open={shown}
+          onOpenChange={setShown}
+          label={shown ? "hide" : `preview as ${offer.renderer}`}
         >
-          {shown ? "hide" : `preview as ${offer.renderer}`}
-        </button>
+          <div className="artifact-preview">
+            <ArtifactPreview
+              partition={props.partition}
+              execution={props.execution}
+              ordinal={props.artifact.ordinal}
+            />
+          </div>
+        </Disclosure>
       )}
-      {shown ? (
-        <div className="artifact-preview">
-          <ArtifactPreview
-            partition={props.partition}
-            execution={props.execution}
-            ordinal={props.artifact.ordinal}
-          />
-        </div>
-      ) : null}
     </li>
   );
 }

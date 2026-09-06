@@ -1,0 +1,7 @@
+/* Disclosure: the root draws as neither box; the trigger and body keep their parent's layout. */
+
+@layer ui {
+  .disclosure {
+    display: contents;
+  }
+}

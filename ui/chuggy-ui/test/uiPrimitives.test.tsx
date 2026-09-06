@@ -7,18 +7,24 @@
  * — because that is the part a stylesheet cannot supply.
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, expect, test } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { Field, Fields, fieldsVariants } from "../app/browser/ui/Fields.tsx";
 import { EmptyState, emptyVariants } from "../app/browser/ui/EmptyState.tsx";
 import { Identity, identityForms } from "../app/browser/ui/Identity.tsx";
 import { SectionList } from "../app/browser/ui/SectionList.tsx";
 import { Table } from "../app/browser/ui/Table.tsx";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 
-afterEach(cleanup);
+beforeEach(resizeObserverStubbed);
 
-test("an identity shows the short form and hovers the whole of it", () => {
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+test("an identity shows the short form and hovers the whole of it", async () => {
   for (const form of identityForms) {
     const { container } = render(
       <Identity
@@ -26,9 +32,12 @@ test("an identity shows the short form and hovers the whole of it", () => {
         block={form === "block"}
       />,
     );
-    const drawn = screen.getByTitle("cfaca0a1b2c3");
-    expect(drawn.textContent).toBe("cfaca0a");
+    const drawn = screen.getByText("cfaca0a");
     expect(drawn.classList.contains("identity-block")).toBe(form === "block");
+    fireEvent.focus(drawn);
+    expect((await screen.findByRole("tooltip")).textContent).toBe(
+      "cfaca0a1b2c3",
+    );
     expect(container.querySelector("[style]")).toBeNull();
     cleanup();
   }

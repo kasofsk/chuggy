@@ -59,6 +59,7 @@ import { Figure } from "./ui/Figure.tsx";
 import { PageHead } from "./ui/PageHead.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
+import { Tooltip } from "./ui/Tooltip.tsx";
 
 import "./lead/lead.css";
 
@@ -124,9 +125,11 @@ function LeadTurnRow(props: { readonly turn: LeadTurnResponse }): ReactNode {
       <td className="num">{turn.ordinal}</td>
       <td>{turn.inputKind}</td>
       <td>
-        <span title={turn.failure}>
-          <Pill tone={sessionTurnStateTone(turn.state)}>{turn.state}</Pill>
-        </span>
+        <Tooltip text={turn.failure}>
+          <span>
+            <Pill tone={sessionTurnStateTone(turn.state)}>{turn.state}</Pill>
+          </span>
+        </Tooltip>
       </td>
       <td>{turn.model ?? "—"}</td>
       <td className="num">

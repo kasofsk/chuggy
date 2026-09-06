@@ -57,6 +57,7 @@ import { DataPanel } from "./DataPanel.tsx";
 import { drawBytes } from "./ports.ts";
 import { operationIdBytesCount } from "../core/operationFollow.ts";
 import { TicketCreationAdvanced } from "./TicketCreationAdvanced.tsx";
+import { Tooltip } from "./ui/Tooltip.tsx";
 
 type Attempt =
   | { readonly attempt: "Idle" }
@@ -274,9 +275,9 @@ function CreationFields(
   const shaping = creationConfigurationSentence(props.configuration);
   return (
     <>
-      <p className="creation-configuration" title={shaping.title}>
-        {shaping.text}
-      </p>
+      <Tooltip text={shaping.title}>
+        <p className="creation-configuration">{shaping.text}</p>
+      </Tooltip>
       <Intent form={form} onChange={onChange} />
       <Fault field="intent" faults={faults} />
       <Links form={form} onChange={onChange} />

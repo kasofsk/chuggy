@@ -60,6 +60,7 @@ import {
   TicketNumberCell,
 } from "./TicketCells.tsx";
 import { ButtonLink } from "./ui/Button.tsx";
+import { Tooltip } from "./ui/Tooltip.tsx";
 
 interface TicketRowsHeld {
   readonly state: PanelState<ProjectTicketRows>;
@@ -134,9 +135,11 @@ function TicketRow(props: {
     <tr>
       <TicketNumberCell partition={props.partition} ticket={row.ticket} />
       <td className="cell-dim">
-        <span className="clipped" title={row.configuration?.title}>
-          {ticketRowExecutionCell(row, row.configuration?.text)}
-        </span>
+        <Tooltip text={row.configuration?.title}>
+          <span className="clipped">
+            {ticketRowExecutionCell(row, row.configuration?.text)}
+          </span>
+        </Tooltip>
       </td>
       <td>{row.phase}</td>
       <td>
@@ -148,9 +151,11 @@ function TicketRow(props: {
       </td>
       <td>{ticketRowExecutionCell(row, status)}</td>
       <td className="cell-dim">
-        <span className="clipped" title={row.runsOn?.title}>
-          {ticketRowExecutionCell(row, row.runsOn?.text)}
-        </span>
+        <Tooltip text={row.runsOn?.title}>
+          <span className="clipped">
+            {ticketRowExecutionCell(row, row.runsOn?.text)}
+          </span>
+        </Tooltip>
       </td>
       <td className="cell-dim">
         {row.sequence}

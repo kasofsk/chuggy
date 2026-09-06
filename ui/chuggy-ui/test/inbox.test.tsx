@@ -9,8 +9,8 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
@@ -28,6 +28,7 @@ import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { leadRefusals } from "./leadFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -42,6 +43,8 @@ vi.mock("@tanstack/react-router", () => ({
   ),
   useParams: () => atlas,
 }));
+
+beforeEach(resizeObserverStubbed);
 
 /** The stubbed global goes back whatever a case did with it, including a case
  * that stops partway; the rendered tree is the testing library's own cleanup. */
@@ -144,8 +147,10 @@ test("a ticket the lead refused is a row of its own, marked and reasoned", async
   drawInbox(servedWithRefusal);
   await settled();
   expect(screen.getByRole("link", { name: "42" })).toBeDefined();
-  const standing = screen.getByText("Standing");
-  expect(standing.closest("[title]")?.getAttribute("title")).toBe(
+  const trigger = screen.getByText("Standing").closest('[tabindex="0"]');
+  if (trigger === null) throw new Error("no tooltip trigger around Standing");
+  fireEvent.focus(trigger);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
     "the brief names no reference",
   );
 });

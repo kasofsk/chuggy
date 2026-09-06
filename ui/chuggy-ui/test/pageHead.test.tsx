@@ -4,14 +4,20 @@
  * asserted with no provider around it.
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, expect, test } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { PageHead } from "../app/browser/ui/PageHead.tsx";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 
-afterEach(cleanup);
+beforeEach(resizeObserverStubbed);
 
-test("the title heads the identity, drawn short with the whole of it on hover", () => {
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+test("the title heads the identity, drawn short with the whole of it on hover", async () => {
   const { container } = render(
     <PageHead
       title="Thread"
@@ -21,9 +27,12 @@ test("the title heads the identity, drawn short with the whole of it on hover", 
     </PageHead>,
   );
   expect(screen.getByRole("heading", { name: "Thread" })).toBeDefined();
-  const identity = screen.getByTitle("sess-abc123-full");
-  expect(identity.textContent).toBe("sess-abc123");
+  const identity = screen.getByText("sess-abc123");
   expect(identity.classList.contains("identity")).toBe(true);
+  fireEvent.focus(identity);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "sess-abc123-full",
+  );
   expect(container.querySelector("[style]")).toBeNull();
 });
 

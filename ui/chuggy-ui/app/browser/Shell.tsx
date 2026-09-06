@@ -37,7 +37,9 @@ import {
 import type { ThemeChoice } from "./theme.ts";
 import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
+import { Picker } from "./ui/Picker.tsx";
 import { Pill } from "./ui/Pill.tsx";
+import { ToggleGroup } from "./ui/ToggleGroup.tsx";
 import "./shell.css";
 
 /**
@@ -73,13 +75,16 @@ function ProjectSwitcher(props: {
   if (state.state !== "Ready")
     return <Notice tone="parked" inline detail="Projects unavailable" />;
   return (
-    <select
-      aria-label="Project"
+    <Picker
+      label="Project"
       value={`${props.partition.tenant}/${props.partition.project}`}
-      onChange={(event) => {
+      options={state.value.map((candidate) => ({
+        value: `${candidate.tenant}/${candidate.project}`,
+        text: `${candidate.tenant} / ${candidate.project}`,
+      }))}
+      onChoose={(picked) => {
         const chosen = state.value.find(
-          (candidate) =>
-            `${candidate.tenant}/${candidate.project}` === event.target.value,
+          (candidate) => `${candidate.tenant}/${candidate.project}` === picked,
         );
         if (chosen === undefined) return;
         lastProjectWrite(persistentStore, chosen);
@@ -88,16 +93,7 @@ function ProjectSwitcher(props: {
           params: { tenant: chosen.tenant, project: chosen.project },
         });
       }}
-    >
-      {state.value.map((candidate) => (
-        <option
-          key={`${candidate.tenant}/${candidate.project}`}
-          value={`${candidate.tenant}/${candidate.project}`}
-        >
-          {candidate.tenant} / {candidate.project}
-        </option>
-      ))}
-    </select>
+    />
   );
 }
 
@@ -120,22 +116,18 @@ export function ThemeControl(): ReactNode {
     themeChoiceRead(persistentStore),
   );
   return (
-    <span className="shell-theme" role="group" aria-label="Theme">
-      {themeChoices.map((candidate) => (
-        <Button
-          key={candidate}
-          size="sm"
-          pressed={candidate === chosen}
-          onClick={() => {
-            themeChoiceApply(document.documentElement, candidate);
-            themeChoiceWrite(persistentStore, candidate);
-            setChosen(candidate);
-          }}
-        >
-          {candidate}
-        </Button>
-      ))}
-    </span>
+    <ToggleGroup
+      label="Theme"
+      options={themeChoices}
+      value={chosen}
+      onChange={(value) => {
+        const choice = themeChoices.find((candidate) => candidate === value);
+        if (choice === undefined) return;
+        themeChoiceApply(document.documentElement, choice);
+        themeChoiceWrite(persistentStore, choice);
+        setChosen(choice);
+      }}
+    />
   );
 }
 

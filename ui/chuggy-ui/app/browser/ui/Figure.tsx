@@ -4,13 +4,14 @@
  *
  * Total over `figureKinds`, and over a span that is open or closed. It formats
  * nothing — `core/figures.ts` did that — so the same quantity cannot be rounded
- * two ways on one page, and an absence is drawn as an absence with the reason
- * on hover rather than as a zero.
+ * two ways on one page, and an absence is drawn as an absence with its reason
+ * in a tooltip rather than as a zero.
  */
 
 import type { ReactNode } from "react";
 
 import type { Figure as FigureValue } from "../../core/figures.ts";
+import { Tooltip } from "./Tooltip.tsx";
 
 import "./Figure.css";
 
@@ -22,18 +23,19 @@ function FigureSpan(props: {
 }): ReactNode {
   const span = props.figure;
   return (
-    <span
-      className={span.open ? "fig fig-live" : "fig"}
-      title={span.title}
-      data-open={span.open ? "true" : undefined}
-    >
-      {span.start}
-      {span.end === undefined ? null : ` → ${span.end}`}
-      <i className="fig-sep" aria-hidden="true">
-        ·
-      </i>
-      {span.length}
-    </span>
+    <Tooltip text={span.title}>
+      <span
+        className={span.open ? "fig fig-live" : "fig"}
+        data-open={span.open ? "true" : undefined}
+      >
+        {span.start}
+        {span.end === undefined ? null : ` → ${span.end}`}
+        <i className="fig-sep" aria-hidden="true">
+          ·
+        </i>
+        {span.length}
+      </span>
+    </Tooltip>
   );
 }
 
@@ -45,9 +47,9 @@ export function Figure(props: { readonly figure: FigureValue }): ReactNode {
         <span className="fig">
           {figure.text}
           {figure.basis === undefined ? null : (
-            <i className="fig-basis" title={figureBasisTitle}>
-              {figure.basis}
-            </i>
+            <Tooltip text={figureBasisTitle}>
+              <i className="fig-basis">{figure.basis}</i>
+            </Tooltip>
           )}
         </span>
       );
@@ -56,17 +58,17 @@ export function Figure(props: { readonly figure: FigureValue }): ReactNode {
       return <span className="fig">{figure.text}</span>;
     case "Instant":
       return (
-        <span className="fig" title={figure.iso}>
-          {figure.text}
-        </span>
+        <Tooltip text={figure.iso}>
+          <span className="fig">{figure.text}</span>
+        </Tooltip>
       );
     case "Span":
       return <FigureSpan figure={figure} />;
     case "Absent":
       return (
-        <span className="fig fig-dim" title={figure.why}>
-          —
-        </span>
+        <Tooltip text={figure.why}>
+          <span className="fig fig-dim">—</span>
+        </Tooltip>
       );
   }
 }

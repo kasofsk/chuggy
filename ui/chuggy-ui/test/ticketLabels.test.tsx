@@ -1,7 +1,7 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
@@ -15,6 +15,7 @@ import {
 } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -42,6 +43,8 @@ vi.mock("@tanstack/react-router", () => ({
  * each site is mounted and asked for the identity, not for the name — the name
  * is the half a reader can already see.
  */
+
+beforeEach(resizeObserverStubbed);
 
 afterEach(() => {
   cleanup();
@@ -166,7 +169,8 @@ const named: Named = {
 test("the revision a ticket was released under stays reachable from its name", async () => {
   await drawTicket(named);
   const releasedUnder = drawn("chuggy #12");
-  expect(releasedUnder.getAttribute("title")).toBe(revision);
+  fireEvent.focus(releasedUnder);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(revision);
 });
 
 test("the configuration panel keeps the revision its heading no longer shows", async () => {
@@ -182,12 +186,14 @@ test("the configuration panel keeps the revision its heading no longer shows", a
 test("an execution names its worker and keeps the image reference on hover", async () => {
   await drawTicket(named);
   const ranOn = drawn("Linux/Amd64 chuggy-worker v3");
-  expect(ranOn.getAttribute("title")).toBe(image);
+  fireEvent.focus(ranOn);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(image);
 });
 
 test("a page the catalog named nothing on draws the identities themselves", async () => {
   await drawTicket({});
   expect(screen.getAllByText(revision).length).toBeGreaterThan(0);
   const ranOn = drawn("Linux/Amd64 worker@sha256:9949c442");
-  expect(ranOn.getAttribute("title")).toBe(image);
+  fireEvent.focus(ranOn);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(image);
 });
