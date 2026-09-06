@@ -128,9 +128,7 @@
 }
 
 .action-panel,
-.configuration,
-.execution-detail,
-.result {
+.configuration {
   display: grid;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
@@ -151,9 +149,7 @@
   color: var(--tone-fail);
 }
 
-.ticket-sequence,
-.execution-source,
-.artifact-bytes {
+.ticket-sequence {
   color: var(--ink-3);
   font-size: var(--text-xs);
 }
@@ -203,8 +199,7 @@
   word-break: break-word;
 }
 
-.executions,
-.artifacts {
+.executions {
   list-style: none;
   margin: 0;
   padding: var(--space-2) var(--space-4);
@@ -233,10 +228,6 @@
   color: var(--ink-3);
 }
 
-.execution-source {
-  margin: 0;
-}
-
 .attempts {
   border-collapse: collapse;
   width: 100%;
@@ -253,29 +244,6 @@
 .attempts th {
   color: var(--ink-3);
   font-size: var(--text-xs);
-}
-
-.artifact {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2);
-}
-
-.artifact-role {
-  color: var(--ink-3);
-}
-
-.artifact-preview {
-  flex-basis: 100%;
-}
-
-.verdict-pass {
-  color: var(--tone-live);
-}
-
-.verdict-fail {
-  color: var(--tone-fail);
 }
 
 /* The inbox: a badge on the nav item that leads to it, and answers that sit in
@@ -397,8 +365,7 @@
 /* Run evidence: the stage breakdown above the executions it groups, and the
  * four panes an expanded run draws. */
 
-.stages,
-.runs {
+.stages {
   list-style: none;
   margin: 0;
   padding: var(--space-2) var(--space-4);
@@ -423,52 +390,7 @@
   grid-column: 1 / -1;
 }
 
-.run-totals {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-4);
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-}
-
-.run-cost {
-  color: var(--ink-1);
-}
-
-.run-tokens,
-.run-turns,
-.run-duration {
-  color: var(--ink-3);
-  font-size: var(--text-xs);
-}
-
-.run {
-  border-top: 1px solid var(--edge);
-  padding-top: var(--space-2);
-  display: grid;
-  gap: var(--space-2);
-}
-
-.run-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-4);
-  margin: 0;
-}
-
-.run-number {
-  color: var(--ink-1);
-  font-weight: 600;
-}
-
-.run-state {
-  color: var(--ink-3);
-}
-
-.run-report,
-.argv {
+.run-report {
   margin: 0;
   padding: var(--space-2);
   background: var(--surface-2);
@@ -489,11 +411,6 @@
 .run-report pre {
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-.run-reads {
-  display: grid;
-  gap: var(--space-2);
 }
 
 .turns {
@@ -541,26 +458,4 @@
   grid-template-columns: 7rem 1fr;
   gap: 0 var(--space-4);
   align-items: baseline;
-}
-
-.step-type {
-  color: var(--ink-3);
-}
-
-.step-tools {
-  color: var(--tone-live);
-}
-
-.step-capped,
-.step-elided {
-  grid-column: 2;
-  color: var(--tone-parked);
-  font-size: var(--text-xs);
-}
-
-.step-text {
-  grid-column: 2;
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
