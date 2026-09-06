@@ -62,18 +62,20 @@ export function RunTotalsLine(props: {
 }): ReactNode {
   const totals = props.totals;
   return (
-    <p className="run-totals">
-      <span className="run-cost">
+    <p className="flex flex-wrap items-baseline gap-4 tabular-nums">
+      <span className="text-ink-1">
         {runCostLabel(totals.costUsdMicros, totals.costBasis)}
       </span>
-      <span className="run-tokens">
+      <span className="text-ink-3 text-xs">
         {runCountLabel(totals.tokensInput)} in,{" "}
         {runCountLabel(totals.tokensOutput)} out,{" "}
         {runCountLabel(totals.tokensCacheCreation)} cache written,{" "}
         {runCountLabel(totals.tokensCacheRead)} cache read
       </span>
-      <span className="run-turns">{runCountLabel(totals.turns)} turns</span>
-      <span className="run-duration">
+      <span className="text-ink-3 text-xs">
+        {runCountLabel(totals.turns)} turns
+      </span>
+      <span className="text-ink-3 text-xs">
         {runDurationLabel(totals.durationMs)}
       </span>
     </p>
@@ -177,11 +179,13 @@ function RunConfigurationFileRow(props: {
   const sentence = runConfigurationFileSentence(file);
   return (
     <li className="configuration-file">
-      <span className="artifact-role">
+      <span className="text-ink-3">
         {runConfigurationSourceSentence(file.source)}
       </span>
       <code>{file.path}</code>
-      <span className="artifact-bytes">{runCountLabel(file.bytes)} bytes</span>
+      <span className="text-ink-3 text-xs">
+        {runCountLabel(file.bytes)} bytes
+      </span>
       {sentence === undefined ? null : (
         <span className="panel-absent">{sentence}</span>
       )}
@@ -228,11 +232,15 @@ function RunConfigurationBody(props: { readonly content: string }): ReactNode {
         <div className="legacy-field">
           <dt>command line</dt>
           <dd>
-            {argv ?? <code className="argv">{snapshot.argv.join(" ")}</code>}
+            {argv ?? (
+              <code className="m-0 border border-edge bg-surface-2 p-2 whitespace-pre-wrap break-words rounded-2">
+                {snapshot.argv.join(" ")}
+              </code>
+            )}
           </dd>
         </div>
       </dl>
-      <ul className="artifacts">
+      <ul className="grid gap-2 px-4 py-2">
         {runConfigurationOrdered(snapshot.files).map((file) => (
           <RunConfigurationFileRow key={`kept/${file.path}`} file={file} />
         ))}
@@ -297,7 +305,7 @@ function RunEvidenceReads(props: {
       </p>
     );
   return (
-    <div className="run-reads">
+    <div className="grid gap-2">
       {run.totals === undefined ? (
         <p className="panel-note">this run recorded no figures</p>
       ) : (
@@ -359,11 +367,16 @@ function RunAttempt(props: {
 }): ReactNode {
   const attempt = props.attempt;
   return (
-    <li className="run" data-attempt={attempt.attempt}>
-      <p className="run-head">
-        <span className="run-number">run {attempt.number}</span>
-        <span className="run-state">{attempt.state}</span>
-        <span className="execution-source">opened {attempt.openedAt}</span>
+    <li
+      className="grid gap-2 border-t border-edge pt-2"
+      data-attempt={attempt.attempt}
+    >
+      <p className="flex flex-wrap items-baseline gap-4">
+        <span className="text-ink-1 font-strong">run {attempt.number}</span>
+        <span className="text-ink-3">{attempt.state}</span>
+        <span className="m-0 text-ink-3 text-xs">
+          opened {attempt.openedAt}
+        </span>
       </p>
       <RunSummary attempt={attempt} result={props.execution.result} />
       <RunEvidenceReads
@@ -384,7 +397,7 @@ export function RunEvidence(props: {
   return attempts.length === 0 ? (
     <p className="panel-note">nothing has run for this execution yet</p>
   ) : (
-    <ul className="runs">
+    <ul className="grid gap-2 px-4 py-2">
       {attempts.map((attempt) => (
         <RunAttempt
           key={attempt.attempt}

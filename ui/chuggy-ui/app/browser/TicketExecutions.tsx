@@ -13,12 +13,18 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ExecutionResponse } from "../../../../src/contract/responses.ts";
+import type { ResultVerdict } from "../../../../src/contract/rosters.ts";
 import { apiExecution, apiOutputContent } from "../core/apiRoutes.ts";
 import { artifactPreviewOffer } from "../core/artifactPreview.ts";
 import { usePanelResource } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { RunEvidence } from "./RunEvidence.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
+
+const resultVerdictClass: Record<ResultVerdict, string> = {
+  Pass: "text-tone-live",
+  Fail: "text-tone-fail",
+};
 
 type ResultArtifact = NonNullable<
   ExecutionResponse["result"]
@@ -56,10 +62,10 @@ function Artifact(props: {
   const [shown, setShown] = useState(false);
   const offer = artifactPreviewOffer(props.artifact);
   return (
-    <li className="artifact">
-      <span className="artifact-role">{props.artifact.role}</span>
+    <li className="flex flex-wrap items-baseline gap-2">
+      <span className="text-ink-3">{props.artifact.role}</span>
       <code>{props.artifact.path}</code>
-      <span className="artifact-bytes">{props.artifact.bytes} bytes</span>
+      <span className="text-ink-3 text-xs">{props.artifact.bytes} bytes</span>
       {offer.offer === "Unpreviewable" ? (
         <span className="panel-absent">{offer.reason}</span>
       ) : (
@@ -68,7 +74,7 @@ function Artifact(props: {
           onOpenChange={setShown}
           label={shown ? "hide" : `preview as ${offer.renderer}`}
         >
-          <div className="artifact-preview">
+          <div className="basis-full">
             <ArtifactPreview
               partition={props.partition}
               execution={props.execution}
@@ -120,15 +126,15 @@ function ExecutionResult(props: {
   if (result === undefined)
     return <p className="panel-note">no result has been recorded</p>;
   return (
-    <div className="result">
+    <div className="grid gap-2 px-4 py-2">
       <p>
-        <strong className={`verdict verdict-${result.verdict.toLowerCase()}`}>
+        <strong className={resultVerdictClass[result.verdict]}>
           {result.verdict}
         </strong>{" "}
         recorded {result.recordedAt} under manifest{" "}
         <code>{result.manifest}</code>
       </p>
-      <ul className="artifacts">
+      <ul className="grid gap-2 px-4 py-2">
         {result.artifacts.map((artifact) => (
           <Artifact
             key={artifact.ordinal}
@@ -155,7 +161,7 @@ export function ExecutionDetail(props: {
   return (
     <DataPanel title={`execution ${props.execution}`} state={state}>
       {(execution) => (
-        <div className="execution-detail">
+        <div className="grid gap-2 px-4 py-2">
           <ExecutionAttempts execution={execution} />
           <ExecutionResult partition={props.partition} execution={execution} />
           <RunEvidence partition={props.partition} execution={execution} />

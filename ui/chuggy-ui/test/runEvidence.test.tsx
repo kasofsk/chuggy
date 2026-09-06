@@ -300,10 +300,10 @@ test("a lost run says it ended without a result and draws no verdict", async () 
     },
     transcripts: [transcript([1, 2], true)],
   });
-  const lost = rendered.container.querySelector('.run[data-attempt="a1"]');
+  const lost = rendered.container.querySelector('[data-attempt="a1"]');
   expect(lost?.textContent).toContain("ended without a result: LeaseExpired");
   expect(lost?.textContent).not.toContain("Pass");
-  const reported = rendered.container.querySelector('.run[data-attempt="a2"]');
+  const reported = rendered.container.querySelector('[data-attempt="a2"]');
   expect(reported?.textContent).toContain("the work passed");
 });
 
@@ -329,7 +329,7 @@ test("a result older than the summary field draws the reason there is none", asy
     transcripts: [transcript([1, 2], true)],
   });
   expect(
-    rendered.container.querySelector('.run[data-attempt="a1"]')?.textContent,
+    rendered.container.querySelector('[data-attempt="a1"]')?.textContent,
   ).toContain("report schema too old");
 });
 
@@ -392,7 +392,7 @@ test("a run from a worker that wrote no evidence says so", async () => {
     transcripts: [],
   });
   expect(
-    rendered.container.querySelector('.run[data-attempt="a1"]')?.textContent,
+    rendered.container.querySelector('[data-attempt="a1"]')?.textContent,
   ).toContain("recorded no run evidence");
   expect(
     rendered.container.querySelector(".ticket-figures")?.textContent,
