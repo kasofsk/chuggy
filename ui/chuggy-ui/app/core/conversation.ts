@@ -1,7 +1,4 @@
 /**
- * The one place a runtime message's content blocks are read, and the one place
- * they are grouped into the exchanges a conversation is drawn as.
- *
  * The transcript is the spine and the mailbox is an overlay: a turn contributes
  * what the transcript cannot — a pending exchange nobody has claimed, the word a
  * failure ended on, the measures — and it finds its exchange by the input text
@@ -69,16 +66,20 @@ function conversationBlockText(
 }
 
 /** A tool result's characters, which the runtime writes either as the string
- * itself or as the text blocks of a nested content array. */
+ * itself or as the text blocks of a nested content array, read no further than
+ * the sibling block list is and never cut in silence. */
 function conversationBlockResultText(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
-  return content
-    .flatMap((part) => {
-      const text = conversationRecord(part)?.["text"];
-      return typeof text === "string" ? [text] : [];
-    })
-    .join("\n");
+  const read = content.slice(0, conversationBlocksMax);
+  const texts = read.flatMap((part) => {
+    const text = conversationRecord(part)?.["text"];
+    return typeof text === "string" ? [text] : [];
+  });
+  const cut = content.length - read.length;
+  return cut === 0
+    ? texts.join("\n")
+    : [...texts, conversationCappedSentence("Result", cut)].join("\n");
 }
 
 function conversationBlockOf(value: unknown): ConversationBlock {
@@ -198,8 +199,9 @@ export type ConversationStep =
     }
   | { readonly step: "Other"; readonly kind: string };
 
-/** Where one exchange stands. `Open` is a transcript exchange with no answer
- * that no turn speaks for, which is what a run still going looks like. */
+/** Where one exchange stands: `Open` is a transcript exchange with no answer
+ * that no turn speaks for, a run still going; `Markers` carries only the
+ * markers ahead of it, with no ask, work, answer or measures. */
 export type ConversationStanding =
   | { readonly standing: "Answered" }
   | {
@@ -208,7 +210,8 @@ export type ConversationStanding =
     }
   | { readonly standing: "Failed"; readonly failure?: SessionTurnFailure }
   | { readonly standing: "Abandoned" }
-  | { readonly standing: "Open" };
+  | { readonly standing: "Open" }
+  | { readonly standing: "Markers" };
 
 export interface ConversationMeasures {
   readonly tokens?: number;
@@ -361,11 +364,19 @@ interface ConversationBuilder {
 /** The identity of the exchange that carries markers nothing follows. */
 const conversationTrailingId = "trailing";
 
+/** The one sentence a cut is ever said in, wherever the cut happens. */
+function conversationCappedSentence(noun: string, count: number): string {
+  return `${noun} cut · ${String(count)}`;
+}
+
 function conversationCappedMarker(
   noun: string,
   count: number,
 ): ConversationMarker {
-  return { marker: "Capped", sentence: `${noun} cut · ${String(count)}` };
+  return {
+    marker: "Capped",
+    sentence: conversationCappedSentence(noun, count),
+  };
 }
 
 function conversationOpened(
@@ -591,6 +602,18 @@ function conversationOverlaid(
   }
 }
 
+/** Whether a built exchange carries nothing a conversation would: no ask, no
+ * work, no answer and no measures. Only the trailing exchange opened to carry
+ * markers nothing follows is ever this empty. */
+function conversationBuiltEmpty(built: ConversationBuilt): boolean {
+  return (
+    built.ask === undefined &&
+    built.work.length === 0 &&
+    built.answer === undefined &&
+    built.measures === undefined
+  );
+}
+
 function conversationDrawn(built: ConversationBuilt): ConversationExchange {
   const before =
     built.stepsCut === 0
@@ -603,19 +626,22 @@ function conversationDrawn(built: ConversationBuilt): ConversationExchange {
     ...(built.answer === undefined ? {} : { answer: built.answer }),
     standing: built.matched
       ? built.standing
-      : built.answer === undefined
-        ? { standing: "Open" }
-        : { standing: "Answered" },
+      : conversationBuiltEmpty(built)
+        ? { standing: "Markers" }
+        : built.answer === undefined
+          ? { standing: "Open" }
+          : { standing: "Answered" },
     ...(built.measures === undefined ? {} : { measures: built.measures }),
     before,
   };
 }
 
 /**
- * The exchanges a surface draws. Markers between entries land on the exchange
- * they precede, and markers with nothing after them on a trailing exchange of
- * their own, so a shortfall is never attributed to a conversation it is not
- * about.
+ * The exchanges a surface draws: markers between entries land on the exchange
+ * they precede. Markers with nothing after them land on the first exchange the
+ * mailbox overlay appends, or open a trailing exchange of their own when the
+ * overlay appends none, so a shortfall is never attributed to a conversation
+ * it is not about.
  */
 export function conversationExchanges(
   items: readonly ConversationItem[],
@@ -633,9 +659,9 @@ export function conversationExchanges(
       conversationUserEntry(builder, item.entry);
     else conversationAssistantEntry(builder, item.entry);
   }
+  if (turns !== undefined) conversationOverlaid(builder, turns);
   if (builder.pending.length > 0)
     conversationOpened(builder, conversationTrailingId);
-  if (turns !== undefined) conversationOverlaid(builder, turns);
   const first = builder.built[0];
   if (first !== undefined && builder.exchangesCut > 0)
     first.before.unshift(

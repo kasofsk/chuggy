@@ -139,6 +139,20 @@ test("a marker stands above the exchange it precedes", () => {
   styleless();
 });
 
+test("a markers-only exchange draws its markers and no pill", () => {
+  const markersOnly: ConversationExchange = {
+    id: "x9",
+    work: [],
+    standing: { standing: "Markers" },
+    before: [{ marker: "Truncated" }],
+  };
+  render(<Conversation exchanges={[markersOnly]} empty="No conversation" />);
+  expect(screen.getByText("Truncated")).toBeDefined();
+  expect(screen.queryByRole("button")).toBeNull();
+  expect(document.querySelectorAll(".pill").length).toBe(0);
+  styleless();
+});
+
 test("a wake draws its pointer and never its document", () => {
   const woken = exchangeOf({
     ask: { ask: "Wake", wake: "TicketDone", resource: "ticket-44" },
