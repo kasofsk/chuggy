@@ -279,6 +279,7 @@ export const nativeHttpRoutes = {
   thread: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session`,
   threadTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/transcript`,
   threadMessages: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/messages`,
+  threadClose: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/close`,
 } as const;
 
 export type NativeHttpRoute = keyof typeof nativeHttpRoutes;
@@ -321,8 +322,9 @@ function jsonObjectChars(
 /**
  * How long a resource identity a change row may name, which the widest session
  * change decides rather than a path segment: an object naming the session,
- * what the session is, and either the turn or the stream and the batch that
- * moved, with every character of every identity escaped.
+ * what the session is, and the turn, the stream and the batch, or the state
+ * that moved, with every character of every identity escaped. The state arm is
+ * narrower than the turn arm, so it is named here and not measured.
  */
 export const projectChangeResourceCharsMax = Math.max(
   jsonObjectChars([

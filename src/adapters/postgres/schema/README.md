@@ -222,30 +222,32 @@ AN ANSWERED OPERATION IS TERMINAL WITH NO ENTRY BEHIND IT. `Approve` and
 `Answered`: the state a decision input reaches without a decided sequence, and
 the one public operation state that carries no sequence for a client to read.
 
-`agent_session` — one agent session: what it is for, whose authorization it
-acts under, what it may do and whether it still takes turns. Owned by the
-boundary owner alone, which is what `open_agent_session`, `close_agent_session`
-and `enqueue_session_turn` run as; no runtime role holds a privilege on it,
-because a role that could open one could mint an authority to act as a
-principal. Its composite key is `(tenant, project)` and its identity is
-`(tenant, project, session)`, with the opaque session unique globally so a
-reused one cannot answer another project's mailbox. It is changed by those
-three doors, by `open_member_thread`, by `open_project_lead`, by the scheduler
-taking an attempt number, by the worker plane binding the runtime's session id
-once, by the selector moving the project's lead onto the objectives it now holds
-and by `set_session_capabilities` reconfiguring one session's roster; a trigger
-refuses every other change, which is what makes the transcript the row points
-at singular. A project holds one OPEN lead and any number of closed ones — a
-closed lead is the context that ended, and the successor the selector opens is
-how a project whose lead ended decides again — so the uniqueness is a partial
-index over `state='Open'` and `open_project_lead` is the selector service's own
-door onto it. Closing one is `close_agent_session`'s alone, which no runtime
-role may execute. The objectives and the roster are the two columns a later write
-may move — a project whose North Star changed must be able to tell the next
-session that opens, and a thread's roster is reconfigured by the provisioning
-identity rather than reopened — and everything that decides who the session
-acts as stays frozen. Unfinished work is found by selecting open sessions with
-a queued turn and no live attempt, which is exactly what
+`agent_session` — one agent session: what it is for, whose authorization it acts
+under, what it may do and whether it still takes turns. Owned by the boundary
+owner alone, which is what `open_agent_session`, `close_agent_session` and
+`enqueue_session_turn` run as; no runtime role holds a privilege on it, because
+a role that could open one could mint an authority to act as a principal. Its
+composite key is `(tenant, project)` and its identity is `(tenant, project,
+session)`, with the opaque session unique globally so a reused one cannot answer
+another project's mailbox. It is changed by those three doors, by
+`open_member_thread` and `close_member_thread`, by `open_project_lead`, by the
+scheduler taking an attempt number, by the worker plane binding the runtime's
+session id once, by the selector moving the project's lead onto the objectives
+it now holds and by `set_session_capabilities` reconfiguring one session's
+roster; a trigger refuses every other change, which is what makes the transcript
+the row points at singular. A project holds one OPEN lead and any number of
+closed ones — a closed lead is the context that ended, and the successor the
+selector opens is how a project whose lead ended decides again — so the
+uniqueness is a partial index over `state='Open'` and `open_project_lead` is the
+selector service's own door onto it. Closing a lead is `close_agent_session`'s
+alone, which no runtime role may execute; closing a thread is
+`close_member_thread`'s, the API's door, which admits a thread alone and
+performs that close. The objectives and the roster are the two columns a later
+write may move — a project whose North Star changed must be able to tell the
+next session that opens, and a thread's roster is reconfigured by the
+provisioning identity rather than reopened — and everything that decides who the
+session acts as stays frozen. Unfinished work is found by selecting open
+sessions with a queued turn and no live attempt, which is exactly what
 `sessions_awaiting_placement` answers.
 
 `thread_wake_cursor` — how far the wake pass has read the installation's change

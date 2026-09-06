@@ -1,7 +1,8 @@
 /**
  * A member's thread against PostgreSQL: the listing, the door that opens one,
- * the standing read behind a thread page, the door a message goes through, what
- * a first turn is seeded from, and the bounded pass that wakes a thread.
+ * the standing read behind a thread page, the door a message goes through, the
+ * door that closes one, what a first turn is seeded from, and the bounded pass
+ * that wakes a thread.
  *
  * THIS FILE DECIDES NOTHING. `open_member_thread` takes no roster and
  * `enqueue_thread_message` takes no session, so neither the roster a thread
@@ -12,8 +13,8 @@
  *
  * THE API AND THE SELECTOR REACH DIFFERENT DOORS, so they are different
  * factories over different pools. `postgresThreads` is the API's five reads and
- * two doors; `postgresThreadWakes` is the selector's cursor, candidate read and
- * wake door. A single factory over one pool would be a shape a deployment
+ * three doors; `postgresThreadWakes` is the selector's cursor, candidate read
+ * and wake door. A single factory over one pool would be a shape a deployment
  * cannot supply, because no credential in it holds both roles.
  *
  * THE BOUNDS ARE THE CALLER'S ARGUMENTS. Every page limit arrives from
@@ -48,6 +49,7 @@ import type {
   ThreadWakeStore,
 } from "../../interpreter/threadWake.ts";
 import type {
+  ThreadClosed,
   ThreadMessageEnqueued,
   ThreadOpened,
   ThreadRecord,
@@ -319,6 +321,43 @@ async function threadEnqueue(
   return threadMessageEnqueued(row);
 }
 
+/**
+ * The close door's verdict, and the row read back through the standing read
+ * where there is one, for the reason `threadOpen` reads its row back: the
+ * listing's shape is one shape.
+ */
+async function threadClose(
+  pool: pg.Pool,
+  streamsMax: number,
+  input: {
+    readonly partition: Partition;
+    readonly session: SessionId;
+  },
+): Promise<ThreadClosed> {
+  const answered = await pool.query<{ closed: string | null }>(
+    sql`SELECT close_member_thread(
+          ${input.partition.tenant},${input.partition.project},
+          ${input.session})::text AS closed`,
+  );
+  const closed = answered.rows[0]?.closed;
+  if (closed === "NoThread") return { closed };
+  if (closed !== "Closed" && closed !== "AlreadyClosed")
+    throw new Error(`postgres thread: closing answered ${String(closed)}`);
+  const standing = await threadStanding(
+    pool,
+    input.partition,
+    input.session,
+    undefined,
+    1,
+    streamsMax,
+  );
+  if (standing === undefined)
+    throw new Error(
+      `postgres thread: ${input.session} was closed and is not there`,
+    );
+  return { closed, thread: standing.thread };
+}
+
 export function postgresThreads(
   pool: pg.Pool,
   bounds: {
@@ -338,6 +377,7 @@ export function postgresThreads(
         bounds.streamsMax,
       ),
     enqueueMessage: (input) => threadEnqueue(pool, input),
+    close: (input) => threadClose(pool, bounds.streamsMax, input),
   };
 }
 

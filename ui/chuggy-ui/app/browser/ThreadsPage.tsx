@@ -11,8 +11,11 @@
  * EVERY `Session` FRAME STALES THIS LIST. The frame is a pointer and carries no
  * body, so there is nothing to fold; and unlike a thread page, which watches one
  * session, a listing over every thread in the project is changed by any of them
- * — a thread opening, a turn landing, a session closing — so the kind is the
- * whole of the filter.
+ * — a turn landing, a session closing — so the kind is the whole of the filter.
+ *
+ * EVERY ROW THAT IS NOT CLOSED OFFERS A CLOSE, whoever's thread it is: the
+ * door is the project's `Mutate`, and the row that most needs it is the
+ * orphaned one, still acting for a member who is gone.
  */
 
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
@@ -27,10 +30,15 @@ import type {
 import { apiOpenThread, apiThreads } from "../core/apiRoutes.ts";
 import { panelReason } from "../core/freshness.ts";
 import { projectListReread } from "../core/projectQueryKeys.ts";
-import { threadMine, threadsMineFirst } from "../core/threads.ts";
+import {
+  threadClosable,
+  threadMine,
+  threadsMineFirst,
+} from "../core/threads.ts";
 import { threadStandingTone } from "../core/tones.ts";
 import { useApiPorts, usePanelList } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
+import { ThreadClose } from "./thread/ThreadClose.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Identity } from "./ui/Identity.tsx";
@@ -65,6 +73,16 @@ function ThreadRow(props: {
         <Pill tone={threadStandingTone(thread.state)}>{thread.state}</Pill>
       </td>
       <td className="num">{thread.turns}</td>
+      <td>
+        {threadClosable(thread) ? (
+          <ThreadClose
+            partition={props.partition}
+            session={thread.session}
+            variant="quiet"
+            size="sm"
+          />
+        ) : null}
+      </td>
     </tr>
   );
 }
@@ -126,6 +144,7 @@ function ThreadTable(props: {
           <th scope="col">Owner</th>
           <th scope="col">Standing</th>
           <th scope="col">Turns</th>
+          <th scope="col">Close</th>
         </tr>
       </thead>
       <tbody>

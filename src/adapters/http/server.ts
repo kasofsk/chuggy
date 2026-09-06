@@ -110,6 +110,7 @@ import {
   askLeadResponse,
   leadInquiriesResponse,
   leadInquiryResponse,
+  closeThreadResponse,
   openThreadResponse,
   threadMessageResponse,
   threadResponse,
@@ -193,6 +194,7 @@ type InitialNativeWeb = Pick<
   | "threadTranscript"
   | "openThread"
   | "sendThreadMessage"
+  | "closeThread"
   | "leadInquiries"
   | "leadInquiry"
   | "askLead"
@@ -1162,9 +1164,11 @@ function registerThreadReads(
 }
 
 /**
- * The member's own two doors, each behind the versioned media type. Opening
- * takes an empty body because a thread is the caller's own, and a message takes
- * the turn identity the caller minted because that identity is the idempotency.
+ * The three thread doors, each behind the versioned media type. Opening takes an
+ * empty body because a thread is the caller's own, a message takes the turn
+ * identity the caller minted because that identity is the idempotency, and
+ * closing takes an empty body because the URL already names the thread and the
+ * door decides nothing else.
  */
 function registerThreadWrites(
   app: FastifyInstance,
@@ -1201,6 +1205,23 @@ function registerThreadWrites(
               ),
               ...parseThreadMessage(request.body),
             },
+          ),
+        ),
+      );
+    },
+  );
+  app.post(
+    `${root}/threads/:session/close`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      fieldsOnly(request.body ?? {}, []);
+      send(
+        reply,
+        closeThreadResponse(
+          await web.closeThread(
+            principalOf(request),
+            partitionOf(request),
+            asSessionId(textField(record(request.params), "session")),
           ),
         ),
       );

@@ -1,6 +1,7 @@
 /**
- * The five thread routes through the real app: the status map, the bounds the
- * door checks, the media type the two writes require, and the body each answers.
+ * The six thread routes through the real app: the status map, the bounds the
+ * door checks, the media type the three writes require, and the body each
+ * answers.
  *
  * THE BOUNDARY IS A DOUBLE AND THE APP IS REAL, because what is being settled
  * here is the transport: which status one refusal reaches the wire as, which
@@ -40,7 +41,10 @@ import {
   threadBacklogRetrySeconds,
 } from "../../src/interpreter/threadRead.ts";
 import { checkedLeadTranscriptQuery } from "../../src/interpreter/leadRead.ts";
-import type { ThreadMessageSent } from "../../src/interpreter/threadRead.ts";
+import type {
+  ThreadClosing,
+  ThreadMessageSent,
+} from "../../src/interpreter/threadRead.ts";
 import { threadTurnInputCharsMax } from "../../src/interpreter/thread.ts";
 import { servedNativeHttpApp, unservedNativeWeb } from "./threadFixtures.ts";
 
@@ -109,6 +113,7 @@ const turn = {
 interface ThreadCase {
   readonly calls: string[];
   readonly sent?: ThreadMessageSent;
+  readonly closed?: ThreadClosing;
   readonly found?: boolean;
 }
 
@@ -165,6 +170,15 @@ function threadWeb(held: ThreadCase): NativeThreadWeb {
           result: "Sent",
           turn: input.turn,
           ordinal: 12,
+        },
+      );
+    },
+    closeThread: (_principal, _partition, session) => {
+      held.calls.push(`close:${session}`);
+      return Promise.resolve(
+        held.closed ?? {
+          result: "Closed",
+          thread: { ...entry, state: "Closed" },
         },
       );
     },
@@ -417,11 +431,76 @@ test("opening a thread takes an empty body and refuses any other", async () => {
   assert.deepEqual(held.calls, []);
 });
 
-test("both write doors take the versioned media type and nothing else", async () => {
+test("closing a thread answers the entry as it now stands, once and again", async () => {
+  const held: ThreadCase = { calls: [] };
+  const again: ThreadCase = {
+    calls: [],
+    closed: { result: "AlreadyClosed", thread: { ...entry, state: "Closed" } },
+  };
+  await using first = appOf(held);
+  await using second = appOf(again);
+
+  const closed = await first.inject({
+    method: "POST",
+    url: `${root}/${mine}/close`,
+    headers: versioned,
+    payload: {},
+  });
+  const repeated = await second.inject({
+    method: "POST",
+    url: `${root}/${mine}/close`,
+    headers: versioned,
+    payload: {},
+  });
+
+  assert.equal(closed.statusCode, 200);
+  assert.equal(repeated.statusCode, 200);
+  for (const answer of [closed, repeated])
+    assert.equal(
+      threadEntryResponseSchema.parse(answer.json()).state,
+      "Closed",
+    );
+  assert.deepEqual(held.calls, [`close:${mine}`]);
+});
+
+test("closing takes an empty body and refuses any other", async () => {
   const held: ThreadCase = { calls: [] };
   await using app = appOf(held);
 
-  for (const url of [root, `${root}/${mine}/messages`])
+  assert.equal(
+    (
+      await app.inject({
+        method: "POST",
+        url: `${root}/${mine}/close`,
+        headers: versioned,
+        payload: { reason: "done" },
+      })
+    ).statusCode,
+    400,
+  );
+  assert.deepEqual(held.calls, []);
+});
+
+test("closing a session that is no thread of this project's is not found", async () => {
+  const held: ThreadCase = { calls: [], closed: { result: "NotFound" } };
+  await using app = appOf(held);
+
+  const answer = await app.inject({
+    method: "POST",
+    url: `${root}/lead-atlas/close`,
+    headers: versioned,
+    payload: {},
+  });
+
+  assert.equal(answer.statusCode, 404);
+  assert.equal(answer.json<HttpErrorEnvelope>().error.code, "NotFound");
+});
+
+test("every write door takes the versioned media type and nothing else", async () => {
+  const held: ThreadCase = { calls: [] };
+  await using app = appOf(held);
+
+  for (const url of [root, `${root}/${mine}/messages`, `${root}/${mine}/close`])
     assert.equal(
       (
         await app.inject({
@@ -592,6 +671,19 @@ test("every thread route needs a bearer", async () => {
 
   for (const url of [root, `${root}/${mine}`, `${root}/${mine}/transcript`])
     assert.equal((await app.inject({ url })).statusCode, 401, url);
+  for (const url of [root, `${root}/${mine}/messages`, `${root}/${mine}/close`])
+    assert.equal(
+      (
+        await app.inject({
+          method: "POST",
+          url,
+          headers: { "content-type": nativeHttpMediaType },
+          payload: {},
+        })
+      ).statusCode,
+      401,
+      url,
+    );
   assert.deepEqual(held.calls, []);
 });
 
@@ -610,6 +702,7 @@ test("every thread route the contract declares is one this server serves", async
     ["GET", nativeHttpRoutes.thread],
     ["GET", nativeHttpRoutes.threadTranscript],
     ["POST", nativeHttpRoutes.threadMessages],
+    ["POST", nativeHttpRoutes.threadClose],
   ] as const)
     assert.ok(app.hasRoute({ method, url }), `${method} ${url}`);
 });

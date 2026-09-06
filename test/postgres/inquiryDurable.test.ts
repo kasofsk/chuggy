@@ -25,6 +25,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
+import { sessionChangeResourceSchema } from "../../src/contract/events.ts";
 import {
   apiRole,
   boundaryOwnerRole,
@@ -858,6 +859,20 @@ test("a turn that ends closes its inquiry, and one that is lost does not", async
   const closed = await inquiryRigSessionRow(rig, answering.session);
   assert.equal(closed["state"], "Closed");
   assert.equal(closed["open"], false);
+  assert.deepEqual(
+    (
+      await rig.sessions.harness.query(
+        `SELECT resource FROM project_change
+          WHERE tenant=$1 AND project=$2 AND kind='Session'
+            AND resource LIKE '%"state"%' ORDER BY sequence`,
+        [partition.tenant, partition.project],
+      )
+    ).map((row) =>
+      sessionChangeResourceSchema.parse(JSON.parse(String(row["resource"]))),
+    ),
+    [{ session: answering.session, kind: "Inquiry", state: "Closed" }],
+    "the close a turn's answer performs is a state frame beside the turn's",
+  );
 
   assert.equal(
     (await inquiryRigSessionRow(rig, lead.session))["state"],

@@ -74,7 +74,8 @@
     "threads": "/api/v1/tenants/:tenant/projects/:project/threads",
     "thread": "/api/v1/tenants/:tenant/projects/:project/threads/:session",
     "threadTranscript": "/api/v1/tenants/:tenant/projects/:project/threads/:session/transcript",
-    "threadMessages": "/api/v1/tenants/:tenant/projects/:project/threads/:session/messages"
+    "threadMessages": "/api/v1/tenants/:tenant/projects/:project/threads/:session/messages",
+    "threadClose": "/api/v1/tenants/:tenant/projects/:project/threads/:session/close"
   },
   "schemas": {
     "publicMutation": {

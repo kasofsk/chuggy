@@ -68,6 +68,7 @@ import type {
   LeadInquiryRead,
 } from "../../interpreter/leadInquiry.ts";
 import type {
+  ThreadClosing,
   ThreadMessageSent,
   ThreadOpening,
   ThreadRead,
@@ -1092,6 +1093,18 @@ export function openThreadResponse(
   return response(result.result === "Opened" ? 201 : 200, result.thread, {
     location: resourcePath(partition, "threads", result.thread.session),
   });
+}
+
+/**
+ * Closing a thread is idempotent and terminal, so both ways it succeeds are one
+ * status and the entry as it now stands: a caller pressing twice is told the
+ * thread is closed, which is what they asked. A session that is no thread of
+ * this project's is not found, as every thread read answers it.
+ */
+export function closeThreadResponse(result: ThreadClosing): NativeHttpResponse {
+  if (result.result === "NotFound")
+    return response(404, nativeHttpError("NotFound", "Resource not found."));
+  return response(200, result.thread);
 }
 
 /**

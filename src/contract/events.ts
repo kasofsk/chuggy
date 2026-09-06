@@ -35,6 +35,7 @@ import {
   sessionStoreBatchesMax,
   sessionStoreStreamCharsMax,
 } from "./http.ts";
+import { sessionStates } from "./rosters.ts";
 import {
   configurationResponseSchema,
   draftResponseSchema,
@@ -97,9 +98,10 @@ const sessionResourceIdentitySchema = z
 
 /**
  * What a `Session` change names: the session that moved, what that session is,
- * and either the turn or the store batch the move was. It is the resource
- * string parsed, so one reader does not guess at another's spelling — the
- * triggers write it and a console reads it to know which lead to re-read.
+ * and what the move was — the turn, the store batch, or the session's own state.
+ * It is the resource string parsed, so one reader does not guess at another's
+ * spelling — the triggers write it and a console reads it to know which
+ * session to re-read.
  */
 export const sessionChangeResourceSchema = z.union([
   z.strictObject({
@@ -112,6 +114,11 @@ export const sessionChangeResourceSchema = z.union([
     kind: z.string().min(1).max(sessionKindCharsMax),
     stream: z.string().min(1).max(sessionStoreStreamCharsMax),
     batch: countSchema.max(sessionStoreBatchesMax),
+  }),
+  z.strictObject({
+    session: sessionResourceIdentitySchema,
+    kind: z.string().min(1).max(sessionKindCharsMax),
+    state: z.enum(sessionStates),
   }),
 ]);
 

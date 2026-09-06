@@ -1,19 +1,23 @@
 /**
- * What a project's members may read of each other's threads, and what one
- * member may put in their own: the listing, one thread's standing with a page
- * of its mailbox, the transcript behind it, and the door a message goes
- * through.
+ * What a project's members may read of each other's threads, what one member
+ * may put in their own, and what any of them may end: the listing, one
+ * thread's standing with a page of its mailbox, the transcript behind it, the
+ * door a message goes through and the door that closes a thread.
  *
- * A THREAD IS READABLE BY EVERY MEMBER AND WRITABLE BY ITS OWNER ALONE. The
- * reads are `Read` and answer every thread the project holds, because members
- * cooperating is the reason the three thread tools exist; the door is `Mutate`
- * and reaches the caller's own mailbox and no other. What enforces that second
- * half is `enqueue_thread_message` taking no session at all and resolving one
- * from the authenticated principal: the URL's session is compared with the one
- * that resolved, AFTER the enqueue, so a mismatch is refused on what the
- * durable side actually did rather than on a row read a round trip earlier. The
- * standing read before it is a fast refusal and the seeding decision, not the
- * control — between the two, a thread can be closed and reopened.
+ * A THREAD IS READABLE BY EVERY MEMBER, WRITABLE BY ITS OWNER ALONE, AND
+ * CLOSABLE BY ANY MEMBER WHO MAY MUTATE. The reads are `Read` and answer every
+ * thread the project holds, because members cooperating is the reason the
+ * three thread tools exist; the message door is `Mutate` and reaches the
+ * caller's own mailbox and no other; the close door is `Mutate` and reaches
+ * any thread, because a thread files drafts and does nothing else, so ending
+ * one takes nothing its owner cannot file again from a new one. What enforces
+ * the owner-alone half is `enqueue_thread_message` taking no session at all
+ * and resolving one from the authenticated principal: the URL's session is
+ * compared with the one that resolved, AFTER the enqueue, so a mismatch is
+ * refused on what the durable side actually did rather than on a row read a
+ * round trip earlier. The standing read before it is a fast refusal and the
+ * seeding decision, not the control — between the two, a thread can be closed
+ * and another opened.
  *
  * THE MAILBOX IS PAGED AND THE LISTING IS NOT. One thread turn carries what the
  * member typed and what came back, and either alone may weigh most of a wire
@@ -126,6 +130,19 @@ export interface ThreadOpened {
 }
 
 /**
+ * What closing a thread answered: it is closed now, it already was, or the
+ * session named is not this project's thread at all. The two closed arms carry
+ * the record as it stands after the door, so a caller is answered the thread
+ * it closed rather than sent to read it again.
+ */
+export type ThreadClosed =
+  | {
+      readonly closed: "Closed" | "AlreadyClosed";
+      readonly thread: ThreadRecord;
+    }
+  | { readonly closed: "NoThread" };
+
+/**
  * What the message door's durable half answered. `NoThread`, `Closed` and
  * `Orphaned` are each a mailbox that takes no message, and they are three arms
  * rather than one because a member whose thread is closed reopens it and a
@@ -143,13 +160,15 @@ export type ThreadMessageEnqueued =
     };
 
 /**
- * The durable thread authority migration 062 answers: the listing, the door
- * that opens one, the standing read and the door a message goes through.
- * `open` TAKES NO ROSTER AND `enqueueMessage` TAKES NO SESSION, and both
- * omissions are the control — the definer writes `threadCapabilitiesDefault`
- * itself so an API talked into opening a thread cannot widen one, and it
- * resolves the mailbox from the principal so an API talked into enqueuing
- * cannot reach another member's.
+ * The durable thread authority migrations 062 and 075 answer: the listing, the
+ * door that opens one, the standing read, the door a message goes through and
+ * the door that closes one. `open` TAKES NO ROSTER, `enqueueMessage` TAKES NO
+ * SESSION AND `close` TAKES NO PRINCIPAL, and each omission is the control —
+ * the definer writes `threadCapabilitiesDefault` itself so an API talked into
+ * opening a thread cannot widen one, it resolves the mailbox from the
+ * principal so an API talked into enqueuing cannot reach another member's, and
+ * any member who may mutate the project may close any of its threads, so the
+ * close door refuses only a session that is not a thread.
  */
 export interface ThreadStore {
   threads(
@@ -182,6 +201,11 @@ export interface ThreadStore {
     readonly turn: SessionTurnId;
     readonly input: string;
   }): Promise<ThreadMessageEnqueued>;
+  /** Closes the thread named, abandoning the turns it still held; a closed thread stays readable. */
+  close(input: {
+    readonly partition: Partition;
+    readonly session: SessionId;
+  }): Promise<ThreadClosed>;
 }
 
 /**
@@ -246,6 +270,18 @@ export type ThreadOpening =
   | { readonly result: "NotFound" }
   | {
       readonly result: "Opened" | "AlreadyOpen";
+      readonly thread: ThreadEntry;
+    };
+
+/**
+ * What closing a thread answered, and which of the two the wire reports as
+ * done now. A session that is no thread of this project's is `NotFound`, as
+ * every thread read answers it.
+ */
+export type ThreadClosing =
+  | { readonly result: "NotFound" }
+  | {
+      readonly result: "Closed" | "AlreadyClosed";
       readonly thread: ThreadEntry;
     };
 

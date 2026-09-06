@@ -64,6 +64,7 @@ test("the golden is the document and not an empty stand-in", () => {
     "selectorSettings",
     "selectorSettingsHistory",
     "thread",
+    "threadClose",
     "threadMessages",
     "threadTranscript",
     "threads",

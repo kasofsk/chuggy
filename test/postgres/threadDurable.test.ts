@@ -1,11 +1,11 @@
 /**
- * What migration 062 adds, driven against a real PostgreSQL by the role each
- * door is granted to.
+ * What migrations 062 and 075 add, driven against a real PostgreSQL by the
+ * role each door is granted to.
  *
  * EVERY CASE HERE IS ABOUT A CONTROL AND NOT ABOUT A SHAPE. A grant, a revoke,
  * a check, a trigger and a filter are each a claim about what the server
  * refuses, and the only way to hold one is to attempt the thing it refuses as
- * the identity that would attempt it. So the five thread doors are driven
+ * the identity that would attempt it. So the six thread doors are driven
  * through the API's role, the three wake doors through the selector's, the
  * roster door through the identity that owns the boundary, and every other role
  * is asked for each and refused.
@@ -30,9 +30,11 @@ import {
   projectThreadsReadFunction,
   schedulerRole,
   selectorServiceRole,
+  sessionCloseFunction,
   sessionStoreBatchesReadFunction,
   sessionStoreStreamListFunction,
   ticketServiceRole,
+  threadCloseFunction,
   threadMessageEnqueueFunction,
   threadOpenFunction,
   threadStandingReadFunction,
@@ -296,6 +298,207 @@ test("one member has one open thread, and the index is what says so", async () =
       ),
     /agent_session_one_thread_per_member/u,
     "a second open thread for one member is refused by the index, not by a body",
+  );
+});
+
+/**
+ * The close door is the API's, and it is a control in three ways at once: it
+ * ends the turns the thread still held, it leaves the thread readable as what
+ * it was, and it is terminal — pressing it again is answered as already done,
+ * and the member's next thread is a new session rather than this one reopened.
+ */
+test("a thread closes through the API's door, its waiting turns abandoned, and stays readable", async () => {
+  const partition = await project("close");
+  const member = await threadRigMember(rig, partition, "close");
+  const thread = await threadRigThread(rig, partition, member);
+  for (const each of ["first", "second"])
+    await rig.threads.enqueueMessage({
+      partition,
+      principal: member.principal,
+      session: thread.session,
+      turn: asSessionTurnId(threadRigTurnId(`close-${each}`)),
+      input: each,
+    });
+
+  const closed = await rig.threads.close({
+    partition,
+    session: thread.session,
+  });
+
+  assert.equal(closed.closed, "Closed");
+  assert.equal(closed.closed === "Closed" ? closed.thread.state : "", "Closed");
+  assert.equal(closed.closed === "Closed" ? closed.thread.turns : 0, 2);
+  const standing = await rig.threads.standing({
+    partition,
+    session: thread.session,
+    query: { limit: threadTurnsAnsweredMax },
+  });
+  assert.deepEqual(
+    standing?.turns.map((turn) => [turn.input, turn.state, turn.failure]),
+    [
+      ["first", "Abandoned", "SessionClosed"],
+      ["second", "Abandoned", "SessionClosed"],
+    ],
+    "a closed thread's mailbox is readable and every turn it held is ended",
+  );
+  assert.deepEqual(
+    await rig.threads.close({ partition, session: thread.session }),
+    { closed: "AlreadyClosed", thread: standing?.thread },
+  );
+  assert.equal(
+    (
+      await rig.threads.enqueueMessage({
+        partition,
+        principal: member.principal,
+        session: thread.session,
+        turn: asSessionTurnId(threadRigTurnId("close-after")),
+        input: "after the close",
+      })
+    ).enqueued,
+    "Closed",
+  );
+  const next = await threadRigThread(rig, partition, member);
+  assert.notEqual(next.session, thread.session, "a close is not a reopen");
+});
+
+/**
+ * The door admits `kind='Thread'` alone, and that is what keeps the API's grant
+ * on it from being a grant on `close_agent_session`: a lead named through it is
+ * no thread, and so is a session nobody opened.
+ */
+test("the close door closes a thread and nothing else the project holds", async () => {
+  const partition = await project("close-kind");
+  const lead = await sessionRigSession(rig.sessions, partition, "close-kind", {
+    kind: "Lead",
+  });
+
+  assert.deepEqual(await rig.threads.close({ partition, session: lead }), {
+    closed: "NoThread",
+  });
+  assert.deepEqual(
+    await rig.threads.close({
+      partition,
+      session: asSessionId("session-nobody-opened"),
+    }),
+    { closed: "NoThread" },
+  );
+  const held = await rig.sessions.harness.query(
+    `SELECT state FROM agent_session WHERE tenant=$1 AND project=$2 AND session=$3`,
+    [partition.tenant, partition.project, lead],
+  );
+  assert.equal(
+    held[0]?.["state"],
+    "Open",
+    "the lead was closed through a thread door",
+  );
+});
+
+/**
+ * The door decides the row is a thread in the predicate its lock is taken
+ * under, so a close aimed at the lead's session contends with nothing the
+ * scheduler or the worker plane holds on the lead's row. The lead's row is held
+ * locked by another transaction for the whole of the call, and the door must
+ * answer inside a lock timeout rather than wait on it.
+ */
+test("the close door waits on no row that is not a thread's", async () => {
+  const partition = await project("close-lock");
+  const lead = await sessionRigSession(rig.sessions, partition, "close-lock", {
+    kind: "Lead",
+  });
+  const held = await rig.sessions.harness.begin();
+  const api = await rig.apiPool.connect();
+  try {
+    await held.query(
+      `SELECT 1 FROM agent_session WHERE tenant=$1 AND project=$2 AND session=$3
+         FOR UPDATE`,
+      [partition.tenant, partition.project, lead],
+    );
+    await api.query("BEGIN");
+    await api.query("SET LOCAL lock_timeout='500ms'");
+    const answered = await api.query<{ closed: string }>(
+      `SELECT close_member_thread($1,$2,$3)::text AS closed`,
+      [partition.tenant, partition.project, lead],
+    );
+    assert.equal(answered.rows[0]?.closed, "NoThread");
+  } finally {
+    await api.query("ROLLBACK").catch(() => undefined);
+    api.release();
+    await held.rollback().catch(() => undefined);
+  }
+});
+
+/**
+ * The listing is one bounded page and a close is terminal, so a listing that
+ * answered the oldest threads first would fill with closed ones and drop the
+ * live ones off its end. Open threads come first and the rest newest first,
+ * which the smallest page shows: it holds the live thread and no closed one.
+ */
+test("a closed thread displaces no live one from the listing", async () => {
+  const partition = await project("listing-order");
+  const first = await threadRigMember(rig, partition, "listing-first");
+  const second = await threadRigMember(rig, partition, "listing-second");
+  const ended = await threadRigThread(rig, partition, first);
+  await rig.threads.close({ partition, session: ended.session });
+  const live = await threadRigThread(rig, partition, first);
+  const later = await threadRigThread(rig, partition, second);
+  await rig.threads.close({ partition, session: later.session });
+
+  const smallest = await rig.threads.threads(partition, 1);
+  assert.deepEqual(
+    smallest.map((record) => record.session),
+    [live.session],
+    "the page of one holds a closed thread over the live one",
+  );
+  const whole = await rig.threads.threads(partition, threadsAnsweredMax);
+  assert.deepEqual(
+    whole.map((record) => record.session),
+    [live.session, later.session, ended.session],
+  );
+});
+
+/**
+ * A close with no turn waiting moves no turn and stores no batch, so without a
+ * frame of its own the pages watching the thread would go on drawing it open.
+ * The frame is the third shape the wire's schema admits, and it is asserted
+ * through that schema so a console reads what the trigger wrote.
+ */
+test("a close is a Session frame naming the state, even with nothing waiting", async () => {
+  const partition = await project("close-frame");
+  const member = await threadRigMember(rig, partition, "close-frame");
+  const thread = await threadRigThread(rig, partition, member);
+
+  await rig.threads.close({ partition, session: thread.session });
+
+  const rows = await rig.sessions.harness.query(
+    `SELECT resource FROM project_change
+      WHERE tenant=$1 AND project=$2 AND kind='Session' ORDER BY sequence`,
+    [partition.tenant, partition.project],
+  );
+  const parsed = rows.map((row) =>
+    sessionChangeResourceSchema.parse(JSON.parse(String(row["resource"]))),
+  );
+  assert.deepEqual(parsed, [
+    { session: thread.session, kind: "Thread", state: "Closed" },
+  ]);
+});
+
+/**
+ * 075's close door is held beside the door it PERFORMs: a grant on the narrow
+ * door that had widened into one on `close_agent_session` would let the API
+ * end the project's lead, which is the thing the narrowing is for.
+ */
+test("the close door is the API's, and the door it performs is no runtime role's", async () => {
+  const partition = await project("close-grants");
+
+  await onlyTheseRolesMay(
+    [apiRole],
+    threadCloseFunction,
+    `SELECT ${threadCloseFunction}('${partition.tenant}','${partition.project}','session-grants')`,
+  );
+  await onlyTheseRolesMay(
+    [],
+    sessionCloseFunction,
+    `SELECT ${sessionCloseFunction}('${partition.tenant}','${partition.project}','session-grants')`,
   );
 });
 

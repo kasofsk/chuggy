@@ -620,6 +620,28 @@ export function apiSendThreadMessage(
 }
 
 /**
+ * Closes one thread, whoever's it is: the door is the project's `Mutate` and
+ * not the thread's owner. It is terminal and idempotent, so a second press is
+ * answered the closed thread rather than refused; the body is an empty object
+ * for the reason `apiOpenThread`'s is.
+ */
+export function apiCloseThread(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  session: string,
+): Promise<ApiResult<ThreadEntryResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "POST",
+      path: apiSegments(partition, "threads", session, "close"),
+      body: {},
+    },
+    (value) => threadEntryResponseSchema.parse(value),
+  );
+}
+
+/**
  * A question asked aside, which opens one fork and one turn.
  *
  * The two identities are minted by the caller, the way an operation id is, and
