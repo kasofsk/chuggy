@@ -42,10 +42,7 @@ import {
   sessionStoreBatchRows,
   sessionStoreStreamRows,
 } from "./sessionStoreReads.ts";
-import {
-  selectorInteractionRecord,
-  type SelectorInteractionRow,
-} from "./selector.ts";
+import { interactionInstant, readSelectorInteractions } from "./selector.ts";
 import {
   sessionRowMember,
   sessionRowText,
@@ -133,69 +130,6 @@ function leadReadOf(
   };
 }
 
-/**
- * One `read_selector_interactions` row. Every column of a set-returning
- * function is nullable to the query checker, because a function that answers
- * nothing answers nulls, so the row is narrowed here rather than declared as
- * what the relation holds.
- */
-interface SelectorInteractionsRow {
-  readonly selector_decision: string | null;
-  readonly ordinal: string | null;
-  readonly instructions_version: string | null;
-  readonly instructions: string | null;
-  readonly observed_view: string | null;
-  readonly observed_token: string | null;
-  readonly context: string | null;
-  readonly tool_activity: string | null;
-  readonly result: string | null;
-  readonly implementation_revision: string | null;
-  readonly model_revision: string | null;
-  readonly policy_revision: string | null;
-  readonly accounting: string | null;
-  readonly started_at: Date | null;
-  readonly completed_at: Date | null;
-  readonly observed_view_chunks: string[] | null;
-  readonly context_chunks: string[] | null;
-  readonly tool_activity_chunks: string[] | null;
-  readonly dispatches: string | null;
-}
-
-function interactionInstant(value: Date | null, what: string): Date {
-  if (value === null) throw new Error(`lead read: ${what} is null`);
-  return value;
-}
-
-/** The interaction row the record builder is written against, narrowed once. */
-function selectorInteractionRowOf(
-  row: SelectorInteractionsRow,
-): SelectorInteractionRow {
-  return {
-    selector_decision: sessionRowText(row.selector_decision, "decision"),
-    ordinal: sessionRowText(row.ordinal, "interaction ordinal"),
-    instructions_version: sessionRowText(
-      row.instructions_version,
-      "instructions version",
-    ),
-    instructions: sessionRowText(row.instructions, "instructions"),
-    observed_view: sessionRowText(row.observed_view, "observed view"),
-    observed_token: row.observed_token,
-    context: sessionRowText(row.context, "context"),
-    tool_activity: sessionRowText(row.tool_activity, "tool activity"),
-    result: sessionRowText(row.result, "result"),
-    implementation_revision: sessionRowText(
-      row.implementation_revision,
-      "implementation revision",
-    ),
-    model_revision: sessionRowText(row.model_revision, "model revision"),
-    policy_revision: sessionRowText(row.policy_revision, "policy revision"),
-    accounting: sessionRowText(row.accounting, "accounting"),
-    started_at: interactionInstant(row.started_at, "a decision's start"),
-    completed_at: interactionInstant(row.completed_at, "a decision's end"),
-    dispatches: row.dispatches,
-  };
-}
-
 async function leadStanding(
   pool: pg.Pool,
   partition: Partition,
@@ -213,32 +147,6 @@ async function leadStanding(
                  ${partition.tenant},${partition.project},${turnsMax})`,
   );
   return leadReadOf(found.rows);
-}
-
-async function leadDecisionHistory(
-  pool: pg.Pool,
-  partition: Partition,
-  after: number | undefined,
-  limit: number,
-  newestFirst: boolean,
-): Promise<readonly SelectorInteractionRecord[]> {
-  const found = await pool.query<SelectorInteractionsRow>(
-    sql`SELECT selector_decision,ordinal::text,instructions_version,instructions,
-               observed_view,observed_token,context,tool_activity,result,
-               implementation_revision,model_revision,policy_revision,
-               accounting,started_at,completed_at,
-               observed_view_chunks,context_chunks,tool_activity_chunks,dispatches
-          FROM read_selector_interactions(
-                 ${partition.tenant},${partition.project},
-                 ${after ?? null},${limit},${newestFirst})`,
-  );
-  return found.rows.map((row) =>
-    selectorInteractionRecord(partition, selectorInteractionRowOf(row), {
-      observedView: row.observed_view_chunks ?? [],
-      context: row.context_chunks ?? [],
-      toolActivity: row.tool_activity_chunks ?? [],
-    }),
-  );
 }
 
 async function leadPlanningIntent(
@@ -268,21 +176,6 @@ async function leadPlanningIntent(
   };
 }
 
-/**
- * The one interaction read the selector's own role holds, newest first: the
- * decision tail a lead with no transcript is seeded from. It is its own
- * constructor because the selector has a grant on this door and on none of the
- * others here.
- */
-export function postgresLeadDecisionTail(
-  pool: pg.Pool,
-): Pick<PostgresLeadReads, "tail"> {
-  return {
-    tail: (partition, limit) =>
-      leadDecisionHistory(pool, partition, undefined, limit, true),
-  };
-}
-
 /** Every read the API has onto a lead, over the API's own pool. */
 export function postgresLeadReads(pool: pg.Pool): PostgresLeadReads {
   return {
@@ -291,7 +184,7 @@ export function postgresLeadReads(pool: pg.Pool): PostgresLeadReads {
     streams: (partition, session, limit) =>
       sessionStoreStreamRows(pool, partition, session, limit),
     history: (partition, query) =>
-      leadDecisionHistory(
+      readSelectorInteractions(
         pool,
         partition,
         query.after,
@@ -299,7 +192,7 @@ export function postgresLeadReads(pool: pg.Pool): PostgresLeadReads {
         query.order === "newest",
       ),
     tail: (partition, limit) =>
-      leadDecisionHistory(pool, partition, undefined, limit, true),
+      readSelectorInteractions(pool, partition, undefined, limit, true),
     planningIntent: (partition) => leadPlanningIntent(pool, partition),
   };
 }

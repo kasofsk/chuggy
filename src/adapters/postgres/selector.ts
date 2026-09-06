@@ -55,6 +55,7 @@ import type { ProjectNotification } from "../../interpreter/notifications.ts";
 import { parseTicketCommand } from "../../interpreter/wire.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
+import { sessionRowText } from "./sessionRows.ts";
 import {
   finalizationPricingSchema,
   reworkPolicySchema,
@@ -1810,6 +1811,101 @@ async function readSelectorHistory(
   );
 }
 
+/**
+ * One `read_selector_interactions` row. Every column of a set-returning
+ * function is nullable to the query checker, because a function that answers
+ * nothing answers nulls, so the row is narrowed here rather than declared as
+ * what the relation holds.
+ */
+interface SelectorInteractionsRow {
+  readonly selector_decision: string | null;
+  readonly ordinal: string | null;
+  readonly instructions_version: string | null;
+  readonly instructions: string | null;
+  readonly observed_view: string | null;
+  readonly observed_token: string | null;
+  readonly context: string | null;
+  readonly tool_activity: string | null;
+  readonly result: string | null;
+  readonly implementation_revision: string | null;
+  readonly model_revision: string | null;
+  readonly policy_revision: string | null;
+  readonly accounting: string | null;
+  readonly started_at: Date | null;
+  readonly completed_at: Date | null;
+  readonly observed_view_chunks: string[] | null;
+  readonly context_chunks: string[] | null;
+  readonly tool_activity_chunks: string[] | null;
+  readonly dispatches: string | null;
+}
+
+export function interactionInstant(value: Date | null, what: string): Date {
+  if (value === null) throw new Error(`interaction read: ${what} is null`);
+  return value;
+}
+
+/** The interaction row the record builder is written against, narrowed once. */
+function selectorInteractionRowOf(
+  row: SelectorInteractionsRow,
+): SelectorInteractionRow {
+  return {
+    selector_decision: sessionRowText(row.selector_decision, "decision"),
+    ordinal: sessionRowText(row.ordinal, "interaction ordinal"),
+    instructions_version: sessionRowText(
+      row.instructions_version,
+      "instructions version",
+    ),
+    instructions: sessionRowText(row.instructions, "instructions"),
+    observed_view: sessionRowText(row.observed_view, "observed view"),
+    observed_token: row.observed_token,
+    context: sessionRowText(row.context, "context"),
+    tool_activity: sessionRowText(row.tool_activity, "tool activity"),
+    result: sessionRowText(row.result, "result"),
+    implementation_revision: sessionRowText(
+      row.implementation_revision,
+      "implementation revision",
+    ),
+    model_revision: sessionRowText(row.model_revision, "model revision"),
+    policy_revision: sessionRowText(row.policy_revision, "policy revision"),
+    accounting: sessionRowText(row.accounting, "accounting"),
+    started_at: interactionInstant(row.started_at, "a decision's start"),
+    completed_at: interactionInstant(row.completed_at, "a decision's end"),
+    dispatches: row.dispatches,
+  };
+}
+
+/**
+ * One page of a project's decisions through the door both roles are granted,
+ * walked forward from a cursor or read newest first from the end. It is the one
+ * reader the lead's seeding tail, the API's log and the selector's own failure
+ * count all answer through, so the three cannot disagree about order.
+ */
+export async function readSelectorInteractions(
+  pool: pg.Pool,
+  partition: Partition,
+  after: number | undefined,
+  limit: number,
+  newestFirst: boolean,
+): Promise<readonly SelectorInteractionRecord[]> {
+  const found = await pool.query<SelectorInteractionsRow>(
+    sql`SELECT selector_decision,ordinal::text,instructions_version,instructions,
+               observed_view,observed_token,context,tool_activity,result,
+               implementation_revision,model_revision,policy_revision,
+               accounting,started_at,completed_at,
+               observed_view_chunks,context_chunks,tool_activity_chunks,dispatches
+          FROM read_selector_interactions(
+                 ${partition.tenant},${partition.project},
+                 ${after ?? null},${limit},${newestFirst})`,
+  );
+  return found.rows.map((row) =>
+    selectorInteractionRecord(partition, selectorInteractionRowOf(row), {
+      observedView: row.observed_view_chunks ?? [],
+      context: row.context_chunks ?? [],
+      toolActivity: row.tool_activity_chunks ?? [],
+    }),
+  );
+}
+
 export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
   return {
     setAutomaticReadiness: async (ready) => {
@@ -1860,6 +1956,8 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
     },
     history: (partition, after, limit) =>
       readSelectorHistory(pool, partition, after, limit),
+    tail: (partition, limit) =>
+      readSelectorInteractions(pool, partition, undefined, limit, true),
     project: (partition) => readSelectorProject(pool, partition),
     planningIntent: (partition) => readPlanningIntent(pool, partition),
   };

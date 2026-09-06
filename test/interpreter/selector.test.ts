@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/064-multi-dispatch-delivery.ts";
+import { selectorFailedDecisionsPerViewMax } from "../../src/contract/http.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   dryRunSelectorPolicy,
@@ -23,6 +24,7 @@ import {
   type SelectorPolicyRequest,
   type SelectorObservation,
   type SelectorStandingRefusal,
+  type SelectorInteractionRecord,
   type SelectorProjectState,
   type JsonValue,
 } from "../../src/interpreter/selector.ts";
@@ -336,6 +338,7 @@ function stateStore(
       return Promise.resolve();
     },
     history: () => Promise.resolve([]),
+    tail: () => Promise.resolve([]),
     project: () => Promise.resolve(undefined),
     planningIntent: () => Promise.resolve(undefined),
   };
@@ -3353,4 +3356,139 @@ test("one delivery failure names its own ticket and leaves the rest", async () =
       ticket: stuck.ticket,
     },
   ]);
+});
+
+/** The token the candidate source stamps on every page it answers. */
+const candidateViewToken = {
+  ...partition,
+  recoveryEpoch: "epoch",
+  schemaVersion: 1,
+  watermark: 1,
+  digest: "c".repeat(64),
+} as const;
+
+/** One recorded decision that failed while standing on the token given. */
+function failedRecordOn(
+  token: SelectorInteractionRecord["observedToken"],
+  ordinal: number,
+): SelectorInteractionRecord {
+  return {
+    ordinal,
+    deliveries: [],
+    decision: `failed-decision-${String(ordinal)}`,
+    partition,
+    instructionsVersion: "1.0",
+    instructions: "choose one",
+    observedView: [],
+    ...(token === undefined ? {} : { observedToken: token }),
+    context: { operationalContext, handoffNote: {} },
+    toolActivity: [],
+    result: { outcome: "Failed", code: "PolicyFailed" },
+    implementationRevision: "Unavailable",
+    modelRevision: "Unavailable",
+    policyRevision: "Unavailable",
+    accounting: { tokens: 0, durationMs: 0 },
+    startedAt: "2026-09-06T02:17:15.773Z",
+    completedAt: "2026-09-06T02:17:15.773Z",
+  };
+}
+
+/** One cycle whose policy fails, answering the state the store was asked to keep. */
+async function failedCycleState(
+  state: SelectorProjectState,
+  tail: readonly SelectorInteractionRecord[],
+): Promise<SelectorProjectState | undefined> {
+  let kept: SelectorProjectState | undefined;
+  const result = await runSelectorCycle(
+    state,
+    candidateSource([dispatchable]),
+    refusalWrites(),
+    {
+      ...stateStore(() => undefined),
+      tail: () => Promise.resolve(tail),
+      recordInteraction: (_interaction, next) => {
+        kept = next;
+        return Promise.resolve(true);
+      },
+    },
+    policyHost(() =>
+      Promise.reject(new Error("the lead turn ended without an answer")),
+    ),
+    {
+      operation: asOperationId("failing-operation"),
+      selectorDecisionReference: "failing-decision",
+    },
+    resolved(),
+  );
+  assert.equal(result, undefined);
+  return kept;
+}
+
+test("a failed decision leaves its view standing, and the next cycle is offered the same candidates", async () => {
+  const state = observedState(0);
+  const kept = await failedCycleState(state, []);
+  assert.deepEqual(kept, { ...state, attention: "Attention" });
+  assert.notEqual(kept, undefined);
+  let offered: readonly DispatchCandidate[] = [];
+  await runSelectorCycle(
+    kept ?? state,
+    candidateSource([dispatchable]),
+    refusalWrites(),
+    stateStore(() => undefined),
+    policyHost((request) => {
+      offered = request.observation.candidates;
+      return Promise.resolve(waitingExecution());
+    }),
+    {
+      operation: asOperationId("retried-operation"),
+      selectorDecisionReference: "retried-decision",
+    },
+    resolved(),
+  );
+  assert.deepEqual(offered, [dispatchable]);
+});
+
+test("the last failure a view is allowed consumes it as a completed decision would", async () => {
+  const state = observedState(0);
+  const earlier = Array.from(
+    { length: selectorFailedDecisionsPerViewMax - 1 },
+    (_, index) => failedRecordOn(candidateViewToken, 10 - index),
+  );
+  const kept = await failedCycleState(state, earlier);
+  assert.deepEqual(kept, {
+    partition,
+    notificationCursor: 1,
+    revision: state.revision,
+    recoveryEpoch: "epoch",
+    attention: "Attention",
+    handoffNote: {},
+    candidateScan: { state: "Exhausted", token: candidateViewToken },
+  });
+});
+
+test("failures on another view, or a decision that did not fail, do not count against this one", async () => {
+  const state = observedState(0);
+  const moved = { ...candidateViewToken, digest: "e".repeat(64) };
+  const earlier = Array.from(
+    { length: selectorFailedDecisionsPerViewMax - 1 },
+    (_, index) => failedRecordOn(moved, 10 - index),
+  );
+  assert.deepEqual(await failedCycleState(state, earlier), {
+    ...state,
+    attention: "Attention",
+  });
+  const interrupted = [
+    ...earlier.slice(0, -1).map((record) => ({
+      ...record,
+      observedToken: candidateViewToken,
+    })),
+    {
+      ...failedRecordOn(candidateViewToken, 1),
+      result: { dispatches: [], refusals: [], lifts: [] },
+    },
+  ];
+  assert.deepEqual(await failedCycleState(state, interrupted), {
+    ...state,
+    attention: "Attention",
+  });
 });
