@@ -142,6 +142,7 @@ function RailSectionDrawn(props: {
 
 function RailProjectSwitcher(props: {
   readonly partition: PartitionIdentity;
+  readonly onNavigate: (() => void) | undefined;
 }): ReactNode {
   const navigate = useNavigate();
   const state = usePanelInventory((ports) => apiProjectInventoryAll(ports));
@@ -161,6 +162,7 @@ function RailProjectSwitcher(props: {
         );
         if (chosen === undefined) return;
         lastProjectWrite(persistentStore, chosen);
+        props.onNavigate?.();
         void navigate({
           to: "/$tenant/$project",
           params: { tenant: chosen.tenant, project: chosen.project },
@@ -192,11 +194,17 @@ export function ThemeControl(): ReactNode {
   );
 }
 
-function RailFoot(props: { readonly partition: PartitionIdentity }): ReactNode {
+function RailFoot(props: {
+  readonly partition: PartitionIdentity;
+  readonly onNavigate: (() => void) | undefined;
+}): ReactNode {
   const holder = useSessionHolder();
   return (
     <div className="grid justify-items-start gap-3 px-3">
-      <RailProjectSwitcher partition={props.partition} />
+      <RailProjectSwitcher
+        partition={props.partition}
+        onNavigate={props.onNavigate}
+      />
       <ThemeControl />
       <Button
         variant="quiet"
@@ -257,7 +265,7 @@ export function Rail(props: {
         ))}
       </div>
       <Separator.Root decorative className="h-px bg-edge" />
-      <RailFoot partition={props.partition} />
+      <RailFoot partition={props.partition} onNavigate={props.onNavigate} />
     </nav>
   );
 }

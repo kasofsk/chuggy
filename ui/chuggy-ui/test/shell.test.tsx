@@ -10,8 +10,8 @@
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
@@ -25,6 +25,7 @@ import {
   viewportDeskEm,
   viewportTwoColumnEm,
 } from "../app/browser/shell/viewport.ts";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { viewportAtEm } from "./viewport.ts";
 import {
   answer,
@@ -39,6 +40,7 @@ import type * as BrowserPorts from "../app/browser/ports.ts";
 import type * as RouterModule from "@tanstack/react-router";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
+const borealis: PartitionIdentity = { tenant: "acme", project: "borealis" };
 
 let pageDrawn: () => ReactNode = () => null;
 
@@ -49,14 +51,26 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ...(await importOriginal<typeof RouterModule>()),
-  Link: (props: { readonly children?: ReactNode }) => (
-    <a href="/">{props.children}</a>
+  Link: (props: {
+    readonly children?: ReactNode;
+    readonly onClick?: () => void;
+  }) => (
+    <a href="/" onClick={props.onClick}>
+      {props.children}
+    </a>
   ),
   Outlet: () => pageDrawn(),
   useNavigate: () => () => undefined,
   useParams: () => atlas,
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
+
+beforeAll(() => {
+  Element.prototype.scrollIntoView = () => undefined;
+  Element.prototype.hasPointerCapture = () => false;
+});
+
+beforeEach(resizeObserverStubbed);
 
 afterEach(() => {
   cleanup();
@@ -90,6 +104,32 @@ async function mounted(em: number): Promise<void> {
 
 function railDrawn(): HTMLElement | null {
   return screen.queryByRole("navigation", { name: "Console" });
+}
+
+/** The drawer, open under the two-column width, with a second project on
+ * offer so a case can switch. */
+async function mountedDrawer(): Promise<void> {
+  const api = apiDouble({
+    operation: operationAt("Pending"),
+    route: () => answer({ projects: [atlas, borealis] }),
+  });
+  viewportAtEm(viewportTwoColumnEm - 1);
+  vi.stubGlobal("fetch", api.fetch);
+  const server = openedStream();
+  render(
+    <ScreenHarness
+      partition={atlas}
+      client={new QueryClient()}
+      transport={server.ports.fetch}
+    >
+      <Shell partition={atlas} />
+    </ScreenHarness>,
+  );
+  await settled();
+  await turned(() => {
+    screen.getByRole("button", { name: "Menu" }).click();
+  });
+  await settled();
 }
 
 test("the rail sits beside the page at the two-column width", async () => {
@@ -176,4 +216,30 @@ test("the bottom slot draws under the page", async () => {
   );
   await mounted(viewportDeskEm);
   expect(screen.getByText("composer")).toBeDefined();
+});
+
+test("the drawer closes when its own project switcher navigates", async () => {
+  await mountedDrawer();
+  expect(railDrawn()).not.toBeNull();
+  await turned(() => {
+    fireEvent.keyDown(screen.getByRole("button", { name: /^Project /u }), {
+      key: "ArrowDown",
+    });
+  });
+  await screen.findByRole("menu");
+  await turned(() => {
+    screen.getByRole("menuitemradio", { name: "acme / borealis" }).click();
+  });
+  await settled();
+  expect(railDrawn()).toBeNull();
+});
+
+test("the drawer closes when a rail entry is followed", async () => {
+  await mountedDrawer();
+  expect(railDrawn()).not.toBeNull();
+  await turned(() => {
+    screen.getByRole("link", { name: "Overview" }).click();
+  });
+  await settled();
+  expect(railDrawn()).toBeNull();
 });
