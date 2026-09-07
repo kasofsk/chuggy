@@ -27,6 +27,7 @@ const everyKind: readonly FigureValue[] = [
   { kind: "Cost", text: "$0.42", basis: "list" },
   { kind: "Tokens", text: "9.1k tok" },
   { kind: "Duration", text: "4m 12s" },
+  { kind: "Quantity", text: "17,523,063", unit: "tokens" },
   { kind: "Instant", text: "10:12", iso: "2026-08-27T10:12:00.000Z" },
   {
     kind: "Span",
@@ -105,4 +106,14 @@ test("an open span is drawn live and a closed one is not", () => {
   expect(
     closed.container.querySelector(".fig")?.classList.contains("fig-live"),
   ).toBe(false);
+});
+
+/** A ceiling and what it counts are read together, so the unit is drawn beside
+ * the digits rather than left to the column head a settings row does not have. */
+test("a quantity draws its unit beside its digits", () => {
+  const { container } = render(
+    <Figure figure={{ kind: "Quantity", text: "15", unit: "min" }} />,
+  );
+  expect(container.querySelector(".fig")?.textContent).toBe("15min");
+  expect(container.querySelector(".fig-unit")?.textContent).toBe("min");
 });
