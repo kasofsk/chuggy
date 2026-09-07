@@ -267,13 +267,19 @@ export function countFigure(count: number, unit: string): Figure {
   return { kind: "Quantity", text: groupedDigits(count), unit };
 }
 
+const msPerMinute = msPerSecond * secondsPerMinute;
+
+const msPerHour = msPerMinute * minutesPerHour;
+
 /** A span somebody set, in the largest whole unit that states it exactly. */
 export function spanSetFigure(durationMs: number): Figure {
-  if (durationMs < msPerSecond) return countFigure(durationMs, "ms");
-  const seconds = Math.trunc(durationMs / msPerSecond);
-  if (seconds % secondsPerMinute === 0)
-    return countFigure(seconds / secondsPerMinute, "min");
-  return countFigure(seconds, "s");
+  if (durationMs >= msPerHour && durationMs % msPerHour === 0)
+    return countFigure(durationMs / msPerHour, "h");
+  if (durationMs >= msPerMinute && durationMs % msPerMinute === 0)
+    return countFigure(durationMs / msPerMinute, "min");
+  if (durationMs >= msPerSecond && durationMs % msPerSecond === 0)
+    return countFigure(durationMs / msPerSecond, "s");
+  return countFigure(durationMs, "ms");
 }
 
 /** A size somebody set, in the largest whole unit that states it exactly. */

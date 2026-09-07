@@ -238,11 +238,24 @@ test("a count keeps every digit it was given, in groups", () => {
 /** A span somebody set is written in the largest unit that states it exactly,
  * because rounding a ceiling states a limit the project does not have. */
 test("a set span takes the largest unit that is still exact", () => {
+  expect(textOf(spanSetFigure(3_600_000))).toBe("1");
+  expect(unitOf(spanSetFigure(3_600_000))).toBe("h");
   expect(textOf(spanSetFigure(900_000))).toBe("15");
   expect(unitOf(spanSetFigure(900_000))).toBe("min");
   expect(textOf(spanSetFigure(90_000))).toBe("90");
   expect(unitOf(spanSetFigure(90_000))).toBe("s");
   expect(unitOf(spanSetFigure(500))).toBe("ms");
+});
+
+/** A span that does not divide exactly into a coarser unit stays in
+ * milliseconds rather than round to a whole one that misstates it. */
+test("a set span that is not a whole coarser unit stays in milliseconds", () => {
+  expect(textOf(spanSetFigure(900_500))).toBe("900,500");
+  expect(unitOf(spanSetFigure(900_500))).toBe("ms");
+  expect(textOf(spanSetFigure(90_500))).toBe("90,500");
+  expect(unitOf(spanSetFigure(90_500))).toBe("ms");
+  expect(textOf(spanSetFigure(1_500))).toBe("1,500");
+  expect(unitOf(spanSetFigure(1_500))).toBe("ms");
 });
 
 test("a set size takes the largest binary unit that is still exact", () => {
