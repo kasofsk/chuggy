@@ -189,16 +189,24 @@ export function Conversation(props: {
   readonly composer?: ConversationComposerProps;
   readonly empty: string;
   readonly emptyTitle?: string;
+  /** Whether this mount is the pane's own scroller — lead and thread pages,
+   * whose `DetailsPane` wrapper gave up its inset for it — rather than a
+   * panel that already pads itself. */
+  readonly pane?: boolean;
 }): ReactNode {
   const held = useConversationRuntime({
     exchanges: props.exchanges,
     composer: props.composer,
   });
+  const inset = props.pane === true;
   return (
     <AssistantRuntimeProvider runtime={held.runtime}>
       <ThreadPrimitive.Root className="grid h-full min-h-0 grid-rows-[1fr_auto] gap-4">
+        {/* The column centers inside the scroller; only a pane caller carries the inset the pane gave up. */}
         <ThreadPrimitive.Viewport className="min-h-0 overflow-y-auto">
-          <div className="max-w-column mx-auto grid min-w-0 gap-6">
+          <div
+            className={`max-w-column mx-auto grid min-w-0 gap-6${inset ? " px-4 py-4" : ""}`}
+          >
             {props.exchanges.length === 0 ? (
               <ConversationEmpty
                 title={props.emptyTitle}
@@ -212,7 +220,9 @@ export function Conversation(props: {
           </div>
         </ThreadPrimitive.Viewport>
         {props.composer === undefined ? null : (
-          <div className="max-w-column mx-auto w-full min-w-0">
+          <div
+            className={`max-w-column mx-auto w-full min-w-0${inset ? " px-4 pb-4" : ""}`}
+          >
             <ConversationComposer {...props.composer} busy={held.sending} />
           </div>
         )}

@@ -89,6 +89,40 @@ test("the viewport and the composer cap width at the column token, not a call-si
   styleless();
 });
 
+test("only a pane caller carries the pane's own inset on the column and the composer", () => {
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  const paneView = render(
+    <Conversation
+      exchanges={[answered]}
+      composer={composerOf({ onSend })}
+      empty="No conversation"
+      pane
+    />,
+  );
+  const [paneColumn, paneComposer] = [
+    ...paneView.container.querySelectorAll(".max-w-column"),
+  ];
+  expect(paneColumn?.className).toContain("px-4");
+  expect(paneColumn?.className).toContain("py-4");
+  expect(paneComposer?.className).toContain("px-4");
+  expect(paneComposer?.className).toContain("pb-4");
+  paneView.unmount();
+
+  const plainView = render(
+    <Conversation
+      exchanges={[answered]}
+      composer={composerOf({ onSend })}
+      empty="No conversation"
+    />,
+  );
+  const plainWrappers = plainView.container.querySelectorAll(".max-w-column");
+  expect(plainWrappers).toHaveLength(2);
+  for (const wrapper of plainWrappers) {
+    expect(wrapper.className).not.toContain("px-4");
+  }
+  styleless();
+});
+
 test("no exchanges draws the empty label and no composer", () => {
   render(<Conversation exchanges={[]} empty="No conversation" />);
   expect(screen.getByText("No conversation")).toBeDefined();

@@ -177,6 +177,7 @@ function ThreadBody(props: {
           )}
           {...(thread.mine ? { composer } : {})}
           empty="Nothing said"
+          pane
         />
       </div>
     </>

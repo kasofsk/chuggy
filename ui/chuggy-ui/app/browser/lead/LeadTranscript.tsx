@@ -122,7 +122,7 @@ export function LeadNote(props: {
   const note = props.note;
   if (note === undefined || note.bytes === 0) return null;
   return (
-    <div className="pb-3">
+    <div className="max-w-page mx-auto w-full px-4 pt-4">
       <ConversationCard
         label={
           <span className="flex flex-wrap items-center gap-2">
