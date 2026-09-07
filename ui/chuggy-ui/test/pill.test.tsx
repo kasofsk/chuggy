@@ -47,4 +47,5 @@ test("emphasis is a class beside the tone, not a tone of its own", () => {
 test("the chip's class name is the pill and its tone, and nothing else", () => {
   render(<Pill tone="live">Running</Pill>);
   expect(screen.getByText("Running").className).toBe("pill pill-live");
+  styleless();
 });

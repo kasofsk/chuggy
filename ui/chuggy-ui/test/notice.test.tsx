@@ -66,4 +66,5 @@ test("a notice with no heading draws none, and the inline form has none at all",
   expect(screen.getByText("Failed to load · API unreachable").tagName).toBe(
     "P",
   );
+  styleless();
 });
