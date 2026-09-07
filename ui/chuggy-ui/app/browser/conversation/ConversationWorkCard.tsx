@@ -63,7 +63,7 @@ function conversationArgumentLine(argument: ConversationArgument): string {
 }
 
 const conversationResultClassName =
-  "bg-surface-2 rounded-2 overflow-auto p-2 text-xs";
+  "bg-surface-2 rounded-2 max-h-(--height-clip) overflow-auto p-2 text-xs";
 
 /** One call, its one-line argument, and the whole of what went in and came
  * back a chevron away. An error is the row's own ink: a result that failed is

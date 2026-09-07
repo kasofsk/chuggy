@@ -81,7 +81,9 @@ function ConversationObservation(props: {
       <ConversationSystemLine words="Observation" />
       {props.text === undefined ? null : (
         <ConversationCard label="Observation">
-          <pre className="max-h-96 overflow-auto">{props.text}</pre>
+          <pre className="max-h-(--height-clip) overflow-auto">
+            {props.text}
+          </pre>
         </ConversationCard>
       )}
     </>

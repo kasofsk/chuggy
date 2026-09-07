@@ -132,7 +132,9 @@ export function LeadNote(props: {
           </span>
         }
       >
-        <pre className="max-h-96 overflow-auto">{note.preview}</pre>
+        <pre className="max-h-(--height-clip) overflow-auto">
+          {note.preview}
+        </pre>
       </ConversationCard>
     </div>
   );

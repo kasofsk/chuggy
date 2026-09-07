@@ -269,7 +269,7 @@ function LeadInquiryRow(props: {
       </div>
       <p className="max-w-measure">{inquiry.question}</p>
       {inquiry.answer === undefined ? null : (
-        <pre className="bg-surface-2 text-ink-1 rounded-2 max-h-96 overflow-auto p-2 font-mono text-xs whitespace-pre-wrap">
+        <pre className="bg-surface-2 text-ink-1 rounded-2 max-h-(--height-clip) overflow-auto p-2 font-mono text-xs whitespace-pre-wrap">
           {inquiry.answer}
         </pre>
       )}
