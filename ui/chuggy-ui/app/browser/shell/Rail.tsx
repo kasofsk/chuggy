@@ -15,11 +15,16 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ThreadsResponse } from "../../../../../src/contract/responses.ts";
-import { apiProjectInventoryAll, apiThreads } from "../../core/apiRoutes.ts";
+import {
+  apiOpenThread,
+  apiProjectInventoryAll,
+  apiThreads,
+} from "../../core/apiRoutes.ts";
+import { panelReason } from "../../core/freshness.ts";
 import { inboxCountLabel } from "../../core/inboxList.ts";
 import { lastProjectWrite } from "../../core/lastProject.ts";
 import { projectListReread } from "../../core/projectQueryKeys.ts";
-import { shellRailSections } from "../../core/shellRail.ts";
+import { railRoutes, shellRailSections } from "../../core/shellRail.ts";
 import type {
   RailEntry,
   RailSection,
@@ -27,7 +32,7 @@ import type {
 } from "../../core/shellRail.ts";
 import { sessionStateTone } from "../../core/tones.ts";
 import type { Tone } from "../../core/tones.ts";
-import { usePanelInventory, usePanelList } from "../api.ts";
+import { useApiPorts, usePanelInventory, usePanelList } from "../api.ts";
 import { Footer } from "../Footer.tsx";
 import { useInboxRows } from "../Inbox.tsx";
 import { useLead } from "../LeadPage.tsx";
@@ -71,34 +76,101 @@ function RailDot(props: { readonly standing: RailStanding }): ReactNode {
   );
 }
 
-function RailEntryDrawn(props: {
+function RailEntryContent(props: { readonly entry: RailEntry }): ReactNode {
+  const entry = props.entry;
+  return (
+    <>
+      {entry.standing === undefined ? null : (
+        <RailDot standing={entry.standing} />
+      )}
+      <span className="min-w-0 flex-1 truncate">
+        {entry.mine === false ? (
+          <Identity label={{ text: entry.label, title: entry.label }} />
+        ) : (
+          entry.label
+        )}
+      </span>
+      {entry.count === undefined ? null : (
+        <span className="text-xs text-ink-3 tabular-nums">{entry.count}</span>
+      )}
+    </>
+  );
+}
+
+const railEntryClassName =
+  "flex items-center gap-2 rounded-2 px-3 py-2 text-md no-underline";
+
+/** The offer an entry's `action` makes, rather than a route it follows:
+ * opened idempotently, so a second press answers the thread the first
+ * opened. */
+function RailEntryOpenThread(props: {
   readonly entry: RailEntry;
+  readonly partition: PartitionIdentity;
   readonly onNavigate: (() => void) | undefined;
 }): ReactNode {
   const entry = props.entry;
+  const ports = useApiPorts();
+  const navigate = useNavigate();
+  const [opening, setOpening] = useState(false);
+  const [refused, setRefused] = useState<string | undefined>(undefined);
+  return (
+    <li>
+      <button
+        type="button"
+        aria-busy={opening}
+        disabled={opening}
+        className={`${railEntryClassName} border-0 bg-surface-1 text-left text-ink-2`}
+        onClick={() => {
+          setOpening(true);
+          setRefused(undefined);
+          void apiOpenThread(ports, props.partition).then((opened) => {
+            setOpening(false);
+            if (opened.outcome !== "Ok") {
+              setRefused(panelReason(opened));
+              return;
+            }
+            props.onNavigate?.();
+            void navigate({
+              to: railRoutes.thread,
+              params: { ...props.partition, session: opened.value.session },
+            });
+          });
+        }}
+      >
+        <RailEntryContent entry={entry} />
+      </button>
+      {refused === undefined ? null : (
+        <Notice tone="danger" inline detail={`Refused · ${refused}`} />
+      )}
+    </li>
+  );
+}
+
+function RailEntryDrawn(props: {
+  readonly entry: RailEntry;
+  readonly partition: PartitionIdentity;
+  readonly onNavigate: (() => void) | undefined;
+}): ReactNode {
+  const entry = props.entry;
+  if (entry.action !== undefined)
+    return (
+      <RailEntryOpenThread
+        entry={entry}
+        partition={props.partition}
+        onNavigate={props.onNavigate}
+      />
+    );
   return (
     <li>
       <Link
         to={entry.to}
         params={entry.params}
         onClick={props.onNavigate}
-        className="flex items-center gap-2 rounded-2 px-3 py-2 text-md no-underline"
+        className={railEntryClassName}
         activeProps={{ className: "bg-surface-2 text-ink-1" }}
         inactiveProps={{ className: "text-ink-2" }}
       >
-        {entry.standing === undefined ? null : (
-          <RailDot standing={entry.standing} />
-        )}
-        <span className="min-w-0 flex-1 truncate">
-          {entry.mine === false ? (
-            <Identity label={{ text: entry.label, title: entry.label }} />
-          ) : (
-            entry.label
-          )}
-        </span>
-        {entry.count === undefined ? null : (
-          <span className="text-xs text-ink-3 tabular-nums">{entry.count}</span>
-        )}
+        <RailEntryContent entry={entry} />
       </Link>
     </li>
   );
@@ -106,6 +178,7 @@ function RailEntryDrawn(props: {
 
 function RailSectionDrawn(props: {
   readonly section: RailSection;
+  readonly partition: PartitionIdentity;
   readonly onNavigate: (() => void) | undefined;
 }): ReactNode {
   const section = props.section;
@@ -132,6 +205,7 @@ function RailSectionDrawn(props: {
           <RailEntryDrawn
             key={entry.id}
             entry={entry}
+            partition={props.partition}
             onNavigate={props.onNavigate}
           />
         ))}
@@ -260,6 +334,7 @@ export function Rail(props: {
           <RailSectionDrawn
             key={section.id}
             section={section}
+            partition={props.partition}
             onNavigate={props.onNavigate}
           />
         ))}

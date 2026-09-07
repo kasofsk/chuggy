@@ -43,17 +43,30 @@ export interface RailStanding {
   readonly tone: Tone;
 }
 
-/** One line of the rail. `mine` is the reader's own thread, which is labelled
- * rather than identified; every other label is an identity. */
-export interface RailEntry {
+export type RailActionKind = "OpenThread";
+
+interface RailEntryCommon {
   readonly id: string;
   readonly label: string;
-  readonly to: RailRoute;
-  readonly params: RailParams;
   readonly standing?: RailStanding | undefined;
   readonly count?: string | undefined;
   readonly mine?: boolean | undefined;
 }
+
+/** One line of the rail: a route to follow, or an action to take — never
+ * both. `mine` is the reader's own thread, which is labelled rather than
+ * identified; every other label is an identity. */
+export type RailEntry =
+  | (RailEntryCommon & {
+      readonly to: RailRoute;
+      readonly params: RailParams;
+      readonly action?: undefined;
+    })
+  | (RailEntryCommon & {
+      readonly to?: undefined;
+      readonly params?: undefined;
+      readonly action: RailActionKind;
+    });
 
 /** A group of entries under a heading, which links to the full listing where
  * the rail holds only part of one. */
@@ -101,14 +114,7 @@ function shellRailConversations(
   if (threads === undefined) return [lead];
   const offer: readonly RailEntry[] =
     threadMine(threads) === undefined
-      ? [
-          {
-            id: "thread-new",
-            label: "New thread",
-            to: railRoutes.threads,
-            params,
-          },
-        ]
+      ? [{ id: "thread-new", label: "New thread", action: "OpenThread" }]
       : [];
   return [
     lead,

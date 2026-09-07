@@ -39,9 +39,10 @@ test("a listing that has not answered draws the lead and nothing else", () => {
 });
 
 test("an answered listing with no thread of the reader's offers a new one", () => {
-  expect(
-    conversations({ partition: atlas, threads: [] }).map((entry) => entry.id),
-  ).toEqual(["lead", "thread-new"]);
+  const entries = conversations({ partition: atlas, threads: [] });
+  expect(entries.map((entry) => entry.id)).toEqual(["lead", "thread-new"]);
+  expect(entries[1]?.action).toBe("OpenThread");
+  expect(entries[1]?.to).toBeUndefined();
 });
 
 test("the reader's own thread is labelled, first, and withholds the offer", () => {
