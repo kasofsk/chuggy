@@ -343,6 +343,8 @@ test("a configuration commanding no check stage offers no checks editor", () => 
 test("nothing the form draws is a runtime style element", () => {
   draw(api({ state: "Succeeded" }).ports, []);
   expect(document.querySelectorAll("style").length).toBe(0);
+  fireEvent.click(screen.getByText("Advanced"));
+  expect(document.querySelectorAll("style").length).toBe(0);
 });
 
 /**
