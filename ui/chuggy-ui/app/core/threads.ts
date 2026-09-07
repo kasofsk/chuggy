@@ -135,6 +135,60 @@ export function threadMine(
   return threads.find((thread) => thread.mine && thread.state !== "Closed");
 }
 
+/** Whether a thread has a turn the mailbox has not settled, which is what
+ * makes closing it a real abandonment rather than a formality. */
+export function threadAnswering(
+  thread: Pick<ThreadResponse, "turns">,
+): boolean {
+  return thread.turns.some(
+    (turn) => turn.state === "Queued" || turn.state === "Claimed",
+  );
+}
+
+export const threadOwnerFilters = ["Mine", "Everyone"] as const;
+export type ThreadOwnerFilter = (typeof threadOwnerFilters)[number];
+
+export const threadStandingFilters = ["Open", "Closed", "Hidden"] as const;
+export type ThreadStandingFilter = (typeof threadStandingFilters)[number];
+
+/** Whether a row belongs in one of the Threads page's standing filters.
+ * `Hidden` is a bucket of its own rather than a flag over the other two, so a
+ * thread its owner hid stops appearing under `Open` or `Closed` the moment it
+ * is. */
+function threadMatchesStanding(
+  thread: ThreadEntryResponse,
+  standing: ThreadStandingFilter,
+): boolean {
+  switch (standing) {
+    case "Open":
+      return !thread.hidden && thread.state !== "Closed";
+    case "Closed":
+      return !thread.hidden && thread.state === "Closed";
+    case "Hidden":
+      return thread.hidden;
+  }
+}
+
+/**
+ * The Threads page's own rows: a thread its owner hid is only ever offered
+ * back to its owner, so the `Hidden` standing forces `Mine` whatever the
+ * owner chip reads — a stranger's archived thread is not this reader's to
+ * restore.
+ */
+export function threadPageRows(
+  threads: readonly ThreadEntryResponse[],
+  owner: ThreadOwnerFilter,
+  standing: ThreadStandingFilter,
+): readonly ThreadEntryResponse[] {
+  const owned =
+    owner === "Everyone" && standing !== "Hidden"
+      ? threads
+      : threads.filter((thread) => thread.mine);
+  return threadsMineFirst(
+    owned.filter((thread) => threadMatchesStanding(thread, standing)),
+  );
+}
+
 /**
  * The two fields a wake document is drawn from. Unknown keys are dropped rather
  * than refused, so a document carrying more than this reads as the notice it is.
