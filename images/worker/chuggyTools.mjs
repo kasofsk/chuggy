@@ -712,7 +712,7 @@ export const chuggyProjectTools = [
   {
     name: "file_dependent",
     description:
-      "Files a new draft derived from an existing ticket. `relation` admits FollowUp only, and `authoring.dependencies` must carry the parent. The fence comes from initialize_draft.",
+      "Files a new draft derived from an existing ticket. `relation` admits FollowUp only, and `authoring.dependencies` must carry the parent. The fence comes from initialize_draft. `brief` is {title?, intent, links, checks?, branch?, finalization?}: `title` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; `intent` is the paragraph.",
     shape: (z) => ({
       parent: ticket(z),
       relation: z.enum(allDependentRelations),
@@ -746,7 +746,7 @@ export const chuggyProjectTools = [
   {
     name: "revise_draft",
     description:
-      "Replaces one open draft's authoring and brief, fenced on the version read.",
+      "Replaces one open draft's authoring and brief, fenced on the version read. `brief` is {title?, intent, links, checks?, branch?, finalization?}: `title` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; `intent` is the paragraph.",
     shape: (z) => ({
       ticket: ticket(z),
       expectedVersion: count(z),
@@ -807,7 +807,7 @@ export const chuggyProjectTools = [
   {
     name: "create_draft",
     description:
-      "Files a new draft for work your owner asked for, derived from nothing. The fence comes from initialize_draft.",
+      "Files a new draft for work your owner asked for, derived from nothing. The fence comes from initialize_draft. `brief` is {title?, intent, links, checks?, branch?, finalization?}: `title` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; `intent` is the paragraph.",
     shape: (z) => ({
       configurationRevision: identity(z),
       configurationDigest: identity(z),
