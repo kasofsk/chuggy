@@ -1,15 +1,17 @@
 /**
- * The project's selector settings, written whole under the revision they were
- * read at: the North Star, its threads' standing rules, the base prompt, the
- * two modes and the limits a project may set for itself.
+ * The project's selector settings: what it is running under, the setting groups
+ * a reader edits one at a time, and every revision that got it here.
  *
  * A WRITE THE REVISION MOVED UNDER IS NOT RETRIED. The route answers `409` with
- * the settings that moved; the page names the revision and stops, and the boxes
- * this reader never touched take what now stands rather than carrying their
- * stale copy of it back over another administrator's write. Every box left
- * empty is an override cleared, which is what the route means by omitting a
- * field, and the effective value stands in the box as what the project runs
- * under instead.
+ * the settings that moved; the section names the revision and stops, and the
+ * boxes this reader never touched take what now stands rather than carrying
+ * their stale copy of it back over another administrator's write. Every box
+ * left empty is an override cleared, which is what the route means by omitting
+ * a field, and the installation's value stands in the section instead.
+ *
+ * EVERY WRITE ON THIS PAGE IS THE WHOLE OVERRIDE SET. A section's Save, the
+ * strip's one press and a revision's Restore all go through the same door, so
+ * the overrides no section draws are carried by each of them alike.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -18,233 +20,49 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import {
-  selectorDispatchModes,
-  selectorModes,
-} from "../../../../src/contract/rosters.ts";
-import type {
-  SelectorProjectSettingsResponse,
-  SelectorSettingsHistoryResponse,
-} from "../../../../src/contract/responses.ts";
+import type { SelectorProjectSettingsResponse } from "../../../../src/contract/responses.ts";
 import {
   apiSelectorSettings,
   apiSelectorSettingsHistory,
   apiWriteSelectorSettings,
 } from "../core/apiRoutes.ts";
-import { instantFigure } from "../core/figures.ts";
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import {
   selectorSettingsAnswered,
   selectorSettingsDraft,
-  selectorSettingsLimitLabel,
-  selectorSettingsLimitNames,
   selectorSettingsRebased,
+  selectorSettingsSectionCleared,
+  selectorSettingsSectionRestored,
+  selectorSettingsTextNames,
   selectorSettingsWrite,
 } from "../core/selectorSettingsForm.ts";
 import type {
+  SelectorProjectOverrides,
   SelectorSettingsDraft,
-  SelectorSettingsLimitName,
   SelectorSettingsSaved,
+  SelectorSettingsSectionName,
 } from "../core/selectorSettingsForm.ts";
 import { useApiPorts, usePanelResource } from "./api.ts";
-import { DataPanel } from "./DataPanel.tsx";
+import { PanelUnready } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
+import { SelectorLimitsSection } from "./selector/SelectorLimitsSection.tsx";
+import { SelectorRevisions } from "./selector/SelectorRevisions.tsx";
+import { SelectorStrip } from "./selector/SelectorStrip.tsx";
+import { SelectorTextSection } from "./selector/SelectorTextSection.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
-import { Button } from "./ui/Button.tsx";
-import { EmptyState } from "./ui/EmptyState.tsx";
-import { Field, Fields } from "./ui/Fields.tsx";
-import { Figure } from "./ui/Figure.tsx";
-import { Notice } from "./ui/Notice.tsx";
-import { Pill } from "./ui/Pill.tsx";
-import { Table } from "./ui/Table.tsx";
 
 /** No frame names either read, so the partition's own refetch is what reaches
  * them. */
 export const selectorSettingsResource = "selector-settings";
 export const selectorSettingsHistoryResource = "selector-settings-history";
 
-/** What the last write did, in the one line a form says it in. */
-export function SelectorSettingsSavedNotice(props: {
-  readonly saved: SelectorSettingsSaved;
-}): ReactNode {
-  const saved = props.saved;
-  switch (saved.saved) {
-    case "Idle":
-      return null;
-    case "Writing":
-      return <Notice tone="info" inline detail="Writing" />;
-    case "Written":
-      return (
-        <Notice
-          tone="live"
-          inline
-          detail={`Written · ${String(saved.revision)}`}
-        />
-      );
-    case "Conflict":
-      return (
-        <Notice
-          tone="parked"
-          inline
-          detail={`Conflict · ${String(saved.revision)}`}
-        />
-      );
-    case "Failed":
-      return (
-        <Notice tone="danger" inline detail={`Failed · ${saved.reason}`} />
-      );
-  }
-}
+/** Which part of the page the last write belongs to, so its answer is drawn
+ * where it was asked for and nowhere else. */
+type SelectorSettingsWriter = SelectorSettingsSectionName | "strip";
 
-interface SelectorFieldChrome {
+interface SelectorSettingsHeld {
   readonly draft: SelectorSettingsDraft;
-  readonly settings: SelectorProjectSettingsResponse;
-  readonly faults: Readonly<Record<string, string>>;
-  readonly onChange: (draft: SelectorSettingsDraft) => void;
-}
-
-function SelectorLimitField(props: {
-  readonly chrome: SelectorFieldChrome;
-  readonly name: SelectorSettingsLimitName;
-}): ReactNode {
-  const { chrome, name } = props;
-  const label = selectorSettingsLimitLabel(name);
-  const fault = chrome.faults[`limits.${name}`];
-  return (
-    <Field name={label} absent={chrome.draft.limits[name] === ""}>
-      <input
-        className="num bg-surface-1 border-edge-control rounded-2 aria-invalid:border-tone-fail w-full border px-2 py-1"
-        aria-label={label}
-        aria-invalid={fault !== undefined}
-        inputMode="numeric"
-        value={chrome.draft.limits[name]}
-        placeholder={String(chrome.settings.effective.limits[name])}
-        onChange={(event) => {
-          chrome.onChange({
-            ...chrome.draft,
-            limits: { ...chrome.draft.limits, [name]: event.target.value },
-          });
-        }}
-      />
-      {fault === undefined ? null : <Pill tone="fail">{fault}</Pill>}
-    </Field>
-  );
-}
-
-function SelectorModeField(props: {
-  readonly label: string;
-  readonly choices: readonly string[];
-  readonly value: string;
-  readonly effective: string;
-  readonly onChange: (value: string) => void;
-}): ReactNode {
-  return (
-    <Field name={props.label} absent={props.value === ""}>
-      <select
-        aria-label={props.label}
-        value={props.value}
-        onChange={(event) => {
-          props.onChange(event.target.value);
-        }}
-      >
-        <option value="">{`Inherit · ${props.effective}`}</option>
-        {props.choices.map((choice) => (
-          <option key={choice} value={choice}>
-            {choice}
-          </option>
-        ))}
-      </select>
-    </Field>
-  );
-}
-
-/** The name a text override is drawn under, which is the key of the box it holds. */
-type SelectorSettingsTextName =
-  "northStar" | "threadStandingRules" | "basePrompt";
-
-function SelectorTextField(props: {
-  readonly chrome: SelectorFieldChrome;
-  readonly name: SelectorSettingsTextName;
-  readonly label: string;
-  readonly effective: string;
-}): ReactNode {
-  const { chrome, name, label } = props;
-  const draft = chrome.draft;
-  return (
-    <Field name={label} absent={draft[name] === ""}>
-      <textarea
-        className="bg-surface-1 border-edge-control rounded-2 aria-invalid:border-tone-fail font-mono w-full resize-y border px-2 py-1"
-        rows={8}
-        aria-label={label}
-        aria-invalid={chrome.faults[name] !== undefined}
-        value={draft[name]}
-        placeholder={props.effective}
-        onChange={(event) => {
-          chrome.onChange({ ...draft, [name]: event.target.value });
-        }}
-      />
-    </Field>
-  );
-}
-
-function SelectorTextFields(props: {
-  readonly chrome: SelectorFieldChrome;
-}): ReactNode {
-  const chrome = props.chrome;
-  const effective = chrome.settings.effective;
-  return (
-    <Fields>
-      <SelectorTextField
-        chrome={chrome}
-        name="northStar"
-        label="North Star"
-        effective={effective.northStar ?? "None"}
-      />
-      <SelectorTextField
-        chrome={chrome}
-        name="threadStandingRules"
-        label="Standing rules"
-        effective={effective.threadStandingRules}
-      />
-      <SelectorTextField
-        chrome={chrome}
-        name="basePrompt"
-        label="Base prompt"
-        effective={effective.basePrompt}
-      />
-    </Fields>
-  );
-}
-
-function SelectorLimitFields(props: {
-  readonly chrome: SelectorFieldChrome;
-}): ReactNode {
-  const chrome = props.chrome;
-  return (
-    <Fields>
-      <SelectorModeField
-        label="Mode"
-        choices={selectorModes}
-        value={chrome.draft.mode}
-        effective={chrome.settings.effective.mode}
-        onChange={(mode) => {
-          chrome.onChange({ ...chrome.draft, mode });
-        }}
-      />
-      <SelectorModeField
-        label="Dispatch"
-        choices={selectorDispatchModes}
-        value={chrome.draft.dispatchMode}
-        effective={chrome.settings.effective.dispatchMode}
-        onChange={(dispatchMode) => {
-          chrome.onChange({ ...chrome.draft, dispatchMode });
-        }}
-      />
-      {selectorSettingsLimitNames.map((name) => (
-        <SelectorLimitField key={name} chrome={chrome} name={name} />
-      ))}
-    </Fields>
-  );
+  readonly setDraft: (draft: SelectorSettingsDraft) => void;
 }
 
 /**
@@ -255,10 +73,9 @@ function SelectorLimitFields(props: {
  * click and its answer, and a reseed would take back text the reader had typed
  * in that window.
  */
-function useSelectorSettingsDraft(settings: SelectorProjectSettingsResponse): {
-  readonly draft: SelectorSettingsDraft;
-  readonly setDraft: (draft: SelectorSettingsDraft) => void;
-} {
+function useSelectorSettingsDraft(
+  settings: SelectorProjectSettingsResponse,
+): SelectorSettingsHeld {
   const [draft, setDraft] = useState<SelectorSettingsDraft>(() =>
     selectorSettingsDraft(settings),
   );
@@ -284,10 +101,7 @@ function useSelectorSettingsDraft(settings: SelectorProjectSettingsResponse): {
  */
 function selectorSettingsApply(
   answered: SelectorSettingsSaved,
-  held: {
-    readonly draft: SelectorSettingsDraft;
-    readonly setDraft: (draft: SelectorSettingsDraft) => void;
-  },
+  held: SelectorSettingsHeld,
   wrote: (settings: SelectorProjectSettingsResponse) => void,
 ): void {
   switch (answered.saved) {
@@ -304,97 +118,195 @@ function selectorSettingsApply(
   }
 }
 
+/** The one door every write on this page goes through, and what it answered. */
+interface SelectorSettingsWriting {
+  readonly saved: SelectorSettingsSaved;
+  readonly writer: SelectorSettingsWriter | undefined;
+  readonly write: (
+    writer: SelectorSettingsWriter,
+    overrides: SelectorProjectOverrides,
+    wrote: () => void,
+  ) => void;
+  readonly reload: () => void;
+}
+
+function useSelectorSettingsWriting(
+  partition: PartitionIdentity,
+  held: SelectorSettingsHeld,
+): SelectorSettingsWriting {
+  const ports = useApiPorts();
+  const client = useQueryClient();
+  const [saved, setSaved] = useState<SelectorSettingsSaved>({ saved: "Idle" });
+  const [writer, setWriter] = useState<SelectorSettingsWriter | undefined>(
+    undefined,
+  );
+  const key = projectResourceKey(
+    partition,
+    "Project",
+    selectorSettingsResource,
+  );
+  return {
+    saved,
+    writer,
+    reload: () => {
+      void client.invalidateQueries({ queryKey: key });
+    },
+    write: (asked, overrides, wrote) => {
+      setWriter(asked);
+      setSaved({ saved: "Writing" });
+      void (async () => {
+        const answered = selectorSettingsAnswered(
+          await apiWriteSelectorSettings(ports, partition, {
+            expectedRevision: held.draft.revision,
+            overrides,
+          }),
+        );
+        setSaved(answered);
+        selectorSettingsApply(answered, held, (settings) => {
+          client.setQueryData(key, settings);
+          wrote();
+        });
+      })();
+    },
+  };
+}
+
+/** What one section is handed: its own slice of the draft, whether it is the
+ * open one, and the answer to its own last write. */
+interface SelectorSettingsSectionChrome {
+  readonly draft: SelectorSettingsDraft;
+  readonly settings: SelectorProjectSettingsResponse;
+  readonly editing: SelectorSettingsSectionName | undefined;
+  readonly writing: SelectorSettingsWriting;
+  readonly onChange: (draft: SelectorSettingsDraft) => void;
+  readonly onOpen: (name: SelectorSettingsSectionName | undefined) => void;
+  readonly onSave: (name: SelectorSettingsSectionName) => void;
+  readonly onCancel: (name: SelectorSettingsSectionName) => void;
+}
+
+function selectorSettingsSaved(
+  chrome: SelectorSettingsSectionChrome,
+  writer: SelectorSettingsWriter,
+): SelectorSettingsSaved {
+  return chrome.writing.writer === writer
+    ? chrome.writing.saved
+    : { saved: "Idle" };
+}
+
+function SelectorSettingsSections(props: {
+  readonly chrome: SelectorSettingsSectionChrome;
+}): ReactNode {
+  const chrome = props.chrome;
+  const editing = chrome.editing;
+  const savable =
+    selectorSettingsWrite(chrome.draft).overrides !== undefined &&
+    chrome.writing.saved.saved !== "Writing";
+  return (
+    <>
+      {selectorSettingsTextNames.map((name) => (
+        <SelectorTextSection
+          key={name}
+          name={name}
+          draft={chrome.draft}
+          effective={chrome.settings.effective[name] ?? "None"}
+          editing={editing === name}
+          editable={editing === undefined}
+          savable={savable}
+          saved={selectorSettingsSaved(chrome, name)}
+          onChange={chrome.onChange}
+          onEdit={() => {
+            chrome.onOpen(name);
+          }}
+          onCancel={() => {
+            chrome.onCancel(name);
+          }}
+          onReset={() => {
+            chrome.onChange(selectorSettingsSectionCleared(chrome.draft, name));
+          }}
+          onSave={() => {
+            chrome.onSave(name);
+          }}
+          onReload={chrome.writing.reload}
+        />
+      ))}
+      <SelectorLimitsSection
+        draft={chrome.draft}
+        settings={chrome.settings}
+        faults={selectorSettingsWrite(chrome.draft).faults}
+        editing={editing === "limits"}
+        editable={editing === undefined}
+        savable={savable}
+        saved={selectorSettingsSaved(chrome, "limits")}
+        onChange={chrome.onChange}
+        onEdit={() => {
+          chrome.onOpen("limits");
+        }}
+        onCancel={() => {
+          chrome.onCancel("limits");
+        }}
+        onSave={() => {
+          chrome.onSave("limits");
+        }}
+        onReload={chrome.writing.reload}
+      />
+    </>
+  );
+}
+
 function SelectorSettingsForm(props: {
   readonly partition: PartitionIdentity;
   readonly settings: SelectorProjectSettingsResponse;
 }): ReactNode {
-  const ports = useApiPorts();
-  const client = useQueryClient();
   const held = useSelectorSettingsDraft(props.settings);
-  const [saved, setSaved] = useState<SelectorSettingsSaved>({ saved: "Idle" });
-  const write = selectorSettingsWrite(held.draft);
-  const chrome: SelectorFieldChrome = {
+  const writing = useSelectorSettingsWriting(props.partition, held);
+  const [editing, setEditing] = useState<
+    SelectorSettingsSectionName | undefined
+  >(undefined);
+  const chrome: SelectorSettingsSectionChrome = {
     draft: held.draft,
     settings: props.settings,
-    faults: write.faults,
+    editing,
+    writing,
     onChange: held.setDraft,
-  };
-  const submit = () => {
-    const overrides = write.overrides;
-    if (overrides === undefined) return;
-    setSaved({ saved: "Writing" });
-    void (async () => {
-      const answered = selectorSettingsAnswered(
-        await apiWriteSelectorSettings(ports, props.partition, {
-          expectedRevision: held.draft.revision,
-          overrides,
-        }),
-      );
-      setSaved(answered);
-      selectorSettingsApply(answered, held, (settings) => {
-        client.setQueryData(
-          projectResourceKey(
-            props.partition,
-            "Project",
-            selectorSettingsResource,
-          ),
-          settings,
-        );
+    onOpen: setEditing,
+    onSave: (name) => {
+      const overrides = selectorSettingsWrite(held.draft).overrides;
+      if (overrides === undefined) return;
+      writing.write(name, overrides, () => {
+        setEditing(undefined);
       });
-    })();
+    },
+    onCancel: (name) => {
+      held.setDraft(selectorSettingsSectionRestored(held.draft, name));
+      setEditing(undefined);
+    },
   };
   return (
-    <div className="grid min-w-0 gap-4">
-      <SelectorSettingsSavedNotice saved={saved} />
-      <SelectorTextFields chrome={chrome} />
-      <SelectorLimitFields chrome={chrome} />
-      <div className="justify-self-start">
-        <Button
-          variant="primary"
-          disabled={write.overrides === undefined || saved.saved === "Writing"}
-          onClick={submit}
-        >
-          Save
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function SelectorHistoryRows(props: {
-  readonly history: SelectorSettingsHistoryResponse;
-  readonly nowMs: number;
-}): ReactNode {
-  if (props.history.revisions.length === 0)
-    return <EmptyState label="No revisions" />;
-  return (
-    <Table caption="Settings revisions">
-      <thead>
-        <tr>
-          <th scope="col">Revision</th>
-          <th scope="col">Administrator</th>
-          <th scope="col">Recorded</th>
-        </tr>
-      </thead>
-      <tbody>
-        {props.history.revisions.map((revision) => (
-          <tr key={revision.revision}>
-            <td className="num">{revision.revision}</td>
-            <td>{revision.administrator.subject}</td>
-            <td>
-              <Figure
-                figure={instantFigure(revision.recordedAt, props.nowMs)}
-              />
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </Table>
+    <>
+      <SelectorStrip
+        draft={held.draft}
+        settings={props.settings}
+        busy={writing.saved.saved === "Writing"}
+        onPress={(overrides) => {
+          writing.write("strip", overrides, () => undefined);
+        }}
+      />
+      <SelectorSettingsSections chrome={chrome} />
+      <SelectorSettingsHistory
+        partition={props.partition}
+        busy={writing.saved.saved === "Writing"}
+        onRestore={(overrides) => {
+          writing.write("strip", overrides, () => undefined);
+        }}
+      />
+    </>
   );
 }
 
 function SelectorSettingsHistory(props: {
   readonly partition: PartitionIdentity;
+  readonly busy: boolean;
+  readonly onRestore: (overrides: SelectorProjectOverrides) => void;
 }): ReactNode {
   const partition = props.partition;
   const nowMs = useNowMs();
@@ -405,9 +317,12 @@ function SelectorSettingsHistory(props: {
     (ports) => apiSelectorSettingsHistory(ports, partition),
   );
   return (
-    <DataPanel title="Revisions" state={state}>
-      {(history) => <SelectorHistoryRows history={history} nowMs={nowMs} />}
-    </DataPanel>
+    <SelectorRevisions
+      state={state}
+      nowMs={nowMs}
+      busy={props.busy}
+      onRestore={props.onRestore}
+    />
   );
 }
 
@@ -424,21 +339,19 @@ export function SelectorSettingsPage(): ReactNode {
     (ports) => apiSelectorSettings(ports, partition),
   );
   return (
-    <div className="grid min-w-0 gap-4">
+    <div className="grid min-w-0 max-w-settings gap-4">
       <TopBarSlot>
         <h1 className="text-md font-strong text-ink-1 truncate">Selector</h1>
         {state.state === "Ready" ? (
           <span className="text-ink-3 text-sm tabular-nums">
-            {state.value.revision}
+            {`Revision ${String(state.value.revision)}`}
           </span>
         ) : null}
       </TopBarSlot>
-      <DataPanel title="Objectives" state={state}>
-        {(settings) => (
-          <SelectorSettingsForm partition={partition} settings={settings} />
-        )}
-      </DataPanel>
-      <SelectorSettingsHistory partition={partition} />
+      <PanelUnready state={state} />
+      {state.state === "Ready" ? (
+        <SelectorSettingsForm partition={partition} settings={state.value} />
+      ) : null}
     </div>
   );
 }
