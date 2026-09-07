@@ -139,10 +139,16 @@ function exchangeCount(): number {
   return document.querySelectorAll('[data-message-id$="-ask"]').length;
 }
 
+/** Each question, read off the one `<p>` its own listitem holds. */
+/** Each question, read off the one `<p>` its own listitem holds, scoped to
+ * the inquiries panel since the refusals ledger draws listitems of its own. */
 function inquiryQuestions(): readonly string[] {
-  return [...document.querySelectorAll(".lead-inquiry-question")].map(
-    (question) => question.textContent ?? "",
-  );
+  const section = screen
+    .getByRole("heading", { name: "Inquiries" })
+    .closest("section");
+  return within(section as HTMLElement)
+    .queryAllByRole("listitem")
+    .map((row) => row.querySelector("p")?.textContent ?? "");
 }
 
 test("the head names the session, its state and the cursor it stands on", async () => {

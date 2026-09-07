@@ -176,10 +176,14 @@ async function drawInquiries(served: {
   };
 }
 
+/** Each question, read off the one `<p>` its own listitem holds — the
+ * answer beside it is a `<pre>`, so a query for the tag cannot cross rows. */
+/** Each question, read off the one `<p>` its own listitem holds — the
+ * answer beside it is a `<pre>`, so a query for the tag cannot cross rows. */
 function rows(): readonly string[] {
-  return [...document.querySelectorAll(".lead-inquiry-question")].map(
-    (row) => row.textContent ?? "",
-  );
+  return screen
+    .queryAllByRole("listitem")
+    .map((row) => row.querySelector("p")?.textContent ?? "");
 }
 
 /** One frame of the kind, named as the trigger names it: the session, what kind
@@ -314,7 +318,7 @@ test("an answer carrying markup is drawn as text", async () => {
   });
   expect(screen.getByText(markup)).toBeDefined();
   expect(
-    document.querySelector(".lead-inquiry img"),
+    screen.getByRole("listitem").querySelector("img"),
     "an answer's markup was drawn as markup",
   ).toBeNull();
 });

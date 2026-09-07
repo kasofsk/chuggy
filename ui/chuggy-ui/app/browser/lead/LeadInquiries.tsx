@@ -252,7 +252,7 @@ function LeadInquiryRow(props: {
 }): ReactNode {
   const inquiry = props.inquiry;
   return (
-    <li className="lead-inquiry grid min-w-0 gap-1 border-t border-edge pt-2">
+    <li className="grid min-w-0 gap-1 border-t border-edge pt-2">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-ink-3 max-w-measure truncate font-mono text-xs">
           {inquiryAskerNamed(inquiry.asker)}
@@ -268,7 +268,7 @@ function LeadInquiryRow(props: {
         <Figure figure={instantFigure(inquiry.askedAt, props.nowMs)} />
         <LeadInquiryRollup inquiry={inquiry} />
       </div>
-      <p className="lead-inquiry-question max-w-measure">{inquiry.question}</p>
+      <p className="max-w-measure">{inquiry.question}</p>
       {inquiry.answer === undefined ? null : (
         <QuotedText>{inquiry.answer}</QuotedText>
       )}
