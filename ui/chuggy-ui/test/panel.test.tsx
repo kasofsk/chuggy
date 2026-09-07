@@ -3,14 +3,15 @@
  * collapsible form.
  *
  * What is asserted is the accessible shape rather than the frame — the region
- * is labelled by its own heading, and a collapsible panel is a disclosure the
- * keyboard already knows how to open.
+ * is labelled by its own heading, and a collapsible panel is a heading holding
+ * a disclosure the keyboard already knows how to open.
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 
 import { Panel } from "../app/browser/ui/Panel.tsx";
+import { styleless } from "./styleless.ts";
 
 afterEach(cleanup);
 
@@ -23,7 +24,9 @@ test("the region is labelled by its own heading, and the meta sits beside it", (
   const region = screen.getByRole("region", { name: "Budgets" });
   expect(region.querySelector(".panel-meta")?.textContent).toBe("12s ago");
   expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Budgets");
+  expect(region.classList.contains("rounded-3")).toBe(true);
   expect(view.container.querySelector("[style]")).toBeNull();
+  styleless();
 });
 
 test("the level chooses the heading, and quiet drops the frame's class", () => {
@@ -33,18 +36,48 @@ test("the level chooses the heading, and quiet drops the frame's class", () => {
     </Panel>,
   );
   expect(screen.getByRole("heading", { level: 3 })).toBeDefined();
-  expect(
-    view.container.querySelector(".panel")?.classList.contains("panel-quiet"),
-  ).toBe(true);
+  const panel = view.container.querySelector(".panel");
+  expect(panel?.classList.contains("panel-quiet")).toBe(true);
+  expect(panel?.classList.contains("border-edge")).toBe(false);
+  styleless();
 });
 
-test("a collapsible panel is a disclosure that opens from its prop", () => {
-  const view = render(
-    <Panel title="Configuration" collapsible={{ open: true }}>
+/** Radix writes the content's measured height through the CSSOM, which the
+ * served policy permits; what it must never do is append a sheet. */
+test("a collapsible panel opens from its prop and closes from the keyboard", () => {
+  render(
+    <Panel title="Configuration" collapsible={{ open: true }} meta="rev 11">
       <p>Revision</p>
     </Panel>,
   );
-  const details = view.container.querySelector("details");
-  expect(details?.hasAttribute("open")).toBe(true);
-  expect(details?.querySelector("summary")?.textContent).toBe("Configuration");
+  const trigger = screen.getByRole("button", { name: "Configuration" });
+  expect(trigger.closest("h2")).not.toBeNull();
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByText("Revision")).toBeDefined();
+  styleless();
+
+  fireEvent.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("Revision")).toBeNull();
+  styleless();
+
+  fireEvent.keyDown(trigger, { key: "Enter" });
+  fireEvent.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  styleless();
+});
+
+test("a collapsible panel starts closed when its prop says so", () => {
+  render(
+    <Panel title="Refusals" collapsible={{ open: false }}>
+      <p>None</p>
+    </Panel>,
+  );
+  expect(
+    screen
+      .getByRole("button", { name: "Refusals" })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
+  expect(screen.queryByText("None")).toBeNull();
+  styleless();
 });
