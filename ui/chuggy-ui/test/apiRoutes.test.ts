@@ -352,6 +352,7 @@ test("the settings are read, written whole and paged for their revisions", async
       installationMode: "Running",
       dispatchMode: "Automatic",
       basePrompt: "choose",
+      threadStandingRules: "- You act through your owner's own commands.",
       modelAllowlist: [],
       toolAllowlist: [],
       limits: {

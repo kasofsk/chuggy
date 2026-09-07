@@ -23,15 +23,11 @@
  * it. No roster enforces that either — a shell writes — so it is prose,
  * written once, in one place.
  *
- * A WAKE IS A NOTICE, NOT AN INSTRUCTION. A woken thread reports what happened
- * to its owner and stops. No roster can enforce that, because the same tools are
- * held on a message turn, so it is written the only two ways prose can be: the
- * system prompt states it, which is what a resumed session already holds, and
- * the wake document restates it, which is what the turn that could break the
- * rule carries. Neither of those is a control either. What is a control is that
- * everything a thread does is an operation row naming its author and the session
- * it came through, so a thread that originated work on a wake is visible in the
- * record afterwards.
+ * THE STANDING RULES ARE PROSE AND NOT A CONTROL. What a thread may do on a
+ * wake is nothing a roster can enforce, because the same tools are held on a
+ * message turn. What IS a control is that everything a thread does is an
+ * operation row naming its author and the session it came through, so a thread
+ * that originated work on a wake is visible in the record afterwards.
  */
 
 import {
@@ -43,11 +39,12 @@ import {
   threadWakeCharsMax,
 } from "../contract/http.ts";
 import {
+  resolvedThreadStandingRules,
   threadDraftsHeading,
   threadNorthStarHeading,
   threadRefusalsHeading,
   threadStandingSection,
-  threadWakeStanding,
+  threadTurnBoundaryHeading,
 } from "../contract/threadSeeding.ts";
 import type { SessionCapability, SessionState } from "./agentSession.ts";
 import type { Partition } from "./projectStore.ts";
@@ -114,15 +111,18 @@ export interface ThreadWakeDocument {
   /** The ticket the event is about, as the change row named it. */
   readonly resource: string;
   readonly at: string;
-  /** The standing rule, carried on the turn that could break it. */
+  /** The standing rules, carried on the turn that could break them. */
   readonly standing: string;
 }
 
-/** One wake document, with the standing rule put on it rather than left to a caller. */
+/** One wake document, with the project's standing rules resolved onto it rather
+ * than left to a caller. */
 export function threadWakeDocument(input: {
   readonly wake: ThreadWakeReason;
   readonly resource: string;
   readonly at: string;
+  /** The project's own standing rules, absent where it takes the default. */
+  readonly standingRules?: string;
 }): ThreadWakeDocument {
   if (input.resource.length === 0)
     throw new RangeError("wake document: the resource is empty");
@@ -133,7 +133,7 @@ export function threadWakeDocument(input: {
     wake: input.wake,
     resource: input.resource,
     at: input.at,
-    standing: threadWakeStanding,
+    standing: resolvedThreadStandingRules(input.standingRules),
   };
 }
 
@@ -207,12 +207,14 @@ export function parseThreadWake(text: string): ThreadWakeDocument {
 export const threadPurposeStanding =
   "Your job is to turn what your owner asks for into tickets, and nothing else. A request for a change is a request for a draft: file it through the draft tools this session holds, one draft per piece of work small enough for one work attempt, with a brief that names the real files and an acceptance check that can be run, and release it unless your owner asked to see it first. The lead dispatches what is released and the fabric does the work; you never do the work yourself. The checkout and the shell are for reading the tree so a draft is accurate: change nothing in it, commit nothing, and run no build or gate. A question is answered from what you read. End every turn by saying what you filed, or why you filed nothing.";
 
-/** What a thread is told about itself, beside the project's own North Star. */
+/** What a thread is told about itself, beside the project's own North Star and
+ * standing rules. */
 function threadObjectives(
   tenant: string,
   project: string,
   owner: string,
   northStar: string | undefined,
+  standingRules: string,
 ): string {
   return [
     `# Whose thread this is
@@ -226,35 +228,37 @@ ${threadPurposeStanding}`,
     ...(northStar === undefined
       ? []
       : [`${threadNorthStarHeading}\n\n${northStar}`]),
-    threadStandingSection,
+    threadStandingSection(standingRules),
   ].join("\n\n");
 }
 
 /** What this module contributes to a thread's objectives beyond the texts it is given. */
-const threadObjectivesFixedChars = threadObjectives("", "", "", "").length;
+const threadObjectivesFixedChars = threadObjectives("", "", "", "", "").length;
 
 /**
  * The longest set of objectives one thread's session row holds, derived from
  * its parts rather than named: the partition and the owner are each a wire
- * identity and the North Star is what the settings route already accepts, so a
- * ceiling below their sum would refuse a prompt no writer could have shortened.
+ * identity, and the North Star and the standing rules are each what the
+ * settings route already accepts, so a ceiling below their sum would refuse a
+ * prompt no writer could have shortened.
  */
 export const threadSystemPromptCharsMax =
   nativeHttpPathSegmentCharsMax * 3 +
-  selectorSettingsTextCharsMax +
+  selectorSettingsTextCharsMax * 2 +
   threadObjectivesFixedChars;
 
 /**
  * The thread's objectives as one recorded prefix, in the order that decides
  * what a reader takes first: whose thread this is, that its acts are its
  * owner's, that it may do only what its owner may, what it is for, the
- * project's North Star where there is one, which channel it acts through, and
- * what a wake is.
+ * project's North Star where there is one, and the standing rules it acts
+ * under.
  */
 export function threadSystemPrompt(input: {
   readonly partition: Partition;
   readonly owner: string;
   readonly northStar?: string;
+  readonly standingRules: string;
 }): string {
   if (input.owner.length === 0)
     throw new RangeError("thread system prompt: the owner is empty");
@@ -263,6 +267,7 @@ export function threadSystemPrompt(input: {
     input.partition.project,
     input.owner,
     input.northStar,
+    input.standingRules,
   );
   if (textCodePointsCount(prompt) > threadSystemPromptCharsMax)
     throw new RangeError(
@@ -284,12 +289,25 @@ export interface ThreadSeededRefusal {
 }
 
 /**
+ * The two texts a project binds its threads by, each absent where the project
+ * has set none. They are read together because one thread composition needs
+ * both, and narrow because a thread is not the lead: no prompt and no limit of
+ * the lead's is reachable through them.
+ */
+export interface ThreadProjectTexts {
+  readonly northStar?: string;
+  readonly standingRules?: string;
+}
+
+/**
  * The block a thread's first turn carries in front of the member's message, and
  * that no later turn carries: what the project is aiming at, what the member
- * already has open, and what stands against it.
+ * already has open, what stands against it, and the standing rules it acts
+ * under, which are resolved before they get here.
  */
 export interface ThreadSeeding {
   readonly northStar?: string;
+  readonly standingRules: string;
   readonly drafts: readonly ThreadSeededDraft[];
   readonly refusals: readonly ThreadSeededRefusal[];
 }
@@ -314,7 +332,7 @@ export function threadSeedingText(seeding: ThreadSeeding): string {
             .map(({ ticket, reason }) => `- ${String(ticket)} — ${reason}`)
             .join("\n")}`,
         ]),
-    threadStandingSection,
+    threadStandingSection(seeding.standingRules),
   ].join("\n\n");
 }
 
@@ -323,11 +341,12 @@ export const threadTurnInputCharsMax =
   threadMessageCharsMax + threadSeedingCharsMax;
 
 /**
- * The whole of one turn's input: the seeding block where the turn has one, then
- * the member's message, with the drafts shed oldest-first and then the refusals
- * until the two fit together. The North Star and the two standing rules are
- * never shed, because they are what the turn is bound by, and an input that
- * will not fit without shedding one of them is refused instead.
+ * The whole of one turn's input: the seeding block where the turn has one, the
+ * boundary the console splits on, then the member's message, with the drafts
+ * shed oldest-first and then the refusals until the two fit together. The North
+ * Star and the standing rules are never shed, because they are what the turn is
+ * bound by, and an input that will not fit without shedding one of them is
+ * refused instead.
  */
 export function threadTurnInput(
   message: string,
@@ -343,7 +362,7 @@ export function threadTurnInput(
   let drafts = seeding.drafts;
   let refusals = seeding.refusals;
   for (;;) {
-    const input = `${threadSeedingText({ ...seeding, drafts, refusals })}\n\n${message}`;
+    const input = `${threadSeedingText({ ...seeding, drafts, refusals })}\n\n${threadTurnBoundaryHeading}\n\n${message}`;
     if (textCodePointsCount(input) <= threadTurnInputCharsMax) return input;
     if (drafts.length > 0) drafts = drafts.slice(1);
     else if (refusals.length > 0) refusals = refusals.slice(1);

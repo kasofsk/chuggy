@@ -33,11 +33,11 @@
  * reader of the lead's cannot be shown two readings of one store.
  *
  * THE SEEDING BLOCK IS COMPOSED HERE AND BOUNDED IN `thread.ts`. The first turn
- * of a thread with no agent reference carries the project's North Star, the
- * member's own open drafts and what stands against them; every later turn is
- * the message alone. What sheds and what never sheds is `threadTurnInput`'s
- * rule, and an input that will not fit without shedding the North Star is
- * refused rather than quietly shortened.
+ * of a thread with no agent reference carries the project's North Star and
+ * standing rules, the member's own open drafts and what stands against them;
+ * every later turn is the message alone. What sheds and what never sheds is
+ * `threadTurnInput`'s rule, and an input that will not fit without shedding one
+ * of the project's two texts is refused rather than quietly shortened.
  */
 
 import {
@@ -48,6 +48,7 @@ import {
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
 } from "../contract/http.ts";
+import { resolvedThreadStandingRules } from "../contract/threadSeeding.ts";
 import type {
   SessionId,
   SessionState,
@@ -63,6 +64,7 @@ import type { Partition } from "./projectStore.ts";
 import type { SessionStoreStreamRow } from "./sessionPlane.ts";
 import {
   threadStanding,
+  type ThreadProjectTexts,
   type ThreadSeededDraft,
   type ThreadSeededRefusal,
   type ThreadSeeding,
@@ -221,15 +223,16 @@ export interface ThreadSessionMint {
 }
 
 /**
- * What a thread's first turn is seeded from, the North Star asked for as itself
- * rather than as the whole resolved record so the composition answering it
- * cannot hand a thread the lead's prompt or its limits by accident. The drafts
- * and the refusals — migration 061's read and 059's — are filtered to the
- * member the block is for, which is why an authority rather than a principal is
- * what they take.
+ * What a thread's first turn is seeded from, the project's two texts asked for
+ * as themselves rather than as the whole resolved record so the composition
+ * answering it cannot hand a thread the lead's prompt or its limits by
+ * accident. The drafts and the refusals — migration 061's read and 059's — are
+ * filtered to the member the block is for, which is why an authority rather
+ * than a principal is what they take.
  */
 export interface ThreadSeedingRead {
-  northStar(partition: Partition): Promise<string | undefined>;
+  /** The overrides as the project holds them; the precedence is the interpreter's. */
+  projectTexts(partition: Partition): Promise<ThreadProjectTexts>;
   drafts(
     partition: Partition,
     author: Authority,
@@ -419,18 +422,18 @@ export function checkedThreadMessage(message: string): string {
 }
 
 /**
- * What a thread's first turn is seeded with: the project's North Star, the
- * member's own open drafts, and the standing refusals against exactly those
- * drafts. The refusals are asked for by ticket rather than read whole, because
- * a refusal against work this member never authored is not their business on
- * their first turn.
+ * What a thread's first turn is seeded with: the project's North Star, its
+ * standing rules, the member's own open drafts, and the standing refusals
+ * against exactly those drafts. The refusals are asked for by ticket rather
+ * than read whole, because a refusal against work this member never authored is
+ * not their business on their first turn.
  */
 export async function threadSeeding(
   seeding: ThreadSeedingRead,
   partition: Partition,
   author: Authority,
 ): Promise<ThreadSeeding> {
-  const northStar = await seeding.northStar(partition);
+  const texts = await seeding.projectTexts(partition);
   const drafts = await seeding.drafts(partition, author, threadSeededDraftsMax);
   const refusals =
     drafts.length === 0
@@ -441,7 +444,8 @@ export async function threadSeeding(
           threadSeededRefusalsMax,
         );
   return {
-    ...(northStar === undefined ? {} : { northStar }),
+    ...(texts.northStar === undefined ? {} : { northStar: texts.northStar }),
+    standingRules: resolvedThreadStandingRules(texts.standingRules),
     drafts,
     refusals,
   };

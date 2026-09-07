@@ -660,6 +660,7 @@ async function readSettings(pool: pg.Pool): Promise<SelectorRuntimeSettings> {
 
 interface SelectorProjectOverrideRow {
   readonly north_star: string | null;
+  readonly thread_standing_rules: string | null;
   readonly mode: string | null;
   readonly dispatch_mode: string | null;
   readonly base_prompt: string | null;
@@ -765,6 +766,9 @@ function selectorProjectOverridesOf(
   );
   return {
     ...(row.north_star === null ? {} : { northStar: row.north_star }),
+    ...(row.thread_standing_rules === null
+      ? {}
+      : { threadStandingRules: row.thread_standing_rules }),
     ...(row.mode === null ? {} : { mode: selectorMode(row.mode) }),
     ...(row.dispatch_mode === null
       ? {}
@@ -819,7 +823,8 @@ async function readProjectSettings(
   partition: Partition,
 ): Promise<SelectorProjectSettingsRecord> {
   const found = await pool.query<SelectorProjectSettingsRow>(
-    sql`SELECT overrides.revision::text,overrides.north_star,overrides.mode,
+    sql`SELECT overrides.revision::text,overrides.north_star,
+         overrides.thread_standing_rules,overrides.mode,
          overrides.dispatch_mode,overrides.base_prompt,
          overrides.model_allowlist,overrides.tool_allowlist,
          overrides.tokens_per_decision::text,
@@ -893,7 +898,8 @@ async function writeProjectSettings(
   let found;
   try {
     found = await pool.query<SelectorProjectSettingsWriteRow>(
-      sql`SELECT revision::text,north_star,mode,dispatch_mode,base_prompt,
+      sql`SELECT revision::text,north_star,thread_standing_rules,mode,dispatch_mode,
+           base_prompt,
            model_allowlist,tool_allowlist,tokens_per_decision::text,
            milliseconds_per_decision::text,tool_calls_per_decision::text,
            dispatches_per_decision::text,
@@ -903,7 +909,8 @@ async function writeProjectSettings(
            installation_controls
          FROM update_selector_project_settings(
            ${partition.tenant},${partition.project},${expectedRevision},
-           ${overrides.northStar ?? null},${overrides.mode ?? null},
+           ${overrides.northStar ?? null},${overrides.threadStandingRules ?? null},
+           ${overrides.mode ?? null},
            ${overrides.dispatchMode ?? null},${overrides.basePrompt ?? null},
            ${overrides.modelAllowlist === undefined ? null : encode(overrides.modelAllowlist)},
            ${overrides.toolAllowlist === undefined ? null : encode(overrides.toolAllowlist)},
@@ -947,7 +954,8 @@ async function projectSettingsHistory(
       recorded_at: Date;
     }
   >(
-    sql`SELECT history.revision::text,history.north_star,history.mode,
+    sql`SELECT history.revision::text,history.north_star,
+         history.thread_standing_rules,history.mode,
          history.dispatch_mode,history.base_prompt,
          history.model_allowlist,history.tool_allowlist,
          history.tokens_per_decision::text,

@@ -197,7 +197,7 @@ const threadPortsProgram = `
   });
   const partition = { tenant: 'tenant', project: 'project' };
   await ports.threads.threads(partition, 1);
-  await ports.seeding.northStar(partition);
+  await ports.seeding.projectTexts(partition);
   await ports.rows.batches({
     partition,
     session: 'session',

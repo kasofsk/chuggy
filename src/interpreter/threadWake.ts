@@ -69,6 +69,12 @@ export interface ThreadWakeCandidate {
   readonly resource: string;
   readonly principal: Principal;
   readonly session: SessionId;
+  /**
+   * The project's own standing rules, absent where it takes the default. It
+   * rides on the candidate because the pass composes a document that restates
+   * them and a read inside the pass would be an await in the middle of it.
+   */
+  readonly standingRules?: string;
 }
 
 /**
@@ -210,6 +216,9 @@ export async function threadWakePass(
           wake: candidate.reason,
           resource: candidate.resource,
           at: service.clock.nowIso(),
+          ...(candidate.standingRules === undefined
+            ? {}
+            : { standingRules: candidate.standingRules }),
         }),
       ),
     });

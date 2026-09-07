@@ -39,6 +39,7 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import { selectorProjectOverridesSchema } from "../../src/contract/requests.ts";
+import { threadStandingRulesDefault } from "../../src/contract/threadSeeding.ts";
 import {
   dispatchesPerDecisionUnstated,
   leadDispatchesMax,
@@ -95,7 +96,59 @@ test("a project with no row of its own inherits every installation default", asy
     assert.equal(settings.effective.basePrompt, installation.basePrompt);
     assert.equal(settings.effective.revision, installation.revision);
     assert.equal(settings.effective.northStar, undefined);
+    assert.equal(
+      settings.effective.threadStandingRules,
+      threadStandingRulesDefault,
+    );
     assert.deepEqual(settings.effective.limits, installation.limits);
+  } finally {
+    await pool.end();
+  }
+});
+
+/**
+ * The standing rules a project's threads act under are a column like every
+ * other override, and the installation holds no row for them: a project that
+ * clears the override runs its threads under the code default again.
+ */
+test("a project's thread standing rules survive the write, the history and a clearing", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "selector-thread-standing-rules",
+  );
+  const pool = postgresHarnessRolePool(apiRole);
+  const store = postgresSelectorProjectSettings(pool);
+  const standingRules = "- You draft, and nothing else.";
+  try {
+    const written = writtenSettings(
+      await store.write(
+        partition,
+        0,
+        { threadStandingRules: standingRules },
+        administrator,
+      ),
+    );
+    assert.equal(written.overrides.threadStandingRules, standingRules);
+    assert.equal(written.effective.threadStandingRules, standingRules);
+    assert.equal(
+      (await store.read(partition)).overrides.threadStandingRules,
+      standingRules,
+    );
+    assert.deepEqual(
+      (await store.history(partition, 0, 10)).map(
+        (revision) => revision.overrides.threadStandingRules,
+      ),
+      [standingRules],
+    );
+
+    const cleared = writtenSettings(
+      await store.write(partition, 1, {}, administrator),
+    );
+    assert.equal(cleared.overrides.threadStandingRules, undefined);
+    assert.equal(
+      cleared.effective.threadStandingRules,
+      threadStandingRulesDefault,
+    );
   } finally {
     await pool.end();
   }
@@ -1053,7 +1106,7 @@ test("a project's dispatch budget is a column, and a budget of none is not one",
   const write = (revision: number, dispatches: number | null) =>
     harness.query(
       `SELECT revision::text FROM update_selector_project_settings(
-         $1,$2,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,$4,
+         $1,$2,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,$4,
          NULL,NULL,NULL,'User','selector-admin')`,
       [partition.tenant, partition.project, revision, dispatches],
     );
@@ -1103,7 +1156,7 @@ test("a project's dispatch budget stops at the ceiling its decisions are parsed 
   const write = (revision: number, dispatches: number) =>
     harness.query(
       `SELECT revision::text FROM update_selector_project_settings(
-         $1,$2,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,$4,
+         $1,$2,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,$4,
          NULL,NULL,NULL,'User','selector-admin')`,
       [partition.tenant, partition.project, revision, dispatches],
     );

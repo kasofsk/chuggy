@@ -178,6 +178,7 @@ import {
   type ThreadsRead,
 } from "./threadRead.ts";
 import { inquiriesAnsweredMax, threadsAnsweredMax } from "../contract/http.ts";
+import { resolvedThreadStandingRules } from "../contract/threadSeeding.ts";
 export { asPublicInstant, type PublicInstant } from "./publicResource.ts";
 export { asPrincipal, oidcPrincipal, type Principal } from "./principal.ts";
 export {
@@ -1336,8 +1337,8 @@ function composedThreadPorts(ports?: NativeThreadPorts): NativeThreadPorts {
 /**
  * What the member's first turn carries, which is the seeding block and no later
  * turn's, or the ceiling it would not fit under. The overflow is a refusal
- * rather than a raise because it is the project's North Star that is too long
- * and not the member's request: a bare `InvalidRequest` would tell them their
+ * rather than a raise because it is the project's texts that are too long and
+ * not the member's request: a bare `InvalidRequest` would tell them their
  * message was malformed, which is the one thing it was not.
  */
 async function nativeThreadTurnInput(
@@ -1371,7 +1372,7 @@ function nativeOpenThreadMethod(
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
     const ports = composedThreadPorts(threads);
-    const northStar = await ports.seeding.northStar(partition);
+    const texts = await ports.seeding.projectTexts(partition);
     const opened = await ports.threads.open({
       partition,
       principal,
@@ -1379,7 +1380,10 @@ function nativeOpenThreadMethod(
       systemPrompt: threadSystemPrompt({
         partition,
         owner: authority.subject,
-        ...(northStar === undefined ? {} : { northStar }),
+        ...(texts.northStar === undefined
+          ? {}
+          : { northStar: texts.northStar }),
+        standingRules: resolvedThreadStandingRules(texts.standingRules),
       }),
       credentialSlot: ports.credentialSlot,
     });
