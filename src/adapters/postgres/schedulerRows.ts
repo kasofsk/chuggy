@@ -14,8 +14,11 @@
  * kind and the stage all belong to the request and the task row that authorized
  * the registration, and issue #180 has the
  * registration pin the request rather than copy them — a copy is a second
- * version of a fact that can drift from the effect that authorized it. So every
- * read of an execution names the same join, once, below.
+ * version of a fact that can drift from the effect that authorized it. The
+ * query checker reads only a literal statement, never one built from an
+ * interpolated constant, so that join cannot be named once and shared: each
+ * read writes it itself, in full, and a change to the provenance is made at
+ * every read.
  *
  * A NARROWING IS A REFUSAL AND NEVER A DEFAULT. A status, outcome or attempt
  * state outside the closed set is a row no migration can have written, so it
@@ -106,50 +109,6 @@ export interface AttemptRow {
   readonly capability_secret: string;
   readonly manifest: string;
 }
-
-/**
- * The relations every read of an execution draws from, named once so no two
- * queries can join the provenance differently.
- */
-export const executionRowFrom = `
-  execution e
-  JOIN execution_request q
-    ON q.tenant = e.tenant AND q.project = e.project AND q.request = e.source_request
-  JOIN execution_request_task t
-    ON t.tenant = e.tenant AND t.project = e.project
-   AND t.request = e.source_request AND t.task = e.task
-  JOIN configuration_revision c
-    ON c.tenant = e.tenant AND c.project = e.project
-   AND c.revision = e.configuration_revision AND c.digest = e.configuration_digest
-`;
-
-/** The columns those reads select, cast so every counter arrives as text to parse. */
-export const executionRowColumns = `
-  e.tenant, e.project, e.execution, e.ticket::text AS ticket, e.task::text AS task,
-  t.kind AS task_kind, t.stage::text AS stage, e.source_request,
-  q.input_bundle, q.input_bundle_digest,
-  q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
-  q.ticket_version::text AS ticket_version, e.account, e.cluster,
-  e.configuration_revision, e.configuration_digest,
-  c.canonical AS configuration_canonical, e.requirement_identity,
-  e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
-  e.platform_default_version::text AS platform_default_version, e.status, e.outcome,
-  e.result_manifest, e.completion_operation,
-  (e.attempt_next - 1)::text AS attempts_opened, e.retries_spent::text AS retries_spent
-`;
-
-/**
- * The columns every read of an attempt selects, with the liveness the database
- * computed. They carry no table qualifier, because the one statement that
- * returns them is the insert that opens an attempt and a `RETURNING` clause has
- * no alias to qualify them with.
- */
-export const attemptRowColumns = `
-  tenant, project, execution, attempt, attempt_number::text AS attempt_number,
-  generation::text AS generation, recovery_epoch, state, workload,
-  (state IN ('Placing', 'Running')) AS authoritative,
-  capability, capability_secret_digest AS capability_secret, manifest
-`;
 
 /** The partition a scheduler row belongs to. */
 export function schedulerRowPartition(row: {
