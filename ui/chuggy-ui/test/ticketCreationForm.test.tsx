@@ -301,8 +301,11 @@ test("the advanced disclosure holds the authoring, and offers what is chosen", (
     defaults: { ...creationInitialization.defaults, workFanout: 9 },
   };
   draw(api({ state: "Succeeded" }).ports, [], chosen);
-  const disclosure = screen.getByText("Advanced").closest("details");
-  expect(disclosure).not.toBeNull();
+  const disclosure = screen.getByRole("button", { name: "Advanced" });
+  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByLabelText("work fanout")).toBeNull();
+  fireEvent.click(disclosure);
+  expect(disclosure.getAttribute("aria-expanded")).toBe("true");
   const fanout = screen.getByLabelText<HTMLSelectElement>("work fanout");
   expect(fanout.value).toBe("9");
   expect([...fanout.options].map((option) => option.value)).toStrictEqual([
