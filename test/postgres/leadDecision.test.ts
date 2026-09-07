@@ -58,6 +58,16 @@ function settingsFor(
   partition: Partition,
   dispatchesPerDecision = 1,
 ): SelectorResolvedSettings {
+  const limits = {
+    tokensPerDecision: 200_000,
+    millisecondsPerDecision: 900_000,
+    toolCallsPerDecision: 20,
+    dispatchesPerDecision,
+    inputBytesPerDecision: 1_048_576,
+    candidatePagesPerDecision: 1,
+    concurrentDecisions: 4,
+    selectionsPerMinute: 600,
+  };
   return {
     partition,
     revision: 1,
@@ -70,16 +80,8 @@ function settingsFor(
     modelAllowlist: ["*"],
     toolAllowlist: ["*"],
     operationalContextMaxAgeMs: 9_000_000_000_000_000,
-    limits: {
-      tokensPerDecision: 200_000,
-      millisecondsPerDecision: 900_000,
-      toolCallsPerDecision: 20,
-      dispatchesPerDecision,
-      inputBytesPerDecision: 1_048_576,
-      candidatePagesPerDecision: 1,
-      concurrentDecisions: 4,
-      selectionsPerMinute: 600,
-    },
+    limits,
+    installationLimits: limits,
   };
 }
 

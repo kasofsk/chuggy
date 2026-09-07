@@ -340,6 +340,17 @@ test("the decision log is read from whichever end the caller named", async () =>
   );
 });
 
+const apiLimits = {
+  tokensPerDecision: 1,
+  millisecondsPerDecision: 1,
+  toolCallsPerDecision: 1,
+  dispatchesPerDecision: 3,
+  inputBytesPerDecision: 1,
+  candidatePagesPerDecision: 1,
+  concurrentDecisions: 1,
+  selectionsPerMinute: 1,
+};
+
 /** The write is a PUT of the whole override set under the revision it was read
  * at, which is what makes a concurrent write a conflict rather than a clobber. */
 test("the settings are read, written whole and paged for their revisions", async () => {
@@ -357,16 +368,8 @@ test("the settings are read, written whole and paged for their revisions", async
       threadStandingRules: "- You act through your owner's own commands.",
       modelAllowlist: [],
       toolAllowlist: [],
-      limits: {
-        tokensPerDecision: 1,
-        millisecondsPerDecision: 1,
-        toolCallsPerDecision: 1,
-        dispatchesPerDecision: 3,
-        inputBytesPerDecision: 1,
-        candidatePagesPerDecision: 1,
-        concurrentDecisions: 1,
-        selectionsPerMinute: 1,
-      },
+      limits: apiLimits,
+      installationLimits: apiLimits,
       operationalContextMaxAgeMs: 1,
     },
   };

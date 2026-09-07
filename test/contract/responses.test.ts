@@ -59,6 +59,7 @@ import {
   runTranscriptResponseSchema,
   runTurnsResponseSchema,
   selectorProjectSettingsResponseSchema,
+  selectorSettingsConflictResponseSchema,
   selectorSettingsHistoryResponseSchema,
   leadResponseSchema,
   ticketAgenticRefusalsResponseSchema,
@@ -415,6 +416,35 @@ test("a settings write that lost its fence answers a conflict carrying the curre
       settings: selectorProjectSettings,
     }).status,
     200,
+  );
+});
+
+/** The number alone does not say whose write to reload, so the body names them. */
+test("a conflict body names the administrator of the revision now standing", () => {
+  const movedBy = {
+    administrator: {
+      kind: asAuthorityKind("User"),
+      subject: asAuthoritySubject("someone-else"),
+    },
+    recordedAt: "2026-09-07T10:00:00.000Z",
+  };
+  const parsed = selectorSettingsConflictResponseSchema.parse(
+    selectorProjectSettingsWriteResponse({
+      result: "Conflict",
+      settings: selectorProjectSettings,
+      movedBy,
+    }).body,
+  );
+  assert.deepEqual(parsed.movedBy, movedBy);
+  assert.equal(parsed.settings.revision, 2);
+  assert.equal(
+    selectorSettingsConflictResponseSchema.parse(
+      selectorProjectSettingsWriteResponse({
+        result: "Conflict",
+        settings: selectorProjectSettings,
+      }).body,
+    ).movedBy,
+    undefined,
   );
 });
 

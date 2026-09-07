@@ -340,7 +340,9 @@ const selectorLimitsResponseSchema = z.object({
  * project's own or the installation default, and both revisions are named
  * because a decision is fenced on the pair. `installationMode` is beside the
  * resolved `mode` so a reader can tell a project's own pause from the
- * installation-wide one it cannot lift.
+ * installation-wide one it cannot lift, and `installationLimits` is beside the
+ * resolved `limits` so a reader can tell an overridden limit from an inherited
+ * one and say what it would fall back to.
  */
 export const selectorEffectiveSettingsResponseSchema = z.strictObject({
   revision: countSchema,
@@ -354,6 +356,7 @@ export const selectorEffectiveSettingsResponseSchema = z.strictObject({
   modelAllowlist: z.array(z.string()),
   toolAllowlist: z.array(z.string()),
   limits: selectorLimitsResponseSchema,
+  installationLimits: selectorLimitsResponseSchema,
   operationalContextMaxAgeMs: countSchema,
 });
 
@@ -367,15 +370,36 @@ export type SelectorProjectSettingsResponse = z.infer<
   typeof selectorProjectSettingsResponseSchema
 >;
 
+/** Who a settings revision is recorded against, as the authorization named them. */
+const selectorAdministratorResponseSchema = z.strictObject({
+  kind: identitySchema,
+  subject: identitySchema,
+});
+
 export const selectorSettingsRevisionResponseSchema = z.strictObject({
   revision: countSchema,
   overrides: selectorProjectOverridesSchema,
-  administrator: z.strictObject({
-    kind: identitySchema,
-    subject: identitySchema,
-  }),
+  administrator: selectorAdministratorResponseSchema,
   recordedAt: instantSchema,
 });
+
+/**
+ * What a write that lost the revision fence answers with beside its error code:
+ * the settings standing in its place, and who moved them. `movedBy` is absent
+ * only where the standing revision is zero, which nobody wrote.
+ */
+export const selectorSettingsConflictResponseSchema = z.object({
+  settings: selectorProjectSettingsResponseSchema,
+  movedBy: z
+    .strictObject({
+      administrator: selectorAdministratorResponseSchema,
+      recordedAt: instantSchema,
+    })
+    .optional(),
+});
+export type SelectorSettingsConflictResponse = z.infer<
+  typeof selectorSettingsConflictResponseSchema
+>;
 
 export const selectorSettingsHistoryResponseSchema = z.strictObject({
   revisions: page(selectorSettingsRevisionResponseSchema),

@@ -1875,7 +1875,7 @@ test("the durable dispatch-mode resolution answers what the interpreter resolves
         durable.push(await i5ResolvedDispatchMode(partition));
         resolved.push(
           (await postgresSelectorProjectSettings(apiPool).read(partition))
-            .effective.dispatchMode,
+            .settings.effective.dispatchMode,
         );
       } finally {
         await restore();

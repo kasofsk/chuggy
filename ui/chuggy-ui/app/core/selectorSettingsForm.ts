@@ -25,11 +25,14 @@
  * the route accepts is the account that drifts.
  */
 
-import { z } from "zod";
+import type { z } from "zod";
 
 import { selectorProjectOverridesSchema } from "../../../../src/contract/requests.ts";
-import { selectorProjectSettingsResponseSchema } from "../../../../src/contract/responses.ts";
-import type { SelectorProjectSettingsResponse } from "../../../../src/contract/responses.ts";
+import { selectorSettingsConflictResponseSchema } from "../../../../src/contract/responses.ts";
+import type {
+  SelectorProjectSettingsResponse,
+  SelectorSettingsConflictResponse,
+} from "../../../../src/contract/responses.ts";
 
 import type { ApiResult } from "./apiRequest.ts";
 import { bytesSetFigure, countFigure, spanSetFigure } from "./figures.ts";
@@ -553,13 +556,9 @@ export type SelectorSettingsSaved =
       readonly saved: "Conflict";
       readonly revision: number;
       readonly settings: SelectorProjectSettingsResponse;
+      readonly movedBy?: SelectorSettingsConflictResponse["movedBy"];
     }
   | { readonly saved: "Failed"; readonly reason: string };
-
-/** What a revision conflict carries beside its code: the settings that moved. */
-const selectorSettingsConflictSchema = z.object({
-  settings: selectorProjectSettingsResponseSchema,
-});
 
 /**
  * What the write answered. A conflict is drawn as the revision that moved and
@@ -575,12 +574,15 @@ export function selectorSettingsAnswered(
       settings: result.value,
     };
   if (result.outcome === "Conflict") {
-    const read = selectorSettingsConflictSchema.safeParse(result.body);
+    const read = selectorSettingsConflictResponseSchema.safeParse(result.body);
     if (read.success)
       return {
         saved: "Conflict",
         revision: read.data.settings.revision,
         settings: read.data.settings,
+        ...(read.data.movedBy === undefined
+          ? {}
+          : { movedBy: read.data.movedBy }),
       };
   }
   return { saved: "Failed", reason: panelReason(result) };

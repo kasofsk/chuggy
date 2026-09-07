@@ -59,6 +59,17 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const installationLimits = {
+  tokensPerDecision: 200_000,
+  millisecondsPerDecision: 900_000,
+  toolCallsPerDecision: 40,
+  dispatchesPerDecision: 3,
+  inputBytesPerDecision: 1_048_576,
+  candidatePagesPerDecision: 4,
+  concurrentDecisions: 2,
+  selectionsPerMinute: 6,
+};
+
 const effective = {
   revision: 12,
   projectRevision: 12,
@@ -70,16 +81,8 @@ const effective = {
   threadStandingRules: "- You act through your owner's own commands.",
   modelAllowlist: [],
   toolAllowlist: [],
-  limits: {
-    tokensPerDecision: 200_000,
-    millisecondsPerDecision: 900_000,
-    toolCallsPerDecision: 40,
-    dispatchesPerDecision: 3,
-    inputBytesPerDecision: 1_048_576,
-    candidatePagesPerDecision: 4,
-    concurrentDecisions: 2,
-    selectionsPerMinute: 6,
-  },
+  limits: installationLimits,
+  installationLimits,
   operationalContextMaxAgeMs: 60_000,
 };
 
