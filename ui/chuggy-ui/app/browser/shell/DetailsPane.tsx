@@ -50,7 +50,7 @@ export function DetailsPane(props: {
         hidden={open && !desk}
         className="grid min-h-0 grid-rows-[minmax(0,1fr)] overflow-y-auto"
       >
-        <div className="mx-auto grid max-w-page content-start gap-4 p-4">
+        <div className="mx-auto flex max-w-page flex-col gap-4 self-start p-4 has-[[role=region]]:self-stretch">
           {props.children}
         </div>
       </div>

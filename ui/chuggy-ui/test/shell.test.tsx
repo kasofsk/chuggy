@@ -171,16 +171,17 @@ test("a page that hands the shell no details gets no toggle", async () => {
   styleless();
 });
 
-/** A page's own middle row pins a composer to its foot with `h-full`, which
- * resolves against this column's own height and not against its content — so
- * the column has to give its wrapper a definite row to stretch into rather
- * than one sized by what the page draws. */
-test("the page column gives its wrapper a definite row to stretch a full-height page into", async () => {
+/** A page's own middle row pins a composer to its foot with `flex-1`, which
+ * needs the wrapper to stretch and claim a height for it — only when the
+ * page draws a `role="region"`, so a plain listing keeps its own height and
+ * scrolls past its trailing padding instead of losing it. jsdom draws no
+ * boxes; this reads the declaration, not the effect. */
+test("the page column only stretches its wrapper for a page that fills it", async () => {
   pageDrawn = () => <p>page</p>;
   await mounted(viewportDeskEm);
   const wrapper = screen.getByText("page").parentElement;
-  const scroller = wrapper?.parentElement;
-  expect(scroller?.className).toContain("grid-rows-[minmax(0,1fr)]");
+  expect(wrapper?.className).toContain("self-start");
+  expect(wrapper?.className).toContain("has-[[role=region]]:self-stretch");
   styleless();
 });
 
