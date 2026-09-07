@@ -73,6 +73,16 @@ const settings: SelectorProjectSettingsResponse = {
       concurrentDecisions: 2,
       selectionsPerMinute: 6,
     },
+    installationLimits: {
+      tokensPerDecision: 200_000,
+      millisecondsPerDecision: 900_000,
+      toolCallsPerDecision: 40,
+      dispatchesPerDecision: 3,
+      inputBytesPerDecision: 1_048_576,
+      candidatePagesPerDecision: 4,
+      concurrentDecisions: 2,
+      selectionsPerMinute: 6,
+    },
     operationalContextMaxAgeMs: 60_000,
   },
 };
