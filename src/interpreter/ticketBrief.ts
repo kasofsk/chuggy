@@ -133,7 +133,7 @@ function briefIntentNormalized(value: string): string {
 /**
  * Brands a title. It renders as one briefing line under the shorter bound a
  * column of tickets is read down, and a title of nothing but blanks names
- * nothing, so it is refused the way the form that asks for one refuses it.
+ * nothing, so it is refused here, the one door a blank could otherwise pass.
  */
 export function asBriefTitle(value: string): BriefTitle {
   if (

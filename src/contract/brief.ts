@@ -70,9 +70,9 @@ export const briefBranchSchema = z
 export const briefCheckSchema = z.string().min(1).max(briefLineCharsMax);
 
 /**
- * What a person calls this ticket. It renders as one line, so the line rule is
- * the whole of what bounds it and the server decides the rest; it is optional
- * because a brief written before tickets had titles is still a brief.
+ * What a person calls this ticket. It renders as one line under the shorter
+ * title bound, and the server decides the rest; it is optional because a brief
+ * written before tickets had titles is still a brief.
  */
 export const briefTitleSchema = z.string().min(1).max(briefTitleCharsMax);
 

@@ -2,9 +2,9 @@
  * The cells every table of tickets draws the same way.
  *
  * A ticket number and the title beside it are both links to that ticket's page
- * wherever they appear, so the route and the parameters they are built from are
- * written once; a table that spelled its own would be a second place the path
- * has to change. The execution columns are the same arrangement for a different
+ * wherever they appear, each cell spelling the same route, so a table that
+ * drew its own would be a second place the path has to change. The execution
+ * columns are the same arrangement for a different
  * reason: a dash meaning "not read" and a dash meaning "never ran" are the same
  * dash, and which one a row shows is a decision two screens must not answer
  * differently.
