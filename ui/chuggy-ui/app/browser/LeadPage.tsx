@@ -241,7 +241,7 @@ function LeadBody(props: {
         aria-label="Conversation"
         className="flex-1 min-h-0 min-w-0"
       >
-        <Conversation exchanges={exchanges} empty="No conversation" />
+        <Conversation exchanges={exchanges} empty="No conversation" pane />
       </div>
     </>
   );
