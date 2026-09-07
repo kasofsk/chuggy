@@ -79,13 +79,16 @@ export function useThread(
   );
 }
 
-/** The bar's own title, the thread's standing, whether it is the reader's own,
- * and whose it is otherwise. */
+/** The thread's derived title, its standing, whether it is the reader's own,
+ * and whose it is otherwise. A thread nobody has written in has no title yet,
+ * and the bar says what the page is instead. */
 function ThreadTopBar(props: { readonly thread: ThreadResponse }): ReactNode {
   const thread = props.thread;
   return (
     <TopBarSlot>
-      <h1 className="text-md font-strong text-ink-1 truncate">Thread</h1>
+      <h1 className="text-md font-strong text-ink-1 truncate">
+        {thread.title ?? "Thread"}
+      </h1>
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         <Pill tone={threadStandingTone(thread.state)} emphasis>
           {thread.state}

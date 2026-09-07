@@ -189,6 +189,15 @@ test("the head names the thread, its standing and whose it is", async () => {
   expect(screen.getAllByText("geoff").length).toBeGreaterThan(0);
 });
 
+/** A titled thread is headed by what is in it; a thread nobody has written in
+ * has nothing to derive one from, and the bar says what the page is. */
+test("the head is the thread's title where the read derived one", async () => {
+  drawThread(() => ({ thread: { ...threadBody({}), title: "ship it" } }));
+  await mountThread();
+  expect(screen.getByRole("heading", { name: "ship it" })).toBeDefined();
+  expect(screen.getByText("Yours")).toBeDefined();
+});
+
 /** The bar's own title never wraps, so a narrow reader needs its chips to run
  * onto a line of their own rather than under the details toggle. */
 test("the bar's chips wrap on their own rather than crowd the title", async () => {

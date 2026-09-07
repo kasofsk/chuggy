@@ -16,6 +16,10 @@
  * EVERY ROW THAT IS NOT CLOSED OFFERS A CLOSE, whoever's thread it is: the
  * door is the project's `Mutate`, and the row that most needs it is the
  * orphaned one, still acting for a member who is gone.
+ *
+ * A ROW IS ITS TITLE WHERE THE READ DERIVED ONE, and its session otherwise: a
+ * thread nobody has written in has nothing to be named after, and its identity
+ * is the only handle a reader has on it.
  */
 
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
@@ -61,7 +65,9 @@ function ThreadRow(props: {
           to="/$tenant/$project/threads/$session"
           params={{ ...props.partition, session: thread.session }}
         >
-          <Identity label={{ text: thread.session, title: thread.session }} />
+          {thread.title ?? (
+            <Identity label={{ text: thread.session, title: thread.session }} />
+          )}
         </Link>
       </td>
       <td>{thread.mine ? <Pill tone="live">Mine</Pill> : null}</td>

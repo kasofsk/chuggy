@@ -84,12 +84,15 @@ function RailEntryContent(props: { readonly entry: RailEntry }): ReactNode {
         <RailDot standing={entry.standing} />
       )}
       <span className="min-w-0 flex-1 truncate">
-        {entry.mine === false ? (
+        {entry.identity === true ? (
           <Identity label={{ text: entry.label, title: entry.label }} />
         ) : (
           entry.label
         )}
       </span>
+      {entry.yours === true ? (
+        <span className="text-xs text-ink-3">Yours</span>
+      ) : null}
       {entry.count === undefined ? null : (
         <span className="text-xs text-ink-3 tabular-nums">{entry.count}</span>
       )}
