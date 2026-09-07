@@ -1,7 +1,7 @@
 /* What the conversation surface cannot say as a utility: the chevron's turn,
  * which is a Radix data-attribute; the glyph's pulse, which is a keyframe; and
- * two values Tailwind writes raw — `bg-transparent` emits a hex and
- * `rounded-full` a length, and the built-layer policy refuses both. */
+ * `bg-transparent`, which Tailwind writes as a raw hex the built-layer policy
+ * refuses. */
 
 @layer page {
   .conversation-trigger {
@@ -12,10 +12,6 @@
     color: inherit;
     text-align: left;
     cursor: pointer;
-  }
-
-  .conversation-round {
-    border-radius: 50%;
   }
 
   /* The ring is the field's, not the textarea's: a box drawn around a box is
