@@ -66,7 +66,9 @@ import {
   parseSelectorProjectSettings,
   parseSubmission,
   parseLeadInquiry,
+  parseThreadHide,
   parseThreadMessage,
+  parseThreadRename,
 } from "./contract.ts";
 import {
   cancellationResponse,
@@ -111,6 +113,8 @@ import {
   leadInquiriesResponse,
   leadInquiryResponse,
   closeThreadResponse,
+  hideThreadResponse,
+  renameThreadResponse,
   openThreadResponse,
   threadMessageResponse,
   threadResponse,
@@ -195,6 +199,8 @@ type InitialNativeWeb = Pick<
   | "openThread"
   | "sendThreadMessage"
   | "closeThread"
+  | "renameThread"
+  | "hideThread"
   | "leadInquiries"
   | "leadInquiry"
   | "askLead"
@@ -1164,11 +1170,11 @@ function registerThreadReads(
 }
 
 /**
- * The three thread doors, each behind the versioned media type. Opening takes an
+ * The five thread doors, each behind the versioned media type. Opening takes an
  * empty body because a thread is the caller's own, a message takes the turn
- * identity the caller minted because that identity is the idempotency, and
- * closing takes an empty body because the URL already names the thread and the
- * door decides nothing else.
+ * identity the caller minted because that identity is the idempotency, closing
+ * takes an empty body because the URL already names the thread, and renaming
+ * and hiding take the one field each writes.
  */
 function registerThreadWrites(
   app: FastifyInstance,
@@ -1223,6 +1229,45 @@ function registerThreadWrites(
             partitionOf(request),
             asSessionId(textField(record(request.params), "session")),
           ),
+        ),
+      );
+    },
+  );
+  registerThreadWritesMemberView(app, web, root);
+}
+
+/** The two doors that write a member's own view of a thread: its name and whether it is on their rail. */
+function registerThreadWritesMemberView(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+  root: string,
+): void {
+  app.post(
+    `${root}/threads/:session/rename`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        renameThreadResponse(
+          await web.renameThread(principalOf(request), partitionOf(request), {
+            session: asSessionId(textField(record(request.params), "session")),
+            ...parseThreadRename(request.body),
+          }),
+        ),
+      );
+    },
+  );
+  app.post(
+    `${root}/threads/:session/hide`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        hideThreadResponse(
+          await web.hideThread(principalOf(request), partitionOf(request), {
+            session: asSessionId(textField(record(request.params), "session")),
+            ...parseThreadHide(request.body),
+          }),
         ),
       );
     },

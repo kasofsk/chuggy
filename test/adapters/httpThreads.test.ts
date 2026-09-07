@@ -24,6 +24,8 @@ import {
 } from "../../src/contract/http.ts";
 import {
   threadEntryResponseSchema,
+  threadHideResponseSchema,
+  threadRenameResponseSchema,
   threadMessageAcceptedSchema,
   threadResponseSchema,
   threadTranscriptResponseSchema,
@@ -36,6 +38,7 @@ import {
   asSessionStoreStream,
   asSessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
+import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import {
   checkedThreadMailboxQuery,
   threadBacklogRetrySeconds,
@@ -43,7 +46,9 @@ import {
 import { checkedLeadTranscriptQuery } from "../../src/interpreter/leadRead.ts";
 import type {
   ThreadClosing,
+  ThreadHiding,
   ThreadMessageSent,
+  ThreadRenaming,
 } from "../../src/interpreter/threadRead.ts";
 import { threadTurnInputCharsMax } from "../../src/interpreter/thread.ts";
 import { servedNativeHttpApp, unservedNativeWeb } from "./threadFixtures.ts";
@@ -90,6 +95,9 @@ const entry = {
   mine: true,
   turns: 2,
   agentReference: "1a2b",
+  openedAt: asPublicInstant("2026-09-05T09:00:00Z"),
+  lastActivityAt: asPublicInstant("2026-09-05T10:00:00Z"),
+  hidden: false,
 } as const;
 
 const turn = {
@@ -114,6 +122,8 @@ interface ThreadCase {
   readonly calls: string[];
   readonly sent?: ThreadMessageSent;
   readonly closed?: ThreadClosing;
+  readonly renamed?: ThreadRenaming;
+  readonly hid?: ThreadHiding;
   readonly found?: boolean;
 }
 
@@ -182,6 +192,33 @@ function threadWeb(held: ThreadCase): NativeThreadWeb {
         },
       );
     },
+    ...threadWebMemberView(held),
+  };
+}
+
+/** The two doors a member's own view of a thread goes through. */
+function threadWebMemberView(
+  held: ThreadCase,
+): Pick<NativeThreadWeb, "renameThread" | "hideThread"> {
+  return {
+    renameThread: (_principal, _partition, input) => {
+      held.calls.push(`rename:${input.session}:${input.title}`);
+      return Promise.resolve(
+        held.renamed ?? {
+          result: "Renamed",
+          thread: { ...entry, title: input.title },
+        },
+      );
+    },
+    hideThread: (_principal, _partition, input) => {
+      held.calls.push(`hide:${input.session}:${String(input.hidden)}`);
+      return Promise.resolve(
+        held.hid ?? {
+          result: input.hidden ? "Hidden" : "Shown",
+          thread: { ...entry, hidden: input.hidden },
+        },
+      );
+    },
   };
 }
 
@@ -200,7 +237,17 @@ test("the project's threads are listed as the listing schema names them", async 
   assert.deepEqual(held.calls, ["threads:acme/atlas"]);
   assert.deepEqual(
     Object.keys(found.json<{ threads: object[] }>().threads[0] ?? {}).sort(),
-    ["agentReference", "mine", "owner", "session", "state", "turns"],
+    [
+      "agentReference",
+      "hidden",
+      "lastActivityAt",
+      "mine",
+      "openedAt",
+      "owner",
+      "session",
+      "state",
+      "turns",
+    ],
   );
 });
 
@@ -496,11 +543,145 @@ test("closing a session that is no thread of this project's is not found", async
   assert.equal(answer.json<HttpErrorEnvelope>().error.code, "NotFound");
 });
 
+test("renaming a thread answers the entry as it now stands", async () => {
+  const held: ThreadCase = { calls: [] };
+  await using app = appOf(held);
+
+  const renamed = await app.inject({
+    method: "POST",
+    url: `${root}/${mine}/rename`,
+    headers: versioned,
+    payload: { title: "the footer" },
+  });
+
+  assert.equal(renamed.statusCode, 200);
+  assert.equal(
+    threadRenameResponseSchema.parse(renamed.json()).title,
+    "the footer",
+  );
+  assert.deepEqual(held.calls, [`rename:${mine}:the footer`]);
+});
+
+/**
+ * A blank title is how the door clears the override, so it is the one write
+ * body here whose text may be empty — a schema that refused it would leave a
+ * member no way back to the derived title.
+ */
+test("renaming takes a title and nothing else, and an empty one is a title", async () => {
+  const held: ThreadCase = { calls: [] };
+  await using app = appOf(held);
+
+  assert.equal(
+    (
+      await app.inject({
+        method: "POST",
+        url: `${root}/${mine}/rename`,
+        headers: versioned,
+        payload: { title: "" },
+      })
+    ).statusCode,
+    200,
+  );
+  for (const payload of [{ title: "x", why: "because" }, { title: 1 }, {}])
+    assert.equal(
+      (
+        await app.inject({
+          method: "POST",
+          url: `${root}/${mine}/rename`,
+          headers: versioned,
+          payload,
+        })
+      ).statusCode,
+      400,
+      JSON.stringify(payload),
+    );
+  assert.deepEqual(held.calls, [`rename:${mine}:`]);
+});
+
+test("renaming a session that is no thread of this project's is not found", async () => {
+  const held: ThreadCase = { calls: [], renamed: { result: "NotFound" } };
+  await using app = appOf(held);
+
+  const answer = await app.inject({
+    method: "POST",
+    url: `${root}/lead-atlas/rename`,
+    headers: versioned,
+    payload: { title: "x" },
+  });
+
+  assert.equal(answer.statusCode, 404);
+  assert.equal(answer.json<HttpErrorEnvelope>().error.code, "NotFound");
+});
+
+test("hiding a thread answers the entry on the side it is now on", async () => {
+  const held: ThreadCase = { calls: [] };
+  await using app = appOf(held);
+
+  const hid = await app.inject({
+    method: "POST",
+    url: `${root}/${mine}/hide`,
+    headers: versioned,
+    payload: { hidden: true },
+  });
+  const shown = await app.inject({
+    method: "POST",
+    url: `${root}/${mine}/hide`,
+    headers: versioned,
+    payload: { hidden: false },
+  });
+
+  assert.equal(hid.statusCode, 200);
+  assert.equal(threadHideResponseSchema.parse(hid.json()).hidden, true);
+  assert.equal(threadHideResponseSchema.parse(shown.json()).hidden, false);
+  assert.deepEqual(held.calls, [`hide:${mine}:true`, `hide:${mine}:false`]);
+});
+
+test("hiding takes a boolean and nothing else", async () => {
+  const held: ThreadCase = { calls: [] };
+  await using app = appOf(held);
+
+  for (const payload of [{ hidden: "yes" }, { hidden: true, why: 1 }, {}])
+    assert.equal(
+      (
+        await app.inject({
+          method: "POST",
+          url: `${root}/${mine}/hide`,
+          headers: versioned,
+          payload,
+        })
+      ).statusCode,
+      400,
+      JSON.stringify(payload),
+    );
+  assert.deepEqual(held.calls, []);
+});
+
+test("hiding a session that is no thread of this project's is not found", async () => {
+  const held: ThreadCase = { calls: [], hid: { result: "NotFound" } };
+  await using app = appOf(held);
+
+  const answer = await app.inject({
+    method: "POST",
+    url: `${root}/lead-atlas/hide`,
+    headers: versioned,
+    payload: { hidden: true },
+  });
+
+  assert.equal(answer.statusCode, 404);
+  assert.equal(answer.json<HttpErrorEnvelope>().error.code, "NotFound");
+});
+
 test("every write door takes the versioned media type and nothing else", async () => {
   const held: ThreadCase = { calls: [] };
   await using app = appOf(held);
 
-  for (const url of [root, `${root}/${mine}/messages`, `${root}/${mine}/close`])
+  for (const url of [
+    root,
+    `${root}/${mine}/messages`,
+    `${root}/${mine}/close`,
+    `${root}/${mine}/rename`,
+    `${root}/${mine}/hide`,
+  ])
     assert.equal(
       (
         await app.inject({
@@ -671,7 +852,13 @@ test("every thread route needs a bearer", async () => {
 
   for (const url of [root, `${root}/${mine}`, `${root}/${mine}/transcript`])
     assert.equal((await app.inject({ url })).statusCode, 401, url);
-  for (const url of [root, `${root}/${mine}/messages`, `${root}/${mine}/close`])
+  for (const url of [
+    root,
+    `${root}/${mine}/messages`,
+    `${root}/${mine}/close`,
+    `${root}/${mine}/rename`,
+    `${root}/${mine}/hide`,
+  ])
     assert.equal(
       (
         await app.inject({
@@ -703,6 +890,8 @@ test("every thread route the contract declares is one this server serves", async
     ["GET", nativeHttpRoutes.threadTranscript],
     ["POST", nativeHttpRoutes.threadMessages],
     ["POST", nativeHttpRoutes.threadClose],
+    ["POST", nativeHttpRoutes.threadRename],
+    ["POST", nativeHttpRoutes.threadHide],
   ] as const)
     assert.ok(app.hasRoute({ method, url }), `${method} ${url}`);
 });
