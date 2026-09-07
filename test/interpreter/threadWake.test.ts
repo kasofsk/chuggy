@@ -35,9 +35,9 @@ import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   allThreadWakeReasons,
   parseThreadWake,
-  threadWakeStanding,
   type ThreadWakeReason,
 } from "../../src/interpreter/thread.ts";
+import { threadWakeStanding } from "../../src/contract/threadSeeding.ts";
 import {
   threadWakeAdvanced,
   threadWakePass,

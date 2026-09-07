@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import type { AttemptState } from "../../../../src/contract/rosters.ts";
 import { apiRunTranscript } from "../core/apiRoutes.ts";
 import { conversationExchanges } from "../core/conversation.ts";
 import { panelReason } from "../core/freshness.ts";
@@ -21,6 +22,7 @@ import {
   runTranscriptHeldEmpty,
   runTranscriptMerged,
   runTranscriptNextAfter,
+  runTranscriptEnded,
   runTranscriptRead,
   runTranscriptReadsMax,
 } from "../core/runTranscript.ts";
@@ -78,11 +80,15 @@ export function RunTranscript(props: {
   readonly execution: string;
   readonly attempt: string;
   readonly highWaterBatch: number;
+  readonly state: AttemptState;
 }): ReactNode {
   const held = useRunTranscript(props);
   const now = useNowMs();
   const reading = runTranscriptRead(held);
-  const exchanges = conversationExchanges(reading.items);
+  const exchanges = runTranscriptEnded(
+    conversationExchanges(reading.items),
+    props.state,
+  );
   return (
     <section className="panel transcript">
       <header className="panel-head">

@@ -289,6 +289,29 @@ function RunSummary(props: {
   );
 }
 
+/** The run's own conversation, told what state the attempt is in so a run that
+ * is over draws no exchange still open. */
+function RunEvidenceTranscript(props: {
+  readonly partition: PartitionIdentity;
+  readonly execution: string;
+  readonly attempt: ExecutionAttempt;
+}): ReactNode {
+  const transcript = props.attempt.run?.transcript;
+  if (transcript === undefined)
+    return (
+      <p className="panel-note">no transcript was recorded for this run</p>
+    );
+  return (
+    <RunTranscript
+      partition={props.partition}
+      execution={props.execution}
+      attempt={props.attempt.attempt}
+      highWaterBatch={transcript.highWaterBatch}
+      state={props.attempt.state}
+    />
+  );
+}
+
 function RunEvidenceReads(props: {
   readonly partition: PartitionIdentity;
   readonly execution: string;
@@ -346,16 +369,11 @@ function RunEvidenceReads(props: {
           attempt={props.attempt.attempt}
         />
       ) : null}
-      {run.transcript === undefined ? (
-        <p className="panel-note">no transcript was recorded for this run</p>
-      ) : (
-        <RunTranscript
-          partition={props.partition}
-          execution={props.execution}
-          attempt={props.attempt.attempt}
-          highWaterBatch={run.transcript.highWaterBatch}
-        />
-      )}
+      <RunEvidenceTranscript
+        partition={props.partition}
+        execution={props.execution}
+        attempt={props.attempt}
+      />
     </div>
   );
 }

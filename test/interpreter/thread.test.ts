@@ -28,7 +28,6 @@ import {
   allThreadWakeReasons,
   parseThreadWake,
   threadCapabilitiesDefault,
-  threadChannelStanding,
   threadPurposeStanding,
   threadSeedingText,
   threadStanding,
@@ -37,10 +36,13 @@ import {
   threadTurnInput,
   threadTurnInputCharsMax,
   threadWakeDocument,
-  threadWakeStanding,
   threadWakeText,
   threadWakeVersion,
 } from "../../src/interpreter/thread.ts";
+import {
+  threadChannelStanding,
+  threadWakeStanding,
+} from "../../src/contract/threadSeeding.ts";
 
 const partition = { tenant: "acme", project: "atlas" } as unknown as Partition;
 const instant = "2026-09-02T12:00:00.000Z";
@@ -389,4 +391,37 @@ test("the seeding block omits the sections it has nothing for", () => {
   assert.ok(!bare.includes("open drafts"));
   assert.ok(!bare.includes("Standing against"));
   assert.ok(bare.includes(threadWakeStanding));
+});
+
+/**
+ * The block moved into the contract so the console could split it back off a
+ * first turn's input. This is the text before that move, written out, because
+ * the split is worth nothing if the composition drifted while it was made.
+ */
+test("the composed block is character for character what it was", () => {
+  const composed = threadSeedingText({
+    northStar: "Ship the console.",
+    drafts: [{ ticket: 7, summary: "the rail" }],
+    refusals: [{ ticket: 9, reason: "no brief" }],
+  });
+
+  assert.equal(
+    composed,
+    `# North Star
+
+Ship the console.
+
+# Your open drafts
+
+- 7 — the rail
+
+# Standing against them
+
+- 9 — no brief
+
+# How you act on this project
+
+- ${threadChannelStanding}
+- ${threadWakeStanding}`,
+  );
 });

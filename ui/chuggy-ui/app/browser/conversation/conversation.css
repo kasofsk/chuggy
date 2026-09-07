@@ -1,0 +1,57 @@
+/* What the conversation surface cannot say as a utility: the chevron's turn,
+ * which is a Radix data-attribute; the glyph's pulse, which is a keyframe; and
+ * two values Tailwind writes raw — `bg-transparent` emits a hex and
+ * `rounded-full` a length, and the built-layer policy refuses both. */
+
+@layer page {
+  .conversation-trigger {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .conversation-round {
+    border-radius: 50%;
+  }
+
+  /* The ring is the field's, not the textarea's: a box drawn around a box is
+   * two rings, and the outer one is the control the reader sees. */
+  .conversation-field:focus-within {
+    box-shadow: var(--ring-focus);
+  }
+
+  .conversation-input {
+    background: transparent;
+  }
+
+  .conversation-input:focus-visible {
+    box-shadow: none;
+  }
+
+  .conversation-chevron {
+    transition: rotate var(--duration-1) var(--ease-out);
+  }
+
+  [data-state="open"] > .conversation-chevron {
+    rotate: 90deg;
+  }
+
+  .conversation-glyph-live {
+    animation: conversation-pulse var(--duration-pulse) var(--ease-out) infinite;
+  }
+
+  @keyframes conversation-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+
+    50% {
+      opacity: 0.3;
+    }
+  }
+}

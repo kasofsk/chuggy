@@ -230,7 +230,7 @@ test("a tool call sits inside the collapsed work disclosure", async () => {
   });
   vi.stubGlobal("fetch", api.fetch);
   await mountLead();
-  const trigger = screen.getByRole("button", { name: /Tools/ });
+  const trigger = screen.getByRole("button", { name: /tool/ });
   expect(screen.queryByText("bytes")).toBeNull();
   fireEvent.click(trigger);
   expect(screen.queryByText("bytes")).toBeNull();

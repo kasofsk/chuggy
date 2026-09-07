@@ -6,6 +6,13 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  threadDraftsHeading,
+  threadNorthStarHeading,
+  threadSeedingLastLine,
+  threadStandingSection,
+} from "../../../src/contract/threadSeeding.ts";
+import {
+  conversationAskMessage,
   conversationArgumentSummary,
   conversationArgumentSummaryCharsMax,
   conversationArgumentText,
@@ -620,5 +627,62 @@ describe("the argument summary", () => {
     cycle["self"] = cycle;
     expect(conversationArgumentText(cycle)).toBe("");
     expect(conversationArgumentSummary(cycle)).toEqual({ argument: "None" });
+  });
+});
+
+/** A first turn as the interpreter composes one: the seeding block's sections
+ * in order, then the blank line, then what the member typed. */
+const seeded = [
+  `${threadNorthStarHeading}\n\nShip the console.`,
+  `${threadDraftsHeading}\n\n- 7 — the rail`,
+  threadStandingSection,
+].join("\n\n");
+
+describe("the seeding block a first turn carries", () => {
+  test("is split off the member's words on the contract's own last line", () => {
+    const ask = conversationAskMessage(`${seeded}\n\nwhat is left to do`);
+
+    expect(ask).toEqual({
+      ask: "Message",
+      text: "what is left to do",
+      context: seeded,
+    });
+  });
+
+  test("is split at the last of its lines, not the first", () => {
+    const quoted = `${seeded}\n\n${threadSeedingLastLine}\n\nmy own words`;
+
+    expect(conversationAskMessage(quoted).text).toBe("my own words");
+  });
+
+  test("leaves a message that opens on no heading of its whole", () => {
+    const said = `check the rail\n\n${threadSeedingLastLine}\n\nand the drawer`;
+
+    expect(conversationAskMessage(said)).toEqual({
+      ask: "Message",
+      text: said,
+    });
+  });
+
+  test("leaves a message that opens on a heading and carries no block", () => {
+    const said = `${threadNorthStarHeading}\n\nis what I want to change`;
+
+    expect(conversationAskMessage(said)).toEqual({
+      ask: "Message",
+      text: said,
+    });
+  });
+
+  test("reaches a drawn exchange as the two halves it is", () => {
+    const drawn = conversationExchanges([
+      askOf("e1", `${seeded}\n\nwhat is left to do`),
+      answerOf("e2", "two things"),
+    ]);
+
+    expect(drawn[0]?.ask).toEqual({
+      ask: "Message",
+      text: "what is left to do",
+      context: seeded,
+    });
   });
 });
