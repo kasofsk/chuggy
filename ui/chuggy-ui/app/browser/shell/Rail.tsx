@@ -82,8 +82,9 @@ function RailEntryDrawn(props: {
         to={entry.to}
         params={entry.params}
         onClick={props.onNavigate}
-        className="flex items-center gap-2 rounded-2 px-3 py-2 text-md text-ink-2 no-underline"
+        className="flex items-center gap-2 rounded-2 px-3 py-2 text-md no-underline"
         activeProps={{ className: "bg-surface-2 text-ink-1" }}
+        inactiveProps={{ className: "text-ink-2" }}
       >
         {entry.standing === undefined ? null : (
           <RailDot standing={entry.standing} />
