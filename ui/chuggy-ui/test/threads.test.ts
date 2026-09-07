@@ -23,6 +23,7 @@ import {
   threadPageRows,
   threadRefusalCode,
   threadRefusalWord,
+  threadRowActions,
   threadSendFrom,
   threadTakesMessages,
   threadTurnKindWord,
@@ -62,6 +63,50 @@ describe("where a thread stands", () => {
   test("Orphaned is drawn in the hue that asks for attention, not the live one", () => {
     expect(threadStandingTone("Orphaned")).toBe("parked");
     expect(threadStandingTone("Open")).toBe("live");
+  });
+});
+
+describe("the actions one row's menu offers", () => {
+  test("the reader's own open thread offers Rename, Close and Hide", () => {
+    expect(
+      threadRowActions(threadEntry({ session: "s", mine: true })),
+    ).toStrictEqual(["Rename", "Close", "Hide"]);
+  });
+
+  test("the reader's own closed thread offers Rename and Hide, not Close", () => {
+    expect(
+      threadRowActions(
+        threadEntry({ session: "s", mine: true, state: "Closed" }),
+      ),
+    ).toStrictEqual(["Rename", "Hide"]);
+  });
+
+  test("the reader's own hidden thread offers Show in Hide's place", () => {
+    expect(
+      threadRowActions(threadEntry({ session: "s", mine: true, hidden: true })),
+    ).toStrictEqual(["Rename", "Close", "Show"]);
+  });
+
+  test("a stranger's open thread offers Close alone", () => {
+    expect(
+      threadRowActions(threadEntry({ session: "s", mine: false })),
+    ).toStrictEqual(["Close"]);
+  });
+
+  test("a stranger's closed thread offers nothing — no trigger is drawn", () => {
+    expect(
+      threadRowActions(
+        threadEntry({ session: "s", mine: false, state: "Closed" }),
+      ),
+    ).toStrictEqual([]);
+  });
+
+  test("a stranger's hidden thread still offers Close alone — Show is the owner's", () => {
+    expect(
+      threadRowActions(
+        threadEntry({ session: "s", mine: false, hidden: true }),
+      ),
+    ).toStrictEqual(["Close"]);
   });
 });
 

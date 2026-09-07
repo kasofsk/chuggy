@@ -103,6 +103,27 @@ export function threadLabel(
   return thread.title ?? "New thread";
 }
 
+export const threadRowActionNames = [
+  "Rename",
+  "Close",
+  "Hide",
+  "Show",
+] as const;
+export type ThreadRowAction = (typeof threadRowActionNames)[number];
+
+/** The actions one thread's row menu offers: Rename and Hide/Show are the
+ * owner's alone, Close is anyone's while the thread still stands. Empty on a
+ * stranger's closed row, which is a row with nothing for its menu to draw. */
+export function threadRowActions(
+  thread: Pick<ThreadEntryResponse, "mine" | "state" | "hidden">,
+): readonly ThreadRowAction[] {
+  return [
+    ...(thread.mine ? (["Rename"] as const) : []),
+    ...(threadClosable(thread) ? (["Close"] as const) : []),
+    ...(thread.mine ? ([thread.hidden ? "Show" : "Hide"] as const) : []),
+  ];
+}
+
 /**
  * The word one turn's kind is drawn as, total over the wire's roster so a kind
  * it grows stops compiling here. `UserMessage` is what the mailbox calls a
