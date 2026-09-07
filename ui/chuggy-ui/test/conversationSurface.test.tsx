@@ -8,6 +8,7 @@
  * console this suite can see.
  */
 
+// jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import {
   cleanup,
   fireEvent,
@@ -16,7 +17,9 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { ReactNode } from "react";
 
+import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { Conversation } from "../app/browser/conversation/Conversation.tsx";
 import type {
   ConversationComposerProps,
@@ -25,6 +28,17 @@ import type {
 import type { ConversationExchange } from "../app/core/conversation.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
+
+const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
+
+vi.mock("@tanstack/react-router", () => ({
+  createLink: (component: unknown) => component,
+  Link: (props: { readonly children?: ReactNode }) => (
+    <a href="/">{props.children}</a>
+  ),
+  useParams: () => atlas,
+}));
+// jscpd:ignore-end
 
 function exchangeOf(
   exchange: Partial<ConversationExchange>,
@@ -209,6 +223,65 @@ test("a tool result that failed marks the row and draws no pill", () => {
   fireEvent.click(screen.getByRole("button", { name: /tool/ }));
   expect(screen.getByText("Bash").className).toContain("text-tone-fail");
   expect(document.querySelectorAll(".pill")).toHaveLength(0);
+  styleless();
+});
+
+function filedExchange(): ConversationExchange {
+  return exchangeOf({
+    answer: "filed it",
+    work: [
+      {
+        step: "ToolCall",
+        id: "call-3",
+        name: "mcp__chuggy__create_draft",
+        input: { configurationRevision: "rev-1" },
+        result: {
+          text: 'HTTP 201\n{"ticket":42,"authoringVersion":1}',
+          isError: false,
+        },
+      },
+    ],
+  });
+}
+
+test("a filed ticket draws as text without a partition, with no disclosure open", () => {
+  render(
+    <Conversation exchanges={[filedExchange()]} empty="No conversation" />,
+  );
+  expect(screen.getByText("Filed")).toBeDefined();
+  expect(screen.getByText("42")).toBeDefined();
+  expect(screen.getByText("42").closest("a")).toBeNull();
+  styleless();
+});
+
+test("a filed ticket links to the ticket page once a partition is passed", () => {
+  render(
+    <Conversation
+      exchanges={[filedExchange()]}
+      empty="No conversation"
+      partition={atlas}
+    />,
+  );
+  const link = screen.getByText("42").closest("a");
+  expect(link).not.toBeNull();
+  styleless();
+});
+
+test("a call whose result errored draws no ticket line", () => {
+  const errored = exchangeOf({
+    answer: "could not file it",
+    work: [
+      {
+        step: "ToolCall",
+        id: "call-4",
+        name: "mcp__chuggy__create_draft",
+        input: {},
+        result: { text: "HTTP 409\nconflict", isError: true },
+      },
+    ],
+  });
+  render(<Conversation exchanges={[errored]} empty="No conversation" />);
+  expect(screen.queryByText("Filed")).toBeNull();
   styleless();
 });
 

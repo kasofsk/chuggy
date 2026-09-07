@@ -2,10 +2,12 @@
  * The console's one conversation surface: exchanges drawn as a thread, and a
  * composer where the page hands one in.
  *
- * IT REACHES NO API AND NO ROUTER. Everything it draws arrives as props and
- * everything it sends leaves through `onSend`, so it mounts in a suite with
- * `render()` and no provider, and the three pages that adopt it keep their own
- * reads.
+ * IT REACHES NO API, AND NO ROUTER UNLESS A PARTITION SAYS WHERE A TICKET
+ * LEADS. Everything it draws arrives as props and everything it sends leaves
+ * through `onSend`, so it mounts in a suite with `render()` and no provider —
+ * `partition` omitted draws a filed ticket's number as text rather than a
+ * link, which is the one thing here that would otherwise need one. The three
+ * pages that adopt it keep their own reads.
  *
  * THE MAILBOX IS THE QUEUE. Without a queue adapter the library refuses a send
  * while a turn is pending; the mailbox already queues, so the adapter holds no
@@ -28,6 +30,7 @@ import type {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ConversationExchange } from "../../core/conversation.ts";
 import { ConversationComposer } from "./ConversationComposer.tsx";
 import type { ConversationComposerProps } from "./ConversationComposer.tsx";
@@ -66,6 +69,7 @@ function conversationStatus(exchange: ConversationExchange): MessageStatus {
  * the answer it is still waiting for or already has. */
 function conversationMessages(
   exchanges: readonly ConversationExchange[],
+  partition: PartitionIdentity | undefined,
 ): readonly ThreadMessageLike[] {
   return exchanges.flatMap((exchange): ThreadMessageLike[] => [
     {
@@ -87,7 +91,7 @@ function conversationMessages(
           ? []
           : [{ type: "text", text: exchange.answer }],
       status: conversationStatus(exchange),
-      metadata: { custom: { exchange, side: "Answer" } },
+      metadata: { custom: { exchange, side: "Answer", partition } },
     },
   ]);
 }
@@ -106,6 +110,7 @@ interface ConversationHeld {
 function useConversationRuntime(props: {
   readonly exchanges: readonly ConversationExchange[];
   readonly composer: ConversationComposerProps | undefined;
+  readonly partition: PartitionIdentity | undefined;
 }): ConversationHeld {
   const [sending, setSending] = useState(false);
   const dispatchRef = useRef<(message: AppendMessage) => Promise<void>>(() =>
@@ -135,7 +140,7 @@ function useConversationRuntime(props: {
   };
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     queue,
-    messages: conversationMessages(props.exchanges),
+    messages: conversationMessages(props.exchanges, props.partition),
     isRunning: props.exchanges.some(
       (exchange) => exchange.standing.standing === "Running",
     ),
@@ -189,10 +194,12 @@ export function Conversation(props: {
   readonly composer?: ConversationComposerProps;
   readonly empty: string;
   readonly emptyTitle?: string;
+  readonly partition?: PartitionIdentity;
 }): ReactNode {
   const held = useConversationRuntime({
     exchanges: props.exchanges,
     composer: props.composer,
+    partition: props.partition,
   });
   return (
     <AssistantRuntimeProvider runtime={held.runtime}>

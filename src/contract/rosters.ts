@@ -217,6 +217,23 @@ export type SchedulerFreshness = (typeof schedulerFreshnesses)[number];
 export const draftStates = ["Draft", "Released", "Deleted"] as const;
 export type DraftState = (typeof draftStates)[number];
 
+/**
+ * The chuggy tools whose call writes a ticket. `src/interpreter/leadTools.ts`
+ * owns this list, as `DraftAuthor` less `initialize_draft` — which reads the
+ * fence a write is filed against and writes nothing itself — plus
+ * `DraftOriginate`; the console may not reach that module under
+ * `check-boundaries.sh`'s `console-reaches-no-source`, so the wire restates it
+ * here for the console to draw a ticket beside the call that touched it.
+ */
+export const chuggyTicketWritingTools = [
+  "create_draft",
+  "file_dependent",
+  "revise_draft",
+  "delete_draft",
+  "release_draft",
+] as const;
+export type ChuggyTicketWritingTool = (typeof chuggyTicketWritingTools)[number];
+
 export const evaluationCombinators = ["UnanimousPass", "AnyPass"] as const;
 export type EvaluationCombinator = (typeof evaluationCombinators)[number];
 

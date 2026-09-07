@@ -3,14 +3,17 @@
  * record could not draw, and where the answer ended up.
  */
 
+import { Link } from "@tanstack/react-router";
 import { Fragment } from "react";
 import type { ReactNode } from "react";
 
+import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type {
   ConversationMarker,
   ConversationMeasures,
   ConversationStanding,
 } from "../../core/conversation.ts";
+import type { ConversationExchangeTicket } from "../../core/conversationTickets.ts";
 import type { Figure as FigureValue } from "../../core/figures.ts";
 import {
   costAmountFigure,
@@ -126,6 +129,51 @@ export function ConversationMetaLine(props: {
         <Fragment key={at}>
           <span aria-hidden="true">·</span>
           <Figure figure={figure} />
+        </Fragment>
+      ))}
+    </p>
+  );
+}
+
+/** One ticket a call touched, as a link where the surface holds a partition
+ * and as text where it does not — which is what keeps the surface mountable
+ * with no router. */
+function ConversationTicketNumber(props: {
+  readonly partition: PartitionIdentity | undefined;
+  readonly ticket: number;
+}): ReactNode {
+  return props.partition === undefined ? (
+    <span>{props.ticket}</span>
+  ) : (
+    <Link
+      to="/$tenant/$project/tickets/$ticket"
+      params={{ ...props.partition, ticket: String(props.ticket) }}
+    >
+      {props.ticket}
+    </Link>
+  );
+}
+
+/**
+ * Which tickets the exchange's work touched and what was done to each, one
+ * quiet line beside the meta line so a reader sees what a filing tool call
+ * filed without opening the work card's disclosures.
+ */
+export function ConversationTicketsLine(props: {
+  readonly tickets: readonly ConversationExchangeTicket[];
+  readonly partition: PartitionIdentity | undefined;
+}): ReactNode {
+  if (props.tickets.length === 0) return null;
+  return (
+    <p className="text-ink-3 flex flex-wrap items-baseline gap-2 text-xs">
+      {props.tickets.map((ticket, at) => (
+        <Fragment key={at}>
+          {at === 0 ? null : <span aria-hidden="true">·</span>}
+          <span>{ticket.verb}</span>
+          <ConversationTicketNumber
+            partition={props.partition}
+            ticket={ticket.ticket}
+          />
         </Fragment>
       ))}
     </p>

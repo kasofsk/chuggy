@@ -12,7 +12,9 @@ import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
 import type { TextMessagePartComponent } from "@assistant-ui/react";
 import type { ReactNode } from "react";
 
+import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ConversationExchange } from "../../core/conversation.ts";
+import { conversationExchangeTickets } from "../../core/conversationTickets.ts";
 import { threadTurnKindWord } from "../../core/threads.ts";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { Notice } from "../ui/Notice.tsx";
@@ -20,6 +22,7 @@ import { ConversationCard } from "./ConversationCard.tsx";
 import {
   ConversationMetaLine,
   ConversationSystemLine,
+  ConversationTicketsLine,
   conversationMarkerWords,
 } from "./ConversationLines.tsx";
 import { ConversationWorkCard } from "./ConversationWorkCard.tsx";
@@ -30,6 +33,7 @@ import "./conversation.css";
 export interface ConversationCustom {
   readonly exchange: ConversationExchange;
   readonly side: "Ask" | "Answer";
+  readonly partition?: PartitionIdentity;
 }
 
 function conversationHeld(custom: unknown): ConversationExchange | undefined {
@@ -37,9 +41,22 @@ function conversationHeld(custom: unknown): ConversationExchange | undefined {
   return (custom as Partial<ConversationCustom>).exchange;
 }
 
+function conversationPartitionHeld(
+  custom: unknown,
+): PartitionIdentity | undefined {
+  if (custom === null || typeof custom !== "object") return undefined;
+  return (custom as Partial<ConversationCustom>).partition;
+}
+
 function useConversationExchange(): ConversationExchange | undefined {
   return useAuiState((state) =>
     conversationHeld(state.message.metadata.custom),
+  );
+}
+
+function useConversationPartition(): PartitionIdentity | undefined {
+  return useAuiState((state) =>
+    conversationPartitionHeld(state.message.metadata.custom),
   );
 }
 
@@ -146,6 +163,7 @@ function ConversationMark(): ReactNode {
  * ended up. */
 export function ConversationAnswerMessage(): ReactNode {
   const exchange = useConversationExchange();
+  const partition = useConversationPartition();
   if (exchange === undefined) return null;
   const standing = exchange.standing;
   if (standing.standing === "Markers") return null;
@@ -163,6 +181,10 @@ export function ConversationAnswerMessage(): ReactNode {
         {exchange.answer === undefined ? null : (
           <MessagePrimitive.Parts components={{ Text: ConversationReport }} />
         )}
+        <ConversationTicketsLine
+          tickets={conversationExchangeTickets(exchange)}
+          partition={partition}
+        />
         <ConversationMetaLine
           standing={standing}
           measures={exchange.measures}
