@@ -631,6 +631,22 @@ test("a limit the wire will not take marks its own box and blocks the save", asy
   ).toBe(true);
 });
 
+test("a faulted box is described by the text that names its fault", async () => {
+  await drawSettings();
+  await turned(() => {
+    edit("Limits");
+  });
+  await turned(() => {
+    fireEvent.change(box("Tokens"), {
+      target: { value: "many" },
+    });
+  });
+  const described = box("Tokens").getAttribute("aria-describedby");
+  const fault = document.querySelector(".selector-fault");
+  expect(fault?.id).toBe(described);
+  expect(fault?.textContent).not.toBe("");
+});
+
 /**
  * THE CEILING IS THE WIRE'S AND THE PAGE HOLDS NO COPY OF IT. What a decision
  * may dispatch is bounded by the override schema this form parses its draft

@@ -9,6 +9,7 @@
  */
 
 import type { ReactNode } from "react";
+import { useId } from "react";
 
 import { countFigure } from "../../core/figures.ts";
 import {
@@ -89,6 +90,7 @@ function SelectorLimit(props: { readonly row: SelectorLimitRow }): ReactNode {
   const placeholder = selectorSettingsLimitOverridden(row.draft, row.name)
     ? undefined
     : String(row.installationEffective);
+  const faultId = useId();
   return (
     <div className="selector-limit" data-edited={edited ? "" : undefined}>
       <span className="selector-limit-key">
@@ -103,6 +105,7 @@ function SelectorLimit(props: { readonly row: SelectorLimitRow }): ReactNode {
           value={row.draft.limits[row.name]}
           {...(placeholder === undefined ? {} : { placeholder })}
           invalid={row.fault !== undefined}
+          {...(row.fault === undefined ? {} : { describedBy: faultId })}
           onChange={(digits) => {
             row.onChange(
               selectorSettingsLimitTyped(row.draft, row.name, digits),
@@ -114,7 +117,9 @@ function SelectorLimit(props: { readonly row: SelectorLimitRow }): ReactNode {
       )}
       <SelectorLimitStanding row={row} />
       {row.fault === undefined ? null : (
-        <span className="selector-fault">{row.fault}</span>
+        <span id={faultId} className="selector-fault">
+          {row.fault}
+        </span>
       )}
     </div>
   );
