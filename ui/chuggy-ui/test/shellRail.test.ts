@@ -61,36 +61,56 @@ test("the reader's own thread is labelled, first, and withholds the offer", () =
   expect(entries[1]?.mine).toBe(true);
 });
 
-test("a second thread of the reader's own is disambiguated by its session prefix", () => {
+test("a second thread of the reader's own is disambiguated by its session tail", () => {
   const entries = conversations({
     partition: atlas,
     threads: [
-      thread({ session: "s-mine-one", mine: true, turns: 3 }),
-      thread({ session: "s-mine-two", mine: true, turns: 12 }),
+      thread({
+        session: "thread-11112222-3333-4444-5555-666677778888",
+        mine: true,
+        turns: 3,
+      }),
+      thread({
+        session: "thread-aaaabbbb-cccc-dddd-eeee-ffff00001234",
+        mine: true,
+        turns: 12,
+      }),
     ],
   });
   expect(entries.map((entry) => entry.label)).toEqual([
     "Lead",
     "Your thread",
-    "Your thread · s-mine-t",
+    "Your thread · 00001234",
   ]);
 });
 
-test("two threads with the same turn count still read apart, because the suffix is the session", () => {
+test("two threads whose session shares its first eight characters still read apart", () => {
   const entries = conversations({
     partition: atlas,
     threads: [
-      thread({ session: "mine-aaa1111", mine: true, turns: 1 }),
-      thread({ session: "mine-bbb2222", mine: true, turns: 1 }),
-      thread({ session: "mine-ccc3333", mine: true, turns: 1 }),
+      thread({
+        session: "thread-a1111111-2222-3333-4444-555566667777",
+        mine: true,
+        turns: 1,
+      }),
+      thread({
+        session: "thread-a1111111-2222-3333-4444-555566668888",
+        mine: true,
+        turns: 1,
+      }),
+      thread({
+        session: "thread-a1111111-2222-3333-4444-555566669999",
+        mine: true,
+        turns: 1,
+      }),
     ],
   });
   const labels = entries.map((entry) => entry.label);
   expect(labels).toEqual([
     "Lead",
     "Your thread",
-    "Your thread · mine-bbb",
-    "Your thread · mine-ccc",
+    "Your thread · 66668888",
+    "Your thread · 66669999",
   ]);
   expect(new Set(labels).size).toBe(labels.length);
 });

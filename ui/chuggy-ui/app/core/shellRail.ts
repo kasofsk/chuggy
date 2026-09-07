@@ -85,16 +85,21 @@ export interface ShellRailInput {
   readonly inboxCount?: string | undefined;
 }
 
+/** How much of a session's tail tells one of the reader's threads from
+ * another: every session shares the fixed `thread-` head a mint gives it, so
+ * the distinguishing hex lives in the UUID's own tail. */
+const sessionCharsShort = 8;
+
 /** `Your thread` is the reader's most recent; a second one of theirs is the
- * same words disambiguated by its own session's first eight characters, which
- * is unique by construction, so two never read alike. */
+ * same words disambiguated by its session's tail, which draws from the
+ * random half of the id rather than the prefix every session shares. */
 function shellRailThreadLabel(
   thread: ThreadEntryResponse,
   mostRecentMine: boolean,
 ): string {
   if (!thread.mine) return thread.owner ?? thread.session;
   if (mostRecentMine) return "Your thread";
-  return `Your thread · ${thread.session.slice(0, 8)}`;
+  return `Your thread · ${thread.session.slice(-sessionCharsShort)}`;
 }
 
 function shellRailThreadEntry(
