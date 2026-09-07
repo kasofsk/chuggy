@@ -586,10 +586,25 @@ function briefingTicketBriefFault(
   return brief === undefined
     ? undefined
     : briefingListsFault([
+        [briefingTicketTitleLines(brief), 1],
         [briefIntentLines(brief.intent), briefIntentLinesMax],
         [brief.links, briefLinksMax],
         [brief.checks, briefChecksMax],
       ]);
+}
+
+/** A title renders as one line, or as none where the brief named none. */
+function briefingTicketTitleLines(brief: DraftBrief): readonly string[] {
+  return brief.title === undefined ? [] : [brief.title];
+}
+
+/** The ticket's own words: what it is called, where it is called anything, and
+ * then what it asks for. */
+function briefingTicketIntentLines(brief: DraftBrief): readonly string[] {
+  return [
+    ...briefingTicketTitleLines(brief),
+    ...briefIntentLines(brief.intent),
+  ];
 }
 
 /** One list member as it renders, which is the only list shape a briefing has. */
@@ -649,7 +664,7 @@ function briefingBodies(
   return {
     RoleInstructions: briefingRoleInstructions(view.purpose, carrier),
     TicketIntent:
-      view.brief === undefined ? [] : briefIntentLines(view.brief.intent),
+      view.brief === undefined ? [] : briefingTicketIntentLines(view.brief),
     TicketLinks:
       view.brief === undefined ? [] : view.brief.links.map(briefingBullet),
     WhyItMatters: view.configuration.brief.motivation,

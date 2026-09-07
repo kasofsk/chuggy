@@ -169,6 +169,7 @@ test("a page of drafts answers the open ones ascending, and pages past them", as
   assert.equal(page.more, true);
   assert.equal(page.nextCursor, second.ticket);
   assert.deepEqual(page.partition, partition);
+  assert.equal(page.drafts[0]?.brief?.title, postgresHarnessBrief.title);
   assert.equal(page.drafts[0]?.brief?.intent, postgresHarnessBrief.intent);
 
   const rest = await drafts.drafts(partition, {
@@ -241,6 +242,7 @@ test("a draft's brief is read from its own project, not its tenant", async () =>
     await harness.store.createProject(partition);
   const briefOf = (which: string) =>
     asDraftBrief({
+      title: `What ${which} is called`,
       intent: `Do the one thing ${which} is for.`,
       links: [`https://${which}.example.test/one`],
       checks: [`just check-${which}`],
@@ -263,6 +265,10 @@ test("a draft's brief is read from its own project, not its tenant", async () =>
   );
 
   const page = await drafts.drafts(mine, { limit: 100 });
+  assert.deepEqual(
+    page.drafts.map((draft) => draft.brief?.title),
+    ["What mine is called"],
+  );
   assert.deepEqual(
     page.drafts.map((draft) => draft.brief?.links),
     [["https://mine.example.test/one"]],

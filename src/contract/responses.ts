@@ -57,7 +57,7 @@ import {
   reworkPolicySchema,
   reworkPolicyResponseSchema,
 } from "./authoring.ts";
-import { briefResponseSchema } from "./brief.ts";
+import { briefResponseSchema, briefTitleCharsMax } from "./brief.ts";
 import { selectorProjectOverridesSchema } from "./requests.ts";
 import {
   architectures,
@@ -201,12 +201,18 @@ const ticketAccountsSchema = z.object({
 });
 
 /**
- * A ticket as the project table and its own read both carry it. The brief is
- * the ticket's own read alone: an intent is a paragraph, and a page of them is
- * a page of documents rather than a table.
+ * A ticket as the project table and its own read both carry it. The title is
+ * the one field of the brief the table carries, because a table of documents
+ * needs a heading; the rest of the brief is the ticket's own read alone, an
+ * intent being a paragraph and a page of them a page of documents.
  */
 export const ticketResponseSchema = z.object({
   ticket: ticketNumberSchema,
+  /**
+   * What this ticket is called: the title its brief names, or the first line
+   * of its intent where the brief named none.
+   */
+  title: z.string().max(briefTitleCharsMax).optional(),
   phase: z.enum(phaseRoster),
   sequence: countSchema,
   /**

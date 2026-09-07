@@ -20,6 +20,7 @@ import {
   briefIntentLinesMax,
   briefLineCharsMax,
   briefLinkScheme,
+  briefTitleCharsMax,
 } from "../../src/contract/brief.ts";
 import {
   asBriefBranch,
@@ -27,6 +28,7 @@ import {
   asBriefIntent,
   asBriefLinkUrl,
   asBriefFinalization,
+  asBriefTitle,
   asDraftBrief,
   briefIntentLines,
 } from "../../src/interpreter/ticketBrief.ts";
@@ -146,6 +148,42 @@ test("a whole brief brands each of its parts and omits the branch it has none of
         branch: "not-a-ref",
       }),
     RangeError,
+  );
+});
+
+test("a title is one printable line, bounded shorter than the line it renders as", () => {
+  assert.equal(asBriefTitle("Serve the reason"), "Serve the reason");
+  for (const value of [
+    "",
+    "   ",
+    "Serve the reason\nand the rest",
+    "a".repeat(briefTitleCharsMax + 1),
+  ])
+    assert.throws(
+      () => asBriefTitle(value),
+      RangeError,
+      `refused: ${JSON.stringify(value)}`,
+    );
+});
+
+test("a title's bound counts code points, matching the schema in front of it", () => {
+  const title = "\u{1f600}".repeat(briefTitleCharsMax);
+  assert.equal(asBriefTitle(title), title);
+  assert.throws(() => asBriefTitle(`${title}\u{1f600}`), RangeError);
+});
+
+test("a brief carries the title it was given and omits the one it was not", () => {
+  assert.equal(
+    asDraftBrief({
+      title: "Serve the reason",
+      intent: "Fix the importer.",
+      links: [],
+    }).title,
+    "Serve the reason",
+  );
+  assert.equal(
+    "title" in asDraftBrief({ intent: "Fix the importer.", links: [] }),
+    false,
   );
 });
 

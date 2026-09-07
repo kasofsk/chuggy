@@ -3,6 +3,7 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
+import { briefTitleCharsMax } from "../../contract/brief.ts";
 import {
   escalationReasons,
   operationRefusalCodes,
@@ -62,6 +63,12 @@ interface PublicOperationRow {
  */
 interface TicketProjectionRow {
   readonly ticket: string;
+  /**
+   * What the ticket is called: its brief's title, or the first line of its
+   * intent that says anything, cut to the title's bound, where the brief names
+   * none; empty where neither names anything.
+   */
+  readonly ticket_title: string;
   readonly phase: string;
   readonly seq: string;
   readonly reason: string;
@@ -277,6 +284,7 @@ function ticketResource(row: TicketProjectionRow): TicketResource {
   const accounts = projectionAccounts(row);
   return {
     ticket: asTicketId(projectRowCounter(row.ticket, "ticket identity")),
+    ...(row.ticket_title === "" ? {} : { title: row.ticket_title }),
     phase: projectionPhase(row.phase),
     sequence: projectRowCounter(row.seq, "ticket projection sequence"),
     changedAt: ticketResourceChangedAt(row.changed_at),
@@ -411,11 +419,16 @@ async function readProjectTickets(
     const found = await client.query<TicketProjectionRow>(
       sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,t.gas_left,
                  t.rework_left,t.finalization_left,
+                 coalesce(b.title,left(substring(b.intent from
+                   '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
+                   AS ticket_title,
                  d.domain_configuration::jsonb->>'gas' AS gas_max,
                  r.committed_at::text AS released_at,
                  c.committed_at::text AS changed_at
           FROM ticket_projection t
           LEFT JOIN deployment_authoring_policy d ON d.singleton=true
+          LEFT JOIN draft_brief b
+            ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
           LEFT JOIN LATERAL (
@@ -437,11 +450,16 @@ async function readProjectTickets(
   const found = await client.query<TicketProjectionRow>(
     sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,t.gas_left,
                t.rework_left,t.finalization_left,
+               coalesce(b.title,left(substring(b.intent from
+                 '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
+                 AS ticket_title,
                d.domain_configuration::jsonb->>'gas' AS gas_max,
                r.committed_at::text AS released_at,
                c.committed_at::text AS changed_at
           FROM ticket_projection t
           LEFT JOIN deployment_authoring_policy d ON d.singleton=true
+          LEFT JOIN draft_brief b
+            ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
           LEFT JOIN LATERAL (
@@ -484,8 +502,11 @@ function nativeReadsResources(
       const found = await pool.query<TicketProjectionRow & DraftBriefRow>(
         sql`SELECT t.ticket,t.phase,t.seq,t.reason,t.resume_at,t.gas_left,
                    t.rework_left,t.finalization_left,
+                   coalesce(b.title,left(substring(b.intent from
+                     '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
+                     AS ticket_title,
                    d.domain_configuration::jsonb->>'gas' AS gas_max,
-                   b.intent,b.branch,
+                   b.title,b.intent,b.branch,
                    b.finalization_mode,b.finalization_target,
                    r.committed_at::text AS released_at,
                    c.committed_at::text AS changed_at,

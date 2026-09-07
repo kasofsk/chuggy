@@ -2,14 +2,14 @@
  * Creating a ticket: one screen, one submit, and a configuration nobody is
  * asked about.
  *
- * What is visible is what only a person can state — the intent, what to read
- * first, the check lines this ticket adds where its configuration commands a
- * stage for them, the branch the work happens on and the one it lands on; the
- * rest is prefilled behind the disclosure. Submit creates the draft and
- * releases it in one motion, and the navigation happens on a settled success
- * alone, so a screen never hands a reader a ticket the projection has not got
- * to yet. Every other ending is drawn here with its reason and the form still
- * holding what was typed.
+ * What is visible is what only a person can state — the title, the intent, what
+ * to read first, the check lines this ticket adds where its configuration
+ * commands a stage for them, the branch the work happens on and the one it
+ * lands on; the rest is prefilled behind the disclosure. Submit creates the
+ * draft and releases it in one motion, and the navigation happens on a settled
+ * success alone, so a screen never hands a reader a ticket the projection has
+ * not got to yet. Every other ending is drawn here with its reason and the form
+ * still holding what was typed.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -84,6 +84,23 @@ function Fault(props: {
   const found = props.faults.find((fault) => fault.field === props.field);
   return found === undefined ? null : (
     <p className="text-tone-fail">{found.reason}</p>
+  );
+}
+
+function Title(props: FormEdit): ReactNode {
+  const { form, onChange } = props;
+  return (
+    <label className="creation-row">
+      <span>title</span>
+      <input
+        type="text"
+        value={form.title}
+        placeholder="what this ticket is called"
+        onChange={(event) => {
+          onChange({ ...form, title: event.target.value });
+        }}
+      />
+    </label>
   );
 }
 
@@ -284,6 +301,8 @@ function CreationFields(
       <Tooltip text={shaping.title}>
         <p className="text-ink-3">{shaping.text}</p>
       </Tooltip>
+      <Title form={form} onChange={onChange} />
+      <Fault field="title" faults={faults} />
       <Intent form={form} onChange={onChange} />
       <Fault field="intent" faults={faults} />
       <Links form={form} onChange={onChange} />

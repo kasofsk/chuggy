@@ -20,11 +20,11 @@ import type { ProjectTableRow } from "../app/core/projectTableRows.ts";
 function row(executionRead: ProjectTableRow["executionRead"]): ProjectTableRow {
   return {
     ticket: 4,
+    title: undefined,
     phase: "Escalated",
     section: "NeedsYou",
     badge: "work failed",
     executionRead,
-    configuration: undefined,
     executionStatus: undefined,
     executionOutcome: undefined,
     runsOn: undefined,

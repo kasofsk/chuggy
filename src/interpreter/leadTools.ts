@@ -231,7 +231,9 @@ const leadStandingInstructions = `# How you act on this project
 - Derived work only. \`file_dependent\` files a draft against a parent ticket
   that already exists; there is no bare create. It admits ${relationsSaid(
     dependentRelationsAdmitted,
-  )} and refuses ${relationsSaid(dependentRelationsRefused)}.
+  )} and refuses ${relationsSaid(dependentRelationsRefused)}. Its brief carries
+  a title of one short line naming the work, which is what tickets are listed
+  by.
 - A released ticket cannot be re-authored. A follow-up points from the new
   draft at the ticket it derives from and rewrites nothing; a prerequisite
   would point from an existing ticket at the new one, which rewrites

@@ -24,6 +24,7 @@ import {
   briefLineCharsMax,
   briefLinkScheme,
   briefLinksMax,
+  briefTitleCharsMax,
 } from "../../../../src/contract/brief.ts";
 import { draftCreationSchema } from "../../../../src/contract/requests.ts";
 import type { BriefFinalizationMode } from "../../../../src/contract/rosters.ts";
@@ -51,6 +52,7 @@ export type CreationStage = CreationAuthoring["program"][number];
  * types rather than the references they become.
  */
 export interface TicketCreationForm extends CreationAuthoring {
+  readonly title: string;
   readonly intent: string;
   readonly links: readonly string[];
   readonly checks: readonly string[];
@@ -59,7 +61,14 @@ export interface TicketCreationForm extends CreationAuthoring {
 }
 
 export type CreationField =
-  "intent" | "links" | "checks" | "branch" | "target" | "authoring" | "fence";
+  | "title"
+  | "intent"
+  | "links"
+  | "checks"
+  | "branch"
+  | "target"
+  | "authoring"
+  | "fence";
 
 export interface CreationFault {
   readonly field: CreationField;
@@ -109,6 +118,7 @@ export function creationFormFrom(
 ): TicketCreationForm {
   return {
     ...initialization.defaults,
+    title: "",
     intent: "",
     links: [],
     checks: [],
@@ -165,6 +175,8 @@ export const creationBranchPrefixedSentence = `enter the branch name, not the re
  */
 export function creationFaultSentence(field: CreationField): string {
   switch (field) {
+    case "title":
+      return `name this ticket in one line of at most ${String(briefTitleCharsMax)} characters`;
     case "intent":
       return `state what this ticket is for: at least one line, at most ${String(briefIntentLinesMax)} printed lines and ${String(briefIntentCharsMax)} characters`;
     case "links":
@@ -184,6 +196,7 @@ export function creationFaultSentence(field: CreationField): string {
 function creationFieldOf(path: readonly PropertyKey[]): CreationField {
   if (path[0] === "authoring") return "authoring";
   if (path[0] !== "brief") return "fence";
+  if (path[1] === "title") return "title";
   if (path[1] === "intent") return "intent";
   if (path[1] === "branch") return "branch";
   if (path[1] === "checks") return "checks";
@@ -242,8 +255,9 @@ const creationFinalizationMode: BriefFinalizationMode = "Push";
 
 /**
  * The brief a form becomes. A finalization is what naming a target means, so a
- * form that names none sends none rather than a target repeating the branch,
- * and a form adding no check lines sends none rather than an empty list.
+ * form that names none sends none rather than a target repeating the branch, a
+ * form adding no check lines sends none rather than an empty list, and a form
+ * naming no title sends none rather than an empty one.
  */
 function creationBriefOf(
   form: TicketCreationForm,
@@ -252,7 +266,9 @@ function creationBriefOf(
   const checks = form.checks
     .map((check) => check.trim())
     .filter((check) => check !== "");
+  const title = form.title.trim();
   return {
+    ...(title === "" ? {} : { title }),
     intent: creationIntentNormalized(form.intent).trim(),
     links: form.links.map((link) => link.trim()).filter((link) => link !== ""),
     ...(checks.length === 0 ? {} : { checks }),

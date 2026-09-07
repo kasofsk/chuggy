@@ -1,7 +1,7 @@
 /**
- * The brief a ticket carries beside its authoring: what a human asked for,
- * what to read first, the check lines it adds, the branch the work happens on,
- * and where a finalization lands it.
+ * The brief a ticket carries beside its authoring: what a human called it and
+ * asked for, what to read first, the check lines it adds, the branch the work
+ * happens on, and where a finalization lands it.
  *
  * A brief is not authoring. `authoringSchema` is the model's own release event
  * and every value of it decides how the machine runs the ticket; none of these
@@ -19,6 +19,13 @@ import { z } from "zod";
  * is the bound the wire publishes, the server enforces and the CHECK stores.
  */
 export const briefLineCharsMax = 512;
+
+/**
+ * The longest title a brief names. A title is one line and takes the line
+ * rule, and it is shorter than a line because it is what a table of tickets is
+ * read down.
+ */
+export const briefTitleCharsMax = 256;
 
 /** The longest intent a draft stores, an intent being a paragraph and not a line. */
 export const briefIntentCharsMax = 16_384;
@@ -61,6 +68,13 @@ export const briefBranchSchema = z
  * of what the wire says about it and the server decides the rest.
  */
 export const briefCheckSchema = z.string().min(1).max(briefLineCharsMax);
+
+/**
+ * What a person calls this ticket. It renders as one line under the shorter
+ * title bound, and the server decides the rest; it is optional because a brief
+ * written before tickets had titles is still a brief.
+ */
+export const briefTitleSchema = z.string().min(1).max(briefTitleCharsMax);
 
 /**
  * How and where a finalization lands the work, as one variant per mode: a push
@@ -107,6 +121,7 @@ export function briefLandingIsWhole(value: {
  */
 export const briefSchema = z
   .strictObject({
+    title: briefTitleSchema.optional(),
     intent: z.string().min(1).max(briefIntentCharsMax),
     links: z.array(briefLinkSchema).max(briefLinksMax),
     checks: z.array(briefCheckSchema).max(briefChecksMax).optional(),

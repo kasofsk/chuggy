@@ -355,6 +355,19 @@ test("the shell's top bar draws the ticket's own number and phase", async () => 
   expect(screen.getByText("Escalated")).toBeDefined();
 });
 
+test("the shell's top bar is headed by the ticket's own title where it has one", async () => {
+  await drawTicket(
+    {
+      shapes: ticket21Parked,
+      ticket: { ...parkedTicket, title: "Serve the reason" },
+    },
+    { shell: true },
+  );
+  expect(
+    screen.getByRole("heading", { name: "Serve the reason" }),
+  ).toBeDefined();
+});
+
 test("the canonical configuration is closed until asked for, and its trigger names what it opens", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
   const trigger = screen.getByRole("button", { name: "show canonical" });

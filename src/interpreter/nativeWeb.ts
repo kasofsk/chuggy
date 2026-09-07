@@ -255,6 +255,7 @@ export interface TicketAccounts {
  */
 export interface TicketResource {
   readonly ticket: TicketId;
+  readonly title?: string;
   readonly phase: Phase;
   readonly sequence: number;
   readonly changedAt: PublicInstant;

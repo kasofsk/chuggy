@@ -57,6 +57,7 @@ afterEach(() => {
 
 const escalated = {
   ticket: 4,
+  title: "Serve the reason",
   phase: "Escalated",
   sequence: 9,
   reason: "WorkFailed",
@@ -101,6 +102,11 @@ function drawInbox(route: (url: string) => Response): void {
     </ScreenHarness>,
   );
 }
+
+test("a row names the ticket it is about beside its number", async () => {
+  drawInbox(served);
+  expect(await screen.findByText("Serve the reason")).toBeDefined();
+});
 
 test("an answered row stays until a Ticket frame moves it out of the section", async () => {
   const api = apiDouble({ operation: operationAt("Pending"), route: served });

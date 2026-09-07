@@ -101,6 +101,33 @@ test("a tool the roster does not grant is never registered", () => {
   );
 });
 
+/**
+ * `brief` is an open object on the wire, so a session learns what one carries
+ * from the description alone. A tool that takes one and does not name the title
+ * is a tool that files untitled tickets.
+ */
+test("every tool that takes a brief names the title it carries", () => {
+  const taking = chuggyToolDefinitions(
+    chuggyToolContext(task, bearer, {
+      capabilities: everyCapability,
+      staging: leadDecisionStaging(),
+    }),
+  ).filter((definition) => "brief" in definition.shape(z));
+
+  assert.deepEqual(taking.map(({ name }) => name).sort(), [
+    "create_draft",
+    "file_dependent",
+    "revise_draft",
+  ]);
+  for (const { name, description } of taking) {
+    assert.ok(description.includes("`title`"), `${name} names no title`);
+    assert.ok(
+      description.includes("always give one"),
+      `${name} does not ask for one`,
+    );
+  }
+});
+
 test("the server the runtime is handed carries exactly the tools the roster admits", () => {
   const seen = [];
   const sdk = {

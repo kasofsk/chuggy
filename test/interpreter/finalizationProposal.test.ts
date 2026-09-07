@@ -44,7 +44,10 @@ import {
   finalizationProposalTitle,
   type FinalizationProposalGathered,
 } from "../../src/interpreter/finalizationProposal.ts";
-import { asBriefIntent } from "../../src/interpreter/ticketBrief.ts";
+import {
+  asBriefIntent,
+  asBriefTitle,
+} from "../../src/interpreter/ticketBrief.ts";
 import { populated } from "./roster.ts";
 
 const identity = asChangeProposalRequestIdentity("a".repeat(64));
@@ -62,7 +65,7 @@ const request = changeProposalRequest({
   headCommit: asGitObjectId("b".repeat(40)),
   baseRef: asGitRefName("refs/heads/main"),
   baseCommit: asGitObjectId("c".repeat(40)),
-  title: finalizationProposalTitle(asTicketId(7), intent),
+  title: finalizationProposalTitle(asTicketId(7), { intent }),
   body: finalizationProposalBody(intent, marker),
 });
 
@@ -280,12 +283,22 @@ test("an answer about this deployment is never recorded as one about the proposa
 
 test("the words a proposal carries name its ticket and always end on its marker", () => {
   assert.equal(
-    finalizationProposalTitle(asTicketId(7), intent),
+    finalizationProposalTitle(asTicketId(7), { intent }),
     "ticket 7: Serve the escalation reason.",
   );
   assert.equal(
     finalizationProposalBody(intent, marker),
     `Serve the escalation reason.\nRead the ticket.\n\n${marker}`,
+  );
+});
+
+test("a proposal is titled by the ticket's own title where its brief names one", () => {
+  assert.equal(
+    finalizationProposalTitle(asTicketId(7), {
+      title: asBriefTitle("Serve the reason"),
+      intent,
+    }),
+    "ticket 7: Serve the reason",
   );
 });
 
@@ -298,7 +311,7 @@ function longestIntent(line: string): ReturnType<typeof asBriefIntent> {
 
 test("an intent no proposal could carry whole is bounded rather than refused", () => {
   const long = longestIntent("w".repeat(briefLineCharsMax - 1));
-  const title = finalizationProposalTitle(asTicketId(7), long);
+  const title = finalizationProposalTitle(asTicketId(7), { intent: long });
   const body = finalizationProposalBody(long, marker);
   assert.equal(title.length, proposalTitleCharsMax);
   assert.equal(body.length, proposalBodyCharsMax);
@@ -308,7 +321,7 @@ test("an intent no proposal could carry whole is bounded rather than refused", (
 test("a bound falling inside a character keeps the words well formed", () => {
   const emoji = "\u{1f600}";
   const paired = longestIntent(emoji.repeat(briefLineCharsMax / 2 - 1));
-  const title = finalizationProposalTitle(asTicketId(70), paired);
+  const title = finalizationProposalTitle(asTicketId(70), { intent: paired });
   assert.equal(
     title,
     `ticket 70: ${emoji.repeat(proposalTitleCharsMax - "ticket 70: ".length)}`,

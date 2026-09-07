@@ -177,6 +177,7 @@ function releaseBriefFinalization(
 /** The brief beside it, branded through the rules the interpreter states once. */
 function releaseBrief(value: TicketBriefBody): DraftBrief {
   return asDraftBrief({
+    ...(value.title === undefined ? {} : { title: value.title }),
     intent: value.intent,
     links: value.links,
     ...(value.checks === undefined ? {} : { checks: value.checks }),

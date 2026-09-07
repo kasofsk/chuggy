@@ -40,8 +40,14 @@ import {
   briefChecksMax,
   briefLineCharsMax,
   briefLinksMax,
+  briefTitleCharsMax,
 } from "../../src/contract/brief.ts";
-import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
+import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
+import {
+  asBriefIntent,
+  asDraftBrief,
+  briefIntentLines,
+} from "../../src/interpreter/ticketBrief.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import { handoffFixture } from "../interpreter/handoffFixture.ts";
 import {
@@ -1364,4 +1370,81 @@ test("a released ticket's brief no longer moves, which is what lets a retry read
     await reader.brief(fixture.partition, fixture.draft.ticket),
     released,
   );
+});
+
+/** A brief that names itself, and an intent whose first line is not that name. */
+const titledBrief = asDraftBrief({
+  title: "Serve the reason on the ticket",
+  intent: "Serve the escalation reason.\nAnd on the table beside it.",
+  links: [],
+});
+
+/** What the listing calls the one ticket a released fixture's project carries. */
+async function listedTitle(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+): Promise<string | undefined> {
+  const found = await postgresNativeReads(pool).project(fixture.partition, {
+    limit: 2,
+  });
+  assert.equal(found.result, "Found");
+  return found.result === "Found" ? found.project.tickets[0]?.title : undefined;
+}
+
+test("a brief's title is what the listing and the ticket's own read call it", async () => {
+  const fixture = await draftFixture(postgresHarnessConfiguration, titledBrief);
+  await releaseFixtureDraft(fixture, "brief-title");
+  assert.equal(await listedTitle(fixture), titledBrief.title);
+  const read = await postgresNativeReads(pool).ticket(
+    fixture.partition,
+    fixture.draft.ticket,
+  );
+  assert.equal(read?.title, titledBrief.title);
+  assert.deepEqual(read?.brief, titledBrief);
+});
+
+test("a brief that names no title is called by the first line of its intent", async () => {
+  const fixture = await draftFixture(
+    postgresHarnessConfiguration,
+    asDraftBrief({
+      intent: "Name it by this line.\nNot by this one.",
+      links: [],
+    }),
+  );
+  await releaseFixtureDraft(fixture, "brief-untitled");
+  assert.equal(await listedTitle(fixture), "Name it by this line.");
+});
+
+test("an untitled brief is called by the first line of its intent that says anything", async () => {
+  const intent = "\n   \nName it by this line.\nNot by this one.";
+  const fixture = await draftFixture(
+    postgresHarnessConfiguration,
+    asDraftBrief({ intent, links: [] }),
+  );
+  await releaseFixtureDraft(fixture, "brief-blank-first");
+  assert.equal(
+    await listedTitle(fixture),
+    briefIntentLines(asBriefIntent(intent))[0],
+    "the listing calls a ticket what a briefing heads it with",
+  );
+});
+
+test("the server refuses a title that reached it around the interpreter's rules", async () => {
+  const { partition, draft } = await draftFixture();
+  for (const value of [
+    "",
+    "Serve it.\nAnd more.",
+    "a".repeat(briefTitleCharsMax + 1),
+  ]) {
+    assert.throws(
+      () => asDraftBrief({ title: value, intent: "Fix it.", links: [] }),
+      `the interpreter refuses ${JSON.stringify(value)}`,
+    );
+    await assert.rejects(
+      harness.query(
+        "UPDATE draft_brief SET title=$4 WHERE tenant=$1 AND project=$2 AND ticket=$3",
+        [partition.tenant, partition.project, draft.ticket, value],
+      ),
+      `the server refuses ${JSON.stringify(value)}`,
+    );
+  }
 });

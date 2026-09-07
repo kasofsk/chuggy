@@ -110,14 +110,17 @@ function standingDotFill(tone: Tone): string {
   }
 }
 
-/** The title and standing chip the top bar draws for a ticket page. */
+/** The title and standing chip the top bar draws for a ticket page, the ticket's
+ * own title where the read carries one. */
 export function TicketTopBar(props: {
   readonly ticket: TicketResponse;
 }): ReactNode {
   const ticket = props.ticket;
   return (
     <>
-      <h1 className="text-md font-strong text-ink-1 truncate">Ticket</h1>
+      <h1 className="text-md font-strong text-ink-1 truncate">
+        {ticket.title ?? "Ticket"}
+      </h1>
       <span className="text-ink-3 text-sm tabular-nums">{ticket.ticket}</span>
       <span className="text-ink-2 flex items-center gap-2 text-sm">
         <i

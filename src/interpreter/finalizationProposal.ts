@@ -60,7 +60,11 @@ import {
 } from "./changeProposal.ts";
 import type { CommitPermitId, FinalizationClaim } from "./finalizer.ts";
 import type { FinalizationHoldKind } from "./finalizer.ts";
-import { briefIntentLines, type BriefIntent } from "./ticketBrief.ts";
+import {
+  briefIntentLines,
+  type BriefIntent,
+  type DraftBrief,
+} from "./ticketBrief.ts";
 
 /** The lines a proposal's body puts between the ticket's own words and its marker. */
 const finalizationProposalMarkerSeparator = "\n\n";
@@ -220,14 +224,18 @@ function finalizationProposalBounded(value: string, charsMax: number): string {
     : [...value].slice(0, charsMax).join("");
 }
 
-/** The one line a proposal is titled with: the ticket it is for, and what it was asked for. */
+/**
+ * The one line a proposal is titled with: the ticket it is for, and what it is
+ * called — the brief's own title where it names one, and the first line of its
+ * intent where it does not.
+ */
 export function finalizationProposalTitle(
   ticket: TicketId,
-  intent: BriefIntent,
+  brief: Pick<DraftBrief, "title" | "intent">,
 ): string {
-  const [first] = briefIntentLines(intent);
+  const [first] = briefIntentLines(brief.intent);
   return finalizationProposalBounded(
-    `ticket ${String(ticket)}: ${first ?? ""}`,
+    `ticket ${String(ticket)}: ${brief.title ?? first ?? ""}`,
     proposalTitleCharsMax,
   );
 }
