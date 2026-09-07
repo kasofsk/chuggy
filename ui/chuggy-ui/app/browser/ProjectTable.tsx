@@ -59,6 +59,7 @@ import {
   cellAbsent,
   ticketRowExecutionCell,
   TicketNumberCell,
+  TicketTitleCell,
 } from "./TicketCells.tsx";
 import { Button, ButtonLink } from "./ui/Button.tsx";
 import { Pill } from "./ui/Pill.tsx";
@@ -137,13 +138,11 @@ function TicketRow(props: {
   return (
     <tr>
       <TicketNumberCell partition={props.partition} ticket={row.ticket} />
-      <td className="text-ink-3">
-        <Tooltip text={row.configuration?.title}>
-          <span className="max-w-aside inline-block truncate align-bottom">
-            {ticketRowExecutionCell(row, row.configuration?.text)}
-          </span>
-        </Tooltip>
-      </td>
+      <TicketTitleCell
+        partition={props.partition}
+        ticket={row.ticket}
+        title={row.title}
+      />
       <td>{row.phase}</td>
       <td>
         {row.badge === undefined ? (
@@ -178,7 +177,7 @@ function TicketTable(props: {
       <thead>
         <tr>
           <th scope="col">ticket</th>
-          <th scope="col">configuration</th>
+          <th scope="col">title</th>
           <th scope="col">phase</th>
           <th scope="col">why</th>
           <th scope="col">execution</th>

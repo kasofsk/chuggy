@@ -160,6 +160,12 @@ function typeIntent(text: string): void {
   });
 }
 
+function typeTitle(text: string): void {
+  fireEvent.change(screen.getByPlaceholderText("what this ticket is called"), {
+    target: { value: text },
+  });
+}
+
 function submit(): void {
   fireEvent.click(screen.getByText("create and release"));
 }
@@ -222,6 +228,7 @@ test("a follow that runs out of budget navigates nowhere either", async () => {
 test("what was typed survives a re-render and a fresh initialization", async () => {
   const held = api({ state: "Succeeded", draftStatus: 409 });
   const drawn = draw(held.ports, []);
+  typeTitle("Ship it");
   typeIntent("ship it");
   fireEvent.change(screen.getByPlaceholderText("the branch name"), {
     target: { value: "topic/one" },
@@ -230,6 +237,10 @@ test("what was typed survives a re-render and a fresh initialization", async () 
     ...creationInitialization,
     fence: { ...creationInitialization.fence, projectSequence: 99 },
   });
+  expect(
+    screen.getByPlaceholderText<HTMLInputElement>("what this ticket is called")
+      .value,
+  ).toBe("Ship it");
   expect(
     screen.getByPlaceholderText<HTMLTextAreaElement>("what this ticket is for")
       .value,
@@ -252,6 +263,7 @@ test("what was typed survives a re-render and a fresh initialization", async () 
 test("both branch fields reach the wire, the target as the finalization", async () => {
   const held = api({ state: "Succeeded" });
   draw(held.ports, []);
+  typeTitle("Ship it");
   typeIntent("ship it");
   fireEvent.change(screen.getByPlaceholderText("the branch name"), {
     target: { value: "topic/one" },
@@ -269,6 +281,7 @@ test("both branch fields reach the wire, the target as the finalization", async 
       ? body.brief
       : undefined,
   ).toStrictEqual({
+    title: "Ship it",
     intent: "ship it",
     links: [],
     branch: "refs/heads/topic/one",

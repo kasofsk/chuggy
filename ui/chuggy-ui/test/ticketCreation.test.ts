@@ -18,6 +18,7 @@ import {
   briefLineCharsMax,
   briefLinkScheme,
   briefLinksMax,
+  briefTitleCharsMax,
 } from "../../../src/contract/brief.ts";
 import { draftCreationSchema } from "../../../src/contract/requests.ts";
 import {
@@ -112,6 +113,27 @@ test("a filled form becomes a body the wire's own parser accepts", () => {
     links: ["https://example.test/a"],
     branch: "refs/heads/topic/one",
   });
+});
+
+test("a title is sent where one is typed, and omitted where the field is blank", () => {
+  const titled = creationBodyFrom(
+    creationInitialization,
+    creationForm({ title: "  Ship it  " }),
+  );
+  expect(titled.assembled).toBe("Body");
+  if (titled.assembled !== "Body") return;
+  expect(titled.body.brief.title).toBe("Ship it");
+
+  const untitled = creationBodyFrom(creationInitialization, creationForm());
+  expect(untitled.assembled).toBe("Body");
+  if (untitled.assembled !== "Body") return;
+  expect("title" in untitled.body.brief).toBe(false);
+});
+
+test("a title the wire will not take names the field a reader has to revisit", () => {
+  expect(
+    faultFields(creationForm({ title: "t".repeat(briefTitleCharsMax + 1) })),
+  ).toStrictEqual(["title"]);
 });
 
 test("the fence the initialization stated is what the body carries", () => {

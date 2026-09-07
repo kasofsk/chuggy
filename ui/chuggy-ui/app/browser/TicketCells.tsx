@@ -1,12 +1,13 @@
 /**
  * The cells every table of tickets draws the same way.
  *
- * A ticket number is the link to that ticket's page wherever it appears, so the
- * route and the parameters it is built from are written once; a table that
- * spelled its own would be a second place the path has to change. The execution
- * columns are the same arrangement for a different reason: a dash meaning "not
- * read" and a dash meaning "never ran" are the same dash, and which one a row
- * shows is a decision two screens must not answer differently.
+ * A ticket number and the title beside it are both links to that ticket's page
+ * wherever they appear, so the route and the parameters they are built from are
+ * written once; a table that spelled its own would be a second place the path
+ * has to change. The execution columns are the same arrangement for a different
+ * reason: a dash meaning "not read" and a dash meaning "never ran" are the same
+ * dash, and which one a row shows is a decision two screens must not answer
+ * differently.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -14,6 +15,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
+import { Tooltip } from "./ui/Tooltip.tsx";
 
 export const cellAbsent = "—";
 
@@ -32,6 +34,33 @@ export function TicketNumberCell(props: {
         {props.ticket}
       </Link>
     </th>
+  );
+}
+
+/** What the ticket is called, linking where its number does. A ticket whose
+ * brief states nothing a title could be read out of has none. */
+export function TicketTitleCell(props: {
+  readonly partition: PartitionIdentity;
+  readonly ticket: number;
+  readonly title: string | undefined;
+}): ReactNode {
+  return (
+    <td>
+      {props.title === undefined ? (
+        <span className="text-ink-3">{cellAbsent}</span>
+      ) : (
+        <Tooltip text={props.title}>
+          <span className="max-w-aside inline-block truncate align-bottom">
+            <Link
+              to="/$tenant/$project/tickets/$ticket"
+              params={{ ...props.partition, ticket: String(props.ticket) }}
+            >
+              {props.title}
+            </Link>
+          </span>
+        </Tooltip>
+      )}
+    </td>
   );
 }
 

@@ -34,15 +34,15 @@ vi.mock("@tanstack/react-router", () => ({
 // jscpd:ignore-end
 
 /**
- * The two columns of the project table that draw a label, on the two things
- * `projectTableRows.ts` cannot say about them: that the identity behind the
- * name is on the cell, and that the cell still clips.
+ * The two columns of the project table that draw a long value, on the two
+ * things `projectTableRows.ts` cannot say about them: that the whole value is
+ * on the cell, and that the cell still clips.
  *
  * Both are properties of the markup and of nothing else. A `title` dropped at
- * either call site loses the revision or the image with no way back to it, and
- * `max-w-aside` dropped lets the fallback identity — which is a full digest
- * reference, and the reason the class is there — take the column apart. Neither
- * shows up in a row's own value, so neither is provable above this tier.
+ * either call site loses the image or the ticket's own words with no way back
+ * to them, and `max-w-aside` dropped lets a value the length of a full digest
+ * reference take the column apart. Neither shows up in a row's own value, so
+ * neither is provable above this tier.
  */
 
 beforeEach(resizeObserverStubbed);
@@ -57,7 +57,16 @@ const revision = "repository:cfaca0a0f14ec03845a4e01458ac6c3a56d52a23:chuggy";
 const image =
   "registry.chuggy.internal/chuggy/worker@sha256:9949c442a2f0a5cd0f0a5b1c8b6e0a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f";
 
-const ticket = { ticket: 11, phase: "Working", sequence: 7, ...ticketInstants };
+const title =
+  "Serve the escalation reason on the ticket resource, and on the table beside it";
+
+const ticket = {
+  ticket: 11,
+  title,
+  phase: "Working",
+  sequence: 7,
+  ...ticketInstants,
+};
 
 const execution = {
   execution: "e1",
@@ -106,12 +115,13 @@ async function drawTable(): Promise<void> {
   await settled();
 }
 
-test("the configuration cell keeps the revision, and keeps clipping it", async () => {
+test("the title cell keeps the whole title, keeps clipping it, and links", async () => {
   await drawTable();
-  const cell = screen.getByText("chuggy #12");
-  expect(cell.className).toContain("max-w-aside");
-  fireEvent.focus(cell);
-  expect((await screen.findByRole("tooltip")).textContent).toBe(revision);
+  const cell = screen.getByText(title).parentElement;
+  expect(cell?.className).toContain("max-w-aside");
+  expect(screen.getByText(title).tagName).toBe("A");
+  fireEvent.focus(cell as Element);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(title);
 });
 
 test("the runs-on cell keeps the image reference, and keeps clipping it", async () => {
@@ -127,7 +137,7 @@ test("the runs-on cell keeps the image reference, and keeps clipping it", async 
 test("nothing the project table draws is a runtime style element", async () => {
   await drawTable();
   expect(document.querySelectorAll("style").length).toBe(0);
-  fireEvent.focus(screen.getByText("chuggy #12"));
+  fireEvent.focus(screen.getByText("chuggy-worker v3"));
   await screen.findByRole("tooltip");
   expect(document.querySelectorAll("style").length).toBe(0);
 });
