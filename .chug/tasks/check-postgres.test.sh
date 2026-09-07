@@ -90,6 +90,19 @@ run_gate() { # <dir> [env=value...]
 	set -e
 }
 
+suite_moves() { # <worker> — that worker's per-suite clones and drops, in order
+	# Two other lines name a database: a clone names its template as well and
+	# the run's cleanup drops every name at once, so the field count is what
+	# tells a move about one suite from a move about the run.
+	awk -v worker="$1" '
+		($1 == "clone" && NF == 3) || ($1 == "drop" && NF == 2) {
+			if (match($2, "_w" worker "_s[0-9]+$"))
+				printf "%s%s ", $1, substr($2, RSTART)
+		}
+		END { print "" }
+	' "$CHUG_PG_HELPER_LOG"
+}
+
 # --- A suite that is not there is a could-not-run ----------------------------
 
 fresh_repo "$R"
@@ -183,7 +196,7 @@ git -C "$R" add -A
 HELPER_LOG="$WORK/.helper"
 : >"$HELPER_LOG"
 run_gate "$R" "CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$HELPER_LOG" CHUG_PG_HELPER_FAIL=clone
-check "a worker database that cannot be cloned is a could-not-run" 2 "$RC" "could not clone worker database"
+check "a suite database that cannot be cloned is a could-not-run" 2 "$RC" "could not clone a database for"
 OUT="$HELPER_LOG"
 check "a partial preparation removes its clone name and template" 0 0 "drop ignored_"
 
@@ -226,5 +239,28 @@ OUT="$HELPER_LOG"
 check "a green run prepares the schema once" 0 0 "prepare ignored_"
 check "a green run removes its databases" 0 0 "drop ignored_"
 check "every database it made is named inside the one it connected to" 0 0 "_t"
+
+# --- Each suite runs against a database of its own ---------------------------
+#
+# Three suites over two workers, so one worker is dealt two of them: what the
+# helper log has to show is that the second was cloned a database of its own
+# rather than given the first one's, and that the first was dropped before it.
+
+fixture
+passing_suite "$R/test/postgres/one.test.ts"
+passing_suite "$R/test/postgres/three.test.ts"
+passing_suite "$R/test/postgres/two.test.ts"
+git -C "$R" add -A
+HELPER_LOG="$WORK/.helper"
+: >"$HELPER_LOG"
+run_gate "$R" "CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$HELPER_LOG" CHUG_PG_WORKERS=2
+check "a run dealing suites over workers is clean" 0 "$RC" "3 suite(s) clean"
+check "the clean line reports the workers that ran them" 0 "$RC" "with 2 worker(s)"
+MOVES="$WORK/.moves"
+{ suite_moves 1; suite_moves 2; } >"$MOVES"
+OUT="$MOVES"
+check "a worker clones a database per suite and drops it when the suite ends" 0 0 \
+	"clone_w1_s1 drop_w1_s1 clone_w1_s2 drop_w1_s2"
+check "the other worker does the same for the suite it was dealt" 0 0 "clone_w2_s1 drop_w2_s1"
 
 done_ "check-postgres.test.sh"

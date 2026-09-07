@@ -1314,9 +1314,9 @@ test("the store reads answer the session they were asked about and no sibling", 
 });
 
 /**
- * Where the change log stands now. Every suite of one worker shares a database,
- * so a wake case that read from zero would be reading whatever an earlier case
- * left behind and would pass or fail on that.
+ * Where the change log stands now. The cases of a suite share a database, so a
+ * wake case that read from zero would be reading whatever an earlier case left
+ * behind and would pass or fail on that.
  */
 async function changeLogHead(): Promise<number> {
   const rows = await rig.sessions.harness.query(

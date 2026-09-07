@@ -14,7 +14,7 @@
  * conflict pushes to the remote in the window between those two reads rather
  * than trusting timing to find it.
  *
- * EVERY CASE QUIESCES THE DATABASE IT SHARES. The suites in this directory run
+ * EVERY CASE QUIESCES THE DATABASE IT SHARES. The cases of this suite run
  * against one database and a pass draws work installation-wide, so a case that
  * left a live request would be advanced by the next case's pass.
  */

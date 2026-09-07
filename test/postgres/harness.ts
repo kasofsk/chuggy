@@ -10,10 +10,11 @@
  * at it.
  *
  * IDENTITIES ARE UNIQUE PER CASE rather than the database being fresh per
- * case. Creating a database costs a connection and a template copy, and the
- * thing being tested is a partitioned store — so cases that share one database
- * and hold different partitions exercise the isolation the port claims instead
- * of hiding it behind a clean slate.
+ * case. The gate gives each suite a database of its own; within one, creating
+ * another costs a connection and a template copy, and the thing being tested
+ * is a partitioned store — so cases that share one database and hold different
+ * partitions exercise the isolation the port claims instead of hiding it
+ * behind a clean slate.
  */
 
 import { randomUUID } from "node:crypto";

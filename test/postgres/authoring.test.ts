@@ -57,6 +57,7 @@ import {
   postgresHarnessReleaseSubmission,
   postgresHarnessOpen,
   postgresHarnessProject,
+  postgresHarnessStalled,
   postgresHarnessUrl,
   postgresHarnessWriter,
   type PostgresHarness,
@@ -127,6 +128,30 @@ test("the ticket service refuses policy drift from the installed authority", asy
     ).met,
     "Refused",
   );
+});
+
+/**
+ * Two writers starting against an installation the policy is not installed in
+ * yet, staged rather than hoped for: the winner holds its insert open, and the
+ * loser is proved queued behind that row before the winner commits. The row is
+ * emptied first because the harness installed it already, and the winner puts
+ * it back.
+ */
+test("a writer that loses the policy install is admitted by the one that won", async () => {
+  await harness.query("DELETE FROM deployment_authoring_policy");
+  const winner = await harness.begin();
+  await winner.query(
+    `INSERT INTO deployment_authoring_policy(singleton,domain_configuration)
+     VALUES(true,$1)`,
+    [JSON.stringify(refinementInstance)],
+  );
+  const loser = postgresDomainConfigurationPrecondition(
+    pool,
+    refinementInstance,
+  ).check(new AbortController().signal);
+  await postgresHarnessStalled(harness.pool, 1);
+  await winner.commit();
+  assert.equal((await loser).met, "Met");
 });
 
 function repositoryDeclarations(

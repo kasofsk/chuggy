@@ -422,9 +422,9 @@ test("a placement recorded after a claim leaves the working attempt exempt from 
 });
 
 /**
- * Whether the observation read offers one attempt. The suites of one worker
- * share a database, so a case reads the whole bounded page and picks its own
- * attempt out of it.
+ * Whether the observation read offers one attempt. The cases of a suite share
+ * a database, so a case reads the whole bounded page and picks its own attempt
+ * out of it.
  */
 async function observed(
   attempt: FencedSessionAttempt,

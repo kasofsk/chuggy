@@ -4,7 +4,7 @@
  * that its functions decide what their names claim.
  *
  * THE FRESH DATABASE IS THE GATE'S OWN. `.chug/tasks/check-postgres.sh`
- * creates a database per run and drops it when the run ends, so every case
+ * creates a database per suite and drops it when the suite ends, so every case
  * here already runs against a schema this run applied from nothing. What is
  * left to say is that re-applying adds nothing, which is a claim about the
  * ledger and is where the first case looks.
