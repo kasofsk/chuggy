@@ -30,6 +30,8 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import { styleless } from "./styleless.ts";
+import { frame } from "./streamDouble.ts";
+import { threadSessionResource } from "./threadFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
@@ -70,12 +72,12 @@ async function openThreadMenu(name = "Thread actions"): Promise<void> {
 /** The rail persists across a route change beneath it, drawn once at the
  * partition and not per leaf, so a case can navigate under it and still find
  * it. */
-function railRouter(): ReturnType<typeof createRouter> {
+function railRouter(onNavigate?: () => void): ReturnType<typeof createRouter> {
   const rootRoute = createRootRoute({ component: Outlet });
   const partitionRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/$tenant/$project",
-    component: () => <Rail partition={atlas} />,
+    component: () => <Rail partition={atlas} onNavigate={onNavigate} />,
   });
   const leaf = (path: string) =>
     createRoute({
@@ -102,10 +104,11 @@ function railRouter(): ReturnType<typeof createRouter> {
 
 async function mounted(
   fetchDouble: typeof fetch,
+  onNavigate?: () => void,
 ): Promise<ReturnType<typeof createRouter>> {
   vi.stubGlobal("fetch", fetchDouble);
   const server = openedStream();
-  const router = railRouter();
+  const router = railRouter(onNavigate);
   render(
     <ScreenHarness
       partition={atlas}
@@ -238,6 +241,12 @@ test("the active rail entry's ink is not shared with a resting one", async () =>
   expect(resting.className.split(" ")).not.toContain("text-ink-1");
 });
 
+test("All threads is a link after the list, not a list item outside one", async () => {
+  await mounted(projectsOnly());
+  const allThreads = screen.getByRole("link", { name: "All threads" });
+  expect(allThreads.closest("li")).toBeNull();
+});
+
 test("with no thread of the reader's own, New thread opens one and follows it", async () => {
   const api = threadRailApi({ openedSession: "s-new" });
   vi.stubGlobal("fetch", api.fetch);
@@ -308,6 +317,45 @@ test("while the open thread is answering, New thread is disabled and says so", a
   styleless();
 });
 
+/**
+ * The open thread's own read is a live read of a mutable object the fetch
+ * double closes over, not a value it was called with — so a `Session` frame
+ * naming the thread is what makes the second read visible, and nothing else
+ * would have.
+ */
+test("a Session frame for the open thread rereads it, not a timer", async () => {
+  const opts = { listing: [mineOpen], answering: false };
+  const api = threadRailApi(opts);
+  vi.stubGlobal("fetch", api.fetch);
+  const server = openedStream();
+  render(
+    <ScreenHarness
+      partition={atlas}
+      client={new QueryClient()}
+      transport={server.ports.fetch}
+    >
+      <RouterProvider router={railRouter()} />
+    </ScreenHarness>,
+  );
+  await settled();
+  expect(screen.getByRole("button", { name: "New thread" })).toBeDefined();
+
+  opts.answering = true;
+  await turned(() => {
+    server.push(
+      frame("Session", "10", {
+        version: 1,
+        resource: threadSessionResource(mineOpen.session, "thread-turn-1"),
+        representation: null,
+      }),
+    );
+  });
+  await settled();
+
+  expect(screen.getByRole("button", { name: "Answering" })).toBeDefined();
+  styleless();
+});
+
 test("a titled thread of the reader's own draws its title, with no Yours tag", async () => {
   const titled = {
     ...mineOpen,
@@ -318,6 +366,19 @@ test("a titled thread of the reader's own draws its title, with no Yours tag", a
   await mounted(api.fetch);
   expect(screen.getByText("why is 42 blocked")).toBeDefined();
   expect(screen.queryByText("Yours")).toBeNull();
+});
+
+test("pressing a thread row fires the drawer's close callback, as All threads does", async () => {
+  const titled = {
+    ...mineOpen,
+    session: "thread-titled",
+    title: "why is 42 blocked",
+  };
+  const api = threadRailApi({ listing: [titled] });
+  const onNavigate = vi.fn();
+  await mounted(api.fetch, onNavigate);
+  fireEvent.click(screen.getByRole("link", { name: "why is 42 blocked" }));
+  expect(onNavigate).toHaveBeenCalledOnce();
 });
 
 test("an untitled thread of the reader's own reads New thread", async () => {

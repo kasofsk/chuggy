@@ -2,16 +2,8 @@
  * The console's navigation: the brand and project switcher at the head, the
  * project's own entries fixed above the list, the reader's own conversations
  * scrolling beneath them, and the account controls at the foot.
- *
- * WHETHER THE READER'S OPEN THREAD IS ANSWERING IS POLLED, NOT FRAME-DRIVEN.
- * The listing that drives everything else here carries a turn count and not a
- * turn's own state, so knowing whether one is `Queued` or `Claimed` needs the
- * thread's own read — asked only while a thread of the reader's stands open,
- * and re-asked on the same interval a freshness label ages by, rather than
- * on the `Session` frame every other panel here waits for.
  */
 
-import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -31,7 +23,11 @@ import {
 import { panelReason } from "../../core/freshness.ts";
 import { inboxCountLabel } from "../../core/inboxList.ts";
 import { lastProjectWrite } from "../../core/lastProject.ts";
-import { projectListReread } from "../../core/projectQueryKeys.ts";
+import { leadSessionNamed } from "../../core/leadTranscript.ts";
+import {
+  projectListReread,
+  projectListRereadNamed,
+} from "../../core/projectQueryKeys.ts";
 import { railRoutes, shellRail } from "../../core/shellRail.ts";
 import type {
   RailConversations,
@@ -44,7 +40,7 @@ import { sessionStateTone } from "../../core/tones.ts";
 import type { Tone } from "../../core/tones.ts";
 import { useApiPorts, usePanelInventory, usePanelList } from "../api.ts";
 import { Footer } from "../Footer.tsx";
-import { freshnessTickMs, useNowMs } from "../Freshness.tsx";
+import { useNowMs } from "../Freshness.tsx";
 import { useInboxRows } from "../Inbox.tsx";
 import { useLead } from "../LeadPage.tsx";
 import { persistentStore } from "../ports.ts";
@@ -136,6 +132,7 @@ function RailThreadEntry(props: {
   readonly thread: ThreadEntryResponse;
   readonly closed: boolean;
   readonly partition: PartitionIdentity;
+  readonly onNavigate: (() => void) | undefined;
 }): ReactNode {
   return (
     <li
@@ -143,7 +140,11 @@ function RailThreadEntry(props: {
         props.closed ? "text-ink-3" : "text-ink-2"
       }`}
     >
-      <ThreadEntryLabel partition={props.partition} thread={props.thread} />
+      <ThreadEntryLabel
+        partition={props.partition}
+        thread={props.thread}
+        onNavigate={props.onNavigate}
+      />
     </li>
   );
 }
@@ -203,10 +204,32 @@ function RailNewThreadEntry(props: {
   );
 }
 
+/** The section's own foot, a link rather than a list item: it names no
+ * thread, so it draws beneath the list rather than inside it as one more
+ * entry of a kind it is not. */
+function RailAllThreadsEntry(props: {
+  readonly entry: RailEntry;
+  readonly onNavigate: (() => void) | undefined;
+}): ReactNode {
+  const entry = props.entry;
+  if (entry.to === undefined || entry.params === undefined) return null;
+  return (
+    <Link
+      to={entry.to}
+      params={entry.params}
+      onClick={props.onNavigate}
+      className={`${railEntryClassName} text-ink-2`}
+    >
+      {entry.label}
+    </Link>
+  );
+}
+
 function RailConversationsSection(props: {
   readonly conversations: RailConversations;
   readonly threads: readonly ThreadEntryResponse[] | undefined;
   readonly partition: PartitionIdentity;
+  readonly allThreads: RailEntry;
   readonly onNavigate: (() => void) | undefined;
 }): ReactNode {
   const conversations = props.conversations;
@@ -245,12 +268,17 @@ function RailConversationsSection(props: {
                     thread={thread}
                     closed={entry.closed === true}
                     partition={props.partition}
+                    onNavigate={props.onNavigate}
                   />
                 );
               })}
             </ul>
           </div>
         ))}
+        <RailAllThreadsEntry
+          entry={props.allThreads}
+          onNavigate={props.onNavigate}
+        />
       </section>
     </div>
   );
@@ -352,25 +380,37 @@ function RailFoot(): ReactNode {
 
 /** Whether the reader's own open thread, if any, has a turn the mailbox has
  * not settled. */
+/** The list entry the reader's own open thread keeps its answering read
+ * under, distinct from the thread page's own so the two entries never share
+ * a cache slot over different result shapes. */
+function railAnsweringListName(session: string): string {
+  return `rail-answering-${session}`;
+}
+
+/** Whether the reader's own open thread, if any, has a turn the mailbox has
+ * not settled — re-read on the `Session` frame that names it, as
+ * `ThreadPage`'s own read is. */
 function useThreadAnswering(
   partition: PartitionIdentity,
   session: string | undefined,
 ): boolean {
-  const ports = useApiPorts();
-  const query = useQuery({
-    queryKey: ["rail-answering", partition.tenant, partition.project, session],
-    queryFn: () =>
-      session === undefined
-        ? Promise.resolve(undefined)
-        : apiThread(ports, partition, session),
-    enabled: session !== undefined,
-    refetchInterval: freshnessTickMs,
-  });
-  return (
-    query.data !== undefined &&
-    query.data.outcome === "Ok" &&
-    threadAnswering(query.data.value)
+  const state = usePanelList(
+    projectListRereadNamed<boolean>(
+      partition,
+      "Session",
+      session === undefined ? "rail-answering" : railAnsweringListName(session),
+      (change) =>
+        session !== undefined && leadSessionNamed(change.resource) === session,
+    ),
+    async (ports) => {
+      if (session === undefined) return { outcome: "Ok", value: false };
+      const result = await apiThread(ports, partition, session);
+      return result.outcome === "Ok"
+        ? { outcome: "Ok", value: threadAnswering(result.value) }
+        : result;
+    },
   );
+  return state.state === "Ready" && state.value;
 }
 
 function useRail(partition: PartitionIdentity): {
@@ -429,9 +469,9 @@ export function Rail(props: {
           conversations={rail.conversations}
           threads={threads}
           partition={props.partition}
+          allThreads={rail.allThreads}
           onNavigate={props.onNavigate}
         />
-        <RailNavEntry entry={rail.allThreads} onNavigate={props.onNavigate} />
       </div>
       <RailFoot />
     </nav>
