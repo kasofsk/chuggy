@@ -33,7 +33,7 @@ export type RailRoute = (typeof railRoutes)[keyof typeof railRoutes];
 export interface RailParams {
   readonly tenant: string;
   readonly project: string;
-  readonly session?: string;
+  readonly session?: string | undefined;
 }
 
 /** One entry's standing, in the word the wire says it in and the hue it takes,
@@ -50,9 +50,9 @@ export interface RailEntry {
   readonly label: string;
   readonly to: RailRoute;
   readonly params: RailParams;
-  readonly standing?: RailStanding;
-  readonly count?: string;
-  readonly mine?: boolean;
+  readonly standing?: RailStanding | undefined;
+  readonly count?: string | undefined;
+  readonly mine?: boolean | undefined;
 }
 
 /** A group of entries under a heading, which links to the full listing where
@@ -60,16 +60,16 @@ export interface RailEntry {
 export interface RailSection {
   readonly id: string;
   readonly heading: string;
-  readonly to?: RailRoute;
-  readonly params?: RailParams;
+  readonly to?: RailRoute | undefined;
+  readonly params?: RailParams | undefined;
   readonly entries: readonly RailEntry[];
 }
 
 export interface ShellRailInput {
   readonly partition: PartitionIdentity;
   readonly threads: readonly ThreadEntryResponse[] | undefined;
-  readonly leadStanding?: RailStanding;
-  readonly inboxCount?: string;
+  readonly leadStanding?: RailStanding | undefined;
+  readonly inboxCount?: string | undefined;
 }
 
 function shellRailThreadEntry(

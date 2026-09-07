@@ -64,7 +64,7 @@ function RailDot(props: { readonly standing: RailStanding }): ReactNode {
     <>
       <i
         aria-hidden="true"
-        className={`size-2 shrink-0 rounded-circle ${railDotFills[props.standing.tone]}`}
+        className={`block size-2 shrink-0 rounded-circle ${railDotFills[props.standing.tone]}`}
       />
       <span className="visually-hidden">{props.standing.word}</span>
     </>
