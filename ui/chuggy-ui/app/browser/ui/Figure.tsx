@@ -56,6 +56,13 @@ export function Figure(props: { readonly figure: FigureValue }): ReactNode {
     case "Tokens":
     case "Duration":
       return <span className="fig">{figure.text}</span>;
+    case "Quantity":
+      return (
+        <span className="fig">
+          {figure.text}
+          <i className="fig-unit">{figure.unit}</i>
+        </span>
+      );
     case "Instant":
       return (
         <Tooltip text={figure.iso}>

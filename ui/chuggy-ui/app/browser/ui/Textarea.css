@@ -1,0 +1,26 @@
+/* Textarea: a box that grows with its text and stops where a quoted block
+   stops. `resize` is off because the height is the text's, not a handle's. */
+
+@layer ui {
+  .textarea {
+    width: 100%;
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge-control);
+    border-radius: var(--radius-2);
+    color: var(--ink-1);
+    padding: var(--space-3);
+    line-height: var(--leading-prose);
+    resize: none;
+    field-sizing: content;
+    max-height: var(--height-clip);
+  }
+
+  .textarea[data-mono] {
+    font-family: var(--font-mono);
+    font-size: var(--mono-optical);
+  }
+
+  .textarea::placeholder {
+    color: var(--ink-3);
+  }
+}

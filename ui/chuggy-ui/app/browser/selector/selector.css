@@ -1,0 +1,215 @@
+/* The selector settings page: the status strip, the shape a prose setting is
+   read in, the limits grid and the revisions list. Everything a utility can
+   state is stated as one; what is here is the grids, the clip and the states a
+   data attribute carries. */
+
+@layer page {
+  .selector-strip {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+    background: var(--surface-1);
+  }
+
+  .selector-cell {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .selector-cell + .selector-cell {
+    border-top: var(--hairline) solid var(--edge);
+  }
+
+  @media (min-width: 60em) {
+    .selector-strip {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .selector-cell + .selector-cell {
+      border-top: 0;
+      border-left: var(--hairline) solid var(--edge);
+    }
+  }
+
+  .selector-key {
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+    width: 5em;
+  }
+
+  .selector-standing {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--ink-1);
+    font-weight: var(--weight-medium);
+  }
+
+  .selector-dot {
+    width: 0.5em;
+    height: 0.5em;
+    border-radius: var(--radius-circle);
+    flex: none;
+  }
+
+  .selector-dot[data-tone="live"] {
+    background: var(--tone-live);
+  }
+
+  .selector-dot[data-tone="parked"] {
+    background: var(--tone-parked);
+  }
+
+  .selector-prose {
+    white-space: pre-wrap;
+    max-width: var(--measure);
+    color: var(--ink-2);
+    line-height: var(--leading-prose);
+  }
+
+  .selector-prose[data-mono] {
+    font-family: var(--font-mono);
+    font-size: var(--mono-optical);
+  }
+
+  /* A passage longer than the section wants to give it, faded out at the cut
+     rather than sliced, so the reader can see there is more. */
+  .selector-clip {
+    position: relative;
+    max-height: var(--height-clip);
+    overflow: hidden;
+  }
+
+  .selector-clip::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0 0;
+    height: var(--space-7);
+    background: linear-gradient(transparent, var(--surface-1));
+  }
+
+  .selector-limits {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    column-gap: var(--space-6);
+  }
+
+  @media (min-width: 60em) {
+    .selector-limits {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  .selector-limit {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(8em, auto);
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: var(--hairline) solid var(--edge);
+  }
+
+  .selector-limit-key {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--ink-2);
+  }
+
+  .selector-limit[data-edited] .selector-limit-key {
+    color: var(--ink-1);
+    font-weight: var(--weight-medium);
+  }
+
+  .selector-mark {
+    display: inline-block;
+    width: 0.4em;
+    height: 0.4em;
+    border-radius: var(--radius-circle);
+    background: var(--tone-live);
+    flex: none;
+  }
+
+  .selector-was {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    justify-content: flex-end;
+    font-size: var(--text-sm);
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+
+  .selector-fault {
+    grid-column: 1 / -1;
+    text-align: right;
+    font-size: var(--text-xs);
+    color: var(--tone-fail);
+  }
+
+  .selector-revision {
+    display: grid;
+    grid-template-columns: 4em 14em 9em minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: var(--hairline) solid var(--edge);
+  }
+
+  @media (max-width: 60em) {
+    .selector-revision {
+      grid-template-columns: 4em minmax(0, 1fr) auto;
+    }
+  }
+
+  .selector-revisions > *:last-child .selector-revision {
+    border-bottom: 0;
+  }
+
+  .selector-changed {
+    color: var(--ink-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .selector-changed[data-none] {
+    color: var(--ink-3);
+  }
+
+  .selector-diff {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-2) 0 var(--space-3) var(--space-6);
+    border-bottom: var(--hairline) solid var(--edge);
+  }
+
+  .selector-diff-row {
+    display: grid;
+    grid-template-columns: 10em minmax(0, 1fr);
+    gap: var(--space-3);
+    font-size: var(--text-sm);
+  }
+
+  .selector-diff-row > dt {
+    color: var(--ink-3);
+  }
+
+  .selector-diff-row[data-mono] > dd {
+    font-family: var(--font-mono);
+    font-size: var(--mono-optical);
+  }
+
+  .selector-before {
+    color: var(--tone-fail);
+    text-decoration: line-through;
+  }
+
+  .selector-after {
+    color: var(--tone-pass);
+  }
+}
