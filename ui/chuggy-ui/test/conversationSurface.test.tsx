@@ -72,6 +72,23 @@ test("an exchange draws its ask, its standing and its answer", () => {
   styleless();
 });
 
+test("the viewport and the composer cap width at the column token, not a call-site width", () => {
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  const view = render(
+    <Conversation
+      exchanges={[answered]}
+      composer={composerOf({ onSend })}
+      empty="No conversation"
+    />,
+  );
+  const wrappers = view.container.querySelectorAll(".max-w-column");
+  expect(wrappers).toHaveLength(2);
+  for (const wrapper of wrappers) {
+    expect(wrapper.classList.contains("max-w-column")).toBe(true);
+  }
+  styleless();
+});
+
 test("no exchanges draws the empty label and no composer", () => {
   render(<Conversation exchanges={[]} empty="No conversation" />);
   expect(screen.getByText("No conversation")).toBeDefined();

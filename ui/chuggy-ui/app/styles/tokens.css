@@ -132,7 +132,7 @@
     /* layout */
     --width-page: 96rem;
     --width-rail: 16rem; /* the shell's navigation */
-    --width-column: 48rem; /* a conversation's reading column */
+    --width-column: 64rem; /* a conversation's reading column */
     --width-aside: 22rem;
     --width-aside-min: 18rem;
     --col-label: 8.5rem; /* ledger: the row's label */
