@@ -14,6 +14,7 @@
 
   .fields dt {
     color: var(--ink-3);
+    font-size: var(--text-sm);
   }
 
   .fields dd {

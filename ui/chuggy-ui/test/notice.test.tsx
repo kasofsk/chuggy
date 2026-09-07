@@ -10,6 +10,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 
 import { Notice, noticeTones } from "../app/browser/ui/Notice.tsx";
+import { styleless } from "./styleless.ts";
 
 afterEach(cleanup);
 
@@ -25,6 +26,7 @@ test("every tone draws its own class in both forms", () => {
     expect(drawn.length).toBe(2);
     expect(drawn[1]?.classList.contains("notice-inline")).toBe(true);
     expect(drawn[0]?.classList.contains("notice-inline")).toBe(false);
+    styleless();
     cleanup();
   }
 });
@@ -50,6 +52,7 @@ test("the block form draws the word, the reason and at most one more line", () =
     "Stage 1 of 2 failed",
   );
   expect(view.container.querySelector("[style]")).toBeNull();
+  styleless();
 });
 
 test("a notice with no heading draws none, and the inline form has none at all", () => {
