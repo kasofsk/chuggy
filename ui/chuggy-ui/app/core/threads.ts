@@ -95,6 +95,14 @@ export function threadClosable(
   return thread.state !== "Closed";
 }
 
+/** A thread's own label, wherever one is drawn: its title, or `New thread`
+ * before it has one. */
+export function threadLabel(
+  thread: Pick<ThreadEntryResponse, "title">,
+): string {
+  return thread.title ?? "New thread";
+}
+
 /**
  * The word one turn's kind is drawn as, total over the wire's roster so a kind
  * it grows stops compiling here. `UserMessage` is what the mailbox calls a

@@ -273,10 +273,10 @@ test("an open the server refused says so and navigates nowhere", async () => {
   expect(navigations.length, "a refused open navigated anyway").toBe(0);
 });
 
-/** The menu is per row: Rename is always offered, Close only where the thread
- * is not already Closed, and Hide/Show only on the reader's own — the door
- * refuses `NotYourThread` for anyone else's. */
-test("a stranger's row offers no Hide, and the reader's own does", async () => {
+/** The menu is per row: Close is offered where the thread is not already
+ * Closed, and Rename and Hide/Show only on the reader's own — the door
+ * refuses `NotYourThread` for anyone else's, for both. */
+test("a stranger's row offers no Rename or Hide, and the reader's own does", async () => {
   drawThreads(threadsBody);
   await mountThreads();
   fireEvent.click(screen.getByRole("radio", { name: "Everyone" }));
@@ -293,14 +293,22 @@ test("a stranger's row offers no Hide, and the reader's own does", async () => {
   const mineTrigger = rowMenuTrigger(mineRow);
   await openThreadMenu(mineTrigger);
   expect(
+    screen.getByRole("menuitem", { name: "Rename" }),
+    "the reader's own row offered no Rename",
+  ).toBeDefined();
+  expect(
     screen.getByRole("menuitem", { name: "Hide" }),
     "the reader's own row offered no Hide",
   ).toBeDefined();
   fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
   await openThreadMenu(rowMenuTrigger(otherRow));
   expect(
+    screen.queryByRole("menuitem", { name: "Rename" }),
+    "a stranger's row offered Rename, which the door refuses",
+  ).toBeNull();
+  expect(
     screen.queryByRole("menuitem", { name: "Hide" }),
-    "a stranger's row offered Hide, which the door always refuses",
+    "a stranger's row offered Hide, which the door refuses",
   ).toBeNull();
   styleless();
 });

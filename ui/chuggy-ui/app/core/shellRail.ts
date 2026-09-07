@@ -17,7 +17,7 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../src/contract/responses.ts";
 import { threadGroups } from "./threadGroups.ts";
 import type { ThreadGroupHeading } from "./threadGroups.ts";
-import { threadMine } from "./threads.ts";
+import { threadLabel, threadMine } from "./threads.ts";
 import type { Tone } from "./tones.ts";
 
 /** The router's own paths, named here so an entry is data and the renderer is
@@ -137,7 +137,7 @@ function shellRailThreadEntry(
 ): RailEntry {
   return {
     id: thread.session,
-    label: thread.title ?? "New thread",
+    label: threadLabel(thread),
     to: railRoutes.thread,
     params: { ...params, session: thread.session },
     closed: thread.state === "Closed",

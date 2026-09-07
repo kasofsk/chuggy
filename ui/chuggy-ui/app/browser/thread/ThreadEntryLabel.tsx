@@ -23,19 +23,21 @@ import {
   apiRenameThread,
 } from "../../core/apiRoutes.ts";
 import { panelReason } from "../../core/freshness.ts";
-import { threadClosable } from "../../core/threads.ts";
+import { threadClosable, threadLabel } from "../../core/threads.ts";
 import { useApiPorts } from "../api.ts";
 import { Notice } from "../ui/Notice.tsx";
-import "../ui/Picker.css";
+import "./thread.css";
 
 export interface ThreadEntryActions {
   readonly renaming: boolean;
   readonly busy: boolean;
   readonly refused: string | undefined;
   readonly closable: boolean;
-  /** Whether hiding or showing this thread is the reader's to do: the door is
-   * member-scoped and refuses `NotYourThread` otherwise, so a row that is not
+  /** Whether renaming this thread is the reader's to do: the door is
+   * owner-scoped and refuses `NotYourThread` otherwise, so a row that is not
    * the reader's own does not offer an action it can only ever be refused. */
+  readonly renameable: boolean;
+  /** Hiding or showing is owner-scoped the same way. */
   readonly hideable: boolean;
   readonly hidden: boolean;
   readonly startRename: () => void;
@@ -61,6 +63,7 @@ export function useThreadEntryActions(
     busy,
     refused,
     closable: threadClosable(thread),
+    renameable: thread.mine,
     hideable: thread.mine,
     hidden: thread.hidden,
     startRename: () => {
@@ -146,21 +149,30 @@ export function ThreadEntryMenu(props: {
         …
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content className="picker" sideOffset={4} align="end">
-          <DropdownMenu.Item
-            className="picker-item"
-            onSelect={actions.startRename}
-          >
-            Rename
-          </DropdownMenu.Item>
+        <DropdownMenu.Content
+          className="thread-menu"
+          sideOffset={4}
+          align="end"
+        >
+          {actions.renameable ? (
+            <DropdownMenu.Item
+              className="thread-menu-item"
+              onSelect={actions.startRename}
+            >
+              Rename
+            </DropdownMenu.Item>
+          ) : null}
           {actions.closable ? (
-            <DropdownMenu.Item className="picker-item" onSelect={actions.close}>
+            <DropdownMenu.Item
+              className="thread-menu-item"
+              onSelect={actions.close}
+            >
               Close
             </DropdownMenu.Item>
           ) : null}
           {actions.hideable ? (
             <DropdownMenu.Item
-              className="picker-item"
+              className="thread-menu-item"
               onSelect={actions.toggleHidden}
             >
               {actions.hidden ? "Show" : "Hide"}
@@ -177,6 +189,7 @@ export function ThreadEntryMenu(props: {
 export function ThreadEntryLabel(props: {
   readonly partition: PartitionIdentity;
   readonly thread: ThreadEntryResponse;
+  readonly onNavigate?: (() => void) | undefined;
 }): ReactNode {
   const thread = props.thread;
   const actions = useThreadEntryActions(props.partition, thread);
@@ -189,10 +202,11 @@ export function ThreadEntryLabel(props: {
           <Link
             to="/$tenant/$project/threads/$session"
             params={{ ...props.partition, session: thread.session }}
+            onClick={props.onNavigate}
             className="min-w-0 flex-1 truncate no-underline"
             activeProps={{ className: "text-ink-1" }}
           >
-            {thread.title ?? "New thread"}
+            {threadLabel(thread)}
           </Link>
           <ThreadEntryMenu actions={actions} />
         </>
