@@ -724,6 +724,11 @@
               "minLength": 1,
               "maxLength": 65536
             },
+            "threadStanding": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 65536
+            },
             "mode": {
               "type": "string",
               "enum": ["Running", "Paused"]

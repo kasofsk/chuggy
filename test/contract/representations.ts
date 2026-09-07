@@ -328,12 +328,21 @@ export const selectorDefaults: SelectorRuntimeSettings = {
   operationalContextMaxAgeMs: 30_000,
 };
 
-/** One project that has set a North Star and inherited everything else. */
+/** One project that has set a North Star and its threads' standing rules, and
+ * inherited everything else. */
+const selectorProjectOverrides = {
+  northStar: "Ship the console.",
+  threadStanding: "- You draft, and nothing else.",
+};
+
 export const selectorProjectSettings: SelectorProjectSettingsRecord = {
   partition,
   revision: 2,
-  overrides: { northStar: "Ship the console." },
-  effective: resolvedSelectorSettings(partition, selectorDefaults, 2, {
-    northStar: "Ship the console.",
-  }),
+  overrides: selectorProjectOverrides,
+  effective: resolvedSelectorSettings(
+    partition,
+    selectorDefaults,
+    2,
+    selectorProjectOverrides,
+  ),
 };

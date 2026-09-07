@@ -382,20 +382,31 @@ export function postgresThreads(
 }
 
 /**
- * What a thread's first turn is seeded from. The North Star is read as itself
- * rather than as the whole resolved settings record, so the composition that
- * uses it cannot hand a thread the lead's prompt or its limits by accident; the
- * drafts and the refusals are filtered to the member the block is for, which is
- * why an authority rather than a principal is what they take.
+ * What a thread's first turn is seeded from. The project's two texts are read
+ * as themselves rather than as the whole resolved settings record, so the
+ * composition that uses them cannot hand a thread the lead's prompt or its
+ * limits by accident; the drafts and the refusals are filtered to the member
+ * the block is for, which is why an authority rather than a principal is what
+ * they take.
  */
 export function postgresThreadSeeding(pool: pg.Pool): ThreadSeedingRead {
   return {
-    northStar: async (partition) => {
-      const found = await pool.query<{ north_star: string | null }>(
-        sql`SELECT north_star FROM selector_project_settings
+    projectTexts: async (partition) => {
+      const found = await pool.query<{
+        north_star: string | null;
+        thread_standing: string | null;
+      }>(
+        sql`SELECT north_star,thread_standing FROM selector_project_settings
              WHERE tenant=${partition.tenant} AND project=${partition.project}`,
       );
-      return found.rows[0]?.north_star ?? undefined;
+      const row = found.rows[0];
+      if (row === undefined) return {};
+      return {
+        ...(row.north_star === null ? {} : { northStar: row.north_star }),
+        ...(row.thread_standing === null
+          ? {}
+          : { standing: row.thread_standing }),
+      };
     },
 
     drafts: async (partition, author, limit) => {
@@ -484,8 +495,10 @@ function threadWakeCandidateOf(row: {
   readonly reason: string | null;
   readonly principal: string | null;
   readonly session: string | null;
+  readonly thread_standing: string | null;
 }): ThreadWakeCandidate {
   return {
+    ...(row.thread_standing === null ? {} : { standing: row.thread_standing }),
     sequence: projectRowCounter(
       sessionRowText(row.sequence, "change sequence"),
       "change sequence",
@@ -505,6 +518,12 @@ function threadWakeCandidateOf(row: {
   };
 }
 
+/**
+ * One page of candidates, with the standing rules of the project each names
+ * hung off it: the settings row is keyed by the partition the page already
+ * carries, so the join adds a column and no candidate. It restates the
+ * definer's order, which a join over a function's rows does not preserve.
+ */
 async function threadWakeCandidates(
   pool: pg.Pool,
   after: number,
@@ -518,10 +537,16 @@ async function threadWakeCandidates(
     reason: string | null;
     principal: string | null;
     session: string | null;
+    thread_standing: string | null;
   }>(
-    sql`SELECT sequence::text AS sequence,tenant,project,resource,reason,
-               principal,session
-          FROM thread_wake_candidates(${after},${limit})`,
+    sql`SELECT candidate.sequence::text AS sequence,candidate.tenant,
+               candidate.project,candidate.resource,candidate.reason,
+               candidate.principal,candidate.session,settings.thread_standing
+          FROM thread_wake_candidates(${after},${limit}) candidate
+          LEFT JOIN selector_project_settings settings
+            ON settings.tenant=candidate.tenant
+           AND settings.project=candidate.project
+         ORDER BY candidate.sequence,candidate.session`,
   );
   return found.rows.map(threadWakeCandidateOf);
 }

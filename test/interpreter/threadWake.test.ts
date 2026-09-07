@@ -37,7 +37,7 @@ import {
   parseThreadWake,
   type ThreadWakeReason,
 } from "../../src/interpreter/thread.ts";
-import { threadWakeStanding } from "../../src/contract/threadSeeding.ts";
+import { threadStandingDefault } from "../../src/contract/threadSeeding.ts";
 import {
   threadWakeAdvanced,
   threadWakePass,
@@ -216,8 +216,26 @@ test("every reason the roster names becomes a turn whose document says so", asyn
     assert.ok(candidate !== undefined);
     assert.equal(document.resource, candidate.resource);
     assert.equal(document.at, instant);
-    assert.equal(document.standing, threadWakeStanding);
+    assert.equal(document.standing, threadStandingDefault);
   }
+});
+
+/**
+ * The standing a wake restates is the project's own, and it rides on the
+ * candidate rather than being read inside the pass — a read there would be an
+ * await in the middle of a pure pass, which house rule 8 is about.
+ */
+test("a candidate carrying its project's standing is what the wake restates", async () => {
+  const standing = "- You draft, and nothing else.";
+  const store = referenceStore({
+    log: [{ ...candidateAt(1, "solo"), standing }],
+  });
+
+  await threadWakePass(serviceOf(store));
+
+  const offer = store.offers[0];
+  assert.ok(offer !== undefined);
+  assert.equal(parseThreadWake(offer.input).standing, standing);
 });
 
 test("the wake carries the reason and the resource and never a body", async () => {

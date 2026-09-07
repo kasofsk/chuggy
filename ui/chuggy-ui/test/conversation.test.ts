@@ -8,8 +8,9 @@ import { describe, expect, test } from "vitest";
 import {
   threadDraftsHeading,
   threadNorthStarHeading,
-  threadSeedingLastLine,
+  threadStandingDefault,
   threadStandingSection,
+  threadTurnBoundaryHeading,
 } from "../../../src/contract/threadSeeding.ts";
 import {
   conversationAskMessage,
@@ -631,16 +632,20 @@ describe("the argument summary", () => {
 });
 
 /** A first turn as the interpreter composes one: the seeding block's sections
- * in order, then the blank line, then what the member typed. */
+ * in order, then the boundary, then what the member typed. */
 const seeded = [
   `${threadNorthStarHeading}\n\nShip the console.`,
   `${threadDraftsHeading}\n\n- 7 — the rail`,
-  threadStandingSection,
+  threadStandingSection(threadStandingDefault),
 ].join("\n\n");
 
+/** One first turn's whole input, which is what the mailbox hands the console. */
+const firstTurn = (said: string) =>
+  `${seeded}\n\n${threadTurnBoundaryHeading}\n\n${said}`;
+
 describe("the seeding block a first turn carries", () => {
-  test("is split off the member's words on the contract's own last line", () => {
-    const ask = conversationAskMessage(`${seeded}\n\nwhat is left to do`);
+  test("is split off the member's words on the contract's own boundary", () => {
+    const ask = conversationAskMessage(firstTurn("what is left to do"));
 
     expect(ask).toEqual({
       ask: "Message",
@@ -649,14 +654,14 @@ describe("the seeding block a first turn carries", () => {
     });
   });
 
-  test("is split at the last of its lines, not the first", () => {
-    const quoted = `${seeded}\n\n${threadSeedingLastLine}\n\nmy own words`;
+  test("is split at the last boundary, not the first", () => {
+    const quoted = firstTurn(`${threadTurnBoundaryHeading}\n\nmy own words`);
 
     expect(conversationAskMessage(quoted).text).toBe("my own words");
   });
 
   test("leaves a message that opens on no heading of its whole", () => {
-    const said = `check the rail\n\n${threadSeedingLastLine}\n\nand the drawer`;
+    const said = `check the rail\n\n${threadTurnBoundaryHeading}\n\nand the drawer`;
 
     expect(conversationAskMessage(said)).toEqual({
       ask: "Message",
@@ -693,14 +698,14 @@ describe("the seeding block a first turn carries", () => {
 
   test("the seeding split still wins first, over a JSON member's words", () => {
     const envelope = `{"version":1}`;
-    const ask = conversationAskMessage(`${seeded}\n\n${envelope}`);
+    const ask = conversationAskMessage(firstTurn(envelope));
 
     expect(ask).toEqual({ ask: "Observation", text: envelope });
   });
 
   test("reaches a drawn exchange as the two halves it is", () => {
     const drawn = conversationExchanges([
-      askOf("e1", `${seeded}\n\nwhat is left to do`),
+      askOf("e1", firstTurn("what is left to do")),
       answerOf("e2", "two things"),
     ]);
 
@@ -708,6 +713,27 @@ describe("the seeding block a first turn carries", () => {
       ask: "Message",
       text: "what is left to do",
       context: seeded,
+    });
+  });
+});
+
+describe("a block whose standing rules the project wrote", () => {
+  /** Nothing inside the block is a text the console may split on; the boundary
+   * is, and it is the same boundary whatever the rules say. */
+  test("is split off the member's words on the boundary all the same", () => {
+    const own = [
+      `${threadNorthStarHeading}\n\nShip the console.`,
+      threadStandingSection("- You draft, and nothing else."),
+    ].join("\n\n");
+
+    const ask = conversationAskMessage(
+      `${own}\n\n${threadTurnBoundaryHeading}\n\nwhat is left to do`,
+    );
+
+    expect(ask).toEqual({
+      ask: "Message",
+      text: "what is left to do",
+      context: own,
     });
   });
 });

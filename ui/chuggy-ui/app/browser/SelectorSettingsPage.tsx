@@ -1,7 +1,7 @@
 /**
  * The project's selector settings, written whole under the revision they were
- * read at: the North Star, the base prompt, the two modes and the limits a
- * project may set for itself.
+ * read at: the North Star, its threads' standing rules, the base prompt, the
+ * two modes and the limits a project may set for itself.
  *
  * A WRITE THE REVISION MOVED UNDER IS NOT RETRIED. The route answers `409` with
  * the settings that moved; the page names the revision and stops, and the boxes
@@ -158,39 +158,59 @@ function SelectorModeField(props: {
   );
 }
 
+/** The name a text override is drawn under, which is the key of the box it holds. */
+type SelectorSettingsTextName = "northStar" | "threadStanding" | "basePrompt";
+
+function SelectorTextField(props: {
+  readonly chrome: SelectorFieldChrome;
+  readonly name: SelectorSettingsTextName;
+  readonly label: string;
+  readonly effective: string;
+}): ReactNode {
+  const { chrome, name, label } = props;
+  const draft = chrome.draft;
+  return (
+    <Field name={label} absent={draft[name] === ""}>
+      <textarea
+        className="bg-surface-1 border-edge-control rounded-2 aria-invalid:border-tone-fail font-mono w-full resize-y border px-2 py-1"
+        rows={8}
+        aria-label={label}
+        aria-invalid={chrome.faults[name] !== undefined}
+        value={draft[name]}
+        placeholder={props.effective}
+        onChange={(event) => {
+          chrome.onChange({ ...draft, [name]: event.target.value });
+        }}
+      />
+    </Field>
+  );
+}
+
 function SelectorTextFields(props: {
   readonly chrome: SelectorFieldChrome;
 }): ReactNode {
   const chrome = props.chrome;
-  const draft = chrome.draft;
+  const effective = chrome.settings.effective;
   return (
     <Fields>
-      <Field name="North Star" absent={draft.northStar === ""}>
-        <textarea
-          className="bg-surface-1 border-edge-control rounded-2 aria-invalid:border-tone-fail font-mono w-full resize-y border px-2 py-1"
-          rows={8}
-          aria-label="North Star"
-          aria-invalid={chrome.faults["northStar"] !== undefined}
-          value={draft.northStar}
-          placeholder={chrome.settings.effective.northStar ?? "None"}
-          onChange={(event) => {
-            chrome.onChange({ ...draft, northStar: event.target.value });
-          }}
-        />
-      </Field>
-      <Field name="Base prompt" absent={draft.basePrompt === ""}>
-        <textarea
-          className="bg-surface-1 border-edge-control rounded-2 aria-invalid:border-tone-fail font-mono w-full resize-y border px-2 py-1"
-          rows={8}
-          aria-label="Base prompt"
-          aria-invalid={chrome.faults["basePrompt"] !== undefined}
-          value={draft.basePrompt}
-          placeholder={chrome.settings.effective.basePrompt}
-          onChange={(event) => {
-            chrome.onChange({ ...draft, basePrompt: event.target.value });
-          }}
-        />
-      </Field>
+      <SelectorTextField
+        chrome={chrome}
+        name="northStar"
+        label="North Star"
+        effective={effective.northStar ?? "None"}
+      />
+      <SelectorTextField
+        chrome={chrome}
+        name="threadStanding"
+        label="Standing rules"
+        effective={effective.threadStanding}
+      />
+      <SelectorTextField
+        chrome={chrome}
+        name="basePrompt"
+        label="Base prompt"
+        effective={effective.basePrompt}
+      />
     </Fields>
   );
 }

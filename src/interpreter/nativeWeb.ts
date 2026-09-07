@@ -178,6 +178,7 @@ import {
   type ThreadsRead,
 } from "./threadRead.ts";
 import { inquiriesAnsweredMax, threadsAnsweredMax } from "../contract/http.ts";
+import { resolvedThreadStanding } from "../contract/threadSeeding.ts";
 export { asPublicInstant, type PublicInstant } from "./publicResource.ts";
 export { asPrincipal, oidcPrincipal, type Principal } from "./principal.ts";
 export {
@@ -1371,7 +1372,7 @@ function nativeOpenThreadMethod(
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
     const ports = composedThreadPorts(threads);
-    const northStar = await ports.seeding.northStar(partition);
+    const texts = await ports.seeding.projectTexts(partition);
     const opened = await ports.threads.open({
       partition,
       principal,
@@ -1379,7 +1380,10 @@ function nativeOpenThreadMethod(
       systemPrompt: threadSystemPrompt({
         partition,
         owner: authority.subject,
-        ...(northStar === undefined ? {} : { northStar }),
+        ...(texts.northStar === undefined
+          ? {}
+          : { northStar: texts.northStar }),
+        standing: resolvedThreadStanding(texts.standing),
       }),
       credentialSlot: ports.credentialSlot,
     });

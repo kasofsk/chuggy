@@ -14,6 +14,7 @@ import { after, before, test } from "node:test";
 
 import { leadSessionMint } from "../../src/adapters/crypto/leadSessionMint.ts";
 import { postgresSelectorState } from "../../src/adapters/postgres/selector.ts";
+import { threadStandingDefault } from "../../src/contract/threadSeeding.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   leadSelectorPolicy,
@@ -64,6 +65,7 @@ function settingsFor(
     mode: "Running",
     installationMode: "Running",
     dispatchMode: "ApprovalRequired",
+    threadStanding: threadStandingDefault,
     basePrompt: "choose a dispatchable ticket",
     modelAllowlist: ["*"],
     toolAllowlist: ["*"],

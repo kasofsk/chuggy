@@ -1,6 +1,6 @@
 /**
- * The North Star editor's draft: the project's overrides as the strings a form
- * holds, and the override set those strings become.
+ * The project settings editor's draft: the project's overrides as the strings a
+ * form holds, and the override set those strings become.
  *
  * AN EMPTY FIELD IS NO OVERRIDE AND NEVER A ZERO. The wire says a project takes
  * the installation default by omitting the field, so a cleared box is an
@@ -9,7 +9,7 @@
  *
  * THE WRITE REPLACES THE WHOLE OVERRIDE SET, so the three overrides this form
  * draws no box for — the two allowlists and the context age — are carried
- * through it unchanged rather than deleted by an edit to the North Star.
+ * through it unchanged rather than deleted by an edit to a box it draws.
  *
  * A BOX THE READER HAS TOUCHED IS THEIRS AND EVERY OTHER BOX FOLLOWS THE READ.
  * The draft holds what the read gave beside what is held, so the two can be
@@ -62,6 +62,7 @@ export type SelectorSettingsLimitDraft = Readonly<
  */
 export const selectorSettingsEditedNames = [
   "northStar",
+  "threadStanding",
   "basePrompt",
   "mode",
   "dispatchMode",
@@ -71,6 +72,7 @@ export const selectorSettingsEditedNames = [
 /** The boxes this form draws, as the strings they hold. */
 export interface SelectorSettingsDrawn {
   readonly northStar: string;
+  readonly threadStanding: string;
   readonly basePrompt: string;
   readonly mode: string;
   readonly dispatchMode: string;
@@ -120,6 +122,7 @@ function selectorSettingsDrawn(
 ): SelectorSettingsDrawn {
   return {
     northStar: overrides.northStar ?? "",
+    threadStanding: overrides.threadStanding ?? "",
     basePrompt: overrides.basePrompt ?? "",
     mode: overrides.mode ?? "",
     dispatchMode: overrides.dispatchMode ?? "",
@@ -169,10 +172,13 @@ export function selectorSettingsRebased(
   settings: SelectorProjectSettingsResponse,
 ): SelectorSettingsDraft {
   const arriving = selectorSettingsDrawn(settings.overrides);
-  const kept = (name: "northStar" | "basePrompt" | "mode" | "dispatchMode") =>
-    draft[name] === draft.read[name] ? arriving[name] : draft[name];
+  const kept = (
+    name:
+      "northStar" | "threadStanding" | "basePrompt" | "mode" | "dispatchMode",
+  ) => (draft[name] === draft.read[name] ? arriving[name] : draft[name]);
   return {
     northStar: kept("northStar"),
+    threadStanding: kept("threadStanding"),
     basePrompt: kept("basePrompt"),
     mode: kept("mode"),
     dispatchMode: kept("dispatchMode"),
@@ -216,6 +222,9 @@ export function selectorSettingsWrite(
   const built = {
     ...draft.carried,
     ...(draft.northStar.trim() === "" ? {} : { northStar: draft.northStar }),
+    ...(draft.threadStanding.trim() === ""
+      ? {}
+      : { threadStanding: draft.threadStanding }),
     ...(draft.basePrompt.trim() === "" ? {} : { basePrompt: draft.basePrompt }),
     ...(draft.mode === "" ? {} : { mode: draft.mode }),
     ...(draft.dispatchMode === "" ? {} : { dispatchMode: draft.dispatchMode }),

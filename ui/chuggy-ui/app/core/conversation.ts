@@ -13,7 +13,7 @@ import type {
 } from "../../../../src/contract/rosters.ts";
 import {
   threadSeedingHeadings,
-  threadSeedingLastLine,
+  threadTurnBoundaryHeading,
 } from "../../../../src/contract/threadSeeding.ts";
 import { threadWakeDrawn } from "./threads.ts";
 
@@ -322,7 +322,8 @@ function conversationTextIsJsonObject(text: string): boolean {
  * The member's own words, and the seeding block the server put in front of them
  * where the input carries one. Both sides read the contract's constants, so
  * this is the writer's boundary read backwards rather than a guess at one, and
- * a text that does not carry them is the member's whole message.
+ * a text that does not carry them is the member's whole message, with the
+ * boundary belonging to neither half of the split.
  */
 export function conversationAskMessage(
   text: string,
@@ -330,17 +331,13 @@ export function conversationAskMessage(
   const opens = threadSeedingHeadings.some((heading) =>
     text.startsWith(heading),
   );
-  const joined = `${threadSeedingLastLine}\n\n`;
+  const joined = `\n\n${threadTurnBoundaryHeading}\n\n`;
   const at = opens ? text.lastIndexOf(joined) : -1;
   const said = at < 0 ? text : text.slice(at + joined.length);
   if (conversationTextIsJsonObject(said))
     return { ask: "Observation", text: said };
   if (at < 0) return { ask: "Message", text: said };
-  return {
-    ask: "Message",
-    text: said,
-    context: text.slice(0, at + threadSeedingLastLine.length),
-  };
+  return { ask: "Message", text: said, context: text.slice(0, at) };
 }
 
 /** What a turn's own kind asks for, with or without the text: the one place

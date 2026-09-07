@@ -56,6 +56,7 @@ const effective = {
   dispatchMode: "Automatic",
   basePrompt: "choose the next ticket",
   northStar: "ship the console",
+  threadStanding: "- You act through your owner's own commands.",
   modelAllowlist: [],
   toolAllowlist: [],
   limits: {
@@ -143,6 +144,38 @@ test("the project's own overrides are the boxes, and the rest stand in", async (
   expect(screen.getByLabelText<HTMLInputElement>("Tokens").placeholder).toBe(
     "200000",
   );
+});
+
+/** The standing rules a project's threads act under are the third text box, and
+ * an empty one stands in the rules the installation ships. */
+test("the standing rules box holds the project's own and stands in the rest", async () => {
+  const server = await drawSettings(
+    () => ({
+      body: settingsBody(13, {
+        threadStanding: "- You draft, and nothing else.",
+      }),
+      status: 200,
+    }),
+    settingsBody(12, {}),
+  );
+  const standing = screen.getByLabelText<HTMLTextAreaElement>("Standing rules");
+  expect(standing.value).toBe("");
+  expect(standing.placeholder).toBe(
+    "- You act through your owner's own commands.",
+  );
+
+  await turned(() => {
+    fireEvent.change(standing, {
+      target: { value: "- You draft, and nothing else." },
+    });
+  });
+  await turned(save);
+  await settled();
+
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 12,
+    overrides: { threadStanding: "- You draft, and nothing else." },
+  });
 });
 
 /** The write is the whole override set under the revision the form was seeded

@@ -1,11 +1,13 @@
 /**
  * The thread vocabulary: what a wake document says, what a thread's objectives
- * state, and what a first turn sheds to fit.
+ * state, what a first turn sheds to fit, and where the member's own message
+ * begins.
  *
  * THE RULE WRITTEN TWICE IS THE POINT, so the identity of the two copies is
  * asserted rather than assumed: the system prompt and the wake document must
- * carry the same sentence, because two drifting copies of a rule nothing
- * enforces is a rule nobody is bound by.
+ * carry the same standing rules, because two drifting copies of a rule nothing
+ * enforces is a rule nobody is bound by. That holds for a project's own rules
+ * as much as for the ones it inherits, so both are driven.
  */
 
 import assert from "node:assert/strict";
@@ -40,9 +42,13 @@ import {
   threadWakeVersion,
 } from "../../src/interpreter/thread.ts";
 import {
-  threadChannelStanding,
-  threadWakeStanding,
+  resolvedThreadStanding,
+  threadStandingDefault,
+  threadTurnBoundaryHeading,
 } from "../../src/contract/threadSeeding.ts";
+
+/** What one project says instead of the installation's, said once here. */
+const projectStanding = "- You draft, and you do nothing else.";
 
 const partition = { tenant: "acme", project: "atlas" } as unknown as Partition;
 const instant = "2026-09-02T12:00:00.000Z";
@@ -84,11 +90,16 @@ test("the wake roster holds exactly the reasons the wake runtime joins", () => {
  * the sentence forbids are written out here. `originate` is the one that
  * matters most: this slice gives every thread `DraftOriginate` by default.
  */
-test("the standing sentence names each act a woken thread may not take", () => {
+test("the default standing names each act a woken thread may not take", () => {
   for (const act of ["originate", "revise", "release", "dispatch", "run"])
-    assert.ok(threadWakeStanding.includes(` ${act}`), act);
-  assert.match(threadWakeStanding, /notice, not an instruction/u);
-  assert.match(threadWakeStanding, /nothing/u);
+    assert.ok(threadStandingDefault.includes(` ${act}`), act);
+  assert.match(threadStandingDefault, /notice, not an instruction/u);
+  assert.match(threadStandingDefault, /the lead's decisions are the lead's/u);
+});
+
+test("a project's own standing is what stands, and the default stands for the rest", () => {
+  assert.equal(resolvedThreadStanding(projectStanding), projectStanding);
+  assert.equal(resolvedThreadStanding(undefined), threadStandingDefault);
 });
 
 test("a thread with no membership left stands apart from one that is closed", () => {
@@ -104,8 +115,23 @@ test("a wake document carries the standing rule rather than taking one", () => {
   assert.equal(document.version, threadWakeVersion);
   assert.equal(document.wake, "TicketRefused");
   assert.equal(document.resource, "42");
-  assert.equal(document.standing, threadWakeStanding);
+  assert.equal(document.standing, threadStandingDefault);
   assert.deepEqual(parseThreadWake(threadWakeText(document)), document);
+});
+
+test("a wake carries the project's own standing where the candidate named one", () => {
+  const document = threadWakeDocument({
+    wake: "TicketRefused",
+    resource: "42",
+    at: instant,
+    standing: projectStanding,
+  });
+
+  assert.equal(document.standing, projectStanding);
+  assert.equal(
+    parseThreadWake(threadWakeText(document)).standing,
+    projectStanding,
+  );
 });
 
 test("every reason in the roster is one a document round-trips", () => {
@@ -161,9 +187,9 @@ test("a wake larger than the column holds is refused at both ends", () => {
 });
 
 /**
- * The standing sentence is inside every wake document, so lengthening it eats
- * the budget the resource is written in. This is what makes that visible before
- * a pass finds it: the widest resource a change row can name must still fit.
+ * The standing rules are inside every wake document and a project sets its own,
+ * so the bound must admit the widest of both together: the widest resource a
+ * change row can name beside the widest standing the settings route accepts.
  */
 test("the widest wake a change row can name fits the document bound", () => {
   for (const reason of allThreadWakeReasons) {
@@ -172,6 +198,7 @@ test("the widest wake a change row can name fits the document bound", () => {
         wake: reason,
         resource: "r".repeat(nativeHttpPathSegmentCharsMax),
         at: instant,
+        standing: "s".repeat(selectorSettingsTextCharsMax),
       }),
     );
 
@@ -179,41 +206,65 @@ test("the widest wake a change row can name fits the document bound", () => {
   }
 });
 
-test("the objectives state whose the thread is, what it is for, then the two standing rules", () => {
-  const prompt = threadSystemPrompt({ partition, owner: "geoff" });
+test("the objectives state whose the thread is, what it is for, then its standing rules", () => {
+  const prompt = threadSystemPrompt({
+    partition,
+    owner: "geoff",
+    standing: threadStandingDefault,
+  });
 
   assert.ok(prompt.includes("geoff"));
   assert.ok(prompt.includes("acme/atlas"));
   assert.ok(prompt.includes(threadPurposeStanding));
-  assert.ok(prompt.includes(threadChannelStanding));
-  assert.ok(prompt.includes(threadWakeStanding));
+  assert.ok(prompt.includes(threadStandingDefault));
   assert.ok(
     prompt.indexOf("geoff") < prompt.indexOf(threadPurposeStanding),
     "the owner is named before the purpose",
   );
   assert.ok(
     prompt.indexOf(threadPurposeStanding) <
-      prompt.indexOf(threadChannelStanding),
+      prompt.indexOf(threadStandingDefault),
     "the purpose stands before the rules",
   );
-  assert.ok(
-    prompt.indexOf(threadChannelStanding) < prompt.indexOf(threadWakeStanding),
-    "the channel rule stands before the wake rule",
-  );
+});
+
+test("the objectives carry the project's own standing rules and not the default", () => {
+  const prompt = threadSystemPrompt({
+    partition,
+    owner: "geoff",
+    standing: projectStanding,
+  });
+
+  assert.ok(prompt.includes(projectStanding));
+  assert.ok(!prompt.includes(threadStandingDefault));
 });
 
 /**
  * The rule is enforceable nowhere, so the only thing that can be checked of it
  * is that the two places saying it say the same thing.
  */
-test("the wake document and the objectives carry one sentence and not two", () => {
-  const carried = parseThreadWake(threadWakeText(wake())).standing;
+test("the wake document and the objectives carry one standing and not two", () => {
+  for (const standing of [undefined, projectStanding]) {
+    const carried = parseThreadWake(
+      threadWakeText(
+        threadWakeDocument({
+          wake: "TicketRefused",
+          resource: "42",
+          at: instant,
+          ...(standing === undefined ? {} : { standing }),
+        }),
+      ),
+    ).standing;
 
-  assert.equal(carried, threadWakeStanding);
-  assert.ok(
-    threadSystemPrompt({ partition, owner: "geoff" }).includes(carried),
-    "the prompt does not carry the sentence the wake does",
-  );
+    assert.ok(
+      threadSystemPrompt({
+        partition,
+        owner: "geoff",
+        standing: resolvedThreadStanding(standing),
+      }).includes(carried),
+      "the prompt does not carry the rules the wake does",
+    );
+  }
 });
 
 /**
@@ -230,11 +281,16 @@ test("the purpose says the draft is the job and the checkout is for reading", ()
 });
 
 test("a North Star is named where there is one and no heading where there is none", () => {
-  const without = threadSystemPrompt({ partition, owner: "geoff" });
+  const without = threadSystemPrompt({
+    partition,
+    owner: "geoff",
+    standing: threadStandingDefault,
+  });
   const with_ = threadSystemPrompt({
     partition,
     owner: "geoff",
     northStar: "ship the console",
+    standing: threadStandingDefault,
   });
 
   assert.ok(!without.includes("North Star"));
@@ -242,7 +298,13 @@ test("a North Star is named where there is one and no heading where there is non
 });
 
 test("an owner nobody could have been is refused, and the widest prompt fits", () => {
-  assert.throws(() => threadSystemPrompt({ partition, owner: "" }));
+  assert.throws(() =>
+    threadSystemPrompt({
+      partition,
+      owner: "",
+      standing: threadStandingDefault,
+    }),
+  );
   const widest = threadSystemPrompt({
     partition: {
       tenant: "t".repeat(256),
@@ -250,6 +312,7 @@ test("an owner nobody could have been is refused, and the widest prompt fits", (
     } as unknown as Partition,
     owner: "o".repeat(256),
     northStar: "n".repeat(selectorSettingsTextCharsMax),
+    standing: "s".repeat(selectorSettingsTextCharsMax),
   });
 
   assert.ok(widest.length <= threadSystemPromptCharsMax);
@@ -275,6 +338,7 @@ test("a turn with no seeding is the message alone", () => {
 test("a first turn puts the seeding block in front of the message", () => {
   const input = threadTurnInput("what is blocking 42?", {
     northStar: "ship the console",
+    standing: threadStandingDefault,
     drafts: seededDrafts(2),
     refusals: seededRefusals(1),
   });
@@ -282,7 +346,31 @@ test("a first turn puts the seeding block in front of the message", () => {
   assert.ok(input.endsWith("what is blocking 42?"));
   assert.ok(input.indexOf("ship the console") < input.indexOf("draft 1"));
   assert.ok(input.indexOf("draft 2") < input.indexOf("refused 1"));
-  assert.ok(input.includes(threadWakeStanding));
+  assert.ok(input.includes(threadStandingDefault));
+});
+
+/**
+ * The boundary is what the console splits a first turn on, so where it is
+ * written is a fact about the wire and not a detail of the composition: it
+ * stands between the block and the message, and the message is the whole of
+ * what follows it.
+ */
+test("a first turn writes the boundary between the block and the message", () => {
+  const input = threadTurnInput("what is blocking 42?", {
+    standing: projectStanding,
+    drafts: [],
+    refusals: [],
+  });
+
+  assert.equal(
+    input,
+    `${threadSeedingText({
+      standing: projectStanding,
+      drafts: [],
+      refusals: [],
+    })}\n\n${threadTurnBoundaryHeading}\n\nwhat is blocking 42?`,
+  );
+  assert.equal(input.split(threadTurnBoundaryHeading).length, 2);
 });
 
 test("the drafts shed oldest first, and only then the refusals", () => {
@@ -294,6 +382,7 @@ test("the drafts shed oldest first, and only then the refusals", () => {
   const message = "x".repeat(threadMessageCharsMax);
 
   const input = threadTurnInput(message, {
+    standing: threadStandingDefault,
     drafts,
     refusals: seededRefusals(2),
   });
@@ -312,6 +401,7 @@ test("the refusals shed oldest first once no draft is left to shed", () => {
   }));
 
   const input = threadTurnInput("x".repeat(threadMessageCharsMax), {
+    standing: threadStandingDefault,
     drafts: seededDrafts(4),
     refusals,
   });
@@ -325,19 +415,20 @@ test("the refusals shed oldest first once no draft is left to shed", () => {
 test("the North Star and the standing rules are never shed", () => {
   const input = threadTurnInput("x".repeat(threadMessageCharsMax), {
     northStar: "ship the console",
+    standing: projectStanding,
     drafts: seededDrafts(nativeHttpPageItemsMax),
     refusals: seededRefusals(32),
   });
 
   assert.ok(input.includes("ship the console"));
-  assert.ok(input.includes(threadChannelStanding));
-  assert.ok(input.includes(threadWakeStanding));
+  assert.ok(input.includes(projectStanding));
 });
 
 test("an input that cannot fit with everything sheddable shed is refused", () => {
   assert.throws(() =>
     threadTurnInput("x".repeat(threadTurnInputCharsMax), {
       northStar: "n".repeat(selectorSettingsTextCharsMax),
+      standing: threadStandingDefault,
       drafts: [],
       refusals: [],
     }),
@@ -345,21 +436,24 @@ test("an input that cannot fit with everything sheddable shed is refused", () =>
 });
 
 /**
- * The seeding carries a North Star the settings route has already accepted and
- * never sheds it, so a first turn at that ceiling has to compose rather than
- * raise. Refusing it would be a door no member could open and no member could
- * fix.
+ * The seeding carries a North Star and a standing the settings route has
+ * already accepted and sheds neither, so a first turn at both ceilings has to
+ * compose rather than raise. Refusing it would be a door no member could open
+ * and no member could fix.
  */
-test("a North Star at the bound the settings route accepts still composes", () => {
+test("both settings texts at the bound the route accepts still compose", () => {
   const northStar = "n".repeat(selectorSettingsTextCharsMax);
+  const standing = "s".repeat(selectorSettingsTextCharsMax);
 
   const input = threadTurnInput("x".repeat(threadMessageCharsMax), {
     northStar,
+    standing,
     drafts: seededDrafts(nativeHttpPageItemsMax),
     refusals: seededRefusals(32),
   });
 
   assert.ok(input.includes(northStar));
+  assert.ok(input.includes(standing));
   assert.ok(input.length <= threadTurnInputCharsMax);
   assert.ok(
     input.length <= sessionTurnInputCharsMax,
@@ -368,29 +462,34 @@ test("a North Star at the bound the settings route accepts still composes", () =
 });
 
 /** The ceiling the contract names is a claim about this block, so it is measured. */
-test("what the seeding weighs beyond its North Star is inside the named ceiling", () => {
-  const headings = threadSeedingText({
+test("what the seeding weighs beyond its two texts is inside the named ceiling", () => {
+  const headings = `${threadSeedingText({
     northStar: "",
+    standing: "",
     drafts: [{ ticket: 1, summary: "" }],
     refusals: [{ ticket: 1, reason: "" }],
-  });
+  })}\n\n${threadTurnBoundaryHeading}\n\n`;
 
   assert.ok(headings.includes("open drafts"));
   assert.ok(headings.includes("Standing against"));
   assert.ok(headings.length <= threadSeedingFixedCharsMax);
   assert.equal(
     threadSeedingCharsMax,
-    selectorSettingsTextCharsMax + threadSeedingFixedCharsMax,
+    selectorSettingsTextCharsMax * 2 + threadSeedingFixedCharsMax,
   );
 });
 
 test("the seeding block omits the sections it has nothing for", () => {
-  const bare = threadSeedingText({ drafts: [], refusals: [] });
+  const bare = threadSeedingText({
+    standing: projectStanding,
+    drafts: [],
+    refusals: [],
+  });
 
   assert.ok(!bare.includes("North Star"));
   assert.ok(!bare.includes("open drafts"));
   assert.ok(!bare.includes("Standing against"));
-  assert.ok(bare.includes(threadWakeStanding));
+  assert.ok(bare.includes(projectStanding));
 });
 
 /**
@@ -401,6 +500,7 @@ test("the seeding block omits the sections it has nothing for", () => {
 test("the composed block is character for character what it was", () => {
   const composed = threadSeedingText({
     northStar: "Ship the console.",
+    standing: threadStandingDefault,
     drafts: [{ ticket: 7, summary: "the rail" }],
     refusals: [{ ticket: 9, reason: "no brief" }],
   });
@@ -421,7 +521,6 @@ Ship the console.
 
 # How you act on this project
 
-- ${threadChannelStanding}
-- ${threadWakeStanding}`,
+${threadStandingDefault}`,
   );
 });

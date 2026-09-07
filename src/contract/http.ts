@@ -212,8 +212,8 @@ export const resultReportSchemaVersionMin = 3;
 export const threadMessageCharsMax = 16_384;
 
 /**
- * What a thread's seeding block weighs beyond the North Star inside it: the
- * headings, and the two standing sentences the block restates. It is a ceiling
+ * What a thread's seeding block weighs beyond the two settings texts inside it:
+ * the headings, and the boundary over the member's message. It is a ceiling
  * rather than a measurement, and the interpreter's suite is what holds the
  * composed block under it.
  */
@@ -222,12 +222,13 @@ export const threadSeedingFixedCharsMax = 4_096;
 /**
  * The longest block a thread's first turn carries in front of the member's
  * message, DERIVED rather than named. The block carries the project's North
- * Star and never sheds it, so a ceiling below what the settings route already
- * accepts would refuse every first turn of a project whose North Star is long —
- * on every member, long after the write that caused it.
+ * Star and its standing rules and sheds neither, so a ceiling below what the
+ * settings route already accepts for each would refuse every first turn of a
+ * project whose texts are long — on every member, long after the write that
+ * caused it.
  */
 export const threadSeedingCharsMax =
-  selectorSettingsTextCharsMax + threadSeedingFixedCharsMax;
+  selectorSettingsTextCharsMax * 2 + threadSeedingFixedCharsMax;
 
 /** How many turns one thread may have waiting, which is what stops a member queueing a day's work. */
 export const threadBacklogMax = 8;
@@ -238,8 +239,17 @@ export const threadsAnsweredMax = 64;
 /** How many turns of one thread's mailbox a read answers with, newest last. */
 export const threadTurnsAnsweredMax = 32;
 
-/** What a wake document weighs, which is a roster member, a resource and one sentence. */
-export const threadWakeCharsMax = 2_048;
+/** What a wake document weighs beyond its standing: a roster member, a resource and an instant. */
+export const threadWakeFixedCharsMax = 2_048;
+
+/**
+ * What a wake document weighs, DERIVED for the reason the seeding ceiling is:
+ * the document restates the project's standing rules on the turn that could
+ * break them, so a ceiling below what the settings route accepts would refuse
+ * every wake of a project whose standing is long.
+ */
+export const threadWakeCharsMax =
+  selectorSettingsTextCharsMax + threadWakeFixedCharsMax;
 
 /** How many wake candidates one pass of the wake runtime reads and enqueues. */
 export const threadWakesPerPassMax = 64;

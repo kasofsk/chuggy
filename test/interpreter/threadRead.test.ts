@@ -47,7 +47,7 @@ import {
   threadSystemPromptCharsMax,
   threadTurnInputCharsMax,
 } from "../../src/interpreter/thread.ts";
-import { threadWakeStanding } from "../../src/contract/threadSeeding.ts";
+import { threadStandingDefault } from "../../src/contract/threadSeeding.ts";
 
 const partition = {
   tenant: asTenantId("acme"),
@@ -100,6 +100,8 @@ interface ThreadDoubles {
   /** What the close door answers where a case sets it; else the record named, closed. */
   readonly closed?: ThreadClosed;
   readonly northStar?: string;
+  /** The standing rules the project holds, absent where it inherits. */
+  readonly standing?: string;
   /** The identity the mint answers, which the definer opens the thread under. */
   readonly minted?: SessionId;
 }
@@ -157,7 +159,15 @@ function ports(doubles: ThreadDoubles): NativeThreadPorts {
     threads: threadStore(doubles),
     sessions: { session: () => doubles.minted ?? mine },
     seeding: {
-      northStar: () => Promise.resolve(doubles.northStar),
+      projectTexts: () =>
+        Promise.resolve({
+          ...(doubles.northStar === undefined
+            ? {}
+            : { northStar: doubles.northStar }),
+          ...(doubles.standing === undefined
+            ? {}
+            : { standing: doubles.standing }),
+        }),
       drafts: () =>
         Promise.resolve([{ ticket: 42, summary: "the footer is wrong" }]),
       refusals: (_partition, tickets) => {
@@ -499,7 +509,27 @@ test("the recorded prompt names the owner and never the principal behind them", 
   const open = held.calls.find((call) => call.startsWith("open:")) ?? "";
   assert.ok(open.includes("You are geoff's thread on acme/atlas"));
   assert.ok(!open.includes("https://auth.example"));
-  assert.ok(open.includes(threadWakeStanding));
+  assert.ok(open.includes(threadStandingDefault));
+});
+
+/**
+ * A project that states its own rules states them everywhere a thread reads
+ * them, and the door that opens a session is the one that writes the copy a
+ * resumed session holds for good.
+ */
+test("a project's own standing is what the opened thread's prompt carries", async () => {
+  const { web, held } = boundary({
+    standing: "- You draft, and nothing else.",
+  });
+
+  await web.openThread(
+    oidcPrincipal("https://auth.example", "geoff"),
+    partition,
+  );
+
+  const open = held.calls.find((call) => call.startsWith("open:")) ?? "";
+  assert.ok(open.includes("- You draft, and nothing else."));
+  assert.ok(!open.includes(threadStandingDefault));
 });
 
 /**
@@ -812,6 +842,7 @@ test("the first turn is seeded and every later turn is the message alone", async
 
   const first = seeded.held.calls.find((call) => call.startsWith("enqueue:"));
   assert.ok(first?.includes("Ship the console."));
+  assert.ok(first?.includes(threadStandingDefault));
   assert.ok(first?.includes("the footer is wrong"));
   assert.ok(first?.includes("no dependency"));
   assert.ok(first?.endsWith("what is blocking 42?"));
@@ -824,4 +855,21 @@ test("the first turn is seeded and every later turn is the message alone", async
     bound.held.calls.filter((call) => call.startsWith("refusals:")).length,
     0,
   );
+});
+
+test("a project's own standing is what the seeded first turn carries", async () => {
+  const { web, held } = boundary({
+    threads: [record(mine, geoff, { agentReference: undefined })],
+    standing: "- You draft, and nothing else.",
+  });
+
+  await web.sendThreadMessage(geoff, partition, {
+    session: mine,
+    turn: asSessionTurnId("thread-turn-1"),
+    message: "what is blocking 42?",
+  });
+
+  const first = held.calls.find((call) => call.startsWith("enqueue:")) ?? "";
+  assert.ok(first.includes("- You draft, and nothing else."));
+  assert.ok(!first.includes(threadStandingDefault));
 });

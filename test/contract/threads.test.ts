@@ -101,15 +101,16 @@ test("a message fits the mailbox column as that column stands", () => {
 });
 
 /**
- * A first turn carries the project's North Star and never sheds it, so the
- * seeding ceiling is DERIVED from what the settings route already accepts
- * rather than named below it — a ceiling under that would refuse every first
- * turn of a project whose North Star is long, on every member.
+ * A first turn carries the project's North Star and its standing rules and
+ * sheds neither, so the seeding ceiling is DERIVED from what the settings route
+ * already accepts for each rather than named below it — a ceiling under that
+ * would refuse every first turn of a project whose texts are long, on every
+ * member.
  */
-test("the seeding ceiling is derived from the North Star it must carry", () => {
+test("the seeding ceiling is derived from the two texts it must carry", () => {
   assert.equal(
     threadSeedingCharsMax,
-    selectorSettingsTextCharsMax + threadSeedingFixedCharsMax,
+    selectorSettingsTextCharsMax * 2 + threadSeedingFixedCharsMax,
   );
 });
 
