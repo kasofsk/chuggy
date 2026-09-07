@@ -1,15 +1,15 @@
 /**
  * The selector settings draft's own decisions, with no renderer: what a strip
- * press writes, what a limit box parses to, and which rows the wire's own
- * installation default is known for.
+ * press writes, what a limit box parses to, and what a write's own answer
+ * carries through to the saved state.
  */
 
 import { expect, test } from "vitest";
 
 import type { SelectorProjectSettingsResponse } from "../../../src/contract/responses.ts";
 import {
+  selectorSettingsAnswered,
   selectorSettingsDispatchCell,
-  selectorSettingsLimitOverriddenAtRead,
   selectorSettingsModeCell,
   selectorSettingsTextOverriddenAtRead,
   selectorSettingsWrite,
@@ -125,16 +125,40 @@ test("a limit accepts grouped digits and refuses anything else", () => {
   }
 });
 
-/** The wire carries no installation limit or prose, so the fact these ask for
- * is what the read carried, not what the draft holds live. */
+/** The wire carries no installation prose, so a section's placeholder asks
+ * what the read carried, not what the draft holds live. */
 test("overridden-at-read reads the read side, not a live edit", () => {
   const draft = draftOf({ northStar: "typed but not saved" });
   expect(selectorSettingsTextOverriddenAtRead(draft, "northStar")).toBe(true);
   expect(selectorSettingsTextOverriddenAtRead(draft, "basePrompt")).toBe(false);
-  expect(
-    selectorSettingsLimitOverriddenAtRead(draft, "tokensPerDecision"),
-  ).toBe(true);
-  expect(
-    selectorSettingsLimitOverriddenAtRead(draft, "millisecondsPerDecision"),
-  ).toBe(false);
+});
+
+/** The route's own nit: `movedBy` reaches `SelectorSettingsSaved` only through
+ * the spread on the `Conflict` arm, and nothing else here would fail if it
+ * were dropped. */
+test("a conflict carries who moved the revision, when the route names them", () => {
+  const answered = selectorSettingsAnswered({
+    outcome: "Conflict",
+    code: "SettingsRevisionConflict",
+    body: {
+      settings,
+      movedBy: {
+        administrator: { kind: "member", subject: "dave@vteng.io" },
+        recordedAt: "2026-09-05T17:20:00.000Z",
+      },
+    },
+  });
+  if (answered.saved !== "Conflict") throw new Error("expected a conflict");
+  expect(answered.movedBy?.administrator.subject).toBe("dave@vteng.io");
+});
+
+/** Revision zero has no history row, so a conflict against it names nobody. */
+test("a conflict with no history row carries no mover", () => {
+  const answered = selectorSettingsAnswered({
+    outcome: "Conflict",
+    code: "SettingsRevisionConflict",
+    body: { settings },
+  });
+  if (answered.saved !== "Conflict") throw new Error("expected a conflict");
+  expect(answered.movedBy).toBeUndefined();
 });
