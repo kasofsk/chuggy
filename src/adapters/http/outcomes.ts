@@ -367,6 +367,7 @@ function selectorProjectSettingsBody(
       modelAllowlist: effective.modelAllowlist,
       toolAllowlist: effective.toolAllowlist,
       limits: effective.limits,
+      installationLimits: effective.installationLimits,
       operationalContextMaxAgeMs: effective.operationalContextMaxAgeMs,
     },
   };

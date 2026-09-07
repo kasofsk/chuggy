@@ -1016,6 +1016,7 @@ test("every limit the override door accepts is a column that reads back", async 
     ).shape,
   );
   try {
+    const installation = await postgresSelectorRuntimeControl(pool).settings();
     let revision = 0;
     for (const limit of accepted) {
       /** The one limit whose only legal value is one until multi-page tools land. */
@@ -1030,6 +1031,11 @@ test("every limit the override door accepts is a column that reads back", async 
       );
       revision = written.revision;
       assert.deepEqual(written.overrides.limits, { [limit]: value }, limit);
+      assert.deepEqual(
+        written.effective.installationLimits,
+        installation.limits,
+        limit,
+      );
       assert.equal(
         (await store.read(partition)).overrides.limits?.[
           limit as keyof NonNullable<

@@ -340,7 +340,9 @@ const selectorLimitsResponseSchema = z.object({
  * project's own or the installation default, and both revisions are named
  * because a decision is fenced on the pair. `installationMode` is beside the
  * resolved `mode` so a reader can tell a project's own pause from the
- * installation-wide one it cannot lift.
+ * installation-wide one it cannot lift, and `installationLimits` is beside the
+ * resolved `limits` so a reader can tell an overridden limit from an inherited
+ * one and say what it would fall back to.
  */
 export const selectorEffectiveSettingsResponseSchema = z.strictObject({
   revision: countSchema,
@@ -354,6 +356,7 @@ export const selectorEffectiveSettingsResponseSchema = z.strictObject({
   modelAllowlist: z.array(z.string()),
   toolAllowlist: z.array(z.string()),
   limits: selectorLimitsResponseSchema,
+  installationLimits: selectorLimitsResponseSchema,
   operationalContextMaxAgeMs: countSchema,
 });
 

@@ -164,6 +164,30 @@ test("an installation pause is the one ceiling, and the resolved mode says so", 
   );
 });
 
+/**
+ * A reader that has only the resolved limits cannot say which of them the
+ * project asked for, so the unresolved defaults stand beside them whatever the
+ * project overrode.
+ */
+test("the installation limits survive a project overriding every one of them", () => {
+  const resolved = resolvedSelectorSettings(partition, defaults, 3, {
+    limits: {
+      tokensPerDecision: defaults.limits.tokensPerDecision * 2,
+      millisecondsPerDecision: defaults.limits.millisecondsPerDecision * 2,
+      toolCallsPerDecision: defaults.limits.toolCallsPerDecision * 2,
+      dispatchesPerDecision: leadDispatchesMax,
+      inputBytesPerDecision: defaults.limits.inputBytesPerDecision * 2,
+      candidatePagesPerDecision: defaults.limits.candidatePagesPerDecision * 2,
+    },
+  });
+  assert.deepEqual(resolved.installationLimits, defaults.limits);
+  assert.notDeepEqual(resolved.limits, resolved.installationLimits);
+  assert.deepEqual(
+    resolvedSelectorSettings(partition, defaults, 3, {}).installationLimits,
+    defaults.limits,
+  );
+});
+
 test("the fence holds only while both revisions still name what was read", () => {
   const started = resolvedSelectorSettings(partition, defaults, 3, {});
   const fence = selectorSettingsFence(started);
