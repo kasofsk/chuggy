@@ -538,6 +538,38 @@ test("a member names their own thread, and clearing the name gives the message b
 });
 
 /**
+ * A title of nothing but whitespace trims to nothing, so it clears the
+ * override exactly as an empty string does rather than storing a label a rail
+ * would draw blank.
+ */
+test("a whitespace-only title clears the override rather than storing it", async () => {
+  const partition = await project("rename-blank");
+  const member = await threadRigMember(rig, partition, "rename-blank");
+  const thread = await threadRigThread(rig, partition, member);
+  await rig.threads.enqueueMessage({
+    partition,
+    principal: member.principal,
+    session: thread.session,
+    turn: asSessionTurnId(threadRigTurnId("rename-blank")),
+    input: "why is 42 blocked?",
+  });
+
+  const named = await rig.threads.rename({
+    partition,
+    session: thread.session,
+    title: "\n\n",
+  });
+  assert.equal(named.renamed, "Renamed");
+  assert.equal(
+    threadEntry(
+      named.renamed === "Renamed" ? named.thread : thread,
+      member.principal,
+    ).title,
+    "why is 42 blocked?",
+  );
+});
+
+/**
  * The column is bounded by the same ceiling the wire is, so a title past it is
  * refused by the server rather than by the schema alone — which is the half a
  * caller reaching the door directly would otherwise get past.

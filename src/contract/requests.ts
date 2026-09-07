@@ -164,8 +164,8 @@ export const threadMessageSchema = z.strictObject({
 
 /**
  * What a member calls their own thread, which overrides the title derived from
- * its first message. An empty string clears the override rather than storing a
- * label with nothing in it, so a rail is never offered a blank row.
+ * its first message. A title that trims to nothing clears the override rather
+ * than storing a blank label, so a rail is never offered a blank row.
  */
 export const threadRenameRequestSchema = z.strictObject({
   title: z.string().max(threadTitleCharsMax),
