@@ -6,7 +6,13 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeAll, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -79,6 +85,13 @@ function rowMenuTrigger(row: Element): Element {
   const trigger = row.querySelector('button[aria-label="Thread actions"]');
   if (trigger === null) throw new Error("expected the row's own menu trigger");
   return trigger;
+}
+
+/** The open menu's items, in the order the menu draws them. */
+function menuItemNames(): readonly string[] {
+  return [...document.querySelectorAll('[role="menuitem"]')].map(
+    (item) => item.textContent ?? "",
+  );
 }
 
 /** The listing route answering one body; a POST to `.../close`, `.../rename`
@@ -292,23 +305,37 @@ test("a stranger's row offers no Rename or Hide, and the reader's own does", asy
     throw new Error("expected both rows to be drawn");
   const mineTrigger = rowMenuTrigger(mineRow);
   await openThreadMenu(mineTrigger);
-  expect(
-    screen.getByRole("menuitem", { name: "Rename" }),
-    "the reader's own row offered no Rename",
-  ).toBeDefined();
-  expect(
-    screen.getByRole("menuitem", { name: "Hide" }),
-    "the reader's own row offered no Hide",
-  ).toBeDefined();
+  expect(menuItemNames()).toStrictEqual(["Rename", "Close", "Hide"]);
   fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
   await openThreadMenu(rowMenuTrigger(otherRow));
   expect(
-    screen.queryByRole("menuitem", { name: "Rename" }),
-    "a stranger's row offered Rename, which the door refuses",
-  ).toBeNull();
+    menuItemNames(),
+    "a stranger's row offered Rename or Hide, which the door refuses",
+  ).toStrictEqual(["Close"]);
+  styleless();
+});
+
+test("a stranger's closed row draws no menu trigger at all", async () => {
+  drawThreads(() => ({
+    threads: [
+      ...threadsBody().threads,
+      threadEntry({ session: "thread-done", state: "Closed" }),
+    ],
+  }));
+  await mountThreads();
+  fireEvent.click(screen.getByRole("radio", { name: "Everyone" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Closed" }));
+  await settled();
+  const row = [...document.querySelectorAll("tbody tr")].find((tr) =>
+    tr.textContent?.includes("thread-done"),
+  );
+  if (row === undefined) throw new Error("expected the closed row");
   expect(
-    screen.queryByRole("menuitem", { name: "Hide" }),
-    "a stranger's row offered Hide, which the door refuses",
+    row.querySelector('button[aria-label="Thread actions"]'),
+    "a row with no action drew a trigger anyway",
   ).toBeNull();
   styleless();
 });
@@ -366,6 +393,56 @@ test("renaming a row posts the typed title to that row's own rename door", async
     `/api/v1/tenants/acme/projects/atlas/threads/${threadMineSession}/rename`,
   ]);
   expect(screen.queryByRole("textbox", { name: "Thread title" })).toBeNull();
+});
+
+test("Escape cancels a rename in progress and posts nothing", async () => {
+  const server = drawThreads(threadsBody);
+  await mountThreads();
+  const mineRow = [...document.querySelectorAll("tbody tr")].find((row) =>
+    row.textContent?.includes(threadMineSession),
+  );
+  if (mineRow === undefined) throw new Error("expected the reader's own row");
+  await openThreadMenu(rowMenuTrigger(mineRow));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+  const input = screen.getByRole("textbox", { name: "Thread title" });
+  fireEvent.change(input, { target: { value: "not sent" } });
+  fireEvent.keyDown(input, { key: "Escape" });
+  await settled();
+  styleless();
+  expect(
+    screen.queryByRole("textbox", { name: "Thread title" }),
+    "Escape left the editor open",
+  ).toBeNull();
+  expect(server.posts(), "Escape posted a rename anyway").toBe(0);
+});
+
+test("a hidden row's menu offers Show, and it unhides the thread", async () => {
+  const server = drawThreads(() => ({
+    threads: [
+      ...threadsBody().threads,
+      threadEntry({ session: "thread-hidden-mine", mine: true, hidden: true }),
+    ],
+  }));
+  await mountThreads();
+  fireEvent.click(screen.getByRole("radio", { name: "Hidden" }));
+  await settled();
+  const hiddenRow = [...document.querySelectorAll("tbody tr")].find((row) =>
+    row.textContent?.includes("thread-hidden-mine"),
+  );
+  if (hiddenRow === undefined) throw new Error("expected the hidden row");
+  await openThreadMenu(rowMenuTrigger(hiddenRow));
+  expect(
+    screen.queryByRole("menuitem", { name: "Hide" }),
+    "a hidden row still offered Hide",
+  ).toBeNull();
+  await turned(() => {
+    fireEvent.click(screen.getByRole("menuitem", { name: "Show" }));
+  });
+  await settled();
+  styleless();
+  expect(server.posted()).toStrictEqual([
+    "/api/v1/tenants/acme/projects/atlas/threads/thread-hidden-mine/hide",
+  ]);
 });
 
 test("a project with no threads says so", async () => {
