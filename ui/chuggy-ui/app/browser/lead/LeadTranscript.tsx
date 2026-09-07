@@ -66,23 +66,33 @@ export function useLeadTranscript(
 ): LeadTranscriptHeld {
   const ports = useApiPorts();
   const pane = useRef<LeadTranscriptPane>(leadTranscriptPaneEmpty);
+  /** Set only by unmount's own cleanup, so a walk's cleanup can tell that from
+   * a dependency of its effect moving — the reason `setHeld` must not follow. */
+  const mounted = useRef(true);
   const [held, setHeld] = useState<LeadTranscriptHeld>(
     leadTranscriptDrawn(leadTranscriptPaneEmpty),
   );
   const { session, stream, highWaterBatch } = read;
   const { tenant, project } = read.partition;
+  useEffect(
+    () => () => {
+      mounted.current = false;
+    },
+    [],
+  );
   useEffect(() => {
     let abandoned = false;
     const stepped = (event: LeadTranscriptEvent): void => {
       pane.current = leadTranscriptStep(pane.current, event);
-      setHeld(leadTranscriptDrawn(pane.current));
+      if (mounted.current) setHeld(leadTranscriptDrawn(pane.current));
     };
     const walk = async (): Promise<void> => {
       if (pane.current.stream !== undefined && pane.current.stream !== stream)
         stepped({ event: "StreamChange", stream });
       for (let asked = 0; asked < leadTranscriptReadsMax; asked += 1) {
+        if (abandoned) return;
         const after = leadTranscriptNextAfter(pane.current, highWaterBatch);
-        if (after === undefined || stream === undefined || abandoned) return;
+        if (after === undefined || stream === undefined) return;
         const answered =
           session === undefined
             ? await apiLeadTranscript(
@@ -97,9 +107,9 @@ export function useLeadTranscript(
                 stream,
                 after,
               });
-        if (abandoned) return;
         if (answered.outcome !== "Ok") {
-          stepped({ event: "Failure", reason: panelReason(answered) });
+          if (!abandoned)
+            stepped({ event: "Failure", reason: panelReason(answered) });
           return;
         }
         stepped({ event: "Page", page: answered.value, highWaterBatch });
