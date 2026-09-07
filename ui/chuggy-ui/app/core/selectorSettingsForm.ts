@@ -197,12 +197,12 @@ export function selectorSettingsRebased(
   };
 }
 
-/** A grouped number as the digits the wire reads, or `NaN` for anything a
- * thousands separator does not explain, so the wire's own schema is what
- * refuses it. */
+/** Bare digits, or digits grouped in threes, as the number the wire reads;
+ * `NaN` for anything else, so the wire's own schema is what refuses it. */
 function selectorSettingsLimitNumber(written: string): number {
-  const digits = written.replaceAll(",", "");
-  return /^\d+$/.test(digits) ? Number(digits) : NaN;
+  return /^\d+$/.test(written) || /^\d{1,3}(,\d{3})+$/.test(written)
+    ? Number(written.replaceAll(",", ""))
+    : NaN;
 }
 
 function selectorSettingsLimits(

@@ -104,13 +104,15 @@ test("a limit accepts grouped digits and refuses anything else", () => {
   );
   expect(grouped.overrides?.limits?.tokensPerDecision).toBe(12_000);
 
-  const malformed = selectorSettingsWrite(
-    draftOf({
-      limits: { ...readDrawn.limits, tokensPerDecision: "12,00x" },
-    }),
-  );
-  expect(malformed.overrides).toBeUndefined();
-  expect(malformed.faults["limits.tokensPerDecision"]).toBe("Invalid");
+  for (const written of ["12,00x", "12,00", "1,2345"]) {
+    const malformed = selectorSettingsWrite(
+      draftOf({
+        limits: { ...readDrawn.limits, tokensPerDecision: written },
+      }),
+    );
+    expect(malformed.overrides).toBeUndefined();
+    expect(malformed.faults["limits.tokensPerDecision"]).toBe("Invalid");
+  }
 });
 
 /** The wire carries no installation limit or prose, so the fact these ask for
