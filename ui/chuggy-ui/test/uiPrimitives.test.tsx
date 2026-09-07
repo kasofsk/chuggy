@@ -16,6 +16,7 @@ import { Identity, identityForms } from "../app/browser/ui/Identity.tsx";
 import { SectionList } from "../app/browser/ui/SectionList.tsx";
 import { Table } from "../app/browser/ui/Table.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { styleless } from "./styleless.ts";
 
 beforeEach(resizeObserverStubbed);
 
@@ -99,11 +100,16 @@ test("a table scrolls itself and names its columns", () => {
       </tbody>
     </Table>,
   );
-  expect(container.querySelector(".table-scroll")).not.toBeNull();
+  expect(
+    container
+      .querySelector(".table-scroll")
+      ?.classList.contains("overflow-x-auto"),
+  ).toBe(true);
   expect(screen.getByRole("table", { name: "Usage by model" })).toBeDefined();
   expect(
     screen.getByRole("rowheader", { name: "claude-opus-4" }),
   ).toBeDefined();
+  styleless();
 });
 
 test("a section list is anchors, with a figure or a note and never both invented", () => {
