@@ -84,7 +84,7 @@ test("a second thread of the reader's own is disambiguated by its session tail",
   ]);
 });
 
-test("two threads whose session shares its first eight characters still read apart", () => {
+test("three threads whose sessions share their first eight characters still read apart", () => {
   const entries = conversations({
     partition: atlas,
     threads: [
