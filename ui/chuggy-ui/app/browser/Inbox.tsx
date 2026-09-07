@@ -597,9 +597,11 @@ export function InboxScreen(props: {
         }
       </DataPanel>
       {inbox.readMore === undefined ? null : (
-        <Button size="sm" onClick={inbox.readMore}>
-          more
-        </Button>
+        <div>
+          <Button size="sm" onClick={inbox.readMore}>
+            more
+          </Button>
+        </div>
       )}
       {inbox.reading ? <p className="panel-note">reading…</p> : null}
     </>

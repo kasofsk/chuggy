@@ -299,9 +299,11 @@ export function ProjectTable(): ReactNode {
         />
       ))}
       {tickets.readMore === undefined ? null : (
-        <Button size="sm" onClick={tickets.readMore}>
-          more
-        </Button>
+        <div>
+          <Button size="sm" onClick={tickets.readMore}>
+            more
+          </Button>
+        </div>
       )}
       {tickets.reading ? <p className="panel-note">reading…</p> : null}
     </>
