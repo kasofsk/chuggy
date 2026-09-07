@@ -320,7 +320,7 @@ function conversationTextIsJsonObject(text: string): boolean {
 
 /**
  * The line every block recorded before the boundary heading ended on. It is
- * written out rather than taken from `threadStandingDefault`, because the turns
+ * written out rather than taken from `threadStandingRulesDefault`, because the turns
  * it splits are frozen text and that default is now a project's to reword.
  */
 const conversationRecordedLastLine =

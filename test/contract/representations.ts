@@ -332,7 +332,7 @@ export const selectorDefaults: SelectorRuntimeSettings = {
  * inherited everything else. */
 const selectorProjectOverrides = {
   northStar: "Ship the console.",
-  threadStanding: "- You draft, and nothing else.",
+  threadStandingRules: "- You draft, and nothing else.",
 };
 
 export const selectorProjectSettings: SelectorProjectSettingsRecord = {

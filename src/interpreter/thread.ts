@@ -43,7 +43,7 @@ import {
   threadWakeCharsMax,
 } from "../contract/http.ts";
 import {
-  resolvedThreadStanding,
+  resolvedThreadStandingRules,
   threadDraftsHeading,
   threadNorthStarHeading,
   threadRefusalsHeading,
@@ -126,7 +126,7 @@ export function threadWakeDocument(input: {
   readonly resource: string;
   readonly at: string;
   /** The project's own standing rules, absent where it takes the default. */
-  readonly standing?: string;
+  readonly standingRules?: string;
 }): ThreadWakeDocument {
   if (input.resource.length === 0)
     throw new RangeError("wake document: the resource is empty");
@@ -137,7 +137,7 @@ export function threadWakeDocument(input: {
     wake: input.wake,
     resource: input.resource,
     at: input.at,
-    standing: resolvedThreadStanding(input.standing),
+    standing: resolvedThreadStandingRules(input.standingRules),
   };
 }
 
@@ -218,7 +218,7 @@ function threadObjectives(
   project: string,
   owner: string,
   northStar: string | undefined,
-  standing: string,
+  standingRules: string,
 ): string {
   return [
     `# Whose thread this is
@@ -232,7 +232,7 @@ ${threadPurposeStanding}`,
     ...(northStar === undefined
       ? []
       : [`${threadNorthStarHeading}\n\n${northStar}`]),
-    threadStandingSection(standing),
+    threadStandingSection(standingRules),
   ].join("\n\n");
 }
 
@@ -262,7 +262,7 @@ export function threadSystemPrompt(input: {
   readonly partition: Partition;
   readonly owner: string;
   readonly northStar?: string;
-  readonly standing: string;
+  readonly standingRules: string;
 }): string {
   if (input.owner.length === 0)
     throw new RangeError("thread system prompt: the owner is empty");
@@ -271,7 +271,7 @@ export function threadSystemPrompt(input: {
     input.partition.project,
     input.owner,
     input.northStar,
-    input.standing,
+    input.standingRules,
   );
   if (textCodePointsCount(prompt) > threadSystemPromptCharsMax)
     throw new RangeError(
@@ -300,7 +300,7 @@ export interface ThreadSeededRefusal {
  */
 export interface ThreadProjectTexts {
   readonly northStar?: string;
-  readonly standing?: string;
+  readonly standingRules?: string;
 }
 
 /**
@@ -311,7 +311,7 @@ export interface ThreadProjectTexts {
  */
 export interface ThreadSeeding {
   readonly northStar?: string;
-  readonly standing: string;
+  readonly standingRules: string;
   readonly drafts: readonly ThreadSeededDraft[];
   readonly refusals: readonly ThreadSeededRefusal[];
 }
@@ -336,7 +336,7 @@ export function threadSeedingText(seeding: ThreadSeeding): string {
             .map(({ ticket, reason }) => `- ${String(ticket)} — ${reason}`)
             .join("\n")}`,
         ]),
-    threadStandingSection(seeding.standing),
+    threadStandingSection(seeding.standingRules),
   ].join("\n\n");
 }
 

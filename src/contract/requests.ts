@@ -123,7 +123,7 @@ const selectorAllowlistSchema = z
  */
 export const selectorProjectOverridesSchema = z.strictObject({
   northStar: selectorSettingsTextSchema.optional(),
-  threadStanding: selectorSettingsTextSchema.optional(),
+  threadStandingRules: selectorSettingsTextSchema.optional(),
   mode: z.enum(selectorModes).optional(),
   dispatchMode: z.enum(selectorDispatchModes).optional(),
   basePrompt: selectorSettingsTextSchema.optional(),

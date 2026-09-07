@@ -343,7 +343,7 @@ export const selectorEffectiveSettingsResponseSchema = z.strictObject({
   dispatchMode: z.enum(selectorDispatchModes),
   basePrompt: z.string().min(1),
   northStar: z.string().min(1).optional(),
-  threadStanding: z.string().min(1),
+  threadStandingRules: z.string().min(1),
   modelAllowlist: z.array(z.string()),
   toolAllowlist: z.array(z.string()),
   limits: selectorLimitsResponseSchema,

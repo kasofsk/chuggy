@@ -74,7 +74,7 @@ export interface ThreadWakeCandidate {
    * rides on the candidate because the pass composes a document that restates
    * them and a read inside the pass would be an await in the middle of it.
    */
-  readonly standing?: string;
+  readonly standingRules?: string;
 }
 
 /**
@@ -216,9 +216,9 @@ export async function threadWakePass(
           wake: candidate.reason,
           resource: candidate.resource,
           at: service.clock.nowIso(),
-          ...(candidate.standing === undefined
+          ...(candidate.standingRules === undefined
             ? {}
-            : { standing: candidate.standing }),
+            : { standingRules: candidate.standingRules }),
         }),
       ),
     });

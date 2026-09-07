@@ -8,7 +8,7 @@ import { describe, expect, test } from "vitest";
 import {
   threadDraftsHeading,
   threadNorthStarHeading,
-  threadStandingDefault,
+  threadStandingRulesDefault,
   threadStandingHeading,
   threadStandingSection,
   threadTurnBoundaryHeading,
@@ -637,7 +637,7 @@ describe("the argument summary", () => {
 const seeded = [
   `${threadNorthStarHeading}\n\nShip the console.`,
   `${threadDraftsHeading}\n\n- 7 — the rail`,
-  threadStandingSection(threadStandingDefault),
+  threadStandingSection(threadStandingRulesDefault),
 ].join("\n\n");
 
 /** One first turn's whole input, which is what the mailbox hands the console. */

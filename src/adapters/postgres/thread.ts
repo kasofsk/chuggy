@@ -394,18 +394,18 @@ export function postgresThreadSeeding(pool: pg.Pool): ThreadSeedingRead {
     projectTexts: async (partition) => {
       const found = await pool.query<{
         north_star: string | null;
-        thread_standing: string | null;
+        thread_standing_rules: string | null;
       }>(
-        sql`SELECT north_star,thread_standing FROM selector_project_settings
+        sql`SELECT north_star,thread_standing_rules FROM selector_project_settings
              WHERE tenant=${partition.tenant} AND project=${partition.project}`,
       );
       const row = found.rows[0];
       if (row === undefined) return {};
       return {
         ...(row.north_star === null ? {} : { northStar: row.north_star }),
-        ...(row.thread_standing === null
+        ...(row.thread_standing_rules === null
           ? {}
-          : { standing: row.thread_standing }),
+          : { standingRules: row.thread_standing_rules }),
       };
     },
 
@@ -495,10 +495,12 @@ function threadWakeCandidateOf(row: {
   readonly reason: string | null;
   readonly principal: string | null;
   readonly session: string | null;
-  readonly thread_standing: string | null;
+  readonly thread_standing_rules: string | null;
 }): ThreadWakeCandidate {
   return {
-    ...(row.thread_standing === null ? {} : { standing: row.thread_standing }),
+    ...(row.thread_standing_rules === null
+      ? {}
+      : { standingRules: row.thread_standing_rules }),
     sequence: projectRowCounter(
       sessionRowText(row.sequence, "change sequence"),
       "change sequence",
@@ -537,11 +539,11 @@ async function threadWakeCandidates(
     reason: string | null;
     principal: string | null;
     session: string | null;
-    thread_standing: string | null;
+    thread_standing_rules: string | null;
   }>(
     sql`SELECT candidate.sequence::text AS sequence,candidate.tenant,
                candidate.project,candidate.resource,candidate.reason,
-               candidate.principal,candidate.session,settings.thread_standing
+               candidate.principal,candidate.session,settings.thread_standing_rules
           FROM thread_wake_candidates(${after},${limit}) candidate
           LEFT JOIN selector_project_settings settings
             ON settings.tenant=candidate.tenant

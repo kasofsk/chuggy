@@ -175,7 +175,7 @@ export function checkedSelectorProjectOverrides(
   overrides: SelectorProjectOverrides,
 ): SelectorProjectOverrides {
   checkedText(overrides.northStar, "selector north star");
-  checkedText(overrides.threadStanding, "thread standing rules");
+  checkedText(overrides.threadStandingRules, "thread standing rules");
   checkedText(overrides.basePrompt, "selector base prompt");
   checkedAllowlist(overrides.modelAllowlist, "selector model allowlist");
   checkedAllowlist(overrides.toolAllowlist, "selector tool allowlist");

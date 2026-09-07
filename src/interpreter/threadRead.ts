@@ -48,7 +48,7 @@ import {
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
 } from "../contract/http.ts";
-import { resolvedThreadStanding } from "../contract/threadSeeding.ts";
+import { resolvedThreadStandingRules } from "../contract/threadSeeding.ts";
 import type {
   SessionId,
   SessionState,
@@ -445,7 +445,7 @@ export async function threadSeeding(
         );
   return {
     ...(texts.northStar === undefined ? {} : { northStar: texts.northStar }),
-    standing: resolvedThreadStanding(texts.standing),
+    standingRules: resolvedThreadStandingRules(texts.standingRules),
     drafts,
     refusals,
   };

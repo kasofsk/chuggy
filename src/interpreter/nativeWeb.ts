@@ -178,7 +178,7 @@ import {
   type ThreadsRead,
 } from "./threadRead.ts";
 import { inquiriesAnsweredMax, threadsAnsweredMax } from "../contract/http.ts";
-import { resolvedThreadStanding } from "../contract/threadSeeding.ts";
+import { resolvedThreadStandingRules } from "../contract/threadSeeding.ts";
 export { asPublicInstant, type PublicInstant } from "./publicResource.ts";
 export { asPrincipal, oidcPrincipal, type Principal } from "./principal.ts";
 export {
@@ -1383,7 +1383,7 @@ function nativeOpenThreadMethod(
         ...(texts.northStar === undefined
           ? {}
           : { northStar: texts.northStar }),
-        standing: resolvedThreadStanding(texts.standing),
+        standingRules: resolvedThreadStandingRules(texts.standingRules),
       }),
       credentialSlot: ports.credentialSlot,
     });

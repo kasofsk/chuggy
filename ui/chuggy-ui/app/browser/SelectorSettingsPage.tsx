@@ -159,7 +159,8 @@ function SelectorModeField(props: {
 }
 
 /** The name a text override is drawn under, which is the key of the box it holds. */
-type SelectorSettingsTextName = "northStar" | "threadStanding" | "basePrompt";
+type SelectorSettingsTextName =
+  "northStar" | "threadStandingRules" | "basePrompt";
 
 function SelectorTextField(props: {
   readonly chrome: SelectorFieldChrome;
@@ -201,9 +202,9 @@ function SelectorTextFields(props: {
       />
       <SelectorTextField
         chrome={chrome}
-        name="threadStanding"
+        name="threadStandingRules"
         label="Standing rules"
-        effective={effective.threadStanding}
+        effective={effective.threadStandingRules}
       />
       <SelectorTextField
         chrome={chrome}

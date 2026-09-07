@@ -47,7 +47,7 @@ import {
   threadSystemPromptCharsMax,
   threadTurnInputCharsMax,
 } from "../../src/interpreter/thread.ts";
-import { threadStandingDefault } from "../../src/contract/threadSeeding.ts";
+import { threadStandingRulesDefault } from "../../src/contract/threadSeeding.ts";
 
 const partition = {
   tenant: asTenantId("acme"),
@@ -101,7 +101,7 @@ interface ThreadDoubles {
   readonly closed?: ThreadClosed;
   readonly northStar?: string;
   /** The standing rules the project holds, absent where it inherits. */
-  readonly standing?: string;
+  readonly standingRules?: string;
   /** The identity the mint answers, which the definer opens the thread under. */
   readonly minted?: SessionId;
 }
@@ -164,9 +164,9 @@ function ports(doubles: ThreadDoubles): NativeThreadPorts {
           ...(doubles.northStar === undefined
             ? {}
             : { northStar: doubles.northStar }),
-          ...(doubles.standing === undefined
+          ...(doubles.standingRules === undefined
             ? {}
-            : { standing: doubles.standing }),
+            : { standingRules: doubles.standingRules }),
         }),
       drafts: () =>
         Promise.resolve([{ ticket: 42, summary: "the footer is wrong" }]),
@@ -509,7 +509,7 @@ test("the recorded prompt names the owner and never the principal behind them", 
   const open = held.calls.find((call) => call.startsWith("open:")) ?? "";
   assert.ok(open.includes("You are geoff's thread on acme/atlas"));
   assert.ok(!open.includes("https://auth.example"));
-  assert.ok(open.includes(threadStandingDefault));
+  assert.ok(open.includes(threadStandingRulesDefault));
 });
 
 /**
@@ -519,7 +519,7 @@ test("the recorded prompt names the owner and never the principal behind them", 
  */
 test("a project's own standing is what the opened thread's prompt carries", async () => {
   const { web, held } = boundary({
-    standing: "- You draft, and nothing else.",
+    standingRules: "- You draft, and nothing else.",
   });
 
   await web.openThread(
@@ -529,7 +529,7 @@ test("a project's own standing is what the opened thread's prompt carries", asyn
 
   const open = held.calls.find((call) => call.startsWith("open:")) ?? "";
   assert.ok(open.includes("- You draft, and nothing else."));
-  assert.ok(!open.includes(threadStandingDefault));
+  assert.ok(!open.includes(threadStandingRulesDefault));
 });
 
 /**
@@ -842,7 +842,7 @@ test("the first turn is seeded and every later turn is the message alone", async
 
   const first = seeded.held.calls.find((call) => call.startsWith("enqueue:"));
   assert.ok(first?.includes("Ship the console."));
-  assert.ok(first?.includes(threadStandingDefault));
+  assert.ok(first?.includes(threadStandingRulesDefault));
   assert.ok(first?.includes("the footer is wrong"));
   assert.ok(first?.includes("no dependency"));
   assert.ok(first?.endsWith("what is blocking 42?"));
@@ -860,7 +860,7 @@ test("the first turn is seeded and every later turn is the message alone", async
 test("a project's own standing is what the seeded first turn carries", async () => {
   const { web, held } = boundary({
     threads: [record(mine, geoff, { agentReference: undefined })],
-    standing: "- You draft, and nothing else.",
+    standingRules: "- You draft, and nothing else.",
   });
 
   await web.sendThreadMessage(geoff, partition, {
@@ -871,5 +871,5 @@ test("a project's own standing is what the seeded first turn carries", async () 
 
   const first = held.calls.find((call) => call.startsWith("enqueue:")) ?? "";
   assert.ok(first.includes("- You draft, and nothing else."));
-  assert.ok(!first.includes(threadStandingDefault));
+  assert.ok(!first.includes(threadStandingRulesDefault));
 });

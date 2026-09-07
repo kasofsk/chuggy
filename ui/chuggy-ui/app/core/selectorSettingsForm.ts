@@ -62,7 +62,7 @@ export type SelectorSettingsLimitDraft = Readonly<
  */
 export const selectorSettingsEditedNames = [
   "northStar",
-  "threadStanding",
+  "threadStandingRules",
   "basePrompt",
   "mode",
   "dispatchMode",
@@ -72,7 +72,7 @@ export const selectorSettingsEditedNames = [
 /** The boxes this form draws, as the strings they hold. */
 export interface SelectorSettingsDrawn {
   readonly northStar: string;
-  readonly threadStanding: string;
+  readonly threadStandingRules: string;
   readonly basePrompt: string;
   readonly mode: string;
   readonly dispatchMode: string;
@@ -122,7 +122,7 @@ function selectorSettingsDrawn(
 ): SelectorSettingsDrawn {
   return {
     northStar: overrides.northStar ?? "",
-    threadStanding: overrides.threadStanding ?? "",
+    threadStandingRules: overrides.threadStandingRules ?? "",
     basePrompt: overrides.basePrompt ?? "",
     mode: overrides.mode ?? "",
     dispatchMode: overrides.dispatchMode ?? "",
@@ -174,11 +174,15 @@ export function selectorSettingsRebased(
   const arriving = selectorSettingsDrawn(settings.overrides);
   const kept = (
     name:
-      "northStar" | "threadStanding" | "basePrompt" | "mode" | "dispatchMode",
+      | "northStar"
+      | "threadStandingRules"
+      | "basePrompt"
+      | "mode"
+      | "dispatchMode",
   ) => (draft[name] === draft.read[name] ? arriving[name] : draft[name]);
   return {
     northStar: kept("northStar"),
-    threadStanding: kept("threadStanding"),
+    threadStandingRules: kept("threadStandingRules"),
     basePrompt: kept("basePrompt"),
     mode: kept("mode"),
     dispatchMode: kept("dispatchMode"),
@@ -222,9 +226,9 @@ export function selectorSettingsWrite(
   const built = {
     ...draft.carried,
     ...(draft.northStar.trim() === "" ? {} : { northStar: draft.northStar }),
-    ...(draft.threadStanding.trim() === ""
+    ...(draft.threadStandingRules.trim() === ""
       ? {}
-      : { threadStanding: draft.threadStanding }),
+      : { threadStandingRules: draft.threadStandingRules }),
     ...(draft.basePrompt.trim() === "" ? {} : { basePrompt: draft.basePrompt }),
     ...(draft.mode === "" ? {} : { mode: draft.mode }),
     ...(draft.dispatchMode === "" ? {} : { dispatchMode: draft.dispatchMode }),

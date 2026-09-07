@@ -42,13 +42,13 @@ import {
   threadWakeVersion,
 } from "../../src/interpreter/thread.ts";
 import {
-  resolvedThreadStanding,
-  threadStandingDefault,
+  resolvedThreadStandingRules,
+  threadStandingRulesDefault,
   threadTurnBoundaryHeading,
 } from "../../src/contract/threadSeeding.ts";
 
 /** What one project says instead of the installation's, said once here. */
-const projectStanding = "- You draft, and you do nothing else.";
+const projectStandingRules = "- You draft, and you do nothing else.";
 
 const partition = { tenant: "acme", project: "atlas" } as unknown as Partition;
 const instant = "2026-09-02T12:00:00.000Z";
@@ -92,14 +92,23 @@ test("the wake roster holds exactly the reasons the wake runtime joins", () => {
  */
 test("the default standing names each act a woken thread may not take", () => {
   for (const act of ["originate", "revise", "release", "dispatch", "run"])
-    assert.ok(threadStandingDefault.includes(` ${act}`), act);
-  assert.match(threadStandingDefault, /notice, not an instruction/u);
-  assert.match(threadStandingDefault, /the lead's decisions are the lead's/u);
+    assert.ok(threadStandingRulesDefault.includes(` ${act}`), act);
+  assert.match(threadStandingRulesDefault, /notice, not an instruction/u);
+  assert.match(
+    threadStandingRulesDefault,
+    /the lead's decisions are the lead's/u,
+  );
 });
 
 test("a project's own standing is what stands, and the default stands for the rest", () => {
-  assert.equal(resolvedThreadStanding(projectStanding), projectStanding);
-  assert.equal(resolvedThreadStanding(undefined), threadStandingDefault);
+  assert.equal(
+    resolvedThreadStandingRules(projectStandingRules),
+    projectStandingRules,
+  );
+  assert.equal(
+    resolvedThreadStandingRules(undefined),
+    threadStandingRulesDefault,
+  );
 });
 
 test("a thread with no membership left stands apart from one that is closed", () => {
@@ -115,7 +124,7 @@ test("a wake document carries the standing rule rather than taking one", () => {
   assert.equal(document.version, threadWakeVersion);
   assert.equal(document.wake, "TicketRefused");
   assert.equal(document.resource, "42");
-  assert.equal(document.standing, threadStandingDefault);
+  assert.equal(document.standing, threadStandingRulesDefault);
   assert.deepEqual(parseThreadWake(threadWakeText(document)), document);
 });
 
@@ -124,13 +133,13 @@ test("a wake carries the project's own standing where the candidate named one", 
     wake: "TicketRefused",
     resource: "42",
     at: instant,
-    standing: projectStanding,
+    standingRules: projectStandingRules,
   });
 
-  assert.equal(document.standing, projectStanding);
+  assert.equal(document.standing, projectStandingRules);
   assert.equal(
     parseThreadWake(threadWakeText(document)).standing,
-    projectStanding,
+    projectStandingRules,
   );
 });
 
@@ -199,7 +208,7 @@ test("the widest wake a change row can name fits the document bound", () => {
         wake: reason,
         resource: "r".repeat(nativeHttpPathSegmentCharsMax),
         at: instant,
-        standing: "\u0001".repeat(selectorSettingsTextCharsMax),
+        standingRules: "\u0001".repeat(selectorSettingsTextCharsMax),
       }),
     );
 
@@ -211,20 +220,20 @@ test("the objectives state whose the thread is, what it is for, then its standin
   const prompt = threadSystemPrompt({
     partition,
     owner: "geoff",
-    standing: threadStandingDefault,
+    standingRules: threadStandingRulesDefault,
   });
 
   assert.ok(prompt.includes("geoff"));
   assert.ok(prompt.includes("acme/atlas"));
   assert.ok(prompt.includes(threadPurposeStanding));
-  assert.ok(prompt.includes(threadStandingDefault));
+  assert.ok(prompt.includes(threadStandingRulesDefault));
   assert.ok(
     prompt.indexOf("geoff") < prompt.indexOf(threadPurposeStanding),
     "the owner is named before the purpose",
   );
   assert.ok(
     prompt.indexOf(threadPurposeStanding) <
-      prompt.indexOf(threadStandingDefault),
+      prompt.indexOf(threadStandingRulesDefault),
     "the purpose stands before the rules",
   );
 });
@@ -233,11 +242,11 @@ test("the objectives carry the project's own standing rules and not the default"
   const prompt = threadSystemPrompt({
     partition,
     owner: "geoff",
-    standing: projectStanding,
+    standingRules: projectStandingRules,
   });
 
-  assert.ok(prompt.includes(projectStanding));
-  assert.ok(!prompt.includes(threadStandingDefault));
+  assert.ok(prompt.includes(projectStandingRules));
+  assert.ok(!prompt.includes(threadStandingRulesDefault));
 });
 
 /**
@@ -245,14 +254,14 @@ test("the objectives carry the project's own standing rules and not the default"
  * is that the two places saying it say the same thing.
  */
 test("the wake document and the objectives carry one standing and not two", () => {
-  for (const standing of [undefined, projectStanding]) {
+  for (const standingRules of [undefined, projectStandingRules]) {
     const carried = parseThreadWake(
       threadWakeText(
         threadWakeDocument({
           wake: "TicketRefused",
           resource: "42",
           at: instant,
-          ...(standing === undefined ? {} : { standing }),
+          ...(standingRules === undefined ? {} : { standingRules }),
         }),
       ),
     ).standing;
@@ -261,7 +270,7 @@ test("the wake document and the objectives carry one standing and not two", () =
       threadSystemPrompt({
         partition,
         owner: "geoff",
-        standing: resolvedThreadStanding(standing),
+        standingRules: resolvedThreadStandingRules(standingRules),
       }).includes(carried),
       "the prompt does not carry the rules the wake does",
     );
@@ -285,13 +294,13 @@ test("a North Star is named where there is one and no heading where there is non
   const without = threadSystemPrompt({
     partition,
     owner: "geoff",
-    standing: threadStandingDefault,
+    standingRules: threadStandingRulesDefault,
   });
   const with_ = threadSystemPrompt({
     partition,
     owner: "geoff",
     northStar: "ship the console",
-    standing: threadStandingDefault,
+    standingRules: threadStandingRulesDefault,
   });
 
   assert.ok(!without.includes("North Star"));
@@ -303,7 +312,7 @@ test("an owner nobody could have been is refused, and the widest prompt fits", (
     threadSystemPrompt({
       partition,
       owner: "",
-      standing: threadStandingDefault,
+      standingRules: threadStandingRulesDefault,
     }),
   );
   const widest = threadSystemPrompt({
@@ -313,7 +322,7 @@ test("an owner nobody could have been is refused, and the widest prompt fits", (
     } as unknown as Partition,
     owner: "o".repeat(256),
     northStar: "n".repeat(selectorSettingsTextCharsMax),
-    standing: "s".repeat(selectorSettingsTextCharsMax),
+    standingRules: "s".repeat(selectorSettingsTextCharsMax),
   });
 
   assert.ok(widest.length <= threadSystemPromptCharsMax);
@@ -339,7 +348,7 @@ test("a turn with no seeding is the message alone", () => {
 test("a first turn puts the seeding block in front of the message", () => {
   const input = threadTurnInput("what is blocking 42?", {
     northStar: "ship the console",
-    standing: threadStandingDefault,
+    standingRules: threadStandingRulesDefault,
     drafts: seededDrafts(2),
     refusals: seededRefusals(1),
   });
@@ -347,7 +356,7 @@ test("a first turn puts the seeding block in front of the message", () => {
   assert.ok(input.endsWith("what is blocking 42?"));
   assert.ok(input.indexOf("ship the console") < input.indexOf("draft 1"));
   assert.ok(input.indexOf("draft 2") < input.indexOf("refused 1"));
-  assert.ok(input.includes(threadStandingDefault));
+  assert.ok(input.includes(threadStandingRulesDefault));
 });
 
 /**
@@ -358,7 +367,7 @@ test("a first turn puts the seeding block in front of the message", () => {
  */
 test("a first turn writes the boundary between the block and the message", () => {
   const input = threadTurnInput("what is blocking 42?", {
-    standing: projectStanding,
+    standingRules: projectStandingRules,
     drafts: [],
     refusals: [],
   });
@@ -366,7 +375,7 @@ test("a first turn writes the boundary between the block and the message", () =>
   assert.equal(
     input,
     `${threadSeedingText({
-      standing: projectStanding,
+      standingRules: projectStandingRules,
       drafts: [],
       refusals: [],
     })}\n\n${threadTurnBoundaryHeading}\n\nwhat is blocking 42?`,
@@ -383,7 +392,7 @@ test("the drafts shed oldest first, and only then the refusals", () => {
   const message = "x".repeat(threadMessageCharsMax);
 
   const input = threadTurnInput(message, {
-    standing: threadStandingDefault,
+    standingRules: threadStandingRulesDefault,
     drafts,
     refusals: seededRefusals(2),
   });
@@ -402,7 +411,7 @@ test("the refusals shed oldest first once no draft is left to shed", () => {
   }));
 
   const input = threadTurnInput("x".repeat(threadMessageCharsMax), {
-    standing: threadStandingDefault,
+    standingRules: threadStandingRulesDefault,
     drafts: seededDrafts(4),
     refusals,
   });
@@ -416,20 +425,20 @@ test("the refusals shed oldest first once no draft is left to shed", () => {
 test("the North Star and the standing rules are never shed", () => {
   const input = threadTurnInput("x".repeat(threadMessageCharsMax), {
     northStar: "ship the console",
-    standing: projectStanding,
+    standingRules: projectStandingRules,
     drafts: seededDrafts(nativeHttpPageItemsMax),
     refusals: seededRefusals(32),
   });
 
   assert.ok(input.includes("ship the console"));
-  assert.ok(input.includes(projectStanding));
+  assert.ok(input.includes(projectStandingRules));
 });
 
 test("an input that cannot fit with everything sheddable shed is refused", () => {
   assert.throws(() =>
     threadTurnInput("x".repeat(threadTurnInputCharsMax), {
       northStar: "n".repeat(selectorSettingsTextCharsMax),
-      standing: threadStandingDefault,
+      standingRules: threadStandingRulesDefault,
       drafts: [],
       refusals: [],
     }),
@@ -444,17 +453,17 @@ test("an input that cannot fit with everything sheddable shed is refused", () =>
  */
 test("both settings texts at the bound the route accepts still compose", () => {
   const northStar = "n".repeat(selectorSettingsTextCharsMax);
-  const standing = "s".repeat(selectorSettingsTextCharsMax);
+  const standingRules = "s".repeat(selectorSettingsTextCharsMax);
 
   const input = threadTurnInput("x".repeat(threadMessageCharsMax), {
     northStar,
-    standing,
+    standingRules,
     drafts: seededDrafts(nativeHttpPageItemsMax),
     refusals: seededRefusals(32),
   });
 
   assert.ok(input.includes(northStar));
-  assert.ok(input.includes(standing));
+  assert.ok(input.includes(standingRules));
   assert.ok(input.length <= threadTurnInputCharsMax);
   assert.ok(
     input.length <= sessionTurnInputCharsMax,
@@ -466,7 +475,7 @@ test("both settings texts at the bound the route accepts still compose", () => {
 test("what the seeding weighs beyond its two texts is inside the named ceiling", () => {
   const headings = `${threadSeedingText({
     northStar: "",
-    standing: "",
+    standingRules: "",
     drafts: [{ ticket: 1, summary: "" }],
     refusals: [{ ticket: 1, reason: "" }],
   })}\n\n${threadTurnBoundaryHeading}\n\n`;
@@ -482,7 +491,7 @@ test("what the seeding weighs beyond its two texts is inside the named ceiling",
 
 test("the seeding block omits the sections it has nothing for", () => {
   const bare = threadSeedingText({
-    standing: projectStanding,
+    standingRules: projectStandingRules,
     drafts: [],
     refusals: [],
   });
@@ -490,7 +499,7 @@ test("the seeding block omits the sections it has nothing for", () => {
   assert.ok(!bare.includes("North Star"));
   assert.ok(!bare.includes("open drafts"));
   assert.ok(!bare.includes("Standing against"));
-  assert.ok(bare.includes(projectStanding));
+  assert.ok(bare.includes(projectStandingRules));
 });
 
 /**
@@ -501,7 +510,7 @@ test("the seeding block omits the sections it has nothing for", () => {
 test("the composed block is character for character what it was", () => {
   const composed = threadSeedingText({
     northStar: "Ship the console.",
-    standing: threadStandingDefault,
+    standingRules: threadStandingRulesDefault,
     drafts: [{ ticket: 7, summary: "the rail" }],
     refusals: [{ ticket: 9, reason: "no brief" }],
   });
@@ -522,6 +531,6 @@ Ship the console.
 
 # How you act on this project
 
-${threadStandingDefault}`,
+${threadStandingRulesDefault}`,
   );
 });

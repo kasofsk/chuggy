@@ -39,7 +39,7 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import { selectorProjectOverridesSchema } from "../../src/contract/requests.ts";
-import { threadStandingDefault } from "../../src/contract/threadSeeding.ts";
+import { threadStandingRulesDefault } from "../../src/contract/threadSeeding.ts";
 import {
   dispatchesPerDecisionUnstated,
   leadDispatchesMax,
@@ -96,7 +96,10 @@ test("a project with no row of its own inherits every installation default", asy
     assert.equal(settings.effective.basePrompt, installation.basePrompt);
     assert.equal(settings.effective.revision, installation.revision);
     assert.equal(settings.effective.northStar, undefined);
-    assert.equal(settings.effective.threadStanding, threadStandingDefault);
+    assert.equal(
+      settings.effective.threadStandingRules,
+      threadStandingRulesDefault,
+    );
     assert.deepEqual(settings.effective.limits, installation.limits);
   } finally {
     await pool.end();
@@ -108,41 +111,44 @@ test("a project with no row of its own inherits every installation default", asy
  * other override, and the installation holds no row for them: a project that
  * clears the override runs its threads under the code default again.
  */
-test("a project's thread standing survives the write, the history and a clearing", async () => {
+test("a project's thread standing rules survive the write, the history and a clearing", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
-    "selector-thread-standing",
+    "selector-thread-standing-rules",
   );
   const pool = postgresHarnessRolePool(apiRole);
   const store = postgresSelectorProjectSettings(pool);
-  const standing = "- You draft, and nothing else.";
+  const standingRules = "- You draft, and nothing else.";
   try {
     const written = writtenSettings(
       await store.write(
         partition,
         0,
-        { threadStanding: standing },
+        { threadStandingRules: standingRules },
         administrator,
       ),
     );
-    assert.equal(written.overrides.threadStanding, standing);
-    assert.equal(written.effective.threadStanding, standing);
+    assert.equal(written.overrides.threadStandingRules, standingRules);
+    assert.equal(written.effective.threadStandingRules, standingRules);
     assert.equal(
-      (await store.read(partition)).overrides.threadStanding,
-      standing,
+      (await store.read(partition)).overrides.threadStandingRules,
+      standingRules,
     );
     assert.deepEqual(
       (await store.history(partition, 0, 10)).map(
-        (revision) => revision.overrides.threadStanding,
+        (revision) => revision.overrides.threadStandingRules,
       ),
-      [standing],
+      [standingRules],
     );
 
     const cleared = writtenSettings(
       await store.write(partition, 1, {}, administrator),
     );
-    assert.equal(cleared.overrides.threadStanding, undefined);
-    assert.equal(cleared.effective.threadStanding, threadStandingDefault);
+    assert.equal(cleared.overrides.threadStandingRules, undefined);
+    assert.equal(
+      cleared.effective.threadStandingRules,
+      threadStandingRulesDefault,
+    );
   } finally {
     await pool.end();
   }

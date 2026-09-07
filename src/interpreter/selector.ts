@@ -10,7 +10,7 @@ import {
   textCodePointsCount,
 } from "../contract/http.ts";
 import type { SelectorDeliveryState } from "../contract/rosters.ts";
-import { resolvedThreadStanding } from "../contract/threadSeeding.ts";
+import { resolvedThreadStandingRules } from "../contract/threadSeeding.ts";
 import type { DispatchCandidate, DispatchViewToken } from "./dispatchView.ts";
 import {
   asOperationId,
@@ -518,7 +518,7 @@ export type SelectorProjectLimitOverrides = Partial<
 export interface SelectorProjectOverrides {
   readonly northStar?: string;
   /** The standing rules this project's threads act under, in place of the installation's. */
-  readonly threadStanding?: string;
+  readonly threadStandingRules?: string;
   readonly mode?: SelectorRuntimeSettings["mode"];
   readonly dispatchMode?: SelectorRuntimeSettings["dispatchMode"];
   readonly basePrompt?: string;
@@ -542,7 +542,7 @@ export interface SelectorResolvedSettings extends SelectorRuntimeSettings {
   readonly installationMode: SelectorRuntimeSettings["mode"];
   readonly northStar?: string;
   /** Always a value: a project that overrides nothing runs its threads under the code default. */
-  readonly threadStanding: string;
+  readonly threadStandingRules: string;
 }
 
 /** The revisions an in-flight decision is conditioned on, which is both rows it read. */
@@ -619,7 +619,9 @@ export function resolvedSelectorSettings(
     ...(overrides.northStar === undefined
       ? {}
       : { northStar: overrides.northStar }),
-    threadStanding: resolvedThreadStanding(overrides.threadStanding),
+    threadStandingRules: resolvedThreadStandingRules(
+      overrides.threadStandingRules,
+    ),
   };
 }
 

@@ -23,12 +23,12 @@ import {
   type Migration,
 } from "../shared.ts";
 
-const projectThreadStanding = [
+const projectThreadStandingRules = [
   `ALTER TABLE selector_project_settings
-     ADD COLUMN thread_standing text,
-     ADD CONSTRAINT selector_project_thread_standing_is_bounded CHECK (
-       thread_standing IS NULL OR length(thread_standing) BETWEEN 1 AND 65536)`,
-  `ALTER TABLE selector_project_settings_history ADD COLUMN thread_standing text`,
+     ADD COLUMN thread_standing_rules text,
+     ADD CONSTRAINT selector_project_thread_standing_rules_is_bounded CHECK (
+       thread_standing_rules IS NULL OR length(thread_standing_rules) BETWEEN 1 AND 65536)`,
+  `ALTER TABLE selector_project_settings_history ADD COLUMN thread_standing_rules text`,
 ];
 
 const projectSettingsArgumentsBefore =
@@ -39,7 +39,7 @@ const projectSettingsArguments =
 
 /** What a write answers with: the project's own columns beside the defaults they fall back to. */
 const projectSettingsColumns = `
-       revision bigint,north_star text,thread_standing text,mode text,
+       revision bigint,north_star text,thread_standing_rules text,mode text,
        dispatch_mode text,
        base_prompt text,model_allowlist text,tool_allowlist text,
        tokens_per_decision bigint,milliseconds_per_decision bigint,
@@ -52,7 +52,7 @@ const projectSettingsColumns = `
 
 /** The written row read back at the revision this write produced, and no later one. */
 const projectSettingsProjection = `
-  SELECT settings.revision,settings.north_star,settings.thread_standing,
+  SELECT settings.revision,settings.north_star,settings.thread_standing_rules,
          settings.mode,settings.dispatch_mode,
          settings.base_prompt,settings.model_allowlist,settings.tool_allowlist,
          settings.tokens_per_decision,settings.milliseconds_per_decision,
@@ -67,11 +67,11 @@ const projectSettingsProjection = `
    WHERE settings.tenant=in_tenant AND settings.project=in_project
      AND settings.revision=written AND installation.singleton=1`;
 
-const projectSettingsWriteTakesTheStanding = [
+const projectSettingsWriteTakesTheStandingRules = [
   `DROP FUNCTION ${selectorProjectSettingsFunction}(${projectSettingsArgumentsBefore})`,
   `CREATE FUNCTION ${selectorProjectSettingsFunction}(
      in_tenant text,in_project text,expected_revision bigint,
-     new_north_star text,new_thread_standing text,new_mode text,
+     new_north_star text,new_thread_standing_rules text,new_mode text,
      new_dispatch_mode text,new_base_prompt text,
      new_model_allowlist text,new_tool_allowlist text,
      new_tokens_per_decision bigint,new_milliseconds_per_decision bigint,
@@ -91,12 +91,12 @@ const projectSettingsWriteTakesTheStanding = [
        IF coalesce(standing,0)<>expected_revision THEN RETURN; END IF;
        IF expected_revision=0 THEN
          INSERT INTO selector_project_settings
-           (tenant,project,revision,north_star,thread_standing,mode,dispatch_mode,
+           (tenant,project,revision,north_star,thread_standing_rules,mode,dispatch_mode,
             base_prompt,model_allowlist,tool_allowlist,tokens_per_decision,
             milliseconds_per_decision,tool_calls_per_decision,
             dispatches_per_decision,input_bytes_per_decision,
             candidate_pages_per_decision,operational_context_max_age_ms)
-           VALUES (in_tenant,in_project,1,new_north_star,new_thread_standing,
+           VALUES (in_tenant,in_project,1,new_north_star,new_thread_standing_rules,
             new_mode,new_dispatch_mode,
             new_base_prompt,new_model_allowlist,new_tool_allowlist,
             new_tokens_per_decision,new_milliseconds_per_decision,
@@ -106,7 +106,7 @@ const projectSettingsWriteTakesTheStanding = [
            RETURNING selector_project_settings.revision INTO written;
        ELSE
          UPDATE selector_project_settings SET revision=selector_project_settings.revision+1,
-           north_star=new_north_star,thread_standing=new_thread_standing,
+           north_star=new_north_star,thread_standing_rules=new_thread_standing_rules,
            mode=new_mode,dispatch_mode=new_dispatch_mode,
            base_prompt=new_base_prompt,model_allowlist=new_model_allowlist,
            tool_allowlist=new_tool_allowlist,tokens_per_decision=new_tokens_per_decision,
@@ -123,14 +123,14 @@ const projectSettingsWriteTakesTheStanding = [
        END IF;
        IF written IS NULL THEN RETURN; END IF;
        INSERT INTO selector_project_settings_history
-         (tenant,project,revision,north_star,thread_standing,mode,dispatch_mode,
+         (tenant,project,revision,north_star,thread_standing_rules,mode,dispatch_mode,
           base_prompt,model_allowlist,tool_allowlist,tokens_per_decision,
           milliseconds_per_decision,tool_calls_per_decision,
           dispatches_per_decision,input_bytes_per_decision,
           candidate_pages_per_decision,operational_context_max_age_ms,
           administrator_kind,administrator_subject)
          SELECT settings.tenant,settings.project,settings.revision,settings.north_star,
-           settings.thread_standing,
+           settings.thread_standing_rules,
            settings.mode,settings.dispatch_mode,settings.base_prompt,
            settings.model_allowlist,settings.tool_allowlist,settings.tokens_per_decision,
            settings.milliseconds_per_decision,settings.tool_calls_per_decision,
@@ -154,7 +154,7 @@ export const migration076: Migration = {
   version: 76,
   name: "a project's threads act under its own standing rules",
   statements: [
-    ...projectThreadStanding,
-    ...projectSettingsWriteTakesTheStanding,
+    ...projectThreadStandingRules,
+    ...projectSettingsWriteTakesTheStandingRules,
   ],
 };

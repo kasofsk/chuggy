@@ -56,7 +56,7 @@ const effective = {
   dispatchMode: "Automatic",
   basePrompt: "choose the next ticket",
   northStar: "ship the console",
-  threadStanding: "- You act through your owner's own commands.",
+  threadStandingRules: "- You act through your owner's own commands.",
   modelAllowlist: [],
   toolAllowlist: [],
   limits: {
@@ -152,20 +152,20 @@ test("the standing rules box holds the project's own and stands in the rest", as
   const server = await drawSettings(
     () => ({
       body: settingsBody(13, {
-        threadStanding: "- You draft, and nothing else.",
+        threadStandingRules: "- You draft, and nothing else.",
       }),
       status: 200,
     }),
     settingsBody(12, {}),
   );
-  const standing = screen.getByLabelText<HTMLTextAreaElement>("Standing rules");
-  expect(standing.value).toBe("");
-  expect(standing.placeholder).toBe(
+  const rules = screen.getByLabelText<HTMLTextAreaElement>("Standing rules");
+  expect(rules.value).toBe("");
+  expect(rules.placeholder).toBe(
     "- You act through your owner's own commands.",
   );
 
   await turned(() => {
-    fireEvent.change(standing, {
+    fireEvent.change(rules, {
       target: { value: "- You draft, and nothing else." },
     });
   });
@@ -174,7 +174,7 @@ test("the standing rules box holds the project's own and stands in the rest", as
 
   expect(server.written()).toStrictEqual({
     expectedRevision: 12,
-    overrides: { threadStanding: "- You draft, and nothing else." },
+    overrides: { threadStandingRules: "- You draft, and nothing else." },
   });
 });
 
