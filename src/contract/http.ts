@@ -323,6 +323,8 @@ export const nativeHttpRoutes = {
   threadTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/transcript`,
   threadMessages: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/messages`,
   threadClose: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/close`,
+  threadRename: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/rename`,
+  threadHide: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/hide`,
 } as const;
 
 export type NativeHttpRoute = keyof typeof nativeHttpRoutes;

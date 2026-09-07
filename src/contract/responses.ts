@@ -1017,9 +1017,17 @@ export const threadEntryResponseSchema = z.object({
   mine: z.boolean(),
   turns: countSchema,
   agentReference: identitySchema.optional(),
-  /** What the thread is about, derived from its first message and absent until
-   * a member has sent one. */
+  /** What the thread is about: the member's own name for it where they gave
+   * one, else the title derived from its first message, and absent until one of
+   * those exists. */
   title: z.string().max(threadTitleCharsMax).optional(),
+  openedAt: instantSchema,
+  /** When the thread last moved: it opened, a turn was enqueued or ended, or it
+   * closed. It is what a rail groups by. */
+  lastActivityAt: instantSchema,
+  /** Off its owner's rail. Nothing is deleted, so a hidden thread is still
+   * listed here and still readable. */
+  hidden: z.boolean(),
 });
 export type ThreadEntryResponse = z.infer<typeof threadEntryResponseSchema>;
 
@@ -1059,6 +1067,9 @@ export const threadResponseSchema = z.object({
   mine: z.boolean(),
   agentReference: identitySchema.optional(),
   title: z.string().max(threadTitleCharsMax).optional(),
+  openedAt: instantSchema,
+  lastActivityAt: instantSchema,
+  hidden: z.boolean(),
   turns: z.array(threadTurnResponseSchema).max(threadTurnsAnsweredMax),
   /** The cursor an older page is asked for with, absent where this page holds the first turn. */
   nextBefore: countSchema.optional(),
@@ -1076,6 +1087,18 @@ export type ThreadResponse = z.infer<typeof threadResponseSchema>;
  */
 export const threadTranscriptResponseSchema = leadTranscriptResponseSchema;
 export type ThreadTranscriptResponse = LeadTranscriptResponse;
+
+/**
+ * What the rename and the hide doors answer: the entry as it now stands, which
+ * is what the close door answers and for its reason — a caller is given the
+ * thread it wrote rather than sent to read it again. They are two names over one
+ * shape because the two doors are two writes, and a shape that split later
+ * would split under one of the names.
+ */
+export const threadRenameResponseSchema = threadEntryResponseSchema;
+export type ThreadRenameResponse = ThreadEntryResponse;
+export const threadHideResponseSchema = threadEntryResponseSchema;
+export type ThreadHideResponse = ThreadEntryResponse;
 
 /** What the message door answers: the turn it took, and where it sits in the mailbox. */
 export const threadMessageAcceptedSchema = z.object({

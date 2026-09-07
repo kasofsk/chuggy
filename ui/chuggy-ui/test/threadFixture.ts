@@ -24,6 +24,10 @@ export const threadOtherSession = "thread-ada";
 export const threadOrphanSession = "thread-gone";
 export const threadStream = "9f8e7d";
 
+/** What a thread says of itself where a case is about neither instant. */
+export const threadOpenedAt = "2026-09-02T09:00:00Z";
+export const threadMovedAt = "2026-09-02T10:00:00Z";
+
 /**
  * The standing rules a wake document carries, as a project that wrote its own
  * would state them. They are written out here rather than imported because a
@@ -53,6 +57,9 @@ export function threadEntry(
     mine: false,
     turns: 3,
     agentReference: threadStream,
+    openedAt: threadOpenedAt,
+    lastActivityAt: threadMovedAt,
+    hidden: false,
     ...entry,
   };
 }
@@ -120,6 +127,9 @@ export function threadBody(input: {
     state: input.state ?? (input.orphaned === true ? "Orphaned" : "Open"),
     mine: input.mine ?? true,
     agentReference: threadStream,
+    openedAt: threadOpenedAt,
+    lastActivityAt: threadMovedAt,
+    hidden: false,
     turns: [...(input.turns ?? [threadTurn({ turn: "thread-turn-1" })])],
     ...(input.nextBefore === undefined ? {} : { nextBefore: input.nextBefore }),
     streams: [{ stream: threadStream, batches: input.batches ?? 1 }],

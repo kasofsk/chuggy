@@ -34,6 +34,7 @@ import {
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
 import { asPrincipal, oidcPrincipal } from "../../src/interpreter/principal.ts";
+import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { unaskedNativeWebPorts } from "./nativeWebFixtures.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
@@ -44,6 +45,8 @@ import {
   type ThreadClosed,
   type ThreadMessageEnqueued,
   type ThreadRecord,
+  type ThreadHidden,
+  type ThreadRenamed,
   type ThreadStore,
 } from "../../src/interpreter/threadRead.ts";
 import {
@@ -71,7 +74,15 @@ interface ThreadOverrides {
   readonly turns?: number;
   readonly owner?: string | undefined;
   readonly agentReference?: string | undefined;
+  readonly firstMessage?: string;
+  readonly memberTitle?: string;
+  readonly hidden?: boolean;
+  readonly lastActivityAt?: string;
 }
+
+/** What a row says of itself where a case is about neither instant. */
+const threadOpenedAt = asPublicInstant("2026-09-05T09:00:00Z");
+const threadMovedAt = asPublicInstant("2026-09-05T10:00:00Z");
 
 function record(
   session: SessionId,
@@ -93,6 +104,15 @@ function record(
     turns: overrides.turns ?? 2,
     ...(owner === undefined ? {} : { owner }),
     ...(agentReference === undefined ? {} : { agentReference }),
+    ...(overrides.firstMessage === undefined
+      ? {}
+      : { firstMessage: overrides.firstMessage }),
+    ...(overrides.memberTitle === undefined
+      ? {}
+      : { memberTitle: overrides.memberTitle }),
+    openedAt: threadOpenedAt,
+    lastActivityAt: asPublicInstant(overrides.lastActivityAt ?? threadMovedAt),
+    hidden: overrides.hidden ?? false,
   };
 }
 
@@ -102,6 +122,8 @@ interface ThreadDoubles {
   readonly enqueued: ThreadMessageEnqueued;
   /** What the close door answers where a case sets it; else the record named, closed. */
   readonly closed?: ThreadClosed;
+  /** What the rename door answers where a case sets it; else the record named. */
+  readonly renamed?: ThreadRenamed;
   readonly northStar?: string;
   /** The standing rules the project holds, absent where it inherits. */
   readonly standingRules?: string;
@@ -152,6 +174,29 @@ function threadStore(doubles: ThreadDoubles): ThreadStore {
         found === undefined
           ? { closed: "NoThread" }
           : { closed: "Closed", thread: { ...found, state: "Closed" } },
+      );
+    },
+    rename: ({ session, title }) => {
+      doubles.calls.push(`rename:${session}:${title}`);
+      if (doubles.renamed !== undefined)
+        return Promise.resolve(doubles.renamed);
+      const found = doubles.threads.find((held) => held.session === session);
+      return Promise.resolve<ThreadRenamed>(
+        found === undefined
+          ? { renamed: "NoThread" }
+          : { renamed: "Renamed", thread: { ...found, memberTitle: title } },
+      );
+    },
+    hide: ({ session, hidden }) => {
+      doubles.calls.push(`hide:${session}:${String(hidden)}`);
+      const found = doubles.threads.find((held) => held.session === session);
+      return Promise.resolve<ThreadHidden>(
+        found === undefined
+          ? { hidden: "NoThread" }
+          : {
+              hidden: hidden ? "Hidden" : "Shown",
+              thread: { ...found, hidden },
+            },
       );
     },
   };
@@ -259,7 +304,17 @@ test("every member reads every thread, and `mine` is the reader's own", async ()
   assert.ok(held.calls.includes(`threads:${String(threadsAnsweredMax)}`));
   assert.deepEqual(
     Object.keys(read.result === "Found" ? (read.threads[0] ?? {}) : {}).sort(),
-    ["agentReference", "mine", "owner", "session", "state", "turns"],
+    [
+      "agentReference",
+      "hidden",
+      "lastActivityAt",
+      "mine",
+      "openedAt",
+      "owner",
+      "session",
+      "state",
+      "turns",
+    ],
   );
 });
 
@@ -453,6 +508,9 @@ test("any member who may mutate closes any thread, and is answered it closed", a
       mine: false,
       turns: 2,
       agentReference: "1a2b",
+      openedAt: threadOpenedAt,
+      lastActivityAt: threadMovedAt,
+      hidden: false,
     },
   });
   assert.deepEqual(held.calls, ["authorize:Mutate", `close:${hers}`]);
@@ -492,6 +550,153 @@ test("closing a session that is no thread of this project's is not found", async
     { result: "NotFound" },
   );
   assert.ok(held.calls.includes("close:lead-atlas"));
+});
+
+/**
+ * Renaming is gated like closing and for its reason: it changes what a rail
+ * draws and nothing the thread does, so a member who may mutate the project
+ * reaches any of its threads. The case renames another member's to hold that,
+ * and the entry comes back titled by the name rather than by the message.
+ */
+test("any member who may mutate names any thread, and is answered it named", async () => {
+  const { web, held } = boundary({
+    threads: [
+      record(mine, geoff),
+      record(hers, dana, { firstMessage: "why is 42 blocked?" }),
+    ],
+  });
+
+  const renamed = await web.renameThread(geoff, partition, {
+    session: hers,
+    title: "the footer",
+  });
+
+  assert.equal(renamed.result, "Renamed");
+  assert.equal(
+    renamed.result === "Renamed" ? renamed.thread.title : "",
+    "the footer",
+  );
+  assert.deepEqual(held.calls, [
+    "authorize:Mutate",
+    `rename:${hers}:the footer`,
+  ]);
+});
+
+test("a member with Read alone names no thread, and no door is reached", async () => {
+  const { web, held } = boundary({}, ["Read"]);
+
+  assert.deepEqual(
+    await web.renameThread(geoff, partition, { session: mine, title: "x" }),
+    { result: "NotFound" },
+  );
+  assert.deepEqual(held.calls, ["authorize:Mutate"]);
+});
+
+/**
+ * Clearing the member's name leaves the title derived from the first message,
+ * which is what makes a rename an override rather than a copy: a rail row that
+ * went blank would have lost a name the mailbox still holds.
+ */
+test("clearing a member's name leaves the thread titled by its first message", async () => {
+  const { web } = boundary({
+    renamed: {
+      renamed: "Renamed",
+      thread: record(mine, geoff, { firstMessage: "why is 42 blocked?" }),
+    },
+  });
+
+  const renamed = await web.renameThread(geoff, partition, {
+    session: mine,
+    title: "",
+  });
+
+  assert.equal(
+    renamed.result === "Renamed" ? renamed.thread.title : "",
+    "why is 42 blocked?",
+  );
+});
+
+test("naming a session that is no thread of this project's is not found", async () => {
+  const { web, held } = boundary();
+
+  assert.deepEqual(
+    await web.renameThread(geoff, partition, {
+      session: asSessionId("lead-atlas"),
+      title: "x",
+    }),
+    { result: "NotFound" },
+  );
+  assert.ok(held.calls.includes("rename:lead-atlas:x"));
+});
+
+/**
+ * Hiding answers which side of the rail the thread is now on rather than
+ * whether this press moved it, so a rail pressing Hide twice is told the thread
+ * is hidden both times.
+ */
+test("hiding and showing a thread each answer the side it is now on", async () => {
+  const { web, held } = boundary();
+
+  const hid = await web.hideThread(geoff, partition, {
+    session: mine,
+    hidden: true,
+  });
+  const shown = await web.hideThread(geoff, partition, {
+    session: mine,
+    hidden: false,
+  });
+
+  assert.equal(hid.result, "Hidden");
+  assert.equal(hid.result === "Hidden" ? hid.thread.hidden : false, true);
+  assert.equal(shown.result, "Shown");
+  assert.equal(shown.result === "Shown" ? shown.thread.hidden : true, false);
+  assert.deepEqual(held.calls, [
+    "authorize:Mutate",
+    `standing:${mine}:undefined:1`,
+    `hide:${mine}:true`,
+    "authorize:Mutate",
+    `standing:${mine}:undefined:1`,
+    `hide:${mine}:false`,
+  ]);
+});
+
+test("a member with Read alone hides no thread, and no door is reached", async () => {
+  const { web, held } = boundary({}, ["Read"]);
+
+  assert.deepEqual(
+    await web.hideThread(geoff, partition, { session: mine, hidden: true }),
+    { result: "NotFound" },
+  );
+  assert.deepEqual(held.calls, ["authorize:Mutate"]);
+});
+
+test("hiding a session that is no thread of this project's is not found", async () => {
+  const { web } = boundary();
+
+  assert.deepEqual(
+    await web.hideThread(geoff, partition, {
+      session: asSessionId("lead-atlas"),
+      hidden: true,
+    }),
+    { result: "NotFound" },
+  );
+});
+
+/**
+ * Hide is the owner's alone: a member who may mutate the project still cannot
+ * clear another member's thread off that member's rail.
+ */
+test("hiding another member's thread is refused, not silently done", async () => {
+  const { web, held } = boundary();
+
+  assert.deepEqual(
+    await web.hideThread(geoff, partition, { session: hers, hidden: true }),
+    { result: "NotYourThread" },
+  );
+  assert.deepEqual(held.calls, [
+    "authorize:Mutate",
+    `standing:${hers}:undefined:1`,
+  ]);
 });
 
 /**
@@ -878,32 +1083,52 @@ test("a project's own standing is what the seeded first turn carries", async () 
 });
 
 test("a title is the first non-empty line of the first message, run onto one line", () => {
-  assert.equal(threadTitle("why is 42 blocked?"), "why is 42 blocked?");
   assert.equal(
-    threadTitle("\n\n   \nwhy is 42 blocked?\nand 43?"),
+    threadTitle({ firstMessage: "why is 42 blocked?" }),
     "why is 42 blocked?",
   );
   assert.equal(
-    threadTitle("  why   is\t42\u00a0blocked?  "),
+    threadTitle({ firstMessage: "\n\n   \nwhy is 42 blocked?\nand 43?" }),
+    "why is 42 blocked?",
+  );
+  assert.equal(
+    threadTitle({ firstMessage: "  why   is\t42\u00a0blocked?  " }),
     "why is 42 blocked?",
   );
 });
 
 test("a message with nothing but whitespace in it names no thread", () => {
-  assert.equal(threadTitle(""), undefined);
-  assert.equal(threadTitle("\n \t\n"), undefined);
+  assert.equal(threadTitle({ firstMessage: "" }), undefined);
+  assert.equal(threadTitle({ firstMessage: "\n \t\n" }), undefined);
 });
 
 test("a title is cut to its bound in code points, not in UTF-16 units", () => {
   const said = "\u{1f600}".repeat(threadTitleCharsMax * 2);
-  const title = threadTitle(said) ?? "";
+  const title = threadTitle({ firstMessage: said }) ?? "";
   assert.equal([...title].length, threadTitleCharsMax);
   assert.equal(title, "\u{1f600}".repeat(threadTitleCharsMax));
 });
 
 test("a cut that lands on a space does not leave one at the end", () => {
   const said = `${"a".repeat(threadTitleCharsMax - 1)} bcd`;
-  assert.equal(threadTitle(said), "a".repeat(threadTitleCharsMax - 1));
+  assert.equal(
+    threadTitle({ firstMessage: said }),
+    "a".repeat(threadTitleCharsMax - 1),
+  );
+});
+
+test("a member's own name for a thread is its title, and clearing it leaves the derived one", () => {
+  assert.equal(
+    threadTitle({
+      memberTitle: "the footer",
+      firstMessage: "why is 42 blocked?",
+    }),
+    "the footer",
+  );
+  assert.equal(
+    threadTitle({ firstMessage: "why is 42 blocked?" }),
+    "why is 42 blocked?",
+  );
 });
 
 test("an entry is titled by its first message and untitled without one", () => {

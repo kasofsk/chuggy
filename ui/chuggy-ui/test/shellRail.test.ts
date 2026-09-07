@@ -17,6 +17,9 @@ function thread(entry: Partial<ThreadEntryResponse>): ThreadEntryResponse {
     state: "Open",
     mine: false,
     turns: 1,
+    openedAt: "2026-09-02T09:00:00Z",
+    lastActivityAt: "2026-09-02T10:00:00Z",
+    hidden: false,
     ...entry,
   };
 }

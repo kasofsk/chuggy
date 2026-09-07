@@ -35,6 +35,8 @@ import {
   sessionStoreStreamListFunction,
   ticketServiceRole,
   threadCloseFunction,
+  threadHideFunction,
+  threadRenameFunction,
   threadMessageEnqueueFunction,
   threadOpenFunction,
   threadStandingReadFunction,
@@ -487,6 +489,354 @@ test("a close is a Session frame naming the state, even with nothing waiting", a
   assert.deepEqual(parsed, [
     { session: thread.session, kind: "Thread", state: "Closed" },
   ]);
+});
+
+/**
+ * A member's own name for a thread overrides the title derived from its first
+ * message, and clearing it gives that derivation back. It is asserted through
+ * `threadEntry` rather than off the column, because what is claimed is what a
+ * rail is answered.
+ */
+test("a member names their own thread, and clearing the name gives the message back", async () => {
+  const partition = await project("rename");
+  const member = await threadRigMember(rig, partition, "rename");
+  const thread = await threadRigThread(rig, partition, member);
+  await rig.threads.enqueueMessage({
+    partition,
+    principal: member.principal,
+    session: thread.session,
+    turn: asSessionTurnId(threadRigTurnId("rename")),
+    input: "why is 42 blocked?",
+  });
+
+  const named = await rig.threads.rename({
+    partition,
+    session: thread.session,
+    title: "the footer",
+  });
+  assert.equal(named.renamed, "Renamed");
+  assert.equal(
+    threadEntry(
+      named.renamed === "Renamed" ? named.thread : thread,
+      member.principal,
+    ).title,
+    "the footer",
+  );
+
+  const cleared = await rig.threads.rename({
+    partition,
+    session: thread.session,
+    title: "",
+  });
+  assert.equal(
+    threadEntry(
+      cleared.renamed === "Renamed" ? cleared.thread : thread,
+      member.principal,
+    ).title,
+    "why is 42 blocked?",
+  );
+});
+
+/**
+ * A title of nothing but whitespace trims to nothing, so it clears the
+ * override exactly as an empty string does rather than storing a label a rail
+ * would draw blank.
+ */
+test("a whitespace-only title clears the override rather than storing it", async () => {
+  const partition = await project("rename-blank");
+  const member = await threadRigMember(rig, partition, "rename-blank");
+  const thread = await threadRigThread(rig, partition, member);
+  await rig.threads.enqueueMessage({
+    partition,
+    principal: member.principal,
+    session: thread.session,
+    turn: asSessionTurnId(threadRigTurnId("rename-blank")),
+    input: "why is 42 blocked?",
+  });
+
+  const named = await rig.threads.rename({
+    partition,
+    session: thread.session,
+    title: "\n\n",
+  });
+  assert.equal(named.renamed, "Renamed");
+  assert.equal(
+    threadEntry(
+      named.renamed === "Renamed" ? named.thread : thread,
+      member.principal,
+    ).title,
+    "why is 42 blocked?",
+  );
+});
+
+/**
+ * The column is bounded by the same ceiling the wire is, so a title past it is
+ * refused by the server rather than by the schema alone — which is the half a
+ * caller reaching the door directly would otherwise get past.
+ */
+test("a member title past its bound is refused by the column that holds it", async () => {
+  const partition = await project("rename-bound");
+  const member = await threadRigMember(rig, partition, "rename-bound");
+  const thread = await threadRigThread(rig, partition, member);
+
+  await assert.rejects(
+    rig.threads.rename({
+      partition,
+      session: thread.session,
+      title: "a".repeat(threadTitleCharsMax + 1),
+    }),
+    /agent_session_member_title_is_bounded/u,
+  );
+  assert.equal(
+    (
+      await rig.threads.rename({
+        partition,
+        session: thread.session,
+        title: "a".repeat(threadTitleCharsMax),
+      })
+    ).renamed,
+    "Renamed",
+  );
+});
+
+/**
+ * Hiding says which side of the rail the thread is on, and a second press says
+ * the same and writes nothing: the instant it went off the rail is the instant
+ * it first did, so a repeated press is not a thread that just moved.
+ */
+test("hiding a thread toggles and is idempotent on the side it is asked for", async () => {
+  const partition = await project("hide");
+  const member = await threadRigMember(rig, partition, "hide");
+  const thread = await threadRigThread(rig, partition, member);
+  const hiddenAt = async () =>
+    (
+      await rig.sessions.harness.query(
+        `SELECT hidden_at::text AS at FROM agent_session
+          WHERE tenant=$1 AND project=$2 AND session=$3`,
+        [partition.tenant, partition.project, thread.session],
+      )
+    )[0]?.["at"];
+
+  const hid = await rig.threads.hide({
+    partition,
+    session: thread.session,
+    hidden: true,
+  });
+  assert.equal(hid.hidden, "Hidden");
+  assert.equal(hid.hidden === "Hidden" ? hid.thread.hidden : false, true);
+  const first = await hiddenAt();
+  assert.equal(
+    (
+      await rig.threads.hide({
+        partition,
+        session: thread.session,
+        hidden: true,
+      })
+    ).hidden,
+    "Hidden",
+  );
+  assert.equal(await hiddenAt(), first, "a second press moved the instant");
+
+  const shown = await rig.threads.hide({
+    partition,
+    session: thread.session,
+    hidden: false,
+  });
+  assert.equal(shown.hidden, "Shown");
+  assert.equal(shown.hidden === "Shown" ? shown.thread.hidden : true, false);
+});
+
+/** Neither door reaches a lead, and neither reaches a session nobody opened. */
+test("neither view door admits a session that is not this project's thread", async () => {
+  const partition = await project("view-no-thread");
+  const lead = await sessionRigSession(rig.sessions, partition, "view", {
+    kind: "Lead",
+  });
+
+  assert.deepEqual(
+    await rig.threads.rename({ partition, session: lead, title: "x" }),
+    { renamed: "NoThread" },
+  );
+  assert.deepEqual(
+    await rig.threads.hide({ partition, session: lead, hidden: true }),
+    { hidden: "NoThread" },
+  );
+  assert.deepEqual(
+    await rig.threads.hide({
+      partition,
+      session: asSessionId("session-nobody-opened"),
+      hidden: true,
+    }),
+    { hidden: "NoThread" },
+  );
+});
+
+/**
+ * A rail re-reads its listing on a `Session` frame, and neither door moves the
+ * state 075's trigger watches — so without a frame of their own a rename and a
+ * hide would be invisible until something else moved.
+ */
+test("naming and hiding each raise the Session frame a listing re-reads on", async () => {
+  const partition = await project("view-frame");
+  const member = await threadRigMember(rig, partition, "view-frame");
+  const thread = await threadRigThread(rig, partition, member);
+
+  await rig.threads.rename({
+    partition,
+    session: thread.session,
+    title: "the footer",
+  });
+  await rig.threads.hide({
+    partition,
+    session: thread.session,
+    hidden: true,
+  });
+  await rig.threads.rename({
+    partition,
+    session: thread.session,
+    title: "the footer",
+  });
+
+  const rows = await rig.sessions.harness.query(
+    `SELECT resource FROM project_change
+      WHERE tenant=$1 AND project=$2 AND kind='Session' ORDER BY sequence`,
+    [partition.tenant, partition.project],
+  );
+  assert.deepEqual(
+    rows.map((row) =>
+      sessionChangeResourceSchema.parse(JSON.parse(String(row["resource"]))),
+    ),
+    [
+      { session: thread.session, kind: "Thread", state: "Open" },
+      { session: thread.session, kind: "Thread", state: "Open" },
+    ],
+    "a write that changed nothing raised a frame, or a write that changed something did not",
+  );
+});
+
+/**
+ * The listing is grouped by activity in the console, so the order it answers is
+ * the order a rail draws: a thread somebody spoke in comes before one opened
+ * later and left alone, which an order on `opened_at` cannot give.
+ */
+test("the listing orders open threads by when they last moved", async () => {
+  const partition = await project("view-order");
+  const first = await threadRigMember(rig, partition, "order-first");
+  const second = await threadRigMember(rig, partition, "order-second");
+  const older = await threadRigThread(rig, partition, first);
+  const newer = await threadRigThread(rig, partition, second);
+
+  assert.deepEqual(
+    (await rig.threads.threads(partition, threadsAnsweredMax)).map(
+      (record) => record.session,
+    ),
+    [newer.session, older.session],
+    "a thread opened later is not first before anything else moves",
+  );
+
+  await rig.threads.enqueueMessage({
+    partition,
+    principal: first.principal,
+    session: older.session,
+    turn: asSessionTurnId(threadRigTurnId("order")),
+    input: "why is 42 blocked?",
+  });
+
+  assert.deepEqual(
+    (await rig.threads.threads(partition, threadsAnsweredMax)).map(
+      (record) => record.session,
+    ),
+    [older.session, newer.session],
+  );
+});
+
+/** When this project's one thread last moved, as the listing answers it. */
+async function threadListedActivity(partition: Partition): Promise<number> {
+  const listed = await rig.threads.threads(partition, threadsAnsweredMax);
+  return Date.parse(String(listed[0]?.lastActivityAt));
+}
+
+/** When the row says the thread closed, which the listing's activity must agree with. */
+async function threadRowClosedAt(
+  partition: Partition,
+  session: string,
+): Promise<number> {
+  const rows = await rig.sessions.harness.query(
+    `SELECT closed_at::text AS at FROM agent_session
+      WHERE tenant=$1 AND project=$2 AND session=$3`,
+    [partition.tenant, partition.project, session],
+  );
+  return Date.parse(String(rows[0]?.["at"]));
+}
+
+/**
+ * A closed thread last moved when it closed, and a rail groups it by that. The
+ * case reads the two instants off the listing rather than off the row, because
+ * what is claimed is what the definer derives.
+ */
+test("a thread's activity is its opening, its turns and its close", async () => {
+  const partition = await project("view-activity");
+  const member = await threadRigMember(rig, partition, "activity");
+  const thread = await threadRigThread(rig, partition, member);
+
+  const listed = (await rig.threads.threads(partition, threadsAnsweredMax))[0];
+  assert.equal(listed?.lastActivityAt, listed?.openedAt);
+  const opened = await threadListedActivity(partition);
+
+  await rig.threads.enqueueMessage({
+    partition,
+    principal: member.principal,
+    session: thread.session,
+    turn: asSessionTurnId(threadRigTurnId("activity")),
+    input: "why is 42 blocked?",
+  });
+  assert.ok(
+    (await threadListedActivity(partition)) > opened,
+    "a turn did not move the thread's activity",
+  );
+
+  await rig.threads.close({ partition, session: thread.session });
+  assert.equal(
+    await threadListedActivity(partition),
+    await threadRowClosedAt(partition, thread.session),
+  );
+});
+
+/**
+ * A thread closed with nothing in its mailbox last moved when it closed, which
+ * is the arm a thread that also holds an abandoned turn cannot settle: the
+ * abandon and the close are one transaction and share an instant.
+ */
+test("a thread with no turns still last moved when it closed", async () => {
+  const partition = await project("view-closed-empty");
+  const member = await threadRigMember(rig, partition, "closed-empty");
+  const thread = await threadRigThread(rig, partition, member);
+  const opened = await threadListedActivity(partition);
+
+  await rig.threads.close({ partition, session: thread.session });
+
+  const closed = await threadListedActivity(partition);
+  assert.equal(closed, await threadRowClosedAt(partition, thread.session));
+  assert.ok(
+    closed > opened,
+    "a closed thread still says it last moved when it opened",
+  );
+});
+
+/** Both view doors are the API's, as the close door is, and no other role's. */
+test("the two view doors are the API's alone", async () => {
+  const partition = await project("view-grants");
+
+  await onlyTheseRolesMay(
+    [apiRole],
+    threadRenameFunction,
+    `SELECT ${threadRenameFunction}('${partition.tenant}','${partition.project}','session-grants','x')`,
+  );
+  await onlyTheseRolesMay(
+    [apiRole],
+    threadHideFunction,
+    `SELECT ${threadHideFunction}('${partition.tenant}','${partition.project}','session-grants',true)`,
+  );
 });
 
 /**

@@ -69,9 +69,11 @@ import type {
 } from "../../interpreter/leadInquiry.ts";
 import type {
   ThreadClosing,
+  ThreadHiding,
   ThreadMessageSent,
   ThreadOpening,
   ThreadRead,
+  ThreadRenaming,
   ThreadTurnRecord,
   ThreadsRead,
 } from "../../interpreter/threadRead.ts";
@@ -1106,6 +1108,37 @@ export function openThreadResponse(
 export function closeThreadResponse(result: ThreadClosing): NativeHttpResponse {
   if (result.result === "NotFound")
     return response(404, nativeHttpError("NotFound", "Resource not found."));
+  return response(200, result.thread);
+}
+
+/**
+ * Renaming and hiding are idempotent and answer the entry as it now stands,
+ * exactly as closing does: a caller is given the thread they wrote rather than
+ * sent to read it again.
+ */
+export function renameThreadResponse(
+  result: ThreadRenaming,
+): NativeHttpResponse {
+  if (result.result === "NotFound")
+    return response(404, nativeHttpError("NotFound", "Resource not found."));
+  return response(200, result.thread);
+}
+
+/**
+ * Hiding is the owner's alone, so a caller pressing another member's thread
+ * meets the same refusal the message door answers a stale mailbox with.
+ */
+export function hideThreadResponse(result: ThreadHiding): NativeHttpResponse {
+  if (result.result === "NotFound")
+    return response(404, nativeHttpError("NotFound", "Resource not found."));
+  if (result.result === "NotYourThread")
+    return response(
+      403,
+      nativeHttpError(
+        threadMessageRefusalCode.NotYourThread,
+        "The thread is not yours to hide.",
+      ),
+    );
   return response(200, result.thread);
 }
 

@@ -18,6 +18,7 @@ import {
   apiConfiguration,
   apiDispatchView,
   apiExecutions,
+  apiHideThread,
   apiLead,
   apiLeadInquiries,
   apiLeadInquiry,
@@ -27,6 +28,7 @@ import {
   apiProject,
   apiProjectInventory,
   apiProjectInventoryAll,
+  apiRenameThread,
   apiSelectorHistory,
   apiSelectorSettings,
   apiSelectorSettingsHistory,
@@ -394,6 +396,9 @@ test("opening a thread posts the versioned empty object", async () => {
     mine: true,
     turns: 0,
     owner: "geoff",
+    openedAt: "2026-09-02T09:00:00Z",
+    lastActivityAt: "2026-09-02T10:00:00Z",
+    hidden: false,
   });
   const opened = await apiOpenThread(held.ports, partition);
   expect(opened.outcome).toBe("Ok");
@@ -405,4 +410,44 @@ test("opening a thread posts the versioned empty object", async () => {
   expect(
     (request?.init.headers as Record<string, string>)["content-type"],
   ).toBe(nativeHttpMediaType);
+});
+
+/** The rail's two row writes, each posting the one field it writes to the door
+ * that names it, and each answered the entry as it now stands. */
+test("naming and hiding a thread each post one field to their own door", async () => {
+  const entry = {
+    session: "thread-1",
+    state: "Open",
+    mine: true,
+    turns: 0,
+    owner: "geoff",
+    title: "the footer",
+    openedAt: "2026-09-02T09:00:00Z",
+    lastActivityAt: "2026-09-02T10:00:00Z",
+    hidden: true,
+  };
+  const held = recordingRequests(entry);
+
+  const named = await apiRenameThread(
+    held.ports,
+    partition,
+    "thread-1",
+    "the footer",
+  );
+  const hid = await apiHideThread(held.ports, partition, "thread-1", true);
+
+  expect(named.outcome).toBe("Ok");
+  expect(hid.outcome).toBe("Ok");
+  expect(held.requests.map((request) => request.url)).toStrictEqual([
+    `${partitionPath}/threads/thread-1/rename`,
+    `${partitionPath}/threads/thread-1/hide`,
+  ]);
+  expect(held.requests.map((request) => request.init.body)).toStrictEqual([
+    JSON.stringify({ title: "the footer" }),
+    JSON.stringify({ hidden: true }),
+  ]);
+  for (const request of held.requests) {
+    expect(request.init.method).toBe("POST");
+    expect(request.init.headers["content-type"]).toBe(nativeHttpMediaType);
+  }
 });

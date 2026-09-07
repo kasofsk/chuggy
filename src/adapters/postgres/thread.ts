@@ -33,6 +33,7 @@ import {
   type SessionTurnId,
 } from "../../interpreter/agentSession.ts";
 import { asPrincipal, type Principal } from "../../interpreter/principal.ts";
+import { asPublicInstant } from "../../interpreter/publicResource.ts";
 import {
   asProjectId,
   asTenantId,
@@ -50,9 +51,11 @@ import type {
 } from "../../interpreter/threadWake.ts";
 import type {
   ThreadClosed,
+  ThreadHidden,
   ThreadMessageEnqueued,
   ThreadOpened,
   ThreadRecord,
+  ThreadRenamed,
   ThreadSeedingRead,
   ThreadStandingRecord,
   ThreadStore,
@@ -82,6 +85,10 @@ interface ThreadIdentityRow {
   readonly agent_reference: string | null;
   readonly turns: string | null;
   readonly first_message: string | null;
+  readonly member_title: string | null;
+  readonly opened_at: string | null;
+  readonly last_activity_at: string | null;
+  readonly hidden_at: string | null;
 }
 
 /** One `read_project_threads` row, which names the session's state `state`. */
@@ -119,6 +126,12 @@ function threadRecordOf(
       ? {}
       : { agentReference: row.agent_reference }),
     ...(row.first_message === null ? {} : { firstMessage: row.first_message }),
+    ...(row.member_title === null ? {} : { memberTitle: row.member_title }),
+    openedAt: asPublicInstant(sessionRowText(row.opened_at, "thread opening")),
+    lastActivityAt: asPublicInstant(
+      sessionRowText(row.last_activity_at, "thread activity"),
+    ),
+    hidden: row.hidden_at !== null,
   };
 }
 
@@ -148,7 +161,10 @@ async function threadStandingRows(
 ): Promise<readonly ThreadStandingRow[]> {
   const found = await pool.query<ThreadStandingRow>(
     sql`SELECT session,principal,owner,session_state,agent_reference,
-               turns::text AS turns,first_message,
+               turns::text AS turns,first_message,member_title,
+               opened_at::text AS opened_at,
+               last_activity_at::text AS last_activity_at,
+               hidden_at::text AS hidden_at,
                next_before::text AS next_before,
                turn,turn_ordinal::text AS turn_ordinal,input_kind,
                turn_state,input,result,failure,model,tokens::text AS tokens,
@@ -199,6 +215,27 @@ async function threadStanding(
   };
 }
 
+/** The row a door just wrote, which the door decided is there. */
+async function threadReadBack(
+  pool: pg.Pool,
+  streamsMax: number,
+  partition: Partition,
+  session: SessionId,
+  what: string,
+): Promise<ThreadRecord> {
+  const standing = await threadStanding(
+    pool,
+    partition,
+    session,
+    undefined,
+    1,
+    streamsMax,
+  );
+  if (standing === undefined)
+    throw new Error(`postgres thread: ${session} was ${what} and is not there`);
+  return standing.thread;
+}
+
 /** The verdict a mailbox door answered, with the ordinal and session each arm carries. */
 function threadMessageEnqueued(row: {
   readonly enqueued: string | null;
@@ -240,7 +277,10 @@ async function threadListing(
 ): Promise<readonly ThreadRecord[]> {
   const found = await pool.query<ThreadListingRow>(
     sql`SELECT session,principal,owner,state,agent_reference,
-               turns::text AS turns,first_message
+               turns::text AS turns,first_message,member_title,
+               opened_at::text AS opened_at,
+               last_activity_at::text AS last_activity_at,
+               hidden_at::text AS hidden_at
           FROM read_project_threads(
                  ${partition.tenant},${partition.project},${limit})`,
   );
@@ -284,17 +324,16 @@ async function threadOpen(
   if (row === undefined)
     throw new Error("postgres thread: opening returned no verdict");
   const { opened, session } = threadOpening(row);
-  const standing = await threadStanding(
-    pool,
-    input.partition,
-    session,
-    undefined,
-    1,
-    streamsMax,
-  );
-  if (standing === undefined)
-    throw new Error(`postgres thread: ${session} was opened and is not there`);
-  return { opened, thread: standing.thread };
+  return {
+    opened,
+    thread: await threadReadBack(
+      pool,
+      streamsMax,
+      input.partition,
+      session,
+      "opened",
+    ),
+  };
 }
 
 async function threadEnqueue(
@@ -346,19 +385,81 @@ async function threadClose(
   if (closed === "NoThread") return { closed };
   if (closed !== "Closed" && closed !== "AlreadyClosed")
     throw new Error(`postgres thread: closing answered ${String(closed)}`);
-  const standing = await threadStanding(
-    pool,
-    input.partition,
-    input.session,
-    undefined,
-    1,
-    streamsMax,
+  return {
+    closed,
+    thread: await threadReadBack(
+      pool,
+      streamsMax,
+      input.partition,
+      input.session,
+      "closed",
+    ),
+  };
+}
+
+/**
+ * The two doors a member's own view goes through, each reading its row back
+ * through the standing read for the reason `threadClose` does: the listing's
+ * shape is one shape.
+ */
+async function threadRename(
+  pool: pg.Pool,
+  streamsMax: number,
+  input: {
+    readonly partition: Partition;
+    readonly session: SessionId;
+    readonly title: string;
+  },
+): Promise<ThreadRenamed> {
+  const answered = await pool.query<{ renamed: string | null }>(
+    sql`SELECT rename_member_thread(
+          ${input.partition.tenant},${input.partition.project},
+          ${input.session},${input.title})::text AS renamed`,
   );
-  if (standing === undefined)
-    throw new Error(
-      `postgres thread: ${input.session} was closed and is not there`,
-    );
-  return { closed, thread: standing.thread };
+  const renamed = answered.rows[0]?.renamed;
+  if (renamed === "NoThread") return { renamed };
+  if (renamed !== "Renamed")
+    throw new Error(`postgres thread: renaming answered ${String(renamed)}`);
+  return {
+    renamed,
+    thread: await threadReadBack(
+      pool,
+      streamsMax,
+      input.partition,
+      input.session,
+      "renamed",
+    ),
+  };
+}
+
+async function threadHide(
+  pool: pg.Pool,
+  streamsMax: number,
+  input: {
+    readonly partition: Partition;
+    readonly session: SessionId;
+    readonly hidden: boolean;
+  },
+): Promise<ThreadHidden> {
+  const answered = await pool.query<{ hidden: string | null }>(
+    sql`SELECT hide_member_thread(
+          ${input.partition.tenant},${input.partition.project},
+          ${input.session},${input.hidden})::text AS hidden`,
+  );
+  const hidden = answered.rows[0]?.hidden;
+  if (hidden === "NoThread") return { hidden };
+  if (hidden !== "Hidden" && hidden !== "Shown")
+    throw new Error(`postgres thread: hiding answered ${String(hidden)}`);
+  return {
+    hidden,
+    thread: await threadReadBack(
+      pool,
+      streamsMax,
+      input.partition,
+      input.session,
+      hidden === "Hidden" ? "hidden" : "shown",
+    ),
+  };
 }
 
 export function postgresThreads(
@@ -381,6 +482,8 @@ export function postgresThreads(
       ),
     enqueueMessage: (input) => threadEnqueue(pool, input),
     close: (input) => threadClose(pool, bounds.streamsMax, input),
+    rename: (input) => threadRename(pool, bounds.streamsMax, input),
+    hide: (input) => threadHide(pool, bounds.streamsMax, input),
   };
 }
 

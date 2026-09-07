@@ -20,7 +20,9 @@ import {
   publicMutationSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
+  threadHideRequestSchema,
   threadMessageSchema,
+  threadRenameRequestSchema,
 } from "./requests.ts";
 
 export function nativeHttpContractDocument(): unknown {
@@ -75,6 +77,8 @@ export function nativeHttpContractDocument(): unknown {
       leadInquiry: z.toJSONSchema(leadInquirySchema),
       selectorProjectSettings: z.toJSONSchema(selectorProjectSettingsSchema),
       threadMessage: z.toJSONSchema(threadMessageSchema),
+      threadRename: z.toJSONSchema(threadRenameRequestSchema),
+      threadHide: z.toJSONSchema(threadHideRequestSchema),
     },
   };
 }
