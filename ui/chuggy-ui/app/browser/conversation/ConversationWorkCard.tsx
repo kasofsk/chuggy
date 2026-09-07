@@ -19,32 +19,13 @@ import type {
 } from "../../core/conversation.ts";
 import { runCountLabel } from "../../core/runTotals.ts";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
+import {
+  ConversationCard,
+  ConversationChevron,
+  conversationTriggerClassName,
+} from "./ConversationCard.tsx";
 
 import "./conversation.css";
-
-/** A button carries the browser's own box until something takes it off, and
- * this surface's triggers are rows rather than controls to press. */
-const conversationTriggerClassName =
-  "conversation-trigger flex w-full min-w-0 items-center gap-2";
-
-function ConversationChevron(): ReactNode {
-  return (
-    <svg
-      viewBox="0 0 12 12"
-      aria-hidden="true"
-      className="conversation-chevron size-3 shrink-0"
-    >
-      <path
-        d="M4 2 L8 6 L4 10"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 /** Hollow while the work is over, filled and pulsing while it is not. */
 function ConversationGlyph(props: { readonly running: boolean }): ReactNode {
@@ -174,32 +155,19 @@ export function ConversationWorkCard(props: {
   readonly work: readonly ConversationStep[];
   readonly running: boolean;
 }): ReactNode {
-  const [open, setOpen] = useState(false);
   if (props.work.length === 0) return null;
   return (
-    <Collapsible.Root
-      className="bg-surface-1 border-edge rounded-3 grid min-w-0 gap-3 border p-3"
-      open={open}
-      onOpenChange={setOpen}
+    <ConversationCard
+      label={conversationWorkLabel(props.work, props.running)}
+      glyph={<ConversationGlyph running={props.running} />}
     >
-      <Collapsible.Trigger
-        className={`${conversationTriggerClassName} text-ink-3 text-sm`}
-      >
-        <ConversationGlyph running={props.running} />
-        <span className="min-w-0 grow">
-          {conversationWorkLabel(props.work, props.running)}
-        </span>
-        <ConversationChevron />
-      </Collapsible.Trigger>
-      <Collapsible.Content>
-        <ol className="border-edge grid min-w-0 gap-3 border-l pl-4">
-          {props.work.map((step, at) => (
-            <li key={at} className="grid min-w-0 gap-1">
-              <ConversationWorkStep step={step} />
-            </li>
-          ))}
-        </ol>
-      </Collapsible.Content>
-    </Collapsible.Root>
+      <ol className="border-edge grid min-w-0 gap-3 border-l pl-4">
+        {props.work.map((step, at) => (
+          <li key={at} className="grid min-w-0 gap-1">
+            <ConversationWorkStep step={step} />
+          </li>
+        ))}
+      </ol>
+    </ConversationCard>
   );
 }

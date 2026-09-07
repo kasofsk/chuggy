@@ -11,6 +11,10 @@ import type {
   SessionTurnInputKind,
   SessionTurnState,
 } from "../../../../src/contract/rosters.ts";
+import {
+  threadSeedingHeadings,
+  threadSeedingLastLine,
+} from "../../../../src/contract/threadSeeding.ts";
 import { threadWakeDrawn } from "./threads.ts";
 
 /** The most blocks one entry is read for. */
@@ -180,7 +184,13 @@ export interface ConversationTurn {
 /** What opened an exchange. `Document` is a wake whose pointer cannot be read,
  * which is drawn as its kind rather than as the raw document. */
 export type ConversationAsk =
-  | { readonly ask: "Message"; readonly text: string }
+  | {
+      readonly ask: "Message";
+      readonly text: string;
+      /** The seeding block the server composed in front of a thread's first
+       * message, where the input carried one. */
+      readonly context?: string;
+    }
   | { readonly ask: "Wake"; readonly wake: string; readonly resource: string }
   | { readonly ask: "Document"; readonly kind: SessionTurnInputKind }
   | { readonly ask: "Observation" }
@@ -295,13 +305,33 @@ export function conversationArgumentSummary(
 /** What a turn's own kind asks for, with or without the text: the one place
  * this is decided, so an appended turn nobody has spoken text for still draws
  * its kind's word rather than nothing. Only a message with no text has none. */
+/**
+ * The member's own words, and the seeding block the server put in front of them
+ * where the input carries one. Both sides read the contract's constants, so
+ * this is the writer's boundary read backwards rather than a guess at one, and
+ * a text that does not carry them is the member's whole message.
+ */
+export function conversationAskMessage(text: string): ConversationAsk {
+  const opens = threadSeedingHeadings.some((heading) =>
+    text.startsWith(heading),
+  );
+  const joined = `${threadSeedingLastLine}\n\n`;
+  const at = opens ? text.lastIndexOf(joined) : -1;
+  if (at < 0) return { ask: "Message", text };
+  return {
+    ask: "Message",
+    text: text.slice(at + joined.length),
+    context: text.slice(0, at + threadSeedingLastLine.length),
+  };
+}
+
 function conversationAskOf(
   kind: SessionTurnInputKind,
   text: string | undefined,
 ): ConversationAsk | undefined {
   switch (kind) {
     case "UserMessage":
-      return text === undefined ? undefined : { ask: "Message", text };
+      return text === undefined ? undefined : conversationAskMessage(text);
     case "Wake": {
       const wake = text === undefined ? undefined : threadWakeDrawn(text);
       return wake === undefined
@@ -526,7 +556,7 @@ function conversationUserEntry(
       : builder.open;
   if (opens) {
     built.askText = conversationEntryAskText(entry.blocks);
-    built.ask = { ask: "Message", text: built.askText };
+    built.ask = conversationAskMessage(built.askText);
   }
   for (const block of entry.blocks) conversationBlockWorked(built, block);
 }

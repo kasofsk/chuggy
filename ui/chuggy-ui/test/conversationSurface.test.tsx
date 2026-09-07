@@ -238,6 +238,23 @@ test("a wake draws one system line and never its document", () => {
   styleless();
 });
 
+test("the seeding is a folded Context card, and the bubble is the words", () => {
+  const seeded = exchangeOf({
+    ask: {
+      ask: "Message",
+      text: "what is left to do",
+      context: "# North Star\n\nShip the console.",
+    },
+    answer: "two things",
+  });
+  render(<Conversation exchanges={[seeded]} empty="No conversation" />);
+  expect(screen.getByText("what is left to do")).toBeDefined();
+  expect(screen.queryByText("Ship the console.")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Context" }));
+  expect(screen.getByText("Ship the console.")).toBeDefined();
+  styleless();
+});
+
 test("no exchanges draws the empty title above its one sentence", () => {
   render(
     <Conversation

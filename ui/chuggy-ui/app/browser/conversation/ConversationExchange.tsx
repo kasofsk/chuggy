@@ -16,6 +16,7 @@ import type { ConversationExchange } from "../../core/conversation.ts";
 import { threadTurnKindWord } from "../../core/threads.ts";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { Notice } from "../ui/Notice.tsx";
+import { ConversationCard } from "./ConversationCard.tsx";
 import {
   ConversationMetaLine,
   ConversationSystemLine,
@@ -48,10 +49,21 @@ const ConversationReport: TextMessagePartComponent = (props) => (
   <MarkdownReport text={props.text} />
 );
 
-/** The member's own words, on the right, as they were typed. */
-function ConversationBubble(): ReactNode {
+/** The member's own words, on the right, as they were typed — with the block
+ * the server composed in front of a thread's first message folded away above
+ * them, because they neither typed it nor asked to read it. */
+function ConversationBubble(props: {
+  readonly context: string | undefined;
+}): ReactNode {
   return (
-    <div className="grid min-w-0 justify-items-end">
+    <div className="grid min-w-0 justify-items-end gap-2">
+      {props.context === undefined ? null : (
+        <div className="max-w-3/4 min-w-0">
+          <ConversationCard label="Context">
+            <MarkdownReport text={props.context} />
+          </ConversationCard>
+        </div>
+      )}
       <div className="bg-bubble rounded-3 max-w-3/4 px-4 py-3 whitespace-pre-wrap">
         <MessagePrimitive.Parts components={{ Text: ConversationSaid }} />
       </div>
@@ -68,7 +80,7 @@ function ConversationAskBody(props: {
   if (ask === undefined) return null;
   switch (ask.ask) {
     case "Message":
-      return <ConversationBubble />;
+      return <ConversationBubble context={ask.context} />;
     case "Wake":
       return <ConversationSystemLine words={`${ask.wake} · ${ask.resource}`} />;
     case "Document":
