@@ -46,7 +46,10 @@ export function DetailsPane(props: {
       : "grid-cols-1";
   return (
     <div className={`grid min-h-0 ${columns}`}>
-      <div hidden={open && !desk} className="min-h-0 overflow-y-auto">
+      <div
+        hidden={open && !desk}
+        className="grid min-h-0 grid-rows-[minmax(0,1fr)] overflow-y-auto"
+      >
         <div className="mx-auto grid max-w-page content-start gap-4 p-4">
           {props.children}
         </div>

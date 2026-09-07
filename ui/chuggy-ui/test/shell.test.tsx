@@ -171,6 +171,19 @@ test("a page that hands the shell no details gets no toggle", async () => {
   styleless();
 });
 
+/** A page's own middle row pins a composer to its foot with `h-full`, which
+ * resolves against this column's own height and not against its content — so
+ * the column has to give its wrapper a definite row to stretch into rather
+ * than one sized by what the page draws. */
+test("the page column gives its wrapper a definite row to stretch a full-height page into", async () => {
+  pageDrawn = () => <p>page</p>;
+  await mounted(viewportDeskEm);
+  const wrapper = screen.getByText("page").parentElement;
+  const scroller = wrapper?.parentElement;
+  expect(scroller?.className).toContain("grid-rows-[minmax(0,1fr)]");
+  styleless();
+});
+
 test("at the desk width the details open beside the page", async () => {
   pageDrawn = () => (
     <>
