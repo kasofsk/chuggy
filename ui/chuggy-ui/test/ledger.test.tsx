@@ -14,6 +14,7 @@ import type { ReactNode } from "react";
 
 import type { Figure as FigureValue, Spend } from "../app/core/figures.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { styleless } from "./styleless.ts";
 import {
   Ledger,
   LedgerBlock,
@@ -32,6 +33,7 @@ vi.mock("@tanstack/react-router", () => ({
 beforeEach(resizeObserverStubbed);
 
 afterEach(() => {
+  styleless();
   cleanup();
   vi.unstubAllGlobals();
 });

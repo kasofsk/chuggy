@@ -1,9 +1,7 @@
-/* Figure: one measured number, monospaced and tabular so a column lines up. */
+/* Figure: one measured number, in tabular figures so a column lines up. */
 
 @layer ui {
   .fig {
-    font-family: var(--font-mono);
-    font-size: var(--mono-optical);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
     color: var(--ink-2);
