@@ -2158,7 +2158,7 @@ const i5SliceDefiners: readonly (readonly [
   [selectorDeliveryFunction, "text,bigint,text,text", [selectorServiceRole]],
   [
     selectorProjectSettingsFunction,
-    "text,text,bigint,text,text,text,text,text,text,bigint,bigint,bigint,bigint,bigint,bigint,bigint,text,text",
+    "text,text,bigint,text,text,text,text,text,text,text,bigint,bigint,bigint,bigint,bigint,bigint,bigint,text,text",
     [apiRole, selectorControlRole],
   ],
   [

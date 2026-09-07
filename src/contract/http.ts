@@ -14,6 +14,14 @@ export function textCodePointsCount(text: string): number {
   return [...text].length;
 }
 
+/** What one character weighs once JSON escapes it, which a control character does. */
+const jsonEscapedCharChars = 6;
+
+/** What a JSON string of this many characters weighs: its quotes, every character escaped. */
+function jsonStringChars(chars: number): number {
+  return chars * jsonEscapedCharChars + 2;
+}
+
 export const nativeHttpVersion = 1;
 export const nativeHttpBasePath = "/api/v1";
 export const nativeHttpMediaType = "application/vnd.chuggy.v1+json";
@@ -121,7 +129,7 @@ export const runOutcomeLabelCharsMax = 64;
 /** The longest model identity a usage row names. */
 export const runModelCharsMax = 128;
 
-/** The longest selector prompt or North Star the wire carries, which is what its column holds. */
+/** The longest settings text the wire carries, which is what its column holds. */
 export const selectorSettingsTextCharsMax = 65_536;
 
 /** The most names one selector allowlist carries. */
@@ -212,8 +220,8 @@ export const resultReportSchemaVersionMin = 3;
 export const threadMessageCharsMax = 16_384;
 
 /**
- * What a thread's seeding block weighs beyond the North Star inside it: the
- * headings, and the two standing sentences the block restates. It is a ceiling
+ * What a thread's seeding block weighs beyond the two settings texts inside it:
+ * the headings, and the boundary over the member's message. It is a ceiling
  * rather than a measurement, and the interpreter's suite is what holds the
  * composed block under it.
  */
@@ -222,12 +230,13 @@ export const threadSeedingFixedCharsMax = 4_096;
 /**
  * The longest block a thread's first turn carries in front of the member's
  * message, DERIVED rather than named. The block carries the project's North
- * Star and never sheds it, so a ceiling below what the settings route already
- * accepts would refuse every first turn of a project whose North Star is long —
- * on every member, long after the write that caused it.
+ * Star and its standing rules and sheds neither, so a ceiling below what the
+ * settings route already accepts for each would refuse every first turn of a
+ * project whose texts are long — on every member, long after the write that
+ * caused it.
  */
 export const threadSeedingCharsMax =
-  selectorSettingsTextCharsMax + threadSeedingFixedCharsMax;
+  selectorSettingsTextCharsMax * 2 + threadSeedingFixedCharsMax;
 
 /** How many turns one thread may have waiting, which is what stops a member queueing a day's work. */
 export const threadBacklogMax = 8;
@@ -238,8 +247,28 @@ export const threadsAnsweredMax = 64;
 /** How many turns of one thread's mailbox a read answers with, newest last. */
 export const threadTurnsAnsweredMax = 32;
 
-/** What a wake document weighs, which is a roster member, a resource and one sentence. */
-export const threadWakeCharsMax = 2_048;
+/** What a wake document weighs beyond its standing: a roster member, a resource and an instant. */
+export const threadWakeFixedCharsMax = 2_048;
+
+/**
+ * What a wake document weighs, DERIVED for the reason the seeding ceiling is:
+ * the document restates the project's standing rules on the turn that could
+ * break them, so a ceiling below what the settings route accepts would refuse
+ * every wake of a project whose standing is long. The standing is measured as
+ * JSON escapes it, because the document is a JSON string and a project whose
+ * rules are newlines weighs six characters for each of them.
+ */
+export const threadWakeCharsMax =
+  jsonStringChars(selectorSettingsTextCharsMax) + threadWakeFixedCharsMax;
+
+/**
+ * The widest input one turn of a thread's mailbox holds, which is the wider of
+ * the two doors that write it: a seeded first turn, and a wake document.
+ */
+export const threadTurnRecordedCharsMax = Math.max(
+  threadMessageCharsMax + threadSeedingCharsMax,
+  threadWakeCharsMax,
+);
 
 /** How many wake candidates one pass of the wake runtime reads and enqueues. */
 export const threadWakesPerPassMax = 64;
@@ -301,14 +330,6 @@ export const sessionIdentityCharsMax = 256;
 
 /** The longest label a session kind may be, which its own roster is inside. */
 export const sessionKindCharsMax = 16;
-
-/** What one character weighs once JSON escapes it, which a control character does. */
-const jsonEscapedCharChars = 6;
-
-/** What a JSON string of this many characters weighs: its quotes, every character escaped. */
-function jsonStringChars(chars: number): number {
-  return chars * jsonEscapedCharChars + 2;
-}
 
 /**
  * What one JSON object weighs as `jsonb::text` renders it, which is the only

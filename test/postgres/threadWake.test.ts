@@ -528,3 +528,37 @@ test("a change that commits while the door waits is a change the thread was open
     "the thread was opened after the head the door read before it waited",
   );
 });
+
+/**
+ * The standing rules a wake restates are the project's own, and they reach the
+ * pass on the candidate. The pass cannot read them for itself — a read there
+ * would be an await inside it — so what proves the join is a project holding
+ * rules of its own and a document that says them.
+ */
+test("a project's own standing rules reach the wake through the candidate", async () => {
+  const partition = await threadRigProject(rig, "wakestanding");
+  const member = await threadRigMember(rig, partition, "wakestanding");
+  const thread = await threadRigThread(rig, partition, member);
+  const revision = await configuration(partition);
+  const ticket = await draft(partition, revision, member);
+  const stated = "- You draft, and nothing else.";
+  await rig.sessions.harness.query(
+    `SELECT revision FROM update_selector_project_settings(
+       $1,$2,0,NULL,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+       NULL,'User','thread wake suite')`,
+    [partition.tenant, partition.project, stated],
+  );
+  await fromTheHead();
+  await refuse(partition, "wakestanding", ticket);
+
+  await threadWakePass(service(threadWakesPerPassMax));
+
+  const held = await rig.threads.standing({
+    partition,
+    session: thread.session,
+    query: { limit: threadTurnsAnsweredMax },
+  });
+  const turn = held?.turns[0];
+  assert.ok(turn !== undefined);
+  assert.equal(parseThreadWake(turn.input).standing, stated);
+});

@@ -121,6 +121,17 @@ test("a tool call opens on its arguments and its result", () => {
   styleless();
 });
 
+test("a pipe table in an exchange's answer draws as a table", () => {
+  const tabled = exchangeOf({
+    answer: "| Stage | Result |\n| --- | --- |\n| lint | pass |",
+  });
+  render(<Conversation exchanges={[tabled]} empty="No conversation" />);
+  const table = screen.getByRole("table");
+  expect(table.querySelector("thead th")?.textContent).toBe("Stage");
+  expect(screen.getByText("pass")).toBeDefined();
+  styleless();
+});
+
 test("no work draws no disclosure", () => {
   render(
     <Conversation

@@ -361,6 +361,7 @@ function selectorProjectSettingsBody(
       ...(effective.northStar === undefined
         ? {}
         : { northStar: effective.northStar }),
+      threadStandingRules: effective.threadStandingRules,
       modelAllowlist: effective.modelAllowlist,
       toolAllowlist: effective.toolAllowlist,
       limits: effective.limits,

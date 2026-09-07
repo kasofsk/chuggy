@@ -5,9 +5,13 @@
  * A report is markdown a worker wrote, at the wire's own cap
  * (`resultReportCharsMax`), so a scan over it is bounded by the read that
  * produced it. Recognising the shapes a work report is actually built from —
- * a heading, a listed line, a fenced block, a quoted line, a paragraph — does
- * not need a general markdown grammar, and drawing anything unrecognised as
- * its own paragraph is never wrong, only plain. Inline marks are read in one
+ * a heading, a listed line, a fenced block, a quoted line, a paragraph, a
+ * pipe table — does not need a general markdown grammar, and drawing
+ * anything unrecognised as its own paragraph is never wrong, only plain. A
+ * run of lines is a table only once a delimiter row sits under its header;
+ * short of that it stays the paragraph it would otherwise be, and a row the
+ * delimiter's width does not match is cut or padded to it rather than
+ * guessed at. Inline marks are read in one
  * pass rather than nested, so `**a *b* c**` reads as bold text naming its own
  * asterisks instead of a tree — the same plain-over-wrong choice at the
  * inline grain.
@@ -38,7 +42,17 @@ export type MarkdownBlock =
       readonly kind: "OrderedList";
       readonly items: readonly (readonly MarkdownInline[])[];
     }
-  | { readonly kind: "CodeBlock"; readonly text: string };
+  | { readonly kind: "CodeBlock"; readonly text: string }
+  | {
+      readonly kind: "Table";
+      readonly header: readonly (readonly MarkdownInline[])[];
+      readonly rows: readonly (readonly (readonly MarkdownInline[])[])[];
+    };
+
+/** A table wider than this many columns, or with more body rows than this,
+ * is cut rather than read in full — a wall of pipes stays bounded. */
+export const markdownTableColumnsMax = 32;
+export const markdownTableRowsMax = 100;
 
 const markdownInlineTokenPattern =
   /`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*|_([^_]+)_|\[([^[\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
@@ -139,6 +153,60 @@ function markdownParagraphLines(lines: readonly string[]): MarkdownLines {
   return lines.map(markdownInlineOf);
 }
 
+/** A line's cells, stripped of the leading and trailing pipe a worker tends
+ * to write. `undefined` when the line carries no pipe at all — not a row. */
+function markdownTableRowCells(line: string): readonly string[] | undefined {
+  if (!line.includes("|")) return undefined;
+  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  return trimmed.split("|").map((cell) => cell.trim());
+}
+
+const markdownTableDelimiterCellPattern = /^:?-+:?$/;
+
+/** Whether a line is only dashes, one per header column — the row that
+ * turns a run of pipes into a table rather than leaving it a paragraph. */
+function markdownTableDelimiterRow(line: string): boolean {
+  const cells = markdownTableRowCells(line);
+  return (
+    cells !== undefined &&
+    cells.length > 0 &&
+    cells.every((cell) => markdownTableDelimiterCellPattern.test(cell))
+  );
+}
+
+/** One row's cells, cut or padded to the header's own width. */
+function markdownTableRowOf(
+  cells: readonly string[],
+  columns: number,
+): readonly (readonly MarkdownInline[])[] {
+  return Array.from({ length: columns }, (_unused, at) =>
+    markdownInlineOf(cells[at] ?? ""),
+  );
+}
+
+/** The header, already read, and the body rows under its delimiter — every
+ * further line the same classifier still calls plain text, up to the row
+ * bound. */
+function markdownTableRead(
+  lines: readonly string[],
+  start: number,
+  headerCells: readonly string[],
+): { readonly block: MarkdownBlock; readonly next: number } {
+  const columns = Math.min(headerCells.length, markdownTableColumnsMax);
+  const header = markdownTableRowOf(headerCells, columns);
+  const rows: (readonly (readonly MarkdownInline[])[])[] = [];
+  let at = start + 2;
+  while (at < lines.length && rows.length < markdownTableRowsMax) {
+    const line = lines[at];
+    if (line === undefined || markdownLineKindOf(line).kind !== "Text") break;
+    const cells = markdownTableRowCells(line);
+    if (cells === undefined) break;
+    rows.push(markdownTableRowOf(cells, columns));
+    at += 1;
+  }
+  return { block: { kind: "Table", header, rows }, next: at };
+}
+
 function markdownListItemsRead(
   lines: readonly string[],
   start: number,
@@ -191,14 +259,26 @@ export function markdownReportBlocks(report: string): readonly MarkdownBlock[] {
       blocks.push({ kind: "Quote", lines: markdownParagraphLines(run.rest) });
       index = run.next;
     } else {
-      const run = markdownRunRead(lines, index, (kind) =>
-        kind.kind === "Text" ? kind.rest : undefined,
-      );
-      blocks.push({
-        kind: "Paragraph",
-        lines: markdownParagraphLines(run.rest),
-      });
-      index = run.next;
+      const headerCells = markdownTableRowCells(line);
+      const delimiter = lines[index + 1];
+      if (
+        headerCells !== undefined &&
+        delimiter !== undefined &&
+        markdownTableDelimiterRow(delimiter)
+      ) {
+        const table = markdownTableRead(lines, index, headerCells);
+        blocks.push(table.block);
+        index = table.next;
+      } else {
+        const run = markdownRunRead(lines, index, (kind) =>
+          kind.kind === "Text" ? kind.rest : undefined,
+        );
+        blocks.push({
+          kind: "Paragraph",
+          lines: markdownParagraphLines(run.rest),
+        });
+        index = run.next;
+      }
     }
   }
   return blocks;

@@ -14,6 +14,7 @@ import {
   type MarkdownInline,
   type MarkdownLines,
 } from "../../core/markdownReport.ts";
+import { Table } from "./Table.tsx";
 
 function MarkdownInlineRun(props: {
   readonly nodes: readonly MarkdownInline[];
@@ -70,6 +71,36 @@ function MarkdownHeading(props: {
   }
 }
 
+function MarkdownTable(props: {
+  readonly header: readonly (readonly MarkdownInline[])[];
+  readonly rows: readonly (readonly (readonly MarkdownInline[])[])[];
+}): ReactNode {
+  return (
+    <Table>
+      <thead>
+        <tr>
+          {props.header.map((cell, at) => (
+            <th key={at}>
+              <MarkdownInlineRun nodes={cell} />
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {props.rows.map((row, at) => (
+          <tr key={at}>
+            {row.map((cell, cellAt) => (
+              <td key={cellAt}>
+                <MarkdownInlineRun nodes={cell} />
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </Table>
+  );
+}
+
 function MarkdownBlockView(props: {
   readonly block: MarkdownBlock;
 }): ReactNode {
@@ -115,6 +146,8 @@ function MarkdownBlockView(props: {
           <code>{block.text}</code>
         </pre>
       );
+    case "Table":
+      return <MarkdownTable header={block.header} rows={block.rows} />;
   }
 }
 

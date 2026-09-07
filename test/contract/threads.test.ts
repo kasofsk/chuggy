@@ -29,7 +29,9 @@ import {
   threadBacklogMax,
   threadMessageCharsMax,
   threadSeedingCharsMax,
+  threadWakeCharsMax,
   threadSeedingFixedCharsMax,
+  threadTurnRecordedCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
 } from "../../src/contract/http.ts";
@@ -101,15 +103,16 @@ test("a message fits the mailbox column as that column stands", () => {
 });
 
 /**
- * A first turn carries the project's North Star and never sheds it, so the
- * seeding ceiling is DERIVED from what the settings route already accepts
- * rather than named below it — a ceiling under that would refuse every first
- * turn of a project whose North Star is long, on every member.
+ * A first turn carries the project's North Star and its standing rules and
+ * sheds neither, so the seeding ceiling is DERIVED from what the settings route
+ * already accepts for each rather than named below it — a ceiling under that
+ * would refuse every first turn of a project whose texts are long, on every
+ * member.
  */
-test("the seeding ceiling is derived from the North Star it must carry", () => {
+test("the seeding ceiling is derived from the two texts it must carry", () => {
   assert.equal(
     threadSeedingCharsMax,
-    selectorSettingsTextCharsMax + threadSeedingFixedCharsMax,
+    selectorSettingsTextCharsMax * 2 + threadSeedingFixedCharsMax,
   );
 });
 
@@ -123,6 +126,20 @@ test("a seeded first turn is dominated by the mailbox column it is written to", 
   assert.ok(
     threadMessageCharsMax + threadSeedingCharsMax <= sessionTurnInputCharsMax,
   );
+});
+
+/**
+ * A wake document is written to the same column through the other door, and it
+ * carries the standing rules as JSON escapes them rather than as they read. The
+ * recorded ceiling is what both doors are measured against, so a reader bounds
+ * the row rather than the door it happened to think of.
+ */
+test("the recorded ceiling admits both doors, and the column admits it", () => {
+  assert.ok(
+    threadMessageCharsMax + threadSeedingCharsMax <= threadTurnRecordedCharsMax,
+  );
+  assert.ok(threadWakeCharsMax <= threadTurnRecordedCharsMax);
+  assert.ok(threadTurnRecordedCharsMax <= sessionTurnInputCharsMax);
 });
 
 test("a thread's backlog and its answered tail are inside the mailbox's own", () => {
@@ -203,7 +220,7 @@ test("a turn carries what the member typed and what came back, each inside its c
   assert.throws(() =>
     threadTurnResponseSchema.parse({
       ...turn,
-      input: "x".repeat(threadMessageCharsMax + threadSeedingCharsMax + 1),
+      input: "x".repeat(threadTurnRecordedCharsMax + 1),
     }),
   );
   assert.throws(() =>
