@@ -40,7 +40,9 @@ test("every variant and size draws its own class", () => {
       );
       const drawn = screen.getByRole("button");
       expect(drawn.classList.contains(`btn-${variant}`)).toBe(true);
-      expect(drawn.classList.contains("btn-sm")).toBe(size === "sm");
+      expect(
+        drawn.classList.contains(size === "sm" ? "text-sm" : "text-md"),
+      ).toBe(true);
       expect(drawn.classList.contains("rounded-3")).toBe(true);
       styleless();
       cleanup();

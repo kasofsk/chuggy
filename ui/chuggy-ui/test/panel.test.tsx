@@ -29,16 +29,16 @@ test("the region is labelled by its own heading, and the meta sits beside it", (
   styleless();
 });
 
-test("the level chooses the heading, and quiet drops the frame's class", () => {
-  const view = render(
+test("the level chooses the heading, and quiet drops the frame's utilities", () => {
+  render(
     <Panel title="Provenance" level={3} variant="quiet">
       <p>Stages 2</p>
     </Panel>,
   );
   expect(screen.getByRole("heading", { level: 3 })).toBeDefined();
-  const panel = view.container.querySelector(".panel");
-  expect(panel?.classList.contains("panel-quiet")).toBe(true);
-  expect(panel?.classList.contains("border-edge")).toBe(false);
+  const panel = screen.getByRole("region", { name: "Provenance" });
+  expect(panel.classList.contains("min-w-0")).toBe(true);
+  expect(panel.classList.contains("border-edge")).toBe(false);
   styleless();
 });
 
