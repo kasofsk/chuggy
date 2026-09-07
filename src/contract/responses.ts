@@ -370,15 +370,36 @@ export type SelectorProjectSettingsResponse = z.infer<
   typeof selectorProjectSettingsResponseSchema
 >;
 
+/** Who a settings revision is recorded against, as the authorization named them. */
+const selectorAdministratorResponseSchema = z.strictObject({
+  kind: identitySchema,
+  subject: identitySchema,
+});
+
 export const selectorSettingsRevisionResponseSchema = z.strictObject({
   revision: countSchema,
   overrides: selectorProjectOverridesSchema,
-  administrator: z.strictObject({
-    kind: identitySchema,
-    subject: identitySchema,
-  }),
+  administrator: selectorAdministratorResponseSchema,
   recordedAt: instantSchema,
 });
+
+/**
+ * What a write that lost the revision fence answers with beside its error code:
+ * the settings standing in its place, and who moved them. `movedBy` is absent
+ * only where the standing revision is zero, which nobody wrote.
+ */
+export const selectorSettingsConflictResponseSchema = z.object({
+  settings: selectorProjectSettingsResponseSchema,
+  movedBy: z
+    .strictObject({
+      administrator: selectorAdministratorResponseSchema,
+      recordedAt: instantSchema,
+    })
+    .optional(),
+});
+export type SelectorSettingsConflictResponse = z.infer<
+  typeof selectorSettingsConflictResponseSchema
+>;
 
 export const selectorSettingsHistoryResponseSchema = z.strictObject({
   revisions: page(selectorSettingsRevisionResponseSchema),

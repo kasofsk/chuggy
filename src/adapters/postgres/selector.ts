@@ -40,6 +40,7 @@ import type {
   SelectorProjectSettingsRecord,
   SelectorProjectSettingsRefusal,
   SelectorProjectSettingsRevision,
+  SelectorProjectSettingsStanding,
   SelectorProjectSettingsStore,
   SelectorProjectSettingsWriteOutcome,
 } from "../../interpreter/selectorProjectSettings.ts";
@@ -689,6 +690,13 @@ interface SelectorProjectSettingsRow extends SelectorProjectOverrideRow {
   readonly installation_controls: string;
 }
 
+/** The read's row, whose history half is NULL for a project at revision zero. */
+interface SelectorProjectSettingsStandingRow extends SelectorProjectSettingsRow {
+  readonly administrator_kind: string | null;
+  readonly administrator_subject: string | null;
+  readonly recorded_at: Date | null;
+}
+
 /**
  * The same row as the write answers it. Every column a set-returning function
  * declares is nullable to the server, whatever the tables beneath it require,
@@ -851,6 +859,65 @@ async function readProjectSettings(
   return selectorProjectSettingsRecordOf(partition, row);
 }
 
+/**
+ * The same read with the history row of the revision standing joined to it, so
+ * a caller that lost the fence is told whose write it lost to without a second
+ * round trip. It is a statement of its own because the selector service reads
+ * the settings and may not read the administrators behind them.
+ */
+async function readStandingProjectSettings(
+  pool: pg.Pool,
+  partition: Partition,
+): Promise<SelectorProjectSettingsStanding> {
+  const found = await pool.query<SelectorProjectSettingsStandingRow>(
+    sql`SELECT overrides.revision::text,overrides.north_star,
+         overrides.thread_standing_rules,overrides.mode,
+         overrides.dispatch_mode,overrides.base_prompt,
+         overrides.model_allowlist,overrides.tool_allowlist,
+         overrides.tokens_per_decision::text,
+         overrides.milliseconds_per_decision::text,
+         overrides.tool_calls_per_decision::text,
+         overrides.dispatches_per_decision::text,
+         overrides.input_bytes_per_decision::text,
+         overrides.candidate_pages_per_decision::text,
+         overrides.operational_context_max_age_ms::text,
+         installation.revision::text AS installation_revision,
+         installation.mode AS installation_mode,
+         installation.dispatch_mode AS installation_dispatch_mode,
+         installation.base_prompt AS installation_base_prompt,
+         installation.controls AS installation_controls,
+         moved.administrator_kind,moved.administrator_subject,moved.recorded_at
+       FROM selector_runtime_settings installation
+       LEFT JOIN selector_project_settings overrides
+         ON overrides.tenant=${partition.tenant}
+        AND overrides.project=${partition.project}
+       LEFT JOIN selector_project_settings_history moved
+         ON moved.tenant=overrides.tenant
+        AND moved.project=overrides.project
+        AND moved.revision=overrides.revision
+      WHERE installation.singleton=1`,
+  );
+  const row = found.rows[0];
+  if (row === undefined)
+    throw new Error("selector runtime settings are absent");
+  return {
+    settings: selectorProjectSettingsRecordOf(partition, row),
+    ...(row.administrator_kind === null ||
+    row.administrator_subject === null ||
+    row.recorded_at === null
+      ? {}
+      : {
+          movedBy: {
+            administrator: {
+              kind: asAuthorityKind(row.administrator_kind),
+              subject: asAuthoritySubject(row.administrator_subject),
+            },
+            recordedAt: row.recorded_at.toISOString(),
+          },
+        }),
+  };
+}
+
 /** The SQLSTATE a server refused under, for the refusals that are conditions. */
 function postgresFailureCode(failure: unknown): string | undefined {
   if (typeof failure !== "object" || failure === null) return undefined;
@@ -992,7 +1059,7 @@ export function postgresSelectorProjectSettings(
   pool: pg.Pool,
 ): SelectorProjectSettingsStore {
   return {
-    read: (partition) => readProjectSettings(pool, partition),
+    read: (partition) => readStandingProjectSettings(pool, partition),
     write: (partition, expectedRevision, overrides, administrator) =>
       writeProjectSettings(
         pool,

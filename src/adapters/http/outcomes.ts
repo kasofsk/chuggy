@@ -417,6 +417,7 @@ export function selectorProjectSettingsWriteResponse(
           "The selector settings moved under this write.",
         ),
         settings: selectorProjectSettingsBody(result.settings),
+        ...(result.movedBy === undefined ? {} : { movedBy: result.movedBy }),
       });
     case "Refused":
       return selectorProjectSettingsRefusal(result.refusal);
