@@ -247,8 +247,11 @@ test("All threads is a link after the list, not a list item outside one", async 
   expect(allThreads.closest("li")).toBeNull();
 });
 
-test("with no thread of the reader's own, New thread opens one and follows it", async () => {
-  const api = threadRailApi({ openedSession: "s-new" });
+/** Mounts the rail, clicks New thread, and settles — the setup every New
+ * thread scenario shares before it makes its own assertions. */
+async function railNewThreadClicked(
+  api: ReturnType<typeof threadRailApi>,
+): Promise<ReturnType<typeof railRouter>> {
   vi.stubGlobal("fetch", api.fetch);
   const server = openedStream();
   const router = railRouter();
@@ -268,30 +271,18 @@ test("with no thread of the reader's own, New thread opens one and follows it", 
   });
   await settled();
   styleless();
+  return router;
+}
+
+test("with no thread of the reader's own, New thread opens one and follows it", async () => {
+  const api = threadRailApi({ openedSession: "s-new" });
+  const router = await railNewThreadClicked(api);
   expect(router.state.location.pathname).toBe("/acme/atlas/threads/s-new");
 });
 
 test("with an open thread of the reader's own, New thread closes it before opening another", async () => {
   const api = threadRailApi({ listing: [mineOpen], openedSession: "s-new" });
-  vi.stubGlobal("fetch", api.fetch);
-  const server = openedStream();
-  const router = railRouter();
-  render(
-    <ScreenHarness
-      partition={atlas}
-      client={new QueryClient()}
-      transport={server.ports.fetch}
-    >
-      <RouterProvider router={router} />
-    </ScreenHarness>,
-  );
-  await settled();
-  const button = screen.getByRole("button", { name: "New thread" });
-  await turned(() => {
-    button.click();
-  });
-  await settled();
-  styleless();
+  const router = await railNewThreadClicked(api);
   expect(router.state.location.pathname).toBe("/acme/atlas/threads/s-new");
   expect(
     api.posted().some((url) => url.endsWith(`${mineOpen.session}/close`)),

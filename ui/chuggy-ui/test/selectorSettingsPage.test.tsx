@@ -280,13 +280,10 @@ test("Cancel takes the box back to the read and writes nothing", async () => {
   expect(box("North Star").value).toBe("ship the console");
 });
 
-test("saving a section writes every override whole, under the read revision", async () => {
-  const server = await drawSettings({
-    answering: () => ({
-      body: settingsBody(13, { northStar: "ship the lead page" }),
-      status: 200,
-    }),
-  });
+/** Edits North Star to "ship the lead page" and saves the section — the
+ * change every save-revision scenario below makes before it asserts on the
+ * write. */
+async function selectorSettingsPageNorthStarSaved(): Promise<void> {
   await turned(() => {
     edit("North Star");
   });
@@ -297,6 +294,16 @@ test("saving a section writes every override whole, under the read revision", as
   });
   await turned(save);
   await settled();
+}
+
+test("saving a section writes every override whole, under the read revision", async () => {
+  const server = await drawSettings({
+    answering: () => ({
+      body: settingsBody(13, { northStar: "ship the lead page" }),
+      status: 200,
+    }),
+  });
+  await selectorSettingsPageNorthStarSaved();
   expect(server.written()).toStrictEqual({
     expectedRevision: 12,
     overrides: { northStar: "ship the lead page" },
@@ -668,16 +675,7 @@ test("an override no section draws survives a save that edits another", async ()
       operationalContextMaxAgeMs: 30_000,
     }),
   });
-  await turned(() => {
-    edit("North Star");
-  });
-  await turned(() => {
-    fireEvent.change(box("North Star"), {
-      target: { value: "ship the lead page" },
-    });
-  });
-  await turned(save);
-  await settled();
+  await selectorSettingsPageNorthStarSaved();
   expect(server.written()).toStrictEqual({
     expectedRevision: 12,
     overrides: {

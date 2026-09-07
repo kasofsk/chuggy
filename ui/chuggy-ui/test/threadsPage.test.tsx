@@ -373,8 +373,10 @@ test("closing a row's thread posts to that row's own close door", async () => {
  * territory, not this row's. What is this row's own is the door it posts to
  * and that a successful write closes the editor.
  */
-test("renaming a row posts the typed title to that row's own rename door", async () => {
-  const server = drawThreads(threadsBody);
+/** Mounts the threads page, opens the reader's own row's Rename editor and
+ * types a value into it — the setup Enter and Escape scenarios share before
+ * they diverge on how the edit ends. */
+async function threadsPageRenameStarted(value: string): Promise<HTMLElement> {
   await mountThreads();
   const mineRow = [...document.querySelectorAll("tbody tr")].find((row) =>
     row.textContent?.includes(threadMineSession),
@@ -383,7 +385,13 @@ test("renaming a row posts the typed title to that row's own rename door", async
   await openThreadMenu(rowMenuTrigger(mineRow));
   fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
   const input = screen.getByRole("textbox", { name: "Thread title" });
-  fireEvent.change(input, { target: { value: "ship it" } });
+  fireEvent.change(input, { target: { value } });
+  return input;
+}
+
+test("renaming a row posts the typed title to that row's own rename door", async () => {
+  const server = drawThreads(threadsBody);
+  const input = await threadsPageRenameStarted("ship it");
   await turned(() => {
     fireEvent.keyDown(input, { key: "Enter" });
   });
@@ -397,15 +405,7 @@ test("renaming a row posts the typed title to that row's own rename door", async
 
 test("Escape cancels a rename in progress and posts nothing", async () => {
   const server = drawThreads(threadsBody);
-  await mountThreads();
-  const mineRow = [...document.querySelectorAll("tbody tr")].find((row) =>
-    row.textContent?.includes(threadMineSession),
-  );
-  if (mineRow === undefined) throw new Error("expected the reader's own row");
-  await openThreadMenu(rowMenuTrigger(mineRow));
-  fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
-  const input = screen.getByRole("textbox", { name: "Thread title" });
-  fireEvent.change(input, { target: { value: "not sent" } });
+  const input = await threadsPageRenameStarted("not sent");
   fireEvent.keyDown(input, { key: "Escape" });
   await settled();
   styleless();
