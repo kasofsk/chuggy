@@ -35,14 +35,15 @@
  * configuration identity, every one of them taken from the placement; no
  * credential, no cluster fact and no value this module reached for itself.
  *
- * A SHARED SERVER IS NAMED, NEVER CARRIED. Work that needs PostgreSQL gets a
- * server the site runs rather than one baked into the image beside it, and the
- * URL that reaches it is a credential: it arrives at the container as a
- * `secretKeyRef` into a Secret the site owns, so the value passes through
- * neither this process nor the pod spec this module submits. What this module
- * does supply is the one database name on that server the attempt may make,
- * derived from the attempt the way the pod name is and for the same reason —
- * a second placement of one attempt names what the first created.
+ * A WORKER'S POSTGRESQL IS A SIDECAR, AND THE WORKER IS ITS SUPERUSER. The
+ * gates a repository runs against a server migrate it, and a migration makes
+ * and alters cluster-wide roles: run on a server the attempt shares with
+ * anything else, it needs an authority over that server's roles that nothing
+ * agent-authored can be given. So the server is the attempt's alone — a
+ * container beside the worker's, listening on the pod's own loopback, holding
+ * nothing before the attempt and nothing after it — and what would have been a
+ * credential is a fixed address. It is a sidecar rather than a second
+ * container so that the pod ends when the worker does.
  */
 
 import type {
@@ -60,8 +61,6 @@ import {
   kubernetesAttemptDigest,
   kubernetesContainerResources,
   kubernetesCredentials,
-  kubernetesDigestChars,
-  kubernetesName,
   kubernetesPodNamePrefix,
   kubernetesPositive,
   kubernetesReservedVariables,
@@ -78,10 +77,10 @@ import {
   type KubernetesSecret,
 } from "./kubernetesSite.ts";
 
-/** The Secret key holding the URL of the PostgreSQL every worker of this site shares. */
+/** The PostgreSQL image an attempt's sidecar runs, and what that container may use. */
 export interface KubernetesWorkerDatabase {
-  readonly secretName: string;
-  readonly key: string;
+  readonly image: string;
+  readonly resources: KubernetesResourceBudget;
 }
 
 /**
@@ -98,15 +97,22 @@ export interface KubernetesWorkerLaunchConfig extends KubernetesPodSite {
   readonly database?: KubernetesWorkerDatabase;
 }
 
-/** The one container name a placed pod carries, so a reader of the cluster needs no lookup. */
+/** The name the worker's own container carries, so a reader of the cluster needs no lookup. */
 export const kubernetesWorkerContainerName = "worker";
 
-/** The environment variable a placed worker reaches the site's shared PostgreSQL by. */
+/** The environment variable a placed worker reaches its own PostgreSQL by. */
 export const kubernetesWorkerDatabaseUrlVariable = "CHUG_WORKER_DATABASE_URL";
 
-/** The environment variable naming the one database on that server the attempt may make. */
-export const kubernetesWorkerDatabaseScopeVariable =
-  "CHUG_WORKER_DATABASE_SCOPE";
+/** The container name the attempt's PostgreSQL runs under, beside the worker's. */
+export const kubernetesWorkerDatabaseContainerName = "postgres";
+
+/**
+ * Where the sidecar answers and what it answers as: the pod's loopback, which
+ * only this pod's containers reach, and the server's own superuser with no
+ * password, because there is nothing in the pod the worker is not.
+ */
+export const kubernetesWorkerDatabaseUrl =
+  "postgres://postgres@127.0.0.1:5432/postgres";
 
 /** The names this adapter writes itself, which a site's own environment may not take. */
 export const kubernetesWorkerReservedVariables = [
@@ -114,11 +120,7 @@ export const kubernetesWorkerReservedVariables = [
   kubernetesSessionTaskVariable,
   kubernetesWorkerCredentialFilesVariable,
   kubernetesWorkerDatabaseUrlVariable,
-  kubernetesWorkerDatabaseScopeVariable,
 ] as const;
-
-/** How much of that digest a scoped database name carries, which a PostgreSQL name bounds. */
-const kubernetesWorkerScopeDigestChars = kubernetesDigestChars / 2;
 
 /** What a worker is handed: its fenced identity, its pinned inputs and what it may do. */
 export interface KubernetesWorkerTask {
@@ -168,11 +170,8 @@ export function checkedKubernetesWorkerLaunchConfig(
     kubernetesWorkerReservedVariables,
     "worker environment",
   );
-  if (config.database !== undefined) {
-    kubernetesName(config.database.secretName, "worker database Secret");
-    if (config.database.key.length === 0)
-      throw new RangeError("worker database key is empty");
-  }
+  if (config.database !== undefined && config.database.image.length === 0)
+    throw new RangeError("worker database image is empty");
   kubernetesPositive(config.activeDeadlineSecs, "worker active deadline");
   return config;
 }
@@ -187,22 +186,6 @@ export function kubernetesWorkerPodName(
   attempt: AttemptId,
 ): string {
   return `${config.podNamePrefix}-${kubernetesAttemptDigest(partition, attempt)}`;
-}
-
-/**
- * The database on the shared server this attempt may make, and the prefix of
- * every name it may make beside it.
- *
- * A PostgreSQL identifier is bounded where an object name is not, so the digest
- * is carried in part and opens with a letter — leaving room for the names a run
- * makes inside this one, at what that truncation costs in collision resistance.
- */
-export function kubernetesWorkerDatabaseScope(
-  partition: Partition,
-  attempt: AttemptId,
-): string {
-  const digest = kubernetesAttemptDigest(partition, attempt);
-  return `chug_${digest.slice(0, kubernetesWorkerScopeDigestChars)}`;
 }
 
 export const kubernetesWorkerSecretName = kubernetesWorkerPodName;
@@ -360,34 +343,53 @@ function kubernetesWorkerCapabilityVolumes(
 }
 
 /**
- * The shared server a worker reaches and the database on it that is the
- * attempt's, or nothing where the site runs no such server: work that then
- * asks for one fails in the container rather than being placed against a
+ * The server a worker reaches, or nothing where the site runs none: work that
+ * then asks for one fails in the container rather than being placed against a
  * server this module invented an address for.
  */
 function kubernetesWorkerDatabaseVariables(
   config: KubernetesWorkerLaunchConfig,
-  placement: AttemptPlacement,
 ): readonly KubernetesContainerVariable[] {
   if (config.database === undefined) return [];
   return [
     {
       name: kubernetesWorkerDatabaseUrlVariable,
-      valueFrom: {
-        secretKeyRef: {
-          name: config.database.secretName,
-          key: config.database.key,
-        },
-      },
-    },
-    {
-      name: kubernetesWorkerDatabaseScopeVariable,
-      value: kubernetesWorkerDatabaseScope(
-        placement.partition,
-        placement.attempt,
-      ),
+      value: kubernetesWorkerDatabaseUrl,
     },
   ];
+}
+
+/**
+ * The attempt's PostgreSQL, as the sidecar that runs it. The worker container
+ * is not started until the startup probe has seen the server accept a
+ * connection, so the worker never waits for it; and the server trusts every
+ * loopback connection because it is bound to loopback alone.
+ */
+function kubernetesWorkerDatabaseContainer(
+  config: KubernetesWorkerLaunchConfig,
+  database: KubernetesWorkerDatabase,
+): KubernetesContainer {
+  return {
+    name: kubernetesWorkerDatabaseContainerName,
+    image: database.image,
+    args: ["-c", "listen_addresses=127.0.0.1"],
+    restartPolicy: "Always",
+    startupProbe: {
+      exec: { command: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres"] },
+      periodSeconds: 1,
+      failureThreshold: 120,
+    },
+    env: [{ name: "POSTGRES_HOST_AUTH_METHOD", value: "trust" }],
+    resources: kubernetesContainerResources(database.resources),
+    securityContext: config.containerSecurityContext,
+    volumeMounts: [
+      {
+        name: "worker-database",
+        mountPath: "/var/lib/postgresql",
+        readOnly: false,
+      },
+    ],
+  };
 }
 
 /** The one worker container, separated from its pod so both documents stay reviewable. */
@@ -409,7 +411,7 @@ function kubernetesWorkerContainer(
         name: kubernetesWorkerCredentialFilesVariable,
         value: JSON.stringify(credentials.files),
       },
-      ...kubernetesWorkerDatabaseVariables(config, placement),
+      ...kubernetesWorkerDatabaseVariables(config),
       ...Object.entries(config.environment).map(([name, value]) => ({
         name,
         value,
@@ -432,6 +434,32 @@ function kubernetesWorkerContainer(
       ...credentials.mounts,
     ],
   };
+}
+
+/** Every volume the pod mounts: the bearer, the workspace, the sidecar's data and the credentials. */
+function kubernetesWorkerVolumes(
+  config: KubernetesWorkerLaunchConfig,
+  placement: AttemptPlacement,
+  credentials: KubernetesCredentialSelection,
+): KubernetesPod["spec"]["volumes"] {
+  return [
+    ...kubernetesWorkerCapabilityVolumes(config, placement),
+    {
+      name: "worker-workspace",
+      emptyDir: { sizeLimit: config.resources.ephemeralStorageLimit },
+    },
+    ...(config.database === undefined
+      ? []
+      : [
+          {
+            name: "worker-database",
+            emptyDir: {
+              sizeLimit: config.database.resources.ephemeralStorageLimit,
+            },
+          },
+        ]),
+    ...credentials.volumes,
+  ];
 }
 
 /** The one bounded pod a scheduled attempt becomes, or the inability that stops it. */
@@ -471,6 +499,13 @@ export function kubernetesWorkerPodRequest(
         activeDeadlineSeconds: config.activeDeadlineSecs,
         nodeSelector: config.nodeSelector,
         securityContext: config.podSecurityContext,
+        ...(config.database === undefined
+          ? {}
+          : {
+              initContainers: [
+                kubernetesWorkerDatabaseContainer(config, config.database),
+              ],
+            }),
         containers: [
           kubernetesWorkerContainer(
             config,
@@ -479,14 +514,7 @@ export function kubernetesWorkerPodRequest(
             credentials,
           ),
         ],
-        volumes: [
-          ...kubernetesWorkerCapabilityVolumes(config, placement),
-          {
-            name: "worker-workspace",
-            emptyDir: { sizeLimit: config.resources.ephemeralStorageLimit },
-          },
-          ...credentials.volumes,
-        ],
+        volumes: kubernetesWorkerVolumes(config, placement, credentials),
       },
     },
   };

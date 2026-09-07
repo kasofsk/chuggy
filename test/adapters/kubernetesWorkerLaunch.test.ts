@@ -31,8 +31,8 @@ import {
 import {
   checkedKubernetesWorkerLaunchConfig,
   kubernetesWorkerContainerName,
-  kubernetesWorkerDatabaseScope,
-  kubernetesWorkerDatabaseScopeVariable,
+  kubernetesWorkerDatabaseContainerName,
+  kubernetesWorkerDatabaseUrl,
   kubernetesWorkerDatabaseUrlVariable,
   kubernetesWorkerPodName,
   kubernetesWorkerPodRequest,
@@ -83,9 +83,6 @@ const token = "cluster-token-value";
 const tokenFile = join(root, "token");
 writeFileSync(tokenFile, `${token}\n`);
 
-/** The longest identifier PostgreSQL keeps whole, which a scoped name may not exceed. */
-const postgresNameCharsMax = 63;
-
 /** The image this suite's placement requires, which is the one a container runs. */
 const workerImage = "registry.invalid/worker:1";
 
@@ -96,16 +93,15 @@ const workspaceCredentialMount = {
 } as const;
 
 const workerDatabase = {
-  secretName: "worker-database",
-  key: "url",
+  image: "registry.invalid/postgres:18",
+  resources: {
+    cpuRequest: "250m",
+    cpuLimit: "1",
+    memoryRequest: "256Mi",
+    memoryLimit: "1Gi",
+    ephemeralStorageLimit: "4Gi",
+  },
 } as const;
-
-/**
- * The database this suite's attempt is given, written out rather than derived.
- * A deployment's databases outlive one release, so a rule that changed would
- * orphan every one of them and make a repeated placement name a new database.
- */
-const workerDatabaseScope = "chug_5a25ede16b900033994d5ce97a23b573";
 
 const workerRepositoriesValue = JSON.stringify({
   repository: {
@@ -321,13 +317,7 @@ function expectedContainer(): unknown {
       },
       {
         name: kubernetesWorkerDatabaseUrlVariable,
-        valueFrom: {
-          secretKeyRef: { name: "worker-database", key: "url" },
-        },
-      },
-      {
-        name: kubernetesWorkerDatabaseScopeVariable,
-        value: workerDatabaseScope,
+        value: kubernetesWorkerDatabaseUrl,
       },
       {
         name: "CHUG_WORKER_REPOSITORIES",
@@ -359,6 +349,42 @@ function expectedContainer(): unknown {
         name: "worker-credential-0",
         mountPath: "/run/chuggy/credentials",
         readOnly: true,
+      },
+    ],
+  };
+}
+
+/** The attempt's PostgreSQL, started before the worker and gone with it. */
+function expectedDatabaseContainer(): unknown {
+  return {
+    name: kubernetesWorkerDatabaseContainerName,
+    image: "registry.invalid/postgres:18",
+    args: ["-c", "listen_addresses=127.0.0.1"],
+    restartPolicy: "Always",
+    startupProbe: {
+      exec: { command: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres"] },
+      periodSeconds: 1,
+      failureThreshold: 120,
+    },
+    env: [{ name: "POSTGRES_HOST_AUTH_METHOD", value: "trust" }],
+    resources: {
+      requests: {
+        cpu: "250m",
+        memory: "256Mi",
+        "ephemeral-storage": "4Gi",
+      },
+      limits: {
+        cpu: "1",
+        memory: "1Gi",
+        "ephemeral-storage": "4Gi",
+      },
+    },
+    securityContext: { allowPrivilegeEscalation: false },
+    volumeMounts: [
+      {
+        name: "worker-database",
+        mountPath: "/var/lib/postgresql",
+        readOnly: false,
       },
     ],
   };
@@ -401,6 +427,7 @@ function expectedPod(name: string): unknown {
       activeDeadlineSeconds: 3_600,
       nodeSelector: { "kubernetes.io/os": "linux" },
       securityContext: { runAsNonRoot: true },
+      initContainers: [expectedDatabaseContainer()],
       containers: [expectedContainer()],
       volumes: [
         {
@@ -412,6 +439,7 @@ function expectedPod(name: string): unknown {
           },
         },
         { name: "worker-workspace", emptyDir: { sizeLimit: "10Gi" } },
+        { name: "worker-database", emptyDir: { sizeLimit: "4Gi" } },
         {
           name: "worker-credential-0",
           projected: {
@@ -928,8 +956,7 @@ test("a deployment that cannot address a cluster is refused where it is composed
     { podNamePrefix: "worker-" },
     { podNamePrefix: "w".repeat(kubernetesNameCharsMax) },
     { tokenFile: "" },
-    { database: { secretName: "Worker_Database", key: "url" } },
-    { database: { secretName: "worker-database", key: "" } },
+    { database: { ...workerDatabase, image: "" } },
     { activeDeadlineSecs: 0 },
     { requestTimeoutSecsMax: 0 },
     { unavailableRetryAfterSecs: 0 },
@@ -954,7 +981,6 @@ test("site environment cannot replace any worker-owned document", () => {
     kubernetesSessionTaskVariable,
     kubernetesWorkerCredentialFilesVariable,
     kubernetesWorkerDatabaseUrlVariable,
-    kubernetesWorkerDatabaseScopeVariable,
   ]);
   for (const variable of populated(
     kubernetesWorkerReservedVariables,
@@ -972,34 +998,21 @@ test("site environment cannot replace any worker-owned document", () => {
   }
 });
 
-test("an attempt's database is named for the attempt and for nothing else", () => {
-  const scope = kubernetesWorkerDatabaseScope(partition, placement.attempt);
-  assert.equal(scope, workerDatabaseScope);
-  assert.notEqual(
-    scope,
-    kubernetesWorkerDatabaseScope(partition, asAttemptId("attempt-two")),
-  );
-  assert.notEqual(
-    scope,
-    kubernetesWorkerDatabaseScope(
-      { ...partition, project: asProjectId("other") },
-      placement.attempt,
-    ),
-  );
-  assert.match(scope, /^[a-z][a-z0-9_]*$/u);
-  assert.ok(scope.length <= postgresNameCharsMax);
-});
-
-test("a site that runs no shared server tells its workers of none", () => {
+test("a site that runs no database places a pod with no sidecar and tells its worker of none", () => {
   const siteless: KubernetesWorkerLaunchConfig = { ...config };
   delete (siteless as { database?: unknown }).database;
   const requested = kubernetesWorkerPodRequest(siteless, placement);
   assert.equal(requested.requested, "Pod");
   if (requested.requested !== "Pod") return;
+  assert.equal(requested.pod.spec.initContainers, undefined);
   assert.deepEqual(
     requested.pod.spec.containers[0]?.env.filter(({ name }) =>
       name.startsWith("CHUG_WORKER_DATABASE"),
     ),
+    [],
+  );
+  assert.deepEqual(
+    requested.pod.spec.volumes.filter(({ name }) => name === "worker-database"),
     [],
   );
 });

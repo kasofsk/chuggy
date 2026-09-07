@@ -526,64 +526,29 @@ this from being a command that drops the deployment.
 
 ## The workers' database
 
-**The same server, and a role that cannot reach this database.** Work runs
+**A server per attempt, beside the worker, and no role for it here.** Work runs
 agent-authored code and needs PostgreSQL to run a repository's own gates
-against; on a rig this size that is this server, and what separates the two is
-the role rather than the machine. `worker-database-roles.sql` argues the whole
-of it: what sharing costs, why a read of the durable authority is not among
-those costs, and why the login belongs in its own file. Create it here, with a
-credential of its own:
+against, and those gates migrate whatever server they are pointed at: they make
+and alter cluster-wide roles, which is an authority over the whole server that
+nothing agent-authored can be given on a server shared with this deployment.
+So the scheduler places the server with the worker, as a sidecar of the
+attempt's pod that listens on the pod's loopback alone, trusts what connects
+there, holds nothing before the attempt and is gone with it. This server keeps
+no login for workers, no worker namespace needs a route to it, and nothing
+below runs against it.
 
-The Secret goes in the namespace the worker pods run in, not this one: a
-`secretKeyRef` resolves in the pod's own namespace, and a Secret of this name in
-`chuggy` would be one no worker can read.
-
-```sh
-kubectl -n chuggy-work create secret generic chuggy-worker-database \
-  --from-env-file=/dev/stdin <<EOF
-url=postgres://chuggy_worker:$(head -c 32 /dev/urandom | base64 | tr -d '=+/')@postgres.chuggy.svc.cluster.local:5432/postgres
-EOF
-
-CHUG_PG_WORKER_PASSWORD=... \
-  psql -h 127.0.0.1 -p 55440 -U postgres -d chuggy_rehearsal \
-    -f deploy/rig/postgres/worker-database-roles.sql
-```
-
-The password in that URL and the one psql is given are the same password, and
-nothing checks that they are: the Secret is what a worker authenticates with,
-and the role is what accepts it.
-
-**The scheduler names the Secret and never the URL.** `CHUG_SCHEDULER_WORKER_DATABASE`
-carries `{"secretName": ..., "key": ...}`. Every worker pod then gets that key
-as a `secretKeyRef` and the name of the one database it may make as a plain
-value, so the URL is read by the kubelet and passes through neither the
-scheduler nor the pod spec it submits. A site that names no such Secret places
-workers that are told of no server, and work that then needs one fails in the
+**The scheduler names the image, and the worker is told a fixed address.**
+`CHUG_SCHEDULER_WORKER_DATABASE` carries `{"image": ..., "resources": ...}`:
+the PostgreSQL image the sidecar runs and what that container may use. Every
+worker pod then gets `CHUG_WORKER_DATABASE_URL` as a plain value naming the
+sidecar's superuser on loopback, and `images/worker/postgres.mjs` hands that to
+the gates as `CHUG_PG_URL`. A site that names no image places workers with no
+sidecar that are told of no server, and work that then needs one fails in the
 container.
 
-**A worker never connects to the database the URL names.** The path in it is
-where `chuggy_worker` authenticates and creates, and `images/worker/postgres.mjs`
-replaces it with the attempt's own database before any gate sees a URL — which
-is what keeps `.chug/tasks/check-queries.sh`, whose whole job is migrating the
-database it is pointed at, from being pointed at a live one.
-
-**The pod must be able to reach it, and both halves are named.** A worker
-namespace denies what it is not given, so the destination is an egress rule
-naming this server and the server's own ingress policy admits that namespace;
-either one absent is a worker that cannot connect. Where the namespace denies
-DNS as well — the rehearsal in `deploy/rig/isolation/` does, deliberately, and
-`work-denies-all.yaml` says why — the URL has to name an address rather than a
-name.
-
-**What an attempt leaves behind.** The entrypoint drops every database the
-attempt's role owns when the attempt ends, and then the role. A pod killed
-before that runs leaves them, and they are attributable: every name carries the
-attempt's own, which is also what keeps two attempts running
-`.chug/tasks/check-postgres.sh` at once from colliding. A sweep is by owner:
-
-```sh
-psql -c "SELECT rolname FROM pg_roles WHERE rolname LIKE 'chug\_%'"
-```
+**The worker never waits for it.** The sidecar carries a startup probe, and the
+pod starts the worker container only once that probe has seen the server
+accept a connection.
 
 ## Reversing it
 

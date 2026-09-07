@@ -12,8 +12,8 @@
  *
  * IT PINS THE ORDER AS WELL AS THE VALUES. The wire body is
  * `JSON.stringify(pod)`, whose bytes are a function of key order and value, so
- * an indented serialization of the same object pins the same thing and is
- * reviewable in a diff.
+ * the golden is read back through the same parser and serialized the same way:
+ * the file can be indented for a diff, and what is compared is the wire.
  */
 
 import assert from "node:assert/strict";
@@ -30,7 +30,7 @@ const goldenPath = new URL(
 
 test("one worker placement renders the document the golden pins, byte for byte", () => {
   assert.equal(
-    `${JSON.stringify(workerPodDocuments(), null, 2)}\n`,
-    readFileSync(goldenPath, "utf8"),
+    JSON.stringify(workerPodDocuments()),
+    JSON.stringify(JSON.parse(readFileSync(goldenPath, "utf8"))),
   );
 });

@@ -25,9 +25,9 @@
  * attempt — and travels as an annotation, because an annotation value is
  * neither bounded nor constrained in its alphabet where a label value is both.
  *
- * NO DATABASE VARIABLES. A slice-1 session makes no scratch database, so the
- * shared server is not named to it at all; a session that later needs one gets
- * it the way a worker does rather than by this module inventing an address.
+ * NO DATABASE. A slice-1 session runs no gates, so no PostgreSQL is placed
+ * beside it; a session that later needs one gets it the way a worker does — a
+ * sidecar of its own pod — rather than by this module inventing an address.
  */
 
 import { join } from "node:path";
