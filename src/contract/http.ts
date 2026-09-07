@@ -247,6 +247,14 @@ export const threadsAnsweredMax = 64;
 /** How many turns of one thread's mailbox a read answers with, newest last. */
 export const threadTurnsAnsweredMax = 32;
 
+/**
+ * The longest title a thread is named by, which is also the prefix of its first
+ * message the durable reads answer: the derivation keeps no more than this, so
+ * asking the server for more would be reading a listing's worth of text nothing
+ * draws.
+ */
+export const threadTitleCharsMax = 80;
+
 /** What a wake document weighs beyond its standing: a roster member, a resource and an instant. */
 export const threadWakeFixedCharsMax = 2_048;
 

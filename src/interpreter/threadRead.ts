@@ -21,9 +21,10 @@
  *
  * THE MAILBOX IS PAGED AND THE LISTING IS NOT. One thread turn carries what the
  * member typed and what came back, and either alone may weigh most of a wire
- * body; a listing entry carries three identities and a count. So a thread read
- * takes a page of its own mailbox, newest last and older pages walked backwards
- * the way a conversation is scrolled, and a listing answers whole.
+ * body; a listing entry carries three identities, a bounded title and a
+ * count. So a thread read takes a page of its own mailbox, newest last and
+ * older pages walked backwards the way a conversation is scrolled, and a
+ * listing answers whole.
  *
  * THE TRANSCRIPT IS THE LEAD'S WALK OVER ANOTHER SESSION, and literally so:
  * nothing here declares a page, a query or a read of its own. The boundary
@@ -45,6 +46,7 @@ import {
   nativeHttpPageItemsMax,
   textCodePointsCount,
   threadMessageCharsMax,
+  threadTitleCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
 } from "../contract/http.ts";
@@ -85,6 +87,12 @@ export interface ThreadRecord {
   readonly state: SessionState;
   readonly turns: number;
   readonly agentReference?: string;
+  /**
+   * The head of the earliest message a member put in this thread, as the
+   * durable read bounds it, and absent until one has. It is what `threadTitle`
+   * names the thread from and the only reason either read carries it.
+   */
+  readonly firstMessage?: string;
 }
 
 /**
@@ -253,6 +261,8 @@ export interface ThreadEntry {
   readonly mine: boolean;
   readonly turns: number;
   readonly agentReference?: string;
+  /** What the thread is about, absent until a member has said something in it. */
+  readonly title?: string;
 }
 
 export type ThreadsRead =
@@ -361,11 +371,34 @@ export const threadBacklogRetrySeconds = 60;
 export const threadSeededDraftsMax = nativeHttpPageItemsMax;
 export const threadSeededRefusalsMax = agenticRefusalsAnsweredMax;
 
+/**
+ * What a thread is called: the first non-empty line of the first message a
+ * member put in it, run onto one line and cut to `threadTitleCharsMax` code
+ * points. A thread nobody has written in has no title, and a caller names it
+ * the way it was named before.
+ */
+export function threadTitle(firstMessage: string): string | undefined {
+  const line = firstMessage
+    .split("\n")
+    .map((each) => each.trim())
+    .find((each) => each.length > 0);
+  if (line === undefined) return undefined;
+  const collapsed = line.replace(/\s+/gu, " ");
+  const title = [...collapsed].slice(0, threadTitleCharsMax).join("").trimEnd();
+  if (textCodePointsCount(title) > threadTitleCharsMax)
+    throw new RangeError("a thread title is cut to its bound");
+  return title;
+}
+
 /** One record as the wire names it, with the reader's own principal deciding `mine`. */
 export function threadEntry(
   record: ThreadRecord,
   principal: Principal,
 ): ThreadEntry {
+  const title =
+    record.firstMessage === undefined
+      ? undefined
+      : threadTitle(record.firstMessage);
   return {
     session: record.session,
     ...(record.owner === undefined ? {} : { owner: record.owner }),
@@ -375,6 +408,7 @@ export function threadEntry(
     ...(record.agentReference === undefined
       ? {}
       : { agentReference: record.agentReference }),
+    ...(title === undefined ? {} : { title }),
   };
 }
 

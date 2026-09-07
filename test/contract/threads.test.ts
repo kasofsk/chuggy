@@ -31,6 +31,7 @@ import {
   threadSeedingCharsMax,
   threadWakeCharsMax,
   threadSeedingFixedCharsMax,
+  threadTitleCharsMax,
   threadTurnRecordedCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
@@ -148,12 +149,13 @@ test("a thread's backlog and its answered tail are inside the mailbox's own", ()
 });
 
 /**
- * A listing carries three identities, a count and a flag per thread, so a full
- * page is bounded by the identity bound and nothing else.
+ * A listing carries three identities, a title, a count and a flag per thread,
+ * so a full page is bounded by the identity bound and the title bound.
  */
 test("a full page of threads fits one wire body", () => {
   assert.ok(
-    threadsAnsweredMax * nativeHttpPathSegmentCharsMax * 3 <=
+    threadsAnsweredMax * nativeHttpPathSegmentCharsMax * 3 +
+      threadsAnsweredMax * threadTitleCharsMax <=
       nativeHttpBodyBytesMax,
   );
 });
@@ -196,6 +198,38 @@ test("a thread whose owner's membership is gone still parses", () => {
   });
 
   assert.equal(parsed.owner, undefined);
+});
+
+/**
+ * The console parses these bodies, so a title the server let past its bound
+ * would fail the whole body and blank the rail for every reader. The refusal is
+ * measured in code points, which is why the case is written in emoji: a title
+ * of that many code points is twice as many UTF-16 units and four times as many
+ * bytes, and only the code-point measure admits it.
+ */
+test("a title is carried to its bound and refused past it, by code points", () => {
+  const title = "\u{1F9F5}".repeat(threadTitleCharsMax);
+  const read = {
+    session: "thread-geoff",
+    owner: "geoff",
+    state: "Open",
+    mine: false,
+    turns: [turn],
+    streams: [],
+  };
+
+  assert.equal(
+    threadEntryResponseSchema.parse({ ...entry, title }).title,
+    title,
+  );
+  assert.equal(threadResponseSchema.parse({ ...read, title }).title, title);
+  assert.equal(threadEntryResponseSchema.parse(entry).title, undefined);
+  assert.throws(() =>
+    threadEntryResponseSchema.parse({ ...entry, title: `${title}\u{1F9F5}` }),
+  );
+  assert.throws(() =>
+    threadResponseSchema.parse({ ...read, title: `${title}\u{1F9F5}` }),
+  );
 });
 
 test("a listing longer than one answers with is refused", () => {

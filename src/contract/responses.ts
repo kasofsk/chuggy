@@ -40,6 +40,7 @@ import {
   sessionTurnResultCharsMax,
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
+  threadTitleCharsMax,
   threadTurnRecordedCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
@@ -1010,6 +1011,9 @@ export const threadEntryResponseSchema = z.object({
   mine: z.boolean(),
   turns: countSchema,
   agentReference: identitySchema.optional(),
+  /** What the thread is about, derived from its first message and absent until
+   * a member has sent one. */
+  title: z.string().max(threadTitleCharsMax).optional(),
 });
 export type ThreadEntryResponse = z.infer<typeof threadEntryResponseSchema>;
 
@@ -1048,6 +1052,7 @@ export const threadResponseSchema = z.object({
   state: z.enum(threadStandings),
   mine: z.boolean(),
   agentReference: identitySchema.optional(),
+  title: z.string().max(threadTitleCharsMax).optional(),
   turns: z.array(threadTurnResponseSchema).max(threadTurnsAnsweredMax),
   /** The cursor an older page is asked for with, absent where this page holds the first turn. */
   nextBefore: countSchema.optional(),

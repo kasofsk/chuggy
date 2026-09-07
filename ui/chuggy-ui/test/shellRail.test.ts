@@ -58,7 +58,9 @@ test("the reader's own thread is labelled, first, and withholds the offer", () =
     "Your thread",
     "owner-one",
   ]);
-  expect(entries[1]?.mine).toBe(true);
+  expect(entries[1]?.yours, "the label already says whose thread it is").toBe(
+    false,
+  );
 });
 
 test("a second thread of the reader's own is disambiguated by its session tail", () => {
@@ -113,6 +115,58 @@ test("three threads whose sessions share their first eight characters still read
     "Your thread · 66669999",
   ]);
   expect(new Set(labels).size).toBe(labels.length);
+});
+
+test("a titled thread is labelled by its title, and is not an identity", () => {
+  const entries = conversations({
+    partition: atlas,
+    threads: [
+      thread({ session: "s-two", title: "why is 42 blocked" }),
+      thread({ session: "s-mine", mine: true, title: "the rail is wrong" }),
+    ],
+  });
+  expect(entries.map((entry) => entry.label)).toEqual([
+    "Lead",
+    "the rail is wrong",
+    "why is 42 blocked",
+  ]);
+  expect(entries.map((entry) => entry.identity)).toEqual([
+    undefined,
+    false,
+    false,
+  ]);
+});
+
+test("a titled thread of the reader's own is still marked as theirs", () => {
+  const entries = conversations({
+    partition: atlas,
+    threads: [thread({ session: "s-mine", mine: true, title: "ship it" })],
+  });
+  expect(entries[1]?.label).toBe("ship it");
+  expect(
+    entries[1]?.yours,
+    "a title took the only thing saying whose thread it is",
+  ).toBe(true);
+});
+
+test("a thread nobody has written in keeps the label it had", () => {
+  const entries = conversations({
+    partition: atlas,
+    threads: [
+      thread({ session: "s-mine", mine: true }),
+      thread({ session: "s-two", owner: "ada" }),
+    ],
+  });
+  expect(entries.map((entry) => entry.label)).toEqual([
+    "Lead",
+    "Your thread",
+    "ada",
+  ]);
+  expect(entries.map((entry) => entry.identity)).toEqual([
+    undefined,
+    false,
+    true,
+  ]);
 });
 
 test("a thread whose owner is gone is labelled by its session", () => {
@@ -171,7 +225,7 @@ test("the rail holds no more threads than the listing may answer", () => {
     thread({ session: `s-${String(at)}` }),
   );
   const entries = conversations({ partition: atlas, threads: many });
-  expect(entries.filter((entry) => entry.mine === false).length).toBe(
+  expect(entries.filter((entry) => entry.yours === false).length).toBe(
     threadsAnsweredMax,
   );
 });

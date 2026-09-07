@@ -181,6 +181,39 @@ test("a long session id's truncate and column-cap classes land on the right elem
   expect(list?.className.split(" ")).toContain("grid-cols-[minmax(0,1fr)]");
 });
 
+function titledThreadApi(): typeof fetch {
+  return ((url: string) => {
+    if (url.endsWith("/threads"))
+      return Promise.resolve(
+        answer({
+          threads: [
+            {
+              session: "thread-mine",
+              owner: "geoff",
+              state: "Open",
+              mine: true,
+              turns: 2,
+              title: "why is 42 blocked",
+            },
+          ],
+        }),
+      );
+    return Promise.resolve(answer({ projects: [atlas] }));
+  }) as unknown as typeof fetch;
+}
+
+/** A title says what the conversation is and no longer says whose it is, so
+ * the marker is what is left carrying that. */
+test("a titled thread draws its title and is still marked as the reader's", async () => {
+  await mounted(titledThreadApi());
+  const label = screen.getByText("why is 42 blocked");
+  expect(
+    label.closest("code"),
+    "a title was drawn as an identifier",
+  ).toBeNull();
+  expect(label.closest("a")?.textContent).toContain("Yours");
+});
+
 test("a refusal draws under New thread and the button re-enables", async () => {
   await mounted(threadOpenApi({ refuse: true }));
   const button = screen.getByRole("button", { name: "New thread" });

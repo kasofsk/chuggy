@@ -48,14 +48,19 @@ export type RailActionKind = "OpenThread";
 interface RailEntryCommon {
   readonly id: string;
   readonly label: string;
+  /** Whether the label is an identifier rather than words, which is what the
+   * renderer draws as one. */
+  readonly identity?: boolean | undefined;
   readonly standing?: RailStanding | undefined;
   readonly count?: string | undefined;
-  readonly mine?: boolean | undefined;
+  /** The reader's own thread whose label stopped saying so, which is what the
+   * renderer marks: a thread named by its title lost the only words naming its
+   * owner, and one still labelled `Your thread` says it already. */
+  readonly yours?: boolean | undefined;
 }
 
 /** One line of the rail: a route to follow, or an action to take — never
- * both. `mine` is the reader's own thread, which is labelled rather than
- * identified; every other label is an identity. */
+ * both. */
 export type RailEntry =
   | (RailEntryCommon & {
       readonly to: RailRoute;
@@ -90,13 +95,17 @@ export interface ShellRailInput {
  * the distinguishing hex lives in the UUID's own tail. */
 const sessionCharsShort = 8;
 
-/** `Your thread` is the reader's most recent; a second one of theirs is the
- * same words disambiguated by its session's tail, which draws from the
- * random half of the id rather than the prefix every session shares. */
+/** A thread is its title where the server derived one. Until a member has said
+ * anything there is nothing to derive it from, so the fallback is an identity:
+ * the owner's, or the session's where the membership is gone — and the
+ * reader's own is `Your thread`, a second of theirs disambiguated by its
+ * session's tail, which draws from the random half of the id rather than the
+ * prefix every session shares. */
 function shellRailThreadLabel(
   thread: ThreadEntryResponse,
   mostRecentMine: boolean,
 ): string {
+  if (thread.title !== undefined) return thread.title;
   if (!thread.mine) return thread.owner ?? thread.session;
   if (mostRecentMine) return "Your thread";
   return `Your thread · ${thread.session.slice(-sessionCharsShort)}`;
@@ -110,10 +119,11 @@ function shellRailThreadEntry(
   return {
     id: thread.session,
     label: shellRailThreadLabel(thread, mostRecentMine),
+    identity: thread.title === undefined && !thread.mine,
     to: railRoutes.thread,
     params: { ...params, session: thread.session },
     standing: { word: thread.state, tone: threadStandingTone(thread.state) },
-    mine: thread.mine,
+    yours: thread.mine && thread.title !== undefined,
   };
 }
 

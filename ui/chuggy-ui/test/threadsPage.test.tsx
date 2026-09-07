@@ -169,6 +169,19 @@ test("a thread whose owner is gone is listed as Orphaned, in the parked hue", as
   ).toBe("pill pill-parked");
 });
 
+/** A titled row is named by what is in the thread; an untitled one has only
+ * its session to be named by, and drawing that is what keeps it reachable. */
+test("a row is named by its title where the read derived one", async () => {
+  drawThreads(() => ({
+    threads: [
+      threadEntry({ session: threadMineSession, mine: true, title: "ship it" }),
+      threadEntry({ session: threadOtherSession }),
+    ],
+  }));
+  await mountThreads();
+  expect(rowSessions()).toStrictEqual(["ship it", threadOtherSession]);
+});
+
 test("a member with a thread is offered no Open", async () => {
   drawThreads(threadsBody);
   await mountThreads();
