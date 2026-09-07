@@ -28,11 +28,6 @@
     gap: var(--space-3);
   }
 
-  .panel-flush {
-    padding-left: 0;
-    padding-right: 0;
-  }
-
   /* A button carries the browser's own box until something takes it off, and
      this trigger is a heading to press rather than a control. */
   .panel-trigger {
