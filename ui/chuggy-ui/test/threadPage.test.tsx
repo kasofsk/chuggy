@@ -32,6 +32,7 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import { elementScrollToStubbed } from "./scrolling.ts";
+import { ShellSlotHarness, styleless } from "./shellSlotHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import {
   threadMessageCharsMax,
@@ -111,10 +112,13 @@ async function mountThread(): Promise<ReturnType<typeof openedStream>> {
       client={new QueryClient()}
       transport={server.ports.fetch}
     >
-      <ThreadPage />
+      <ShellSlotHarness>
+        <ThreadPage />
+      </ShellSlotHarness>
     </ScreenHarness>,
   );
   await settled();
+  styleless();
   return server;
 }
 
@@ -170,16 +174,27 @@ async function pressed(said: string): Promise<void> {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
   });
   await settled();
+  styleless();
 }
 
 test("the head names the thread, its standing and whose it is", async () => {
   drawThread(() => ({ thread: threadBody({}) }));
   await mountThread();
   expect(screen.getByRole("heading", { name: "Thread" })).toBeDefined();
-  expect(screen.getAllByText(threadMineSession).length).toBeGreaterThan(0);
-  expect(screen.getByText("Open")).toBeDefined();
-  expect(screen.getByText("Mine")).toBeDefined();
-  expect(screen.getByText("geoff")).toBeDefined();
+  expect(screen.getAllByText("Open").length).toBeGreaterThan(0);
+  expect(screen.getByText("Yours")).toBeDefined();
+  expect(screen.getAllByText("geoff").length).toBeGreaterThan(0);
+});
+
+/** The bar's own title never wraps, so a narrow reader needs its chips to run
+ * onto a line of their own rather than under the details toggle. */
+test("the bar's chips wrap on their own rather than crowd the title", async () => {
+  drawThread(() => ({ thread: threadBody({}) }));
+  await mountThread();
+  const chips = screen.getByRole("heading", {
+    name: "Thread",
+  }).nextElementSibling;
+  expect(chips?.className).toContain("flex-wrap");
 });
 
 /**
@@ -207,6 +222,7 @@ test("Close on any open thread posts to its close route and nothing else", async
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
   });
   await settled();
+  styleless();
   expect(server.posted()).toStrictEqual([
     `/api/v1/tenants/acme/projects/atlas/threads/${threadOtherSession}/close`,
   ]);
@@ -240,8 +256,9 @@ test("a close the server refused says so and leaves the standing alone", async (
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
   });
   await settled();
+  styleless();
   expect(screen.getByText(/^Refused · /u)).toBeDefined();
-  expect(screen.getByText("Open")).toBeDefined();
+  expect(screen.getAllByText("Open").length).toBeGreaterThan(0);
 });
 
 test("my thread draws a composer", async () => {
@@ -313,6 +330,7 @@ test("a backlogged mailbox draws the notice, keeps the text and retries the same
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
   });
   await settled();
+  styleless();
   const later = server.posts().at(-1) as { readonly turn: string };
   expect(
     later.turn,
@@ -749,7 +767,7 @@ test("a thread whose owner is gone stands Orphaned", async () => {
     thread: threadBody({ orphaned: true, mine: false }),
   }));
   await mountThread();
-  expect(screen.getByText("Orphaned")).toBeDefined();
+  expect(screen.getAllByText("Orphaned").length).toBeGreaterThan(0);
 });
 
 /** The transcript is the lead's own walk over a different session's store, and

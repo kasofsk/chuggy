@@ -1,0 +1,8 @@
+/* The question box's own height, sized to its text rather than the space
+   scale: an `em` names no step of it, so it has no utility. */
+
+@layer page {
+  .inquiry-ask-text {
+    min-height: 6em;
+  }
+}

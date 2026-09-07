@@ -32,6 +32,7 @@ import {
 } from "./screenHarness.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
+import { ShellSlotHarness, styleless } from "./shellSlotHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import { inquiryBoxesHeld } from "../app/browser/lead/inquiryBoxes.ts";
 import { sessionStorePageBatchesMax } from "../../../src/contract/http.ts";
@@ -95,10 +96,13 @@ async function mountLead(): Promise<ReturnType<typeof openedStream>> {
       client={new QueryClient()}
       transport={server.ports.fetch}
     >
-      <LeadPage />
+      <ShellSlotHarness>
+        <LeadPage />
+      </ShellSlotHarness>
     </ScreenHarness>,
   );
   await settled();
+  styleless();
   return server;
 }
 
@@ -129,19 +133,33 @@ function exchangeCount(): number {
   return document.querySelectorAll('[data-message-id$="-ask"]').length;
 }
 
+/** Each question, read off the one `<p>` its own listitem holds, scoped to
+ * the inquiries panel since the refusals ledger draws listitems of its own. */
 function inquiryQuestions(): readonly string[] {
-  return [...document.querySelectorAll(".lead-inquiry-question")].map(
-    (question) => question.textContent ?? "",
-  );
+  const section = screen
+    .getByRole("heading", { name: "Inquiries" })
+    .closest("section");
+  return within(section as HTMLElement)
+    .queryAllByRole("listitem")
+    .map((row) => row.querySelector("p")?.textContent ?? "");
 }
 
 test("the head names the session, its state and the cursor it stands on", async () => {
   await drawLead(() => opening);
   expect(screen.getByRole("heading", { name: "Lead" })).toBeDefined();
-  expect(screen.getAllByText(leadSession).length).toBeGreaterThan(0);
   expect(screen.getByText("Open")).toBeDefined();
   expect(screen.getByText("Monitoring")).toBeDefined();
   expect(screen.getByText("1204")).toBeDefined();
+});
+
+/** The bar's own title never wraps, so a narrow reader needs its chips to run
+ * onto a line of their own rather than under the details toggle. */
+test("the bar's chips wrap on their own rather than crowd the title", async () => {
+  await drawLead(() => opening);
+  const chips = screen.getByRole("heading", {
+    name: "Lead",
+  }).nextElementSibling;
+  expect(chips?.className).toContain("flex-wrap");
 });
 
 test("the mailbox tail draws what the pod measured of each turn", async () => {
@@ -281,13 +299,9 @@ test("a Queued lead turn appends a running exchange with the kind word and no te
   vi.stubGlobal("fetch", api.fetch);
   await mountLead();
   expect(exchangeCount()).toBe(1);
-  const conversation = screen
-    .getByRole("heading", { name: "Conversation" })
-    .closest("section");
-  expect(
-    within(conversation as HTMLElement).getByText("Observation"),
-  ).toBeDefined();
-  expect(within(conversation as HTMLElement).getByText("Queued")).toBeDefined();
+  const conversation = screen.getByRole("region", { name: "Conversation" });
+  expect(within(conversation).getByText("Observation")).toBeDefined();
+  expect(within(conversation).getByText("Queued")).toBeDefined();
 });
 
 /** One state, one word. A lead with no store yet says so once. */
@@ -1026,7 +1040,9 @@ async function drawLeadPage(fetching: typeof fetch): Promise<LeadNavigation> {
       client={client}
       transport={server.ports.fetch}
     >
-      <LeadPage />
+      <ShellSlotHarness>
+        <LeadPage />
+      </ShellSlotHarness>
     </ScreenHarness>
   );
   const page = render(under(drawnPartition));
@@ -1085,6 +1101,7 @@ test("a project switch and a return leave the box and its pair where they were",
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
   });
   await settled();
+  styleless();
   expect(screen.getByText(/^Failed · /u)).toBeDefined();
   await moveTo({ tenant: "acme", project: "beta" });
   expect(
@@ -1100,6 +1117,7 @@ test("a project switch and a return leave the box and its pair where they were",
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
   });
   await settled();
+  styleless();
   expect(
     asked.posted.map((post) => post.url.includes("/projects/atlas/")),
   ).toStrictEqual([true, true]);
@@ -1125,6 +1143,7 @@ test("a click away to another screen and back keeps the box and its pair", async
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
   });
   await settled();
+  styleless();
   expect(screen.getByText(/^Failed · /u)).toBeDefined();
   await away();
   expect(
@@ -1135,6 +1154,7 @@ test("a click away to another screen and back keeps the box and its pair", async
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
   });
   await settled();
+  styleless();
   expect(asked.posted.length).toBe(2);
   expect(
     asked.posted[1]?.session,
@@ -1164,6 +1184,7 @@ test("a visit to a project with no lead keeps the box of the one that has it", a
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
   });
   await settled();
+  styleless();
   await moveTo(absent);
   expect(screen.getByRole("heading", { name: "No lead" })).toBeDefined();
   await moveTo(leadPartition);
@@ -1175,6 +1196,7 @@ test("a visit to a project with no lead keeps the box of the one that has it", a
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
   });
   await settled();
+  styleless();
   expect(
     asked.posted[1]?.session,
     "a visit to a leadless project forked another door twice",

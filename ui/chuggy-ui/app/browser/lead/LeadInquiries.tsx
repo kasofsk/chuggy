@@ -86,6 +86,8 @@ import { Pill } from "../ui/Pill.tsx";
 import { QuotedText } from "../ui/QuotedText.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
 
+import "./LeadInquiries.css";
+
 export const leadInquiriesListName = "inquiries";
 
 /**
@@ -185,12 +187,12 @@ function LeadAsk(props: {
     })();
   };
   return (
-    <div className="lead-ask">
+    <div className="grid min-w-0 justify-items-start gap-2 pb-3">
       <LeadAskNotice ask={box.ask} />
       <Fields>
         <Field name="Question">
           <textarea
-            className="lead-ask-text"
+            className="inquiry-ask-text w-full resize-y"
             aria-label="Question"
             aria-invalid={shown !== undefined}
             value={box.typed}
@@ -250,9 +252,9 @@ function LeadInquiryRow(props: {
 }): ReactNode {
   const inquiry = props.inquiry;
   return (
-    <li className="lead-inquiry">
-      <div className="lead-inquiry-head">
-        <span className="lead-inquiry-asker">
+    <li className="grid min-w-0 gap-1 border-t border-edge pt-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-ink-3 max-w-measure truncate font-mono text-xs">
           {inquiryAskerNamed(inquiry.asker)}
         </span>
         {inquiry.mine ? <Pill tone="neutral">Mine</Pill> : null}
@@ -266,7 +268,7 @@ function LeadInquiryRow(props: {
         <Figure figure={instantFigure(inquiry.askedAt, props.nowMs)} />
         <LeadInquiryRollup inquiry={inquiry} />
       </div>
-      <p className="lead-inquiry-question">{inquiry.question}</p>
+      <p className="max-w-measure">{inquiry.question}</p>
       {inquiry.answer === undefined ? null : (
         <QuotedText>{inquiry.answer}</QuotedText>
       )}
@@ -282,7 +284,7 @@ function LeadInquiryList(props: {
   if (props.inquiries.inquiries.length === 0)
     return <EmptyState label="No inquiries" />;
   return (
-    <ol className="lead-inquiries">
+    <ol className="grid min-w-0 list-none gap-3 p-0">
       {props.inquiries.inquiries.map((inquiry) => (
         <LeadInquiryRow
           key={inquiry.session}

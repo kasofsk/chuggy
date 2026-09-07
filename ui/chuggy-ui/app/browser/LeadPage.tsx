@@ -55,16 +55,12 @@ import { LeadInquiries, useInquiryBoxes } from "./lead/LeadInquiries.tsx";
 import type { InquiryBoxesHeld } from "./lead/LeadInquiries.tsx";
 import { LeadRefusals } from "./lead/LeadRefusals.tsx";
 import { LeadNote, useLeadTranscript } from "./lead/LeadTranscript.tsx";
+import { DetailsSlot, TopBarSlot } from "./shell/slots.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
-import { Field, Fields } from "./ui/Fields.tsx";
 import { Figure } from "./ui/Figure.tsx";
-import { PageHead } from "./ui/PageHead.tsx";
-import { Panel } from "./ui/Panel.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
-
-import "./lead/lead.css";
 
 export const leadListName = "lead";
 
@@ -94,30 +90,25 @@ export function useLead(
   return state;
 }
 
-function LeadHead(props: { readonly lead: LeadResponse }): ReactNode {
+/** The bar's own title, where the session stands, how closely it needs
+ * watching, and the cursor its mailbox is at. */
+function LeadTopBar(props: { readonly lead: LeadResponse }): ReactNode {
   const lead = props.lead;
   return (
-    <>
-      <PageHead
-        title="Lead"
-        identity={{ text: lead.session, title: lead.session }}
-      >
+    <TopBarSlot>
+      <h1 className="text-md font-strong text-ink-1 truncate">Lead</h1>
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
         <Pill tone={sessionStateTone(lead.state)} emphasis>
           {lead.state}
         </Pill>
         <Pill tone={selectorAttentionTone(lead.attention)}>
           {lead.attention}
         </Pill>
-      </PageHead>
-      <Fields variant="inline">
-        <Field name="Reference" absent={lead.agentReference === undefined}>
-          {lead.agentReference ?? "None"}
-        </Field>
-        <Field name="Cursor">
-          <span className="num">{lead.notificationCursor}</span>
-        </Field>
-      </Fields>
-    </>
+        <span className="num text-ink-3 text-sm">
+          {lead.notificationCursor}
+        </span>
+      </div>
+    </TopBarSlot>
   );
 }
 
@@ -191,6 +182,33 @@ function LeadTurns(props: { readonly lead: LeadResponse }): ReactNode {
   );
 }
 
+/** What the lead is beside the conversation: its mailbox tail, what it
+ * decided, what it refuses and the inquiries asked of it. Shown by default —
+ * the lead's own state is what a reader came here to watch. */
+function LeadDetails(props: {
+  readonly partition: PartitionIdentity;
+  readonly state: PanelState<LeadResponse>;
+  readonly inquiries: InquiryBoxesHeld;
+  readonly nowMs: number;
+}): ReactNode {
+  const lead = props.state.state === "Ready" ? props.state.value : undefined;
+  return (
+    <DetailsSlot openFirst>
+      <DataPanel title="Turns" state={props.state}>
+        {(value) => <LeadTurns lead={value} />}
+      </DataPanel>
+      <LeadDecisions partition={props.partition} nowMs={props.nowMs} />
+      <LeadRefusals partition={props.partition} nowMs={props.nowMs} />
+      <LeadInquiries
+        partition={props.partition}
+        head={lead?.agentReference}
+        held={props.inquiries}
+        nowMs={props.nowMs}
+      />
+    </DetailsSlot>
+  );
+}
+
 function LeadBody(props: {
   readonly partition: PartitionIdentity;
   readonly state: PanelState<LeadResponse>;
@@ -210,22 +228,21 @@ function LeadBody(props: {
   );
   return (
     <>
-      {lead === undefined ? null : <LeadHead lead={lead} />}
-      <DataPanel title="Turns" state={props.state}>
-        {(value) => <LeadTurns lead={value} />}
-      </DataPanel>
-      <LeadNote note={lead?.handoffNote} />
-      <Panel title="Conversation">
-        <Conversation exchanges={exchanges} empty="No conversation" />
-      </Panel>
-      <LeadDecisions partition={props.partition} nowMs={props.nowMs} />
-      <LeadRefusals partition={props.partition} nowMs={props.nowMs} />
-      <LeadInquiries
+      {lead === undefined ? null : <LeadTopBar lead={lead} />}
+      <LeadDetails
         partition={props.partition}
-        head={lead?.agentReference}
-        held={props.inquiries}
+        state={props.state}
+        inquiries={props.inquiries}
         nowMs={props.nowMs}
       />
+      <LeadNote note={lead?.handoffNote} />
+      <div
+        role="region"
+        aria-label="Conversation"
+        className="flex-1 min-h-0 min-w-0"
+      >
+        <Conversation exchanges={exchanges} empty="No conversation" />
+      </div>
     </>
   );
 }
@@ -242,13 +259,11 @@ export function LeadPage(): ReactNode {
   if (state.state === "Absent")
     return <EmptyState label="No lead" variant="page" />;
   return (
-    <div className="lead">
-      <LeadBody
-        partition={partition}
-        state={state}
-        inquiries={inquiries}
-        nowMs={nowMs}
-      />
-    </div>
+    <LeadBody
+      partition={partition}
+      state={state}
+      inquiries={inquiries}
+      nowMs={nowMs}
+    />
   );
 }

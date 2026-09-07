@@ -122,8 +122,8 @@ export function LeadNote(props: {
   const note = props.note;
   if (note === undefined || note.bytes === 0) return null;
   return (
-    <div className="lead-note-held">
-      <p className="lead-note-head">
+    <div className="grid min-w-0 gap-1 pb-3">
+      <p className="flex flex-wrap items-center gap-2">
         <span className="eyebrow">Handoff note</span>
         <span className="num">{note.bytes}</span>
         {note.truncated ? <Pill tone="parked">Truncated</Pill> : null}
