@@ -678,6 +678,25 @@ test("a dispatch budget past the wire's ceiling marks its own box", async () => 
   ).toBe("false");
 });
 
+/**
+ * THE FORM'S ROWS STRETCH AND SAVE KEEPS ITS OWN WIDTH. `justify-items-start`
+ * on the form's grid would shrink-wrap every row to its widest control's own
+ * content, which is what left the North Star, the base prompt and the limit
+ * boxes sitting at a browser's default control width inside a panel many times
+ * wider; Save is the one child that should not stretch to the row's width.
+ */
+test("the form's grid does not shrink-wrap its rows, and Save keeps its own width", async () => {
+  await drawSettings(() => ({ body: {}, status: 200 }));
+  const form = screen
+    .getByLabelText<HTMLTextAreaElement>("North Star")
+    .closest("div.grid");
+  expect(form?.classList.contains("justify-items-start")).toBe(false);
+  const save = screen.getByRole("button", { name: "Save" });
+  expect(save.parentElement?.classList.contains("justify-self-start")).toBe(
+    true,
+  );
+});
+
 /** The served policy refuses `style-src` but `'self'`, so nothing this page
  * draws — a save answered included — may append a runtime style element. */
 test("nothing this page draws is a runtime style element", async () => {
