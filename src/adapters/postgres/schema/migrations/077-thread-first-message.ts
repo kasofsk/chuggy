@@ -17,8 +17,7 @@
  * `threadTurnBoundaryHeading` where the input carries it, else
  * `threadTurnRecordedLastLine` and the blank line after it, else the whole
  * input is the member's words. Both markers are the contract's own, so the
- * console and this definer cannot come to disagree about where one turn
- * divides.
+ * console and this definer split on the same text.
  *
  * BOTH READS ARE DROPPED AND CREATED. A column added to a `RETURNS TABLE` is a
  * new return type, which `CREATE OR REPLACE` refuses; the drop takes the owner,

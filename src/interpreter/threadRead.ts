@@ -21,9 +21,10 @@
  *
  * THE MAILBOX IS PAGED AND THE LISTING IS NOT. One thread turn carries what the
  * member typed and what came back, and either alone may weigh most of a wire
- * body; a listing entry carries three identities and a count. So a thread read
- * takes a page of its own mailbox, newest last and older pages walked backwards
- * the way a conversation is scrolled, and a listing answers whole.
+ * body; a listing entry carries three identities, a bounded title and a
+ * count. So a thread read takes a page of its own mailbox, newest last and
+ * older pages walked backwards the way a conversation is scrolled, and a
+ * listing answers whole.
  *
  * THE TRANSCRIPT IS THE LEAD'S WALK OVER ANOTHER SESSION, and literally so:
  * nothing here declares a page, a query or a read of its own. The boundary
