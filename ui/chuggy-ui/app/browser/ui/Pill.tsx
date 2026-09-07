@@ -3,9 +3,8 @@
  *
  * Total over `pillTones`. The tone is chosen by `core/tones.ts` from the wire's
  * own words, so a roster the wire grows stops compiling there and never reaches
- * this as `neutral`. The mark is decorative and the word is the signal, which
- * is what lets colour carry the meaning without being the only thing that does,
- * and the face is monospace so a column of pills aligns.
+ * this as `neutral`. The mark is decorative and the word is the signal, so the
+ * chip reads the same to someone who sees no colour in it at all.
  */
 
 import type { ReactNode } from "react";
