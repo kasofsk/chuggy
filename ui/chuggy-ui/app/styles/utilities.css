@@ -11,6 +11,7 @@
   --color-surface-2: var(--surface-2);
   --color-surface-inverse: var(--surface-inverse);
   --color-bubble: var(--bubble);
+  --color-scrim: var(--scrim);
 
   --color-ink-1: var(--ink-1);
   --color-ink-2: var(--ink-2);
@@ -67,8 +68,10 @@
   --radius-1: var(--radius-1);
   --radius-2: var(--radius-2);
   --radius-3: var(--radius-3);
+  --radius-circle: var(--radius-circle);
 
   /* `--container-*` is the namespace `w-` and `max-w-` read a named width from. */
+  --container-page: var(--width-page);
   --container-rail: var(--width-rail);
   --container-column: var(--width-column);
   --container-aside: var(--width-aside);

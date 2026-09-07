@@ -18,6 +18,8 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
 import { Shell } from "../app/browser/Shell.tsx";
+import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
+import { viewportAtEm } from "./viewport.ts";
 import {
   answer,
   apiDouble,
@@ -83,10 +85,12 @@ const served = serving({
   phase: () => answer({ partition: atlas, sequence: 9, tickets: [] }),
 });
 
+/** The count the rail's inbox entry carries after its label, and nothing where
+ * the inbox is clear. */
 function badge(): string | undefined {
-  return (
-    screen.queryByLabelText("Tickets needing you")?.textContent ?? undefined
-  );
+  const entry = screen.queryByRole("link", { name: /Inbox/u });
+  const count = entry?.textContent?.replace("Inbox", "") ?? "";
+  return count === "" ? undefined : count;
 }
 
 function openActions(actions: readonly unknown[]): string {
@@ -102,6 +106,7 @@ function mounted(route: (url: string) => Response): {
   readonly server: ReturnType<typeof openedStream>;
 } {
   const api = apiDouble({ operation: operationAt("Pending"), route });
+  viewportAtEm(viewportDeskEm);
   vi.stubGlobal("fetch", api.fetch);
   const server = openedStream();
   render(

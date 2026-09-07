@@ -1,46 +1,37 @@
 /**
- * The shell every screen is drawn inside: the partition it is looking at, the
- * switcher that changes it, the primary nav, the theme, the session, and the
- * stream's own state.
+ * One frame for every screen: the rail beside the page or over it, the bar
+ * above it, the page scrolling between them, and the slot under it a composer
+ * is pinned to. A page without a composer leaves that slot empty and scrolls in
+ * the same middle a conversation does, which is what makes a ticket page and a
+ * thread page the same frame.
  *
  * The banner is not decoration — it is the only place a reader learns that what
  * the screens below are showing is no longer arriving live.
  */
 
-import { Link, Outlet, useNavigate } from "@tanstack/react-router";
+import { Outlet } from "@tanstack/react-router";
+import { Dialog, Separator } from "radix-ui";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import { apiProjectInventoryAll } from "../core/apiRoutes.ts";
-import { inboxCountLabel } from "../core/inboxList.ts";
-import { lastProjectWrite } from "../core/lastProject.ts";
 import {
   projectStreamCarrying,
   projectStreamUnanswered,
 } from "../core/projectStream.ts";
-import { usePanelInventory } from "./api.ts";
-import { Footer } from "./Footer.tsx";
-import { useInboxRows } from "./Inbox.tsx";
-import { persistentStore } from "./ports.ts";
-import { useSessionHolder } from "./session.tsx";
+import { DetailsPane } from "./shell/DetailsPane.tsx";
+import { Rail } from "./shell/Rail.tsx";
+import { ShellSlots, useShellSlotHolder } from "./shell/slots.tsx";
+import { TopBar } from "./shell/TopBar.tsx";
+import { useViewportAtLeastEm, viewportTwoColumnEm } from "./shell/viewport.ts";
 import {
   useProjectFallbackExhausted,
   useProjectStreamStatus,
 } from "./stream.tsx";
-import {
-  themeChoiceApply,
-  themeChoiceRead,
-  themeChoiceWrite,
-  themeChoices,
-} from "./theme.ts";
-import type { ThemeChoice } from "./theme.ts";
-import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
-import { Picker } from "./ui/Picker.tsx";
-import { Pill } from "./ui/Pill.tsx";
-import { ToggleGroup } from "./ui/ToggleGroup.tsx";
-import "./shell.css";
+import "./shell/shell.css";
+
+export { ThemeControl } from "./shell/Rail.tsx";
 
 /**
  * What the reader is told, which is the other half of what `useStreamFallback`
@@ -67,149 +58,116 @@ export function StreamBanner(): ReactNode {
   );
 }
 
-function ProjectSwitcher(props: {
-  readonly partition: PartitionIdentity;
-}): ReactNode {
-  const navigate = useNavigate();
-  const state = usePanelInventory((ports) => apiProjectInventoryAll(ports));
-  if (state.state !== "Ready")
-    return <Notice tone="parked" inline detail="Projects unavailable" />;
-  return (
-    <Picker
-      label="Project"
-      value={`${props.partition.tenant}/${props.partition.project}`}
-      options={state.value.map((candidate) => ({
-        value: `${candidate.tenant}/${candidate.project}`,
-        text: `${candidate.tenant} / ${candidate.project}`,
-      }))}
-      onChoose={(picked) => {
-        const chosen = state.value.find(
-          (candidate) => `${candidate.tenant}/${candidate.project}` === picked,
-        );
-        if (chosen === undefined) return;
-        lastProjectWrite(persistentStore, chosen);
-        void navigate({
-          to: "/$tenant/$project",
-          params: { tenant: chosen.tenant, project: chosen.project },
-        });
-      }}
-    />
-  );
-}
-
-/** The same union the inbox draws, so the count and the list are one value. */
-function InboxCount(props: {
-  readonly partition: PartitionIdentity;
-}): ReactNode {
-  const label = inboxCountLabel(useInboxRows(props.partition).union);
-  return label === undefined ? null : (
-    <span aria-label="Tickets needing you">
-      <Pill tone="parked">{label}</Pill>
-    </span>
-  );
-}
-
-/** The choice is applied before it is stored, so a store a browser refuses
- * still leaves the operator looking at the theme they asked for. */
-export function ThemeControl(): ReactNode {
-  const [chosen, setChosen] = useState<ThemeChoice>(() =>
-    themeChoiceRead(persistentStore),
-  );
-  return (
-    <ToggleGroup
-      label="Theme"
-      options={themeChoices}
-      value={chosen}
-      onChange={(value) => {
-        const choice = themeChoices.find((candidate) => candidate === value);
-        if (choice === undefined) return;
-        themeChoiceApply(document.documentElement, choice);
-        themeChoiceWrite(persistentStore, choice);
-        setChosen(choice);
-      }}
-    />
-  );
-}
-
 /**
  * The shell's own element, which states whether the stream is carrying because
  * the banner no longer answers that: the banner is silent when the stream is
  * live and silent again when a first connection has not been answered. A reader
  * has the banner; anything watching the console from outside has this.
  */
-export function ShellFrame(props: { readonly children: ReactNode }): ReactNode {
+export function ShellFrame(props: {
+  readonly children: ReactNode;
+  readonly twoColumn?: boolean | undefined;
+}): ReactNode {
   const carrying = projectStreamCarrying(useProjectStreamStatus());
+  const columns =
+    props.twoColumn === true
+      ? "grid-cols-[var(--width-rail)_auto_minmax(0,1fr)]"
+      : "grid-cols-1";
   return (
-    <div className="shell" data-stream={carrying ? "live" : "not-live"}>
+    <div
+      data-stream={carrying ? "live" : "not-live"}
+      className={`grid h-dvh overflow-hidden bg-surface-0 ${columns}`}
+    >
       {props.children}
     </div>
   );
 }
 
-function ShellNav(props: { readonly partition: PartitionIdentity }): ReactNode {
-  const params = {
-    tenant: props.partition.tenant,
-    project: props.partition.project,
-  };
-  const here = { className: "here" };
+function ShellMain(props: {
+  readonly narrow: boolean;
+  readonly title: string;
+}): ReactNode {
+  const holdBottom = useShellSlotHolder("bottom");
   return (
-    <nav className="shell-nav" aria-label="Primary">
-      <Link to="/$tenant/$project" params={params} activeProps={here}>
-        Project
-      </Link>
-      <Link to="/$tenant/$project/inbox" params={params} activeProps={here}>
-        Inbox <InboxCount partition={props.partition} />
-      </Link>
-      <Link to="/$tenant/$project/lead" params={params} activeProps={here}>
-        Lead
-      </Link>
-      <Link to="/$tenant/$project/threads" params={params} activeProps={here}>
-        Threads
-      </Link>
-      <Link to="/$tenant/$project/selector" params={params} activeProps={here}>
-        Selector
-      </Link>
-      <Link
-        to="/$tenant/$project/tickets/new"
-        params={params}
-        activeProps={here}
+    <div className="grid min-h-0 grid-rows-[auto_auto_auto_minmax(0,1fr)_auto]">
+      <div className="shell-banner">
+        <StreamBanner />
+      </div>
+      <TopBar narrow={props.narrow} title={props.title} />
+      <Separator.Root decorative className="h-px bg-edge" />
+      <DetailsPane>
+        <Outlet />
+      </DetailsPane>
+      <div ref={holdBottom} />
+    </div>
+  );
+}
+
+/**
+ * The rail as a drawer. Radix's dialog in its non-modal form, which is the one
+ * that mounts no `<style>` element: the modal form's scroll lock appends one
+ * and the served `style-src 'self'` refuses it. The scrim is this component's
+ * because the non-modal overlay draws nothing.
+ */
+function ShellDrawer(props: {
+  readonly partition: PartitionIdentity;
+  readonly onNavigate: () => void;
+}): ReactNode {
+  return (
+    <Dialog.Portal>
+      <div aria-hidden="true" className="fixed inset-0 z-10 bg-scrim" />
+      <Dialog.Content
+        aria-describedby={undefined}
+        className="fixed inset-y-0 left-0 z-20 w-rail outline-none"
       >
-        New ticket
-      </Link>
-    </nav>
+        <Dialog.Title className="visually-hidden">Console</Dialog.Title>
+        <Rail partition={props.partition} onNavigate={props.onNavigate} />
+      </Dialog.Content>
+    </Dialog.Portal>
+  );
+}
+
+function ShellDrawn(props: {
+  readonly partition: PartitionIdentity;
+}): ReactNode {
+  const twoColumn = useViewportAtLeastEm(viewportTwoColumnEm);
+  const [railOpen, setRailOpen] = useState(false);
+  const partition = props.partition;
+  return (
+    <Dialog.Root open={railOpen} onOpenChange={setRailOpen} modal={false}>
+      <ShellFrame twoColumn={twoColumn}>
+        {twoColumn ? (
+          <>
+            <Rail partition={partition} />
+            <Separator.Root
+              decorative
+              orientation="vertical"
+              className="w-px bg-edge"
+            />
+          </>
+        ) : (
+          <ShellDrawer
+            partition={partition}
+            onNavigate={() => {
+              setRailOpen(false);
+            }}
+          />
+        )}
+        <ShellMain
+          narrow={!twoColumn}
+          title={`${partition.tenant} / ${partition.project}`}
+        />
+      </ShellFrame>
+    </Dialog.Root>
   );
 }
 
 export function Shell(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
-  const holder = useSessionHolder();
   return (
-    <ShellFrame>
-      <header className="shell-head">
-        <Link className="brand" to="/">
-          chuggy
-        </Link>
-        <ProjectSwitcher partition={props.partition} />
-        <ShellNav partition={props.partition} />
-        <div className="shell-tools">
-          <ThemeControl />
-          <Button
-            variant="quiet"
-            size="sm"
-            onClick={() => {
-              void holder.signOut();
-            }}
-          >
-            Sign out
-          </Button>
-        </div>
-      </header>
-      <StreamBanner />
-      <main className="shell-body">
-        <Outlet />
-      </main>
-      <Footer />
-    </ShellFrame>
+    <ShellSlots>
+      <ShellDrawn partition={props.partition} />
+    </ShellSlots>
   );
 }
