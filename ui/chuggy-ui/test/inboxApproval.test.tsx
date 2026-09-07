@@ -44,7 +44,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
-  Outlet: () => null,
+  Outlet: () => <InboxScreen partition={atlas} />,
   useNavigate: () => () => undefined,
   useParams: () => atlas,
 }));
@@ -116,7 +116,6 @@ function mounted(route: (url: string) => Response): {
       transport={server.ports.fetch}
     >
       <Shell partition={atlas} />
-      <InboxScreen partition={atlas} />
     </ScreenHarness>,
   );
   return { api, server };
@@ -177,4 +176,22 @@ test("a phase page that refuses leaves the approval it did not list answerable",
     screen.getByText(/the tickets a phase parks could not be read/u),
   ).toBeDefined();
   expect(screen.queryByText("Inbox is clear")).toBeNull();
+});
+
+/** The served policy refuses `style-src` but `'self'`, so nothing drawn here —
+ * loaded, answered or clicked — may append a runtime style element. */
+test("nothing the inbox draws is a runtime style element", async () => {
+  const held = mounted(
+    serving({
+      actions: () => answer({ actions: [{ ticket: 11, ...approval }] }),
+      phase: () => answer({ partition: atlas, sequence: 9, tickets: [] }),
+    }),
+  );
+  await settled();
+  expect(document.querySelectorAll("style").length).toBe(0);
+  await turned(() => {
+    screen.getByRole("button", { name: "approve" }).click();
+  });
+  expect(held.api.submissions()).toBe(1);
+  expect(document.querySelectorAll("style").length).toBe(0);
 });

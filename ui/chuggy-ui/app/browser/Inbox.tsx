@@ -50,6 +50,7 @@ import {
 import type { InboxAnswers } from "../core/inboxAnswers.ts";
 import {
   inboxActionsPage,
+  inboxCountLabel,
   inboxPage,
   inboxPhases,
   inboxRefusalsPage,
@@ -109,14 +110,17 @@ import { useApiPorts, usePanelList } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { useProjectExecutionIndex } from "./executionIndex.ts";
 import { drawBytes } from "./ports.ts";
+import { TopBarSlot } from "./shell/slots.tsx";
 import {
   cellAbsent,
   cellExecutionUnread,
   ticketRowExecutionCell,
   TicketNumberCell,
 } from "./TicketCells.tsx";
+import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Pill } from "./ui/Pill.tsx";
+import { Table } from "./ui/Table.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
 const inboxListName = "inbox";
@@ -313,16 +317,16 @@ function InboxActions(props: {
             reason: props.entry.held?.reason,
           })}
         >
-          <button
-            type="button"
-            className="row-action"
+          <Button
+            variant="quiet"
+            size="sm"
             disabled={inboxAnswerInFlight(props.step)}
             onClick={() => {
               props.onAnswer(action);
             }}
           >
             {action.action.toLowerCase()}
-          </button>
+          </Button>
         </Tooltip>
       ))}
     </>
@@ -339,20 +343,22 @@ function InboxWhy(props: {
   const row = props.row;
   if (held === undefined || row === undefined)
     return (
-      <>
+      <div className="flex flex-wrap gap-2">
         {props.entry.actions.map((action) => (
-          <span key={action.action} className="badge">
+          <Pill key={action.action} tone="parked">
             {nativeActionKindSentence(action.kind)}
-          </span>
+          </Pill>
         ))}
-      </>
+      </div>
     );
   const reason = held.reason;
   return (
     <Tooltip
       text={reason === undefined ? undefined : escalationReasonSentence(reason)}
     >
-      <span className="badge">{row.badge ?? row.phase}</span>
+      <span>
+        <Pill tone="parked">{row.badge ?? row.phase}</Pill>
+      </span>
     </Tooltip>
   );
 }
@@ -409,7 +415,7 @@ function InboxRow(props: {
         {row === undefined ? cellAbsent : row.sequence}
         {row?.activityAt === undefined ? "" : ` · ${row.activityAt}`}
       </td>
-      <td className="row-actions">
+      <td>
         <div className="flex gap-2 items-baseline">
           <InboxActions
             entry={props.entry}
@@ -433,7 +439,7 @@ function InboxTable(props: {
   readonly onAnswer: (ticket: number, action: TicketAction) => void;
 }): ReactNode {
   return (
-    <table className="ticket-table">
+    <Table caption={ticketSectionTitles[inboxSection]}>
       <thead>
         <tr>
           <th scope="col">ticket</th>
@@ -459,7 +465,7 @@ function InboxTable(props: {
           />
         ))}
       </tbody>
-    </table>
+    </Table>
   );
 }
 
@@ -563,8 +569,15 @@ export function InboxScreen(props: {
       ? executions.value
       : projectExecutionIndexUnread;
   const answers = useInboxAnswers(partition);
+  const count = inboxCountLabel(inbox.union);
   return (
     <>
+      <TopBarSlot>
+        <h1 className="text-md font-strong text-ink-1 truncate">Inbox</h1>
+        {count === undefined ? null : (
+          <span className="text-ink-3 text-sm tabular-nums">{count}</span>
+        )}
+      </TopBarSlot>
       <InboxNotices executions={executions} index={index} held={inbox} />
       <DataPanel title={ticketSectionTitles[inboxSection]} state={inbox.panel}>
         {(union) =>
@@ -582,13 +595,9 @@ export function InboxScreen(props: {
         }
       </DataPanel>
       {inbox.readMore === undefined ? null : (
-        <button
-          type="button"
-          className="justify-self-start"
-          onClick={inbox.readMore}
-        >
+        <Button size="sm" onClick={inbox.readMore}>
           more
-        </button>
+        </Button>
       )}
       {inbox.reading ? <p className="panel-note">reading…</p> : null}
     </>
