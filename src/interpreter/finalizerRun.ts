@@ -1227,7 +1227,7 @@ async function finalizerOpeningProposal(
       headCommit: pinned.candidate,
       baseRef: observed.target.ref,
       baseCommit: observed.target.commit,
-      title: finalizationProposalTitle(view.claim.ticket, brief.intent),
+      title: finalizationProposalTitle(view.claim.ticket, brief),
       body: finalizationProposalBody(brief.intent, proposalMarkerOf(identity)),
     }),
     publication: { publication: "Unopened" },
