@@ -97,7 +97,7 @@ export interface KubernetesWorkerLaunchConfig extends KubernetesPodSite {
   readonly database?: KubernetesWorkerDatabase;
 }
 
-/** The one container name a placed pod carries, so a reader of the cluster needs no lookup. */
+/** The name the worker's own container carries, so a reader of the cluster needs no lookup. */
 export const kubernetesWorkerContainerName = "worker";
 
 /** The environment variable a placed worker reaches its own PostgreSQL by. */

@@ -317,7 +317,8 @@ async function main() {
       credentialFiles,
       bearer,
     );
-    attemptDatabase(process.env, required("CHUG_WORKER_DATABASE_URL"));
+    if (process.env.CHUG_WORKER_DATABASE_URL)
+      attemptDatabase(process.env, process.env.CHUG_WORKER_DATABASE_URL);
     await prepareWorker(task, workspace.directory);
     const run = await runWorkerTask(
       {
