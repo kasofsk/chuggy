@@ -174,6 +174,7 @@ import {
   type ThreadMessageSent,
   type ThreadOpening,
   type ThreadRead,
+  type ThreadRecord,
   type ThreadSeedingRead,
   type ThreadSessionMint,
   type ThreadStore,
@@ -1479,6 +1480,31 @@ function nativeCloseThreadMethod(
 }
 
 /**
+ * The owner gate rename and hide each open with: the caller's own mailbox,
+ * resolved as the message door resolves it, refused where it is not the
+ * caller's.
+ */
+async function nativeThreadOwnedOrRefused(
+  ports: NativeThreadPorts,
+  partition: Partition,
+  principal: Principal,
+  session: SessionId,
+): Promise<
+  | { readonly owned: true; readonly thread: ThreadRecord }
+  | { readonly owned: false; readonly result: "NotFound" | "NotYourThread" }
+> {
+  const mine = await ports.threads.standing({
+    partition,
+    session,
+    query: { limit: 1 },
+  });
+  if (mine === undefined) return { owned: false, result: "NotFound" };
+  if (mine.thread.principal !== principal)
+    return { owned: false, result: "NotYourThread" };
+  return { owned: true, thread: mine.thread };
+}
+
+/**
  * Renaming and hiding are each the owner's alone, resolved against the
  * caller's own mailbox as the message door resolves it.
  */
@@ -1493,14 +1519,13 @@ function nativeThreadViewMethods(
       )
         return { result: "NotFound" };
       const ports = composedThreadPorts(threads);
-      const mine = await ports.threads.standing({
+      const owned = await nativeThreadOwnedOrRefused(
+        ports,
         partition,
-        session: input.session,
-        query: { limit: 1 },
-      });
-      if (mine === undefined) return { result: "NotFound" };
-      if (mine.thread.principal !== principal)
-        return { result: "NotYourThread" };
+        principal,
+        input.session,
+      );
+      if (!owned.owned) return { result: owned.result };
       const renamed = await ports.threads.rename({
         partition,
         session: input.session,
@@ -1518,14 +1543,13 @@ function nativeThreadViewMethods(
       )
         return { result: "NotFound" };
       const ports = composedThreadPorts(threads);
-      const mine = await ports.threads.standing({
+      const owned = await nativeThreadOwnedOrRefused(
+        ports,
         partition,
-        session: input.session,
-        query: { limit: 1 },
-      });
-      if (mine === undefined) return { result: "NotFound" };
-      if (mine.thread.principal !== principal)
-        return { result: "NotYourThread" };
+        principal,
+        input.session,
+      );
+      if (!owned.owned) return { result: owned.result };
       const hidden = await ports.threads.hide({
         partition,
         session: input.session,
