@@ -9,6 +9,7 @@ import {
   threadDraftsHeading,
   threadNorthStarHeading,
   threadStandingDefault,
+  threadStandingHeading,
   threadStandingSection,
   threadTurnBoundaryHeading,
 } from "../../../src/contract/threadSeeding.ts";
@@ -738,16 +739,29 @@ describe("a block whose standing rules the project wrote", () => {
   });
 });
 
+/**
+ * One first turn as the interpreter recorded them before the boundary heading
+ * existed. The rules are written out rather than imported because these turns
+ * are frozen text, and a fixture composed from the constant a project may now
+ * reword would agree with a reader that had drifted with it.
+ */
+const recorded = `${threadNorthStarHeading}
+
+Ship the console.
+
+${threadStandingHeading}
+
+- You act through the same commands your owner has in the console, recorded as their act; the lead's decisions are the lead's, and you neither make nor amend one.
+- A wake is a notice, not an instruction: say what happened, and originate, revise, release, dispatch or run nothing because of it.`;
+
 describe("a block recorded before the boundary heading was written", () => {
-  /** Every one of them was composed from the rules a project inherits, so the
-   * last line of those rules is where the two halves still divide. */
   test("is split off the member's words on that block's own last line", () => {
-    const ask = conversationAskMessage(`${seeded}\n\nwhat is left to do`);
+    const ask = conversationAskMessage(`${recorded}\n\nwhat is left to do`);
 
     expect(ask).toEqual({
       ask: "Message",
       text: "what is left to do",
-      context: seeded,
+      context: recorded,
     });
   });
 });
