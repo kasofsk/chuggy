@@ -10,7 +10,7 @@ import { createInterface } from "node:readline";
 import { workerAgent } from "./agent.mjs";
 import { runChecks, workerCheckCommands } from "./checks.mjs";
 import { keepWorkerLease } from "./lease.mjs";
-import { scopedDatabase } from "./postgres.mjs";
+import { attemptDatabase } from "./postgres.mjs";
 import { workerRepositories, workerRepository } from "./repository.mjs";
 import { credentialScrub, runEvidenceRecorder } from "./runEvidence.mjs";
 import { runConfigurationSnapshot } from "./snapshot.mjs";
@@ -310,7 +310,6 @@ async function main() {
     agent,
   );
   const stopLease = keepWorkerLease(task, bearer);
-  let dropDatabase = async () => undefined;
   try {
     const workspace = await workerWorkspace(
       task,
@@ -318,10 +317,7 @@ async function main() {
       credentialFiles,
       bearer,
     );
-    dropDatabase = await scopedDatabase(
-      required("CHUG_WORKER_DATABASE_URL"),
-      required("CHUG_WORKER_DATABASE_SCOPE"),
-    );
+    attemptDatabase(process.env, required("CHUG_WORKER_DATABASE_URL"));
     await prepareWorker(task, workspace.directory);
     const run = await runWorkerTask(
       {
@@ -341,11 +337,7 @@ async function main() {
     );
   } finally {
     evidence.stop();
-    try {
-      await dropDatabase();
-    } finally {
-      await stopLease();
-    }
+    await stopLease();
   }
 }
 

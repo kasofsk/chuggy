@@ -44,6 +44,50 @@
           "runAsNonRoot": true,
           "fsGroup": 2000
         },
+        "initContainers": [
+          {
+            "name": "postgres",
+            "image": "registry.invalid/golden-postgres:18",
+            "args": ["-c", "listen_addresses=127.0.0.1"],
+            "restartPolicy": "Always",
+            "startupProbe": {
+              "exec": {
+                "command": ["pg_isready", "-h", "127.0.0.1", "-U", "postgres"]
+              },
+              "periodSeconds": 1,
+              "failureThreshold": 120
+            },
+            "env": [
+              {
+                "name": "POSTGRES_HOST_AUTH_METHOD",
+                "value": "trust"
+              }
+            ],
+            "resources": {
+              "requests": {
+                "cpu": "250m",
+                "memory": "256Mi",
+                "ephemeral-storage": "4Gi"
+              },
+              "limits": {
+                "cpu": "1",
+                "memory": "1Gi",
+                "ephemeral-storage": "4Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "readOnlyRootFilesystem": true
+            },
+            "volumeMounts": [
+              {
+                "name": "worker-database",
+                "mountPath": "/var/lib/postgresql",
+                "readOnly": false
+              }
+            ]
+          }
+        ],
         "containers": [
           {
             "name": "worker",
@@ -59,16 +103,7 @@
               },
               {
                 "name": "CHUG_WORKER_DATABASE_URL",
-                "valueFrom": {
-                  "secretKeyRef": {
-                    "name": "golden-database",
-                    "key": "url"
-                  }
-                }
-              },
-              {
-                "name": "CHUG_WORKER_DATABASE_SCOPE",
-                "value": "chug_cf45557c1dd3fa5e62070da1ffe0664f"
+                "value": "postgres://postgres@127.0.0.1:5432/postgres"
               },
               {
                 "name": "CHUG_WORKER_REPOSITORIES",
@@ -134,6 +169,12 @@
             "name": "worker-workspace",
             "emptyDir": {
               "sizeLimit": "20Gi"
+            }
+          },
+          {
+            "name": "worker-database",
+            "emptyDir": {
+              "sizeLimit": "4Gi"
             }
           },
           {

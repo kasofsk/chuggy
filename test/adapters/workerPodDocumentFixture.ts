@@ -136,13 +136,22 @@ const goldenPlacement: AttemptPlacement = {
   },
 };
 
-/** Both database arms, since a site that runs no shared server renders a shorter container. */
+/** Both database arms, since a site that runs no database renders a pod with no sidecar. */
 export function workerPodDocuments(): unknown {
   return {
     withDatabase: kubernetesWorkerPodRequest(
       {
         ...goldenConfig,
-        database: { secretName: "golden-database", key: "url" },
+        database: {
+          image: "registry.invalid/golden-postgres:18",
+          resources: {
+            cpuRequest: "250m",
+            cpuLimit: "1",
+            memoryRequest: "256Mi",
+            memoryLimit: "1Gi",
+            ephemeralStorageLimit: "4Gi",
+          },
+        },
       },
       goldenPlacement,
     ),

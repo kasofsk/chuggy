@@ -594,8 +594,17 @@ test("an admitted-images list longer than its bound is refused", async () => {
   assert.equal(found.parsed, undefined);
 });
 
-test("a shared worker database is site data a placement carries, and is optional", async () => {
-  const database = { secretName: "worker-database", key: "url" };
+test("a worker's database sidecar is site data a placement carries, and is optional", async () => {
+  const database = {
+    image: "registry.invalid/postgres:18",
+    resources: {
+      cpuRequest: "250m",
+      cpuLimit: "1",
+      memoryRequest: "256Mi",
+      memoryLimit: "1Gi",
+      ephemeralStorageLimit: "4Gi",
+    },
+  };
   const found = JSON.parse(
     await schedulerProgram(
       parseProgram({
@@ -610,7 +619,7 @@ test("a shared worker database is site data a placement carries, and is optional
     await schedulerProgram(
       parseProgram({
         ...environment,
-        CHUG_SCHEDULER_WORKER_DATABASE: JSON.stringify({ secretName: "s" }),
+        CHUG_SCHEDULER_WORKER_DATABASE: JSON.stringify({ image: "i" }),
       }),
     ),
   ) as { readonly refused?: string };

@@ -304,8 +304,8 @@ const schedulerResourcesSchema = z.strictObject({
 });
 
 const schedulerWorkerDatabaseSchema = z.strictObject({
-  secretName: schedulerTextSchema,
-  key: schedulerTextSchema,
+  image: schedulerTextSchema,
+  resources: schedulerResourcesSchema,
 });
 
 const schedulerCredentialMountsSchema = z.record(
