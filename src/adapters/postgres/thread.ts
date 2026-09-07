@@ -81,6 +81,7 @@ interface ThreadIdentityRow {
   readonly owner: string | null;
   readonly agent_reference: string | null;
   readonly turns: string | null;
+  readonly first_message: string | null;
 }
 
 /** One `read_project_threads` row, which names the session's state `state`. */
@@ -117,6 +118,7 @@ function threadRecordOf(
     ...(row.agent_reference === null
       ? {}
       : { agentReference: row.agent_reference }),
+    ...(row.first_message === null ? {} : { firstMessage: row.first_message }),
   };
 }
 
@@ -146,7 +148,8 @@ async function threadStandingRows(
 ): Promise<readonly ThreadStandingRow[]> {
   const found = await pool.query<ThreadStandingRow>(
     sql`SELECT session,principal,owner,session_state,agent_reference,
-               turns::text AS turns,next_before::text AS next_before,
+               turns::text AS turns,first_message,
+               next_before::text AS next_before,
                turn,turn_ordinal::text AS turn_ordinal,input_kind,
                turn_state,input,result,failure,model,tokens::text AS tokens,
                cost_micros::text AS cost_micros,
@@ -237,7 +240,7 @@ async function threadListing(
 ): Promise<readonly ThreadRecord[]> {
   const found = await pool.query<ThreadListingRow>(
     sql`SELECT session,principal,owner,state,agent_reference,
-               turns::text AS turns
+               turns::text AS turns,first_message
           FROM read_project_threads(
                  ${partition.tenant},${partition.project},${limit})`,
   );

@@ -45,10 +45,16 @@ import {
 } from "../../src/adapters/postgres/schema.ts";
 import { sessionChangeResourceSchema } from "../../src/contract/events.ts";
 import {
+  threadNorthStarHeading,
+  threadStandingHeading,
+  threadTurnRecordedLastLine,
+} from "../../src/contract/threadSeeding.ts";
+import {
   agentSessionPromptCharsMax,
   sessionStorePageBatchesMax,
   sessionStoreStreamsAnswered,
   threadBacklogMax,
+  threadTitleCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
   threadWakesPerPassMax,
@@ -75,6 +81,7 @@ import {
   threadCapabilitiesDefault,
   threadStanding,
   threadSystemPromptCharsMax,
+  threadTurnInput,
   threadWakeDocument,
   threadWakeText,
   type ThreadWakeReason,
@@ -1110,6 +1117,108 @@ test("a thread that has taken no turn still reads, and a turn carries what was s
   assert.equal(said?.turns[0]?.input, "what a member typed");
   assert.equal(said?.turns[0]?.state, "Queued");
   assert.equal(said?.turns[0]?.result, undefined);
+});
+
+test("both reads answer the first member message, seeding shed and bounded", async () => {
+  const partition = await project("firstsaid");
+  const member = await threadRigMember(rig, partition, "firstsaid");
+  const thread = await threadRigThread(rig, partition, member);
+  const listed = async () =>
+    (await rig.threads.threads(partition, threadsAnsweredMax)).find(
+      (held) => held.session === thread.session,
+    );
+  const read = () =>
+    rig.threads.standing({
+      partition,
+      session: thread.session,
+      query: { limit: threadTurnsAnsweredMax },
+    });
+
+  assert.equal((await listed())?.firstMessage, undefined);
+  assert.equal((await read())?.thread.firstMessage, undefined);
+
+  await rig.wakes.wake({
+    partition,
+    principal: member.principal,
+    turn: asSessionTurnId(threadRigTurnId("firstsaid-wake")),
+    input: threadWakeText(
+      threadWakeDocument({
+        wake: "TicketRefused",
+        resource: "1",
+        at: "2026-09-02T12:00:00.000Z",
+      }),
+    ),
+  });
+  assert.equal(
+    (await listed())?.firstMessage,
+    undefined,
+    "a wake is a notice and not a member's message",
+  );
+
+  const said = `why is 42 blocked ${"and 43 ".repeat(threadTitleCharsMax)}`;
+  await rig.threads.enqueueMessage({
+    partition,
+    principal: member.principal,
+    session: thread.session,
+    turn: asSessionTurnId(threadRigTurnId("firstsaid-one")),
+    input: threadTurnInput(said, {
+      northStar: "Ship the console.",
+      standingRules: "- You draft, and nothing else.",
+      drafts: [],
+      refusals: [],
+    }),
+  });
+  await rig.threads.enqueueMessage({
+    partition,
+    principal: member.principal,
+    session: thread.session,
+    turn: asSessionTurnId(threadRigTurnId("firstsaid-two")),
+    input: "a later message names nothing",
+  });
+
+  const head = said.slice(0, threadTitleCharsMax);
+  assert.equal((await listed())?.firstMessage, head);
+  assert.equal((await read())?.thread.firstMessage, head);
+});
+
+/**
+ * Most turns already recorded predate `threadTurnBoundaryHeading` and end on
+ * the standing rules' last line instead, and a turn with no seeding block in
+ * front of it carries neither marker. Both are the console's own arms, and a
+ * title cut before either would name the thread after the block.
+ */
+test("a first message is found after the older marker and after none", async () => {
+  const partition = await project("olderfirst");
+  const older = await threadRigMember(rig, partition, "olderfirst-older");
+  const bare = await threadRigMember(rig, partition, "olderfirst-bare");
+  const olderThread = await threadRigThread(rig, partition, older);
+  const bareThread = await threadRigThread(rig, partition, bare);
+  const said = "why is 42 blocked";
+
+  await rig.threads.enqueueMessage({
+    partition,
+    principal: older.principal,
+    session: olderThread.session,
+    turn: asSessionTurnId(threadRigTurnId("olderfirst-older")),
+    input: [
+      `${threadNorthStarHeading}\n\nShip the console.`,
+      `${threadStandingHeading}\n\n- You draft, and nothing else.\n${threadTurnRecordedLastLine}`,
+      said,
+    ].join("\n\n"),
+  });
+  await rig.threads.enqueueMessage({
+    partition,
+    principal: bare.principal,
+    session: bareThread.session,
+    turn: asSessionTurnId(threadRigTurnId("olderfirst-bare")),
+    input: said,
+  });
+
+  const listing = await rig.threads.threads(partition, threadsAnsweredMax);
+  const named = (session: string) =>
+    listing.find((held) => held.session === session)?.firstMessage;
+  assert.equal(named(olderThread.session), said);
+  assert.equal(named(bareThread.session), said);
 });
 
 test("the standing read admits a thread and refuses every other session", async () => {

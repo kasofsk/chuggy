@@ -15,6 +15,7 @@ import test from "node:test";
 
 import {
   threadMessageCharsMax,
+  threadTitleCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
 } from "../../src/contract/http.ts";
@@ -38,6 +39,8 @@ import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   checkedThreadsLimit,
   threadBacklogRetrySeconds,
+  threadEntry,
+  threadTitle,
   type ThreadClosed,
   type ThreadMessageEnqueued,
   type ThreadRecord,
@@ -872,4 +875,44 @@ test("a project's own standing is what the seeded first turn carries", async () 
   const first = held.calls.find((call) => call.startsWith("enqueue:")) ?? "";
   assert.ok(first.includes("- You draft, and nothing else."));
   assert.ok(!first.includes(threadStandingRulesDefault));
+});
+
+test("a title is the first non-empty line of the first message, run onto one line", () => {
+  assert.equal(threadTitle("why is 42 blocked?"), "why is 42 blocked?");
+  assert.equal(
+    threadTitle("\n\n   \nwhy is 42 blocked?\nand 43?"),
+    "why is 42 blocked?",
+  );
+  assert.equal(
+    threadTitle("  why   is\t42\u00a0blocked?  "),
+    "why is 42 blocked?",
+  );
+});
+
+test("a message with nothing but whitespace in it names no thread", () => {
+  assert.equal(threadTitle(""), undefined);
+  assert.equal(threadTitle("\n \t\n"), undefined);
+});
+
+test("a title is cut to its bound in code points, not in UTF-16 units", () => {
+  const said = "\u{1f600}".repeat(threadTitleCharsMax * 2);
+  const title = threadTitle(said) ?? "";
+  assert.equal([...title].length, threadTitleCharsMax);
+  assert.equal(title, "\u{1f600}".repeat(threadTitleCharsMax));
+});
+
+test("a cut that lands on a space does not leave one at the end", () => {
+  const said = `${"a".repeat(threadTitleCharsMax - 1)} bcd`;
+  assert.equal(threadTitle(said), "a".repeat(threadTitleCharsMax - 1));
+});
+
+test("an entry is titled by its first message and untitled without one", () => {
+  assert.equal(
+    threadEntry(
+      { ...record(mine, geoff), firstMessage: "why is 42 blocked?\nand 43?" },
+      geoff,
+    ).title,
+    "why is 42 blocked?",
+  );
+  assert.equal(threadEntry(record(mine, geoff), geoff).title, undefined);
 });

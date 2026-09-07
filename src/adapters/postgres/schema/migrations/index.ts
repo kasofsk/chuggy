@@ -74,6 +74,7 @@ import { migration073 } from "./073-refusals-among-a-candidate-page.ts";
 import { migration074 } from "./074-observed-refusals-per-candidate.ts";
 import { migration075 } from "./075-thread-close.ts";
 import { migration076 } from "./076-project-thread-standing-rules.ts";
+import { migration077 } from "./077-thread-first-message.ts";
 import type { Migration } from "../shared.ts";
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -154,4 +155,5 @@ export const migrations: readonly Migration[] = [
   migration074,
   migration075,
   migration076,
+  migration077,
 ];
