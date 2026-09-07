@@ -458,7 +458,7 @@ export function TicketCreation(): ReactNode {
       <TopBarSlot>
         <h1 className="text-md font-strong text-ink-1 truncate">New ticket</h1>
       </TopBarSlot>
-      <DataPanel title="new ticket" state={state}>
+      <DataPanel title="Draft" state={state}>
         {(context) =>
           context.context === "Ready" ? (
             <CreationForm
