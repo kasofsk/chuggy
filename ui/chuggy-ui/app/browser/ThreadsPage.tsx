@@ -38,6 +38,7 @@ import {
 import { threadStandingTone } from "../core/tones.ts";
 import { useApiPorts, usePanelList } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
+import { TopBarSlot } from "./shell/slots.tsx";
 import { ThreadClose } from "./thread/ThreadClose.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
@@ -170,6 +171,9 @@ export function ThreadsPage(): ReactNode {
   );
   return (
     <div className="grid min-w-0 gap-4">
+      <TopBarSlot>
+        <h1 className="text-md font-strong text-ink-1 truncate">Threads</h1>
+      </TopBarSlot>
       <PanelUnready state={state} />
       {state.state === "Ready" ? (
         <>

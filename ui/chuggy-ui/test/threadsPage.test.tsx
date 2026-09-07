@@ -25,6 +25,7 @@ import {
   settled,
   turned,
 } from "./screenHarness.tsx";
+import { ShellSlotHarness } from "./shellSlotHarness.tsx";
 import {
   threadEntry,
   threadMineSession,
@@ -111,7 +112,9 @@ async function mountThreads(): Promise<void> {
       client={new QueryClient()}
       transport={server.ports.fetch}
     >
-      <ThreadsPage />
+      <ShellSlotHarness>
+        <ThreadsPage />
+      </ShellSlotHarness>
     </ScreenHarness>,
   );
   await settled();
@@ -123,6 +126,12 @@ function rowSessions(): readonly string[] {
     (cell) => cell.textContent ?? "",
   );
 }
+
+test("the bar names the page", async () => {
+  drawThreads(threadsBody);
+  await mountThreads();
+  expect(screen.getByRole("heading", { name: "Threads" })).toBeDefined();
+});
 
 /** The listing answers the reader's own thread second, so a page that drew the
  * server's order would put someone else's at the top. */
@@ -144,13 +153,13 @@ test("my thread is drawn first and marked", async () => {
 });
 
 /**
- * An open session whose owner's membership is gone still acts as that member,
- * and an administrator has to be able to see one.
+ * An open session whose owner's membership is gone still acts as that
+ * member, and the hue is half of what its pill says — the half a reader
+ * scans a column by.
  *
- * THE HUE IS HALF OF WHAT A PILL SAYS, and it is the half a reader scans a
- * column by. Drawing `Orphaned` through the state map would answer the live
- * green — the colour that says nothing is wrong — on the one page the thread
- * would be noticed from, so the class is asserted and not only the word.
+ * Drawing `Orphaned` through the state map would answer the live green, the
+ * colour that says nothing is wrong, so the class is asserted and not only
+ * the word.
  */
 test("a thread whose owner is gone is listed as Orphaned, in the parked hue", async () => {
   drawThreads(threadsBody);
