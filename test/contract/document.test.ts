@@ -65,7 +65,9 @@ test("the golden is the document and not an empty stand-in", () => {
     "selectorSettingsHistory",
     "thread",
     "threadClose",
+    "threadHide",
     "threadMessages",
+    "threadRename",
     "threadTranscript",
     "threads",
     "ticket",
@@ -81,6 +83,8 @@ test("the golden is the document and not an empty stand-in", () => {
     "publicMutation",
     "repositoryConfigurationImport",
     "selectorProjectSettings",
+    "threadHide",
     "threadMessage",
+    "threadRename",
   ]);
 });

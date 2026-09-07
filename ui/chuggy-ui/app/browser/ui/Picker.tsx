@@ -9,6 +9,7 @@ import { DropdownMenu } from "radix-ui";
 import type { ReactNode } from "react";
 
 import { buttonLookClassName } from "./Button.tsx";
+import { MenuContent, menuItemClassName } from "./Menu.tsx";
 
 import "./Picker.css";
 
@@ -34,10 +35,7 @@ export function Picker(props: {
         {` ${chosen?.text ?? props.value}`}
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          className="picker"
-          sideOffset={props.sideOffset ?? 4}
-        >
+        <MenuContent sideOffset={props.sideOffset ?? 4}>
           <DropdownMenu.RadioGroup
             value={props.value}
             onValueChange={props.onChoose}
@@ -45,7 +43,7 @@ export function Picker(props: {
             {props.options.map((option) => (
               <DropdownMenu.RadioItem
                 key={option.value}
-                className="picker-item"
+                className={menuItemClassName}
                 value={option.value}
               >
                 <span className="picker-gutter">
@@ -55,7 +53,7 @@ export function Picker(props: {
               </DropdownMenu.RadioItem>
             ))}
           </DropdownMenu.RadioGroup>
-        </DropdownMenu.Content>
+        </MenuContent>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   );

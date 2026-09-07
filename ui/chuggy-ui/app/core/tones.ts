@@ -12,6 +12,7 @@
 
 import type {
   SelectorAttention,
+  SelectorMode,
   SessionState,
   SessionTurnState,
   ThreadStanding,
@@ -126,6 +127,16 @@ export function threadStandingTone(standing: ThreadStanding): Tone {
     case "Closed":
       return "retired";
     case "Orphaned":
+      return "parked";
+  }
+}
+
+/** Whether the selector is deciding for this project, or has been stopped. */
+export function selectorModeTone(mode: SelectorMode): Tone {
+  switch (mode) {
+    case "Running":
+      return "live";
+    case "Paused":
       return "parked";
   }
 }

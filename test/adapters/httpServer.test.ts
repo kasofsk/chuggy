@@ -17,9 +17,14 @@ import {
 } from "../../src/interpreter/nativeWeb.ts";
 import {
   projectNativeActionsResponseSchema,
+  selectorSettingsConflictResponseSchema,
   ticketNativeActionsResponseSchema,
 } from "../../src/contract/responses.ts";
-import { asOperationId } from "../../src/interpreter/operationInbox.ts";
+import {
+  asAuthorityKind,
+  asAuthoritySubject,
+  asOperationId,
+} from "../../src/interpreter/operationInbox.ts";
 import { resolvedSelectorSettings } from "../../src/interpreter/selector.ts";
 import type {
   SelectorProjectSettingsAdministration,
@@ -363,6 +368,15 @@ function selectorRecord(
   };
 }
 
+/** The write standing in place of the one a conflicting caller read. */
+const selectorMovedBy = {
+  administrator: {
+    kind: asAuthorityKind("User"),
+    subject: asAuthoritySubject("someone-else"),
+  },
+  recordedAt: "2026-09-07T10:00:00.000Z",
+};
+
 function fakeSelectorSettings(
   calls: string[],
 ): SelectorProjectSettingsAdministration {
@@ -396,6 +410,7 @@ function fakeSelectorSettings(
         : Promise.resolve({
             result: "Conflict",
             settings: selectorRecord(1, "Ship the console."),
+            movedBy: selectorMovedBy,
           });
     },
     history: (_principal, _partition, after, limit) => {
@@ -491,6 +506,10 @@ test("a settings write that lost its fence is a conflict rather than a rewrite",
   assert.equal(
     refused.json<HttpErrorEnvelope>().error.code,
     "SettingsRevisionConflict",
+  );
+  assert.deepEqual(
+    selectorSettingsConflictResponseSchema.parse(refused.json()).movedBy,
+    selectorMovedBy,
   );
 });
 

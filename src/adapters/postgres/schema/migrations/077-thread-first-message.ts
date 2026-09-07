@@ -2,9 +2,8 @@
  * The two thread reads answer the head of the thread's first member message, so
  * a console can name a conversation by what is in it.
  *
- * THE TITLE IS DERIVED AND NOTHING STORES ONE. `src/interpreter/threadRead.ts`
- * cuts the title out of this column on every read; a title column would be a
- * stored duplicate of the mailbox, stale the moment a thread's first turn moved.
+ * THE TITLE IS DERIVED FROM THE MAILBOX on every read, and 079's `member_title`
+ * overrides that derivation rather than copying it.
  *
  * THE SEEDING BLOCK IS SPLIT OFF HERE AND NOT IN THE READER. A first turn's
  * input is the project's North Star and standing rules with the member's

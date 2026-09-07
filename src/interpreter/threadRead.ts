@@ -63,6 +63,7 @@ import type {
 import type { Authority } from "./operationInbox.ts";
 import type { Principal } from "./principal.ts";
 import type { Partition } from "./projectStore.ts";
+import type { PublicInstant } from "./publicResource.ts";
 import type { SessionStoreStreamRow } from "./sessionPlane.ts";
 import {
   threadStanding,
@@ -93,6 +94,13 @@ export interface ThreadRecord {
    * names the thread from and the only reason either read carries it.
    */
   readonly firstMessage?: string;
+  /** What its member called it, which overrides the derived title. */
+  readonly memberTitle?: string;
+  readonly openedAt: PublicInstant;
+  /** The latest of its opening, its turns' instants and its close. */
+  readonly lastActivityAt: PublicInstant;
+  /** Off its owner's rail. Nothing is deleted, so it is still listed and still readable. */
+  readonly hidden: boolean;
 }
 
 /**
@@ -152,6 +160,24 @@ export type ThreadClosed =
       readonly thread: ThreadRecord;
     }
   | { readonly closed: "NoThread" };
+
+/**
+ * What renaming answered, with the record as it stands after the door for the
+ * reason the close arms carry one. A rename is idempotent: a title already held
+ * is `Renamed` and writes nothing.
+ */
+export type ThreadRenamed =
+  | { readonly renamed: "Renamed"; readonly thread: ThreadRecord }
+  | { readonly renamed: "NoThread" };
+
+/**
+ * What hiding answered, naming the side the thread is now on rather than
+ * whether this call moved it: a rail pressing Hide twice asked for a hidden
+ * thread both times.
+ */
+export type ThreadHidden =
+  | { readonly hidden: "Hidden" | "Shown"; readonly thread: ThreadRecord }
+  | { readonly hidden: "NoThread" };
 
 /**
  * What the message door's durable half answered. `NoThread`, `Closed` and
@@ -217,6 +243,18 @@ export interface ThreadStore {
     readonly partition: Partition;
     readonly session: SessionId;
   }): Promise<ThreadClosed>;
+  /** Names the thread; an empty title clears the member's name and leaves the derived one. */
+  rename(input: {
+    readonly partition: Partition;
+    readonly session: SessionId;
+    readonly title: string;
+  }): Promise<ThreadRenamed>;
+  /** Takes the thread off its owner's rail, or puts it back; nothing is deleted. */
+  hide(input: {
+    readonly partition: Partition;
+    readonly session: SessionId;
+    readonly hidden: boolean;
+  }): Promise<ThreadHidden>;
 }
 
 /**
@@ -261,8 +299,11 @@ export interface ThreadEntry {
   readonly mine: boolean;
   readonly turns: number;
   readonly agentReference?: string;
-  /** What the thread is about, absent until a member has said something in it. */
+  /** What the thread is about, absent until a member has named it or said something in it. */
   readonly title?: string;
+  readonly openedAt: PublicInstant;
+  readonly lastActivityAt: PublicInstant;
+  readonly hidden: boolean;
 }
 
 export type ThreadsRead =
@@ -298,6 +339,26 @@ export type ThreadClosing =
       readonly result: "Closed" | "AlreadyClosed";
       readonly thread: ThreadEntry;
     };
+
+/**
+ * What naming a thread answered, and the entry as it now reads.
+ * `NotYourThread` is the URL and the caller's own mailbox disagreeing, as the
+ * message door's is.
+ */
+export type ThreadRenaming =
+  | { readonly result: "NotFound" }
+  | { readonly result: "NotYourThread" }
+  | { readonly result: "Renamed"; readonly thread: ThreadEntry };
+
+/**
+ * What hiding a thread answered: which side of the rail it is now on.
+ * `NotYourThread` is the URL and the caller's own mailbox disagreeing, as the
+ * message door's is.
+ */
+export type ThreadHiding =
+  | { readonly result: "NotFound" }
+  | { readonly result: "NotYourThread" }
+  | { readonly result: "Hidden" | "Shown"; readonly thread: ThreadEntry };
 
 /**
  * What the message door answered. `NotYourThread` is the URL and the resolved
@@ -372,12 +433,10 @@ export const threadSeededDraftsMax = nativeHttpPageItemsMax;
 export const threadSeededRefusalsMax = agenticRefusalsAnsweredMax;
 
 /**
- * What a thread is called: the first non-empty line of the first message a
- * member put in it, run onto one line and cut to `threadTitleCharsMax` code
- * points. A thread nobody has written in has no title, and a caller names it
- * the way it was named before.
+ * The title cut from what a member said: the first non-empty line, run onto one
+ * line and bounded to `threadTitleCharsMax` code points.
  */
-export function threadTitle(firstMessage: string): string | undefined {
+function threadTitleDerived(firstMessage: string): string | undefined {
   const line = firstMessage
     .split("\n")
     .map((each) => each.trim())
@@ -390,15 +449,28 @@ export function threadTitle(firstMessage: string): string | undefined {
   return title;
 }
 
+/**
+ * What a thread is called: the name its member gave it where they gave one,
+ * else the title derived from the first message they put in it. A thread nobody
+ * has named or written in has none, and a caller names it as it was named
+ * before.
+ */
+export function threadTitle(named: {
+  readonly memberTitle?: string;
+  readonly firstMessage?: string;
+}): string | undefined {
+  if (named.memberTitle !== undefined) return named.memberTitle;
+  return named.firstMessage === undefined
+    ? undefined
+    : threadTitleDerived(named.firstMessage);
+}
+
 /** One record as the wire names it, with the reader's own principal deciding `mine`. */
 export function threadEntry(
   record: ThreadRecord,
   principal: Principal,
 ): ThreadEntry {
-  const title =
-    record.firstMessage === undefined
-      ? undefined
-      : threadTitle(record.firstMessage);
+  const title = threadTitle(record);
   return {
     session: record.session,
     ...(record.owner === undefined ? {} : { owner: record.owner }),
@@ -409,6 +481,9 @@ export function threadEntry(
       ? {}
       : { agentReference: record.agentReference }),
     ...(title === undefined ? {} : { title }),
+    openedAt: record.openedAt,
+    lastActivityAt: record.lastActivityAt,
+    hidden: record.hidden,
   };
 }
 

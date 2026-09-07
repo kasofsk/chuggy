@@ -27,6 +27,7 @@ import {
   type SelectorProjectSettingsRecord,
   type SelectorProjectSettingsStore,
   type SelectorProjectSettingsWriteOutcome,
+  type SelectorSettingsMovement,
 } from "../../src/interpreter/selectorProjectSettings.ts";
 
 const partition = {
@@ -87,6 +88,7 @@ function record(
 
 function store(
   written: SelectorProjectSettingsWriteOutcome,
+  movedBy?: SelectorSettingsMovement,
 ): SelectorProjectSettingsStore & {
   readonly writes: {
     expectedRevision: number;
@@ -99,7 +101,11 @@ function store(
   }[] = [];
   return {
     writes,
-    read: () => Promise.resolve(record(0, {})),
+    read: () =>
+      Promise.resolve({
+        settings: record(0, {}),
+        ...(movedBy === undefined ? {} : { movedBy }),
+      }),
     write: (_partition, expectedRevision, overrides) => {
       writes.push({ expectedRevision, overrides });
       return Promise.resolve(written);
@@ -161,6 +167,30 @@ test("an installation pause is the one ceiling, and the resolved mode says so", 
   assert.equal(
     resolvedSelectorSettings(partition, defaults, 3, {}).installationMode,
     "Running",
+  );
+});
+
+/**
+ * A reader that has only the resolved limits cannot say which of them the
+ * project asked for, so the unresolved defaults stand beside them whatever the
+ * project overrode.
+ */
+test("the installation limits survive a project overriding every one of them", () => {
+  const resolved = resolvedSelectorSettings(partition, defaults, 3, {
+    limits: {
+      tokensPerDecision: defaults.limits.tokensPerDecision * 2,
+      millisecondsPerDecision: defaults.limits.millisecondsPerDecision * 2,
+      toolCallsPerDecision: defaults.limits.toolCallsPerDecision * 2,
+      dispatchesPerDecision: leadDispatchesMax,
+      inputBytesPerDecision: defaults.limits.inputBytesPerDecision * 2,
+      candidatePagesPerDecision: defaults.limits.candidatePagesPerDecision * 2,
+    },
+  });
+  assert.deepEqual(resolved.installationLimits, defaults.limits);
+  assert.notDeepEqual(resolved.limits, resolved.installationLimits);
+  assert.deepEqual(
+    resolvedSelectorSettings(partition, defaults, 3, {}).installationLimits,
+    defaults.limits,
   );
 });
 
@@ -269,6 +299,34 @@ test("a write whose fence moved answers the current settings as a conflict", asy
   assert.equal(
     written.result === "Conflict" ? written.settings.revision : undefined,
     0,
+  );
+});
+
+/** A caller told only the number cannot tell whose write it is looking at. */
+test("a conflict names the administrator whose write is now standing", async () => {
+  const movedBy = {
+    administrator: {
+      kind: asAuthorityKind("User"),
+      subject: asAuthoritySubject("someone-else"),
+    },
+    recordedAt: "2026-09-07T10:00:00.000Z",
+  };
+  const administration = selectorProjectSettingsAdministration(
+    access(["ManageProjectSelector"]),
+    store({ written: "FenceMoved" }, movedBy),
+  );
+  const written = await administration.write(principal, partition, 4, {});
+  assert.deepEqual(
+    written.result === "Conflict" ? written.movedBy : undefined,
+    movedBy,
+  );
+  const unmoved = await selectorProjectSettingsAdministration(
+    access(["ManageProjectSelector"]),
+    store({ written: "FenceMoved" }),
+  ).write(principal, partition, 4, {});
+  assert.equal(
+    unmoved.result === "Conflict" ? unmoved.movedBy : "not a conflict",
+    undefined,
   );
 });
 

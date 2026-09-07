@@ -25,7 +25,9 @@ import {
   publicMutationSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
+  threadHideRequestSchema,
   threadMessageSchema,
+  threadRenameRequestSchema,
   type PublicMutation,
 } from "../../contract/requests.ts";
 import {
@@ -557,6 +559,20 @@ export function parseThreadMessage(body: unknown): {
 } {
   const value = threadMessageSchema.parse(body);
   return { turn: asSessionTurnId(value.turn), message: value.message };
+}
+
+/**
+ * What a member called their own thread. The schema is strict, so a body
+ * carrying anything but `title` is an `InvalidRequest` rather than a rename
+ * that quietly ignored half of what was sent.
+ */
+export function parseThreadRename(body: unknown): { readonly title: string } {
+  return { title: threadRenameRequestSchema.parse(body).title };
+}
+
+/** Which side of its owner's rail this thread is on, strictly as `hidden`. */
+export function parseThreadHide(body: unknown): { readonly hidden: boolean } {
+  return { hidden: threadHideRequestSchema.parse(body).hidden };
 }
 
 /**

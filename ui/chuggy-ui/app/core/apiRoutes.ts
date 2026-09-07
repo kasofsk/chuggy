@@ -42,6 +42,8 @@ import {
   selectorProjectSettingsResponseSchema,
   selectorSettingsHistoryResponseSchema,
   threadEntryResponseSchema,
+  threadHideResponseSchema,
+  threadRenameResponseSchema,
   threadMessageAcceptedSchema,
   threadResponseSchema,
   threadTranscriptResponseSchema,
@@ -638,6 +640,45 @@ export function apiCloseThread(
       body: {},
     },
     (value) => threadEntryResponseSchema.parse(value),
+  );
+}
+
+/**
+ * Names one thread. An empty title clears the member's name and leaves the
+ * title derived from the first message, so a rail row never goes blank.
+ */
+export function apiRenameThread(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  session: string,
+  title: string,
+): Promise<ApiResult<ThreadEntryResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "POST",
+      path: apiSegments(partition, "threads", session, "rename"),
+      body: { title },
+    },
+    (value) => threadRenameResponseSchema.parse(value),
+  );
+}
+
+/** Takes one thread off the reader's rail, or puts it back. Nothing is deleted. */
+export function apiHideThread(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  session: string,
+  hidden: boolean,
+): Promise<ApiResult<ThreadEntryResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "POST",
+      path: apiSegments(partition, "threads", session, "hide"),
+      body: { hidden },
+    },
+    (value) => threadHideResponseSchema.parse(value),
   );
 }
 

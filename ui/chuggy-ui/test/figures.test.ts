@@ -12,10 +12,13 @@ import { expect, test } from "vitest";
 
 import type { Figure } from "../app/core/figures.ts";
 import {
+  bytesSetFigure,
   costFigure,
+  countFigure,
   durationText,
   instantText,
   spanFigure,
+  spanSetFigure,
   spendFigures,
   tokenCountText,
   tokensFigure,
@@ -211,4 +214,54 @@ test("a span with no readable start, and a spend with no totals, are absences", 
   const absent = spendFigures(undefined, undefined);
   expect(absent.cost.kind).toBe("Absent");
   expect(absent.tokens.kind).toBe("Absent");
+});
+
+/** The unit a quantity carries, which is the half that says what it counts. */
+function unitOf(figure: Figure): string {
+  if (figure.kind !== "Quantity") throw new Error("not a quantity figure");
+  return figure.unit;
+}
+
+/**
+ * A CEILING IS NOT SCALED. A token budget drawn as `17.5M` is a number nobody
+ * typed and nobody can check against the box they type it into, which is why
+ * the set figures group their digits instead of shortening them.
+ */
+test("a count keeps every digit it was given, in groups", () => {
+  expect(textOf(countFigure(17_523_063, "tokens"))).toBe("17,523,063");
+  expect(unitOf(countFigure(17_523_063, "tokens"))).toBe("tokens");
+  expect(textOf(countFigure(0, "pages"))).toBe("0");
+  expect(textOf(countFigure(999, "calls"))).toBe("999");
+  expect(textOf(countFigure(1000, "calls"))).toBe("1,000");
+});
+
+/** A span somebody set is written in the largest unit that states it exactly,
+ * because rounding a ceiling states a limit the project does not have. */
+test("a set span takes the largest unit that is still exact", () => {
+  expect(textOf(spanSetFigure(3_600_000))).toBe("1");
+  expect(unitOf(spanSetFigure(3_600_000))).toBe("h");
+  expect(textOf(spanSetFigure(900_000))).toBe("15");
+  expect(unitOf(spanSetFigure(900_000))).toBe("min");
+  expect(textOf(spanSetFigure(90_000))).toBe("90");
+  expect(unitOf(spanSetFigure(90_000))).toBe("s");
+  expect(unitOf(spanSetFigure(500))).toBe("ms");
+});
+
+/** A span that does not divide exactly into a coarser unit stays in
+ * milliseconds rather than round to a whole one that misstates it. */
+test("a set span that is not a whole coarser unit stays in milliseconds", () => {
+  expect(textOf(spanSetFigure(900_500))).toBe("900,500");
+  expect(unitOf(spanSetFigure(900_500))).toBe("ms");
+  expect(textOf(spanSetFigure(90_500))).toBe("90,500");
+  expect(unitOf(spanSetFigure(90_500))).toBe("ms");
+  expect(textOf(spanSetFigure(1_500))).toBe("1,500");
+  expect(unitOf(spanSetFigure(1_500))).toBe("ms");
+});
+
+test("a set size takes the largest binary unit that is still exact", () => {
+  expect(textOf(bytesSetFigure(1_048_576))).toBe("1");
+  expect(unitOf(bytesSetFigure(1_048_576))).toBe("MiB");
+  expect(unitOf(bytesSetFigure(2048))).toBe("KiB");
+  expect(unitOf(bytesSetFigure(1500))).toBe("bytes");
+  expect(unitOf(bytesSetFigure(0))).toBe("bytes");
 });

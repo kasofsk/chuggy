@@ -36,7 +36,11 @@ import {
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
 } from "../../src/contract/http.ts";
-import { threadMessageSchema } from "../../src/contract/requests.ts";
+import {
+  threadHideRequestSchema,
+  threadMessageSchema,
+  threadRenameRequestSchema,
+} from "../../src/contract/requests.ts";
 import {
   leadTranscriptResponseSchema,
   leadTurnResponseSchema,
@@ -57,6 +61,9 @@ const entry = {
   mine: true,
   turns: 3,
   agentReference: "1a2b",
+  openedAt: "2026-09-05T09:00:00Z",
+  lastActivityAt: "2026-09-05T10:00:00Z",
+  hidden: false,
 } as const;
 
 const turn = {
@@ -75,6 +82,8 @@ test("every thread route hangs from the project it is scoped to", () => {
     nativeHttpRoutes.threadTranscript,
     nativeHttpRoutes.threadMessages,
     nativeHttpRoutes.threadClose,
+    nativeHttpRoutes.threadRename,
+    nativeHttpRoutes.threadHide,
   ];
 
   assert.equal(new Set(routes).size, routes.length);
@@ -91,6 +100,8 @@ test("every thread route hangs from the project it is scoped to", () => {
     nativeHttpRoutes.threadTranscript,
     nativeHttpRoutes.threadMessages,
     nativeHttpRoutes.threadClose,
+    nativeHttpRoutes.threadRename,
+    nativeHttpRoutes.threadHide,
   ])
     assert.ok(route.startsWith(`${nativeHttpRoutes.threads}/:session`), route);
 });
@@ -174,6 +185,50 @@ test("a thread entry names its owner, whether it is mine, and how much it holds"
 });
 
 /**
+ * The rail groups by activity and marks what is off it, so both are facts the
+ * listing must carry rather than ones a browser could infer: a body missing
+ * either is refused here rather than drawn as a thread that never moved.
+ */
+test("a thread entry carries when it moved and whether it is off the rail", () => {
+  const parsed = threadEntryResponseSchema.parse(entry);
+
+  assert.equal(parsed.lastActivityAt, "2026-09-05T10:00:00Z");
+  assert.equal(parsed.hidden, false);
+  for (const missing of ["openedAt", "lastActivityAt", "hidden"])
+    assert.throws(() =>
+      threadEntryResponseSchema.parse({ ...entry, [missing]: undefined }),
+    );
+});
+
+/**
+ * A rename is bounded by the column the override is written to, and a blank
+ * title is the door's own way of clearing one — so an empty string is admitted
+ * where a message's is not.
+ */
+test("a rename is bounded by the title column and clears on an empty string", () => {
+  assert.equal(threadRenameRequestSchema.parse({ title: "" }).title, "");
+  assert.equal(
+    threadRenameRequestSchema.parse({ title: "a".repeat(threadTitleCharsMax) })
+      .title,
+    "a".repeat(threadTitleCharsMax),
+  );
+  assert.throws(() =>
+    threadRenameRequestSchema.parse({
+      title: "a".repeat(threadTitleCharsMax + 1),
+    }),
+  );
+  assert.throws(() => threadRenameRequestSchema.parse({ title: "x", who: 1 }));
+});
+
+test("hiding a thread says which side of the rail it is on and nothing else", () => {
+  assert.equal(threadHideRequestSchema.parse({ hidden: true }).hidden, true);
+  assert.throws(() => threadHideRequestSchema.parse({ hidden: "yes" }));
+  assert.throws(() =>
+    threadHideRequestSchema.parse({ hidden: true, session: "s" }),
+  );
+});
+
+/**
  * A thread whose owner's membership is gone stands `Orphaned`, and the wire
  * says so rather than reporting the session state alone: a reader deciding
  * whether a thread still acts cannot get that from `Open` and an absent owner
@@ -214,6 +269,9 @@ test("a title is carried to its bound and refused past it, by code points", () =
     owner: "geoff",
     state: "Open",
     mine: false,
+    openedAt: "2026-09-05T09:00:00Z",
+    lastActivityAt: "2026-09-05T10:00:00Z",
+    hidden: false,
     turns: [turn],
     streams: [],
   };
@@ -318,6 +376,9 @@ test("a thread read carries its mailbox tail and no more of it", () => {
     owner: "geoff",
     state: "Open",
     mine: false,
+    openedAt: "2026-09-05T09:00:00Z",
+    lastActivityAt: "2026-09-05T10:00:00Z",
+    hidden: false,
     turns: [turn],
     streams: [{ stream: "1a2b", batches: 4 }],
   };
@@ -343,6 +404,9 @@ test("a mailbox page names the cursor an older page is asked for with", () => {
     owner: "geoff",
     state: "Open",
     mine: true,
+    openedAt: "2026-09-05T09:00:00Z",
+    lastActivityAt: "2026-09-05T10:00:00Z",
+    hidden: false,
     turns: [turn],
     nextBefore: 1,
     streams: [],
@@ -370,6 +434,9 @@ test("a mailbox answers the page asked for, however long the conversation is", (
       session: "thread-geoff",
       state: "Open",
       mine: true,
+      openedAt: "2026-09-05T09:00:00Z",
+      lastActivityAt: "2026-09-05T10:00:00Z",
+      hidden: false,
       turns: [],
       streams: [],
     }).turns.length,

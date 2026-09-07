@@ -532,14 +532,15 @@ export interface SelectorProjectOverrides {
  * One project's settings, resolved against the installation defaults, where
  * `revision` remains the installation's and `projectRevision` is the project's
  * because either row moving changes what a decision would have run under.
- * `installationMode` is the unresolved default beside the resolved `mode`, so
- * one read answers both what this project runs under and whether the whole
- * installation is stopped.
+ * `installationMode` and `installationLimits` are the unresolved defaults beside
+ * the resolved `mode` and `limits`, because a resolved value alone says neither
+ * whether the whole installation is stopped nor what the project asked for.
  */
 export interface SelectorResolvedSettings extends SelectorRuntimeSettings {
   readonly partition: Partition;
   readonly projectRevision: number;
   readonly installationMode: SelectorRuntimeSettings["mode"];
+  readonly installationLimits: SelectorRuntimeSettings["limits"];
   readonly northStar?: string;
   /** Always a value: a project that overrides nothing runs its threads under the code default. */
   readonly threadStandingRules: string;
@@ -590,6 +591,7 @@ export function resolvedSelectorSettings(
     projectRevision,
     revision: defaults.revision,
     installationMode: defaults.mode,
+    installationLimits: defaults.limits,
     mode: defaults.mode === "Paused" ? "Paused" : (overrides.mode ?? "Running"),
     dispatchMode: overrides.dispatchMode ?? defaults.dispatchMode,
     basePrompt: overrides.basePrompt ?? defaults.basePrompt,

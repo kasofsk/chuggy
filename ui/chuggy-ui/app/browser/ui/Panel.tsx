@@ -1,6 +1,7 @@
 /**
- * The chrome a region of the page sits in: a title, a meta slot on the right,
- * a body.
+ * The chrome a region of the page sits in: a title, the line under it saying
+ * what the region holds, a meta slot on the right, a body, and a foot the
+ * region's own actions sit in.
  *
  * Total over `panelVariants` × static or collapsible. The chrome only — a
  * panel holding a read's state is the `DataPanel` composition — so this mounts
@@ -15,7 +16,7 @@ import type { ReactNode } from "react";
 
 import "./Panel.css";
 
-export const panelVariants = ["framed", "quiet"] as const;
+export const panelVariants = ["framed", "quiet", "section"] as const;
 
 export type PanelVariant = (typeof panelVariants)[number];
 
@@ -26,17 +27,27 @@ interface PanelLook {
 }
 
 function panelLook(variant: PanelVariant | undefined): PanelLook {
-  if (variant === "quiet")
-    return {
-      root: "min-w-0",
-      head: "panel-head px-0",
-      body: "panel-body px-0",
-    };
-  return {
-    root: "bg-surface-1 border-edge rounded-3 min-w-0 border",
-    head: "panel-head",
-    body: "panel-body",
-  };
+  switch (variant) {
+    case "quiet":
+      return {
+        root: "min-w-0",
+        head: "panel-head px-0",
+        body: "panel-body px-0",
+      };
+    case "section":
+      return {
+        root: "bg-surface-1 border-edge rounded-2 min-w-0 border",
+        head: "panel-head panel-head-ruled",
+        body: "panel-body panel-body-ruled",
+      };
+    case "framed":
+    case undefined:
+      return {
+        root: "bg-surface-1 border-edge rounded-3 min-w-0 border",
+        head: "panel-head",
+        body: "panel-body",
+      };
+  }
 }
 
 function PanelChevron(): ReactNode {
@@ -61,6 +72,18 @@ function PanelChevron(): ReactNode {
 function PanelMeta(props: { readonly meta: ReactNode }): ReactNode {
   if (props.meta === undefined) return null;
   return <span className="panel-meta">{props.meta}</span>;
+}
+
+/** The one line under the title saying what the region holds, for a region
+ * whose title is not enough on its own. */
+function PanelAbout(props: { readonly about: string | undefined }): ReactNode {
+  if (props.about === undefined) return null;
+  return <span className="panel-about">{props.about}</span>;
+}
+
+function PanelFoot(props: { readonly foot: ReactNode }): ReactNode {
+  if (props.foot === undefined) return null;
+  return <footer className="panel-foot">{props.foot}</footer>;
 }
 
 function PanelCollapsible(props: {
@@ -92,7 +115,9 @@ function PanelCollapsible(props: {
 
 export function Panel(props: {
   readonly title: ReactNode;
+  readonly about?: string;
   readonly meta?: ReactNode;
+  readonly foot?: ReactNode;
   readonly variant?: PanelVariant;
   readonly level?: 2 | 3;
   readonly collapsible?: { readonly open: boolean };
@@ -116,12 +141,16 @@ export function Panel(props: {
   return (
     <section className={look.root} aria-labelledby={titleId}>
       <header className={look.head}>
-        <Heading className="panel-title" id={titleId}>
-          {props.title}
-        </Heading>
+        <span className="panel-named">
+          <Heading className="panel-title" id={titleId}>
+            {props.title}
+          </Heading>
+          <PanelAbout about={props.about} />
+        </span>
         <PanelMeta meta={props.meta} />
       </header>
       <div className={look.body}>{props.children}</div>
+      <PanelFoot foot={props.foot} />
     </section>
   );
 }

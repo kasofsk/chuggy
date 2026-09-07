@@ -89,7 +89,7 @@ test("a project with no row of its own inherits every installation default", asy
   const pool = postgresHarnessRolePool(apiRole);
   try {
     const installation = await postgresSelectorRuntimeControl(pool).settings();
-    const settings =
+    const { settings } =
       await postgresSelectorProjectSettings(pool).read(partition);
     assert.equal(settings.revision, 0);
     assert.deepEqual(settings.overrides, {});
@@ -131,7 +131,7 @@ test("a project's thread standing rules survive the write, the history and a cle
     assert.equal(written.overrides.threadStandingRules, standingRules);
     assert.equal(written.effective.threadStandingRules, standingRules);
     assert.equal(
-      (await store.read(partition)).overrides.threadStandingRules,
+      (await store.read(partition)).settings.overrides.threadStandingRules,
       standingRules,
     );
     assert.deepEqual(
@@ -211,6 +211,36 @@ test("a project's North Star and overrides survive the whole-value write", async
   }
 });
 
+/**
+ * A caller that lost the fence is told the number it must write under and who
+ * moved it there, so the read answers with the history row of the revision
+ * standing rather than leaving the console a second round trip to make.
+ */
+test("the read names the administrator whose write the standing revision is", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "selector-moved-by",
+  );
+  const pool = postgresHarnessRolePool(apiRole);
+  const store = postgresSelectorProjectSettings(pool);
+  const mover = {
+    kind: asAuthorityKind("User"),
+    subject: asAuthoritySubject("selector-mover"),
+  };
+  try {
+    assert.equal((await store.read(partition)).movedBy, undefined);
+    await store.write(partition, 0, { northStar: "First." }, administrator);
+    await store.write(partition, 1, { northStar: "Moved." }, mover);
+    const standing = await store.read(partition);
+    assert.equal(standing.settings.revision, 2);
+    assert.deepEqual(standing.movedBy?.administrator, mover);
+    const [, second] = await store.history(partition, 0, 10);
+    assert.equal(standing.movedBy?.recordedAt, second?.recordedAt);
+  } finally {
+    await pool.end();
+  }
+});
+
 test("a write under a revision the row has left is refused rather than applied", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
@@ -229,7 +259,10 @@ test("a write under a revision the row has left is refused rather than applied",
       await store.write(partition, 0, { northStar: "Raced." }, administrator),
       { written: "FenceMoved" },
     );
-    assert.equal((await store.read(partition)).overrides.northStar, "First.");
+    assert.equal(
+      (await store.read(partition)).settings.overrides.northStar,
+      "First.",
+    );
     assert.equal(
       writtenSettings(
         await store.write(
@@ -307,6 +340,13 @@ test("the selector service reads a project's settings and never writes them", as
         "UPDATE selector_project_settings SET north_star='forged'",
       )) ?? "",
       postgresHarnessDenial("selector_project_settings"),
+    );
+    assert.match(
+      (await harness.attemptAs(
+        selectorServiceRole,
+        "SELECT administrator_kind FROM selector_project_settings_history",
+      )) ?? "",
+      postgresHarnessDenial("selector_project_settings_history"),
     );
   } finally {
     await apiPool.end();
@@ -425,7 +465,8 @@ test("automatic dispatch with no production host is a refusal, not a fault", asy
       { written: "Refused", refusal: "AutomaticDispatchUnavailable" },
     );
     assert.equal(
-      (await postgresSelectorProjectSettings(pool).read(partition)).revision,
+      (await postgresSelectorProjectSettings(pool).read(partition)).settings
+        .revision,
       0,
     );
   } finally {
@@ -489,7 +530,7 @@ test("a write reports the row it wrote and not a racing administrator's", async 
     assert.equal(mine.revision, 2);
     assert.equal(mine.overrides.northStar, "Second.");
     assert.equal(mine.effective.northStar, "Second.");
-    assert.equal((await store.read(partition)).revision, 3);
+    assert.equal((await store.read(partition)).settings.revision, 3);
   } finally {
     await pool.end();
     await competitor.end();
@@ -758,7 +799,10 @@ test("a stale fence is answered as one whatever the policy host is doing", async
       ),
       { written: "FenceMoved" },
     );
-    assert.equal((await store.read(partition)).overrides.northStar, "First.");
+    assert.equal(
+      (await store.read(partition)).settings.overrides.northStar,
+      "First.",
+    );
     assert.deepEqual(
       await store.write(
         partition,
@@ -1016,6 +1060,7 @@ test("every limit the override door accepts is a column that reads back", async 
     ).shape,
   );
   try {
+    const installation = await postgresSelectorRuntimeControl(pool).settings();
     let revision = 0;
     for (const limit of accepted) {
       /** The one limit whose only legal value is one until multi-page tools land. */
@@ -1030,10 +1075,17 @@ test("every limit the override door accepts is a column that reads back", async 
       );
       revision = written.revision;
       assert.deepEqual(written.overrides.limits, { [limit]: value }, limit);
+      assert.deepEqual(
+        written.effective.installationLimits,
+        installation.limits,
+        limit,
+      );
       assert.equal(
-        (await store.read(partition)).overrides.limits?.[
+        (await store.read(partition)).settings.overrides.limits?.[
           limit as keyof NonNullable<
-            Awaited<ReturnType<typeof store.read>>["overrides"]["limits"]
+            Awaited<
+              ReturnType<typeof store.read>
+            >["settings"]["overrides"]["limits"]
           >
         ],
         value,
@@ -1116,7 +1168,7 @@ test("a project's dispatch budget is a column, and a budget of none is not one",
       /selector_project_dispatches_are_bounded/,
     );
     assert.deepEqual(await write(0, 5), [{ revision: "1" }]);
-    const held = await store.read(partition);
+    const held = (await store.read(partition)).settings;
     assert.equal(held.overrides.limits?.dispatchesPerDecision, 5);
     assert.equal(held.effective.limits.dispatchesPerDecision, 5);
     assert.deepEqual(

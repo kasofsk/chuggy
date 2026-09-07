@@ -1,0 +1,45 @@
+/* Input: the box, the unit ruled off at its end, and the refused state. The
+   border is on the wrapper so the unit sits inside the same box as the value. */
+
+@layer ui {
+  .input {
+    display: inline-flex;
+    align-items: stretch;
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge-control);
+    border-radius: var(--radius-2);
+    overflow: hidden;
+  }
+
+  .input[data-invalid] {
+    border-color: var(--tone-fail);
+  }
+
+  .input-box {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: var(--ink-1);
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .input[data-numeric] .input-box {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .input-box::placeholder {
+    color: var(--ink-3);
+  }
+
+  .input-unit {
+    display: flex;
+    align-items: center;
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+    padding: 0 var(--space-2);
+    border-left: var(--hairline) solid var(--edge);
+    white-space: nowrap;
+  }
+}

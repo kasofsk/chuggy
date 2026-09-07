@@ -95,6 +95,35 @@ export function threadClosable(
   return thread.state !== "Closed";
 }
 
+/** A thread's own label, wherever one is drawn: its title, or `New thread`
+ * before it has one. */
+export function threadLabel(
+  thread: Pick<ThreadEntryResponse, "title">,
+): string {
+  return thread.title ?? "New thread";
+}
+
+export const threadRowActionNames = [
+  "Rename",
+  "Close",
+  "Hide",
+  "Show",
+] as const;
+export type ThreadRowAction = (typeof threadRowActionNames)[number];
+
+/** The actions one thread's row menu offers: Rename and Hide/Show are the
+ * owner's alone, Close is anyone's while the thread still stands. Empty on a
+ * stranger's closed row, which is a row with nothing for its menu to draw. */
+export function threadRowActions(
+  thread: Pick<ThreadEntryResponse, "mine" | "state" | "hidden">,
+): readonly ThreadRowAction[] {
+  return [
+    ...(thread.mine ? (["Rename"] as const) : []),
+    ...(threadClosable(thread) ? (["Close"] as const) : []),
+    ...(thread.mine ? ([thread.hidden ? "Show" : "Hide"] as const) : []),
+  ];
+}
+
 /**
  * The word one turn's kind is drawn as, total over the wire's roster so a kind
  * it grows stops compiling here. `UserMessage` is what the mailbox calls a
@@ -133,6 +162,60 @@ export function threadMine(
   threads: readonly ThreadEntryResponse[],
 ): ThreadEntryResponse | undefined {
   return threads.find((thread) => thread.mine && thread.state !== "Closed");
+}
+
+/** Whether a thread has a turn the mailbox has not settled, which is what
+ * makes closing it a real abandonment rather than a formality. */
+export function threadAnswering(
+  thread: Pick<ThreadResponse, "turns">,
+): boolean {
+  return thread.turns.some(
+    (turn) => turn.state === "Queued" || turn.state === "Claimed",
+  );
+}
+
+export const threadOwnerFilters = ["Mine", "Everyone"] as const;
+export type ThreadOwnerFilter = (typeof threadOwnerFilters)[number];
+
+export const threadStandingFilters = ["Open", "Closed", "Hidden"] as const;
+export type ThreadStandingFilter = (typeof threadStandingFilters)[number];
+
+/** Whether a row belongs in one of the Threads page's standing filters.
+ * `Hidden` is a bucket of its own rather than a flag over the other two, so a
+ * thread its owner hid stops appearing under `Open` or `Closed` the moment it
+ * is. */
+function threadMatchesStanding(
+  thread: ThreadEntryResponse,
+  standing: ThreadStandingFilter,
+): boolean {
+  switch (standing) {
+    case "Open":
+      return !thread.hidden && thread.state !== "Closed";
+    case "Closed":
+      return !thread.hidden && thread.state === "Closed";
+    case "Hidden":
+      return thread.hidden;
+  }
+}
+
+/**
+ * The Threads page's own rows: a thread its owner hid is only ever offered
+ * back to its owner, so the `Hidden` standing forces `Mine` whatever the
+ * owner chip reads — a stranger's archived thread is not this reader's to
+ * restore.
+ */
+export function threadPageRows(
+  threads: readonly ThreadEntryResponse[],
+  owner: ThreadOwnerFilter,
+  standing: ThreadStandingFilter,
+): readonly ThreadEntryResponse[] {
+  const owned =
+    owner === "Everyone" && standing !== "Hidden"
+      ? threads
+      : threads.filter((thread) => thread.mine);
+  return threadsMineFirst(
+    owned.filter((thread) => threadMatchesStanding(thread, standing)),
+  );
 }
 
 /**

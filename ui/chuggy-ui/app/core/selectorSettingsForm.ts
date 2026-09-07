@@ -25,14 +25,21 @@
  * the route accepts is the account that drifts.
  */
 
-import { z } from "zod";
+import type { z } from "zod";
 
 import { selectorProjectOverridesSchema } from "../../../../src/contract/requests.ts";
-import { selectorProjectSettingsResponseSchema } from "../../../../src/contract/responses.ts";
-import type { SelectorProjectSettingsResponse } from "../../../../src/contract/responses.ts";
+import { selectorSettingsConflictResponseSchema } from "../../../../src/contract/responses.ts";
+import type {
+  SelectorProjectSettingsResponse,
+  SelectorSettingsConflictResponse,
+} from "../../../../src/contract/responses.ts";
 
 import type { ApiResult } from "./apiRequest.ts";
+import { bytesSetFigure, countFigure, spanSetFigure } from "./figures.ts";
+import type { Figure } from "./figures.ts";
 import { panelReason } from "./freshness.ts";
+import { selectorModeTone } from "./tones.ts";
+import type { Tone } from "./tones.ts";
 
 export type SelectorProjectOverrides = z.infer<
   typeof selectorProjectOverridesSchema
@@ -193,6 +200,14 @@ export function selectorSettingsRebased(
   };
 }
 
+/** Bare digits, or digits grouped in threes, as the number the wire reads;
+ * `NaN` for anything else, so the wire's own schema is what refuses it. */
+function selectorSettingsLimitNumber(written: string): number {
+  return /^\d+$/.test(written) || /^\d{1,3}(,\d{3})+$/.test(written)
+    ? Number(written.replaceAll(",", ""))
+    : NaN;
+}
+
 function selectorSettingsLimits(
   limits: SelectorSettingsLimitDraft,
 ): Record<string, number> | undefined {
@@ -200,7 +215,7 @@ function selectorSettingsLimits(
   for (const name of selectorSettingsLimitNames) {
     const written = limits[name].trim();
     if (written === "") continue;
-    held[name] = Number(written);
+    held[name] = selectorSettingsLimitNumber(written);
   }
   return Object.keys(held).length === 0 ? undefined : held;
 }
@@ -250,16 +265,277 @@ export function selectorSettingsLimitLabel(
     case "tokensPerDecision":
       return "Tokens";
     case "millisecondsPerDecision":
-      return "Milliseconds";
+      return "Time";
     case "toolCallsPerDecision":
       return "Tool calls";
     case "dispatchesPerDecision":
       return "Dispatches";
     case "inputBytesPerDecision":
-      return "Input bytes";
+      return "Input";
     case "candidatePagesPerDecision":
       return "Candidate pages";
   }
+}
+
+/**
+ * What a limit reads as at rest, in the unit a person states it in. The box
+ * beside it holds the wire's own unit instead, which is why
+ * `selectorSettingsLimitUnitWord` is a second answer and not this one rounded.
+ */
+export function selectorSettingsLimitFigure(
+  name: SelectorSettingsLimitName,
+  value: number,
+): Figure {
+  switch (name) {
+    case "tokensPerDecision":
+      return countFigure(value, "tokens");
+    case "millisecondsPerDecision":
+      return spanSetFigure(value);
+    case "toolCallsPerDecision":
+      return countFigure(value, "calls");
+    case "dispatchesPerDecision":
+      return countFigure(value, "tickets");
+    case "inputBytesPerDecision":
+      return bytesSetFigure(value);
+    case "candidatePagesPerDecision":
+      return countFigure(value, "pages");
+  }
+}
+
+/** The unit the box holds, which is the wire's own: a draft is raw digits, so
+ * the suffix beside them has to say what the wire will read them as. */
+export function selectorSettingsLimitUnitWord(
+  name: SelectorSettingsLimitName,
+): string {
+  switch (name) {
+    case "tokensPerDecision":
+      return "tokens";
+    case "millisecondsPerDecision":
+      return "ms";
+    case "toolCallsPerDecision":
+      return "calls";
+    case "dispatchesPerDecision":
+      return "tickets";
+    case "inputBytesPerDecision":
+      return "bytes";
+    case "candidatePagesPerDecision":
+      return "pages";
+  }
+}
+
+/** The prose overrides, each of which is one section of the page. */
+export const selectorSettingsTextNames = [
+  "northStar",
+  "threadStandingRules",
+  "basePrompt",
+] as const;
+
+export type SelectorSettingsTextName =
+  (typeof selectorSettingsTextNames)[number];
+
+/** A section is what one press of Edit opens, and only one is open at a time. */
+export const selectorSettingsSectionNames = [
+  ...selectorSettingsTextNames,
+  "limits",
+] as const;
+
+export type SelectorSettingsSectionName =
+  (typeof selectorSettingsSectionNames)[number];
+
+/** What a section is called and, in one line, what setting it holds. */
+export interface SelectorSettingsSection {
+  readonly title: string;
+  readonly about: string;
+}
+
+export function selectorSettingsSection(
+  name: SelectorSettingsSectionName,
+): SelectorSettingsSection {
+  switch (name) {
+    case "northStar":
+      return {
+        title: "North Star",
+        about:
+          "What this project is for. Every lead decision is judged against it.",
+      };
+    case "threadStandingRules":
+      return {
+        title: "Standing rules",
+        about: "How threads act on this project.",
+      };
+    case "basePrompt":
+      return {
+        title: "Base prompt",
+        about: "The lead's instructions at the start of every turn.",
+      };
+    case "limits":
+      return { title: "Limits", about: "What one decision may spend." };
+  }
+}
+
+/** One prose box under the text a reader typed into it. */
+export function selectorSettingsTextTyped(
+  draft: SelectorSettingsDraft,
+  name: SelectorSettingsTextName,
+  text: string,
+): SelectorSettingsDraft {
+  switch (name) {
+    case "northStar":
+      return { ...draft, northStar: text };
+    case "threadStandingRules":
+      return { ...draft, threadStandingRules: text };
+    case "basePrompt":
+      return { ...draft, basePrompt: text };
+  }
+}
+
+/** One limit box under the digits a reader typed into it. */
+export function selectorSettingsLimitTyped(
+  draft: SelectorSettingsDraft,
+  name: SelectorSettingsLimitName,
+  digits: string,
+): SelectorSettingsDraft {
+  return { ...draft, limits: { ...draft.limits, [name]: digits } };
+}
+
+/** Whether the section stands on the installation's value rather than the
+ * project's own, read from the draft so that clearing a box says so at once. */
+export function selectorSettingsSectionInherited(
+  draft: SelectorSettingsDraft,
+  name: SelectorSettingsSectionName,
+): boolean {
+  if (name === "limits")
+    return selectorSettingsLimitNames.every(
+      (limit) => draft.limits[limit] === "",
+    );
+  return draft[name] === "";
+}
+
+/** The section as if the project had never set it, which is what Reset holds. */
+export function selectorSettingsSectionCleared(
+  draft: SelectorSettingsDraft,
+  name: SelectorSettingsSectionName,
+): SelectorSettingsDraft {
+  if (name === "limits")
+    return { ...draft, limits: selectorSettingsLimitDraft(undefined) };
+  return selectorSettingsTextTyped(draft, name, "");
+}
+
+/** The section back as the read gave it, which is what Cancel holds. */
+export function selectorSettingsSectionRestored(
+  draft: SelectorSettingsDraft,
+  name: SelectorSettingsSectionName,
+): SelectorSettingsDraft {
+  if (name === "limits") return { ...draft, limits: draft.read.limits };
+  return selectorSettingsTextTyped(draft, name, draft.read[name]);
+}
+
+/** How many boxes of the section this draft would move, which is what its foot
+ * says before a save the reader cannot see the whole of. */
+export function selectorSettingsSectionChangedCount(
+  draft: SelectorSettingsDraft,
+  name: SelectorSettingsSectionName,
+): number {
+  if (name === "limits")
+    return selectorSettingsLimitNames.filter(
+      (limit) => draft.limits[limit] !== draft.read.limits[limit],
+    ).length;
+  return draft[name] === draft.read[name] ? 0 : 1;
+}
+
+/** Whether this draft moved this one limit, which is what marks its row. */
+export function selectorSettingsLimitEdited(
+  draft: SelectorSettingsDraft,
+  name: SelectorSettingsLimitName,
+): boolean {
+  return draft.limits[name] !== draft.read.limits[name];
+}
+
+/** Whether this limit's box currently holds an override: live, so a row
+ * cleared by Reset reads as on the default at once rather than waiting for
+ * the next read. */
+export function selectorSettingsLimitOverridden(
+  draft: SelectorSettingsDraft,
+  name: SelectorSettingsLimitName,
+): boolean {
+  return draft.limits[name] !== "";
+}
+
+/** Whether this text section held an override as of the last read. */
+export function selectorSettingsTextOverriddenAtRead(
+  draft: SelectorSettingsDraft,
+  name: SelectorSettingsTextName,
+): boolean {
+  return draft.read[name] !== "";
+}
+
+/**
+ * One operational fact and the single press that changes it: what the project
+ * runs under, whether that is its own or the installation's, and the draft the
+ * press writes. There is no edit mode here — the press is the write.
+ */
+export interface SelectorSettingsStripCell {
+  readonly name: string;
+  readonly value: string;
+  readonly tone: Tone | undefined;
+  readonly inherited: boolean;
+  readonly action: string;
+  readonly pressed: SelectorSettingsDraft;
+}
+
+/** The draft a strip press writes from: the read's own boxes, not whatever an
+ * open section's edit currently holds — a press here has nothing to do with
+ * the section a reader may be mid-edit on. */
+function selectorSettingsAtRest(
+  draft: SelectorSettingsDraft,
+): SelectorSettingsDraft {
+  return { ...draft, ...draft.read };
+}
+
+/**
+ * Whether the selector is deciding for this project. Resume clears the
+ * project's override where the installation is running anyway, so a project
+ * that was never paused of its own does not acquire an override by being
+ * resumed; where the installation is paused it writes Running instead, because
+ * clearing there would leave the project paused by inheritance.
+ */
+export function selectorSettingsModeCell(
+  draft: SelectorSettingsDraft,
+  settings: SelectorProjectSettingsResponse,
+): SelectorSettingsStripCell {
+  const effective = settings.effective;
+  const running = effective.mode === "Running";
+  const resumed = effective.installationMode === "Running" ? "" : "Running";
+  return {
+    name: "Selector",
+    value: effective.mode,
+    tone: selectorModeTone(effective.mode),
+    inherited: draft.mode === "",
+    action: running ? "Pause" : "Resume",
+    pressed: {
+      ...selectorSettingsAtRest(draft),
+      mode: running ? "Paused" : resumed,
+    },
+  };
+}
+
+/** Whether a proposal is dispatched or held for a reviewer. */
+export function selectorSettingsDispatchCell(
+  draft: SelectorSettingsDraft,
+  settings: SelectorProjectSettingsResponse,
+): SelectorSettingsStripCell {
+  const automatic = settings.effective.dispatchMode === "Automatic";
+  return {
+    name: "Dispatch",
+    value: automatic ? "Automatic" : "Approval",
+    tone: undefined,
+    inherited: draft.dispatchMode === "",
+    action: automatic ? "Require approval" : "Dispatch automatically",
+    pressed: {
+      ...selectorSettingsAtRest(draft),
+      dispatchMode: automatic ? "ApprovalRequired" : "Automatic",
+    },
+  };
 }
 
 /**
@@ -280,13 +556,9 @@ export type SelectorSettingsSaved =
       readonly saved: "Conflict";
       readonly revision: number;
       readonly settings: SelectorProjectSettingsResponse;
+      readonly movedBy?: SelectorSettingsConflictResponse["movedBy"];
     }
   | { readonly saved: "Failed"; readonly reason: string };
-
-/** What a revision conflict carries beside its code: the settings that moved. */
-const selectorSettingsConflictSchema = z.object({
-  settings: selectorProjectSettingsResponseSchema,
-});
 
 /**
  * What the write answered. A conflict is drawn as the revision that moved and
@@ -302,12 +574,15 @@ export function selectorSettingsAnswered(
       settings: result.value,
     };
   if (result.outcome === "Conflict") {
-    const read = selectorSettingsConflictSchema.safeParse(result.body);
+    const read = selectorSettingsConflictResponseSchema.safeParse(result.body);
     if (read.success)
       return {
         saved: "Conflict",
         revision: read.data.settings.revision,
         settings: read.data.settings,
+        ...(read.data.movedBy === undefined
+          ? {}
+          : { movedBy: read.data.movedBy }),
       };
   }
   return { saved: "Failed", reason: panelReason(result) };

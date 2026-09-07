@@ -340,7 +340,9 @@ const selectorLimitsResponseSchema = z.object({
  * project's own or the installation default, and both revisions are named
  * because a decision is fenced on the pair. `installationMode` is beside the
  * resolved `mode` so a reader can tell a project's own pause from the
- * installation-wide one it cannot lift.
+ * installation-wide one it cannot lift, and `installationLimits` is beside the
+ * resolved `limits` so a reader can tell an overridden limit from an inherited
+ * one and say what it would fall back to.
  */
 export const selectorEffectiveSettingsResponseSchema = z.strictObject({
   revision: countSchema,
@@ -354,6 +356,7 @@ export const selectorEffectiveSettingsResponseSchema = z.strictObject({
   modelAllowlist: z.array(z.string()),
   toolAllowlist: z.array(z.string()),
   limits: selectorLimitsResponseSchema,
+  installationLimits: selectorLimitsResponseSchema,
   operationalContextMaxAgeMs: countSchema,
 });
 
@@ -367,15 +370,36 @@ export type SelectorProjectSettingsResponse = z.infer<
   typeof selectorProjectSettingsResponseSchema
 >;
 
+/** Who a settings revision is recorded against, as the authorization named them. */
+const selectorAdministratorResponseSchema = z.strictObject({
+  kind: identitySchema,
+  subject: identitySchema,
+});
+
 export const selectorSettingsRevisionResponseSchema = z.strictObject({
   revision: countSchema,
   overrides: selectorProjectOverridesSchema,
-  administrator: z.strictObject({
-    kind: identitySchema,
-    subject: identitySchema,
-  }),
+  administrator: selectorAdministratorResponseSchema,
   recordedAt: instantSchema,
 });
+
+/**
+ * What a write that lost the revision fence answers with beside its error code:
+ * the settings standing in its place, and who moved them. `movedBy` is absent
+ * only where the standing revision is zero, which nobody wrote.
+ */
+export const selectorSettingsConflictResponseSchema = z.object({
+  settings: selectorProjectSettingsResponseSchema,
+  movedBy: z
+    .strictObject({
+      administrator: selectorAdministratorResponseSchema,
+      recordedAt: instantSchema,
+    })
+    .optional(),
+});
+export type SelectorSettingsConflictResponse = z.infer<
+  typeof selectorSettingsConflictResponseSchema
+>;
 
 export const selectorSettingsHistoryResponseSchema = z.strictObject({
   revisions: page(selectorSettingsRevisionResponseSchema),
@@ -1017,9 +1041,17 @@ export const threadEntryResponseSchema = z.object({
   mine: z.boolean(),
   turns: countSchema,
   agentReference: identitySchema.optional(),
-  /** What the thread is about, derived from its first message and absent until
-   * a member has sent one. */
+  /** What the thread is about: the member's own name for it where they gave
+   * one, else the title derived from its first message, and absent until one of
+   * those exists. */
   title: z.string().max(threadTitleCharsMax).optional(),
+  openedAt: instantSchema,
+  /** When the thread last moved: it opened, a turn was enqueued or ended, or it
+   * closed. It is what a rail groups by. */
+  lastActivityAt: instantSchema,
+  /** Off its owner's rail. Nothing is deleted, so a hidden thread is still
+   * listed here and still readable. */
+  hidden: z.boolean(),
 });
 export type ThreadEntryResponse = z.infer<typeof threadEntryResponseSchema>;
 
@@ -1059,6 +1091,9 @@ export const threadResponseSchema = z.object({
   mine: z.boolean(),
   agentReference: identitySchema.optional(),
   title: z.string().max(threadTitleCharsMax).optional(),
+  openedAt: instantSchema,
+  lastActivityAt: instantSchema,
+  hidden: z.boolean(),
   turns: z.array(threadTurnResponseSchema).max(threadTurnsAnsweredMax),
   /** The cursor an older page is asked for with, absent where this page holds the first turn. */
   nextBefore: countSchema.optional(),
@@ -1076,6 +1111,18 @@ export type ThreadResponse = z.infer<typeof threadResponseSchema>;
  */
 export const threadTranscriptResponseSchema = leadTranscriptResponseSchema;
 export type ThreadTranscriptResponse = LeadTranscriptResponse;
+
+/**
+ * What the rename and the hide doors answer: the entry as it now stands, which
+ * is what the close door answers and for its reason — a caller is given the
+ * thread it wrote rather than sent to read it again. They are two names over one
+ * shape because the two doors are two writes, and a shape that split later
+ * would split under one of the names.
+ */
+export const threadRenameResponseSchema = threadEntryResponseSchema;
+export type ThreadRenameResponse = ThreadEntryResponse;
+export const threadHideResponseSchema = threadEntryResponseSchema;
+export type ThreadHideResponse = ThreadEntryResponse;
 
 /** What the message door answers: the turn it took, and where it sits in the mailbox. */
 export const threadMessageAcceptedSchema = z.object({

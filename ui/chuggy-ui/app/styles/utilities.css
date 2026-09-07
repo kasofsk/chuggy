@@ -73,6 +73,7 @@
   --container-page: var(--width-page);
   --container-rail: var(--width-rail);
   --container-column: var(--width-column);
+  --container-settings: var(--width-settings);
   --container-aside: var(--width-aside);
   --container-measure: var(--measure);
 }

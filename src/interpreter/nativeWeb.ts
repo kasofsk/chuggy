@@ -168,6 +168,8 @@ import {
   threadMessageSent,
   threadSeeding,
   type ThreadClosing,
+  type ThreadHiding,
+  type ThreadRenaming,
   type ThreadMailboxQuery,
   type ThreadMessageSent,
   type ThreadOpening,
@@ -672,6 +674,16 @@ export interface NativeWeb {
     partition: Partition,
     session: SessionId,
   ): Promise<ThreadClosing>;
+  renameThread(
+    principal: Principal,
+    partition: Partition,
+    input: { readonly session: SessionId; readonly title: string },
+  ): Promise<ThreadRenaming>;
+  hideThread(
+    principal: Principal,
+    partition: Partition,
+    input: { readonly session: SessionId; readonly hidden: boolean },
+  ): Promise<ThreadHiding>;
   leadInquiries(
     principal: Principal,
     partition: Partition,
@@ -1466,6 +1478,87 @@ function nativeCloseThreadMethod(
   };
 }
 
+/** The owner gate rename and hide share: the caller's own mailbox, or why not. */
+async function nativeThreadOwnedOrRefused(
+  ports: NativeThreadPorts,
+  partition: Partition,
+  principal: Principal,
+  session: SessionId,
+): Promise<
+  | { readonly owned: true }
+  | { readonly owned: false; readonly result: "NotFound" | "NotYourThread" }
+> {
+  const mine = await ports.threads.standing({
+    partition,
+    session,
+    query: { limit: 1 },
+  });
+  if (mine === undefined) return { owned: false, result: "NotFound" };
+  if (mine.thread.principal !== principal)
+    return { owned: false, result: "NotYourThread" };
+  return { owned: true };
+}
+
+/**
+ * Renaming and hiding are each the owner's alone, resolved against the
+ * caller's own mailbox as the message door resolves it.
+ */
+function nativeThreadViewMethods(
+  access: ProjectAccess,
+  threads?: NativeThreadPorts,
+): Pick<NativeWeb, "renameThread" | "hideThread"> {
+  return {
+    renameThread: async (principal, partition, input) => {
+      if (
+        (await access.authorize(principal, partition, "Mutate")) === undefined
+      )
+        return { result: "NotFound" };
+      const ports = composedThreadPorts(threads);
+      const owned = await nativeThreadOwnedOrRefused(
+        ports,
+        partition,
+        principal,
+        input.session,
+      );
+      if (!owned.owned) return { result: owned.result };
+      const renamed = await ports.threads.rename({
+        partition,
+        session: input.session,
+        title: input.title,
+      });
+      if (renamed.renamed === "NoThread") return { result: "NotFound" };
+      return {
+        result: renamed.renamed,
+        thread: threadEntry(renamed.thread, principal),
+      };
+    },
+    hideThread: async (principal, partition, input) => {
+      if (
+        (await access.authorize(principal, partition, "Mutate")) === undefined
+      )
+        return { result: "NotFound" };
+      const ports = composedThreadPorts(threads);
+      const owned = await nativeThreadOwnedOrRefused(
+        ports,
+        partition,
+        principal,
+        input.session,
+      );
+      if (!owned.owned) return { result: owned.result };
+      const hidden = await ports.threads.hide({
+        partition,
+        session: input.session,
+        hidden: input.hidden,
+      });
+      if (hidden.hidden === "NoThread") return { result: "NotFound" };
+      return {
+        result: hidden.hidden,
+        thread: threadEntry(hidden.thread, principal),
+      };
+    },
+  };
+}
+
 /**
  * The three reads every member of the project may make of every thread in it,
  * each reauthorizing before it reaches a store. A thread that is not this
@@ -1657,7 +1750,7 @@ function nativeLeadInquiryMethods(
   };
 }
 
-/** The thread side of the boundary, whose reads and whose three doors reach it as one. */
+/** The thread side of the boundary, whose reads and whose five doors reach it as one. */
 function nativeThreadMethods(
   access: ProjectAccess,
   threads?: NativeThreadPorts,
@@ -1669,9 +1762,12 @@ function nativeThreadMethods(
   | "openThread"
   | "sendThreadMessage"
   | "closeThread"
+  | "renameThread"
+  | "hideThread"
 > {
   return {
     ...nativeThreadReadMethods(access, threads),
+    ...nativeThreadViewMethods(access, threads),
     openThread: nativeOpenThreadMethod(access, threads),
     sendThreadMessage: nativeSendThreadMessageMethod(access, threads),
     closeThread: nativeCloseThreadMethod(access, threads),

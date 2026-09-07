@@ -34,6 +34,21 @@ export interface SelectorProjectSettingsRecord {
   readonly effective: SelectorResolvedSettings;
 }
 
+/** Who moved a project's settings to the revision now standing, and when. */
+export interface SelectorSettingsMovement {
+  readonly administrator: Authority;
+  readonly recordedAt: string;
+}
+
+/**
+ * The standing row and the write that put it there, which one statement
+ * answers. `movedBy` is absent only at revision zero, which nobody wrote.
+ */
+export interface SelectorProjectSettingsStanding {
+  readonly settings: SelectorProjectSettingsRecord;
+  readonly movedBy?: SelectorSettingsMovement;
+}
+
 /** One retained override set, and the administrator who wrote it. */
 export interface SelectorProjectSettingsRevision {
   readonly revision: number;
@@ -65,7 +80,7 @@ export type SelectorProjectSettingsWriteOutcome =
 
 /** The durable per-project settings, whose write reports the row it wrote. */
 export interface SelectorProjectSettingsStore {
-  read(partition: Partition): Promise<SelectorProjectSettingsRecord>;
+  read(partition: Partition): Promise<SelectorProjectSettingsStanding>;
   write(
     partition: Partition,
     expectedRevision: number,
@@ -91,6 +106,7 @@ export type SelectorProjectSettingsWritten =
   | {
       readonly result: "Conflict";
       readonly settings: SelectorProjectSettingsRecord;
+      readonly movedBy?: SelectorSettingsMovement;
     }
   | {
       readonly result: "Written";
@@ -226,7 +242,7 @@ export function selectorProjectSettingsAdministration(
     read: async (principal, partition) =>
       (await administrator(principal, partition)) === undefined
         ? { result: "NotFound" }
-        : { result: "Found", settings: await store.read(partition) },
+        : { result: "Found", settings: (await store.read(partition)).settings },
     write: async (principal, partition, expectedRevision, overrides) => {
       const authority = await administrator(principal, partition);
       if (authority === undefined) return { result: "NotFound" };
@@ -239,8 +255,16 @@ export function selectorProjectSettingsAdministration(
       switch (written.written) {
         case "Settings":
           return { result: "Written", settings: written.settings };
-        case "FenceMoved":
-          return { result: "Conflict", settings: await store.read(partition) };
+        case "FenceMoved": {
+          const standing = await store.read(partition);
+          return {
+            result: "Conflict",
+            settings: standing.settings,
+            ...(standing.movedBy === undefined
+              ? {}
+              : { movedBy: standing.movedBy }),
+          };
+        }
         case "Refused":
           return { result: "Refused", refusal: written.refusal };
         default:

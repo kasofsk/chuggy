@@ -69,9 +69,11 @@ import type {
 } from "../../interpreter/leadInquiry.ts";
 import type {
   ThreadClosing,
+  ThreadHiding,
   ThreadMessageSent,
   ThreadOpening,
   ThreadRead,
+  ThreadRenaming,
   ThreadTurnRecord,
   ThreadsRead,
 } from "../../interpreter/threadRead.ts";
@@ -365,6 +367,7 @@ function selectorProjectSettingsBody(
       modelAllowlist: effective.modelAllowlist,
       toolAllowlist: effective.toolAllowlist,
       limits: effective.limits,
+      installationLimits: effective.installationLimits,
       operationalContextMaxAgeMs: effective.operationalContextMaxAgeMs,
     },
   };
@@ -414,6 +417,7 @@ export function selectorProjectSettingsWriteResponse(
           "The selector settings moved under this write.",
         ),
         settings: selectorProjectSettingsBody(result.settings),
+        ...(result.movedBy === undefined ? {} : { movedBy: result.movedBy }),
       });
     case "Refused":
       return selectorProjectSettingsRefusal(result.refusal);
@@ -1106,6 +1110,46 @@ export function openThreadResponse(
 export function closeThreadResponse(result: ThreadClosing): NativeHttpResponse {
   if (result.result === "NotFound")
     return response(404, nativeHttpError("NotFound", "Resource not found."));
+  return response(200, result.thread);
+}
+
+/**
+ * Renaming is the owner's alone, so a caller pressing another member's thread
+ * meets the same refusal the message door answers a stale mailbox with.
+ * Idempotent otherwise: a caller is given the thread they wrote rather than
+ * sent to read it again.
+ */
+export function renameThreadResponse(
+  result: ThreadRenaming,
+): NativeHttpResponse {
+  if (result.result === "NotFound")
+    return response(404, nativeHttpError("NotFound", "Resource not found."));
+  if (result.result === "NotYourThread")
+    return response(
+      403,
+      nativeHttpError(
+        threadMessageRefusalCode.NotYourThread,
+        "The thread is not yours to rename.",
+      ),
+    );
+  return response(200, result.thread);
+}
+
+/**
+ * Hiding is the owner's alone, so a caller pressing another member's thread
+ * meets the same refusal the message door answers a stale mailbox with.
+ */
+export function hideThreadResponse(result: ThreadHiding): NativeHttpResponse {
+  if (result.result === "NotFound")
+    return response(404, nativeHttpError("NotFound", "Resource not found."));
+  if (result.result === "NotYourThread")
+    return response(
+      403,
+      nativeHttpError(
+        threadMessageRefusalCode.NotYourThread,
+        "The thread is not yours to hide.",
+      ),
+    );
   return response(200, result.thread);
 }
 

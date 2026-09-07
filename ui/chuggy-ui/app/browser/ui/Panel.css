@@ -11,9 +11,43 @@
     padding: var(--space-3) var(--space-4) var(--space-2);
   }
 
+  .panel-named {
+    display: grid;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
   .panel-title {
     font-size: var(--text-md);
     font-weight: var(--weight-medium);
+  }
+
+  .panel-about {
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+    line-height: var(--leading-dense);
+  }
+
+  /* The section variant: a settings card, where the head and the foot are
+     ruled off from the body a reader edits between them. */
+  .panel-head-ruled {
+    align-items: flex-start;
+    border-bottom: var(--hairline) solid var(--edge);
+    padding-bottom: var(--space-3);
+  }
+
+  .panel-body-ruled {
+    padding-top: var(--space-4);
+  }
+
+  .panel-foot {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    border-top: var(--hairline) solid var(--edge);
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-0);
+    border-radius: 0 0 var(--radius-2) var(--radius-2);
   }
 
   .panel-meta {
