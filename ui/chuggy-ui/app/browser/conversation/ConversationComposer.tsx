@@ -59,7 +59,13 @@ export function ConversationComposer(
 ): ReactNode {
   const written = useAuiState((state) => state.composer.text);
   const count = textCodePointsCount(written);
-  if (!props.takes) return <p className="text-ink-3 text-center">Closed</p>;
+  if (!props.takes)
+    return (
+      <p className="text-ink-3 flex flex-wrap justify-center gap-3 text-center">
+        <span>Closed</span>
+        {props.note}
+      </p>
+    );
   return (
     <ComposerPrimitive.Root className="grid min-w-0 gap-1">
       <div className="conversation-field bg-surface-1 border-edge-control rounded-3 grid min-w-0 gap-2 border p-3">

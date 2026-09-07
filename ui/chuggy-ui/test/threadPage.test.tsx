@@ -503,12 +503,12 @@ test("a NotYourThread whose message did not land is sent again under the same tu
 
 test("a closed thread stops the composer sending", async () => {
   const server = await pressedAgainst("ThreadClosed");
-  expect(screen.getByText("Closed")).toBeDefined();
-  await pressed("shouting at a closed door");
+  expect(screen.getAllByText("Closed").length).toBeGreaterThan(0);
   expect(
-    server.posts().length,
-    "a door that answered Closed was posted to again",
-  ).toBe(1);
+    composer(),
+    "a door that answered Closed left a box to shout into",
+  ).toBeNull();
+  expect(server.posts().length).toBe(1);
 });
 
 test("a thread whose owner is gone stops it too, and says which", async () => {
@@ -517,7 +517,7 @@ test("a thread whose owner is gone stops it too, and says which", async () => {
     screen.getByText("Orphaned"),
     "one refusal was drawn as another",
   ).toBeDefined();
-  await pressed("shouting at an orphan");
+  expect(composer()).toBeNull();
   expect(server.posts().length).toBe(1);
 });
 
@@ -534,7 +534,7 @@ test("a thread already standing Closed draws a composer that takes nothing", asy
     thread: threadBody({ state: "Closed" }),
   }));
   await mountThread();
-  await pressed("into a closed thread");
+  expect(composer()).toBeNull();
   expect(server.posts().length).toBe(0);
 });
 
@@ -663,7 +663,7 @@ test("a transcript tool call sits inside the collapsed work disclosure", async (
   expect(screen.getByText("a member's question")).toBeDefined();
   expect(screen.getByText("it waits on 40")).toBeDefined();
   expect(screen.queryByText("41 waits on 40")).toBeNull();
-  const work = screen.getByRole("button", { name: /Tools/u });
+  const work = screen.getByRole("button", { name: /tool/u });
   fireEvent.click(work);
   const call = screen.getByRole("button", { name: /Read/u });
   expect(screen.queryByText("41 waits on 40")).toBeNull();
@@ -693,8 +693,7 @@ test("a wake draws its reason and its resource and not its document", async () =
     transcript: (after) => threadTranscriptSaid(after, woken),
   }));
   await mountThread();
-  expect(screen.getByText("TicketRefused")).toBeDefined();
-  expect(screen.getByText("41")).toBeDefined();
+  expect(screen.getByText("TicketRefused · 41")).toBeDefined();
   expect(
     screen.queryByText(threadWakeStandingSaid),
     "the rule the agent is bound by was drawn as copy for a reader",

@@ -311,7 +311,9 @@ export function conversationArgumentSummary(
  * this is the writer's boundary read backwards rather than a guess at one, and
  * a text that does not carry them is the member's whole message.
  */
-export function conversationAskMessage(text: string): ConversationAsk {
+export function conversationAskMessage(
+  text: string,
+): Extract<ConversationAsk, { readonly ask: "Message" }> {
   const opens = threadSeedingHeadings.some((heading) =>
     text.startsWith(heading),
   );
