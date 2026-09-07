@@ -302,9 +302,6 @@ export function conversationArgumentSummary(
     : { argument: "Size", chars: text.length };
 }
 
-/** What a turn's own kind asks for, with or without the text: the one place
- * this is decided, so an appended turn nobody has spoken text for still draws
- * its kind's word rather than nothing. Only a message with no text has none. */
 /**
  * The member's own words, and the seeding block the server put in front of them
  * where the input carries one. Both sides read the contract's constants, so
@@ -327,6 +324,9 @@ export function conversationAskMessage(
   };
 }
 
+/** What a turn's own kind asks for, with or without the text: the one place
+ * this is decided, so an appended turn nobody has spoken text for still draws
+ * its kind's word rather than nothing. Only a message with no text has none. */
 function conversationAskOf(
   kind: SessionTurnInputKind,
   text: string | undefined,

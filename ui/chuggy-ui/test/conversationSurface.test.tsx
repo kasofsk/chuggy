@@ -403,3 +403,27 @@ test("the note the page worded stands under the field", () => {
   expect(screen.getByText("Queued")).toBeDefined();
   styleless();
 });
+
+test("a note that is itself a paragraph nests in no paragraph, open or closed", () => {
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  const note = <p>Queued</p>;
+  const { unmount } = render(
+    <Conversation
+      exchanges={[answered]}
+      composer={{ ...composerOf({ onSend }), note }}
+      empty="No conversation"
+    />,
+  );
+  expect(screen.getByText("Queued").closest("p p")).toBeNull();
+  unmount();
+  render(
+    <Conversation
+      exchanges={[answered]}
+      composer={{ ...composerOf({ onSend }), takes: false, note }}
+      empty="No conversation"
+    />,
+  );
+  expect(screen.getByText("Closed")).toBeDefined();
+  expect(screen.getByText("Queued").closest("p p")).toBeNull();
+  styleless();
+});

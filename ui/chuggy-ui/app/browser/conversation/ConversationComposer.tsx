@@ -61,10 +61,10 @@ export function ConversationComposer(
   const count = textCodePointsCount(written);
   if (!props.takes)
     return (
-      <p className="text-ink-3 flex flex-wrap justify-center gap-3 text-center">
+      <div className="text-ink-3 flex flex-wrap justify-center gap-3 text-center">
         <span>Closed</span>
         {props.note}
-      </p>
+      </div>
     );
   return (
     <ComposerPrimitive.Root className="grid min-w-0 gap-1">
@@ -88,14 +88,14 @@ export function ConversationComposer(
           <span className="visually-hidden">Send</span>
         </ComposerPrimitive.Send>
       </div>
-      <p className="text-ink-3 flex flex-wrap items-baseline gap-3 text-xs">
+      <div className="text-ink-3 flex flex-wrap items-baseline gap-3 text-xs">
         {props.note}
         {count < props.charsMax * conversationCounterShare ? null : (
           <span className="num ml-auto">
             {count} / {props.charsMax}
           </span>
         )}
-      </p>
+      </div>
     </ComposerPrimitive.Root>
   );
 }
