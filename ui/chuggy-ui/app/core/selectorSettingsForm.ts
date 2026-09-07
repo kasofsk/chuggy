@@ -461,7 +461,7 @@ export function selectorSettingsLimitOverridden(
   return draft.limits[name] !== "";
 }
 
-/** The text sections' own answer to the same question. */
+/** Whether this text section held an override as of the last read. */
 export function selectorSettingsTextOverriddenAtRead(
   draft: SelectorSettingsDraft,
   name: SelectorSettingsTextName,

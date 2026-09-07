@@ -12,9 +12,9 @@
  * changes are absent rather than a diff against nothing — which would claim the
  * revision set every override the project has.
  *
- * An absent override is drawn as the installation's value rather than as blank,
- * because a field going back to the default is a change like any other and a
- * blank half reads as "unchanged".
+ * An absent override is drawn as `Default` rather than as blank, because a
+ * field going back to the default is a change like any other and a blank
+ * half reads as "unchanged".
  */
 
 import type { SelectorSettingsHistoryResponse } from "../../../../src/contract/responses.ts";
