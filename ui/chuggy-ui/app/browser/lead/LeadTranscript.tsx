@@ -66,23 +66,30 @@ export function useLeadTranscript(
 ): LeadTranscriptHeld {
   const ports = useApiPorts();
   const pane = useRef<LeadTranscriptPane>(leadTranscriptPaneEmpty);
+  const unmounted = useRef(false);
+  useEffect(
+    () => () => {
+      unmounted.current = true;
+    },
+    [],
+  );
   const [held, setHeld] = useState<LeadTranscriptHeld>(
     leadTranscriptDrawn(leadTranscriptPaneEmpty),
   );
   const { session, stream, highWaterBatch } = read;
   const { tenant, project } = read.partition;
   useEffect(() => {
-    let abandoned = false;
+    let superseded = false;
     const stepped = (event: LeadTranscriptEvent): void => {
       pane.current = leadTranscriptStep(pane.current, event);
-      setHeld(leadTranscriptDrawn(pane.current));
+      if (!unmounted.current) setHeld(leadTranscriptDrawn(pane.current));
     };
     const walk = async (): Promise<void> => {
       if (pane.current.stream !== undefined && pane.current.stream !== stream)
         stepped({ event: "StreamChange", stream });
       for (let asked = 0; asked < leadTranscriptReadsMax; asked += 1) {
         const after = leadTranscriptNextAfter(pane.current, highWaterBatch);
-        if (after === undefined || stream === undefined || abandoned) return;
+        if (after === undefined || stream === undefined || superseded) return;
         const answered =
           session === undefined
             ? await apiLeadTranscript(
@@ -97,18 +104,18 @@ export function useLeadTranscript(
                 stream,
                 after,
               });
-        if (abandoned) return;
         if (answered.outcome !== "Ok") {
           stepped({ event: "Failure", reason: panelReason(answered) });
           return;
         }
         stepped({ event: "Page", page: answered.value, highWaterBatch });
+        if (superseded) return;
       }
-      if (!abandoned) stepped({ event: "BudgetEnd" });
+      if (!superseded) stepped({ event: "BudgetEnd" });
     };
     void walk();
     return () => {
-      abandoned = true;
+      superseded = true;
     };
   }, [ports, tenant, project, session, stream, highWaterBatch]);
   return held;
