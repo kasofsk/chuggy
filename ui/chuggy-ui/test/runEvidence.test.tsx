@@ -243,12 +243,12 @@ test("a rising high-water mark reads exactly the batches above what is held", as
   await settled();
 
   expect(transcriptReads(rendered.reads)).toEqual(["?after=0", "?after=2"]);
-  expect(
-    rendered.container.querySelector(".transcript")?.textContent,
-  ).toContain("batch 4");
-  expect(
-    rendered.container.querySelector(".transcript .freshness")?.textContent,
-  ).toMatch(/^as of /);
+  const transcriptPane = screen.getByRole("region", { name: "transcript" });
+  expect(transcriptPane.textContent).toContain("batch 4");
+  expect(transcriptPane.classList.contains("rounded-3")).toBe(true);
+  expect(transcriptPane.querySelector(".freshness")?.textContent).toMatch(
+    /^as of /,
+  );
 });
 
 /** Complete is the attempt no longer being live, not the pane having caught up,
@@ -262,7 +262,9 @@ test("a run whose attempt has ended draws complete and reads no further", async 
   });
   expect(transcriptReads(rendered.reads)).toEqual(["?after=0"]);
   expect(
-    rendered.container.querySelector(".transcript .freshness")?.textContent,
+    screen
+      .getByRole("region", { name: "transcript" })
+      .querySelector(".freshness")?.textContent,
   ).toBe("complete");
 
   await turned(() => {
