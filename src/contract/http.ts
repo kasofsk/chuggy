@@ -14,6 +14,14 @@ export function textCodePointsCount(text: string): number {
   return [...text].length;
 }
 
+/** What one character weighs once JSON escapes it, which a control character does. */
+const jsonEscapedCharChars = 6;
+
+/** What a JSON string of this many characters weighs: its quotes, every character escaped. */
+function jsonStringChars(chars: number): number {
+  return chars * jsonEscapedCharChars + 2;
+}
+
 export const nativeHttpVersion = 1;
 export const nativeHttpBasePath = "/api/v1";
 export const nativeHttpMediaType = "application/vnd.chuggy.v1+json";
@@ -246,10 +254,21 @@ export const threadWakeFixedCharsMax = 2_048;
  * What a wake document weighs, DERIVED for the reason the seeding ceiling is:
  * the document restates the project's standing rules on the turn that could
  * break them, so a ceiling below what the settings route accepts would refuse
- * every wake of a project whose standing is long.
+ * every wake of a project whose standing is long. The standing is measured as
+ * JSON escapes it, because the document is a JSON string and a project whose
+ * rules are newlines weighs six characters for each of them.
  */
 export const threadWakeCharsMax =
-  selectorSettingsTextCharsMax + threadWakeFixedCharsMax;
+  jsonStringChars(selectorSettingsTextCharsMax) + threadWakeFixedCharsMax;
+
+/**
+ * The widest input one turn of a thread's mailbox holds, which is the wider of
+ * the two doors that write it: a seeded first turn, and a wake document.
+ */
+export const threadTurnRecordedCharsMax = Math.max(
+  threadMessageCharsMax + threadSeedingCharsMax,
+  threadWakeCharsMax,
+);
 
 /** How many wake candidates one pass of the wake runtime reads and enqueues. */
 export const threadWakesPerPassMax = 64;
@@ -311,14 +330,6 @@ export const sessionIdentityCharsMax = 256;
 
 /** The longest label a session kind may be, which its own roster is inside. */
 export const sessionKindCharsMax = 16;
-
-/** What one character weighs once JSON escapes it, which a control character does. */
-const jsonEscapedCharChars = 6;
-
-/** What a JSON string of this many characters weighs: its quotes, every character escaped. */
-function jsonStringChars(chars: number): number {
-  return chars * jsonEscapedCharChars + 2;
-}
 
 /**
  * What one JSON object weighs as `jsonb::text` renders it, which is the only

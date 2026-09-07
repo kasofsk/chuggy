@@ -29,7 +29,9 @@ import {
   threadBacklogMax,
   threadMessageCharsMax,
   threadSeedingCharsMax,
+  threadWakeCharsMax,
   threadSeedingFixedCharsMax,
+  threadTurnRecordedCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
 } from "../../src/contract/http.ts";
@@ -126,6 +128,20 @@ test("a seeded first turn is dominated by the mailbox column it is written to", 
   );
 });
 
+/**
+ * A wake document is written to the same column through the other door, and it
+ * carries the standing rules as JSON escapes them rather than as they read. The
+ * recorded ceiling is what both doors are measured against, so a reader bounds
+ * the row rather than the door it happened to think of.
+ */
+test("the recorded ceiling admits both doors, and the column admits it", () => {
+  assert.ok(
+    threadMessageCharsMax + threadSeedingCharsMax <= threadTurnRecordedCharsMax,
+  );
+  assert.ok(threadWakeCharsMax <= threadTurnRecordedCharsMax);
+  assert.ok(threadTurnRecordedCharsMax <= sessionTurnInputCharsMax);
+});
+
 test("a thread's backlog and its answered tail are inside the mailbox's own", () => {
   assert.ok(threadBacklogMax <= sessionTurnBacklogMax);
   assert.ok(threadTurnsAnsweredMax <= sessionTurnSeriesMax);
@@ -204,7 +220,7 @@ test("a turn carries what the member typed and what came back, each inside its c
   assert.throws(() =>
     threadTurnResponseSchema.parse({
       ...turn,
-      input: "x".repeat(threadMessageCharsMax + threadSeedingCharsMax + 1),
+      input: "x".repeat(threadTurnRecordedCharsMax + 1),
     }),
   );
   assert.throws(() =>

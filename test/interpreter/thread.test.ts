@@ -189,7 +189,8 @@ test("a wake larger than the column holds is refused at both ends", () => {
 /**
  * The standing rules are inside every wake document and a project sets its own,
  * so the bound must admit the widest of both together: the widest resource a
- * change row can name beside the widest standing the settings route accepts.
+ * change row can name beside the widest standing the settings route accepts,
+ * written as characters JSON escapes rather than as characters it copies.
  */
 test("the widest wake a change row can name fits the document bound", () => {
   for (const reason of allThreadWakeReasons) {
@@ -198,7 +199,7 @@ test("the widest wake a change row can name fits the document bound", () => {
         wake: reason,
         resource: "r".repeat(nativeHttpPathSegmentCharsMax),
         at: instant,
-        standing: "s".repeat(selectorSettingsTextCharsMax),
+        standing: "\u0001".repeat(selectorSettingsTextCharsMax),
       }),
     );
 
