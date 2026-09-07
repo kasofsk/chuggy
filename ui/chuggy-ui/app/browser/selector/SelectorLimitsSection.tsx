@@ -16,6 +16,7 @@ import {
   selectorSettingsLimitFigure,
   selectorSettingsLimitLabel,
   selectorSettingsLimitNames,
+  selectorSettingsLimitOverriddenAtRead,
   selectorSettingsLimitTyped,
   selectorSettingsLimitUnitWord,
   selectorSettingsSection,
@@ -51,7 +52,11 @@ function SelectorLimitStanding(props: {
   readonly row: SelectorLimitRow;
 }): ReactNode {
   const row = props.row;
-  if (row.draft.limits[row.name] === "")
+  const overriddenAtRead = selectorSettingsLimitOverriddenAtRead(
+    row.draft,
+    row.name,
+  );
+  if (!overriddenAtRead && row.draft.limits[row.name] === "")
     return (
       <span className="selector-was">
         <Pill tone="neutral">Default</Pill>
@@ -77,6 +82,9 @@ function SelectorLimit(props: { readonly row: SelectorLimitRow }): ReactNode {
   const row = props.row;
   const label = selectorSettingsLimitLabel(row.name);
   const edited = selectorSettingsLimitEdited(row.draft, row.name);
+  const placeholder = selectorSettingsLimitOverriddenAtRead(row.draft, row.name)
+    ? undefined
+    : String(row.effective);
   return (
     <div className="selector-limit" data-edited={edited ? "" : undefined}>
       <span className="selector-limit-key">
@@ -89,7 +97,7 @@ function SelectorLimit(props: { readonly row: SelectorLimitRow }): ReactNode {
           label={label}
           unit={selectorSettingsLimitUnitWord(row.name)}
           value={row.draft.limits[row.name]}
-          placeholder={String(row.effective)}
+          {...(placeholder === undefined ? {} : { placeholder })}
           invalid={row.fault !== undefined}
           onChange={(digits) => {
             row.onChange(

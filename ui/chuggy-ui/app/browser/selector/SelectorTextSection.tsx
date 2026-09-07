@@ -14,6 +14,7 @@ import { countFigure } from "../../core/figures.ts";
 import {
   selectorSettingsSection,
   selectorSettingsSectionInherited,
+  selectorSettingsTextOverriddenAtRead,
   selectorSettingsTextTyped,
 } from "../../core/selectorSettingsForm.ts";
 import type {
@@ -96,6 +97,12 @@ export function SelectorTextSection(props: {
 }): ReactNode {
   const section = selectorSettingsSection(props.name);
   const mono = props.name === "basePrompt";
+  const placeholder = selectorSettingsTextOverriddenAtRead(
+    props.draft,
+    props.name,
+  )
+    ? undefined
+    : props.effective;
   return (
     <SelectorSection
       title={section.title}
@@ -120,7 +127,7 @@ export function SelectorTextSection(props: {
           label={section.title}
           mono={mono}
           value={props.draft[props.name]}
-          placeholder={props.effective}
+          {...(placeholder === undefined ? {} : { placeholder })}
           onChange={(text) => {
             props.onChange(
               selectorSettingsTextTyped(props.draft, props.name, text),
