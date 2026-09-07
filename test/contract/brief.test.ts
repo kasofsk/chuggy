@@ -25,6 +25,8 @@ import {
   briefLinksMax,
   briefResponseSchema,
   briefSchema,
+  briefTitleCharsMax,
+  briefTitleSchema,
 } from "../../src/contract/brief.ts";
 import { draftCreationSchema } from "../../src/contract/requests.ts";
 import { briefFinalizationModes } from "../../src/contract/rosters.ts";
@@ -35,7 +37,10 @@ import {
   briefingLineCharsMax,
   briefingLinesMax,
 } from "../../src/interpreter/taskConfiguration.ts";
-import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
+import {
+  asBriefCheckLine,
+  asBriefTitle,
+} from "../../src/interpreter/ticketBrief.ts";
 import { authoringWireBody } from "./representations.ts";
 
 test("every wire bound on a brief is the interpreter bound it was taken from", () => {
@@ -78,6 +83,38 @@ test("a brief states an intent and bounds what it points at", () => {
     },
   );
   assert.ok(briefSchema.safeParse({ intent: "Do it.", links: [] }).success);
+});
+
+test("the longest title the wire accepts is the longest one the server brands", () => {
+  const titleOf = (chars: number) => "a".repeat(chars);
+  assert.ok(briefTitleSchema.safeParse(titleOf(briefTitleCharsMax)).success);
+  assert.doesNotThrow(() => asBriefTitle(titleOf(briefTitleCharsMax)));
+  assert.equal(
+    briefTitleSchema.safeParse(titleOf(briefTitleCharsMax + 1)).success,
+    false,
+  );
+  assert.throws(
+    () => asBriefTitle(titleOf(briefTitleCharsMax + 1)),
+    RangeError,
+  );
+  assert.equal(briefTitleSchema.safeParse("").success, false);
+});
+
+test("a brief names a title or names none, and a title renders on one line", () => {
+  assert.equal(
+    briefSchema.parse({
+      title: "Serve the reason",
+      intent: "Do it.",
+      links: [],
+    }).title,
+    "Serve the reason",
+  );
+  assert.equal(
+    briefSchema.parse({ intent: "Do it.", links: [] }).title,
+    undefined,
+    "a brief naming no title carries none",
+  );
+  assert.ok(briefTitleCharsMax <= briefLineCharsMax);
 });
 
 test("a brief appends bounded command lines or appends none at all", () => {

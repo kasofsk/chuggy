@@ -17,6 +17,7 @@ import {
   asBriefFinalization,
   asBriefIntent,
   asBriefLinkUrl,
+  asBriefTitle,
   briefFinalizationDefault,
   type BriefFinalization,
   type DraftBrief,
@@ -35,6 +36,7 @@ export interface DraftBriefFinalizationRow {
  * relation and from the two ordinal ones beside it.
  */
 export interface DraftBriefRow extends DraftBriefFinalizationRow {
+  readonly title: string | null;
   readonly intent: string | null;
   readonly branch: string | null;
   readonly links: string[] | null;
@@ -84,6 +86,7 @@ export function draftBriefOf(row: DraftBriefRow): DraftBrief | undefined {
   if (row.intent === null) return undefined;
   const finalization = draftBriefFinalizationOf(row);
   return {
+    ...(row.title === null ? {} : { title: asBriefTitle(row.title) }),
     intent: asBriefIntent(row.intent),
     links: (row.links ?? []).map(asBriefLinkUrl),
     checks: (row.checks ?? []).map(asBriefCheckLine),
@@ -97,6 +100,7 @@ export function postgresTicketBrief(pool: pg.Pool): TicketBriefPort {
   return {
     brief: async (partition: Partition, ticket: number) => {
       const found = await pool.query<{
+        title: string | null;
         intent: string;
         branch: string | null;
         finalization_mode: string;
@@ -104,7 +108,7 @@ export function postgresTicketBrief(pool: pg.Pool): TicketBriefPort {
         links: string[] | null;
         checks: string[] | null;
       }>(
-        sql`SELECT b.intent,b.branch,b.finalization_mode,b.finalization_target,
+        sql`SELECT b.title,b.intent,b.branch,b.finalization_mode,b.finalization_target,
                    (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
                      WHERE k.tenant=b.tenant AND k.project=b.project AND k.ticket=b.ticket) AS links,
                    (SELECT array_agg(c.command ORDER BY c.ordinal) FROM draft_brief_check c

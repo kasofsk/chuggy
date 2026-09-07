@@ -41,6 +41,7 @@ import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
 
 /** The brief every harness draft is created with, so a case names one only when it is about one. */
 export const postgresHarnessBrief = asDraftBrief({
+  title: "The one thing the harness ticket is for",
   intent: "Make the harness ticket do the one thing it is for.",
   links: ["https://example.test/harness"],
   branch: "refs/heads/harness",

@@ -615,6 +615,7 @@ function resourcePath(
  */
 function briefBody(brief: DraftBrief): unknown {
   return {
+    ...(brief.title === undefined ? {} : { title: brief.title }),
     intent: brief.intent,
     links: [...brief.links],
     checks: [...brief.checks],

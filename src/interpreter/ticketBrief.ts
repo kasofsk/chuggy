@@ -1,7 +1,7 @@
 /**
- * The brief one ticket carries: the intent a human stated, the links they
- * pointed at, the check lines they added, the branch the work happens on, and
- * where a finalization lands it.
+ * The brief one ticket carries: the title a human gave it, the intent they
+ * stated, the links they pointed at, the check lines they added, the branch the
+ * work happens on, and where a finalization lands it.
  *
  * IT IS NOT AUTHORING. Authoring is the model's release event, and every value
  * of it decides how the machine runs the ticket. None of these do: they are
@@ -61,6 +61,7 @@ import {
   briefLandingIsWhole,
   briefLinkScheme,
   briefLinksMax,
+  briefTitleCharsMax,
 } from "../contract/brief.ts";
 import { textCodePointsCount } from "../contract/http.ts";
 import {
@@ -72,10 +73,12 @@ import { handoffRef } from "./handoffConfiguration.ts";
 import type { Partition } from "./projectStore.ts";
 import { taskConfigurationLineFault } from "./taskConfiguration.ts";
 
+declare const briefTitleBrand: unique symbol;
 declare const briefIntentBrand: unique symbol;
 declare const briefLinkUrlBrand: unique symbol;
 declare const briefCheckLineBrand: unique symbol;
 
+export type BriefTitle = string & { readonly [briefTitleBrand]: true };
 export type BriefIntent = string & { readonly [briefIntentBrand]: true };
 export type BriefLinkUrl = string & { readonly [briefLinkUrlBrand]: true };
 export type BriefCheckLine = string & { readonly [briefCheckLineBrand]: true };
@@ -101,6 +104,7 @@ export const briefFinalizationDefault: BriefFinalization = { mode: "Push" };
 
 /** One ticket's brief, as everything but the wire holds it. */
 export interface DraftBrief {
+  readonly title?: BriefTitle;
   readonly intent: BriefIntent;
   readonly links: readonly BriefLinkUrl[];
   readonly checks: readonly BriefCheckLine[];
@@ -124,6 +128,21 @@ export function briefIntentLines(intent: BriefIntent): readonly string[] {
 /** Normalizes line endings so a browser's newline is the one this tree bounds. */
 function briefIntentNormalized(value: string): string {
   return value.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
+}
+
+/**
+ * Brands a title. It renders as one briefing line under the shorter bound a
+ * column of tickets is read down, and a title of nothing but blanks names
+ * nothing, so it is refused the way the form that asks for one refuses it.
+ */
+export function asBriefTitle(value: string): BriefTitle {
+  if (
+    value.trim().length === 0 ||
+    textCodePointsCount(value) > briefTitleCharsMax ||
+    taskConfigurationLineFault(value) !== undefined
+  )
+    throw new RangeError("ticket title: the value is not one printable line");
+  return value as BriefTitle;
 }
 
 /**
@@ -217,6 +236,7 @@ export function asBriefFinalization(value: {
  * the same statement of it.
  */
 export function asDraftBrief(value: {
+  readonly title?: string;
   readonly intent: string;
   readonly links: readonly string[];
   readonly checks?: readonly string[];
@@ -229,6 +249,7 @@ export function asDraftBrief(value: {
   if (checks.length > briefChecksMax)
     throw new RangeError("ticket brief: more checks than one brief appends");
   const brief: DraftBrief = {
+    ...(value.title === undefined ? {} : { title: asBriefTitle(value.title) }),
     intent: asBriefIntent(value.intent),
     links: value.links.map(asBriefLinkUrl),
     checks: checks.map(asBriefCheckLine),

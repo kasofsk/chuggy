@@ -35,6 +35,7 @@ import { draftsResponseSchema } from "../../src/contract/responses.ts";
 import { populated } from "../interpreter/roster.ts";
 import { id } from "../domain/fixtures.ts";
 import { plainAuthoring } from "../actor/harness.ts";
+import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
 
 const partition = {
   tenant: asTenantId("tenant/one"),
@@ -332,6 +333,28 @@ test("draft resources encode sets as stable JSON arrays", () => {
       value: { created: "Created", draft },
     }).status,
     201,
+  );
+});
+
+test("a draft answers the brief it was written with, title and all", () => {
+  const brief = asDraftBrief({
+    title: "Serve the title on the draft",
+    intent: "Serve the brief on the draft resource.",
+    links: ["https://example.test/issues/340"],
+  });
+  assert.deepEqual(
+    (draftResponse({ ...draft, brief }).body as { brief: unknown }).brief,
+    {
+      title: "Serve the title on the draft",
+      intent: "Serve the brief on the draft resource.",
+      links: ["https://example.test/issues/340"],
+      checks: [],
+    },
+  );
+  assert.equal(
+    Object.hasOwn(draftResponse(draft).body as object, "brief"),
+    false,
+    "a draft authored without a brief answers none",
   );
 });
 
