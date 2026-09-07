@@ -106,8 +106,7 @@ function ShellMain(props: {
 /**
  * The rail as a drawer. Radix's dialog in its non-modal form, which is the one
  * that mounts no `<style>` element: the modal form's scroll lock appends one
- * and the served `style-src 'self'` refuses it. The scrim is this component's
- * because the non-modal overlay draws nothing.
+ * and the served `style-src 'self'` refuses it.
  */
 function ShellDrawer(props: {
   readonly partition: PartitionIdentity;
