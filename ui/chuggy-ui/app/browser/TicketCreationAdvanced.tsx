@@ -22,6 +22,8 @@ import type {
   CreationStage,
   TicketCreationForm,
 } from "../core/ticketCreation.ts";
+import { Button } from "./ui/Button.tsx";
+import { Panel } from "./ui/Panel.tsx";
 
 interface FormEdit {
   readonly form: TicketCreationForm;
@@ -134,8 +136,8 @@ function Program(
               });
             }}
           />
-          <button
-            type="button"
+          <Button
+            size="sm"
             onClick={() => {
               onChange({
                 ...form,
@@ -144,18 +146,18 @@ function Program(
             }}
           >
             remove
-          </button>
+          </Button>
         </div>
       ))}
-      <button
-        type="button"
+      <Button
+        size="sm"
         disabled={form.program.length >= props.stagesMax}
         onClick={() => {
           onChange({ ...form, program: stageAdded(form, offered) });
         }}
       >
         add stage
-      </button>
+      </Button>
     </fieldset>
   );
 }
@@ -224,25 +226,26 @@ export function TicketCreationAdvanced(
 ): ReactNode {
   const { form, initialization, onChange } = props;
   return (
-    <details className="creation-advanced">
-      <summary>advanced</summary>
-      <Dependencies
-        form={form}
-        onChange={onChange}
-        candidates={initialization.dependencyCandidates}
-        truncated={initialization.dependencyCandidatesTruncated}
-      />
-      <Program
-        form={form}
-        onChange={onChange}
-        offered={initialization.choices.stages}
-        stagesMax={initialization.choices.programStagesMax}
-      />
-      <Pricing
-        form={form}
-        onChange={onChange}
-        choices={initialization.choices}
-      />
-    </details>
+    <Panel title="Advanced" collapsible={{ open: false }}>
+      <div className="grid gap-2">
+        <Dependencies
+          form={form}
+          onChange={onChange}
+          candidates={initialization.dependencyCandidates}
+          truncated={initialization.dependencyCandidatesTruncated}
+        />
+        <Program
+          form={form}
+          onChange={onChange}
+          offered={initialization.choices.stages}
+          stagesMax={initialization.choices.programStagesMax}
+        />
+        <Pricing
+          form={form}
+          onChange={onChange}
+          choices={initialization.choices}
+        />
+      </div>
+    </Panel>
   );
 }

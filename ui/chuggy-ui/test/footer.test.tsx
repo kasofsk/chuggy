@@ -1,6 +1,6 @@
 /**
- * The footer, drawn under every page — including the landing route, which
- * builds its own shell markup and never mounts `Shell`.
+ * The footer, drawn at the foot of the rail — and on the landing route, which
+ * builds its own markup and never mounts `Shell`.
  */
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
@@ -12,6 +12,8 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { Landing } from "../app/browser/routes.tsx";
 import { Shell } from "../app/browser/Shell.tsx";
+import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
+import { viewportAtEm } from "./viewport.ts";
 import {
   answer,
   apiDouble,
@@ -53,6 +55,7 @@ function mount(children: ReactNode): void {
     operation: operationAt("Pending"),
     route: () => answer({ projects: [atlas] }),
   });
+  viewportAtEm(viewportDeskEm);
   vi.stubGlobal("fetch", api.fetch);
   const server = openedStream();
   render(
@@ -66,7 +69,7 @@ function mount(children: ReactNode): void {
   );
 }
 
-test("the footer is drawn under a partition page's shell", async () => {
+test("the footer is drawn at the foot of the shell's rail", async () => {
   mount(<Shell partition={atlas} />);
   await settled();
   expect(screen.getByText(footerText)).toBeDefined();

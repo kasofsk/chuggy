@@ -125,6 +125,14 @@ function save(): void {
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
 }
 
+test("the top bar names the revision the settings were read at", async () => {
+  await drawSettings(() => ({ body: {}, status: 200 }));
+  const revision = screen.getByRole("heading", {
+    name: "Selector",
+  }).nextElementSibling;
+  expect(revision?.textContent).toBe("12");
+});
+
 test("the project's own overrides are the boxes, and the rest stand in", async () => {
   await drawSettings(() => ({ body: {}, status: 200 }));
   const northStar = screen.getByLabelText<HTMLTextAreaElement>("North Star");
@@ -668,4 +676,20 @@ test("a dispatch budget past the wire's ceiling marks its own box", async () => 
     screen.getByLabelText("Dispatches").getAttribute("aria-invalid"),
     "the box refused the ceiling itself and not only what is past it",
   ).toBe("false");
+});
+
+/** The served policy refuses `style-src` but `'self'`, so nothing this page
+ * draws — a save answered included — may append a runtime style element. */
+test("nothing this page draws is a runtime style element", async () => {
+  const server = await drawSettings(() => ({ body: {}, status: 200 }));
+  expect(document.querySelectorAll("style").length).toBe(0);
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("Dispatches"), {
+      target: { value: "3" },
+    });
+  });
+  save();
+  await settled();
+  expect(server.writes().length).toBe(1);
+  expect(document.querySelectorAll("style").length).toBe(0);
 });

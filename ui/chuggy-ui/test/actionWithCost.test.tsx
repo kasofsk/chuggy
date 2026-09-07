@@ -18,6 +18,7 @@ import {
   actionStateOf,
   actionStates,
 } from "../app/browser/ui/ActionWithCost.tsx";
+import { styleless } from "./styleless.ts";
 
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
@@ -26,7 +27,10 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  styleless();
+  cleanup();
+});
 
 const base = {
   action: "Resume",

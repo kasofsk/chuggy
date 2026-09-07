@@ -7,6 +7,12 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
 import {
+  DetailsPane,
+  DetailsToggle,
+} from "../app/browser/shell/DetailsPane.tsx";
+import { ShellSlots, useShellSlotHolder } from "../app/browser/shell/slots.tsx";
+import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
+import {
   answer,
   apiDouble,
   openedStream,
@@ -25,6 +31,7 @@ import { ticketInstants } from "./ticketInstants.ts";
 import type { TicketAuthoring } from "../app/core/ticketLedger.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { viewportAtEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "vteng", project: "chuggy" };
 
@@ -56,7 +63,10 @@ vi.mock("@tanstack/react-router", () => ({
  * own zone and a suite that pinned it would pin the machine it ran on.
  */
 
-beforeEach(resizeObserverStubbed);
+beforeEach(() => {
+  resizeObserverStubbed();
+  viewportAtEm(viewportDeskEm);
+});
 
 afterEach(() => {
   cleanup();
@@ -91,13 +101,37 @@ interface Drawn {
   readonly container: HTMLElement;
 }
 
-async function drawTicket(served: {
-  readonly shapes: readonly ExecutionShape[];
-  readonly ticket: Record<string, unknown>;
-  readonly cursor?: string;
-  readonly withDraft?: boolean;
-  readonly authoring?: TicketAuthoring;
-}): Promise<Drawn> {
+/** The shell's own top-bar node, stood up here because the page portals its
+ * `TicketTopBar` into whatever the shell hands it. */
+function TopBarTarget(): ReactNode {
+  const hold = useShellSlotHolder("topBar");
+  return <div ref={hold} />;
+}
+
+/** The shell slots `TicketPage` portals into: the top bar and, behind its
+ * toggle, the details pane holding `TicketPageDetails`. */
+function ShellAroundPage(): ReactNode {
+  return (
+    <ShellSlots>
+      <TopBarTarget />
+      <DetailsToggle />
+      <DetailsPane>
+        <TicketPage />
+      </DetailsPane>
+    </ShellSlots>
+  );
+}
+
+async function drawTicket(
+  served: {
+    readonly shapes: readonly ExecutionShape[];
+    readonly ticket: Record<string, unknown>;
+    readonly cursor?: string;
+    readonly withDraft?: boolean;
+    readonly authoring?: TicketAuthoring;
+  },
+  options: { readonly shell?: boolean } = {},
+): Promise<Drawn> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
@@ -134,7 +168,7 @@ async function drawTicket(served: {
       client={new QueryClient()}
       transport={openedStream().ports.fetch}
     >
-      <TicketPage />
+      {options.shell === true ? <ShellAroundPage /> : <TicketPage />}
     </ScreenHarness>,
   );
   await settled();
@@ -172,16 +206,16 @@ function rowsOf(group: HTMLElement): readonly string[] {
 }
 
 test("the parked ticket names its wall, its phase and what the whole of it cost", async () => {
-  await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
-  expect(screen.getByRole("heading", { name: "Ticket 21" })).toBeDefined();
+  const { container } = await drawTicket({
+    shapes: ticket21Parked,
+    ticket: parkedTicket,
+  });
   expect(screen.getAllByText("Give the console a footer").length).toBe(2);
-  expect(screen.getByText("Escalated")).toBeDefined();
+  expect(screen.getByText("Parked")).toBeDefined();
   expect(screen.getAllByText("Rework budget exhausted").length).toBeGreaterThan(
     0,
   );
-  const head = screen
-    .getByRole("heading", { name: "Ticket 21" })
-    .closest(".ticket-head");
+  const head = container.querySelector(".fields-inline");
   expect(head?.textContent).toContain("167");
   expect(head?.textContent).toContain("$2.74");
   expect(head?.textContent).toContain("198k tok");
@@ -295,10 +329,13 @@ test("the resume states what it re-runs, what it costs and what it keeps", async
 });
 
 test("every section of the main body has an anchor pointing at it", async () => {
-  const { container } = await drawTicket({
-    shapes: ticket21Parked,
-    ticket: parkedTicket,
-  });
+  const { container } = await drawTicket(
+    { shapes: ticket21Parked, ticket: parkedTicket },
+    { shell: true },
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Details", pressed: false }),
+  );
   const anchors = [...container.querySelectorAll("nav.sections a")].map(
     (link) => link.getAttribute("href"),
   );
@@ -306,6 +343,16 @@ test("every section of the main body has an anchor pointing at it", async () => 
   for (const anchor of anchors)
     expect(container.querySelector(`section${String(anchor)}`)).not.toBeNull();
   expect(screen.getByText("3 · 7 runs")).toBeDefined();
+});
+
+test("the shell's top bar draws the ticket's own number and phase", async () => {
+  await drawTicket(
+    { shapes: ticket21Parked, ticket: parkedTicket },
+    { shell: true },
+  );
+  expect(screen.getByRole("heading", { name: "Ticket" })).toBeDefined();
+  expect(screen.getByText("21")).toBeDefined();
+  expect(screen.getByText("Escalated")).toBeDefined();
 });
 
 test("the canonical configuration is closed until asked for, and its trigger names what it opens", async () => {
@@ -359,7 +406,7 @@ test("after a resume the current cycle gains a run and a running stage", async (
     shapes: ticket21Resumed,
     ticket: resumedTicket,
   });
-  expect(screen.getAllByText("Evaluating").length).toBe(2);
+  expect(screen.getAllByText("Evaluating")).toHaveLength(2);
   expect(screen.queryByText("Rework budget exhausted")).toBeNull();
   const current = groups(container)[0];
   if (current === undefined) throw new Error("no current cycle");
@@ -386,7 +433,7 @@ test("a resumed ticket says it was resumed and that a failure parks it again", a
 });
 
 test("a short page says so, and no cycle on it claims to be whole", async () => {
-  const { container } = await drawTicket({
+  await drawTicket({
     shapes: ticket21Parked.slice(0, 4),
     ticket: parkedTicket,
     cursor: "more",
@@ -394,9 +441,9 @@ test("a short page says so, and no cycle on it claims to be whole", async () => 
   const short = screen.getByText(/Showing first 4 executions/u);
   expect(short.classList.contains("notice-inline")).toBe(true);
   expect(short.classList.contains("notice-parked")).toBe(true);
-  const partial = container.querySelectorAll(".ledger-partial");
-  expect(partial.length).toBeGreaterThan(0);
-  expect(partial[0]?.textContent).toContain("Cycle partly on this page");
+  expect(
+    screen.getAllByText("Cycle partly on this page").length,
+  ).toBeGreaterThan(0);
 });
 
 test("without the draft the rows are ungrouped and say why", async () => {
@@ -419,9 +466,10 @@ test("nothing the page draws is a colour of its own, in either theme", async () 
     });
     expect(container.querySelector("[style]")).toBeNull();
     expect(document.documentElement.getAttribute("data-theme")).toBe(theme);
-    expect(container.querySelector(".pill-parked")).not.toBeNull();
+    expect(container.querySelector(".notice-parked")).not.toBeNull();
     cleanup();
     vi.unstubAllGlobals();
+    viewportAtEm(viewportDeskEm);
   }
 });
 
@@ -554,6 +602,7 @@ test("a rework wall with no gas is parked for good, whatever the pricing", async
     ).toBeDefined();
     cleanup();
     vi.unstubAllGlobals();
+    viewportAtEm(viewportDeskEm);
   }
 });
 
@@ -570,6 +619,7 @@ test("a wall the ticket can still pay for keeps its resume", async () => {
     expect(screen.queryByText(/No gas left/u)).toBeNull();
     cleanup();
     vi.unstubAllGlobals();
+    viewportAtEm(viewportDeskEm);
   }
 });
 
@@ -644,10 +694,11 @@ test("a short page marks the head's own counts, draft or no draft", async () => 
       cursor: "more",
       withDraft,
     });
-    const head = container.querySelector(".ticket-figures");
+    const head = container.querySelector(".fields-inline");
     expect(head?.textContent).toContain("on this page");
     cleanup();
     vi.unstubAllGlobals();
+    viewportAtEm(viewportDeskEm);
   }
 });
 
@@ -661,7 +712,7 @@ test("the wall says when the ticket entered it, from the journal's own instant",
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  const when = container.querySelector(".notice-parked .notice-when .fig");
+  const when = container.querySelector(".notice-parked .fig");
   if (when === null) throw new Error("no wall instant figure drawn");
   fireEvent.focus(when);
   expect((await screen.findByRole("tooltip")).textContent).toBe(
@@ -675,7 +726,7 @@ test("a live phase is dated the same way", async () => {
     shapes: ticket21Resumed,
     ticket: resumedTicket,
   });
-  const when = container.querySelector(".notice-live .notice-when .fig");
+  const when = container.querySelector(".notice-live .fig");
   if (when === null) throw new Error("no wall instant figure drawn");
   fireEvent.focus(when);
   expect((await screen.findByRole("tooltip")).textContent).toBe(
@@ -693,7 +744,7 @@ test("the head's span begins at the release and not at the first run", async () 
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  const span = [...container.querySelectorAll(".ticket-figures .fig")].find(
+  const span = [...container.querySelectorAll(".fields-inline .fig")].find(
     (figure) => figure.textContent?.includes("→") === true,
   );
   if (span === undefined) throw new Error("no span figure drawn");
@@ -784,11 +835,12 @@ test("a settled ticket is not drawn as still running when its runs are unread", 
       shapes: [],
       ticket: { ...parkedTicket, phase },
     });
-    const head = document.querySelector(".ticket-figures");
+    const head = document.querySelector(".fields-inline");
     expect(head?.textContent).not.toContain("running");
     expect(head?.textContent).not.toContain("so far");
     cleanup();
     vi.unstubAllGlobals();
+    viewportAtEm(viewportDeskEm);
   }
 });
 
@@ -797,7 +849,7 @@ test("a ticket the machine is working on now keeps its open span", async () => {
     shapes: [],
     ticket: { ...resumedTicket, phase: "Evaluating" },
   });
-  const head = document.querySelector(".ticket-figures");
+  const head = document.querySelector(".fields-inline");
   expect(head?.textContent).toContain("running");
 });
 
@@ -890,6 +942,7 @@ test("the usage panel counts the runs, and says which are still going", async ()
   expect(container.querySelector("#usage")?.textContent).toContain("Runs7");
   cleanup();
   vi.unstubAllGlobals();
+  viewportAtEm(viewportDeskEm);
   const resumed = await drawTicket({
     shapes: ticket21Resumed,
     ticket: resumedTicket,
@@ -1005,4 +1058,13 @@ test("a row that is superseded, relaunched and short still fits the copy budget"
   expect(superseded?.classList.contains("ledger-group-superseded")).toBe(true);
   const over = drawnStringsOver(container);
   expect(over).toEqual([]);
+});
+
+/** The served policy refuses `style-src` but `'self'`, so nothing the ticket
+ * page draws — the canonical disclosure opened included — may append one. */
+test("nothing the ticket page draws is a runtime style element", async () => {
+  await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
+  expect(document.querySelectorAll("style").length).toBe(0);
+  fireEvent.click(screen.getByRole("button", { name: "show canonical" }));
+  expect(document.querySelectorAll("style").length).toBe(0);
 });

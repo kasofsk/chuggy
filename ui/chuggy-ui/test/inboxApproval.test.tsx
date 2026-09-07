@@ -18,6 +18,8 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
 import { Shell } from "../app/browser/Shell.tsx";
+import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
+import { viewportAtEm } from "./viewport.ts";
 import {
   answer,
   apiDouble,
@@ -42,7 +44,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
-  Outlet: () => null,
+  Outlet: () => <InboxScreen partition={atlas} />,
   useNavigate: () => () => undefined,
   useParams: () => atlas,
 }));
@@ -83,10 +85,12 @@ const served = serving({
   phase: () => answer({ partition: atlas, sequence: 9, tickets: [] }),
 });
 
+/** The count the rail's inbox entry carries after its label, and nothing where
+ * the inbox is clear. */
 function badge(): string | undefined {
-  return (
-    screen.queryByLabelText("Tickets needing you")?.textContent ?? undefined
-  );
+  const entry = screen.queryByRole("link", { name: /Inbox/u });
+  const count = entry?.textContent?.replace("Inbox", "") ?? "";
+  return count === "" ? undefined : count;
 }
 
 function openActions(actions: readonly unknown[]): string {
@@ -102,6 +106,7 @@ function mounted(route: (url: string) => Response): {
   readonly server: ReturnType<typeof openedStream>;
 } {
   const api = apiDouble({ operation: operationAt("Pending"), route });
+  viewportAtEm(viewportDeskEm);
   vi.stubGlobal("fetch", api.fetch);
   const server = openedStream();
   render(
@@ -111,7 +116,6 @@ function mounted(route: (url: string) => Response): {
       transport={server.ports.fetch}
     >
       <Shell partition={atlas} />
-      <InboxScreen partition={atlas} />
     </ScreenHarness>,
   );
   return { api, server };
@@ -172,4 +176,22 @@ test("a phase page that refuses leaves the approval it did not list answerable",
     screen.getByText(/the tickets a phase parks could not be read/u),
   ).toBeDefined();
   expect(screen.queryByText("Inbox is clear")).toBeNull();
+});
+
+/** The served policy refuses `style-src` but `'self'`, so nothing drawn here —
+ * loaded, answered or clicked — may append a runtime style element. */
+test("nothing the inbox draws is a runtime style element", async () => {
+  const held = mounted(
+    serving({
+      actions: () => answer({ actions: [{ ticket: 11, ...approval }] }),
+      phase: () => answer({ partition: atlas, sequence: 9, tickets: [] }),
+    }),
+  );
+  await settled();
+  expect(document.querySelectorAll("style").length).toBe(0);
+  await turned(() => {
+    screen.getByRole("button", { name: "approve" }).click();
+  });
+  expect(held.api.submissions()).toBe(1);
+  expect(document.querySelectorAll("style").length).toBe(0);
 });

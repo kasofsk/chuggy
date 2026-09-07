@@ -27,8 +27,7 @@
   .sections .fig,
   .sections-note {
     color: var(--ink-3);
-    font-family: var(--font-mono);
-    font-size: var(--mono-optical);
+    font-size: var(--text-sm);
     white-space: nowrap;
   }
 }

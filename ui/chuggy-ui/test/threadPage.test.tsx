@@ -23,6 +23,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { ThreadPage } from "../app/browser/ThreadPage.tsx";
+import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
   answer,
@@ -32,6 +33,7 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import { elementScrollToStubbed } from "./scrolling.ts";
+import { ShellSlotHarness, styleless } from "./shellSlotHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import {
   threadMessageCharsMax,
@@ -51,6 +53,7 @@ import {
   threadWakeInput,
   threadWakeStandingSaid,
 } from "./threadFixture.ts";
+import { viewportAtEm } from "./viewport.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
@@ -72,6 +75,7 @@ vi.mock("@tanstack/react-router", () => ({
 beforeEach(() => {
   resizeObserverStubbed();
   elementScrollToStubbed();
+  viewportAtEm(viewportDeskEm);
 });
 
 afterEach(() => {
@@ -111,10 +115,13 @@ async function mountThread(): Promise<ReturnType<typeof openedStream>> {
       client={new QueryClient()}
       transport={server.ports.fetch}
     >
-      <ThreadPage />
+      <ShellSlotHarness>
+        <ThreadPage />
+      </ShellSlotHarness>
     </ScreenHarness>,
   );
   await settled();
+  styleless();
   return server;
 }
 
@@ -170,16 +177,27 @@ async function pressed(said: string): Promise<void> {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
   });
   await settled();
+  styleless();
 }
 
 test("the head names the thread, its standing and whose it is", async () => {
   drawThread(() => ({ thread: threadBody({}) }));
   await mountThread();
   expect(screen.getByRole("heading", { name: "Thread" })).toBeDefined();
-  expect(screen.getAllByText(threadMineSession).length).toBeGreaterThan(0);
-  expect(screen.getByText("Open")).toBeDefined();
-  expect(screen.getByText("Mine")).toBeDefined();
-  expect(screen.getByText("geoff")).toBeDefined();
+  expect(screen.getAllByText("Open").length).toBeGreaterThan(0);
+  expect(screen.getByText("Yours")).toBeDefined();
+  expect(screen.getAllByText("geoff").length).toBeGreaterThan(0);
+});
+
+/** The bar's own title never wraps, so a narrow reader needs its chips to run
+ * onto a line of their own rather than under the details toggle. */
+test("the bar's chips wrap on their own rather than crowd the title", async () => {
+  drawThread(() => ({ thread: threadBody({}) }));
+  await mountThread();
+  const chips = screen.getByRole("heading", {
+    name: "Thread",
+  }).nextElementSibling;
+  expect(chips?.className).toContain("flex-wrap");
 });
 
 /**
@@ -207,6 +225,7 @@ test("Close on any open thread posts to its close route and nothing else", async
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
   });
   await settled();
+  styleless();
   expect(server.posted()).toStrictEqual([
     `/api/v1/tenants/acme/projects/atlas/threads/${threadOtherSession}/close`,
   ]);
@@ -240,8 +259,9 @@ test("a close the server refused says so and leaves the standing alone", async (
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
   });
   await settled();
+  styleless();
   expect(screen.getByText(/^Refused · /u)).toBeDefined();
-  expect(screen.getByText("Open")).toBeDefined();
+  expect(screen.getAllByText("Open").length).toBeGreaterThan(0);
 });
 
 test("my thread draws a composer", async () => {
@@ -313,6 +333,7 @@ test("a backlogged mailbox draws the notice, keeps the text and retries the same
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
   });
   await settled();
+  styleless();
   const later = server.posts().at(-1) as { readonly turn: string };
   expect(
     later.turn,
@@ -503,12 +524,12 @@ test("a NotYourThread whose message did not land is sent again under the same tu
 
 test("a closed thread stops the composer sending", async () => {
   const server = await pressedAgainst("ThreadClosed");
-  expect(screen.getByText("Closed")).toBeDefined();
-  await pressed("shouting at a closed door");
+  expect(screen.getAllByText("Closed").length).toBeGreaterThan(0);
   expect(
-    server.posts().length,
-    "a door that answered Closed was posted to again",
-  ).toBe(1);
+    composer(),
+    "a door that answered Closed left a box to shout into",
+  ).toBeNull();
+  expect(server.posts().length).toBe(1);
 });
 
 test("a thread whose owner is gone stops it too, and says which", async () => {
@@ -517,7 +538,7 @@ test("a thread whose owner is gone stops it too, and says which", async () => {
     screen.getByText("Orphaned"),
     "one refusal was drawn as another",
   ).toBeDefined();
-  await pressed("shouting at an orphan");
+  expect(composer()).toBeNull();
   expect(server.posts().length).toBe(1);
 });
 
@@ -534,7 +555,7 @@ test("a thread already standing Closed draws a composer that takes nothing", asy
     thread: threadBody({ state: "Closed" }),
   }));
   await mountThread();
-  await pressed("into a closed thread");
+  expect(composer()).toBeNull();
   expect(server.posts().length).toBe(0);
 });
 
@@ -663,7 +684,7 @@ test("a transcript tool call sits inside the collapsed work disclosure", async (
   expect(screen.getByText("a member's question")).toBeDefined();
   expect(screen.getByText("it waits on 40")).toBeDefined();
   expect(screen.queryByText("41 waits on 40")).toBeNull();
-  const work = screen.getByRole("button", { name: /Tools/u });
+  const work = screen.getByRole("button", { name: /tool/u });
   fireEvent.click(work);
   const call = screen.getByRole("button", { name: /Read/u });
   expect(screen.queryByText("41 waits on 40")).toBeNull();
@@ -693,8 +714,7 @@ test("a wake draws its reason and its resource and not its document", async () =
     transcript: (after) => threadTranscriptSaid(after, woken),
   }));
   await mountThread();
-  expect(screen.getByText("TicketRefused")).toBeDefined();
-  expect(screen.getByText("41")).toBeDefined();
+  expect(screen.getByText("TicketRefused · 41")).toBeDefined();
   expect(
     screen.queryByText(threadWakeStandingSaid),
     "the rule the agent is bound by was drawn as copy for a reader",
@@ -750,7 +770,7 @@ test("a thread whose owner is gone stands Orphaned", async () => {
     thread: threadBody({ orphaned: true, mine: false }),
   }));
   await mountThread();
-  expect(screen.getByText("Orphaned")).toBeDefined();
+  expect(screen.getAllByText("Orphaned").length).toBeGreaterThan(0);
 });
 
 /** The transcript is the lead's own walk over a different session's store, and

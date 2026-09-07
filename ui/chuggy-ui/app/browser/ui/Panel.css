@@ -1,77 +1,52 @@
-/* Panel: the frame, the head with its meta slot, and the body. */
+/* Panel: the head with its meta slot, the body, and the trigger the
+   collapsible form opens from. The frame is utilities on the root, so the
+   quiet variant drops it by not asking for it. */
 
 @layer ui {
-  .panel {
-    background: var(--surface-1);
-    border: var(--hairline) solid var(--edge);
-    border-radius: var(--radius-2);
-    min-width: 0;
-  }
-
   .panel-head {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: var(--space-3);
-    padding: var(--space-2) var(--space-4);
-    border-bottom: var(--hairline) solid var(--edge);
+    padding: var(--space-3) var(--space-4) var(--space-2);
   }
 
   .panel-title {
     font-size: var(--text-md);
+    font-weight: var(--weight-medium);
   }
 
   .panel-meta {
     color: var(--ink-3);
     font-size: var(--text-xs);
-    font-family: var(--font-mono);
     white-space: nowrap;
   }
 
   .panel-body {
-    padding: var(--space-3) var(--space-4);
+    padding: 0 var(--space-4) var(--space-4);
     display: grid;
     gap: var(--space-3);
   }
 
-  .panel-quiet {
+  /* A button carries the browser's own box until something takes it off, and
+     this trigger is a heading to press rather than a control. */
+  .panel-trigger {
+    appearance: none;
     background: transparent;
     border: 0;
-    border-radius: 0;
-  }
-
-  .panel-quiet > .panel-head,
-  .panel-quiet > .panel-body {
-    padding-left: 0;
-    padding-right: 0;
-  }
-
-  .panel-quiet > .panel-head {
-    border-bottom-color: var(--edge-strong);
-  }
-
-  .panel-collapsible > summary {
-    list-style: none;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
     cursor: pointer;
   }
 
-  .panel-collapsible > summary::-webkit-details-marker {
-    display: none;
-  }
-
-  .panel-collapsible > summary .panel-title::before {
-    content: "▸";
-    display: inline-block;
-    width: 1.1em;
+  .panel-chevron {
     color: var(--ink-3);
-    transition: transform var(--duration-2) var(--ease-out);
+    transition: rotate var(--duration-2) var(--ease-out);
   }
 
-  .panel-collapsible[open] > summary .panel-title::before {
-    transform: rotate(90deg);
-  }
-
-  .panel-collapsible:not([open]) > summary {
-    border-bottom: 0;
+  .panel-trigger[data-state="open"] > .panel-chevron {
+    rotate: 90deg;
   }
 }

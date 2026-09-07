@@ -115,6 +115,71 @@ test("no work draws no disclosure", () => {
   styleless();
 });
 
+test("the meta line omits a measure no turn recorded", () => {
+  render(
+    <Conversation
+      exchanges={[
+        exchangeOf({ answer: "done", measures: { durationMs: 4200 } }),
+      ]}
+      empty="No conversation"
+    />,
+  );
+  expect(screen.getByText("Answered")).toBeDefined();
+  expect(screen.queryByText(/tok/)).toBeNull();
+  expect(screen.queryByText("—")).toBeNull();
+  styleless();
+});
+
+test("a failed exchange draws its reason where the answer would be", () => {
+  render(
+    <Conversation
+      exchanges={[
+        exchangeOf({
+          standing: { standing: "Failed", failure: "AgentFailed" },
+        }),
+      ]}
+      empty="No conversation"
+    />,
+  );
+  expect(screen.getByText("Failed")).toBeDefined();
+  expect(screen.getByText("AgentFailed")).toBeDefined();
+  styleless();
+});
+
+test("a tool result that failed marks the row and draws no pill", () => {
+  const failed = exchangeOf({
+    answer: "done",
+    work: [
+      {
+        step: "ToolCall",
+        id: "call-2",
+        name: "Bash",
+        input: { command: "just check" },
+        result: { text: "exit 1", isError: true },
+      },
+    ],
+  });
+  render(<Conversation exchanges={[failed]} empty="No conversation" />);
+  fireEvent.click(screen.getByRole("button", { name: /tool/ }));
+  expect(screen.getByText("Bash").className).toContain("text-tone-fail");
+  expect(document.querySelectorAll(".pill")).toHaveLength(0);
+  styleless();
+});
+
+test("a running exchange's card says Working", () => {
+  const running = exchangeOf({
+    id: "x4",
+    standing: { standing: "Running", state: "Claimed" },
+    work: [{ step: "Thinking", text: "weighing it" }],
+  });
+  render(<Conversation exchanges={[running]} empty="No conversation" />);
+  const trigger = screen.getByRole("button", { name: "Working" });
+  fireEvent.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByText("weighing it")).toBeDefined();
+  styleless();
+});
+
 test("a running exchange draws its state word and no answer", () => {
   const running = exchangeOf({
     id: "x2",
@@ -163,14 +228,43 @@ test("a markers-only exchange draws its markers and no pill", () => {
   styleless();
 });
 
-test("a wake draws its pointer and never its document", () => {
+test("a wake draws one system line and never its document", () => {
   const woken = exchangeOf({
     ask: { ask: "Wake", wake: "TicketDone", resource: "ticket-44" },
     answer: "done",
   });
   render(<Conversation exchanges={[woken]} empty="No conversation" />);
-  expect(screen.getByText("TicketDone")).toBeDefined();
-  expect(screen.getByText("ticket-44")).toBeDefined();
+  expect(screen.getByText("TicketDone · ticket-44")).toBeDefined();
+  styleless();
+});
+
+test("the seeding is a folded Context card, and the bubble is the words", () => {
+  const seeded = exchangeOf({
+    ask: {
+      ask: "Message",
+      text: "what is left to do",
+      context: "# North Star\n\nShip the console.",
+    },
+    answer: "two things",
+  });
+  render(<Conversation exchanges={[seeded]} empty="No conversation" />);
+  expect(screen.getByText("what is left to do")).toBeDefined();
+  expect(screen.queryByText("Ship the console.")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Context" }));
+  expect(screen.getByText("Ship the console.")).toBeDefined();
+  styleless();
+});
+
+test("no exchanges draws the empty title above its one sentence", () => {
+  render(
+    <Conversation
+      exchanges={[]}
+      empty="Ask for a draft"
+      emptyTitle="Your thread"
+    />,
+  );
+  expect(screen.getByRole("heading", { name: "Your thread" })).toBeDefined();
+  expect(screen.getByText("Ask for a draft")).toBeDefined();
   styleless();
 });
 
@@ -267,7 +361,7 @@ test("a running exchange still takes a message, because the mailbox queues", asy
   styleless();
 });
 
-test("a closed door draws a composer that sends nothing", async () => {
+test("a closed door draws no box to type into", () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
   render(
     <Conversation
@@ -276,9 +370,60 @@ test("a closed door draws a composer that sends nothing", async () => {
       empty="No conversation"
     />,
   );
-  const box = await typed("shouted at a closed door");
-  fireEvent.keyDown(box, { key: "Enter" });
-  expect(onSend).not.toHaveBeenCalled();
-  expect(box.value).toBe("shouted at a closed door");
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.getByText("Closed")).toBeDefined();
+  styleless();
+});
+
+test("the counter appears only once the text nears the bound", async () => {
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  render(
+    <Conversation
+      exchanges={[answered]}
+      composer={composerOf({ onSend })}
+      empty="No conversation"
+    />,
+  );
+  await typed("short");
+  expect(screen.queryByText(/\/ 40/)).toBeNull();
+  await typed("a".repeat(33));
+  expect(screen.getByText("33 / 40")).toBeDefined();
+  styleless();
+});
+
+test("the note the page worded stands under the field", () => {
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  render(
+    <Conversation
+      exchanges={[answered]}
+      composer={{ ...composerOf({ onSend }), note: "Queued" }}
+      empty="No conversation"
+    />,
+  );
+  expect(screen.getByText("Queued")).toBeDefined();
+  styleless();
+});
+
+test("a note that is itself a paragraph nests in no paragraph, open or closed", () => {
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  const note = <p>Queued</p>;
+  const { unmount } = render(
+    <Conversation
+      exchanges={[answered]}
+      composer={{ ...composerOf({ onSend }), note }}
+      empty="No conversation"
+    />,
+  );
+  expect(screen.getByText("Queued").closest("p p")).toBeNull();
+  unmount();
+  render(
+    <Conversation
+      exchanges={[answered]}
+      composer={{ ...composerOf({ onSend }), takes: false, note }}
+      empty="No conversation"
+    />,
+  );
+  expect(screen.getByText("Closed")).toBeDefined();
+  expect(screen.getByText("Queued").closest("p p")).toBeNull();
   styleless();
 });

@@ -15,7 +15,7 @@
 
   .meter-name {
     color: var(--ink-1);
-    font-weight: var(--weight-strong);
+    font-weight: var(--weight-medium);
     min-width: var(--col-meter-name);
   }
 

@@ -301,8 +301,11 @@ test("the advanced disclosure holds the authoring, and offers what is chosen", (
     defaults: { ...creationInitialization.defaults, workFanout: 9 },
   };
   draw(api({ state: "Succeeded" }).ports, [], chosen);
-  const disclosure = screen.getByText("advanced").closest("details");
-  expect(disclosure).not.toBeNull();
+  const disclosure = screen.getByRole("button", { name: "Advanced" });
+  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByLabelText("work fanout")).toBeNull();
+  fireEvent.click(disclosure);
+  expect(disclosure.getAttribute("aria-expanded")).toBe("true");
   const fanout = screen.getByLabelText<HTMLSelectElement>("work fanout");
   expect(fanout.value).toBe("9");
   expect([...fanout.options].map((option) => option.value)).toStrictEqual([
@@ -336,6 +339,15 @@ test("the checks editor is drawn only where the configuration commands a stage f
 test("a configuration commanding no check stage offers no checks editor", () => {
   draw(api({ state: "Succeeded" }).ports, []);
   expect(screen.queryByText("add check")).toBeNull();
+});
+
+/** The served policy refuses `style-src` but `'self'`, so nothing this form
+ * draws — a primitive included — may append one. */
+test("nothing the form draws is a runtime style element", () => {
+  draw(api({ state: "Succeeded" }).ports, []);
+  expect(document.querySelectorAll("style").length).toBe(0);
+  fireEvent.click(screen.getByText("Advanced"));
+  expect(document.querySelectorAll("style").length).toBe(0);
 });
 
 /**

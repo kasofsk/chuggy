@@ -16,8 +16,13 @@
  */
 
 import type { RunTranscriptResponse } from "../../../../src/contract/responses.ts";
+import type { AttemptState } from "../../../../src/contract/rosters.ts";
 
-import type { ConversationItem } from "./conversation.ts";
+import type {
+  ConversationExchange,
+  ConversationItem,
+  ConversationStanding,
+} from "./conversation.ts";
 import { conversationBlocksOf } from "./conversation.ts";
 import { freshnessLabel, panelObservedAtMs } from "./freshness.ts";
 import { runCountLabel } from "./runTotals.ts";
@@ -304,4 +309,46 @@ export function runTranscriptRead(
     .slice(from)
     .flatMap((line, at) => runTranscriptLineItems(from + at + 1, line));
   return { items: [...leading, ...items], stepsBefore: from };
+}
+
+/** Where a run's trailing exchange stands once the run is over: a run that
+ * reported answered, and a run that ended any other way did not. A run still
+ * placing or running settles nothing. */
+function runTranscriptEndedStanding(
+  state: AttemptState,
+): ConversationStanding | undefined {
+  switch (state) {
+    case "Placing":
+    case "Running":
+      return undefined;
+    case "Reported":
+      return { standing: "Answered" };
+    case "Lost":
+    case "Withdrawn":
+    case "Superseded":
+      return { standing: "Failed" };
+  }
+}
+
+/**
+ * The exchanges a pane draws, with the trailing one settled by the state the
+ * execution says the attempt is in. An exchange with no final text and no turn
+ * is `Open` by construction, and a run has no mailbox — so without this a run
+ * that ended on tool calls reads as one still being written, whatever the
+ * attempt row says.
+ */
+export function runTranscriptEnded(
+  exchanges: readonly ConversationExchange[],
+  state: AttemptState,
+): readonly ConversationExchange[] {
+  const standing = runTranscriptEndedStanding(state);
+  if (standing === undefined) return exchanges;
+  const at = exchanges.findLastIndex(
+    (exchange) => exchange.standing.standing === "Open",
+  );
+  return at < 0
+    ? exchanges
+    : exchanges.map((exchange, place) =>
+        place === at ? { ...exchange, standing } : exchange,
+      );
 }

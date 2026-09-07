@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import type { AttemptState } from "../../../../src/contract/rosters.ts";
 import { apiRunTranscript } from "../core/apiRoutes.ts";
 import { conversationExchanges } from "../core/conversation.ts";
 import { panelReason } from "../core/freshness.ts";
@@ -21,6 +22,7 @@ import {
   runTranscriptHeldEmpty,
   runTranscriptMerged,
   runTranscriptNextAfter,
+  runTranscriptEnded,
   runTranscriptRead,
   runTranscriptReadsMax,
 } from "../core/runTranscript.ts";
@@ -28,6 +30,7 @@ import type { RunTranscriptHeld } from "../core/runTranscript.ts";
 import { useApiPorts } from "./api.ts";
 import { Conversation } from "./conversation/Conversation.tsx";
 import { useNowMs } from "./Freshness.tsx";
+import { Panel } from "./ui/Panel.tsx";
 
 /** The read walk: batches above what is held, a bounded number of pages at a
  * time, abandoned when the pane goes away. */
@@ -78,19 +81,24 @@ export function RunTranscript(props: {
   readonly execution: string;
   readonly attempt: string;
   readonly highWaterBatch: number;
+  readonly state: AttemptState;
 }): ReactNode {
   const held = useRunTranscript(props);
   const now = useNowMs();
   const reading = runTranscriptRead(held);
-  const exchanges = conversationExchanges(reading.items);
+  const exchanges = runTranscriptEnded(
+    conversationExchanges(reading.items),
+    props.state,
+  );
   return (
-    <section className="panel transcript">
-      <header className="panel-head">
-        <h2>transcript</h2>
+    <Panel
+      title="transcript"
+      meta={
         <span className="freshness">
           {runTranscriptFreshnessSentence(held, now)}
         </span>
-      </header>
+      }
+    >
       {held.failure === undefined ? null : (
         <p className="panel-failed">could not be read — {held.failure}</p>
       )}
@@ -98,6 +106,6 @@ export function RunTranscript(props: {
         exchanges={exchanges}
         empty="no transcript has been recorded yet"
       />
-    </section>
+    </Panel>
   );
 }

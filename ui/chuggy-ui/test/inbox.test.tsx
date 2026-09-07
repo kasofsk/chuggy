@@ -9,7 +9,7 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -38,6 +38,7 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
+  createLink: (component: unknown) => component,
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
@@ -47,8 +48,10 @@ vi.mock("@tanstack/react-router", () => ({
 beforeEach(resizeObserverStubbed);
 
 /** The stubbed global goes back whatever a case did with it, including a case
- * that stops partway; the rendered tree is the testing library's own cleanup. */
+ * that stops partway; the rendered tree is torn down here rather than by the
+ * library's own hook, which this runner has no global `afterEach` for. */
 afterEach(() => {
+  cleanup();
   vi.unstubAllGlobals();
 });
 
@@ -138,6 +141,27 @@ test("an answered row stays until a Ticket frame moves it out of the section", a
   expect(screen.getByText("Inbox is clear")).toBeDefined();
 });
 
+test("the top bar names how many the inbox holds", async () => {
+  drawInbox(served);
+  await settled();
+  const count = screen.getByRole("heading", {
+    name: "Inbox",
+  }).nextElementSibling;
+  expect(count?.textContent).toBe("1");
+});
+
+test("an answer's button still opens the sentence it sends", async () => {
+  drawInbox(served);
+  await settled();
+  const button = screen.getByRole("button", { name: "resume" });
+  const trigger = button.closest('[tabindex="0"]');
+  if (trigger === null) throw new Error("no tooltip trigger around resume");
+  fireEvent.focus(trigger);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "rejoin the pipeline at the point this ticket was parked at",
+  );
+});
+
 /**
  * The inbox's fourth member on screen. A refused ticket keeps its phase and has
  * no open question behind it, so the row is drawn from the refusal alone and
@@ -153,4 +177,17 @@ test("a ticket the lead refused is a row of its own, marked and reasoned", async
   expect((await screen.findByRole("tooltip")).textContent).toBe(
     "the brief names no reference",
   );
+});
+
+/** The served policy refuses `style-src` but `'self'`, so nothing this screen
+ * draws — a tooltip open included — may append a runtime style element. */
+test("nothing the inbox screen draws is a runtime style element", async () => {
+  drawInbox(servedWithRefusal);
+  await settled();
+  expect(document.querySelectorAll("style").length).toBe(0);
+  const trigger = screen.getByText("Standing").closest('[tabindex="0"]');
+  if (trigger === null) throw new Error("no tooltip trigger around Standing");
+  fireEvent.focus(trigger);
+  await screen.findByRole("tooltip");
+  expect(document.querySelectorAll("style").length).toBe(0);
 });

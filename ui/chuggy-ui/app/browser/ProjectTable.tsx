@@ -54,12 +54,15 @@ import type { TicketSection } from "../core/ticketSections.ts";
 import { useApiPorts, usePanelList } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { useProjectExecutionIndex } from "./executionIndex.ts";
+import { TopBarSlot } from "./shell/slots.tsx";
 import {
   cellAbsent,
   ticketRowExecutionCell,
   TicketNumberCell,
 } from "./TicketCells.tsx";
-import { ButtonLink } from "./ui/Button.tsx";
+import { Button, ButtonLink } from "./ui/Button.tsx";
+import { Pill } from "./ui/Pill.tsx";
+import { Table } from "./ui/Table.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
 interface TicketRowsHeld {
@@ -136,7 +139,7 @@ function TicketRow(props: {
       <TicketNumberCell partition={props.partition} ticket={row.ticket} />
       <td className="text-ink-3">
         <Tooltip text={row.configuration?.title}>
-          <span className="clipped">
+          <span className="max-w-aside inline-block truncate align-bottom">
             {ticketRowExecutionCell(row, row.configuration?.text)}
           </span>
         </Tooltip>
@@ -146,13 +149,13 @@ function TicketRow(props: {
         {row.badge === undefined ? (
           <span className="text-ink-3">{cellAbsent}</span>
         ) : (
-          <span className="badge">{row.badge}</span>
+          <Pill tone="parked">{row.badge}</Pill>
         )}
       </td>
       <td>{ticketRowExecutionCell(row, status)}</td>
       <td className="text-ink-3">
         <Tooltip text={row.runsOn?.title}>
-          <span className="clipped">
+          <span className="max-w-aside inline-block truncate align-bottom">
             {ticketRowExecutionCell(row, row.runsOn?.text)}
           </span>
         </Tooltip>
@@ -166,30 +169,29 @@ function TicketRow(props: {
 }
 
 function TicketTable(props: {
+  readonly caption: string;
   readonly rows: readonly ProjectTableRow[];
   readonly partition: PartitionIdentity;
 }): ReactNode {
   return (
-    <div className="max-w-full overflow-x-auto">
-      <table className="ticket-table">
-        <thead>
-          <tr>
-            <th scope="col">ticket</th>
-            <th scope="col">configuration</th>
-            <th scope="col">phase</th>
-            <th scope="col">why</th>
-            <th scope="col">execution</th>
-            <th scope="col">runs on</th>
-            <th scope="col">last activity</th>
-          </tr>
-        </thead>
-        <tbody>
-          {props.rows.map((row) => (
-            <TicketRow key={row.ticket} row={row} partition={props.partition} />
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table caption={props.caption}>
+      <thead>
+        <tr>
+          <th scope="col">ticket</th>
+          <th scope="col">configuration</th>
+          <th scope="col">phase</th>
+          <th scope="col">why</th>
+          <th scope="col">execution</th>
+          <th scope="col">runs on</th>
+          <th scope="col">last activity</th>
+        </tr>
+      </thead>
+      <tbody>
+        {props.rows.map((row) => (
+          <TicketRow key={row.ticket} row={row} partition={props.partition} />
+        ))}
+      </tbody>
+    </Table>
   );
 }
 
@@ -199,8 +201,9 @@ function TicketSectionPanel(props: {
   readonly index: ProjectExecutionIndex;
   readonly partition: PartitionIdentity;
 }): ReactNode {
+  const title = ticketSectionTitles[props.section];
   return (
-    <DataPanel title={ticketSectionTitles[props.section]} state={props.state}>
+    <DataPanel title={title} state={props.state}>
       {(rows) => {
         const drawn = projectTableRowsIn(
           projectTableRows(rows.tickets, props.index),
@@ -209,7 +212,11 @@ function TicketSectionPanel(props: {
         return drawn.length === 0 ? (
           <p className="panel-note">no ticket is here</p>
         ) : (
-          <TicketTable rows={drawn} partition={props.partition} />
+          <TicketTable
+            caption={title}
+            rows={drawn}
+            partition={props.partition}
+          />
         );
       }}
     </DataPanel>
@@ -225,19 +232,18 @@ function TicketFilters(props: {
     ...ticketSectionRoster,
   ];
   return (
-    <div className="filters" role="group" aria-label="phase">
+    <div className="flex flex-wrap gap-2" role="group" aria-label="phase">
       {filters.map((filter) => (
-        <button
+        <Button
           key={filter}
-          type="button"
-          className={filter === props.filter ? "here" : ""}
-          aria-pressed={filter === props.filter}
+          size="sm"
+          pressed={filter === props.filter}
           onClick={() => {
             props.onChange(filter);
           }}
         >
           {filter === ticketFilterAll ? "all" : ticketSectionTitles[filter]}
-        </button>
+        </Button>
       ))}
     </div>
   );
@@ -258,6 +264,9 @@ export function ProjectTable(): ReactNode {
     tickets.state.state === "Ready" ? tickets.state.value.failure : undefined;
   return (
     <>
+      <TopBarSlot>
+        <h1 className="text-md font-strong text-ink-1 truncate">Overview</h1>
+      </TopBarSlot>
       <div className="flex items-center gap-4">
         <TicketFilters filter={filter} onChange={setFilter} />
         <ButtonLink to="/$tenant/$project/tickets/new" params={partition}>
@@ -290,13 +299,11 @@ export function ProjectTable(): ReactNode {
         />
       ))}
       {tickets.readMore === undefined ? null : (
-        <button
-          type="button"
-          className="justify-self-start"
-          onClick={tickets.readMore}
-        >
-          more
-        </button>
+        <div>
+          <Button size="sm" onClick={tickets.readMore}>
+            more
+          </Button>
+        </div>
       )}
       {tickets.reading ? <p className="panel-note">reading…</p> : null}
     </>

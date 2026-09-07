@@ -25,6 +25,7 @@
     --surface-1: light-dark(#f7f8f5, #151a17); /* a panel */
     --surface-2: light-dark(#e2e6de, #0a0d0b); /* inset: code, meters */
     --surface-inverse: light-dark(#151a17, #eef2ee); /* a filled control */
+    --bubble: light-dark(#dfe5da, #1b221d); /* the member's own message */
 
     /* ink */
     --ink-1: light-dark(#151a17, #eef2ee); /* headings, values, figures */
@@ -47,7 +48,6 @@
     --tone-parked: light-dark(#7f5200, #e0b24e);
     --tone-queued: var(--ink-3);
     --tone-retired: var(--ink-3);
-    --tone-danger: var(--tone-fail);
     --tone-on-danger: light-dark(#ffffff, #0e1210);
 
     /* washes — a tone at background strength, for notices and meter cells */
@@ -72,6 +72,10 @@
       var(--tone-parked) var(--wash),
       var(--surface-1)
     );
+
+    /* the page dimmed behind a drawer, which is the one colour that is not a
+       level: it has to let the level under it through */
+    --scrim: color-mix(in srgb, var(--surface-0) 70%, transparent);
 
     --focus: var(--ink-1);
 
@@ -108,10 +112,12 @@
     --space-7: 3rem;
 
     /* shape and lines */
-    --radius-1: 2px; /* pills, meter cells */
-    --radius-2: 4px; /* buttons, panels, inputs */
+    --radius-1: 2px; /* meter cells, the focus ring */
+    --radius-2: 4px; /* inputs, the identity block, quoted text */
+    --radius-3: 1.125rem; /* bubbles, work cards, the composer */
+    --radius-circle: 50%; /* a square drawn round: a dot, a mark, a monogram */
     --hairline: 1px;
-    --rail: 2px; /* the standing rail of a ledger group and a notice */
+    --rail: 2px; /* the standing rail of a ledger group and quoted text */
 
     /* rings */
     --ring-focus: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--focus);
@@ -124,6 +130,8 @@
 
     /* layout */
     --width-page: 96rem;
+    --width-rail: 16rem; /* the shell's navigation */
+    --width-column: 48rem; /* a conversation's reading column */
     --width-aside: 22rem;
     --width-aside-min: 18rem;
     --col-label: 8.5rem; /* ledger: the row's label */

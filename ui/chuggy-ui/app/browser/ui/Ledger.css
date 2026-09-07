@@ -42,10 +42,6 @@
     gap: var(--space-3);
   }
 
-  .ledger-group-head h3 {
-    font-family: var(--font-mono);
-  }
-
   .ledger-group-superseded .ledger-group-head h3 {
     color: var(--ink-3);
   }
@@ -81,15 +77,13 @@
       var(--col-spent) minmax(0, 1fr) auto;
     gap: var(--space-3);
     align-items: baseline;
-    padding: var(--space-1) 0;
+    padding: var(--space-2) 0;
     border-top: var(--hairline) solid var(--edge);
     line-height: var(--leading-dense);
   }
 
   .ledger-label {
     color: var(--ink-1);
-    font-family: var(--font-mono);
-    font-size: var(--mono-optical);
   }
 
   .ledger-group-superseded .ledger-label {

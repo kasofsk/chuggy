@@ -1,8 +1,20 @@
-/* ToggleGroup: the row a set of items sits in; the item look is Button's. */
+/* ToggleGroup: a segmented control — one sunk track, the checked item raised
+   out of it. The item's shape is Button's; only its paint changes here. */
 
 @layer ui {
-  .toggle-group {
-    display: inline-flex;
-    gap: var(--space-1);
+  .toggle-group .btn {
+    background: transparent;
+    border-color: transparent;
+    color: var(--ink-2);
+  }
+
+  .toggle-group .btn:hover {
+    color: var(--ink-1);
+  }
+
+  .toggle-group .btn[aria-checked="true"] {
+    background: var(--surface-1);
+    border-color: var(--edge);
+    color: var(--ink-1);
   }
 }

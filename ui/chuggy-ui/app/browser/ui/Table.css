@@ -1,11 +1,6 @@
-/* Table: rows compared column by column, scrolling itself and not the page. */
+/* Table: rows compared column by column, on hairlines and no frame. */
 
 @layer ui {
-  .table-scroll {
-    max-width: 100%;
-    overflow-x: auto;
-  }
-
   .tabular {
     width: 100%;
     border-collapse: collapse;
@@ -15,16 +10,18 @@
   .tabular th,
   .tabular td {
     text-align: left;
-    padding: var(--space-1) var(--space-3);
+    padding: var(--space-2) var(--space-3);
     white-space: nowrap;
     border-bottom: var(--hairline) solid var(--edge);
   }
 
+  .tabular tbody tr:last-child > * {
+    border-bottom: 0;
+  }
+
   .tabular thead th {
-    font: var(--weight-medium) var(--text-xs) / var(--leading-dense)
-      var(--font-mono);
-    letter-spacing: var(--tracking-label);
-    text-transform: uppercase;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
     color: var(--ink-3);
   }
 

@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, expect, test } from "vitest";
 
 import { Picker } from "../app/browser/ui/Picker.tsx";
+import { styleless } from "./styleless.ts";
 
 const projects = [
   { value: "acme/atlas", text: "acme / atlas" },
@@ -37,6 +38,7 @@ test("the trigger carries the label and shows the chosen option's text", () => {
   const trigger = screen.getByRole("button", { name: "Project acme / beta" });
   expect(trigger).toBeDefined();
   expect(view.container.querySelector("[style]")).toBeNull();
+  styleless();
 });
 
 test("an open menu is radio items with one checked, and appends no style", async () => {
@@ -60,7 +62,7 @@ test("an open menu is radio items with one checked, and appends no style", async
   expect(
     items.filter((item) => item.getAttribute("aria-checked") === "true"),
   ).toHaveLength(1);
-  expect(document.querySelectorAll("style")).toHaveLength(0);
+  styleless();
   expect(document.body.style.pointerEvents).toBe("");
   expect(view.container.querySelector("[style]")).toBeNull();
 });
@@ -83,4 +85,5 @@ test("choosing another option reaches the caller with its value", async () => {
   await screen.findByRole("menu");
   fireEvent.click(screen.getByRole("menuitemradio", { name: "acme / beta" }));
   expect(chosen).toEqual(["acme/beta"]);
+  styleless();
 });

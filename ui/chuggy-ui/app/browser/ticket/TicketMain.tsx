@@ -30,17 +30,19 @@ export function TicketMain(props: {
   readonly page: ExecutionsResponse | undefined;
 }): ReactNode {
   return (
-    <div className="ticket-main">
-      <section id="cycles">{props.ledger}</section>
-      <section id="usage">
+    <div className="grid min-w-0 gap-4">
+      <section id="cycles" className="scroll-mt-4">
+        {props.ledger}
+      </section>
+      <section id="usage" className="scroll-mt-4">
         <Panel title="Usage" meta="list price">
           <TicketUsage totals={props.totals} page={props.page} />
         </Panel>
       </section>
-      <section id="brief">
+      <section id="brief" className="scroll-mt-4">
         <TicketBrief state={props.draftState} />
       </section>
-      <section id="provenance">
+      <section id="provenance" className="scroll-mt-4">
         <TicketProvenance
           partition={props.partition}
           state={props.draftState}

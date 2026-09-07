@@ -11,6 +11,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 
 import { Pill, pillTones } from "../app/browser/ui/Pill.tsx";
+import { styleless } from "./styleless.ts";
 
 afterEach(cleanup);
 
@@ -24,6 +25,7 @@ test("every tone draws its word and its own class, and the mark is decorative", 
       "true",
     );
     expect(view.container.querySelector("[style]")).toBeNull();
+    styleless();
     cleanup();
   }
 });
@@ -37,4 +39,13 @@ test("emphasis is a class beside the tone, not a tone of its own", () => {
   const drawn = screen.getByText("Escalated");
   expect(drawn.classList.contains("pill-emphasis")).toBe(true);
   expect(drawn.classList.contains("pill-parked")).toBe(true);
+  styleless();
+});
+
+/** The chip is what the top bar and the details pane draw standing with, and
+ * every page that draws one reads its class name rather than its markup. */
+test("the chip's class name is the pill and its tone, and nothing else", () => {
+  render(<Pill tone="live">Running</Pill>);
+  expect(screen.getByText("Running").className).toBe("pill pill-live");
+  styleless();
 });

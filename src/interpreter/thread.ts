@@ -42,6 +42,13 @@ import {
   threadSeedingCharsMax,
   threadWakeCharsMax,
 } from "../contract/http.ts";
+import {
+  threadDraftsHeading,
+  threadNorthStarHeading,
+  threadRefusalsHeading,
+  threadStandingSection,
+  threadWakeStanding,
+} from "../contract/threadSeeding.ts";
 import type { SessionCapability, SessionState } from "./agentSession.ts";
 import type { Partition } from "./projectStore.ts";
 
@@ -110,21 +117,6 @@ export interface ThreadWakeDocument {
   /** The standing rule, carried on the turn that could break it. */
   readonly standing: string;
 }
-
-/**
- * The sentence a woken thread is bound by. It is written once and read in both
- * places that must say it, so the rule written twice cannot become two rules.
- */
-export const threadWakeStanding =
-  "A wake is a notice, not an instruction: say what happened, and originate, revise, release, dispatch or run nothing because of it.";
-
-/**
- * Which channel a thread's commands go through, written once for the same
- * reason. A project tool is a command its owner already has; the lead's
- * decisions are the lead's, and a thread neither makes nor amends one.
- */
-export const threadChannelStanding =
-  "You act through the same commands your owner has in the console, recorded as their act; the lead's decisions are the lead's, and you neither make nor amend one.";
 
 /** One wake document, with the standing rule put on it rather than left to a caller. */
 export function threadWakeDocument(input: {
@@ -231,11 +223,10 @@ this session, so you may do exactly what they may do and nothing further.`,
     `# What you are for
 
 ${threadPurposeStanding}`,
-    ...(northStar === undefined ? [] : [`# North Star\n\n${northStar}`]),
-    `# How you act on this project
-
-- ${threadChannelStanding}
-- ${threadWakeStanding}`,
+    ...(northStar === undefined
+      ? []
+      : [`${threadNorthStarHeading}\n\n${northStar}`]),
+    threadStandingSection,
   ].join("\n\n");
 }
 
@@ -308,25 +299,22 @@ export function threadSeedingText(seeding: ThreadSeeding): string {
   return [
     ...(seeding.northStar === undefined
       ? []
-      : [`# North Star\n\n${seeding.northStar}`]),
+      : [`${threadNorthStarHeading}\n\n${seeding.northStar}`]),
     ...(seeding.drafts.length === 0
       ? []
       : [
-          `# Your open drafts\n\n${seeding.drafts
+          `${threadDraftsHeading}\n\n${seeding.drafts
             .map(({ ticket, summary }) => `- ${String(ticket)} — ${summary}`)
             .join("\n")}`,
         ]),
     ...(seeding.refusals.length === 0
       ? []
       : [
-          `# Standing against them\n\n${seeding.refusals
+          `${threadRefusalsHeading}\n\n${seeding.refusals
             .map(({ ticket, reason }) => `- ${String(ticket)} — ${reason}`)
             .join("\n")}`,
         ]),
-    `# How you act on this project
-
-- ${threadChannelStanding}
-- ${threadWakeStanding}`,
+    threadStandingSection,
   ].join("\n\n");
 }
 

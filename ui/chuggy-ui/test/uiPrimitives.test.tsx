@@ -16,6 +16,7 @@ import { Identity, identityForms } from "../app/browser/ui/Identity.tsx";
 import { SectionList } from "../app/browser/ui/SectionList.tsx";
 import { Table } from "../app/browser/ui/Table.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { styleless } from "./styleless.ts";
 
 beforeEach(resizeObserverStubbed);
 
@@ -39,6 +40,7 @@ test("an identity shows the short form and hovers the whole of it", async () => 
       "cfaca0a1b2c3",
     );
     expect(container.querySelector("[style]")).toBeNull();
+    styleless();
     cleanup();
   }
 });
@@ -62,13 +64,14 @@ test("fields are a definition list in both variants, and an absence says so", ()
     expect(
       container.querySelector("dl")?.classList.contains("fields-inline"),
     ).toBe(variant === "inline");
+    styleless();
     cleanup();
   }
 });
 
-test("an empty state is a line inside a panel and a heading on a page", () => {
+test("an empty state is a line inside a panel and a centred heading on a page", () => {
   for (const variant of emptyVariants) {
-    render(
+    const { container } = render(
       <EmptyState
         label="Nothing has run"
         variant={variant}
@@ -80,12 +83,23 @@ test("an empty state is a line inside a panel and a heading on a page", () => {
     expect(
       screen.queryByRole("heading", { name: "Nothing has run" }) !== null,
     ).toBe(variant === "page");
+    expect(
+      container
+        .querySelector(".empty")
+        ?.classList.contains("place-content-center"),
+    ).toBe(variant === "page");
+    expect(
+      container.querySelector(".empty")?.classList.contains("min-h-full"),
+    ).toBe(false);
+    expect(container.querySelector(".empty-page")).toBeNull();
+    expect(container.querySelector(".empty-action")).toBeNull();
+    styleless();
     cleanup();
   }
 });
 
 test("a table scrolls itself and names its columns", () => {
-  const { container } = render(
+  render(
     <Table caption="Usage by model">
       <thead>
         <tr>
@@ -99,11 +113,12 @@ test("a table scrolls itself and names its columns", () => {
       </tbody>
     </Table>,
   );
-  expect(container.querySelector(".table-scroll")).not.toBeNull();
-  expect(screen.getByRole("table", { name: "Usage by model" })).toBeDefined();
+  const table = screen.getByRole("table", { name: "Usage by model" });
+  expect(table.parentElement?.classList.contains("overflow-x-auto")).toBe(true);
   expect(
     screen.getByRole("rowheader", { name: "claude-opus-4" }),
   ).toBeDefined();
+  styleless();
 });
 
 test("a section list is anchors, with a figure or a note and never both invented", () => {
@@ -126,4 +141,5 @@ test("a section list is anchors, with a figure or a note and never both invented
   expect(screen.getByText("3 · 7 runs")).toBeDefined();
   expect(screen.getByText("$2.74")).toBeDefined();
   expect(links[2]?.textContent).toBe("Brief");
+  styleless();
 });

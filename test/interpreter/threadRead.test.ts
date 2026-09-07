@@ -46,8 +46,8 @@ import {
 import {
   threadSystemPromptCharsMax,
   threadTurnInputCharsMax,
-  threadWakeStanding,
 } from "../../src/interpreter/thread.ts";
+import { threadWakeStanding } from "../../src/contract/threadSeeding.ts";
 
 const partition = {
   tenant: asTenantId("acme"),

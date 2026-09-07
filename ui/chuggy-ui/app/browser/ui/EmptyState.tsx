@@ -2,9 +2,10 @@
  * Nothing here, in two to five words, with what to do about it if there is
  * anything.
  *
- * Total over `emptyVariants`: one retired line inside a panel, or a centred
- * card for a console with no session and no page to draw. It is for a list with
- * no members and never for a read that failed, which is a Notice and says why.
+ * Total over `emptyVariants`: one retired line inside a panel, or a title and
+ * a sentence centred horizontally in the column a conversation would fill.
+ * It is for a list with no members and never for a read that failed, which
+ * is a Notice and says why.
  */
 
 import type { ReactNode } from "react";
@@ -23,12 +24,10 @@ export function EmptyState(props: {
 }): ReactNode {
   if (props.variant !== "page") return <p className="empty">{props.label}</p>;
   return (
-    <div className="empty empty-page">
+    <div className="empty grid place-content-center gap-3 text-center">
       <h1>{props.label}</h1>
       {props.detail === undefined ? null : <p>{props.detail}</p>}
-      {props.action === undefined ? null : (
-        <div className="empty-action">{props.action}</div>
-      )}
+      {props.action === undefined ? null : <div>{props.action}</div>}
     </div>
   );
 }

@@ -13,10 +13,12 @@ import type { Figure as FigureValue } from "../app/core/figures.ts";
 import { figureKinds } from "../app/core/figures.ts";
 import { Figure, figureBasisTitle } from "../app/browser/ui/Figure.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { styleless } from "./styleless.ts";
 
 beforeEach(resizeObserverStubbed);
 
 afterEach(() => {
+  styleless();
   cleanup();
   vi.unstubAllGlobals();
 });

@@ -15,6 +15,7 @@ import type { RunTranscriptResponse } from "../../../src/contract/responses.ts";
 import type { RunTranscriptHeld } from "../app/core/runTranscript.ts";
 import {
   runTranscriptBatchesHeldMax,
+  runTranscriptEnded,
   runTranscriptFreshnessSentence,
   runTranscriptHeldEmpty,
   runTranscriptHighestBatch,
@@ -432,4 +433,40 @@ test("a run whose last assistant line has no answer yet draws an open exchange",
   expect(exchanges).toHaveLength(1);
   expect(exchanges[0]?.answer).toBeUndefined();
   expect(exchanges[0]?.standing).toEqual({ standing: "Open" });
+});
+
+test("a run that reported settles the exchange it ended on", () => {
+  const open = conversationExchanges([
+    {
+      item: "Entry",
+      entry: {
+        id: "e1",
+        role: "Assistant",
+        blocks: [{ block: "ToolUse", id: "call-1", name: "Read", input: {} }],
+      },
+    },
+  ]);
+
+  expect(runTranscriptEnded(open, "Running")).toEqual(open);
+  expect(runTranscriptEnded(open, "Reported")[0]?.standing).toEqual({
+    standing: "Answered",
+  });
+  expect(runTranscriptEnded(open, "Lost")[0]?.standing).toEqual({
+    standing: "Failed",
+  });
+});
+
+test("a run that answered in words is settled already, and is left alone", () => {
+  const answered = conversationExchanges([
+    {
+      item: "Entry",
+      entry: {
+        id: "e1",
+        role: "Assistant",
+        blocks: [{ block: "Text", text: "done" }],
+      },
+    },
+  ]);
+
+  expect(runTranscriptEnded(answered, "Lost")).toEqual(answered);
 });

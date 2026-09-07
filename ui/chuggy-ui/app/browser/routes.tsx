@@ -51,8 +51,8 @@ export function Landing(): ReactNode {
     });
   }, [navigate, chosen]);
   return (
-    <div className="shell">
-      <main className="shell-body">
+    <div className="grid min-h-dvh content-start gap-4 p-4">
+      <main>
         <DataPanel title="projects" state={state}>
           {(projects) =>
             projects.length === 0 ? (

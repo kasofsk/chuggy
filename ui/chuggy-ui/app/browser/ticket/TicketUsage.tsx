@@ -224,7 +224,7 @@ export function TicketUsage(props: {
   readonly page: ExecutionsResponse | undefined;
 }): ReactNode {
   return (
-    <div className="ticket-usage">
+    <div className="grid gap-4">
       {props.totals === undefined ? (
         <EmptyState label="No run figures yet" />
       ) : (

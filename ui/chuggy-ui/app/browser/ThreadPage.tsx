@@ -47,14 +47,13 @@ import { usePanelList } from "./api.ts";
 import { Conversation } from "./conversation/Conversation.tsx";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useLeadTranscript } from "./lead/LeadTranscript.tsx";
+import { DetailsSlot, TopBarSlot } from "./shell/slots.tsx";
 import { ThreadClose } from "./thread/ThreadClose.tsx";
 import { useThreadSend } from "./thread/threadSend.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Field, Fields } from "./ui/Fields.tsx";
-import { PageHead } from "./ui/PageHead.tsx";
+import { Identity } from "./ui/Identity.tsx";
 import { Pill } from "./ui/Pill.tsx";
-
-import "./thread/thread.css";
 
 /** The list entry one thread page keeps, named by the session it draws so two
  * threads open in two tabs are two entries and not one. */
@@ -80,30 +79,42 @@ export function useThread(
   );
 }
 
-function ThreadHead(props: {
+/** The bar's own title, the thread's standing, whether it is the reader's own,
+ * and whose it is otherwise. */
+function ThreadTopBar(props: { readonly thread: ThreadResponse }): ReactNode {
+  const thread = props.thread;
+  return (
+    <TopBarSlot>
+      <h1 className="text-md font-strong text-ink-1 truncate">Thread</h1>
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
+        <Pill tone={threadStandingTone(thread.state)} emphasis>
+          {thread.state}
+        </Pill>
+        {thread.mine ? <Pill tone="live">Yours</Pill> : null}
+        {thread.owner === undefined ? null : (
+          <Identity label={{ text: thread.owner, title: thread.owner }} />
+        )}
+      </div>
+    </TopBarSlot>
+  );
+}
+
+/** What the thread is beside the conversation: its standing, whose it is, the
+ * store it writes to, and the close any reader may press. Hidden by default —
+ * a member reading their own thread came for the conversation. */
+function ThreadDetails(props: {
   readonly partition: PartitionIdentity;
   readonly thread: ThreadResponse;
 }): ReactNode {
   const thread = props.thread;
   return (
-    <>
-      <PageHead
-        title="Thread"
-        identity={{ text: thread.session, title: thread.session }}
-      >
-        <Pill tone={threadStandingTone(thread.state)} emphasis>
-          {thread.state}
-        </Pill>
-        {thread.mine ? <Pill tone="live">Mine</Pill> : null}
-        {threadClosable(thread) ? (
-          <ThreadClose
-            partition={props.partition}
-            session={thread.session}
-            variant="danger"
-          />
-        ) : null}
-      </PageHead>
-      <Fields variant="inline">
+    <DetailsSlot>
+      <Fields>
+        <Field name="State">
+          <Pill tone={threadStandingTone(thread.state)} emphasis>
+            {thread.state}
+          </Pill>
+        </Field>
         <Field name="Owner" absent={thread.owner === undefined}>
           {thread.owner ?? "None"}
         </Field>
@@ -111,7 +122,14 @@ function ThreadHead(props: {
           {thread.agentReference ?? "None"}
         </Field>
       </Fields>
-    </>
+      {threadClosable(thread) ? (
+        <ThreadClose
+          partition={props.partition}
+          session={thread.session}
+          variant="danger"
+        />
+      ) : null}
+    </DetailsSlot>
   );
 }
 
@@ -141,19 +159,26 @@ function ThreadBody(props: {
   if (thread === undefined) return <PanelUnready state={props.state} />;
   return (
     <>
-      <ThreadHead partition={props.partition} thread={thread} />
-      <Conversation
-        exchanges={conversationExchanges(
-          sessionConversationItems({
-            held,
-            stream: thread.agentReference,
-            listed: leadStreamListed(thread),
-          }),
-          sessionConversationTurns(thread.turns),
-        )}
-        {...(thread.mine ? { composer } : {})}
-        empty="Nothing said"
-      />
+      <ThreadTopBar thread={thread} />
+      <ThreadDetails partition={props.partition} thread={thread} />
+      <div
+        role="region"
+        aria-label="Conversation"
+        className="flex-1 min-h-0 min-w-0"
+      >
+        <Conversation
+          exchanges={conversationExchanges(
+            sessionConversationItems({
+              held,
+              stream: thread.agentReference,
+              listed: leadStreamListed(thread),
+            }),
+            sessionConversationTurns(thread.turns),
+          )}
+          {...(thread.mine ? { composer } : {})}
+          empty="Nothing said"
+        />
+      </div>
     </>
   );
 }
@@ -169,13 +194,11 @@ export function ThreadPage(): ReactNode {
   if (state.state === "Absent")
     return <EmptyState label="No thread" variant="page" />;
   return (
-    <div className="thread">
-      <ThreadBody
-        key={session}
-        partition={partition}
-        session={session}
-        state={state}
-      />
-    </div>
+    <ThreadBody
+      key={session}
+      partition={partition}
+      session={session}
+      state={state}
+    />
   );
 }

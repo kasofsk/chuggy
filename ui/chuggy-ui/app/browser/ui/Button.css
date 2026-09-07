@@ -1,20 +1,13 @@
-/* Button and ButtonLink: one look, four variants, two sizes. */
+/* Button and ButtonLink: the paint of four variants over one pill. The pill's
+   shape, type and padding are utilities on the class string, so nothing here
+   states a property the utilities layer would win back. */
 
 @layer ui {
   .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-1) var(--space-3);
     background: var(--surface-1);
     color: var(--ink-1);
     border: var(--hairline) solid var(--edge-control);
-    border-radius: var(--radius-2);
-    font: var(--weight-medium) var(--text-md) / var(--leading-dense)
-      var(--font-mono);
     cursor: pointer;
-    text-decoration: none;
-    white-space: nowrap;
     transition:
       background var(--duration-1) var(--ease-out),
       border-color var(--duration-1) var(--ease-out),
@@ -22,16 +15,7 @@
   }
 
   .btn:hover {
-    background: color-mix(in srgb, var(--ink-1) var(--wash), var(--surface-1));
-    border-color: var(--ink-1);
-  }
-
-  .btn:active {
-    background: color-mix(
-      in srgb,
-      var(--ink-1) calc(var(--wash) * 2),
-      var(--surface-1)
-    );
+    background: var(--surface-2);
   }
 
   .btn[aria-pressed="true"],
@@ -67,19 +51,6 @@
     );
   }
 
-  .btn-danger {
-    color: var(--tone-danger);
-    border-color: var(--tone-danger);
-    background: transparent;
-  }
-
-  .btn-danger:hover,
-  .btn-danger:focus-visible {
-    background: var(--tone-danger);
-    color: var(--tone-on-danger);
-    border-color: var(--tone-danger);
-  }
-
   .btn-quiet {
     border-color: transparent;
     background: transparent;
@@ -87,12 +58,24 @@
   }
 
   .btn-quiet:hover {
-    border-color: var(--edge-control);
-    background: transparent;
+    background: var(--surface-2);
   }
 
-  .btn-sm {
-    padding: 0 var(--space-2);
-    font-size: var(--text-sm);
+  .btn-danger {
+    border-color: transparent;
+    background: transparent;
+    color: var(--tone-fail);
+  }
+
+  .btn-danger:hover,
+  .btn-danger:focus-visible {
+    background: var(--tone-fail);
+    color: var(--tone-on-danger);
+    border-color: var(--tone-fail);
+  }
+
+  .btn-quiet:disabled,
+  .btn-danger:disabled {
+    border-color: transparent;
   }
 }

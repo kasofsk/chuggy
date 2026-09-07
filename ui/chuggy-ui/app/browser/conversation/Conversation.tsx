@@ -29,7 +29,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { ConversationExchange } from "../../core/conversation.ts";
-import { EmptyState } from "../ui/EmptyState.tsx";
 import { ConversationComposer } from "./ConversationComposer.tsx";
 import type { ConversationComposerProps } from "./ConversationComposer.tsx";
 import {
@@ -165,10 +164,31 @@ function conversationMessageDrawn(value: {
   );
 }
 
+/** Nothing said yet: the column's own name and one line about it, held in the
+ * middle of the empty space above the composer. */
+function ConversationEmpty(props: {
+  readonly title: string | undefined;
+  readonly sentence: string;
+}): ReactNode {
+  return (
+    <div className="grid min-h-full place-content-center justify-items-center gap-2 text-center">
+      {props.title === undefined ? null : <h2>{props.title}</h2>}
+      <p className="text-ink-3">{props.sentence}</p>
+    </div>
+  );
+}
+
+/**
+ * The conversation as a page holds it: a column of exchanges that scrolls, and
+ * the composer beneath it. The two rows are one grid so that a bounded height
+ * pins the composer to the bottom of it, and an unbounded one — a transcript
+ * pane inside a panel — leaves both in normal flow.
+ */
 export function Conversation(props: {
   readonly exchanges: readonly ConversationExchange[];
   readonly composer?: ConversationComposerProps;
   readonly empty: string;
+  readonly emptyTitle?: string;
 }): ReactNode {
   const held = useConversationRuntime({
     exchanges: props.exchanges,
@@ -176,18 +196,25 @@ export function Conversation(props: {
   });
   return (
     <AssistantRuntimeProvider runtime={held.runtime}>
-      <ThreadPrimitive.Root className="grid min-w-0 gap-4">
-        {props.exchanges.length === 0 ? (
-          <EmptyState label={props.empty} />
-        ) : (
-          <ThreadPrimitive.Viewport className="grid min-w-0 gap-4">
-            <ThreadPrimitive.Messages>
-              {conversationMessageDrawn}
-            </ThreadPrimitive.Messages>
-          </ThreadPrimitive.Viewport>
-        )}
+      <ThreadPrimitive.Root className="grid h-full min-h-0 grid-rows-[1fr_auto] gap-4">
+        <ThreadPrimitive.Viewport className="min-h-0 overflow-y-auto">
+          <div className="max-w-column mx-auto grid min-w-0 gap-6">
+            {props.exchanges.length === 0 ? (
+              <ConversationEmpty
+                title={props.emptyTitle}
+                sentence={props.empty}
+              />
+            ) : (
+              <ThreadPrimitive.Messages>
+                {conversationMessageDrawn}
+              </ThreadPrimitive.Messages>
+            )}
+          </div>
+        </ThreadPrimitive.Viewport>
         {props.composer === undefined ? null : (
-          <ConversationComposer {...props.composer} busy={held.sending} />
+          <div className="max-w-column mx-auto w-full min-w-0">
+            <ConversationComposer {...props.composer} busy={held.sending} />
+          </div>
         )}
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>

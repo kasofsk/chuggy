@@ -18,6 +18,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import type { SessionHolder } from "../app/core/sessionHolder.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
+import { ShellSlots, useShellSlotHolder } from "../app/browser/shell/slots.tsx";
 import { ProjectStreamProvider } from "../app/browser/stream.tsx";
 import { frame, streamServer } from "./streamDouble.ts";
 import type { StreamServer } from "./streamDouble.ts";
@@ -124,6 +125,20 @@ export type StreamTransport = NonNullable<
   Parameters<typeof ProjectStreamProvider>[0]["transport"]
 >;
 
+/** A place for a page's `TopBarSlot` and `DetailsSlot` content to land, the
+ * way `Shell` gives them one, so a suite built on `ScreenHarness` alone can see
+ * what a page draws there. */
+function ScreenHarnessSlotSinks(): ReactNode {
+  const holdTopBar = useShellSlotHolder("topBar");
+  const holdDetails = useShellSlotHolder("details");
+  return (
+    <>
+      <div ref={holdTopBar} />
+      <div ref={holdDetails} />
+    </>
+  );
+}
+
 export function ScreenHarness(props: {
   readonly partition: PartitionIdentity;
   readonly client: QueryClient;
@@ -137,7 +152,10 @@ export function ScreenHarness(props: {
           partition={props.partition}
           transport={props.transport}
         >
-          {props.children}
+          <ShellSlots>
+            <ScreenHarnessSlotSinks />
+            {props.children}
+          </ShellSlots>
         </ProjectStreamProvider>
       </QueryClientProvider>
     </SessionProvider>

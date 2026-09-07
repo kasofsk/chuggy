@@ -164,14 +164,19 @@ export function tokenCountFigure(count: number): Figure {
   return { kind: "Tokens", text: tokenCountText(count) };
 }
 
+/** One count carrying its unit, for a line with no column head to say it. */
+export function tokenCountUnitFigure(count: number): Figure {
+  return { kind: "Tokens", text: `${tokenCountText(count)} tok` };
+}
+
 /** One number over every kind of token, because a row is read at a glance. */
 export function tokensFigure(totals: TokenCounts): Figure {
-  const count =
+  return tokenCountUnitFigure(
     totals.tokensInput +
-    totals.tokensOutput +
-    totals.tokensCacheCreation +
-    totals.tokensCacheRead;
-  return { kind: "Tokens", text: `${tokenCountText(count)} tok` };
+      totals.tokensOutput +
+      totals.tokensCacheCreation +
+      totals.tokensCacheRead,
+  );
 }
 
 /** Below this a sexagesimal or calendar field is written with its leading zero. */
