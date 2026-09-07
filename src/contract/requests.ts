@@ -19,6 +19,7 @@ import {
   selectorAllowlistNamesMax,
   selectorSettingsTextCharsMax,
   threadMessageCharsMax,
+  threadTitleCharsMax,
   ticketNumberSchema,
 } from "./http.ts";
 import { authoringSchema } from "./authoring.ts";
@@ -159,6 +160,21 @@ export const selectorProjectSettingsSchema = z.strictObject({
 export const threadMessageSchema = z.strictObject({
   turn: bodyIdentitySchema,
   message: z.string().min(1).max(threadMessageCharsMax),
+});
+
+/**
+ * What a member calls their own thread, which overrides the title derived from
+ * its first message. An empty string clears the override rather than storing a
+ * label with nothing in it, so a rail is never offered a blank row.
+ */
+export const threadRenameRequestSchema = z.strictObject({
+  title: z.string().max(threadTitleCharsMax),
+});
+
+/** Whether this thread is on its owner's rail. Nothing is deleted; a hidden
+ * thread stays on the threads page. */
+export const threadHideRequestSchema = z.strictObject({
+  hidden: z.boolean(),
 });
 
 /**

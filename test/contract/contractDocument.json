@@ -75,7 +75,9 @@
     "thread": "/api/v1/tenants/:tenant/projects/:project/threads/:session",
     "threadTranscript": "/api/v1/tenants/:tenant/projects/:project/threads/:session/transcript",
     "threadMessages": "/api/v1/tenants/:tenant/projects/:project/threads/:session/messages",
-    "threadClose": "/api/v1/tenants/:tenant/projects/:project/threads/:session/close"
+    "threadClose": "/api/v1/tenants/:tenant/projects/:project/threads/:session/close",
+    "threadRename": "/api/v1/tenants/:tenant/projects/:project/threads/:session/rename",
+    "threadHide": "/api/v1/tenants/:tenant/projects/:project/threads/:session/hide"
   },
   "schemas": {
     "publicMutation": {
@@ -826,6 +828,29 @@
         "message": { "type": "string", "minLength": 1, "maxLength": 16384 }
       },
       "required": ["turn", "message"],
+      "additionalProperties": false
+    },
+    "threadRename": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "maxLength": 80
+        }
+      },
+      "required": ["title"],
+      "additionalProperties": false
+    },
+    "threadHide": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "hidden": {
+          "type": "boolean"
+        }
+      },
+      "required": ["hidden"],
       "additionalProperties": false
     }
   }
