@@ -12,7 +12,6 @@
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { threadsAnsweredMax } from "../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../src/contract/responses.ts";
-import { runCountLabel } from "./runTotals.ts";
 import { threadMine, threadsMineFirst } from "./threads.ts";
 import { threadStandingTone } from "./tones.ts";
 import type { Tone } from "./tones.ts";
@@ -87,14 +86,15 @@ export interface ShellRailInput {
 }
 
 /** `Your thread` is the reader's most recent; a second one of theirs is the
- * same words disambiguated by its own turn count, so two never read alike. */
+ * same words disambiguated by its own session's first eight characters, which
+ * is unique by construction, so two never read alike. */
 function shellRailThreadLabel(
   thread: ThreadEntryResponse,
   mostRecentMine: boolean,
 ): string {
   if (!thread.mine) return thread.owner ?? thread.session;
   if (mostRecentMine) return "Your thread";
-  return `Your thread · ${runCountLabel(thread.turns)} turns`;
+  return `Your thread · ${thread.session.slice(0, 8)}`;
 }
 
 function shellRailThreadEntry(
