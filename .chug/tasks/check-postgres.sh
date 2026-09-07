@@ -9,16 +9,18 @@
 # shape of an unverified control: it reports success and is then believed.
 #
 # THE SERVER IS ACQUIRED BY `.chug/tasks/_postgres.sh`, which this gate
-# sources. The gate migrates one template database, clones one isolated
-# database per active worker, and removes every clone and the template before
-# returning. Ordinary suites therefore exercise the current schema without
-# replaying migrations; `migration.test.ts` remains responsible for the chain
-# and historical upgrade paths.
+# sources. The gate migrates one template database, clones it once per suite,
+# and removes every clone and the template before returning. Ordinary suites
+# therefore exercise the current schema without replaying migrations;
+# `migration.test.ts` remains responsible for the chain and historical upgrade
+# paths.
 #
-# WORKERS RUN CONCURRENTLY AND EACH WORKER RUNS ITS SUITES SERIALLY. Database
-# isolation keeps recovery epochs, locks and rows local to one worker. The
-# worker count is bounded and defaults conservatively; changing it affects
-# throughput and server connection pressure, not test semantics.
+# WORKERS RUN CONCURRENTLY AND EACH WORKER RUNS ITS SUITES SERIALLY, each suite
+# against a clone of its own that is dropped as the suite ends. A suite reading
+# what spans the installation — a sweep, a bounded listing, a singleton row —
+# would otherwise answer for whatever the round-robin put before it. The cases
+# of a suite share its database, which is what exercises the partitioning the
+# store claims. The worker count moves throughput, not verdicts.
 #
 # EVERY DATABASE THIS RUN MAKES IS NAMED INSIDE THE ONE IT CONNECTS TO. A pid
 # is unique on a machine and a shared server is not one: two attempts running
@@ -27,9 +29,10 @@
 # database is the one name a caller has already given this run alone — which is
 # also what makes a database left behind by a killed run attributable to it.
 #
-# NO DOCKER IS A COULD-NOT-RUN, NOT A PASS. Failure to acquire the server or
-# prepare the cloned databases also means the suite did not execute and exits
-# two. Once workers start, any red worker is a finding and exits one.
+# NO DOCKER IS A COULD-NOT-RUN, NOT A PASS. Failure to acquire the server, to
+# prepare the template or to clone a suite's database means the suite did not
+# execute and exits two. A suite that goes red is a finding and exits one, and
+# the worker carrying it runs the rest of its list first.
 #
 # Env: CHUG_PG_URL, CHUG_PG_IMAGE, CHUG_PG_PORT, CHUG_PG_READY_SECS — read by
 # `.chug/tasks/_postgres.sh`; CHUG_PG_WORKERS — worker count from 1 through 16.
@@ -146,24 +149,39 @@ printf '%s\n' "$suites" | while IFS= read -r suite; do
 	if [ "$worker" -gt "$workers" ]; then worker=1; fi
 done
 
+# Every name the run can make, taken before a worker starts: the cleanup drops
+# what a killed run was part way through, and a name it never reached is a drop
+# of a database that is not there.
 worker=1
 while [ "$worker" -le "$workers" ]; do
-	database="${run_scope}_w${worker}"
-	databases="$database $databases"
-	if ! node --experimental-strip-types "$database_helper" clone "$base_url" "$database" "$template"; then
-		echo "check-postgres: LINTER ERROR — could not clone worker database $worker"
-		exit 2
-	fi
-	worker_url="$(node -e 'const u=new URL(process.argv[1]);u.pathname=`/${process.argv[2]}`;process.stdout.write(u.toString())' "$base_url" "$database")"
+	dealt="$(grep -c '' "$work/$worker.suites" || true)"
+	position=1
+	while [ "$position" -le "$dealt" ]; do
+		databases="${run_scope}_w${worker}_s${position} $databases"
+		position=$((position + 1))
+	done
+	worker=$((worker + 1))
+done
+
+worker=1
+while [ "$worker" -le "$workers" ]; do
 	(
-		set -f
-		IFS='
-'
-		# shellcheck disable=SC2046 # each line is one suite path.
-		set -- $(sed -n 'p' "$work/$worker.suites")
-		unset IFS
-		set +f
-		CHUG_PG_URL="$worker_url" node --test --test-concurrency=1 --test-reporter=dot "$@"
+		position=0
+		worker_rc=0
+		while IFS= read -r suite; do
+			position=$((position + 1))
+			database="${run_scope}_w${worker}_s${position}"
+			if ! node --experimental-strip-types "$database_helper" clone "$base_url" "$database" "$template"; then
+				echo "check-postgres: LINTER ERROR — could not clone a database for $suite"
+				exit 2
+			fi
+			suite_url="$(node -e 'const u=new URL(process.argv[1]);u.pathname=`/${process.argv[2]}`;process.stdout.write(u.toString())' "$base_url" "$database")"
+			CHUG_PG_URL="$suite_url" node --test --test-concurrency=1 --test-reporter=dot "$suite" || worker_rc=1
+			# The run's own cleanup drops it again if this misses; what this
+			# buys is one live database per worker rather than all of them.
+			node --experimental-strip-types "$database_helper" drop "$base_url" "$database" || true
+		done <"$work/$worker.suites"
+		exit "$worker_rc"
 	) &
 	pids="$pids $!"
 	worker=$((worker + 1))
@@ -171,7 +189,13 @@ done
 
 rc=0
 for pid in $pids; do
-	if ! wait "$pid"; then rc=1; fi
+	worker_rc=0
+	wait "$pid" || worker_rc=$?
+	if [ "$worker_rc" -eq 2 ]; then
+		rc=2
+	elif [ "$worker_rc" -ne 0 ] && [ "$rc" -eq 0 ]; then
+		rc=1
+	fi
 done
 pids=""
 if ! cleanup; then
@@ -180,6 +204,9 @@ if ! cleanup; then
 fi
 trap - EXIT INT TERM HUP
 
+if [ "$rc" -eq 2 ]; then
+	exit 2
+fi
 if [ "$rc" -ne 0 ]; then
 	echo "check-postgres: FAILED — a worker went red against $subject"
 	exit 1

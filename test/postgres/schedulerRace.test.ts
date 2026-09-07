@@ -150,9 +150,9 @@ async function registeredMidFlight(project: SchedulerProject): Promise<void> {
 
 /**
  * How many requests the case about skipping takes out of the way first.
- * `claimRequests` is installation-wide and the suites share one database, so a
+ * `claimRequests` is installation-wide and the cases share one database, so a
  * case that looks for its own request among one bounded draw has to empty the
- * queue of everything the suites before it left open.
+ * queue of everything the cases before it left open.
  */
 const claimDrainMax = 1_024;
 

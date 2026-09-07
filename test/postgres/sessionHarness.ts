@@ -11,9 +11,9 @@
  *
  * BOUNDS ARE THE CASE'S ARGUMENT AND NOT A FIXTURE'S. A ceiling is a parameter
  * of the boundary being driven, so a case that is about one names it and every
- * other case takes the wide default here — the suites of one worker share a
+ * other case takes the wide default here — the cases of a suite share a
  * database, and a case asserting that a cluster is full would otherwise be
- * asserting about whatever an earlier suite left running.
+ * asserting about whatever an earlier case left running.
  */
 
 import { execFile } from "node:child_process";

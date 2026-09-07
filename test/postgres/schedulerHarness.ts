@@ -483,7 +483,7 @@ export function schedulerReport(
 
 /**
  * The claim a scheduler would be holding for one named request, built rather
- * than drawn because `claimRequests` is installation-wide and the suites share
+ * than drawn because `claimRequests` is installation-wide and the cases share
  * one database. The cases that are about the lease itself draw for real.
  */
 export async function schedulerClaimFor(

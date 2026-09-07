@@ -4,9 +4,9 @@
  * may reach any of it.
  *
  * A CASE ABOUT THE POLICY HOST SETS THE POLICY HOST. Readiness is one row for
- * the whole installation and the suites of one worker share a database, so a
- * case that read it rather than wrote it would be asserting about whatever
- * suite ran before it in an order nothing here decides.
+ * the whole installation and the cases of a suite share a database, so a case
+ * that read it rather than wrote it would be asserting about whatever the case
+ * before it left there.
  */
 
 import assert from "node:assert/strict";
@@ -1084,7 +1084,7 @@ test("an installation whose controls never stated a dispatch budget reads the un
       dispatchesPerDecisionUnstated + 1,
     );
   } finally {
-    /** Every other suite in this database reads what its migration seeded. */
+    /** Every other case in this database reads what its migration seeded. */
     await stated(leadDispatchesPerDecision);
     await pool.end();
   }

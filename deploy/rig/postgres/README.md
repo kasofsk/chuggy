@@ -467,7 +467,7 @@ accepts an established flow before it consults either.
 Two gates read `CHUG_PG_URL`, and neither can be given the control plane's own
 identity. `.chug/tasks/check-queries.sh` migrates the database it names and
 leaves the schema behind; `.chug/tasks/check-postgres.sh` migrates a template
-database beside it and clones one per worker, which is why its header requires
+database beside it and clones one per suite, which is why its header requires
 the role to be able to create and drop sibling databases. `chuggy_owner` can do
 neither: it is `NOCREATEDB`, and the rig's `chuggy` — the other database this
 file names — is at migration 2, which the top of this file says that identity
@@ -501,27 +501,27 @@ database is a rehearsal's residue; the forwarded port is this host's rather than
 the cluster's, so nothing below reverses it.
 
 `chuggy_gate` is not the only database a run can leave in this cluster.
-`check-postgres.sh` migrates `chuggy_template_<pid>` beside it and clones a
-`chuggy_worker_<pid>_<n>` per worker, and drops both on the way out — its trap
-covers an interrupt, so what survives is a signal the trap cannot catch, and
-that same signal leaves a connection an unforced drop refuses over. So the drop
-is forced, and it drops what the run left rather than the one name this file
-chose:
+`check-postgres.sh` names every database it makes inside the one it connects
+to, so a run against this URL migrates `chuggy_gate_<pid>_t` and clones a
+`chuggy_gate_<pid>_w<n>_s<m>` per suite, and drops them on the way out — its
+trap covers an interrupt, so what survives is a signal the trap cannot catch,
+and that same signal leaves a connection an unforced drop refuses over. So the
+drop is forced, and it drops what the run left rather than the one name this
+file chose:
 
 ```sh
 psql -h 127.0.0.1 -p 55440 -U postgres -d postgres <<'SQL'
 SELECT format('DROP DATABASE %I WITH (FORCE)', datname)
   FROM pg_database
  WHERE datname = 'chuggy_gate'
-    OR datname LIKE 'chuggy\_template\_%'
-    OR datname LIKE 'chuggy\_worker\_%'
+    OR datname LIKE 'chuggy\_gate\_%'
 \gexec
 SQL
 kubectl -n chuggy delete pod probe
 kill "$forward"
 ```
 
-`chuggy` and `chuggy_rehearsal` match none of those three, which is what keeps
+`chuggy` and `chuggy_rehearsal` match neither of those, which is what keeps
 this from being a command that drops the deployment.
 
 ## The workers' database

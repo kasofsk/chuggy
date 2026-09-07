@@ -13,7 +13,7 @@
  * about them count `journal_entry` either side of the decision; a call that
  * returned a refusal and journaled anyway would satisfy any weaker assertion.
  *
- * CLAIMING IS INSTALLATION-WIDE AND THE SUITES SHARE ONE DATABASE, so a case
+ * CLAIMING IS INSTALLATION-WIDE AND THE CASES SHARE ONE DATABASE, so a case
  * draws with a generous bound and looks for its own request among what came
  * back. A request identity repeats across projects, so a case that looks for
  * its own matches the partition as well. The one case that is about the order

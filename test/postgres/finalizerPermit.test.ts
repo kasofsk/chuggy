@@ -22,7 +22,7 @@
  * that had already stopped. What that executor may then do is asserted by the
  * journal it did not write, not by the tags its calls returned.
  *
- * EVERY CASE QUIESCES THE DATABASE IT SHARES. The suites in this directory run
+ * EVERY CASE QUIESCES THE DATABASE IT SHARES. The cases of this suite run
  * against one database and a pass draws work installation-wide, so a case that
  * left a live request would be advanced by the next case's pass and counted in
  * its report.
