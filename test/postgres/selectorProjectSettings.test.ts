@@ -1084,7 +1084,7 @@ test("an installation whose controls never stated a dispatch budget reads the un
       dispatchesPerDecisionUnstated + 1,
     );
   } finally {
-    /** Every other suite in this database reads what its migration seeded. */
+    /** Every other case in this database reads what its migration seeded. */
     await stated(leadDispatchesPerDecision);
     await pool.end();
   }

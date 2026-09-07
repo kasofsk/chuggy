@@ -11,8 +11,7 @@ import {
  * Installs the deployment policy once and refuses a writer configured
  * differently. The conflicting update writes the row's own value back, so a
  * writer that lost the install waits for the one that won it and reads what it
- * wrote; `DO NOTHING` returned nothing and left it reading a snapshot taken
- * before that row existed, which refused a writer carrying the same policy.
+ * wrote.
  */
 export function postgresDomainConfigurationPrecondition(
   pool: pg.Pool,
