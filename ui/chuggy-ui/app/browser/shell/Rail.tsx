@@ -378,8 +378,6 @@ function RailFoot(): ReactNode {
   );
 }
 
-/** Whether the reader's own open thread, if any, has a turn the mailbox has
- * not settled. */
 /** The list entry the reader's own open thread keeps its answering read
  * under, distinct from the thread page's own so the two entries never share
  * a cache slot over different result shapes. */
