@@ -971,6 +971,25 @@ test("an accepted press re-reads the project it was asked in", async () => {
   ).not.toBe(true);
 });
 
+/**
+ * THE BOX'S GRID DOES NOT SHRINK-WRAP AND ASK KEEPS ITS OWN WIDTH.
+ * `justify-items-start` on the ask box's grid would shrink the Question field
+ * to its own control's content width instead of the panel's, which is what
+ * left it sitting at a browser's default control width; Ask is the one child
+ * that should not stretch to the row's width.
+ */
+test("the ask box's grid does not shrink-wrap its rows, and Ask keeps its own width", async () => {
+  await drawInquiries({ listing: () => ({ inquiries: [] }) });
+  const box = screen
+    .getByLabelText<HTMLTextAreaElement>("Question")
+    .closest("div.grid");
+  expect(box?.classList.contains("justify-items-start")).toBe(false);
+  const ask = screen.getByRole("button", { name: "Ask" });
+  expect(ask.parentElement?.classList.contains("justify-self-start")).toBe(
+    true,
+  );
+});
+
 /** An edited question is a different question, and the held pair would have the
  * door answer it with the first question's own ordinal. */
 test("an edited question takes a pair of its own", async () => {

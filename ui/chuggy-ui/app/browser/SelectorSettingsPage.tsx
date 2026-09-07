@@ -323,17 +323,19 @@ function SelectorSettingsForm(props: {
     })();
   };
   return (
-    <div className="grid min-w-0 justify-items-start gap-4">
+    <div className="grid min-w-0 gap-4">
       <SelectorSettingsSavedNotice saved={saved} />
       <SelectorTextFields chrome={chrome} />
       <SelectorLimitFields chrome={chrome} />
-      <Button
-        variant="primary"
-        disabled={write.overrides === undefined || saved.saved === "Writing"}
-        onClick={submit}
-      >
-        Save
-      </Button>
+      <div className="justify-self-start">
+        <Button
+          variant="primary"
+          disabled={write.overrides === undefined || saved.saved === "Writing"}
+          onClick={submit}
+        >
+          Save
+        </Button>
+      </div>
     </div>
   );
 }

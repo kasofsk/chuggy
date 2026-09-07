@@ -186,7 +186,7 @@ function LeadAsk(props: {
     })();
   };
   return (
-    <div className="grid min-w-0 justify-items-start gap-2 pb-3">
+    <div className="grid min-w-0 gap-2 pb-3">
       <LeadAskNotice ask={box.ask} />
       <Fields>
         <Field name="Question">
@@ -204,14 +204,16 @@ function LeadAsk(props: {
           {shown === undefined ? null : <Pill tone="fail">{shown}</Pill>}
         </Field>
       </Fields>
-      <Button
-        variant="primary"
-        busy={box.ask.ask === "Asking"}
-        disabled={fault !== undefined || box.ask.ask === "Asking"}
-        onClick={submit}
-      >
-        Ask
-      </Button>
+      <div className="justify-self-start">
+        <Button
+          variant="primary"
+          busy={box.ask.ask === "Asking"}
+          disabled={fault !== undefined || box.ask.ask === "Asking"}
+          onClick={submit}
+        >
+          Ask
+        </Button>
+      </div>
     </div>
   );
 }
