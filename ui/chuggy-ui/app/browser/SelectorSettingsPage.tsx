@@ -49,6 +49,7 @@ import type {
 import { useApiPorts, usePanelResource } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
+import { TopBarSlot } from "./shell/slots.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Field, Fields } from "./ui/Fields.tsx";
@@ -56,8 +57,6 @@ import { Figure } from "./ui/Figure.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
-
-import "./selectorSettings.css";
 
 /** No frame names either read, so the partition's own refetch is what reaches
  * them. */
@@ -114,7 +113,7 @@ function SelectorLimitField(props: {
   return (
     <Field name={label} absent={chrome.draft.limits[name] === ""}>
       <input
-        className="selector-input num"
+        className="num bg-surface-1 border-edge-control rounded-2 aria-invalid:border-tone-fail w-full border px-2 py-1"
         aria-label={label}
         aria-invalid={fault !== undefined}
         inputMode="numeric"
@@ -168,7 +167,8 @@ function SelectorTextFields(props: {
     <Fields>
       <Field name="North Star" absent={draft.northStar === ""}>
         <textarea
-          className="selector-text"
+          className="bg-surface-1 border-edge-control rounded-2 aria-invalid:border-tone-fail font-mono w-full resize-y border px-2 py-1"
+          rows={8}
           aria-label="North Star"
           aria-invalid={chrome.faults["northStar"] !== undefined}
           value={draft.northStar}
@@ -180,7 +180,8 @@ function SelectorTextFields(props: {
       </Field>
       <Field name="Base prompt" absent={draft.basePrompt === ""}>
         <textarea
-          className="selector-text"
+          className="bg-surface-1 border-edge-control rounded-2 aria-invalid:border-tone-fail font-mono w-full resize-y border px-2 py-1"
+          rows={8}
           aria-label="Base prompt"
           aria-invalid={chrome.faults["basePrompt"] !== undefined}
           value={draft.basePrompt}
@@ -322,7 +323,7 @@ function SelectorSettingsForm(props: {
     })();
   };
   return (
-    <div className="selector-form">
+    <div className="grid min-w-0 justify-items-start gap-4">
       <SelectorSettingsSavedNotice saved={saved} />
       <SelectorTextFields chrome={chrome} />
       <SelectorLimitFields chrome={chrome} />
@@ -400,8 +401,15 @@ export function SelectorSettingsPage(): ReactNode {
     (ports) => apiSelectorSettings(ports, partition),
   );
   return (
-    <div className="selector">
-      <h1>Selector</h1>
+    <div className="grid min-w-0 gap-4">
+      <TopBarSlot>
+        <h1 className="text-md font-strong text-ink-1 truncate">Selector</h1>
+        {state.state === "Ready" ? (
+          <span className="text-ink-3 text-sm tabular-nums">
+            {state.value.revision}
+          </span>
+        ) : null}
+      </TopBarSlot>
       <DataPanel title="Objectives" state={state}>
         {(settings) => (
           <SelectorSettingsForm partition={partition} settings={settings} />

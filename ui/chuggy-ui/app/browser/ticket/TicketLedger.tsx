@@ -110,7 +110,7 @@ function SetRowNote(props: {
     <>
       {setNotes(props.set, props.standing)}
       {shortfall === undefined ? null : (
-        <span className="ledger-partial"> {shortfall}</span>
+        <span className="text-tone-parked text-xs"> {shortfall}</span>
       )}
     </>
   );
@@ -273,7 +273,10 @@ function CycleRollup(props: {
       </i>
       <Figure figure={spend.tokens} />
       {props.cycle.complete ? null : (
-        <span className="ledger-partial"> Cycle partly on this page</span>
+        <span className="text-tone-parked text-xs">
+          {" "}
+          Cycle partly on this page
+        </span>
       )}
     </>
   );

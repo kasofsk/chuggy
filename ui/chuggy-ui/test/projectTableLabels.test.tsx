@@ -40,7 +40,7 @@ vi.mock("@tanstack/react-router", () => ({
  *
  * Both are properties of the markup and of nothing else. A `title` dropped at
  * either call site loses the revision or the image with no way back to it, and
- * a `clipped` dropped lets the fallback identity — which is a full digest
+ * `max-w-aside` dropped lets the fallback identity — which is a full digest
  * reference, and the reason the class is there — take the column apart. Neither
  * shows up in a row's own value, so neither is provable above this tier.
  */
@@ -109,7 +109,7 @@ async function drawTable(): Promise<void> {
 test("the configuration cell keeps the revision, and keeps clipping it", async () => {
   await drawTable();
   const cell = screen.getByText("chuggy #12");
-  expect(cell.className).toContain("clipped");
+  expect(cell.className).toContain("max-w-aside");
   fireEvent.focus(cell);
   expect((await screen.findByRole("tooltip")).textContent).toBe(revision);
 });
@@ -117,7 +117,17 @@ test("the configuration cell keeps the revision, and keeps clipping it", async (
 test("the runs-on cell keeps the image reference, and keeps clipping it", async () => {
   await drawTable();
   const cell = screen.getByText("chuggy-worker v3");
-  expect(cell.className).toContain("clipped");
+  expect(cell.className).toContain("max-w-aside");
   fireEvent.focus(cell);
   expect((await screen.findByRole("tooltip")).textContent).toBe(image);
+});
+
+/** The served policy refuses `style-src` but `'self'`, so nothing this table
+ * draws — a tooltip open included — may append a runtime style element. */
+test("nothing the project table draws is a runtime style element", async () => {
+  await drawTable();
+  expect(document.querySelectorAll("style").length).toBe(0);
+  fireEvent.focus(screen.getByText("chuggy #12"));
+  await screen.findByRole("tooltip");
+  expect(document.querySelectorAll("style").length).toBe(0);
 });

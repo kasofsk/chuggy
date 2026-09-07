@@ -40,74 +40,6 @@
   color: var(--ink-3);
 }
 
-/* The project table: dense rows, one line each, and a badge that is read
- * before the row it sits in. */
-
-.filters {
-  display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.filters .here {
-  border-color: var(--tone-live);
-  color: var(--ink-1);
-}
-
-.ticket-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
-}
-
-.ticket-table th,
-.ticket-table td {
-  padding: 0.15rem var(--space-4);
-  text-align: left;
-  white-space: nowrap;
-  border-bottom: 1px solid var(--surface-2);
-}
-
-.ticket-table thead th {
-  color: var(--ink-3);
-  font-size: var(--text-xs);
-  font-weight: 400;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.ticket-table tbody tr:hover {
-  background: var(--surface-2);
-}
-
-.ticket-table tbody th {
-  font-weight: 400;
-}
-
-.ticket-table tbody th a:focus-visible {
-  outline: 1px solid var(--tone-live);
-  outline-offset: 2px;
-}
-
-/* An inline block, because a `td` clips only under a fixed table layout and
- * this table sizes its columns from what is in them. */
-.clipped {
-  display: inline-block;
-  max-width: 22rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  vertical-align: bottom;
-  white-space: nowrap;
-}
-
-.badge {
-  padding: 0 0.35rem;
-  border: 1px solid var(--tone-parked);
-  border-radius: var(--radius-2);
-  color: var(--tone-parked);
-  font-size: var(--text-xs);
-}
-
 .configuration {
   display: grid;
   gap: var(--space-2);
@@ -213,27 +145,6 @@
   font-size: var(--text-xs);
 }
 
-/* The inbox: a badge on the nav item that leads to it, and answers that sit in
- * the row they are about. */
-
-.row-action {
-  padding: 0 0.4rem;
-  border: 1px solid var(--edge);
-  border-radius: var(--radius-2);
-  background: var(--surface-1);
-  color: var(--ink-2);
-  font-size: var(--text-xs);
-}
-
-.row-action:hover:enabled {
-  border-color: var(--tone-live);
-  color: var(--ink-1);
-}
-
-.row-action:disabled {
-  color: var(--ink-3);
-}
-
 .session-card {
   max-width: 34rem;
   margin: 12vh auto;
@@ -308,19 +219,6 @@
 .creation-set > button,
 .creation-stage > button {
   justify-self: start;
-}
-
-.creation-advanced {
-  border: 1px solid var(--edge);
-  border-radius: var(--radius-2);
-  padding: var(--space-2) var(--space-4);
-  display: grid;
-  gap: var(--space-2);
-}
-
-.creation-advanced > summary {
-  cursor: pointer;
-  color: var(--ink-3);
 }
 
 /* Run evidence: the four panes an expanded run draws. */

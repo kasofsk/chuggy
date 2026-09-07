@@ -15,11 +15,12 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
+import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import {
   apiDouble,
   openedStream,
@@ -36,8 +37,13 @@ import {
   ticketPageRoutes,
 } from "./ticketPageFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import { viewportAtEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
+
+beforeEach(() => {
+  viewportAtEm(viewportDeskEm);
+});
 
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
