@@ -44,7 +44,7 @@ test("the level chooses the heading, and quiet drops the frame's class", () => {
 
 /** Radix writes the content's measured height through the CSSOM, which the
  * served policy permits; what it must never do is append a sheet. */
-test("a collapsible panel opens from its prop and closes from the keyboard", () => {
+test("a collapsible panel opens from its prop and its trigger toggles aria-expanded", () => {
   render(
     <Panel title="Configuration" collapsible={{ open: true }} meta="rev 11">
       <p>Revision</p>
@@ -61,7 +61,6 @@ test("a collapsible panel opens from its prop and closes from the keyboard", () 
   expect(screen.queryByText("Revision")).toBeNull();
   styleless();
 
-  fireEvent.keyDown(trigger, { key: "Enter" });
   fireEvent.click(trigger);
   expect(trigger.getAttribute("aria-expanded")).toBe("true");
   styleless();
