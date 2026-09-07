@@ -1,234 +1,177 @@
-/** The rail's sections, derived with no renderer. */
+/** The rail's own derivation, with no renderer. */
 
 import { expect, test } from "vitest";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { threadsAnsweredMax } from "../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../src/contract/responses.ts";
-import { railRoutes, shellRailSections } from "../app/core/shellRail.ts";
-import type { RailEntry } from "../app/core/shellRail.ts";
+import {
+  railRoutes,
+  railThreadsShown,
+  shellRail,
+} from "../app/core/shellRail.ts";
+import type { ShellRailInput } from "../app/core/shellRail.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
+const nowMs = Date.parse("2026-09-07T12:00:00Z");
 
 function thread(entry: Partial<ThreadEntryResponse>): ThreadEntryResponse {
   return {
     session: "s-one",
     owner: "owner-one",
     state: "Open",
-    mine: false,
+    mine: true,
     turns: 1,
-    openedAt: "2026-09-02T09:00:00Z",
-    lastActivityAt: "2026-09-02T10:00:00Z",
+    openedAt: "2026-09-07T09:00:00Z",
+    lastActivityAt: "2026-09-07T10:00:00Z",
     hidden: false,
     ...entry,
   };
 }
 
-function conversations(
-  input: Parameters<typeof shellRailSections>[0],
-): readonly RailEntry[] {
-  const section = shellRailSections(input).find(
-    (held) => held.id === "conversations",
-  );
-  return section === undefined ? [] : section.entries;
+function rail(input: Partial<ShellRailInput>) {
+  return shellRail({ partition: atlas, threads: undefined, nowMs, ...input });
 }
 
-test("a listing that has not answered draws the lead and nothing else", () => {
-  expect(
-    conversations({ partition: atlas, threads: undefined }).map(
-      (entry) => entry.label,
-    ),
-  ).toEqual(["Lead"]);
+test("a listing that has not answered draws the lead and offers no new thread", () => {
+  const result = rail({ threads: undefined });
+  expect(result.conversations.lead.label).toBe("Lead");
+  expect(result.conversations.newThread).toBeUndefined();
+  expect(result.conversations.groups).toEqual([]);
 });
 
-test("an answered listing with no thread of the reader's offers a new one", () => {
-  const entries = conversations({ partition: atlas, threads: [] });
-  expect(entries.map((entry) => entry.id)).toEqual(["lead", "thread-new"]);
-  expect(entries[1]?.action).toBe("OpenThread");
-  expect(entries[1]?.to).toBeUndefined();
-});
-
-test("the reader's own thread is labelled, first, and withholds the offer", () => {
-  const entries = conversations({
-    partition: atlas,
-    threads: [
-      thread({ session: "s-two" }),
-      thread({ session: "s-mine", mine: true }),
-    ],
-  });
-  expect(entries.map((entry) => entry.label)).toEqual([
-    "Lead",
-    "Your thread",
-    "owner-one",
-  ]);
-  expect(entries[1]?.yours, "the label already says whose thread it is").toBe(
-    false,
-  );
-});
-
-test("a second thread of the reader's own is disambiguated by its session tail", () => {
-  const entries = conversations({
-    partition: atlas,
-    threads: [
-      thread({
-        session: "thread-11112222-3333-4444-5555-666677778888",
-        mine: true,
-        turns: 3,
-      }),
-      thread({
-        session: "thread-aaaabbbb-cccc-dddd-eeee-ffff00001234",
-        mine: true,
-        turns: 12,
-      }),
-    ],
-  });
-  expect(entries.map((entry) => entry.label)).toEqual([
-    "Lead",
-    "Your thread",
-    "Your thread · 00001234",
-  ]);
-});
-
-test("three threads whose sessions share their first eight characters still read apart", () => {
-  const entries = conversations({
-    partition: atlas,
-    threads: [
-      thread({
-        session: "thread-a1111111-2222-3333-4444-555566667777",
-        mine: true,
-        turns: 1,
-      }),
-      thread({
-        session: "thread-a1111111-2222-3333-4444-555566668888",
-        mine: true,
-        turns: 1,
-      }),
-      thread({
-        session: "thread-a1111111-2222-3333-4444-555566669999",
-        mine: true,
-        turns: 1,
-      }),
-    ],
-  });
-  const labels = entries.map((entry) => entry.label);
-  expect(labels).toEqual([
-    "Lead",
-    "Your thread",
-    "Your thread · 66668888",
-    "Your thread · 66669999",
-  ]);
-  expect(new Set(labels).size).toBe(labels.length);
-});
-
-test("a titled thread is labelled by its title, and is not an identity", () => {
-  const entries = conversations({
-    partition: atlas,
-    threads: [
-      thread({ session: "s-two", title: "why is 42 blocked" }),
-      thread({ session: "s-mine", mine: true, title: "the rail is wrong" }),
-    ],
-  });
-  expect(entries.map((entry) => entry.label)).toEqual([
-    "Lead",
-    "the rail is wrong",
-    "why is 42 blocked",
-  ]);
-  expect(entries.map((entry) => entry.identity)).toEqual([
-    undefined,
-    false,
-    false,
-  ]);
-});
-
-test("a titled thread of the reader's own is still marked as theirs", () => {
-  const entries = conversations({
-    partition: atlas,
-    threads: [thread({ session: "s-mine", mine: true, title: "ship it" })],
-  });
-  expect(entries[1]?.label).toBe("ship it");
-  expect(
-    entries[1]?.yours,
-    "a title took the only thing saying whose thread it is",
-  ).toBe(true);
-});
-
-test("a thread nobody has written in keeps the label it had", () => {
-  const entries = conversations({
-    partition: atlas,
-    threads: [
-      thread({ session: "s-mine", mine: true }),
-      thread({ session: "s-two", owner: "ada" }),
-    ],
-  });
-  expect(entries.map((entry) => entry.label)).toEqual([
-    "Lead",
-    "Your thread",
-    "ada",
-  ]);
-  expect(entries.map((entry) => entry.identity)).toEqual([
-    undefined,
-    false,
-    true,
-  ]);
-});
-
-test("a thread whose owner is gone is labelled by its session", () => {
-  const entries = conversations({
-    partition: atlas,
-    threads: [
-      thread({ session: "s-orphan", owner: undefined, state: "Orphaned" }),
-    ],
-  });
-  expect(entries[1]?.label).toBe("s-orphan");
-  expect(entries[1]?.standing).toEqual({ word: "Orphaned", tone: "parked" });
-});
-
-test("a thread entry carries its session in the params its route needs", () => {
-  const entries = conversations({
-    partition: atlas,
-    threads: [thread({ session: "s-two" })],
-  });
-  expect(entries[1]?.to).toBe(railRoutes.thread);
-  expect(entries[1]?.params).toEqual({
-    tenant: "acme",
-    project: "atlas",
-    session: "s-two",
-  });
-});
-
-test("the lead carries the standing it was handed and the inbox its count", () => {
-  const sections = shellRailSections({
-    partition: atlas,
-    threads: [],
-    leadStanding: { word: "Closed", tone: "retired" },
-    inboxCount: "3",
-  });
-  expect(sections[0]?.entries[0]?.standing).toEqual({
-    word: "Closed",
-    tone: "retired",
-  });
-  const project = sections.find((section) => section.id === "project");
-  expect(project?.entries.map((entry) => entry.label)).toEqual([
+test("the fixed entries are the project's, in order, and carry the inbox count", () => {
+  const result = rail({ threads: [], inboxCount: "3" });
+  expect(result.fixed.map((entry) => entry.label)).toEqual([
     "Overview",
     "Inbox",
     "Selector",
     "New ticket",
   ]);
-  expect(project?.entries[1]?.count).toBe("3");
+  expect(result.fixed[1]?.count).toBe("3");
 });
 
-test("the conversations heading links to the full listing", () => {
-  const sections = shellRailSections({ partition: atlas, threads: undefined });
-  expect(sections[0]?.to).toBe(railRoutes.threads);
-  expect(sections[1]?.to).toBeUndefined();
+test("all threads links to the full listing", () => {
+  const result = rail({ threads: [] });
+  expect(result.allThreads.to).toBe(railRoutes.threads);
+  expect(result.allThreads.params).toEqual({
+    tenant: "acme",
+    project: "atlas",
+  });
 });
 
-test("the rail holds no more threads than the listing may answer", () => {
-  const many = Array.from({ length: threadsAnsweredMax * 2 }, (_unused, at) =>
-    thread({ session: `s-${String(at)}` }),
+test("with no thread of the reader's own, New thread opens rather than closes one", () => {
+  const result = rail({ threads: [] });
+  expect(result.conversations.newThread).toEqual({
+    id: "thread-new",
+    label: "New thread",
+    action: "NewThread",
+  });
+});
+
+test("with an open thread of the reader's own, New thread closes it first", () => {
+  const result = rail({
+    threads: [thread({ session: "s-mine", mine: true, state: "Open" })],
+  });
+  expect(result.conversations.newThread?.closes).toBe("s-mine");
+  expect(result.conversations.newThread?.disabled).toBeUndefined();
+});
+
+test("while the open thread is answering, New thread is disabled and says so", () => {
+  const result = rail({
+    threads: [thread({ session: "s-mine", mine: true, state: "Open" })],
+    answering: true,
+  });
+  expect(result.conversations.newThread).toEqual({
+    id: "thread-new",
+    label: "Answering",
+    action: "NewThread",
+    disabled: true,
+  });
+});
+
+test("only the reader's own threads are grouped, and a hidden one is left out", () => {
+  const result = rail({
+    threads: [
+      thread({ session: "s-mine", mine: true }),
+      thread({ session: "s-other", mine: false }),
+      thread({ session: "s-hidden", mine: true, hidden: true }),
+    ],
+  });
+  const sessions = result.conversations.groups.flatMap((group) =>
+    group.entries.map((entry) => entry.id),
   );
-  const entries = conversations({ partition: atlas, threads: many });
-  expect(entries.filter((entry) => entry.yours === false).length).toBe(
-    threadsAnsweredMax,
+  expect(sessions).toEqual(["s-mine"]);
+});
+
+test("a thread with no title is labelled New thread, and a closed one is marked", () => {
+  const result = rail({
+    threads: [
+      thread({ session: "s-untitled", mine: true, title: undefined }),
+      thread({ session: "s-closed", mine: true, state: "Closed" }),
+    ],
+  });
+  const entries = result.conversations.groups.flatMap((group) => group.entries);
+  const untitled = entries.find((entry) => entry.id === "s-untitled");
+  const closed = entries.find((entry) => entry.id === "s-closed");
+  expect(untitled?.label).toBe("New thread");
+  expect(untitled?.standing).toBeUndefined();
+  expect(closed?.closed).toBe(true);
+  expect(untitled?.closed).toBe(false);
+});
+
+/** Chosen well clear of a UTC day boundary either side of `nowMs` (noon UTC)
+ * so the case does not depend on the runner's own time zone to land in the
+ * calendar day it names. */
+test("threads group under the heading their activity falls in, newest first within it", () => {
+  const result = rail({
+    threads: [
+      thread({
+        session: "s-early-today",
+        mine: true,
+        lastActivityAt: "2026-09-07T08:00:00Z",
+      }),
+      thread({
+        session: "s-late-today",
+        mine: true,
+        lastActivityAt: "2026-09-07T16:00:00Z",
+      }),
+      thread({
+        session: "s-yesterday",
+        mine: true,
+        lastActivityAt: "2026-09-06T20:00:00Z",
+      }),
+    ],
+  });
+  expect(result.conversations.groups.map((group) => group.heading)).toEqual([
+    "Today",
+    "Yesterday",
+  ]);
+  expect(
+    result.conversations.groups[0]?.entries.map((entry) => entry.id),
+  ).toEqual(["s-late-today", "s-early-today"]);
+});
+
+test("the rail holds no more of the reader's threads than its own cap", () => {
+  const many = Array.from({ length: railThreadsShown * 2 }, (_unused, at) =>
+    thread({
+      session: `s-${String(at)}`,
+      mine: true,
+      lastActivityAt: new Date(nowMs - at * 60_000).toISOString(),
+    }),
   );
+  const result = rail({ threads: many });
+  const drawn = result.conversations.groups.flatMap((group) => group.entries);
+  expect(drawn.length).toBe(railThreadsShown);
+  expect(drawn[0]?.id).toBe("s-0");
+});
+
+test("the lead carries the standing it was handed", () => {
+  const result = rail({
+    threads: [],
+    leadStanding: { word: "Closed", tone: "retired" },
+  });
+  expect(result.conversations.lead.standing).toEqual({
+    word: "Closed",
+    tone: "retired",
+  });
 });

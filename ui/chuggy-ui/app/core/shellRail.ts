@@ -1,19 +1,23 @@
 /**
- * The shell's rail, derived: the conversations the project holds and its other
- * faces under them, as sections of entries a renderer can draw without knowing
- * what any of them is.
+ * The shell's rail, derived: the project's fixed entries, the reader's own
+ * conversations grouped by activity, and the link to the rest.
  *
- * A LISTING THAT HAS NOT ANSWERED IS NOT AN EMPTY ONE. `threads` is absent
- * until the read is ready, because an empty array would put `New thread` in the
- * rail while the listing that decides whether to offer it is still in flight.
- * `threadMine` is that decision, and it is the threads page's own.
+ * A LISTING THAT HAS NOT ANSWERED OFFERS NO NEW THREAD. `threads` is absent
+ * until the read is ready, because an offer to open one before the listing
+ * says whether the reader already has one would race the door that answers
+ * idempotently on it.
+ *
+ * ONLY THE READER'S OWN THREADS APPEAR HERE. A project's other members' work
+ * belongs to the Threads page; the rail is one member's own view of their own
+ * conversations; and a thread its owner hid is off this list until they show
+ * it again, which is what `hidden` is for.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import { threadsAnsweredMax } from "../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../src/contract/responses.ts";
-import { threadMine, threadsMineFirst } from "./threads.ts";
-import { threadStandingTone } from "./tones.ts";
+import { threadGroups } from "./threadGroups.ts";
+import type { ThreadGroupHeading } from "./threadGroups.ts";
+import { threadMine } from "./threads.ts";
 import type { Tone } from "./tones.ts";
 
 /** The router's own paths, named here so an entry is data and the renderer is
@@ -43,20 +47,19 @@ export interface RailStanding {
   readonly tone: Tone;
 }
 
-export type RailActionKind = "OpenThread";
+export type RailActionKind = "NewThread";
 
 interface RailEntryCommon {
   readonly id: string;
   readonly label: string;
-  /** Whether the label is an identifier rather than words, which is what the
-   * renderer draws as one. */
-  readonly identity?: boolean | undefined;
   readonly standing?: RailStanding | undefined;
   readonly count?: string | undefined;
-  /** The reader's own thread whose label stopped saying so, which is what the
-   * renderer marks: a thread named by its title lost the only words naming its
-   * owner, and one still labelled `Your thread` says it already. */
-  readonly yours?: boolean | undefined;
+  /** Drawn in the quiet ink: a thread that no longer takes turns. */
+  readonly closed?: boolean | undefined;
+  readonly disabled?: boolean | undefined;
+  /** For a `NewThread` action only: the reader's open thread it closes before
+   * opening another, where one stands. */
+  readonly closes?: string | undefined;
 }
 
 /** One line of the rail: a route to follow, or an action to take — never
@@ -73,14 +76,23 @@ export type RailEntry =
       readonly action: RailActionKind;
     });
 
-/** A group of entries under a heading, which links to the full listing where
- * the rail holds only part of one. */
-export interface RailSection {
-  readonly id: string;
-  readonly heading: string;
-  readonly to?: RailRoute | undefined;
-  readonly params?: RailParams | undefined;
+export interface RailThreadGroup {
+  readonly heading: ThreadGroupHeading;
   readonly entries: readonly RailEntry[];
+}
+
+export interface RailConversations {
+  readonly lead: RailEntry;
+  /** Absent while the listing has not answered. */
+  readonly newThread: RailEntry | undefined;
+  readonly groups: readonly RailThreadGroup[];
+}
+
+export interface ShellRail {
+  /** Overview, Inbox, Selector, New ticket: entries that never scroll away. */
+  readonly fixed: readonly RailEntry[];
+  readonly conversations: RailConversations;
+  readonly allThreads: RailEntry;
 }
 
 export interface ShellRailInput {
@@ -88,50 +100,54 @@ export interface ShellRailInput {
   readonly threads: readonly ThreadEntryResponse[] | undefined;
   readonly leadStanding?: RailStanding | undefined;
   readonly inboxCount?: string | undefined;
+  /** Whether the reader's own open thread has a turn the mailbox has not
+   * settled, which is what `New thread` is withheld for. */
+  readonly answering?: boolean | undefined;
+  readonly nowMs: number;
 }
 
-/** How much of a session's tail tells one of the reader's threads from
- * another: every session shares the fixed `thread-` head a mint gives it, so
- * the distinguishing hex lives in the UUID's own tail. */
-const sessionCharsShort = 8;
+/** How many of the reader's own threads the rail draws before handing off to
+ * the Threads page, which holds the rest. */
+export const railThreadsShown = 20;
 
-/** A thread is its title where the server derived one. Until a member has said
- * anything there is nothing to derive it from, so the fallback is an identity:
- * the owner's, or the session's where the membership is gone — and the
- * reader's own is `Your thread`, a second of theirs disambiguated by its
- * session's tail, which draws from the random half of the id rather than the
- * prefix every session shares. */
-function shellRailThreadLabel(
-  thread: ThreadEntryResponse,
-  mostRecentMine: boolean,
-): string {
-  if (thread.title !== undefined) return thread.title;
-  if (!thread.mine) return thread.owner ?? thread.session;
-  if (mostRecentMine) return "Your thread";
-  return `Your thread · ${thread.session.slice(-sessionCharsShort)}`;
+function shellRailNewThread(
+  mine: ThreadEntryResponse | undefined,
+  answering: boolean,
+): RailEntry {
+  if (mine === undefined)
+    return { id: "thread-new", label: "New thread", action: "NewThread" };
+  if (answering)
+    return {
+      id: "thread-new",
+      label: "Answering",
+      action: "NewThread",
+      disabled: true,
+    };
+  return {
+    id: "thread-new",
+    label: "New thread",
+    action: "NewThread",
+    closes: mine.session,
+  };
 }
 
 function shellRailThreadEntry(
   params: RailParams,
   thread: ThreadEntryResponse,
-  mostRecentMine: boolean,
 ): RailEntry {
   return {
     id: thread.session,
-    label: shellRailThreadLabel(thread, mostRecentMine),
-    identity: thread.title === undefined && !thread.mine,
+    label: thread.title ?? "New thread",
     to: railRoutes.thread,
     params: { ...params, session: thread.session },
-    standing: { word: thread.state, tone: threadStandingTone(thread.state) },
-    yours: thread.mine && thread.title !== undefined,
+    closed: thread.state === "Closed",
   };
 }
 
 function shellRailConversations(
   input: ShellRailInput,
   params: RailParams,
-): readonly RailEntry[] {
-  const threads = input.threads;
+): RailConversations {
   const lead: RailEntry = {
     id: "lead",
     label: "Lead",
@@ -139,60 +155,63 @@ function shellRailConversations(
     params,
     standing: input.leadStanding,
   };
-  if (threads === undefined) return [lead];
-  const offer: readonly RailEntry[] =
-    threadMine(threads) === undefined
-      ? [{ id: "thread-new", label: "New thread", action: "OpenThread" }]
-      : [];
-  const ordered = threadsMineFirst(threads).slice(0, threadsAnsweredMax);
-  /** `read_project_threads` (migration 075, replacing 062's ascending order)
-   * lists an open thread ahead of a closed one and then newest-opened first,
-   * so the reader's most recent thread is the first mine entry, not the last. */
-  const mostRecentMine = ordered.findIndex((thread) => thread.mine);
-  return [
-    lead,
-    ...ordered.map((thread, at) =>
-      shellRailThreadEntry(params, thread, at === mostRecentMine),
+  const threads = input.threads;
+  if (threads === undefined) return { lead, newThread: undefined, groups: [] };
+  const newThread = shellRailNewThread(
+    threadMine(threads),
+    input.answering === true,
+  );
+  const own = threads
+    .filter((thread) => thread.mine && !thread.hidden)
+    .toSorted(
+      (left, right) =>
+        Date.parse(right.lastActivityAt) - Date.parse(left.lastActivityAt),
+    )
+    .slice(0, railThreadsShown);
+  const groups = threadGroups(
+    own,
+    (thread) => Date.parse(thread.lastActivityAt),
+    input.nowMs,
+  ).map((group) => ({
+    heading: group.heading,
+    entries: group.entries.map((thread) =>
+      shellRailThreadEntry(params, thread),
     ),
-    ...offer,
+  }));
+  return { lead, newThread, groups };
+}
+
+function shellRailFixed(
+  params: RailParams,
+  inboxCount: string | undefined,
+): readonly RailEntry[] {
+  return [
+    { id: "overview", label: "Overview", to: railRoutes.overview, params },
+    {
+      id: "inbox",
+      label: "Inbox",
+      to: railRoutes.inbox,
+      params,
+      count: inboxCount,
+    },
+    { id: "selector", label: "Selector", to: railRoutes.selector, params },
+    { id: "ticket-new", label: "New ticket", to: railRoutes.ticketNew, params },
   ];
 }
 
-export function shellRailSections(
-  input: ShellRailInput,
-): readonly RailSection[] {
+export function shellRail(input: ShellRailInput): ShellRail {
   const params: RailParams = {
     tenant: input.partition.tenant,
     project: input.partition.project,
   };
-  return [
-    {
-      id: "conversations",
-      heading: "Conversations",
+  return {
+    fixed: shellRailFixed(params, input.inboxCount),
+    conversations: shellRailConversations(input, params),
+    allThreads: {
+      id: "all-threads",
+      label: "All threads",
       to: railRoutes.threads,
       params,
-      entries: shellRailConversations(input, params),
     },
-    {
-      id: "project",
-      heading: "Project",
-      entries: [
-        { id: "overview", label: "Overview", to: railRoutes.overview, params },
-        {
-          id: "inbox",
-          label: "Inbox",
-          to: railRoutes.inbox,
-          params,
-          count: input.inboxCount,
-        },
-        { id: "selector", label: "Selector", to: railRoutes.selector, params },
-        {
-          id: "ticket-new",
-          label: "New ticket",
-          to: railRoutes.ticketNew,
-          params,
-        },
-      ],
-    },
-  ];
+  };
 }
