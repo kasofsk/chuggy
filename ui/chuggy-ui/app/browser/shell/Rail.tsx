@@ -119,7 +119,7 @@ function RailEntryOpenThread(props: {
         type="button"
         aria-busy={opening}
         disabled={opening}
-        className={`${railEntryClassName} border-0 bg-surface-1 text-left text-ink-2`}
+        className={`${railEntryClassName} bg-surface-1 text-ink-2 cursor-pointer border-0 text-left`}
         onClick={() => {
           setOpening(true);
           setRefused(undefined);

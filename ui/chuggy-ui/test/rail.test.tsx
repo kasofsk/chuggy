@@ -1,8 +1,8 @@
 /**
  * The rail under the real router: `Link` concatenates `className` with
- * `activeProps`/`inactiveProps`, and a mocked router cannot see the result,
- * and `New thread` is offered as a route only the router's own navigation can
- * be caught taking nowhere.
+ * `activeProps`/`inactiveProps`, and a mocked router cannot see the result.
+ * `New thread` is an action, so only a real router can be seen arriving at
+ * the session it opened.
  */
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
