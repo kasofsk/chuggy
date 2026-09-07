@@ -1479,10 +1479,9 @@ function nativeCloseThreadMethod(
 }
 
 /**
- * The two doors a member's own view of a thread goes through, gated like the
- * close door and for its reason: renaming and hiding change what a rail draws
- * and nothing a thread does, so any member who may mutate the project may reach
- * either, and the durable side is what refuses a session that is not a thread.
+ * Renaming is gated like the close door: any member who may mutate the
+ * project may rename any thread it holds. Hiding is the owner's alone,
+ * resolved against the caller's own mailbox as the message door resolves it.
  */
 function nativeThreadViewMethods(
   access: ProjectAccess,
@@ -1510,7 +1509,16 @@ function nativeThreadViewMethods(
         (await access.authorize(principal, partition, "Mutate")) === undefined
       )
         return { result: "NotFound" };
-      const hidden = await composedThreadPorts(threads).threads.hide({
+      const ports = composedThreadPorts(threads);
+      const mine = await ports.threads.standing({
+        partition,
+        session: input.session,
+        query: { limit: 1 },
+      });
+      if (mine === undefined) return { result: "NotFound" };
+      if (mine.thread.principal !== principal)
+        return { result: "NotYourThread" };
+      const hidden = await ports.threads.hide({
         partition,
         session: input.session,
         hidden: input.hidden,

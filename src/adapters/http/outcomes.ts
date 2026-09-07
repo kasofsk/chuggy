@@ -1124,9 +1124,21 @@ export function renameThreadResponse(
   return response(200, result.thread);
 }
 
+/**
+ * Hiding is the owner's alone, so a caller pressing another member's thread
+ * meets the same refusal the message door answers a stale mailbox with.
+ */
 export function hideThreadResponse(result: ThreadHiding): NativeHttpResponse {
   if (result.result === "NotFound")
     return response(404, nativeHttpError("NotFound", "Resource not found."));
+  if (result.result === "NotYourThread")
+    return response(
+      403,
+      nativeHttpError(
+        threadMessageRefusalCode.NotYourThread,
+        "The thread is not yours to hide.",
+      ),
+    );
   return response(200, result.thread);
 }
 

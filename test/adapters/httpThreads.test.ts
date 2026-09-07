@@ -671,6 +671,21 @@ test("hiding a session that is no thread of this project's is not found", async 
   assert.equal(answer.json<HttpErrorEnvelope>().error.code, "NotFound");
 });
 
+test("hiding another member's thread is refused as the message door refuses one", async () => {
+  const held: ThreadCase = { calls: [], hid: { result: "NotYourThread" } };
+  await using app = appOf(held);
+
+  const answer = await app.inject({
+    method: "POST",
+    url: `${root}/${mine}/hide`,
+    headers: versioned,
+    payload: { hidden: true },
+  });
+
+  assert.equal(answer.statusCode, 403);
+  assert.equal(answer.json<HttpErrorEnvelope>().error.code, "NotYourThread");
+});
+
 test("every write door takes the versioned media type and nothing else", async () => {
   const held: ThreadCase = { calls: [] };
   await using app = appOf(held);

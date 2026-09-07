@@ -345,9 +345,14 @@ export type ThreadRenaming =
   | { readonly result: "NotFound" }
   | { readonly result: "Renamed"; readonly thread: ThreadEntry };
 
-/** What hiding a thread answered: which side of the rail it is now on. */
+/**
+ * What hiding a thread answered: which side of the rail it is now on.
+ * `NotYourThread` is the URL and the caller's own mailbox disagreeing, as the
+ * message door's is.
+ */
 export type ThreadHiding =
   | { readonly result: "NotFound" }
+  | { readonly result: "NotYourThread" }
   | { readonly result: "Hidden" | "Shown"; readonly thread: ThreadEntry };
 
 /**
