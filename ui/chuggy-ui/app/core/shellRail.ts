@@ -90,21 +90,21 @@ export interface ShellRailInput {
  * same words disambiguated by its own turn count, so two never read alike. */
 function shellRailThreadLabel(
   thread: ThreadEntryResponse,
-  firstMine: boolean,
+  mostRecentMine: boolean,
 ): string {
   if (!thread.mine) return thread.owner ?? thread.session;
-  if (firstMine) return "Your thread";
+  if (mostRecentMine) return "Your thread";
   return `Your thread · ${runCountLabel(thread.turns)} turns`;
 }
 
 function shellRailThreadEntry(
   params: RailParams,
   thread: ThreadEntryResponse,
-  firstMine: boolean,
+  mostRecentMine: boolean,
 ): RailEntry {
   return {
     id: thread.session,
-    label: shellRailThreadLabel(thread, firstMine),
+    label: shellRailThreadLabel(thread, mostRecentMine),
     to: railRoutes.thread,
     params: { ...params, session: thread.session },
     standing: { word: thread.state, tone: threadStandingTone(thread.state) },
@@ -130,11 +130,14 @@ function shellRailConversations(
       ? [{ id: "thread-new", label: "New thread", action: "OpenThread" }]
       : [];
   const ordered = threadsMineFirst(threads).slice(0, threadsAnsweredMax);
-  const firstMine = ordered.findIndex((thread) => thread.mine);
+  /** `read_project_threads` (migration 075, replacing 062's ascending order)
+   * lists an open thread ahead of a closed one and then newest-opened first,
+   * so the reader's most recent thread is the first mine entry, not the last. */
+  const mostRecentMine = ordered.findIndex((thread) => thread.mine);
   return [
     lead,
     ...ordered.map((thread, at) =>
-      shellRailThreadEntry(params, thread, at === firstMine),
+      shellRailThreadEntry(params, thread, at === mostRecentMine),
     ),
     ...offer,
   ];
