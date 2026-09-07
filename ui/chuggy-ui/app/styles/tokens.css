@@ -117,7 +117,7 @@
     --radius-3: 1.125rem; /* bubbles, work cards, the composer */
     --radius-circle: 50%; /* a square drawn round: a dot, a mark, a monogram */
     --hairline: 1px;
-    --rail: 2px; /* the standing rail of a ledger group and quoted text */
+    --rail: 2px; /* the standing rail of a ledger group */
     --height-clip: 24em; /* the tallest a quoted block stands before it scrolls */
 
     /* rings */
