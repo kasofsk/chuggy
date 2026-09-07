@@ -9,13 +9,39 @@
 
 import type { ReactNode } from "react";
 
+import { instantFigure } from "../../core/figures.ts";
 import type { SelectorSettingsSaved } from "../../core/selectorSettingsForm.ts";
+import { useNowMs } from "../Freshness.tsx";
 import { Button } from "../ui/Button.tsx";
+import { Figure } from "../ui/Figure.tsx";
+import { Identity } from "../ui/Identity.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Pill } from "../ui/Pill.tsx";
 
 import "./selector.css";
+
+type SelectorSettingsConflict = Extract<
+  SelectorSettingsSaved,
+  { readonly saved: "Conflict" }
+>;
+
+/** Who moved the revision this write lost the fence on, and when: the fact a
+ * reader needs before deciding whether Reload is theirs to press. */
+function SelectorSettingsMovedBy(props: {
+  readonly movedBy: NonNullable<SelectorSettingsConflict["movedBy"]>;
+}): ReactNode {
+  const nowMs = useNowMs();
+  const subject = props.movedBy.administrator.subject;
+  return (
+    <>
+      {"Changed by "}
+      <Identity label={{ text: subject, title: subject }} />
+      {" at "}
+      <Figure figure={instantFigure(props.movedBy.recordedAt, nowMs)} />
+    </>
+  );
+}
 
 /** What the last write did, in the one line a form says it in. */
 export function SelectorSettingsSavedNotice(props: {
@@ -36,12 +62,16 @@ export function SelectorSettingsSavedNotice(props: {
         />
       );
     case "Conflict":
-      return (
+      return saved.movedBy === undefined ? (
         <Notice
           tone="parked"
           inline
           detail={`Conflict · ${String(saved.revision)}`}
         />
+      ) : (
+        <Notice tone="parked" inline>
+          <SelectorSettingsMovedBy movedBy={saved.movedBy} />
+        </Notice>
       );
     case "Failed":
       return (
