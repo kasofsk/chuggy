@@ -6,6 +6,11 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
+import {
+  DetailsPane,
+  DetailsToggle,
+} from "../app/browser/shell/DetailsPane.tsx";
+import { ShellSlots, useShellSlotHolder } from "../app/browser/shell/slots.tsx";
 import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import {
   answer,
@@ -96,13 +101,37 @@ interface Drawn {
   readonly container: HTMLElement;
 }
 
-async function drawTicket(served: {
-  readonly shapes: readonly ExecutionShape[];
-  readonly ticket: Record<string, unknown>;
-  readonly cursor?: string;
-  readonly withDraft?: boolean;
-  readonly authoring?: TicketAuthoring;
-}): Promise<Drawn> {
+/** The shell's own top-bar node, stood up here because the page portals its
+ * `TicketTopBar` into whatever the shell hands it. */
+function TopBarTarget(): ReactNode {
+  const hold = useShellSlotHolder("topBar");
+  return <div ref={hold} />;
+}
+
+/** The shell slots `TicketPage` portals into: the top bar and, behind its
+ * toggle, the details pane holding `TicketPageDetails`. */
+function ShellAroundPage(): ReactNode {
+  return (
+    <ShellSlots>
+      <TopBarTarget />
+      <DetailsToggle />
+      <DetailsPane>
+        <TicketPage />
+      </DetailsPane>
+    </ShellSlots>
+  );
+}
+
+async function drawTicket(
+  served: {
+    readonly shapes: readonly ExecutionShape[];
+    readonly ticket: Record<string, unknown>;
+    readonly cursor?: string;
+    readonly withDraft?: boolean;
+    readonly authoring?: TicketAuthoring;
+  },
+  options: { readonly shell?: boolean } = {},
+): Promise<Drawn> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
@@ -139,7 +168,7 @@ async function drawTicket(served: {
       client={new QueryClient()}
       transport={openedStream().ports.fetch}
     >
-      <TicketPage />
+      {options.shell === true ? <ShellAroundPage /> : <TicketPage />}
     </ScreenHarness>,
   );
   await settled();
@@ -299,19 +328,31 @@ test("the resume states what it re-runs, what it costs and what it keeps", async
   expect(screen.getByText("Rework returns to 0/2")).toBeDefined();
 });
 
-/**
- * The anchors themselves are `ticketSections`' own list, drawn in the details
- * pane the shell portals — out of reach of a page mounted with no shell around
- * it. What this tier can still hold is the other half of the same promise:
- * every id that list names is a section this body actually draws.
- */
 test("every section of the main body has an anchor pointing at it", async () => {
-  const { container } = await drawTicket({
-    shapes: ticket21Parked,
-    ticket: parkedTicket,
-  });
-  for (const anchor of ["cycles", "usage", "brief", "provenance"])
-    expect(container.querySelector(`section#${anchor}`)).not.toBeNull();
+  const { container } = await drawTicket(
+    { shapes: ticket21Parked, ticket: parkedTicket },
+    { shell: true },
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Details", pressed: false }),
+  );
+  const anchors = [...container.querySelectorAll("nav.sections a")].map(
+    (link) => link.getAttribute("href"),
+  );
+  expect(anchors).toEqual(["#cycles", "#usage", "#brief", "#provenance"]);
+  for (const anchor of anchors)
+    expect(container.querySelector(`section${String(anchor)}`)).not.toBeNull();
+  expect(screen.getByText("3 · 7 runs")).toBeDefined();
+});
+
+test("the shell's top bar draws the ticket's own number and phase", async () => {
+  await drawTicket(
+    { shapes: ticket21Parked, ticket: parkedTicket },
+    { shell: true },
+  );
+  expect(screen.getByRole("heading", { name: "Ticket" })).toBeDefined();
+  expect(screen.getByText("21")).toBeDefined();
+  expect(screen.getByText("Escalated")).toBeDefined();
 });
 
 test("the canonical configuration is closed until asked for, and its trigger names what it opens", async () => {
