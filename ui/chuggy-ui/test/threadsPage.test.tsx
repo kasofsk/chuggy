@@ -97,6 +97,12 @@ function drawThreads(
   return { posts: () => posts, posted: () => posted };
 }
 
+/** The served policy refuses a runtime `<style>` element, so every mount is
+ * checked against it rather than trusted from the primitives it composes. */
+function styleless(): void {
+  expect(document.querySelectorAll("style")).toHaveLength(0);
+}
+
 async function mountThreads(): Promise<void> {
   const server = openedStream();
   render(
@@ -109,6 +115,7 @@ async function mountThreads(): Promise<void> {
     </ScreenHarness>,
   );
   await settled();
+  styleless();
 }
 
 function rowSessions(): readonly string[] {

@@ -45,7 +45,7 @@ function LeadRefusalRow(props: {
       <td>
         <Figure figure={instantFigure(refusal.recordedAt, props.nowMs)} />
       </td>
-      <td className="lead-reason">{refusal.reason}</td>
+      <td className="max-w-measure">{refusal.reason}</td>
     </tr>
   );
 }
@@ -59,7 +59,7 @@ function LeadRefusalTable(props: {
   return (
     <>
       {props.refusals.more ? (
-        <p className="lead-note">
+        <p className="text-ink-3">
           <span className="eyebrow">More</span>
         </p>
       ) : null}

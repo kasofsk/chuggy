@@ -75,4 +75,5 @@
   --container-rail: var(--width-rail);
   --container-column: var(--width-column);
   --container-aside: var(--width-aside);
+  --container-measure: var(--measure);
 }

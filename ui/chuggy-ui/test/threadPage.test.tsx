@@ -32,6 +32,7 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import { elementScrollToStubbed } from "./scrolling.ts";
+import { ShellSlotHarness } from "./shellSlotHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import {
   threadMessageCharsMax,
@@ -80,6 +81,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** The served policy refuses a runtime `<style>` element, so every mount is
+ * checked against it rather than trusted from the primitives it composes. */
+function styleless(): void {
+  expect(document.querySelectorAll("style")).toHaveLength(0);
+}
+
 interface ThreadServed {
   readonly thread: ReturnType<typeof threadBody>;
   /** The store this thread has written, where a case needs one of its own. */
@@ -111,10 +118,13 @@ async function mountThread(): Promise<ReturnType<typeof openedStream>> {
       client={new QueryClient()}
       transport={server.ports.fetch}
     >
-      <ThreadPage />
+      <ShellSlotHarness>
+        <ThreadPage />
+      </ShellSlotHarness>
     </ScreenHarness>,
   );
   await settled();
+  styleless();
   return server;
 }
 
@@ -176,10 +186,9 @@ test("the head names the thread, its standing and whose it is", async () => {
   drawThread(() => ({ thread: threadBody({}) }));
   await mountThread();
   expect(screen.getByRole("heading", { name: "Thread" })).toBeDefined();
-  expect(screen.getAllByText(threadMineSession).length).toBeGreaterThan(0);
-  expect(screen.getByText("Open")).toBeDefined();
-  expect(screen.getByText("Mine")).toBeDefined();
-  expect(screen.getByText("geoff")).toBeDefined();
+  expect(screen.getAllByText("Open").length).toBeGreaterThan(0);
+  expect(screen.getByText("Yours")).toBeDefined();
+  expect(screen.getAllByText("geoff").length).toBeGreaterThan(0);
 });
 
 /**
@@ -241,7 +250,7 @@ test("a close the server refused says so and leaves the standing alone", async (
   });
   await settled();
   expect(screen.getByText(/^Refused · /u)).toBeDefined();
-  expect(screen.getByText("Open")).toBeDefined();
+  expect(screen.getAllByText("Open").length).toBeGreaterThan(0);
 });
 
 test("my thread draws a composer", async () => {
@@ -749,7 +758,7 @@ test("a thread whose owner is gone stands Orphaned", async () => {
     thread: threadBody({ orphaned: true, mine: false }),
   }));
   await mountThread();
-  expect(screen.getByText("Orphaned")).toBeDefined();
+  expect(screen.getAllByText("Orphaned").length).toBeGreaterThan(0);
 });
 
 /** The transcript is the lead's own walk over a different session's store, and

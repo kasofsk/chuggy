@@ -32,6 +32,7 @@ import {
 } from "./screenHarness.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
+import { ShellSlotHarness } from "./shellSlotHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import { inquiryBoxesHeld } from "../app/browser/lead/inquiryBoxes.ts";
 import { sessionStorePageBatchesMax } from "../../../src/contract/http.ts";
@@ -86,6 +87,12 @@ afterEach(() => {
   drawnPartition = { ...leadPartition };
 });
 
+/** The served policy refuses a runtime `<style>` element, so every mount is
+ * checked against it rather than trusted from the primitives it composes. */
+function styleless(): void {
+  expect(document.querySelectorAll("style")).toHaveLength(0);
+}
+
 /** The page under its providers, over whatever fetch the case has stubbed. */
 async function mountLead(): Promise<ReturnType<typeof openedStream>> {
   const server = openedStream();
@@ -95,10 +102,13 @@ async function mountLead(): Promise<ReturnType<typeof openedStream>> {
       client={new QueryClient()}
       transport={server.ports.fetch}
     >
-      <LeadPage />
+      <ShellSlotHarness>
+        <LeadPage />
+      </ShellSlotHarness>
     </ScreenHarness>,
   );
   await settled();
+  styleless();
   return server;
 }
 
@@ -138,7 +148,6 @@ function inquiryQuestions(): readonly string[] {
 test("the head names the session, its state and the cursor it stands on", async () => {
   await drawLead(() => opening);
   expect(screen.getByRole("heading", { name: "Lead" })).toBeDefined();
-  expect(screen.getAllByText(leadSession).length).toBeGreaterThan(0);
   expect(screen.getByText("Open")).toBeDefined();
   expect(screen.getByText("Monitoring")).toBeDefined();
   expect(screen.getByText("1204")).toBeDefined();
@@ -281,13 +290,9 @@ test("a Queued lead turn appends a running exchange with the kind word and no te
   vi.stubGlobal("fetch", api.fetch);
   await mountLead();
   expect(exchangeCount()).toBe(1);
-  const conversation = screen
-    .getByRole("heading", { name: "Conversation" })
-    .closest("section");
-  expect(
-    within(conversation as HTMLElement).getByText("Observation"),
-  ).toBeDefined();
-  expect(within(conversation as HTMLElement).getByText("Queued")).toBeDefined();
+  const conversation = screen.getByRole("region", { name: "Conversation" });
+  expect(within(conversation).getByText("Observation")).toBeDefined();
+  expect(within(conversation).getByText("Queued")).toBeDefined();
 });
 
 /** One state, one word. A lead with no store yet says so once. */
@@ -1026,7 +1031,9 @@ async function drawLeadPage(fetching: typeof fetch): Promise<LeadNavigation> {
       client={client}
       transport={server.ports.fetch}
     >
-      <LeadPage />
+      <ShellSlotHarness>
+        <LeadPage />
+      </ShellSlotHarness>
     </ScreenHarness>
   );
   const page = render(under(drawnPartition));

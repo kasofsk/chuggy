@@ -1,9 +1,0 @@
-/* One thread's page around its conversation. */
-
-@layer page {
-  .thread {
-    display: grid;
-    gap: var(--space-4);
-    min-width: 0;
-  }
-}
