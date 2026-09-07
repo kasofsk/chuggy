@@ -1,8 +1,8 @@
-/* The thread row's own menu: the panel a Rename/Close/Hide choice is made in,
-   and the items inside it. */
+/* Menu: the panel a Radix dropdown draws its choices in, and the items
+   inside it. */
 
-@layer page {
-  .thread-menu {
+@layer ui {
+  .menu {
     max-height: var(--radix-dropdown-menu-content-available-height);
     overflow-y: auto;
     display: grid;
@@ -16,7 +16,7 @@
       var(--font-prose);
   }
 
-  .thread-menu-item {
+  .menu-item {
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -27,7 +27,7 @@
     white-space: nowrap;
   }
 
-  .thread-menu-item[data-highlighted] {
+  .menu-item[data-highlighted] {
     background: var(--surface-2);
   }
 }

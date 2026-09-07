@@ -25,8 +25,8 @@ import {
 import { panelReason } from "../../core/freshness.ts";
 import { threadLabel, threadRowActions } from "../../core/threads.ts";
 import { useApiPorts } from "../api.ts";
+import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
 import { Notice } from "../ui/Notice.tsx";
-import "./thread.css";
 
 export interface ThreadEntryActions {
   readonly renaming: boolean;
@@ -155,14 +155,10 @@ export function ThreadEntryMenu(props: {
         …
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          className="thread-menu"
-          sideOffset={4}
-          align="end"
-        >
+        <MenuContent sideOffset={4} align="end">
           {actions.renameable ? (
             <DropdownMenu.Item
-              className="thread-menu-item"
+              className={menuItemClassName}
               onSelect={actions.startRename}
             >
               Rename
@@ -170,7 +166,7 @@ export function ThreadEntryMenu(props: {
           ) : null}
           {actions.closable ? (
             <DropdownMenu.Item
-              className="thread-menu-item"
+              className={menuItemClassName}
               onSelect={actions.close}
             >
               Close
@@ -178,13 +174,13 @@ export function ThreadEntryMenu(props: {
           ) : null}
           {actions.hideable ? (
             <DropdownMenu.Item
-              className="thread-menu-item"
+              className={menuItemClassName}
               onSelect={actions.toggleHidden}
             >
               {actions.hidden ? "Show" : "Hide"}
             </DropdownMenu.Item>
           ) : null}
-        </DropdownMenu.Content>
+        </MenuContent>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   );
