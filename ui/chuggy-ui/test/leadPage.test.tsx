@@ -133,7 +133,6 @@ function exchangeCount(): number {
   return document.querySelectorAll('[data-message-id$="-ask"]').length;
 }
 
-/** Each question, read off the one `<p>` its own listitem holds. */
 /** Each question, read off the one `<p>` its own listitem holds, scoped to
  * the inquiries panel since the refusals ledger draws listitems of its own. */
 function inquiryQuestions(): readonly string[] {

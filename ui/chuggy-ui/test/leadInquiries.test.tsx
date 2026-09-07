@@ -178,8 +178,6 @@ async function drawInquiries(served: {
 
 /** Each question, read off the one `<p>` its own listitem holds — the
  * answer beside it is a `<pre>`, so a query for the tag cannot cross rows. */
-/** Each question, read off the one `<p>` its own listitem holds — the
- * answer beside it is a `<pre>`, so a query for the tag cannot cross rows. */
 function rows(): readonly string[] {
   return screen
     .queryAllByRole("listitem")
