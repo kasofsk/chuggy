@@ -381,6 +381,42 @@ test("Require approval writes the dispatch mode the other press undoes", async (
   });
 });
 
+/** The strip has no edit mode of its own, so its press cannot be told apart
+ * from a section's Save except by disabling it while one is open — the one
+ * way an open section's unsaved text could otherwise ride a press about
+ * something else entirely. */
+test("the strip is disabled while a section is open", async () => {
+  const server = await drawSettings();
+  await turned(() => {
+    edit("North Star");
+  });
+  await turned(() => {
+    fireEvent.change(box("North Star"), {
+      target: { value: "SECRET UNSAVED DRAFT" },
+    });
+  });
+  expect(
+    screen.getByRole("button", { name: "Pause" }).hasAttribute("disabled"),
+  ).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+  await settled();
+  expect(server.writes()).toHaveLength(0);
+});
+
+/** The strip owns its own write, so a refusal is said beside the strip and
+ * not silently dropped where no section is reading for it. */
+test("a strip press that fails says so beside the strip", async () => {
+  const server = await drawSettings({
+    answering: () => ({ body: {}, status: 500 }),
+  });
+  await turned(() => {
+    press("Pause");
+  });
+  await settled();
+  expect(screen.getByText(/Failed/)).toBeDefined();
+  expect(server.writes()).toHaveLength(1);
+});
+
 /** A limit is read in the unit a person states it in, and never in the wire's
  * own: nobody sets a decision's wall in milliseconds or its input in bytes. */
 test("a limit is read in its own unit and its digits are not scaled", async () => {
@@ -473,6 +509,56 @@ test("a row's Reset clears that override and no other", async () => {
   expect(server.written()).toStrictEqual({
     expectedRevision: 12,
     overrides: { limits: { dispatchesPerDecision: 3 } },
+  });
+});
+
+/** The wire carries no installation limit, so once a row is overridden a
+ * cleared box has no honest default to draw — not a placeholder holding the
+ * value the project has just stopped overriding, and not the Default pill
+ * that value would wrongly claim it is. */
+test("Reset on an overridden limit draws neither a placeholder nor Default", async () => {
+  await drawSettings({
+    read: settingsBody(12, { limits: { tokensPerDecision: 100 } }),
+  });
+  await turned(() => {
+    edit("Limits");
+  });
+  const [reset] = within(sectionOf("Limits")).getAllByRole("button", {
+    name: "Reset",
+  });
+  if (reset === undefined) throw new Error("no overridden limit offered Reset");
+  await turned(() => {
+    fireEvent.click(reset);
+  });
+  expect(box("Tokens").getAttribute("placeholder")).toBeNull();
+  const row = screen
+    .getByLabelText("Tokens")
+    .closest<HTMLElement>(".selector-limit");
+  if (row === null) throw new Error("no row found for Tokens");
+  expect(within(row).queryByText("Default")).toBeNull();
+});
+
+/** The row reads at rest with grouped digits, so typing them back is taken
+ * the same as the bare digits underneath. */
+test("a limit typed with grouped digits is accepted", async () => {
+  const server = await drawSettings({
+    answering: () => ({ body: settingsBody(13, {}), status: 200 }),
+    read: settingsBody(12, {}),
+  });
+  await turned(() => {
+    edit("Limits");
+  });
+  await turned(() => {
+    fireEvent.change(box("Tokens"), {
+      target: { value: "12,000" },
+    });
+  });
+  expect(box("Tokens").getAttribute("aria-invalid")).toBe("false");
+  await turned(save);
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 12,
+    overrides: { limits: { tokensPerDecision: 12_000 } },
   });
 });
 
@@ -853,6 +939,24 @@ test("Restore writes that revision's overrides under the current revision", asyn
       limits: { tokensPerDecision: 12_000_000 },
     },
   });
+});
+
+/** Restore is the Revisions card's own write, so a refusal is said on the
+ * card that asked for it rather than nowhere at all. */
+test("a Restore that fails says so on the Revisions card", async () => {
+  const server = await drawSettings({
+    answering: () => ({ body: {}, status: 500 }),
+    history,
+  });
+  const restores = within(sectionOf("Revisions")).getAllByRole("button", {
+    name: "Restore",
+  });
+  await turned(() => {
+    fireEvent.click(restores[0] as HTMLElement);
+  });
+  await settled();
+  expect(within(sectionOf("Revisions")).getByText(/Failed/)).toBeDefined();
+  expect(server.writes()).toHaveLength(1);
 });
 
 /** The newest revision is what stands, so restoring it is an offer to write
