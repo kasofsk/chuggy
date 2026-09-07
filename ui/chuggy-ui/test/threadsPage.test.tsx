@@ -17,6 +17,7 @@ import { afterEach, beforeAll, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { ThreadsPage } from "../app/browser/ThreadsPage.tsx";
+import { threadLabel } from "../app/core/threads.ts";
 import {
   answer,
   openedStream,
@@ -45,8 +46,13 @@ const navigations: unknown[] = [];
 
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
-  Link: (props: { readonly children?: ReactNode }) => (
-    <a href="/">{props.children}</a>
+  Link: (props: {
+    readonly children?: ReactNode;
+    readonly params?: { readonly session?: string };
+  }) => (
+    <a href="/" data-session={props.params?.session}>
+      {props.children}
+    </a>
   ),
   useNavigate: () => (to: unknown) => {
     navigations.push(to);
@@ -176,9 +182,18 @@ async function mountThreads(): Promise<void> {
   styleless();
 }
 
+/** The row's own session, read off the link the mocked router still carries
+ * it on — the label itself is `New thread` for every untitled fixture here,
+ * so it cannot tell rows apart. */
 function rowSessions(): readonly string[] {
-  return [...document.querySelectorAll("tbody tr td:first-child")].map(
-    (cell) => cell.textContent ?? "",
+  return [...document.querySelectorAll("tbody tr td:first-child a")].map(
+    (link) => link.getAttribute("data-session") ?? "",
+  );
+}
+
+function rowForSession(session: string): Element | undefined {
+  return [...document.querySelectorAll("tbody tr")].find(
+    (row) => row.querySelector(`a[data-session="${session}"]`) !== null,
   );
 }
 
@@ -186,6 +201,16 @@ test("the bar names the page", async () => {
   drawThreads(threadsBody);
   await mountThreads();
   expect(screen.getByRole("heading", { name: "Threads" })).toBeDefined();
+});
+
+/** An untitled thread reads the same word here as it does in the rail, rather
+ * than the raw id `threadsBody`'s fixtures never set a title on. */
+test("an untitled row is labelled the way the rail labels it", async () => {
+  drawThreads(threadsBody);
+  await mountThreads();
+  const mineRow = rowForSession(threadMineSession);
+  if (mineRow === undefined) throw new Error("expected the reader's own row");
+  expect(mineRow.querySelector("a")?.textContent).toBe(threadLabel({}));
 });
 
 /** The default filters are Mine and Open, so a reader's own open threads are
@@ -294,13 +319,8 @@ test("a stranger's row offers no Rename or Hide, and the reader's own does", asy
   await mountThreads();
   fireEvent.click(screen.getByRole("radio", { name: "Everyone" }));
   await settled();
-  const rows = [...document.querySelectorAll("tbody tr")];
-  const mineRow = rows.find((row) =>
-    row.textContent?.includes(threadMineSession),
-  );
-  const otherRow = rows.find((row) =>
-    row.textContent?.includes(threadOtherSession),
-  );
+  const mineRow = rowForSession(threadMineSession);
+  const otherRow = rowForSession(threadOtherSession);
   if (mineRow === undefined || otherRow === undefined)
     throw new Error("expected both rows to be drawn");
   const mineTrigger = rowMenuTrigger(mineRow);
@@ -329,9 +349,7 @@ test("a stranger's closed row draws no menu trigger at all", async () => {
   fireEvent.click(screen.getByRole("radio", { name: "Everyone" }));
   fireEvent.click(screen.getByRole("radio", { name: "Closed" }));
   await settled();
-  const row = [...document.querySelectorAll("tbody tr")].find((tr) =>
-    tr.textContent?.includes("thread-done"),
-  );
+  const row = rowForSession("thread-done");
   if (row === undefined) throw new Error("expected the closed row");
   expect(
     row.querySelector('button[aria-label="Thread actions"]'),
@@ -350,9 +368,7 @@ test("closing a row's thread posts to that row's own close door", async () => {
   await mountThreads();
   fireEvent.click(screen.getByRole("radio", { name: "Everyone" }));
   await settled();
-  const orphanRow = [...document.querySelectorAll("tbody tr")].find((row) =>
-    row.textContent?.includes(threadOrphanSession),
-  );
+  const orphanRow = rowForSession(threadOrphanSession);
   if (orphanRow === undefined) throw new Error("expected the orphaned row");
   await openThreadMenu(rowMenuTrigger(orphanRow));
   await turned(() => {
@@ -378,9 +394,7 @@ test("closing a row's thread posts to that row's own close door", async () => {
  * they diverge on how the edit ends. */
 async function threadsPageRenameStarted(value: string): Promise<HTMLElement> {
   await mountThreads();
-  const mineRow = [...document.querySelectorAll("tbody tr")].find((row) =>
-    row.textContent?.includes(threadMineSession),
-  );
+  const mineRow = rowForSession(threadMineSession);
   if (mineRow === undefined) throw new Error("expected the reader's own row");
   await openThreadMenu(rowMenuTrigger(mineRow));
   fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
@@ -426,9 +440,7 @@ test("a hidden row's menu offers Show, and it unhides the thread", async () => {
   await mountThreads();
   fireEvent.click(screen.getByRole("radio", { name: "Hidden" }));
   await settled();
-  const hiddenRow = [...document.querySelectorAll("tbody tr")].find((row) =>
-    row.textContent?.includes("thread-hidden-mine"),
-  );
+  const hiddenRow = rowForSession("thread-hidden-mine");
   if (hiddenRow === undefined) throw new Error("expected the hidden row");
   await openThreadMenu(rowMenuTrigger(hiddenRow));
   expect(

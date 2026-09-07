@@ -24,6 +24,7 @@ import { instantFigure } from "../core/figures.ts";
 import { panelReason } from "../core/freshness.ts";
 import { projectListReread } from "../core/projectQueryKeys.ts";
 import {
+  threadLabel,
   threadOwnerFilters,
   threadPageRows,
   threadStandingFilters,
@@ -45,7 +46,6 @@ import {
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
-import { Identity } from "./ui/Identity.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
@@ -70,11 +70,7 @@ function ThreadRow(props: {
             to="/$tenant/$project/threads/$session"
             params={{ ...props.partition, session: thread.session }}
           >
-            {thread.title ?? (
-              <Identity
-                label={{ text: thread.session, title: thread.session }}
-              />
-            )}
+            {threadLabel(thread)}
           </Link>
         )}
       </td>
