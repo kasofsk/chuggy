@@ -2,10 +2,10 @@
  * The frame: the rail beside the page or behind a menu, the bar a page fills,
  * the details beside the page or instead of it, and the slot under it.
  *
- * Every case counts `<style>` elements, because the served policy refuses one
- * and the drawer is the console's first modal-shaped control: a primitive that
- * appends a sheet passes every other assertion here and is refused by the
- * browser.
+ * Every case ends by asserting `styleless()`, because the served policy
+ * refuses a `<style>` element and the drawer is the console's first
+ * modal-shaped control: a primitive that appends a sheet passes every other
+ * assertion here and is refused by the browser.
  */
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
@@ -78,8 +78,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function sheetsDrawn(): number {
-  return document.querySelectorAll("style").length;
+function styleless(): void {
+  expect(document.querySelectorAll("style")).toHaveLength(0);
 }
 
 async function mounted(em: number): Promise<void> {
@@ -136,19 +136,19 @@ test("the rail sits beside the page at the two-column width", async () => {
   await mounted(viewportTwoColumnEm);
   expect(railDrawn()).not.toBeNull();
   expect(screen.queryByRole("button", { name: "Menu" })).toBeNull();
-  expect(sheetsDrawn()).toBe(0);
+  styleless();
 });
 
 test("under it the rail is a drawer the menu opens, and no sheet is appended", async () => {
   await mounted(viewportTwoColumnEm - 1);
   expect(railDrawn()).toBeNull();
-  expect(sheetsDrawn()).toBe(0);
+  styleless();
   await turned(() => {
     screen.getByRole("button", { name: "Menu" }).click();
   });
   await settled();
   expect(railDrawn()).not.toBeNull();
-  expect(sheetsDrawn()).toBe(0);
+  styleless();
 });
 
 test("a page's own bar content replaces the frame's title", async () => {
@@ -160,6 +160,7 @@ test("a page's own bar content replaces the frame's title", async () => {
   await mounted(viewportDeskEm);
   expect(screen.getByText("ticket 44")).toBeDefined();
   expect(screen.queryByRole("heading", { name: "acme / atlas" })).toBeNull();
+  styleless();
 });
 
 test("a page that hands the shell no details gets no toggle", async () => {
@@ -167,6 +168,7 @@ test("a page that hands the shell no details gets no toggle", async () => {
   await mounted(viewportDeskEm);
   expect(screen.queryByRole("button", { name: "Details" })).toBeNull();
   expect(screen.getByRole("heading", { name: "acme / atlas" })).toBeDefined();
+  styleless();
 });
 
 test("at the desk width the details open beside the page", async () => {
@@ -187,6 +189,7 @@ test("at the desk width the details open beside the page", async () => {
   await settled();
   expect(screen.queryByText("aside")).toBeNull();
   expect(screen.getByText("page")).toBeDefined();
+  styleless();
 });
 
 test("under the desk width the details take the middle from the page", async () => {
@@ -206,6 +209,7 @@ test("under the desk width the details take the middle from the page", async () 
   await settled();
   expect(screen.getByText("aside")).toBeDefined();
   expect(screen.getByText("page").closest("[hidden]")).not.toBeNull();
+  styleless();
 });
 
 test("the bottom slot draws under the page", async () => {
@@ -216,6 +220,7 @@ test("the bottom slot draws under the page", async () => {
   );
   await mounted(viewportDeskEm);
   expect(screen.getByText("composer")).toBeDefined();
+  styleless();
 });
 
 test("the drawer closes when its own project switcher navigates", async () => {
@@ -232,6 +237,7 @@ test("the drawer closes when its own project switcher navigates", async () => {
   });
   await settled();
   expect(railDrawn()).toBeNull();
+  styleless();
 });
 
 test("the drawer closes when a rail entry is followed", async () => {
@@ -242,4 +248,5 @@ test("the drawer closes when a rail entry is followed", async () => {
   });
   await settled();
   expect(railDrawn()).toBeNull();
+  styleless();
 });
