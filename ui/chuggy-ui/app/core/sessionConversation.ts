@@ -39,14 +39,16 @@ export interface SessionConversationRead {
 }
 
 /**
- * The one word a walk that cannot say how far it reached is drawn as. A read
- * that could not decide the held set is truncated by construction, so
- * `Truncated` stands only where it is the whole of what went short.
+ * The one word a walk that has not reached the end of the store is drawn as,
+ * whether that is a read that cannot say how far it reached or a last page
+ * that said there may be batches above the cursor it gave. A read that could
+ * not decide the held set is truncated by construction, so `Truncated` stands
+ * only where it is the whole of what went short.
  */
 function sessionConversationShortfall(
   held: LeadTranscriptHeld,
 ): ConversationMarker | undefined {
-  if (held.holdingUnknown) return { marker: "Unreached" };
+  if (held.holdingUnknown || held.more) return { marker: "Unreached" };
   return held.truncated ? { marker: "Truncated" } : undefined;
 }
 

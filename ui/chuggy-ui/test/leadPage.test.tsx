@@ -778,14 +778,15 @@ test("a cut that moves on the last read does not blank the log", async () => {
   ).toBeDefined();
 });
 
-/** A re-walk that finishes inside the budget draws what it rebuilt, and says
- * nothing about being undecided. */
+/** A re-walk that finishes inside the budget draws what it rebuilt rather than
+ * the stale kept fold — and still says the store has not been read to its end,
+ * since this store's cursor always advances and the budget never catches it. */
 test("a cut that moves early is rebuilt inside the budget and drawn", async () => {
   compactingStore(2);
   await mountLead();
   expect(exchangeCount()).toBeGreaterThan(0);
   expect(screen.queryByText("No conversation")).toBeNull();
-  expect(screen.queryByText("Not reached")).toBeNull();
+  expect(screen.getByText("Not reached")).toBeDefined();
 });
 
 /** A store whose pages the case decides, so a probe can move the cut, fail a

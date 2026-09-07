@@ -222,6 +222,21 @@ test("truncated stands only where the walk could say how far it reached", () => 
 });
 
 /**
+ * `more` says the last page left batches above its cursor unread, which is
+ * its own way of not having reached the end of the store — the case a walk
+ * that stops on its read budget leaves behind without ever setting
+ * `holdingUnknown`. It is worded the same as an unreached tail rather than
+ * left silent, and does not double-report beside `truncated`.
+ */
+test("a fold carrying `more` draws the walk as unreached, and one that reached the end draws nothing for it", () => {
+  expect(markers(itemsOf({ more: true }))).toStrictEqual(["Unreached"]);
+  expect(markers(itemsOf({ more: false }))).toStrictEqual([]);
+  expect(markers(itemsOf({ more: true, truncated: true }))).toStrictEqual([
+    "Unreached",
+  ]);
+});
+
+/**
  * The two derivations meet in `conversationExchanges`, which is the only place
  * they are ever used together: the transcript is the spine, and the turn that
  * matches its ask by text is what carries the measures and the standing.
