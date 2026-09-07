@@ -451,14 +451,14 @@ export function selectorSettingsLimitEdited(
   return draft.limits[name] !== draft.read.limits[name];
 }
 
-/** Whether this limit already carried a project override at the last read.
- * The wire has no separate installation limit to draw once one does, so a
- * placeholder or a Default label is honest only where this is false. */
-export function selectorSettingsLimitOverriddenAtRead(
+/** Whether this limit's box currently holds an override: live, so a row
+ * cleared by Reset reads as on the default at once rather than waiting for
+ * the next read. */
+export function selectorSettingsLimitOverridden(
   draft: SelectorSettingsDraft,
   name: SelectorSettingsLimitName,
 ): boolean {
-  return draft.read.limits[name] !== "";
+  return draft.limits[name] !== "";
 }
 
 /** The text sections' own answer to the same question. */

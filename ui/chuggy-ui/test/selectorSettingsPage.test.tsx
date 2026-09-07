@@ -515,11 +515,10 @@ test("a row's Reset clears that override and no other", async () => {
   });
 });
 
-/** The wire carries no installation limit, so once a row is overridden a
- * cleared box has no honest default to draw — not a placeholder holding the
- * value the project has just stopped overriding, and not the Default pill
- * that value would wrongly claim it is. */
-test("Reset on an overridden limit draws neither a placeholder nor Default", async () => {
+/** `installationLimits` is on the wire, so a row Reset clears knows its own
+ * default at once: the box takes it as a placeholder and the row rejoins the
+ * ones the pill calls Default. */
+test("Reset on an overridden limit shows the installation value as its placeholder", async () => {
   await drawSettings({
     read: settingsBody(12, { limits: { tokensPerDecision: 100 } }),
   });
@@ -533,12 +532,54 @@ test("Reset on an overridden limit draws neither a placeholder nor Default", asy
   await turned(() => {
     fireEvent.click(reset);
   });
-  expect(box("Tokens").getAttribute("placeholder")).toBeNull();
+  expect(box("Tokens").getAttribute("placeholder")).toBe(
+    String(installationLimits.tokensPerDecision),
+  );
   const row = screen
     .getByLabelText("Tokens")
     .closest<HTMLElement>(".selector-limit");
   if (row === null) throw new Error("no row found for Tokens");
-  expect(within(row).queryByText("Default")).toBeNull();
+  expect(within(row).getByText("Default")).toBeDefined();
+});
+
+/** A row on the installation's value shows it as the edit box's placeholder,
+ * so a reader who opens Limits sees what a save would leave the row at. */
+test("a limit on the installation's value shows it as the edit box's placeholder", async () => {
+  await drawSettings();
+  await turned(() => {
+    edit("Limits");
+  });
+  expect(box("Tokens").getAttribute("placeholder")).toBe(
+    String(installationLimits.tokensPerDecision),
+  );
+});
+
+/** An overridden row reads its own default beside the value at rest, and
+ * beside its Reset while the section is open — both in the same unit the
+ * value itself is read in. */
+test("an overridden limit reads its own installation default beside the value", async () => {
+  await drawSettings({
+    read: settingsBody(
+      12,
+      { limits: { dispatchesPerDecision: 5 } },
+      { limits: { ...installationLimits, dispatchesPerDecision: 5 } },
+    ),
+  });
+  const readRow = screen
+    .getByText("Dispatches")
+    .closest<HTMLElement>(".selector-limit");
+  if (readRow === null) throw new Error("no row found for Dispatches");
+  expect(within(readRow).getByText("5")).toBeDefined();
+  expect(within(readRow).getByText("3")).toBeDefined();
+  await turned(() => {
+    edit("Limits");
+  });
+  const editRow = screen
+    .getByLabelText("Dispatches")
+    .closest<HTMLElement>(".selector-limit");
+  if (editRow === null) throw new Error("no row found for Dispatches");
+  expect(within(editRow).getByText("3")).toBeDefined();
+  expect(within(editRow).getByRole("button", { name: "Reset" })).toBeDefined();
 });
 
 /** The row reads at rest with grouped digits, so typing them back is taken
@@ -671,6 +712,34 @@ test("a revision that moved under the write is named and not retried", async () 
     (server.written() as { readonly expectedRevision: number })
       .expectedRevision,
   ).toBe(12);
+});
+
+/** The 409 names who moved the revision, so the section says so instead of
+ * the bare revision number a reader cannot act on. */
+test("a conflict that names its mover reads who and when, not the bare revision", async () => {
+  await drawSettings({
+    answering: () => ({
+      body: {
+        error: { code: "SettingsRevisionConflict", message: "moved" },
+        settings: settingsBody(14, { northStar: "somebody else's star" }),
+        movedBy: {
+          administrator: { kind: "member", subject: "dave@vteng.io" },
+          recordedAt: "2026-09-05T17:20:00.000Z",
+        },
+      },
+      status: 409,
+    }),
+  });
+  await turned(() => {
+    edit("North Star");
+  });
+  await turned(save);
+  await settled();
+  const section = sectionOf("North Star");
+  expect(within(section).getByText(/Changed by/)).toBeDefined();
+  expect(within(section).getByText("dave@vteng.io")).toBeDefined();
+  expect(within(section).queryByText("Conflict · 14")).toBeNull();
+  expect(within(section).getByRole("button", { name: "Reload" })).toBeDefined();
 });
 
 /**
