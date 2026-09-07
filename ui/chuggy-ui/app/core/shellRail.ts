@@ -12,6 +12,7 @@
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { threadsAnsweredMax } from "../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../src/contract/responses.ts";
+import { runCountLabel } from "./runTotals.ts";
 import { threadMine, threadsMineFirst } from "./threads.ts";
 import { threadStandingTone } from "./tones.ts";
 import type { Tone } from "./tones.ts";
@@ -85,13 +86,25 @@ export interface ShellRailInput {
   readonly inboxCount?: string | undefined;
 }
 
+/** `Your thread` is the reader's most recent; a second one of theirs is the
+ * same words disambiguated by its own turn count, so two never read alike. */
+function shellRailThreadLabel(
+  thread: ThreadEntryResponse,
+  firstMine: boolean,
+): string {
+  if (!thread.mine) return thread.owner ?? thread.session;
+  if (firstMine) return "Your thread";
+  return `Your thread · ${runCountLabel(thread.turns)} turns`;
+}
+
 function shellRailThreadEntry(
   params: RailParams,
   thread: ThreadEntryResponse,
+  firstMine: boolean,
 ): RailEntry {
   return {
     id: thread.session,
-    label: thread.mine ? "Your thread" : (thread.owner ?? thread.session),
+    label: shellRailThreadLabel(thread, firstMine),
     to: railRoutes.thread,
     params: { ...params, session: thread.session },
     standing: { word: thread.state, tone: threadStandingTone(thread.state) },
@@ -116,11 +129,13 @@ function shellRailConversations(
     threadMine(threads) === undefined
       ? [{ id: "thread-new", label: "New thread", action: "OpenThread" }]
       : [];
+  const ordered = threadsMineFirst(threads).slice(0, threadsAnsweredMax);
+  const firstMine = ordered.findIndex((thread) => thread.mine);
   return [
     lead,
-    ...threadsMineFirst(threads)
-      .slice(0, threadsAnsweredMax)
-      .map((thread) => shellRailThreadEntry(params, thread)),
+    ...ordered.map((thread, at) =>
+      shellRailThreadEntry(params, thread, at === firstMine),
+    ),
     ...offer,
   ];
 }

@@ -61,6 +61,21 @@ test("the reader's own thread is labelled, first, and withholds the offer", () =
   expect(entries[1]?.mine).toBe(true);
 });
 
+test("a second thread of the reader's own is disambiguated by its turn count", () => {
+  const entries = conversations({
+    partition: atlas,
+    threads: [
+      thread({ session: "s-mine-one", mine: true, turns: 3 }),
+      thread({ session: "s-mine-two", mine: true, turns: 12 }),
+    ],
+  });
+  expect(entries.map((entry) => entry.label)).toEqual([
+    "Lead",
+    "Your thread",
+    "Your thread · 12 turns",
+  ]);
+});
+
 test("a thread whose owner is gone is labelled by its session", () => {
   const entries = conversations({
     partition: atlas,
