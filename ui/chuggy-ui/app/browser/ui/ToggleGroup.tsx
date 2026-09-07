@@ -18,7 +18,7 @@ export function ToggleGroup(props: {
   return (
     <ToggleGroupPrimitive.Root
       type="single"
-      className="toggle-group"
+      className="toggle-group bg-surface-2 rounded-3 inline-flex gap-1 p-1"
       aria-label={props.label}
       value={props.value}
       onValueChange={(value) => {
