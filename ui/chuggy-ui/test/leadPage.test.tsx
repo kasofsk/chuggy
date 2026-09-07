@@ -22,6 +22,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { LeadPage } from "../app/browser/LeadPage.tsx";
+import { useShellSlotsFilled } from "../app/browser/shell/slots.tsx";
+import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import {
   answer,
   apiDouble,
@@ -34,6 +36,7 @@ import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
 import { ShellSlotHarness, styleless } from "./shellSlotHarness.tsx";
 import { frame } from "./streamDouble.ts";
+import { viewportAtEm } from "./viewport.ts";
 import { inquiryBoxesHeld } from "../app/browser/lead/inquiryBoxes.ts";
 import { sessionStorePageBatchesMax } from "../../../src/contract/http.ts";
 import {
@@ -78,6 +81,7 @@ let drawnPartition = { ...leadPartition };
 beforeEach(() => {
   resizeObserverStubbed();
   elementScrollToStubbed();
+  viewportAtEm(viewportDeskEm);
 });
 
 afterEach(() => {
@@ -127,6 +131,43 @@ const opening: LeadServed = {
   refusals: leadRefusals(false),
 };
 
+/** The flag `openFirst` sets, read beside the page: the fake slot sinks draw a
+ * filled details slot's content whether or not the real pane would show it, so
+ * a case reads the flag itself rather than the details' presence in the DOM. */
+function DetailsOpenProbe(): ReactNode {
+  return <p>details {useShellSlotsFilled().detailsOpen ? "open" : "closed"}</p>;
+}
+
+/** The page at a given width, with `DetailsOpenProbe` beside it. */
+async function drawLeadAtEm(
+  em: number,
+  holding: () => LeadServed,
+): Promise<void> {
+  viewportAtEm(em);
+  const api = apiDouble({
+    operation: { operation: "op-one", state: "Pending" },
+    route: (url) => {
+      const found = leadRouteAnswer(url, holding());
+      return answer(found.body, found.status);
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  const server = openedStream();
+  render(
+    <ScreenHarness
+      partition={leadPartition}
+      client={new QueryClient()}
+      transport={server.ports.fetch}
+    >
+      <ShellSlotHarness>
+        <DetailsOpenProbe />
+        <LeadPage />
+      </ShellSlotHarness>
+    </ScreenHarness>,
+  );
+  await settled();
+}
+
 /** How many exchanges the conversation surface drew: each holds one ask
  * message, whichever half of it is empty. */
 function exchangeCount(): number {
@@ -150,6 +191,19 @@ test("the head names the session, its state and the cursor it stands on", async 
   expect(screen.getByText("Open")).toBeDefined();
   expect(screen.getByText("Monitoring")).toBeDefined();
   expect(screen.getByText("1204")).toBeDefined();
+});
+
+/** Below the desk width an open details pane would replace the page a reader
+ * came here to see, so `openFirst` starts it closed there — the toggle is
+ * still the reader's to press. */
+test("openFirst leaves the details closed under the desk width", async () => {
+  await drawLeadAtEm(40, () => opening);
+  expect(screen.getByText("details closed")).toBeDefined();
+});
+
+test("openFirst opens the details at the desk width", async () => {
+  await drawLeadAtEm(viewportDeskEm, () => opening);
+  expect(screen.getByText("details open")).toBeDefined();
 });
 
 /** The bar's own title never wraps, so a narrow reader needs its chips to run

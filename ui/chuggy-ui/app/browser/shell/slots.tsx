@@ -24,6 +24,8 @@ import {
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 
+import { useViewportAtLeastEm, viewportDeskEm } from "./viewport.ts";
+
 export const shellSlotNames = ["topBar", "details", "bottom"] as const;
 
 export type ShellSlotName = (typeof shellSlotNames)[number];
@@ -167,14 +169,21 @@ export function TopBarSlot(props: { readonly children: ReactNode }): ReactNode {
   );
 }
 
-/** What the page is about beside the page itself, behind the bar's toggle. */
+/** What the page is about beside the page itself, behind the bar's toggle.
+ * `openFirst` is honoured only where the details have room to sit beside the
+ * page (`viewportDeskEm`); below that width it would otherwise replace the
+ * page a reader came here to see. */
 export function DetailsSlot(props: {
   readonly children: ReactNode;
   readonly openFirst?: boolean | undefined;
 }): ReactNode {
+  const desk = useViewportAtLeastEm(viewportDeskEm);
   return (
     <>
-      <ShellSlotFill name="details" openFirst={props.openFirst === true} />
+      <ShellSlotFill
+        name="details"
+        openFirst={props.openFirst === true && desk}
+      />
       <ShellSlotPortal name="details">{props.children}</ShellSlotPortal>
     </>
   );
