@@ -222,7 +222,9 @@ test("under the desk width the details take the middle from the page", async () 
   });
   await settled();
   expect(screen.getByText("aside")).toBeDefined();
-  expect(screen.getByText("page").closest("[hidden]")).not.toBeNull();
+  const hiddenScroller = screen.getByText("page").closest("[hidden]");
+  expect(hiddenScroller).not.toBeNull();
+  expect(hiddenScroller?.className ?? "").not.toContain("grid");
   styleless();
 });
 

@@ -44,11 +44,16 @@ export function DetailsPane(props: {
     open && desk
       ? "grid-cols-[minmax(0,1fr)_auto_var(--width-aside)]"
       : "grid-cols-1";
+  const scrollerHidden = open && !desk;
   return (
     <div className={`grid min-h-0 ${columns}`}>
       <div
-        hidden={open && !desk}
-        className="grid min-h-0 grid-rows-[minmax(0,1fr)] overflow-y-auto"
+        hidden={scrollerHidden}
+        className={
+          scrollerHidden
+            ? undefined
+            : "grid min-h-0 grid-rows-[minmax(0,1fr)] overflow-y-auto"
+        }
       >
         <div className="mx-auto flex max-w-page flex-col gap-4 self-start p-4 has-[[role=region]]:self-stretch">
           {props.children}
