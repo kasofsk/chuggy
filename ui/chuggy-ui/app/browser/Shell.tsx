@@ -21,7 +21,7 @@ import {
 } from "../core/projectStream.ts";
 import { DetailsPane } from "./shell/DetailsPane.tsx";
 import { Rail } from "./shell/Rail.tsx";
-import { ShellSlots, useShellSlotHolder } from "./shell/slots.tsx";
+import { ShellSlots } from "./shell/slots.tsx";
 import { TopBar } from "./shell/TopBar.tsx";
 import { useViewportAtLeastEm, viewportTwoColumnEm } from "./shell/viewport.ts";
 import {
@@ -87,9 +87,8 @@ function ShellMain(props: {
   readonly narrow: boolean;
   readonly title: string;
 }): ReactNode {
-  const holdBottom = useShellSlotHolder("bottom");
   return (
-    <div className="grid min-h-0 grid-rows-[auto_auto_auto_minmax(0,1fr)_auto]">
+    <div className="grid min-h-0 grid-rows-[auto_auto_auto_minmax(0,1fr)]">
       <div className="shell-banner">
         <StreamBanner />
       </div>
@@ -98,7 +97,6 @@ function ShellMain(props: {
       <DetailsPane>
         <Outlet />
       </DetailsPane>
-      <div ref={holdBottom} />
     </div>
   );
 }

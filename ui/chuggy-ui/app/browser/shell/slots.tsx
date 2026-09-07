@@ -1,6 +1,6 @@
 /**
- * The three places of the shell a page draws into from inside the router's
- * outlet: the top bar above it, the details aside beside it, the slot under it.
+ * The two places of the shell a page draws into from inside the router's
+ * outlet: the top bar above it, the details aside beside it.
  *
  * A PORTAL RATHER THAN A REGISTERED NODE. What a page hands the shell here is
  * markup, and markup registered through an effect re-registers on every render
@@ -26,13 +26,11 @@ import type { ReactNode } from "react";
 
 import { useViewportAtLeastEm, viewportDeskEm } from "./viewport.ts";
 
-export const shellSlotNames = ["topBar", "details", "bottom"] as const;
+export const shellSlotNames = ["topBar", "details"] as const;
 
 export type ShellSlotName = (typeof shellSlotNames)[number];
 
-/** The two slots a page can be said to have filled; the bottom slot is empty or
- * it is not, and nothing is drawn differently either way. */
-export type ShellSlotFilled = "topBar" | "details";
+export type ShellSlotFilled = ShellSlotName;
 
 type ShellSlotNodes = Readonly<Record<ShellSlotName, HTMLElement | null>>;
 
@@ -77,7 +75,6 @@ export function ShellSlots(props: { readonly children: ReactNode }): ReactNode {
   const [nodes, setNodes] = useState<ShellSlotNodes>({
     topBar: null,
     details: null,
-    bottom: null,
   });
   const [filled, setFilled] = useState<ShellSlotsFilled>(shellSlotsUnfilled);
   const holders = useMemo<ShellSlotHolders>(() => {
@@ -91,7 +88,6 @@ export function ShellSlots(props: { readonly children: ReactNode }): ReactNode {
     return {
       topBar: holder("topBar"),
       details: holder("details"),
-      bottom: holder("bottom"),
     };
   }, []);
   const fill = useCallback(
@@ -187,9 +183,4 @@ export function DetailsSlot(props: {
       <ShellSlotPortal name="details">{props.children}</ShellSlotPortal>
     </>
   );
-}
-
-/** The row under the scrolling page, which a composer is pinned to. */
-export function BottomSlot(props: { readonly children: ReactNode }): ReactNode {
-  return <ShellSlotPortal name="bottom">{props.children}</ShellSlotPortal>;
 }
