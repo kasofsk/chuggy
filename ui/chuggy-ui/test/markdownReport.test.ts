@@ -10,6 +10,8 @@ import { expect, test } from "vitest";
 import {
   markdownInlineOf,
   markdownReportBlocks,
+  markdownTableColumnsMax,
+  markdownTableRowsMax,
 } from "../app/core/markdownReport.ts";
 
 test("a paragraph keeps every line break it was written with", () => {
@@ -92,4 +94,63 @@ test("a fenced code block keeps its body as literal text with no marks read", ()
 test("a fence left unclosed still reads as a code block rather than nothing", () => {
   const blocks = markdownReportBlocks("```\nunterminated");
   expect(blocks).toEqual([{ kind: "CodeBlock", text: "unterminated" }]);
+});
+
+test("a pipe table reads as a table block, a cell carrying its own marks", () => {
+  const blocks = markdownReportBlocks(
+    "| Name | Note |\n| --- | --- |\n| **a** | plain |",
+  );
+  expect(blocks).toEqual([
+    {
+      kind: "Table",
+      header: [
+        [{ kind: "Text", text: "Name" }],
+        [{ kind: "Text", text: "Note" }],
+      ],
+      rows: [
+        [[{ kind: "Bold", text: "a" }], [{ kind: "Text", text: "plain" }]],
+      ],
+    },
+  ]);
+});
+
+test("a row wider or narrower than the header is cut or padded to it", () => {
+  const blocks = markdownReportBlocks(
+    "| A | B |\n| --- | --- |\n| 1 | 2 | 3 |\n| only |",
+  );
+  expect(blocks).toEqual([
+    {
+      kind: "Table",
+      header: [[{ kind: "Text", text: "A" }], [{ kind: "Text", text: "B" }]],
+      rows: [
+        [[{ kind: "Text", text: "1" }], [{ kind: "Text", text: "2" }]],
+        [[{ kind: "Text", text: "only" }], []],
+      ],
+    },
+  ]);
+});
+
+test("a run of lines missing its delimiter row stays a paragraph", () => {
+  const blocks = markdownReportBlocks("| A | B |\n| 1 | 2 |");
+  expect(blocks.map((block) => block.kind)).toEqual(["Paragraph"]);
+});
+
+test("a table past the column or row bound is cut rather than read in full", () => {
+  const columns = markdownTableColumnsMax + 5;
+  const header = Array.from({ length: columns }, (_unused, at) => `c${at}`);
+  const delimiter = header.map(() => "---");
+  const bodyRow = header.map((_unused, at) => `${at}`);
+  const report = [
+    `| ${header.join(" | ")} |`,
+    `| ${delimiter.join(" | ")} |`,
+    ...Array.from(
+      { length: markdownTableRowsMax + 5 },
+      () => `| ${bodyRow.join(" | ")} |`,
+    ),
+  ].join("\n");
+  const table = markdownReportBlocks(report)[0];
+  if (table === undefined || table.kind !== "Table")
+    throw new Error("expected the report's first block to be a table");
+  expect(table.header.length).toBe(markdownTableColumnsMax);
+  expect(table.rows.length).toBe(markdownTableRowsMax);
 });
