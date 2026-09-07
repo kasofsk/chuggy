@@ -284,6 +284,20 @@ test("the seeding is a folded Context card, and the bubble is the words", () => 
   styleless();
 });
 
+test("an Observation with text draws the line and its collapsed card", () => {
+  const observed = exchangeOf({
+    ask: { ask: "Observation", text: '{"version":1,"decision":"lead"}' },
+    answer: "done",
+  });
+  render(<Conversation exchanges={[observed]} empty="No conversation" />);
+  expect(screen.getAllByText("Observation")).toHaveLength(2);
+  const trigger = screen.getByRole("button", { name: "Observation" });
+  expect(screen.queryByText(/"version":1/)).toBeNull();
+  fireEvent.click(trigger);
+  expect(screen.getByText(/"version":1/)).toBeDefined();
+  styleless();
+});
+
 test("no exchanges draws the empty title above its one sentence", () => {
   render(
     <Conversation
