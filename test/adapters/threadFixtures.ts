@@ -30,6 +30,8 @@ export const unservedThreads: Pick<
   | "openThread"
   | "sendThreadMessage"
   | "closeThread"
+  | "renameThread"
+  | "hideThread"
 > = {
   threads: unserved("threads"),
   thread: unserved("thread"),
@@ -37,6 +39,8 @@ export const unservedThreads: Pick<
   openThread: unserved("open thread"),
   sendThreadMessage: unserved("thread message"),
   closeThread: unserved("close thread"),
+  renameThread: unserved("rename thread"),
+  hideThread: unserved("hide thread"),
 };
 
 /**

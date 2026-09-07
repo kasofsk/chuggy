@@ -168,6 +168,8 @@ import {
   threadMessageSent,
   threadSeeding,
   type ThreadClosing,
+  type ThreadHiding,
+  type ThreadRenaming,
   type ThreadMailboxQuery,
   type ThreadMessageSent,
   type ThreadOpening,
@@ -672,6 +674,16 @@ export interface NativeWeb {
     partition: Partition,
     session: SessionId,
   ): Promise<ThreadClosing>;
+  renameThread(
+    principal: Principal,
+    partition: Partition,
+    input: { readonly session: SessionId; readonly title: string },
+  ): Promise<ThreadRenaming>;
+  hideThread(
+    principal: Principal,
+    partition: Partition,
+    input: { readonly session: SessionId; readonly hidden: boolean },
+  ): Promise<ThreadHiding>;
   leadInquiries(
     principal: Principal,
     partition: Partition,
@@ -1467,6 +1479,52 @@ function nativeCloseThreadMethod(
 }
 
 /**
+ * The two doors a member's own view of a thread goes through, gated like the
+ * close door and for its reason: renaming and hiding change what a rail draws
+ * and nothing a thread does, so any member who may mutate the project may reach
+ * either, and the durable side is what refuses a session that is not a thread.
+ */
+function nativeThreadViewMethods(
+  access: ProjectAccess,
+  threads?: NativeThreadPorts,
+): Pick<NativeWeb, "renameThread" | "hideThread"> {
+  return {
+    renameThread: async (principal, partition, input) => {
+      if (
+        (await access.authorize(principal, partition, "Mutate")) === undefined
+      )
+        return { result: "NotFound" };
+      const renamed = await composedThreadPorts(threads).threads.rename({
+        partition,
+        session: input.session,
+        title: input.title,
+      });
+      if (renamed.renamed === "NoThread") return { result: "NotFound" };
+      return {
+        result: renamed.renamed,
+        thread: threadEntry(renamed.thread, principal),
+      };
+    },
+    hideThread: async (principal, partition, input) => {
+      if (
+        (await access.authorize(principal, partition, "Mutate")) === undefined
+      )
+        return { result: "NotFound" };
+      const hidden = await composedThreadPorts(threads).threads.hide({
+        partition,
+        session: input.session,
+        hidden: input.hidden,
+      });
+      if (hidden.hidden === "NoThread") return { result: "NotFound" };
+      return {
+        result: hidden.hidden,
+        thread: threadEntry(hidden.thread, principal),
+      };
+    },
+  };
+}
+
+/**
  * The three reads every member of the project may make of every thread in it,
  * each reauthorizing before it reaches a store. A thread that is not this
  * project's own, and a session that is not a thread at all, answer alike:
@@ -1657,7 +1715,7 @@ function nativeLeadInquiryMethods(
   };
 }
 
-/** The thread side of the boundary, whose reads and whose three doors reach it as one. */
+/** The thread side of the boundary, whose reads and whose five doors reach it as one. */
 function nativeThreadMethods(
   access: ProjectAccess,
   threads?: NativeThreadPorts,
@@ -1669,9 +1727,12 @@ function nativeThreadMethods(
   | "openThread"
   | "sendThreadMessage"
   | "closeThread"
+  | "renameThread"
+  | "hideThread"
 > {
   return {
     ...nativeThreadReadMethods(access, threads),
+    ...nativeThreadViewMethods(access, threads),
     openThread: nativeOpenThreadMethod(access, threads),
     sendThreadMessage: nativeSendThreadMessageMethod(access, threads),
     closeThread: nativeCloseThreadMethod(access, threads),
