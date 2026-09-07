@@ -3,9 +3,9 @@
  * anything.
  *
  * Total over `emptyVariants`: one retired line inside a panel, or a title and
- * a sentence centred in the column a conversation would fill. It is for a list
- * with no members and never for a read that failed, which is a Notice and says
- * why.
+ * a sentence centred horizontally in the column a conversation would fill.
+ * It is for a list with no members and never for a read that failed, which
+ * is a Notice and says why.
  */
 
 import type { ReactNode } from "react";
@@ -24,7 +24,7 @@ export function EmptyState(props: {
 }): ReactNode {
   if (props.variant !== "page") return <p className="empty">{props.label}</p>;
   return (
-    <div className="empty empty-page grid min-h-full place-content-center gap-3 text-center">
+    <div className="empty empty-page grid place-content-center gap-3 text-center">
       <h1>{props.label}</h1>
       {props.detail === undefined ? null : <p>{props.detail}</p>}
       {props.action === undefined ? null : (

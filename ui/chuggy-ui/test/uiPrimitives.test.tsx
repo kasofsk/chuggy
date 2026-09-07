@@ -88,6 +88,9 @@ test("an empty state is a line inside a panel and a centred heading on a page", 
         .querySelector(".empty")
         ?.classList.contains("place-content-center"),
     ).toBe(variant === "page");
+    expect(
+      container.querySelector(".empty")?.classList.contains("min-h-full"),
+    ).toBe(false);
     styleless();
     cleanup();
   }
