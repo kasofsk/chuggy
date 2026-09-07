@@ -56,7 +56,9 @@ import { usePanelList, useApiPorts } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { drawBytes } from "./ports.ts";
 import { operationIdBytesCount } from "../core/operationFollow.ts";
+import { TopBarSlot } from "./shell/slots.tsx";
 import { TicketCreationAdvanced } from "./TicketCreationAdvanced.tsx";
+import { Button } from "./ui/Button.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
 type Attempt =
@@ -122,8 +124,8 @@ function Links(props: FormEdit): ReactNode {
               });
             }}
           />
-          <button
-            type="button"
+          <Button
+            size="sm"
             onClick={() => {
               onChange({
                 ...form,
@@ -132,18 +134,18 @@ function Links(props: FormEdit): ReactNode {
             }}
           >
             remove
-          </button>
+          </Button>
         </div>
       ))}
-      <button
-        type="button"
+      <Button
+        size="sm"
         disabled={form.links.length >= briefLinksMax}
         onClick={() => {
           onChange({ ...form, links: [...form.links, ""] });
         }}
       >
         add link
-      </button>
+      </Button>
     </fieldset>
   );
 }
@@ -169,8 +171,8 @@ function Checks(props: FormEdit): ReactNode {
               });
             }}
           />
-          <button
-            type="button"
+          <Button
+            size="sm"
             onClick={() => {
               onChange({
                 ...form,
@@ -179,18 +181,18 @@ function Checks(props: FormEdit): ReactNode {
             }}
           >
             remove
-          </button>
+          </Button>
         </div>
       ))}
-      <button
-        type="button"
+      <Button
+        size="sm"
         disabled={form.checks.length >= briefChecksMax}
         onClick={() => {
           onChange({ ...form, checks: [...form.checks, ""] });
         }}
       >
         add check
-      </button>
+      </Button>
     </fieldset>
   );
 }
@@ -424,15 +426,15 @@ export function CreationForm(props: {
         configuration={props.context.configuration}
         initialization={initialization}
       />
-      <button
-        type="button"
+      <Button
+        variant="primary"
         disabled={running.attempt.attempt === "Running"}
         onClick={() => {
           void running.submit(form);
         }}
       >
         create and release
-      </button>
+      </Button>
       <AttemptNote attempt={running.attempt} />
     </div>
   );
@@ -452,25 +454,30 @@ export function TicketCreation(): ReactNode {
     readCreationContext(readPorts, partition),
   );
   return (
-    <DataPanel title="new ticket" state={state}>
-      {(context) =>
-        context.context === "Ready" ? (
-          <CreationForm
-            ports={ports}
-            partition={partition}
-            queryKey={queryKey}
-            context={context}
-            onCreated={(ticket) => {
-              void navigate({
-                to: "/$tenant/$project/tickets/$ticket",
-                params: { ...partition, ticket: String(ticket) },
-              });
-            }}
-          />
-        ) : (
-          <p className="panel-absent">{creationContextSentence(context)}</p>
-        )
-      }
-    </DataPanel>
+    <>
+      <TopBarSlot>
+        <h1 className="text-md font-strong text-ink-1 truncate">New ticket</h1>
+      </TopBarSlot>
+      <DataPanel title="new ticket" state={state}>
+        {(context) =>
+          context.context === "Ready" ? (
+            <CreationForm
+              ports={ports}
+              partition={partition}
+              queryKey={queryKey}
+              context={context}
+              onCreated={(ticket) => {
+                void navigate({
+                  to: "/$tenant/$project/tickets/$ticket",
+                  params: { ...partition, ticket: String(ticket) },
+                });
+              }}
+            />
+          ) : (
+            <p className="panel-absent">{creationContextSentence(context)}</p>
+          )
+        }
+      </DataPanel>
+    </>
   );
 }
