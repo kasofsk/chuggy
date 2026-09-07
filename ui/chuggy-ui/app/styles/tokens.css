@@ -133,6 +133,7 @@
     --width-page: 96rem;
     --width-rail: 16rem; /* the shell's navigation */
     --width-column: 64rem; /* a conversation's reading column */
+    --width-settings: 56rem; /* a settings page: form rows, not prose */
     --width-aside: 22rem;
     --width-aside-min: 18rem;
     --col-label: 8.5rem; /* ledger: the row's label */
