@@ -1,22 +1,9 @@
-/* The thread pages: the listing, and one thread's page around its conversation. */
+/* One thread's page around its conversation. */
 
 @layer page {
-  .threads,
   .thread {
     display: grid;
     gap: var(--space-4);
     min-width: 0;
-  }
-
-  .thread-open {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3);
-    padding-bottom: var(--space-3);
-  }
-
-  .thread-absent {
-    color: var(--ink-3);
   }
 }
