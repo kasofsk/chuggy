@@ -5,17 +5,11 @@
  * slot is `shell.test.tsx`'s; this only has to exist for a portal to land in.
  */
 
-import { expect } from "vitest";
 import type { ReactNode } from "react";
 
 import { ShellSlots, useShellSlotHolder } from "../app/browser/shell/slots.tsx";
 
-/** The served policy refuses a runtime `<style>` element, so a case checks
- * this after mounting and after each interaction rather than trusting it
- * from the primitives a page composes. */
-export function styleless(): void {
-  expect(document.querySelectorAll("style")).toHaveLength(0);
-}
+export { styleless } from "./styleless.ts";
 
 function ShellSlotSinks(): ReactNode {
   const holdTopBar = useShellSlotHolder("topBar");
