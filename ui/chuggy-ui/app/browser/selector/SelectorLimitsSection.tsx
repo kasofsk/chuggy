@@ -16,7 +16,7 @@ import {
   selectorSettingsLimitFigure,
   selectorSettingsLimitLabel,
   selectorSettingsLimitNames,
-  selectorSettingsLimitOverriddenAtRead,
+  selectorSettingsLimitOverridden,
   selectorSettingsLimitTyped,
   selectorSettingsLimitUnitWord,
   selectorSettingsSection,
@@ -41,39 +41,43 @@ interface SelectorLimitRow {
   readonly name: SelectorSettingsLimitName;
   readonly draft: SelectorSettingsDraft;
   readonly effective: number;
+  readonly installationEffective: number;
   readonly fault: string | undefined;
   readonly editing: boolean;
   readonly onChange: (draft: SelectorSettingsDraft) => void;
 }
 
 /** What the row says about where its value came from: the installation's, or
- * the project's own with the one action that gives it back. */
+ * the project's own, its default beside it and the one action that gives it
+ * back. */
 function SelectorLimitStanding(props: {
   readonly row: SelectorLimitRow;
 }): ReactNode {
   const row = props.row;
-  const overriddenAtRead = selectorSettingsLimitOverriddenAtRead(
-    row.draft,
-    row.name,
-  );
-  if (!overriddenAtRead && row.draft.limits[row.name] === "")
+  if (!selectorSettingsLimitOverridden(row.draft, row.name))
     return (
       <span className="selector-was">
         <Pill tone="neutral">Default</Pill>
       </span>
     );
-  if (!row.editing) return <span className="selector-was" />;
+  const installation = selectorSettingsLimitFigure(
+    row.name,
+    row.installationEffective,
+  );
   return (
     <span className="selector-was">
-      <Button
-        variant="quiet"
-        size="sm"
-        onClick={() => {
-          row.onChange(selectorSettingsLimitTyped(row.draft, row.name, ""));
-        }}
-      >
-        Reset
-      </Button>
+      default <Figure figure={installation} />
+      {row.editing ? (
+        <Button
+          variant="quiet"
+          size="sm"
+          onClick={() => {
+            row.onChange(selectorSettingsLimitTyped(row.draft, row.name, ""));
+          }}
+        >
+          Reset
+        </Button>
+      ) : null}
     </span>
   );
 }
@@ -82,9 +86,9 @@ function SelectorLimit(props: { readonly row: SelectorLimitRow }): ReactNode {
   const row = props.row;
   const label = selectorSettingsLimitLabel(row.name);
   const edited = selectorSettingsLimitEdited(row.draft, row.name);
-  const placeholder = selectorSettingsLimitOverriddenAtRead(row.draft, row.name)
+  const placeholder = selectorSettingsLimitOverridden(row.draft, row.name)
     ? undefined
-    : String(row.effective);
+    : String(row.installationEffective);
   return (
     <div className="selector-limit" data-edited={edited ? "" : undefined}>
       <span className="selector-limit-key">
@@ -159,6 +163,8 @@ export function SelectorLimitsSection(props: {
               name,
               draft: props.draft,
               effective: props.settings.effective.limits[name],
+              installationEffective:
+                props.settings.effective.installationLimits[name],
               fault: props.faults[`limits.${name}`],
               editing: props.editing,
               onChange: props.onChange,
