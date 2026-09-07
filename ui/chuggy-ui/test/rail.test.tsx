@@ -169,7 +169,10 @@ function longSessionApi(): typeof fetch {
   }) as unknown as typeof fetch;
 }
 
-test("a long session id truncates instead of widening the rail", async () => {
+/** The classes a long session id needs — `truncate` on its label, the column
+ * cap on its list — land on the elements they must; jsdom draws no boxes, so
+ * this cannot observe whether a box is actually narrower. */
+test("a long session id's truncate and column-cap classes land on the right elements", async () => {
   const session = "session-1234567890123456789012345678901234";
   await mounted(longSessionApi());
   const label = screen.getByText(session);
