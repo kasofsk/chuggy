@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
+import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import {
   answer,
   apiDouble,
@@ -19,6 +20,7 @@ import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import { viewportAtEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -39,6 +41,7 @@ vi.mock("@tanstack/react-router", () => ({
 beforeEach(() => {
   resizeObserverStubbed();
   elementScrollToStubbed();
+  viewportAtEm(viewportDeskEm);
 });
 
 afterEach(() => {
@@ -352,11 +355,11 @@ test("the ticket's total is the figure the ticket read answered with", async () 
     transcripts: [transcript([1, 2], true)],
   });
   expect(
-    rendered.container.querySelector(".ticket-figures")?.textContent,
+    rendered.container.querySelector(".fields-inline")?.textContent,
   ).toContain("$9.99");
-  expect(
-    rendered.container.querySelector(".ticket-usage")?.textContent,
-  ).toContain("$0.30");
+  expect(rendered.container.querySelector("#usage")?.textContent).toContain(
+    "$0.30",
+  );
 });
 
 /** A report the worker wrote as markdown must draw as markdown, and the
@@ -404,7 +407,7 @@ test("a run from a worker that wrote no evidence says so", async () => {
     rendered.container.querySelector('[data-attempt="a1"]')?.textContent,
   ).toContain("recorded no run evidence");
   expect(
-    rendered.container.querySelector(".ticket-figures")?.textContent,
+    rendered.container.querySelector(".fields-inline")?.textContent,
   ).toContain("—");
   expect(transcriptReads(rendered.reads)).toEqual([]);
 });

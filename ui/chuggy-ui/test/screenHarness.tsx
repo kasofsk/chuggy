@@ -18,6 +18,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import type { SessionHolder } from "../app/core/sessionHolder.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
+import { ShellSlots } from "../app/browser/shell/slots.tsx";
 import { ProjectStreamProvider } from "../app/browser/stream.tsx";
 import { frame, streamServer } from "./streamDouble.ts";
 import type { StreamServer } from "./streamDouble.ts";
@@ -137,7 +138,7 @@ export function ScreenHarness(props: {
           partition={props.partition}
           transport={props.transport}
         >
-          {props.children}
+          <ShellSlots>{props.children}</ShellSlots>
         </ProjectStreamProvider>
       </QueryClientProvider>
     </SessionProvider>

@@ -1,15 +1,11 @@
 /**
  * The short column beside the ledger: where the ticket is, what may be done to
- * it, what it is metered by, and where the rest of the page is.
- *
- * It holds exactly four things and none of them is detail — the brief, the
- * provenance and the configuration are in the main body under the ledger, and
- * the section list is how a reader gets to them. Anchors rather than tabs,
- * because tabs hide content, break find-in-page and cannot be linked to, and
- * the ledger is what this page is.
+ * it, and what it is metered by. The brief, the provenance and the
+ * configuration are in the main body under the ledger; the details pane's
+ * `TicketPageDetails` is how a reader gets to them.
  */
 
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 
 import type { TicketResponse } from "../../../../../src/contract/responses.ts";
 import {
@@ -22,6 +18,8 @@ import { costFigure, instantFigure } from "../../core/figures.ts";
 import type { TicketAccounts } from "../../core/ticketAccounts.ts";
 import type { Cycle, Ledger as LedgerFacts } from "../../core/ticketLedger.ts";
 import { cycleLabel, ledgerLastSet } from "../../core/ticketLedger.ts";
+import { useShellDetailsShow } from "../shell/slots.tsx";
+import { useViewportAtLeastEm, viewportDeskEm } from "../shell/viewport.ts";
 import { ActionWithCost } from "../ui/ActionWithCost.tsx";
 import { BudgetMeter } from "../ui/BudgetMeter.tsx";
 import { Figure } from "../ui/Figure.tsx";
@@ -80,7 +78,7 @@ export function SituationNotice(props: {
         detail={escalationReasonLabel(reason)}
         {...(more === undefined ? {} : { more })}
       >
-        <p className="notice-when">
+        <p className="pt-1">
           <Figure figure={at} />
         </p>
       </Notice>
@@ -101,7 +99,7 @@ export function SituationNotice(props: {
       {...(resumed === undefined ? {} : { detail: resumed })}
       {...(exhausted === undefined ? {} : { more: exhausted })}
     >
-      <p className="notice-when">
+      <p className="pt-1">
         <Figure figure={at} />
       </p>
     </Notice>
@@ -146,12 +144,14 @@ export function TicketSituation(props: {
   readonly facts: LedgerFacts;
   readonly accounts: TicketAccounts;
   readonly stageCount: number;
-  readonly sections: readonly SectionEntry[];
   readonly actions: ReactNode;
   readonly nowMs: number;
+  readonly sticky: boolean;
 }): ReactNode {
   return (
-    <aside className="situation">
+    <aside
+      className={`grid min-w-0 gap-4 ${props.sticky ? "sticky top-4" : ""}`}
+    >
       <SituationNotice
         ticket={props.ticket}
         facts={props.facts}
@@ -161,7 +161,7 @@ export function TicketSituation(props: {
       />
       {props.actions}
       <Panel title="Budgets" level={2}>
-        <div className="situation-budgets">
+        <div className="grid gap-4">
           <SituationBudgets
             accounts={props.accounts}
             onTopUp={() => {
@@ -170,10 +170,31 @@ export function TicketSituation(props: {
           />
         </div>
       </Panel>
+    </aside>
+  );
+}
+
+/**
+ * The page's table of contents, drawn in the shell's details pane rather than
+ * beside the ledger. A click closes the pane first where the pane and the page
+ * share the middle row, so the anchor's target is not left behind it; at the
+ * desk width the page stays beside the pane and nothing closes.
+ */
+export function TicketPageDetails(props: {
+  readonly sections: readonly SectionEntry[];
+}): ReactNode {
+  const detailsShow = useShellDetailsShow();
+  const desk = useViewportAtLeastEm(viewportDeskEm);
+  const onNavigate = (event: MouseEvent<HTMLDivElement>): void => {
+    if (!desk && (event.target as HTMLElement).closest("a") !== null)
+      detailsShow(false);
+  };
+  return (
+    <div onClick={onNavigate}>
       <Panel title="On this page" level={2}>
         <SectionList entries={props.sections} />
       </Panel>
-    </aside>
+    </div>
   );
 }
 

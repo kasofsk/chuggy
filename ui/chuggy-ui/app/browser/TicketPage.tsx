@@ -32,8 +32,10 @@ import type { PanelState } from "../core/freshness.ts";
 import { ticketDispatchList } from "../core/ticketActions.ts";
 import { usePanelList, usePanelResource } from "./api.ts";
 import { useNowMs } from "./Freshness.tsx";
+import { DetailsSlot, TopBarSlot } from "./shell/slots.tsx";
+import { useViewportAtLeastEm, viewportTwoColumnEm } from "./shell/viewport.ts";
 import { TicketActions } from "./TicketActions.tsx";
-import { TicketHead } from "./ticket/TicketHead.tsx";
+import { TicketHead, TicketTopBar } from "./ticket/TicketHead.tsx";
 import {
   TicketLedgerPanel,
   useTicketExecutions,
@@ -42,13 +44,12 @@ import { TicketMain } from "./ticket/TicketMain.tsx";
 import { ticketPageFacts } from "./ticket/ticketPageFacts.ts";
 import type { TicketPageFacts } from "./ticket/ticketPageFacts.ts";
 import {
+  TicketPageDetails,
   TicketSituation,
   usageSectionFigure,
 } from "./ticket/TicketSituation.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import type { SectionEntry } from "./ui/SectionList.tsx";
-
-import "./ticket/ticket.css";
 
 /** Everything the page has read, so each part is handed facts and not a query. */
 export interface TicketReads {
@@ -89,23 +90,58 @@ function TicketAside(props: {
   readonly facts: TicketPageFacts;
   readonly actions: ReactNode;
   readonly nowMs: number;
+  readonly sticky: boolean;
 }): ReactNode {
   const ticket = props.ticket;
   const ledger = props.facts.ledger;
   const accounts = props.facts.accounts;
   if (ticket === undefined || ledger === undefined || accounts === undefined)
-    return <aside className="situation">{props.actions}</aside>;
+    return (
+      <aside
+        className={`grid min-w-0 gap-4 ${props.sticky ? "sticky top-4" : ""}`}
+      >
+        {props.actions}
+      </aside>
+    );
   return (
     <TicketSituation
       ticket={ticket}
       facts={ledger}
       accounts={accounts}
       stageCount={props.facts.stageCount}
-      sections={ticketSections(ticket, props.facts)}
       actions={props.actions}
       nowMs={props.nowMs}
+      sticky={props.sticky}
     />
   );
+}
+
+/** Where the page's own head belongs while the shell has taken it: the top bar
+ * and the details pane fill only once the ticket has been read. */
+function TicketPortals(props: {
+  readonly ticket: TicketResponse | undefined;
+  readonly facts: TicketPageFacts;
+}): ReactNode {
+  const ticket = props.ticket;
+  if (ticket === undefined) return null;
+  return (
+    <>
+      <TopBarSlot>
+        <TicketTopBar ticket={ticket} />
+      </TopBarSlot>
+      <DetailsSlot>
+        <TicketPageDetails sections={ticketSections(ticket, props.facts)} />
+      </DetailsSlot>
+    </>
+  );
+}
+
+/** The situation column's width where it stands beside the main body, one
+ * column where it does not. */
+function ticketPageGridColumns(twoColumn: boolean): string {
+  return twoColumn
+    ? "grid-cols-[minmax(var(--width-aside-min),var(--width-aside))_minmax(0,1fr)]"
+    : "grid-cols-1";
 }
 
 function TicketBody(props: {
@@ -119,6 +155,7 @@ function TicketBody(props: {
   const page = readValue(props.reads.pageState);
   const facts = ticketPageFacts(ticket, draft, page);
   const rework = facts.accounts?.rework;
+  const twoColumn = useViewportAtLeastEm(viewportTwoColumnEm);
   const actions = (
     <TicketActions
       partition={props.partition}
@@ -134,6 +171,7 @@ function TicketBody(props: {
   );
   return (
     <>
+      <TicketPortals ticket={ticket} facts={facts} />
       {ticket === undefined ? null : (
         <TicketHead
           ticket={ticket}
@@ -143,12 +181,15 @@ function TicketBody(props: {
           nowMs={props.nowMs}
         />
       )}
-      <div className="ticket-grid">
+      <div
+        className={`grid items-start gap-4 ${ticketPageGridColumns(twoColumn)}`}
+      >
         <TicketAside
           ticket={ticket}
           facts={facts}
           actions={actions}
           nowMs={props.nowMs}
+          sticky={twoColumn}
         />
         <TicketMain
           partition={props.partition}
