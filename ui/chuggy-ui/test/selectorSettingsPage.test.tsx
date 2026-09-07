@@ -125,6 +125,14 @@ function save(): void {
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
 }
 
+test("the top bar names the revision the settings were read at", async () => {
+  await drawSettings(() => ({ body: {}, status: 200 }));
+  const revision = screen.getByRole("heading", {
+    name: "Selector",
+  }).nextElementSibling;
+  expect(revision?.textContent).toBe("12");
+});
+
 test("the project's own overrides are the boxes, and the rest stand in", async () => {
   await drawSettings(() => ({ body: {}, status: 200 }));
   const northStar = screen.getByLabelText<HTMLTextAreaElement>("North Star");

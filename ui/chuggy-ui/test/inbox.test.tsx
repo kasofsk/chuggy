@@ -141,6 +141,15 @@ test("an answered row stays until a Ticket frame moves it out of the section", a
   expect(screen.getByText("Inbox is clear")).toBeDefined();
 });
 
+test("the top bar names how many the inbox holds", async () => {
+  drawInbox(served);
+  await settled();
+  const count = screen.getByRole("heading", {
+    name: "Inbox",
+  }).nextElementSibling;
+  expect(count?.textContent).toBe("1");
+});
+
 test("an answer's button still opens the sentence it sends", async () => {
   drawInbox(served);
   await settled();
