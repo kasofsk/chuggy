@@ -737,3 +737,17 @@ describe("a block whose standing rules the project wrote", () => {
     });
   });
 });
+
+describe("a block recorded before the boundary heading was written", () => {
+  /** Every one of them was composed from the rules a project inherits, so the
+   * last line of those rules is where the two halves still divide. */
+  test("is split off the member's words on that block's own last line", () => {
+    const ask = conversationAskMessage(`${seeded}\n\nwhat is left to do`);
+
+    expect(ask).toEqual({
+      ask: "Message",
+      text: "what is left to do",
+      context: seeded,
+    });
+  });
+});
