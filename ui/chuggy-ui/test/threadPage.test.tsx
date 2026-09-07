@@ -32,7 +32,7 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import { elementScrollToStubbed } from "./scrolling.ts";
-import { ShellSlotHarness } from "./shellSlotHarness.tsx";
+import { ShellSlotHarness, styleless } from "./shellSlotHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import {
   threadMessageCharsMax,
@@ -80,12 +80,6 @@ afterEach(() => {
   routed.session = threadMineSession;
   vi.unstubAllGlobals();
 });
-
-/** The served policy refuses a runtime `<style>` element, so every mount is
- * checked against it rather than trusted from the primitives it composes. */
-function styleless(): void {
-  expect(document.querySelectorAll("style")).toHaveLength(0);
-}
 
 interface ThreadServed {
   readonly thread: ReturnType<typeof threadBody>;
@@ -180,6 +174,7 @@ async function pressed(said: string): Promise<void> {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
   });
   await settled();
+  styleless();
 }
 
 test("the head names the thread, its standing and whose it is", async () => {
@@ -227,6 +222,7 @@ test("Close on any open thread posts to its close route and nothing else", async
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
   });
   await settled();
+  styleless();
   expect(server.posted()).toStrictEqual([
     `/api/v1/tenants/acme/projects/atlas/threads/${threadOtherSession}/close`,
   ]);
@@ -260,6 +256,7 @@ test("a close the server refused says so and leaves the standing alone", async (
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
   });
   await settled();
+  styleless();
   expect(screen.getByText(/^Refused · /u)).toBeDefined();
   expect(screen.getAllByText("Open").length).toBeGreaterThan(0);
 });
@@ -333,6 +330,7 @@ test("a backlogged mailbox draws the notice, keeps the text and retries the same
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
   });
   await settled();
+  styleless();
   const later = server.posts().at(-1) as { readonly turn: string };
   expect(
     later.turn,

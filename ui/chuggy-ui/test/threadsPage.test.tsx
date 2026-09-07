@@ -25,7 +25,7 @@ import {
   settled,
   turned,
 } from "./screenHarness.tsx";
-import { ShellSlotHarness } from "./shellSlotHarness.tsx";
+import { ShellSlotHarness, styleless } from "./shellSlotHarness.tsx";
 import {
   threadEntry,
   threadMineSession,
@@ -96,12 +96,6 @@ function drawThreads(
   };
   vi.stubGlobal("fetch", fetching);
   return { posts: () => posts, posted: () => posted };
-}
-
-/** The served policy refuses a runtime `<style>` element, so every mount is
- * checked against it rather than trusted from the primitives it composes. */
-function styleless(): void {
-  expect(document.querySelectorAll("style")).toHaveLength(0);
 }
 
 async function mountThreads(): Promise<void> {
@@ -204,6 +198,7 @@ test("a member with no thread opens one and is taken to it", async () => {
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
   });
   await settled();
+  styleless();
   expect(server.posts()).toBe(1);
   expect(navigations.at(-1)).toStrictEqual({
     to: "/$tenant/$project/threads/$session",
@@ -223,6 +218,7 @@ test("an open the server refused says so and navigates nowhere", async () => {
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
   });
   await settled();
+  styleless();
   expect(screen.getByText(/^Refused · /u)).toBeDefined();
   expect(navigations.length, "a refused open navigated anyway").toBe(0);
 });
@@ -266,6 +262,7 @@ test("every row not closed offers Close, and a press closes that row's thread", 
     fireEvent.click(close);
   });
   await settled();
+  styleless();
   expect(server.posted()).toStrictEqual([
     `/api/v1/tenants/acme/projects/atlas/threads/${threadOrphanSession}/close`,
   ]);

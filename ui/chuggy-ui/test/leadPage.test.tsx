@@ -32,7 +32,7 @@ import {
 } from "./screenHarness.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
-import { ShellSlotHarness } from "./shellSlotHarness.tsx";
+import { ShellSlotHarness, styleless } from "./shellSlotHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import { inquiryBoxesHeld } from "../app/browser/lead/inquiryBoxes.ts";
 import { sessionStorePageBatchesMax } from "../../../src/contract/http.ts";
@@ -86,12 +86,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   drawnPartition = { ...leadPartition };
 });
-
-/** The served policy refuses a runtime `<style>` element, so every mount is
- * checked against it rather than trusted from the primitives it composes. */
-function styleless(): void {
-  expect(document.querySelectorAll("style")).toHaveLength(0);
-}
 
 /** The page under its providers, over whatever fetch the case has stubbed. */
 async function mountLead(): Promise<ReturnType<typeof openedStream>> {
@@ -1108,6 +1102,7 @@ test("a project switch and a return leave the box and its pair where they were",
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
   });
   await settled();
+  styleless();
   expect(screen.getByText(/^Failed · /u)).toBeDefined();
   await moveTo({ tenant: "acme", project: "beta" });
   expect(
@@ -1123,6 +1118,7 @@ test("a project switch and a return leave the box and its pair where they were",
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
   });
   await settled();
+  styleless();
   expect(
     asked.posted.map((post) => post.url.includes("/projects/atlas/")),
   ).toStrictEqual([true, true]);
@@ -1148,6 +1144,7 @@ test("a click away to another screen and back keeps the box and its pair", async
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
   });
   await settled();
+  styleless();
   expect(screen.getByText(/^Failed · /u)).toBeDefined();
   await away();
   expect(
@@ -1158,6 +1155,7 @@ test("a click away to another screen and back keeps the box and its pair", async
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
   });
   await settled();
+  styleless();
   expect(asked.posted.length).toBe(2);
   expect(
     asked.posted[1]?.session,
@@ -1187,6 +1185,7 @@ test("a visit to a project with no lead keeps the box of the one that has it", a
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
   });
   await settled();
+  styleless();
   await moveTo(absent);
   expect(screen.getByRole("heading", { name: "No lead" })).toBeDefined();
   await moveTo(leadPartition);
@@ -1198,6 +1197,7 @@ test("a visit to a project with no lead keeps the box of the one that has it", a
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
   });
   await settled();
+  styleless();
   expect(
     asked.posted[1]?.session,
     "a visit to a leadless project forked another door twice",
