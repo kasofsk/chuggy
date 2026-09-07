@@ -16,7 +16,9 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { ReactNode } from "react";
 
+import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { Conversation } from "../app/browser/conversation/Conversation.tsx";
 import type {
   ConversationComposerProps,
@@ -25,6 +27,18 @@ import type {
 import type { ConversationExchange } from "../app/core/conversation.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
+
+// jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
+const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
+
+vi.mock("@tanstack/react-router", () => ({
+  createLink: (component: unknown) => component,
+  Link: (props: { readonly children?: ReactNode }) => (
+    <a href="/">{props.children}</a>
+  ),
+  useParams: () => atlas,
+}));
+// jscpd:ignore-end
 
 function exchangeOf(
   exchange: Partial<ConversationExchange>,
@@ -118,6 +132,47 @@ test("a tool call opens on its arguments and its result", () => {
   fireEvent.click(call);
   expect(screen.getByText("bytes")).toBeDefined();
   expect(screen.getAllByText(/ThreadPage\.tsx/)).toHaveLength(2);
+  styleless();
+});
+
+function filedExchange(): ConversationExchange {
+  return exchangeOf({
+    answer: "opened the draft.",
+    work: [
+      {
+        step: "ToolCall",
+        id: "call-9",
+        name: "mcp__chuggy__create_draft",
+        input: { authoring: {} },
+        result: {
+          text: 'HTTP 201\n{"ticket":42,"version":1}',
+          isError: false,
+        },
+      },
+    ],
+  });
+}
+
+test("a ticket the work filed shows without opening the work disclosure, linked to a partition passed in", () => {
+  render(
+    <Conversation
+      exchanges={[filedExchange()]}
+      partition={atlas}
+      empty="No conversation"
+    />,
+  );
+  expect(screen.getByText(/Filed/)).toBeDefined();
+  expect(screen.getByRole("link", { name: "42" })).toBeDefined();
+  styleless();
+});
+
+test("the same ticket draws as plain text where no partition is passed", () => {
+  render(
+    <Conversation exchanges={[filedExchange()]} empty="No conversation" />,
+  );
+  expect(screen.getByText(/Filed/)).toBeDefined();
+  expect(screen.getByText(/42/)).toBeDefined();
+  expect(screen.queryByRole("link", { name: "42" })).toBeNull();
   styleless();
 });
 

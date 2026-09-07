@@ -176,6 +176,7 @@ function ThreadBody(props: {
             sessionConversationTurns(thread.turns),
           )}
           {...(thread.mine ? { composer } : {})}
+          partition={props.partition}
           empty="Nothing said"
         />
       </div>

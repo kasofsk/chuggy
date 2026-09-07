@@ -28,6 +28,7 @@ import type {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ConversationExchange } from "../../core/conversation.ts";
 import { ConversationComposer } from "./ConversationComposer.tsx";
 import type { ConversationComposerProps } from "./ConversationComposer.tsx";
@@ -63,9 +64,11 @@ function conversationStatus(exchange: ConversationExchange): MessageStatus {
 }
 
 /** One exchange as the two messages the library holds a turn as: the ask, and
- * the answer it is still waiting for or already has. */
+ * the answer it is still waiting for or already has. The partition rides
+ * along on both, undefined where the surface mounts with no router. */
 function conversationMessages(
   exchanges: readonly ConversationExchange[],
+  partition: PartitionIdentity | undefined,
 ): readonly ThreadMessageLike[] {
   return exchanges.flatMap((exchange): ThreadMessageLike[] => [
     {
@@ -77,7 +80,7 @@ function conversationMessages(
           text: exchange.ask?.ask === "Message" ? exchange.ask.text : "",
         },
       ],
-      metadata: { custom: { exchange, side: "Ask" } },
+      metadata: { custom: { exchange, side: "Ask", partition } },
     },
     {
       id: `${exchange.id}-answer`,
@@ -87,7 +90,7 @@ function conversationMessages(
           ? []
           : [{ type: "text", text: exchange.answer }],
       status: conversationStatus(exchange),
-      metadata: { custom: { exchange, side: "Answer" } },
+      metadata: { custom: { exchange, side: "Answer", partition } },
     },
   ]);
 }
@@ -106,6 +109,7 @@ interface ConversationHeld {
 function useConversationRuntime(props: {
   readonly exchanges: readonly ConversationExchange[];
   readonly composer: ConversationComposerProps | undefined;
+  readonly partition: PartitionIdentity | undefined;
 }): ConversationHeld {
   const [sending, setSending] = useState(false);
   const dispatchRef = useRef<(message: AppendMessage) => Promise<void>>(() =>
@@ -135,7 +139,7 @@ function useConversationRuntime(props: {
   };
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     queue,
-    messages: conversationMessages(props.exchanges),
+    messages: conversationMessages(props.exchanges, props.partition),
     isRunning: props.exchanges.some(
       (exchange) => exchange.standing.standing === "Running",
     ),
@@ -189,10 +193,14 @@ export function Conversation(props: {
   readonly composer?: ConversationComposerProps;
   readonly empty: string;
   readonly emptyTitle?: string;
+  /** Where a ticket the work names is linked to; absent draws its number as
+   * text, which is what keeps this surface mountable with no router. */
+  readonly partition?: PartitionIdentity;
 }): ReactNode {
   const held = useConversationRuntime({
     exchanges: props.exchanges,
     composer: props.composer,
+    partition: props.partition,
   });
   return (
     <AssistantRuntimeProvider runtime={held.runtime}>

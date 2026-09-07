@@ -16,6 +16,7 @@ import {
   artifactRoles,
   attemptEvidences,
   attemptStates,
+  chuggyTicketWriteTools,
   configurationProvenanceSources,
   configurationReadinesses,
   draftStates,
@@ -79,7 +80,10 @@ import { runTurnsPageLimitMax } from "../../src/interpreter/runEvidence.ts";
 import type { RunTotals } from "../../src/interpreter/runEvidence.ts";
 import { projectChangeKinds } from "../../src/contract/events.ts";
 import { inquiryObjectivesFixedChars } from "../../src/interpreter/inquiry.ts";
-import { leadObjectivesFixedChars } from "../../src/interpreter/leadTools.ts";
+import {
+  chuggyToolCapabilities,
+  leadObjectivesFixedChars,
+} from "../../src/interpreter/leadTools.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import { allAgenticRefusalEvents } from "../../src/interpreter/agenticRefusal.ts";
 import { allThreadStandings } from "../../src/interpreter/thread.ts";
@@ -422,6 +426,23 @@ test("the authoring rosters are exhaustive over the model unions", () => {
   assert.deepEqual(sorted(configurationProvenanceSources), keysOf(provenance));
   assert.deepEqual(sorted(configurationReadinesses), keysOf(readiness));
   assert.deepEqual(sorted(repositoryConfigurationFaults), keysOf(faults));
+});
+
+/**
+ * `leadTools.ts` names `create_draft` under `DraftOriginate` and the other
+ * four under `DraftAuthor`, the latter carrying `initialize_draft` as well —
+ * a read of the fence, not a write, so it is not among the wire's tools.
+ */
+test("the ticket-writing tools are DraftOriginate's then DraftAuthor's, less the read", () => {
+  assert.deepEqual(
+    [...chuggyTicketWriteTools],
+    [
+      ...chuggyToolCapabilities.DraftOriginate,
+      ...chuggyToolCapabilities.DraftAuthor.filter(
+        (tool) => tool !== "initialize_draft",
+      ),
+    ],
+  );
 });
 
 test("the stream carries every polled kind and the four polling omits", () => {

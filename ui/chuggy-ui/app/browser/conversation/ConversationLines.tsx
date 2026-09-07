@@ -3,14 +3,17 @@
  * record could not draw, and where the answer ended up.
  */
 
+import { Link } from "@tanstack/react-router";
 import { Fragment } from "react";
 import type { ReactNode } from "react";
 
+import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type {
   ConversationMarker,
   ConversationMeasures,
   ConversationStanding,
 } from "../../core/conversation.ts";
+import type { ConversationTicketTouch } from "../../core/conversationTickets.ts";
 import type { Figure as FigureValue } from "../../core/figures.ts";
 import {
   costAmountFigure,
@@ -126,6 +129,48 @@ export function ConversationMetaLine(props: {
         <Fragment key={at}>
           <span aria-hidden="true">·</span>
           <Figure figure={figure} />
+        </Fragment>
+      ))}
+    </p>
+  );
+}
+
+/** The number a linked ticket draws, or plain text where the surface holds no
+ * partition — which is what keeps it mountable with no router. */
+function ConversationTicketNumber(props: {
+  readonly ticket: number;
+  readonly partition: PartitionIdentity | undefined;
+}): ReactNode {
+  if (props.partition === undefined) return props.ticket;
+  return (
+    <Link
+      to="/$tenant/$project/tickets/$ticket"
+      params={{ ...props.partition, ticket: String(props.ticket) }}
+    >
+      {props.ticket}
+    </Link>
+  );
+}
+
+/** Which tickets the exchange's work touched and what was done to each, one
+ * quiet line beside the meta line rather than behind the work disclosure. */
+export function ConversationTicketsLine(props: {
+  readonly touches: readonly ConversationTicketTouch[];
+  readonly partition: PartitionIdentity | undefined;
+}): ReactNode {
+  if (props.touches.length === 0) return null;
+  return (
+    <p className="text-ink-3 flex flex-wrap items-baseline gap-2 text-xs">
+      {props.touches.map((touch, at) => (
+        <Fragment key={at}>
+          {at === 0 ? null : <span aria-hidden="true">·</span>}
+          <span>
+            {touch.action}{" "}
+            <ConversationTicketNumber
+              ticket={touch.ticket}
+              partition={props.partition}
+            />
+          </span>
         </Fragment>
       ))}
     </p>

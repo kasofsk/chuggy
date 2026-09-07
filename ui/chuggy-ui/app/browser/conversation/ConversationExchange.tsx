@@ -12,7 +12,9 @@ import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
 import type { TextMessagePartComponent } from "@assistant-ui/react";
 import type { ReactNode } from "react";
 
+import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ConversationExchange } from "../../core/conversation.ts";
+import { conversationExchangeTickets } from "../../core/conversationTickets.ts";
 import { threadTurnKindWord } from "../../core/threads.ts";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { Notice } from "../ui/Notice.tsx";
@@ -20,26 +22,35 @@ import { ConversationCard } from "./ConversationCard.tsx";
 import {
   ConversationMetaLine,
   ConversationSystemLine,
+  ConversationTicketsLine,
   conversationMarkerWords,
 } from "./ConversationLines.tsx";
 import { ConversationWorkCard } from "./ConversationWorkCard.tsx";
 
 import "./conversation.css";
 
-/** What one message carries of the exchange it is half of. */
+/** What one message carries of the exchange it is half of, and the partition
+ * a ticket it names is linked into — absent where the surface mounts with no
+ * router. */
 export interface ConversationCustom {
   readonly exchange: ConversationExchange;
   readonly side: "Ask" | "Answer";
+  readonly partition?: PartitionIdentity;
 }
 
-function conversationHeld(custom: unknown): ConversationExchange | undefined {
-  if (custom === null || typeof custom !== "object") return undefined;
-  return (custom as Partial<ConversationCustom>).exchange;
+function conversationCustom(custom: unknown): Partial<ConversationCustom> {
+  return custom === null || typeof custom !== "object" ? {} : custom;
 }
 
 function useConversationExchange(): ConversationExchange | undefined {
-  return useAuiState((state) =>
-    conversationHeld(state.message.metadata.custom),
+  return useAuiState(
+    (state) => conversationCustom(state.message.metadata.custom).exchange,
+  );
+}
+
+function useConversationPartition(): PartitionIdentity | undefined {
+  return useAuiState(
+    (state) => conversationCustom(state.message.metadata.custom).partition,
   );
 }
 
@@ -146,6 +157,7 @@ function ConversationMark(): ReactNode {
  * ended up. */
 export function ConversationAnswerMessage(): ReactNode {
   const exchange = useConversationExchange();
+  const partition = useConversationPartition();
   if (exchange === undefined) return null;
   const standing = exchange.standing;
   if (standing.standing === "Markers") return null;
@@ -166,6 +178,10 @@ export function ConversationAnswerMessage(): ReactNode {
         <ConversationMetaLine
           standing={standing}
           measures={exchange.measures}
+        />
+        <ConversationTicketsLine
+          touches={conversationExchangeTickets(exchange)}
+          partition={partition}
         />
       </div>
     </MessagePrimitive.Root>
