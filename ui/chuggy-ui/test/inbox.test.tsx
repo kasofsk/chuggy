@@ -141,6 +141,18 @@ test("an answered row stays until a Ticket frame moves it out of the section", a
   expect(screen.getByText("Inbox is clear")).toBeDefined();
 });
 
+test("an answer's button still opens the sentence it sends", async () => {
+  drawInbox(served);
+  await settled();
+  const button = screen.getByRole("button", { name: "resume" });
+  const trigger = button.closest('[tabindex="0"]');
+  if (trigger === null) throw new Error("no tooltip trigger around resume");
+  fireEvent.focus(trigger);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "rejoin the pipeline at the point this ticket was parked at",
+  );
+});
+
 /**
  * The inbox's fourth member on screen. A refused ticket keeps its phase and has
  * no open question behind it, so the row is drawn from the refusal alone and

@@ -317,16 +317,18 @@ function InboxActions(props: {
             reason: props.entry.held?.reason,
           })}
         >
-          <Button
-            variant="quiet"
-            size="sm"
-            disabled={inboxAnswerInFlight(props.step)}
-            onClick={() => {
-              props.onAnswer(action);
-            }}
-          >
-            {action.action.toLowerCase()}
-          </Button>
+          <span>
+            <Button
+              variant="quiet"
+              size="sm"
+              disabled={inboxAnswerInFlight(props.step)}
+              onClick={() => {
+                props.onAnswer(action);
+              }}
+            >
+              {action.action.toLowerCase()}
+            </Button>
+          </span>
         </Tooltip>
       ))}
     </>
