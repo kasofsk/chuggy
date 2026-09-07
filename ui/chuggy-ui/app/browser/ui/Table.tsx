@@ -17,7 +17,7 @@ export function Table(props: {
   readonly children: ReactNode;
 }): ReactNode {
   return (
-    <div className="table-scroll">
+    <div className="table-scroll max-w-full overflow-x-auto">
       <table className="tabular">
         {props.caption === undefined ? null : (
           <caption className="visually-hidden">{props.caption}</caption>

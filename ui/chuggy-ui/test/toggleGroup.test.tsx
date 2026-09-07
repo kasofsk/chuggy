@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { ToggleGroup } from "../app/browser/ui/ToggleGroup.tsx";
+import { styleless } from "./styleless.ts";
 
 afterEach(cleanup);
 
@@ -20,7 +21,12 @@ test("one item is checked, a press reaches onChange, and the chosen item does no
       onChange={onChange}
     />,
   );
-  expect(screen.getByRole("radiogroup", { name: "Theme" })).toBeDefined();
+  expect(
+    screen
+      .getByRole("radiogroup", { name: "Theme" })
+      .classList.contains("bg-surface-2"),
+  ).toBe(true);
+  styleless();
   const radios = screen.getAllByRole("radio");
   expect(radios).toHaveLength(3);
   expect(
@@ -29,6 +35,7 @@ test("one item is checked, a press reaches onChange, and the chosen item does no
 
   fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
   expect(onChange).toHaveBeenCalledWith("Dark");
+  styleless();
 
   onChange.mockClear();
   rerender(
@@ -48,5 +55,5 @@ test("one item is checked, a press reaches onChange, and the chosen item does no
   /** Radix's roving focus sets `outline: none` on the root through the CSSOM,
    * which the policy admits; no item this primitive draws carries a style. */
   expect(container.querySelectorAll("button[style]")).toHaveLength(0);
-  expect(document.querySelectorAll("style")).toHaveLength(0);
+  styleless();
 });

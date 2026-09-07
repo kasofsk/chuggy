@@ -17,6 +17,7 @@ import {
   buttonSizes,
   buttonVariants,
 } from "../app/browser/ui/Button.tsx";
+import { styleless } from "./styleless.ts";
 
 interface LinkStub {
   readonly className?: string;
@@ -40,6 +41,8 @@ test("every variant and size draws its own class", () => {
       const drawn = screen.getByRole("button");
       expect(drawn.classList.contains(`btn-${variant}`)).toBe(true);
       expect(drawn.classList.contains("btn-sm")).toBe(size === "sm");
+      expect(drawn.classList.contains("rounded-3")).toBe(true);
+      styleless();
       cleanup();
     }
 });
@@ -68,6 +71,7 @@ test("a press reaches the caller, and a disabled button does not", () => {
   );
   fireEvent.click(screen.getByRole("button"));
   expect(presses).toBe(1);
+  styleless();
 });
 
 test("pressed and busy are attributes, and the default type is not submit", () => {
@@ -81,6 +85,7 @@ test("pressed and busy are attributes, and the default type is not submit", () =
   expect(drawn.getAttribute("aria-busy")).toBe("true");
   expect(drawn.getAttribute("type")).toBe("button");
   expect(view.container.querySelector("[style]")).toBeNull();
+  styleless();
 });
 
 test("a link is drawn with the button's own look, and no style attribute", () => {
@@ -90,4 +95,5 @@ test("a link is drawn with the button's own look, and no style attribute", () =>
   expect(drawn?.classList.contains("btn")).toBe(true);
   expect(drawn?.classList.contains("btn-default")).toBe(true);
   expect(view.container.querySelector("[style]")).toBeNull();
+  styleless();
 });

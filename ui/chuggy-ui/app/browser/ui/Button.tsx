@@ -33,10 +33,18 @@ interface ButtonLook {
   readonly size?: ButtonSize | undefined;
 }
 
+const buttonPillClassName =
+  "btn inline-flex items-center gap-2 rounded-3 font-prose font-medium" +
+  " leading-dense whitespace-nowrap no-underline";
+
+const buttonSizeClassNames: Record<ButtonSize, string> = {
+  md: "px-4 py-2 text-md",
+  sm: "btn-sm px-3 py-1 text-sm",
+};
+
 export function buttonLookClassName(look: ButtonLook): string {
   const variant = look.variant ?? "default";
-  const size = look.size ?? "md";
-  return `btn btn-${variant}${size === "sm" ? " btn-sm" : ""}`;
+  return `${buttonPillClassName} btn-${variant} ${buttonSizeClassNames[look.size ?? "md"]}`;
 }
 
 export function Button(

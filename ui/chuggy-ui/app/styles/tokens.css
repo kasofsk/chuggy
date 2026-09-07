@@ -48,7 +48,6 @@
     --tone-parked: light-dark(#7f5200, #e0b24e);
     --tone-queued: var(--ink-3);
     --tone-retired: var(--ink-3);
-    --tone-danger: var(--tone-fail);
     --tone-on-danger: light-dark(#ffffff, #0e1210);
 
     /* washes — a tone at background strength, for notices and meter cells */
@@ -113,12 +112,12 @@
     --space-7: 3rem;
 
     /* shape and lines */
-    --radius-1: 2px; /* pills, meter cells */
-    --radius-2: 4px; /* buttons, panels, inputs */
+    --radius-1: 2px; /* meter cells, the focus ring */
+    --radius-2: 4px; /* inputs, the identity block, quoted text */
     --radius-3: 1.125rem; /* bubbles, work cards, the composer */
     --radius-circle: 50%; /* a square drawn round: a dot, a mark, a monogram */
     --hairline: 1px;
-    --rail: 2px; /* the standing rail of a ledger group and a notice */
+    --rail: 2px; /* the standing rail of a ledger group and quoted text */
 
     /* rings */
     --ring-focus: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--focus);

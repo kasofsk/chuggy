@@ -9,6 +9,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { Tooltip } from "../app/browser/ui/Tooltip.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { styleless } from "./styleless.ts";
 
 beforeEach(resizeObserverStubbed);
 
@@ -25,10 +26,11 @@ test("the child is the trigger, focusable, and the text appears on focus", async
   );
   const trigger = screen.getByText("short");
   expect(trigger.getAttribute("tabindex")).toBe("0");
+  styleless();
   fireEvent.focus(trigger);
   const content = await screen.findByRole("tooltip");
   expect(content.textContent).toBe("the full reason");
-  expect(document.querySelectorAll("style")).toHaveLength(0);
+  styleless();
   expect(container.querySelector("[style]")).toBeNull();
 });
 
@@ -41,4 +43,5 @@ test("absent text draws the child alone", () => {
   const drawn = screen.getByText("plain");
   expect(drawn.hasAttribute("tabindex")).toBe(false);
   expect(screen.queryByRole("tooltip")).toBeNull();
+  styleless();
 });

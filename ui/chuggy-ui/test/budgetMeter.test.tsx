@@ -19,8 +19,12 @@ import {
   meterStateOf,
   meterStates,
 } from "../app/browser/ui/BudgetMeter.tsx";
+import { styleless } from "./styleless.ts";
 
-afterEach(cleanup);
+afterEach(() => {
+  styleless();
+  cleanup();
+});
 
 function budgeted(spent: number, max: number, machine = false): Account {
   return {

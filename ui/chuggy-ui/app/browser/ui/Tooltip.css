@@ -1,12 +1,13 @@
-/* Tooltip: inverse surface, small text, bounded by the measure. */
+/* Tooltip: a level with a hairline, bounded by the measure. */
 
 @layer ui {
   .tooltip {
     max-width: var(--measure);
-    padding: var(--space-1) var(--space-2);
-    border-radius: var(--radius-1);
-    background: var(--surface-inverse);
-    color: var(--ink-inverse);
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-3);
+    background: var(--surface-1);
+    color: var(--ink-2);
+    border: var(--hairline) solid var(--edge);
     font-size: var(--text-sm);
     line-height: var(--leading-dense);
   }
