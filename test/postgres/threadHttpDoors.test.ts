@@ -1,5 +1,5 @@
 /**
- * The five thread routes over a real database, through the ports the ROOT
+ * The thread routes over a real database, through the ports the ROOT
  * composes: the API's own role, 062's definers, and the HTTP boundary above
  * them.
  *
