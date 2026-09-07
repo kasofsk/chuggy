@@ -457,13 +457,8 @@ export function postgresThreadSeeding(pool: pg.Pool): ThreadSeedingRead {
   };
 }
 
-/**
- * The wake pass's three doors, answering the ports
- * `src/interpreter/threadWake.ts` declares. The candidate join is the
- * definer's, because it is a bounded read over four relations and a pass that
- * pulled the change rows out and joined them itself would be a second copy of a
- * query the database answers.
- */
+/** The wake pass's three doors, answering the ports
+ * `src/interpreter/threadWake.ts` declares. */
 function threadWokenRow(row: {
   readonly enqueued: string | null;
   readonly ordinal: string | null;

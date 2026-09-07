@@ -20,7 +20,7 @@ export const threadStandingRulesDefault = `- You act through the same commands y
 
 /**
  * The standing rules one project's threads run under: its own where it set
- * them, the installation's otherwise. It is the whole of the precedence, so a
+ * them, the default otherwise. It is the whole of the precedence, so a
  * system prompt, a seeding block and a wake document cannot read it three ways.
  */
 export function resolvedThreadStandingRules(override?: string): string {

@@ -3,11 +3,10 @@
  * state, what a first turn sheds to fit, and where the member's own message
  * begins.
  *
- * THE RULE WRITTEN TWICE IS THE POINT, so the identity of the two copies is
- * asserted rather than assumed: the system prompt and the wake document must
- * carry the same standing rules, because two drifting copies of a rule nothing
- * enforces is a rule nobody is bound by. That holds for a project's own rules
- * as much as for the ones it inherits, so both are driven.
+ * THE RULE IS WRITTEN TWICE, so what the two compositions do with one set of
+ * rules is asserted rather than assumed: given the same rules, the objectives
+ * and the wake document write the same text. That is driven for a project's own
+ * rules and for the default.
  */
 
 import assert from "node:assert/strict";
@@ -249,11 +248,9 @@ test("the objectives carry the project's own standing rules and not the default"
   assert.ok(!prompt.includes(threadStandingRulesDefault));
 });
 
-/**
- * The rule is enforceable nowhere, so the only thing that can be checked of it
- * is that the two places saying it say the same thing.
- */
-test("the wake document and the objectives carry one standing and not two", () => {
+/** The rule is enforceable nowhere, so what can be checked of it is that the
+ * two compositions write one set of rules the same way. */
+test("one set of rules composes the same into the objectives and the wake", () => {
   for (const standingRules of [undefined, projectStandingRules]) {
     const carried = parseThreadWake(
       threadWakeText(

@@ -517,7 +517,7 @@ export type SelectorProjectLimitOverrides = Partial<
 /** What a project sets for itself, each absent field inheriting the installation default. */
 export interface SelectorProjectOverrides {
   readonly northStar?: string;
-  /** The standing rules this project's threads act under, in place of the installation's. */
+  /** The standing rules this project's threads act under, in place of the default. */
   readonly threadStandingRules?: string;
   readonly mode?: SelectorRuntimeSettings["mode"];
   readonly dispatchMode?: SelectorRuntimeSettings["dispatchMode"];

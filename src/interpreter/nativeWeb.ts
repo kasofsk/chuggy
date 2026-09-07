@@ -1337,8 +1337,8 @@ function composedThreadPorts(ports?: NativeThreadPorts): NativeThreadPorts {
 /**
  * What the member's first turn carries, which is the seeding block and no later
  * turn's, or the ceiling it would not fit under. The overflow is a refusal
- * rather than a raise because it is the project's North Star that is too long
- * and not the member's request: a bare `InvalidRequest` would tell them their
+ * rather than a raise because it is the project's texts that are too long and
+ * not the member's request: a bare `InvalidRequest` would tell them their
  * message was malformed, which is the one thing it was not.
  */
 async function nativeThreadTurnInput(

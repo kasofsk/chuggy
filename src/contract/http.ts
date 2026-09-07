@@ -129,7 +129,7 @@ export const runOutcomeLabelCharsMax = 64;
 /** The longest model identity a usage row names. */
 export const runModelCharsMax = 128;
 
-/** The longest selector prompt or North Star the wire carries, which is what its column holds. */
+/** The longest settings text the wire carries, which is what its column holds. */
 export const selectorSettingsTextCharsMax = 65_536;
 
 /** The most names one selector allowlist carries. */

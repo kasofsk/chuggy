@@ -25,13 +25,9 @@
  *
  * THE STANDING RULES ARE PROSE AND NOT A CONTROL. What a thread may do on a
  * wake is nothing a roster can enforce, because the same tools are held on a
- * message turn, so a project's standing rules are written the only two ways
- * prose can be: the system prompt states them, which is what a resumed session
- * already holds, and the wake document restates them, which is what the turn
- * that could break them carries. What IS a control is that everything a thread
- * does is an operation row naming its author and the session it came through,
- * so a thread that originated work on a wake is visible in the record
- * afterwards.
+ * message turn. What IS a control is that everything a thread does is an
+ * operation row naming its author and the session it came through, so a thread
+ * that originated work on a wake is visible in the record afterwards.
  */
 
 import {
