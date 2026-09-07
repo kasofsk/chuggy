@@ -17,16 +17,19 @@ import {
 } from "../../core/selectorSettingsForm.ts";
 import type {
   SelectorSettingsDraft,
+  SelectorSettingsSaved,
   SelectorSettingsStripCell,
 } from "../../core/selectorSettingsForm.ts";
 import type { SelectorProjectOverrides } from "../../core/selectorSettingsForm.ts";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import { SelectorSettingsSavedNotice } from "./SelectorSection.tsx";
 
 import "./selector.css";
 
 function SelectorStripCell(props: {
   readonly cell: SelectorSettingsStripCell;
+  readonly editable: boolean;
   readonly busy: boolean;
   readonly onPress: (overrides: SelectorProjectOverrides) => void;
 }): ReactNode {
@@ -49,7 +52,7 @@ function SelectorStripCell(props: {
       <Button
         size="sm"
         busy={props.busy}
-        disabled={overrides === undefined || props.busy}
+        disabled={overrides === undefined || props.busy || !props.editable}
         onClick={() => {
           if (overrides !== undefined) props.onPress(overrides);
         }}
@@ -63,21 +66,32 @@ function SelectorStripCell(props: {
 export function SelectorStrip(props: {
   readonly draft: SelectorSettingsDraft;
   readonly settings: SelectorProjectSettingsResponse;
+  readonly editable: boolean;
   readonly busy: boolean;
+  readonly saved: SelectorSettingsSaved;
   readonly onPress: (overrides: SelectorProjectOverrides) => void;
 }): ReactNode {
   return (
-    <div className="selector-strip">
-      <SelectorStripCell
-        cell={selectorSettingsModeCell(props.draft, props.settings)}
-        busy={props.busy}
-        onPress={props.onPress}
-      />
-      <SelectorStripCell
-        cell={selectorSettingsDispatchCell(props.draft, props.settings)}
-        busy={props.busy}
-        onPress={props.onPress}
-      />
-    </div>
+    <>
+      <div className="selector-strip">
+        <SelectorStripCell
+          cell={selectorSettingsModeCell(props.draft, props.settings)}
+          editable={props.editable}
+          busy={props.busy}
+          onPress={props.onPress}
+        />
+        <SelectorStripCell
+          cell={selectorSettingsDispatchCell(props.draft, props.settings)}
+          editable={props.editable}
+          busy={props.busy}
+          onPress={props.onPress}
+        />
+      </div>
+      {props.saved.saved === "Idle" ? null : (
+        <div className="flex items-center gap-2">
+          <SelectorSettingsSavedNotice saved={props.saved} />
+        </div>
+      )}
+    </>
   );
 }

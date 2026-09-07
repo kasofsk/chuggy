@@ -58,7 +58,8 @@ export const selectorSettingsHistoryResource = "selector-settings-history";
 
 /** Which part of the page the last write belongs to, so its answer is drawn
  * where it was asked for and nowhere else. */
-type SelectorSettingsWriter = SelectorSettingsSectionName | "strip";
+type SelectorSettingsWriter =
+  SelectorSettingsSectionName | "strip" | "revisions";
 
 interface SelectorSettingsHeld {
   readonly draft: SelectorSettingsDraft;
@@ -185,12 +186,10 @@ interface SelectorSettingsSectionChrome {
 }
 
 function selectorSettingsSaved(
-  chrome: SelectorSettingsSectionChrome,
+  writing: SelectorSettingsWriting,
   writer: SelectorSettingsWriter,
 ): SelectorSettingsSaved {
-  return chrome.writing.writer === writer
-    ? chrome.writing.saved
-    : { saved: "Idle" };
+  return writing.writer === writer ? writing.saved : { saved: "Idle" };
 }
 
 function SelectorSettingsSections(props: {
@@ -212,7 +211,7 @@ function SelectorSettingsSections(props: {
           editing={editing === name}
           editable={editing === undefined}
           savable={savable}
-          saved={selectorSettingsSaved(chrome, name)}
+          saved={selectorSettingsSaved(chrome.writing, name)}
           onChange={chrome.onChange}
           onEdit={() => {
             chrome.onOpen(name);
@@ -236,7 +235,7 @@ function SelectorSettingsSections(props: {
         editing={editing === "limits"}
         editable={editing === undefined}
         savable={savable}
-        saved={selectorSettingsSaved(chrome, "limits")}
+        saved={selectorSettingsSaved(chrome.writing, "limits")}
         onChange={chrome.onChange}
         onEdit={() => {
           chrome.onOpen("limits");
@@ -286,7 +285,9 @@ function SelectorSettingsForm(props: {
       <SelectorStrip
         draft={held.draft}
         settings={props.settings}
+        editable={editing === undefined}
         busy={writing.saved.saved === "Writing"}
+        saved={selectorSettingsSaved(writing, "strip")}
         onPress={(overrides) => {
           writing.write("strip", overrides, () => undefined);
         }}
@@ -295,8 +296,9 @@ function SelectorSettingsForm(props: {
       <SelectorSettingsHistory
         partition={props.partition}
         busy={writing.saved.saved === "Writing"}
+        saved={selectorSettingsSaved(writing, "revisions")}
         onRestore={(overrides) => {
-          writing.write("strip", overrides, () => undefined);
+          writing.write("revisions", overrides, () => undefined);
         }}
       />
     </>
@@ -306,6 +308,7 @@ function SelectorSettingsForm(props: {
 function SelectorSettingsHistory(props: {
   readonly partition: PartitionIdentity;
   readonly busy: boolean;
+  readonly saved: SelectorSettingsSaved;
   readonly onRestore: (overrides: SelectorProjectOverrides) => void;
 }): ReactNode {
   const partition = props.partition;
@@ -321,6 +324,7 @@ function SelectorSettingsHistory(props: {
       state={state}
       nowMs={nowMs}
       busy={props.busy}
+      saved={props.saved}
       onRestore={props.onRestore}
     />
   );

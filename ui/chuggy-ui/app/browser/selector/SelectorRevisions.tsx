@@ -20,12 +20,16 @@ import type {
   SelectorSettingsFieldChange,
   SelectorSettingsRevisionDiff,
 } from "../../core/selectorSettingsHistory.ts";
-import type { SelectorProjectOverrides } from "../../core/selectorSettingsForm.ts";
+import type {
+  SelectorProjectOverrides,
+  SelectorSettingsSaved,
+} from "../../core/selectorSettingsForm.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Button, buttonLookClassName } from "../ui/Button.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Panel } from "../ui/Panel.tsx";
+import { SelectorSettingsSavedNotice } from "./SelectorSection.tsx";
 
 import "./selector.css";
 
@@ -165,6 +169,7 @@ export function SelectorRevisions(props: {
   readonly state: PanelState<SelectorSettingsHistoryResponse>;
   readonly nowMs: number;
   readonly busy: boolean;
+  readonly saved: SelectorSettingsSaved;
   readonly onRestore: (overrides: SelectorProjectOverrides) => void;
 }): ReactNode {
   const state = props.state;
@@ -173,6 +178,11 @@ export function SelectorRevisions(props: {
       variant="section"
       title="Revisions"
       about="Every save, newest first."
+      foot={
+        props.saved.saved === "Idle" ? undefined : (
+          <SelectorSettingsSavedNotice saved={props.saved} />
+        )
+      }
     >
       <PanelUnready state={state} />
       {state.state === "Ready" ? (
