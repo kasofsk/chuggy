@@ -1114,8 +1114,9 @@ export function closeThreadResponse(result: ThreadClosing): NativeHttpResponse {
 }
 
 /**
- * Renaming and hiding are idempotent and answer the entry as it now stands,
- * exactly as closing does: a caller is given the thread they wrote rather than
+ * Renaming is the owner's alone, so a caller pressing another member's thread
+ * meets the same refusal the message door answers a stale mailbox with.
+ * Idempotent otherwise: a caller is given the thread they wrote rather than
  * sent to read it again.
  */
 export function renameThreadResponse(
@@ -1123,6 +1124,14 @@ export function renameThreadResponse(
 ): NativeHttpResponse {
   if (result.result === "NotFound")
     return response(404, nativeHttpError("NotFound", "Resource not found."));
+  if (result.result === "NotYourThread")
+    return response(
+      403,
+      nativeHttpError(
+        threadMessageRefusalCode.NotYourThread,
+        "The thread is not yours to rename.",
+      ),
+    );
   return response(200, result.thread);
 }
 

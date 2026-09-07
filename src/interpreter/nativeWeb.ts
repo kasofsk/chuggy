@@ -1479,9 +1479,8 @@ function nativeCloseThreadMethod(
 }
 
 /**
- * Renaming is gated like the close door: any member who may mutate the
- * project may rename any thread it holds. Hiding is the owner's alone,
- * resolved against the caller's own mailbox as the message door resolves it.
+ * Renaming and hiding are each the owner's alone, resolved against the
+ * caller's own mailbox as the message door resolves it.
  */
 function nativeThreadViewMethods(
   access: ProjectAccess,
@@ -1493,7 +1492,16 @@ function nativeThreadViewMethods(
         (await access.authorize(principal, partition, "Mutate")) === undefined
       )
         return { result: "NotFound" };
-      const renamed = await composedThreadPorts(threads).threads.rename({
+      const ports = composedThreadPorts(threads);
+      const mine = await ports.threads.standing({
+        partition,
+        session: input.session,
+        query: { limit: 1 },
+      });
+      if (mine === undefined) return { result: "NotFound" };
+      if (mine.thread.principal !== principal)
+        return { result: "NotYourThread" };
+      const renamed = await ports.threads.rename({
         partition,
         session: input.session,
         title: input.title,

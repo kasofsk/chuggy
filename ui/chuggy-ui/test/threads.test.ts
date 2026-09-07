@@ -17,10 +17,13 @@ import {
 } from "../../../src/contract/rosters.ts";
 import type { ThreadTurnResponse } from "../../../src/contract/responses.ts";
 import {
+  threadAnswering,
   threadHeldTurn,
   threadMine,
+  threadPageRows,
   threadRefusalCode,
   threadRefusalWord,
+  threadRowActions,
   threadSendFrom,
   threadTakesMessages,
   threadTurnKindWord,
@@ -60,6 +63,50 @@ describe("where a thread stands", () => {
   test("Orphaned is drawn in the hue that asks for attention, not the live one", () => {
     expect(threadStandingTone("Orphaned")).toBe("parked");
     expect(threadStandingTone("Open")).toBe("live");
+  });
+});
+
+describe("the actions one row's menu offers", () => {
+  test("the reader's own open thread offers Rename, Close and Hide", () => {
+    expect(
+      threadRowActions(threadEntry({ session: "s", mine: true })),
+    ).toStrictEqual(["Rename", "Close", "Hide"]);
+  });
+
+  test("the reader's own closed thread offers Rename and Hide, not Close", () => {
+    expect(
+      threadRowActions(
+        threadEntry({ session: "s", mine: true, state: "Closed" }),
+      ),
+    ).toStrictEqual(["Rename", "Hide"]);
+  });
+
+  test("the reader's own hidden thread offers Show in Hide's place", () => {
+    expect(
+      threadRowActions(threadEntry({ session: "s", mine: true, hidden: true })),
+    ).toStrictEqual(["Rename", "Close", "Show"]);
+  });
+
+  test("a stranger's open thread offers Close alone", () => {
+    expect(
+      threadRowActions(threadEntry({ session: "s", mine: false })),
+    ).toStrictEqual(["Close"]);
+  });
+
+  test("a stranger's closed thread offers nothing — no trigger is drawn", () => {
+    expect(
+      threadRowActions(
+        threadEntry({ session: "s", mine: false, state: "Closed" }),
+      ),
+    ).toStrictEqual([]);
+  });
+
+  test("a stranger's hidden thread still offers Close alone — Show is the owner's", () => {
+    expect(
+      threadRowActions(
+        threadEntry({ session: "s", mine: false, hidden: true }),
+      ),
+    ).toStrictEqual(["Close"]);
   });
 });
 
@@ -310,5 +357,73 @@ describe("the door's own vocabulary", () => {
     const turn = turnOf({ turn: "thread-turn-a", ordinal: 7 });
     expect(threadHeldTurn({ turns: [turn] }, "thread-turn-a")?.ordinal).toBe(7);
     expect(threadHeldTurn({ turns: [turn] }, "thread-turn-b")).toBeUndefined();
+  });
+});
+
+describe("whether a thread is still answering", () => {
+  test("a queued or a claimed turn is answering, and a settled one is not", () => {
+    expect(threadAnswering({ turns: [turnOf({ state: "Queued" })] })).toBe(
+      true,
+    );
+    expect(threadAnswering({ turns: [turnOf({ state: "Claimed" })] })).toBe(
+      true,
+    );
+    expect(threadAnswering({ turns: [turnOf({ state: "Answered" })] })).toBe(
+      false,
+    );
+    expect(threadAnswering({ turns: [] })).toBe(false);
+  });
+});
+
+describe("the Threads page's own rows", () => {
+  const mineOpen = threadEntry({ session: "thread-mine-open", mine: true });
+  const mineClosed = threadEntry({
+    session: "thread-mine-closed",
+    mine: true,
+    state: "Closed",
+  });
+  const mineHidden = threadEntry({
+    session: "thread-mine-hidden",
+    mine: true,
+    hidden: true,
+  });
+  const otherOpen = threadEntry({ session: "thread-other-open" });
+  const otherHidden = threadEntry({
+    session: "thread-other-hidden",
+    hidden: true,
+  });
+  const all = [mineOpen, mineClosed, mineHidden, otherOpen, otherHidden];
+
+  test("Mine and Open narrows to the reader's own open threads", () => {
+    expect(threadPageRows(all, "Mine", "Open").map((t) => t.session)).toEqual([
+      "thread-mine-open",
+    ]);
+  });
+
+  test("Everyone and Open drops the hidden and the closed", () => {
+    expect(
+      threadPageRows(all, "Everyone", "Open").map((t) => t.session),
+    ).toEqual(["thread-mine-open", "thread-other-open"]);
+  });
+
+  test("Closed narrows to closed threads that are not hidden", () => {
+    expect(
+      threadPageRows(all, "Everyone", "Closed").map((t) => t.session),
+    ).toEqual(["thread-mine-closed"]);
+  });
+
+  /** Hidden forces Mine whatever the owner chip reads: a stranger's archived
+   * thread is not this reader's to restore. */
+  test("Hidden shows only the reader's own hidden threads, Everyone or not", () => {
+    expect(
+      threadPageRows(all, "Everyone", "Hidden").map((t) => t.session),
+    ).toEqual(["thread-mine-hidden"]);
+    expect(threadPageRows(all, "Mine", "Hidden").map((t) => t.session)).toEqual(
+      ["thread-mine-hidden"],
+    );
+  });
+
+  test("rows still put the reader's own first", () => {
+    expect(threadPageRows(all, "Everyone", "Open")[0]?.mine).toBe(true);
   });
 });

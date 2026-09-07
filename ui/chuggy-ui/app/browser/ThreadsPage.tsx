@@ -1,25 +1,13 @@
 /**
- * The project's member threads: whose each is, where it stands, and which one
- * is the reader's own.
+ * The full list of the project's threads: filtered by owner and standing,
+ * each row offering the same rename, close and hide the rail offers its own.
  *
- * WHICH ONE IS MINE IS THE SERVER'S ANSWER. Nothing in this browser knows who
- * is signed in, so the listing's `mine` is what puts the reader's own thread at
- * the top and what decides whether this page offers to open one. A console that
- * worked it out from a token would be a second account of an identity it cannot
- * see.
- *
- * EVERY `Session` FRAME STALES THIS LIST. The frame is a pointer and carries no
- * body, so there is nothing to fold; and unlike a thread page, which watches one
- * session, a listing over every thread in the project is changed by any of them
- * — a turn landing, a session closing — so the kind is the whole of the filter.
- *
- * EVERY ROW THAT IS NOT CLOSED OFFERS A CLOSE, whoever's thread it is: the
- * door is the project's `Mutate`, and the row that most needs it is the
- * orphaned one, still acting for a member who is gone.
- *
- * A ROW IS ITS TITLE WHERE THE READ DERIVED ONE, and its session otherwise: a
- * thread nobody has written in has nothing to be named after, and its identity
- * is the only handle a reader has on it.
+ * THE `Open` CONTROL IS OFFERED FROM THE LISTING'S OWN `mine` AND NOTHING ELSE.
+ * A page that worked out whose thread was whose in the browser would offer a
+ * second thread to a member who has one, and the route — which is idempotent —
+ * would answer with the thread they already had while the page said it had
+ * opened one. So both arms are cases: offered where the listing carries no
+ * thread of theirs, and absent where it does.
  */
 
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
@@ -32,61 +20,85 @@ import type {
   ThreadsResponse,
 } from "../../../../src/contract/responses.ts";
 import { apiOpenThread, apiThreads } from "../core/apiRoutes.ts";
+import { instantFigure } from "../core/figures.ts";
 import { panelReason } from "../core/freshness.ts";
 import { projectListReread } from "../core/projectQueryKeys.ts";
 import {
-  threadClosable,
-  threadMine,
-  threadsMineFirst,
+  threadOwnerFilters,
+  threadPageRows,
+  threadStandingFilters,
+} from "../core/threads.ts";
+import type {
+  ThreadOwnerFilter,
+  ThreadStandingFilter,
 } from "../core/threads.ts";
 import { threadStandingTone } from "../core/tones.ts";
 import { useApiPorts, usePanelList } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
+import { useNowMs } from "./Freshness.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
-import { ThreadClose } from "./thread/ThreadClose.tsx";
+import {
+  ThreadEntryMenu,
+  ThreadEntryRename,
+  useThreadEntryActions,
+} from "./thread/ThreadEntryLabel.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
+import { Figure } from "./ui/Figure.tsx";
 import { Identity } from "./ui/Identity.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
+import { ToggleGroup } from "./ui/ToggleGroup.tsx";
 
 export const threadsListName = "threads";
 
 function ThreadRow(props: {
   readonly partition: PartitionIdentity;
   readonly thread: ThreadEntryResponse;
+  readonly nowMs: number;
 }): ReactNode {
   const thread = props.thread;
+  const actions = useThreadEntryActions(props.partition, thread);
   return (
-    <tr>
+    <tr className="group">
       <td>
-        <Link
-          to="/$tenant/$project/threads/$session"
-          params={{ ...props.partition, session: thread.session }}
-        >
-          {thread.title ?? (
-            <Identity label={{ text: thread.session, title: thread.session }} />
-          )}
-        </Link>
+        {actions.renaming ? (
+          <ThreadEntryRename initial={thread.title ?? ""} actions={actions} />
+        ) : (
+          <Link
+            to="/$tenant/$project/threads/$session"
+            params={{ ...props.partition, session: thread.session }}
+          >
+            {thread.title ?? (
+              <Identity
+                label={{ text: thread.session, title: thread.session }}
+              />
+            )}
+          </Link>
+        )}
       </td>
-      <td>{thread.mine ? <Pill tone="live">Mine</Pill> : null}</td>
       <td className={thread.owner === undefined ? "text-ink-3" : undefined}>
         {thread.owner ?? "None"}
       </td>
       <td>
         <Pill tone={threadStandingTone(thread.state)}>{thread.state}</Pill>
       </td>
+      <td>
+        <Figure figure={instantFigure(thread.lastActivityAt, props.nowMs)} />
+      </td>
       <td className="num">{thread.turns}</td>
       <td>
-        {threadClosable(thread) ? (
-          <ThreadClose
-            partition={props.partition}
-            session={thread.session}
-            variant="quiet"
-            size="sm"
-          />
-        ) : null}
+        <div className="flex flex-col items-end gap-1">
+          <ThreadEntryMenu actions={actions} />
+          {actions.refused === undefined ? null : (
+            <Notice
+              tone="danger"
+              inline
+              detail={`Refused · ${actions.refused}`}
+            />
+          )}
+        </div>
       </td>
     </tr>
   );
@@ -97,14 +109,14 @@ function ThreadRow(props: {
  * rather than a second thread. */
 function ThreadOpen(props: {
   readonly partition: PartitionIdentity;
-  readonly threads: readonly ThreadEntryResponse[];
+  readonly offered: boolean;
 }): ReactNode {
   const ports = useApiPorts();
   const navigate = useNavigate();
   const partition = props.partition;
   const [opening, setOpening] = useState(false);
   const [refused, setRefused] = useState<string | undefined>(undefined);
-  if (threadMine(props.threads) !== undefined) return null;
+  if (!props.offered) return null;
   return (
     <div className="flex flex-wrap items-center gap-3 pb-3">
       <Button
@@ -137,31 +149,67 @@ function ThreadOpen(props: {
 
 function ThreadTable(props: {
   readonly partition: PartitionIdentity;
-  readonly threads: readonly ThreadEntryResponse[];
+  readonly rows: readonly ThreadEntryResponse[];
+  readonly nowMs: number;
 }): ReactNode {
-  if (props.threads.length === 0) return <EmptyState label="No threads" />;
+  if (props.rows.length === 0) return <EmptyState label="No threads" />;
   return (
     <Table caption="Threads">
       <thead>
         <tr>
           <th scope="col">Thread</th>
-          <th scope="col">Mine</th>
           <th scope="col">Owner</th>
           <th scope="col">Standing</th>
+          <th scope="col">Last activity</th>
           <th scope="col">Turns</th>
-          <th scope="col">Close</th>
+          <th scope="col">Menu</th>
         </tr>
       </thead>
       <tbody>
-        {threadsMineFirst(props.threads).map((thread) => (
+        {props.rows.map((thread) => (
           <ThreadRow
             key={thread.session}
             partition={props.partition}
             thread={thread}
+            nowMs={props.nowMs}
           />
         ))}
       </tbody>
     </Table>
+  );
+}
+
+function ThreadFilters(props: {
+  readonly owner: ThreadOwnerFilter;
+  readonly onOwner: (owner: ThreadOwnerFilter) => void;
+  readonly standing: ThreadStandingFilter;
+  readonly onStanding: (standing: ThreadStandingFilter) => void;
+}): ReactNode {
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <ToggleGroup
+        label="Owner"
+        options={threadOwnerFilters}
+        value={props.owner}
+        onChange={(value) => {
+          const owner = threadOwnerFilters.find(
+            (candidate) => candidate === value,
+          );
+          if (owner !== undefined) props.onOwner(owner);
+        }}
+      />
+      <ToggleGroup
+        label="Standing"
+        options={threadStandingFilters}
+        value={props.standing}
+        onChange={(value) => {
+          const standing = threadStandingFilters.find(
+            (candidate) => candidate === value,
+          );
+          if (standing !== undefined) props.onStanding(standing);
+        }}
+      />
+    </div>
   );
 }
 
@@ -175,6 +223,9 @@ export function ThreadsPage(): ReactNode {
     projectListReread<ThreadsResponse>(partition, "Session", threadsListName),
     (ports) => apiThreads(ports, partition),
   );
+  const nowMs = useNowMs();
+  const [owner, setOwner] = useState<ThreadOwnerFilter>("Mine");
+  const [standing, setStanding] = useState<ThreadStandingFilter>("Open");
   return (
     <div className="grid min-w-0 gap-4">
       <TopBarSlot>
@@ -183,8 +234,25 @@ export function ThreadsPage(): ReactNode {
       <PanelUnready state={state} />
       {state.state === "Ready" ? (
         <>
-          <ThreadOpen partition={partition} threads={state.value.threads} />
-          <ThreadTable partition={partition} threads={state.value.threads} />
+          <ThreadOpen
+            partition={partition}
+            offered={
+              !state.value.threads.some(
+                (thread) => thread.mine && thread.state !== "Closed",
+              )
+            }
+          />
+          <ThreadFilters
+            owner={owner}
+            onOwner={setOwner}
+            standing={standing}
+            onStanding={setStanding}
+          />
+          <ThreadTable
+            partition={partition}
+            rows={threadPageRows(state.value.threads, owner, standing)}
+            nowMs={nowMs}
+          />
         </>
       ) : null}
     </div>
