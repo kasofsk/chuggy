@@ -23,7 +23,7 @@ import {
   apiRenameThread,
 } from "../../core/apiRoutes.ts";
 import { panelReason } from "../../core/freshness.ts";
-import { threadClosable, threadLabel } from "../../core/threads.ts";
+import { threadLabel, threadRowActions } from "../../core/threads.ts";
 import { useApiPorts } from "../api.ts";
 import { Notice } from "../ui/Notice.tsx";
 import "./thread.css";
@@ -40,6 +40,9 @@ export interface ThreadEntryActions {
   /** Hiding or showing is owner-scoped the same way. */
   readonly hideable: boolean;
   readonly hidden: boolean;
+  /** Whether the row offers any action at all — a stranger's closed row
+   * offers none, and draws no `…` trigger. */
+  readonly actionable: boolean;
   readonly startRename: () => void;
   readonly submitRename: (title: string) => void;
   readonly cancelRename: () => void;
@@ -57,15 +60,17 @@ export function useThreadEntryActions(
   const [renaming, setRenaming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string | undefined>(undefined);
+  const rowActions = threadRowActions(thread);
 
   return {
     renaming,
     busy,
     refused,
-    closable: threadClosable(thread),
-    renameable: thread.mine,
-    hideable: thread.mine,
+    closable: rowActions.includes("Close"),
+    renameable: rowActions.includes("Rename"),
+    hideable: rowActions.includes("Hide") || rowActions.includes("Show"),
     hidden: thread.hidden,
+    actionable: rowActions.length > 0,
     startRename: () => {
       setRenaming(true);
     },
@@ -140,6 +145,7 @@ export function ThreadEntryMenu(props: {
   readonly actions: ThreadEntryActions;
 }): ReactNode {
   const actions = props.actions;
+  if (!actions.actionable) return null;
   return (
     <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger
