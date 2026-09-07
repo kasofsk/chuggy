@@ -652,8 +652,10 @@ test("hiding and showing a thread each answer the side it is now on", async () =
   assert.equal(shown.result === "Shown" ? shown.thread.hidden : true, false);
   assert.deepEqual(held.calls, [
     "authorize:Mutate",
+    `standing:${mine}:undefined:1`,
     `hide:${mine}:true`,
     "authorize:Mutate",
+    `standing:${mine}:undefined:1`,
     `hide:${mine}:false`,
   ]);
 });
@@ -678,6 +680,23 @@ test("hiding a session that is no thread of this project's is not found", async 
     }),
     { result: "NotFound" },
   );
+});
+
+/**
+ * Hide is the owner's alone: a member who may mutate the project still cannot
+ * clear another member's thread off that member's rail.
+ */
+test("hiding another member's thread is refused, not silently done", async () => {
+  const { web, held } = boundary();
+
+  assert.deepEqual(
+    await web.hideThread(geoff, partition, { session: hers, hidden: true }),
+    { result: "NotYourThread" },
+  );
+  assert.deepEqual(held.calls, [
+    "authorize:Mutate",
+    `standing:${hers}:undefined:1`,
+  ]);
 });
 
 /**

@@ -65,8 +65,8 @@ const memberViewColumns = [
 
 /**
  * The two doors, each admitting a thread alone in the predicate its lock is
- * taken under, as 075's close door does. A blank title clears the override
- * rather than storing a label with nothing in it, and hiding a thread already
+ * taken under, as 075's close door does. A title that trims to nothing clears
+ * the override rather than storing a blank label, and hiding a thread already
  * hidden writes nothing, so the instant it went off the rail is the first one.
  */
 const memberViewDoors = [
@@ -80,7 +80,7 @@ const memberViewDoors = [
         FOR UPDATE;
        IF NOT FOUND THEN RETURN 'NoThread'; END IF;
        UPDATE agent_session s
-          SET member_title=nullif(btrim(coalesce(in_title,'')),'')
+          SET member_title=nullif(btrim(coalesce(in_title,''),E' \t\r\n'),'')
         WHERE s.tenant=in_tenant AND s.project=in_project
           AND s.session=in_session;
        RETURN 'Renamed';

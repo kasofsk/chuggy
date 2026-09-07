@@ -1,6 +1,12 @@
 /**
- * Every number the wire measured, formatted once: money, tokens, duration, an
- * instant, a span, and the absence of any of them.
+ * Every number the wire measured, formatted once: money, tokens, duration, a
+ * quantity carrying its own unit, an instant, a span, and the absence of any of
+ * them.
+ *
+ * A MEASURED FIGURE IS SCALED AND A SET ONE IS NOT. What a run spent is read at
+ * a glance and rounds; a ceiling somebody typed is the number they typed, so a
+ * `Quantity` groups its digits rather than shortening them and names the unit
+ * it is read in beside them.
  *
  * Total over `figureKinds`. A figure is built here and drawn by the `Figure`
  * primitive, so no component composes one and no two places round the same
@@ -28,6 +34,7 @@ export const figureKinds = [
   "Cost",
   "Tokens",
   "Duration",
+  "Quantity",
   "Instant",
   "Span",
   "Absent",
@@ -39,6 +46,11 @@ export type Figure =
   | { readonly kind: "Cost"; readonly text: string; readonly basis?: string }
   | { readonly kind: "Tokens"; readonly text: string }
   | { readonly kind: "Duration"; readonly text: string }
+  | {
+      readonly kind: "Quantity";
+      readonly text: string;
+      readonly unit: string;
+    }
   | { readonly kind: "Instant"; readonly text: string; readonly iso: string }
   | {
       readonly kind: "Span";
@@ -228,6 +240,49 @@ export function durationText(durationMs: number): string {
 
 export function durationFigure(durationMs: number): Figure {
   return { kind: "Duration", text: durationText(durationMs) };
+}
+
+const digitsPerGroup = 3;
+
+const bytesPerKibibyte = 1024;
+
+const bytesPerMebibyte = bytesPerKibibyte * bytesPerKibibyte;
+
+/**
+ * The digits of a whole number in groups, so a long one is read without being
+ * counted. The grouping is written here rather than taken from the reader's
+ * locale, because a figure a case asserts must not change with the environment
+ * the case runs in.
+ */
+export function groupedDigits(count: number): string {
+  const whole = String(Math.trunc(Math.abs(count)));
+  const groups: string[] = [];
+  for (let end = whole.length; end > 0; end -= digitsPerGroup)
+    groups.unshift(whole.slice(Math.max(end - digitsPerGroup, 0), end));
+  return `${count < 0 ? "-" : ""}${groups.join(",")}`;
+}
+
+/** A count in the unit its own row is read in, whole. */
+export function countFigure(count: number, unit: string): Figure {
+  return { kind: "Quantity", text: groupedDigits(count), unit };
+}
+
+/** A span somebody set, in the largest whole unit that states it exactly. */
+export function spanSetFigure(durationMs: number): Figure {
+  if (durationMs < msPerSecond) return countFigure(durationMs, "ms");
+  const seconds = Math.trunc(durationMs / msPerSecond);
+  if (seconds % secondsPerMinute === 0)
+    return countFigure(seconds / secondsPerMinute, "min");
+  return countFigure(seconds, "s");
+}
+
+/** A size somebody set, in the largest whole unit that states it exactly. */
+export function bytesSetFigure(bytes: number): Figure {
+  if (bytes >= bytesPerMebibyte && bytes % bytesPerMebibyte === 0)
+    return countFigure(bytes / bytesPerMebibyte, "MiB");
+  if (bytes >= bytesPerKibibyte && bytes % bytesPerKibibyte === 0)
+    return countFigure(bytes / bytesPerKibibyte, "KiB");
+  return countFigure(bytes, "bytes");
 }
 
 function clockOf(at: Date): string {
