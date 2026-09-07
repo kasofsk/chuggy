@@ -340,9 +340,14 @@ export type ThreadClosing =
       readonly thread: ThreadEntry;
     };
 
-/** What naming a thread answered, and the entry as it now reads. */
+/**
+ * What naming a thread answered, and the entry as it now reads.
+ * `NotYourThread` is the URL and the caller's own mailbox disagreeing, as the
+ * message door's is.
+ */
 export type ThreadRenaming =
   | { readonly result: "NotFound" }
+  | { readonly result: "NotYourThread" }
   | { readonly result: "Renamed"; readonly thread: ThreadEntry };
 
 /**

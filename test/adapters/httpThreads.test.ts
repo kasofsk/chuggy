@@ -613,6 +613,21 @@ test("renaming a session that is no thread of this project's is not found", asyn
   assert.equal(answer.json<HttpErrorEnvelope>().error.code, "NotFound");
 });
 
+test("renaming another member's thread is refused as the message door refuses one", async () => {
+  const held: ThreadCase = { calls: [], renamed: { result: "NotYourThread" } };
+  await using app = appOf(held);
+
+  const answer = await app.inject({
+    method: "POST",
+    url: `${root}/${mine}/rename`,
+    headers: versioned,
+    payload: { title: "x" },
+  });
+
+  assert.equal(answer.statusCode, 403);
+  assert.equal(answer.json<HttpErrorEnvelope>().error.code, "NotYourThread");
+});
+
 test("hiding a thread answers the entry on the side it is now on", async () => {
   const held: ThreadCase = { calls: [] };
   await using app = appOf(held);

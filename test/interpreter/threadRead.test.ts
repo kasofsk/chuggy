@@ -553,21 +553,14 @@ test("closing a session that is no thread of this project's is not found", async
 });
 
 /**
- * Renaming is gated like closing and for its reason: it changes what a rail
- * draws and nothing the thread does, so a member who may mutate the project
- * reaches any of its threads. The case renames another member's to hold that,
- * and the entry comes back titled by the name rather than by the message.
+ * Renaming is the owner's alone, resolved against the caller's own mailbox as
+ * hiding is: it is the reader's own label on their own rail row.
  */
-test("any member who may mutate names any thread, and is answered it named", async () => {
-  const { web, held } = boundary({
-    threads: [
-      record(mine, geoff),
-      record(hers, dana, { firstMessage: "why is 42 blocked?" }),
-    ],
-  });
+test("a member renames their own thread, and is answered it renamed", async () => {
+  const { web, held } = boundary();
 
   const renamed = await web.renameThread(geoff, partition, {
-    session: hers,
+    session: mine,
     title: "the footer",
   });
 
@@ -578,7 +571,28 @@ test("any member who may mutate names any thread, and is answered it named", asy
   );
   assert.deepEqual(held.calls, [
     "authorize:Mutate",
-    `rename:${hers}:the footer`,
+    `standing:${mine}:undefined:1`,
+    `rename:${mine}:the footer`,
+  ]);
+});
+
+/**
+ * Rename is the owner's alone: a member who may mutate the project still
+ * cannot relabel another member's thread on that member's rail.
+ */
+test("renaming another member's thread is refused, not silently done", async () => {
+  const { web, held } = boundary();
+
+  assert.deepEqual(
+    await web.renameThread(geoff, partition, {
+      session: hers,
+      title: "the footer",
+    }),
+    { result: "NotYourThread" },
+  );
+  assert.deepEqual(held.calls, [
+    "authorize:Mutate",
+    `standing:${hers}:undefined:1`,
   ]);
 });
 
@@ -617,7 +631,7 @@ test("clearing a member's name leaves the thread titled by its first message", a
 });
 
 test("naming a session that is no thread of this project's is not found", async () => {
-  const { web, held } = boundary();
+  const { web } = boundary();
 
   assert.deepEqual(
     await web.renameThread(geoff, partition, {
@@ -626,7 +640,6 @@ test("naming a session that is no thread of this project's is not found", async 
     }),
     { result: "NotFound" },
   );
-  assert.ok(held.calls.includes("rename:lead-atlas:x"));
 });
 
 /**
