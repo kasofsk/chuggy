@@ -191,6 +191,17 @@ test("the head names the thread, its standing and whose it is", async () => {
   expect(screen.getAllByText("geoff").length).toBeGreaterThan(0);
 });
 
+/** The bar's own title never wraps, so a narrow reader needs its chips to run
+ * onto a line of their own rather than under the details toggle. */
+test("the bar's chips wrap on their own rather than crowd the title", async () => {
+  drawThread(() => ({ thread: threadBody({}) }));
+  await mountThread();
+  const chips = screen.getByRole("heading", {
+    name: "Thread",
+  }).nextElementSibling;
+  expect(chips?.className).toContain("flex-wrap");
+});
+
 /**
  * The close is any reader's, so the case presses it on ANOTHER member's thread;
  * and the page refreshes nothing itself — the frame does — so what is asserted

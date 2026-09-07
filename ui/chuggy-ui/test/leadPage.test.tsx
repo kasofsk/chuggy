@@ -153,6 +153,16 @@ test("the head names the session, its state and the cursor it stands on", async 
   expect(screen.getByText("1204")).toBeDefined();
 });
 
+/** The bar's own title never wraps, so a narrow reader needs its chips to run
+ * onto a line of their own rather than under the details toggle. */
+test("the bar's chips wrap on their own rather than crowd the title", async () => {
+  await drawLead(() => opening);
+  const chips = screen.getByRole("heading", {
+    name: "Lead",
+  }).nextElementSibling;
+  expect(chips?.className).toContain("flex-wrap");
+});
+
 test("the mailbox tail draws what the pod measured of each turn", async () => {
   await drawLead(() => opening);
   const turns = screen

@@ -97,11 +97,17 @@ function LeadTopBar(props: { readonly lead: LeadResponse }): ReactNode {
   return (
     <TopBarSlot>
       <h1 className="text-md font-strong text-ink-1 truncate">Lead</h1>
-      <Pill tone={sessionStateTone(lead.state)} emphasis>
-        {lead.state}
-      </Pill>
-      <Pill tone={selectorAttentionTone(lead.attention)}>{lead.attention}</Pill>
-      <span className="num text-ink-3 text-sm">{lead.notificationCursor}</span>
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
+        <Pill tone={sessionStateTone(lead.state)} emphasis>
+          {lead.state}
+        </Pill>
+        <Pill tone={selectorAttentionTone(lead.attention)}>
+          {lead.attention}
+        </Pill>
+        <span className="num text-ink-3 text-sm">
+          {lead.notificationCursor}
+        </span>
+      </div>
     </TopBarSlot>
   );
 }

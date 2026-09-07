@@ -86,13 +86,15 @@ function ThreadTopBar(props: { readonly thread: ThreadResponse }): ReactNode {
   return (
     <TopBarSlot>
       <h1 className="text-md font-strong text-ink-1 truncate">Thread</h1>
-      <Pill tone={threadStandingTone(thread.state)} emphasis>
-        {thread.state}
-      </Pill>
-      {thread.mine ? <Pill tone="live">Yours</Pill> : null}
-      {thread.owner === undefined ? null : (
-        <Identity label={{ text: thread.owner, title: thread.owner }} />
-      )}
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
+        <Pill tone={threadStandingTone(thread.state)} emphasis>
+          {thread.state}
+        </Pill>
+        {thread.mine ? <Pill tone="live">Yours</Pill> : null}
+        {thread.owner === undefined ? null : (
+          <Identity label={{ text: thread.owner, title: thread.owner }} />
+        )}
+      </div>
     </TopBarSlot>
   );
 }
