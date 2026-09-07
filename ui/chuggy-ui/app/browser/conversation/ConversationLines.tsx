@@ -13,7 +13,7 @@ import type {
 } from "../../core/conversation.ts";
 import type { Figure as FigureValue } from "../../core/figures.ts";
 import {
-  costFigure,
+  costAmountFigure,
   durationFigure,
   tokenCountUnitFigure,
 } from "../../core/figures.ts";
@@ -101,7 +101,7 @@ function conversationMetaFigures(
       : [tokenCountUnitFigure(measures.tokens)]),
     ...(measures.costMicros === undefined
       ? []
-      : [costFigure(measures.costMicros, "List")]),
+      : [costAmountFigure(measures.costMicros)]),
     ...(measures.durationMs === undefined
       ? []
       : [durationFigure(measures.durationMs)]),

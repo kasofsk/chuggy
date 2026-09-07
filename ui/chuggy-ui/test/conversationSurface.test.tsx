@@ -130,6 +130,35 @@ test("the meta line omits a measure no turn recorded", () => {
   styleless();
 });
 
+function lineText(element: Element): string {
+  return Array.from(element.children)
+    .map((child) => child.textContent)
+    .join(" ");
+}
+
+test("the meta line drops the cost figure's basis word", () => {
+  render(
+    <Conversation
+      exchanges={[
+        exchangeOf({
+          answer: "done",
+          measures: {
+            tokens: 1_300_000,
+            costMicros: 750_000,
+            durationMs: 26_000,
+          },
+        }),
+      ]}
+      empty="No conversation"
+    />,
+  );
+  const meta = screen.getByText("Answered").closest("p");
+  expect(meta === null ? "" : lineText(meta)).toBe(
+    "Answered · 1.3M tok · $0.75 · 26s",
+  );
+  styleless();
+});
+
 test("a failed exchange draws its reason where the answer would be", () => {
   render(
     <Conversation

@@ -99,19 +99,29 @@ function costBasisTag(basis: RunRollupBasis): string {
   }
 }
 
+function costText(costUsdMicros: number): string {
+  const usd = costUsdMicros / costUsdMicrosPerUsd;
+  const decimals =
+    usd === 0 || usd >= costUsdCent ? costDecimalsCents : costDecimalsFine;
+  return `$${usd.toFixed(decimals)}`;
+}
+
 /** Cents, or finer where cents alone would draw a spend as nothing spent. */
 export function costFigure(
   costUsdMicros: number,
   basis: RunRollupBasis,
 ): Figure {
-  const usd = costUsdMicros / costUsdMicrosPerUsd;
-  const decimals =
-    usd === 0 || usd >= costUsdCent ? costDecimalsCents : costDecimalsFine;
   return {
     kind: "Cost",
-    text: `$${usd.toFixed(decimals)}`,
+    text: costText(costUsdMicros),
     basis: costBasisTag(basis),
   };
+}
+
+/** The amount alone, for a line that already says what stood rather than a
+ * table column, which states its basis instead. */
+export function costAmountFigure(costUsdMicros: number): Figure {
+  return { kind: "Cost", text: costText(costUsdMicros) };
 }
 
 /**
