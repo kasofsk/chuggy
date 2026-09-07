@@ -24,12 +24,10 @@ export function EmptyState(props: {
 }): ReactNode {
   if (props.variant !== "page") return <p className="empty">{props.label}</p>;
   return (
-    <div className="empty empty-page grid place-content-center gap-3 text-center">
+    <div className="empty grid place-content-center gap-3 text-center">
       <h1>{props.label}</h1>
       {props.detail === undefined ? null : <p>{props.detail}</p>}
-      {props.action === undefined ? null : (
-        <div className="empty-action">{props.action}</div>
-      )}
+      {props.action === undefined ? null : <div>{props.action}</div>}
     </div>
   );
 }

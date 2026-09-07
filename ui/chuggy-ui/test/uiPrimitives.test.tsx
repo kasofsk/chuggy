@@ -91,6 +91,8 @@ test("an empty state is a line inside a panel and a centred heading on a page", 
     expect(
       container.querySelector(".empty")?.classList.contains("min-h-full"),
     ).toBe(false);
+    expect(container.querySelector(".empty-page")).toBeNull();
+    expect(container.querySelector(".empty-action")).toBeNull();
     styleless();
     cleanup();
   }
