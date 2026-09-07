@@ -673,6 +673,31 @@ describe("the seeding block a first turn carries", () => {
     });
   });
 
+  test("a JSON object is not a member's words", () => {
+    const envelope = `{"version":1,"decision":"selector-decision"}`;
+
+    expect(conversationAskMessage(envelope)).toEqual({
+      ask: "Observation",
+      text: envelope,
+    });
+  });
+
+  test("a message that merely opens on a brace stays a message", () => {
+    const said = "{not json, just how I start a sentence}";
+
+    expect(conversationAskMessage(said)).toEqual({
+      ask: "Message",
+      text: said,
+    });
+  });
+
+  test("the seeding split still wins first, over a JSON member's words", () => {
+    const envelope = `{"version":1}`;
+    const ask = conversationAskMessage(`${seeded}\n\n${envelope}`);
+
+    expect(ask).toEqual({ ask: "Observation", text: envelope });
+  });
+
   test("reaches a drawn exchange as the two halves it is", () => {
     const drawn = conversationExchanges([
       askOf("e1", `${seeded}\n\nwhat is left to do`),

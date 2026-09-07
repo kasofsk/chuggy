@@ -42,8 +42,8 @@ import type {
   LeadTranscriptPane,
 } from "../../core/leadTranscript.ts";
 import { useApiPorts } from "../api.ts";
+import { ConversationCard } from "../conversation/ConversationCard.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { QuotedText } from "../ui/QuotedText.tsx";
 
 export interface LeadTranscriptRead {
   readonly partition: PartitionIdentity;
@@ -122,13 +122,20 @@ export function LeadNote(props: {
   const note = props.note;
   if (note === undefined || note.bytes === 0) return null;
   return (
-    <div className="grid min-w-0 gap-1 pb-3">
-      <p className="flex flex-wrap items-center gap-2">
-        <span className="eyebrow">Handoff note</span>
-        <span className="num">{note.bytes}</span>
-        {note.truncated ? <Pill tone="parked">Truncated</Pill> : null}
-      </p>
-      <QuotedText>{note.preview}</QuotedText>
+    <div className="pb-3">
+      <ConversationCard
+        label={
+          <span className="flex flex-wrap items-center gap-2">
+            <span>Handoff note</span>
+            <span className="text-ink-3 tabular-nums">{note.bytes}</span>
+            {note.truncated ? <Pill tone="parked">Truncated</Pill> : null}
+          </span>
+        }
+      >
+        <pre className="max-h-(--height-clip) overflow-auto">
+          {note.preview}
+        </pre>
+      </ConversationCard>
     </div>
   );
 }

@@ -130,6 +130,35 @@ test("the meta line omits a measure no turn recorded", () => {
   styleless();
 });
 
+function lineText(element: Element): string {
+  return Array.from(element.children)
+    .map((child) => child.textContent)
+    .join(" ");
+}
+
+test("the meta line drops the cost figure's basis word", () => {
+  render(
+    <Conversation
+      exchanges={[
+        exchangeOf({
+          answer: "done",
+          measures: {
+            tokens: 1_300_000,
+            costMicros: 750_000,
+            durationMs: 26_000,
+          },
+        }),
+      ]}
+      empty="No conversation"
+    />,
+  );
+  const meta = screen.getByText("Answered").closest("p");
+  expect(meta === null ? "" : lineText(meta)).toBe(
+    "Answered · 1.3M tok · $0.75 · 26s",
+  );
+  styleless();
+});
+
 test("a failed exchange draws its reason where the answer would be", () => {
   render(
     <Conversation
@@ -252,6 +281,20 @@ test("the seeding is a folded Context card, and the bubble is the words", () => 
   expect(screen.queryByText("Ship the console.")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Context" }));
   expect(screen.getByText("Ship the console.")).toBeDefined();
+  styleless();
+});
+
+test("an Observation with text draws the line and its collapsed card", () => {
+  const observed = exchangeOf({
+    ask: { ask: "Observation", text: '{"version":1,"decision":"lead"}' },
+    answer: "done",
+  });
+  render(<Conversation exchanges={[observed]} empty="No conversation" />);
+  expect(screen.getAllByText("Observation")).toHaveLength(2);
+  const trigger = screen.getByRole("button", { name: "Observation" });
+  expect(screen.queryByText(/"version":1/)).toBeNull();
+  fireEvent.click(trigger);
+  expect(screen.getByText(/"version":1/)).toBeDefined();
   styleless();
 });
 

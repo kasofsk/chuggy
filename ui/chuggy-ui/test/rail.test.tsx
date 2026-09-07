@@ -150,6 +150,37 @@ test("New thread opens a thread and follows it", async () => {
   expect(router.state.location.pathname).toBe("/acme/atlas/threads/s-new");
 });
 
+function longSessionApi(): typeof fetch {
+  return ((url: string) => {
+    if (url.endsWith("/threads"))
+      return Promise.resolve(
+        answer({
+          threads: [
+            {
+              session: "session-1234567890123456789012345678901234",
+              state: "Open",
+              mine: false,
+              turns: 1,
+            },
+          ],
+        }),
+      );
+    return Promise.resolve(answer({ projects: [atlas] }));
+  }) as unknown as typeof fetch;
+}
+
+/** The classes a long session id needs — `truncate` on its label, the column
+ * cap on its list — land on the elements they must; jsdom draws no boxes, so
+ * this cannot observe whether a box is actually narrower. */
+test("a long session id's truncate and column-cap classes land on the right elements", async () => {
+  const session = "session-1234567890123456789012345678901234";
+  await mounted(longSessionApi());
+  const label = screen.getByText(session);
+  expect(label.parentElement?.className.split(" ")).toContain("truncate");
+  const list = label.closest("ul");
+  expect(list?.className.split(" ")).toContain("grid-cols-[minmax(0,1fr)]");
+});
+
 test("a refusal draws under New thread and the button re-enables", async () => {
   await mounted(threadOpenApi({ refuse: true }));
   const button = screen.getByRole("button", { name: "New thread" });

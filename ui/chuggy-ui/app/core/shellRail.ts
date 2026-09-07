@@ -85,13 +85,31 @@ export interface ShellRailInput {
   readonly inboxCount?: string | undefined;
 }
 
+/** How much of a session's tail tells one of the reader's threads from
+ * another: every session shares the fixed `thread-` head a mint gives it, so
+ * the distinguishing hex lives in the UUID's own tail. */
+const sessionCharsShort = 8;
+
+/** `Your thread` is the reader's most recent; a second one of theirs is the
+ * same words disambiguated by its session's tail, which draws from the
+ * random half of the id rather than the prefix every session shares. */
+function shellRailThreadLabel(
+  thread: ThreadEntryResponse,
+  mostRecentMine: boolean,
+): string {
+  if (!thread.mine) return thread.owner ?? thread.session;
+  if (mostRecentMine) return "Your thread";
+  return `Your thread · ${thread.session.slice(-sessionCharsShort)}`;
+}
+
 function shellRailThreadEntry(
   params: RailParams,
   thread: ThreadEntryResponse,
+  mostRecentMine: boolean,
 ): RailEntry {
   return {
     id: thread.session,
-    label: thread.mine ? "Your thread" : (thread.owner ?? thread.session),
+    label: shellRailThreadLabel(thread, mostRecentMine),
     to: railRoutes.thread,
     params: { ...params, session: thread.session },
     standing: { word: thread.state, tone: threadStandingTone(thread.state) },
@@ -116,11 +134,16 @@ function shellRailConversations(
     threadMine(threads) === undefined
       ? [{ id: "thread-new", label: "New thread", action: "OpenThread" }]
       : [];
+  const ordered = threadsMineFirst(threads).slice(0, threadsAnsweredMax);
+  /** `read_project_threads` (migration 075, replacing 062's ascending order)
+   * lists an open thread ahead of a closed one and then newest-opened first,
+   * so the reader's most recent thread is the first mine entry, not the last. */
+  const mostRecentMine = ordered.findIndex((thread) => thread.mine);
   return [
     lead,
-    ...threadsMineFirst(threads)
-      .slice(0, threadsAnsweredMax)
-      .map((thread) => shellRailThreadEntry(params, thread)),
+    ...ordered.map((thread, at) =>
+      shellRailThreadEntry(params, thread, at === mostRecentMine),
+    ),
     ...offer,
   ];
 }

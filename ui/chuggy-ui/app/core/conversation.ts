@@ -193,7 +193,7 @@ export type ConversationAsk =
     }
   | { readonly ask: "Wake"; readonly wake: string; readonly resource: string }
   | { readonly ask: "Document"; readonly kind: SessionTurnInputKind }
-  | { readonly ask: "Observation" }
+  | { readonly ask: "Observation"; readonly text?: string }
   | { readonly ask: "Inquiry" };
 
 /** One thing that happened between the ask and the answer. */
@@ -302,6 +302,22 @@ export function conversationArgumentSummary(
     : { argument: "Size", chars: text.length };
 }
 
+/** Whether a text is a machine envelope rather than a member's own words: a
+ * JSON object, trimmed. A brace that opens prose and nothing else stays a
+ * message. */
+function conversationTextIsJsonObject(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{")) return false;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return (
+      typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The member's own words, and the seeding block the server put in front of them
  * where the input carries one. Both sides read the contract's constants, so
@@ -310,16 +326,19 @@ export function conversationArgumentSummary(
  */
 export function conversationAskMessage(
   text: string,
-): Extract<ConversationAsk, { readonly ask: "Message" }> {
+): Extract<ConversationAsk, { readonly ask: "Message" | "Observation" }> {
   const opens = threadSeedingHeadings.some((heading) =>
     text.startsWith(heading),
   );
   const joined = `${threadSeedingLastLine}\n\n`;
   const at = opens ? text.lastIndexOf(joined) : -1;
-  if (at < 0) return { ask: "Message", text };
+  const said = at < 0 ? text : text.slice(at + joined.length);
+  if (conversationTextIsJsonObject(said))
+    return { ask: "Observation", text: said };
+  if (at < 0) return { ask: "Message", text: said };
   return {
     ask: "Message",
-    text: text.slice(at + joined.length),
+    text: said,
     context: text.slice(0, at + threadSeedingLastLine.length),
   };
 }

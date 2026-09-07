@@ -83,7 +83,6 @@ import { Figure } from "../ui/Figure.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { QuotedText } from "../ui/QuotedText.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
 
 import "./LeadInquiries.css";
@@ -270,7 +269,9 @@ function LeadInquiryRow(props: {
       </div>
       <p className="max-w-measure">{inquiry.question}</p>
       {inquiry.answer === undefined ? null : (
-        <QuotedText>{inquiry.answer}</QuotedText>
+        <pre className="bg-surface-2 text-ink-1 rounded-2 max-h-(--height-clip) overflow-auto p-2 font-mono text-xs whitespace-pre-wrap">
+          {inquiry.answer}
+        </pre>
       )}
     </li>
   );

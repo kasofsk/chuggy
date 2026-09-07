@@ -200,7 +200,7 @@ function RailSectionDrawn(props: {
           </Link>
         )}
       </h2>
-      <ul className="grid">
+      <ul className="grid grid-cols-[minmax(0,1fr)]">
         {section.entries.map((entry) => (
           <RailEntryDrawn
             key={entry.id}

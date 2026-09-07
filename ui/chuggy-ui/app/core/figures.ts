@@ -7,11 +7,13 @@
  * quantity differently. The summing stays in `runTotals.ts`; what this adds is
  * the reading.
  *
- * A DOLLAR NEVER APPEARS WITHOUT ITS BASIS. `costBasis` is the wire's word for
- * what the figure is, and a rollup over runs that disagreed on it says so, so
- * nothing on a page can be read as a bill that was not one. The tag is total
- * over the roster, which is what makes a basis the wire gains stop compiling
- * here rather than reaching a reader as a price.
+ * A ROLLUP'S DOLLAR NEVER APPEARS WITHOUT ITS BASIS. `costBasis` is the wire's
+ * word for what the figure is, and a rollup over runs that disagreed on it
+ * says so, so a table cell can never be read as a bill that was not one. The
+ * tag is total over the roster, which is what makes a basis the wire gains
+ * stop compiling here rather than reaching a reader as a price;
+ * `costAmountFigure`'s bare amount is the one exception, legitimate because
+ * the line it sits on already names the turn it belongs to.
  *
  * AN INSTANT IS ABSOLUTE AND A FRESHNESS IS RELATIVE. A ledger is compared row
  * to row and a relative time drifts while the page is open, so an instant is
@@ -99,19 +101,29 @@ function costBasisTag(basis: RunRollupBasis): string {
   }
 }
 
+function costText(costUsdMicros: number): string {
+  const usd = costUsdMicros / costUsdMicrosPerUsd;
+  const decimals =
+    usd === 0 || usd >= costUsdCent ? costDecimalsCents : costDecimalsFine;
+  return `$${usd.toFixed(decimals)}`;
+}
+
 /** Cents, or finer where cents alone would draw a spend as nothing spent. */
 export function costFigure(
   costUsdMicros: number,
   basis: RunRollupBasis,
 ): Figure {
-  const usd = costUsdMicros / costUsdMicrosPerUsd;
-  const decimals =
-    usd === 0 || usd >= costUsdCent ? costDecimalsCents : costDecimalsFine;
   return {
     kind: "Cost",
-    text: `$${usd.toFixed(decimals)}`,
+    text: costText(costUsdMicros),
     basis: costBasisTag(basis),
   };
+}
+
+/** The amount alone, for a line that already says what stood rather than a
+ * table column, which states its basis instead. */
+export function costAmountFigure(costUsdMicros: number): Figure {
+  return { kind: "Cost", text: costText(costUsdMicros) };
 }
 
 /**

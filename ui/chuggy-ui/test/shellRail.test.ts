@@ -61,6 +61,60 @@ test("the reader's own thread is labelled, first, and withholds the offer", () =
   expect(entries[1]?.mine).toBe(true);
 });
 
+test("a second thread of the reader's own is disambiguated by its session tail", () => {
+  const entries = conversations({
+    partition: atlas,
+    threads: [
+      thread({
+        session: "thread-11112222-3333-4444-5555-666677778888",
+        mine: true,
+        turns: 3,
+      }),
+      thread({
+        session: "thread-aaaabbbb-cccc-dddd-eeee-ffff00001234",
+        mine: true,
+        turns: 12,
+      }),
+    ],
+  });
+  expect(entries.map((entry) => entry.label)).toEqual([
+    "Lead",
+    "Your thread",
+    "Your thread · 00001234",
+  ]);
+});
+
+test("three threads whose sessions share their first eight characters still read apart", () => {
+  const entries = conversations({
+    partition: atlas,
+    threads: [
+      thread({
+        session: "thread-a1111111-2222-3333-4444-555566667777",
+        mine: true,
+        turns: 1,
+      }),
+      thread({
+        session: "thread-a1111111-2222-3333-4444-555566668888",
+        mine: true,
+        turns: 1,
+      }),
+      thread({
+        session: "thread-a1111111-2222-3333-4444-555566669999",
+        mine: true,
+        turns: 1,
+      }),
+    ],
+  });
+  const labels = entries.map((entry) => entry.label);
+  expect(labels).toEqual([
+    "Lead",
+    "Your thread",
+    "Your thread · 66668888",
+    "Your thread · 66669999",
+  ]);
+  expect(new Set(labels).size).toBe(labels.length);
+});
+
 test("a thread whose owner is gone is labelled by its session", () => {
   const entries = conversations({
     partition: atlas,

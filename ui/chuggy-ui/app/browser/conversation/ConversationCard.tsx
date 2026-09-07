@@ -35,7 +35,7 @@ export function ConversationChevron(): ReactNode {
 }
 
 export function ConversationCard(props: {
-  readonly label: string;
+  readonly label: ReactNode;
   readonly glyph?: ReactNode;
   readonly children: ReactNode;
 }): ReactNode {

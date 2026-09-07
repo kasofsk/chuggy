@@ -71,6 +71,25 @@ function ConversationBubble(props: {
   );
 }
 
+/** The line every ask nobody typed opens on, and the record of it a reader can
+ * still choose to read — the same card the seeding's `Context` uses. */
+function ConversationObservation(props: {
+  readonly text: string | undefined;
+}): ReactNode {
+  return (
+    <>
+      <ConversationSystemLine words="Observation" />
+      {props.text === undefined ? null : (
+        <ConversationCard label="Observation">
+          <pre className="max-h-(--height-clip) overflow-auto">
+            {props.text}
+          </pre>
+        </ConversationCard>
+      )}
+    </>
+  );
+}
+
 /** The ask half of one exchange: the member's bubble, or the centred line a
  * turn the runtime opened is drawn as — never the document it composed. */
 function ConversationAskBody(props: {
@@ -86,7 +105,7 @@ function ConversationAskBody(props: {
     case "Document":
       return <ConversationSystemLine words={threadTurnKindWord(ask.kind)} />;
     case "Observation":
-      return <ConversationSystemLine words="Observation" />;
+      return <ConversationObservation text={ask.text} />;
     case "Inquiry":
       return <ConversationSystemLine words="Inquiry" />;
   }

@@ -593,15 +593,18 @@ test("the lead's own frame moves the lead alone, and an inquiry's the inquiries"
 test("the handoff note is drawn as its preview, marked where it is cut", async () => {
   await drawLead(() => ({ ...opening, note: leadHandoffNote(true) }));
   expect(screen.getByText("Handoff note")).toBeDefined();
-  expect(screen.getByText("watch ticket 41")).toBeDefined();
   expect(screen.getByText("9000")).toBeDefined();
   expect(screen.getByText("Truncated")).toBeDefined();
+  expect(screen.queryByText("watch ticket 41")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /Handoff note/ }));
+  expect(screen.getByText("watch ticket 41")).toBeDefined();
 });
 
 test("a note the read carried whole is drawn with no Truncated mark", async () => {
   await drawLead(() => opening);
-  expect(screen.getByText("watch ticket 41")).toBeDefined();
   expect(screen.queryByText("Truncated")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /Handoff note/ }));
+  expect(screen.getByText("watch ticket 41")).toBeDefined();
 });
 
 /** A lead that has left no note has nothing to draw, and a zero-byte preview
