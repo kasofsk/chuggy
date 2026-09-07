@@ -197,6 +197,14 @@ export function selectorSettingsRebased(
   };
 }
 
+/** A grouped number as the digits the wire reads, or `NaN` for anything a
+ * thousands separator does not explain, so the wire's own schema is what
+ * refuses it. */
+function selectorSettingsLimitNumber(written: string): number {
+  const digits = written.replaceAll(",", "");
+  return /^\d+$/.test(digits) ? Number(digits) : NaN;
+}
+
 function selectorSettingsLimits(
   limits: SelectorSettingsLimitDraft,
 ): Record<string, number> | undefined {
@@ -204,7 +212,7 @@ function selectorSettingsLimits(
   for (const name of selectorSettingsLimitNames) {
     const written = limits[name].trim();
     if (written === "") continue;
-    held[name] = Number(written);
+    held[name] = selectorSettingsLimitNumber(written);
   }
   return Object.keys(held).length === 0 ? undefined : held;
 }
@@ -440,6 +448,24 @@ export function selectorSettingsLimitEdited(
   return draft.limits[name] !== draft.read.limits[name];
 }
 
+/** Whether this limit already carried a project override at the last read.
+ * The wire has no separate installation limit to draw once one does, so a
+ * placeholder or a Default label is honest only where this is false. */
+export function selectorSettingsLimitOverriddenAtRead(
+  draft: SelectorSettingsDraft,
+  name: SelectorSettingsLimitName,
+): boolean {
+  return draft.read.limits[name] !== "";
+}
+
+/** The text sections' own answer to the same question. */
+export function selectorSettingsTextOverriddenAtRead(
+  draft: SelectorSettingsDraft,
+  name: SelectorSettingsTextName,
+): boolean {
+  return draft.read[name] !== "";
+}
+
 /**
  * One operational fact and the single press that changes it: what the project
  * runs under, whether that is its own or the installation's, and the draft the
@@ -452,6 +478,15 @@ export interface SelectorSettingsStripCell {
   readonly inherited: boolean;
   readonly action: string;
   readonly pressed: SelectorSettingsDraft;
+}
+
+/** The draft a strip press writes from: the read's own boxes, not whatever an
+ * open section's edit currently holds — a press here has nothing to do with
+ * the section a reader may be mid-edit on. */
+function selectorSettingsAtRest(
+  draft: SelectorSettingsDraft,
+): SelectorSettingsDraft {
+  return { ...draft, ...draft.read };
 }
 
 /**
@@ -474,7 +509,10 @@ export function selectorSettingsModeCell(
     tone: selectorModeTone(effective.mode),
     inherited: draft.mode === "",
     action: running ? "Pause" : "Resume",
-    pressed: { ...draft, mode: running ? "Paused" : resumed },
+    pressed: {
+      ...selectorSettingsAtRest(draft),
+      mode: running ? "Paused" : resumed,
+    },
   };
 }
 
@@ -491,7 +529,7 @@ export function selectorSettingsDispatchCell(
     inherited: draft.dispatchMode === "",
     action: automatic ? "Require approval" : "Dispatch automatically",
     pressed: {
-      ...draft,
+      ...selectorSettingsAtRest(draft),
       dispatchMode: automatic ? "ApprovalRequired" : "Automatic",
     },
   };
