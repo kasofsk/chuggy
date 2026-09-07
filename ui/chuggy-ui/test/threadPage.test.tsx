@@ -23,6 +23,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { ThreadPage } from "../app/browser/ThreadPage.tsx";
+import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
   answer,
@@ -52,6 +53,7 @@ import {
   threadWakeInput,
   threadWakeStandingSaid,
 } from "./threadFixture.ts";
+import { viewportAtEm } from "./viewport.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
@@ -73,6 +75,7 @@ vi.mock("@tanstack/react-router", () => ({
 beforeEach(() => {
   resizeObserverStubbed();
   elementScrollToStubbed();
+  viewportAtEm(viewportDeskEm);
 });
 
 afterEach(() => {

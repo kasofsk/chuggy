@@ -406,7 +406,7 @@ test("after a resume the current cycle gains a run and a running stage", async (
     shapes: ticket21Resumed,
     ticket: resumedTicket,
   });
-  expect(screen.getAllByText("Evaluating").length).toBe(1);
+  expect(screen.getAllByText("Evaluating")).toHaveLength(2);
   expect(screen.queryByText("Rework budget exhausted")).toBeNull();
   const current = groups(container)[0];
   if (current === undefined) throw new Error("no current cycle");

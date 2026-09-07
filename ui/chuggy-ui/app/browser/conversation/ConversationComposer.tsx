@@ -81,7 +81,7 @@ export function ConversationComposer(
           }
         />
         <ComposerPrimitive.Send
-          className="conversation-round bg-surface-inverse text-ink-inverse disabled:bg-surface-2 disabled:text-ink-3 ml-auto flex size-6 items-center justify-center border-0"
+          className="rounded-circle bg-surface-inverse text-ink-inverse disabled:bg-surface-2 disabled:text-ink-3 ml-auto flex size-6 items-center justify-center border-0"
           aria-busy={props.busy}
         >
           <ConversationSendGlyph />

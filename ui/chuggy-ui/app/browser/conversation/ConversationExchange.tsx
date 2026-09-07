@@ -115,7 +115,7 @@ export function ConversationAskMessage(): ReactNode {
 function ConversationMark(): ReactNode {
   return (
     <span
-      className="conversation-round bg-surface-inverse text-ink-inverse flex size-5 shrink-0 items-center justify-center text-xs"
+      className="rounded-circle bg-surface-inverse text-ink-inverse flex size-5 shrink-0 items-center justify-center text-xs"
       aria-hidden="true"
     >
       c

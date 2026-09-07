@@ -28,12 +28,12 @@ interface PanelLook {
 function panelLook(variant: PanelVariant | undefined): PanelLook {
   if (variant === "quiet")
     return {
-      root: "panel panel-quiet min-w-0",
+      root: "min-w-0",
       head: "panel-head px-0",
       body: "panel-body px-0",
     };
   return {
-    root: "panel bg-surface-1 border-edge rounded-3 min-w-0 border",
+    root: "bg-surface-1 border-edge rounded-3 min-w-0 border",
     head: "panel-head",
     body: "panel-body",
   };

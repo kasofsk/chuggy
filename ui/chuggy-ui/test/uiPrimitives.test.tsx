@@ -99,7 +99,7 @@ test("an empty state is a line inside a panel and a centred heading on a page", 
 });
 
 test("a table scrolls itself and names its columns", () => {
-  const { container } = render(
+  render(
     <Table caption="Usage by model">
       <thead>
         <tr>
@@ -113,12 +113,8 @@ test("a table scrolls itself and names its columns", () => {
       </tbody>
     </Table>,
   );
-  expect(
-    container
-      .querySelector(".table-scroll")
-      ?.classList.contains("overflow-x-auto"),
-  ).toBe(true);
-  expect(screen.getByRole("table", { name: "Usage by model" })).toBeDefined();
+  const table = screen.getByRole("table", { name: "Usage by model" });
+  expect(table.parentElement?.classList.contains("overflow-x-auto")).toBe(true);
   expect(
     screen.getByRole("rowheader", { name: "claude-opus-4" }),
   ).toBeDefined();

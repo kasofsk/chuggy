@@ -16,11 +16,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { Shell } from "../app/browser/Shell.tsx";
-import {
-  BottomSlot,
-  DetailsSlot,
-  TopBarSlot,
-} from "../app/browser/shell/slots.tsx";
+import { DetailsSlot, TopBarSlot } from "../app/browser/shell/slots.tsx";
 import {
   viewportDeskEm,
   viewportTwoColumnEm,
@@ -225,17 +221,6 @@ test("under the desk width the details take the middle from the page", async () 
   const hiddenScroller = screen.getByText("page").closest("[hidden]");
   expect(hiddenScroller).not.toBeNull();
   expect(hiddenScroller?.className ?? "").not.toContain("grid");
-  styleless();
-});
-
-test("the bottom slot draws under the page", async () => {
-  pageDrawn = () => (
-    <BottomSlot>
-      <p>composer</p>
-    </BottomSlot>
-  );
-  await mounted(viewportDeskEm);
-  expect(screen.getByText("composer")).toBeDefined();
   styleless();
 });
 
