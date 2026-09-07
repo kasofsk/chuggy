@@ -382,13 +382,6 @@ test("closing a row's thread posts to that row's own close door", async () => {
   expect(navigations.length, "a close navigated somewhere").toBe(0);
 });
 
-/**
- * The updated title itself is not asserted here: the row still reads the
- * listing's own cache, which only the stream's `Session` frame refreshes —
- * that reread is `shellRail.test.ts` and the panel-list machinery's own
- * territory, not this row's. What is this row's own is the door it posts to
- * and that a successful write closes the editor.
- */
 /** Mounts the threads page, opens the reader's own row's Rename editor and
  * types a value into it — the setup Enter and Escape scenarios share before
  * they diverge on how the edit ends. */
@@ -403,6 +396,9 @@ async function threadsPageRenameStarted(value: string): Promise<HTMLElement> {
   return input;
 }
 
+/** The new title is not asserted: the row reads the listing's cache, which
+ * only the stream's `Session` frame refreshes, and that reread belongs to
+ * `shellRail.test.ts`. */
 test("renaming a row posts the typed title to that row's own rename door", async () => {
   const server = drawThreads(threadsBody);
   const input = await threadsPageRenameStarted("ship it");

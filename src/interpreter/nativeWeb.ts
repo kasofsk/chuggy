@@ -174,7 +174,6 @@ import {
   type ThreadMessageSent,
   type ThreadOpening,
   type ThreadRead,
-  type ThreadRecord,
   type ThreadSeedingRead,
   type ThreadSessionMint,
   type ThreadStore,
@@ -1479,18 +1478,14 @@ function nativeCloseThreadMethod(
   };
 }
 
-/**
- * The owner gate rename and hide each open with: the caller's own mailbox,
- * resolved as the message door resolves it, refused where it is not the
- * caller's.
- */
+/** The owner gate rename and hide share: the caller's own mailbox, or why not. */
 async function nativeThreadOwnedOrRefused(
   ports: NativeThreadPorts,
   partition: Partition,
   principal: Principal,
   session: SessionId,
 ): Promise<
-  | { readonly owned: true; readonly thread: ThreadRecord }
+  | { readonly owned: true }
   | { readonly owned: false; readonly result: "NotFound" | "NotYourThread" }
 > {
   const mine = await ports.threads.standing({
@@ -1501,7 +1496,7 @@ async function nativeThreadOwnedOrRefused(
   if (mine === undefined) return { owned: false, result: "NotFound" };
   if (mine.thread.principal !== principal)
     return { owned: false, result: "NotYourThread" };
-  return { owned: true, thread: mine.thread };
+  return { owned: true };
 }
 
 /**
