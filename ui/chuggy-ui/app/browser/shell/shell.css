@@ -1,0 +1,10 @@
+/* The banner spans the frame rather than a reading measure, which is the one
+   thing about the shell a utility on the shell cannot state: the width and the
+   corners belong to the notice inside it. */
+
+@layer page {
+  .shell-banner > .notice {
+    max-width: none;
+    border-radius: 0;
+  }
+}

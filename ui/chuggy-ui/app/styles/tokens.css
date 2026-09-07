@@ -74,6 +74,10 @@
       var(--surface-1)
     );
 
+    /* the page dimmed behind a drawer, which is the one colour that is not a
+       level: it has to let the level under it through */
+    --scrim: color-mix(in srgb, var(--surface-0) 70%, transparent);
+
     --focus: var(--ink-1);
 
     /* type — the operator's own faces, because the policy admits no font */
@@ -112,6 +116,7 @@
     --radius-1: 2px; /* pills, meter cells */
     --radius-2: 4px; /* buttons, panels, inputs */
     --radius-3: 1.125rem; /* bubbles, work cards, the composer */
+    --radius-circle: 50%; /* a square drawn round: a dot, a mark, a monogram */
     --hairline: 1px;
     --rail: 2px; /* the standing rail of a ledger group and a notice */
 
@@ -126,8 +131,8 @@
 
     /* layout */
     --width-page: 96rem;
-    --width-column: 48rem; /* a conversation's own measure */
     --width-rail: 16rem; /* the shell's navigation */
+    --width-column: 48rem; /* a conversation's reading column */
     --width-aside: 22rem;
     --width-aside-min: 18rem;
     --col-label: 8.5rem; /* ledger: the row's label */

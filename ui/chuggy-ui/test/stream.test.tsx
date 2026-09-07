@@ -344,7 +344,9 @@ async function shellStream(
     </Harness>,
   );
   await settled();
-  return view.container.querySelector(".shell")?.getAttribute("data-stream");
+  return view.container
+    .querySelector("[data-stream]")
+    ?.getAttribute("data-stream");
 }
 
 test("the shell says the stream is live once it is carrying changes", async () => {

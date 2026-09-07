@@ -37,7 +37,7 @@ import {
 } from "../core/threads.ts";
 import { threadStandingTone } from "../core/tones.ts";
 import { useApiPorts, usePanelList } from "./api.ts";
-import { DataPanel } from "./DataPanel.tsx";
+import { PanelUnready } from "./DataPanel.tsx";
 import { ThreadClose } from "./thread/ThreadClose.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
@@ -45,8 +45,6 @@ import { Identity } from "./ui/Identity.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
-
-import "./thread/thread.css";
 
 export const threadsListName = "threads";
 
@@ -66,7 +64,7 @@ function ThreadRow(props: {
         </Link>
       </td>
       <td>{thread.mine ? <Pill tone="live">Mine</Pill> : null}</td>
-      <td className={thread.owner === undefined ? "thread-absent" : undefined}>
+      <td className={thread.owner === undefined ? "text-ink-3" : undefined}>
         {thread.owner ?? "None"}
       </td>
       <td>
@@ -101,7 +99,7 @@ function ThreadOpen(props: {
   const [refused, setRefused] = useState<string | undefined>(undefined);
   if (threadMine(props.threads) !== undefined) return null;
   return (
-    <div className="thread-open">
+    <div className="flex flex-wrap items-center gap-3 pb-3">
       <Button
         variant="primary"
         busy={opening}
@@ -171,15 +169,14 @@ export function ThreadsPage(): ReactNode {
     (ports) => apiThreads(ports, partition),
   );
   return (
-    <div className="threads">
-      <DataPanel title="Threads" state={state}>
-        {(value) => (
-          <>
-            <ThreadOpen partition={partition} threads={value.threads} />
-            <ThreadTable partition={partition} threads={value.threads} />
-          </>
-        )}
-      </DataPanel>
+    <div className="grid min-w-0 gap-4">
+      <PanelUnready state={state} />
+      {state.state === "Ready" ? (
+        <>
+          <ThreadOpen partition={partition} threads={state.value.threads} />
+          <ThreadTable partition={partition} threads={state.value.threads} />
+        </>
+      ) : null}
     </div>
   );
 }
