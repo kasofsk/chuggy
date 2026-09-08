@@ -28,7 +28,6 @@ import { SelectorSettingsPage } from "../app/browser/SelectorSettingsPage.tsx";
 import { leadDispatchesMax } from "../../../src/contract/http.ts";
 import { selectorProjectOverridesSchema } from "../../../src/contract/requests.ts";
 import { selectorSettingsLimitNames } from "../app/core/selectorSettingsForm.ts";
-import { selectorTextShownCharsMax } from "../app/browser/selector/SelectorTextSection.tsx";
 import {
   answer,
   openedStream,
@@ -1070,34 +1069,17 @@ test("only the latest revisions stand until Show all is pressed", async () => {
   expect(rows()).toHaveLength(7);
 });
 
-/**
- * A SETTING A READER CANNOT SEE THE END OF IS A SETTING THEY CANNOT CHECK. A
- * passage past what the section will give it is clipped rather than cut, and
- * says how much it is holding back, so the sections under it are still on the
- * screen.
- */
-test("a long passage is clipped until Show all, and a short one is not", async () => {
-  const long = "a".repeat(selectorTextShownCharsMax + 1);
+/** A setting a reader cannot see the end of is a setting they cannot check, so
+ * a long passage stands whole at rest with nothing hiding any of it. */
+test("a long passage is drawn whole, with no clip and no Show all", async () => {
+  const long = "a".repeat(2000);
   await drawSettings({
     read: settingsBody(12, {}, { basePrompt: long }),
   });
   const prompt = sectionOf("Base prompt");
-  expect(prompt.querySelector(".selector-clip")).not.toBeNull();
-  expect(within(prompt).getByText(String(selectorTextShownCharsMax + 1)));
-  expect(
-    within(sectionOf("North Star")).queryByRole("button", { name: /Show all/ }),
-  ).toBeNull();
-
-  await turned(() => {
-    fireEvent.click(
-      within(sectionOf("Base prompt")).getByRole("button", {
-        name: /Show all/,
-      }),
-    );
-  });
-  const shown = sectionOf("Base prompt");
-  expect(shown.querySelector(".selector-clip")).toBeNull();
-  expect(within(shown).getByRole("button", { name: "Show less" }));
+  expect(prompt.querySelector(".selector-clip")).toBeNull();
+  expect(within(prompt).getByText(long));
+  expect(within(prompt).queryByRole("button", { name: /Show all/ })).toBeNull();
   styleless();
 });
 

@@ -1,16 +1,10 @@
 /**
  * One prose setting: the whole of what the project runs under while the section
  * is read, and a box that grows to the text while it is edited.
- *
- * The passage is shown whole because a setting a reader cannot see the end of
- * is a setting they cannot check; only a passage past the height a quoted block
- * stops at is clipped, and it says how much it is holding back.
  */
 
-import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { countFigure } from "../../core/figures.ts";
 import {
   selectorSettingsSection,
   selectorSettingsSectionInherited,
@@ -23,16 +17,10 @@ import type {
   SelectorSettingsTextName,
 } from "../../core/selectorSettingsForm.ts";
 import { Button } from "../ui/Button.tsx";
-import { Disclosure } from "../ui/Disclosure.tsx";
-import { Figure } from "../ui/Figure.tsx";
 import { Textarea } from "../ui/Textarea.tsx";
 import { SelectorSection } from "./SelectorSection.tsx";
 
 import "./selector.css";
-
-/** Past this a passage is clipped at rest, because a section holding more than
- * this pushes every section under it off the screen. */
-export const selectorTextShownCharsMax = 600;
 
 function SelectorTextBody(props: {
   readonly text: string;
@@ -41,41 +29,6 @@ function SelectorTextBody(props: {
   return (
     <div className="selector-prose" data-mono={props.mono ? "" : undefined}>
       {props.text}
-    </div>
-  );
-}
-
-function SelectorTextRead(props: {
-  readonly text: string;
-  readonly mono: boolean;
-}): ReactNode {
-  const [shown, setShown] = useState(false);
-  if (props.text.length <= selectorTextShownCharsMax)
-    return <SelectorTextBody text={props.text} mono={props.mono} />;
-  return (
-    <div className="grid gap-2 justify-items-start">
-      {shown ? null : (
-        <div className="selector-clip">
-          <SelectorTextBody text={props.text} mono={props.mono} />
-        </div>
-      )}
-      <Disclosure
-        open={shown}
-        onOpenChange={setShown}
-        look={{ variant: "quiet", size: "sm" }}
-        label={
-          shown ? (
-            "Show less"
-          ) : (
-            <span className="flex items-center gap-2">
-              Show all
-              <Figure figure={countFigure(props.text.length, "characters")} />
-            </span>
-          )
-        }
-      >
-        <SelectorTextBody text={props.text} mono={props.mono} />
-      </Disclosure>
     </div>
   );
 }
@@ -135,7 +88,7 @@ export function SelectorTextSection(props: {
           }}
         />
       ) : (
-        <SelectorTextRead text={props.effective} mono={mono} />
+        <SelectorTextBody text={props.effective} mono={mono} />
       )}
     </SelectorSection>
   );
