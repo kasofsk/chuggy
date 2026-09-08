@@ -32,7 +32,6 @@ import {
   leadTranscriptDrawn,
   leadTranscriptNextAfter,
   leadTranscriptPaneEmpty,
-  leadTranscriptReadsMax,
   leadTranscriptStep,
 } from "../../core/leadTranscript.ts";
 import type {
@@ -55,11 +54,12 @@ export interface LeadTranscriptRead {
 }
 
 /**
- * The batches above what is held, a bounded number of pages at a time,
- * abandoned when the page goes away. THE PANE IS THE STATE AND WHAT IS DRAWN IS
- * DERIVED FROM IT: this reads, turns each read into one of the events the pane
- * accepts, and holds nothing of its own — every decision about what a reader
- * sees is `leadTranscriptStep`'s and `leadTranscriptDrawn`'s.
+ * The batches between what is held and the mark the session's own read carries,
+ * however many pages that takes, abandoned when the page goes away. THE PANE IS
+ * THE STATE AND WHAT IS DRAWN IS DERIVED FROM IT: this reads, turns each read
+ * into one of the events the pane accepts, and holds nothing of its own — every
+ * decision about what a reader sees is `leadTranscriptStep`'s and
+ * `leadTranscriptDrawn`'s.
  */
 export function useLeadTranscript(
   read: LeadTranscriptRead,
@@ -87,7 +87,7 @@ export function useLeadTranscript(
     const walk = async (): Promise<void> => {
       if (pane.current.stream !== undefined && pane.current.stream !== stream)
         stepped({ event: "StreamChange", stream });
-      for (let asked = 0; asked < leadTranscriptReadsMax; asked += 1) {
+      for (let page = 0; page < highWaterBatch; page += 1) {
         const after = leadTranscriptNextAfter(pane.current, highWaterBatch);
         if (after === undefined || stream === undefined || superseded) return;
         const answered =
@@ -111,7 +111,6 @@ export function useLeadTranscript(
         stepped({ event: "Page", page: answered.value, highWaterBatch });
         if (superseded) return;
       }
-      if (!superseded) stepped({ event: "BudgetEnd" });
     };
     void walk();
     return () => {

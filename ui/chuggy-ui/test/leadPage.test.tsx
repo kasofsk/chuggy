@@ -38,11 +38,11 @@ import { ShellSlotHarness, styleless } from "./shellSlotHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import { viewportAtEm } from "./viewport.ts";
 import { inquiryBoxesHeld } from "../app/browser/lead/inquiryBoxes.ts";
-import { sessionStorePageBatchesMax } from "../../../src/contract/http.ts";
 import {
-  leadTranscriptEntriesHeldMax,
-  leadTranscriptReadsMax,
-} from "../app/core/leadTranscript.ts";
+  sessionStorePageBatchesMax,
+  sessionTranscriptEntriesMax,
+} from "../../../src/contract/http.ts";
+import { leadTranscriptEntriesHeldMax } from "../app/core/leadTranscript.ts";
 import {
   leadBody,
   leadHandoffNote,
@@ -617,55 +617,112 @@ test("a lead that has left no note draws no note at all", async () => {
   expect(screen.queryByText("Handoff note")).toBeNull();
 });
 
-/** A store that never says it is finished, so the walk's own budget is the only
- * thing that stops it. */
-function endlessStore(): { readonly reads: () => number } {
-  let reads = 0;
+/** A store of many pages, which is the shape a walk stopped by a count of its
+ * own reads used to give up part-way through. */
+const walkedStoreBatches = 202;
+
+/**
+ * The store the walk must read whole, paged the way the route pages it: a full
+ * page carries the batch it read to, and the short page that ends the store
+ * carries no cursor at all. `endless` is the same store answering a cursor
+ * above the mark on every page — the route the walk must not follow past it.
+ */
+function pagedStore(
+  batches: number,
+  shape: { readonly endless: boolean } = { endless: false },
+): { readonly asks: () => readonly number[] } {
+  const asks: number[] = [];
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
       if (url.includes("/lead/transcript")) {
-        const asked = Number(
+        const after = Number(
           new URL(url, "https://console").searchParams.get("after") ?? "0",
         );
-        reads += 1;
+        asks.push(after);
+        const last = shape.endless
+          ? after + sessionStorePageBatchesMax
+          : Math.min(after + sessionStorePageBatchesMax, batches);
         return answer({
-          stream: "1a2b3c",
-          entries: [
+          stream: leadStream,
+          entries: Array.from({ length: last - after }, (_unused, at) => [
             {
-              uuid: `uuid-${String(asked)}`,
+              uuid: `uuid-ask-${String(after + at + 1)}`,
+              type: "user",
+              message: {
+                content: [
+                  { type: "text", text: `turn ${String(after + at + 1)}` },
+                ],
+              },
+            },
+            {
+              uuid: `uuid-said-${String(after + at + 1)}`,
               type: "assistant",
               message: { content: [] },
             },
-          ],
+          ]).flat(),
           held: [],
+          cut: 1,
           elided: 0,
           truncated: false,
-          nextAfter: asked + 1,
+          ...(last - after < sessionStorePageBatchesMax
+            ? {}
+            : { nextAfter: last }),
         });
       }
-      const found = leadRouteAnswer(url, { ...opening, batches: 9_999 });
+      const found = leadRouteAnswer(url, { ...opening, batches });
       return answer(found.body, found.status);
     },
   });
   vi.stubGlobal("fetch", api.fetch);
-  return { reads: () => reads };
+  return { asks: () => asks };
+}
+
+/** How many reads a store of `batches` costs: a page of them a read, and no
+ * read at all above the mark. */
+function readsAllowed(batches: number): number {
+  return Math.ceil(batches / sessionStorePageBatchesMax);
 }
 
 /**
- * The read budget is the only thing between a lead whose store keeps answering
- * and a tab that walks it forever, and its size is part of the control: a bound
- * raised past what the route itself pages in is a budget that no longer bounds
- * anything a reader waits on.
+ * THE MARK IS WHAT THE WALK READS TO, and a store of more batches than one
+ * effect used to be allowed is read whole on mount. A walk stopped by a count
+ * of its own reads drew the first turn of this store, marked the rest
+ * "Not reached", and stayed there until the store was written again — which for
+ * a session that had finished never happened.
  */
-test("the walk stops at its own read budget however much the store offers", async () => {
-  const store = endlessStore();
+test("a store of many pages is read to its end on mount", async () => {
+  const store = pagedStore(walkedStoreBatches);
   await mountLead();
-  expect(store.reads()).toBe(leadTranscriptReadsMax);
+  expect(screen.getByText("turn 1")).toBeDefined();
+  expect(screen.getByText(`turn ${String(walkedStoreBatches)}`)).toBeDefined();
+  expect(exchangeCount()).toBe(walkedStoreBatches);
   expect(
-    leadTranscriptReadsMax,
-    "one rise of the store may now cost more reads than the route pages in",
-  ).toBeLessThanOrEqual(sessionStorePageBatchesMax);
+    screen.queryByText("Not reached"),
+    "a store the walk read whole was drawn as one it had not reached the end of",
+  ).toBeNull();
+  expect(screen.queryByText(/^Dropped · /u)).toBeNull();
+  expect(store.asks().length).toBeLessThanOrEqual(
+    readsAllowed(walkedStoreBatches),
+  );
+});
+
+/**
+ * The mark is also the only thing between a store that keeps answering a cursor
+ * and a tab that pages it forever. The walk asks below the mark the session's
+ * own read carries and nowhere else, so a route answering a cursor above it is
+ * not followed there.
+ */
+test("a store answering a cursor above the mark is not asked past it", async () => {
+  const store = pagedStore(walkedStoreBatches, { endless: true });
+  await mountLead();
+  expect(
+    Math.max(...store.asks()),
+    "the walk asked for a batch the session's own read does not carry",
+  ).toBeLessThan(walkedStoreBatches);
+  expect(store.asks().length).toBeLessThanOrEqual(
+    readsAllowed(walkedStoreBatches),
+  );
 });
 
 /** A transcript that will not read is said as itself; a Log drawn as empty
@@ -716,10 +773,14 @@ test("a stream the store's listing does not carry is named, not drawn as empty",
   expect(screen.queryByText("No conversation")).toBeNull();
 });
 
+/** A batch a page, so the walk over this store costs one read a batch, and the
+ * mark is the last read it may make. */
+const compactingStoreBatches = 40;
+
 /**
- * A store whose `cut` moves on the last read the budget allows, which is the
- * reachable worst case: the walk ends on the reset and no re-walk page arrives
- * to replace it.
+ * A store whose `cut` moves on a read the case names. Moving it on the last
+ * read the mark allows is the reachable worst case: the walk ends on the reset
+ * and no re-walk page arrives to replace it.
  */
 function compactingStore(moveOnRead: number): { readonly reads: () => number } {
   let reads = 0;
@@ -748,7 +809,10 @@ function compactingStore(moveOnRead: number): { readonly reads: () => number } {
           nextAfter: asked + 1,
         });
       }
-      const found = leadRouteAnswer(url, { ...opening, batches: 40 });
+      const found = leadRouteAnswer(url, {
+        ...opening,
+        batches: compactingStoreBatches,
+      });
       return answer(found.body, found.status);
     },
   });
@@ -760,13 +824,13 @@ function compactingStore(moveOnRead: number): { readonly reads: () => number } {
  * THE RESET IS A STEP IN THE WALK AND NOT A STATE A READER IS SHOWN. A pane
  * drawn from it says the lead has recorded nothing and is holding nothing —
  * the two claims these panels reserve for a lead that really has — and when the
- * reset lands on the last read of the budget it says them until the store is
+ * reset lands on the last read the mark allows it says them until the store is
  * written again.
  */
 test("a cut that moves on the last read does not blank the log", async () => {
-  const store = compactingStore(leadTranscriptReadsMax);
+  const store = compactingStore(compactingStoreBatches);
   await mountLead();
-  expect(store.reads()).toBe(leadTranscriptReadsMax);
+  expect(store.reads()).toBe(compactingStoreBatches);
   expect(
     screen.queryByText("No conversation"),
     "the walk's own reset was drawn as a lead that has recorded nothing",
@@ -778,12 +842,13 @@ test("a cut that moves on the last read does not blank the log", async () => {
   ).toBeDefined();
 });
 
-/** A re-walk that finishes inside the budget draws what it rebuilt rather than
- * the stale kept fold — and still says the store has not been read to its end,
- * since this store's cursor always advances and the budget never catches it. */
-test("a cut that moves early is rebuilt inside the budget and drawn", async () => {
-  compactingStore(2);
+/** A re-walk draws what it rebuilt rather than the stale kept fold — and still
+ * says the store has not been read to its end, since the reads the reset spent
+ * are reads the re-walk no longer has to reach the mark with. */
+test("a cut that moves early is rebuilt and drawn", async () => {
+  const store = compactingStore(2);
   await mountLead();
+  expect(store.reads()).toBe(compactingStoreBatches);
   expect(exchangeCount()).toBeGreaterThan(0);
   expect(screen.queryByText("No conversation")).toBeNull();
   expect(screen.getByText("Not reached")).toBeDefined();
@@ -930,33 +995,30 @@ test("what a read could not draw is said beside what it did", async () => {
 
 /** What a pane stopped holding is said as itself: a chain longer than the cap
  * is drawn short, and a reader with no notice reads the short one as the whole
- * of it. */
+ * of it. The route answers a page of entries at a time, so overflowing the cap
+ * takes as many pages as the cap is worth of them. */
 test("the entries a pane stopped holding are counted where a reader sees them", async () => {
   const overflowing = leadTranscriptEntriesHeldMax + 2;
-  scriptedStore((read, after) =>
-    read === 1
-      ? answer({
-          stream: leadStream,
-          entries: Array.from({ length: overflowing }, (_unused, at) => ({
-            uuid: `uuid-${String(at).padStart(4, "0")}`,
-            type: "assistant",
-            message: { content: [] },
-          })),
-          held: [],
-          cut: 1,
-          elided: 0,
-          truncated: false,
-          nextAfter: after + 1,
-        })
-      : answer({
-          stream: leadStream,
-          entries: [],
-          held: [],
-          cut: 1,
-          elided: 0,
-          truncated: false,
-        }),
-  );
+  scriptedStore((read, after) => {
+    const from = (read - 1) * sessionTranscriptEntriesMax;
+    const carried = Math.max(
+      0,
+      Math.min(sessionTranscriptEntriesMax, overflowing - from),
+    );
+    return answer({
+      stream: leadStream,
+      entries: Array.from({ length: carried }, (_unused, at) => ({
+        uuid: `uuid-${String(from + at).padStart(4, "0")}`,
+        type: "assistant",
+        message: { content: [] },
+      })),
+      held: [],
+      cut: 1,
+      elided: 0,
+      truncated: false,
+      ...(carried === 0 ? {} : { nextAfter: after + 1 }),
+    });
+  });
   await mountLead();
   expect(screen.getByText("Dropped · 2")).toBeDefined();
 });

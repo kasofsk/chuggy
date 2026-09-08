@@ -37,7 +37,7 @@
  * one of its own, and says only the thing the reset does make true: that what
  * the lead holds is no longer known.
  *
- * THE RE-WALK COSTS A RUN OF THE READ BUDGET, which is the price of being
+ * THE RE-WALK COSTS THE READS THE MARK ALLOWS, which is the price of being
  * right: a pane part-way through a re-walk holds less than it did, and the next
  * rise of the store's batch count carries it further. A lead compacting faster
  * than its own transcript can be paged is a lead whose transcript no reader can
@@ -77,11 +77,8 @@ import type {
 /** As much of the note the lead left its successor as the lead read carries. */
 export type LeadHandoffNote = LeadResponse["handoffNote"];
 
-/** The most reads one rise of the store's batch count may cost. */
-export const leadTranscriptReadsMax = 8;
-
 /** The most entries a pane keeps, past which the oldest leave. */
-export const leadTranscriptEntriesHeldMax = 400;
+export const leadTranscriptEntriesHeldMax = 4096;
 
 export type LeadTranscriptEntry = LeadTranscriptResponse["entries"][number];
 
@@ -118,7 +115,8 @@ export interface LeadTranscriptFold {
    * on from exactly where it stopped.
    */
   readonly stalledAt: number | undefined;
-  /** Whether the last page said there may be more above the cursor it gave. */
+  /** Whether the last page left batches below the mark it was read against
+   * unread, which is the walk not having reached the end of the store. */
   readonly more: boolean;
 }
 
@@ -175,10 +173,11 @@ export interface LeadTranscriptHeld extends LeadTranscriptFold {
 }
 
 /**
- * The batch the next read asks after. `nextAfter` says a page filled its limit
- * and so only that there MAY be more, which is why a full page that ends the
- * store is followed by one empty page; past that the walk resumes only when the
- * store has been written above the cursor this pane has read to.
+ * The batch the next read asks after, and nothing where the walk has read to
+ * the mark the session's own read carries. THE MARK IS WHAT BOUNDS THE WALK:
+ * asking nothing at or above it is what stops a store that keeps answering a
+ * cursor from being paged forever, and what a store written past the mark
+ * carries the walk on from.
  */
 export function leadTranscriptNextAfter(
   pane: LeadTranscriptPane,
@@ -188,24 +187,26 @@ export function leadTranscriptNextAfter(
   if (fold.readTo === undefined) return highWaterBatch > 0 ? 0 : undefined;
   if (fold.stalledAt !== undefined && highWaterBatch <= fold.stalledAt)
     return undefined;
-  if (fold.more) return fold.readTo;
   return highWaterBatch > fold.readTo ? fold.readTo : undefined;
 }
 
 /**
- * Whether the walk asks again on the strength of the page's own cursor. Neither
- * a page with no entries nor one whose cursor did not move can have filled a
- * limit, so neither is asked past on that basis; the store growing above the
- * cursor is what reaches them, and the read budget is what bounds that.
+ * Whether the page leaves batches below the mark unread: `nextAfter` says a
+ * page filled its limit and so only that there MAY be more, and a page whose
+ * cursor reaches the mark has read the store to its end. Neither a page with no
+ * entries nor one whose cursor did not move can have filled a limit, so neither
+ * leaves anything unread on that basis.
  */
 function leadTranscriptMore(
   page: LeadTranscriptResponse,
   asked: number,
+  highWaterBatch: number,
 ): boolean {
   return (
     page.nextAfter !== undefined &&
     page.entries.length > 0 &&
-    page.nextAfter > asked
+    page.nextAfter > asked &&
+    page.nextAfter < highWaterBatch
   );
 }
 
@@ -291,14 +292,14 @@ function leadTranscriptGathered(
     entriesDropped: fold.entriesDropped + (merged.length - kept.length),
     readTo: cursor.readTo,
     stalledAt: cursor.stalledAt,
-    more: leadTranscriptMore(page, asked),
+    more: leadTranscriptMore(page, asked, highWaterBatch),
   };
 }
 
 /**
- * What happens to a pane. These are the only four, and every one of them is
- * something the walk observed rather than anything it decided: the reset is a
- * transition the step takes on a page, not an event anything can send.
+ * What happens to a pane. Every one of them is something the walk observed
+ * rather than anything it decided: the reset is a transition the step takes on
+ * a page, not an event anything can send.
  */
 export type LeadTranscriptEvent =
   | {
@@ -307,7 +308,6 @@ export type LeadTranscriptEvent =
       readonly highWaterBatch: number;
     }
   | { readonly event: "Failure"; readonly reason: string }
-  | { readonly event: "BudgetEnd" }
   | { readonly event: "StreamChange"; readonly stream: string | undefined };
 
 /**
@@ -349,8 +349,7 @@ function leadTranscriptPaged(
 
 /**
  * One event, applied. FAILURE records the reason and touches nothing else,
- * because a read that did not answer establishes only that it did not;
- * BUDGET-END is the walk stopping, which says nothing about the stream; and a
+ * because a read that did not answer establishes only that it did not; and a
  * STREAM-CHANGE is a different pane, so it starts from nothing.
  */
 export function leadTranscriptStep(
@@ -362,8 +361,6 @@ export function leadTranscriptStep(
       return leadTranscriptPaged(pane, event.page, event.highWaterBatch);
     case "Failure":
       return { ...pane, failure: event.reason };
-    case "BudgetEnd":
-      return pane;
     case "StreamChange":
       return { ...leadTranscriptPaneEmpty, stream: event.stream };
   }

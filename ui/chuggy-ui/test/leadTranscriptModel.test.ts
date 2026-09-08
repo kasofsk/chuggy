@@ -24,7 +24,6 @@ import {
   leadTranscriptEntriesHeldMax,
   leadTranscriptNextAfter,
   leadTranscriptPaneEmpty,
-  leadTranscriptReadsMax,
   leadTranscriptStep,
 } from "../app/core/leadTranscript.ts";
 import type {
@@ -43,7 +42,7 @@ const modelEntriesPerBatch = 3;
  * the cap, which is where the entries a pane drops meet everything else. */
 const modelCappedSequences = 6;
 const modelCappedEventsMax = 60;
-const modelCappedEntriesPerBatch = 60;
+const modelCappedEntriesPerBatch = 512;
 
 /**
  * A seeded generator, so a sequence that finds something can be run again. It
@@ -175,11 +174,17 @@ function modelGathered(
     entry.uuid === undefined ? [] : [entry.uuid],
   );
   const merged = [...segment.entries];
-  for (const uuid of arriving) if (!merged.includes(uuid)) merged.push(uuid);
+  const seen = new Set(merged);
+  for (const uuid of arriving)
+    if (!seen.has(uuid)) {
+      seen.add(uuid);
+      merged.push(uuid);
+    }
   const kept = merged.slice(-leadTranscriptEntriesHeldMax);
+  const present = new Set(kept);
   const holding = [
     ...new Set([...segment.holding, ...(page.held ?? [])]),
-  ].filter((uuid) => kept.includes(uuid));
+  ].filter((uuid) => present.has(uuid));
   return {
     entries: kept,
     holding,
@@ -231,7 +236,6 @@ function modelReference(
       failure = event.reason;
       continue;
     }
-    if (event.event === "BudgetEnd") continue;
     failure = undefined;
     const current = runs[runs.length - 1] ?? modelSegmentEmpty;
     if (modelStartsRun(current, event.page))
@@ -290,13 +294,12 @@ function modelEvent(
   store: ModelStore,
   pane: LeadTranscriptPane,
   highWaterBatch: number,
-): LeadTranscriptEvent {
+): LeadTranscriptEvent | undefined {
   const roll = random();
   if (roll < 0.08) return { event: "Failure", reason: "the API failed" };
-  if (roll < 0.14) return { event: "BudgetEnd" };
-  if (roll < 0.18) return { event: "StreamChange", stream: "model-stream" };
+  if (roll < 0.12) return { event: "StreamChange", stream: "model-stream" };
   const after = leadTranscriptNextAfter(pane, highWaterBatch);
-  if (after === undefined) return { event: "BudgetEnd" };
+  if (after === undefined) return undefined;
   return {
     event: "Page",
     page: modelPage(store, after, {
@@ -356,6 +359,7 @@ function modelRun(seed: number, shape: ModelShape): ModelRun {
       };
     if (random() > 0.6) store = modelGrown(store, shape.entries);
     const event = modelEvent(random, store, pane, store.batches.length);
+    if (event === undefined) continue;
     events.push(event);
     pane = leadTranscriptStep(pane, event);
   }
@@ -402,7 +406,8 @@ function modelChecked(
     new Set(uuids).size,
     modelSaid(where, "an entry was drawn twice"),
   ).toBe(uuids.length);
-  const places = uuids.map((uuid) => chain.indexOf(uuid));
+  const placed = new Map(chain.map((uuid, place) => [uuid, place]));
+  const places = uuids.map((uuid) => placed.get(uuid) ?? -1);
   expect(
     places.every((place, at) => at === 0 || place > (places[at - 1] ?? -1)),
     modelSaid(where, "the chain was drawn out of the store's own order"),
@@ -525,11 +530,11 @@ test("the invariants hold over a store past what a pane can keep", () => {
 
 /**
  * THE WALK STOPS. Over a store that is not growing, a pane must run out of
- * cursor before it runs out of budget — including on a page whose cursor does
- * not advance, which leaves the walk nowhere to go and must therefore end it
- * rather than spend every read a reader is waiting on re-asking one batch.
+ * cursor within the reads the mark allows — including on a page whose cursor
+ * does not advance, which leaves the walk nowhere to go and must therefore end
+ * it rather than spend every read a reader is waiting on re-asking one batch.
  */
-test("a walk over a store that stands still stops before its budget", () => {
+test("a walk over a store that stands still stops at the mark it read against", () => {
   const shapes = new Set<string>();
   let stalled = 0;
   for (let seed = 1; seed <= modelSequences; seed += 1) {
@@ -543,7 +548,7 @@ test("a walk over a store that stands still stops before its budget", () => {
     let reads = 0;
     let stalls = false;
     const cursors: number[] = [];
-    for (let at = 0; at < leadTranscriptReadsMax; at += 1) {
+    for (let at = 0; at <= store.batches.length; at += 1) {
       const after = leadTranscriptNextAfter(pane, store.batches.length);
       if (after === undefined) break;
       cursors.push(after);
@@ -571,12 +576,16 @@ test("a walk over a store that stands still stops before its budget", () => {
     );
     expect(
       leadTranscriptNextAfter(pane, store.batches.length),
-      `seed ${String(seed)}: the walk was still asking when its budget ran out`,
+      `seed ${String(seed)}: the walk was still asking past the mark`,
     ).toBeUndefined();
     expect(
       reads,
-      `seed ${String(seed)}: the walk spent its whole budget`,
-    ).toBeLessThan(leadTranscriptReadsMax);
+      `seed ${String(seed)}: the walk read more batches than the store holds`,
+    ).toBeLessThanOrEqual(store.batches.length);
+    expect(
+      Math.max(...cursors),
+      `seed ${String(seed)}: the walk asked at or above the mark`,
+    ).toBeLessThan(store.batches.length);
   }
   expect(
     shapes.size,
@@ -622,7 +631,7 @@ test("a store written past a stall carries the walk on from where it stopped", (
     "a pane that has not reached the rest of the stream claimed to know",
   ).toBe(true);
   const cursors: number[] = [];
-  for (let at = 0; at < leadTranscriptReadsMax; at += 1) {
+  for (let at = 0; at <= store.batches.length; at += 1) {
     const after = leadTranscriptNextAfter(pane, store.batches.length);
     if (after === undefined) break;
     cursors.push(after);
@@ -641,7 +650,7 @@ test("a store written past a stall carries the walk on from where it stopped", (
   expect(
     cursors,
     "the walk did not resume from the cursor it stalled at",
-  ).toStrictEqual([1, 2, 3, 4, 5]);
+  ).toStrictEqual([1, 2, 3, 4]);
   expect(pane.fold.entries.length).toBe(
     store.batches.length * modelEntriesPerBatch,
   );
