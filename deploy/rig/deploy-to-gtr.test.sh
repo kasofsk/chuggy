@@ -171,7 +171,7 @@ for file in src/a.ts src/contract/c.ts ui/chuggy-ui/app.ts ui/console/index.html
 done
 cat >"$REPO/.chug/tasks/ci.sh" <<'STUB'
 #!/bin/sh
-printf 'ci prefix=<%s>\n' "${CHUG_IMAGE_PREFIX:-}" >>"$CHUG_STUB_LOG"
+printf 'ci prefix=<%s> full=<%s> base=<%s>\n' "${CHUG_IMAGE_PREFIX:-}" "${CHUG_CI_FULL:-}" "${CHUG_CI_BASE:-}" >>"$CHUG_STUB_LOG"
 exit "${CHUG_STUB_GATE_RC:-0}"
 STUB
 cat >"$REPO/deploy/rig/images/build-and-import.sh" <<'STUB'
@@ -230,6 +230,7 @@ git -C "$FABRIC_SEED" config user.name t
 git -C "$FABRIC_SEED" add -A
 git -C "$FABRIC_SEED" commit -qm seed
 git clone -q --bare "$FABRIC_SEED" "$FABRIC_GIT"
+FABRIC_SEED_SHA="$(git --git-dir="$FABRIC_GIT" rev-parse main)"
 
 # --- the drivers ------------------------------------------------------------------
 
@@ -238,6 +239,7 @@ fresh_case() {
 	rm -f "$LOG.body" "$ARCHIVE"/*
 	git -C "$REPO" reset -q --hard "$DEPLOYED_FULL"
 	git -C "$REPO" push -q -f origin main
+	git --git-dir="$FABRIC_GIT" update-ref refs/heads/main "$FABRIC_SEED_SHA"
 	for ref in $(git --git-dir="$FABRIC_GIT" for-each-ref --format='%(refname:short)' refs/heads/release); do
 		git --git-dir="$FABRIC_GIT" branch -q -D "$ref"
 	done
@@ -262,6 +264,20 @@ advance() { # <path>...
 	git -C "$REPO" push -q origin main
 	TAG="$(git -C "$REPO" rev-parse --short HEAD)"
 	export CHUG_STUB_BRANCH="release/chuggy-$TAG"
+}
+
+# The fabric's main comes to name another commit as live, as a release that
+# landed would leave it.
+rig_at() { # <short commit>
+	rm -rf "$WORK/rig-at"
+	git clone -q "$FABRIC_GIT" "$WORK/rig-at"
+	git -C "$WORK/rig-at" config user.email t@example.com
+	git -C "$WORK/rig-at" config user.name t
+	for name in $(ls "$WORK/rig-at/cluster/apps"); do
+		sed -i "s|source-commit: $DEPLOYED|source-commit: $1|; s|chuggy-migrate-$DEPLOYED-|chuggy-migrate-$1-|" "$WORK/rig-at/cluster/apps/$name"
+	done
+	git -C "$WORK/rig-at" commit -qam "release: chuggy $1"
+	git -C "$WORK/rig-at" push -q origin main
 }
 
 run() { # <argument...>
@@ -627,6 +643,93 @@ open_release src/a.ts
 export CHUG_STUB_MERGE_RC=1
 run --merge
 check "a merge that failed is a finding" 1 "$RC" "pull request 9 did not merge"
+
+# --- --console: a console-only release, both phases in one run ----------------------
+
+fresh_case
+advance ui/chuggy-ui/app.ts
+run --console --merge
+check "console with merge is refused" 2 "$RC" "takes no --merge"
+check "console with merge reaches no tool" 2 "$RC" "$untouched"
+
+fresh_case
+advance ui/chuggy-ui/app.ts src/a.ts
+run --console
+check "a change that moves the api is not a console release" 2 "$RC" "moves the api, so it is not a console release"
+check "a refused console release runs no gate" 2 "$RC" "gates run: 0"
+check "a refused console release builds nothing" 2 "$RC" "builds attempted: 0"
+
+fresh_case
+advance ui/chuggy-ui/app.ts ui/console/index.html
+run --console
+check "a change that moves the old console is not a console release" 2 "$RC" "moves the old console"
+
+fresh_case
+advance ui/chuggy-ui/app.ts src/adapters/postgres/schema/migrations/050-b.ts
+run --console
+check "a migration moves the api and is not a console release" 2 "$RC" "moves the api, so it is not a console release"
+
+fresh_case
+advance images/worker/Dockerfile
+run --console
+check "a change the console does not serve is no console release" 2 "$RC" "nothing the console serves moved"
+
+# The rig runs a commit HEAD is behind: the gate runner would diff HEAD from
+# itself and find nothing to run, so the mode refuses rather than vouch for it.
+fresh_case
+advance ui/chuggy-ui/app.ts
+rig_at "$TAG"
+git -C "$REPO" reset -q --hard "$DEPLOYED_FULL"
+git -C "$REPO" push -q -f origin main
+run --console
+check "a console release that moves the rig back is refused" 2 "$RC" "HEAD has none; run without --console"
+check "a release that moves the rig back runs no gate" 2 "$RC" "gates run: 0"
+check "a release that moves the rig back builds nothing" 2 "$RC" "builds attempted: 0"
+
+# The mirror: the full route releases the same move, with every gate.
+fresh_case
+advance ui/chuggy-ui/app.ts
+rig_at "$TAG"
+git -C "$REPO" reset -q --hard "$DEPLOYED_FULL"
+git -C "$REPO" push -q -f origin main
+export CHUG_STUB_BRANCH="release/chuggy-$DEPLOYED"
+run
+check "the full route releases a move back" 0 "$RC" "this moves the rig back"
+check "a move back is gated with every gate" 0 "$RC" "ci prefix=<> full=<1> base=<>"
+
+fresh_case
+advance ui/chuggy-ui/app.ts
+export CHUG_STUB_MERGED="$MERGED"
+export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1 CHUG_STUB_LIVE_ROWS=1
+run --console
+check "a console release lands in one run" 0 "$RC" "the rig is at $TAG; ledger at 52"
+check "a console release gates what moved since the live commit" 0 "$RC" "ci prefix=<> full=<> base=<$DEPLOYED>"
+check "a console release runs one gate" 0 "$RC" "gates run: 1"
+check "a console release builds the console alone" 0 "$RC" "builds attempted: 1"
+check "a console release opens the pull request" 0 "$RC" "pull requests opened: 1"
+check "a console release merges its own pull request" 0 "$RC" "gh pr merge 7 -R gdoteof/chuggy-fabric --merge --delete-branch --admin"
+check "a live attempt does not refuse a console release" 0 "$RC" "merges attempted: 1"
+printf 'attempts asked for: %s\n' "$(grep -c 'chuggy-work get pods' "$LOG" || true)" >>"$OUT"
+check "a console release does not ask after attempts" 0 "$RC" "attempts asked for: 0"
+check "a console release verifies the console rollout" 0 "$RC" "rollout status deployment/chuggy-ui"
+cp "$LOG.body" "$OUT"
+check "the pull request says what the gate covered" 0 "$RC" "Gate at $TAG: clean over the gates the change since $DEPLOYED affects"
+OUT="$WORK/.release"
+released chuggy-ui.yaml >"$OUT"
+check "a console release selects the registry's digest" 0 "$RC" "chuggy/web@$NEW"
+
+fresh_case
+advance ui/chuggy-ui/app.ts
+export CHUG_STUB_GATE_RC=1
+run --console
+check "a console gate finding stops the release" 1 "$RC" "did not pass $TAG"
+check "a failed console gate merges nothing" 1 "$RC" "merges attempted: 0"
+
+# The full route still gates with every gate, so the two cannot be confused.
+fresh_case
+advance ui/chuggy-ui/app.ts
+run
+check "the full route gates with every gate" 0 "$RC" "ci prefix=<> full=<1> base=<>"
 
 # --- the tools that have to be there --------------------------------------------------
 

@@ -52,9 +52,21 @@
 # Job and every rollout, and requires each Deployment to run the image its
 # manifest names.
 #
+# `--console` IS BOTH PHASES IN ONE RUN, for a release in which only the
+# realtime console moved. Every other manifest then takes an annotation and no
+# new image, so nothing that carries a heartbeat restarts and the live-attempt
+# refusal is not consulted; the gate is the gates the change since the live
+# commit affects rather than every gate; and the pull request is opened,
+# merged and rolled out without a pause, because a diff that is digests and
+# annotations is read mechanically and not reviewed. A change that also moves
+# the api or the old console is refused under it and goes the long way, and a
+# migration is under `src/`, so it moves the api. So is a release that moves
+# the rig back, because it has no change since the live commit to gate over.
+#
 # Usage:
 #   deploy/rig/deploy-to-gtr.sh            gate, build, publish, open the PR
 #   deploy/rig/deploy-to-gtr.sh --merge    merge HEAD's PR, reconcile, verify
+#   deploy/rig/deploy-to-gtr.sh --console  a console-only release, both phases
 #
 # Env:
 #   CHUG_RIG_SSH          the ssh destination of the k3s node. Required: the
@@ -66,8 +78,8 @@
 #   CHUG_RIG_ARCHIVE      where a pre-merge dump is kept. Required by --merge
 #                         when the release carries a migration; no default.
 #   CHUG_FABRIC_REPO      the fabric repository, default gdoteof/chuggy-fabric
-#   CHUG_RELEASE_GATE     0 skips the full gate, and the pull request says so
-#   CHUG_RELEASE_WAIT_SECS  how long --merge waits on each of Flux, the
+#   CHUG_RELEASE_GATE     0 skips the gate, and the pull request says so
+#   CHUG_RELEASE_WAIT_SECS  how long a landing run waits on each of Flux, the
 #                         migrate Job and a rollout
 #
 # Exits 0 clean, 1 when something did not land, 2 when it could not run. Two
@@ -90,12 +102,15 @@ leave_as() { # <status> <what>
 }
 
 merge=0
+console=0
 for argument in "$@"; do
 	case "$argument" in
 	--merge) merge=1 ;;
-	*) refuse "unknown argument $argument; the only option is --merge" ;;
+	--console) console=1 ;;
+	*) refuse "unknown argument $argument; the options are --merge and --console" ;;
 	esac
 done
+[ "$merge" -eq 0 ] || [ "$console" -eq 0 ] || refuse "--console lands its own release; it takes no --merge"
 
 for tool in git docker ssh kubectl gh python3; do
 	command -v "$tool" >/dev/null 2>&1 || refuse "no \`$tool\` on PATH, so nothing was released"
@@ -162,20 +177,21 @@ if git merge-base --is-ancestor "$deployed" HEAD; then
 	say "releasing $tag over $deployed"
 else
 	say "releasing $tag, which is not ahead of the live $deployed: this moves the rig back"
+	# The gate runner diffs from the merge base, which is HEAD itself here, so
+	# there would be nothing to gate over and a clean verdict about nothing.
+	[ "$console" -eq 0 ] || refuse "--console gates the change since $deployed, and HEAD has none; run without --console"
 fi
 
 changed="$(git diff --name-only "$deployed" HEAD -- src/adapters/postgres/schema/migrations)" || refuse "the migrations since $deployed could not be read"
 migrations="$(printf '%s\n' "$changed" | grep -v '/index\.ts$' | grep . || true)"
 
-if [ "$merge" -eq 1 ]; then
-	# ============================================================================
-	# --merge: the pull request that stands for HEAD is landed and rolled out.
-	# ============================================================================
-	pr_url="$(gh pr list -R "$fabric_repo" --head "$branch" --state open --json url --jq '.[].url')"
-	[ -n "$pr_url" ] || refuse "no open pull request stands for $branch; run without --merge first"
-	pr_number="${pr_url##*/}"
-	git -C "$fabric" fetch -q origin "refs/heads/$branch:refs/heads/$branch" || refuse "$branch could not be fetched from $fabric_repo"
-	git -C "$fabric" checkout -q "$branch"
+# ================================================================================
+# Landing: the pull request that stands for HEAD is merged and rolled out.
+# ================================================================================
+land() { # <pull request url>
+	pr_number="${1##*/}"
+	git -C "$fabric" fetch -q origin "refs/heads/$branch" || refuse "$branch could not be fetched from $fabric_repo"
+	git -C "$fabric" checkout -q --detach FETCH_HEAD
 	[ "$(manifest_source_commit chuggy-api.yaml)" = "$tag" ] || refuse "$branch does not select $tag, so it is not HEAD's release"
 	job="$(manifest_job)"
 	[ -n "$job" ] || refuse "chuggy-migrate.yaml names no Job"
@@ -183,21 +199,24 @@ if [ "$merge" -eq 1 ]; then
 	# A live attempt is a worker pod or a session pod, and those are the only
 	# pods in the namespace the scheduler stamps with these labels; anything
 	# else there has no heartbeat for a rollout to drop. A selector is
-	# conjunctive, so each label is asked for on its own.
-	newline='
+	# conjunctive, so each label is asked for on its own. A console release
+	# restarts nothing that holds a heartbeat, so it does not ask.
+	if [ "$console" -eq 0 ]; then
+		newline='
 '
-	live_pods=""
-	for label in chuggy.dev/worker chuggy.dev/session; do
-		labelled_pods="$(kube -n chuggy-work get pods -l "$label=true" -o name 2>/dev/null)" || refuse "the work namespace could not be read, so whether an attempt is live is unknown"
-		# An answer of nothing adds nothing, so an empty gathering stays empty
-		# and the test below is a test of what was found.
-		[ -n "$labelled_pods" ] || continue
-		live_pods="${live_pods:+$live_pods$newline}$labelled_pods"
-	done
-	[ -z "$live_pods" ] || fail "an attempt is live in chuggy-work; a rollout would drop its heartbeats"
-	live_rows="$(sql 'select count(*) from execution where terminal_at is null' 2>/dev/null || true)"
-	printf '%s' "$live_rows" | grep -Eqx '[0-9]+' || refuse "the live execution count could not be read, so whether an attempt is live is unknown"
-	[ "$live_rows" -eq 0 ] || fail "$live_rows execution(s) are live; a rollout would drop their heartbeats"
+		live_pods=""
+		for label in chuggy.dev/worker chuggy.dev/session; do
+			labelled_pods="$(kube -n chuggy-work get pods -l "$label=true" -o name 2>/dev/null)" || refuse "the work namespace could not be read, so whether an attempt is live is unknown"
+			# An answer of nothing adds nothing, so an empty gathering stays empty
+			# and the test below is a test of what was found.
+			[ -n "$labelled_pods" ] || continue
+			live_pods="${live_pods:+$live_pods$newline}$labelled_pods"
+		done
+		[ -z "$live_pods" ] || fail "an attempt is live in chuggy-work; a rollout would drop its heartbeats"
+		live_rows="$(sql 'select count(*) from execution where terminal_at is null' 2>/dev/null || true)"
+		printf '%s' "$live_rows" | grep -Eqx '[0-9]+' || refuse "the live execution count could not be read, so whether an attempt is live is unknown"
+		[ "$live_rows" -eq 0 ] || fail "$live_rows execution(s) are live; a rollout would drop their heartbeats"
+	fi
 
 	if [ -n "$migrations" ]; then
 		[ -n "${CHUG_RIG_ARCHIVE:-}" ] || refuse "this release carries a migration and CHUG_RIG_ARCHIVE names nowhere to keep the dump that is the only way back below it"
@@ -265,6 +284,12 @@ if [ "$merge" -eq 1 ]; then
 	ledger="$(sql 'select max(version) from schema_migration' 2>/dev/null || true)"
 	say "the rig is at $tag; ledger at ${ledger:-unknown}"
 	exit 0
+}
+
+if [ "$merge" -eq 1 ]; then
+	pr_url="$(gh pr list -R "$fabric_repo" --head "$branch" --state open --json url --jq '.[].url')"
+	[ -n "$pr_url" ] || refuse "no open pull request stands for $branch; run without --merge first"
+	land "$pr_url"
 fi
 
 # ================================================================================
@@ -297,12 +322,25 @@ if moved ui/console images/web; then web_moved=1; fi
 if moved images/worker; then
 	say "WARNING — images/worker changed since $deployed; the worker is built and admitted by the fabric, not here, and this release does not move it"
 fi
+if [ "$console" -eq 1 ]; then
+	[ "$ui_moved" -eq 1 ] || refuse "nothing the console serves moved since $deployed, so there is no console release"
+	[ "$api_moved" -eq 0 ] || refuse "the change since $deployed moves the api, so it is not a console release; run without --console"
+	[ "$web_moved" -eq 0 ] || refuse "the change since $deployed moves the old console, so it is not a console release; run without --console"
+fi
 
 # --- the gate -------------------------------------------------------------------
 
 if [ "${CHUG_RELEASE_GATE:-1}" = "0" ]; then
 	gate="skipped by CHUG_RELEASE_GATE=0"
 	say "gate $gate; this release carries no verdict of its own"
+elif [ "$console" -eq 1 ]; then
+	say "gating $tag with the gates the change since $deployed affects"
+	set +e
+	CHUG_CI_BASE="$deployed" ./.chug/tasks/ci.sh
+	gated=$?
+	set -e
+	[ "$gated" -eq 0 ] || leave_as "$gated" "the gate did not pass $tag, so it is not released"
+	gate="clean over the gates the change since $deployed affects"
 else
 	say "gating $tag with every gate"
 	set +e
@@ -434,5 +472,8 @@ if [ -z "$pr_url" ]; then
 fi
 [ -n "$pr_url" ] || fail "no pull request stands for $branch"
 say "pull request $pr_url"
+if [ "$console" -eq 1 ]; then
+	land "$pr_url"
+fi
 say "not merged. Review it, then land it and roll it out with:"
 say "  CHUG_RIG_SSH=$node deploy/rig/deploy-to-gtr.sh --merge"
