@@ -172,7 +172,11 @@ function TicketBody(props: {
   );
   return (
     <>
-      <TicketPortals partition={props.partition} ticket={ticket} facts={facts} />
+      <TicketPortals
+        partition={props.partition}
+        ticket={ticket}
+        facts={facts}
+      />
       {ticket === undefined ? null : (
         <TicketHead
           ticket={ticket}

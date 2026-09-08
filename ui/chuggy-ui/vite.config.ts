@@ -25,8 +25,7 @@
 
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Plugin, ProxyOptions } from "vite";
+import type { Connect, Plugin, ProxyOptions } from "vite";
 import { defineConfig } from "vitest/config";
 
 const upstream = process.env["CHUG_UI_UPSTREAM"];
@@ -37,13 +36,15 @@ const clientId = process.env["CHUG_UI_CLIENT_ID"] ?? "";
 const issuerPrefix = "/issuer";
 const discoveryPath = "/.well-known/openid-configuration";
 
+type Middleware = Connect.NextHandleFunction;
+
 /** The browser's own address, so a console reached on any port configures. */
-function requestOrigin(request: IncomingMessage): string {
+function requestOrigin(request: Parameters<Middleware>[0]): string {
   return `http://${request.headers.host ?? "localhost"}`;
 }
 
 function sendJson(
-  response: ServerResponse,
+  response: Parameters<Middleware>[1],
   status: number,
   body: unknown,
 ): void {

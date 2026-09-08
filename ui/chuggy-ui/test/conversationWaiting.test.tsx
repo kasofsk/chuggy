@@ -90,9 +90,7 @@ test("the strip shares the composer's own width rather than the pane's", () => {
   const strip = view.container.querySelector(".conversation-waiting");
   const composer = view.container.querySelector(".conversation-field");
   expect(strip?.parentElement?.className).toContain("max-w-column");
-  expect(strip?.parentElement).toBe(
-    composer?.closest("form")?.parentElement,
-  );
+  expect(strip?.parentElement).toBe(composer?.closest("form")?.parentElement);
 });
 
 test("the engine trails three puffs of smoke while it is drawn", () => {
