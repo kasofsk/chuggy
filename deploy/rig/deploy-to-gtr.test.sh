@@ -243,7 +243,7 @@ fresh_case() {
 	for ref in $(git --git-dir="$FABRIC_GIT" for-each-ref --format='%(refname:short)' refs/heads/release); do
 		git --git-dir="$FABRIC_GIT" branch -q -D "$ref"
 	done
-	unset CHUG_RIG_SSH CHUG_RIG_ARCHIVE CHUG_RELEASE_GATE CHUG_IMAGE_PREFIX
+	unset CHUG_RIG_SSH CHUG_RIG_ARCHIVE CHUG_RELEASE_GATE CHUG_IMAGE_PREFIX CHUG_CI_FULL CHUG_CI_BASE
 	unset CHUG_STUB_DIGEST CHUG_STUB_PUSH_RC CHUG_STUB_GATE_RC CHUG_STUB_BUILD_RC CHUG_STUB_CONSISTENCY_RC
 	unset CHUG_STUB_RENDER_RC CHUG_STUB_LIVE_ROWS CHUG_STUB_PR_HEAD CHUG_STUB_PR_URL
 	unset CHUG_STUB_WORKER_PODS CHUG_STUB_SESSION_PODS CHUG_STUB_UNLABELLED_PODS CHUG_STUB_WORK_PODS_RC
@@ -730,6 +730,14 @@ fresh_case
 advance ui/chuggy-ui/app.ts
 run
 check "the full route gates with every gate" 0 "$RC" "ci prefix=<> full=<1> base=<>"
+
+# A full run in the caller's environment, as a suite under the full gate has,
+# must not widen a console release's gate to every gate.
+fresh_case
+advance ui/chuggy-ui/app.ts
+export CHUG_STUB_MERGED="$MERGED" CHUG_CI_FULL=1
+run --console
+check "an inherited full-run flag does not widen a console release's gate" 0 "$RC" "ci prefix=<> full=<> base=<$DEPLOYED>"
 
 # --- the tools that have to be there --------------------------------------------------
 
