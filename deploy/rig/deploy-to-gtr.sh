@@ -336,7 +336,9 @@ if [ "${CHUG_RELEASE_GATE:-1}" = "0" ]; then
 elif [ "$console" -eq 1 ]; then
 	say "gating $tag with the gates the change since $deployed affects"
 	set +e
-	CHUG_CI_BASE="$deployed" ./.chug/tasks/ci.sh
+	# The runner selects by the base only when nothing asks it for every gate,
+	# and a full run in this environment would.
+	CHUG_CI_FULL= CHUG_CI_BASE="$deployed" ./.chug/tasks/ci.sh
 	gated=$?
 	set -e
 	[ "$gated" -eq 0 ] || leave_as "$gated" "the gate did not pass $tag, so it is not released"
