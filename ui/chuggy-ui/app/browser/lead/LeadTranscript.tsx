@@ -87,7 +87,7 @@ export function useLeadTranscript(
     const walk = async (): Promise<void> => {
       if (pane.current.stream !== undefined && pane.current.stream !== stream)
         stepped({ event: "StreamChange", stream });
-      for (let page = 0; page < highWaterBatch; page += 1) {
+      for (let read = 0; read < highWaterBatch; read += 1) {
         const after = leadTranscriptNextAfter(pane.current, highWaterBatch);
         if (after === undefined || stream === undefined || superseded) return;
         const answered =

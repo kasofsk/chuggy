@@ -381,11 +381,10 @@ test("a lead with no store says so", async () => {
 });
 
 /**
- * A read the route could not decide the held set for is a page that carries its
- * entries and reports itself truncated for a walk of the server's own. Nothing
- * on this page draws the held set, so that shortfall is a reader's business in
- * neither of the two words it has for one — and a page saying both would tell
- * every reader of a long transcript their record was short.
+ * A read the route could not decide the held set for carries its entries and
+ * says that by omitting `held` and by nothing else. Nothing on this page draws
+ * the held set, so that shortfall is a reader's business in neither of the two
+ * words this page has for one.
  */
 test("a read that could not decide what is held draws its entries and no shortfall", async () => {
   const api = apiDouble({
@@ -396,7 +395,7 @@ test("a read that could not decide what is held draws its entries and no shortfa
           stream: leadStream,
           entries: [{ uuid: "uuid-a", type: "user", message: { content: [] } }],
           elided: 0,
-          truncated: true,
+          truncated: false,
         });
       const found = leadRouteAnswer(url, { ...opening, batches: 1 });
       return answer(found.body, found.status);
@@ -633,13 +632,13 @@ const walkedStoreBatches = 202;
 /**
  * The store the walk must read whole, paged the way the route pages it: a full
  * page carries the batch it read to, the short page that ends the store carries
- * no cursor at all, and a stream past the held walk's bound answers no `held`
- * and calls itself truncated on every page. `endless` is the same store
- * answering a cursor above the mark — the route the walk must not follow past.
+ * no cursor, and a stream past the held walk's bound answers no `held`.
+ * `endless` answers a cursor above the mark, the route the walk must not follow
+ * past, and `cutAt` names the cursor whose page had its own entries cut.
  */
 function pagedStore(
   batches: number,
-  shape: { readonly endless: boolean } = { endless: false },
+  shape: { readonly endless?: boolean; readonly cutAt?: number } = {},
 ): { readonly asks: () => readonly number[] } {
   const asks: number[] = [];
   const decided = batches <= sessionTranscriptHeldBatchesMax;
@@ -651,9 +650,10 @@ function pagedStore(
           new URL(url, "https://console").searchParams.get("after") ?? "0",
         );
         asks.push(after);
-        const last = shape.endless
-          ? after + sessionStorePageBatchesMax
-          : Math.min(after + sessionStorePageBatchesMax, batches);
+        const last =
+          shape.endless === true
+            ? after + sessionStorePageBatchesMax
+            : Math.min(after + sessionStorePageBatchesMax, batches);
         return answer({
           stream: leadStream,
           entries: Array.from({ length: last - after }, (_unused, at) => [
@@ -674,7 +674,7 @@ function pagedStore(
           ]).flat(),
           ...(decided ? { held: [], cut: 1 } : {}),
           elided: 0,
-          truncated: !decided,
+          truncated: after === shape.cutAt,
           ...(last - after < sessionStorePageBatchesMax
             ? {}
             : { nextAfter: last }),
@@ -716,6 +716,30 @@ test("a store of many pages is read to its end on mount", async () => {
     "the route's own held walk falling short was drawn as a short record",
   ).toBeNull();
   expect(screen.queryByText(/^Dropped · /u)).toBeNull();
+  expect(store.asks().length).toBeLessThanOrEqual(
+    readsAllowed(walkedStoreBatches),
+  );
+});
+
+/**
+ * A page of a long stream is cut at the entry bound like any other, and the
+ * route says that in `truncated` alone. Guarding the word on a decided held set
+ * would swallow it here, where the walk reached the mark and a run of entries
+ * out of the middle of the record is gone.
+ */
+test("a page whose entries were cut says so on a stream the walk read whole", async () => {
+  const store = pagedStore(walkedStoreBatches, {
+    cutAt: sessionStorePageBatchesMax,
+  });
+  await mountLead();
+  expect(
+    screen.getByText("Truncated"),
+    "a page the route cut was drawn as a whole record",
+  ).toBeDefined();
+  expect(
+    screen.queryByText("Not reached"),
+    "a store the walk read whole was drawn as one it had not reached the end of",
+  ).toBeNull();
   expect(store.asks().length).toBeLessThanOrEqual(
     readsAllowed(walkedStoreBatches),
   );

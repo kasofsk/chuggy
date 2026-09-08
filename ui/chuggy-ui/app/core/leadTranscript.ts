@@ -58,10 +58,9 @@
  * reached.
  *
  * `held` ABSENT IS UNKNOWN AND NEVER EMPTY. It is absent only where the route
- * could not reach the stream's end to decide it, and it says so with
- * `truncated`. Drawing that as "nothing held" would tell a reader the lead has
- * forgotten everything at exactly the moment the server said it could not
- * tell.
+ * could not reach the stream's end to decide it. Drawing that as "nothing held"
+ * would tell a reader the lead has forgotten everything at exactly the moment
+ * the server said it could not tell.
  */
 
 import { sessionChangeResourceSchema } from "../../../../src/contract/events.ts";

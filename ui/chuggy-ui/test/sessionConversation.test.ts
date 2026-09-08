@@ -214,18 +214,17 @@ test("a read that failed, an unreached tail, elided batches and dropped entries 
 });
 
 /**
- * THE ROUTE'S OWN WALK IS NOT THIS READER'S. A page whose `held` the route
- * could not decide reports itself truncated for that reason and no other, and
- * a stream longer than the route's held walk may read answers every page that
- * way — so a pane that drew it would tell every reader of a long transcript
- * that something was missing from a record it had read whole.
+ * A page reports `truncated` for its own entries being cut and for nothing
+ * else, so an undecided held set neither raises the word nor silences it. The
+ * pane that guarded it on `holdingUnknown` swallowed a real cut on every page
+ * of a stream longer than the route's held walk may read.
  */
-test("a page whose held set was undecided is not a shortfall a reader is shown", () => {
+test("a page whose entries were cut says so, decided or not", () => {
   expect(markers(itemsOf({ truncated: true }))).toStrictEqual(["Truncated"]);
   expect(
     markers(itemsOf({ truncated: true, holdingUnknown: true })),
-    "the route's own walk falling short was drawn as this read falling short",
-  ).toStrictEqual([]);
+    "an undecided walk is not grounds to swallow a cut this page did make",
+  ).toStrictEqual(["Truncated"]);
   expect(markers(itemsOf({ holdingUnknown: true }))).toStrictEqual([]);
 });
 
