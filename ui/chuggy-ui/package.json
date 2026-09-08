@@ -6,7 +6,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.tools.json",
     "lint": "eslint .",
     "test": "vitest run",
-    "build": "vite build && node ../../scripts/check-console-policy.ts dist"
+    "build": "vite build && node ../../scripts/check-console-policy.ts dist",
+    "format": "../../node_modules/.bin/prettier --check --log-level warn --ignore-path ../../.gitignore --ignore-path ../../.prettierignore ."
   },
   "dependencies": {
     "@assistant-ui/react": "^0.15.18",
