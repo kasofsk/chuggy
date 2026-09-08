@@ -1,0 +1,11 @@
+/* Breadcrumb: the page a drill-down was reached from, linked above the title. */
+
+@layer ui {
+  .breadcrumb-link {
+    color: var(--ink-3);
+  }
+
+  .breadcrumb-link:hover {
+    color: var(--ink-1);
+  }
+}

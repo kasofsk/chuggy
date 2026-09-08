@@ -41,6 +41,7 @@ import {
   sessionConversationItems,
   sessionConversationTurns,
 } from "../core/sessionConversation.ts";
+import { railRoutes } from "../core/shellRail.ts";
 import { threadClosable, threadTakesMessages } from "../core/threads.ts";
 import { threadStandingTone } from "../core/tones.ts";
 import { usePanelList } from "./api.ts";
@@ -50,6 +51,7 @@ import { useLeadTranscript } from "./lead/LeadTranscript.tsx";
 import { DetailsSlot, TopBarSlot } from "./shell/slots.tsx";
 import { ThreadClose } from "./thread/ThreadClose.tsx";
 import { useThreadSend } from "./thread/threadSend.tsx";
+import { Breadcrumb, BreadcrumbLink } from "./ui/Breadcrumb.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Field, Fields } from "./ui/Fields.tsx";
 import { Identity } from "./ui/Identity.tsx";
@@ -82,10 +84,18 @@ export function useThread(
 /** The thread's derived title, its standing, whether it is the reader's own,
  * and whose it is otherwise. A thread nobody has written in has no title yet,
  * and the bar says what the page is instead. */
-function ThreadTopBar(props: { readonly thread: ThreadResponse }): ReactNode {
+function ThreadTopBar(props: {
+  readonly partition: PartitionIdentity;
+  readonly thread: ThreadResponse;
+}): ReactNode {
   const thread = props.thread;
   return (
     <TopBarSlot>
+      <Breadcrumb>
+        <BreadcrumbLink to={railRoutes.threads} params={props.partition}>
+          Threads
+        </BreadcrumbLink>
+      </Breadcrumb>
       <h1 className="text-md font-strong text-ink-1 truncate">
         {thread.title ?? "Thread"}
       </h1>
@@ -162,7 +172,7 @@ function ThreadBody(props: {
   if (thread === undefined) return <PanelUnready state={props.state} />;
   return (
     <>
-      <ThreadTopBar thread={thread} />
+      <ThreadTopBar partition={props.partition} thread={thread} />
       <ThreadDetails partition={props.partition} thread={thread} />
       <div
         role="region"
