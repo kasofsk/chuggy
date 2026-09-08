@@ -194,7 +194,7 @@ export function useLeadTranscript(
           stepped({ event: "Failure", reason: panelReason(answered) });
           return;
         }
-        stepped({ event: "Page", page: answered.value, highWaterBatch });
+        stepped({ event: "Page", page: answered.value, highWaterBatch, after });
         /** A reset sends the cursor back to nothing, and everything read ahead
          * of it was read under the cut this pane has just abandoned. */
         if (pane.current.fold.readTo === undefined) reads.dropped();

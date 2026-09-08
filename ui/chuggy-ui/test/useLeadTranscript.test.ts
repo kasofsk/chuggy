@@ -198,7 +198,14 @@ test("a walk under a StrictMode root settles", async () => {
   expect(settled?.reading, "a StrictMode remount left the walk reading").toBe(
     false,
   );
-  expect(settled?.held.entries.length).toBeGreaterThan(0);
+  expect(
+    settled?.held.entries.map((entry) => entry.uuid),
+    "the second walk folded the page the first had, and stalled on it",
+  ).toEqual(["uuid-p", "uuid-q", "uuid-a", "uuid-b", "uuid-c"]);
+  expect(
+    settled?.held.unreached,
+    "a StrictMode remount left the store drawn as unreached",
+  ).toBe(false);
   view.unmount();
 });
 
@@ -228,13 +235,15 @@ test("a rise of highWaterBatch mid-page keeps the page the walk already fetched"
   await flushed();
   expect(held.calls.length).toBe(2);
   await answering(held.calls[0], leadTranscriptPage(0, 2));
-  await answering(held.calls[1], {
+  await answering(held.calls[1], leadTranscriptPage(0, 2));
+  await answering(askedAt(held.calls, 1), {
     stream: leadStream,
     entries: [],
     held: [],
     cut: leadCutBatch,
     elided: 0,
     truncated: false,
+    nextAfter: 2,
   });
   expect(
     result.current.held.entries.map((entry) => entry.uuid),
@@ -243,7 +252,51 @@ test("a rise of highWaterBatch mid-page keeps the page the walk already fetched"
   expect(
     held.calls.length,
     "the superseded walk asked for a further page after being told to stop",
-  ).toBe(2);
+  ).toBe(3);
+});
+
+/**
+ * A MARK THAT RISES WHILE A CURSOR IS IN FLIGHT LEAVES TWO WALKS ASKING IT, and
+ * a route answers both with the page it holds there. The superseded walk folds
+ * first; a pane that gathered the live walk's copy of the same page against its
+ * own cursor would take it for a page that would not advance, wait at the mark
+ * for a store already written past it, and draw the rest of the store unread.
+ */
+test("a page both walks were answered for is folded once and the walk goes on", async () => {
+  const held = heldPorts();
+  portsHeld.current = held.ports;
+  const { result, rerender } = renderHook(
+    (read: LeadTranscriptRead) => useLeadTranscript(read),
+    { initialProps: readAt(1) },
+  );
+  await flushed();
+  rerender(readAt(4));
+  await flushed();
+  const both = held.calls.filter((call) => afterAsked(call.url) === 0);
+  expect(both.length, "the rise of the mark left one walk asking").toBe(2);
+  const first = pageAt("uuid-first", { nextAfter: 1 });
+  await answering(both[0], first);
+  await answering(both[1], first);
+  await answering(
+    askedAt(held.calls, 1),
+    pageAt("uuid-second", { nextAfter: 2 }),
+  );
+  await answering(
+    askedAt(held.calls, 2),
+    pageAt("uuid-third", { nextAfter: 3 }),
+  );
+  await answering(
+    askedAt(held.calls, 3),
+    pageAt("uuid-fourth", { nextAfter: 4 }),
+  );
+  expect(
+    result.current.held.entries.map((entry) => entry.uuid),
+    "the walk stopped at the page the superseded walk had already folded",
+  ).toStrictEqual(["uuid-first", "uuid-second", "uuid-third", "uuid-fourth"]);
+  expect(
+    result.current.held.unreached,
+    "a walk that reached the mark drew the store as unread",
+  ).toBe(false);
 });
 
 /** A store of many pages, which is the walk this is about: read one after

@@ -310,6 +310,7 @@ function modelEvent(
       elided: random() > 0.85 ? 1 : 0,
     }),
     highWaterBatch,
+    after,
   };
 }
 
@@ -565,6 +566,7 @@ test("a walk over a store that stands still stops at the mark it read against", 
           elided: 0,
         }),
         highWaterBatch: store.batches.length,
+        after,
       });
     }
     if (stalls) stalled += 1;
@@ -618,11 +620,13 @@ test("a store written past a stall carries the walk on from where it stopped", (
     event: "Page",
     page: stalling(0),
     highWaterBatch: 2,
+    after: 0,
   });
   pane = leadTranscriptStep(pane, {
     event: "Page",
     page: stalling(1),
     highWaterBatch: 2,
+    after: 1,
   });
   expect(pane.fold.readTo, "the walk gave up the cursor it stalled at").toBe(1);
   expect(leadTranscriptNextAfter(pane, 2)).toBeUndefined();
@@ -645,6 +649,7 @@ test("a store written past a stall carries the walk on from where it stopped", (
         elided: 0,
       }),
       highWaterBatch: store.batches.length,
+      after,
     });
   }
   expect(
@@ -670,6 +675,7 @@ test("a cursor that does not advance ends the walk where it stands", () => {
       elided: 0,
     }),
     highWaterBatch: 4,
+    after: 0,
   });
   expect(walked.fold.entries.length).toBe(modelEntriesPerBatch);
   expect(

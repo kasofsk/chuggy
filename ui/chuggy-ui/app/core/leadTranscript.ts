@@ -295,13 +295,14 @@ function leadTranscriptHoldingPruned(
   return [...new Set(holding)].filter((uuid) => present.has(uuid));
 }
 
-/** One page gathered into the fold it belongs to. */
+/** One page gathered into the fold it belongs to, at the cursor it was asked
+ * with. */
 function leadTranscriptGathered(
   fold: LeadTranscriptFold,
   page: LeadTranscriptResponse,
   highWaterBatch: number,
+  asked: number,
 ): LeadTranscriptFold {
-  const asked = fold.readTo ?? 0;
   const cursor = leadTranscriptCursor(page, highWaterBatch, asked);
   const merged = leadTranscriptEntriesMerged(fold.entries, page.entries);
   const kept = merged.slice(-leadTranscriptEntriesHeldMax);
@@ -333,6 +334,10 @@ export type LeadTranscriptEvent =
       readonly event: "Page";
       readonly page: LeadTranscriptResponse;
       readonly highWaterBatch: number;
+      /** The cursor the walk asked this page at, which is what it is folded
+       * against — a read in flight is answered at a cursor the pane may have
+       * passed since. */
+      readonly after: number;
     }
   | { readonly event: "Failure"; readonly reason: string }
   | { readonly event: "StreamChange"; readonly stream: string | undefined };
@@ -356,16 +361,31 @@ function leadTranscriptReset(
   };
 }
 
-/** The PAGE transition: a page gathered, and the kept fold released once the
- * walk has entries of its own again. */
+/** Whether a page was asked at a cursor this fold has read past, which is a
+ * page it has already gathered. */
+function leadTranscriptPassed(
+  fold: LeadTranscriptFold,
+  after: number,
+): boolean {
+  return fold.readTo !== undefined && after < fold.readTo;
+}
+
+/**
+ * The PAGE transition: a page gathered, and the kept fold released once the
+ * walk has entries of its own again. A page the fold has read past has nothing
+ * left to gather and still carries the stream's cut, so the cut is read from it
+ * before it is dropped.
+ */
 function leadTranscriptPaged(
   pane: LeadTranscriptPane,
   page: LeadTranscriptResponse,
   highWaterBatch: number,
+  after: number,
 ): LeadTranscriptPane {
   if (leadTranscriptCutMoved(pane.fold, page))
     return leadTranscriptReset(pane, page);
-  const fold = leadTranscriptGathered(pane.fold, page, highWaterBatch);
+  if (leadTranscriptPassed(pane.fold, after)) return pane;
+  const fold = leadTranscriptGathered(pane.fold, page, highWaterBatch, after);
   return {
     stream: page.stream,
     fold,
@@ -385,7 +405,12 @@ export function leadTranscriptStep(
 ): LeadTranscriptPane {
   switch (event.event) {
     case "Page":
-      return leadTranscriptPaged(pane, event.page, event.highWaterBatch);
+      return leadTranscriptPaged(
+        pane,
+        event.page,
+        event.highWaterBatch,
+        event.after,
+      );
     case "Failure":
       return { ...pane, failure: event.reason };
     case "StreamChange":
