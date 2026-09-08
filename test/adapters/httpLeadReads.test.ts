@@ -598,7 +598,11 @@ test("a stream longer than the held walk leaves the page undecided", async () =>
     ).json(),
   );
   assert.equal(undecided.held, undefined, "past the bound nothing is decided");
-  assert.equal(undecided.truncated, true, "and the page says it falls short");
+  assert.equal(
+    undecided.truncated,
+    false,
+    "and the absent held set is the whole of what the page says about that",
+  );
 });
 
 test("a batch that cannot be drawn is elided, and the page is still answered", async () => {
@@ -622,7 +626,7 @@ test("a batch that cannot be drawn is elided, and the page is still answered", a
     undefined,
     "the walk met the batch nobody could draw and decided nothing",
   );
-  assert.equal(body.truncated, true);
+  assert.equal(body.truncated, false, "and every entry it did draw crossed");
 });
 
 test("an outage on the page's own batch refuses the page", async () => {
@@ -659,7 +663,7 @@ test("an outage beyond the page leaves held undecided, not the page refused", as
   assert.ok(body.entries.length > 0);
   assert.equal(body.elided, 0, "no batch of this page was elided");
   assert.equal(body.held, undefined, "the walk could not decide what is held");
-  assert.equal(body.truncated, true);
+  assert.equal(body.truncated, false, "and every entry it did draw crossed");
 });
 
 test("a lead that has bound no stream has no transcript to answer", async () => {

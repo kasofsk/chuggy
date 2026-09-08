@@ -80,7 +80,7 @@ export const sessionTranscriptEntriesMax = 512;
  * How many of a stream's batches the walk that decides what a session holds may
  * read. What is held is a fact about the whole stream rather than about the page
  * being read, so the walk is stream-scoped and this is what stops it being
- * unbounded; past it a page says it is truncated and names no held set.
+ * unbounded; past it a page names no held set.
  */
 export const sessionTranscriptHeldBatchesMax = 64;
 

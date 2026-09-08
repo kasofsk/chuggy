@@ -25,7 +25,6 @@ import {
   leadTranscriptPaneEmpty,
   leadTranscriptStep,
   leadTranscriptNextAfter,
-  leadTranscriptReadsMax,
 } from "../app/core/leadTranscript.ts";
 import type {
   LeadTranscriptEntry,
@@ -86,16 +85,16 @@ function refusalAt(superseded: boolean): AgenticRefusalResponse {
   return held;
 }
 
-/** The store walked to its end at two batches, which is three reads: two full
- * pages and the empty one a full page that ends the store is followed by. */
+/** The store walked until the mark it is read against is reached, which is what
+ * ends the walk; a page carries a batch, so the mark bounds the reads. */
 function walkedToEnd(batches: number): LeadTranscriptPane {
   let held = leadTranscriptPaneEmpty;
-  for (let read = 0; read < leadTranscriptReadsMax; read += 1) {
+  for (let read = 0; read <= batches; read += 1) {
     const after = leadTranscriptNextAfter(held, batches);
     if (after === undefined) return held;
     held = paged(held, leadTranscriptPage(after, batches), batches);
   }
-  throw new Error("the walk did not stop inside its own budget");
+  throw new Error("the walk did not stop at the mark it was read against");
 }
 
 function walkedTwice(): LeadTranscriptPane {
@@ -104,24 +103,26 @@ function walkedTwice(): LeadTranscriptPane {
 
 /**
  * `nextAfter` says a page filled its limit, so it means only that there MAY be
- * more: a full page that ends the store still carries one, and the walk has to
- * ask once more to learn that it is done. A pane that read it as "there IS
- * more" would stop one page early on every store whose last page is full.
+ * more, and the mark is what decides: a full page below it is asked past, and a
+ * full page whose cursor reaches it has read the store to its end. A pane that
+ * asked past that one too would cost every walk a trailing empty read, and
+ * would draw a store it had read whole as one it had not reached the end of.
  */
-test("a full page is asked past, and the empty page after it ends the walk", () => {
+test("a full page below the mark is asked past, and one reaching it ends the walk", () => {
   expect(leadTranscriptNextAfter(leadTranscriptPaneEmpty, 0)).toBeUndefined();
   expect(leadTranscriptNextAfter(leadTranscriptPaneEmpty, 2)).toBe(0);
   const first = paged(leadTranscriptPaneEmpty, leadTranscriptPage(0, 2), 2);
+  expect(first.fold.more).toBe(true);
+  expect(leadTranscriptDrawn(first).unreached).toBe(true);
   expect(leadTranscriptNextAfter(first, 2)).toBe(1);
   const second = paged(first, leadTranscriptPage(1, 2), 2);
   expect(
     second.fold.more,
-    "a full page that ends the store was read as the end",
-  ).toBe(true);
-  expect(leadTranscriptNextAfter(second, 2)).toBe(2);
-  const third = paged(second, leadTranscriptPage(2, 2), 2);
-  expect(leadTranscriptNextAfter(third, 2)).toBeUndefined();
-  expect(leadTranscriptNextAfter(third, 3)).toBe(2);
+    "a page whose cursor reached the mark was drawn as not having reached it",
+  ).toBe(false);
+  expect(leadTranscriptDrawn(second).unreached).toBe(false);
+  expect(leadTranscriptNextAfter(second, 2)).toBeUndefined();
+  expect(leadTranscriptNextAfter(second, 3)).toBe(2);
 });
 
 /** A page with nothing on it cannot have filled a limit, and neither can one
@@ -448,12 +449,13 @@ test("an ordinary fold is drawn as it stands", () => {
   const walked = paged(
     leadTranscriptPaneEmpty,
     cutPage(1, ["uuid-a"], ["uuid-a"], 1),
-    2,
+    1,
   );
   expect(leadTranscriptDrawn(walked)).toStrictEqual({
     ...walked.fold,
     stream: walked.stream,
     failure: undefined,
+    unreached: false,
   });
   expect(walked.kept, "an ordinary fold kept a fold for the reader").toBe(
     undefined,
@@ -873,17 +875,18 @@ test("an entry-less re-walk keeps the fold the reader had", () => {
   expect(rebuilt.kept, "the kept fold outlived the re-walk").toBe(undefined);
 });
 
-/** The walk stopping says nothing about the stream, so it changes nothing a
- * reader is shown. */
-test("the budget ending leaves the pane exactly as it was", () => {
+/** The mark is what ends the walk and nothing else: a pane that has read to it
+ * is asked nothing more, and the store written past it carries the walk on. */
+test("a walk that has read to the mark asks nothing more until the store grows", () => {
   const walked = paged(
     leadTranscriptPaneEmpty,
     cutPage(1, ["uuid-a"], ["uuid-a"], 1),
     1,
   );
-  expect(leadTranscriptStep(walked, { event: "BudgetEnd" })).toStrictEqual(
-    walked,
-  );
+  expect(walked.fold.readTo).toBe(1);
+  expect(walked.fold.more).toBe(false);
+  expect(leadTranscriptNextAfter(walked, 1)).toBeUndefined();
+  expect(leadTranscriptNextAfter(walked, 2)).toBe(1);
 });
 
 /** A different stream is a different pane, so nothing gathered from the old one
@@ -928,9 +931,9 @@ test("the reset carries the cut, and a cursor of nothing", () => {
  * THE STALL RULE, BESIDE THE MODEL THAT GENERATES IT. A page that hands back the
  * cursor it was asked with leaves the walk nowhere to go, so the pane waits at
  * that cursor rather than skipping to the mark it read against — and says it
- * cannot yet tell what the lead holds, because it has not reached the rest.
+ * has not reached the store's end, because it has not.
  */
-test("a stalled page keeps its cursor, waits, and says it cannot yet tell", () => {
+test("a stalled page keeps its cursor, waits, and says it stopped short", () => {
   const walked = paged(
     leadTranscriptPaneEmpty,
     cutPage(1, ["uuid-a"], ["uuid-a"], 1),
@@ -948,14 +951,14 @@ test("a stalled page keeps its cursor, waits, and says it cannot yet tell", () =
   expect(stalled.fold.stalledAt).toBe(9);
   expect(leadTranscriptNextAfter(stalled, 9)).toBeUndefined();
   expect(
-    leadTranscriptDrawn(stalled).holdingUnknown,
-    "a pane that has not reached the rest of the stream claimed to know",
+    leadTranscriptDrawn(stalled).unreached,
+    "a pane that has not reached the rest of the stream said it had",
   ).toBe(true);
 });
 
 /** The store written past the mark carries the walk on from the cursor it
- * stopped at, and reaching the rest is what lets it say what is held again. */
-test("a walk resumed past a stall stops calling itself undecided", () => {
+ * stopped at, and reaching the rest is what clears the marker. */
+test("a walk resumed past a stall stops saying it stopped short", () => {
   const stalled = paged(
     paged(leadTranscriptPaneEmpty, cutPage(1, ["uuid-a"], ["uuid-a"], 1), 9),
     { ...cutPage(1, ["uuid-b"], ["uuid-b"], 1), nextAfter: 1 },
@@ -964,13 +967,14 @@ test("a walk resumed past a stall stops calling itself undecided", () => {
   expect(leadTranscriptNextAfter(stalled, 10)).toBe(1);
   const resumed = paged(stalled, cutPage(1, ["uuid-c"], ["uuid-c"], 2), 10);
   expect(resumed.fold.stalledAt).toBeUndefined();
-  expect(
-    leadTranscriptDrawn(resumed).holdingUnknown,
-    "a pane that reached the rest of the stream still called itself undecided",
-  ).toBe(false);
   expect(holdingLines(resumed).map((line) => line.uuid)).toStrictEqual([
     "uuid-a",
     "uuid-b",
     "uuid-c",
   ]);
+  const reached = paged(resumed, cutPage(1, ["uuid-d"], ["uuid-d"]), 10);
+  expect(
+    leadTranscriptDrawn(reached).unreached,
+    "a pane that reached the rest of the stream still said it had not",
+  ).toBe(false);
 });
