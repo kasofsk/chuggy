@@ -127,6 +127,7 @@
     --duration-1: 120ms; /* hover, focus, toggles */
     --duration-2: 240ms; /* a disclosure opening */
     --duration-pulse: 1200ms; /* the live mark */
+    --duration-travel: 800ms; /* one tile of the locomotive's ground */
     --ease-out: cubic-bezier(0.2, 0, 0, 1);
 
     /* layout */
@@ -158,6 +159,7 @@
       --duration-1: 0ms;
       --duration-2: 0ms;
       --duration-pulse: 0ms;
+      --duration-travel: 0ms;
     }
   }
 }

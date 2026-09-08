@@ -1,0 +1,45 @@
+/* Locomotive: the engine held still, one repeating ground sliding under it. */
+
+@layer ui {
+  .locomotive {
+    position: relative;
+    display: inline-block;
+    width: 4em;
+    height: 4em;
+    overflow: hidden;
+  }
+
+  .locomotive-engine {
+    position: relative;
+    z-index: 1;
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .locomotive-track {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0.25em;
+    height: 0.125em;
+    background-image: repeating-linear-gradient(
+      to right,
+      var(--edge-strong) 0,
+      var(--edge-strong) 0.5em,
+      transparent 0.5em,
+      transparent 1em
+    );
+    background-size: 1em 100%;
+    animation: locomotive-travel var(--duration-travel) linear infinite;
+  }
+
+  @keyframes locomotive-travel {
+    from {
+      background-position: 0 0;
+    }
+
+    to {
+      background-position: -1em 0;
+    }
+  }
+}

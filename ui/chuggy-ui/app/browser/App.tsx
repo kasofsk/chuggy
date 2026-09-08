@@ -19,15 +19,18 @@ import {
   useSilentRefresh,
 } from "./session.tsx";
 import { Button } from "./ui/Button.tsx";
+import { Locomotive } from "./ui/Locomotive.tsx";
 
 function SessionCard(props: {
   readonly title: string;
   readonly detail: string;
+  readonly media?: ReactNode;
   readonly action?: ReactNode;
 }): ReactNode {
   return (
     <div className="session-card">
       <h1>{props.title}</h1>
+      {props.media}
       <p>{props.detail}</p>
       {props.action}
     </div>
@@ -43,6 +46,7 @@ export function App(props: { readonly queryClient: QueryClient }): ReactNode {
       <SessionCard
         title="chuggy"
         detail="reading this deployment's configuration…"
+        media={<Locomotive />}
       />
     );
   if (snapshot.phase === "Unconfigured")
