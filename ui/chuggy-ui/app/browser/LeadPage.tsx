@@ -209,6 +209,8 @@ function LeadDetails(props: {
   );
 }
 
+/** The lead read is what the conversation waits on before there is a stream to
+ * walk at all, so a lead still pending reads as a conversation still read. */
 function LeadBody(props: {
   readonly partition: PartitionIdentity;
   readonly state: PanelState<LeadResponse>;
@@ -247,7 +249,7 @@ function LeadBody(props: {
       >
         <Conversation
           exchanges={exchanges}
-          reading={walked.reading}
+          reading={walked.reading || props.state.state === "Pending"}
           empty="No conversation"
           pane
         />

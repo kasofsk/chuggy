@@ -10,7 +10,8 @@
  * session's reader watching network traffic that never became an entry.
  */
 
-import { act, renderHook } from "@testing-library/react";
+import { act, render, renderHook } from "@testing-library/react";
+import { createElement, StrictMode } from "react";
 import { expect, test, vi } from "vitest";
 
 import { sessionStorePageBatchesMax } from "../../../src/contract/http.ts";
@@ -19,6 +20,7 @@ import { leadTranscriptReadsInFlightMax } from "../app/core/leadTranscript.ts";
 import {
   useLeadTranscript,
   type LeadTranscriptRead,
+  type LeadTranscriptWalk,
 } from "../app/browser/lead/LeadTranscript.tsx";
 import {
   leadCutBatch,
@@ -171,6 +173,33 @@ test("a walk that threw is a settled walk", async () => {
     result.current.reading,
     "a walk that threw left the conversation reading",
   ).toBe(false);
+});
+
+/**
+ * A dev build mounts under `StrictMode`, which runs every effect's setup, its
+ * cleanup and its setup again. A hook that took that cleanup for the page going
+ * away would publish nothing ever after, and both panes would sit on the word
+ * they wait in; `renderHook` under a wrapper does not double-invoke effects, so
+ * the case mounts a real root.
+ */
+test("a walk under a StrictMode root settles", async () => {
+  portsHeld.current = settledPorts(2);
+  let walked: LeadTranscriptWalk | undefined = undefined;
+  const Walking = (): null => {
+    walked = useLeadTranscript(readAt(2));
+    return null;
+  };
+  const view = render(createElement(StrictMode, null, createElement(Walking)));
+  await act(async () => {
+    for (let flush = 0; flush < flushesPerAnswer; flush += 1)
+      await Promise.resolve();
+  });
+  const settled = walked as LeadTranscriptWalk | undefined;
+  expect(settled?.reading, "a StrictMode remount left the walk reading").toBe(
+    false,
+  );
+  expect(settled?.held.entries.length).toBeGreaterThan(0);
+  view.unmount();
 });
 
 test("a walk pages to the end of the store", async () => {

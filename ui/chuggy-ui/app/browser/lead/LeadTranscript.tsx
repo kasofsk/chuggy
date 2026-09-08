@@ -143,12 +143,12 @@ export function useLeadTranscript(
   const ports = useApiPorts();
   const pane = useRef<LeadTranscriptPane>(leadTranscriptPaneEmpty);
   const unmounted = useRef(false);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    unmounted.current = false;
+    return () => {
       unmounted.current = true;
-    },
-    [],
-  );
+    };
+  }, []);
   const [drawn, setDrawn] = useState<LeadTranscriptDrawn>({
     held: leadTranscriptDrawn(leadTranscriptPaneEmpty),
     settled: undefined,

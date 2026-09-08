@@ -692,6 +692,26 @@ function pagedStore(
   return { asks: () => asks };
 }
 
+/** Which store to walk is the lead read's own answer, so a pane that drew the
+ * marker for a lead with none flashed it at every lead on the way in. */
+test("a lead read still pending draws its conversation as still read", async () => {
+  const unanswered = new Promise<Response>(() => undefined);
+  const fetching = ((url: string) => {
+    if (url.includes("/lead")) return unanswered;
+    const found = leadRouteAnswer(url, opening);
+    return Promise.resolve(answer(found.body, found.status));
+  }) as unknown as typeof fetch;
+  vi.stubGlobal("fetch", fetching);
+  await mountLead();
+  const conversation = screen.getByRole("region", { name: "Conversation" });
+  expect(within(conversation).getByText("Loading…")).toBeDefined();
+  expect(
+    screen.queryByText("No store"),
+    "a lead whose own read had not answered was drawn as one with no store",
+  ).toBeNull();
+  expect(exchangeCount()).toBe(0);
+});
+
 /**
  * A CONVERSATION HALF READ IS DRAWN AS NO CONVERSATION AT ALL. A store of many
  * pages takes many reads, and stepping each page into the pane as it landed
