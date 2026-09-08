@@ -31,11 +31,10 @@
  * the rest in the order the chain gives it.
  *
  * THE RESET IS AN EVENT IN THE WALK AND NOT A STATE A READER IS SHOWN. It holds
- * nothing, and a pane drawn from it says the lead has recorded nothing and is
- * holding nothing — the two claims this module's panels reserve for a lead that
- * really has. So what is drawn keeps the last whole fold until the re-walk has
- * one of its own, and says only the thing the reset does make true: that what
- * the lead holds is no longer known.
+ * nothing, and a pane drawn from it says the lead has recorded nothing — the
+ * claim this page reserves for a lead that really has. So what is drawn keeps
+ * the last whole fold until the re-walk has one of its own, and says only the
+ * thing the reset does make true: that what the lead holds is no longer known.
  *
  * THE RE-WALK COSTS THE READS THE MARK ALLOWS, which is the price of being
  * right: a pane part-way through a re-walk holds less than it did, and the next
