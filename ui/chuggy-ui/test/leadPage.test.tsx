@@ -373,6 +373,10 @@ test("a lead with no store says so", async () => {
   vi.stubGlobal("fetch", api.fetch);
   await mountLead();
   expect(screen.getByText("No store")).toBeDefined();
+  expect(
+    screen.queryByText("Loading…"),
+    "a lead with no store to read was drawn as one still being read",
+  ).toBeNull();
   expect(screen.queryByText("Stream unlisted")).toBeNull();
   expect(
     screen.queryByRole("button", { name: "Ask" }),
@@ -688,6 +692,31 @@ function pagedStore(
   return { asks: () => asks };
 }
 
+/**
+ * A CONVERSATION HALF READ IS DRAWN AS NO CONVERSATION AT ALL. A store of many
+ * pages takes many reads, and stepping each page into the pane as it landed
+ * painted the first turn and then repainted for every page behind it; what the
+ * conversation's place holds until the walk settles is the word every other
+ * read this console waits on is drawn in.
+ */
+test("a store still being read draws a pending conversation and no turns", async () => {
+  const unanswered = new Promise<Response>(() => undefined);
+  const fetching = ((url: string) => {
+    if (url.includes("/lead/transcript")) return unanswered;
+    const found = leadRouteAnswer(url, opening);
+    return Promise.resolve(answer(found.body, found.status));
+  }) as unknown as typeof fetch;
+  vi.stubGlobal("fetch", fetching);
+  await mountLead();
+  expect(screen.getByText("Loading…")).toBeDefined();
+  expect(
+    exchangeCount(),
+    "a walk that had read nothing yet drew a conversation",
+  ).toBe(0);
+  expect(screen.queryByText("No conversation")).toBeNull();
+  expect(screen.queryByText("Not reached")).toBeNull();
+});
+
 /** How many reads a store of `batches` costs: a page of them a read, and no
  * read at all above the mark. */
 function readsAllowed(batches: number): number {
@@ -704,6 +733,10 @@ function readsAllowed(batches: number): number {
 test("a store of many pages is read to its end on mount", async () => {
   const store = pagedStore(walkedStoreBatches);
   await mountLead();
+  expect(
+    screen.queryByText("Loading…"),
+    "a store the walk read whole was still drawn as one being read",
+  ).toBeNull();
   expect(screen.getByText("turn 1")).toBeDefined();
   expect(screen.getByText(`turn ${String(walkedStoreBatches)}`)).toBeDefined();
   expect(exchangeCount()).toBe(walkedStoreBatches);
@@ -782,6 +815,10 @@ test("a transcript read that failed says so rather than drawing an empty log", a
     screen.getByText(/^Failed · /u),
     "a transcript that could not be read was drawn as a log with nothing in it",
   ).toBeDefined();
+  expect(
+    screen.queryByText("Loading…"),
+    "a read that failed left the conversation being read for ever",
+  ).toBeNull();
 });
 
 /** A reference the bounded stream listing does not carry has nothing to walk,
@@ -1008,6 +1045,10 @@ test("a lead that has recorded nothing says so", async () => {
   );
   await mountLead();
   expect(screen.getByText("No conversation")).toBeDefined();
+  expect(
+    screen.queryByText("Loading…"),
+    "a store with nothing in it was drawn as one still being read",
+  ).toBeNull();
 });
 
 /** What the read could not draw is drawn as itself, in the words the counts

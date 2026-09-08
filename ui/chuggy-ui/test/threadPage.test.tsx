@@ -844,3 +844,23 @@ test("a mailbox tail over the answered bound is refused, not drawn", async () =>
     "a page longer than the wire allows was drawn instead of refused",
   ).toBeDefined();
 });
+
+/** A conversation half read is drawn as no conversation at all: what the
+ * conversation's place holds until the walk settles is the word every other
+ * read this console waits on is drawn in. */
+test("a store still being read draws a pending conversation and no turns", async () => {
+  const unanswered = new Promise<Response>(() => undefined);
+  const fetching = (url: string): Promise<Response> => {
+    if (url.includes("/transcript")) return unanswered;
+    const found = threadRouteAnswer(url, { thread: threadBody({}) });
+    return Promise.resolve(answer(found.body, found.status));
+  };
+  vi.stubGlobal("fetch", fetching);
+  await mountThread();
+  expect(screen.getByText("Loading…")).toBeDefined();
+  expect(
+    screen.queryByText("a member's question"),
+    "a walk that had read nothing yet drew a conversation",
+  ).toBeNull();
+  expect(screen.queryByText("Nothing said")).toBeNull();
+});

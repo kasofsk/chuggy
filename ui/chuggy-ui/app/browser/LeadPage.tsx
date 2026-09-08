@@ -54,7 +54,11 @@ import { LeadDecisions } from "./lead/LeadDecisions.tsx";
 import { LeadInquiries, useInquiryBoxes } from "./lead/LeadInquiries.tsx";
 import type { InquiryBoxesHeld } from "./lead/LeadInquiries.tsx";
 import { LeadRefusals } from "./lead/LeadRefusals.tsx";
-import { LeadNote, useLeadTranscript } from "./lead/LeadTranscript.tsx";
+import {
+  LeadNote,
+  LeadTranscriptReading,
+  useLeadTranscript,
+} from "./lead/LeadTranscript.tsx";
 import { DetailsSlot, TopBarSlot } from "./shell/slots.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
@@ -217,13 +221,17 @@ function LeadBody(props: {
 }): ReactNode {
   const lead = props.state.state === "Ready" ? props.state.value : undefined;
   const listed = lead !== undefined && leadStreamListed(lead);
-  const held = useLeadTranscript({
+  const walked = useLeadTranscript({
     partition: props.partition,
     stream: lead?.agentReference,
     highWaterBatch: lead === undefined ? 0 : leadStreamBatches(lead),
   });
   const exchanges = conversationExchanges(
-    sessionConversationItems({ held, stream: lead?.agentReference, listed }),
+    sessionConversationItems({
+      held: walked.held,
+      stream: lead?.agentReference,
+      listed,
+    }),
     sessionConversationTurns(lead?.turns ?? []),
   );
   return (
@@ -241,7 +249,11 @@ function LeadBody(props: {
         aria-label="Conversation"
         className="flex-1 min-h-0 min-w-0"
       >
-        <Conversation exchanges={exchanges} empty="No conversation" pane />
+        {walked.reading ? (
+          <LeadTranscriptReading />
+        ) : (
+          <Conversation exchanges={exchanges} empty="No conversation" pane />
+        )}
       </div>
     </>
   );

@@ -100,7 +100,7 @@ const leadBatchEntries: readonly (readonly LeadTranscriptResponse["entries"][num
 
 /** The batch the stream's one compaction falls in, which every page decided
  * against answers with. */
-const leadCutBatch = 2;
+export const leadCutBatch = 2;
 
 /**
  * Which of a page's own entries the lead still holds, decided by the cut in the

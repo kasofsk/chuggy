@@ -21,6 +21,7 @@ import {
   type LeadTranscriptRead,
 } from "../app/browser/lead/LeadTranscript.tsx";
 import {
+  leadCutBatch,
   leadPartition,
   leadStream,
   leadTranscriptPage,
@@ -152,7 +153,7 @@ test("a walk pages to the end of the store", async () => {
   portsHeld.current = settledPorts(2);
   const { result } = renderHook(() => useLeadTranscript(readAt(2)));
   await flushed();
-  expect(result.current.entries.map((entry) => entry.uuid)).toEqual([
+  expect(result.current.held.entries.map((entry) => entry.uuid)).toEqual([
     "uuid-p",
     "uuid-q",
     "uuid-a",
@@ -173,13 +174,17 @@ test("a rise of highWaterBatch mid-page keeps the page the walk already fetched"
   rerender(readAt(2));
   await flushed();
   expect(held.calls.length).toBe(2);
-  await act(async () => {
-    held.calls[0]?.respond(leadTranscriptPage(0, 2));
-    await Promise.resolve();
-    await Promise.resolve();
+  await answering(held.calls[0], leadTranscriptPage(0, 2));
+  await answering(held.calls[1], {
+    stream: leadStream,
+    entries: [],
+    held: [],
+    cut: leadCutBatch,
+    elided: 0,
+    truncated: false,
   });
   expect(
-    result.current.entries.map((entry) => entry.uuid),
+    result.current.held.entries.map((entry) => entry.uuid),
     "a page the superseded walk had already fetched was dropped",
   ).toEqual(["uuid-p", "uuid-q"]);
   expect(
@@ -191,6 +196,70 @@ test("a rise of highWaterBatch mid-page keeps the page the walk already fetched"
 /** A store of many pages, which is the walk this is about: read one after
  * another it is a page's round trip times its length. */
 const walkedStoreBatches = 202;
+
+/**
+ * A page stepped in as it landed drew the first turn and then repainted for
+ * every page behind it, with the scroller chasing the bottom. What a reader is
+ * shown is the walk's whole answer, or nothing of it yet.
+ */
+test("a store of many pages draws nothing until the walk has read it whole", async () => {
+  const held = heldPorts();
+  portsHeld.current = held.ports;
+  const second = sessionStorePageBatchesMax;
+  const third = sessionStorePageBatchesMax * 2;
+  const { result } = renderHook(() =>
+    useLeadTranscript(readAt(sessionStorePageBatchesMax * 3)),
+  );
+  await flushed();
+  await answering(
+    askedAt(held.calls, 0),
+    pageAt("uuid-first", { nextAfter: second }),
+  );
+  expect(
+    result.current.reading,
+    "a walk with pages still to read said it had finished",
+  ).toBe(true);
+  expect(
+    result.current.held.entries,
+    "a page landing mid-walk was drawn as the conversation",
+  ).toStrictEqual([]);
+  await answering(
+    askedAt(held.calls, second),
+    pageAt("uuid-second", { nextAfter: third }),
+  );
+  expect(result.current.held.entries).toStrictEqual([]);
+  await answering(askedAt(held.calls, third), pageAt("uuid-last", {}));
+  expect(result.current.reading).toBe(false);
+  expect(
+    result.current.held.entries.map((entry) => entry.uuid),
+    "the walk settled on less than it had read",
+  ).toStrictEqual(["uuid-first", "uuid-second", "uuid-last"]);
+});
+
+/** A session that keeps answering raises the mark it is walked to, and the
+ * pages of that walk append as they land rather than waiting for its end. */
+test("a mark that rises after the first settle draws each page as it lands", async () => {
+  const held = heldPorts();
+  portsHeld.current = held.ports;
+  const { result, rerender } = renderHook(
+    (read: LeadTranscriptRead) => useLeadTranscript(read),
+    { initialProps: readAt(1) },
+  );
+  await flushed();
+  await answering(askedAt(held.calls, 0), pageAt("uuid-first", {}));
+  expect(result.current.reading).toBe(false);
+  rerender(readAt(walkedStoreBatches));
+  await flushed();
+  await answering(
+    askedAt(held.calls, 1),
+    pageAt("uuid-next", { nextAfter: 2 }),
+  );
+  expect(
+    result.current.held.entries.map((entry) => entry.uuid),
+    "a page after the first settle waited for the walk to reach the mark",
+  ).toStrictEqual(["uuid-first", "uuid-next"]);
+  expect(result.current.reading).toBe(false);
+});
 
 /**
  * The cursors below the mark are the route's own pages, so the walk asks for
@@ -230,7 +299,7 @@ test("a page read ahead at a cursor the walk does not ask is not folded", async 
     pageAt("uuid-next", { nextAfter: 1 }),
   );
   expect(
-    result.current.entries.map((entry) => entry.uuid),
+    result.current.held.entries.map((entry) => entry.uuid),
     "a page at a cursor the walk never asked for was folded into the pane",
   ).toStrictEqual(["uuid-here", "uuid-next"]);
 });
@@ -278,7 +347,7 @@ test("a reset drops what the walk had read ahead of it", async () => {
     "the re-walk took an answer read under the cut the pane had abandoned",
   ).toBe(2);
   expect(
-    result.current.entries.map((entry) => entry.uuid),
+    result.current.held.entries.map((entry) => entry.uuid),
     "a page read under the cut the pane abandoned was folded into the re-walk",
   ).toStrictEqual(["uuid-again", "uuid-more", "uuid-fresh"]);
 });
@@ -298,14 +367,14 @@ test("a read that failed ahead of the walk is the walk's failure at that cursor"
     500,
   );
   expect(
-    result.current.failure,
+    result.current.held.failure,
     "a cursor the walk had not reached failed the walk",
   ).toBeUndefined();
   await answering(
     askedAt(held.calls, 0),
     pageAt("uuid-here", { nextAfter: sessionStorePageBatchesMax }),
   );
-  expect(result.current.failure).toBeDefined();
+  expect(result.current.held.failure).toBeDefined();
   expect(
     held.calls.filter(
       (call) => afterAsked(call.url) === sessionStorePageBatchesMax,
