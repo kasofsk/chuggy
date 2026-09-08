@@ -255,7 +255,7 @@ function modelReference(
     return {
       entries: last.entries,
       holding: last.holding,
-      holdingUnknown: last.undecided || last.stalledAt !== undefined,
+      holdingUnknown: last.undecided,
       failure,
     };
   const kept = [...runs]
@@ -266,7 +266,7 @@ function modelReference(
     return {
       entries: [],
       holding: last.holding,
-      holdingUnknown: last.undecided || last.stalledAt !== undefined,
+      holdingUnknown: last.undecided,
       failure,
     };
   return {
@@ -627,8 +627,8 @@ test("a store written past a stall carries the walk on from where it stopped", (
   expect(pane.fold.readTo, "the walk gave up the cursor it stalled at").toBe(1);
   expect(leadTranscriptNextAfter(pane, 2)).toBeUndefined();
   expect(
-    leadTranscriptDrawn(pane).holdingUnknown,
-    "a pane that has not reached the rest of the stream claimed to know",
+    leadTranscriptDrawn(pane).unreached,
+    "a pane that has not reached the rest of the stream said it had",
   ).toBe(true);
   const cursors: number[] = [];
   for (let at = 0; at <= store.batches.length; at += 1) {

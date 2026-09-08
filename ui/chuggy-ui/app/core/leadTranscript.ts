@@ -159,17 +159,21 @@ export const leadTranscriptPaneEmpty: LeadTranscriptPane = {
 };
 
 /**
- * What a reader is shown: one fold, the stream it came from, and the reason the
- * last read gave if it did not answer.
- *
- * `holdingUnknown` MEANS MORE HERE THAN ON A FOLD — on a fold it is what a page
- * answered, and on what is drawn it is every reason this pane cannot say what
- * the lead holds, the fold's own and a walk waiting at a cursor it could not
- * move.
+ * What a reader is shown: one fold, the stream it came from, the reason the
+ * last read gave if it did not answer, and whether the walk got to the end of
+ * the store.
  */
 export interface LeadTranscriptHeld extends LeadTranscriptFold {
   readonly stream: string | undefined;
   readonly failure: string | undefined;
+  /**
+   * Whether the walk has not reached the mark it was read against: batches
+   * below it left unread, a cursor a page would not move, or a re-walk that
+   * still owes this reader a fold. It is a fact about how far this pane got and
+   * never about what the route could decide, which is a shortfall of the
+   * server's own walk that nothing here draws.
+   */
+  readonly unreached: boolean;
 }
 
 /**
@@ -367,13 +371,12 @@ export function leadTranscriptStep(
 }
 
 /**
- * Whether a fold can say what the lead holds. A page that answered no `held`
- * did not decide it and nothing later can; a walk waiting at a stalled cursor
- * has not reached the rest of the stream and the resumed walk clears that by
- * reaching it.
+ * Whether the walk stopped short of the mark. Batches below it the last page
+ * left unread say so, and so does a cursor a page would not move, which the
+ * resumed walk clears by reaching the rest.
  */
-function leadTranscriptUndecided(fold: LeadTranscriptFold): boolean {
-  return fold.holdingUnknown || fold.stalledAt !== undefined;
+function leadTranscriptUnreached(fold: LeadTranscriptFold): boolean {
+  return fold.more || fold.stalledAt !== undefined;
 }
 
 /**
@@ -390,7 +393,7 @@ export function leadTranscriptDrawn(
   if (kept === undefined)
     return {
       ...pane.fold,
-      holdingUnknown: leadTranscriptUndecided(pane.fold),
+      unreached: leadTranscriptUnreached(pane.fold),
       stream: pane.stream,
       failure: pane.failure,
     };
@@ -398,6 +401,7 @@ export function leadTranscriptDrawn(
     ...kept,
     holding: [],
     holdingUnknown: true,
+    unreached: true,
     cut: pane.fold.cut,
     stream: pane.stream,
     failure: pane.failure,

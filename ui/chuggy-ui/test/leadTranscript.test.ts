@@ -113,12 +113,14 @@ test("a full page below the mark is asked past, and one reaching it ends the wal
   expect(leadTranscriptNextAfter(leadTranscriptPaneEmpty, 2)).toBe(0);
   const first = paged(leadTranscriptPaneEmpty, leadTranscriptPage(0, 2), 2);
   expect(first.fold.more).toBe(true);
+  expect(leadTranscriptDrawn(first).unreached).toBe(true);
   expect(leadTranscriptNextAfter(first, 2)).toBe(1);
   const second = paged(first, leadTranscriptPage(1, 2), 2);
   expect(
     second.fold.more,
     "a page whose cursor reached the mark was drawn as not having reached it",
   ).toBe(false);
+  expect(leadTranscriptDrawn(second).unreached).toBe(false);
   expect(leadTranscriptNextAfter(second, 2)).toBeUndefined();
   expect(leadTranscriptNextAfter(second, 3)).toBe(2);
 });
@@ -447,12 +449,13 @@ test("an ordinary fold is drawn as it stands", () => {
   const walked = paged(
     leadTranscriptPaneEmpty,
     cutPage(1, ["uuid-a"], ["uuid-a"], 1),
-    2,
+    1,
   );
   expect(leadTranscriptDrawn(walked)).toStrictEqual({
     ...walked.fold,
     stream: walked.stream,
     failure: undefined,
+    unreached: false,
   });
   expect(walked.kept, "an ordinary fold kept a fold for the reader").toBe(
     undefined,
@@ -928,9 +931,9 @@ test("the reset carries the cut, and a cursor of nothing", () => {
  * THE STALL RULE, BESIDE THE MODEL THAT GENERATES IT. A page that hands back the
  * cursor it was asked with leaves the walk nowhere to go, so the pane waits at
  * that cursor rather than skipping to the mark it read against — and says it
- * cannot yet tell what the lead holds, because it has not reached the rest.
+ * has not reached the store's end, because it has not.
  */
-test("a stalled page keeps its cursor, waits, and says it cannot yet tell", () => {
+test("a stalled page keeps its cursor, waits, and says it stopped short", () => {
   const walked = paged(
     leadTranscriptPaneEmpty,
     cutPage(1, ["uuid-a"], ["uuid-a"], 1),
@@ -948,14 +951,14 @@ test("a stalled page keeps its cursor, waits, and says it cannot yet tell", () =
   expect(stalled.fold.stalledAt).toBe(9);
   expect(leadTranscriptNextAfter(stalled, 9)).toBeUndefined();
   expect(
-    leadTranscriptDrawn(stalled).holdingUnknown,
-    "a pane that has not reached the rest of the stream claimed to know",
+    leadTranscriptDrawn(stalled).unreached,
+    "a pane that has not reached the rest of the stream said it had",
   ).toBe(true);
 });
 
 /** The store written past the mark carries the walk on from the cursor it
- * stopped at, and reaching the rest is what lets it say what is held again. */
-test("a walk resumed past a stall stops calling itself undecided", () => {
+ * stopped at, and reaching the rest is what clears the marker. */
+test("a walk resumed past a stall stops saying it stopped short", () => {
   const stalled = paged(
     paged(leadTranscriptPaneEmpty, cutPage(1, ["uuid-a"], ["uuid-a"], 1), 9),
     { ...cutPage(1, ["uuid-b"], ["uuid-b"], 1), nextAfter: 1 },
@@ -964,13 +967,14 @@ test("a walk resumed past a stall stops calling itself undecided", () => {
   expect(leadTranscriptNextAfter(stalled, 10)).toBe(1);
   const resumed = paged(stalled, cutPage(1, ["uuid-c"], ["uuid-c"], 2), 10);
   expect(resumed.fold.stalledAt).toBeUndefined();
-  expect(
-    leadTranscriptDrawn(resumed).holdingUnknown,
-    "a pane that reached the rest of the stream still called itself undecided",
-  ).toBe(false);
   expect(holdingLines(resumed).map((line) => line.uuid)).toStrictEqual([
     "uuid-a",
     "uuid-b",
     "uuid-c",
   ]);
+  const reached = paged(resumed, cutPage(1, ["uuid-d"], ["uuid-d"]), 10);
+  expect(
+    leadTranscriptDrawn(reached).unreached,
+    "a pane that reached the rest of the stream still said it had not",
+  ).toBe(false);
 });

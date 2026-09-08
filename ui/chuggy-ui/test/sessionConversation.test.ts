@@ -32,6 +32,7 @@ function heldOf(held: Partial<LeadTranscriptHeld>): LeadTranscriptHeld {
     ...leadTranscriptFoldEmpty,
     stream,
     failure: undefined,
+    unreached: false,
     ...held,
   };
 }
@@ -192,7 +193,7 @@ test("an unlisted stream's shortfalls stand beside the marker and what was gathe
 test("a read that failed, an unreached tail, elided batches and dropped entries each say themselves", () => {
   const items = itemsOf({
     failure: "Fault · 500",
-    holdingUnknown: true,
+    unreached: true,
     elided: 2,
     entriesDropped: 3,
   });
@@ -212,26 +213,32 @@ test("a read that failed, an unreached tail, elided batches and dropped entries 
   ]);
 });
 
-/** A read that could not decide the held set is truncated by construction, so
- * saying both would be one shortfall reported twice. */
-test("truncated stands only where the walk could say how far it reached", () => {
+/**
+ * THE ROUTE'S OWN WALK IS NOT THIS READER'S. A page whose `held` the route
+ * could not decide reports itself truncated for that reason and no other, and
+ * a stream longer than the route's held walk may read answers every page that
+ * way — so a pane that drew it would tell every reader of a long transcript
+ * that something was missing from a record it had read whole.
+ */
+test("a page whose held set was undecided is not a shortfall a reader is shown", () => {
   expect(markers(itemsOf({ truncated: true }))).toStrictEqual(["Truncated"]);
   expect(
     markers(itemsOf({ truncated: true, holdingUnknown: true })),
-  ).toStrictEqual(["Unreached"]);
+    "the route's own walk falling short was drawn as this read falling short",
+  ).toStrictEqual([]);
+  expect(markers(itemsOf({ holdingUnknown: true }))).toStrictEqual([]);
 });
 
 /**
- * `more` says the last page left batches above its cursor unread, which is
- * its own way of not having reached the end of the store — the case a walk
- * that stops on its read budget leaves behind without ever setting
- * `holdingUnknown`. It is worded the same as an unreached tail rather than
- * left silent, and does not double-report beside `truncated`.
+ * `unreached` is the whole of what the reader is told about how far this walk
+ * got, and it is a fact about this pane rather than about the route. It is
+ * worded as an unreached tail rather than left silent, and does not
+ * double-report beside `truncated`.
  */
-test("a fold carrying `more` draws the walk as unreached, and one that reached the end draws nothing for it", () => {
-  expect(markers(itemsOf({ more: true }))).toStrictEqual(["Unreached"]);
-  expect(markers(itemsOf({ more: false }))).toStrictEqual([]);
-  expect(markers(itemsOf({ more: true, truncated: true }))).toStrictEqual([
+test("a walk that stopped short says so, and one that reached the end says nothing for it", () => {
+  expect(markers(itemsOf({ unreached: true }))).toStrictEqual(["Unreached"]);
+  expect(markers(itemsOf({ unreached: false }))).toStrictEqual([]);
+  expect(markers(itemsOf({ unreached: true, truncated: true }))).toStrictEqual([
     "Unreached",
   ]);
 });
