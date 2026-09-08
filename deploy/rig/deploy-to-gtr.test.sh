@@ -171,7 +171,7 @@ for file in src/a.ts src/contract/c.ts ui/chuggy-ui/app.ts ui/console/index.html
 done
 cat >"$REPO/.chug/tasks/ci.sh" <<'STUB'
 #!/bin/sh
-printf 'ci prefix=<%s>\n' "${CHUG_IMAGE_PREFIX:-}" >>"$CHUG_STUB_LOG"
+printf 'ci prefix=<%s> full=<%s> base=<%s>\n' "${CHUG_IMAGE_PREFIX:-}" "${CHUG_CI_FULL:-}" "${CHUG_CI_BASE:-}" >>"$CHUG_STUB_LOG"
 exit "${CHUG_STUB_GATE_RC:-0}"
 STUB
 cat >"$REPO/deploy/rig/images/build-and-import.sh" <<'STUB'
@@ -627,6 +627,70 @@ open_release src/a.ts
 export CHUG_STUB_MERGE_RC=1
 run --merge
 check "a merge that failed is a finding" 1 "$RC" "pull request 9 did not merge"
+
+# --- --console: a console-only release, both phases in one run ----------------------
+
+fresh_case
+advance ui/chuggy-ui/app.ts
+run --console --merge
+check "console with merge is refused" 2 "$RC" "takes no --merge"
+check "console with merge reaches no tool" 2 "$RC" "$untouched"
+
+fresh_case
+advance ui/chuggy-ui/app.ts src/a.ts
+run --console
+check "a change that moves the api is not a console release" 2 "$RC" "moves the api, so it is not a console release"
+check "a refused console release runs no gate" 2 "$RC" "gates run: 0"
+check "a refused console release builds nothing" 2 "$RC" "builds attempted: 0"
+
+fresh_case
+advance ui/chuggy-ui/app.ts ui/console/index.html
+run --console
+check "a change that moves the old console is not a console release" 2 "$RC" "moves the old console"
+
+fresh_case
+advance ui/chuggy-ui/app.ts src/adapters/postgres/schema/migrations/050-b.ts
+run --console
+check "a migration moves the api and is not a console release" 2 "$RC" "moves the api, so it is not a console release"
+
+fresh_case
+advance images/worker/Dockerfile
+run --console
+check "a change the console does not serve is no console release" 2 "$RC" "nothing the console serves moved"
+
+fresh_case
+advance ui/chuggy-ui/app.ts
+export CHUG_STUB_MERGED="$MERGED"
+export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1 CHUG_STUB_LIVE_ROWS=1
+run --console
+check "a console release lands in one run" 0 "$RC" "the rig is at $TAG; ledger at 52"
+check "a console release gates what moved since the live commit" 0 "$RC" "ci prefix=<> full=<> base=<$DEPLOYED>"
+check "a console release runs one gate" 0 "$RC" "gates run: 1"
+check "a console release builds the console alone" 0 "$RC" "builds attempted: 1"
+check "a console release opens the pull request" 0 "$RC" "pull requests opened: 1"
+check "a console release merges its own pull request" 0 "$RC" "gh pr merge 7 -R gdoteof/chuggy-fabric --merge --delete-branch --admin"
+check "a live attempt does not refuse a console release" 0 "$RC" "merges attempted: 1"
+printf 'attempts asked for: %s\n' "$(grep -c 'chuggy-work get pods' "$LOG" || true)" >>"$OUT"
+check "a console release does not ask after attempts" 0 "$RC" "attempts asked for: 0"
+check "a console release verifies the console rollout" 0 "$RC" "rollout status deployment/chuggy-ui"
+cp "$LOG.body" "$OUT"
+check "the pull request says what the gate covered" 0 "$RC" "Gate at $TAG: clean over the gates the change since $DEPLOYED affects"
+OUT="$WORK/.release"
+released chuggy-ui.yaml >"$OUT"
+check "a console release selects the registry's digest" 0 "$RC" "chuggy/web@$NEW"
+
+fresh_case
+advance ui/chuggy-ui/app.ts
+export CHUG_STUB_GATE_RC=1
+run --console
+check "a console gate finding stops the release" 1 "$RC" "did not pass $TAG"
+check "a failed console gate merges nothing" 1 "$RC" "merges attempted: 0"
+
+# The full route still gates with every gate, so the two cannot be confused.
+fresh_case
+advance ui/chuggy-ui/app.ts
+run
+check "the full route gates with every gate" 0 "$RC" "ci prefix=<> full=<1> base=<>"
 
 # --- the tools that have to be there --------------------------------------------------
 

@@ -59,8 +59,9 @@ acceptance *ARGS:
 
 # Release HEAD to the rig: gate it, build and publish what changed, and open
 # the chuggy-fabric pull request that selects it. `just deploy-to-gtr --merge`
-# lands that pull request and watches the rollout. The script's header is the
-# procedure and names what it needs.
+# lands that pull request and watches the rollout, and `just deploy-to-gtr
+# --console` does both in one run for a release that moves only the realtime
+# console. The script's header is the procedure and names what it needs.
 deploy-to-gtr *ARGS:
     ./deploy/rig/deploy-to-gtr.sh {{ ARGS }}
 
