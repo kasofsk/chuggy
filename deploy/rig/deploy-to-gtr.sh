@@ -60,7 +60,8 @@
 # merged and rolled out without a pause, because a diff that is digests and
 # annotations is read mechanically and not reviewed. A change that also moves
 # the api or the old console is refused under it and goes the long way, and a
-# migration is under `src/`, so it moves the api.
+# migration is under `src/`, so it moves the api. So is a release that moves
+# the rig back, because it has no change since the live commit to gate over.
 #
 # Usage:
 #   deploy/rig/deploy-to-gtr.sh            gate, build, publish, open the PR
@@ -77,8 +78,8 @@
 #   CHUG_RIG_ARCHIVE      where a pre-merge dump is kept. Required by --merge
 #                         when the release carries a migration; no default.
 #   CHUG_FABRIC_REPO      the fabric repository, default gdoteof/chuggy-fabric
-#   CHUG_RELEASE_GATE     0 skips the full gate, and the pull request says so
-#   CHUG_RELEASE_WAIT_SECS  how long --merge waits on each of Flux, the
+#   CHUG_RELEASE_GATE     0 skips the gate, and the pull request says so
+#   CHUG_RELEASE_WAIT_SECS  how long a landing run waits on each of Flux, the
 #                         migrate Job and a rollout
 #
 # Exits 0 clean, 1 when something did not land, 2 when it could not run. Two
@@ -176,6 +177,9 @@ if git merge-base --is-ancestor "$deployed" HEAD; then
 	say "releasing $tag over $deployed"
 else
 	say "releasing $tag, which is not ahead of the live $deployed: this moves the rig back"
+	# The gate runner diffs from the merge base, which is HEAD itself here, so
+	# there would be nothing to gate over and a clean verdict about nothing.
+	[ "$console" -eq 0 ] || refuse "--console gates the change since $deployed, and HEAD has none; run without --console"
 fi
 
 changed="$(git diff --name-only "$deployed" HEAD -- src/adapters/postgres/schema/migrations)" || refuse "the migrations since $deployed could not be read"

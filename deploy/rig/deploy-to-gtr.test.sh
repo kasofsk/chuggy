@@ -230,6 +230,7 @@ git -C "$FABRIC_SEED" config user.name t
 git -C "$FABRIC_SEED" add -A
 git -C "$FABRIC_SEED" commit -qm seed
 git clone -q --bare "$FABRIC_SEED" "$FABRIC_GIT"
+FABRIC_SEED_SHA="$(git --git-dir="$FABRIC_GIT" rev-parse main)"
 
 # --- the drivers ------------------------------------------------------------------
 
@@ -238,6 +239,7 @@ fresh_case() {
 	rm -f "$LOG.body" "$ARCHIVE"/*
 	git -C "$REPO" reset -q --hard "$DEPLOYED_FULL"
 	git -C "$REPO" push -q -f origin main
+	git --git-dir="$FABRIC_GIT" update-ref refs/heads/main "$FABRIC_SEED_SHA"
 	for ref in $(git --git-dir="$FABRIC_GIT" for-each-ref --format='%(refname:short)' refs/heads/release); do
 		git --git-dir="$FABRIC_GIT" branch -q -D "$ref"
 	done
@@ -262,6 +264,20 @@ advance() { # <path>...
 	git -C "$REPO" push -q origin main
 	TAG="$(git -C "$REPO" rev-parse --short HEAD)"
 	export CHUG_STUB_BRANCH="release/chuggy-$TAG"
+}
+
+# The fabric's main comes to name another commit as live, as a release that
+# landed would leave it.
+rig_at() { # <short commit>
+	rm -rf "$WORK/rig-at"
+	git clone -q "$FABRIC_GIT" "$WORK/rig-at"
+	git -C "$WORK/rig-at" config user.email t@example.com
+	git -C "$WORK/rig-at" config user.name t
+	for name in $(ls "$WORK/rig-at/cluster/apps"); do
+		sed -i "s|source-commit: $DEPLOYED|source-commit: $1|; s|chuggy-migrate-$DEPLOYED-|chuggy-migrate-$1-|" "$WORK/rig-at/cluster/apps/$name"
+	done
+	git -C "$WORK/rig-at" commit -qam "release: chuggy $1"
+	git -C "$WORK/rig-at" push -q origin main
 }
 
 run() { # <argument...>
@@ -657,6 +673,29 @@ fresh_case
 advance images/worker/Dockerfile
 run --console
 check "a change the console does not serve is no console release" 2 "$RC" "nothing the console serves moved"
+
+# The rig runs a commit HEAD is behind: the gate runner would diff HEAD from
+# itself and find nothing to run, so the mode refuses rather than vouch for it.
+fresh_case
+advance ui/chuggy-ui/app.ts
+rig_at "$TAG"
+git -C "$REPO" reset -q --hard "$DEPLOYED_FULL"
+git -C "$REPO" push -q -f origin main
+run --console
+check "a console release that moves the rig back is refused" 2 "$RC" "HEAD has none; run without --console"
+check "a release that moves the rig back runs no gate" 2 "$RC" "gates run: 0"
+check "a release that moves the rig back builds nothing" 2 "$RC" "builds attempted: 0"
+
+# The mirror: the full route releases the same move, with every gate.
+fresh_case
+advance ui/chuggy-ui/app.ts
+rig_at "$TAG"
+git -C "$REPO" reset -q --hard "$DEPLOYED_FULL"
+git -C "$REPO" push -q -f origin main
+export CHUG_STUB_BRANCH="release/chuggy-$DEPLOYED"
+run
+check "the full route releases a move back" 0 "$RC" "this moves the rig back"
+check "a move back is gated with every gate" 0 "$RC" "ci prefix=<> full=<1> base=<>"
 
 fresh_case
 advance ui/chuggy-ui/app.ts
