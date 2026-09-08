@@ -863,4 +863,60 @@ test("a store still being read draws a pending conversation and no turns", async
     "a walk that had read nothing yet drew a conversation",
   ).toBeNull();
   expect(screen.queryByText("Nothing said")).toBeNull();
+  expect(
+    composer(),
+    "a walk still reading took the member's own box away with the turns",
+  ).not.toBeNull();
+});
+
+/** A thread has no stream reference until a turn reports one, so a member's
+ * first send is exactly when the walk starts reading — and the box they typed
+ * it in must still be the same box. */
+test("a stream arriving after a send keeps the composer and its draft", async () => {
+  const unanswered = new Promise<Response>(() => undefined);
+  let streamed = false;
+  const fetching = (
+    url: string,
+    init?: { readonly method?: string },
+  ): Promise<Response> => {
+    if (init?.method === "POST")
+      return Promise.resolve(
+        answer({ turn: "thread-turn-2", ordinal: 2 }, 202),
+      );
+    if (url.includes("/transcript")) return unanswered;
+    if (url.includes("/threads/"))
+      return Promise.resolve(
+        answer(streamed ? threadBody({}) : threadBody({ streamless: true })),
+      );
+    return Promise.resolve(
+      answer({ partition: threadPartition, sequence: 1, tickets: [] }),
+    );
+  };
+  vi.stubGlobal("fetch", fetching);
+  const server = await mountThread();
+  const box = typing();
+  await turned(() => {
+    fireEvent.change(box, { target: { value: "half typed" } });
+  });
+  streamed = true;
+  await turned(() => {
+    server.push(
+      frame("Session", "80", {
+        version: 1,
+        resource: threadSessionResource(threadMineSession, "thread-turn-2"),
+        representation: null,
+      }),
+    );
+  });
+  await settled();
+  styleless();
+  expect(
+    screen.getByText("Loading…"),
+    "the walk over the reference that arrived was not drawn as reading",
+  ).toBeDefined();
+  expect(
+    composer(),
+    "the reference arriving unmounted the box the member was typing in",
+  ).toBe(box);
+  expect(composer()?.value).toBe("half typed");
 });

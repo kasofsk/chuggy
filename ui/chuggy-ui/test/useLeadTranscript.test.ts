@@ -149,6 +149,30 @@ async function flushed(): Promise<void> {
   });
 }
 
+/** The retry's own wait is the walk's one await outside a `try`, so a browser
+ * that abandons it rejects the walk itself. */
+test("a walk that threw is a settled walk", async () => {
+  portsHeld.current = {
+    fetch: () =>
+      Promise.resolve({
+        status: 503,
+        headers: { get: () => null },
+        text: () => Promise.resolve("{}"),
+      } as unknown as Response),
+    bearer: () => Promise.resolve("token"),
+    sleepMs: () => Promise.reject(new Error("the reader left")),
+  };
+  const { result } = renderHook(() => useLeadTranscript(readAt(1)));
+  await act(async () => {
+    for (let flush = 0; flush < flushesPerAnswer; flush += 1)
+      await Promise.resolve();
+  });
+  expect(
+    result.current.reading,
+    "a walk that threw left the conversation reading",
+  ).toBe(false);
+});
+
 test("a walk pages to the end of the store", async () => {
   portsHeld.current = settledPorts(2);
   const { result } = renderHook(() => useLeadTranscript(readAt(2)));

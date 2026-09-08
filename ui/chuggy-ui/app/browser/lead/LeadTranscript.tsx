@@ -54,7 +54,6 @@ import type {
 } from "../../core/leadTranscript.ts";
 import { useApiPorts } from "../api.ts";
 import { ConversationCard } from "../conversation/ConversationCard.tsx";
-import { PanelUnready } from "../DataPanel.tsx";
 import { Pill } from "../ui/Pill.tsx";
 
 export interface LeadTranscriptRead {
@@ -158,8 +157,9 @@ export function useLeadTranscript(
   const { tenant, project } = read.partition;
   useEffect(() => {
     let superseded = false;
-    const publish = (): void => {
-      if (unmounted.current) return;
+    /** However the walk ended: a throw would leave the page reading forever. */
+    const settle = (): void => {
+      if (superseded || unmounted.current) return;
       setDrawn({
         held: leadTranscriptDrawn(pane.current),
         settled: { stream },
@@ -201,24 +201,12 @@ export function useLeadTranscript(
         if (superseded) return;
       }
     };
-    void walk().then(() => {
-      if (!superseded) publish();
-    });
+    void walk().then(settle, settle);
     return () => {
       superseded = true;
     };
   }, [ports, tenant, project, session, stream, highWaterBatch]);
   return { held: drawn.held, reading: !leadTranscriptSettledOn(drawn, stream) };
-}
-
-/** The conversation's place while the walk over its stream is still reading,
- * said in the words every other read this console waits on is said in. */
-export function LeadTranscriptReading(): ReactNode {
-  return (
-    <div className="max-w-column mx-auto w-full px-4 py-4">
-      <PanelUnready state={{ state: "Pending" }} />
-    </div>
-  );
 }
 
 /** The note a lead leaves a successor that has no transcript, as much of it as

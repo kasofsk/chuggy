@@ -123,6 +123,28 @@ test("only a pane caller carries the pane's own inset on the column and the comp
   styleless();
 });
 
+/** A page whose exchanges are still being read says so where they will be, and
+ * the composer beneath is not part of what is waited on. */
+test("exchanges still being read draw the waiting word and keep the composer", () => {
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  render(
+    <Conversation
+      exchanges={[answered]}
+      composer={composerOf({ onSend })}
+      empty="No conversation"
+      reading
+    />,
+  );
+  expect(screen.getByText("Loading…")).toBeDefined();
+  expect(
+    screen.queryByText("what did it say"),
+    "a conversation half read was drawn as the whole of it",
+  ).toBeNull();
+  expect(screen.queryByText("No conversation")).toBeNull();
+  expect(screen.getByRole("textbox")).toBeDefined();
+  styleless();
+});
+
 test("no exchanges draws the empty label and no composer", () => {
   render(<Conversation exchanges={[]} empty="No conversation" />);
   expect(screen.getByText("No conversation")).toBeDefined();

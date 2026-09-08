@@ -54,11 +54,7 @@ import { LeadDecisions } from "./lead/LeadDecisions.tsx";
 import { LeadInquiries, useInquiryBoxes } from "./lead/LeadInquiries.tsx";
 import type { InquiryBoxesHeld } from "./lead/LeadInquiries.tsx";
 import { LeadRefusals } from "./lead/LeadRefusals.tsx";
-import {
-  LeadNote,
-  LeadTranscriptReading,
-  useLeadTranscript,
-} from "./lead/LeadTranscript.tsx";
+import { LeadNote, useLeadTranscript } from "./lead/LeadTranscript.tsx";
 import { DetailsSlot, TopBarSlot } from "./shell/slots.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
@@ -249,11 +245,12 @@ function LeadBody(props: {
         aria-label="Conversation"
         className="flex-1 min-h-0 min-w-0"
       >
-        {walked.reading ? (
-          <LeadTranscriptReading />
-        ) : (
-          <Conversation exchanges={exchanges} empty="No conversation" pane />
-        )}
+        <Conversation
+          exchanges={exchanges}
+          reading={walked.reading}
+          empty="No conversation"
+          pane
+        />
       </div>
     </>
   );

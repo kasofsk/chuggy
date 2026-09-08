@@ -46,10 +46,7 @@ import { threadStandingTone } from "../core/tones.ts";
 import { usePanelList } from "./api.ts";
 import { Conversation } from "./conversation/Conversation.tsx";
 import { PanelUnready } from "./DataPanel.tsx";
-import {
-  LeadTranscriptReading,
-  useLeadTranscript,
-} from "./lead/LeadTranscript.tsx";
+import { useLeadTranscript } from "./lead/LeadTranscript.tsx";
 import { DetailsSlot, TopBarSlot } from "./shell/slots.tsx";
 import { ThreadClose } from "./thread/ThreadClose.tsx";
 import { useThreadSend } from "./thread/threadSend.tsx";
@@ -172,23 +169,20 @@ function ThreadBody(props: {
         aria-label="Conversation"
         className="flex-1 min-h-0 min-w-0"
       >
-        {walked.reading ? (
-          <LeadTranscriptReading />
-        ) : (
-          <Conversation
-            exchanges={conversationExchanges(
-              sessionConversationItems({
-                held: walked.held,
-                stream: thread.agentReference,
-                listed: leadStreamListed(thread),
-              }),
-              sessionConversationTurns(thread.turns),
-            )}
-            {...(thread.mine ? { composer } : {})}
-            empty="Nothing said"
-            pane
-          />
-        )}
+        <Conversation
+          exchanges={conversationExchanges(
+            sessionConversationItems({
+              held: walked.held,
+              stream: thread.agentReference,
+              listed: leadStreamListed(thread),
+            }),
+            sessionConversationTurns(thread.turns),
+          )}
+          {...(thread.mine ? { composer } : {})}
+          reading={walked.reading}
+          empty="Nothing said"
+          pane
+        />
       </div>
     </>
   );
