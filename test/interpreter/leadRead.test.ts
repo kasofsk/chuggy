@@ -103,6 +103,15 @@ test("a page longer than the entry bound is cut and says so", () => {
   });
   assert.equal(page.entries.length, sessionTranscriptEntriesMax);
   assert.equal(page.truncated, true);
+  const undecided = leadTranscriptPage({
+    stream,
+    drawn: [drawn(chainText(sessionTranscriptEntriesMax + 4))],
+  });
+  assert.equal(
+    undecided.truncated,
+    true,
+    "a cut is a cut whether or not the walk decided",
+  );
   const whole = leadTranscriptPage({
     stream,
     walk: { held },
@@ -112,13 +121,17 @@ test("a page longer than the entry bound is cut and says so", () => {
   assert.equal(whole.truncated, false);
 });
 
-test("a walk that could not decide what is held truncates the page", () => {
+test("a walk that could not decide what is held names no held set", () => {
   const undecided = leadTranscriptPage({
     stream,
     drawn: [drawn(chainText(2))],
   });
   assert.equal(undecided.held, undefined);
-  assert.equal(undecided.truncated, true);
+  assert.equal(
+    undecided.truncated,
+    false,
+    "the page's own entries all crossed, so nothing about them was cut",
+  );
   const decided = leadTranscriptPage({
     stream,
     walk: { held: new Set(["entry-1"]) },

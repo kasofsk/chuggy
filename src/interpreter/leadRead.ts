@@ -28,10 +28,10 @@
  * THE WALK IS BOUNDED AND SAYS SO WHEN IT ENDS SHORT. A stream longer than
  * `sessionTranscriptHeldBatchesMax`, or one holding a batch the walk cannot draw
  * for any reason, is one this read cannot decide what is held from; the page
- * then names no held set and reports itself truncated, because a held set
- * answered off a partial walk is the very thing this rule exists to stop. A
- * batch the walk needed and the page did not never refuses the page: what the
- * reader asked for drew, and only what the walk was for goes unanswered.
+ * then names no held set, because a held set answered off a partial walk is the
+ * very thing this rule exists to stop. A batch the walk needed and the page did
+ * not never refuses the page: what the reader asked for drew, and only what the
+ * walk was for goes unanswered.
  */
 
 import {
@@ -259,7 +259,7 @@ export function sessionHeldWalkAsks(batchesRead: number): number {
 /**
  * The page one stream's drawn batches make, against what the whole stream says
  * is held. `held` is absent exactly where that walk could not reach the stream's
- * end, and the page then reports itself truncated.
+ * end, and `truncated` says only that this page's own entries were cut.
  */
 export function leadTranscriptPage(input: {
   readonly stream: SessionStoreStream;
@@ -304,7 +304,7 @@ export function leadTranscriptPage(input: {
           },
         }),
     elided,
-    truncated: chain.length > entries.length || held === undefined,
+    truncated: chain.length > entries.length,
     ...(input.nextAfter === undefined ? {} : { nextAfter: input.nextAfter }),
   };
 }

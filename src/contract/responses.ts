@@ -978,7 +978,8 @@ export const leadTranscriptResponseSchema = z.object({
     .object({ boundary: identitySchema, at: instantSchema.optional() })
     .optional(),
   elided: countSchema,
-  /** Whether this page falls short: its entries were cut, or `held` is undecided. */
+  /** Whether this page's own entries were cut at their bound. A walk that could
+   * not decide what is held says that by omitting `held`, not by this. */
   truncated: z.boolean(),
   nextAfter: countSchema.optional(),
 });

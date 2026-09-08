@@ -1197,8 +1197,8 @@ async function nativeSessionHeldWalk(
 /**
  * One page of a stream, drawn batch by batch. An outage on a batch of the page
  * refuses it, because that is a page nobody can answer; an outage the walk meets
- * beyond the page answers the page with no held set and `truncated`, and a batch
- * that is gone or fails its digest is elided and counted.
+ * beyond the page answers the page with no held set, and a batch that is gone or
+ * fails its digest is elided and counted.
  */
 async function nativeSessionTranscriptPage(
   rows: SessionStoreRowsRead,
