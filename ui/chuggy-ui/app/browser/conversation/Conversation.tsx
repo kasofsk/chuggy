@@ -35,6 +35,7 @@ import {
   ConversationAnswerMessage,
   ConversationAskMessage,
 } from "./ConversationExchange.tsx";
+import { Notice } from "../ui/Notice.tsx";
 
 export type {
   ConversationComposerProps,
@@ -189,13 +190,17 @@ export function Conversation(props: {
   readonly composer?: ConversationComposerProps;
   readonly empty: string;
   readonly emptyTitle?: string;
+  /** Whether the exchanges are still being read, which the column says in
+   * their place and the composer below it does not wait on. */
+  readonly reading?: boolean;
   /** Whether this mount is the pane's own scroller — lead and thread pages,
    * whose `DetailsPane` wrapper gave up its inset for it — rather than a
    * panel that already pads itself. */
   readonly pane?: boolean;
 }): ReactNode {
+  const reading = props.reading === true;
   const held = useConversationRuntime({
-    exchanges: props.exchanges,
+    exchanges: reading ? [] : props.exchanges,
     composer: props.composer,
   });
   const inset = props.pane === true;
@@ -207,7 +212,9 @@ export function Conversation(props: {
           <div
             className={`max-w-column mx-auto grid min-w-0 gap-6${inset ? " px-4 py-4" : ""}`}
           >
-            {props.exchanges.length === 0 ? (
+            {reading ? (
+              <Notice tone="info" inline detail="Loading…" />
+            ) : props.exchanges.length === 0 ? (
               <ConversationEmpty
                 title={props.emptyTitle}
                 sentence={props.empty}

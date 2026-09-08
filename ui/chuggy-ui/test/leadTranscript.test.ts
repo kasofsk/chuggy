@@ -20,12 +20,18 @@ import {
   sessionChangeKindNamed,
   leadStreamBatches,
   leadStreamListed,
+  leadTranscriptCursorsFrom,
   leadTranscriptDrawn,
   leadTranscriptEntriesHeldMax,
   leadTranscriptPaneEmpty,
+  leadTranscriptReadsInFlightMax,
   leadTranscriptStep,
   leadTranscriptNextAfter,
 } from "../app/core/leadTranscript.ts";
+import {
+  sessionStoreBatchesMax,
+  sessionStorePageBatchesMax,
+} from "../../../src/contract/http.ts";
 import type {
   LeadTranscriptEntry,
   LeadTranscriptPane,
@@ -50,16 +56,20 @@ import {
   leadUnstarted,
 } from "./leadFixture.ts";
 
-/** One page, stepped into the pane, which is the only way a page reaches it. */
+/** One page, stepped into the pane, which is the only way a page reaches it.
+ * The cursor defaults to the one the walk would ask next, so a case about a
+ * page answered anywhere else names it. */
 function paged(
   pane: LeadTranscriptPane,
   page: LeadTranscriptResponse,
   highWaterBatch: number,
+  after: number = pane.fold.readTo ?? 0,
 ): LeadTranscriptPane {
   return leadTranscriptStep(pane, {
     event: "Page",
     page,
     highWaterBatch,
+    after,
   });
 }
 
@@ -92,7 +102,7 @@ function walkedToEnd(batches: number): LeadTranscriptPane {
   for (let read = 0; read <= batches; read += 1) {
     const after = leadTranscriptNextAfter(held, batches);
     if (after === undefined) return held;
-    held = paged(held, leadTranscriptPage(after, batches), batches);
+    held = paged(held, leadTranscriptPage(after, batches), batches, after);
   }
   throw new Error("the walk did not stop at the mark it was read against");
 }
@@ -123,6 +133,40 @@ test("a full page below the mark is asked past, and one reaching it ends the wal
   expect(leadTranscriptDrawn(second).unreached).toBe(false);
   expect(leadTranscriptNextAfter(second, 2)).toBeUndefined();
   expect(leadTranscriptNextAfter(second, 3)).toBe(2);
+});
+
+/**
+ * The route answers a full page's `nextAfter` at the limit it was asked with, so
+ * the cursors a walk is going to ask are known before any of them answers. The
+ * mark bounds them as it bounds the walk: a cursor at or above it is one the
+ * walk may not ask, so it is not read ahead either.
+ */
+test("the cursors read from one are the route's own pages below the mark", () => {
+  expect(leadTranscriptCursorsFrom(0, 1)).toStrictEqual([0]);
+  expect(
+    leadTranscriptCursorsFrom(0, sessionStorePageBatchesMax * 2 + 1),
+  ).toStrictEqual([
+    0,
+    sessionStorePageBatchesMax,
+    sessionStorePageBatchesMax * 2,
+  ]);
+  expect(
+    leadTranscriptCursorsFrom(3, sessionStorePageBatchesMax + 3),
+  ).toStrictEqual([3]);
+  expect(
+    leadTranscriptCursorsFrom(4, 4),
+    "a cursor the walk may not ask was read ahead anyway",
+  ).toStrictEqual([]);
+});
+
+/** A store of many pages is read ahead only as far as the reads one walk keeps
+ * in flight, whatever the mark allows past that. */
+test("the cursors read ahead are bounded by the reads one walk keeps in flight", () => {
+  const cursors = leadTranscriptCursorsFrom(0, sessionStoreBatchesMax);
+  expect(cursors.length).toBe(leadTranscriptReadsInFlightMax);
+  expect(cursors.at(-1)).toBe(
+    sessionStorePageBatchesMax * (leadTranscriptReadsInFlightMax - 1),
+  );
 });
 
 /** A page with nothing on it cannot have filled a limit, and neither can one
@@ -370,6 +414,42 @@ test("a page delivered twice lands once, in the place it first took", () => {
     twice.fold.holding.length,
     "the holding set grew by a page it had already gathered",
   ).toBe(1);
+});
+
+/**
+ * A PAGE IS FOLDED AGAINST THE CURSOR IT WAS ASKED AT. A walk superseded
+ * mid-page answers into the pane the walk that replaced it is building, so a
+ * page arrives at a cursor the fold has already read past; gathered again it
+ * hands back a cursor that does not advance, which the fold reads as a stall
+ * and the walk as the end of what the mark allows it to ask.
+ */
+test("a page at a cursor the fold has passed changes nothing", () => {
+  const page: LeadTranscriptResponse = {
+    ...cutPage(1, ["uuid-a"], ["uuid-a"], 1),
+    elided: 1,
+  };
+  const walked = paged(leadTranscriptPaneEmpty, page, 9);
+  expect(walked.fold.readTo).toBe(1);
+  const again = paged(walked, page, 9, 0);
+  expect(
+    lines(again).map((line) => line.uuid),
+    "a page at a passed cursor was merged again",
+  ).toStrictEqual(lines(walked).map((line) => line.uuid));
+  expect(
+    again.fold.elided,
+    "an undrawable batch was counted a second time",
+  ).toBe(walked.fold.elided);
+  expect(again.fold.readTo, "the cursor was moved back").toBe(
+    walked.fold.readTo,
+  );
+  expect(again.fold.stalledAt, "the walk was stalled by its own page").toBe(
+    walked.fold.stalledAt,
+  );
+  expect(again.fold.more).toBe(walked.fold.more);
+  expect(
+    leadTranscriptNextAfter(again, 9),
+    "the walk stopped at a page it had already read",
+  ).toBe(leadTranscriptNextAfter(walked, 9));
 });
 
 /**

@@ -373,6 +373,10 @@ test("a lead with no store says so", async () => {
   vi.stubGlobal("fetch", api.fetch);
   await mountLead();
   expect(screen.getByText("No store")).toBeDefined();
+  expect(
+    screen.queryByText("Loading…"),
+    "a lead with no store to read was drawn as one still being read",
+  ).toBeNull();
   expect(screen.queryByText("Stream unlisted")).toBeNull();
   expect(
     screen.queryByRole("button", { name: "Ask" }),
@@ -688,6 +692,51 @@ function pagedStore(
   return { asks: () => asks };
 }
 
+/** Which store to walk is the lead read's own answer, so a pane that drew the
+ * marker for a lead with none flashed it at every lead on the way in. */
+test("a lead read still pending draws its conversation as still read", async () => {
+  const unanswered = new Promise<Response>(() => undefined);
+  const fetching = ((url: string) => {
+    if (url.includes("/lead")) return unanswered;
+    const found = leadRouteAnswer(url, opening);
+    return Promise.resolve(answer(found.body, found.status));
+  }) as unknown as typeof fetch;
+  vi.stubGlobal("fetch", fetching);
+  await mountLead();
+  const conversation = screen.getByRole("region", { name: "Conversation" });
+  expect(within(conversation).getByText("Loading…")).toBeDefined();
+  expect(
+    screen.queryByText("No store"),
+    "a lead whose own read had not answered was drawn as one with no store",
+  ).toBeNull();
+  expect(exchangeCount()).toBe(0);
+});
+
+/**
+ * A CONVERSATION HALF READ IS DRAWN AS NO CONVERSATION AT ALL. A store of many
+ * pages takes many reads, and stepping each page into the pane as it landed
+ * painted the first turn and then repainted for every page behind it; what the
+ * conversation's place holds until the walk settles is the word every other
+ * read this console waits on is drawn in.
+ */
+test("a store still being read draws a pending conversation and no turns", async () => {
+  const unanswered = new Promise<Response>(() => undefined);
+  const fetching = ((url: string) => {
+    if (url.includes("/lead/transcript")) return unanswered;
+    const found = leadRouteAnswer(url, opening);
+    return Promise.resolve(answer(found.body, found.status));
+  }) as unknown as typeof fetch;
+  vi.stubGlobal("fetch", fetching);
+  await mountLead();
+  expect(screen.getByText("Loading…")).toBeDefined();
+  expect(
+    exchangeCount(),
+    "a walk that had read nothing yet drew a conversation",
+  ).toBe(0);
+  expect(screen.queryByText("No conversation")).toBeNull();
+  expect(screen.queryByText("Not reached")).toBeNull();
+});
+
 /** How many reads a store of `batches` costs: a page of them a read, and no
  * read at all above the mark. */
 function readsAllowed(batches: number): number {
@@ -704,6 +753,10 @@ function readsAllowed(batches: number): number {
 test("a store of many pages is read to its end on mount", async () => {
   const store = pagedStore(walkedStoreBatches);
   await mountLead();
+  expect(
+    screen.queryByText("Loading…"),
+    "a store the walk read whole was still drawn as one being read",
+  ).toBeNull();
   expect(screen.getByText("turn 1")).toBeDefined();
   expect(screen.getByText(`turn ${String(walkedStoreBatches)}`)).toBeDefined();
   expect(exchangeCount()).toBe(walkedStoreBatches);
@@ -782,6 +835,10 @@ test("a transcript read that failed says so rather than drawing an empty log", a
     screen.getByText(/^Failed · /u),
     "a transcript that could not be read was drawn as a log with nothing in it",
   ).toBeDefined();
+  expect(
+    screen.queryByText("Loading…"),
+    "a read that failed left the conversation being read for ever",
+  ).toBeNull();
 });
 
 /** A reference the bounded stream listing does not carry has nothing to walk,
@@ -881,11 +938,12 @@ test("a cut that moves on the last read does not blank the log", async () => {
 
 /** A re-walk draws what it rebuilt rather than the stale kept fold — and still
  * says the store has not been read to its end, since the reads the reset spent
- * are reads the re-walk no longer has to reach the mark with. */
+ * are reads the re-walk no longer has to reach the mark with. The reset discards
+ * what the walk had read ahead, so a cursor is asked once on each side of it. */
 test("a cut that moves early is rebuilt and drawn", async () => {
   const store = compactingStore(2);
   await mountLead();
-  expect(store.reads()).toBe(compactingStoreBatches);
+  expect(store.reads()).toBeLessThanOrEqual(compactingStoreBatches * 2);
   expect(exchangeCount()).toBeGreaterThan(0);
   expect(screen.queryByText("No conversation")).toBeNull();
   expect(screen.getByText("Not reached")).toBeDefined();
@@ -941,12 +999,21 @@ function scriptedPage(
  * and a reader with no notice has no way to know why it stopped moving.
  */
 test("a read that fails after a cut moved still draws its reason", async () => {
-  scriptedStore((read, after) => {
-    if (read === 1) return scriptedPage(after, 1, [`uuid-${String(after)}`]);
-    if (read === 2) return scriptedPage(after, 9, [`uuid-${String(after)}`]);
-    return answer({ error: { code: "InternalError", message: "no" } }, 500);
+  let moved = false;
+  let openings = 0;
+  scriptedStore((_read, after) => {
+    if (after === 0) openings += 1;
+    if (moved)
+      return answer({ error: { code: "InternalError", message: "no" } }, 500);
+    if (after !== 1) return scriptedPage(after, 1, [`uuid-${String(after)}`]);
+    moved = true;
+    return scriptedPage(after, 9, [`uuid-${String(after)}`]);
   });
   await mountLead();
+  expect(
+    openings,
+    "the read failed with no re-walk under it, so nothing here is about one",
+  ).toBeGreaterThan(1);
   expect(
     screen.getByText(/^Failed · /u),
     "a read that failed across a re-walk said nothing to the reader",
@@ -998,6 +1065,10 @@ test("a lead that has recorded nothing says so", async () => {
   );
   await mountLead();
   expect(screen.getByText("No conversation")).toBeDefined();
+  expect(
+    screen.queryByText("Loading…"),
+    "a store with nothing in it was drawn as one still being read",
+  ).toBeNull();
 });
 
 /** What the read could not draw is drawn as itself, in the words the counts
@@ -1040,8 +1111,8 @@ test("what a read could not draw is said beside what it did", async () => {
  * takes as many pages as the cap is worth of them. */
 test("the entries a pane stopped holding are counted where a reader sees them", async () => {
   const overflowing = leadTranscriptEntriesHeldMax + 2;
-  scriptedStore((read, after) => {
-    const from = (read - 1) * sessionTranscriptEntriesMax;
+  scriptedStore((_read, after) => {
+    const from = after * sessionTranscriptEntriesMax;
     const carried = Math.max(
       0,
       Math.min(sessionTranscriptEntriesMax, overflowing - from),

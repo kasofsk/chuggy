@@ -148,7 +148,7 @@ function ThreadBody(props: {
   readonly state: PanelState<ThreadResponse>;
 }): ReactNode {
   const thread = props.state.state === "Ready" ? props.state.value : undefined;
-  const held = useLeadTranscript({
+  const walked = useLeadTranscript({
     partition: props.partition,
     session: props.session,
     stream: thread?.agentReference,
@@ -172,13 +172,14 @@ function ThreadBody(props: {
         <Conversation
           exchanges={conversationExchanges(
             sessionConversationItems({
-              held,
+              held: walked.held,
               stream: thread.agentReference,
               listed: leadStreamListed(thread),
             }),
             sessionConversationTurns(thread.turns),
           )}
           {...(thread.mine ? { composer } : {})}
+          reading={walked.reading}
           empty="Nothing said"
           pane
         />

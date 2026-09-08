@@ -1,7 +1,7 @@
 /* The selector settings page: the status strip, the shape a prose setting is
    read in, the limits grid and the revisions list. Everything a utility can
-   state is stated as one; what is here is the grids, the clip and the states a
-   data attribute carries. */
+   state is stated as one; what is here is the grids and the states a data
+   attribute carries. */
 
 @layer page {
   .selector-strip {
@@ -74,22 +74,6 @@
   .selector-prose[data-mono] {
     font-family: var(--font-mono);
     font-size: var(--mono-optical);
-  }
-
-  /* A passage longer than the section wants to give it, faded out at the cut
-     rather than sliced, so the reader can see there is more. */
-  .selector-clip {
-    position: relative;
-    max-height: var(--height-clip);
-    overflow: hidden;
-  }
-
-  .selector-clip::after {
-    content: "";
-    position: absolute;
-    inset: auto 0 0 0;
-    height: var(--space-7);
-    background: linear-gradient(transparent, var(--surface-1));
   }
 
   .selector-limits {

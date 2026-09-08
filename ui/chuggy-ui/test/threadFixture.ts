@@ -56,7 +56,6 @@ export function threadEntry(
     state: "Open" as const,
     mine: false,
     turns: 3,
-    agentReference: threadStream,
     openedAt: threadOpenedAt,
     lastActivityAt: threadMovedAt,
     hidden: false,
@@ -120,19 +119,26 @@ export function threadBody(input: {
   readonly nextBefore?: number;
   readonly batches?: number;
   readonly turns?: readonly ThreadTurnResponse[];
+  /** A thread whose session has reported no stream yet, which every thread is
+   * until its first turn is answered. */
+  readonly streamless?: boolean;
 }): ThreadResponse {
   return {
     session: input.session ?? threadMineSession,
     ...(input.orphaned === true ? {} : { owner: input.owner ?? "geoff" }),
     state: input.state ?? (input.orphaned === true ? "Orphaned" : "Open"),
     mine: input.mine ?? true,
-    agentReference: threadStream,
     openedAt: threadOpenedAt,
     lastActivityAt: threadMovedAt,
     hidden: false,
     turns: [...(input.turns ?? [threadTurn({ turn: "thread-turn-1" })])],
     ...(input.nextBefore === undefined ? {} : { nextBefore: input.nextBefore }),
-    streams: [{ stream: threadStream, batches: input.batches ?? 1 }],
+    ...(input.streamless === true
+      ? { streams: [] }
+      : {
+          agentReference: threadStream,
+          streams: [{ stream: threadStream, batches: input.batches ?? 1 }],
+        }),
   };
 }
 
