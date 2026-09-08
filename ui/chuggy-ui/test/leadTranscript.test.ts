@@ -20,12 +20,18 @@ import {
   sessionChangeKindNamed,
   leadStreamBatches,
   leadStreamListed,
+  leadTranscriptCursorsFrom,
   leadTranscriptDrawn,
   leadTranscriptEntriesHeldMax,
   leadTranscriptPaneEmpty,
+  leadTranscriptReadsInFlightMax,
   leadTranscriptStep,
   leadTranscriptNextAfter,
 } from "../app/core/leadTranscript.ts";
+import {
+  sessionStoreBatchesMax,
+  sessionStorePageBatchesMax,
+} from "../../../src/contract/http.ts";
 import type {
   LeadTranscriptEntry,
   LeadTranscriptPane,
@@ -123,6 +129,40 @@ test("a full page below the mark is asked past, and one reaching it ends the wal
   expect(leadTranscriptDrawn(second).unreached).toBe(false);
   expect(leadTranscriptNextAfter(second, 2)).toBeUndefined();
   expect(leadTranscriptNextAfter(second, 3)).toBe(2);
+});
+
+/**
+ * The route answers a full page's `nextAfter` at the limit it was asked with, so
+ * the cursors a walk is going to ask are known before any of them answers. The
+ * mark bounds them as it bounds the walk: a cursor at or above it is one the
+ * walk may not ask, so it is not read ahead either.
+ */
+test("the cursors read from one are the route's own pages below the mark", () => {
+  expect(leadTranscriptCursorsFrom(0, 1)).toStrictEqual([0]);
+  expect(
+    leadTranscriptCursorsFrom(0, sessionStorePageBatchesMax * 2 + 1),
+  ).toStrictEqual([
+    0,
+    sessionStorePageBatchesMax,
+    sessionStorePageBatchesMax * 2,
+  ]);
+  expect(
+    leadTranscriptCursorsFrom(3, sessionStorePageBatchesMax + 3),
+  ).toStrictEqual([3]);
+  expect(
+    leadTranscriptCursorsFrom(4, 4),
+    "a cursor the walk may not ask was read ahead anyway",
+  ).toStrictEqual([]);
+});
+
+/** A store of many pages is read ahead only as far as the reads one walk keeps
+ * in flight, whatever the mark allows past that. */
+test("the cursors read ahead are bounded by the reads one walk keeps in flight", () => {
+  const cursors = leadTranscriptCursorsFrom(0, sessionStoreBatchesMax);
+  expect(cursors.length).toBe(leadTranscriptReadsInFlightMax);
+  expect(cursors.at(-1)).toBe(
+    sessionStorePageBatchesMax * (leadTranscriptReadsInFlightMax - 1),
+  );
 });
 
 /** A page with nothing on it cannot have filled a limit, and neither can one

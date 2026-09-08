@@ -64,6 +64,7 @@
 
 import { sessionChangeResourceSchema } from "../../../../src/contract/events.ts";
 import type { SessionChangeResource } from "../../../../src/contract/events.ts";
+import { sessionStorePageBatchesMax } from "../../../../src/contract/http.ts";
 import type { OperationState } from "../../../../src/contract/rosters.ts";
 import type {
   AgenticRefusalResponse,
@@ -190,6 +191,30 @@ export function leadTranscriptNextAfter(
   if (fold.stalledAt !== undefined && highWaterBatch <= fold.stalledAt)
     return undefined;
   return highWaterBatch > fold.readTo ? fold.readTo : undefined;
+}
+
+/** How many reads one walk keeps in flight, which is what a prediction the
+ * route does not follow costs. */
+export const leadTranscriptReadsInFlightMax = 16;
+
+/**
+ * The cursors a walk at `after` reads: that one, and the ones a full page's
+ * `nextAfter` puts after it, below the mark and within the reads a walk keeps
+ * in flight. A cursor named here that the walk never asks is a read spent, and
+ * one it asks that is not named here is read when it asks.
+ */
+export function leadTranscriptCursorsFrom(
+  after: number,
+  highWaterBatch: number,
+): readonly number[] {
+  const cursors: number[] = [];
+  for (
+    let cursor = after;
+    cursor < highWaterBatch && cursors.length < leadTranscriptReadsInFlightMax;
+    cursor += sessionStorePageBatchesMax
+  )
+    cursors.push(cursor);
+  return cursors;
 }
 
 /**

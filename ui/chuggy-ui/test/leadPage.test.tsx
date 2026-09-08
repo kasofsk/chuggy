@@ -881,11 +881,12 @@ test("a cut that moves on the last read does not blank the log", async () => {
 
 /** A re-walk draws what it rebuilt rather than the stale kept fold — and still
  * says the store has not been read to its end, since the reads the reset spent
- * are reads the re-walk no longer has to reach the mark with. */
+ * are reads the re-walk no longer has to reach the mark with. The reset discards
+ * what the walk had read ahead, so a cursor is asked once on each side of it. */
 test("a cut that moves early is rebuilt and drawn", async () => {
   const store = compactingStore(2);
   await mountLead();
-  expect(store.reads()).toBe(compactingStoreBatches);
+  expect(store.reads()).toBeLessThanOrEqual(compactingStoreBatches * 2);
   expect(exchangeCount()).toBeGreaterThan(0);
   expect(screen.queryByText("No conversation")).toBeNull();
   expect(screen.getByText("Not reached")).toBeDefined();
@@ -941,12 +942,21 @@ function scriptedPage(
  * and a reader with no notice has no way to know why it stopped moving.
  */
 test("a read that fails after a cut moved still draws its reason", async () => {
-  scriptedStore((read, after) => {
-    if (read === 1) return scriptedPage(after, 1, [`uuid-${String(after)}`]);
-    if (read === 2) return scriptedPage(after, 9, [`uuid-${String(after)}`]);
-    return answer({ error: { code: "InternalError", message: "no" } }, 500);
+  let moved = false;
+  let openings = 0;
+  scriptedStore((_read, after) => {
+    if (after === 0) openings += 1;
+    if (moved)
+      return answer({ error: { code: "InternalError", message: "no" } }, 500);
+    if (after !== 1) return scriptedPage(after, 1, [`uuid-${String(after)}`]);
+    moved = true;
+    return scriptedPage(after, 9, [`uuid-${String(after)}`]);
   });
   await mountLead();
+  expect(
+    openings,
+    "the read failed with no re-walk under it, so nothing here is about one",
+  ).toBeGreaterThan(1);
   expect(
     screen.getByText(/^Failed · /u),
     "a read that failed across a re-walk said nothing to the reader",
@@ -1040,8 +1050,8 @@ test("what a read could not draw is said beside what it did", async () => {
  * takes as many pages as the cap is worth of them. */
 test("the entries a pane stopped holding are counted where a reader sees them", async () => {
   const overflowing = leadTranscriptEntriesHeldMax + 2;
-  scriptedStore((read, after) => {
-    const from = (read - 1) * sessionTranscriptEntriesMax;
+  scriptedStore((_read, after) => {
+    const from = after * sessionTranscriptEntriesMax;
     const carried = Math.max(
       0,
       Math.min(sessionTranscriptEntriesMax, overflowing - from),

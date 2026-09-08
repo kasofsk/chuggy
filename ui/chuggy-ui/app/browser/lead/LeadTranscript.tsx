@@ -4,8 +4,10 @@
  *
  * The walk asks for the batches above the one it has read to, and it does so
  * when the batch count on the session's own read rises — a turn moving is what
- * raises it, so there is no poll here and no follow control. Every entry is
- * drawn as characters and nothing in a transcript is a link.
+ * raises it, so there is no poll here and no follow control. The cursors below
+ * the mark are read ahead of the walk and taken as it reaches them, so what is
+ * folded is the same sequential walk over answers that were asked for at once.
+ * Every entry is drawn as characters and nothing in a transcript is a link.
  *
  * ONE WALK SERVES THE LEAD AND A MEMBER THREAD. The two routes answer the same
  * page over the same store — the contract aliases the thread's response to the
@@ -22,13 +24,17 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import { sessionStorePageBatchesMax } from "../../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import type { LeadTranscriptResponse } from "../../../../../src/contract/responses.ts";
+import type { ApiResult } from "../../core/apiRequest.ts";
 import {
   apiLeadTranscript,
   apiThreadTranscript,
 } from "../../core/apiRoutes.ts";
 import { panelReason } from "../../core/freshness.ts";
 import {
+  leadTranscriptCursorsFrom,
   leadTranscriptDrawn,
   leadTranscriptNextAfter,
   leadTranscriptPaneEmpty,
@@ -87,28 +93,41 @@ export function useLeadTranscript(
     const walk = async (): Promise<void> => {
       if (pane.current.stream !== undefined && pane.current.stream !== stream)
         stepped({ event: "StreamChange", stream });
+      if (stream === undefined) return;
+      /** The reads in flight, by the cursor each was asked with, so a cursor
+       * the walk reaches has its answer already on the way. */
+      const reading = new Map<
+        number,
+        Promise<ApiResult<LeadTranscriptResponse>>
+      >();
+      const asked = (
+        after: number,
+      ): Promise<ApiResult<LeadTranscriptResponse>> => {
+        const inFlight = reading.get(after);
+        if (inFlight !== undefined) return inFlight;
+        const page = { stream, after, limit: sessionStorePageBatchesMax };
+        const started =
+          session === undefined
+            ? apiLeadTranscript(ports, { tenant, project }, page)
+            : apiThreadTranscript(ports, { tenant, project }, session, page);
+        reading.set(after, started);
+        return started;
+      };
       for (let read = 0; read < highWaterBatch; read += 1) {
         const after = leadTranscriptNextAfter(pane.current, highWaterBatch);
-        if (after === undefined || stream === undefined || superseded) return;
-        const answered =
-          session === undefined
-            ? await apiLeadTranscript(
-                ports,
-                { tenant, project },
-                {
-                  stream,
-                  after,
-                },
-              )
-            : await apiThreadTranscript(ports, { tenant, project }, session, {
-                stream,
-                after,
-              });
+        if (after === undefined || superseded) return;
+        for (const cursor of leadTranscriptCursorsFrom(after, highWaterBatch))
+          void asked(cursor);
+        const answered = await asked(after);
+        reading.delete(after);
         if (answered.outcome !== "Ok") {
           stepped({ event: "Failure", reason: panelReason(answered) });
           return;
         }
         stepped({ event: "Page", page: answered.value, highWaterBatch });
+        /** A reset sends the cursor back to nothing, and everything read ahead
+         * of it was read under the cut this pane has just abandoned. */
+        if (pane.current.fold.readTo === undefined) reading.clear();
         if (superseded) return;
       }
     };
