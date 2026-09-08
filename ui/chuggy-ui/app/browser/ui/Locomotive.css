@@ -15,6 +15,33 @@
     display: block;
     width: 100%;
     height: 100%;
+    overflow: hidden;
+  }
+
+  /* Six frames, side by side, held one at a time by `steps()`: the frame
+   * count here has to match `locomotiveFrames` in Locomotive.tsx. */
+  .locomotive-sprite {
+    display: flex;
+    width: 600%;
+    height: 100%;
+    animation: locomotive-chuff var(--duration-chuff) steps(6) infinite;
+  }
+
+  .locomotive-frame {
+    display: block;
+    flex: 0 0 calc(100% / 6);
+    width: calc(100% / 6);
+    height: 100%;
+  }
+
+  @keyframes locomotive-chuff {
+    from {
+      transform: translateX(0);
+    }
+
+    to {
+      transform: translateX(-100%);
+    }
   }
 
   .locomotive-track {
