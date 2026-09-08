@@ -249,7 +249,7 @@ test("each bound the contract states is where the form's verdict turns", () => {
   const linkAt = `${briefLinkScheme}${"a".repeat(briefLineCharsMax - briefLinkScheme.length)}`;
   const branchAt = "b".repeat(briefBranchCharsMax - briefBranchPrefix.length);
   const atBound: readonly Partial<TicketCreationForm>[] = [
-    { intent: "x".repeat(briefIntentCharsMax) },
+    { intent: "x".repeat(briefLineCharsMax) },
     { intent: intentOf(briefIntentLinesMax) },
     { links: Array.from({ length: briefLinksMax }, () => "https://a.test") },
     { links: [linkAt] },
@@ -257,6 +257,7 @@ test("each bound the contract states is where the form's verdict turns", () => {
     { targetBranchName: branchAt },
   ];
   const overBound: readonly Partial<TicketCreationForm>[] = [
+    { intent: "x".repeat(briefLineCharsMax + 1) },
     { intent: "x".repeat(briefIntentCharsMax + 1) },
     { intent: intentOf(briefIntentLinesMax + 1) },
     {

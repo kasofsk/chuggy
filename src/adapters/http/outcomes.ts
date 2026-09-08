@@ -122,10 +122,38 @@ function response(
 const clientFaultStatusMin = 400;
 const clientFaultStatusMax = 499;
 
-function invalidRequest(status: number): NativeHttpResponse {
+/** The most issues one refusal renders, a body of bad fields being one finding repeated. */
+export const invalidRequestIssuesMax = 8;
+
+/** The longest reason one refusal carries, so a raised message cannot become the body. */
+export const invalidRequestReasonCharsMax = 1_024;
+
+/** One issue as a caller reads it, a root-level one having no field to name. */
+function invalidRequestIssueLine(issue: z.ZodIssue): string {
+  const at = issue.path.join(".");
+  return at.length === 0 ? issue.message : `${at}: ${issue.message}`;
+}
+
+/** Why a shape fault was refused, in the fault's own words, or nothing where it has none. */
+function invalidRequestReason(failure: unknown): string | undefined {
+  const stated =
+    failure instanceof z.ZodError
+      ? failure.issues
+          .slice(0, invalidRequestIssuesMax)
+          .map(invalidRequestIssueLine)
+          .join("\n")
+      : failure instanceof RangeError
+        ? failure.message
+        : "";
+  const points = [...stated];
+  if (points.length === 0) return undefined;
+  return points.slice(0, invalidRequestReasonCharsMax).join("");
+}
+
+function invalidRequest(status: number, reason?: string): NativeHttpResponse {
   return response(
     status,
-    nativeHttpError("InvalidRequest", "The request is invalid."),
+    nativeHttpError("InvalidRequest", reason ?? "The request is invalid."),
   );
 }
 
@@ -155,7 +183,8 @@ export function failureResponse(failure: unknown): NativeHttpResponse {
       nativeHttpError("BodyTooLarge", "The request body is too large."),
     );
   if (status !== undefined) return invalidRequest(status);
-  if (requestShapeFault(failure)) return invalidRequest(400);
+  if (requestShapeFault(failure))
+    return invalidRequest(400, invalidRequestReason(failure));
   return response(
     500,
     nativeHttpError("InternalError", "The request could not be completed."),

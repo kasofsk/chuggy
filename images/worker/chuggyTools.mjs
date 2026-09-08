@@ -97,6 +97,14 @@ export const selectorHistoryLimitMax = 50;
 export const agenticRefusalsAnsweredMax = 32;
 export const sessionStorePageBatchesMax = 8;
 export const threadTurnsAnsweredMax = 32;
+export const chuggyBriefIntentLineCharsMax = 512;
+
+/**
+ * What a session is told a brief carries, `brief` being an open object on the
+ * wire. An intent is bounded a line at a time, so a paragraph filed as one line
+ * is refused however short the paragraph is.
+ */
+const chuggyBriefDescription = `\`brief\` is {title?, intent, links, checks?, branch?, finalization?}: \`title\` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; \`intent\` is lines, each at most ${String(chuggyBriefIntentLineCharsMax)} characters — break a sentence across lines rather than shorten it. A 400 names the rule the brief broke.`;
 
 /**
  * How many times the entry the runtime mirrors carries one answer's text. The
@@ -711,8 +719,7 @@ export const chuggyProjectTools = [
   },
   {
     name: "file_dependent",
-    description:
-      "Files a new draft derived from an existing ticket. `relation` admits FollowUp only, and `authoring.dependencies` must carry the parent. The fence comes from initialize_draft. `brief` is {title?, intent, links, checks?, branch?, finalization?}: `title` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; `intent` is the paragraph.",
+    description: `Files a new draft derived from an existing ticket. \`relation\` admits FollowUp only, and \`authoring.dependencies\` must carry the parent. The fence comes from initialize_draft. ${chuggyBriefDescription}`,
     shape: (z) => ({
       parent: ticket(z),
       relation: z.enum(allDependentRelations),
@@ -745,8 +752,7 @@ export const chuggyProjectTools = [
   },
   {
     name: "revise_draft",
-    description:
-      "Replaces one open draft's authoring and brief, fenced on the version read. `brief` is {title?, intent, links, checks?, branch?, finalization?}: `title` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; `intent` is the paragraph.",
+    description: `Replaces one open draft's authoring and brief, fenced on the version read. ${chuggyBriefDescription}`,
     shape: (z) => ({
       ticket: ticket(z),
       expectedVersion: count(z),
@@ -806,8 +812,7 @@ export const chuggyProjectTools = [
   },
   {
     name: "create_draft",
-    description:
-      "Files a new draft for work your owner asked for, derived from nothing. The fence comes from initialize_draft. `brief` is {title?, intent, links, checks?, branch?, finalization?}: `title` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; `intent` is the paragraph.",
+    description: `Files a new draft for work your owner asked for, derived from nothing. The fence comes from initialize_draft. ${chuggyBriefDescription}`,
     shape: (z) => ({
       configurationRevision: identity(z),
       configurationDigest: identity(z),

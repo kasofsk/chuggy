@@ -39,6 +39,7 @@ import {
 } from "../../src/interpreter/taskConfiguration.ts";
 import {
   asBriefCheckLine,
+  asBriefIntent,
   asBriefTitle,
 } from "../../src/interpreter/ticketBrief.ts";
 import { authoringWireBody } from "./representations.ts";
@@ -147,6 +148,53 @@ test("the longest check the wire accepts is the longest one the server brands", 
     false,
   );
   assert.throws(() => asBriefCheckLine(lineOf(briefLineCharsMax + 1)));
+});
+
+test("the longest intent line the wire accepts is the longest one the server brands", () => {
+  const intenting = (intent: string) =>
+    briefSchema.safeParse({ intent, links: [] }).success;
+  const lineOf = (chars: number) => "a".repeat(chars);
+  assert.ok(intenting(lineOf(briefLineCharsMax)));
+  assert.doesNotThrow(() => asBriefIntent(lineOf(briefLineCharsMax)));
+  assert.equal(intenting(lineOf(briefLineCharsMax + 1)), false);
+  assert.throws(() => asBriefIntent(lineOf(briefLineCharsMax + 1)), RangeError);
+});
+
+test("the most lines the wire accepts is the most the server brands", () => {
+  const linesOf = (count: number) =>
+    Array.from({ length: count }, () => "a").join("\n");
+  assert.ok(
+    briefSchema.safeParse({ intent: linesOf(briefIntentLinesMax), links: [] })
+      .success,
+  );
+  assert.doesNotThrow(() => asBriefIntent(linesOf(briefIntentLinesMax)));
+  assert.equal(
+    briefSchema.safeParse({
+      intent: linesOf(briefIntentLinesMax + 1),
+      links: [],
+    }).success,
+    false,
+  );
+  assert.throws(
+    () => asBriefIntent(linesOf(briefIntentLinesMax + 1)),
+    RangeError,
+  );
+});
+
+/** A browser sends the newline its platform uses, and the server normalises before it counts. */
+test("an intent is judged as the newline the server stores it under", () => {
+  const intenting = (intent: string) =>
+    briefSchema.safeParse({ intent, links: [] }).success;
+  const whole = "a".repeat(briefLineCharsMax);
+  assert.ok(intenting(`${whole}\r\nsecond line`));
+  assert.ok(intenting(`${whole}\rsecond line`));
+  assert.equal(intenting(`${whole}a\r\nsecond line`), false);
+  const tooMany = Array.from(
+    { length: briefIntentLinesMax + 1 },
+    () => "a",
+  ).join("\r\n");
+  assert.equal(intenting(tooMany), false);
+  assert.throws(() => asBriefIntent(tooMany), RangeError);
 });
 
 test("a brief lands where its work happened unless its finalization says otherwise", () => {
