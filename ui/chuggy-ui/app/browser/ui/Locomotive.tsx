@@ -16,6 +16,11 @@
  * import: an SVG file is not import-able as markup without a bundler plugin
  * this console does not otherwise need. The favicon does not change, and if
  * this drawing ever does, both copies change together in the same commit.
+ *
+ * `LocomotiveEngine` is the `rect`s alone, exported so a caller elsewhere in
+ * the console — the strip above a waiting composer — draws the same engine
+ * without the ground this card slides under it, and without a second copy of
+ * the drawing to keep in step with the favicon.
  */
 
 import type { ReactNode } from "react";
@@ -103,26 +108,32 @@ const locomotiveDrawing: ReadonlyArray<
   [14, 14, 2, 1, "#1b1530"],
 ];
 
+export function LocomotiveEngine(): ReactNode {
+  return (
+    <svg
+      className="locomotive-engine"
+      viewBox="0 0 16 16"
+      shapeRendering="crispEdges"
+      aria-hidden="true"
+    >
+      {locomotiveDrawing.map(([x, y, width, height, fill]) => (
+        <rect
+          key={`${x}-${y}`}
+          x={x}
+          y={y}
+          width={width}
+          height={height}
+          fill={fill}
+        />
+      ))}
+    </svg>
+  );
+}
+
 export function Locomotive(): ReactNode {
   return (
     <div className="locomotive" role="img" aria-label="chuggy is under way">
-      <svg
-        className="locomotive-engine"
-        viewBox="0 0 16 16"
-        shapeRendering="crispEdges"
-        aria-hidden="true"
-      >
-        {locomotiveDrawing.map(([x, y, width, height, fill]) => (
-          <rect
-            key={`${x}-${y}`}
-            x={x}
-            y={y}
-            width={width}
-            height={height}
-            fill={fill}
-          />
-        ))}
-      </svg>
+      <LocomotiveEngine />
       <div className="locomotive-track" aria-hidden="true" />
     </div>
   );

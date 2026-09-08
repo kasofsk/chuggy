@@ -35,6 +35,7 @@ import {
   ConversationAnswerMessage,
   ConversationAskMessage,
 } from "./ConversationExchange.tsx";
+import { ConversationWaiting } from "./ConversationWaiting.tsx";
 import { Notice } from "../ui/Notice.tsx";
 
 export type {
@@ -93,6 +94,14 @@ function conversationMessages(
   ]);
 }
 
+/** Whether any exchange is still being worked, the half of the waiting
+ * predicate that outlives one send. */
+function conversationRunning(
+  exchanges: readonly ConversationExchange[],
+): boolean {
+  return exchanges.some((exchange) => exchange.standing.standing === "Running");
+}
+
 function conversationAppendedText(message: AppendMessage): string {
   return message.content
     .flatMap((part) => (part.type === "text" ? [part.text] : []))
@@ -137,9 +146,7 @@ function useConversationRuntime(props: {
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     queue,
     messages: conversationMessages(props.exchanges),
-    isRunning: props.exchanges.some(
-      (exchange) => exchange.standing.standing === "Running",
-    ),
+    isRunning: conversationRunning(props.exchanges),
     isSendDisabled: props.composer === undefined || !props.composer.takes,
     convertMessage: (message) => message,
     onNew: dispatch,
@@ -199,10 +206,12 @@ export function Conversation(props: {
   readonly pane?: boolean;
 }): ReactNode {
   const reading = props.reading === true;
+  const activeExchanges = reading ? [] : props.exchanges;
   const held = useConversationRuntime({
-    exchanges: reading ? [] : props.exchanges,
+    exchanges: activeExchanges,
     composer: props.composer,
   });
+  const waiting = held.sending || conversationRunning(activeExchanges);
   const inset = props.pane === true;
   return (
     <AssistantRuntimeProvider runtime={held.runtime}>
@@ -227,11 +236,14 @@ export function Conversation(props: {
           </div>
         </ThreadPrimitive.Viewport>
         {props.composer === undefined ? null : (
-          <div
-            className={`max-w-column mx-auto w-full min-w-0${inset ? " px-4 pb-4" : ""}`}
-          >
-            <ConversationComposer {...props.composer} busy={held.sending} />
-          </div>
+          <>
+            <ConversationWaiting waiting={waiting} />
+            <div
+              className={`max-w-column mx-auto w-full min-w-0${inset ? " px-4 pb-4" : ""}`}
+            >
+              <ConversationComposer {...props.composer} busy={held.sending} />
+            </div>
+          </>
         )}
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>

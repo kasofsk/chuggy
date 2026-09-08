@@ -50,4 +50,47 @@
       opacity: 0.3;
     }
   }
+
+  /* The strip holds this height whether or not the engine is drawn inside
+   * it, so a turn starting or ending never shifts the composer under it. */
+  .conversation-waiting {
+    position: relative;
+    height: 2.5em;
+  }
+
+  .conversation-waiting-engine {
+    position: absolute;
+    top: 0;
+    width: 2.5em;
+    height: 2.5em;
+    animation: conversation-waiting-travel var(--duration-waiting-travel) linear
+      infinite;
+  }
+
+  /* `left` is a percentage of the strip, which `transform` cannot read
+   * without measuring it; the flip is stepped between two frames a
+   * fraction apart so it lands while the engine is not moving, facing the
+   * way it is about to go rather than crossing backwards. */
+  @keyframes conversation-waiting-travel {
+    0%,
+    100% {
+      left: 0%;
+      transform: scaleX(1);
+    }
+
+    49.99% {
+      left: calc(100% - 2.5em);
+      transform: scaleX(1);
+    }
+
+    50% {
+      left: calc(100% - 2.5em);
+      transform: scaleX(-1);
+    }
+
+    99.99% {
+      left: 0%;
+      transform: scaleX(-1);
+    }
+  }
 }
