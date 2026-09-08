@@ -42,7 +42,7 @@ test("a listing that has not answered draws the lead and offers no new thread", 
 test("the fixed entries are the project's, in order, and carry the inbox count", () => {
   const result = rail({ threads: [], inboxCount: "3" });
   expect(result.fixed.map((entry) => entry.label)).toEqual([
-    "Overview",
+    "Ticket overview",
     "Inbox",
     "Selector",
     "New ticket",
