@@ -46,7 +46,15 @@ test("the locomotive draws its engine and carries an accessible name, with no pr
   const view = render(<Locomotive />);
   const drawn = screen.getByRole("img", { name: /chuggy/i });
   expect(drawn.classList.contains("locomotive")).toBe(true);
-  expect(drawn.querySelector("svg.locomotive-engine rect")).not.toBeNull();
+  expect(drawn.querySelector(".locomotive-frame rect")).not.toBeNull();
+  expect(view.container.querySelector("[style]")).toBeNull();
+  styleless();
+});
+
+test("the engine is a sprite of more than one frame, and adds no inline style", () => {
+  const view = render(<Locomotive />);
+  const frames = view.container.querySelectorAll(".locomotive-frame");
+  expect(frames.length).toBeGreaterThan(1);
   expect(view.container.querySelector("[style]")).toBeNull();
   styleless();
 });

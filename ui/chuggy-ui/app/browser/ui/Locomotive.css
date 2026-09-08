@@ -1,4 +1,6 @@
-/* Locomotive: the engine held still, one repeating ground sliding under it. */
+/* Locomotive: the engine held still, one repeating ground sliding under it.
+ * The engine is a sprite of four frames sitting side by side in the markup;
+ * this sheet is what slides a one-frame window over them. */
 
 @layer ui {
   .locomotive {
@@ -15,6 +17,34 @@
     display: block;
     width: 100%;
     height: 100%;
+    overflow: hidden;
+  }
+
+  /* Four frames wide, matching the `frames` array in Locomotive.tsx: each
+     frame is one quarter of the strip, and the strip is stepped past the
+     window one whole frame at a time. */
+  .locomotive-sprite {
+    display: flex;
+    width: 400%;
+    height: 100%;
+    animation: locomotive-chug var(--duration-chug) steps(4) infinite;
+  }
+
+  .locomotive-frame {
+    display: block;
+    flex: 0 0 25%;
+    width: 25%;
+    height: 100%;
+  }
+
+  @keyframes locomotive-chug {
+    from {
+      transform: translateX(0);
+    }
+
+    to {
+      transform: translateX(-100%);
+    }
   }
 
   .locomotive-track {
