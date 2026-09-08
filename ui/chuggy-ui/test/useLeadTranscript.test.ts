@@ -23,7 +23,6 @@ import {
   type LeadTranscriptWalk,
 } from "../app/browser/lead/LeadTranscript.tsx";
 import {
-  leadCutBatch,
   leadPartition,
   leadStream,
   leadTranscriptPage,
@@ -235,16 +234,11 @@ test("a rise of highWaterBatch mid-page keeps the page the walk already fetched"
   await flushed();
   expect(held.calls.length).toBe(2);
   await answering(held.calls[0], leadTranscriptPage(0, 2));
-  await answering(held.calls[1], leadTranscriptPage(0, 2));
-  await answering(askedAt(held.calls, 1), {
-    stream: leadStream,
-    entries: [],
-    held: [],
-    cut: leadCutBatch,
-    elided: 0,
-    truncated: false,
-    nextAfter: 2,
-  });
+  await answering(
+    held.calls[1],
+    { error: { code: "InternalError", message: "no" } },
+    500,
+  );
   expect(
     result.current.held.entries.map((entry) => entry.uuid),
     "a page the superseded walk had already fetched was dropped",
@@ -252,7 +246,7 @@ test("a rise of highWaterBatch mid-page keeps the page the walk already fetched"
   expect(
     held.calls.length,
     "the superseded walk asked for a further page after being told to stop",
-  ).toBe(3);
+  ).toBe(2);
 });
 
 /**
