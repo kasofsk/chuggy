@@ -6,6 +6,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.tools.json",
     "lint": "eslint .",
     "test": "vitest run",
+    "format": "../../node_modules/.bin/prettier --check --log-level warn .",
     "build": "vite build && node ../../scripts/check-console-policy.ts dist"
   },
   "dependencies": {
