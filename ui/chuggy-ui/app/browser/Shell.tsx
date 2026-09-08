@@ -63,6 +63,10 @@ export function StreamBanner(): ReactNode {
  * the banner no longer answers that: the banner is silent when the stream is
  * live and silent again when a first connection has not been answered. A reader
  * has the banner; anything watching the console from outside has this.
+ *
+ * It is also the containing block for anything positioned inside it, so a
+ * hidden caption placed absolutely is clipped with the frame rather than
+ * lengthening the document below it.
  */
 export function ShellFrame(props: {
   readonly children: ReactNode;
@@ -76,7 +80,7 @@ export function ShellFrame(props: {
   return (
     <div
       data-stream={carrying ? "live" : "not-live"}
-      className={`grid h-dvh overflow-hidden bg-surface-0 ${columns}`}
+      className={`relative grid h-dvh overflow-hidden bg-surface-0 ${columns}`}
     >
       {props.children}
     </div>
