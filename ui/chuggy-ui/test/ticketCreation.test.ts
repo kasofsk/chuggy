@@ -47,10 +47,31 @@ function intentOf(lines: number): string {
   );
 }
 
+/**
+ * The longest intent of the given character count, its newlines included: every
+ * line but the last at the line bound, so the character bound is what the whole
+ * turns on rather than either of the other two.
+ */
+function intentOfChars(chars: number): string {
+  const filled = briefIntentLinesMax - 1;
+  const last = chars - filled * briefLineCharsMax - filled;
+  return [
+    ...Array.from({ length: filled }, () => "a".repeat(briefLineCharsMax)),
+    "a".repeat(last),
+  ].join("\n");
+}
+
 function faultFields(form: TicketCreationForm): readonly string[] {
   const assembled = creationBodyFrom(creationInitialization, form);
   return assembled.assembled === "Faults"
     ? assembled.faults.map((fault) => fault.field)
+    : [];
+}
+
+function faultReasons(form: TicketCreationForm): readonly string[] {
+  const assembled = creationBodyFrom(creationInitialization, form);
+  return assembled.assembled === "Faults"
+    ? assembled.faults.map((fault) => fault.reason)
     : [];
 }
 
@@ -251,6 +272,7 @@ test("each bound the contract states is where the form's verdict turns", () => {
   const atBound: readonly Partial<TicketCreationForm>[] = [
     { intent: "x".repeat(briefLineCharsMax) },
     { intent: intentOf(briefIntentLinesMax) },
+    { intent: intentOfChars(briefIntentCharsMax) },
     { links: Array.from({ length: briefLinksMax }, () => "https://a.test") },
     { links: [linkAt] },
     { branchName: branchAt },
@@ -258,7 +280,7 @@ test("each bound the contract states is where the form's verdict turns", () => {
   ];
   const overBound: readonly Partial<TicketCreationForm>[] = [
     { intent: "x".repeat(briefLineCharsMax + 1) },
-    { intent: "x".repeat(briefIntentCharsMax + 1) },
+    { intent: intentOfChars(briefIntentCharsMax + 1) },
     { intent: intentOf(briefIntentLinesMax + 1) },
     {
       links: Array.from({ length: briefLinksMax + 1 }, () => "https://a.test"),
@@ -319,7 +341,12 @@ test("an intent is required, and bounded in characters and in printed lines", ()
     "intent",
   ]);
   expect(
-    faultFields(creationForm({ intent: "x".repeat(briefIntentCharsMax + 1) })),
+    faultFields(creationForm({ intent: intentOfChars(briefIntentCharsMax) })),
+  ).toStrictEqual([]);
+  expect(
+    faultFields(
+      creationForm({ intent: intentOfChars(briefIntentCharsMax + 1) }),
+    ),
   ).toStrictEqual(["intent"]);
   const tooManyLines = Array.from(
     { length: briefIntentLinesMax + 1 },
@@ -328,6 +355,15 @@ test("an intent is required, and bounded in characters and in printed lines", ()
   expect(faultFields(creationForm({ intent: tooManyLines }))).toStrictEqual([
     "intent",
   ]);
+});
+
+test("an intent refused for one long line is told to break lines, not to shorten", () => {
+  const pasted = creationForm({ intent: "x".repeat(briefLineCharsMax + 88) });
+  expect(faultFields(pasted)).toStrictEqual(["intent"]);
+  expect(faultReasons(pasted)[0]).toContain(String(briefLineCharsMax));
+  expect(faultReasons(pasted)[0]).toContain(
+    "break the sentence across lines rather than shorten it",
+  );
 });
 
 test("a line with nothing on it prints nothing, so it counts for nothing", () => {

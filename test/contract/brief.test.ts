@@ -181,6 +181,30 @@ test("the most lines the wire accepts is the most the server brands", () => {
   );
 });
 
+/**
+ * The whole-intent bound, put to an intent no line rule can decide: every line
+ * but the last is at the line bound and the count is at the line count, so the
+ * characters are the only thing left for the verdict to turn on.
+ */
+test("the most characters the wire accepts is the most the server brands", () => {
+  const filled = briefIntentLinesMax - 1;
+  const intentOfChars = (chars: number) =>
+    [
+      ...Array.from({ length: filled }, () => "a".repeat(briefLineCharsMax)),
+      "a".repeat(chars - filled * briefLineCharsMax - filled),
+    ].join("\n");
+  const intenting = (intent: string) =>
+    briefSchema.safeParse({ intent, links: [] }).success;
+  assert.equal(intentOfChars(briefIntentCharsMax).length, briefIntentCharsMax);
+  assert.ok(intenting(intentOfChars(briefIntentCharsMax)));
+  assert.doesNotThrow(() => asBriefIntent(intentOfChars(briefIntentCharsMax)));
+  assert.equal(intenting(intentOfChars(briefIntentCharsMax + 1)), false);
+  assert.throws(
+    () => asBriefIntent(intentOfChars(briefIntentCharsMax + 1)),
+    RangeError,
+  );
+});
+
 /** A browser sends the newline its platform uses, and the server normalises before it counts. */
 test("an intent is judged as the newline the server stores it under", () => {
   const intenting = (intent: string) =>

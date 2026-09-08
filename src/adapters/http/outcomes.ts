@@ -129,7 +129,7 @@ export const invalidRequestIssuesMax = 8;
 export const invalidRequestReasonCharsMax = 1_024;
 
 /** One issue as a caller reads it, a root-level one having no field to name. */
-function invalidRequestIssueLine(issue: z.ZodIssue): string {
+function invalidRequestIssueLine(issue: z.core.$ZodIssue): string {
   const at = issue.path.join(".");
   return at.length === 0 ? issue.message : `${at}: ${issue.message}`;
 }
