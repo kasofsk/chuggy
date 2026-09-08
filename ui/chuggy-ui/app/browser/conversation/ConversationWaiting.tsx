@@ -26,6 +26,9 @@ export function ConversationWaiting(props: {
           role="img"
           aria-label="chuggy is under way"
         >
+          <span aria-hidden="true" className="conversation-waiting-smoke" />
+          <span aria-hidden="true" className="conversation-waiting-smoke" />
+          <span aria-hidden="true" className="conversation-waiting-smoke" />
           <LocomotiveEngine />
         </div>
       ) : null}

@@ -76,6 +76,32 @@ test("a running exchange draws the engine on the strip above the composer", () =
   ).not.toBeNull();
 });
 
+test("the strip shares the composer's own width rather than the pane's", () => {
+  const running = exchangeOf({
+    standing: { standing: "Running", state: "Claimed" },
+  });
+  const view = render(
+    <Conversation
+      exchanges={[running]}
+      composer={composerOf()}
+      empty="No conversation"
+    />,
+  );
+  const strip = view.container.querySelector(".conversation-waiting");
+  const composer = view.container.querySelector(".conversation-field");
+  expect(strip?.parentElement?.className).toContain("max-w-column");
+  expect(strip?.parentElement).toBe(
+    composer?.closest("form")?.parentElement,
+  );
+});
+
+test("the engine trails three puffs of smoke while it is drawn", () => {
+  const running = render(<ConversationWaiting waiting />);
+  expect(
+    running.container.querySelectorAll(".conversation-waiting-smoke"),
+  ).toHaveLength(3);
+});
+
 test("every exchange settled draws the strip with no engine", () => {
   const answered = exchangeOf({ answer: "done" });
   const view = render(

@@ -128,7 +128,7 @@
     --duration-2: 240ms; /* a disclosure opening */
     --duration-pulse: 1200ms; /* the live mark */
     --duration-travel: 800ms; /* one tile of the locomotive's ground */
-    --duration-waiting-travel: 6000ms; /* one crossing of the waiting strip */
+    --duration-waiting-travel: 12000ms; /* one crossing of the waiting strip */
     --duration-chug: 800ms; /* one full cycle of the locomotive's sprite */
     --ease-out: cubic-bezier(0.2, 0, 0, 1);
 

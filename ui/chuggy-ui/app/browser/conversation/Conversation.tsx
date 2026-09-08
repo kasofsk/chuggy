@@ -236,14 +236,12 @@ export function Conversation(props: {
           </div>
         </ThreadPrimitive.Viewport>
         {props.composer === undefined ? null : (
-          <>
+          <div
+            className={`max-w-column mx-auto w-full min-w-0${inset ? " px-4 pb-4" : ""}`}
+          >
             <ConversationWaiting waiting={waiting} />
-            <div
-              className={`max-w-column mx-auto w-full min-w-0${inset ? " px-4 pb-4" : ""}`}
-            >
-              <ConversationComposer {...props.composer} busy={held.sending} />
-            </div>
-          </>
+            <ConversationComposer {...props.composer} busy={held.sending} />
+          </div>
         )}
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>
