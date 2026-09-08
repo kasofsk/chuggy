@@ -50,4 +50,45 @@
       opacity: 0.3;
     }
   }
+
+  /* The strip holds this height whether or not the engine is inside it, so a
+   * turn starting or settling never moves the composer beneath it. */
+  .conversation-waiting {
+    position: relative;
+    height: 2em;
+  }
+
+  .conversation-waiting-engine {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    width: 2em;
+    height: 2em;
+    animation: conversation-waiting-crossing var(--duration-crossing) linear
+      infinite;
+  }
+
+  /* Crosses the strip left to right, then right to left, forever: the
+   * turnaround flips the engine horizontally rather than sliding it
+   * backwards, so it always faces the way it is travelling. */
+  @keyframes conversation-waiting-crossing {
+    0% {
+      inset-inline-start: 0%;
+      transform: scaleX(1);
+    }
+
+    50% {
+      inset-inline-start: calc(100% - 2em);
+      transform: scaleX(1);
+    }
+
+    50% {
+      transform: scaleX(-1);
+    }
+
+    100% {
+      inset-inline-start: 0%;
+      transform: scaleX(-1);
+    }
+  }
 }

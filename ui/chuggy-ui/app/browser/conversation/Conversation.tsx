@@ -35,6 +35,7 @@ import {
   ConversationAnswerMessage,
   ConversationAskMessage,
 } from "./ConversationExchange.tsx";
+import { ConversationWaiting } from "./ConversationWaiting.tsx";
 import { Notice } from "../ui/Notice.tsx";
 
 export type {
@@ -102,6 +103,7 @@ function conversationAppendedText(message: AppendMessage): string {
 interface ConversationHeld {
   readonly runtime: AssistantRuntime;
   readonly sending: boolean;
+  readonly running: boolean;
 }
 
 function useConversationRuntime(props: {
@@ -134,12 +136,13 @@ function useConversationRuntime(props: {
     setSending(false);
     if (sent === "Kept") restoreRef.current(text);
   };
+  const running = props.exchanges.some(
+    (exchange) => exchange.standing.standing === "Running",
+  );
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     queue,
     messages: conversationMessages(props.exchanges),
-    isRunning: props.exchanges.some(
-      (exchange) => exchange.standing.standing === "Running",
-    ),
+    isRunning: running,
     isSendDisabled: props.composer === undefined || !props.composer.takes,
     convertMessage: (message) => message,
     onNew: dispatch,
@@ -152,7 +155,7 @@ function useConversationRuntime(props: {
       box.setText(text);
     };
   });
-  return { runtime, sending };
+  return { runtime, sending, running };
 }
 
 function conversationMessageDrawn(value: {
@@ -203,6 +206,9 @@ export function Conversation(props: {
     exchanges: reading ? [] : props.exchanges,
     composer: props.composer,
   });
+  /** Whether the conversation is waiting on the fabric: an exchange standing
+   * `Running`, or a send out and not yet answered. */
+  const waiting = held.running || held.sending;
   const inset = props.pane === true;
   return (
     <AssistantRuntimeProvider runtime={held.runtime}>
@@ -230,6 +236,7 @@ export function Conversation(props: {
           <div
             className={`max-w-column mx-auto w-full min-w-0${inset ? " px-4 pb-4" : ""}`}
           >
+            <ConversationWaiting waiting={waiting} />
             <ConversationComposer {...props.composer} busy={held.sending} />
           </div>
         )}

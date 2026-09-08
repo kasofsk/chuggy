@@ -12,6 +12,12 @@
  * animation of its own, so nothing here is animated a second time to fake the
  * depth the moving ground already gives it.
  *
+ * `LocomotiveEngine` is the drawing alone, with no ground and no wrapper of
+ * its own, because the conversation surface's waiting strip crosses the
+ * engine itself rather than sliding ground under a still one — a second copy
+ * of these `rect`s would be a finding, so the strip imports this instead.
+ * `Locomotive` is the engine plus the ground, unchanged, for the Loading card.
+ *
  * The drawing is a copy of `public/favicon.svg`'s `rect`s rather than a shared
  * import: an SVG file is not import-able as markup without a bundler plugin
  * this console does not otherwise need. The favicon does not change, and if
@@ -103,26 +109,32 @@ const locomotiveDrawing: ReadonlyArray<
   [14, 14, 2, 1, "#1b1530"],
 ];
 
+export function LocomotiveEngine(): ReactNode {
+  return (
+    <svg
+      className="locomotive-engine"
+      viewBox="0 0 16 16"
+      shapeRendering="crispEdges"
+      aria-hidden="true"
+    >
+      {locomotiveDrawing.map(([x, y, width, height, fill]) => (
+        <rect
+          key={`${x}-${y}`}
+          x={x}
+          y={y}
+          width={width}
+          height={height}
+          fill={fill}
+        />
+      ))}
+    </svg>
+  );
+}
+
 export function Locomotive(): ReactNode {
   return (
     <div className="locomotive" role="img" aria-label="chuggy is under way">
-      <svg
-        className="locomotive-engine"
-        viewBox="0 0 16 16"
-        shapeRendering="crispEdges"
-        aria-hidden="true"
-      >
-        {locomotiveDrawing.map(([x, y, width, height, fill]) => (
-          <rect
-            key={`${x}-${y}`}
-            x={x}
-            y={y}
-            width={width}
-            height={height}
-            fill={fill}
-          />
-        ))}
-      </svg>
+      <LocomotiveEngine />
       <div className="locomotive-track" aria-hidden="true" />
     </div>
   );

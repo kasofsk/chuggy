@@ -128,6 +128,7 @@
     --duration-2: 240ms; /* a disclosure opening */
     --duration-pulse: 1200ms; /* the live mark */
     --duration-travel: 800ms; /* one tile of the locomotive's ground */
+    --duration-crossing: 6000ms; /* one pass of the waiting strip, end to end */
     --ease-out: cubic-bezier(0.2, 0, 0, 1);
 
     /* layout */
@@ -160,6 +161,7 @@
       --duration-2: 0ms;
       --duration-pulse: 0ms;
       --duration-travel: 0ms;
+      --duration-crossing: 0ms;
     }
   }
 }
