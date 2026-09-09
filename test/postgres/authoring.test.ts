@@ -32,7 +32,9 @@ import {
   projectWriterLoad,
 } from "../../src/interpreter/projectWriter.ts";
 import {
+  asProjectId,
   asRecoveryEpoch,
+  asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
@@ -89,13 +91,13 @@ function configurationVersionBackfill(): string {
   return statement;
 }
 
-async function repositoryBinding(partition: Partition) {
+async function repositoryBinding(partition: Partition, label = "sole") {
   const [row] = await harness.query(`SELECT epoch FROM recovery_epoch LIMIT 1`);
   const epoch = row?.["epoch"];
   if (typeof epoch !== "string") throw new Error("recovery epoch is absent");
   const recoveryEpoch = asRecoveryEpoch(epoch);
   const repository = asRepositoryId(
-    `repository-${partition.tenant}-${partition.project}`,
+    `repository-${label}-${partition.tenant}-${partition.project}`,
   );
   await harness.query(
     `INSERT INTO project_repository (tenant,project,repository,recovery_epoch)
@@ -635,7 +637,94 @@ test("a repository import conflict rolls back the entire snapshot", async () => 
   );
 });
 
-test("a changed repository binding fences the entire import", async () => {
+test("either binding a project holds may import, and no other repository", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "repository-binding-peers",
+  );
+  const first = await repositoryBinding(partition, "peer-first");
+  const second = await repositoryBinding(partition, "peer-second");
+  for (const [binding, commit] of [
+    [first, "7".repeat(40)],
+    [second, "8".repeat(40)],
+  ] as const)
+    assert.deepEqual(
+      await harness.authoring.importRepositoryConfigurations({
+        partition,
+        binding,
+        authority,
+        declarations: repositoryDeclarations(commit, ["work"]),
+      }),
+      { imported: "Imported" },
+    );
+  assert.deepEqual(
+    await harness.query(
+      `SELECT repository FROM repository_configuration_provenance
+        WHERE tenant=$1 AND project=$2 ORDER BY repository`,
+      [partition.tenant, partition.project],
+    ),
+    [{ repository: first.repository }, { repository: second.repository }],
+  );
+  assert.deepEqual(
+    await harness.authoring.importRepositoryConfigurations({
+      partition,
+      binding: { ...first, repository: asRepositoryId(`un-${randomUUID()}`) },
+      authority,
+      declarations: repositoryDeclarations("9".repeat(40), ["work"]),
+    }),
+    { imported: "StaleBinding" },
+  );
+});
+
+test("an import against another project's binding under the same tenant is fenced", async () => {
+  const tenant = asTenantId(`tenant-stale-project-${randomUUID()}`);
+  const holder: Partition = {
+    tenant,
+    project: asProjectId(`project-stale-holder-${randomUUID()}`),
+  };
+  const importer: Partition = {
+    tenant,
+    project: asProjectId(`project-stale-importer-${randomUUID()}`),
+  };
+  await harness.store.createProject(holder);
+  await harness.store.createProject(importer);
+  const binding = await repositoryBinding(holder, "stale-project");
+  assert.deepEqual(
+    await harness.authoring.importRepositoryConfigurations({
+      partition: importer,
+      binding,
+      authority,
+      declarations: repositoryDeclarations("a".repeat(40), ["work"]),
+    }),
+    { imported: "StaleBinding" },
+  );
+});
+
+test("an import against a same-named project under another tenant is fenced", async () => {
+  const project = asProjectId(`project-stale-tenant-${randomUUID()}`);
+  const holder: Partition = {
+    tenant: asTenantId(`tenant-stale-holder-${randomUUID()}`),
+    project,
+  };
+  const importer: Partition = {
+    tenant: asTenantId(`tenant-stale-importer-${randomUUID()}`),
+    project,
+  };
+  await harness.store.createProject(holder);
+  await harness.store.createProject(importer);
+  const binding = await repositoryBinding(holder, "stale-tenant");
+  assert.deepEqual(
+    await harness.authoring.importRepositoryConfigurations({
+      partition: importer,
+      binding,
+      authority,
+      declarations: repositoryDeclarations("b".repeat(40), ["work"]),
+    }),
+    { imported: "StaleBinding" },
+  );
+});
+
+test("an import naming an epoch the binding was not made under is fenced", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "repository-binding-fence",
@@ -644,20 +733,11 @@ test("a changed repository binding fences the entire import", async () => {
   const changedRecoveryEpoch = await harness.store.establishRecoveryEpoch(
     asRecoveryEpoch(`changed-${randomUUID()}`),
   );
-  await harness.query(
-    `SELECT activate_project_repository($1,$2,$3,$3,$4,$5,'Test','authoring')`,
-    [
-      partition.tenant,
-      partition.project,
-      binding.repository,
-      changedRecoveryEpoch,
-      `operation-${randomUUID()}`,
-    ],
-  );
+  assert.notEqual(changedRecoveryEpoch, binding.recoveryEpoch);
   assert.deepEqual(
     await harness.authoring.importRepositoryConfigurations({
       partition,
-      binding,
+      binding: { ...binding, recoveryEpoch: changedRecoveryEpoch },
       authority,
       declarations: repositoryDeclarations("e".repeat(40), ["work"]),
     }),

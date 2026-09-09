@@ -636,7 +636,7 @@ async function finalizerDurableView(
     SELECT x.* FROM project_repository x
      WHERE x.tenant=f.tenant AND x.project=f.project
        AND x.repository=coalesce(a.repository,h.repository,(
-         SELECT active.repository FROM read_project_repository_binding(f.tenant,f.project) active))
+         SELECT bound.repository FROM read_project_repository_binding(f.tenant,f.project) bound))
      LIMIT 1) b ON true
   LEFT JOIN commit_permit p
     ON p.tenant = a.tenant AND p.project = a.project AND p.attempt = a.attempt
