@@ -72,20 +72,26 @@
  * missing grant would look, and a control that degrades silently is one nobody
  * can tell from a working one.
  *
- * THAT READ NEEDS A GRANT THIS TREE DOES NOT YET CARRY. The pass runs as
- * `chuggy_scheduler`, and every `GRANT EXECUTE ON FUNCTION
- * read_project_repository_binding` in the ledger names some other role;
- * slice 3's migration 061 adds the scheduler's. Until it lands, the first
- * placement of every deployment raises `permission denied` and — by the
- * paragraph above — stops the session half of the pass.
- * `test/postgres/sessionPrivileges.test.ts` asserts the grant and is what says
- * when this is no longer true. It is read BEFORE the attempt is opened for that
- * reason: the read depends on nothing an attempt produces, and a raise after
- * `openAttempt` would leave an opened, unplaced attempt that nothing cancels
- * and that costs a whole lease window to reap — once per pass, per deployment,
- * for as long as the grant is missing. It reads for a session whose attempt is
- * then refused, which the older order did not; that is one definer call per
- * refused session per pass, and simplicity over performance takes it.
+ * NO SESSION'S CHECKOUT FOLLOWS A TICKET, BECAUSE NO SESSION NAMES ONE.
+ * `allSessionKinds` is `Lead`, `Thread` and `Inquiry`: a lead decides every
+ * ticket of its project, a thread is a member's own and drafts against any of
+ * them, an inquiry is a fork of a lead, and the session relation carries
+ * neither a ticket nor a repository. So the binding asked for here is the
+ * project's oldest, and where a project binds several that privileges one — an
+ * election 080 left standing, kept until a session can name the tree its next
+ * turn is about, because a lead judging a ticket needs a tree and none of the
+ * tickets it holds is more its own than another. Work and evaluation are not
+ * placed here at all: the execution scheduler places them, against the
+ * repository their input bundle pins, which is the ticket's own.
+ *
+ * THE BINDING IS READ BEFORE THE ATTEMPT IS OPENED. The read depends on nothing
+ * an attempt produces, and a raise after `openAttempt` would leave an opened,
+ * unplaced attempt that nothing cancels and that costs a whole lease window to
+ * reap. It reads for a session whose attempt is then refused, which is one
+ * definer call per refused session per pass, and simplicity over performance
+ * takes it. The pass runs as `chuggy_scheduler`, and
+ * `test/postgres/sessionPrivileges.test.ts` is what says that role still holds
+ * the grant the read needs.
  */
 
 import type { AgentSession, SessionAttemptId } from "./agentSession.ts";

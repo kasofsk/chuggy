@@ -274,7 +274,7 @@ test("the API may read the session an operation came through and no more of it",
 test("the scheduler may read a project's repository binding, which its session pass needs", async () => {
   const refused = await harness.attemptAs(
     schedulerRole,
-    `SELECT * FROM ${repositoryBindingReadFunction}('tenant','project')`,
+    `SELECT * FROM ${repositoryBindingReadFunction}('tenant','project',NULL)`,
   );
   assert.equal(
     refused,

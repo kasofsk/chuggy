@@ -499,6 +499,9 @@ async function projectWriterExecutionSource(
     ticket,
     kind: effect === "SpawnWorkTasks" ? "Work" : "Evaluation",
     ...(configurationCanonical === undefined ? {} : { configurationCanonical }),
+    ...(brief?.repository === undefined
+      ? {}
+      : { repository: brief.repository }),
     ...(brief?.branch === undefined ? {} : { ref: brief.branch }),
   });
   return observed.observed === "Source"

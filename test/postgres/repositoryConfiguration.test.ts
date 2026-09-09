@@ -5,6 +5,7 @@ import type pg from "pg";
 
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
+import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import {
   asProjectId,
   asTenantId,
@@ -127,4 +128,46 @@ test("repository binding reads hold a shared project name and a shared tenant ap
       recoveryEpoch: epoch,
     });
   }
+});
+
+test("a binding read answers the repository named, and the project's oldest where none is", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "binding-named",
+  );
+  const row = (await harness.query(
+    "SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1",
+  )) as readonly { epoch: string }[];
+  const epoch = row[0]?.epoch;
+  if (epoch === undefined) throw new Error("recovery epoch fixture is absent");
+  const older = `repository-binding-named-older-${randomUUID()}`;
+  const newer = `repository-binding-named-newer-${randomUUID()}`;
+  await harness.query(
+    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,bound_at)
+     VALUES ($1,$2,$3,$5,'2026-01-01'),($1,$2,$4,$5,'2026-01-02')`,
+    [partition.tenant, partition.project, older, newer, epoch],
+  );
+  const bindings = postgresProjectRepositoryBinding(pool);
+  assert.deepEqual(await bindings.binding(partition, asRepositoryId(newer)), {
+    partition,
+    repository: newer,
+    recoveryEpoch: epoch,
+  });
+  assert.deepEqual(await bindings.binding(partition, asRepositoryId(older)), {
+    partition,
+    repository: older,
+    recoveryEpoch: epoch,
+  });
+  assert.deepEqual(await bindings.binding(partition), {
+    partition,
+    repository: older,
+    recoveryEpoch: epoch,
+  });
+  assert.equal(
+    await bindings.binding(
+      partition,
+      asRepositoryId(`repository-binding-named-unbound-${randomUUID()}`),
+    ),
+    undefined,
+  );
 });

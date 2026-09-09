@@ -344,7 +344,7 @@ test("the API reads one repository binding only through its boundary", async () 
   assert.equal(
     await harness.attemptAs(
       apiRole,
-      `SELECT * FROM ${repositoryBindingReadFunction}('tenant','project')`,
+      `SELECT * FROM ${repositoryBindingReadFunction}('tenant','project',NULL)`,
     ),
     undefined,
   );
@@ -359,7 +359,7 @@ test("the ticket service reads one repository binding only through its boundary"
   assert.equal(
     await harness.attemptAs(
       ticketServiceRole,
-      `SELECT * FROM ${repositoryBindingReadFunction}('tenant','project')`,
+      `SELECT * FROM ${repositoryBindingReadFunction}('tenant','project',NULL)`,
     ),
     undefined,
   );
