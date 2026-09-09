@@ -1,9 +1,10 @@
 /**
- * Administrative activation of one of a project's immutable repository bindings.
+ * Administrative binding of a repository to a project.
  *
- * This is installation administration, not journalled project state. It changes
- * which binding future work discovers without changing any binding or work that
- * already exists, so it belongs beside project membership rather than in Core.
+ * This is installation administration, not journalled project state. It adds a
+ * binding without changing any binding or work that already exists, and without
+ * privileging the repository it names, so it belongs beside project membership
+ * rather than in Core.
  */
 
 import { asRepositoryId, type RepositoryId } from "./finalizer.ts";
@@ -22,10 +23,9 @@ import {
   type RecoveryEpoch,
 } from "./projectStore.ts";
 
-export interface RepositoryActivationRequest {
+export interface RepositoryBindingRequest {
   readonly tenant: string;
   readonly project: string;
-  readonly expectedRepository: string;
   readonly repository: string;
   readonly recoveryEpoch: string;
   readonly operation: string;
@@ -33,33 +33,30 @@ export interface RepositoryActivationRequest {
   readonly authoritySubject: string;
 }
 
-export interface RepositoryActivation {
+export interface RepositoryBindingCommand {
   readonly partition: Partition;
-  readonly expectedRepository: RepositoryId;
   readonly repository: RepositoryId;
   readonly recoveryEpoch: RecoveryEpoch;
   readonly operation: OperationId;
   readonly authority: Authority;
 }
 
-export type RepositoryActivationOutcome =
-  | "Activated"
-  | "AlreadyActivated"
+export type RepositoryBindingOutcome =
+  | "Bound"
+  | "AlreadyBound"
   | "OperationConflict"
-  | "ExpectedRepositoryMismatch"
   | "RecoveryEpochMismatch"
   | "RepositoryBoundElsewhere";
 
 /** Narrows every operator-supplied identity before the adapter sees it. */
-export function checkedRepositoryActivation(
-  request: RepositoryActivationRequest,
-): RepositoryActivation {
+export function checkedRepositoryBindingCommand(
+  request: RepositoryBindingRequest,
+): RepositoryBindingCommand {
   return {
     partition: {
       tenant: asTenantId(request.tenant),
       project: asProjectId(request.project),
     },
-    expectedRepository: asRepositoryId(request.expectedRepository),
     repository: asRepositoryId(request.repository),
     recoveryEpoch: asRecoveryEpoch(request.recoveryEpoch),
     operation: asOperationId(request.operation),
@@ -70,14 +67,12 @@ export function checkedRepositoryActivation(
   };
 }
 
-export interface RepositoryActivationWriter {
+export interface RepositoryBindingWriter {
   readonly role: string;
   readonly canExecute: boolean;
 }
 
-export interface RepositoryActivationAdministration {
-  writer(): Promise<RepositoryActivationWriter>;
-  activate(
-    activation: RepositoryActivation,
-  ): Promise<RepositoryActivationOutcome>;
+export interface RepositoryBindingAdministration {
+  writer(): Promise<RepositoryBindingWriter>;
+  bind(command: RepositoryBindingCommand): Promise<RepositoryBindingOutcome>;
 }

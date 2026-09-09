@@ -26,7 +26,7 @@ import {
   type FinalizerRig,
 } from "./finalizerHarness.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
-import { repositoryActivationFunction } from "../../src/adapters/postgres/schema.ts";
+import { repositoryBindingWriteFunction } from "../../src/adapters/postgres/schema.ts";
 
 let rig: FinalizerRig;
 before(async () => {
@@ -133,33 +133,33 @@ test("the finalizer prepares, permits, reconciles and concludes without the owne
   assert.deepEqual(fulfilled, [{ state: "Fulfilled" }]);
 });
 
-test("an attempt remains bound after the project activates another repository", async () => {
+test("an attempt keeps its own repository though the project's oldest binding differs", async () => {
   const project = await finalizerProject(rig, "attempt-binding");
-  const claim = await finalizerClaim(
-    rig,
-    project,
-    finalizerIdentity("owner-attempt-binding"),
-  );
-  const attempt = await finalizerPrepare(rig, project, "attempt-binding");
-  await finalizerGrantPermit(rig, project, attempt, "attempt-binding");
-  const next = `repository-next-${finalizerIdentity("attempt-binding")}`;
-  const activated = await rig.harness.query(
-    `SELECT ${repositoryActivationFunction}($1,$2,$3,$4,$5,$6,$7,$8) AS result`,
+  const used = `repository-used-${finalizerIdentity("attempt-binding")}`;
+  const bound = await rig.harness.query(
+    `SELECT ${repositoryBindingWriteFunction}($1,$2,$3,$4,$5,$6,$7) AS result`,
     [
       project.partition.tenant,
       project.partition.project,
-      project.repository,
-      next,
+      used,
       project.epoch,
       finalizerIdentity("operation-attempt-binding"),
       "Administrator",
       "test-operator",
     ],
   );
-  assert.deepEqual(activated, [{ result: "Activated" }]);
+  assert.deepEqual(bound, [{ result: "Bound" }]);
+  const attempting: FinalizerProject = { ...project, repository: used };
+  const claim = await finalizerClaim(
+    rig,
+    project,
+    finalizerIdentity("owner-attempt-binding"),
+  );
+  const attempt = await finalizerPrepare(rig, attempting, "attempt-binding");
+  await finalizerGrantPermit(rig, attempting, attempt, "attempt-binding");
   const view = await postgresFinalizer(rig.pool).durableView(claim);
   assert.equal(view?.attempt?.attempt, attempt);
-  assert.equal(view?.repository?.repository, project.repository);
+  assert.equal(view?.repository?.repository, used);
 });
 
 test("a permit is spent once and never re-identified", async () => {

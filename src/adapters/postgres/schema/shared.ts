@@ -43,6 +43,7 @@ export const repositoryConfigurationImportFunction =
   "import_repository_configuration";
 export const repositoryBindingReadFunction = "read_project_repository_binding";
 export const repositoryActivationFunction = "activate_project_repository";
+export const repositoryBindingWriteFunction = "bind_project_repository";
 export const draftCreateFunction = "create_draft";
 export const draftReviseFunction = "revise_draft";
 export const draftDeleteFunction = "delete_draft";

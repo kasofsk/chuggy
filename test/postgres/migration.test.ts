@@ -17,7 +17,9 @@ import {
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
   schedulerRole,
+  repositoryActivationFunction,
   repositoryBindingReadFunction,
+  repositoryBindingWriteFunction,
   schemaTextSet,
   selectorServiceRole,
   sessionStoreReadFunction,
@@ -3773,5 +3775,129 @@ test("migration 74 moves a floor and never a budget somebody raised", async () =
       revision: before.revision,
       recorded: before.recorded,
     });
+  });
+});
+
+/** The one repository a project's binding read answers with. */
+async function migratedBinding(subject: pg.Pool) {
+  return (
+    await subject.query<{ repository: string; recovery_epoch: string }>(
+      `SELECT repository,recovery_epoch
+         FROM ${repositoryBindingReadFunction}('tenant-80','project-80')`,
+    )
+  ).rows;
+}
+
+/** A project holding two bindings, the later of which the ledger elected. */
+async function seedElectedBinding(subject: pg.Pool): Promise<void> {
+  await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-80')`);
+  await subject.query(
+    `INSERT INTO project(tenant,project,lifecycle,head,ingress_next)
+     VALUES('tenant-80','project-80','Active',0,1)`,
+  );
+  await subject.query(
+    `INSERT INTO project_repository(tenant,project,repository,recovery_epoch,bound_at)
+     VALUES('tenant-80','project-80','established','epoch-80','2026-01-01'),
+           ('tenant-80','project-80','elected','epoch-80','2026-01-02')`,
+  );
+  await subject.query(
+    `SELECT ${repositoryActivationFunction}('tenant-80','project-80','established',
+       'elected','epoch-80','operation-80','Test','migration')`,
+  );
+}
+
+/** Every binding the migration carried over, oldest first. */
+async function migratedBindings(subject: pg.Pool) {
+  return (
+    await subject.query<{ repository: string }>(
+      `SELECT repository FROM project_repository ORDER BY bound_at`,
+    )
+  ).rows;
+}
+
+/** One turn of the migrated door, at the epoch the seeded bindings were made under. */
+async function migratedBind(
+  subject: pg.Pool,
+  repository: string,
+  operation: string,
+) {
+  return (
+    await subject.query<{ outcome: string }>(
+      `SELECT ${repositoryBindingWriteFunction}('tenant-80','project-80',$1,
+         'epoch-80',$2,'Test','migration') AS outcome`,
+      [repository, operation],
+    )
+  ).rows;
+}
+
+/** Every bind operation the door has recorded, by identity. */
+async function migratedBindOperations(subject: pg.Pool) {
+  return (
+    await subject.query<{
+      operation: string;
+      repository: string;
+      outcome: string;
+    }>(
+      `SELECT operation,repository,outcome
+         FROM project_repository_bind_operation ORDER BY operation`,
+    )
+  ).rows;
+}
+
+test("migration 80 keeps every binding, elects none, and claims none as its own", async () => {
+  await migrationDatabase("repository_binding", async (subject) => {
+    await migrationSeedApplied(subject, 80);
+    await seedElectedBinding(subject);
+    assert.deepEqual(await migratedBinding(subject), [
+      { repository: "elected", recovery_epoch: "epoch-80" },
+    ]);
+
+    await applyMigration(subject, 80);
+
+    assert.deepEqual(await migratedBinding(subject), [
+      { repository: "established", recovery_epoch: "epoch-80" },
+    ]);
+    assert.deepEqual(await migratedBindings(subject), [
+      { repository: "established" },
+      { repository: "elected" },
+    ]);
+    assert.deepEqual(await migratedBindOperations(subject), []);
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT to_regclass('project_repository_activation')::text AS ledger,
+                  to_regprocedure('${repositoryActivationFunction}(text,text,text,text,text,text,text,text)')::text AS door,
+                  to_regprocedure('project_repository_initial_activation()')::text AS trigger_function,
+                  to_regprocedure('project_repository_activation_is_immutable()')::text AS immutability_function`,
+        )
+      ).rows,
+      [
+        {
+          ledger: null,
+          door: null,
+          trigger_function: null,
+          immutability_function: null,
+        },
+      ],
+    );
+    assert.deepEqual(await migratedBind(subject, "third", "operation-third"), [
+      { outcome: "Bound" },
+    ]);
+    assert.deepEqual(
+      await migratedBind(subject, "established", "operation-repeat"),
+      [{ outcome: "AlreadyBound" }],
+    );
+    assert.deepEqual(
+      await migratedBind(subject, "fourth", "operation-repeat"),
+      [{ outcome: "OperationConflict" }],
+    );
+    assert.deepEqual(await migratedBindOperations(subject), [
+      {
+        operation: "operation-repeat",
+        repository: "established",
+        outcome: "AlreadyBound",
+      },
+      { operation: "operation-third", repository: "third", outcome: "Bound" },
+    ]);
   });
 });
