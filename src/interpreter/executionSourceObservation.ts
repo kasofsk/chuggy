@@ -1,11 +1,18 @@
 /**
- * What a ticket's work is observed against: the project's binding, narrowed by
- * the configuration's handoff role and then by the branch the ticket's brief
- * says its work happens on, which is the most specific of the three and
- * therefore the last word. Where that work lands is the brief's separate answer
- * and the finalizer's to read. An evaluation is observed against the work
- * instead, because what it judges is what the work produced rather than what
- * the work was handed.
+ * What a ticket's work is observed against: the binding of the repository the
+ * ticket's brief names, narrowed by the configuration's handoff role and then
+ * by the branch that brief says its work happens on, which is the most specific
+ * of the three and therefore the last word. Where that work lands is the
+ * brief's separate answer and the finalizer's to read. An evaluation is
+ * observed against the work instead, because what it judges is what the work
+ * produced rather than what the work was handed.
+ *
+ * A BRIEF NAMING NO REPOSITORY IS UNREADABLE RATHER THAN THE PROJECT'S OLDEST
+ * BINDING. Migration 82 backfills every brief it left null, so a released
+ * ticket's brief now names none only where its own project has never bound one,
+ * or where the ticket carries no brief row at all — and there the
+ * oldest-binding election this port used to fall back to would find nothing
+ * either, so it is not asked.
  *
  * A BRANCH THE REMOTE DOES NOT HOLD YET IS WHERE THE WORK STARTS, NOT A FAILED
  * OBSERVATION. The base is the binding's own target, exactly as it is for a
@@ -103,14 +110,19 @@ export function executionSourceObservation(
           return { observed: "Unreadable", evidence: "RefUnreadable" };
         return { observed: "Source", source: executionSourceEvaluated(work) };
       }
-      const project = await bindings.binding(request.partition);
-      if (project === undefined)
+      if (request.repository === undefined)
+        return { observed: "Unreadable", evidence: "RefUnreadable" };
+      const bound = await bindings.binding(
+        request.partition,
+        request.repository,
+      );
+      if (bound === undefined)
         return { observed: "Unreadable", evidence: "RefUnreadable" };
       const work = executionSourceConfiguredWork(
         request.configurationCanonical,
       );
       const repository: RepositoryBinding = {
-        ...project,
+        ...bound,
         ...(work === undefined ? {} : { repository: work.repository }),
         ...(work === undefined ? {} : { targetRef: work.targetRef }),
         ...(work === undefined

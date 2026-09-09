@@ -88,6 +88,7 @@ test("configured work source selects its own repository, ref and credential", as
         partition,
         ticket: 1,
         kind: "Work",
+        repository: asRepositoryId("project-default"),
         configurationCanonical: configuredWorkSource,
       })
     ).observed,
@@ -104,7 +105,11 @@ test("configured work source selects its own repository, ref and credential", as
   ]);
 });
 
-test("evaluation without retained work source never reads mutable Git", async () => {
+/** An observation whose binding read is counted and whose Git port refuses every call. */
+function observingUncalled(): {
+  subject: ReturnType<typeof executionSourceObservation>;
+  bindingReads: () => number;
+} {
   let bindingReads = 0;
   const subject = executionSourceObservation(
     {
@@ -120,11 +125,16 @@ test("evaluation without retained work source never reads mutable Git", async ()
     },
     { workSource: () => Promise.resolve(undefined) },
   );
+  return { subject, bindingReads: () => bindingReads };
+}
+
+test("evaluation without retained work source never reads mutable Git", async () => {
+  const { subject, bindingReads } = observingUncalled();
   assert.deepEqual(
     await subject.observe({ partition, ticket: 1, kind: "Evaluation" }),
     { observed: "Unreadable", evidence: "RefUnreadable" },
   );
-  assert.equal(bindingReads, 0);
+  assert.equal(bindingReads(), 0);
 });
 
 test("the ticket's own branch is the last word on what work is observed against", async () => {
@@ -134,6 +144,7 @@ test("the ticket's own branch is the last word on what work is observed against"
     partition,
     ticket: 1,
     kind: "Work",
+    repository: asRepositoryId("project-default"),
     configurationCanonical: configuredWorkSource,
     ref: asGitRefName("refs/heads/ticket"),
   });
@@ -206,6 +217,7 @@ test("a brief branch the remote does not hold is based on the binding's own targ
     partition,
     ticket: 1,
     kind: "Work",
+    repository: asRepositoryId("project-default"),
     configurationCanonical: configuredWorkSource,
     ref: asGitRefName(ticketBranch),
   });
@@ -230,6 +242,7 @@ test("a branch nobody can read is unreadable still, and is asked about once", as
     partition,
     ticket: 1,
     kind: "Work",
+    repository: asRepositoryId("project-default"),
     configurationCanonical: configuredWorkSource,
     ref: asGitRefName(ticketBranch),
   });
@@ -311,4 +324,68 @@ test("a fan-out that declared several commits is evaluated at the base they shar
       manifests: ["manifest-one"],
     },
   });
+});
+
+/**
+ * A project binding two repositories, answering each by name and its oldest to
+ * a caller naming none, which is what the durable read does. The observation is
+ * recorded so a case can say which repository was asked about.
+ */
+function observingBound(
+  observed: unknown[],
+): ReturnType<typeof executionSourceObservation> {
+  return executionSourceObservation(
+    {
+      binding: (asked, repository) =>
+        Promise.resolve({
+          partition: asked,
+          repository: repository ?? asRepositoryId("repository-oldest"),
+          recoveryEpoch: asRecoveryEpoch("epoch"),
+        }),
+    },
+    {
+      observeTarget: (repository) => {
+        observed.push(repository.repository);
+        return Promise.resolve({
+          observed: "Target",
+          target: {
+            ref: asGitRefName(repository.targetRef ?? "refs/heads/main"),
+            commit: asGitObjectId("f".repeat(40)),
+          },
+        });
+      },
+    },
+    { workSource: () => Promise.resolve(undefined) },
+  );
+}
+
+test("two tickets of one project are each observed in the repository their brief names", async () => {
+  const observed: unknown[] = [];
+  const subject = observingBound(observed);
+  const sources = [];
+  for (const [ticket, repository] of [
+    [1, "repository-oldest"],
+    [2, "repository-sibling"],
+  ] as const) {
+    const source = await subject.observe({
+      partition,
+      ticket,
+      kind: "Work",
+      repository: asRepositoryId(repository),
+    });
+    sources.push(
+      source.observed === "Source" ? source.source.repository : undefined,
+    );
+  }
+  assert.deepEqual(observed, ["repository-oldest", "repository-sibling"]);
+  assert.deepEqual(sources, ["repository-oldest", "repository-sibling"]);
+});
+
+test("a request naming no repository is unreadable, and the binding is never read for it", async () => {
+  const { subject, bindingReads } = observingUncalled();
+  assert.deepEqual(
+    await subject.observe({ partition, ticket: 3, kind: "Work" }),
+    { observed: "Unreadable", evidence: "RefUnreadable" },
+  );
+  assert.equal(bindingReads(), 0);
 });

@@ -217,7 +217,10 @@ async function planned(
   return offered;
 }
 
-/** A port that records what it was asked to observe and answers at the ref it was given. */
+/**
+ * A port that records what it was asked to observe and answers at the
+ * repository and ref it was given, so a bundle says which of them reached it.
+ */
 function recordingSources(
   into: Parameters<ExecutionSourceObservationPort["observe"]>[0][],
 ): ExecutionSourceObservationPort {
@@ -227,7 +230,7 @@ function recordingSources(
       return Promise.resolve({
         observed: "Source",
         source: {
-          repository: asRepositoryId("repository"),
+          repository: request.repository ?? asRepositoryId("repository"),
           target: {
             ref: asGitRefName(request.ref ?? "refs/heads/main"),
             commit: asGitObjectId("a".repeat(40)),
@@ -857,4 +860,38 @@ test("a deferred input ends the run it arrived in without clearing readiness", a
   assert.equal(deferred, 1);
   assert.equal(cleared, 0);
   assert.equal(memory.lease.head, 1);
+});
+
+/** A repository of the project's that is not the one an unbriefed ticket takes. */
+const siblingRepository = "https://forge.example/sibling.git";
+
+test("the repository a ticket was briefed with is the one its work is pinned to", async () => {
+  const observed: Parameters<ExecutionSourceObservationPort["observe"]>[0][] =
+    [];
+  const decision = await planned(
+    releasedMemory(),
+    manualDispatch,
+    recordingSources(observed),
+    {
+      brief: () =>
+        Promise.resolve(
+          asDraftBrief({
+            intent: "Fix the importer.",
+            links: [],
+            repository: siblingRepository,
+          }),
+        ),
+    },
+  );
+  assert.deepEqual(
+    observed.map((request) => request.repository),
+    [siblingRepository],
+  );
+  assert.equal(
+    decision.outcome.outcome === "Journaled"
+      ? decision.outcome.materialization.execution[0]?.bundle?.source
+          ?.repository
+      : undefined,
+    siblingRepository,
+  );
 });

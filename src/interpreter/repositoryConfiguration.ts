@@ -120,7 +120,15 @@ export interface RepositoryConfigurationStore {
 }
 
 export interface ProjectRepositoryBindingRead {
-  binding(partition: Partition): Promise<RepositoryBinding | undefined>;
+  /**
+   * The binding of the repository named, or of the project's oldest where a
+   * caller names none — which is what a caller holding no ticket to take one
+   * from still asks for.
+   */
+  binding(
+    partition: Partition,
+    repository?: RepositoryId,
+  ): Promise<RepositoryBinding | undefined>;
 }
 
 export interface RepositoryConfigurationImportPorts {

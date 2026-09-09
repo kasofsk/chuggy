@@ -489,10 +489,10 @@ test("the pod is answered the objectives its session was opened with", async () 
 
 /**
  * The two reads 061 opens or widens, beside every role that holds one. The
- * binding read was already the API's (021), the ticket service's (031), the
- * configuration importer's (029) and the finalizer's (040); this migration adds
- * the scheduler and nothing else, so the case names them all rather than
- * asserting a door has one holder it never had.
+ * binding read was already the API's (021), the ticket service's (031) and the
+ * configuration importer's (029), 061 adds the scheduler and 082 takes the
+ * finalizer's (040) back with its caller, so the case names them all rather
+ * than asserting a door has one holder it never had.
  */
 const leadToolDoors: readonly {
   readonly door: string;
@@ -503,12 +503,11 @@ const leadToolDoors: readonly {
     holders: [apiRole],
   },
   {
-    door: `${repositoryBindingReadFunction}(text,text)`,
+    door: `${repositoryBindingReadFunction}(text,text,text)`,
     holders: [
       apiRole,
       ticketServiceRole,
       configurationImporterRole,
-      finalizerRole,
       schedulerRole,
     ],
   },
@@ -566,7 +565,7 @@ test("the scheduler's own credential can read a project's repository binding", a
     assert.deepEqual(
       (
         await scheduling.query(
-          `SELECT repository FROM ${repositoryBindingReadFunction}($1,$2)`,
+          `SELECT repository FROM ${repositoryBindingReadFunction}($1,$2,NULL)`,
           [partition.tenant, partition.project],
         )
       ).rows,
@@ -584,7 +583,7 @@ test("the worker plane's own credential cannot read a project's repository bindi
     await assert.rejects(
       () =>
         plane.query(
-          `SELECT repository FROM ${repositoryBindingReadFunction}($1,$2)`,
+          `SELECT repository FROM ${repositoryBindingReadFunction}($1,$2,NULL)`,
           ["tenant", "project"],
         ),
       /permission denied for function read_project_repository_binding/u,
