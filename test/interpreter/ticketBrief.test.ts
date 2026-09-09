@@ -151,6 +151,31 @@ test("a whole brief brands each of its parts and omits the branch it has none of
   );
 });
 
+test("a whole brief brands the repository its work happens in", () => {
+  assert.equal(
+    asDraftBrief({
+      intent: "Fix the importer.",
+      links: [],
+      repository: "chuggy-fabric",
+    }).repository,
+    "chuggy-fabric",
+  );
+  assert.equal(
+    asDraftBrief({ intent: "Fix the importer.", links: [] }).repository,
+    undefined,
+    "a brief naming no repository carries none, which a release refuses",
+  );
+  assert.throws(
+    () =>
+      asDraftBrief({
+        intent: "Fix the importer.",
+        links: [],
+        repository: "",
+      }),
+    RangeError,
+  );
+});
+
 test("a title is one printable line, bounded shorter than the line it renders as", () => {
   assert.equal(asBriefTitle("Serve the reason"), "Serve the reason");
   for (const value of [

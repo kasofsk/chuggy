@@ -183,6 +183,7 @@ function releaseBrief(value: TicketBriefBody): DraftBrief {
     intent: value.intent,
     links: value.links,
     ...(value.checks === undefined ? {} : { checks: value.checks }),
+    ...(value.repository === undefined ? {} : { repository: value.repository }),
     ...(value.branch === undefined ? {} : { branch: value.branch }),
     ...(value.finalization === undefined
       ? {}

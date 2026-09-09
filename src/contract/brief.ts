@@ -1,7 +1,7 @@
 /**
  * The brief a ticket carries beside its authoring: what a human called it and
- * asked for, what to read first, the check lines it adds, the branch the work
- * happens on, and where a finalization lands it.
+ * asked for, what to read first, the check lines it adds, the repository and
+ * branch the work happens in, and where a finalization lands it.
  *
  * A brief is not authoring. `authoringSchema` is the model's own release event
  * and every value of it decides how the machine runs the ticket; none of these
@@ -46,6 +46,12 @@ export const briefChecksMax = 8;
 /** The longest branch one brief names, a branch being a stored reference name. */
 export const briefBranchCharsMax = 256;
 
+/**
+ * The longest repository one brief names, a repository being the same opaque
+ * identity the binding stores and the finalizer lands in.
+ */
+export const briefRepositoryCharsMax = 256;
+
 /** The one scheme a brief's links are read over. */
 export const briefLinkScheme = "https://";
 
@@ -61,6 +67,18 @@ export const briefBranchSchema = z
   .string()
   .max(briefBranchCharsMax)
   .startsWith(briefBranchPrefix);
+
+/**
+ * The repository the work happens in, optional because a draft may be filed
+ * before it is known; the server refuses one the project does not bind, and
+ * refuses a release that names none. The wire says nothing about its grammar
+ * because a repository identity is opaque here, exactly as it is everywhere
+ * else.
+ */
+export const briefRepositorySchema = z
+  .string()
+  .min(1)
+  .max(briefRepositoryCharsMax);
 
 /**
  * One command line a ticket appends to its check stage. It renders as one
@@ -125,6 +143,7 @@ export const briefSchema = z
     intent: z.string().min(1).max(briefIntentCharsMax),
     links: z.array(briefLinkSchema).max(briefLinksMax),
     checks: z.array(briefCheckSchema).max(briefChecksMax).optional(),
+    repository: briefRepositorySchema.optional(),
     branch: briefBranchSchema.optional(),
     finalization: briefFinalizationSchema.optional(),
   })

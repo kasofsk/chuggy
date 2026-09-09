@@ -211,7 +211,8 @@ export type OperationRefusalCode =
   | "SelectionChanged"
   | "CommandUnreadable"
   | "ExecutionSourceUnreadable"
-  | "ExecutionSourceDenied";
+  | "ExecutionSourceDenied"
+  | "BriefNamesNoRepository";
 
 interface OperationResourceBase {
   readonly operation: OperationId;

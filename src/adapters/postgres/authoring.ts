@@ -57,6 +57,7 @@ interface DraftRow extends ConfigurationVersionRow {
   readonly title: string | null;
   readonly intent: string | null;
   readonly branch: string | null;
+  readonly repository: string | null;
   readonly finalization_mode: string | null;
   readonly finalization_target: string | null;
   readonly links: string[] | null;
@@ -186,7 +187,8 @@ async function readDraft(
 ): Promise<DraftResource | undefined> {
   const found = await pool.query<DraftRow>(
     sql`SELECT d.ticket,d.authoring_version,d.state,d.configuration_revision,r.authoring,
-              b.title,b.intent,b.branch,b.finalization_mode,b.finalization_target,
+              b.title,b.intent,b.branch,b.repository,
+              b.finalization_mode,b.finalization_target,
               v.name AS version_name,v.number::text AS version_number,
               (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
                 WHERE k.tenant=d.tenant AND k.project=d.project AND k.ticket=d.ticket) AS links,
@@ -243,6 +245,7 @@ interface DraftPageRow extends ConfigurationVersionRow {
   readonly title: string | null;
   readonly intent: string | null;
   readonly branch: string | null;
+  readonly repository: string | null;
   readonly finalization_mode: string | null;
   readonly finalization_target: string | null;
   readonly links: string[] | null;
@@ -283,7 +286,7 @@ async function readDrafts(
     sql`SELECT ticket::text AS ticket,
                authoring_version::text AS authoring_version,
                state,configuration_revision,authoring,title,intent,branch,
-               finalization_mode,finalization_target,links,checks,
+               repository,finalization_mode,finalization_target,links,checks,
                version_name,version_number::text AS version_number
           FROM read_project_drafts(
                  ${partition.tenant},${partition.project},
@@ -554,11 +557,13 @@ async function createDraft(
     result: string | null;
     ticket: string | null;
   }>(
-    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? briefFinalizationDefault.mode},${input.brief.finalization?.target ?? null},${input.authority.kind},${input.authority.subject})`,
+    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? briefFinalizationDefault.mode},${input.brief.finalization?.target ?? null},${input.brief.repository ?? null},${input.authority.kind},${input.authority.subject})`,
   );
   const row = found.rows[0];
   if (row?.result === "ConfigurationNotFound")
     return { created: "ConfigurationNotFound" };
+  if (row?.result === "RepositoryNotBound")
+    return { created: "RepositoryNotBound" };
   if (row?.result === "Stale") return { created: "Stale" };
   if (row?.result !== "Created" || row.ticket === null)
     throw new Error("draft creation returned no ticket");
@@ -577,13 +582,15 @@ async function reviseDraft(
     authoring_version: string | null;
     state: string | null;
   }>(
-    sql`SELECT * FROM revise_draft(${input.partition.tenant},${input.partition.project},${input.ticket},${input.expectedVersion},${input.configurationRevision},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? briefFinalizationDefault.mode},${input.brief.finalization?.target ?? null},${input.authority.kind},${input.authority.subject})`,
+    sql`SELECT * FROM revise_draft(${input.partition.tenant},${input.partition.project},${input.ticket},${input.expectedVersion},${input.configurationRevision},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? briefFinalizationDefault.mode},${input.brief.finalization?.target ?? null},${input.brief.repository ?? null},${input.authority.kind},${input.authority.subject})`,
   );
   const row = found.rows[0];
   if (row === undefined || row.result === "NotFound")
     return { revised: "NotFound" };
   if (row.result === "ConfigurationNotFound")
     return { revised: "ConfigurationNotFound" };
+  if (row.result === "RepositoryNotBound")
+    return { revised: "RepositoryNotBound" };
   if (row.result === "Stale") {
     if (row.authoring_version === null)
       throw new Error("draft revision returned Stale with no current version");

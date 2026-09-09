@@ -58,7 +58,7 @@ import { assertNever } from "../../domain/assertNever.ts";
 import { decisionEventSubject } from "../../actor/decisionEvent.ts";
 import {
   asCanonicalConfiguration,
-  releaseConfigurationReadiness,
+  draftReleaseReadiness,
   type CanonicalConfiguration,
 } from "../../interpreter/authoring.ts";
 import {
@@ -81,7 +81,10 @@ import {
   encodeDispatchReworkPolicy,
   type DispatchCandidate,
 } from "../../interpreter/dispatchView.ts";
-import { asInputBundleId } from "../../interpreter/finalizer.ts";
+import {
+  asInputBundleId,
+  asRepositoryId,
+} from "../../interpreter/finalizer.ts";
 import {
   pinnedHandoffConfigurationReadiness,
   promoteForHandoffConfiguration,
@@ -635,11 +638,15 @@ async function decisionReleaseOutcome(
   const configuration = await client.query<{
     canonical: string;
     digest: string;
+    repository: string | null;
   }>(
-    sql`SELECT canonical,digest FROM configuration_revision
-      WHERE tenant=${decision.lease.partition.tenant}
-        AND project=${decision.lease.partition.project}
-        AND revision=${fence.configurationRevision}`,
+    sql`SELECT c.canonical,c.digest,p.repository
+      FROM configuration_revision c
+      LEFT JOIN repository_configuration_provenance p
+        ON p.tenant=c.tenant AND p.project=c.project AND p.revision=c.revision
+      WHERE c.tenant=${decision.lease.partition.tenant}
+        AND c.project=${decision.lease.partition.project}
+        AND c.revision=${fence.configurationRevision}`,
   );
   const revision = configuration.rows[0];
   if (revision === undefined)
@@ -652,11 +659,21 @@ async function decisionReleaseOutcome(
       "release configuration content contradicts its retained digest",
     );
   const canonical = asCanonicalConfiguration(revision.canonical);
-  if (
-    releaseConfigurationReadiness(canonical, fence.brief).readiness ===
-    "Incomplete"
-  )
-    return { outcome: "Refused", code: "ConfigurationInvalid" };
+  const readiness = draftReleaseReadiness(
+    canonical,
+    fence.brief,
+    revision.repository === null
+      ? undefined
+      : asRepositoryId(revision.repository),
+  );
+  if (readiness.readiness === "Incomplete")
+    return {
+      outcome: "Refused",
+      code:
+        readiness.fault === "BriefNamesNoRepository"
+          ? "BriefNamesNoRepository"
+          : "ConfigurationInvalid",
+    };
   if (decision.outcome.outcome === "Journaled" && !(await releaseFence(true)))
     throw new Error(
       "release fence changed while held by its deciding transaction",

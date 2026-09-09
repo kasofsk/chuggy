@@ -712,7 +712,7 @@ export const chuggyProjectTools = [
   {
     name: "file_dependent",
     description:
-      "Files a new draft derived from an existing ticket. `relation` admits FollowUp only, and `authoring.dependencies` must carry the parent. The fence comes from initialize_draft. `brief` is {title?, intent, links, checks?, branch?, finalization?}: `title` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; `intent` is the paragraph.",
+      "Files a new draft derived from an existing ticket. `relation` admits FollowUp only, and `authoring.dependencies` must carry the parent. The fence comes from initialize_draft. `brief` is {title?, intent, links, checks?, repository?, branch?, finalization?}: `title` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; `intent` is the paragraph; `repository` is the repository the work happens in, which list_configurations reports as an imported configuration's provenance, and a draft carrying none is refused when it is released.",
     shape: (z) => ({
       parent: ticket(z),
       relation: z.enum(allDependentRelations),
@@ -746,7 +746,7 @@ export const chuggyProjectTools = [
   {
     name: "revise_draft",
     description:
-      "Replaces one open draft's authoring and brief, fenced on the version read. `brief` is {title?, intent, links, checks?, branch?, finalization?}: `title` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; `intent` is the paragraph.",
+      "Replaces one open draft's authoring and brief, fenced on the version read. `brief` is {title?, intent, links, checks?, repository?, branch?, finalization?}: `title` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; `intent` is the paragraph; `repository` is the repository the work happens in, which list_configurations reports as an imported configuration's provenance, and a draft carrying none is refused when it is released. The brief is replaced whole, so send back the `repository` read_draft answered or the revision clears it.",
     shape: (z) => ({
       ticket: ticket(z),
       expectedVersion: count(z),
@@ -807,7 +807,7 @@ export const chuggyProjectTools = [
   {
     name: "create_draft",
     description:
-      "Files a new draft for work your owner asked for, derived from nothing. The fence comes from initialize_draft. `brief` is {title?, intent, links, checks?, branch?, finalization?}: `title` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; `intent` is the paragraph.",
+      "Files a new draft for work your owner asked for, derived from nothing. The fence comes from initialize_draft. `brief` is {title?, intent, links, checks?, repository?, branch?, finalization?}: `title` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; `intent` is the paragraph; `repository` is the repository the work happens in, which list_configurations reports as an imported configuration's provenance, and a draft carrying none is refused when it is released.",
     shape: (z) => ({
       configurationRevision: identity(z),
       configurationDigest: identity(z),

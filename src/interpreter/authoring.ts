@@ -60,16 +60,21 @@ export type ReleaseConfiguration = Readonly<Record<string, unknown>> & {
 } & AuthoredTaskConfiguration;
 
 /**
- * Why one configuration is not releasable. `HandoffProposesChange` and
- * `BriefChecksUncommanded` are the two faults about the pairing rather than the
- * document, either document alone being fine: a configuration carrying a handoff
- * contradicts a brief that opens a change proposal, and one commanding no check
- * stage contradicts a brief that appends check lines to it.
+ * Why one configuration is not releasable. `HandoffProposesChange`,
+ * `BriefChecksUncommanded`, `BriefNamesNoRepository` and
+ * `ConfigurationFromAnotherRepository` are faults about the pairing rather than
+ * the document, either document alone being fine: a configuration carrying a
+ * handoff contradicts a brief that opens a change proposal, one commanding no
+ * check stage contradicts a brief that appends check lines to it, a brief
+ * naming no repository has nothing to pair with, and a configuration imported
+ * from a repository contradicts a brief working in a different one.
  */
 export type ReleaseConfigurationFault =
   | "ReleaseShapeInvalid"
   | "HandoffProposesChange"
   | "BriefChecksUncommanded"
+  | "BriefNamesNoRepository"
+  | "ConfigurationFromAnotherRepository"
   | TaskConfigurationFault
   | HandoffConfigurationFault;
 
@@ -167,6 +172,38 @@ export function releaseConfigurationReadiness(
     readiness: "Ready",
     configuration: value as ReleaseConfiguration,
   };
+}
+
+/**
+ * The release-time minimum for one draft: the configuration's own readiness
+ * plus the repository the brief and the configuration have to agree on, held
+ * in a second function because `releaseConfigurationReadiness` is also asked
+ * about a configuration nobody is releasing, at import, at creation and at
+ * draft initialization, where a brief is absent for want of a draft rather
+ * than for want of a repository. Only an imported revision was read out of a
+ * repository, so a configuration carrying no provenance repository releases
+ * under any binding and one carrying a provenance repository releases from
+ * that binding alone.
+ */
+export function draftReleaseReadiness(
+  configuration: CanonicalConfiguration,
+  brief: ReleaseBrief | undefined,
+  configurationRepository: RepositoryId | undefined,
+): ReleaseConfigurationReadiness {
+  const readiness = releaseConfigurationReadiness(configuration, brief);
+  if (readiness.readiness === "Incomplete") return readiness;
+  const repository = brief?.repository;
+  if (repository === undefined)
+    return { readiness: "Incomplete", fault: "BriefNamesNoRepository" };
+  if (
+    configurationRepository !== undefined &&
+    configurationRepository !== repository
+  )
+    return {
+      readiness: "Incomplete",
+      fault: "ConfigurationFromAnotherRepository",
+    };
+  return readiness;
 }
 
 const prohibitedConfigurationKeys =
@@ -390,9 +427,16 @@ export type ConfigurationCreated =
   | { readonly created: "IdentityConflict" }
   | { readonly created: "ParentNotFound" };
 
+/**
+ * `RepositoryNotBound` is the brief's repository refused: the door names it
+ * rather than letting the foreign key raise, because a body naming a referent
+ * the project does not have is a refusal like `ConfigurationNotFound` and not a
+ * fault.
+ */
 export type DraftCreated =
   | { readonly created: "Created"; readonly draft: DraftResource }
   | { readonly created: "ConfigurationNotFound" }
+  | { readonly created: "RepositoryNotBound" }
   | { readonly created: "Stale" };
 
 export interface DraftInitialization {
@@ -471,6 +515,7 @@ export function draftInitializationPolicy(
   };
 }
 
+/** `RepositoryNotBound` is the same refusal `DraftCreated` documents. */
 export type DraftRevised =
   | { readonly revised: "Revised"; readonly draft: DraftResource }
   | { readonly revised: "NotFound" }
@@ -479,7 +524,8 @@ export type DraftRevised =
       readonly revised: "NotDraft";
       readonly state: Exclude<DraftState, "Draft">;
     }
-  | { readonly revised: "ConfigurationNotFound" };
+  | { readonly revised: "ConfigurationNotFound" }
+  | { readonly revised: "RepositoryNotBound" };
 
 export type DraftDeleted =
   | { readonly deleted: "Deleted"; readonly draft: DraftResource }

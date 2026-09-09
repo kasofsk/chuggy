@@ -10,6 +10,7 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
+import { asRepositoryId } from "../../interpreter/finalizer.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import {
   asBriefBranch,
@@ -39,6 +40,7 @@ export interface DraftBriefRow extends DraftBriefFinalizationRow {
   readonly title: string | null;
   readonly intent: string | null;
   readonly branch: string | null;
+  readonly repository: string | null;
   readonly links: string[] | null;
   readonly checks: string[] | null;
 }
@@ -71,12 +73,18 @@ export function draftBriefFinalizationOf(
  * brief that named no finalization.
  */
 export function draftReleaseBriefOf(
-  row: DraftBriefFinalizationRow & { readonly checks: string[] | null },
+  row: DraftBriefFinalizationRow & {
+    readonly checks: string[] | null;
+    readonly repository: string | null;
+  },
 ): ReleaseBrief | undefined {
   if (row.finalization_mode === null) return undefined;
   const finalization = draftBriefFinalizationOf(row);
   return {
     checks: (row.checks ?? []).map(asBriefCheckLine),
+    ...(row.repository === null
+      ? {}
+      : { repository: asRepositoryId(row.repository) }),
     ...(finalization === undefined ? {} : { finalization }),
   };
 }
@@ -91,6 +99,9 @@ export function draftBriefOf(row: DraftBriefRow): DraftBrief | undefined {
     links: (row.links ?? []).map(asBriefLinkUrl),
     checks: (row.checks ?? []).map(asBriefCheckLine),
     ...(row.branch === null ? {} : { branch: asBriefBranch(row.branch) }),
+    ...(row.repository === null
+      ? {}
+      : { repository: asRepositoryId(row.repository) }),
     ...(finalization === undefined ? {} : { finalization }),
   };
 }
@@ -103,12 +114,14 @@ export function postgresTicketBrief(pool: pg.Pool): TicketBriefPort {
         title: string | null;
         intent: string;
         branch: string | null;
+        repository: string | null;
         finalization_mode: string;
         finalization_target: string | null;
         links: string[] | null;
         checks: string[] | null;
       }>(
-        sql`SELECT b.title,b.intent,b.branch,b.finalization_mode,b.finalization_target,
+        sql`SELECT b.title,b.intent,b.branch,b.repository,
+                   b.finalization_mode,b.finalization_target,
                    (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
                      WHERE k.tenant=b.tenant AND k.project=b.project AND k.ticket=b.ticket) AS links,
                    (SELECT array_agg(c.command ORDER BY c.ordinal) FROM draft_brief_check c

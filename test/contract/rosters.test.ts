@@ -81,6 +81,7 @@ import { projectChangeKinds } from "../../src/contract/events.ts";
 import { inquiryObjectivesFixedChars } from "../../src/interpreter/inquiry.ts";
 import { leadObjectivesFixedChars } from "../../src/interpreter/leadTools.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
+import { allRefusalCodes } from "../../src/interpreter/projectDecision.ts";
 import { allAgenticRefusalEvents } from "../../src/interpreter/agenticRefusal.ts";
 import { allThreadStandings } from "../../src/interpreter/thread.ts";
 import {
@@ -337,6 +338,7 @@ test("the rosters with no runtime list are exhaustive over their unions", () => 
     CommandUnreadable: true,
     ExecutionSourceUnreadable: true,
     ExecutionSourceDenied: true,
+    BriefNamesNoRepository: true,
   };
   const freshness: Record<
     ProjectOperationalStatus["schedulerFreshness"],
@@ -449,6 +451,11 @@ test("every session and refusal roster restates the interpreter's own", () => {
     ...allPlatformTurnFailures,
   ]);
   assert.deepEqual(threadStandings, allThreadStandings);
+  assert.deepEqual(
+    sorted(operationRefusalCodes),
+    sorted([...allRefusalCodes, "CommandUnreadable"]),
+    "the decision narrows a stored code through its own roster and throws on a stranger; CommandUnreadable was written by migrations 005 and 007 alone",
+  );
 });
 
 /**

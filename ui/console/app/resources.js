@@ -275,6 +275,7 @@ export const operationRefusalCodes = [
   "CommandUnreadable",
   "ExecutionSourceUnreadable",
   "ExecutionSourceDenied",
+  "BriefNamesNoRepository",
 ];
 
 /**
