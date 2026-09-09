@@ -370,6 +370,8 @@ export function operationRefusalLabel(code: OperationRefusalCode): string {
       return "Source ref not on remote";
     case "ExecutionSourceDenied":
       return "Remote refused credentials";
+    case "BriefNamesNoRepository":
+      return "Brief names no repository";
   }
 }
 

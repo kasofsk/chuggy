@@ -448,6 +448,11 @@
                 "maxLength": 512
               }
             },
+            "repository": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
             "branch": {
               "type": "string",
               "maxLength": 256,
@@ -643,6 +648,11 @@
                 "minLength": 1,
                 "maxLength": 512
               }
+            },
+            "repository": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
             },
             "branch": {
               "type": "string",

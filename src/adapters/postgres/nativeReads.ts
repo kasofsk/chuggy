@@ -506,7 +506,7 @@ function nativeReadsResources(
                      '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                      AS ticket_title,
                    d.domain_configuration::jsonb->>'gas' AS gas_max,
-                   b.title,b.intent,b.branch,
+                   b.title,b.intent,b.branch,b.repository,
                    b.finalization_mode,b.finalization_target,
                    r.committed_at::text AS released_at,
                    c.committed_at::text AS changed_at,

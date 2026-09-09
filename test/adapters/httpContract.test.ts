@@ -422,3 +422,29 @@ test("a brief the interpreter would refuse never reaches a draft", () => {
     "the lines a brief appends reach the interpreter branded and in order",
   );
 });
+
+test("the repository a brief names crosses the door on creation and on revision", () => {
+  const named = { ...brief, repository: "kasofsk/chuggy" };
+  const creation = {
+    configurationRevision: "revision",
+    configurationDigest: "a".repeat(64),
+    expectedProjectSequence: 7,
+    authoring,
+    brief: named,
+  };
+  assert.equal(parseDraftCreation(creation).brief.repository, "kasofsk/chuggy");
+  assert.equal(
+    parseDraftRevision({
+      expectedVersion: 3,
+      configurationRevision: "revision",
+      authoring,
+      brief: named,
+    }).brief.repository,
+    "kasofsk/chuggy",
+  );
+  assert.equal(
+    parseDraftCreation({ ...creation, brief }).brief.repository,
+    undefined,
+    "a brief naming none reaches the interpreter naming none",
+  );
+});

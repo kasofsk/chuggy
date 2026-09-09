@@ -1,7 +1,7 @@
 /**
  * The brief one ticket carries: the title a human gave it, the intent they
- * stated, the links they pointed at, the check lines they added, the branch the
- * work happens on, and where a finalization lands it.
+ * stated, the links they pointed at, the check lines they added, the repository
+ * and branch the work happens in, and where a finalization lands it.
  *
  * IT IS NOT AUTHORING. Authoring is the model's release event, and every value
  * of it decides how the machine runs the ticket. None of these do: they are
@@ -23,6 +23,14 @@
  * already been split into the lines a briefing would print and refused unless
  * each of them passes the same line rule an authored line does, so a stored
  * brief cannot be one the scheduler will later be unable to render.
+ *
+ * A REPOSITORY IS NAMED BY THE TICKET AND NOT BY THE PROJECT. A project binds
+ * several repositories and privileges none of them, so the one a ticket works
+ * in is the ticket's own value; that it is bound is the server's to enforce,
+ * because nothing here can see a binding. It is optional on a draft and
+ * required to release: a brief that arrives without one is finished during
+ * authoring rather than refused at the door, and `draftReleaseReadiness` is
+ * where the release refuses to take it further.
  *
  * A BRANCH IS A REFERENCE NAME AND SHARES ITS GRAMMAR. `handoffRef` is the one
  * statement of what a reference name is in this tree, and a second spelling of
@@ -68,7 +76,11 @@ import {
   briefFinalizationModes,
   type BriefFinalizationMode,
 } from "../contract/rosters.ts";
-import type { GitRefName } from "./finalizer.ts";
+import {
+  asRepositoryId,
+  type GitRefName,
+  type RepositoryId,
+} from "./finalizer.ts";
 import { handoffRef } from "./handoffConfiguration.ts";
 import type { Partition } from "./projectStore.ts";
 import { taskConfigurationLineFault } from "./taskConfiguration.ts";
@@ -108,17 +120,22 @@ export interface DraftBrief {
   readonly intent: BriefIntent;
   readonly links: readonly BriefLinkUrl[];
   readonly checks: readonly BriefCheckLine[];
+  readonly repository?: RepositoryId;
   readonly branch?: GitRefName;
   readonly finalization?: BriefFinalization;
 }
 
 /**
- * What release reads of a brief: the two halves a pinned configuration can
+ * What release reads of a brief: the parts a pinned configuration can
  * contradict. A brief that proposes a change contradicts a configuration that
- * hands off, and a brief that appends check lines contradicts one that commands
- * no check stage for them to join.
+ * hands off, one that appends check lines contradicts a configuration commanding
+ * no check stage for them to join, and one naming a repository contradicts a
+ * configuration imported from another.
  */
-export type ReleaseBrief = Pick<DraftBrief, "finalization" | "checks">;
+export type ReleaseBrief = Pick<
+  DraftBrief,
+  "finalization" | "checks" | "repository"
+>;
 
 /** The lines one intent renders as, which is the form it is bounded and stored in. */
 export function briefIntentLines(intent: BriefIntent): readonly string[] {
@@ -240,6 +257,7 @@ export function asDraftBrief(value: {
   readonly intent: string;
   readonly links: readonly string[];
   readonly checks?: readonly string[];
+  readonly repository?: string;
   readonly branch?: string;
   readonly finalization?: { readonly mode: string; readonly target?: string };
 }): DraftBrief {
@@ -253,6 +271,9 @@ export function asDraftBrief(value: {
     intent: asBriefIntent(value.intent),
     links: value.links.map(asBriefLinkUrl),
     checks: checks.map(asBriefCheckLine),
+    ...(value.repository === undefined
+      ? {}
+      : { repository: asRepositoryId(value.repository) }),
     ...(value.branch === undefined
       ? {}
       : { branch: asBriefBranch(value.branch) }),

@@ -139,10 +139,11 @@ async function releaseDraftSource(
     canonical: string;
     finalization_mode: string | null;
     finalization_target: string | null;
+    repository: string | null;
     checks: string[] | null;
   }>(
     sql`SELECT r.authoring,c.digest,c.canonical,
-           b.finalization_mode,b.finalization_target,
+           b.finalization_mode,b.finalization_target,b.repository,
            (SELECT array_agg(k.command ORDER BY k.ordinal) FROM draft_brief_check k
              WHERE k.tenant=r.tenant AND k.project=r.project AND k.ticket=r.ticket) AS checks
       FROM draft_revision r

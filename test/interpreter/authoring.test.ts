@@ -9,6 +9,7 @@ import {
   configurationRevisionSummary,
   draftPageLimitDefault,
   draftInitializationPolicy,
+  draftReleaseReadiness,
   encodeDraftAuthoring,
   parseDraftAuthoring,
   releaseConfigurationReadiness,
@@ -17,6 +18,7 @@ import {
   asBriefBranch,
   asBriefCheckLine,
 } from "../../src/interpreter/ticketBrief.ts";
+import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { handoffFixture } from "./handoffFixture.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
@@ -230,6 +232,81 @@ test("a configuration commanding no check stage refuses a brief that appends che
     ).readiness,
     "Incomplete",
     "a check stage that briefs an agent commands nothing for a ticket to join",
+  );
+});
+
+const firstRepository = asRepositoryId("repository-one");
+const secondRepository = asRepositoryId("repository-two");
+
+test("a release refuses a brief that names no repository at all", () => {
+  assert.deepEqual(
+    draftReleaseReadiness(
+      readyConfiguration,
+      { checks: [], repository: firstRepository },
+      undefined,
+    ).readiness,
+    "Ready",
+  );
+  assert.deepEqual(
+    draftReleaseReadiness(readyConfiguration, { checks: [] }, undefined),
+    { readiness: "Incomplete", fault: "BriefNamesNoRepository" },
+  );
+  assert.deepEqual(
+    draftReleaseReadiness(readyConfiguration, undefined, undefined),
+    { readiness: "Incomplete", fault: "BriefNamesNoRepository" },
+    "a draft written before briefs existed names none either",
+  );
+});
+
+test("a release refuses a configuration imported from another repository", () => {
+  assert.deepEqual(
+    draftReleaseReadiness(
+      readyConfiguration,
+      { checks: [], repository: firstRepository },
+      secondRepository,
+    ),
+    { readiness: "Incomplete", fault: "ConfigurationFromAnotherRepository" },
+  );
+  for (const repository of [firstRepository, secondRepository]) {
+    assert.equal(
+      draftReleaseReadiness(
+        readyConfiguration,
+        { checks: [], repository },
+        repository,
+      ).readiness,
+      "Ready",
+      "an imported configuration releases from the repository it was read in",
+    );
+    assert.equal(
+      draftReleaseReadiness(
+        readyConfiguration,
+        { checks: [], repository },
+        undefined,
+      ).readiness,
+      "Ready",
+      "and an authored one releases from either binding, privileging neither",
+    );
+  }
+});
+
+test("the configuration's own refusals are answered before the repository's", () => {
+  const parsed = JSON.parse(readyConfiguration) as Record<string, unknown>;
+  assert.deepEqual(
+    draftReleaseReadiness(
+      canonicalConfigurationOf({
+        ...parsed,
+        finalizationHandoff: handoffFixture(),
+      }),
+      {
+        checks: [],
+        finalization: {
+          mode: "PullRequest",
+          target: asBriefBranch("refs/heads/rt/landing"),
+        },
+      },
+      secondRepository,
+    ),
+    { readiness: "Incomplete", fault: "HandoffProposesChange" },
   );
 });
 

@@ -23,6 +23,8 @@ import {
   briefLinkSchema,
   briefLinkScheme,
   briefLinksMax,
+  briefRepositoryCharsMax,
+  briefRepositorySchema,
   briefResponseSchema,
   briefSchema,
   briefTitleCharsMax,
@@ -31,7 +33,11 @@ import {
 import { draftCreationSchema } from "../../src/contract/requests.ts";
 import { briefFinalizationModes } from "../../src/contract/rosters.ts";
 import { proposalBodyCharsMax } from "../../src/interpreter/changeProposal.ts";
-import { gitRefNameCharsMax } from "../../src/interpreter/finalizer.ts";
+import {
+  asRepositoryId,
+  finalizerIdentityCharsMax,
+  gitRefNameCharsMax,
+} from "../../src/interpreter/finalizer.ts";
 import { handoffRefPrefix } from "../../src/interpreter/handoffConfiguration.ts";
 import {
   briefingLineCharsMax,
@@ -49,6 +55,7 @@ test("every wire bound on a brief is the interpreter bound it was taken from", (
   assert.equal(briefLinksMax, briefingLinesMax);
   assert.equal(briefBranchCharsMax, gitRefNameCharsMax);
   assert.equal(briefBranchPrefix, handoffRefPrefix);
+  assert.equal(briefRepositoryCharsMax, finalizerIdentityCharsMax);
 });
 
 test("the lines an intent renders as are what its two bounds divide out to", () => {
@@ -147,6 +154,45 @@ test("the longest check the wire accepts is the longest one the server brands", 
     false,
   );
   assert.throws(() => asBriefCheckLine(lineOf(briefLineCharsMax + 1)));
+});
+
+test("the longest repository the wire accepts is the longest the server brands", () => {
+  const named = (chars: number) => "a".repeat(chars);
+  assert.ok(
+    briefRepositorySchema.safeParse(named(briefRepositoryCharsMax)).success,
+  );
+  assert.doesNotThrow(() => asRepositoryId(named(briefRepositoryCharsMax)));
+  assert.equal(
+    briefRepositorySchema.safeParse(named(briefRepositoryCharsMax + 1)).success,
+    false,
+  );
+  assert.throws(() => asRepositoryId(named(briefRepositoryCharsMax + 1)));
+  assert.equal(briefRepositorySchema.safeParse("").success, false);
+});
+
+test("a brief names the repository its work happens in, or names none", () => {
+  assert.equal(
+    briefSchema.parse({
+      intent: "Do it.",
+      links: [],
+      repository: "chuggy-fabric",
+    }).repository,
+    "chuggy-fabric",
+  );
+  assert.equal(
+    briefSchema.parse({ intent: "Do it.", links: [] }).repository,
+    undefined,
+    "a brief naming no repository carries none",
+  );
+  assert.equal(
+    briefResponseSchema.safeParse({
+      intent: "Do it.",
+      links: [],
+      repository: "chuggy-fabric",
+    }).data?.repository,
+    "chuggy-fabric",
+    "and a brief read back carries the one it was written with",
+  );
 });
 
 test("a brief lands where its work happened unless its finalization says otherwise", () => {

@@ -3901,3 +3901,71 @@ test("migration 80 keeps every binding, elects none, and claims none as its own"
     ]);
   });
 });
+
+/** A project holding a binding and a draft brief filed before repositories were named. */
+async function seedUnnamedBrief(subject: pg.Pool): Promise<void> {
+  await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-81')`);
+  await subject.query(
+    `INSERT INTO project(tenant,project,lifecycle,head,ingress_next)
+     VALUES('tenant-81','project-81','Active',0,1)`,
+  );
+  await subject.query(
+    `INSERT INTO project_repository(tenant,project,repository,recovery_epoch)
+     VALUES('tenant-81','project-81','bound-81','epoch-81')`,
+  );
+  await subject.query(
+    `INSERT INTO configuration_revision
+       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+     VALUES('tenant-81','project-81','revision-81','{}','digest-81','Test','migration')`,
+  );
+  await subject.query(
+    `INSERT INTO draft(tenant,project,ticket,authoring_version,state,configuration_revision)
+     VALUES('tenant-81','project-81',1,1,'Draft','revision-81')`,
+  );
+  await subject.query(
+    `INSERT INTO draft_brief(tenant,project,ticket,intent)
+     VALUES('tenant-81','project-81',1,'work filed before a brief named where it happens')`,
+  );
+}
+
+/** The repository each of the project's briefs names, if any. */
+async function migratedBriefRepositories(subject: pg.Pool) {
+  return (
+    await subject.query<{ repository: string | null }>(
+      `SELECT repository FROM draft_brief ORDER BY ticket`,
+    )
+  ).rows;
+}
+
+/** Names one repository on the seeded brief, as only a bound one may be. */
+async function migratedBriefNames(
+  subject: pg.Pool,
+  repository: string,
+): Promise<void> {
+  await subject.query(
+    `UPDATE draft_brief SET repository=$1
+      WHERE tenant='tenant-81' AND project='project-81' AND ticket=1`,
+    [repository],
+  );
+}
+
+test("migration 81 leaves a brief naming no repository and takes only a bound one", async () => {
+  await migrationDatabase("brief_repository", async (subject) => {
+    await migrationSeedApplied(subject, 81);
+    await seedUnnamedBrief(subject);
+
+    await applyMigration(subject, 81);
+
+    assert.deepEqual(await migratedBriefRepositories(subject), [
+      { repository: null },
+    ]);
+    await assert.rejects(
+      migratedBriefNames(subject, "unbound-81"),
+      /draft_brief_repository_is_bound/u,
+    );
+    await migratedBriefNames(subject, "bound-81");
+    assert.deepEqual(await migratedBriefRepositories(subject), [
+      { repository: "bound-81" },
+    ]);
+  });
+});

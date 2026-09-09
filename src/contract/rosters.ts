@@ -172,6 +172,7 @@ export const operationRefusalCodes = [
   "CommandUnreadable",
   "ExecutionSourceUnreadable",
   "ExecutionSourceDenied",
+  "BriefNamesNoRepository",
 ] as const;
 export type OperationRefusalCode = (typeof operationRefusalCodes)[number];
 
