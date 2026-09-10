@@ -18,6 +18,13 @@
 
 import { randomUUID } from "node:crypto";
 
+import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
+import { postgresAgenticRefusalReads } from "../../src/adapters/postgres/agenticRefusal.ts";
+import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
+import { postgresLeadReads } from "../../src/adapters/postgres/leadReads.ts";
+import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
+import { postgresSessionStoreRows } from "../../src/adapters/postgres/sessionStoreReads.ts";
+import { composeNativeWeb } from "../../src/compose.ts";
 import { threadSessionMint } from "../../src/adapters/crypto/threadSessionMint.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 import { postgresThreadSeeding } from "../../src/adapters/postgres/thread.ts";
@@ -27,7 +34,10 @@ import {
 } from "../../src/adapters/postgres/thread.ts";
 import { sessionStoreStreamsAnswered } from "../../src/contract/http.ts";
 import type { Authority } from "../../src/interpreter/operationInbox.ts";
-import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
+import {
+  memberAuthority,
+  type ProjectAccess,
+} from "../../src/interpreter/projectAccess.ts";
 import {
   oidcPrincipal,
   type Principal,
@@ -43,6 +53,8 @@ import type {
 } from "../../src/interpreter/threadRead.ts";
 import type { ThreadWakeStore } from "../../src/interpreter/threadWake.ts";
 import { leadRigOpen, leadRigProject, type LeadRig } from "./leadHarness.ts";
+import { postgresHarnessKeying } from "./harness.ts";
+import type { SessionStoreDouble } from "./storeDouble.ts";
 
 /** One opened subject: the lead rig, and the three stores 062 answers. */
 export interface ThreadRig extends LeadRig {
@@ -212,5 +224,61 @@ export async function threadRigTicketPhase(
   await rig.sessions.harness.query(
     `SELECT append_project_change($1,$2,'Ticket',$3)`,
     [partition.tenant, partition.project, String(ticket)],
+  );
+}
+
+/**
+ * The app the thread routes are driven through, composed from the bundle the
+ * ROOT composes. It is here rather than in either suite because the two that
+ * drive it differ in one thing — which project access answers — and a second
+ * copy of the composition is a second place a port is added to.
+ */
+export function threadRigApp(input: {
+  readonly rig: ThreadRig;
+  readonly principal: Principal;
+  readonly access: ProjectAccess;
+  readonly store: SessionStoreDouble;
+}) {
+  const pool = input.rig.apiPool;
+  const leads = postgresLeadReads(pool);
+  const web = composeNativeWeb(
+    pool,
+    postgresHarnessKeying(),
+    input.access,
+    postgresExecutionBacklogGuard(pool),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      leads,
+      store: input.store,
+      refusals: postgresAgenticRefusalReads(pool),
+      history: leads,
+    },
+    {
+      threads: postgresThreads(pool, {
+        streamsMax: sessionStoreStreamsAnswered,
+      }),
+      sessions: threadSessionMint(),
+      seeding: postgresThreadSeeding(pool),
+      rows: postgresSessionStoreRows(pool),
+      store: input.store,
+      credentialSlot: threadRigSlot,
+    },
+  );
+  return createNativeHttpApp(
+    web,
+    {
+      authenticateBearer: () =>
+        Promise.resolve({
+          authenticated: "Bearer" as const,
+          bearer: { principal: input.principal },
+        }),
+    },
+    { ready: () => Promise.resolve(true) },
+    postgresInstallationAuthority(pool),
   );
 }

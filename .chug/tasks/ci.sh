@@ -182,6 +182,7 @@ run_selected_gate check-random "check-random" ./.chug/tasks/check-random.sh
 
 run_selected_gate check-postgres "check-postgres" ./.chug/tasks/check-postgres.sh
 run_selected_gate check-queries "check-queries" ./.chug/tasks/check-queries.sh
+run_selected_gate check-keto "check-keto" ./.chug/tasks/check-keto.sh
 
 run_selected_gate check-model "check-model" ./.chug/tasks/check-model.sh
 run_selected_gate check-model-api "check-model-api" ./.chug/tasks/check-model-api.sh

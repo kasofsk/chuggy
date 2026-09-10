@@ -19,11 +19,9 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { randomUUID } from "node:crypto";
 
-import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import {
   nativeHttpMediaType,
   sessionStorePageBatchesMax,
-  sessionStoreStreamsAnswered,
   threadMessageCharsMax,
 } from "../../src/contract/http.ts";
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
@@ -34,27 +32,16 @@ import {
   threadTranscriptResponseSchema,
   threadsResponseSchema,
 } from "../../src/contract/responses.ts";
-import { threadSessionMint } from "../../src/adapters/crypto/threadSessionMint.ts";
-import { postgresAgenticRefusalReads } from "../../src/adapters/postgres/agenticRefusal.ts";
-import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
-import { postgresLeadReads } from "../../src/adapters/postgres/leadReads.ts";
-import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
-import { postgresSessionStoreRows } from "../../src/adapters/postgres/sessionStoreReads.ts";
-import {
-  postgresThreadSeeding,
-  postgresThreads,
-} from "../../src/adapters/postgres/thread.ts";
-import { composeNativeWeb } from "../../src/compose.ts";
 import {
   asSessionId,
   asSessionStoreStream,
 } from "../../src/interpreter/agentSession.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import { postgresHarnessKeying } from "./harness.ts";
 import { sessionStoreDouble, sessionStoreEntryLine } from "./storeDouble.ts";
 import { sessionRigAttempt } from "./sessionHarness.ts";
 import {
+  threadRigApp,
   threadRigIssuer,
   threadRigMember,
   threadRigOpen,
@@ -81,50 +68,14 @@ const storeReads = sessionStoreDouble();
 const authorized = { authorization: "Bearer valid" };
 const versioned = { ...authorized, "content-type": nativeHttpMediaType };
 
-/** The app the routes are driven through, with the bundle the root composes. */
+/** The app the routes are driven through, under the caller's own principal. */
 function threadApp(principal: ThreadRigMember["principal"]) {
-  const pool = rig.apiPool;
-  const leads = postgresLeadReads(pool);
-  const web = composeNativeWeb(
-    pool,
-    postgresHarnessKeying(),
-    rig.sessions.harness.access,
-    postgresExecutionBacklogGuard(pool),
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    {
-      leads,
-      store: storeReads,
-      refusals: postgresAgenticRefusalReads(pool),
-      history: leads,
-    },
-    {
-      threads: postgresThreads(pool, {
-        streamsMax: sessionStoreStreamsAnswered,
-      }),
-      sessions: threadSessionMint(),
-      seeding: postgresThreadSeeding(pool),
-      rows: postgresSessionStoreRows(pool),
-      store: storeReads,
-      credentialSlot: threadRigSlot,
-    },
-  );
-  return createNativeHttpApp(
-    web,
-    {
-      authenticateBearer: () =>
-        Promise.resolve({
-          authenticated: "Bearer" as const,
-          bearer: { principal },
-        }),
-    },
-    { ready: () => Promise.resolve(true) },
-    postgresInstallationAuthority(pool),
-  );
+  return threadRigApp({
+    rig,
+    principal,
+    access: rig.sessions.harness.access,
+    store: storeReads,
+  });
 }
 
 function pathOf(partition: Partition): string {

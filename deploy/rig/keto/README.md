@@ -5,10 +5,12 @@ rig's PostgreSQL. `deploy/rig/postgres/README.md` is the procedure for the
 database; this is the procedure for the authority beside it.
 
 The namespaces the API asks about — `Project` and `Tenant` — are the model the
-fabric deploys with the server, and nothing in this checkout applies it. The
-API's readiness answers false until both namespaces exist, which is how a
-server carrying some other model is caught at the door rather than by the first
-member it refuses.
+fabric deploys with the server, and nothing in this checkout applies it.
+`.chug/tasks/keto/namespaces.ts` is the copy `check-keto.sh` drives its own
+container with, so a model the rig runs and a model the gate proves against are
+one file apart and are compared by nobody. The API's readiness answers false
+until both namespaces exist, which is how a server carrying some other model is
+caught at a pod's door rather than by the first member it refuses.
 
 ## Grant a project access
 

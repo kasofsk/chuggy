@@ -205,24 +205,26 @@ check "a checkout nested under .claude/ is not this tree's source" 0 "$RC" "0 st
 
 # --- What the unit stage runs ------------------------------------------------
 #
-# `check-conformance.sh`, `check-random.sh` and `check-postgres.sh` own their
-# directories, and a suite of theirs failing here would mean this stage had
-# discovered it anyway. So all three are made to fail and the gate is required
-# to pass regardless. The postgres one also cannot run here at all — it needs a
-# server — which is the second reason its directory is subtracted.
+# `check-conformance.sh`, `check-random.sh`, `check-postgres.sh` and
+# `check-keto.sh` own their directories, and a suite of theirs failing here
+# would mean this stage had discovered it anyway. So every one of them is made
+# to fail and the gate is required to pass regardless. The last two also cannot
+# run here at all — they need a server — which is the second reason their
+# directories are subtracted.
 
 fixture
 clean_source
-mkdir -p "$R/test/conformance" "$R/test/random" "$R/test/postgres"
+mkdir -p "$R/test/conformance" "$R/test/random" "$R/test/postgres" "$R/test/keto"
 failing_suite "$R/test/conformance/replay.test.ts" "the corpus gate's own"
 failing_suite "$R/test/random/walk.test.ts" "the walk gate's own"
 failing_suite "$R/test/postgres/journal.test.ts" "the server gate's own"
+failing_suite "$R/test/keto/access.test.ts" "the authority gate's own"
 seal
 
 check "the owning gates' suites are not this stage's" 0 "$RC" "0 stage(s) failed"
 # The split is asserted against a fixture whose suites this file wrote, so the
 # line cannot report a scope the run did not have.
-check "the clean line reports the split it ran" 0 "$RC" "unit ran 1 suite(s); 3 left to check-conformance, check-random, check-postgres and check-console"
+check "the clean line reports the split it ran" 0 "$RC" "unit ran 1 suite(s); 4 left to check-conformance, check-random, check-postgres, check-keto and check-console"
 
 # A console's own suite is written for the runner its manifest pins, so this
 # runner is not merely a second one for it - it is the wrong one, and the
