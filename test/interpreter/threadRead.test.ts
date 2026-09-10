@@ -339,6 +339,24 @@ test("a member reads another member's thread, and it is not theirs", async () =>
 });
 
 /**
+ * The listing derives one owner per distinct principal and a single read
+ * derives one for the thread it answers, so the two would otherwise disagree
+ * about a thread the listing had just drawn as orphaned.
+ */
+test("a thread's own route names no owner the project no longer admits", async () => {
+  const { web } = boundary({ unadmitted: [geoff] });
+
+  const read = await web.thread(dana, partition, mine, { limit: 4 });
+
+  assert.equal(read.result, "Found");
+  assert.equal(read.result === "Found" ? read.thread.owner : "", undefined);
+  assert.equal(
+    read.result === "Found" ? read.thread.state : "Open",
+    "Orphaned",
+  );
+});
+
+/**
  * READING A THREAD IS `Read` AND NOTHING MORE. A member the listing showed a
  * thread to must be able to open it, so a read narrowed to `Mutate` would hide
  * from a reader exactly what it had just told them was there.
