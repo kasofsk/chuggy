@@ -45,6 +45,7 @@ import {
 } from "../../src/interpreter/taskConfiguration.ts";
 import {
   asBriefCheckLine,
+  asBriefIntent,
   asBriefTitle,
 } from "../../src/interpreter/ticketBrief.ts";
 import { authoringWireBody } from "./representations.ts";
@@ -154,6 +155,77 @@ test("the longest check the wire accepts is the longest one the server brands", 
     false,
   );
   assert.throws(() => asBriefCheckLine(lineOf(briefLineCharsMax + 1)));
+});
+
+test("the longest intent line the wire accepts is the longest one the server brands", () => {
+  const intenting = (intent: string) =>
+    briefSchema.safeParse({ intent, links: [] }).success;
+  const lineOf = (chars: number) => "a".repeat(chars);
+  assert.ok(intenting(lineOf(briefLineCharsMax)));
+  assert.doesNotThrow(() => asBriefIntent(lineOf(briefLineCharsMax)));
+  assert.equal(intenting(lineOf(briefLineCharsMax + 1)), false);
+  assert.throws(() => asBriefIntent(lineOf(briefLineCharsMax + 1)), RangeError);
+});
+
+test("the most lines the wire accepts is the most the server brands", () => {
+  const linesOf = (count: number) =>
+    Array.from({ length: count }, () => "a").join("\n");
+  assert.ok(
+    briefSchema.safeParse({ intent: linesOf(briefIntentLinesMax), links: [] })
+      .success,
+  );
+  assert.doesNotThrow(() => asBriefIntent(linesOf(briefIntentLinesMax)));
+  assert.equal(
+    briefSchema.safeParse({
+      intent: linesOf(briefIntentLinesMax + 1),
+      links: [],
+    }).success,
+    false,
+  );
+  assert.throws(
+    () => asBriefIntent(linesOf(briefIntentLinesMax + 1)),
+    RangeError,
+  );
+});
+
+/**
+ * The whole-intent bound, put to an intent no line rule can decide: every line
+ * but the last is at the line bound and the count is at the line count, so the
+ * characters are the only thing left for the verdict to turn on.
+ */
+test("the most characters the wire accepts is the most the server brands", () => {
+  const filled = briefIntentLinesMax - 1;
+  const intentOfChars = (chars: number) =>
+    [
+      ...Array.from({ length: filled }, () => "a".repeat(briefLineCharsMax)),
+      "a".repeat(chars - filled * briefLineCharsMax - filled),
+    ].join("\n");
+  const intenting = (intent: string) =>
+    briefSchema.safeParse({ intent, links: [] }).success;
+  assert.equal(intentOfChars(briefIntentCharsMax).length, briefIntentCharsMax);
+  assert.ok(intenting(intentOfChars(briefIntentCharsMax)));
+  assert.doesNotThrow(() => asBriefIntent(intentOfChars(briefIntentCharsMax)));
+  assert.equal(intenting(intentOfChars(briefIntentCharsMax + 1)), false);
+  assert.throws(
+    () => asBriefIntent(intentOfChars(briefIntentCharsMax + 1)),
+    RangeError,
+  );
+});
+
+/** A browser sends the newline its platform uses, and the server normalises before it counts. */
+test("an intent is judged as the newline the server stores it under", () => {
+  const intenting = (intent: string) =>
+    briefSchema.safeParse({ intent, links: [] }).success;
+  const whole = "a".repeat(briefLineCharsMax);
+  assert.ok(intenting(`${whole}\r\nsecond line`));
+  assert.ok(intenting(`${whole}\rsecond line`));
+  assert.equal(intenting(`${whole}a\r\nsecond line`), false);
+  const tooMany = Array.from(
+    { length: briefIntentLinesMax + 1 },
+    () => "a",
+  ).join("\r\n");
+  assert.equal(intenting(tooMany), false);
+  assert.throws(() => asBriefIntent(tooMany), RangeError);
 });
 
 test("the longest repository the wire accepts is the longest the server brands", () => {

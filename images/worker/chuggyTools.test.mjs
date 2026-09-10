@@ -10,6 +10,7 @@ import { z } from "zod";
 
 import {
   allChuggyTools,
+  chuggyBriefIntentLineCharsMax,
   chuggyOperationIdentity,
   chuggyToolAnswerBytes,
   chuggyToolAnswerBytesMax,
@@ -124,6 +125,36 @@ test("every tool that takes a brief names the title it carries", () => {
     assert.ok(
       description.includes("always give one"),
       `${name} does not ask for one`,
+    );
+  }
+});
+
+/**
+ * The bound a model cannot infer from an open object. An intent is refused a
+ * line at a time, so a description that calls it a paragraph steers the model
+ * into the one shape the door will not take.
+ */
+test("every tool that takes a brief names the line bound an intent is held to", () => {
+  const taking = chuggyToolDefinitions(
+    chuggyToolContext(task, bearer, {
+      capabilities: everyCapability,
+      staging: leadDecisionStaging(),
+    }),
+  ).filter((definition) => "brief" in definition.shape(z));
+
+  for (const { name, description } of taking) {
+    assert.ok(
+      description.includes(String(chuggyBriefIntentLineCharsMax)),
+      `${name} names no line bound`,
+    );
+    assert.ok(
+      description.includes("break a sentence across lines"),
+      `${name} does not say how to stay under it`,
+    );
+    assert.equal(
+      description.includes("`intent` is the paragraph"),
+      false,
+      `${name} still asks for one long line`,
     );
   }
 });

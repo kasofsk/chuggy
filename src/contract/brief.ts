@@ -13,6 +13,8 @@
 
 import { z } from "zod";
 
+import { textCodePointsCount } from "./http.ts";
+
 /**
  * The longest line a briefing renders, which is the whole of what a brief is
  * measured in: an intent renders as lines and a link renders as one, so this
@@ -95,6 +97,44 @@ export const briefCheckSchema = z.string().min(1).max(briefLineCharsMax);
 export const briefTitleSchema = z.string().min(1).max(briefTitleCharsMax);
 
 /**
+ * The lines an intent renders as, over the newline a browser sends as well as
+ * the one this tree bounds. A blank line prints nothing, so it is neither
+ * bounded nor counted.
+ */
+function briefIntentWireLines(intent: string): readonly string[] {
+  return intent
+    .replaceAll("\r\n", "\n")
+    .replaceAll("\r", "\n")
+    .split("\n")
+    .filter((line) => line.trim().length > 0);
+}
+
+/**
+ * What this ticket is for, stored as the lines a briefing prints. Each of them
+ * takes the line rule an authored line takes, so a paragraph written as one long
+ * line is refused here rather than branded and thrown on.
+ */
+export const briefIntentSchema = z
+  .string()
+  .min(1)
+  .max(briefIntentCharsMax)
+  .refine(
+    (intent) =>
+      briefIntentWireLines(intent).every(
+        (line) => textCodePointsCount(line) <= briefLineCharsMax,
+      ),
+    {
+      error: `an intent line is longer than the ${String(briefLineCharsMax)} characters a briefing line renders: break the sentence across lines rather than shorten it`,
+    },
+  )
+  .refine(
+    (intent) => briefIntentWireLines(intent).length <= briefIntentLinesMax,
+    {
+      error: `an intent renders as more than the ${String(briefIntentLinesMax)} lines a briefing prints`,
+    },
+  );
+
+/**
  * How and where a finalization lands the work, as one variant per mode: a push
  * names the reference it lands on only where that is not the branch the work
  * happened on, and a pull request must name one, because a proposal opened into
@@ -140,7 +180,7 @@ export function briefLandingIsWhole(value: {
 export const briefSchema = z
   .strictObject({
     title: briefTitleSchema.optional(),
-    intent: z.string().min(1).max(briefIntentCharsMax),
+    intent: briefIntentSchema,
     links: z.array(briefLinkSchema).max(briefLinksMax),
     checks: z.array(briefCheckSchema).max(briefChecksMax).optional(),
     repository: briefRepositorySchema.optional(),

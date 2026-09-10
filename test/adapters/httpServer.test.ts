@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
+import { briefLineCharsMax } from "../../src/contract/brief.ts";
 import {
   createNativeHttpApp,
   type NativeHttpLimits,
@@ -1041,6 +1042,33 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     "deleteDraft:3",
     "dispatchView:4",
   ]);
+});
+
+test("a draft refused for an over-long intent line is told the field and the rule", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const refused = await app.inject({
+    method: "POST",
+    url: "/api/v1/tenants/tenant/projects/project/drafts",
+    headers: {
+      authorization: "Bearer valid",
+      "content-type": "application/vnd.chuggy.v1+json",
+    },
+    body: {
+      ...publicDraftCreation,
+      brief: { ...publicBrief, intent: "x".repeat(briefLineCharsMax + 1) },
+    },
+  });
+
+  assert.equal(refused.statusCode, 400);
+  const envelope = refused.json<HttpErrorEnvelope>();
+  assert.equal(envelope.error.code, "InvalidRequest");
+  assert.match(envelope.error.message, /^brief\.intent: /mu);
+  assert.match(
+    envelope.error.message,
+    new RegExp(String(briefLineCharsMax), "u"),
+  );
+  assert.deepEqual(calls, []);
 });
 
 test("a drafts page routes its cursor and its bound, and nothing else", async () => {

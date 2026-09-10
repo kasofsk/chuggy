@@ -178,7 +178,7 @@ export function creationFaultSentence(field: CreationField): string {
     case "title":
       return `name this ticket in one line of at most ${String(briefTitleCharsMax)} characters`;
     case "intent":
-      return `state what this ticket is for: at least one line, at most ${String(briefIntentLinesMax)} printed lines and ${String(briefIntentCharsMax)} characters`;
+      return `state what this ticket is for on at least one line, at most ${String(briefLineCharsMax)} characters a line — break the sentence across lines rather than shorten it — and at most ${String(briefIntentLinesMax)} printed lines and ${String(briefIntentCharsMax)} characters in all`;
     case "links":
       return `each link is an ${briefLinkScheme} URL of at most ${String(briefLineCharsMax)} characters, and one ticket carries at most ${String(briefLinksMax)}`;
     case "checks":
