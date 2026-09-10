@@ -23,6 +23,13 @@
  * the API is restarted, which is what makes the write a precondition of the
  * release rather than a follow-up to it.
  *
+ * ROWS WRITTEN BEFORE THIS MIGRATION STOP MATCHING THEIR AUTHOR, and that loss
+ * is accepted rather than repaired: they carry the operator-chosen kind and
+ * subject the dropped table supplied, not the one a principal derives, so a
+ * draft written before the cutover is no longer seeded into its author's next
+ * thread and a ticket authored before it wakes nobody.
+ * `deploy/rig/keto/README.md` names this as a release step.
+ *
  * `project_membership_grants_no_boundary_authority` GOES WITH THE TABLE AND ITS
  * RULE IS NOW STRUCTURAL. That CHECK existed because an authority kind was a
  * granted string an administrator chose; the kind is a constant in the

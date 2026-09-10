@@ -12,6 +12,16 @@ one file apart and are compared by nobody. The API's readiness answers false
 until both namespaces exist, which is how a server carrying some other model is
 caught at a pod's door rather than by the first member it refuses.
 
+## Before migration 83
+
+Write a tuple for every principal the `project_membership` table admitted, then
+apply the migration: a principal with no tuple is refused from the moment the
+API restarts. **Threads and drafts written before migration 83 stop matching
+their author** — those rows carry the authority the dropped table supplied
+rather than the one a principal derives, so a pre-cutover draft is no longer
+seeded into its author's next thread and a pre-cutover ticket wakes nobody. The
+loss is accepted rather than repaired.
+
 ## Grant a project access
 
 `src/roots/provisionProjectAccess.ts` is the only way a tuple is written from
