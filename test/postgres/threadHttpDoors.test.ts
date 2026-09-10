@@ -38,7 +38,6 @@ import { threadSessionMint } from "../../src/adapters/crypto/threadSessionMint.t
 import { postgresAgenticRefusalReads } from "../../src/adapters/postgres/agenticRefusal.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
 import { postgresLeadReads } from "../../src/adapters/postgres/leadReads.ts";
-import { postgresProjectAccess } from "../../src/adapters/postgres/projectAccess.ts";
 import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { postgresSessionStoreRows } from "../../src/adapters/postgres/sessionStoreReads.ts";
 import {
@@ -89,7 +88,7 @@ function threadApp(principal: ThreadRigMember["principal"]) {
   const web = composeNativeWeb(
     pool,
     postgresHarnessKeying(),
-    postgresProjectAccess(pool),
+    rig.sessions.harness.access,
     postgresExecutionBacklogGuard(pool),
     undefined,
     undefined,
@@ -137,11 +136,11 @@ async function readableMember(
   label: string,
 ): Promise<{ partition: Partition; member: ThreadRigMember }> {
   const partition = await threadRigProject(rig, `http-${label}`);
-  const member = await threadRigMember(rig, partition, `http-${label}`);
+  const member = threadRigMember(rig, partition, `http-${label}`);
   assert.equal(
     member.principal,
-    oidcPrincipal(threadRigIssuer, member.authority.subject),
-    "the principal the app authenticates as is the membership's own",
+    member.authority.subject,
+    "the principal the app authenticates as is the authority it is audited to",
   );
   return { partition, member };
 }
@@ -186,7 +185,7 @@ test("opening my thread answers the entry, and opening again answers the same on
 
 test("the listing answers every thread the project holds, mine marked", async () => {
   const { partition, member } = await readableMember("list");
-  const other = await threadRigMember(rig, partition, "http-list-other");
+  const other = threadRigMember(rig, partition, "http-list-other");
   await using app = threadApp(member.principal);
   const entry = await openedThread(app, partition);
   const theirs = await rig.threads.open({
@@ -309,7 +308,7 @@ test("the transcript route walks the thread's own store", async () => {
  */
 test("the door refuses another member's mailbox and an ownerless one", async () => {
   const { partition, member } = await readableMember("refused");
-  const other = await threadRigMember(rig, partition, "http-refused-other");
+  const other = threadRigMember(rig, partition, "http-refused-other");
   const theirs = await rig.threads.open({
     partition,
     principal: other.principal,
@@ -329,7 +328,7 @@ test("the door refuses another member's mailbox and an ownerless one", async () 
   assert.equal(elsewhere.statusCode, 403, elsewhere.body);
   assert.equal(elsewhere.json<HttpErrorEnvelope>().error.code, "NotYourThread");
 
-  await threadRigRevoke(rig, partition, member);
+  threadRigRevoke(rig, partition, member);
   const orphaned = await app.inject({
     method: "POST",
     url: `${pathOf(partition)}/${mine.session}/messages`,

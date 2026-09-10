@@ -1,11 +1,6 @@
 import {
-  allProjectAccessKinds,
-  type ProjectAccessKind,
-} from "../../../../interpreter/nativeWeb.ts";
-import {
   apiRole,
   boundaryOwnerRole,
-  projectAccessColumns,
   projectAuthorizationFunction,
   schemaTextSet,
   selectorAutomaticReadinessErrorCode,
@@ -233,25 +228,36 @@ const selectorAttemptProjectFence = [
 ];
 
 /**
- * The access a project's settings answer to. Both the accepted kinds and the
- * column each is granted by are rendered from `projectAccessColumns`, so a kind
- * added to the roster without a column beside it is a compile error rather than
- * a runtime refusal.
+ * The access kinds this migration was applied with, and the membership column
+ * each was granted by. They are written out here rather than read from the
+ * live roster because the ledger keeps no digest of a body it has applied, so
+ * a roster that grows later must not reach back into this one.
  */
+const membershipAccessColumns: readonly (readonly [string, string])[] = [
+  ["Read", "may_read"],
+  ["Mutate", "may_mutate"],
+  ["DispatchTicket", "may_dispatch"],
+  ["ProposeDispatch", "may_propose"],
+  ["ManageProjectSelector", "may_manage_project_selector"],
+];
+
+/** The access a project's settings answer to, which is every kind the membership granted. */
 const selectorProjectSettingsAccess = [
   `ALTER TABLE project_membership
-     ADD COLUMN ${projectAccessColumns.ManageProjectSelector} boolean NOT NULL DEFAULT false,
+     ADD COLUMN may_manage_project_selector boolean NOT NULL DEFAULT false,
      DROP CONSTRAINT project_membership_grants_something,
      ADD CONSTRAINT project_membership_grants_something CHECK (
        may_read OR may_mutate OR may_dispatch OR may_propose
-         OR ${projectAccessColumns.ManageProjectSelector})`,
+         OR may_manage_project_selector)`,
   `CREATE OR REPLACE FUNCTION ${projectAuthorizationFunction}(
      in_principal text,in_tenant text,in_project text,in_access text)
      RETURNS TABLE (authority_kind text,authority_subject text)
      LANGUAGE plpgsql SECURITY DEFINER
      SET search_path=pg_catalog,public,pg_temp AS $$
      BEGIN
-       IF in_access NOT IN (${schemaTextSet([...allProjectAccessKinds])}) THEN
+       IF in_access NOT IN (${schemaTextSet(
+         membershipAccessColumns.map(([kind]) => kind),
+       )}) THEN
          RAISE EXCEPTION 'unknown project access kind';
        END IF;
        RETURN QUERY
@@ -260,10 +266,10 @@ const selectorProjectSettingsAccess = [
           WHERE membership.principal=in_principal
             AND membership.tenant=in_tenant AND membership.project=in_project
             AND CASE in_access
-              ${allProjectAccessKinds
+              ${membershipAccessColumns
                 .map(
-                  (kind: ProjectAccessKind) =>
-                    `WHEN '${kind}' THEN membership.${projectAccessColumns[kind]}`,
+                  ([kind, column]) =>
+                    `WHEN '${kind}' THEN membership.${column}`,
                 )
                 .join("\n              ")}
             END;

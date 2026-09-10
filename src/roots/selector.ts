@@ -11,6 +11,7 @@ import { clientCredentialsTokenSource } from "../adapters/http/clientCredentials
 import { selectorContextHttp } from "../adapters/http/selectorContext.ts";
 import { asPrincipal, type Principal } from "../interpreter/nativeWeb.ts";
 import { asOperationId } from "../interpreter/operationInbox.ts";
+import { checkedProjectAccessSettings } from "../interpreter/projectAccess.ts";
 import {
   selectorNativeSource,
   type SelectorNativeApi,
@@ -78,6 +79,12 @@ const configurationSchema = z
       })
       .strict()
       .optional(),
+    access: z
+      .object({
+        readUrl: credentialUrl,
+        requestTimeoutMs: positiveInteger.optional(),
+      })
+      .strict(),
     identity: z
       .object({
         principal: z.string().min(1).max(256),
@@ -171,6 +178,7 @@ export function selectorConfiguration(
       runtime: data.runtime,
       ...(data.selector === undefined ? {} : { selector: data.selector }),
       wakes: { wakesPerPassMax: selectorWakesPerPass(environment) },
+      access: checkedProjectAccessSettings(data.access),
     },
     identity: data.identity,
     source: {

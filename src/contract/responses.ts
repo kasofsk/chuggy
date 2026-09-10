@@ -1029,8 +1029,8 @@ export type SelectorHistoryResponse = z.infer<
 >;
 
 /**
- * One member thread as a listing names it, `owner` being the membership's own
- * authority subject and absent where that membership has been revoked — a
+ * One member thread as a listing names it, `owner` being the authority its
+ * member acts under and absent where the project no longer admits them — a
  * thread its owner must still see and close rather than one to hide. `mine` is
  * computed against the request's own principal, which is what lets a browser
  * name "my thread" without ever decoding a token.
@@ -1147,8 +1147,8 @@ const inquiryMeasureShape = leadTurnResponseSchema.pick({
  * One inquiry against the project's lead, carrying its `question` and its
  * `answer` where `leadTurnResponseSchema` carries neither: a lead's input is
  * the observation its decision log already holds, and an inquiry's is what the
- * member typed and the answer they are waiting for. `asker` is the membership's
- * own authority subject, absent where that membership has been revoked
+ * member typed and the answer they are waiting for. `asker` is the authority
+ * its member acts under, absent where the project no longer admits them
  * (`threadEntryResponseSchema.owner`'s shape, for its reason), and `mine` is
  * computed against the request's own principal so a browser can name "my
  * inquiry" without decoding a token.

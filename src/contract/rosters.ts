@@ -336,7 +336,6 @@ export type ThreadStanding = (typeof threadStandings)[number];
 export const threadMessageRefusalCodes = [
   "NotYourThread",
   "ThreadClosed",
-  "ThreadOrphaned",
   "ThreadBacklogged",
   "ThreadTurnTooLarge",
 ] as const;

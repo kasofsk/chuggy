@@ -1,7 +1,13 @@
-import { apiRole } from "../adapters/postgres/schema.ts";
+import {
+  apiRole,
+  projectThreadsReadFunction,
+} from "../adapters/postgres/schema.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
 import { postgresInstallationAuthority } from "../adapters/postgres/installationAuthority.ts";
-import { postgresProjectAccess } from "../adapters/postgres/projectAccess.ts";
+import {
+  ketoProjectAccess,
+  ketoReadiness,
+} from "../adapters/keto/projectAccess.ts";
 import { postgresExecutionBacklogGuard } from "../adapters/postgres/schedulerContext.ts";
 import {
   createNativeHttpApp,
@@ -54,6 +60,11 @@ import {
   postgresRuntimeSchema,
 } from "../adapters/postgres/runtimeSchema.ts";
 import { schemaCompatibilityPrecondition } from "../interpreter/serviceRuntime.ts";
+import {
+  checkedProjectAccessSettings,
+  projectAccessTimeoutMsDefault,
+  type ProjectAccessSettings,
+} from "../interpreter/projectAccess.ts";
 import { postgresExecutionContextRead } from "../adapters/postgres/schedulerContext.ts";
 import { postgresSelectorProposalReviews } from "../adapters/postgres/selector.ts";
 import { selectorOperationalContextRead } from "../interpreter/selectorOperationalContext.ts";
@@ -73,6 +84,8 @@ const oidcIssuerVariable = "CHUG_API_OIDC_ISSUER";
 const oidcAudienceVariable = "CHUG_API_OIDC_AUDIENCE";
 const oidcAlgorithmsVariable = "CHUG_API_OIDC_ALGORITHMS";
 const artifactRootVariable = "CHUG_API_ARTIFACT_ROOT";
+const ketoReadUrlVariable = "CHUG_API_KETO_READ_URL";
+const ketoTimeoutVariable = "CHUG_API_KETO_TIMEOUT_MS";
 /**
  * The named credential mount a member's thread speaks through. It is REQUIRED
  * rather than defaulted: the slot is what a per-user Anthropic credential
@@ -128,6 +141,17 @@ function idempotencyKeying(): IdempotencyKeying {
   return { current: value["current"], versions };
 }
 
+/** Where the project authority is, and how long this server waits on one question. */
+function ketoConfig(): ProjectAccessSettings {
+  return checkedProjectAccessSettings({
+    readUrl: requiredEnvironment(ketoReadUrlVariable),
+    requestTimeoutMs: positiveEnvironment(
+      ketoTimeoutVariable,
+      projectAccessTimeoutMsDefault,
+    ),
+  });
+}
+
 function oidcConfig(): OidcAuthenticationConfig {
   return {
     issuer: requiredEnvironment(oidcIssuerVariable),
@@ -153,7 +177,7 @@ async function apiDatabaseReady(
     }>(
       `SELECT current_user AS current_role,
          has_function_privilege(
-           current_user,'authorize_project_access(text,text,text,text)','EXECUTE') AS authorized`,
+           current_user,'${projectThreadsReadFunction}(text,text,bigint)','EXECUTE') AS authorized`,
     );
     const row = found.rows[0];
     if (row?.current_role !== apiRole || !row.authorized) return false;
@@ -210,14 +234,21 @@ function closePools(
   return Promise.all([pool.end(), selectorReviewPool.end()]);
 }
 
+/**
+ * What this server must reach to answer at all. The project authority is one of
+ * them, and it is a readiness rather than a start-up precondition: an authority
+ * that goes down answers every request 503 and does not stop this process.
+ */
 function nativeReadiness(
   pool: ReturnType<typeof postgresPool>,
   selectorReviewPool: ReturnType<typeof postgresPool>,
+  access: ProjectAccessSettings,
 ) {
   return {
     ready: async () =>
       (await apiDatabaseReady(pool)) &&
-      (await postgresSelectorContextReady(selectorReviewPool)),
+      (await postgresSelectorContextReady(selectorReviewPool)) &&
+      (await ketoReadiness(access).ready()),
   };
 }
 
@@ -453,7 +484,8 @@ async function main(): Promise<void> {
     ),
     pools,
   );
-  const access = postgresProjectAccess(pool);
+  const accessSettings = ketoConfig();
+  const access = ketoProjectAccess(accessSettings);
   const artifacts = artifactStore({
     root: requiredEnvironment(artifactRootVariable),
   });
@@ -475,7 +507,7 @@ async function main(): Promise<void> {
   const app = createNativeHttpApp(
     web,
     authentication,
-    nativeReadiness(pool, selectorReviewPool),
+    nativeReadiness(pool, selectorReviewPool, accessSettings),
     postgresInstallationAuthority(pool),
     nativeHttpLimitsDefault,
     hub,

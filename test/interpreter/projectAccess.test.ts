@@ -69,10 +69,17 @@ test("the derived kind is neither boundary kind a completion is reserved to", ()
   assert.notEqual(memberAuthorityKind, finalizerAuthorityKind);
 });
 
-test("a principal too wide to be audited is refused rather than authorized", () => {
+test("a principal too wide to be audited is refused where it is composed", () => {
   assert.throws(
-    () => memberAuthority(asPrincipal("p".repeat(authorityCharsMax + 1))),
+    () => asPrincipal("p".repeat(authorityCharsMax + 1)),
     RangeError,
+  );
+  assert.deepEqual(
+    memberAuthority(asPrincipal("p".repeat(authorityCharsMax))),
+    {
+      kind: memberAuthorityKind,
+      subject: "p".repeat(authorityCharsMax),
+    },
   );
 });
 

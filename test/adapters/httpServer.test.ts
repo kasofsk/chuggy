@@ -436,7 +436,7 @@ function appOf(
           authenticated && token === "valid"
             ? {
                 authenticated: "Bearer" as const,
-                bearer: { principal: asPrincipal("issuer\u0000subject") },
+                bearer: { principal: asPrincipal("issuer-subject") },
               }
             : { authenticated: "InvalidToken" as const },
         ),

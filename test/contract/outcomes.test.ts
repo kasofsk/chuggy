@@ -12,12 +12,14 @@ import test from "node:test";
 import { z } from "zod";
 
 import {
+  authorityRetryAfterSeconds,
   failureResponse,
   invalidRequestIssuesMax,
   invalidRequestReasonCharsMax,
 } from "../../src/adapters/http/outcomes.ts";
 import type { NativeHttpResponse } from "../../src/adapters/http/outcomes.ts";
 import { briefLineCharsMax, briefSchema } from "../../src/contract/brief.ts";
+import { ProjectAccessUnavailable } from "../../src/interpreter/projectAccess.ts";
 import { asBriefIntent } from "../../src/interpreter/ticketBrief.ts";
 import {
   classify,
@@ -94,6 +96,23 @@ test("a rejection the server builds keeps the code a caller branches on", () => 
   assert.equal(
     internal.outcome === "Fault" ? internal.code : undefined,
     "InternalError",
+  );
+});
+
+test("an authority that could not be reached is retryable, never a refusal", () => {
+  const refusal = failureResponse(
+    new ProjectAccessUnavailable("the authority answered 503"),
+  );
+  assert.equal(refusal.status, 503);
+  const outcome = classified(refusal);
+  assert.equal(outcome.outcome, "Retryable");
+  assert.equal(
+    outcome.outcome === "Retryable" ? outcome.code : undefined,
+    "AuthorityUnavailable",
+  );
+  assert.equal(
+    retryAfterSeconds(refusal.headers["retry-after"]),
+    authorityRetryAfterSeconds,
   );
 });
 

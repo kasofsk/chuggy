@@ -34,7 +34,9 @@ import {
   leadInquiryTurnInput,
   type LeadInquiriesRead,
   type LeadInquiryAsked,
+  type LeadInquiryEntry,
   type LeadInquiryRead,
+  type LeadInquiryRecord,
   type LeadInquiryStore,
 } from "./leadInquiry.ts";
 import type { Partition } from "./projectStore.ts";
@@ -110,6 +112,7 @@ import {
 } from "./runEvidence.ts";
 import type { AttemptId, ExecutionId } from "./schedulerIdentity.ts";
 import { type PublicInstant } from "./publicResource.ts";
+import { memberAuthorities } from "./projectAccess.ts";
 import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { SelectorOperationalContext } from "./selector.ts";
@@ -155,7 +158,6 @@ import {
   type RepositoryConfigurationImportPorts,
 } from "./repositoryConfiguration.ts";
 import {
-  threadStanding,
   threadSystemPrompt,
   threadTurnInput,
   threadTurnInputCharsMax,
@@ -168,12 +170,14 @@ import {
   threadMessageSent,
   threadSeeding,
   type ThreadClosing,
+  type ThreadEntry,
   type ThreadHiding,
   type ThreadRenaming,
   type ThreadMailboxQuery,
   type ThreadMessageSent,
   type ThreadOpening,
   type ThreadRead,
+  type ThreadRecord,
   type ThreadSeedingRead,
   type ThreadSessionMint,
   type ThreadStore,
@@ -1378,6 +1382,55 @@ async function nativeThreadTurnInput(
 }
 
 /**
+ * The `owner` one thread is named by: the authority its principal acts under,
+ * and nothing where the project no longer admits them. Its absence is what
+ * `threadStanding` reads as `Orphaned`.
+ */
+async function nativeThreadOwner(
+  access: ProjectAccess,
+  partition: Partition,
+  record: ThreadRecord,
+): Promise<string | undefined> {
+  return (await access.authorize(record.principal, partition, "Read"))?.subject;
+}
+
+/** One page of threads as the wire names it, asking the authority once per distinct owner. */
+async function nativeThreadEntries(
+  access: ProjectAccess,
+  partition: Partition,
+  records: readonly ThreadRecord[],
+  reader: Principal,
+): Promise<readonly ThreadEntry[]> {
+  const owners = await memberAuthorities(
+    access,
+    partition,
+    records.map((record) => record.principal),
+    threadsAnsweredMax,
+  );
+  return records.map((record) =>
+    threadEntry(record, reader, owners.get(record.principal)?.subject),
+  );
+}
+
+/** One page of inquiries as the wire names it, asking the authority once per distinct asker. */
+async function nativeInquiryEntries(
+  access: ProjectAccess,
+  partition: Partition,
+  records: readonly LeadInquiryRecord[],
+  reader: Principal,
+): Promise<readonly LeadInquiryEntry[]> {
+  const askers = await memberAuthorities(
+    access,
+    partition,
+    records.map((record) => record.principal),
+    inquiriesAnsweredMax,
+  );
+  return records.map((record) =>
+    leadInquiryEntry(record, reader, askers.get(record.principal)?.subject),
+  );
+}
+
+/**
  * Opening the caller's own thread, which is `Mutate` and takes no session: a
  * member has one thread per project, the definer is idempotent on that, and the
  * roster it is opened with is the definer's own.
@@ -1407,7 +1460,7 @@ function nativeOpenThreadMethod(
     });
     return {
       result: opened.opened,
-      thread: threadEntry(opened.thread, principal),
+      thread: threadEntry(opened.thread, principal, authority.subject),
     };
   };
 }
@@ -1434,8 +1487,7 @@ function nativeSendThreadMessageMethod(
     });
     if (mine === undefined) return { result: "NotFound" };
     if (mine.thread.principal !== principal) return { result: "NotYourThread" };
-    const standing = threadStanding(mine.thread);
-    if (standing !== "Open") return { result: standing };
+    if (mine.thread.state === "Closed") return { result: "Closed" };
     const turnInput = await nativeThreadTurnInput(
       ports,
       partition,
@@ -1478,21 +1530,36 @@ function nativeCloseThreadMethod(
     if (closed.closed === "NoThread") return { result: "NotFound" };
     return {
       result: closed.closed,
-      thread: threadEntry(closed.thread, principal),
+      thread: threadEntry(
+        closed.thread,
+        principal,
+        await nativeThreadOwner(access, partition, closed.thread),
+      ),
     };
   };
 }
 
-/** The owner gate rename and hide share: the caller's own mailbox, or why not. */
-async function nativeThreadOwnedOrRefused(
-  ports: NativeThreadPorts,
-  partition: Partition,
+/**
+ * The gate rename and hide share: `Mutate`, the ports behind it, and the
+ * caller's own mailbox — or the refusal that stands in for all three.
+ */
+async function nativeOwnedThread(
+  access: ProjectAccess,
+  threads: NativeThreadPorts | undefined,
   principal: Principal,
+  partition: Partition,
   session: SessionId,
 ): Promise<
-  | { readonly owned: true }
+  | {
+      readonly owned: true;
+      readonly ports: NativeThreadPorts;
+      readonly authority: Authority;
+    }
   | { readonly owned: false; readonly result: "NotFound" | "NotYourThread" }
 > {
+  const authority = await access.authorize(principal, partition, "Mutate");
+  if (authority === undefined) return { owned: false, result: "NotFound" };
+  const ports = composedThreadPorts(threads);
   const mine = await ports.threads.standing({
     partition,
     session,
@@ -1501,7 +1568,7 @@ async function nativeThreadOwnedOrRefused(
   if (mine === undefined) return { owned: false, result: "NotFound" };
   if (mine.thread.principal !== principal)
     return { owned: false, result: "NotYourThread" };
-  return { owned: true };
+  return { owned: true, ports, authority };
 }
 
 /**
@@ -1514,19 +1581,15 @@ function nativeThreadViewMethods(
 ): Pick<NativeWeb, "renameThread" | "hideThread"> {
   return {
     renameThread: async (principal, partition, input) => {
-      if (
-        (await access.authorize(principal, partition, "Mutate")) === undefined
-      )
-        return { result: "NotFound" };
-      const ports = composedThreadPorts(threads);
-      const owned = await nativeThreadOwnedOrRefused(
-        ports,
-        partition,
+      const owned = await nativeOwnedThread(
+        access,
+        threads,
         principal,
+        partition,
         input.session,
       );
       if (!owned.owned) return { result: owned.result };
-      const renamed = await ports.threads.rename({
+      const renamed = await owned.ports.threads.rename({
         partition,
         session: input.session,
         title: input.title,
@@ -1534,23 +1597,19 @@ function nativeThreadViewMethods(
       if (renamed.renamed === "NoThread") return { result: "NotFound" };
       return {
         result: renamed.renamed,
-        thread: threadEntry(renamed.thread, principal),
+        thread: threadEntry(renamed.thread, principal, owned.authority.subject),
       };
     },
     hideThread: async (principal, partition, input) => {
-      if (
-        (await access.authorize(principal, partition, "Mutate")) === undefined
-      )
-        return { result: "NotFound" };
-      const ports = composedThreadPorts(threads);
-      const owned = await nativeThreadOwnedOrRefused(
-        ports,
-        partition,
+      const owned = await nativeOwnedThread(
+        access,
+        threads,
         principal,
+        partition,
         input.session,
       );
       if (!owned.owned) return { result: owned.result };
-      const hidden = await ports.threads.hide({
+      const hidden = await owned.ports.threads.hide({
         partition,
         session: input.session,
         hidden: input.hidden,
@@ -1558,7 +1617,7 @@ function nativeThreadViewMethods(
       if (hidden.hidden === "NoThread") return { result: "NotFound" };
       return {
         result: hidden.hidden,
-        thread: threadEntry(hidden.thread, principal),
+        thread: threadEntry(hidden.thread, principal, owned.authority.subject),
       };
     },
   };
@@ -1585,7 +1644,7 @@ function nativeThreadReadMethods(
       );
       return {
         result: "Found",
-        threads: found.map((record) => threadEntry(record, principal)),
+        threads: await nativeThreadEntries(access, partition, found, principal),
       };
     },
     thread: async (principal, partition, session, query) => {
@@ -1600,7 +1659,11 @@ function nativeThreadReadMethods(
       if (found === undefined) return { result: "NotFound" };
       return {
         result: "Found",
-        thread: threadEntry(found.thread, principal),
+        thread: threadEntry(
+          found.thread,
+          principal,
+          await nativeThreadOwner(access, partition, found.thread),
+        ),
         turns: found.turns,
         ...(found.nextBefore === undefined
           ? {}
@@ -1724,7 +1787,12 @@ function nativeLeadInquiryMethods(
       const found = await composed().inquiries(partition, inquiriesAnsweredMax);
       return {
         result: "Found",
-        inquiries: found.map((record) => leadInquiryEntry(record, principal)),
+        inquiries: await nativeInquiryEntries(
+          access,
+          partition,
+          found,
+          principal,
+        ),
       };
     },
     leadInquiry: async (principal, partition, session) => {
@@ -1732,7 +1800,14 @@ function nativeLeadInquiryMethods(
         return { result: "NotFound" };
       const found = await composed().inquiry(partition, session);
       if (found === undefined) return { result: "NotFound" };
-      return { result: "Found", inquiry: leadInquiryEntry(found, principal) };
+      const [inquiry] = await nativeInquiryEntries(
+        access,
+        partition,
+        [found],
+        principal,
+      );
+      if (inquiry === undefined) return { result: "NotFound" };
+      return { result: "Found", inquiry };
     },
     askLead: async (principal, partition, input) => {
       const authority = await access.authorize(principal, partition, "Read");

@@ -120,6 +120,7 @@ import {
   threadResponse,
   threadsResponse,
   type NativeHttpResponse,
+  authorityRetryAfterSeconds,
 } from "./outcomes.ts";
 
 /** Who the bearer is, and when it stops saying so, for a route that outlives one request. */
@@ -300,9 +301,6 @@ declare module "fastify" {
     viaSession?: SessionId;
   }
 }
-
-/** How long a caller is told to wait before asking this server to verify again. */
-const authorityRetryAfterSeconds = 1;
 
 /**
  * RFC 6750's two challenges. A request that offered nothing is told what to

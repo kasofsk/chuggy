@@ -103,6 +103,7 @@ to start without the required ones.
 | `CHUG_API_OIDC_ISSUER` | required | an HTTPS URL with no credentials, query or fragment |
 | `CHUG_API_OIDC_AUDIENCE` | required | |
 | `CHUG_API_OIDC_ALGORITHMS` | required | comma-separated, surrounding spaces trimmed; every entry must be one `oidcVerifiableAlgorithms` in `src/adapters/http/oidc.ts` admits, and anything else — a shared-secret algorithm, `none`, an empty entry, a name with a typo — refuses to start, naming what it refused |
+| `CHUG_API_KETO_READ_URL` | required | the read API of the authority that answers project access, HTTP or HTTPS and carrying no credentials |
 | `CHUG_API_ARTIFACT_ROOT` | required | see below |
 | `CHUG_API_GIT_SCRATCH_ROOT` | required | writable scratch for exact-commit configuration reads |
 | `CHUG_API_THREAD_CREDENTIAL_SLOT` | required | the named credential mount a member's thread speaks through |
@@ -112,6 +113,7 @@ to start without the required ones.
 | `CHUG_API_SHUTDOWN_DRAIN_MS` | | how long a drain runs before open connections are closed |
 | `CHUG_API_OIDC_DISCOVERY_TIMEOUT_MS` | | |
 | `CHUG_API_OIDC_JWKS_TIMEOUT_MS` | | |
+| `CHUG_API_KETO_TIMEOUT_MS` | | how long one project access question may take before it is undecided |
 | `CHUG_API_STREAM_CONNECTIONS_MAX` | | how many project event streams one process holds open at once |
 | `CHUG_API_STREAM_MAX_AGE_MS` | | how long one stream lives before the client is made to reconnect |
 | `CHUG_API_STREAM_HEARTBEAT_MS` | | keeps a quiet stream from reading as idle to the Cloudflare edge in front of the rig, whose cutoff was measured by holding `curl -N` on the route until the edge closed it |

@@ -41,6 +41,7 @@
 
 import type { SessionId } from "./agentSession.ts";
 import { asBoundedText } from "./boundedText.ts";
+import { principalCharsMax } from "./principal.ts";
 import type { Lifecycle, Partition } from "./projectStore.ts";
 import { safetyResolution, type TicketCommand } from "./ticketCommand.ts";
 export {
@@ -84,8 +85,12 @@ export const operationIdentityCharsMax = 256;
 /** The longest normalized idempotency key this tree keys a digest from. */
 export const idempotencyKeyCharsMax = 256;
 
-/** The longest authority kind or subject a stored operation records. */
-export const authorityCharsMax = 256;
+/**
+ * The longest authority kind or subject a stored operation records. It is the
+ * principal's own bound because an authority subject IS a principal, and two
+ * numbers would let one side authorize what the other could not record.
+ */
+export const authorityCharsMax = principalCharsMax;
 
 /** The longest command an accepted operation carries into the inbox. */
 export const operationCommandCharsMax = 65_536;

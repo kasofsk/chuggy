@@ -548,16 +548,6 @@ test("a closed thread stops the composer sending", async () => {
   expect(server.posts().length).toBe(1);
 });
 
-test("a thread whose owner is gone stops it too, and says which", async () => {
-  const server = await pressedAgainst("ThreadOrphaned");
-  expect(
-    screen.getByText("Orphaned"),
-    "one refusal was drawn as another",
-  ).toBeDefined();
-  expect(composer()).toBeNull();
-  expect(server.posts().length).toBe(1);
-});
-
 test("the composer bounds what one message may carry", async () => {
   drawThread(() => ({ thread: threadBody({}) }));
   await mountThread();

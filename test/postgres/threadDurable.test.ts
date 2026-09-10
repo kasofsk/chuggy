@@ -76,6 +76,7 @@ import {
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
+import { memberAuthorities } from "../../src/interpreter/projectAccess.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   allThreadStandings,
@@ -99,12 +100,10 @@ import { leadRigDecision } from "./leadHarness.ts";
 import { sessionRigProvision, sessionRigSession } from "./sessionHarness.ts";
 import {
   threadRigMember,
-  threadRigMemberAlso,
   threadRigOpen,
   threadRigProject,
   threadRigPrompt,
   threadRigRevoke,
-  threadRigSiblingProject,
   threadRigSlot,
   threadRigThread,
   threadRigTicketPhase,
@@ -221,13 +220,13 @@ async function waitForABlockedStatement(): Promise<void> {
 
 test("a member's thread opens once and answers the session it already has", async () => {
   const partition = await project("open");
-  const one = await threadRigMember(rig, partition, "one");
-  const two = await threadRigMember(rig, partition, "two");
+  const one = threadRigMember(rig, partition, "one");
+  const two = threadRigMember(rig, partition, "two");
 
   const first = await threadRigThread(rig, partition, one);
   const again = await threadRigThread(rig, partition, one, "AlreadyOpen");
   assert.equal(again.session, first.session);
-  assert.equal(first.owner, one.authority.subject);
+  assert.equal(first.principal, one.principal);
   assert.equal(first.state, "Open");
   assert.equal(first.turns, 0);
 
@@ -237,7 +236,7 @@ test("a member's thread opens once and answers the session it already has", asyn
 
 test("the roster a thread is opened with is the installation's own and no argument's", async () => {
   const partition = await project("roster");
-  const member = await threadRigMember(rig, partition, "roster");
+  const member = threadRigMember(rig, partition, "roster");
   const thread = await threadRigThread(rig, partition, member);
 
   const rows = await rig.sessions.harness.query(
@@ -274,7 +273,7 @@ test("the roster a thread is opened with is the installation's own and no argume
  */
 test("one member has one open thread, and the index is what says so", async () => {
   const partition = await project("oneopen");
-  const member = await threadRigMember(rig, partition, "oneopen");
+  const member = threadRigMember(rig, partition, "oneopen");
   const thread = await threadRigThread(rig, partition, member);
 
   const held = await rig.sessions.harness.query(
@@ -318,7 +317,7 @@ test("one member has one open thread, and the index is what says so", async () =
  */
 test("a thread closes through the API's door, its waiting turns abandoned, and stays readable", async () => {
   const partition = await project("close");
-  const member = await threadRigMember(rig, partition, "close");
+  const member = threadRigMember(rig, partition, "close");
   const thread = await threadRigThread(rig, partition, member);
   for (const each of ["first", "second"])
     await rig.threads.enqueueMessage({
@@ -444,8 +443,8 @@ test("the close door waits on no row that is not a thread's", async () => {
  */
 test("a closed thread displaces no live one from the listing", async () => {
   const partition = await project("listing-order");
-  const first = await threadRigMember(rig, partition, "listing-first");
-  const second = await threadRigMember(rig, partition, "listing-second");
+  const first = threadRigMember(rig, partition, "listing-first");
+  const second = threadRigMember(rig, partition, "listing-second");
   const ended = await threadRigThread(rig, partition, first);
   await rig.threads.close({ partition, session: ended.session });
   const live = await threadRigThread(rig, partition, first);
@@ -473,7 +472,7 @@ test("a closed thread displaces no live one from the listing", async () => {
  */
 test("a close is a Session frame naming the state, even with nothing waiting", async () => {
   const partition = await project("close-frame");
-  const member = await threadRigMember(rig, partition, "close-frame");
+  const member = threadRigMember(rig, partition, "close-frame");
   const thread = await threadRigThread(rig, partition, member);
 
   await rig.threads.close({ partition, session: thread.session });
@@ -499,7 +498,7 @@ test("a close is a Session frame naming the state, even with nothing waiting", a
  */
 test("a member names their own thread, and clearing the name gives the message back", async () => {
   const partition = await project("rename");
-  const member = await threadRigMember(rig, partition, "rename");
+  const member = threadRigMember(rig, partition, "rename");
   const thread = await threadRigThread(rig, partition, member);
   await rig.threads.enqueueMessage({
     partition,
@@ -519,6 +518,7 @@ test("a member names their own thread, and clearing the name gives the message b
     threadEntry(
       named.renamed === "Renamed" ? named.thread : thread,
       member.principal,
+      member.authority.subject,
     ).title,
     "the footer",
   );
@@ -532,6 +532,7 @@ test("a member names their own thread, and clearing the name gives the message b
     threadEntry(
       cleared.renamed === "Renamed" ? cleared.thread : thread,
       member.principal,
+      member.authority.subject,
     ).title,
     "why is 42 blocked?",
   );
@@ -544,7 +545,7 @@ test("a member names their own thread, and clearing the name gives the message b
  */
 test("a whitespace-only title clears the override rather than storing it", async () => {
   const partition = await project("rename-blank");
-  const member = await threadRigMember(rig, partition, "rename-blank");
+  const member = threadRigMember(rig, partition, "rename-blank");
   const thread = await threadRigThread(rig, partition, member);
   await rig.threads.enqueueMessage({
     partition,
@@ -564,6 +565,7 @@ test("a whitespace-only title clears the override rather than storing it", async
     threadEntry(
       named.renamed === "Renamed" ? named.thread : thread,
       member.principal,
+      member.authority.subject,
     ).title,
     "why is 42 blocked?",
   );
@@ -576,7 +578,7 @@ test("a whitespace-only title clears the override rather than storing it", async
  */
 test("a member title past its bound is refused by the column that holds it", async () => {
   const partition = await project("rename-bound");
-  const member = await threadRigMember(rig, partition, "rename-bound");
+  const member = threadRigMember(rig, partition, "rename-bound");
   const thread = await threadRigThread(rig, partition, member);
 
   await assert.rejects(
@@ -606,7 +608,7 @@ test("a member title past its bound is refused by the column that holds it", asy
  */
 test("hiding a thread toggles and is idempotent on the side it is asked for", async () => {
   const partition = await project("hide");
-  const member = await threadRigMember(rig, partition, "hide");
+  const member = threadRigMember(rig, partition, "hide");
   const thread = await threadRigThread(rig, partition, member);
   const hiddenAt = async () =>
     (
@@ -678,7 +680,7 @@ test("neither view door admits a session that is not this project's thread", asy
  */
 test("naming and hiding each raise the Session frame a listing re-reads on", async () => {
   const partition = await project("view-frame");
-  const member = await threadRigMember(rig, partition, "view-frame");
+  const member = threadRigMember(rig, partition, "view-frame");
   const thread = await threadRigThread(rig, partition, member);
 
   await rig.threads.rename({
@@ -721,8 +723,8 @@ test("naming and hiding each raise the Session frame a listing re-reads on", asy
  */
 test("the listing orders open threads by when they last moved", async () => {
   const partition = await project("view-order");
-  const first = await threadRigMember(rig, partition, "order-first");
-  const second = await threadRigMember(rig, partition, "order-second");
+  const first = threadRigMember(rig, partition, "order-first");
+  const second = threadRigMember(rig, partition, "order-second");
   const older = await threadRigThread(rig, partition, first);
   const newer = await threadRigThread(rig, partition, second);
 
@@ -776,7 +778,7 @@ async function threadRowClosedAt(
  */
 test("a thread's activity is its opening, its turns and its close", async () => {
   const partition = await project("view-activity");
-  const member = await threadRigMember(rig, partition, "activity");
+  const member = threadRigMember(rig, partition, "activity");
   const thread = await threadRigThread(rig, partition, member);
 
   const listed = (await rig.threads.threads(partition, threadsAnsweredMax))[0];
@@ -809,7 +811,7 @@ test("a thread's activity is its opening, its turns and its close", async () => 
  */
 test("a thread with no turns still last moved when it closed", async () => {
   const partition = await project("view-closed-empty");
-  const member = await threadRigMember(rig, partition, "closed-empty");
+  const member = threadRigMember(rig, partition, "closed-empty");
   const thread = await threadRigThread(rig, partition, member);
   const opened = await threadListedActivity(partition);
 
@@ -861,7 +863,7 @@ test("the close door is the API's, and the door it performs is no runtime role's
 
 test("a closed thread does not block a new one", async () => {
   const partition = await project("reopen");
-  const member = await threadRigMember(rig, partition, "reopen");
+  const member = threadRigMember(rig, partition, "reopen");
   const first = await threadRigThread(rig, partition, member);
 
   assert.equal(
@@ -908,7 +910,7 @@ test("a closed thread does not block a new one", async () => {
  */
 test("an open that loses the race to the index answers the session that won it", async () => {
   const partition = await project("race");
-  const member = await threadRigMember(rig, partition, "race");
+  const member = threadRigMember(rig, partition, "race");
   const winner = `thread-race-winner-${partition.project}`;
   const loser = `thread-race-loser-${partition.project}`;
   const values = (session: string) => [
@@ -949,8 +951,8 @@ test("an open that loses the race to the index answers the session that won it",
 
 test("the widest objectives a thread composes are objectives the column takes", async () => {
   const partition = await project("prompt");
-  const wide = await threadRigMember(rig, partition, "wide");
-  const over = await threadRigMember(rig, partition, "over");
+  const wide = threadRigMember(rig, partition, "wide");
+  const over = threadRigMember(rig, partition, "over");
 
   assert.ok(threadSystemPromptCharsMax <= agentSessionPromptCharsMax);
   const opened = await rig.threads.open({
@@ -977,7 +979,7 @@ test("the widest objectives a thread composes are objectives the column takes", 
 
 test("a principal with no thread of its own is told there is none", async () => {
   const partition = await project("nothread");
-  const member = await threadRigMember(rig, partition, "nothread");
+  const member = threadRigMember(rig, partition, "nothread");
 
   assert.deepEqual(
     await rig.threads.enqueueMessage({
@@ -993,7 +995,7 @@ test("a principal with no thread of its own is told there is none", async () => 
 
 test("the same turn twice is the same ordinal, and one past the backlog is refused", async () => {
   const partition = await project("backlog");
-  const member = await threadRigMember(rig, partition, "backlog");
+  const member = threadRigMember(rig, partition, "backlog");
   const thread = await threadRigThread(rig, partition, member);
 
   const message = (turn: string, input: string) =>
@@ -1050,8 +1052,8 @@ test("the same turn twice is the same ordinal, and one past the backlog is refus
  */
 test("a message naming a session the caller does not own is refused by the door", async () => {
   const partition = await project("named");
-  const mine = await threadRigMember(rig, partition, "named-mine");
-  const other = await threadRigMember(rig, partition, "named-other");
+  const mine = threadRigMember(rig, partition, "named-mine");
+  const other = threadRigMember(rig, partition, "named-other");
   const ours = await threadRigThread(rig, partition, mine);
   const theirs = await threadRigThread(rig, partition, other);
 
@@ -1096,7 +1098,7 @@ test("a message naming a session the caller does not own is refused by the door"
  */
 test("a retried turn keeps the input it was enqueued with", async () => {
   const partition = await project("retried");
-  const member = await threadRigMember(rig, partition, "retried");
+  const member = threadRigMember(rig, partition, "retried");
   const thread = await threadRigThread(rig, partition, member);
   const turn = asSessionTurnId(threadRigTurnId("retried"));
   const message = (input: string) =>
@@ -1131,7 +1133,7 @@ test("a retried turn keeps the input it was enqueued with", async () => {
  */
 test("a retried turn is already enqueued before it is backlogged", async () => {
   const partition = await project("retryfull");
-  const member = await threadRigMember(rig, partition, "retryfull");
+  const member = threadRigMember(rig, partition, "retryfull");
   const thread = await threadRigThread(rig, partition, member);
   const message = (turn: string) =>
     rig.threads.enqueueMessage({
@@ -1161,63 +1163,9 @@ test("a retried turn is already enqueued before it is backlogged", async () => {
   });
 });
 
-/**
- * The partition predicate in the standing read's membership join. Every other
- * project here sits in a tenant of its own, so this is the one fixture where
- * `m.project=s.project` decides anything: without it the join matches both
- * memberships, the page answers each turn once per project, and a member whose
- * access to THIS project was withdrawn still reads as an owner.
- */
-test("one member of two projects in one tenant is one owner and one page", async () => {
-  const partition = await project("sibling");
-  const sibling = await threadRigSiblingProject(rig, partition, "sibling");
-  const member = await threadRigMember(rig, partition, "sibling");
-  await threadRigMemberAlso(rig, sibling, member);
-  const thread = await threadRigThread(rig, partition, member);
-  await rig.threads.enqueueMessage({
-    partition,
-    principal: member.principal,
-    session: thread.session,
-    turn: asSessionTurnId(threadRigTurnId("sibling")),
-    input: "one turn, once",
-  });
-
-  const held = () =>
-    rig.threads.standing({
-      partition,
-      session: thread.session,
-      query: { limit: threadTurnsAnsweredMax },
-    });
-  const standing = await held();
-  assert.equal(standing?.turns.length, 1, "the page answers the turn once");
-  assert.equal(standing?.thread.turns, 1);
-  assert.equal(standing?.thread.owner, member.authority.subject);
-  assert.equal(threadStanding(standing?.thread ?? { state: "Closed" }), "Open");
-
-  const listed = await rig.threads.threads(partition, threadsAnsweredMax);
-  assert.deepEqual(
-    listed.map((record) => [record.session, record.owner]),
-    [[thread.session, member.authority.subject]],
-    "and the listing names the same owner once",
-  );
-
-  await threadRigRevoke(rig, partition, member);
-  const orphaned = await held();
-  assert.equal(
-    orphaned?.thread.owner,
-    undefined,
-    "the membership in the sibling project is not this project's owner",
-  );
-  assert.equal(
-    threadStanding(orphaned?.thread ?? { state: "Closed" }),
-    "Orphaned",
-  );
-  assert.equal(orphaned?.turns.length, 1);
-});
-
 test("a closed thread takes no message", async () => {
   const partition = await project("closed");
-  const member = await threadRigMember(rig, partition, "closed");
+  const member = threadRigMember(rig, partition, "closed");
   const thread = await threadRigThread(rig, partition, member);
   await rig.sessions.sessions.close(partition, thread.session);
 
@@ -1234,35 +1182,15 @@ test("a closed thread takes no message", async () => {
 });
 
 /**
- * The order of the two arms, which is the only thing that tells them apart: a
- * closed thread whose owner's membership is ALSO gone answers `Closed`, because
- * a closed session is the fact its owner can act on and `enqueue_session_turn`
- * behind the door would answer the same thing about a different question.
+ * The doors ask nothing about access, because no row here holds any. A thread
+ * whose owner the project has withdrawn is listed exactly as it was, and it is
+ * the route above that refuses them.
  */
-test("a closed thread is closed before it is orphaned", async () => {
-  const partition = await project("closedorphan");
-  const member = await threadRigMember(rig, partition, "closedorphan");
-  const thread = await threadRigThread(rig, partition, member);
-  await rig.sessions.sessions.close(partition, thread.session);
-  await threadRigRevoke(rig, partition, member);
-
-  assert.deepEqual(
-    await rig.threads.enqueueMessage({
-      partition,
-      principal: member.principal,
-      session: thread.session,
-      turn: asSessionTurnId(threadRigTurnId("closedorphan")),
-      input: "which is it",
-    }),
-    { enqueued: "Closed" },
-  );
-});
-
-test("a thread whose owner's membership is gone is orphaned, listed and mute", async () => {
+test("a thread the project no longer admits its owner to is listed unchanged", async () => {
   const partition = await project("orphan");
-  const member = await threadRigMember(rig, partition, "orphan");
+  const member = threadRigMember(rig, partition, "orphan");
   const thread = await threadRigThread(rig, partition, member);
-  await threadRigRevoke(rig, partition, member);
+  threadRigRevoke(rig, partition, member);
 
   assert.deepEqual(
     await rig.threads.enqueueMessage({
@@ -1272,35 +1200,49 @@ test("a thread whose owner's membership is gone is orphaned, listed and mute", a
       turn: asSessionTurnId(threadRigTurnId("orphan")),
       input: "am I still here",
     }),
-    { enqueued: "Orphaned" },
+    { enqueued: "Enqueued", session: thread.session, ordinal: 1 },
   );
 
   const listed = await rig.threads.threads(partition, threadsAnsweredMax);
   assert.equal(listed.length, 1);
   const only = listed[0];
   assert.ok(only !== undefined);
-  assert.equal(only.owner, undefined);
-  assert.equal(threadStanding(only), "Orphaned");
+  assert.equal(only.principal, member.principal);
+  assert.equal(
+    threadStanding({ state: only.state, owner: undefined }),
+    "Orphaned",
+  );
 });
 
 test("the three standings a listing can name are the roster's own", async () => {
   const partition = await project("standings");
-  const open = await threadRigMember(rig, partition, "standing-open");
-  const closed = await threadRigMember(rig, partition, "standing-closed");
-  const orphan = await threadRigMember(rig, partition, "standing-orphan");
+  const open = threadRigMember(rig, partition, "standing-open");
+  const closed = threadRigMember(rig, partition, "standing-closed");
+  const orphan = threadRigMember(rig, partition, "standing-orphan");
 
   await threadRigThread(rig, partition, open);
   const ended = await threadRigThread(rig, partition, closed);
   await rig.sessions.sessions.close(partition, ended.session);
   await threadRigThread(rig, partition, orphan);
-  await threadRigRevoke(rig, partition, orphan);
+  threadRigRevoke(rig, partition, orphan);
 
   const listed = await rig.threads.threads(partition, threadsAnsweredMax);
+  const owners = await memberAuthorities(
+    rig.sessions.harness.access,
+    partition,
+    listed.map((record) => record.principal),
+    threadsAnsweredMax,
+  );
   assert.deepEqual(
     [
       ...new Set(
         listed.map(
-          (record) => threadEntry(record, asPrincipal("nobody")).state,
+          (record) =>
+            threadEntry(
+              record,
+              asPrincipal("nobody"),
+              owners.get(record.principal)?.subject,
+            ).state,
         ),
       ),
     ].sort(),
@@ -1310,7 +1252,7 @@ test("the three standings a listing can name are the roster's own", async () => 
 
 test("the two mailbox doors write the two input kinds and no other", async () => {
   const partition = await project("kinds");
-  const member = await threadRigMember(rig, partition, "kinds");
+  const member = threadRigMember(rig, partition, "kinds");
   const thread = await threadRigThread(rig, partition, member);
 
   await rig.threads.enqueueMessage({
@@ -1347,7 +1289,7 @@ test("the two mailbox doors write the two input kinds and no other", async () =>
 
 test("a wake offered twice is the same ordinal and no second turn", async () => {
   const partition = await project("rewake");
-  const member = await threadRigMember(rig, partition, "rewake");
+  const member = threadRigMember(rig, partition, "rewake");
   const thread = await threadRigThread(rig, partition, member);
   const turn = asSessionTurnId(threadRigTurnId("rewake"));
   const document = threadWakeText(
@@ -1378,7 +1320,7 @@ test("a wake offered twice is the same ordinal and no second turn", async () => 
 
 test("a thread turn's change frame names the session the console must re-read", async () => {
   const partition = await project("frame");
-  const member = await threadRigMember(rig, partition, "frame");
+  const member = threadRigMember(rig, partition, "frame");
   const thread = await threadRigThread(rig, partition, member);
   const turn = threadRigTurnId("frame");
   await rig.threads.enqueueMessage({
@@ -1402,7 +1344,7 @@ test("a thread turn's change frame names the session the console must re-read", 
 
 test("the mailbox is paged backwards and answers the cursor of the older page", async () => {
   const partition = await project("page");
-  const member = await threadRigMember(rig, partition, "page");
+  const member = threadRigMember(rig, partition, "page");
   const thread = await threadRigThread(rig, partition, member);
   for (const each of ["one", "two", "three"])
     await rig.threads.enqueueMessage({
@@ -1439,7 +1381,7 @@ test("the mailbox is paged backwards and answers the cursor of the older page", 
 
 test("a thread that has taken no turn still reads, and a turn carries what was said", async () => {
   const partition = await project("empty");
-  const member = await threadRigMember(rig, partition, "empty");
+  const member = threadRigMember(rig, partition, "empty");
   const thread = await threadRigThread(rig, partition, member);
 
   const empty = await rig.threads.standing({
@@ -1471,7 +1413,7 @@ test("a thread that has taken no turn still reads, and a turn carries what was s
 
 test("both reads answer the first member message, seeding shed and bounded", async () => {
   const partition = await project("firstsaid");
-  const member = await threadRigMember(rig, partition, "firstsaid");
+  const member = threadRigMember(rig, partition, "firstsaid");
   const thread = await threadRigThread(rig, partition, member);
   const listed = async () =>
     (await rig.threads.threads(partition, threadsAnsweredMax)).find(
@@ -1539,8 +1481,8 @@ test("both reads answer the first member message, seeding shed and bounded", asy
  */
 test("a first message is found after the older marker and after none", async () => {
   const partition = await project("olderfirst");
-  const older = await threadRigMember(rig, partition, "olderfirst-older");
-  const bare = await threadRigMember(rig, partition, "olderfirst-bare");
+  const older = threadRigMember(rig, partition, "olderfirst-older");
+  const bare = threadRigMember(rig, partition, "olderfirst-bare");
   const olderThread = await threadRigThread(rig, partition, older);
   const bareThread = await threadRigThread(rig, partition, bare);
   const said = "why is 42 blocked";
@@ -1573,7 +1515,7 @@ test("a first message is found after the older marker and after none", async () 
 
 test("the standing read admits a thread and refuses every other session", async () => {
   const partition = await project("kindfilter");
-  const member = await threadRigMember(rig, partition, "kindfilter");
+  const member = threadRigMember(rig, partition, "kindfilter");
   const thread = await threadRigThread(rig, partition, member);
   const lead = await sessionRigSession(rig.sessions, partition, "kindfilter", {
     kind: "Lead",
@@ -1610,7 +1552,7 @@ test("the standing read admits a thread and refuses every other session", async 
 
 test("the store reads answer the session they were asked about and no sibling", async () => {
   const partition = await project("store");
-  const member = await threadRigMember(rig, partition, "store");
+  const member = threadRigMember(rig, partition, "store");
   const thread = await threadRigThread(rig, partition, member);
   const lead = await sessionRigSession(rig.sessions, partition, "store", {
     kind: "Lead",
@@ -1725,7 +1667,7 @@ async function wakeFixture(label: string): Promise<{
 }> {
   const partition = await project(label);
   const after = await changeLogHead();
-  const member = await threadRigMember(rig, partition, label);
+  const member = threadRigMember(rig, partition, label);
   const thread = await threadRigThread(rig, partition, member);
   await sessionRigSession(rig.sessions, partition, `wake-${label}`, {
     kind: "Lead",
@@ -1812,7 +1754,7 @@ test("every reason the roster names is a reason the join derives", async () => {
 test("a ticket's earlier moves keep their own reasons after it is revoked", async () => {
   const partition = await project("ticketreasons");
   const after = await changeLogHead();
-  const member = await threadRigMember(rig, partition, "ticketreasons");
+  const member = threadRigMember(rig, partition, "ticketreasons");
   await threadRigThread(rig, partition, member);
   const revision = await threadConfiguration(partition);
   const ticket = await threadDraft(partition, revision, member);
@@ -1833,7 +1775,7 @@ test("a ticket's earlier moves keep their own reasons after it is revoked", asyn
 test("a deleted draft's earlier changes are not deletions", async () => {
   const partition = await project("draftreasons");
   const after = await changeLogHead();
-  const member = await threadRigMember(rig, partition, "draftreasons");
+  const member = threadRigMember(rig, partition, "draftreasons");
   await threadRigThread(rig, partition, member);
   const revision = await threadConfiguration(partition);
   const ticket = await threadDraft(partition, revision, member);
@@ -1871,7 +1813,7 @@ test("a deleted draft's earlier changes are not deletions", async () => {
 test("a lift does not turn the refusal before it into a second lift", async () => {
   const partition = await project("refusalreasons");
   const after = await changeLogHead();
-  const member = await threadRigMember(rig, partition, "refusalreasons");
+  const member = threadRigMember(rig, partition, "refusalreasons");
   await threadRigThread(rig, partition, member);
   const revision = await threadConfiguration(partition);
   const ticket = await threadDraft(partition, revision, member);
@@ -1902,8 +1844,8 @@ test("a lift does not turn the refusal before it into a second lift", async () =
 test("a wake follows whoever wrote the ticket, once, and nobody else", async () => {
   const partition = await project("authorship");
   const after = await changeLogHead();
-  const author = await threadRigMember(rig, partition, "author");
-  const bystander = await threadRigMember(rig, partition, "bystander");
+  const author = threadRigMember(rig, partition, "author");
+  const bystander = threadRigMember(rig, partition, "bystander");
   const authorThread = await threadRigThread(rig, partition, author);
   await threadRigThread(rig, partition, bystander);
   const revision = await threadConfiguration(partition);
@@ -1937,7 +1879,7 @@ test("a wake follows whoever wrote the ticket, once, and nobody else", async () 
 test("a closed thread is a thread nothing wakes", async () => {
   const partition = await project("closedwake");
   const after = await changeLogHead();
-  const member = await threadRigMember(rig, partition, "closedwake");
+  const member = threadRigMember(rig, partition, "closedwake");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await threadConfiguration(partition);
   const ticket = await threadDraft(partition, revision, member);
@@ -1961,7 +1903,7 @@ test("a closed thread is a thread nothing wakes", async () => {
 test("a change whose resource is not a ticket number is no candidate and no error", async () => {
   const partition = await project("nonnumeric");
   const after = await changeLogHead();
-  const member = await threadRigMember(rig, partition, "nonnumeric");
+  const member = threadRigMember(rig, partition, "nonnumeric");
   await threadRigThread(rig, partition, member);
   const revision = await threadConfiguration(partition);
   await threadDraft(partition, revision, member);
@@ -2034,7 +1976,7 @@ test("the wake cursor is one row and never a negative one", async () => {
 
 test("a session's roster is reconfigured by the boundary's own identity alone", async () => {
   const partition = await project("reconfigure");
-  const member = await threadRigMember(rig, partition, "reconfigure");
+  const member = threadRigMember(rig, partition, "reconfigure");
   const thread = await threadRigThread(rig, partition, member);
   const narrowed = ["ProjectRead"] as const;
 
@@ -2079,7 +2021,7 @@ test("a session's roster is reconfigured by the boundary's own identity alone", 
 
 test("what a session was opened as is still what it is", async () => {
   const partition = await project("frozen");
-  const member = await threadRigMember(rig, partition, "frozen");
+  const member = threadRigMember(rig, partition, "frozen");
   const thread = await threadRigThread(rig, partition, member);
 
   for (const [column, value] of [
@@ -2100,7 +2042,7 @@ test("what a session was opened as is still what it is", async () => {
 
 test("each door 062 declares is the role's it was granted to and no other's", async () => {
   const partition = await project("grants");
-  const member = await threadRigMember(rig, partition, "grants");
+  const member = threadRigMember(rig, partition, "grants");
   await threadRigThread(rig, partition, member);
   const named = [partition.tenant, partition.project, member.principal]
     .map((value) => `'${value}'`)
@@ -2170,7 +2112,7 @@ test("each door 062 declares is the role's it was granted to and no other's", as
 
 test("a thread's roster is reconfigured by the provisioning command and no route", async () => {
   const partition = await project("provisioned");
-  const member = await threadRigMember(rig, partition, "provisioned");
+  const member = threadRigMember(rig, partition, "provisioned");
   const thread = await threadRigThread(rig, partition, member);
 
   const set = await sessionRigProvision({

@@ -353,12 +353,22 @@ const askDoor = [
  * over unparsed: the interpreter composes that document and the interpreter
  * reads it back, exactly as the plane stores a turn's input without reading it.
  */
-const inquiryColumns = `session text,principal text,asker text,state text,
+/**
+ * Whether a read still answers the asker column, which 083 drops with the
+ * membership join it was taken from.
+ */
+export interface LeadInquiryReads {
+  readonly asker: boolean;
+}
+
+const inquiryColumns = (reads: LeadInquiryReads): string =>
+  `session text,principal text,${reads.asker ? "asker text," : ""}state text,
                    turn text,turn_state text,ordinal bigint,input text,result text,
                    failure text,asked_at timestamptz,model text,tokens bigint,
                    cost_micros bigint,duration_ms bigint,tools text[]`;
 
-const inquirySelection = `SELECT s.session,s.principal,m.authority_subject,s.state,
+const inquirySelection = (reads: LeadInquiryReads): string =>
+  `SELECT s.session,s.principal,${reads.asker ? "m.authority_subject," : ""}s.state,
               t.turn,t.state,t.ordinal,t.input,t.result,t.failure,t.enqueued_at,
               t.model,t.tokens,t.cost_micros,t.duration_ms,t.tools
          FROM agent_session s
@@ -367,27 +377,43 @@ const inquirySelection = `SELECT s.session,s.principal,m.authority_subject,s.sta
           AND parent.session=s.parent_session AND parent.kind='Lead'
          JOIN session_turn t
            ON t.tenant=s.tenant AND t.project=s.project AND t.session=s.session
-         LEFT JOIN project_membership m
+         ${
+           reads.asker
+             ? `LEFT JOIN project_membership m
            ON m.tenant=s.tenant AND m.project=s.project AND m.principal=s.principal
-        WHERE s.tenant=in_tenant AND s.project=in_project`;
+        `
+             : ""
+         }WHERE s.tenant=in_tenant AND s.project=in_project`;
 
-const inquiryReads = [
+export const leadInquiryReads = (
+  reads: LeadInquiryReads,
+): readonly string[] => [
   `CREATE FUNCTION ${leadInquiriesReadFunction}(
      in_tenant text,in_project text,in_max bigint)
-     RETURNS TABLE(${inquiryColumns})
+     RETURNS TABLE(${inquiryColumns(reads)})
      LANGUAGE sql STABLE SECURITY DEFINER
      SET search_path=pg_catalog,public,pg_temp AS $$
-       ${inquirySelection}
+       ${inquirySelection(reads)}
         ORDER BY t.enqueued_at DESC,s.session DESC
         LIMIT least(coalesce(in_max,${inquiriesAnsweredMax}),${inquiriesAnsweredMax})
      $$`,
   `CREATE FUNCTION ${leadInquiryReadFunction}(
      in_tenant text,in_project text,in_session text)
-     RETURNS TABLE(${inquiryColumns})
+     RETURNS TABLE(${inquiryColumns(reads)})
      LANGUAGE sql STABLE SECURITY DEFINER
      SET search_path=pg_catalog,public,pg_temp AS $$
-       ${inquirySelection} AND s.session=in_session
+       ${inquirySelection(reads)} AND s.session=in_session
      $$`,
+];
+
+/** The two reads, beside the argument types each is named by. */
+export const inquiryReadSignatures: readonly (readonly [
+  string,
+  string,
+  string,
+])[] = [
+  [leadInquiriesReadFunction, "text,text,bigint", apiRole],
+  [leadInquiryReadFunction, "text,text,text", apiRole],
 ];
 
 /** Every door 063 declares, beside the argument types each is named by. */
@@ -396,24 +422,28 @@ const inquirySignatures: readonly (readonly [string, string, string])[] = [
   [sessionStoreReadFunction, "text,bigint,text,bigint,bigint", workerPlaneRole],
   [sessionStreamListFunction, "text,bigint,bigint", workerPlaneRole],
   [leadInquiryOpenFunction, "text,text,text,text,text,text", apiRole],
-  [leadInquiriesReadFunction, "text,text,bigint", apiRole],
-  [leadInquiryReadFunction, "text,text,text", apiRole],
+  ...inquiryReadSignatures,
 ];
 
-const doorGrants = [
-  ...inquirySignatures.map(
+/** The owner, the revoke and the grant one door needs, which a dropped one needs again. */
+export const inquiryDoorGrants = (
+  signatures: readonly (readonly [string, string, string])[],
+): readonly string[] => [
+  ...signatures.map(
     ([name, signature]) =>
       `ALTER FUNCTION ${name}(${signature}) OWNER TO ${boundaryOwnerRole}`,
   ),
-  ...inquirySignatures.map(
+  ...signatures.map(
     ([name, signature]) =>
       `REVOKE ALL ON FUNCTION ${name}(${signature}) FROM PUBLIC`,
   ),
-  ...inquirySignatures.map(
+  ...signatures.map(
     ([name, signature, role]) =>
       `GRANT EXECUTE ON FUNCTION ${name}(${signature}) TO ${role}`,
   ),
 ];
+
+const doorGrants = inquiryDoorGrants(inquirySignatures);
 
 /** Inquiries against a lead, forked and retained nowhere. */
 export const migration063: Migration = {
@@ -424,7 +454,7 @@ export const migration063: Migration = {
     ...inquiryWalls,
     ...widenedPromptBound,
     ...askDoor,
-    ...inquiryReads,
+    ...leadInquiryReads({ asker: true }),
     ...doorGrants,
   ],
 };
