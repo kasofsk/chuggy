@@ -23,6 +23,13 @@ COPY package.json package-lock.json ./
 # be one nothing needs.
 RUN npm ci --omit=dev --ignore-scripts
 
+# THE CA BUNDLE THE APT STEP VERIFIES AGAINST comes from the full image of the
+# same release: the slim one ships none, and a bundle cannot be installed over
+# a connection that needs one. The digest is the multi-architecture index's,
+# read on 2026-09-10 with
+#   docker buildx imagetools inspect node:26.7.0-trixie
+FROM node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599cd76a7a6caad48b AS certificates
+
 FROM node:26.7.0-trixie-slim@sha256:4ebb5ace66f15a24c14c492e01a8beeed4fddf970a856109f5126e703e5fe503
 
 # The source binds 127.0.0.1, which is right on a developer's machine and
@@ -68,9 +75,20 @@ ENV NODE_ENV=production \
 # libcurl; `perl`, `git-man` and `libcurl3t64-gnutls` are hard dependencies
 # rather than recommendations, so no install line is leaner and the lever is the
 # split, not this RUN.
-RUN apt-get update \
-	&& apt-get install -y --no-install-recommends git ca-certificates \
-	&& rm -rf /var/lib/apt/lists/*
+#
+# THE SOURCES ARE REWRITTEN TO HTTPS FIRST, as images/worker/Dockerfile does,
+# because the fabric builds this image in a pod whose egress is TLS alone and
+# the base image's apt sources name plain http. The seed bundle is handed to
+# apt by option rather than placed where libssl looks, because the slim base
+# has no `openssl` package and so no such place until ca-certificates arrives;
+# it is removed once the installed bundle has taken over.
+COPY --from=certificates /etc/ssl/certs/ca-certificates.crt /tmp/seed-ca-certificates.crt
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
+		/etc/apt/sources.list.d/debian.sources \
+	&& apt-get -o Acquire::https::CAInfo=/tmp/seed-ca-certificates.crt update \
+	&& apt-get -o Acquire::https::CAInfo=/tmp/seed-ca-certificates.crt \
+		install -y --no-install-recommends git ca-certificates \
+	&& rm -rf /var/lib/apt/lists/* /tmp/seed-ca-certificates.crt
 
 WORKDIR /srv/chuggy
 COPY --from=dependencies /srv/chuggy/node_modules ./node_modules
