@@ -600,9 +600,11 @@ function finalizerRowPermit(
 }
 
 /**
- * Everything the pure pass reads, gathered before it runs. The observed target
- * is not among it: reading the remote is the caller's, through a port this
- * adapter does not hold.
+ * Everything the pure pass reads, gathered before it runs — the observed target
+ * excepted, reading the remote being the caller's through a port this adapter
+ * does not hold. Which binding a request works against is its attempt's, then
+ * its handoff's, then its own ticket's brief, because a project fact could
+ * answer a sibling ticket's repository instead of this one's.
  */
 async function finalizerDurableView(
   client: pg.PoolClient,
@@ -628,6 +630,8 @@ async function finalizerDurableView(
   JOIN project j ON j.tenant = f.tenant AND j.project = f.project
   LEFT JOIN finalization_request_configuration h
     ON h.tenant=f.tenant AND h.project=f.project AND h.request=f.request
+  LEFT JOIN draft_brief w
+    ON w.tenant=f.tenant AND w.project=f.project AND w.ticket=f.ticket
   LEFT JOIN LATERAL (
     SELECT x.* FROM finalization_attempt x
      WHERE x.tenant = f.tenant AND x.project = f.project AND x.request = f.request
@@ -635,8 +639,7 @@ async function finalizerDurableView(
   LEFT JOIN LATERAL (
     SELECT x.* FROM project_repository x
      WHERE x.tenant=f.tenant AND x.project=f.project
-       AND x.repository=coalesce(a.repository,h.repository,(
-         SELECT active.repository FROM read_project_repository_binding(f.tenant,f.project) active))
+       AND x.repository=coalesce(a.repository,h.repository,w.repository)
      LIMIT 1) b ON true
   LEFT JOIN commit_permit p
     ON p.tenant = a.tenant AND p.project = a.project AND p.attempt = a.attempt

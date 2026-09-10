@@ -11,10 +11,12 @@ import {
   asCanonicalConfiguration,
   canonicalConfigurationOf,
   asConfigurationRevisionId,
+  type ConfigurationRevisionId,
 } from "../../src/interpreter/authoring.ts";
 import {
   asGitObjectId,
   asRepositoryId,
+  type RepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import {
   repositoryConfigurationImportReadiness,
@@ -32,7 +34,9 @@ import {
   projectWriterLoad,
 } from "../../src/interpreter/projectWriter.ts";
 import {
+  asProjectId,
   asRecoveryEpoch,
+  asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
@@ -47,11 +51,14 @@ import {
   asBriefIntent,
   asDraftBrief,
   briefIntentLines,
+  type DraftBrief,
 } from "../../src/interpreter/ticketBrief.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import { handoffFixture } from "../interpreter/handoffFixture.ts";
 import {
+  postgresHarnessBinding,
   postgresHarnessBrief,
+  postgresHarnessBriefIn,
   postgresHarnessHeld,
   postgresHarnessConfiguration,
   postgresHarnessReleaseSubmission,
@@ -89,13 +96,13 @@ function configurationVersionBackfill(): string {
   return statement;
 }
 
-async function repositoryBinding(partition: Partition) {
+async function repositoryBinding(partition: Partition, label = "sole") {
   const [row] = await harness.query(`SELECT epoch FROM recovery_epoch LIMIT 1`);
   const epoch = row?.["epoch"];
   if (typeof epoch !== "string") throw new Error("recovery epoch is absent");
   const recoveryEpoch = asRecoveryEpoch(epoch);
   const repository = asRepositoryId(
-    `repository-${partition.tenant}-${partition.project}`,
+    `repository-${label}-${partition.tenant}-${partition.project}`,
   );
   await harness.query(
     `INSERT INTO project_repository (tenant,project,repository,recovery_epoch)
@@ -188,22 +195,19 @@ function repositoryDeclarations(
   return ready.declarations;
 }
 
-async function draftFixture(
-  canonical = postgresHarnessConfiguration,
-  brief = postgresHarnessBrief,
+/**
+ * One draft on a revision the project already holds, its brief naming the
+ * repository given whatever else it says. A release refuses a brief naming no
+ * repository, so a case about anything else reaches a releasable draft here,
+ * and a case about a brief without one revises what this made.
+ */
+async function draftOnRevision(
+  partition: Partition,
+  revision: ConfigurationRevisionId,
+  repository: RepositoryId,
+  brief: DraftBrief = postgresHarnessBrief,
 ) {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "authoring-draft",
-  );
   const store = postgresAuthoring(pool);
-  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
-  await store.createConfiguration({
-    partition,
-    authority,
-    revision,
-    canonical,
-  });
   const initialized = await store.initializeDraft(partition, revision, 100);
   if (initialized === undefined || initialized === "PolicyUnavailable")
     throw new Error("draft fixture was not initialized");
@@ -214,11 +218,31 @@ async function draftFixture(
     configurationDigest: initialized.configuration.digest,
     expectedProjectSequence: initialized.projectSequence,
     authoring: plainAuthoring,
-    brief,
+    brief: { ...brief, repository },
   });
   if (created.created !== "Created")
-    throw new Error("draft fixture was not created");
-  return { partition, store, revision, draft: created.draft };
+    throw new Error(`draft fixture was ${created.created}`);
+  return { partition, store, revision, repository, draft: created.draft };
+}
+
+/** The same draft over a project and a configuration of its own. */
+async function draftFixture(
+  canonical = postgresHarnessConfiguration,
+  brief: DraftBrief = postgresHarnessBrief,
+) {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "authoring-draft",
+  );
+  const repository = await postgresHarnessBinding(harness, partition);
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  await postgresAuthoring(pool).createConfiguration({
+    partition,
+    authority,
+    revision,
+    canonical,
+  });
+  return draftOnRevision(partition, revision, repository, brief);
 }
 
 test("draft creation rejects a stale initialization fence", async () => {
@@ -635,7 +659,145 @@ test("a repository import conflict rolls back the entire snapshot", async () => 
   );
 });
 
-test("a changed repository binding fences the entire import", async () => {
+test("one name declared by two repositories is one chronology of two revisions", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "repository-one-name-two-repositories",
+  );
+  const first = await repositoryBinding(partition, "named-first");
+  const second = await repositoryBinding(partition, "named-second");
+  const firstCommit = "a".repeat(40);
+  const secondCommit = "b".repeat(40);
+  assert.deepEqual(
+    [
+      await importedConfigurationVersion(
+        partition,
+        first,
+        repositoryDeclarations(firstCommit, ["work"]),
+      ),
+      await importedConfigurationVersion(
+        partition,
+        second,
+        repositoryDeclarations(secondCommit, ["work"], "worker:v2"),
+      ),
+    ],
+    [
+      { name: "work", number: 1 },
+      { name: "work", number: 2 },
+    ],
+  );
+  assert.deepEqual(
+    await harness.query(
+      `SELECT revision,repository,repository_commit,name
+         FROM repository_configuration_provenance
+        WHERE tenant=$1 AND project=$2 ORDER BY repository_commit`,
+      [partition.tenant, partition.project],
+    ),
+    [
+      {
+        revision: `repository:${firstCommit}:work`,
+        repository: first.repository,
+        repository_commit: firstCommit,
+        name: "work",
+      },
+      {
+        revision: `repository:${secondCommit}:work`,
+        repository: second.repository,
+        repository_commit: secondCommit,
+        name: "work",
+      },
+    ],
+  );
+});
+
+test("either binding a project holds may import, and no other repository", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "repository-binding-peers",
+  );
+  const first = await repositoryBinding(partition, "peer-first");
+  const second = await repositoryBinding(partition, "peer-second");
+  for (const [binding, commit] of [
+    [first, "7".repeat(40)],
+    [second, "8".repeat(40)],
+  ] as const)
+    assert.deepEqual(
+      await harness.authoring.importRepositoryConfigurations({
+        partition,
+        binding,
+        authority,
+        declarations: repositoryDeclarations(commit, ["work"]),
+      }),
+      { imported: "Imported" },
+    );
+  assert.deepEqual(
+    await harness.query(
+      `SELECT repository FROM repository_configuration_provenance
+        WHERE tenant=$1 AND project=$2 ORDER BY repository`,
+      [partition.tenant, partition.project],
+    ),
+    [{ repository: first.repository }, { repository: second.repository }],
+  );
+  assert.deepEqual(
+    await harness.authoring.importRepositoryConfigurations({
+      partition,
+      binding: { ...first, repository: asRepositoryId(`un-${randomUUID()}`) },
+      authority,
+      declarations: repositoryDeclarations("9".repeat(40), ["work"]),
+    }),
+    { imported: "StaleBinding" },
+  );
+});
+
+test("an import against another project's binding under the same tenant is fenced", async () => {
+  const tenant = asTenantId(`tenant-stale-project-${randomUUID()}`);
+  const holder: Partition = {
+    tenant,
+    project: asProjectId(`project-stale-holder-${randomUUID()}`),
+  };
+  const importer: Partition = {
+    tenant,
+    project: asProjectId(`project-stale-importer-${randomUUID()}`),
+  };
+  await harness.store.createProject(holder);
+  await harness.store.createProject(importer);
+  const binding = await repositoryBinding(holder, "stale-project");
+  assert.deepEqual(
+    await harness.authoring.importRepositoryConfigurations({
+      partition: importer,
+      binding,
+      authority,
+      declarations: repositoryDeclarations("a".repeat(40), ["work"]),
+    }),
+    { imported: "StaleBinding" },
+  );
+});
+
+test("an import against a same-named project under another tenant is fenced", async () => {
+  const project = asProjectId(`project-stale-tenant-${randomUUID()}`);
+  const holder: Partition = {
+    tenant: asTenantId(`tenant-stale-holder-${randomUUID()}`),
+    project,
+  };
+  const importer: Partition = {
+    tenant: asTenantId(`tenant-stale-importer-${randomUUID()}`),
+    project,
+  };
+  await harness.store.createProject(holder);
+  await harness.store.createProject(importer);
+  const binding = await repositoryBinding(holder, "stale-tenant");
+  assert.deepEqual(
+    await harness.authoring.importRepositoryConfigurations({
+      partition: importer,
+      binding,
+      authority,
+      declarations: repositoryDeclarations("b".repeat(40), ["work"]),
+    }),
+    { imported: "StaleBinding" },
+  );
+});
+
+test("an import naming an epoch the binding was not made under is fenced", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "repository-binding-fence",
@@ -644,20 +806,11 @@ test("a changed repository binding fences the entire import", async () => {
   const changedRecoveryEpoch = await harness.store.establishRecoveryEpoch(
     asRecoveryEpoch(`changed-${randomUUID()}`),
   );
-  await harness.query(
-    `SELECT activate_project_repository($1,$2,$3,$3,$4,$5,'Test','authoring')`,
-    [
-      partition.tenant,
-      partition.project,
-      binding.repository,
-      changedRecoveryEpoch,
-      `operation-${randomUUID()}`,
-    ],
-  );
+  assert.notEqual(changedRecoveryEpoch, binding.recoveryEpoch);
   assert.deepEqual(
     await harness.authoring.importRepositoryConfigurations({
       partition,
-      binding,
+      binding: { ...binding, recoveryEpoch: changedRecoveryEpoch },
       authority,
       declarations: repositoryDeclarations("e".repeat(40), ["work"]),
     }),
@@ -958,21 +1111,41 @@ async function releaseDecision(
 }
 
 /**
- * Drives one release the fence refuses, and holds the draft where a refusal
- * leaves it, which is editable.
+ * A project's writer, held once and answered to for release after release: a
+ * project has one lease, so a case driving more than one release of the same
+ * project takes it once rather than racing its own tenure.
  */
-async function assertReleaseRefused(
+async function projectReleases(partition: Partition, label: string) {
+  const writer = postgresHarnessWriter(harness);
+  let memory = await projectWriterLoad(
+    writer,
+    await postgresHarnessHeld(harness.store, partition, label),
+  );
+  return async function projectReleasesNext(
+    fixture: Awaited<ReturnType<typeof draftFixture>>,
+  ) {
+    const submission = releaseSubmission(fixture);
+    assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
+    const input = await harness.discovery.next(partition);
+    assert.ok(input !== undefined);
+    const decision = await projectWriterDecide(writer, memory, input);
+    memory = decision.memory;
+    return { submission, decided: decision.decided.decided };
+  };
+}
+
+/** What a refused release leaves behind: the reason it names and the draft, still editable. */
+async function assertRefusalLeftBehind(
   fixture: Awaited<ReturnType<typeof draftFixture>>,
-  label: string,
+  submission: Submission,
+  code = "ConfigurationInvalid",
 ): Promise<void> {
-  const { submission, result } = await releaseDecision(fixture, label);
-  assert.equal(result.decided.decided, "Refused");
   assert.deepEqual(
     await harness.query(
       "SELECT state,outcome_code FROM decision_input WHERE input_id=$1",
       [submission.operation],
     ),
-    [{ state: "Refused", outcome_code: "ConfigurationInvalid" }],
+    [{ state: "Refused", outcome_code: code }],
   );
   assert.deepEqual(
     await harness.query(
@@ -982,6 +1155,19 @@ async function assertReleaseRefused(
     [{ state: "Draft" }],
     "the draft is still editable, which is the point of refusing here",
   );
+}
+
+/**
+ * Drives one release the fence refuses, and holds the draft where a refusal
+ * leaves it, which is editable.
+ */
+async function assertReleaseRefused(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+  label: string,
+): Promise<void> {
+  const { submission, result } = await releaseDecision(fixture, label);
+  assert.equal(result.decided.decided, "Refused");
+  await assertRefusalLeftBehind(fixture, submission);
 }
 
 /** Appends one check line to a fixture's brief, as a ticket carrying one has. */
@@ -1027,6 +1213,184 @@ test("the same handing-off configuration releases a brief that pushes", async ()
   const { result } = await releaseDecision(fixture, "handoff-pushes");
 
   assert.equal(result.decided.decided, "Committed");
+});
+
+/**
+ * A project binding two repositories, in the order it bound them. Neither is
+ * privileged, so a case that reads one of them names it rather than taking the
+ * first, and a case about both puts each through the same steps.
+ */
+async function twoBoundRepositories(label: string) {
+  const partition = await postgresHarnessProject(harness.store, label);
+  return {
+    partition,
+    first: await repositoryBinding(partition, "peer-first"),
+    second: await repositoryBinding(partition, "peer-second"),
+  };
+}
+
+/** One configuration imported from a binding, answering the revision it landed as. */
+async function importedRevision(
+  partition: Partition,
+  binding: Awaited<ReturnType<typeof repositoryBinding>>,
+  commit: string,
+): Promise<ConfigurationRevisionId> {
+  const declarations = repositoryDeclarations(commit, ["work"]);
+  assert.deepEqual(
+    await harness.authoring.importRepositoryConfigurations({
+      partition,
+      binding,
+      authority,
+      declarations,
+    }),
+    { imported: "Imported" },
+  );
+  const declaration = declarations[0];
+  if (declaration === undefined)
+    throw new Error("the import fixture declared nothing");
+  return declaration.revision;
+}
+
+test("a brief naming a repository the project does not bind is refused", async () => {
+  const fixture = await draftFixture();
+  const unbound = {
+    ...postgresHarnessBrief,
+    repository: asRepositoryId(`unbound-${randomUUID()}`),
+  };
+  const initialized = await fixture.store.initializeDraft(
+    fixture.partition,
+    fixture.revision,
+    100,
+  );
+  if (initialized === undefined || initialized === "PolicyUnavailable")
+    throw new Error("the second draft was not initialized");
+  assert.deepEqual(
+    await fixture.store.createDraft({
+      partition: fixture.partition,
+      authority,
+      configurationRevision: fixture.revision,
+      configurationDigest: initialized.configuration.digest,
+      expectedProjectSequence: initialized.projectSequence,
+      authoring: plainAuthoring,
+      brief: unbound,
+    }),
+    { created: "RepositoryNotBound" },
+  );
+  assert.deepEqual(
+    await fixture.store.reviseDraft({
+      partition: fixture.partition,
+      authority,
+      ticket: fixture.draft.ticket,
+      expectedVersion: fixture.draft.authoringVersion,
+      configurationRevision: fixture.revision,
+      authoring: plainAuthoring,
+      brief: unbound,
+    }),
+    { revised: "RepositoryNotBound" },
+  );
+  assert.deepEqual(
+    (await fixture.store.draft(fixture.partition, fixture.draft.ticket))?.brief
+      ?.repository,
+    fixture.repository,
+    "the refused revision left the repository the draft already named",
+  );
+});
+
+test("a release is refused for a configuration imported from another repository", async () => {
+  const { partition, first, second } = await twoBoundRepositories(
+    "release-configuration-repository",
+  );
+  const revision = await importedRevision(partition, first, "7".repeat(40));
+  const release = await projectReleases(partition, "configuration-provenance");
+
+  const elsewhere = await draftOnRevision(
+    partition,
+    revision,
+    second.repository,
+  );
+  const refused = await release(elsewhere);
+  assert.equal(refused.decided, "Refused");
+  await assertRefusalLeftBehind(elsewhere, refused.submission);
+
+  assert.equal(
+    (
+      await release(
+        await draftOnRevision(partition, revision, first.repository),
+      )
+    ).decided,
+    "Committed",
+    "the same revision releases from the repository it was imported from",
+  );
+});
+
+test("a brief naming either binding releases, and neither of the two is privileged", async () => {
+  const { partition, first, second } = await twoBoundRepositories(
+    "release-either-binding",
+  );
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  await harness.authoring.createConfiguration({
+    partition,
+    authority,
+    revision,
+    canonical: postgresHarnessConfiguration,
+  });
+  const release = await projectReleases(partition, "either-binding");
+  for (const binding of [first, second]) {
+    assert.equal(
+      (
+        await release(
+          await draftOnRevision(partition, revision, binding.repository),
+        )
+      ).decided,
+      "Committed",
+      `an authored configuration releases in ${binding.repository}`,
+    );
+  }
+});
+
+test("a draft filed with no repository is revisable, refused at release, and then filled", async () => {
+  const fixture = await draftFixture();
+  const cleared = await fixture.store.reviseDraft({
+    partition: fixture.partition,
+    authority,
+    ticket: fixture.draft.ticket,
+    expectedVersion: fixture.draft.authoringVersion,
+    configurationRevision: fixture.revision,
+    authoring: plainAuthoring,
+    brief: postgresHarnessBrief,
+  });
+  assert.equal(
+    cleared.revised === "Revised" ? cleared.draft.brief?.repository : "revised",
+    undefined,
+    "a draft that names no repository is still one a lead may revise",
+  );
+  if (cleared.revised !== "Revised")
+    throw new Error("the draft was not revised");
+
+  const release = await projectReleases(fixture.partition, "repository-filled");
+  const unnamed = { ...fixture, draft: cleared.draft };
+  const refused = await release(unnamed);
+  assert.equal(refused.decided, "Refused");
+  await assertRefusalLeftBehind(
+    unnamed,
+    refused.submission,
+    "BriefNamesNoRepository",
+  );
+
+  const filled = await fixture.store.reviseDraft({
+    partition: fixture.partition,
+    authority,
+    ticket: fixture.draft.ticket,
+    expectedVersion: cleared.draft.authoringVersion,
+    configurationRevision: fixture.revision,
+    authoring: plainAuthoring,
+    brief: postgresHarnessBriefIn(fixture.repository),
+  });
+  if (filled.revised !== "Revised") throw new Error("the draft was not filled");
+  assert.equal(
+    (await release({ ...fixture, draft: filled.draft })).decided,
+    "Committed",
+  );
 });
 
 test("semantic configuration failure durably refuses release without an entry", async () => {
@@ -1129,8 +1493,9 @@ test("release acceptance rejects a revision that was never retained", async () =
 });
 
 test("the brief is written with the draft, replaced with it, and read back beside it", async () => {
-  const { partition, store, revision, draft } = await draftFixture();
-  assert.deepEqual(draft.brief, postgresHarnessBrief);
+  const { partition, store, revision, repository, draft } =
+    await draftFixture();
+  assert.deepEqual(draft.brief, postgresHarnessBriefIn(repository));
   const later = asDraftBrief({
     intent: "Serve it on the ticket too.\nAnd on the draft.",
     links: ["https://example.test/one", "https://example.test/two"],
@@ -1153,6 +1518,34 @@ test("the brief is written with the draft, replaced with it, and read back besid
     await postgresTicketBrief(pool).brief(partition, draft.ticket),
     later,
   );
+});
+
+test("a page of drafts answers each one's repository, undefined for a brief naming none", async () => {
+  const fixture = await draftFixture();
+  const initialized = await fixture.store.initializeDraft(
+    fixture.partition,
+    fixture.revision,
+    100,
+  );
+  if (initialized === undefined || initialized === "PolicyUnavailable")
+    throw new Error("the second draft was not initialized");
+  const unrepositoried = await fixture.store.createDraft({
+    partition: fixture.partition,
+    authority,
+    configurationRevision: fixture.revision,
+    configurationDigest: initialized.configuration.digest,
+    expectedProjectSequence: initialized.projectSequence,
+    authoring: plainAuthoring,
+    brief: postgresHarnessBrief,
+  });
+  if (unrepositoried.created !== "Created")
+    throw new Error(`the second draft was ${unrepositoried.created}`);
+  const page = await fixture.store.drafts(fixture.partition, { limit: 10 });
+  const repositoryOf = new Map(
+    page.drafts.map((draft) => [draft.ticket, draft.brief?.repository]),
+  );
+  assert.equal(repositoryOf.get(fixture.draft.ticket), fixture.repository);
+  assert.equal(repositoryOf.get(unrepositoried.draft.ticket), undefined);
 });
 
 test("where a brief lands is written, replaced and read back apart from where it works", async () => {
@@ -1213,14 +1606,15 @@ const appendingBrief = asDraftBrief({
 });
 
 test("a draft is created with the check lines its brief appends", async () => {
-  const { partition, draft } = await draftFixture(
+  const { partition, repository, draft } = await draftFixture(
     postgresHarnessConfiguration,
     appendingBrief,
   );
-  assert.deepEqual(draft.brief, appendingBrief);
+  const appending = { ...appendingBrief, repository };
+  assert.deepEqual(draft.brief, appending);
   assert.deepEqual(
     await postgresTicketBrief(pool).brief(partition, draft.ticket),
-    appendingBrief,
+    appending,
     "the scheduler's own read carries the lines in the order they were created",
   );
 });
@@ -1374,7 +1768,7 @@ test("a released ticket's brief no longer moves, which is what lets a retry read
   await releaseFixtureDraft(fixture, "brief-freeze");
   const reader = postgresTicketBrief(pool);
   const released = await reader.brief(fixture.partition, fixture.draft.ticket);
-  assert.deepEqual(released, postgresHarnessBrief);
+  assert.deepEqual(released, postgresHarnessBriefIn(fixture.repository));
   assert.deepEqual(
     await fixture.store.reviseDraft({
       partition: fixture.partition,
@@ -1424,7 +1818,10 @@ test("a brief's title is what the listing and the ticket's own read call it", as
     fixture.draft.ticket,
   );
   assert.equal(read?.title, titledBrief.title);
-  assert.deepEqual(read?.brief, titledBrief);
+  assert.deepEqual(read?.brief, {
+    ...titledBrief,
+    repository: fixture.repository,
+  });
 });
 
 test("a brief that names no title is called by the first line of its intent", async () => {

@@ -479,12 +479,36 @@ async function finalizerReport(
   return drained.memory;
 }
 
-/** The repository, configuration and epoch a prepared attempt is bound to. */
-async function finalizerBind(
+/**
+ * Binds the repository this project's ticket works in, before the release that
+ * names it: the released brief names the project's binding, and a second one
+ * bound afterwards would be the one nothing reads.
+ */
+async function finalizerBindRepository(
   rig: FinalizerRig,
   partition: Partition,
   label: string,
   named?: string,
+): Promise<string> {
+  const repository = named ?? `repository-${label}-${randomUUID()}`;
+  await rig.harness.query(
+    `INSERT INTO project_repository (tenant, project, repository, recovery_epoch)
+     VALUES ($1,$2,$3,$4)`,
+    [
+      partition.tenant,
+      partition.project,
+      repository,
+      await rig.harness.store.currentRecoveryEpoch(),
+    ],
+  );
+  return repository;
+}
+
+/** The repository, configuration and epoch a prepared attempt is bound to. */
+async function finalizerBind(
+  rig: FinalizerRig,
+  partition: Partition,
+  repository: string,
 ): Promise<{
   epoch: string;
   repository: string;
@@ -492,12 +516,6 @@ async function finalizerBind(
   digest: string;
 }> {
   const epoch = await rig.harness.store.currentRecoveryEpoch();
-  const repository = named ?? `repository-${label}-${randomUUID()}`;
-  await rig.harness.query(
-    `INSERT INTO project_repository (tenant, project, repository, recovery_epoch)
-     VALUES ($1,$2,$3,$4)`,
-    [partition.tenant, partition.project, repository, epoch],
-  );
   const found = (await rig.harness.query(
     `SELECT revision, digest FROM configuration_revision WHERE tenant=$1 AND project=$2`,
     [partition.tenant, partition.project],
@@ -516,8 +534,19 @@ async function finalizerBind(
 export async function finalizerEntering(
   rig: FinalizerRig,
   label: string,
-): Promise<{ partition: Partition; memory: ProjectMemory }> {
+  repository?: string,
+): Promise<{
+  partition: Partition;
+  repository: string;
+  memory: ProjectMemory;
+}> {
   const partition = await postgresHarnessProject(rig.harness.store, label);
+  const bound = await finalizerBindRepository(
+    rig,
+    partition,
+    label,
+    repository,
+  );
   const first = await postgresHarnessHistory(
     rig.harness,
     partition,
@@ -526,6 +555,7 @@ export async function finalizerEntering(
   );
   return {
     partition,
+    repository: bound,
     memory: await finalizerReport(rig.harness, partition, first, label, 1),
   };
 }
@@ -578,7 +608,7 @@ export async function finalizerProject(
       "finalizer harness: the released ticket cannot rework that often",
     );
   }
-  const entering = await finalizerEntering(rig, label);
+  const entering = await finalizerEntering(rig, label, repository);
   const partition = entering.partition;
   let carried = entering.memory;
   let evaluation = 2;
@@ -616,7 +646,7 @@ export async function finalizerProject(
       "finalizer harness: the evaluation left no finalization request",
     );
   }
-  const bound = await finalizerBind(rig, partition, label, repository);
+  const bound = await finalizerBind(rig, partition, entering.repository);
   await finalizerBriefBranch(rig, partition, Number(row.ticket), null);
   return {
     partition,

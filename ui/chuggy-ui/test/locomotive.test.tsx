@@ -42,11 +42,18 @@ function holderAt(phase: SessionPhase): SessionHolder {
   };
 }
 
-test("the locomotive draws its engine and carries an accessible name, with no provider", () => {
+test("the locomotive draws an animated sprite and carries an accessible name, with no provider", () => {
   const view = render(<Locomotive />);
   const drawn = screen.getByRole("img", { name: /chuggy/i });
   expect(drawn.classList.contains("locomotive")).toBe(true);
-  expect(drawn.querySelector("svg.locomotive-engine rect")).not.toBeNull();
+  const rects = Array.from(
+    drawn.querySelectorAll("svg.locomotive-sprite rect"),
+  );
+  expect(rects.length).toBeGreaterThan(0);
+  const frameIndexes = new Set(
+    rects.map((rect) => Math.floor(Number(rect.getAttribute("x")) / 16)),
+  );
+  expect(frameIndexes.size).toBeGreaterThan(1);
   expect(view.container.querySelector("[style]")).toBeNull();
   styleless();
 });

@@ -1,4 +1,14 @@
-/** Repository-declared configurations before any repository or database I/O. */
+/**
+ * Repository-declared configurations before any repository or database I/O.
+ *
+ * AN IMPORT NAMES THE REPOSITORY IT READS, and works against that repository's
+ * binding rather than against whichever the project bound first.
+ *
+ * A VERSION SEQUENCE STAYS PER PROJECT AND NAME. A name is the project's handle
+ * for a configuration — a lead selects by it — so two repositories declaring one
+ * name are two sources of one named thing, their numbers interleave into its
+ * chronology, and the provenance row is what tells the sources apart.
+ */
 
 import {
   asConfigurationRevisionId,
@@ -120,7 +130,15 @@ export interface RepositoryConfigurationStore {
 }
 
 export interface ProjectRepositoryBindingRead {
-  binding(partition: Partition): Promise<RepositoryBinding | undefined>;
+  /**
+   * The binding of the repository named, or of the project's oldest where a
+   * caller names none — which is what a caller holding no ticket to take one
+   * from still asks for.
+   */
+  binding(
+    partition: Partition,
+    repository?: RepositoryId,
+  ): Promise<RepositoryBinding | undefined>;
 }
 
 export interface RepositoryConfigurationImportPorts {
@@ -155,11 +173,15 @@ export type RepositoryConfigurationImportOutcome =
 /** Imports the declarations at one exact repository commit under an already-resolved authority. */
 export async function importRepositoryConfigurations(input: {
   readonly partition: Partition;
+  readonly repository: RepositoryId;
   readonly commit: GitObjectId;
   readonly authority: Authority;
   readonly ports: RepositoryConfigurationImportPorts;
 }): Promise<RepositoryConfigurationImportOutcome> {
-  const binding = await input.ports.bindings.binding(input.partition);
+  const binding = await input.ports.bindings.binding(
+    input.partition,
+    input.repository,
+  );
   if (binding === undefined) return { result: "RepositoryAbsent" };
   const snapshot = await input.ports.snapshots.snapshot({
     repository: binding,
@@ -207,9 +229,10 @@ export interface RepositoryConfigurationPartitionImport {
   readonly outcome: RepositoryConfigurationImportOutcome;
 }
 
-/** Attempts every named partition at one commit, preserving each outcome for the caller to report. */
+/** Attempts every named partition at one repository commit, preserving each outcome for the caller to report. */
 export async function importRepositoryConfigurationPartitions(input: {
   readonly partitions: readonly Partition[];
+  readonly repository: RepositoryId;
   readonly commit: GitObjectId;
   readonly authority: Authority;
   readonly ports: RepositoryConfigurationImportPorts;
@@ -220,6 +243,7 @@ export async function importRepositoryConfigurationPartitions(input: {
       partition,
       outcome: await importRepositoryConfigurations({
         partition,
+        repository: input.repository,
         commit: input.commit,
         authority: input.authority,
         ports: input.ports,

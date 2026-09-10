@@ -36,6 +36,7 @@ import { populated } from "../interpreter/roster.ts";
 import { id } from "../domain/fixtures.ts";
 import { plainAuthoring } from "../actor/harness.ts";
 import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
+import { parseDraftRevision } from "../../src/adapters/http/contract.ts";
 
 const partition = {
   tenant: asTenantId("tenant/one"),
@@ -341,6 +342,7 @@ test("a draft answers the brief it was written with, title and all", () => {
     title: "Serve the title on the draft",
     intent: "Serve the brief on the draft resource.",
     links: ["https://example.test/issues/340"],
+    repository: "origin/chuggy",
   });
   assert.deepEqual(
     (draftResponse({ ...draft, brief }).body as { brief: unknown }).brief,
@@ -349,6 +351,7 @@ test("a draft answers the brief it was written with, title and all", () => {
       intent: "Serve the brief on the draft resource.",
       links: ["https://example.test/issues/340"],
       checks: [],
+      repository: "origin/chuggy",
     },
   );
   assert.equal(
@@ -356,6 +359,34 @@ test("a draft answers the brief it was written with, title and all", () => {
     false,
     "a draft authored without a brief answers none",
   );
+});
+
+test("revising a draft with exactly the brief it was read back with keeps its repository", () => {
+  const brief = asDraftBrief({
+    intent: "Serve the brief on the draft resource.",
+    links: [],
+    repository: "origin/chuggy",
+  });
+  const readBack = (
+    draftResponse({ ...draft, brief }).body as {
+      brief: { intent: string; links: readonly string[]; repository: string };
+    }
+  ).brief;
+  const revision = parseDraftRevision({
+    expectedVersion: 2,
+    configurationRevision: draft.configurationRevision,
+    authoring: {
+      dependencies: [],
+      program: [{ fanout: 1, combinator: "UnanimousPass" }],
+      workFanout: 1,
+      reworkPolicy: { type: "BudgetedRework", value: 1 },
+      finalizationPricing: { type: "Budgeted", value: 1 },
+      resumePricing: "RetryCharged",
+      finalizer: "ManagedFinalizer",
+    },
+    brief: readBack,
+  });
+  assert.equal(revision.brief.repository, "origin/chuggy");
 });
 
 test("a drafts page names its cursor exactly where it says there is more", () => {
@@ -438,6 +469,7 @@ test("draft revision and deletion map every closed result", () => {
     { value: { revised: "Stale", currentVersion: 3 }, status: 409 },
     { value: { revised: "NotDraft", state: "Released" }, status: 409 },
     { value: { revised: "ConfigurationNotFound" }, status: 404 },
+    { value: { revised: "RepositoryNotBound" }, status: 404 },
   ] as const;
   for (const each of populated(revisions, "draft revision outcomes")) {
     assert.equal(
@@ -467,5 +499,15 @@ test("dispatch view authorization preserves reset and page outcomes", () => {
       value: { result: "Reset" },
     }).body,
     { result: "Reset" },
+  );
+});
+
+test("a draft the project's bindings do not answer for is not found", () => {
+  assert.equal(
+    draftCreationResponse({
+      result: "Authorized",
+      value: { created: "RepositoryNotBound" },
+    }).status,
+    404,
   );
 });

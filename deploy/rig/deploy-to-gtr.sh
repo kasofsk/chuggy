@@ -41,6 +41,12 @@
 # Deployment metadata, so a manifest whose digest did not move restarts
 # nothing.
 #
+# THAT CHECK KEEPS ITS OWN PROTOCOL, WHICH IS NOT THIS SCRIPT'S. It exits 3 to
+# refuse the manifests it read, and 1 when it could not read them at all. So 3
+# is the finding here and every other non-zero answer is a could-not-run: a
+# check that reached no verdict has not said the release is consistent, and
+# releasing on it would be believing a control that never ran.
+#
 # `--merge` IS WHERE THE CLUSTER CHANGES, and it is a separate run so that a
 # reviewer can read the pull request in between. It refuses while an attempt
 # is live, because a rollout restarts the worker plane and drops a running
@@ -433,7 +439,15 @@ if [ -n "$web_digest" ]; then
 	[ "$(manifest_image chuggy-web.yaml)" = "$registry_prefix/web@$web_digest" ] || fail "chuggy-web.yaml does not carry the old console digest after the edit"
 fi
 git -C "$fabric" diff --quiet && fail "the edit changed no manifest, so there is no release to commit"
-python3 "$fabric/scripts/check-release-consistency" "$apps" || fail "the fabric's consistency check refuses the edited manifests"
+set +e
+python3 "$fabric/scripts/check-release-consistency" "$apps"
+consistent=$?
+set -e
+if [ "$consistent" -eq 3 ]; then
+	fail "the fabric's consistency check refuses the edited manifests"
+elif [ "$consistent" -ne 0 ]; then
+	refuse "the fabric's consistency check did not run, and answered $consistent"
+fi
 kube kustomize "$apps" >/dev/null || fail "the edited manifests do not render"
 
 # --- the fabric change ----------------------------------------------------------

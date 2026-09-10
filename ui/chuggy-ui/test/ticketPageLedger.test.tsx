@@ -368,6 +368,15 @@ test("the shell's top bar is headed by the ticket's own title where it has one",
   ).toBeDefined();
 });
 
+test("the top bar's breadcrumb returns to the project's overview", async () => {
+  await drawTicket(
+    { shapes: ticket21Parked, ticket: parkedTicket },
+    { shell: true },
+  );
+  const crumb = screen.getByText("Overview");
+  expect(crumb.tagName).toBe("A");
+});
+
 test("the canonical configuration is closed until asked for, and its trigger names what it opens", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
   const trigger = screen.getByRole("button", { name: "show canonical" });

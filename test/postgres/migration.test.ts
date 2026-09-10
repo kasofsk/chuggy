@@ -17,7 +17,9 @@ import {
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
   schedulerRole,
+  repositoryActivationFunction,
   repositoryBindingReadFunction,
+  repositoryBindingWriteFunction,
   schemaTextSet,
   selectorServiceRole,
   sessionStoreReadFunction,
@@ -3773,5 +3775,474 @@ test("migration 74 moves a floor and never a budget somebody raised", async () =
       revision: before.revision,
       recorded: before.recorded,
     });
+  });
+});
+
+/** The one repository a project's binding read answers with. */
+async function migratedBinding(subject: pg.Pool) {
+  return (
+    await subject.query<{ repository: string; recovery_epoch: string }>(
+      `SELECT repository,recovery_epoch
+         FROM ${repositoryBindingReadFunction}('tenant-80','project-80')`,
+    )
+  ).rows;
+}
+
+/** A project holding two bindings, the later of which the ledger elected. */
+async function seedElectedBinding(subject: pg.Pool): Promise<void> {
+  await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-80')`);
+  await subject.query(
+    `INSERT INTO project(tenant,project,lifecycle,head,ingress_next)
+     VALUES('tenant-80','project-80','Active',0,1)`,
+  );
+  await subject.query(
+    `INSERT INTO project_repository(tenant,project,repository,recovery_epoch,bound_at)
+     VALUES('tenant-80','project-80','established','epoch-80','2026-01-01'),
+           ('tenant-80','project-80','elected','epoch-80','2026-01-02')`,
+  );
+  await subject.query(
+    `SELECT ${repositoryActivationFunction}('tenant-80','project-80','established',
+       'elected','epoch-80','operation-80','Test','migration')`,
+  );
+}
+
+/** Every binding the migration carried over, oldest first. */
+async function migratedBindings(subject: pg.Pool) {
+  return (
+    await subject.query<{ repository: string }>(
+      `SELECT repository FROM project_repository ORDER BY bound_at`,
+    )
+  ).rows;
+}
+
+/** One turn of the migrated door, at the epoch the seeded bindings were made under. */
+async function migratedBind(
+  subject: pg.Pool,
+  repository: string,
+  operation: string,
+) {
+  return (
+    await subject.query<{ outcome: string }>(
+      `SELECT ${repositoryBindingWriteFunction}('tenant-80','project-80',$1,
+         'epoch-80',$2,'Test','migration') AS outcome`,
+      [repository, operation],
+    )
+  ).rows;
+}
+
+/** Every bind operation the door has recorded, by identity. */
+async function migratedBindOperations(subject: pg.Pool) {
+  return (
+    await subject.query<{
+      operation: string;
+      repository: string;
+      outcome: string;
+    }>(
+      `SELECT operation,repository,outcome
+         FROM project_repository_bind_operation ORDER BY operation`,
+    )
+  ).rows;
+}
+
+test("migration 80 keeps every binding, elects none, and claims none as its own", async () => {
+  await migrationDatabase("repository_binding", async (subject) => {
+    await migrationSeedApplied(subject, 80);
+    await seedElectedBinding(subject);
+    assert.deepEqual(await migratedBinding(subject), [
+      { repository: "elected", recovery_epoch: "epoch-80" },
+    ]);
+
+    await applyMigration(subject, 80);
+
+    assert.deepEqual(await migratedBinding(subject), [
+      { repository: "established", recovery_epoch: "epoch-80" },
+    ]);
+    assert.deepEqual(await migratedBindings(subject), [
+      { repository: "established" },
+      { repository: "elected" },
+    ]);
+    assert.deepEqual(await migratedBindOperations(subject), []);
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT to_regclass('project_repository_activation')::text AS ledger,
+                  to_regprocedure('${repositoryActivationFunction}(text,text,text,text,text,text,text,text)')::text AS door,
+                  to_regprocedure('project_repository_initial_activation()')::text AS trigger_function,
+                  to_regprocedure('project_repository_activation_is_immutable()')::text AS immutability_function`,
+        )
+      ).rows,
+      [
+        {
+          ledger: null,
+          door: null,
+          trigger_function: null,
+          immutability_function: null,
+        },
+      ],
+    );
+    assert.deepEqual(await migratedBind(subject, "third", "operation-third"), [
+      { outcome: "Bound" },
+    ]);
+    assert.deepEqual(
+      await migratedBind(subject, "established", "operation-repeat"),
+      [{ outcome: "AlreadyBound" }],
+    );
+    assert.deepEqual(
+      await migratedBind(subject, "fourth", "operation-repeat"),
+      [{ outcome: "OperationConflict" }],
+    );
+    assert.deepEqual(await migratedBindOperations(subject), [
+      {
+        operation: "operation-repeat",
+        repository: "established",
+        outcome: "AlreadyBound",
+      },
+      { operation: "operation-third", repository: "third", outcome: "Bound" },
+    ]);
+  });
+});
+
+/** A project holding a binding and a draft brief filed before repositories were named. */
+async function seedUnnamedBrief(subject: pg.Pool): Promise<void> {
+  await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-81')`);
+  await subject.query(
+    `INSERT INTO project(tenant,project,lifecycle,head,ingress_next)
+     VALUES('tenant-81','project-81','Active',0,1)`,
+  );
+  await subject.query(
+    `INSERT INTO project_repository(tenant,project,repository,recovery_epoch)
+     VALUES('tenant-81','project-81','bound-81','epoch-81')`,
+  );
+  await subject.query(
+    `INSERT INTO configuration_revision
+       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+     VALUES('tenant-81','project-81','revision-81','{}','digest-81','Test','migration')`,
+  );
+  await subject.query(
+    `INSERT INTO draft(tenant,project,ticket,authoring_version,state,configuration_revision)
+     VALUES('tenant-81','project-81',1,1,'Draft','revision-81')`,
+  );
+  await subject.query(
+    `INSERT INTO draft_brief(tenant,project,ticket,intent)
+     VALUES('tenant-81','project-81',1,'work filed before a brief named where it happens')`,
+  );
+}
+
+/** The repository each of the project's briefs names, if any. */
+async function migratedBriefRepositories(subject: pg.Pool) {
+  return (
+    await subject.query<{ repository: string | null }>(
+      `SELECT repository FROM draft_brief ORDER BY ticket`,
+    )
+  ).rows;
+}
+
+/** Names one repository on the seeded brief, as only a bound one may be. */
+async function migratedBriefNames(
+  subject: pg.Pool,
+  repository: string,
+): Promise<void> {
+  await subject.query(
+    `UPDATE draft_brief SET repository=$1
+      WHERE tenant='tenant-81' AND project='project-81' AND ticket=1`,
+    [repository],
+  );
+}
+
+test("migration 81 leaves a brief naming no repository and takes only a bound one", async () => {
+  await migrationDatabase("brief_repository", async (subject) => {
+    await migrationSeedApplied(subject, 81);
+    await seedUnnamedBrief(subject);
+
+    await applyMigration(subject, 81);
+
+    assert.deepEqual(await migratedBriefRepositories(subject), [
+      { repository: null },
+    ]);
+    await assert.rejects(
+      migratedBriefNames(subject, "unbound-81"),
+      /draft_brief_repository_is_bound/u,
+    );
+    await migratedBriefNames(subject, "bound-81");
+    assert.deepEqual(await migratedBriefRepositories(subject), [
+      { repository: "bound-81" },
+    ]);
+  });
+});
+
+/**
+ * A project binding two repositories, which is what a narrowed read is asked
+ * about. A caller seeding a second tenant or project gives its own tenant,
+ * project, epoch and repository names — `project_repository_is_exclusive`
+ * holds a repository name unique across the whole table, and `recovery_epoch`
+ * holds an epoch unique the same way.
+ */
+async function seedTwoBindings(
+  subject: pg.Pool,
+  tenant = "tenant-82",
+  project = "project-82",
+  epoch = "epoch-82",
+  older = "older-82",
+  newer = "newer-82",
+): Promise<void> {
+  await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES($1)`, [epoch]);
+  await subject.query(
+    `INSERT INTO project(tenant,project,lifecycle,head,ingress_next)
+     VALUES($1,$2,'Active',0,1)`,
+    [tenant, project],
+  );
+  await subject.query(
+    `INSERT INTO project_repository(tenant,project,repository,recovery_epoch,bound_at)
+     VALUES($1,$2,$3,$4,'2026-01-01'),($1,$2,$5,$4,'2026-01-02')`,
+    [tenant, project, older, epoch, newer],
+  );
+}
+
+/** What the narrowed read answers for one repository, or for a caller naming none. */
+async function migratedNarrowedBinding(
+  subject: pg.Pool,
+  repository: string | null,
+) {
+  return (
+    await subject.query<{ repository: string }>(
+      `SELECT repository FROM ${repositoryBindingReadFunction}(
+         'tenant-82','project-82',$1)`,
+      [repository],
+    )
+  ).rows;
+}
+
+test("migration 82 narrows the binding read and leaves it to the roles that call it", async () => {
+  await migrationDatabase("binding_read_named", async (subject) => {
+    await migrationSeedApplied(subject, 82);
+    await seedTwoBindings(subject);
+
+    await applyMigration(subject, 82);
+
+    assert.deepEqual(await migratedNarrowedBinding(subject, "newer-82"), [
+      { repository: "newer-82" },
+    ]);
+    assert.deepEqual(await migratedNarrowedBinding(subject, "older-82"), [
+      { repository: "older-82" },
+    ]);
+    assert.deepEqual(await migratedNarrowedBinding(subject, null), [
+      { repository: "older-82" },
+    ]);
+    assert.deepEqual(await migratedNarrowedBinding(subject, "unbound-82"), []);
+    assert.deepEqual(
+      (
+        await subject.query<{ signature: string | null }>(
+          `SELECT to_regprocedure('${repositoryBindingReadFunction}(text,text)')::text AS signature`,
+        )
+      ).rows,
+      [{ signature: null }],
+    );
+    for (const [role, granted] of [
+      [apiRole, true],
+      [ticketServiceRole, true],
+      [schedulerRole, true],
+      [configurationImporterRole, true],
+      [finalizerRole, false],
+    ] as const)
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            `SELECT has_function_privilege($1,'${repositoryBindingReadFunction}(text,text,text)','EXECUTE') AS granted`,
+            [role],
+          )
+        ).rows[0]?.granted,
+        granted,
+        `${repositoryBindingReadFunction} to ${role}`,
+      );
+  });
+});
+
+/** A project's configuration revision, which a draft's row has to reference. */
+async function seedConfigurationRevision(
+  subject: pg.Pool,
+  tenant: string,
+  project: string,
+  revision: string,
+): Promise<void> {
+  await subject.query(
+    `INSERT INTO configuration_revision
+       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+     VALUES ($1,$2,$3,'{}',$4,'Test','migration')`,
+    [tenant, project, revision, `digest-${revision}`],
+  );
+}
+
+/**
+ * One ticket's draft and brief, naming no repository unless the caller gives
+ * one — as every ticket released before 081 is.
+ */
+async function seedUnnamedTicket(
+  subject: pg.Pool,
+  tenant: string,
+  project: string,
+  ticket: number,
+  state: "Draft" | "Released",
+  revision: string,
+  repository?: string,
+): Promise<void> {
+  await subject.query(
+    `INSERT INTO draft(tenant,project,ticket,authoring_version,state,configuration_revision)
+     VALUES ($1,$2,$3,1,$4,$5)`,
+    [tenant, project, ticket, state, revision],
+  );
+  await subject.query(
+    `INSERT INTO draft_brief(tenant,project,ticket,intent,repository)
+     VALUES ($1,$2,$3,'work filed before a brief named where it happens',$4)`,
+    [tenant, project, ticket, repository ?? null],
+  );
+}
+
+/** The repository each ticket's brief names, by ticket. */
+async function migratedTicketRepositories(
+  subject: pg.Pool,
+  tenant: string,
+  project: string,
+) {
+  return (
+    await subject.query<{ ticket: string; repository: string | null }>(
+      `SELECT ticket::text AS ticket, repository FROM draft_brief
+         WHERE tenant=$1 AND project=$2 ORDER BY ticket`,
+      [tenant, project],
+    )
+  ).rows;
+}
+
+/** One tenant's project, its two bindings and the configuration revision its drafts reference. */
+async function seedBindingBackfillPartition(
+  subject: pg.Pool,
+  tenant: string,
+  project: string,
+  epoch: string,
+  older: string,
+  newer: string,
+  revision: string,
+): Promise<void> {
+  await seedTwoBindings(subject, tenant, project, epoch, older, newer);
+  await seedConfigurationRevision(subject, tenant, project, revision);
+}
+
+/** One row of `bindingBackfillPartitions`: tenant, project, epoch, older, newer, revision. */
+type BindingBackfillPartition = readonly [
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+];
+
+/** The tenants and projects `binding_backfill` gives their own bindings and revision. */
+const bindingBackfillPartitions: readonly BindingBackfillPartition[] = [
+  [
+    "tenant-82",
+    "project-82",
+    "epoch-82",
+    "older-82",
+    "newer-82",
+    "revision-82",
+  ],
+  [
+    "tenant-82-b",
+    "project-82",
+    "epoch-82-b",
+    "older-82-b",
+    "newer-82-b",
+    "revision-82-b",
+  ],
+  [
+    "tenant-82",
+    "project-82-c",
+    "epoch-82-c",
+    "alpha-82c",
+    "beta-82c",
+    "revision-82-c",
+  ],
+];
+
+/** One row of `bindingBackfillTickets`: tenant, project, ticket, state, revision, repository. */
+type BindingBackfillTicket = readonly [
+  string,
+  string,
+  number,
+  "Draft" | "Released",
+  string,
+  string | undefined,
+];
+
+/** The tickets `binding_backfill` releases or drafts, one already naming its repository. */
+const bindingBackfillTickets: readonly BindingBackfillTicket[] = [
+  ["tenant-82", "project-82", 1, "Released", "revision-82", undefined],
+  ["tenant-82", "project-82", 2, "Draft", "revision-82", undefined],
+  ["tenant-82", "project-82", 3, "Released", "revision-82", "newer-82"],
+  ["tenant-82-b", "project-82", 1, "Released", "revision-82-b", undefined],
+  ["tenant-82", "project-82-c", 1, "Released", "revision-82-c", undefined],
+];
+
+test("migration 82 backfills a released ticket's unnamed brief from the project's oldest binding, leaves a draft's and an already-named brief alone, and scopes to each tenant and project", async () => {
+  await migrationDatabase("binding_backfill", async (subject) => {
+    await migrationSeedApplied(subject, 82);
+    for (const partition of bindingBackfillPartitions)
+      await seedBindingBackfillPartition(subject, ...partition);
+    for (const ticket of bindingBackfillTickets)
+      await seedUnnamedTicket(subject, ...ticket);
+
+    await applyMigration(subject, 82);
+
+    assert.deepEqual(
+      await migratedTicketRepositories(subject, "tenant-82", "project-82"),
+      [
+        { ticket: "1", repository: "older-82" },
+        { ticket: "2", repository: null },
+        { ticket: "3", repository: "newer-82" },
+      ],
+    );
+    assert.deepEqual(
+      await migratedTicketRepositories(subject, "tenant-82", "project-82-c"),
+      [{ ticket: "1", repository: "alpha-82c" }],
+    );
+    assert.deepEqual(
+      await migratedTicketRepositories(subject, "tenant-82-b", "project-82"),
+      [{ ticket: "1", repository: "older-82-b" }],
+    );
+  });
+});
+
+test("migration 82 leaves a released ticket's brief null where its own project binds nothing", async () => {
+  await migrationDatabase("binding_backfill_unbound", async (subject) => {
+    await migrationSeedApplied(subject, 82);
+    await subject.query(
+      `INSERT INTO project(tenant,project,lifecycle,head,ingress_next)
+       VALUES('tenant-82-unbound','project-82-unbound','Active',0,1)`,
+    );
+    await seedConfigurationRevision(
+      subject,
+      "tenant-82-unbound",
+      "project-82-unbound",
+      "revision-82-unbound",
+    );
+    await seedUnnamedTicket(
+      subject,
+      "tenant-82-unbound",
+      "project-82-unbound",
+      1,
+      "Released",
+      "revision-82-unbound",
+    );
+
+    await applyMigration(subject, 82);
+
+    assert.deepEqual(
+      await migratedTicketRepositories(
+        subject,
+        "tenant-82-unbound",
+        "project-82-unbound",
+      ),
+      [{ ticket: "1", repository: null }],
+    );
   });
 });

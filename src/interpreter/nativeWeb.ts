@@ -148,7 +148,7 @@ import {
   leadTurnsAnsweredMax,
   sessionStoreStreamsAnswered,
 } from "../contract/http.ts";
-import type { GitObjectId } from "./finalizer.ts";
+import type { GitObjectId, RepositoryId } from "./finalizer.ts";
 import {
   importRepositoryConfigurations,
   type RepositoryConfigurationImportOutcome,
@@ -211,7 +211,8 @@ export type OperationRefusalCode =
   | "SelectionChanged"
   | "CommandUnreadable"
   | "ExecutionSourceUnreadable"
-  | "ExecutionSourceDenied";
+  | "ExecutionSourceDenied"
+  | "BriefNamesNoRepository";
 
 interface OperationResourceBase {
   readonly operation: OperationId;
@@ -576,7 +577,10 @@ export interface NativeWeb {
   importRepositoryConfigurations(
     principal: Principal,
     partition: Partition,
-    commit: GitObjectId,
+    source: {
+      readonly repository: RepositoryId;
+      readonly commit: GitObjectId;
+    },
   ): Promise<RepositoryConfigurationImportOutcome>;
   createDraft(
     principal: Principal,
@@ -810,14 +814,15 @@ function nativeRepositoryConfigurationImportMethod(
   access: ProjectAccess,
   ports?: RepositoryConfigurationImportPorts,
 ): NativeWeb["importRepositoryConfigurations"] {
-  return async (principal, partition, commit) => {
+  return async (principal, partition, source) => {
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
     if (ports === undefined)
       return { result: "Unavailable", unavailable: "Repository" };
     return importRepositoryConfigurations({
       partition,
-      commit,
+      repository: source.repository,
+      commit: source.commit,
       authority,
       ports,
     });

@@ -1,0 +1,41 @@
+# The console of a running installation, served from this machine.
+#
+# WHAT IS LOCAL IS THE CONSOLE AND NOTHING ELSE. The API, the issuer and every
+# row behind them are the installation's; this serves the source in the
+# checkout it is run from, over the toolchain `images/chuggy-ui/Dockerfile`
+# builds with rather than whatever Node the host has. So a change is a reload
+# and never a release, and what a reader sees — a run arriving, a degraded
+# banner, a panel still loading — is the installation's own behaviour and not a
+# fixture's account of it.
+#
+# THE PORT IS THE IDENTITY. The console derives its redirect from the address
+# the browser asked on, and the issuer honours only a redirect its client
+# registered, so `CHUG_UI_PORT` may be one of the ports `README.md` names and
+# the same number is published on both sides — a mapping that renamed the port
+# would send the browser to a redirect nothing registered.
+# Named, because the directory this file sits in would otherwise name the
+# project and every other checkout's `dev` would be the same one.
+name: chuggy-ui-local
+
+services:
+  console:
+    image: node:26.7.0-trixie-slim@sha256:4ebb5ace66f15a24c14c492e01a8beeed4fddf970a856109f5126e703e5fe503
+    init: true
+    # The checkout's own files, written by whoever ran this and not by root.
+    user: "${CHUG_UI_UID:-1000}:${CHUG_UI_GID:-1000}"
+    working_dir: /workspace/ui/chuggy-ui
+    command:
+      - sh
+      - -c
+      - exec npm run dev -- --host 0.0.0.0 --port "$$CHUG_UI_PORT" --strictPort
+    environment:
+      HOME: /tmp
+      CHUG_UI_PORT: "${CHUG_UI_PORT:-5173}"
+      CHUG_UI_UPSTREAM: "${CHUG_UI_UPSTREAM:-https://chuggy-ui.vteng.io}"
+      CHUG_UI_ISSUER: "${CHUG_UI_ISSUER:-https://auth.vteng.io}"
+      CHUG_UI_AUDIENCE: "${CHUG_UI_AUDIENCE:-https://chuggy.vteng.io/api}"
+      CHUG_UI_CLIENT_ID: "${CHUG_UI_CLIENT_ID:-chuggy-ui-local}"
+    ports:
+      - "${CHUG_UI_PORT:-5173}:${CHUG_UI_PORT:-5173}"
+    volumes:
+      - ../../..:/workspace

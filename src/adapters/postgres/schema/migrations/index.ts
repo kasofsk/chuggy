@@ -77,6 +77,9 @@ import { migration076 } from "./076-project-thread-standing-rules.ts";
 import { migration077 } from "./077-thread-first-message.ts";
 import { migration078 } from "./078-ticket-brief-title.ts";
 import { migration079 } from "./079-thread-rail.ts";
+import { migration080 } from "./080-bind-without-activating.ts";
+import { migration081 } from "./081-brief-repository.ts";
+import { migration082 } from "./082-binding-read-names-its-repository.ts";
 import type { Migration } from "../shared.ts";
 
 /** Every migration in version order, which is the order the runner applies them in. */
@@ -160,4 +163,7 @@ export const migrations: readonly Migration[] = [
   migration077,
   migration078,
   migration079,
+  migration080,
+  migration081,
+  migration082,
 ];

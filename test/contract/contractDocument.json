@@ -295,12 +295,16 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
         "commit": {
           "type": "string",
           "minLength": 1
         }
       },
-      "required": ["commit"],
+      "required": ["repository", "commit"],
       "additionalProperties": false
     },
     "draftCreation": {
@@ -447,6 +451,11 @@
                 "minLength": 1,
                 "maxLength": 512
               }
+            },
+            "repository": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
             },
             "branch": {
               "type": "string",
@@ -643,6 +652,11 @@
                 "minLength": 1,
                 "maxLength": 512
               }
+            },
+            "repository": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
             },
             "branch": {
               "type": "string",

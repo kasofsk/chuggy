@@ -15,7 +15,7 @@ import {
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
   repositoryBindingReadFunction,
-  repositoryActivationFunction,
+  repositoryBindingWriteFunction,
   schedulerRole,
   selectorReviewRole,
   selectorServiceRole,
@@ -83,7 +83,7 @@ test("every runtime role may read only the migration ledger contract", async () 
   }
 });
 
-test("runtime roles cannot activate or write repository history", async () => {
+test("runtime roles cannot bind a repository or record a bind operation", async () => {
   for (const role of [
     apiRole,
     ticketServiceRole,
@@ -96,16 +96,23 @@ test("runtime roles cannot activate or write repository history", async () => {
     assert.match(
       (await harness.attemptAs(
         role,
-        `SELECT ${repositoryActivationFunction}('tenant','project','old','new','epoch','operation','kind','subject')`,
+        `SELECT ${repositoryBindingWriteFunction}('tenant','project','new','epoch','operation','kind','subject')`,
       )) ?? "",
-      postgresHarnessDenial(repositoryActivationFunction),
+      postgresHarnessDenial(repositoryBindingWriteFunction),
     );
     assert.match(
       (await harness.attemptAs(
         role,
-        "INSERT INTO project_repository_activation DEFAULT VALUES",
+        "INSERT INTO project_repository_bind_operation DEFAULT VALUES",
       )) ?? "",
-      postgresHarnessDenial("project_repository_activation"),
+      postgresHarnessDenial("project_repository_bind_operation"),
+    );
+    assert.match(
+      (await harness.attemptAs(
+        role,
+        "SELECT * FROM project_repository_bind_operation",
+      )) ?? "",
+      postgresHarnessDenial("project_repository_bind_operation"),
     );
   }
 });
@@ -337,7 +344,7 @@ test("the API reads one repository binding only through its boundary", async () 
   assert.equal(
     await harness.attemptAs(
       apiRole,
-      `SELECT * FROM ${repositoryBindingReadFunction}('tenant','project')`,
+      `SELECT * FROM ${repositoryBindingReadFunction}('tenant','project',NULL)`,
     ),
     undefined,
   );
@@ -352,7 +359,7 @@ test("the ticket service reads one repository binding only through its boundary"
   assert.equal(
     await harness.attemptAs(
       ticketServiceRole,
-      `SELECT * FROM ${repositoryBindingReadFunction}('tenant','project')`,
+      `SELECT * FROM ${repositoryBindingReadFunction}('tenant','project',NULL)`,
     ),
     undefined,
   );

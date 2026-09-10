@@ -12,6 +12,7 @@
 
 import type { ReactNode } from "react";
 
+import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type {
   ExecutionsResponse,
   TicketResponse,
@@ -20,8 +21,10 @@ import { phaseLabel } from "../../core/codeLabels.ts";
 import { costFigure, spanFigure, tokensFigure } from "../../core/figures.ts";
 import { runSpanOf } from "../../core/runTotals.ts";
 import type { RunSpan } from "../../core/runTotals.ts";
+import { railRoutes } from "../../core/shellRail.ts";
 import { phaseTone } from "../../core/tones.ts";
 import type { Tone } from "../../core/tones.ts";
+import { Breadcrumb, BreadcrumbLink } from "../ui/Breadcrumb.tsx";
 import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { phaseIsRunning, runsLabel } from "./ticketPageFacts.ts";
@@ -111,13 +114,20 @@ function standingDotFill(tone: Tone): string {
 }
 
 /** The title and standing chip the top bar draws for a ticket page, the ticket's
- * own title where the read carries one. */
+ * own title where the read carries one, reached from the overview it links back
+ * to. */
 export function TicketTopBar(props: {
+  readonly partition: PartitionIdentity;
   readonly ticket: TicketResponse;
 }): ReactNode {
   const ticket = props.ticket;
   return (
     <>
+      <Breadcrumb>
+        <BreadcrumbLink to={railRoutes.overview} params={props.partition}>
+          Overview
+        </BreadcrumbLink>
+      </Breadcrumb>
       <h1 className="text-md font-strong text-ink-1 truncate">
         {ticket.title ?? "Ticket"}
       </h1>

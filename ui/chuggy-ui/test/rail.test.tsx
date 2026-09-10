@@ -233,7 +233,7 @@ function threadRailApi(opts: ThreadRailApiOpts = {}): {
 
 test("the active rail entry's ink is not shared with a resting one", async () => {
   await mounted(projectsOnly());
-  const active = screen.getByRole("link", { name: "Overview" });
+  const active = screen.getByRole("link", { name: "Ticket overview" });
   expect(active.className.split(" ")).not.toContain("text-ink-2");
   expect(active.className.split(" ")).toContain("text-ink-1");
   const resting = screen.getByRole("link", { name: "Inbox" });

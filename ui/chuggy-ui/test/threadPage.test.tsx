@@ -189,6 +189,13 @@ test("the head names the thread, its standing and whose it is", async () => {
   expect(screen.getAllByText("geoff").length).toBeGreaterThan(0);
 });
 
+test("the bar's breadcrumb returns to the project's threads", async () => {
+  drawThread(() => ({ thread: threadBody({}) }));
+  await mountThread();
+  const crumb = screen.getByText("Threads");
+  expect(crumb.tagName).toBe("A");
+});
+
 /** A titled thread is headed by what is in it; a thread nobody has written in
  * has nothing to derive one from, and the bar says what the page is. */
 test("the head is the thread's title where the read derived one", async () => {

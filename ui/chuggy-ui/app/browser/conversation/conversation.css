@@ -50,4 +50,88 @@
       opacity: 0.3;
     }
   }
+
+  /* The strip holds this height whether or not the engine is drawn inside
+   * it, so a turn starting or ending never shifts the composer under it. */
+  .conversation-waiting {
+    position: relative;
+    height: 2.5em;
+  }
+
+  .conversation-waiting-engine {
+    position: absolute;
+    top: 0;
+    width: 2.5em;
+    height: 2.5em;
+    animation: conversation-waiting-travel var(--duration-waiting-travel) linear
+      infinite;
+  }
+
+  /* `left` is a percentage of the strip, which `transform` cannot read
+   * without measuring it; the flip is stepped between two frames a
+   * fraction apart so it lands while the engine is not moving, facing the
+   * way it is about to go rather than crossing backwards. */
+  @keyframes conversation-waiting-travel {
+    0%,
+    100% {
+      left: 0%;
+      transform: scaleX(1);
+    }
+
+    49.99% {
+      left: calc(100% - 2.5em);
+      transform: scaleX(1);
+    }
+
+    50% {
+      left: calc(100% - 2.5em);
+      transform: scaleX(-1);
+    }
+
+    99.99% {
+      left: 0%;
+      transform: scaleX(-1);
+    }
+  }
+
+  /* A puff rests over the smokestack and drifts back and up from there, in
+   * the engine's own local coordinates: the parent's flip at each end of the
+   * crossing carries it to the trailing side without a keyframe of its own
+   * for that. Three copies stagger off one cycle so a puff is always aloft. */
+  .conversation-waiting-smoke {
+    position: absolute;
+    top: 0.3em;
+    left: 1.1em;
+    width: 0.4em;
+    height: 0.4em;
+    border-radius: var(--radius-circle);
+    background: var(--ink-3);
+    opacity: 0;
+    animation: conversation-waiting-smoke calc(var(--duration-chug) * 3)
+      ease-out infinite;
+  }
+
+  .conversation-waiting-smoke:nth-of-type(2) {
+    animation-delay: calc(var(--duration-chug) * -1);
+  }
+
+  .conversation-waiting-smoke:nth-of-type(3) {
+    animation-delay: calc(var(--duration-chug) * -2);
+  }
+
+  @keyframes conversation-waiting-smoke {
+    0% {
+      opacity: 0;
+      transform: translate(0, 0) scale(0.5);
+    }
+
+    15% {
+      opacity: 0.6;
+    }
+
+    100% {
+      opacity: 0;
+      transform: translate(-1.1em, -0.9em) scale(1.6);
+    }
+  }
 }

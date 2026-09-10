@@ -25,8 +25,29 @@ import {
   type FinalizerProject,
   type FinalizerRig,
 } from "./finalizerHarness.ts";
+import {
+  postgresHarnessProject,
+  postgresHarnessSubmission,
+} from "./harness.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
-import { repositoryActivationFunction } from "../../src/adapters/postgres/schema.ts";
+import {
+  asForgeBindingId,
+  asForgeCredentialReference,
+  forgeBindingOf,
+  type ForgeRepositoryBinding,
+} from "../../src/interpreter/changeProposal.ts";
+import {
+  asFinalizerOwnerId,
+  asRepositoryId,
+  type FinalizationClaim,
+  type FinalizationView,
+} from "../../src/interpreter/finalizer.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
+import {
+  asRecoveryEpoch,
+  type Partition,
+} from "../../src/interpreter/projectStore.ts";
+import { repositoryBindingWriteFunction } from "../../src/adapters/postgres/schema.ts";
 
 let rig: FinalizerRig;
 before(async () => {
@@ -133,33 +154,33 @@ test("the finalizer prepares, permits, reconciles and concludes without the owne
   assert.deepEqual(fulfilled, [{ state: "Fulfilled" }]);
 });
 
-test("an attempt remains bound after the project activates another repository", async () => {
+test("an attempt keeps its own repository though the project's oldest binding differs", async () => {
   const project = await finalizerProject(rig, "attempt-binding");
-  const claim = await finalizerClaim(
-    rig,
-    project,
-    finalizerIdentity("owner-attempt-binding"),
-  );
-  const attempt = await finalizerPrepare(rig, project, "attempt-binding");
-  await finalizerGrantPermit(rig, project, attempt, "attempt-binding");
-  const next = `repository-next-${finalizerIdentity("attempt-binding")}`;
-  const activated = await rig.harness.query(
-    `SELECT ${repositoryActivationFunction}($1,$2,$3,$4,$5,$6,$7,$8) AS result`,
+  const used = `repository-used-${finalizerIdentity("attempt-binding")}`;
+  const bound = await rig.harness.query(
+    `SELECT ${repositoryBindingWriteFunction}($1,$2,$3,$4,$5,$6,$7) AS result`,
     [
       project.partition.tenant,
       project.partition.project,
-      project.repository,
-      next,
+      used,
       project.epoch,
       finalizerIdentity("operation-attempt-binding"),
       "Administrator",
       "test-operator",
     ],
   );
-  assert.deepEqual(activated, [{ result: "Activated" }]);
+  assert.deepEqual(bound, [{ result: "Bound" }]);
+  const attempting: FinalizerProject = { ...project, repository: used };
+  const claim = await finalizerClaim(
+    rig,
+    project,
+    finalizerIdentity("owner-attempt-binding"),
+  );
+  const attempt = await finalizerPrepare(rig, attempting, "attempt-binding");
+  await finalizerGrantPermit(rig, attempting, attempt, "attempt-binding");
   const view = await postgresFinalizer(rig.pool).durableView(claim);
   assert.equal(view?.attempt?.attempt, attempt);
-  assert.equal(view?.repository?.repository, project.repository);
+  assert.equal(view?.repository?.repository, used);
 });
 
 test("a permit is spent once and never re-identified", async () => {
@@ -428,4 +449,205 @@ test("the bindings and bundles hold no column any unfinished work could be found
     ),
     [],
   );
+});
+
+/** Two forges, each holding one of the project's repositories, keyed by its host. */
+const finalizerForges: readonly ForgeRepositoryBinding[] = [
+  {
+    binding: {
+      forge: asForgeBindingId("forge-one"),
+      credential: asForgeCredentialReference("credential-one"),
+    },
+    repositoryHost: "forge-one.example",
+  },
+  {
+    binding: {
+      forge: asForgeBindingId("forge-two"),
+      credential: asForgeCredentialReference("credential-two"),
+    },
+    repositoryHost: "forge-two.example",
+  },
+];
+
+/**
+ * A second ticket of the same project working in a repository of its own. The
+ * fixture history authors one ticket, so the draft, the brief that names the
+ * repository and the request a finalizer would claim are written here.
+ */
+async function finalizerSibling(
+  project: FinalizerProject,
+  repository: string,
+): Promise<FinalizerProject> {
+  const ticket = project.ticket + 1;
+  const keys = [project.partition.tenant, project.partition.project, ticket];
+  await rig.harness.query(
+    `INSERT INTO draft (tenant,project,ticket,authoring_version,state,configuration_revision)
+     VALUES ($1,$2,$3,1,'Released',$4)`,
+    [...keys, project.configurationRevision],
+  );
+  await rig.harness.query(
+    `INSERT INTO draft_brief (tenant,project,ticket,intent,repository)
+     VALUES ($1,$2,$3,'Work the sibling repository.',$4)`,
+    [...keys, repository],
+  );
+  const request = `${project.authorizingSeq}:1:RunFinalizer`;
+  await rig.harness.query(
+    `INSERT INTO finalization_request
+       (tenant,project,request,authorizing_seq,effect_position,ticket,
+        ticket_version,request_generation,kind)
+     VALUES ($1,$2,$4,$5,1,$3,$5,1,'RunFinalizer')`,
+    [...keys, request, project.authorizingSeq],
+  );
+  return { ...project, ticket, request };
+}
+
+test("two tickets of one project each finalize in the repository their brief names", async () => {
+  const worked = "https://forge-one.example/worked.git";
+  const sibling = "https://forge-two.example/sibling.git";
+  const project = await finalizerProject(rig, "sibling-repository", worked);
+  const bound = await rig.harness.query(
+    `SELECT ${repositoryBindingWriteFunction}($1,$2,$3,$4,$5,$6,$7) AS result`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      sibling,
+      project.epoch,
+      finalizerIdentity("operation-sibling-repository"),
+      "Administrator",
+      "test-operator",
+    ],
+  );
+  assert.deepEqual(bound, [{ result: "Bound" }]);
+  const other = await finalizerSibling(project, sibling);
+  const store = postgresFinalizer(rig.pool);
+  const views = [];
+  for (const [each, owner] of [
+    [project, "owner-sibling-worked"],
+    [other, "owner-sibling-other"],
+  ] as const) {
+    const claim = await finalizerClaim(rig, each, finalizerIdentity(owner));
+    views.push((await store.durableView(claim))?.repository?.repository);
+  }
+  assert.deepEqual(views, [worked, sibling]);
+  assert.deepEqual(
+    views.map((each) =>
+      each === undefined
+        ? undefined
+        : forgeBindingOf(finalizerForges, asRepositoryId(each))?.forge,
+    ),
+    ["forge-one", "forge-two"],
+  );
+});
+
+/**
+ * A project no operation has ever bound a repository to, with a ticket released
+ * in it — the shape migration 82's backfill leaves a brief in where its own
+ * project binds nothing, written by hand because the release door refuses that
+ * shape today. The journal entry is fabricated rather than replayed, as
+ * `nativeActionFixture.ts` already does for a desk task's own fence, and
+ * `brief: false` omits the brief row entirely, for the shape a ticket released
+ * before migration 42 created `draft_brief` still carries.
+ */
+async function finalizerUnboundTicket(
+  label: string,
+  options: { readonly brief?: boolean } = {},
+): Promise<{ partition: Partition; request: string; ticket: number }> {
+  const partition = await postgresHarnessProject(rig.harness.store, label);
+  const submission = postgresHarnessSubmission(partition, label);
+  await rig.harness.inbox.accept(submission);
+  const epoch = await rig.harness.store.currentRecoveryEpoch();
+  const ticket = 1;
+  const request = `request-${label}`;
+  const seeding = await rig.harness.begin();
+  await seeding.query(
+    `INSERT INTO journal_entry
+       (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
+        recovery_epoch,cause_kind,cause_id)
+     VALUES ($1,$2,1,'{}',$3,'genesis','owner',1,$4,'Operation',$5)`,
+    [
+      partition.tenant,
+      partition.project,
+      `digest-${label}`,
+      epoch,
+      submission.operation,
+    ],
+  );
+  await seeding.query(
+    `UPDATE decision_input SET state='Journaled', decided_seq=1, terminal_at=now()
+      WHERE tenant=$1 AND project=$2 AND input_kind='Operation' AND input_id=$3`,
+    [partition.tenant, partition.project, submission.operation],
+  );
+  await seeding.query(
+    `INSERT INTO configuration_revision
+       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+     VALUES ($1,$2,$3,'{}',$4,'Test','migration')`,
+    [
+      partition.tenant,
+      partition.project,
+      `revision-${label}`,
+      `digest-config-${label}`,
+    ],
+  );
+  await seeding.query(
+    `INSERT INTO draft (tenant,project,ticket,authoring_version,state,configuration_revision)
+     VALUES ($1,$2,$3,1,'Released',$4)`,
+    [partition.tenant, partition.project, ticket, `revision-${label}`],
+  );
+  if (options.brief !== false) {
+    await seeding.query(
+      `INSERT INTO draft_brief (tenant,project,ticket,intent)
+       VALUES ($1,$2,$3,'a ticket released before this project ever bound a repository')`,
+      [partition.tenant, partition.project, ticket],
+    );
+  }
+  await seeding.query(
+    `INSERT INTO finalization_request
+       (tenant,project,request,authorizing_seq,effect_position,ticket,
+        ticket_version,request_generation,kind)
+     VALUES ($1,$2,$3,1,0,$4,1,1,'RunFinalizer')`,
+    [partition.tenant, partition.project, request, ticket],
+  );
+  await seeding.commit();
+  return { partition, request, ticket };
+}
+
+/** The durable view a fresh claim on `finalizerUnboundTicket`'s request gathers. */
+async function finalizerUnboundView(
+  label: string,
+  partition: Partition,
+  request: string,
+  ticket: number,
+): Promise<FinalizationView | undefined> {
+  const claim: FinalizationClaim = {
+    partition,
+    request,
+    ticket: asTicketId(ticket),
+    authorizingSeq: 1,
+    requestGeneration: 1,
+    claimGeneration: 0,
+    state: "Open",
+    kind: "RunFinalizer",
+    recoveryEpoch: asRecoveryEpoch(
+      await rig.harness.store.currentRecoveryEpoch(),
+    ),
+    owner: asFinalizerOwnerId(`owner-${label}`),
+  };
+  return postgresFinalizer(rig.pool).durableView(claim);
+}
+
+test("a released ticket in a partition with no binding at all holds its finalization view honestly unbound", async () => {
+  const label = "unbound-partition";
+  const { partition, request, ticket } = await finalizerUnboundTicket(label);
+  const view = await finalizerUnboundView(label, partition, request, ticket);
+  assert.equal(view?.repository, undefined);
+});
+
+test("a released ticket with no brief row at all still holds a finalization view", async () => {
+  const label = "unbound-partition-briefless";
+  const { partition, request, ticket } = await finalizerUnboundTicket(label, {
+    brief: false,
+  });
+  const view = await finalizerUnboundView(label, partition, request, ticket);
+  assert.notEqual(view, undefined);
+  assert.equal(view?.repository, undefined);
 });

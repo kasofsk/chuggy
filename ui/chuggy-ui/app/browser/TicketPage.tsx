@@ -119,6 +119,7 @@ function TicketAside(props: {
 /** Where the page's own head belongs while the shell has taken it: the top bar
  * and the details pane fill only once the ticket has been read. */
 function TicketPortals(props: {
+  readonly partition: PartitionIdentity;
   readonly ticket: TicketResponse | undefined;
   readonly facts: TicketPageFacts;
 }): ReactNode {
@@ -127,7 +128,7 @@ function TicketPortals(props: {
   return (
     <>
       <TopBarSlot>
-        <TicketTopBar ticket={ticket} />
+        <TicketTopBar partition={props.partition} ticket={ticket} />
       </TopBarSlot>
       <DetailsSlot>
         <TicketPageDetails sections={ticketSections(ticket, props.facts)} />
@@ -171,7 +172,11 @@ function TicketBody(props: {
   );
   return (
     <>
-      <TicketPortals ticket={ticket} facts={facts} />
+      <TicketPortals
+        partition={props.partition}
+        ticket={ticket}
+        facts={facts}
+      />
       {ticket === undefined ? null : (
         <TicketHead
           ticket={ticket}

@@ -89,7 +89,7 @@ export interface RailConversations {
 }
 
 export interface ShellRail {
-  /** Overview, Inbox, Selector, New ticket: entries that never scroll away. */
+  /** Ticket overview, Inbox, Selector, New ticket: entries that never scroll away. */
   readonly fixed: readonly RailEntry[];
   readonly conversations: RailConversations;
   readonly allThreads: RailEntry;
@@ -186,7 +186,12 @@ function shellRailFixed(
   inboxCount: string | undefined,
 ): readonly RailEntry[] {
   return [
-    { id: "overview", label: "Overview", to: railRoutes.overview, params },
+    {
+      id: "overview",
+      label: "Ticket overview",
+      to: railRoutes.overview,
+      params,
+    },
     {
       id: "inbox",
       label: "Inbox",

@@ -248,7 +248,7 @@ test("the drawer closes when a rail entry is followed", async () => {
   await mountedDrawer();
   expect(railDrawn()).not.toBeNull();
   await turned(() => {
-    screen.getByRole("link", { name: "Overview" }).click();
+    screen.getByRole("link", { name: "Ticket overview" }).click();
   });
   await settled();
   expect(railDrawn()).toBeNull();

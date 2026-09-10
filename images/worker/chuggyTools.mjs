@@ -104,7 +104,7 @@ export const chuggyBriefIntentLineCharsMax = 512;
  * wire. An intent is bounded a line at a time, so a paragraph filed as one line
  * is refused however short the paragraph is.
  */
-const chuggyBriefDescription = `\`brief\` is {title?, intent, links, checks?, branch?, finalization?}: \`title\` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; \`intent\` is lines, each at most ${String(chuggyBriefIntentLineCharsMax)} characters — break a sentence across lines rather than shorten it. A 400 names the rule the brief broke.`;
+const chuggyBriefDescription = `\`brief\` is {title?, intent, links, checks?, repository?, branch?, finalization?}: \`title\` is optional in the contract, so always give one — one short line naming the work, which the console lists tickets by; \`intent\` is lines, each at most ${String(chuggyBriefIntentLineCharsMax)} characters — break a sentence across lines rather than shorten it; \`repository\` is the repository the work happens in, which list_configurations reports as an imported configuration's provenance, and a draft carrying none is refused when it is released. A 400 names the rule the brief broke.`;
 
 /**
  * How many times the entry the runtime mirrors carries one answer's text. The
@@ -752,7 +752,7 @@ export const chuggyProjectTools = [
   },
   {
     name: "revise_draft",
-    description: `Replaces one open draft's authoring and brief, fenced on the version read. ${chuggyBriefDescription}`,
+    description: `Replaces one open draft's authoring and brief, fenced on the version read. ${chuggyBriefDescription} The brief is replaced whole, so send back the \`repository\` read_draft answered or the revision clears it.`,
     shape: (z) => ({
       ticket: ticket(z),
       expectedVersion: count(z),

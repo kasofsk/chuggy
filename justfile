@@ -65,6 +65,14 @@ acceptance *ARGS:
 deploy-to-gtr *ARGS:
     ./deploy/rig/deploy-to-gtr.sh {{ ARGS }}
 
+# The console of a running installation, served from this machine, so a change
+# to it is a reload rather than a release. `ui/chuggy-ui/dev/README.md` is the
+# procedure and says which installation it reaches and what that installation
+# had to register for it. `just ui-local -d` leaves it running.
+ui-local *ARGS:
+    CHUG_UI_UID="$(id -u)" CHUG_UI_GID="$(id -g)" \
+        docker compose -f ui/chuggy-ui/dev/compose.yaml up {{ ARGS }}
+
 # Install the pre-commit hook. A fresh clone needs this once.
 hooks:
     git config core.hooksPath .githooks

@@ -71,7 +71,9 @@ import {
 } from "../../interpreter/projectStore.ts";
 import {
   asGitObjectId,
+  asRepositoryId,
   type GitObjectId,
+  type RepositoryId,
 } from "../../interpreter/finalizer.ts";
 import {
   asDraftBrief,
@@ -135,8 +137,19 @@ export interface ParsedConfigurationCreation {
   readonly canonical: CanonicalConfiguration;
 }
 
-export function parseRepositoryConfigurationImport(body: unknown): GitObjectId {
-  return asGitObjectId(repositoryConfigurationImportSchema.parse(body).commit);
+export interface ParsedRepositoryConfigurationImport {
+  readonly repository: RepositoryId;
+  readonly commit: GitObjectId;
+}
+
+export function parseRepositoryConfigurationImport(
+  body: unknown,
+): ParsedRepositoryConfigurationImport {
+  const parsed = repositoryConfigurationImportSchema.parse(body);
+  return {
+    repository: asRepositoryId(parsed.repository),
+    commit: asGitObjectId(parsed.commit),
+  };
 }
 
 export interface ParsedDraftCreation {
@@ -183,6 +196,7 @@ function releaseBrief(value: TicketBriefBody): DraftBrief {
     intent: value.intent,
     links: value.links,
     ...(value.checks === undefined ? {} : { checks: value.checks }),
+    ...(value.repository === undefined ? {} : { repository: value.repository }),
     ...(value.branch === undefined ? {} : { branch: value.branch }),
     ...(value.finalization === undefined
       ? {}

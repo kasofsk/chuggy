@@ -96,6 +96,8 @@ export function operationRefusalSentence(code: OperationRefusalCode): string {
       return "the repository reference this ticket's work would start from is not on the remote";
     case "ExecutionSourceDenied":
       return "the remote declined the credential this project holds for the repository";
+    case "BriefNamesNoRepository":
+      return "the brief names no repository; revise it to name one the project binds";
   }
 }
 

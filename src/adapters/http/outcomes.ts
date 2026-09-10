@@ -652,6 +652,7 @@ function briefBody(brief: DraftBrief): unknown {
     intent: brief.intent,
     links: [...brief.links],
     checks: [...brief.checks],
+    ...(brief.repository === undefined ? {} : { repository: brief.repository }),
     ...(brief.branch === undefined ? {} : { branch: brief.branch }),
     ...(brief.finalization === undefined
       ? {}
@@ -871,6 +872,7 @@ function draftCreated(value: DraftCreated): NativeHttpResponse {
         ),
       });
     case "ConfigurationNotFound":
+    case "RepositoryNotBound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "Stale":
       return response(
@@ -897,6 +899,7 @@ function draftRevised(value: DraftRevised): NativeHttpResponse {
       return response(200, draftBody(value.draft));
     case "NotFound":
     case "ConfigurationNotFound":
+    case "RepositoryNotBound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "Stale":
       return response(409, {

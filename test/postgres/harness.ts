@@ -38,7 +38,10 @@ import type { Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
-import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
+import {
+  asDraftBrief,
+  type DraftBrief,
+} from "../../src/interpreter/ticketBrief.ts";
 
 /** The brief every harness draft is created with, so a case names one only when it is about one. */
 export const postgresHarnessBrief = asDraftBrief({
@@ -57,6 +60,7 @@ import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.t
 import {
   asGitObjectId,
   asRepositoryId,
+  type RepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import { postgresProjectAccess } from "../../src/adapters/postgres/projectAccess.ts";
 import { postgresProjectMembership } from "../../src/adapters/postgres/projectMembership.ts";
@@ -98,6 +102,38 @@ import {
   type ProjectStore,
   type RecoveryEpoch,
 } from "../../src/interpreter/projectStore.ts";
+
+/**
+ * The repository a partition's briefs name, binding one where the case has
+ * bound none. A release refuses a brief carrying no repository, so every
+ * harness draft names a binding; a case that binds its own — the finalizer's,
+ * which binds a real remote — is answered with that one rather than given a
+ * second the project-wide read would then prefer.
+ */
+export async function postgresHarnessBinding(
+  harness: PostgresHarness,
+  partition: Partition,
+): Promise<RepositoryId> {
+  const bound = await harness.query(
+    `SELECT repository FROM project_repository
+      WHERE tenant=$1 AND project=$2 ORDER BY bound_at,repository LIMIT 1`,
+    [partition.tenant, partition.project],
+  );
+  const held = bound[0]?.["repository"];
+  if (typeof held === "string") return asRepositoryId(held);
+  const repository = asRepositoryId(`repository-${partition.tenant}`);
+  await harness.query(
+    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch)
+       SELECT $1,$2,$3,epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1`,
+    [partition.tenant, partition.project, repository],
+  );
+  return repository;
+}
+
+/** The harness brief working in one repository, which is what a releasable draft carries. */
+export function postgresHarnessBriefIn(repository: RepositoryId): DraftBrief {
+  return { ...postgresHarnessBrief, repository };
+}
 
 /** The smallest authored configuration a release may pin. */
 export const postgresHarnessConfiguration = asCanonicalConfiguration(
@@ -617,7 +653,9 @@ export async function postgresHarnessReleaseSubmission(
     configurationDigest: initialized.configuration.digest,
     expectedProjectSequence: initialized.projectSequence,
     authoring,
-    brief: postgresHarnessBrief,
+    brief: postgresHarnessBriefIn(
+      await postgresHarnessBinding(harness, partition),
+    ),
   });
   if (created.created !== "Created")
     throw new Error("postgres harness: release draft was not created");
