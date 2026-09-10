@@ -298,19 +298,23 @@ function jsonRequest(method, accessToken, url, value) {
 }
 
 /**
- * Repository imports name an immutable Git object, never a moving ref.
+ * Repository imports name the repository they read and an immutable Git object
+ * in it, never a moving ref.
  *
  * @param {string} accessToken
  * @param {Partition} partition
- * @param {string} commit
+ * @param {{ repository: string, commit: string }} source
  * @returns {ApiRequest}
  */
 export function repositoryConfigurationImportRequest(
   accessToken,
   partition,
-  commit,
+  source,
 ) {
-  const body = JSON.stringify({ commit });
+  const body = JSON.stringify({
+    repository: source.repository,
+    commit: source.commit,
+  });
   if (body.length > bodyBytesMax)
     throw new RangeError("an import body is larger than the server accepts");
   return {

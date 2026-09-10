@@ -134,7 +134,10 @@ test("configuration reads and repository imports use the public routes", () => {
     headers: { accept: mediaType, authorization: `Bearer ${token}` },
   });
   assert.deepEqual(
-    repositoryConfigurationImportRequest(token, partition, "a".repeat(40)),
+    repositoryConfigurationImportRequest(token, partition, {
+      repository: "chuggy",
+      commit: "a".repeat(40),
+    }),
     {
       method: "POST",
       url: "/api/v1/tenants/acme/projects/atlas/configurations/imports",
@@ -143,7 +146,7 @@ test("configuration reads and repository imports use the public routes", () => {
         authorization: `Bearer ${token}`,
         "content-type": mediaType,
       },
-      body: JSON.stringify({ commit: "a".repeat(40) }),
+      body: JSON.stringify({ repository: "chuggy", commit: "a".repeat(40) }),
     },
   );
 });

@@ -6,6 +6,7 @@ import { deferred } from "./deferred.ts";
 import type { ApiOutcome } from "../../ui/console/app/protocol.js";
 
 const partition = { tenant: "acme", project: "atlas" };
+const repository = "chuggy";
 const commit = "a".repeat(40);
 
 function page(revision: string) {
@@ -61,7 +62,7 @@ test("a successful import refreshes the selected project's registry", async () =
   });
 
   await controller.select(partition);
-  controller.editImport(commit);
+  controller.editImport({ repository, commit });
   await controller.import();
 
   assert.deepEqual(requests, [
@@ -69,7 +70,11 @@ test("a successful import refreshes the selected project's registry", async () =
     "POST /api/v1/tenants/acme/projects/atlas/configurations/imports",
     "GET /api/v1/tenants/acme/projects/atlas/configurations?limit=50",
   ]);
-  assert.deepEqual(controller.state.import, { status: "Succeeded", commit });
+  assert.deepEqual(controller.state.import, {
+    status: "Succeeded",
+    repository,
+    commit,
+  });
 });
 
 test("editing an import commit does not redraw the focused input", () => {
@@ -82,11 +87,12 @@ test("editing an import commit does not redraw the focused input", () => {
     },
   });
 
-  controller.editImport("a");
+  controller.editImport({ repository, commit: "a" });
 
   assert.equal(changes, 0);
   assert.deepEqual(controller.state.import, {
     status: "Editing",
+    repository,
     commit: "a",
     issue: undefined,
   });

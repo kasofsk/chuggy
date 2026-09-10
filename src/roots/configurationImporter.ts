@@ -1,4 +1,10 @@
-/** One-shot import of repository-declared configurations at one exact commit. */
+/**
+ * One-shot import of one named repository's declarations at one exact commit.
+ *
+ * ONE RUN IS ONE REPOSITORY, applied to every partition the run names: a commit
+ * belongs to a repository, so the two are configured together, and a deployment
+ * that imports several repositories runs the importer once for each.
+ */
 
 import { credentialFiles } from "../adapters/credentials/credentialFiles.ts";
 import { gitRepositoryConfiguration } from "../adapters/git/gitRepositoryConfiguration.ts";
@@ -84,6 +90,7 @@ async function main(): Promise<void> {
     };
     const imports = await importRepositoryConfigurationPartitions({
       partitions: config.partitions,
+      repository: config.repository,
       commit: config.commit,
       authority,
       ports,
@@ -94,7 +101,7 @@ async function main(): Promise<void> {
     for (const { partition, outcome } of imports)
       if (outcome.result === "Imported")
         process.stdout.write(
-          `${partition.tenant}/${partition.project} imported ${config.commit}\n`,
+          `${partition.tenant}/${partition.project} imported ${config.repository} ${config.commit}\n`,
         );
     if (failures.length > 0)
       throw new Error(

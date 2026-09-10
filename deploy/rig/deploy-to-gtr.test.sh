@@ -501,12 +501,23 @@ export CHUG_STUB_DIGEST="sha256:notadigest"
 run
 check "a malformed digest is a finding" 1 "$RC" "answered no digest"
 
+# The consistency check's own protocol: it refuses with 3 and crashes with 1,
+# so the release is a finding under the first and a could-not-run under the
+# second. A status that meant the same under both would be the release
+# believing a control that never ran.
+fresh_case
+advance src/a.ts
+export CHUG_STUB_CONSISTENCY_RC=3
+run
+check "the fabric's consistency check is obeyed" 1 "$RC" "consistency check refuses"
+check "a refused release is not pushed" 1 "$RC" "pull requests opened: 0"
+
 fresh_case
 advance src/a.ts
 export CHUG_STUB_CONSISTENCY_RC=1
 run
-check "the fabric's consistency check is obeyed" 1 "$RC" "consistency check refuses"
-check "a refused release is not pushed" 1 "$RC" "pull requests opened: 0"
+check "a consistency check that could not run is not a refusal" 2 "$RC" "consistency check did not run"
+check "an unchecked release is not pushed" 2 "$RC" "pull requests opened: 0"
 
 fresh_case
 advance src/a.ts

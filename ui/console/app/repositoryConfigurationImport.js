@@ -29,12 +29,17 @@ const faultLabels = {
 /** @typedef {import("./protocol.js").ApiOutcome} ApiOutcome */
 
 /**
- * @typedef {{ status: "Editing", commit: string, issue: string | undefined }
- *   | { status: "Submitting", commit: string }
- *   | { status: "Succeeded", commit: string }
- *   | { status: "Rejected", commit: string,
+ * @typedef {{ repository: string, commit: string }} RepositoryConfigurationImportSource
+ */
+
+/**
+ * @typedef {RepositoryConfigurationImportSource &
+ *   ({ status: "Editing", issue: string | undefined }
+ *   | { status: "Submitting" }
+ *   | { status: "Succeeded" }
+ *   | { status: "Rejected",
  *        faults: readonly RepositoryConfigurationImportFault[] }
- *   | { status: "Unavailable", commit: string, reason: string }} RepositoryConfigurationImportState
+ *   | { status: "Unavailable", reason: string })} RepositoryConfigurationImportState
  */
 
 /**
@@ -42,17 +47,25 @@ const faultLabels = {
  *   detail: string | undefined }} RepositoryConfigurationImportFault
  */
 
+/**
+ * @param {RepositoryConfigurationImportState} state
+ * @returns {RepositoryConfigurationImportSource}
+ */
+function repositoryConfigurationImportSource(state) {
+  return { repository: state.repository, commit: state.commit };
+}
+
 /** @returns {RepositoryConfigurationImportState} */
 export function repositoryConfigurationImportInitial() {
-  return { status: "Editing", commit: "", issue: undefined };
+  return { status: "Editing", repository: "", commit: "", issue: undefined };
 }
 
 /**
- * @param {string} commit
+ * @param {RepositoryConfigurationImportSource} source
  * @returns {RepositoryConfigurationImportState}
  */
-export function repositoryConfigurationImportEdited(commit) {
-  return { status: "Editing", commit, issue: undefined };
+export function repositoryConfigurationImportEdited(source) {
+  return { status: "Editing", ...source, issue: undefined };
 }
 
 /**
@@ -65,23 +78,23 @@ export function repositoryConfigurationImportSubmitted(
   accessToken,
   partition,
 ) {
-  if (!commitPattern.test(state.commit))
+  const source = repositoryConfigurationImportSource(state);
+  const issue =
+    source.repository === ""
+      ? "Name the repository to import from."
+      : commitPattern.test(source.commit)
+        ? undefined
+        : "Enter the full 40-character lowercase commit hash.";
+  if (issue !== undefined)
     return {
-      state: {
-        status: /** @type {const} */ ("Editing"),
-        commit: state.commit,
-        issue: "Enter the full 40-character lowercase commit hash.",
-      },
+      state: { status: /** @type {const} */ ("Editing"), ...source, issue },
     };
   return {
-    state: {
-      status: /** @type {const} */ ("Submitting"),
-      commit: state.commit,
-    },
+    state: { status: /** @type {const} */ ("Submitting"), ...source },
     request: repositoryConfigurationImportRequest(
       accessToken,
       partition,
-      state.commit,
+      source,
     ),
   };
 }
@@ -111,12 +124,10 @@ function repositoryConfigurationImportUnavailable(outcome) {
  */
 export function repositoryConfigurationImportAnswered(state, outcome) {
   if (state.status !== "Submitting") return { state };
+  const source = repositoryConfigurationImportSource(state);
   if (outcome.outcome === "Ok")
     return {
-      state: {
-        status: /** @type {const} */ ("Succeeded"),
-        commit: state.commit,
-      },
+      state: { status: /** @type {const} */ ("Succeeded"), ...source },
       event: { event: /** @type {const} */ ("ConfigurationsChanged") },
     };
   if (
@@ -127,7 +138,7 @@ export function repositoryConfigurationImportAnswered(state, outcome) {
       return {
         state: {
           status: /** @type {const} */ ("Rejected"),
-          commit: state.commit,
+          ...source,
           faults: repositoryConfigurationImportFaults(
             parseRepositoryConfigurationRefusals(outcome.body),
           ),
@@ -137,7 +148,7 @@ export function repositoryConfigurationImportAnswered(state, outcome) {
       return {
         state: {
           status: /** @type {const} */ ("Unavailable"),
-          commit: state.commit,
+          ...source,
           reason: unreadableReason,
         },
       };
@@ -146,7 +157,7 @@ export function repositoryConfigurationImportAnswered(state, outcome) {
   return {
     state: {
       status: /** @type {const} */ ("Unavailable"),
-      commit: state.commit,
+      ...source,
       reason: repositoryConfigurationImportUnavailable(outcome),
     },
   };

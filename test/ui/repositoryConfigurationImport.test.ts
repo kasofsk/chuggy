@@ -10,33 +10,45 @@ import {
 import { unreadableReason } from "../../ui/console/app/outcomes.js";
 
 const partition = { tenant: "acme", project: "atlas" };
+const repository = "chuggy";
 const commit = "a".repeat(40);
+const source = { repository, commit };
+
+/** The issue a submission settles on, or the status when it did not settle on one. */
+function submissionIssue(edited: { repository: string; commit: string }) {
+  const transition = repositoryConfigurationImportSubmitted(
+    repositoryConfigurationImportEdited(edited),
+    "token",
+    partition,
+  );
+  assert.equal(transition.request, undefined);
+  return transition.state.status === "Editing"
+    ? (transition.state.issue ?? "")
+    : transition.state.status;
+}
 
 test("an import accepts only a full lowercase 40-character commit hash", () => {
-  for (const invalid of ["", "a".repeat(39), "A".repeat(40), "a".repeat(64)]) {
-    const transition = repositoryConfigurationImportSubmitted(
-      repositoryConfigurationImportEdited(invalid),
-      "token",
-      partition,
-    );
-    assert.equal(transition.state.status, "Editing");
+  for (const invalid of ["", "a".repeat(39), "A".repeat(40), "a".repeat(64)])
     assert.match(
-      transition.state.status === "Editing"
-        ? (transition.state.issue ?? "")
-        : "",
+      submissionIssue({ repository, commit: invalid }),
       /40-character lowercase/u,
     );
-    assert.equal(transition.request, undefined);
-  }
+});
+
+test("an import that names no repository is refused before the commit is read", () => {
+  assert.match(submissionIssue({ repository: "", commit }), /repository/u);
 });
 
 test("submission enters an honest in-flight state and returns the contract request", () => {
   const transition = repositoryConfigurationImportSubmitted(
-    repositoryConfigurationImportEdited(commit),
+    repositoryConfigurationImportEdited(source),
     "token",
     partition,
   );
-  assert.deepEqual(transition.state, { status: "Submitting", commit });
+  assert.deepEqual(transition.state, {
+    status: "Submitting",
+    ...source,
+  });
   assert.deepEqual(transition.request, {
     method: "POST",
     url: "/api/v1/tenants/acme/projects/atlas/configurations/imports",
@@ -45,19 +57,19 @@ test("submission enters an honest in-flight state and returns the contract reque
       authorization: "Bearer token",
       "content-type": "application/vnd.chuggy.v1+json",
     },
-    body: JSON.stringify({ commit }),
+    body: JSON.stringify({ repository, commit }),
   });
 });
 
 test("success emits the event that invalidates the registry", () => {
-  const state = { status: "Submitting" as const, commit };
+  const state = { status: "Submitting" as const, ...source };
   assert.deepEqual(
     repositoryConfigurationImportAnswered(state, {
       outcome: "Ok",
       body: { imported: true },
     }),
     {
-      state: { status: "Succeeded", commit },
+      state: { status: "Succeeded", ...source },
       event: { event: "ConfigurationsChanged" },
     },
   );
@@ -66,7 +78,7 @@ test("success emits the event that invalidates the registry", () => {
 test("a declaration refusal becomes structured display data", () => {
   const path = [".chug", "configurations", "work.json"].join("/");
   const result = repositoryConfigurationImportAnswered(
-    { status: "Submitting", commit },
+    { status: "Submitting", ...source },
     {
       outcome: "Rejected",
       code: "RepositoryConfigurationsRefused",
@@ -85,7 +97,7 @@ test("a declaration refusal becomes structured display data", () => {
   assert.deepEqual(result, {
     state: {
       status: "Rejected",
-      commit,
+      ...source,
       faults: [
         {
           path,
@@ -99,7 +111,7 @@ test("a declaration refusal becomes structured display data", () => {
 });
 
 test("an unreadable refusal and unavailable transport settle visibly", () => {
-  const state = { status: "Submitting" as const, commit };
+  const state = { status: "Submitting" as const, ...source };
   assert.deepEqual(
     repositoryConfigurationImportAnswered(state, {
       outcome: "Rejected",
@@ -107,7 +119,7 @@ test("an unreadable refusal and unavailable transport settle visibly", () => {
       status: 422,
       body: { faults: [{ surprise: true }] },
     }),
-    { state: { status: "Unavailable", commit, reason: unreadableReason } },
+    { state: { status: "Unavailable", ...source, reason: unreadableReason } },
   );
   assert.deepEqual(
     repositoryConfigurationImportAnswered(state, {
@@ -118,7 +130,7 @@ test("an unreadable refusal and unavailable transport settle visibly", () => {
     {
       state: {
         status: "Unavailable",
-        commit,
+        ...source,
         reason: "Import is temporarily unavailable: RepositoryUnavailable.",
       },
     },
@@ -128,12 +140,13 @@ test("an unreadable refusal and unavailable transport settle visibly", () => {
 test("editing starts blank and replaces every settled state", () => {
   assert.deepEqual(repositoryConfigurationImportInitial(), {
     status: "Editing",
+    repository: "",
     commit: "",
     issue: undefined,
   });
-  assert.deepEqual(repositoryConfigurationImportEdited(commit), {
+  assert.deepEqual(repositoryConfigurationImportEdited(source), {
     status: "Editing",
-    commit,
+    ...source,
     issue: undefined,
   });
 });

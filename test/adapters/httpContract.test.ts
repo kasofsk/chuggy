@@ -113,19 +113,30 @@ const brief = {
   finalization: { mode: "PullRequest", target: "refs/heads/main" },
 } as const;
 
-test("authoring DTOs translate into existing application types", () => {
-  assert.equal(
-    parseRepositoryConfigurationImport({ commit: "a".repeat(40) }),
-    "a".repeat(40),
+test("an import names the repository it reads and the commit in it", () => {
+  assert.deepEqual(
+    parseRepositoryConfigurationImport({
+      repository: "repository",
+      commit: "a".repeat(40),
+    }),
+    { repository: "repository", commit: "a".repeat(40) },
+  );
+  assert.throws(
+    () => parseRepositoryConfigurationImport({ commit: "a".repeat(40) }),
+    /repository/u,
   );
   assert.throws(
     () =>
       parseRepositoryConfigurationImport({
+        repository: "repository",
         commit: "a".repeat(40),
-        repository: "untrusted",
+        branch: "untrusted",
       }),
     /[Uu]nrecognized key/u,
   );
+});
+
+test("authoring DTOs translate into existing application types", () => {
   assert.deepEqual(
     parseConfigurationCreation({
       revision: "revision",
