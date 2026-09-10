@@ -219,8 +219,10 @@ function fakeConfigurations(
       calls.push(`createConfiguration:${input.revision}`);
       return Promise.resolve({ result: "NotFound" });
     },
-    importRepositoryConfigurations: (_principal, _partition, commit) => {
-      calls.push(`importRepositoryConfigurations:${commit}`);
+    importRepositoryConfigurations: (_principal, _partition, source) => {
+      calls.push(
+        `importRepositoryConfigurations:${source.repository}:${source.commit}`,
+      );
       return Promise.resolve({ result: "Imported" });
     },
   };
@@ -1001,7 +1003,7 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     method: "POST",
     url: `${project}/configurations/imports`,
     headers,
-    body: { commit: "a".repeat(40) },
+    body: { repository: "repository-named", commit: "a".repeat(40) },
   });
   await app.inject({
     method: "POST",
@@ -1033,7 +1035,7 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     "configurations:2",
     "createConfiguration:revision",
     "configuration:revision",
-    `importRepositoryConfigurations:${"a".repeat(40)}`,
+    `importRepositoryConfigurations:repository-named:${"a".repeat(40)}`,
     "createDraft",
     "reviseDraft:2",
     "deleteDraft:3",

@@ -9,6 +9,10 @@ const presentationModule = "../../ui/console/dom/configurationRegistry.js";
 const { configurationRegistry } = (await import(presentationModule)) as {
   configurationRegistry: (state: unknown) => unknown;
 };
+const pageModule = "../../ui/console/dom/configurationRegistryView.js";
+const { configurationRegistryPage } = (await import(pageModule)) as {
+  configurationRegistryPage: (controller: unknown) => unknown;
+};
 
 test("loading, error, and empty registry states are explicit", () => {
   const loading = configurationRegistry({
@@ -112,4 +116,42 @@ test("a failed refresh keeps visible configurations and announces the failure", 
   assert.match(content(registry), /Refresh failed/);
   assert.match(content(registry), /held-revision/);
   assert.equal(elements(registry, "p")[0]?.attributes.get("role"), "alert");
+});
+
+test("the import form names a repository beside the commit, and edits both", () => {
+  const edits: unknown[] = [];
+  const page = configurationRegistryPage({
+    state: {
+      registry: { state: "Loading", held: undefined, load: "Initial" },
+      import: {
+        status: "Editing",
+        repository: "held",
+        commit: "b".repeat(40),
+        issue: undefined,
+      },
+    },
+    editImport: (source: unknown) => edits.push(source),
+    import: () => undefined,
+    refresh: () => undefined,
+    next: () => undefined,
+  }) as TestElement;
+  const inputs = elements(page, "input");
+  assert.deepEqual(
+    inputs.map((input) => input.attributes.get("id")),
+    ["import-repository", "import-commit"],
+  );
+  assert.deepEqual(
+    inputs.map((input) => input.attributes.get("value")),
+    ["held", "b".repeat(40)],
+  );
+  const repository = inputs[0];
+  const commit = inputs[1];
+  if (repository === undefined || commit === undefined)
+    throw new Error("the import form is missing an input");
+  repository.value = "chuggy";
+  commit.value = "a".repeat(40);
+  repository.listeners.get("input")?.({ preventDefault: () => undefined });
+  commit.listeners.get("input")?.({ preventDefault: () => undefined });
+  const edit = { repository: "chuggy", commit: "a".repeat(40) };
+  assert.deepEqual(edits, [edit, edit]);
 });

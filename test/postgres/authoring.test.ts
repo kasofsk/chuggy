@@ -659,6 +659,57 @@ test("a repository import conflict rolls back the entire snapshot", async () => 
   );
 });
 
+test("one name declared by two repositories is one chronology of two revisions", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "repository-one-name-two-repositories",
+  );
+  const first = await repositoryBinding(partition, "named-first");
+  const second = await repositoryBinding(partition, "named-second");
+  const firstCommit = "a".repeat(40);
+  const secondCommit = "b".repeat(40);
+  assert.deepEqual(
+    [
+      await importedConfigurationVersion(
+        partition,
+        first,
+        repositoryDeclarations(firstCommit, ["work"]),
+      ),
+      await importedConfigurationVersion(
+        partition,
+        second,
+        repositoryDeclarations(secondCommit, ["work"], "worker:v2"),
+      ),
+    ],
+    [
+      { name: "work", number: 1 },
+      { name: "work", number: 2 },
+    ],
+  );
+  assert.deepEqual(
+    await harness.query(
+      `SELECT revision,repository,repository_commit,name
+         FROM repository_configuration_provenance
+        WHERE tenant=$1 AND project=$2 ORDER BY repository_commit`,
+      [partition.tenant, partition.project],
+    ),
+    [
+      {
+        revision: `repository:${firstCommit}:work`,
+        repository: first.repository,
+        repository_commit: firstCommit,
+        name: "work",
+      },
+      {
+        revision: `repository:${secondCommit}:work`,
+        repository: second.repository,
+        repository_commit: secondCommit,
+        name: "work",
+      },
+    ],
+  );
+});
+
 test("either binding a project holds may import, and no other repository", async () => {
   const partition = await postgresHarnessProject(
     harness.store,

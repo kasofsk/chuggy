@@ -10,7 +10,10 @@ import {
   repositoryConfigurationDeclarationsMax,
   repositoryConfigurationImportReadiness,
   repositoryConfigurationRoot,
+  type ProjectRepositoryBindingRead,
   type RepositoryConfigurationFile,
+  type RepositoryConfigurationImportOutcome,
+  type RepositoryConfigurationImportPorts,
 } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
   asAuthorityKind,
@@ -169,6 +172,7 @@ test("partition imports continue after one partition is refused", async () => {
   const calls: string[] = [];
   const imports = await importRepositoryConfigurationPartitions({
     partitions: [first, second],
+    repository,
     commit,
     authority: {
       kind: asAuthorityKind("Service"),
@@ -213,4 +217,82 @@ test("partition imports continue after one partition is refused", async () => {
     "snapshot",
     "store",
   ]);
+});
+
+/**
+ * A binding read over a fixed set of bound repositories, recording every
+ * repository it was asked for so a caller's election is visible.
+ */
+function boundRepositories(
+  bound: ReadonlyMap<string, string>,
+  asked: string[],
+): ProjectRepositoryBindingRead {
+  return {
+    binding: (partition, forRepository) => {
+      asked.push(String(forRepository));
+      const epoch =
+        forRepository === undefined ? undefined : bound.get(forRepository);
+      return Promise.resolve(
+        forRepository === undefined || epoch === undefined
+          ? undefined
+          : {
+              partition,
+              repository: forRepository,
+              recoveryEpoch: asRecoveryEpoch(epoch),
+            },
+      );
+    },
+  };
+}
+
+test("each of one project's repositories imports against its own binding", async () => {
+  const partition = {
+    tenant: asTenantId("tenant"),
+    project: asProjectId("one"),
+  };
+  const other = asRepositoryId("repository-two");
+  const unbound = asRepositoryId("repository-unbound");
+  const asked: string[] = [];
+  const imported: string[] = [];
+  const ports: RepositoryConfigurationImportPorts = {
+    bindings: boundRepositories(
+      new Map([
+        [repository, "epoch-one"],
+        [other, "epoch-two"],
+      ]),
+      asked,
+    ),
+    snapshots: {
+      snapshot: () => Promise.resolve({ read: "Snapshot", files: [] }),
+    },
+    store: {
+      importRepositoryConfigurations: ({ binding }) => {
+        imported.push(`${binding.repository}:${binding.recoveryEpoch}`);
+        return Promise.resolve({ imported: "Imported" });
+      },
+    },
+  };
+  const outcomes: RepositoryConfigurationImportOutcome[] = [];
+  for (const named of [repository, other, unbound])
+    outcomes.push(
+      ...(
+        await importRepositoryConfigurationPartitions({
+          partitions: [partition],
+          repository: named,
+          commit,
+          authority: {
+            kind: asAuthorityKind("Service"),
+            subject: asAuthoritySubject("configuration-mirror-importer"),
+          },
+          ports,
+        })
+      ).map(({ outcome }) => outcome),
+    );
+  assert.deepEqual(outcomes, [
+    { result: "Imported" },
+    { result: "Imported" },
+    { result: "RepositoryAbsent" },
+  ]);
+  assert.deepEqual(asked, [repository, other, unbound]);
+  assert.deepEqual(imported, [`${repository}:epoch-one`, `${other}:epoch-two`]);
 });

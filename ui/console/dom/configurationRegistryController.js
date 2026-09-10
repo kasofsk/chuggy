@@ -125,9 +125,9 @@ export function createConfigurationRegistry(parts) {
       registryStart(registry, (token, partition) =>
         configurationRegistryNext(registry.state.registry, token, partition),
       ),
-    /** @param {string} commit */
-    editImport: (commit) => {
-      registry.state.import = repositoryConfigurationImportEdited(commit);
+    /** @param {import("../app/repositoryConfigurationImport.js").RepositoryConfigurationImportSource} source */
+    editImport: (source) => {
+      registry.state.import = repositoryConfigurationImportEdited(source);
     },
     import: () => registryImport(registry),
   };

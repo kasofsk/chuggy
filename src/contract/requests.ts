@@ -84,6 +84,7 @@ export const configurationCreationSchema = z.strictObject({
 });
 
 export const repositoryConfigurationImportSchema = z.strictObject({
+  repository: bodyIdentitySchema,
   commit: bodyIdentitySchema,
 });
 

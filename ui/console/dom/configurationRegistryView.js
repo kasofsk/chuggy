@@ -31,22 +31,37 @@ function importNotice(state) {
   return undefined;
 }
 
-function importForm(controller) {
-  const state = controller.state.import;
+function importField(state, name, label) {
+  const id = `import-${name}`;
   const input = element("input", {
-    id: "repository-commit",
-    name: "commit",
+    id,
+    name,
     autocomplete: "off",
     spellcheck: "false",
-    value: state.commit,
+    value: state[name],
     disabled: state.status === "Submitting",
   });
-  input.addEventListener("input", () => controller.editImport(input.value));
+  const field = element("label", { class: "field", for: id }, [
+    element("span", { class: "eyebrow" }, [label]),
+    input,
+  ]);
+  return { input, field };
+}
+
+function importForm(controller) {
+  const state = controller.state.import;
+  const repository = importField(state, "repository", "Repository");
+  const commit = importField(state, "commit", "Exact Git commit");
+  const edited = () =>
+    controller.editImport({
+      repository: repository.input.value,
+      commit: commit.input.value,
+    });
+  repository.input.addEventListener("input", edited);
+  commit.input.addEventListener("input", edited);
   const form = element("form", {}, [
-    element("label", { class: "field", for: "repository-commit" }, [
-      element("span", { class: "eyebrow" }, ["Exact Git commit"]),
-      input,
-    ]),
+    repository.field,
+    commit.field,
     element(
       "button",
       {

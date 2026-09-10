@@ -14,7 +14,7 @@ import {
   positiveInteger,
 } from "./commandConfig.ts";
 import type { ProcessDatabaseConfig } from "./controlPlane.ts";
-import type { GitObjectId } from "../interpreter/finalizer.ts";
+import type { GitObjectId, RepositoryId } from "../interpreter/finalizer.ts";
 
 const configurationImporterVariable = "CHUG_CONFIGURATION_IMPORT_CONFIG";
 export const configurationImporterPartitionsMax = 100;
@@ -41,6 +41,7 @@ const configurationImporterSchema = z
         remoteTimeoutSecsMax: positiveInteger.optional(),
       })
       .strict(),
+    repository: z.string().min(1),
     commit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u),
     partitions: z
       .array(
@@ -62,6 +63,7 @@ export interface ConfigurationImporterConfig {
     readonly localTimeoutSecsMax?: number;
     readonly remoteTimeoutSecsMax?: number;
   };
+  readonly repository: RepositoryId;
   readonly commit: GitObjectId;
   readonly partitions: readonly Partition[];
 }
@@ -95,6 +97,7 @@ export function configurationImporterConfig(
         ? {}
         : { remoteTimeoutSecsMax: parsed.git.remoteTimeoutSecsMax }),
     },
+    repository: asRepositoryId(parsed.repository),
     commit: asGitObjectId(parsed.commit),
     partitions: parsed.partitions.map(({ tenant, project }) => ({
       tenant: asTenantId(tenant),

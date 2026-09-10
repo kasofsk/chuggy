@@ -375,11 +375,11 @@ function repositoryImportPorts(
 ): RepositoryConfigurationImportPorts {
   return {
     bindings: {
-      binding: (foundPartition) => {
-        calls.push("binding");
+      binding: (foundPartition, forRepository) => {
+        calls.push(`binding:${String(forRepository)}`);
         return Promise.resolve({
           partition: foundPartition,
-          repository: asRepositoryId("repository"),
+          repository: asRepositoryId(String(forRepository)),
           recoveryEpoch: asRecoveryEpoch("epoch"),
         });
       },
@@ -565,16 +565,20 @@ test("repository imports authorize, pin one snapshot, then persist ready declara
     repositoryImportPorts(calls),
   );
   const commit = asGitObjectId("a".repeat(40));
+  const repository = asRepositoryId("repository-named");
   assert.deepEqual(
-    await subject.web.importRepositoryConfigurations(
-      principal,
-      partition,
+    await subject.web.importRepositoryConfigurations(principal, partition, {
+      repository,
       commit,
-    ),
+    }),
     { result: "Imported" },
   );
   assert.deepEqual(subject.calls, ["authorize:Mutate"]);
-  assert.deepEqual(calls, ["binding", `snapshot:${commit}`, "import:1"]);
+  assert.deepEqual(calls, [
+    `binding:${repository}`,
+    `snapshot:${commit}`,
+    "import:1",
+  ]);
 });
 
 test("repository imports conceal denial before reading any outer port", async () => {
@@ -585,11 +589,10 @@ test("repository imports conceal denial before reading any outer port", async ()
     repositoryImportPorts(calls),
   );
   assert.deepEqual(
-    await subject.web.importRepositoryConfigurations(
-      principal,
-      partition,
-      asGitObjectId("b".repeat(40)),
-    ),
+    await subject.web.importRepositoryConfigurations(principal, partition, {
+      repository: asRepositoryId("repository"),
+      commit: asGitObjectId("b".repeat(40)),
+    }),
     { result: "NotFound" },
   );
   assert.deepEqual(subject.calls, ["authorize:Mutate"]);
@@ -599,22 +602,20 @@ test("repository imports conceal denial before reading any outer port", async ()
 test("repository imports are unavailable when their infrastructure is not composed", async () => {
   const allowed = boundary(true);
   assert.deepEqual(
-    await allowed.web.importRepositoryConfigurations(
-      principal,
-      partition,
-      asGitObjectId("b".repeat(40)),
-    ),
+    await allowed.web.importRepositoryConfigurations(principal, partition, {
+      repository: asRepositoryId("repository"),
+      commit: asGitObjectId("b".repeat(40)),
+    }),
     { result: "Unavailable", unavailable: "Repository" },
   );
   assert.deepEqual(allowed.calls, ["authorize:Mutate"]);
 
   const denied = boundary(false);
   assert.deepEqual(
-    await denied.web.importRepositoryConfigurations(
-      principal,
-      partition,
-      asGitObjectId("b".repeat(40)),
-    ),
+    await denied.web.importRepositoryConfigurations(principal, partition, {
+      repository: asRepositoryId("repository"),
+      commit: asGitObjectId("b".repeat(40)),
+    }),
     { result: "NotFound" },
   );
   assert.deepEqual(denied.calls, ["authorize:Mutate"]);
@@ -641,13 +642,14 @@ test("repository imports refuse invalid declarations without writing", async () 
       },
     },
   });
+  const repository = asRepositoryId("repository-refusing");
   const result = await subject.web.importRepositoryConfigurations(
     principal,
     partition,
-    asGitObjectId("c".repeat(40)),
+    { repository, commit: asGitObjectId("c".repeat(40)) },
   );
   assert.equal(result.result, "DeclarationsRefused");
-  assert.deepEqual(calls, ["binding", "snapshot:invalid"]);
+  assert.deepEqual(calls, [`binding:${repository}`, "snapshot:invalid"]);
 });
 
 test("operational resources authorize before scheduler or artifact reads", async () => {

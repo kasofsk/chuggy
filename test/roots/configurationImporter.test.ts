@@ -36,6 +36,7 @@ function configuration(overrides: Record<string, unknown> = {}) {
   return {
     database: { url: "postgres://importer@127.0.0.1:1/chuggy" },
     git: { scratchDirectory: "/scratch", credentialSources: [] },
+    repository: "chuggy",
     commit: "a".repeat(40),
     partitions: [{ tenant: "acme", project: "atlas" }],
     ...overrides,
@@ -48,6 +49,16 @@ test("the importer refuses a moving ref before opening its database", async () =
   assert.match(
     ran.stderr,
     /CHUG_CONFIGURATION_IMPORT_CONFIG.commit is invalid/u,
+  );
+  assert.equal(ran.stderr.includes("postgres"), false);
+});
+
+test("the importer refuses a run that names no repository", async () => {
+  const ran = await run(configuration({ repository: undefined }));
+  assert.equal(ran.code, 1);
+  assert.match(
+    ran.stderr,
+    /CHUG_CONFIGURATION_IMPORT_CONFIG.repository is invalid/u,
   );
   assert.equal(ran.stderr.includes("postgres"), false);
 });
