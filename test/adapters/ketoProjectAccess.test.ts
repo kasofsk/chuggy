@@ -124,27 +124,65 @@ test("nothing the authority could not decide is answered as a refusal", async ()
   }
 });
 
+const checkPath = "relation-tuples/check/openapi";
+const wholeModel = new Set(["Project", "Tenant"]);
+const everyPermit = new Set(Object.values(projectAccessPermits));
+
+/**
+ * An authority carrying a model: the namespaces it knows and the permits it
+ * declares, answering each path the readiness probe asks the way Keto does.
+ */
+const ready = (
+  known: ReadonlySet<string>,
+  declared: ReadonlySet<string>,
+  health = 200,
+): typeof fetch =>
+  fetcherOf((at) => {
+    if (at.pathname === "/health/ready") return json({ status: "ok" }, health);
+    if (at.pathname === `/${checkPath}`)
+      return declared.has(at.searchParams.get("relation") ?? "")
+        ? json({ allowed: false })
+        : json({ error: { code: 400 } }, 400);
+    const namespace = at.searchParams.get("namespace") ?? "";
+    return known.has(namespace)
+      ? json({ relation_tuples: [] })
+      : json({ error: { code: 404 } }, 404);
+  }).fetch;
+
 test("readiness needs the server up and every namespace the model declares", async () => {
-  const model = new Set(["Project", "Tenant"]);
-  const ready = (known: ReadonlySet<string>, health: number): typeof fetch =>
-    fetcherOf((at) => {
-      if (at.pathname === "/health/ready")
-        return json({ status: "ok" }, health);
-      const namespace = at.searchParams.get("namespace") ?? "";
-      return known.has(namespace)
-        ? json({ relation_tuples: [] })
-        : json({ error: { code: 404 } }, 404);
-    }).fetch;
-  assert.equal(await ketoReadiness(settings, ready(model, 200)).ready(), true);
-  assert.equal(await ketoReadiness(settings, ready(model, 503)).ready(), false);
   assert.equal(
-    await ketoReadiness(settings, ready(new Set(["Project"]), 200)).ready(),
+    await ketoReadiness(settings, ready(wholeModel, everyPermit)).ready(),
+    true,
+  );
+  assert.equal(
+    await ketoReadiness(settings, ready(wholeModel, everyPermit, 503)).ready(),
+    false,
+  );
+  assert.equal(
+    await ketoReadiness(
+      settings,
+      ready(new Set(["Project"]), everyPermit),
+    ).ready(),
     false,
     "a model missing the tenant namespace reported itself ready",
   );
   assert.equal(
-    await ketoReadiness(settings, ready(new Set(["Tenant"]), 200)).ready(),
+    await ketoReadiness(
+      settings,
+      ready(new Set(["Tenant"]), everyPermit),
+    ).ready(),
     false,
     "a model missing the project namespace reported itself ready",
   );
+});
+
+test("readiness needs every permit a check will ask for", async () => {
+  for (const missing of everyPermit) {
+    const without = new Set([...everyPermit].filter((it) => it !== missing));
+    assert.equal(
+      await ketoReadiness(settings, ready(wholeModel, without)).ready(),
+      false,
+      `a model without the ${missing} permit reported itself ready`,
+    );
+  }
 });

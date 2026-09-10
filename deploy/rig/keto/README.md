@@ -9,8 +9,12 @@ fabric deploys with the server, and nothing in this checkout applies it.
 `.chug/tasks/keto/namespaces.ts` is the copy `check-keto.sh` drives its own
 container with, so a model the rig runs and a model the gate proves against are
 one file apart and are compared by nobody. The API's readiness answers false
-until both namespaces exist, which is how a server carrying some other model is
-caught at a pod's door rather than by the first member it refuses.
+until both namespaces exist and every permit the code asks for is declared,
+which is how a server carrying some other model, or one that renamed a permit,
+is caught at a pod's door rather than by the first member it refuses. A permit
+still declared under a changed meaning — a `develop` that no longer implies
+`read` — passes readiness, so a change to the deployed model is still read
+against `.chug/tasks/keto/namespaces.ts` by hand.
 
 ## Before migration 83
 

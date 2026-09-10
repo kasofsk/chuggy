@@ -94,6 +94,14 @@ export function projectAccessTenantObject(tenant: string): string {
   return `${String(tenant.length)}:${tenant}`;
 }
 
+/**
+ * The object and the subject a readiness probe names, which no partition and no
+ * principal encode to: both of those carry a decimal length and a colon before
+ * their first half. It lets a probe ask whether a permit is declared without
+ * naming anything a grant could have been written for.
+ */
+export const projectAccessProbe = "readiness";
+
 /** The kind every authority this port derives carries, naming what the principal is. */
 export const memberAuthorityKind = asAuthorityKind("Member");
 

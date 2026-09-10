@@ -5,8 +5,12 @@
  * gate proving the adapter against a model the installation does not run would
  * report a green verdict about a question the deployment answers differently,
  * so the deployed model changing without this file changing is the failure to
- * watch for; `src/adapters/keto/projectAccess.ts` readiness is what catches it
- * at a pod's door rather than here.
+ * watch for. `src/adapters/keto/projectAccess.ts` readiness asks a deployment
+ * for both namespaces and for every permit the code names, so a model missing
+ * one or having renamed one is caught at a pod's door rather than by the first
+ * member it refuses. A permit still declared under a changed meaning — a
+ * `develop` that no longer implies `read` — is caught by neither, and reading
+ * this file against what the fabric applies is the only thing that finds it.
  *
  * IT IS NOT TYPESCRIPT THIS TREE COMPILES. `@ory/keto-namespace-types` is the
  * server's own package and is not a dependency here, so the file lives under

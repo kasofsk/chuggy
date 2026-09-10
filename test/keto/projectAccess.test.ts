@@ -33,6 +33,7 @@ import {
   ketoHarnessGrants,
   ketoHarnessIssuer,
   ketoHarnessPartition,
+  ketoHarnessReadinessAt,
   ketoHarnessReadUrl,
 } from "./harness.ts";
 
@@ -218,5 +219,21 @@ test("an authority that is not there leaves the question undecided", async () =>
         "Read",
       ),
     ProjectAccessUnavailable,
+  );
+});
+
+/**
+ * The permits are asked of the server rather than read off the model file,
+ * which is what makes readiness a control over a deployed model rather than a
+ * restatement of what this tree already believes.
+ */
+test("readiness holds only against a server carrying this model", async () => {
+  assert.equal(
+    await ketoHarnessReadinessAt(ketoHarnessReadUrl()).ready(),
+    true,
+  );
+  assert.equal(
+    await ketoHarnessReadinessAt("http://127.0.0.1:1/").ready(),
+    false,
   );
 });

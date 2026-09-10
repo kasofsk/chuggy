@@ -16,7 +16,10 @@
 
 import { randomUUID } from "node:crypto";
 
-import { ketoProjectAccess } from "../../src/adapters/keto/projectAccess.ts";
+import {
+  ketoProjectAccess,
+  ketoReadiness,
+} from "../../src/adapters/keto/projectAccess.ts";
 import { ketoProjectGrants } from "../../src/adapters/keto/projectGrants.ts";
 import {
   checkedProjectAccessSettings,
@@ -61,6 +64,15 @@ export function ketoHarnessAccess(): ProjectAccess {
 /** The same port over some other read URL, for the case about one that is not there. */
 export function ketoHarnessAccessAt(readUrl: string): ProjectAccess {
   return ketoProjectAccess(
+    checkedProjectAccessSettings({ readUrl, requestTimeoutMs: 2_000 }),
+  );
+}
+
+/** Readiness as a root composes it, over a read URL a case chooses. */
+export function ketoHarnessReadinessAt(readUrl: string): {
+  ready(): Promise<boolean>;
+} {
+  return ketoReadiness(
     checkedProjectAccessSettings({ readUrl, requestTimeoutMs: 2_000 }),
   );
 }
