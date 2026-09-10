@@ -73,7 +73,8 @@ server.listen(0, "127.0.0.1", () => {
 		sleep 1
 		waited=$((waited + 1))
 	done
-	KETO_ANSWERS="http://127.0.0.1:$(cat "$KETO_PORT_FILE")/"
+	KETO_PORT="$(cat "$KETO_PORT_FILE")"
+	KETO_ANSWERS="http://127.0.0.1:$KETO_PORT/"
 }
 
 keto_double_stop() {
@@ -83,10 +84,62 @@ keto_double_stop() {
 	KETO_DOUBLE=""
 }
 
-fixture() { # a throwaway repo with a test/keto directory
+fixture() { # a throwaway repo with a test/keto directory and a model
 	fresh_repo "$R"
-	mkdir -p "$R/test/keto"
+	mkdir -p "$R/test/keto" "$R/.chug/tasks/keto"
+	printf 'dsn: memory\n' >"$R/.chug/tasks/keto/keto.yml"
+	printf 'class Project {}\n' >"$R/.chug/tasks/keto/namespaces.ts"
 	database_helper_double "$R"
+}
+
+# A docker whose containers are one label in a file: enough to answer the three
+# questions the acquire asks it, and to record what it was told to start.
+docker_double() { # <label the container is running under, or empty for none>
+	DOCKER_BIN="$WORK/dockerbin"
+	DOCKER_LOG="$WORK/.docker"
+	DOCKER_LABEL="$WORK/.docker-label"
+	mkdir -p "$DOCKER_BIN"
+	: >"$DOCKER_LOG"
+	printf '%s' "$1" >"$DOCKER_LABEL"
+	cat >"$DOCKER_BIN/docker" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >>"$CHUG_DOCKER_LOG"
+label="$(cat "$CHUG_DOCKER_LABEL")"
+case "$1" in
+inspect)
+	case "$3" in
+	*State.Running*)
+		if [ -n "$label" ]; then echo true; else echo false; fi
+		;;
+	*Config.Labels*)
+		if [ -z "$label" ]; then exit 1; fi
+		echo "$label"
+		;;
+	*) echo "$CHUG_DOCKER_IMAGE" ;;
+	esac
+	;;
+run)
+	for arg in "$@"; do
+		case "$arg" in
+		chuggy.keto.model=*) printf '%s' "${arg#chuggy.keto.model=}" >"$CHUG_DOCKER_LABEL" ;;
+		esac
+	done
+	;;
+rm) : >"$CHUG_DOCKER_LABEL" ;;
+esac
+exit 0
+SH
+	chmod +x "$DOCKER_BIN/docker"
+}
+
+# The gate against the doubled docker, with the authority double standing in
+# for the container it believes it started.
+run_gate_over_docker() {
+	run_gate "$R" "PATH=$DOCKER_BIN:$PATH" "CHUG_DOCKER_LOG=$DOCKER_LOG" \
+		"CHUG_DOCKER_LABEL=$DOCKER_LABEL" CHUG_DOCKER_IMAGE=oryd/keto:fixture \
+		"CHUG_KETO_READ_PORT=$KETO_PORT" "CHUG_KETO_WRITE_PORT=$KETO_PORT" \
+		CHUG_KETO_READ_URL= CHUG_KETO_WRITE_URL= \
+		"CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$CHUG_PG_HELPER_LOG"
 }
 
 # --- A suite that is not there is a could-not-run ----------------------------
@@ -184,5 +237,40 @@ check "the clean line names both servers it used" 0 "$RC" \
 OUT="$CHUG_PG_HELPER_LOG"
 check "a green run prepares one database and drops it" 0 0 "prepare chuggy_keto_"
 check "a green run removes its database" 0 0 "drop chuggy_keto_"
+
+# --- A container started from another model is started again -----------------
+#
+# Keto compiles the model at start-up, so a container that outlived an edit to
+# `keto/namespaces.ts` answers about the model it booted with. The label is
+# what makes that visible, and these two cases are the two answers it decides:
+# a container whose label is not this model's digest is replaced, and one whose
+# label is is reused.
+
+fixture
+passing_suite "$R/test/keto/one.test.ts"
+git -C "$R" add -A
+keto_double Project Tenant
+docker_double "the digest of some earlier model"
+run_gate_over_docker
+keto_double_stop
+check "a container started from another model is not reused" 0 "$RC" "carries another model"
+OUT="$DOCKER_LOG"
+check "the container carrying it is removed" 0 0 "rm -f chuggy-check-keto"
+check "the model a container starts from is a label on it" 0 0 "--label chuggy.keto.model="
+
+# --- A container started from this model is reused ---------------------------
+#
+# The digest is read off what the run above started rather than restated here,
+# so the case cannot agree with a second copy of the algorithm.
+
+STARTED_FROM="$(sed -n 's/.*--label chuggy\.keto\.model=\([0-9a-f]*\).*/\1/p' "$DOCKER_LOG" | head -1)"
+[ -n "$STARTED_FROM" ] || { echo "check-keto.test.sh: LINTER ERROR — nothing was started with a model label"; exit 2; }
+keto_double Project Tenant
+docker_double "$STARTED_FROM"
+run_gate_over_docker
+keto_double_stop
+check "a container started from this model is reused" 0 "$RC" "reusing chuggy-check-keto"
+OUT="$DOCKER_LOG"
+refute "a reused container is not started again" 0 0 "--label chuggy.keto.model="
 
 done_ "check-keto.test.sh"

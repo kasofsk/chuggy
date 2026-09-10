@@ -30,21 +30,6 @@ R="$WORK/repo"
 unset CHUG_CI_FULL CHUG_CI_BASE GITHUB_BASE_REF \
 	CHUG_CI_SUITE_TIMEOUT_SECS CHUG_CI_SUITES_BUDGET_SECS
 
-# THE SUITE'S ONE NEGATIVE ASSERTION. A stage that was skipped prints a line of
-# its own, and every other stage's output is still there — so "did this run" is
-# not a substring test, it is the absence of that line.
-refute() { # <name> <expected-rc> <actual-rc> <must-not-contain>
-	_name="$1"; _want="$2"; _got="$3"; _needle="$4"
-	if [ "$_got" = "$_want" ] && ! grep -qF -- "$_needle" "$OUT"; then
-		echo "ok   - $_name (rc=$_got)"
-		pass=$((pass + 1))
-	else
-		echo "FAIL - $_name: rc want=$_want got=$_got; expected output NOT to contain: $_needle"
-		echo "----- output -----"; cat "$OUT"; echo "------------------"
-		fail=$((fail + 1))
-	fi
-}
-
 ROOT="$(cd "$HERE/../.." && pwd)"
 grep -F '    ./.chug/tasks/ci.sh' "$ROOT/justfile" >/dev/null
 grep -F '    CHUG_CI_FULL=1 ./.chug/tasks/ci.sh' "$ROOT/justfile" >/dev/null

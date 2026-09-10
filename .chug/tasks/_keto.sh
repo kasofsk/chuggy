@@ -10,13 +10,22 @@
 #             $keto_subject     what the verdict line should name
 #   exits     2 through the caller's shell when no server can be had
 #   claims    its working names — the knobs below, $keto_prefix, $keto_waited,
-#             $keto_container — in the sourcing gate's namespace
+#             $keto_model, $keto_digest, $keto_running, $keto_started_from —
+#             in the sourcing gate's namespace
 #
 # THE SERVER IS A CONTAINER THE SOURCING GATES OWN, started under a name
 # nothing else uses and on ports that are not the conventional ones, so a Keto
 # a developer is running is never asked and never stopped. One already running
 # under that name is reused, because a gate that pays a cold start every run is
 # a gate that gets bypassed.
+#
+# A REUSED CONTAINER IS ONE STARTED FROM THIS MODEL. Keto compiles
+# `keto/namespaces.ts` at start-up and the bind mount is not live, so a
+# container that outlived a change to the model keeps answering about the model
+# it booted with — agreement reported as a verdict about a model the tree no
+# longer states. The digest of `keto/keto.yml` and `keto/namespaces.ts` is a
+# label on the container, and one whose label differs is removed and started
+# again rather than reused.
 #
 # IT HOLDS NOTHING BETWEEN RUNS. `dsn: memory` in `keto/keto.yml` means the
 # tuples a suite writes live in the process, so a reused container carries the
@@ -47,6 +56,21 @@ keto_read_port="${CHUG_KETO_READ_PORT:-54466}"
 keto_write_port="${CHUG_KETO_WRITE_PORT:-54467}"
 keto_ready_secs="${CHUG_KETO_READY_SECS:-30}"
 keto_container="chuggy-check-keto"
+keto_model_label="chuggy.keto.model"
+keto_model_query="{{index .Config.Labels \"$keto_model_label\"}}"
+
+# The digest of the model a container would be started from, printing nothing
+# when the model cannot be read.
+keto_model_digest() { # <model directory>
+	node -e '
+const { createHash } = require("node:crypto");
+const { readFileSync } = require("node:fs");
+const digest = createHash("sha256");
+for (const file of ["keto.yml", "namespaces.ts"])
+  digest.update(readFileSync(`${process.argv[1]}/${file}`));
+console.log(digest.digest("hex"));
+' "$1" 2>/dev/null
+}
 
 # Whether the read API answers ready AND carries both namespaces, printing
 # nothing: a message names the URL the caller already has.
@@ -119,9 +143,23 @@ keto_acquire() { # <message prefix>
 	fi
 
 	keto_model="$(git rev-parse --show-toplevel)/.chug/tasks/keto"
-	if [ "$(docker inspect -f '{{.State.Running}}' "$keto_container" 2>/dev/null || echo false)" != "true" ]; then
+	keto_digest="$(keto_model_digest "$keto_model")"
+	if [ -z "$keto_digest" ]; then
+		echo "$keto_prefix: LINTER ERROR — no model to start an authority from at $keto_model"
+		exit 2
+	fi
+	keto_running="$(docker inspect -f '{{.State.Running}}' "$keto_container" 2>/dev/null || echo false)"
+	keto_started_from="$(docker inspect -f "$keto_model_query" "$keto_container" 2>/dev/null || true)"
+	if [ "$keto_running" = "true" ] && [ "$keto_started_from" != "$keto_digest" ]; then
+		echo "$keto_prefix: $keto_container carries another model, so it is started again"
+		keto_running=false
+	fi
+	if [ "$keto_running" = "true" ]; then
+		echo "$keto_prefix: reusing $keto_container on ports $keto_read_port and $keto_write_port"
+	else
 		docker rm -f "$keto_container" >/dev/null 2>&1 || true
 		if ! docker run -d --name "$keto_container" \
+			--label "$keto_model_label=$keto_digest" \
 			-v "$keto_model/keto.yml:/etc/keto/keto.yml:ro" \
 			-v "$keto_model/namespaces.ts:/etc/keto/namespaces.ts:ro" \
 			-p "$keto_read_port:4466" -p "$keto_write_port:4467" \
@@ -130,8 +168,6 @@ keto_acquire() { # <message prefix>
 			exit 2
 		fi
 		echo "$keto_prefix: started $keto_container on ports $keto_read_port and $keto_write_port"
-	else
-		echo "$keto_prefix: reusing $keto_container on ports $keto_read_port and $keto_write_port"
 	fi
 	# Read back from the container rather than from CHUG_KETO_IMAGE, which says
 	# what a fresh start would have used and not what a reused one is running.
