@@ -1,5 +1,3 @@
-import type { ProjectAccessKind } from "../../../interpreter/nativeWeb.ts";
-
 /** One migration: the version that orders it, the name that reports it, and the statements it applies. */
 export interface Migration {
   readonly version: number;
@@ -186,21 +184,6 @@ export function roleStatement(role: string): string {
   $$
 `;
 }
-
-/**
- * Which membership column each project access kind is granted by, which is the
- * whole of what `authorize_project_access` knows. The record is exhaustive over
- * `ProjectAccessKind`, so a kind added to the roster without a column here is a
- * compile error rather than a grant that silently never matches.
- */
-export const projectAccessColumns: Readonly<Record<ProjectAccessKind, string>> =
-  {
-    Read: "may_read",
-    Mutate: "may_mutate",
-    DispatchTicket: "may_dispatch",
-    ProposeDispatch: "may_propose",
-    ManageProjectSelector: "may_manage_project_selector",
-  };
 
 /** A closed set of text values as the SQL list a CHECK compares against. */
 export function schemaTextSet(values: readonly string[]): string {

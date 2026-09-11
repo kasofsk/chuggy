@@ -63,11 +63,11 @@ precondition.
 
 ## What the drills need of the installation
 
-The identity needs `Read` and `Mutate` on the project, granted with
-`npm run provision:project-access` — the principal is derived from the issuer and
-the subject the token carries, so an operator supplies those and never types a
-principal. The project needs one ready configuration revision for a draft to be
-shaped by.
+The identity needs the project's `developers` relation, granted with
+`npm run provision:project-access` against the authority's write port — the
+principal is derived from the issuer and the subject the token carries, so an
+operator supplies those and never types a principal. The project needs one
+ready configuration revision for a draft to be shaped by.
 
 Three drills need the journalled actor up, because releasing a draft is its work
 and no console action can settle a release without it; one of those also needs

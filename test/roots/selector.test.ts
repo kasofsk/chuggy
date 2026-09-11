@@ -22,6 +22,7 @@ const validConfiguration = {
     shutdownDrainMilliseconds: 100,
   },
   selector: { projectsMax: 1, deliveriesMax: 2, reconciliationsMax: 3 },
+  access: { readUrl: "http://127.0.0.1:2/", requestTimeoutMs: 250 },
   identity: { principal: "selector-service", instance: "selector-1" },
   source: {
     baseUrl: "http://127.0.0.1:1/",
@@ -87,6 +88,7 @@ test("the selector command parses every plain-data dependency", async () => {
       runtime: validConfiguration.runtime,
       selector: validConfiguration.selector,
       wakes: { wakesPerPassMax: threadWakesPerPassMax },
+      access: validConfiguration.access,
     },
     identity: validConfiguration.identity,
     source: {

@@ -298,9 +298,10 @@ export async function sessionRigProvision(
 }
 
 /**
- * The membership provisioning command, run against the harness server. It is
- * here beside the session one because the two roots must derive ONE principal
- * from ONE issuer variable, and a case saying so has to drive both.
+ * The project access provisioning command, which reaches the authority rather
+ * than this server. It is here beside the session one because the two roots
+ * must derive ONE principal from ONE issuer variable, and a case saying so has
+ * to drive both.
  */
 export async function projectAccessProvision(
   environment: Readonly<Record<string, string>>,
@@ -309,14 +310,7 @@ export async function projectAccessProvision(
     const ran = await execute(
       process.execPath,
       ["--experimental-strip-types", "src/roots/provisionProjectAccess.ts"],
-      {
-        cwd: process.cwd(),
-        env: {
-          ...process.env,
-          CHUG_PROVISION_DATABASE_URL: postgresHarnessUrl(),
-          ...environment,
-        },
-      },
+      { cwd: process.cwd(), env: { ...process.env, ...environment } },
     );
     return { code: 0, output: ran.stdout };
   } catch (failure) {

@@ -213,13 +213,6 @@ describe("what a press ended as", () => {
     expect(
       threadSendFrom({
         outcome: "Conflict",
-        code: "ThreadOrphaned",
-        body: undefined,
-      }),
-    ).toStrictEqual({ send: "Ended", why: "Orphaned" });
-    expect(
-      threadSendFrom({
-        outcome: "Conflict",
         code: "Whatever",
         body: undefined,
       }),
@@ -302,7 +295,6 @@ describe("the door's own vocabulary", () => {
     expect(said).toStrictEqual([
       ["NotYourThread", "Elsewhere"],
       ["ThreadClosed", "Closed"],
-      ["ThreadOrphaned", "Orphaned"],
       ["ThreadBacklogged", "Backlogged"],
       ["ThreadTurnTooLarge", "Oversize"],
     ]);

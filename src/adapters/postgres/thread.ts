@@ -81,7 +81,6 @@ const draftWithoutABrief = "no brief yet";
 interface ThreadIdentityRow {
   readonly session: string | null;
   readonly principal: string | null;
-  readonly owner: string | null;
   readonly agent_reference: string | null;
   readonly turns: string | null;
   readonly first_message: string | null;
@@ -116,7 +115,6 @@ function threadRecordOf(
   return {
     session: asSessionId(sessionRowText(row.session, "session")),
     principal: asPrincipal(sessionRowText(row.principal, "principal")),
-    ...(row.owner === null ? {} : { owner: row.owner }),
     state: sessionRowMember(allSessionStates, state, "session state"),
     turns: projectRowCounter(
       sessionRowText(row.turns, "thread turns"),
@@ -160,7 +158,7 @@ async function threadStandingRows(
   limit: number,
 ): Promise<readonly ThreadStandingRow[]> {
   const found = await pool.query<ThreadStandingRow>(
-    sql`SELECT session,principal,owner,session_state,agent_reference,
+    sql`SELECT session,principal,session_state,agent_reference,
                turns::text AS turns,first_message,member_title,
                opened_at::text AS opened_at,
                last_activity_at::text AS last_activity_at,
@@ -247,7 +245,6 @@ function threadMessageEnqueued(row: {
     enqueued === "NoThread" ||
     enqueued === "NotYourThread" ||
     enqueued === "Closed" ||
-    enqueued === "Orphaned" ||
     enqueued === "Backlogged"
   )
     return { enqueued };
@@ -269,14 +266,14 @@ function threadMessageEnqueued(row: {
  * shape is one shape and a door that answered a second one would be a second
  * place a column is added to.
  */
-/** Every thread the project holds, with the owner joined from its membership. */
+/** Every thread the project holds, each named by the principal it acts under. */
 async function threadListing(
   pool: pg.Pool,
   partition: Partition,
   limit: number,
 ): Promise<readonly ThreadRecord[]> {
   const found = await pool.query<ThreadListingRow>(
-    sql`SELECT session,principal,owner,state,agent_reference,
+    sql`SELECT session,principal,state,agent_reference,
                turns::text AS turns,first_message,member_title,
                opened_at::text AS opened_at,
                last_activity_at::text AS last_activity_at,
@@ -570,12 +567,7 @@ function threadWokenRow(row: {
   readonly ordinal: string | null;
 }): ThreadWakeOffered {
   const woken = row.enqueued;
-  if (
-    woken === "NoThread" ||
-    woken === "Closed" ||
-    woken === "Orphaned" ||
-    woken === "Backlogged"
-  )
+  if (woken === "NoThread" || woken === "Closed" || woken === "Backlogged")
     return { woken };
   if ((woken === "Woken" || woken === "AlreadyWoken") && row.ordinal !== null)
     return {

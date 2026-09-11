@@ -4246,3 +4246,31 @@ test("migration 82 leaves a released ticket's brief null where its own project b
     );
   });
 });
+
+/**
+ * The two objects migration 83 drops. A migrated database is what answers
+ * this, because the statements that drop them are what a later edit would
+ * touch and a suite reading those would agree with the edit.
+ */
+test("the table and the function project access was answered from are gone", async () => {
+  await migrationDatabase("i83", async (subject) => {
+    await migrationSeedApplied(subject, declaredLatest + 1);
+    const left = await subject.query<{
+      readonly table_left: string | null;
+      readonly function_left: string | null;
+    }>(
+      `SELECT to_regclass('project_membership')::text AS table_left,
+              to_regprocedure('authorize_project_access(text,text,text,text)')::text AS function_left`,
+    );
+    assert.equal(
+      left.rows[0]?.table_left,
+      null,
+      "project_membership is still there",
+    );
+    assert.equal(
+      left.rows[0]?.function_left,
+      null,
+      "authorize_project_access is still there",
+    );
+  });
+});

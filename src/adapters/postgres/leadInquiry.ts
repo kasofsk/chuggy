@@ -57,7 +57,6 @@ import {
 interface LeadInquiryRow extends SessionTurnMeasureRow {
   readonly session: string | null;
   readonly principal: string | null;
-  readonly asker: string | null;
   readonly state: string | null;
   readonly turn: string | null;
   readonly turn_state: string | null;
@@ -73,7 +72,6 @@ function leadInquiryRecordOf(row: LeadInquiryRow): LeadInquiryRecord {
   return {
     session: asSessionId(sessionRowText(row.session, "inquiry session")),
     principal: asPrincipal(sessionRowText(row.principal, "principal")),
-    ...(row.asker === null ? {} : { asker: row.asker }),
     state: sessionRowMember(allSessionStates, row.state, "session state"),
     turn: asSessionTurnId(sessionRowText(row.turn, "inquiry turn")),
     turnState: sessionRowMember(
@@ -107,7 +105,7 @@ async function leadInquiryListing(
   limit: number,
 ): Promise<readonly LeadInquiryRecord[]> {
   const found = await pool.query<LeadInquiryRow>(
-    sql`SELECT session,principal,asker,state,turn,turn_state,
+    sql`SELECT session,principal,state,turn,turn_state,
                ordinal::text AS ordinal,input,result,failure,
                asked_at::text AS asked_at,model,tokens::text AS tokens,
                cost_micros::text AS cost_micros,
@@ -124,7 +122,7 @@ async function leadInquiryOne(
   session: SessionId,
 ): Promise<LeadInquiryRecord | undefined> {
   const found = await pool.query<LeadInquiryRow>(
-    sql`SELECT session,principal,asker,state,turn,turn_state,
+    sql`SELECT session,principal,state,turn,turn_state,
                ordinal::text AS ordinal,input,result,failure,
                asked_at::text AS asked_at,model,tokens::text AS tokens,
                cost_micros::text AS cost_micros,

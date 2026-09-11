@@ -35,7 +35,6 @@ import {
   leadInquiryResponseSchema,
 } from "../../src/contract/responses.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
-import { postgresProjectAccess } from "../../src/adapters/postgres/projectAccess.ts";
 import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { composeNativeWeb } from "../../src/compose.ts";
 import {
@@ -79,7 +78,7 @@ function inquiryApp(principal: Principal) {
     composeNativeWeb(
       pool,
       postgresHarnessKeying(),
-      postgresProjectAccess(pool),
+      rig.sessions.harness.access,
       postgresExecutionBacklogGuard(pool),
     ),
     {
@@ -105,11 +104,11 @@ async function askableProject(label: string): Promise<{
 }> {
   const partition = await inquiryRigProject(rig, `http-${label}`);
   await inquiryRigLead(rig, partition, `http-${label}`);
-  const member = await inquiryRigMember(rig, partition, `http-${label}`);
+  const member = inquiryRigMember(rig, partition, `http-${label}`);
   assert.equal(
     member.principal,
-    oidcPrincipal(threadRigIssuer, member.authority.subject),
-    "the principal the app authenticates as is the membership's own",
+    member.authority.subject,
+    "the principal the app authenticates as is the authority it is audited to",
   );
   return { partition, member };
 }
@@ -151,7 +150,7 @@ test("asking through the composed root opens a fork the database holds", async (
 
 test("the listing answers what the database holds, mine marked and the asker named", async () => {
   const { partition, member } = await askableProject("list");
-  const other = await inquiryRigMember(rig, partition, "http-list-other");
+  const other = inquiryRigMember(rig, partition, "http-list-other");
   await using mine = inquiryApp(member.principal);
   await using theirs = inquiryApp(other.principal);
 
@@ -219,7 +218,7 @@ test("one inquiry is answered on its own route, and an absent one is not found",
  */
 test("each refusal the door meets is the status the wire sends", async () => {
   const leadless = await inquiryRigProject(rig, "http-leadless");
-  const nobody = await inquiryRigMember(rig, leadless, "http-leadless");
+  const nobody = inquiryRigMember(rig, leadless, "http-leadless");
   await using none = inquiryApp(nobody.principal);
   const noLead = await none.inject({
     method: "POST",
@@ -316,10 +315,10 @@ test("a question over the door's own bound never reaches the database", async ()
  */
 test("an inquiry whose asker's membership is gone is answered with no asker", async () => {
   const { partition, member } = await askableProject("orphaned");
-  const reader = await inquiryRigMember(rig, partition, "http-orphaned-reader");
+  const reader = inquiryRigMember(rig, partition, "http-orphaned-reader");
   await using asking = inquiryApp(member.principal);
   const accepted = await asked(asking, partition);
-  await threadRigRevoke(rig, partition, member);
+  threadRigRevoke(rig, partition, member);
 
   await using app = inquiryApp(reader.principal);
   const listed = await app.inject({

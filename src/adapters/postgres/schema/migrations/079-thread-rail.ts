@@ -148,39 +148,63 @@ const threadMoved = `CROSS JOIN LATERAL (
                       WHERE t.tenant=s.tenant AND t.project=s.project
                         AND t.session=s.session)) AS at) moved`;
 
-const threadListingCarriesTheRail = [
+/**
+ * Whether a read still answers the owner column, which 083 drops with the
+ * membership join it was taken from.
+ */
+export interface ThreadRailReads {
+  readonly owner: boolean;
+}
+
+/** The owner column, absent from both halves of a read that no longer answers one. */
+const threadOwnerColumn = (rail: ThreadRailReads): string =>
+  rail.owner ? "owner text," : "";
+
+const threadOwnerSelection = (rail: ThreadRailReads): string =>
+  rail.owner ? "m.authority_subject," : "";
+
+const threadOwnerJoin = (rail: ThreadRailReads): string =>
+  rail.owner
+    ? `LEFT JOIN project_membership m
+                ON m.tenant=s.tenant AND m.project=s.project
+               AND m.principal=s.principal
+         `
+    : "";
+
+export const threadListingCarriesTheRail = (
+  rail: ThreadRailReads,
+): readonly string[] => [
   `DROP FUNCTION ${projectThreadsReadFunction}(text,text,bigint)`,
   `CREATE FUNCTION ${projectThreadsReadFunction}(
      in_tenant text,in_project text,in_max bigint)
-     RETURNS TABLE(session text,principal text,owner text,state text,
+     RETURNS TABLE(session text,principal text,${threadOwnerColumn(rail)}state text,
                    agent_reference text,turns bigint,first_message text,
                    member_title text,opened_at timestamptz,
                    last_activity_at timestamptz,hidden_at timestamptz)
      LANGUAGE sql STABLE SECURITY DEFINER
      SET search_path=pg_catalog,public,pg_temp AS $$
-       SELECT s.session,s.principal,m.authority_subject,s.state,s.agent_reference,
+       SELECT s.session,s.principal,${threadOwnerSelection(rail)}s.state,s.agent_reference,
               (SELECT count(*) FROM session_turn t
                 WHERE t.tenant=s.tenant AND t.project=s.project
                   AND t.session=s.session),
               ${threadFirstMessage},
               s.member_title,s.opened_at,moved.at,s.hidden_at
          FROM agent_session s
-         LEFT JOIN project_membership m
-                ON m.tenant=s.tenant AND m.project=s.project
-               AND m.principal=s.principal
-         ${threadMoved}
+         ${threadOwnerJoin(rail)}${threadMoved}
         WHERE s.tenant=in_tenant AND s.project=in_project AND s.kind='Thread'
         ORDER BY (s.state='Open') DESC,moved.at DESC,s.session
         LIMIT least(coalesce(in_max,${threadsAnsweredMax}),${threadsAnsweredMax})
      $$`,
 ];
 
-const threadStandingCarriesTheRail = [
+export const threadStandingCarriesTheRail = (
+  rail: ThreadRailReads,
+): readonly string[] => [
   `DROP FUNCTION ${threadStandingReadFunction}(text,text,text,bigint,bigint)`,
   `CREATE FUNCTION ${threadStandingReadFunction}(
      in_tenant text,in_project text,in_session text,
      in_before bigint,in_turns_max bigint)
-     RETURNS TABLE(session text,principal text,owner text,session_state text,
+     RETURNS TABLE(session text,principal text,${threadOwnerColumn(rail)}session_state text,
                    agent_reference text,turns bigint,first_message text,
                    member_title text,opened_at timestamptz,
                    last_activity_at timestamptz,hidden_at timestamptz,
@@ -201,7 +225,7 @@ const threadStandingCarriesTheRail = [
           ORDER BY t.ordinal DESC
           LIMIT least(coalesce(in_turns_max,${threadTurnsAnsweredMax}),
                       ${threadTurnsAnsweredMax}))
-       SELECT s.session,s.principal,m.authority_subject,s.state,s.agent_reference,
+       SELECT s.session,s.principal,${threadOwnerSelection(rail)}s.state,s.agent_reference,
               (SELECT count(*) FROM session_turn t
                 WHERE t.tenant=s.tenant AND t.project=s.project
                   AND t.session=s.session),
@@ -217,10 +241,7 @@ const threadStandingCarriesTheRail = [
               page.result,page.failure,page.model,page.tokens,page.cost_micros,
               page.duration_ms,page.tools,page.batch_first,page.batch_last
          FROM agent_session s
-         LEFT JOIN project_membership m
-                ON m.tenant=s.tenant AND m.project=s.project
-               AND m.principal=s.principal
-         ${threadMoved}
+         ${threadOwnerJoin(rail)}${threadMoved}
          LEFT JOIN page ON true
         WHERE s.tenant=in_tenant AND s.project=in_project
           AND s.session=in_session AND s.kind='Thread'
@@ -229,7 +250,7 @@ const threadStandingCarriesTheRail = [
 ];
 
 /** The two reads, owned and granted exactly as 062 declared them. */
-const threadReadGrants = [
+export const threadReadGrants = [
   [projectThreadsReadFunction, "text,text,bigint"],
   [threadStandingReadFunction, "text,text,text,bigint,bigint"],
 ].flatMap(([name, signature]) => [
@@ -246,8 +267,8 @@ export const migration079: Migration = {
     ...memberViewColumns,
     ...memberViewDoors,
     ...memberViewDoorGrants,
-    ...threadListingCarriesTheRail,
-    ...threadStandingCarriesTheRail,
+    ...threadListingCarriesTheRail({ owner: true }),
+    ...threadStandingCarriesTheRail({ owner: true }),
     ...threadReadGrants,
   ],
 };

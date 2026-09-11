@@ -16,14 +16,9 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import {
   apiRole,
-  projectAuthorizationFunction,
   selectorControlRole,
   selectorServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
-import {
-  allProjectAccessKinds,
-  oidcPrincipal,
-} from "../../src/interpreter/nativeWeb.ts";
 import {
   postgresSelectorProjectSettings,
   postgresSelectorRuntimeControl,
@@ -535,67 +530,6 @@ test("a write reports the row it wrote and not a racing administrator's", async 
     await pool.end();
     await competitor.end();
   }
-});
-
-test("every access kind the roster names is one the server answers for", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "selector-access-kinds",
-  );
-  const principal = oidcPrincipal("https://issuer.test", "settings-admin");
-  await harness.membership.grant({
-    principal,
-    partition,
-    authority: administrator,
-    access: new Set(allProjectAccessKinds),
-  });
-  for (const kind of allProjectAccessKinds)
-    assert.deepEqual(
-      await harness.access.authorize(principal, partition, kind),
-      administrator,
-      kind,
-    );
-  await assert.rejects(
-    () =>
-      harness.query(
-        `SELECT * FROM ${projectAuthorizationFunction}($1,$2,$3,'ManageSelector')`,
-        [principal, partition.tenant, partition.project],
-      ),
-    /unknown project access kind/u,
-  );
-});
-
-test("a project administrator is the one a project's settings answer to", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "selector-settings-membership",
-  );
-  const narrowed = oidcPrincipal("https://issuer.test", "reader-only");
-  await harness.membership.grant({
-    principal: narrowed,
-    partition,
-    authority: administrator,
-    access: new Set(["Read"] as const),
-  });
-  assert.equal(
-    await harness.access.authorize(
-      narrowed,
-      partition,
-      "ManageProjectSelector",
-    ),
-    undefined,
-  );
-  const wide = oidcPrincipal("https://issuer.test", "settings-writer");
-  await harness.membership.grant({
-    principal: wide,
-    partition,
-    authority: administrator,
-    access: new Set(["ManageProjectSelector"] as const),
-  });
-  assert.deepEqual(
-    await harness.access.authorize(wide, partition, "ManageProjectSelector"),
-    administrator,
-  );
 });
 
 test("an interaction recorded without an attempt keeps both fence revisions", async () => {

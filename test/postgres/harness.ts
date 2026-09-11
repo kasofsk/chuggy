@@ -62,13 +62,13 @@ import {
   asRepositoryId,
   type RepositoryId,
 } from "../../src/interpreter/finalizer.ts";
-import { postgresProjectAccess } from "../../src/adapters/postgres/projectAccess.ts";
-import { postgresProjectMembership } from "../../src/adapters/postgres/projectMembership.ts";
+import {
+  memoryProjectAccess,
+  type MemoryProjectAccess,
+} from "./projectAccessMemory.ts";
 import { executionSchedulerAuthorityKind } from "../../src/interpreter/executionScheduler.ts";
 import { isCompletionDecisionEvent } from "../../src/interpreter/ticketCommand.ts";
 import type { DecisionEvent } from "../../src/domain/generated/modelTypes.ts";
-import type { ProjectAccess } from "../../src/interpreter/nativeWeb.ts";
-import type { ProjectMembershipAdministration } from "../../src/interpreter/projectMembership.ts";
 import type { RepositoryConfigurationStore } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
   asAuthorityKind,
@@ -184,8 +184,12 @@ export interface PostgresHarness {
   readonly discovery: ProjectDiscovery;
   readonly decisions: ProjectDecision;
   readonly authoring: AuthoringStore & RepositoryConfigurationStore;
-  readonly access: ProjectAccess;
-  readonly membership: ProjectMembershipAdministration;
+  /**
+   * The project access every door on this harness is gated by. It is held in
+   * memory rather than read from a server, because no row in this database
+   * says who may address a project any more.
+   */
+  readonly access: MemoryProjectAccess;
   readonly query: (
     sql: string,
     values?: readonly unknown[],
@@ -219,8 +223,7 @@ export async function postgresHarnessOpen(): Promise<PostgresHarness> {
     discovery: postgresProjectDiscovery(pool),
     decisions: postgresProjectDecision(pool),
     authoring: postgresAuthoring(pool),
-    access: postgresProjectAccess(pool),
-    membership: postgresProjectMembership(pool),
+    access: memoryProjectAccess(),
     query: async (sql, values) =>
       (await pool.query(sql, values === undefined ? undefined : [...values]))
         .rows as readonly Record<string, unknown>[],

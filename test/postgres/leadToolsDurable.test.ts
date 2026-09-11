@@ -67,7 +67,6 @@ import {
   type PostgresHarness,
 } from "./harness.ts";
 import {
-  projectAccessProvision,
   sessionRigAttempt,
   sessionRigProvision,
   sessionRigBearer,
@@ -687,14 +686,10 @@ test("a session provisioned from an issuer and a subject is the membership's own
     "the session authenticates as the principal a membership is granted to",
   );
 
-  await harness.membership.grant({
+  harness.access.grant({
     partition,
     principal,
     access: new Set(["Read", "Mutate", "ProposeDispatch"] as const),
-    authority: {
-      kind: asAuthorityKind("OidcUser"),
-      subject: asAuthoritySubject(subject),
-    },
   });
   assert.notEqual(
     await harness.access.authorize(principal, partition, "ProposeDispatch"),
@@ -723,58 +718,6 @@ test("a session may be named by one principal form and never by two", async () =
   });
   assert.equal(neither.code, 1);
   assert.match(neither.output, /CHUG_PROVISION_SESSION_PRINCIPAL is required/u);
-});
-
-/**
- * ONE ISSUER VARIABLE ACROSS BOTH PROVISIONING ROOTS, because a session and the
- * membership authorizing it must derive the same principal and two names for
- * one issuer is the one-character difference the derived form exists to close.
- *
- * So the case drives both commands with that variable alone and asks the server
- * whether the membership one wrote authorizes the session the other opened.
- */
-test("both provisioning roots derive one principal from one issuer variable", async () => {
-  const partition = await leadToolsProject("one-issuer");
-  const issuer = "https://accounts.example.test";
-  const subject = `member-${randomUUID()}`;
-  const session = `session-one-issuer-${randomUUID()}`;
-
-  const granted = await projectAccessProvision({
-    CHUG_API_OIDC_ISSUER: issuer,
-    CHUG_PROVISION_ACTION: "grant",
-    CHUG_PROVISION_SUBJECT: subject,
-    CHUG_PROVISION_TENANT: partition.tenant,
-    CHUG_PROVISION_PROJECT: partition.project,
-    CHUG_PROVISION_ACCESS: "Read",
-    CHUG_PROVISION_AUTHORITY_KIND: "OidcUser",
-    CHUG_PROVISION_AUTHORITY_SUBJECT: subject,
-  });
-  assert.equal(granted.code, 0, granted.output);
-
-  const opened = await provisionSession({
-    CHUG_PROVISION_SESSION_TENANT: partition.tenant,
-    CHUG_PROVISION_SESSION_PROJECT: partition.project,
-    CHUG_PROVISION_SESSION_SESSION: session,
-    CHUG_API_OIDC_ISSUER: issuer,
-    CHUG_PROVISION_SESSION_SUBJECT: subject,
-  });
-  assert.equal(opened.code, 0, opened.output);
-
-  const held = await harness.query(
-    "SELECT principal FROM agent_session WHERE session=$1",
-    [session],
-  );
-  const principal = held[0]?.["principal"];
-  assert.equal(principal, oidcPrincipal(issuer, subject));
-  assert.notEqual(
-    await harness.access.authorize(
-      oidcPrincipal(issuer, subject),
-      partition,
-      "Read",
-    ),
-    undefined,
-    "the membership one root wrote authorizes the session the other opened",
-  );
 });
 
 /**

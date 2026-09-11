@@ -9,6 +9,7 @@ import {
   finalizerPass,
   type FinalizerService,
 } from "../interpreter/finalizerRun.ts";
+import type { ProjectAccessSettings } from "../interpreter/projectAccess.ts";
 import type { Partition, RecoveryEpoch } from "../interpreter/projectStore.ts";
 import {
   sessionSchedulerPass,
@@ -38,6 +39,7 @@ import {
   composeSelectorRuntime,
   type FinalizerServiceRuntime,
 } from "../compose.ts";
+import { ketoProjectAccess } from "../adapters/keto/projectAccess.ts";
 import { systemPacing } from "../adapters/runtime/systemPacing.ts";
 import type pg from "pg";
 import {
@@ -334,6 +336,11 @@ export interface SelectorProcessRootConfig {
    * lives and an arm in which a deployment's bound is not the bound that runs.
    */
   readonly wakes: { readonly wakesPerPassMax: number };
+  /**
+   * Where the project authority is. The wake pass asks it whether a thread's
+   * principal may still read the project, which no row in this database says.
+   */
+  readonly access: ProjectAccessSettings;
 }
 
 /**
@@ -362,6 +369,7 @@ export function selectorProcessRoot(
       service,
       {
         store: postgresThreadWakes(pool),
+        access: ketoProjectAccess(config.access),
         clock: { nowIso: () => new Date().toISOString() },
         wakesPerPassMax: config.wakes.wakesPerPassMax,
       },

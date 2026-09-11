@@ -195,7 +195,9 @@ const runEvidenceNamesNothing = [
  * position and the authorship join — is unchanged; what a row is called is now
  * the row's to answer.
  */
-const candidatesReadTheRecord = [
+export const threadWakeCandidatesRead = (
+  authored: string,
+): readonly string[] => [
   `CREATE OR REPLACE FUNCTION ${threadWakeCandidatesFunction}(
      in_after bigint,in_max bigint)
      RETURNS TABLE(sequence bigint,tenant text,project text,kind text,
@@ -211,19 +213,26 @@ const candidatesReadTheRecord = [
           AND c.sequence>s.opened_after_sequence
         WHERE c.sequence>coalesce(in_after,0)
           AND c.wake_reason IS NOT NULL
-          AND EXISTS(SELECT 1 FROM draft_revision r
+          AND ${authored}
+        ORDER BY c.sequence,s.session
+        LIMIT least(coalesce(in_max,${threadWakesPerPassMax}),
+                    ${threadWakesPerPassMax})
+     $$`,
+];
+
+/** The bridge 071 wrote: a revision this session's principal holds a membership for. */
+const authoredUnderAMembership = `EXISTS(SELECT 1 FROM draft_revision r
                        JOIN project_membership m
                          ON m.tenant=r.tenant AND m.project=r.project
                         AND m.authority_kind=r.authority_kind
                         AND m.authority_subject=r.authority_subject
                       WHERE r.tenant=c.tenant AND r.project=c.project
                         AND r.ticket::text=c.resource
-                        AND m.principal=s.principal)
-        ORDER BY c.sequence,s.session
-        LIMIT least(coalesce(in_max,${threadWakesPerPassMax}),
-                    ${threadWakesPerPassMax})
-     $$`,
-];
+                        AND m.principal=s.principal)`;
+
+const candidatesReadTheRecord = threadWakeCandidatesRead(
+  authoredUnderAMembership,
+);
 
 /** A change says what happened when it happened, and a sequence means what it meant. */
 export const migration071: Migration = {

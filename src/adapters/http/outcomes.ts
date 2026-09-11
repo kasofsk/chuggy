@@ -77,6 +77,7 @@ import type {
   ThreadTurnRecord,
   ThreadsRead,
 } from "../../interpreter/threadRead.ts";
+import { ProjectAccessUnavailable } from "../../interpreter/projectAccess.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { DraftBrief } from "../../interpreter/ticketBrief.ts";
 import type { RepositoryConfigurationImportOutcome } from "../../interpreter/repositoryConfiguration.ts";
@@ -175,7 +176,13 @@ function transportFaultStatus(failure: unknown): number | undefined {
     : undefined;
 }
 
+/**
+ * A project authority this server could not reach is this server failing, and
+ * a caller is told to wait rather than told they may not.
+ */
 export function failureResponse(failure: unknown): NativeHttpResponse {
+  if (failure instanceof ProjectAccessUnavailable)
+    return retry(503, authorityRetryAfterSeconds, "AuthorityUnavailable");
   const status = transportFaultStatus(failure);
   if (status === 413)
     return response(
@@ -201,6 +208,9 @@ function operationPath(partition: Partition, operation: OperationId): string {
     encodeURIComponent(operation),
   ].join("/");
 }
+
+/** How long a caller is told to wait before asking an unreachable authority again. */
+export const authorityRetryAfterSeconds = 1;
 
 function retry(
   status: number,
@@ -1200,7 +1210,6 @@ const threadMessageRefusalCode: Readonly<
 > = {
   NotYourThread: "NotYourThread",
   Closed: "ThreadClosed",
-  Orphaned: "ThreadOrphaned",
   TooLarge: "ThreadTurnTooLarge",
   Backlogged: "ThreadBacklogged",
 };
@@ -1232,14 +1241,6 @@ export function threadMessageResponse(
         nativeHttpError(
           threadMessageRefusalCode.Closed,
           "The thread takes no more turns.",
-        ),
-      );
-    case "Orphaned":
-      return response(
-        409,
-        nativeHttpError(
-          threadMessageRefusalCode.Orphaned,
-          "The thread has no owner.",
         ),
       );
     case "TooLarge":

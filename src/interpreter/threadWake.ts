@@ -18,11 +18,20 @@
  * A WAKE THAT LANDS NOWHERE IS SKIPPED, NOT RETRIED, and the cursor still
  * moves past it. A member whose mailbox is full has more waiting than they
  * have read, and a wake retried until it fits would make their mailbox a
- * queue of notices nobody asked for; a thread that is closed, ownerless or
- * absent has nobody to tell. The pass counts each of those and carries on,
- * because one member's mailbox is not the pass's business to stop for.
+ * queue of notices nobody asked for; a thread that is closed or absent has
+ * nobody to tell. The pass counts each of those and carries on, because one
+ * member's mailbox is not the pass's business to stop for.
  *
- * A CURSOR MAY ONLY MOVE PAST A SEQUENCE THE PASS READ WHOLE. One change row
+ * A THREAD WHOSE PRINCIPAL THE PROJECT NO LONGER ADMITS IS ONE OF THOSE, AND
+ * THE AUTHORITY IS ASKED HERE. `src/interpreter/projectAccess.ts` answers it,
+ * not the mailbox door, because access is not a row this database holds. An
+ * authority that could not answer at all is neither a wake nor an ownerless
+ * thread: the candidate is passed over and its sequence holds the cursor,
+ * which is the same rule the paragraph below states for a sequence read in
+ * part. A raise instead would end the pacing loop, and an outage is not a
+ * reason to stop selecting.
+ *
+ * A CURSOR MAY ONLY MOVE PAST A SEQUENCE THE PASS DECIDED WHOLE. One change row
  * wakes one thread per member who authored a revision of the ticket it names,
  * so a page that filled its bound may hold only part of the last sequence's
  * candidates — and a cursor moved past that sequence would drop the rest of
@@ -54,6 +63,10 @@ import { threadWakesPerPassMax } from "../contract/http.ts";
 import type { SessionId, SessionTurnId } from "./agentSession.ts";
 import { asSessionTurnId } from "./agentSession.ts";
 import type { Principal } from "./principal.ts";
+import {
+  ProjectAccessUnavailable,
+  type ProjectAccess,
+} from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
 import {
   threadWakeDocument,
@@ -79,12 +92,12 @@ export interface ThreadWakeCandidate {
 
 /**
  * What one wake offered a member's mailbox. Two arms are a turn — the second
- * being the replay the derived identity makes possible — and the other four
- * are a mailbox there was no turn to put in.
+ * being the replay the derived identity makes possible — and the rest are a
+ * mailbox there was no turn to put in.
  */
 export type ThreadWakeOffered =
   | { readonly woken: "Woken" | "AlreadyWoken"; readonly ordinal: number }
-  | { readonly woken: "NoThread" | "Closed" | "Orphaned" | "Backlogged" };
+  | { readonly woken: "NoThread" | "Closed" | "Backlogged" };
 
 /**
  * The durable side of one pass. `candidates` answers in sequence order and
@@ -108,6 +121,7 @@ export interface ThreadWakeStore {
 
 export interface ThreadWakeService {
   readonly store: ThreadWakeStore;
+  readonly access: ProjectAccess;
   readonly clock: { nowIso(): string };
   readonly wakesPerPassMax: number;
 }
@@ -185,28 +199,39 @@ function orderedPage(
   return page;
 }
 
-export async function threadWakePass(
+/** Whether the project still admits a candidate's principal, or nothing where the authority could not say. */
+async function threadWakeAdmitted(
+  access: ProjectAccess,
+  candidate: ThreadWakeCandidate,
+): Promise<boolean | undefined> {
+  try {
+    return (
+      (await access.authorize(
+        candidate.principal,
+        candidate.partition,
+        "Read",
+      )) !== undefined
+    );
+  } catch (failure) {
+    if (failure instanceof ProjectAccessUnavailable) return undefined;
+    throw failure;
+  }
+}
+
+/** Every wake one page offers, and the first sequence the authority left undecided. */
+async function threadWakesOffered(
   service: ThreadWakeService,
-): Promise<ThreadWakeReport> {
-  const limit = service.wakesPerPassMax;
-  if (!Number.isSafeInteger(limit) || limit < 1)
-    throw new RangeError(
-      `thread wake: ${String(limit)} is not a bound a pass can hold`,
-    );
-  if (limit > threadWakesPerPassMax)
-    throw new RangeError(
-      `thread wake: a bound of ${String(limit)} is above the ${String(threadWakesPerPassMax)} the candidate read caps itself at`,
-    );
-  const started = await service.store.cursor();
-  const page = orderedPage(
-    await service.store.candidates(started, limit),
-    limit,
-  );
-  const advanced = threadWakeAdvanced(page, limit);
-  if (advanced === undefined)
-    return { read: 0, woken: 0, skipped: 0, cursor: started };
+  page: readonly ThreadWakeCandidate[],
+): Promise<{ readonly woken: number; readonly undecidedAt?: number }> {
   let woken = 0;
+  let undecidedAt: number | undefined;
   for (const candidate of page) {
+    const admitted = await threadWakeAdmitted(service.access, candidate);
+    if (admitted === undefined) {
+      undecidedAt ??= candidate.sequence;
+      continue;
+    }
+    if (!admitted) continue;
     const offered = await service.store.wake({
       partition: candidate.partition,
       principal: candidate.principal,
@@ -225,17 +250,57 @@ export async function threadWakePass(
     if (offered.woken === "Woken" || offered.woken === "AlreadyWoken")
       woken += 1;
   }
-  const cursor = await service.store.advance(advanced.sequence);
-  if (cursor < advanced.sequence)
+  return { woken, ...(undecidedAt === undefined ? {} : { undecidedAt }) };
+}
+
+/** The cursor after a move, refusing a store that answered a sequence behind the one it was given. */
+async function threadWakeCursorMoved(
+  service: ThreadWakeService,
+  sequence: number,
+): Promise<number> {
+  const cursor = await service.store.advance(sequence);
+  if (cursor < sequence)
     throw new Error(
-      `thread wake: the cursor holds ${String(cursor)} after being moved to ${String(advanced.sequence)}`,
+      `thread wake: the cursor holds ${String(cursor)} after being moved to ${String(sequence)}`,
     );
+  return cursor;
+}
+
+export async function threadWakePass(
+  service: ThreadWakeService,
+): Promise<ThreadWakeReport> {
+  const limit = service.wakesPerPassMax;
+  if (!Number.isSafeInteger(limit) || limit < 1)
+    throw new RangeError(
+      `thread wake: ${String(limit)} is not a bound a pass can hold`,
+    );
+  if (limit > threadWakesPerPassMax)
+    throw new RangeError(
+      `thread wake: a bound of ${String(limit)} is above the ${String(threadWakesPerPassMax)} the candidate read caps itself at`,
+    );
+  const started = await service.store.cursor();
+  const page = orderedPage(
+    await service.store.candidates(started, limit),
+    limit,
+  );
+  if (page.length === 0)
+    return { read: 0, woken: 0, skipped: 0, cursor: started };
+  const { woken, undecidedAt } = await threadWakesOffered(service, page);
+  const decided =
+    undecidedAt === undefined
+      ? page
+      : page.filter((candidate) => candidate.sequence < undecidedAt);
+  const advanced = threadWakeAdvanced(decided, limit);
+  const cursor =
+    advanced === undefined
+      ? started
+      : await threadWakeCursorMoved(service, advanced.sequence);
   return {
     read: page.length,
     woken,
     skipped: page.length - woken,
     cursor,
-    ...(advanced.truncatedAt === undefined
+    ...(advanced?.truncatedAt === undefined
       ? {}
       : { truncatedAt: advanced.truncatedAt }),
   };

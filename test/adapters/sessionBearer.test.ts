@@ -32,7 +32,7 @@ const identity: SessionBearerIdentity = {
   partition: { tenant: asTenantId("acme"), project: asProjectId("atlas") },
   session: asSessionId("session-one"),
   kind: "Thread",
-  principal: asPrincipal("issuer\u0000subject"),
+  principal: asPrincipal("issuer-subject"),
 };
 
 /**

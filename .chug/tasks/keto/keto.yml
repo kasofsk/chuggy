@@ -1,0 +1,17 @@
+# The configuration `check-keto.sh` starts its own server with. `dsn: memory`
+# migrates itself at start-up, so the gate's server needs no database and
+# holds nothing between runs; the rig's is a PostgreSQL DSN and an
+# `keto migrate up` before it, which is the fabric's to deploy.
+version: v26.2.0
+dsn: memory
+log:
+  level: error
+namespaces:
+  location: file:///etc/keto/namespaces.ts
+serve:
+  read:
+    host: 0.0.0.0
+    port: 4466
+  write:
+    host: 0.0.0.0
+    port: 4467

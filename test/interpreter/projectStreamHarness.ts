@@ -36,7 +36,7 @@ import {
   type Principal,
 } from "../../src/interpreter/nativeWeb.ts";
 
-export const streamPrincipal = asPrincipal("issuer\u0000subject");
+export const streamPrincipal = asPrincipal("issuer-subject");
 
 /** A partition whose tenant a case may vary, because a project id alone is not one. */
 export function partitionOf(project: string, tenant = "tenant"): Partition {
@@ -44,7 +44,7 @@ export function partitionOf(project: string, tenant = "tenant"): Partition {
 }
 
 /** A second principal, for the cases about what one stream's own read answers. */
-export const otherStreamPrincipal = asPrincipal("issuer\u0000other-subject");
+export const otherStreamPrincipal = asPrincipal("issuer-other-subject");
 
 export function changeRow(
   sequence: number,

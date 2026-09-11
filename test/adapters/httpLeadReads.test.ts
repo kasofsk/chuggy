@@ -341,7 +341,7 @@ function appOf(shape: LeadCase = {}) {
       authenticateBearer: () =>
         Promise.resolve({
           authenticated: "Bearer" as const,
-          bearer: { principal: asPrincipal("issuer\u0000subject") },
+          bearer: { principal: asPrincipal("issuer-subject") },
         }),
     },
     { ready: () => Promise.resolve(true) },

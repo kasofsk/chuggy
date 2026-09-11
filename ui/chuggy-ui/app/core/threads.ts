@@ -10,8 +10,9 @@
  * answered rather than working it out.
  *
  * `Orphaned` IS A WORD THE WIRE CARRIES AND NOT ONE DERIVED HERE. `state` is
- * `threadStandings`, so an open session whose owner's membership is gone —
- * still acting, as a person who is no longer a member — is answered as itself.
+ * `threadStandings`, so an open session the project no longer admits its owner
+ * to — still acting, as a person who may no longer read it — is answered as
+ * itself.
  * A console that folded `state` and `owner` again would be a second account of
  * a standing the server already decided, and the two would disagree the first
  * time either moved.
@@ -26,11 +27,10 @@
  * name with silence.
  *
  * A DOOR THAT WILL TAKE NO MORE MESSAGES ENDS THE COMPOSER WHICHEVER REFUSAL
- * IT IS, and the envelope's code is what says which. `ThreadClosed` and
- * `ThreadOrphaned` are both a thread that takes no more, and a console holding
- * its own roster of the door's refusals would answer the next one the door
- * grows by drawing nothing — so the two the wire has get the standing word they
- * belong to and anything else is drawn as the code the server sent.
+ * IT IS, and the envelope's code is what says which. A console holding its own
+ * roster of the door's refusals would answer the next one the door grows by
+ * drawing nothing — so each code the wire has gets the word it belongs to and
+ * anything else is drawn as the code the server sent.
  *
  * EVERY CODE THIS CONSOLE NAMES IS THE DOOR'S OWN ROSTER MEMBER.
  * `threadMessageRefusalCodes` is every code the message door emits, and both
@@ -301,8 +301,6 @@ function threadRosterWord(code: ThreadMessageRefusalCode): string {
       return "Elsewhere";
     case "ThreadClosed":
       return "Closed";
-    case "ThreadOrphaned":
-      return "Orphaned";
     case "ThreadBacklogged":
       return "Backlogged";
     case "ThreadTurnTooLarge":

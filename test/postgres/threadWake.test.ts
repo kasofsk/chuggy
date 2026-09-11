@@ -85,6 +85,7 @@ const instant = "2026-09-02T12:00:00.000Z";
 function service(wakesPerPassMax: number): ThreadWakeService {
   return {
     store: rig.wakes,
+    access: rig.sessions.harness.access,
     clock: { nowIso: () => instant },
     wakesPerPassMax,
   };
@@ -159,7 +160,7 @@ async function refuse(
 
 test("a refusal against a member's own ticket becomes one Wake turn, once", async () => {
   const partition = await threadRigProject(rig, "wakepass");
-  const member = await threadRigMember(rig, partition, "wakepass");
+  const member = threadRigMember(rig, partition, "wakepass");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member);
@@ -223,7 +224,7 @@ test("a refusal against a member's own ticket becomes one Wake turn, once", asyn
  */
 test("a ticket that moves twice wakes a thread with what each move was", async () => {
   const partition = await threadRigProject(rig, "wakemoves");
-  const member = await threadRigMember(rig, partition, "wakemoves");
+  const member = threadRigMember(rig, partition, "wakemoves");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member);
@@ -249,7 +250,7 @@ test("a ticket that moves twice wakes a thread with what each move was", async (
 
 test("a pass whose cursor was not moved re-offers the same turn and is told so", async () => {
   const partition = await threadRigProject(rig, "wakereplay");
-  const member = await threadRigMember(rig, partition, "wakereplay");
+  const member = threadRigMember(rig, partition, "wakereplay");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member);
@@ -291,7 +292,7 @@ test("a pass whose cursor was not moved re-offers the same turn and is told so",
 
 test("a change for a closed thread is read by nobody and moves the cursor by itself", async () => {
   const partition = await threadRigProject(rig, "wakeclosed");
-  const member = await threadRigMember(rig, partition, "wakeclosed");
+  const member = threadRigMember(rig, partition, "wakeclosed");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member);
@@ -308,16 +309,15 @@ test("a change for a closed thread is read by nobody and moves the cursor by its
 });
 
 /**
- * The one arm of the wake door the candidate read can never produce and the
- * adapter must still map. The read requires a membership, so a member whose
- * membership went between the read and the wake is a RACE — and an unmapped
- * verdict is a raise out of the pass, which ends the selector's loop for good.
+ * The door asks nothing about access, because no row here holds any. A member
+ * the project has withdrawn is woken by the door and skipped by the pass that
+ * asks the authority first, so the fact is stated in one place.
  */
-test("a wake offered a thread whose owner's membership is gone is orphaned, not a raise", async () => {
+test("the wake door wakes a thread the project no longer admits its owner to", async () => {
   const partition = await threadRigProject(rig, "wakeorphan");
-  const member = await threadRigMember(rig, partition, "wakeorphan");
+  const member = threadRigMember(rig, partition, "wakeorphan");
   await threadRigThread(rig, partition, member);
-  await threadRigRevoke(rig, partition, member);
+  threadRigRevoke(rig, partition, member);
 
   assert.deepEqual(
     await rig.wakes.wake({
@@ -332,7 +332,7 @@ test("a wake offered a thread whose owner's membership is gone is orphaned, not 
         }),
       ),
     }),
-    { woken: "Orphaned" },
+    { woken: "Woken", ordinal: 1 },
   );
 });
 
@@ -360,7 +360,7 @@ async function lift(
  */
 test("a thread is woken by a change after it opened, and by none the log held before", async () => {
   const partition = await threadRigProject(rig, "wakestart");
-  const member = await threadRigMember(rig, partition, "wakestart");
+  const member = threadRigMember(rig, partition, "wakestart");
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member);
   const started = await fromTheHead();
@@ -440,7 +440,7 @@ test("no role may move the log position a thread was opened after", async () => 
  */
 test("a thread cannot be opened after a sequence the log never held", async () => {
   const partition = await threadRigProject(rig, "wakenegative");
-  const member = await threadRigMember(rig, partition, "wakenegative");
+  const member = threadRigMember(rig, partition, "wakenegative");
   const thread = await threadRigThread(rig, partition, member);
 
   await assert.rejects(
@@ -505,7 +505,7 @@ async function openingAgainstAClose(
  */
 test("a change that commits while the door waits is a change the thread was opened after", async () => {
   const partition = await threadRigProject(rig, "wakerace");
-  const member = await threadRigMember(rig, partition, "wakerace");
+  const member = threadRigMember(rig, partition, "wakerace");
   const standing = await threadRigThread(rig, partition, member);
   const called = await fromTheHead();
 
@@ -537,7 +537,7 @@ test("a change that commits while the door waits is a change the thread was open
  */
 test("a project's own standing rules reach the wake through the candidate", async () => {
   const partition = await threadRigProject(rig, "wakestanding");
-  const member = await threadRigMember(rig, partition, "wakestanding");
+  const member = threadRigMember(rig, partition, "wakestanding");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await configuration(partition);
   const ticket = await draft(partition, revision, member);

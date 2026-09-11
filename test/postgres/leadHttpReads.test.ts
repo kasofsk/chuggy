@@ -31,10 +31,8 @@ import {
 import { postgresAgenticRefusalReads } from "../../src/adapters/postgres/agenticRefusal.ts";
 import { postgresLeadReads } from "../../src/adapters/postgres/leadReads.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
-import { postgresProjectAccess } from "../../src/adapters/postgres/projectAccess.ts";
 import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { composeNativeWeb } from "../../src/compose.ts";
-import { checkedProjectMembership } from "../../src/interpreter/projectMembership.ts";
 import {
   asSessionStoreStream,
   type SessionId,
@@ -131,7 +129,7 @@ function leadApp(subject: string) {
   const web = composeNativeWeb(
     pool,
     postgresHarnessKeying(),
-    postgresProjectAccess(pool),
+    rig.sessions.harness.access,
     postgresExecutionBacklogGuard(pool),
     undefined,
     undefined,
@@ -163,17 +161,11 @@ function leadApp(subject: string) {
 /** A project the reader may read, which is what the routes are gated on. */
 async function readableProject(label: string): Promise<Partition> {
   const partition = await leadRigProject(rig, label);
-  await rig.sessions.harness.membership.grant(
-    checkedProjectMembership({
-      issuer,
-      subject: label,
-      tenant: partition.tenant,
-      project: partition.project,
-      authorityKind: "OidcUser",
-      authoritySubject: `internal-${label}`,
-      access: ["Read"],
-    }),
-  );
+  rig.sessions.harness.access.grant({
+    partition,
+    principal: oidcPrincipal(issuer, label),
+    access: new Set(["Read"]),
+  });
   return partition;
 }
 

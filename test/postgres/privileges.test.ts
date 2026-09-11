@@ -10,7 +10,6 @@ import {
   continuationFunction,
   finalizerRole,
   notificationPublishFunction,
-  projectAuthorizationFunction,
   projectChangeAppendFunction,
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
@@ -275,25 +274,6 @@ test("a well-formed completion is refused whatever authority it claims", async (
   );
 });
 
-test("no membership may be granted the authority a boundary submits under", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "privilege-boundary-membership",
-  );
-  for (const kind of ["ExecutionScheduler", "Finalizer"]) {
-    await assert.rejects(
-      harness.query(
-        `INSERT INTO project_membership
-           (principal,tenant,project,authority_kind,authority_subject,
-            may_read,may_mutate,may_dispatch,may_propose)
-         VALUES ($1,$2,$3,$4,'subject',true,true,false,false)`,
-        [`principal-${kind}`, partition.tenant, partition.project, kind],
-      ),
-      /project_membership_grants_no_boundary_authority/,
-    );
-  }
-});
-
 test("the API cannot append history or create focused work", async () => {
   for (const relation of [
     "journal_entry",
@@ -534,25 +514,6 @@ test("the API read credential cannot inspect private operation columns", async (
     await harness.attemptAs(
       apiRole,
       "SELECT ticket,phase,seq FROM ticket_projection LIMIT 1",
-    ),
-    undefined,
-  );
-});
-
-test("the API can resolve access but cannot enumerate or change memberships", async () => {
-  for (const statement of [
-    "SELECT * FROM project_membership",
-    "INSERT INTO project_membership DEFAULT VALUES",
-    "UPDATE project_membership SET may_read=true",
-    "DELETE FROM project_membership",
-  ]) {
-    const refusal = await harness.attemptAs(apiRole, statement);
-    assert.match(refusal ?? "", postgresHarnessDenial("project_membership"));
-  }
-  assert.equal(
-    await harness.attemptAs(
-      apiRole,
-      `SELECT * FROM ${projectAuthorizationFunction}('principal','tenant','project','Read')`,
     ),
     undefined,
   );

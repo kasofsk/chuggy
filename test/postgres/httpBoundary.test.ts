@@ -11,7 +11,7 @@ import {
 
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
-import { postgresProjectAccess } from "../../src/adapters/postgres/projectAccess.ts";
+import type { ProjectAccess } from "../../src/interpreter/projectAccess.ts";
 import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { apiRole } from "../../src/adapters/postgres/schema.ts";
 import { composeNativeWeb } from "../../src/compose.ts";
@@ -44,13 +44,13 @@ function apiUrl(): string {
  * A suite here is about what that composition reaches, so nothing about it is
  * a double.
  */
-function composedIngress() {
+function composedIngress(access: ProjectAccess) {
   const pool = postgresPool(apiUrl());
   const app = createNativeHttpApp(
     composeNativeWeb(
       pool,
       postgresHarnessKeying(),
-      postgresProjectAccess(pool),
+      access,
       postgresExecutionBacklogGuard(pool),
     ),
     {
@@ -132,14 +132,12 @@ test("real HTTP ingress accepts once and observes the separate writer", async ()
     harness.store,
     "http-boundary",
   );
-  await harness.query(
-    `INSERT INTO project_membership
-       (principal,tenant,project,authority_kind,authority_subject,
-        may_read,may_mutate,may_dispatch,may_propose)
-     VALUES ($1,$2,$3,'OidcUser','internal-user',true,true,true,true)`,
-    [principal, partition.tenant, partition.project],
-  );
-  const { pool, app } = composedIngress();
+  harness.access.grant({
+    partition,
+    principal,
+    access: new Set(["Read", "Mutate", "DispatchTicket", "ProposeDispatch"]),
+  });
+  const { pool, app } = composedIngress(harness.access);
   const address = await app.listen({ host: "127.0.0.1", port: 0 });
   try {
     assert.deepEqual(
@@ -221,15 +219,13 @@ async function ingressLead(
 test("real HTTP ingress asks the lead a question and lists it back", async () => {
   const harness = await postgresHarnessOpen();
   const partition = await postgresHarnessProject(harness.store, "http-inquiry");
-  await harness.query(
-    `INSERT INTO project_membership
-       (principal,tenant,project,authority_kind,authority_subject,
-        may_read,may_mutate,may_dispatch,may_propose)
-     VALUES ($1,$2,$3,'OidcUser','internal-user',true,false,false,false)`,
-    [principal, partition.tenant, partition.project],
-  );
+  harness.access.grant({
+    partition,
+    principal,
+    access: new Set(["Read"]),
+  });
   await ingressLead(harness, partition);
-  const { pool, app } = composedIngress();
+  const { pool, app } = composedIngress(harness.access);
   const address = await app.listen({ host: "127.0.0.1", port: 0 });
   const root = `${address}/api/v1/tenants/${partition.tenant}/projects/${partition.project}/lead/inquiries`;
   try {
@@ -269,7 +265,7 @@ test("real HTTP ingress asks the lead a question and lists it back", async () =>
         {
           session: inquiry,
           question: "what stopped ticket 14?",
-          asker: "internal-user",
+          asker: principal,
           mine: true,
         },
       ],
