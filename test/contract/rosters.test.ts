@@ -49,12 +49,14 @@ import {
   selectorDispatchModes,
   selectorModes,
   agenticRefusalEvents,
+  forgeCredentialPermissions,
   sessionStates,
   threadStandings,
   sessionTurnFailures,
   sessionTurnInputKinds,
   sessionTurnStates,
 } from "../../src/contract/rosters.ts";
+import { allForgePermissionSets } from "../../src/interpreter/forgeInstallation.ts";
 import {
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
@@ -451,6 +453,7 @@ test("every session and refusal roster restates the interpreter's own", () => {
     ...allPlatformTurnFailures,
   ]);
   assert.deepEqual(threadStandings, allThreadStandings);
+  assert.deepEqual(forgeCredentialPermissions, allForgePermissionSets);
   assert.deepEqual(
     sorted(operationRefusalCodes),
     sorted([...allRefusalCodes, "CommandUnreadable"]),

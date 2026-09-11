@@ -36,6 +36,7 @@ import {
 import { twoBearerAuthentication } from "../adapters/http/sessionBearer.ts";
 import { postgresSessionBearerAuthority } from "../adapters/postgres/sessionPlane.ts";
 import {
+  composeForgeCredentialMinting,
   composeNativeWeb,
   composeSelectorProjectSettings,
 } from "../compose.ts";
@@ -77,6 +78,25 @@ import {
   finalizerGitEnvironmentNames,
   repositoryCredentialFilesOf,
 } from "../interpreter/finalizerSettings.ts";
+import {
+  githubInstallationTokens,
+  githubInstallationTokensDefaults,
+  githubInstallationTokensPrecondition,
+  type GithubInstallationTokensOptions,
+} from "../adapters/forge/githubInstallationTokens.ts";
+import { githubRepositoryHost } from "../adapters/forge/githubAddress.ts";
+import {
+  mintedRepositoryCredentials,
+  mintedRepositoryTokens,
+} from "../adapters/forge/mintedCredentials.ts";
+import { postgresForgeInstallations } from "../adapters/postgres/forgeInstallation.ts";
+import {
+  repositoryCredentialsByHost,
+  type ForgeCredentialMinting,
+  type MintedCredentialHost,
+} from "../interpreter/forgeCredentials.ts";
+import { githubForgeId } from "../interpreter/forgeInstallation.ts";
+import type { ProjectAccess } from "../interpreter/projectAccess.ts";
 
 const databaseUrlVariable = "CHUG_API_DATABASE_URL";
 const idempotencyKeyingVariable = "CHUG_API_IDEMPOTENCY_KEYING";
@@ -98,6 +118,18 @@ const selectorReviewDatabaseUrlVariable =
 const gitScratchRootVariable = "CHUG_API_GIT_SCRATCH_ROOT";
 const repositoryCredentialSourcesVariable =
   "CHUG_API_REPOSITORY_CREDENTIAL_SOURCES";
+/**
+ * The app this process mints under and the key it signs with. They are named
+ * together or not at all: one alone is a deployment that meant to mint and
+ * cannot, which is a refusal to start rather than an outage at every mint.
+ */
+const forgeAppIdVariable = "CHUG_API_FORGE_APP_ID";
+const forgeAppKeyFileVariable = "CHUG_API_FORGE_APP_KEY_FILE";
+const forgeApiUrlVariable = "CHUG_API_FORGE_API_URL";
+const forgeTimeoutVariable = "CHUG_API_FORGE_TIMEOUT_MS";
+
+/** The app this process holds the key of, the other being the fabric's. */
+const forgeApp = "portal";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
@@ -267,7 +299,9 @@ function nativePools(): NativePools {
   };
 }
 
-function repositoryConfigurationSnapshots() {
+function repositoryConfigurationSnapshots(
+  minted: readonly MintedCredentialHost[],
+) {
   const scratchDirectory = process.env[gitScratchRootVariable];
   if (scratchDirectory === undefined || scratchDirectory.length === 0)
     return undefined;
@@ -291,8 +325,86 @@ function repositoryConfigurationSnapshots() {
       email: "configuration-importer@chuggy.invalid",
     },
     environment,
-    credentials: credentialFiles({ sources }),
+    credentials: repositoryCredentialsByHost(
+      minted,
+      credentialFiles({ sources }),
+    ),
   });
+}
+
+/** What this deployment mints with, or nothing at all where it holds no app key. */
+export function forgeTokenOptions():
+  GithubInstallationTokensOptions | undefined {
+  const appId = process.env[forgeAppIdVariable] ?? "";
+  const privateKeyPath = process.env[forgeAppKeyFileVariable] ?? "";
+  if (appId.length === 0 && privateKeyPath.length === 0) return undefined;
+  if (appId.length === 0 || privateKeyPath.length === 0)
+    throw new Error(
+      `${forgeAppIdVariable} and ${forgeAppKeyFileVariable} are named together or not at all`,
+    );
+  return {
+    fetch,
+    appId,
+    privateKeyPath,
+    apiUrl:
+      process.env[forgeApiUrlVariable] ??
+      githubInstallationTokensDefaults.apiUrl,
+    requestTimeoutMs: positiveEnvironment(
+      forgeTimeoutVariable,
+      githubInstallationTokensDefaults.requestTimeoutMs,
+    ),
+  };
+}
+
+/** Refuses to start on a key this process could not sign with, leaving no pool open behind it. */
+async function forgeKeyReady(
+  options: GithubInstallationTokensOptions,
+  pools: NativePools,
+): Promise<void> {
+  const verdict = await githubInstallationTokensPrecondition(options).check(
+    new AbortController().signal,
+  );
+  if (verdict.met === "Met") return;
+  await closePools(pools.pool, pools.selectorReviewPool);
+  throw new Error(`${forgeAppKeyFileVariable}: ${verdict.why}`);
+}
+
+/** The minting this process does: the source its own reads take, and the service its route answers from. */
+export interface NativeForge {
+  readonly hosts: readonly MintedCredentialHost[];
+  readonly minting: ForgeCredentialMinting | undefined;
+}
+
+/**
+ * A deployment naming no app key mints nothing and reads every credential from
+ * its files, which is the deployment this tree already had.
+ */
+async function nativeForge(
+  pools: NativePools,
+  access: ProjectAccess,
+): Promise<NativeForge> {
+  const options = forgeTokenOptions();
+  if (options === undefined) return { hosts: [], minting: undefined };
+  await forgeKeyReady(options, pools);
+  const tokens = mintedRepositoryTokens({
+    forge: githubForgeId,
+    app: forgeApp,
+    repositoryHost: githubRepositoryHost,
+    installations: postgresForgeInstallations(pools.pool),
+    tokens: githubInstallationTokens(options),
+  });
+  return {
+    hosts: [
+      {
+        repositoryHost: githubRepositoryHost,
+        credentials: mintedRepositoryCredentials({
+          tokens,
+          permissions: "read",
+        }),
+      },
+    ],
+    minting: composeForgeCredentialMinting(pools.pool, access, tokens),
+  };
 }
 
 function streamNoteText(note: ProjectStreamNote): string {
@@ -386,6 +498,20 @@ function nativeShutdown(
       clearTimeout(force);
     }
   };
+}
+
+/** Ends this process on either signal a supervisor stops it with, and reports a drain that failed. */
+function nativeShutdownSignals(shutdown: () => Promise<void>): void {
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.once(signal, () => {
+      void shutdown().catch((failure: unknown) => {
+        const message =
+          failure instanceof Error ? failure.message : "unknown failure";
+        process.stderr.write(`native HTTP shutdown: ${message}\n`);
+        process.exitCode = 1;
+      });
+    });
+  }
 }
 
 /**
@@ -489,6 +615,7 @@ async function main(): Promise<void> {
   const artifacts = artifactStore({
     root: requiredEnvironment(artifactRootVariable),
   });
+  const forge = await nativeForge(pools, access);
   const web = composeNativeWeb(
     pool,
     keying,
@@ -499,7 +626,7 @@ async function main(): Promise<void> {
     undefined,
     artifacts,
     selectorContextSource(pool, selectorReviewPool),
-    repositoryConfigurationSnapshots(),
+    repositoryConfigurationSnapshots(forge.hosts),
     nativeLeadPorts(pools, artifacts),
     nativeThreadPorts(pools, artifacts),
   );
@@ -512,6 +639,7 @@ async function main(): Promise<void> {
     nativeHttpLimitsDefault,
     hub,
     composeSelectorProjectSettings(pool, access),
+    forge.minting,
   );
   app.addHook("onClose", async () => {
     await hub.close();
@@ -522,16 +650,7 @@ async function main(): Promise<void> {
     hub,
     positiveEnvironment("CHUG_API_SHUTDOWN_DRAIN_MS", 15_000),
   );
-  for (const signal of ["SIGINT", "SIGTERM"] as const) {
-    process.once(signal, () => {
-      void shutdown().catch((failure: unknown) => {
-        const message =
-          failure instanceof Error ? failure.message : "unknown failure";
-        process.stderr.write(`native HTTP shutdown: ${message}\n`);
-        process.exitCode = 1;
-      });
-    });
-  }
+  nativeShutdownSignals(shutdown);
   await app.listen({
     host: process.env["CHUG_API_HOST"] ?? "127.0.0.1",
     port: positiveEnvironment("CHUG_API_PORT", 3_000),

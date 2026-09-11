@@ -345,6 +345,81 @@ test("a deployment that names no credential slot for a thread is refused", async
   assert.match(ran.out, /CHUG_API_THREAD_CREDENTIAL_SLOT/u);
 });
 
+const forgeOptionsProgram = `
+  const root = await import('./src/roots/nativeHttp.ts');
+  process.stdout.write(JSON.stringify(root.forgeTokenOptions() ?? null));
+`;
+
+/** The root's forge composition under the variables one case names, and nothing else. */
+async function forgeOptionsRead(
+  named: Readonly<Record<string, string>>,
+): Promise<{ readonly code: number; readonly out: string }> {
+  const environment = { ...process.env, ...named };
+  for (const variable of [
+    "CHUG_API_FORGE_APP_ID",
+    "CHUG_API_FORGE_APP_KEY_FILE",
+    "CHUG_API_FORGE_API_URL",
+  ])
+    if (named[variable] === undefined) delete environment[variable];
+  try {
+    const ran = await execute(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--input-type=module",
+        "--eval",
+        forgeOptionsProgram,
+      ],
+      { cwd: process.cwd(), env: environment },
+    );
+    return { code: 0, out: ran.stdout };
+  } catch (failure) {
+    const ran = failure as { code?: number; stderr?: string };
+    return { code: ran.code ?? 1, out: ran.stderr ?? "" };
+  }
+}
+
+test("a deployment naming no forge app mints nothing at all", async () => {
+  const ran = await forgeOptionsRead({});
+  assert.equal(ran.code, 0, ran.out);
+  assert.equal(JSON.parse(ran.out), null);
+});
+
+test("a deployment naming one of the app and its key is refused rather than started", async () => {
+  for (const named of [
+    { CHUG_API_FORGE_APP_ID: "4708055" },
+    { CHUG_API_FORGE_APP_KEY_FILE: "/etc/chuggy/forge/portal.pem" },
+  ]) {
+    const ran = await forgeOptionsRead(named);
+    assert.equal(ran.code, 1, ran.out);
+    assert.match(ran.out, /named together or not at all/u);
+  }
+});
+
+test("a deployment naming both reaches the forge it named, or the public one", async () => {
+  const named = {
+    CHUG_API_FORGE_APP_ID: "4708055",
+    CHUG_API_FORGE_APP_KEY_FILE: "/etc/chuggy/forge/portal.pem",
+  };
+  const composed = JSON.parse((await forgeOptionsRead(named)).out) as {
+    appId: string;
+    privateKeyPath: string;
+    apiUrl: string;
+  };
+  assert.equal(composed.appId, named.CHUG_API_FORGE_APP_ID);
+  assert.equal(composed.privateKeyPath, named.CHUG_API_FORGE_APP_KEY_FILE);
+  assert.equal(composed.apiUrl, "https://api.github.com");
+  const elsewhere = JSON.parse(
+    (
+      await forgeOptionsRead({
+        ...named,
+        CHUG_API_FORGE_API_URL: "https://forge.invalid",
+      })
+    ).out,
+  ) as { apiUrl: string };
+  assert.equal(elsewhere.apiUrl, "https://forge.invalid");
+});
+
 async function authenticating(token: string): Promise<Authenticated> {
   const ran = await execute(
     process.execPath,

@@ -47,6 +47,7 @@ export const allProjectAccessKinds = [
   "DispatchTicket",
   "ProposeDispatch",
   "ManageProjectSelector",
+  "Execute",
 ] as const;
 
 export type ProjectAccessKind = (typeof allProjectAccessKinds)[number];
@@ -77,6 +78,7 @@ export const projectAccessPermits: Readonly<Record<ProjectAccessKind, string>> =
     DispatchTicket: "dispatch",
     ProposeDispatch: "propose",
     ManageProjectSelector: "manage_selector",
+    Execute: "execute",
   };
 
 /**

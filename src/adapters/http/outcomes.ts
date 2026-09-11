@@ -78,6 +78,7 @@ import type {
   ThreadsRead,
 } from "../../interpreter/threadRead.ts";
 import { ProjectAccessUnavailable } from "../../interpreter/projectAccess.ts";
+import type { ForgeCredentialMinted } from "../../interpreter/forgeCredentials.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { DraftBrief } from "../../interpreter/ticketBrief.ts";
 import type { RepositoryConfigurationImportOutcome } from "../../interpreter/repositoryConfiguration.ts";
@@ -750,6 +751,29 @@ export function configurationCreationResponse(
   return result.result === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
     : configurationCreated(result.value);
+}
+
+/**
+ * A minted credential, or the two refusals every other route answers with: a
+ * caller the project does not admit and a repository it does not bind are one
+ * `NotFound`, and a forge this server could not reach is a wait.
+ */
+export function forgeCredentialResponse(
+  result: ForgeCredentialMinted,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Unavailable":
+      return retry(503, authorityRetryAfterSeconds, "ForgeUnavailable");
+    case "Authorized":
+      return response(200, {
+        token: result.value.token,
+        expiresAtMs: result.value.expiresAtMs,
+      });
+    default:
+      return assertNever(result);
+  }
 }
 
 export function repositoryConfigurationImportResponse(

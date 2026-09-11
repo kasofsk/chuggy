@@ -25,6 +25,7 @@ import {
 import { authoringSchema } from "./authoring.ts";
 import { briefSchema } from "./brief.ts";
 import {
+  forgeCredentialPermissions,
   nativeActionResolutions,
   selectorDispatchModes,
   selectorModes,
@@ -86,6 +87,11 @@ export const configurationCreationSchema = z.strictObject({
 export const repositoryConfigurationImportSchema = z.strictObject({
   repository: bodyIdentitySchema,
   commit: bodyIdentitySchema,
+});
+
+export const forgeCredentialRequestSchema = z.strictObject({
+  repository: bodyIdentitySchema,
+  permissions: z.enum(forgeCredentialPermissions),
 });
 
 export const draftCreationSchema = z.strictObject({

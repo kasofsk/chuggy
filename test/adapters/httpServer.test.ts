@@ -42,6 +42,22 @@ import {
   encodeExecutionCursor,
   parsePartition,
 } from "../../src/adapters/http/contract.ts";
+import {
+  forgeCredentialMinting,
+  type ForgeCredentialMinting,
+} from "../../src/interpreter/forgeCredentials.ts";
+import {
+  asForgeId,
+  asForgeInstallationId,
+  asForgeInstallationToken,
+} from "../../src/interpreter/forgeInstallation.ts";
+import { mintedRepositoryTokens } from "../../src/adapters/forge/mintedCredentials.ts";
+import { githubRepositoryHost } from "../../src/adapters/forge/githubAddress.ts";
+import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
+import {
+  asRepositoryId,
+  type RepositoryBinding,
+} from "../../src/interpreter/finalizer.ts";
 import { unreadableLeadReads } from "./leadReadFixtures.ts";
 import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
 import {
@@ -423,10 +439,37 @@ function fakeSelectorSettings(
   };
 }
 
+/**
+ * The minting service the credential route answers from, refusing the
+ * repository this suite treats as unbound and reporting the forge as down for
+ * the one it treats as unreachable.
+ */
+function fakeForgeCredentials(calls: string[]): ForgeCredentialMinting {
+  return {
+    mint: (_principal, _partition, request) => {
+      calls.push(
+        `forge-credentials:${request.repository}:${request.permissions}`,
+      );
+      if (request.repository.endsWith("/unbound"))
+        return Promise.resolve({ result: "NotFound" });
+      if (request.repository.endsWith("/unreachable"))
+        return Promise.resolve({ result: "Unavailable" });
+      return Promise.resolve({
+        result: "Authorized",
+        value: {
+          token: asForgeInstallationToken("ghs-minted-q4w5e6"),
+          expiresAtMs: 1_757_500_000_000,
+        },
+      });
+    },
+  };
+}
+
 function appOf(
   calls: string[],
   authenticated = true,
   limits?: NativeHttpLimits,
+  minting?: ForgeCredentialMinting,
 ) {
   return createNativeHttpApp(
     fakeWeb(calls),
@@ -446,6 +489,7 @@ function appOf(
     limits,
     undefined,
     fakeSelectorSettings(calls),
+    minting ?? fakeForgeCredentials(calls),
   );
 }
 
@@ -491,6 +535,161 @@ test("a project's selector settings are read, written and historied", async () =
     "selector-settings:write:1:Land the panel.",
     "selector-settings:history:1:10",
   ]);
+});
+
+const forgeCredentialsPath =
+  "/api/v1/tenants/acme/projects/atlas/forge-credentials";
+
+/** One credential request, the repository being what each case is about. */
+function forgeCredentialRequest(repository: string) {
+  return {
+    method: "POST" as const,
+    url: forgeCredentialsPath,
+    headers: {
+      authorization: "Bearer valid",
+      "content-type": "application/vnd.chuggy.v1+json",
+    },
+    payload: JSON.stringify({ repository, permissions: "write" }),
+  };
+}
+
+test("a bound repository is answered with a token and when it stops working", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const minted = await app.inject(
+    forgeCredentialRequest("https://github.com/kasofsk/chuggy"),
+  );
+  assert.equal(minted.statusCode, 200);
+  assert.deepEqual(minted.json(), {
+    token: "ghs-minted-q4w5e6",
+    expiresAtMs: 1_757_500_000_000,
+  });
+  assert.deepEqual(calls, [
+    "forge-credentials:https://github.com/kasofsk/chuggy:write",
+  ]);
+});
+
+test("a repository this caller may not mint for is not found and a forge that is down is a wait", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const absent = await app.inject(
+    forgeCredentialRequest("https://github.com/kasofsk/unbound"),
+  );
+  assert.equal(absent.statusCode, 404);
+  const waiting = await app.inject(
+    forgeCredentialRequest("https://github.com/kasofsk/unreachable"),
+  );
+  assert.equal(waiting.statusCode, 503);
+  assert.equal(
+    waiting.json<HttpErrorEnvelope>().error.code,
+    "ForgeUnavailable",
+  );
+  assert.ok(waiting.headers["retry-after"] !== undefined);
+});
+
+/**
+ * The route over the real minting stack, the store holding one claim: the
+ * tenant in the path is what decides whether that claim may be read, so a
+ * project of another tenant that has somehow bound the repository is answered
+ * exactly as an unbound one is.
+ */
+function realForgeCredentials(claimedBy: string): ForgeCredentialMinting {
+  return forgeCredentialMinting(
+    { authorize: () => Promise.resolve(memberAuthority(asPrincipal("m"))) },
+    {
+      binding: (_partition, repository) =>
+        Promise.resolve({
+          partition: { tenant: asTenantId("elsewhere") },
+          repository,
+        } as RepositoryBinding),
+    },
+    mintedRepositoryTokens({
+      forge: asForgeId("github"),
+      app: "portal",
+      repositoryHost: githubRepositoryHost,
+      installations: {
+        installation: (query) =>
+          Promise.resolve(
+            query.tenant === claimedBy
+              ? {
+                  forge: query.forge,
+                  app: query.app,
+                  account: query.account,
+                  installationId: asForgeInstallationId("156333284"),
+                }
+              : undefined,
+          ),
+      },
+      tokens: {
+        mint: () =>
+          Promise.resolve({
+            minted: "Token",
+            token: asForgeInstallationToken("ghs-minted-q4w5e6"),
+            expiresAtMs: 1_757_500_000_000,
+          }),
+      },
+    }),
+  );
+}
+
+test("a repository whose account another tenant claimed is not found through the route", async () => {
+  const repository = asRepositoryId(
+    `https://${githubRepositoryHost}/kasofsk/chuggy`,
+  );
+  await using crossing = appOf(
+    [],
+    true,
+    undefined,
+    realForgeCredentials("elsewhere"),
+  );
+  assert.equal(
+    (await crossing.inject(forgeCredentialRequest(repository))).statusCode,
+    404,
+  );
+  await using held = appOf([], true, undefined, realForgeCredentials("acme"));
+  const minted = await held.inject(forgeCredentialRequest(repository));
+  assert.equal(
+    minted.statusCode,
+    200,
+    "the tenant the path names holds the claim",
+  );
+});
+
+test("a credential request presenting no bearer or no version reaches no minting", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const request = forgeCredentialRequest("https://github.com/kasofsk/chuggy");
+  assert.equal(
+    (
+      await app.inject({
+        ...request,
+        headers: { "content-type": "application/vnd.chuggy.v1+json" },
+      })
+    ).statusCode,
+    401,
+  );
+  assert.equal(
+    (
+      await app.inject({
+        ...request,
+        headers: {
+          authorization: "Bearer valid",
+          "content-type": "application/json",
+        },
+      })
+    ).statusCode,
+    415,
+  );
+  assert.equal(
+    (
+      await app.inject({
+        ...request,
+        payload: JSON.stringify({ repository: "r", permissions: "administer" }),
+      })
+    ).statusCode,
+    400,
+  );
+  assert.deepEqual(calls, []);
 });
 
 test("a settings write that lost its fence is a conflict rather than a rewrite", async () => {

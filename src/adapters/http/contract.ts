@@ -23,6 +23,7 @@ import {
   draftRevisionSchema,
   leadInquirySchema,
   publicMutationSchema,
+  forgeCredentialRequestSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
   threadHideRequestSchema,
@@ -55,6 +56,7 @@ import type {
   TicketActivityPosition,
 } from "../../interpreter/nativeWeb.ts";
 import { checkedSelectorDecisionReference } from "../../interpreter/dispatchView.ts";
+import type { ForgeCredentialRequest } from "../../interpreter/forgeCredentials.ts";
 import type { ExecutionPageCursor } from "../../interpreter/operationsView.ts";
 import {
   asIdempotencyKey,
@@ -149,6 +151,17 @@ export function parseRepositoryConfigurationImport(
   return {
     repository: asRepositoryId(parsed.repository),
     commit: asGitObjectId(parsed.commit),
+  };
+}
+
+/** One minting request as the wire carries it, both fields already narrowed. */
+export function parseForgeCredentialRequest(
+  body: unknown,
+): ForgeCredentialRequest {
+  const parsed = forgeCredentialRequestSchema.parse(body);
+  return {
+    repository: asRepositoryId(parsed.repository),
+    permissions: parsed.permissions,
   };
 }
 

@@ -203,6 +203,11 @@ export const schedulerFreshnesses = ["Unknown"] as const;
 export const selectorModes = ["Running", "Paused"] as const;
 export type SelectorMode = (typeof selectorModes)[number];
 
+/** What a minted forge credential may do to the repository it is scoped to. */
+export const forgeCredentialPermissions = ["read", "write", "propose"] as const;
+export type ForgeCredentialPermission =
+  (typeof forgeCredentialPermissions)[number];
+
 /** Whether a selector proposal is dispatched or held for a reviewer. */
 export const selectorDispatchModes = ["Automatic", "ApprovalRequired"] as const;
 export type SelectorDispatchMode = (typeof selectorDispatchModes)[number];

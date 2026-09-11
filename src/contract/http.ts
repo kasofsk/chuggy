@@ -314,6 +314,7 @@ export const nativeHttpRoutes = {
   configurations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations`,
   configurationImports: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/imports`,
   configuration: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/:revision`,
+  forgeCredentials: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/forge-credentials`,
   drafts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts`,
   draftInitialization: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/draft-initializations/:revision`,
   draft: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts/:ticket`,

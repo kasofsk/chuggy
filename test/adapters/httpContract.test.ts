@@ -69,6 +69,7 @@ test("the versioned route and media contracts move together", () => {
     "/api/v1/tenants/:tenant/projects/:project/configurations",
     "/api/v1/tenants/:tenant/projects/:project/configurations/imports",
     "/api/v1/tenants/:tenant/projects/:project/configurations/:revision",
+    "/api/v1/tenants/:tenant/projects/:project/forge-credentials",
     "/api/v1/tenants/:tenant/projects/:project/drafts",
     "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
     "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",

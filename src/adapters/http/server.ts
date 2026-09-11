@@ -34,6 +34,7 @@ import type {
   ProjectStreamHub,
 } from "../../interpreter/projectStream.ts";
 import type { SelectorProjectSettingsAdministration } from "../../interpreter/selectorProjectSettings.ts";
+import type { ForgeCredentialMinting } from "../../interpreter/forgeCredentials.ts";
 import { projectStreamSocket } from "./eventStream.ts";
 import { nativeHttpContractDocument } from "../../contract/document.ts";
 import {
@@ -59,6 +60,7 @@ import {
   parseNativeActionCursor,
   parseTicketActivityCursor,
   parseConfigurationCreation,
+  parseForgeCredentialRequest,
   parseRepositoryConfigurationImport,
   parseDraftCreation,
   parseDraftRevision,
@@ -84,6 +86,7 @@ import {
   draftRevisionResponse,
   draftsResponse,
   failureResponse,
+  forgeCredentialResponse,
   inventoryResponse,
   nativeActionsResponse,
   notificationsResponse,
@@ -853,6 +856,33 @@ function registerSelectorSettings(
   });
 }
 
+/**
+ * A credential for one repository this project binds, minted per request under
+ * `Execute`. The answer is the token and its expiry and nothing else, so
+ * nothing a caller stores can outlive what the forge will honour.
+ */
+function registerForgeCredentials(
+  app: FastifyInstance,
+  minting: ForgeCredentialMinting,
+): void {
+  app.post(
+    "/api/v1/tenants/:tenant/projects/:project/forge-credentials",
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        forgeCredentialResponse(
+          await minting.mint(
+            principalOf(request),
+            partitionOf(request),
+            parseForgeCredentialRequest(request.body),
+          ),
+        ),
+      );
+    },
+  );
+}
+
 /** The executions read's own parameters: its cursor, its size and what it narrows to. */
 function executionListQuery(
   value: unknown,
@@ -1451,6 +1481,7 @@ export function createNativeHttpApp(
   limits: NativeHttpLimits = nativeHttpLimitsDefault,
   hub?: ProjectStreamHub,
   selectorSettings?: SelectorProjectSettingsAdministration,
+  forgeCredentials?: ForgeCredentialMinting,
 ): FastifyInstance {
   const app = fastify({
     bodyLimit: nativeHttpBodyBytesMax,
@@ -1483,6 +1514,8 @@ export function createNativeHttpApp(
   registerSelectorHistory(app, web, partitionRoot);
   if (selectorSettings !== undefined)
     registerSelectorSettings(app, selectorSettings);
+  if (forgeCredentials !== undefined)
+    registerForgeCredentials(app, forgeCredentials);
   registerOperations(app, web);
   registerNotifications(app, web);
   if (hub !== undefined) registerProjectEvents(app, web, hub);
