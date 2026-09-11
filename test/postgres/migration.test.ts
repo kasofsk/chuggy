@@ -2810,13 +2810,12 @@ test("the session migrations compose into the schema a fresh generation renders"
 });
 
 /**
- * The versions no declared migration holds — 85 being a sibling branch's, which
- * this branch numbered itself around and which leaves this list when that
- * branch merges. It is written down rather than computed so that a hole nobody
- * meant is a hole nobody can leave, renumbering a migration upward opening one
- * this list does not name.
+ * The versions no declared migration holds, which is none: the sibling branch
+ * this image was numbered around has merged. It is written down rather than
+ * computed so that a hole nobody meant is a hole nobody can leave, renumbering
+ * a migration upward opening one this list does not name.
  */
-const declaredVersionsAwaited: readonly number[] = [85];
+const declaredVersionsAwaited: readonly number[] = [];
 
 /**
  * The ledger a whole chain leaves is exactly the versions this image declares,

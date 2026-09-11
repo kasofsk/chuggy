@@ -116,6 +116,7 @@ function accessAdmitting(admitted: readonly string[]): {
           admitted.includes(principal) ? memberAuthority(principal) : undefined,
         );
       },
+      authorizeTenant: () => Promise.resolve(undefined),
     },
   };
 }

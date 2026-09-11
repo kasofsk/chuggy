@@ -70,6 +70,7 @@ function accessHolding(...held: readonly string[]): ProjectAccess {
             }
           : undefined,
       ),
+    authorizeTenant: () => Promise.resolve(undefined),
   };
 }
 

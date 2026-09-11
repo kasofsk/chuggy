@@ -38,6 +38,19 @@ import {
   type ForgeCredentialMinting,
 } from "./interpreter/forgeCredentials.ts";
 import type { ForgeRepositoryTokens } from "./interpreter/forgeInstallation.ts";
+import {
+  repositoryOnboarding,
+  type RepositoryOnboarding,
+  type RepositoryOnboardingForgeApp,
+} from "./interpreter/repositoryOnboarding.ts";
+import {
+  postgresForgeInstallationClaims,
+  postgresForgeInstallationRecording,
+} from "./adapters/postgres/forgeInstallation.ts";
+import {
+  postgresProjectRepositoryBindings,
+  postgresRepositoryBinding,
+} from "./adapters/postgres/repositoryBinding.ts";
 import { postgresNotifications } from "./adapters/postgres/notifications.ts";
 import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
 import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
@@ -79,6 +92,7 @@ import {
   finalizerDefaults,
   type FinalizerConfig,
   type GitPromotionPort,
+  type RepositoryCredentialPort,
 } from "./interpreter/finalizer.ts";
 import {
   asProjectArtifactId,
@@ -217,6 +231,32 @@ export function composeForgeCredentialMinting(
     postgresProjectRepositoryBinding(apiPool),
     tokens,
   );
+}
+
+/**
+ * The onboarding service the API answers its onboarding routes with: the
+ * relation authority for every question of standing, one forge half per app
+ * this deployment holds a key for, the credential source a binding is proved
+ * against, and the two doors 085 grants the API. THE APPS ARE OPTIONAL AND THE
+ * REST IS NOT: a deployment naming no app key still binds and still lists what
+ * a project binds, and has nothing to say about installations, which is what
+ * `NotConfigured` is.
+ */
+export function composeRepositoryOnboarding(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+  credentials: RepositoryCredentialPort,
+  forgeApps: readonly RepositoryOnboardingForgeApp[],
+): RepositoryOnboarding {
+  return repositoryOnboarding({
+    access,
+    forgeApps,
+    credentials,
+    recording: postgresForgeInstallationRecording(apiPool),
+    claims: postgresForgeInstallationClaims(apiPool),
+    bindings: postgresProjectRepositoryBindings(apiPool),
+    binding: postgresRepositoryBinding(apiPool),
+  });
 }
 
 /** What a finalizer deployment answers its own ports with, none of it read from an environment. */

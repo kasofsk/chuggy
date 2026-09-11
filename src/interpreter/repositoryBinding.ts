@@ -41,12 +41,19 @@ export interface RepositoryBindingCommand {
   readonly authority: Authority;
 }
 
+/**
+ * What binding came to. `ProjectAbsent` is the one the door raises rather than
+ * returns, because a project that is not there is not a refusal an operator may
+ * retry into, and the adapter turns that raise into this outcome so a caller
+ * reads one roster rather than a roster and a fault.
+ */
 export type RepositoryBindingOutcome =
   | "Bound"
   | "AlreadyBound"
   | "OperationConflict"
   | "RecoveryEpochMismatch"
-  | "RepositoryBoundElsewhere";
+  | "RepositoryBoundElsewhere"
+  | "ProjectAbsent";
 
 /** Narrows every operator-supplied identity before the adapter sees it. */
 export function checkedRepositoryBindingCommand(
@@ -72,7 +79,34 @@ export interface RepositoryBindingWriter {
   readonly canExecute: boolean;
 }
 
-export interface RepositoryBindingAdministration {
-  writer(): Promise<RepositoryBindingWriter>;
+/**
+ * Binding a repository, and the epoch one is bound under. THE EPOCH IS READ
+ * HERE RATHER THAN SUPPLIED: the door refuses a binding made under an epoch
+ * that is not current, which is a fence an operator typing one at a command
+ * line needs and a route has no way to ask a caller for, since a caller has no
+ * reason to know an epoch and one it did supply would be a value it could get
+ * wrong in the only direction that matters.
+ */
+export interface ProjectRepositoryBindingWrite {
+  currentRecoveryEpoch(): Promise<RecoveryEpoch>;
   bind(command: RepositoryBindingCommand): Promise<RepositoryBindingOutcome>;
+}
+
+export interface RepositoryBindingAdministration extends ProjectRepositoryBindingWrite {
+  writer(): Promise<RepositoryBindingWriter>;
+}
+
+/** One of a project's bindings, as a reader choosing between them sees it. */
+export interface ProjectRepositoryBound {
+  readonly repository: RepositoryId;
+  readonly boundAt: string;
+}
+
+/**
+ * Every repository one project binds, oldest first — the order
+ * `read_project_repository_binding` already elects by, so the head of this list
+ * is the binding every caller naming no repository works against.
+ */
+export interface ProjectRepositoryBindings {
+  bindings(partition: Partition): Promise<readonly ProjectRepositoryBound[]>;
 }

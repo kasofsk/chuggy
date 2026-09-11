@@ -1409,6 +1409,7 @@ test("current selector planning is project-authorized and cursor-free", async ()
               }
             : undefined,
         ),
+      authorizeTenant: () => Promise.resolve(undefined),
     },
     { planningIntent: () => Promise.resolve(plan) },
   );
@@ -1974,6 +1975,7 @@ test("proposal review requires dispatch authority and preserves feedback", async
               }
             : undefined,
         ),
+      authorizeTenant: () => Promise.resolve(undefined),
     },
     {
       awaitingApproval: () => Promise.resolve([delivery]),

@@ -17,6 +17,9 @@ import {
   agenticRefusalsAnsweredMax,
   countSchema,
   cursorSchema,
+  forgeInstallationsAnsweredMax,
+  forgeRepositoriesAnsweredMax,
+  projectRepositoriesAnsweredMax,
   digestSchema,
   dispatchViewSchemaVersion,
   identitySchema,
@@ -98,6 +101,8 @@ import {
   sessionTurnInputKinds,
   sessionTurnStates,
   threadStandings,
+  forgeAccountKinds,
+  forgeApps,
 } from "./rosters.ts";
 
 const page = <T extends z.ZodType>(item: T) =>
@@ -1181,3 +1186,116 @@ export const leadInquiryAcceptedSchema = z.object({
   ordinal: countSchema,
 });
 export type LeadInquiryAccepted = z.infer<typeof leadInquiryAcceptedSchema>;
+
+/** One app this deployment holds the key of, and the address a tenant's administrator installs it from. */
+export const forgeAppResponseSchema = z.object({
+  app: z.enum(forgeApps),
+  id: identitySchema,
+  slug: identitySchema,
+  installUrl: z.string().min(1),
+});
+export type ForgeAppResponse = z.infer<typeof forgeAppResponseSchema>;
+
+/**
+ * Every app this deployment holds a key for. Every bearer reads it, because it
+ * says nothing about any tenant: it is the identity of the deployment's own
+ * apps, and onboarding installs each of them.
+ */
+export const forgeAppsResponseSchema = z.object({
+  apps: z.array(forgeAppResponseSchema).max(forgeApps.length),
+});
+export type ForgeAppsResponse = z.infer<typeof forgeAppsResponseSchema>;
+
+/** One installation a tenant has claimed, as the claim route answers it. */
+export const forgeInstallationClaimedSchema = z.object({
+  forge: identitySchema,
+  app: z.enum(forgeApps),
+  account: identitySchema,
+  accountKind: z.enum(forgeAccountKinds),
+  installationId: identitySchema,
+});
+export type ForgeInstallationClaimedResponse = z.infer<
+  typeof forgeInstallationClaimedSchema
+>;
+
+/** The same, with the moment it was claimed, as a listing answers it. */
+export const forgeInstallationResponseSchema =
+  forgeInstallationClaimedSchema.extend({
+    claimedAt: instantSchema,
+  });
+export type ForgeInstallationResponse = z.infer<
+  typeof forgeInstallationResponseSchema
+>;
+
+/**
+ * Every installation one tenant holds, oldest first. `truncated` says the tenant
+ * holds more than this deployment answers, so a reader that cannot find one
+ * knows the listing is partial rather than that the claim is absent.
+ */
+export const forgeInstallationsResponseSchema = z.object({
+  installations: z
+    .array(forgeInstallationResponseSchema)
+    .max(forgeInstallationsAnsweredMax),
+  truncated: z.boolean(),
+});
+export type ForgeInstallationsResponse = z.infer<
+  typeof forgeInstallationsResponseSchema
+>;
+
+/** One repository an installation grants, `url` being the address a binding names it by. */
+export const forgeRepositoryResponseSchema = z.object({
+  name: identitySchema,
+  fullName: z.string().min(1),
+  url: z.string().min(1),
+  defaultBranch: z.string().min(1),
+  private: z.boolean(),
+});
+export type ForgeRepositoryResponse = z.infer<
+  typeof forgeRepositoryResponseSchema
+>;
+
+/**
+ * What one installation grants. `truncated` says the installation holds more
+ * than this deployment pages for, so a reader that cannot find a repository
+ * knows the listing is partial rather than that the repository is absent.
+ */
+export const forgeRepositoriesResponseSchema = z.object({
+  repositories: z
+    .array(forgeRepositoryResponseSchema)
+    .max(forgeRepositoriesAnsweredMax),
+  truncated: z.boolean(),
+});
+export type ForgeRepositoriesResponse = z.infer<
+  typeof forgeRepositoriesResponseSchema
+>;
+
+/**
+ * What binding one repository came to, which names the repository and nothing
+ * else: the binding privileges no repository over another, so an answer
+ * carrying a position or a count would be saying something the row does not.
+ */
+export const projectRepositoryBoundSchema = z.object({
+  repository: z.string().min(1),
+});
+export type ProjectRepositoryBoundResponse = z.infer<
+  typeof projectRepositoryBoundSchema
+>;
+
+/** One repository a project binds, and when it was bound. */
+export const projectRepositoryResponseSchema = z.object({
+  repository: z.string().min(1),
+  boundAt: instantSchema,
+});
+export type ProjectRepositoryResponse = z.infer<
+  typeof projectRepositoryResponseSchema
+>;
+
+/** Every repository one project binds, oldest first, which privileges none of them. */
+export const projectRepositoriesResponseSchema = z.object({
+  repositories: z
+    .array(projectRepositoryResponseSchema)
+    .max(projectRepositoriesAnsweredMax),
+});
+export type ProjectRepositoriesResponse = z.infer<
+  typeof projectRepositoriesResponseSchema
+>;

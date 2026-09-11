@@ -14,15 +14,26 @@ import {
   memberAuthority,
   ProjectAccessUnavailable,
   projectAccessObject,
+  projectAccessTenantObject,
   type ProjectAccess,
   type ProjectAccessKind,
+  type TenantAccessKind,
 } from "../../src/interpreter/projectAccess.ts";
 import type { Principal } from "../../src/interpreter/principal.ts";
-import type { Partition } from "../../src/interpreter/projectStore.ts";
+import type {
+  Partition,
+  TenantId,
+} from "../../src/interpreter/projectStore.ts";
 
 /** One principal's standing in one project, as a case grants and withdraws it. */
 export interface MemoryProjectGrant {
   readonly partition: Partition;
+  readonly principal: Principal;
+}
+
+/** One principal's standing in one tenant, which is the other namespace's grant. */
+export interface MemoryTenantGrant {
+  readonly tenant: TenantId;
   readonly principal: Principal;
 }
 
@@ -31,6 +42,13 @@ export interface MemoryProjectAccess extends ProjectAccess {
   grant(
     input: MemoryProjectGrant & {
       readonly access: ReadonlySet<ProjectAccessKind>;
+    },
+  ): void;
+
+  /** Admits one principal to one tenant for the kinds named, replacing what they held. */
+  grantTenant(
+    input: MemoryTenantGrant & {
+      readonly access: ReadonlySet<TenantAccessKind>;
     },
   ): void;
 
@@ -46,9 +64,12 @@ export interface MemoryProjectAccess extends ProjectAccess {
 
 export function memoryProjectAccess(): MemoryProjectAccess {
   const held = new Map<string, ReadonlySet<ProjectAccessKind>>();
+  const heldTenant = new Map<string, ReadonlySet<TenantAccessKind>>();
   let broken: string | undefined;
   const at = (grant: MemoryProjectGrant): string =>
     `${projectAccessObject(grant.partition)} ${grant.principal}`;
+  const atTenant = (grant: MemoryTenantGrant): string =>
+    `${projectAccessTenantObject(grant.tenant)} ${grant.principal}`;
   return {
     authorize: (principal, partition, access) => {
       if (broken !== undefined)
@@ -58,8 +79,19 @@ export function memoryProjectAccess(): MemoryProjectAccess {
         granted?.has(access) === true ? memberAuthority(principal) : undefined,
       );
     },
+    authorizeTenant: (principal, tenant, access) => {
+      if (broken !== undefined)
+        return Promise.reject(new ProjectAccessUnavailable(broken));
+      const granted = heldTenant.get(atTenant({ tenant, principal }));
+      return Promise.resolve(
+        granted?.has(access) === true ? memberAuthority(principal) : undefined,
+      );
+    },
     grant: (input) => {
       held.set(at(input), new Set(input.access));
+    },
+    grantTenant: (input) => {
+      heldTenant.set(atTenant(input), new Set(input.access));
     },
     revoke: (input) => held.delete(at(input)),
     breaks: (why = "the authority did not answer") => {

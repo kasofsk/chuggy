@@ -17,7 +17,9 @@ import {
   draftCreationSchema,
   draftRevisionSchema,
   forgeCredentialRequestSchema,
+  forgeInstallationClaimSchema,
   leadInquirySchema,
+  projectRepositoryBindSchema,
   publicMutationSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
@@ -66,6 +68,10 @@ export function nativeHttpContractDocument(): unknown {
       "a PullRequest finalization requires the brief to name a branch, and a target that is not it",
     selectorProjectSettings:
       "installation settings are defaults; an absent override inherits one, and a write replaces the whole set under the revision it was read at",
+    forgeInstallations:
+      "a tenant's administrator claims an installation of this deployment's app; an installation another tenant holds is a conflict, and a claim is never released",
+    repositoryBinding:
+      "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one this deployment holds a credential for — on a host it mints for, that means an installation this tenant has claimed",
     routes: nativeHttpRoutes,
     schemas: {
       publicMutation: z.toJSONSchema(publicMutationSchema),
@@ -76,6 +82,8 @@ export function nativeHttpContractDocument(): unknown {
       draftCreation: z.toJSONSchema(draftCreationSchema),
       draftRevision: z.toJSONSchema(draftRevisionSchema),
       forgeCredential: z.toJSONSchema(forgeCredentialRequestSchema),
+      forgeInstallationClaim: z.toJSONSchema(forgeInstallationClaimSchema),
+      projectRepositoryBind: z.toJSONSchema(projectRepositoryBindSchema),
       leadInquiry: z.toJSONSchema(leadInquirySchema),
       selectorProjectSettings: z.toJSONSchema(selectorProjectSettingsSchema),
       threadMessage: z.toJSONSchema(threadMessageSchema),

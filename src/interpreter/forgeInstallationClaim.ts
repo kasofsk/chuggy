@@ -48,3 +48,39 @@ export type ForgeInstallationRecorded =
 export interface ForgeInstallationRecording {
   record(claim: ForgeInstallationClaim): Promise<ForgeInstallationRecorded>;
 }
+
+/**
+ * One claim as it is read back. The authority that made it is not part of it:
+ * it says who acted and decides nothing, so a reader handed it would hold an
+ * identity it has no question to ask of.
+ */
+export interface ForgeInstallationClaimed {
+  readonly forge: ForgeId;
+  readonly app: ForgeApp;
+  readonly account: ForgeAccount;
+  readonly accountKind: ForgeAccountKind;
+  readonly installationId: ForgeInstallationId;
+  readonly claimedAt: string;
+}
+
+/** One page of a tenant's claims, `truncated` saying it holds more than this answers. */
+export interface ForgeInstallationClaimsPage {
+  readonly claims: readonly ForgeInstallationClaimed[];
+  readonly truncated: boolean;
+}
+
+/**
+ * A tenant's claims, oldest first, and the one claim it holds under an
+ * installation identity. THE LISTING IS A PAGE AND THE LOOKUP IS NOT: a bound
+ * that is right for a reader is wrong for an ownership test, so a caller asking
+ * whether this tenant holds an installation asks for that row rather than
+ * searching the first page of them.
+ */
+export interface ForgeInstallationClaims {
+  claims(tenant: TenantId): Promise<ForgeInstallationClaimsPage>;
+
+  claim(
+    tenant: TenantId,
+    installationId: ForgeInstallationId,
+  ): Promise<ForgeInstallationClaimed | undefined>;
+}

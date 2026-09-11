@@ -38,6 +38,7 @@ import { postgresSessionBearerAuthority } from "../adapters/postgres/sessionPlan
 import {
   composeForgeCredentialMinting,
   composeNativeWeb,
+  composeRepositoryOnboarding,
   composeSelectorProjectSettings,
 } from "../compose.ts";
 import type { IdempotencyKeying } from "../adapters/postgres/keying.ts";
@@ -86,6 +87,19 @@ import {
 } from "../adapters/forge/githubInstallationTokens.ts";
 import { githubRepositoryHost } from "../adapters/forge/githubAddress.ts";
 import {
+  githubApps,
+  githubInstallationDirectory,
+} from "../adapters/forge/githubApp.ts";
+import {
+  githubInstallationRepositories,
+  githubInstallationRepositoriesDefaults,
+} from "../adapters/forge/githubInstallationRepositories.ts";
+import type {
+  RepositoryOnboarding,
+  RepositoryOnboardingForgeApp,
+} from "../interpreter/repositoryOnboarding.ts";
+import { forgeRepositoriesAnsweredMax } from "../contract/http.ts";
+import {
   mintedRepositoryCredentials,
   mintedRepositoryTokens,
 } from "../adapters/forge/mintedCredentials.ts";
@@ -95,7 +109,12 @@ import {
   type ForgeCredentialMinting,
   type MintedCredentialHost,
 } from "../interpreter/forgeCredentials.ts";
-import { githubForgeId } from "../interpreter/forgeInstallation.ts";
+import type { RepositoryCredentialPort } from "../interpreter/finalizer.ts";
+import {
+  githubForgeId,
+  type ForgeApp,
+  type ForgeInstallationTokens,
+} from "../interpreter/forgeInstallation.ts";
 import type { ProjectAccess } from "../interpreter/projectAccess.ts";
 
 const databaseUrlVariable = "CHUG_API_DATABASE_URL";
@@ -119,17 +138,22 @@ const gitScratchRootVariable = "CHUG_API_GIT_SCRATCH_ROOT";
 const repositoryCredentialSourcesVariable =
   "CHUG_API_REPOSITORY_CREDENTIAL_SOURCES";
 /**
- * The app this process mints under and the key it signs with. They are named
- * together or not at all: one alone is a deployment that meant to mint and
- * cannot, which is a refusal to start rather than an outage at every mint.
+ * The portal app this process acts under and the key it signs with, and the
+ * worker app it verifies a claim for and enumerates an installation of. Each
+ * pair is named together or not at all: one alone is a deployment that meant to
+ * hold an app and cannot, which is a refusal to start rather than an outage per
+ * request.
  */
 const forgeAppIdVariable = "CHUG_API_FORGE_APP_ID";
 const forgeAppKeyFileVariable = "CHUG_API_FORGE_APP_KEY_FILE";
+const forgeWorkerAppIdVariable = "CHUG_API_FORGE_WORKER_APP_ID";
+const forgeWorkerAppKeyFileVariable = "CHUG_API_FORGE_WORKER_APP_KEY_FILE";
 const forgeApiUrlVariable = "CHUG_API_FORGE_API_URL";
 const forgeTimeoutVariable = "CHUG_API_FORGE_TIMEOUT_MS";
+const forgeRepositoriesMaxVariable = "CHUG_API_FORGE_REPOSITORIES_MAX";
 
-/** The app this process holds the key of, the other being the fabric's. */
-const forgeApp = "portal";
+/** The app every act here mints under, the worker's mints being only to enumerate. */
+const forgeApp: ForgeApp = "portal";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
@@ -299,8 +323,28 @@ function nativePools(): NativePools {
   };
 }
 
-function repositoryConfigurationSnapshots(
+/**
+ * Where a repository's credential comes from in this process: the minting
+ * source for a host that has one, and the mounted files for every other. The
+ * onboarding routes prove a binding against it and the configuration importer
+ * clones with it, so a repository one of them can reach is one the other can.
+ */
+function nativeRepositoryCredentials(
   minted: readonly MintedCredentialHost[],
+): RepositoryCredentialPort {
+  const encoded = process.env[repositoryCredentialSourcesVariable];
+  const sources =
+    encoded === undefined || encoded.length === 0
+      ? []
+      : repositoryCredentialFilesOf(
+          encoded,
+          repositoryCredentialSourcesVariable,
+        );
+  return repositoryCredentialsByHost(minted, credentialFiles({ sources }));
+}
+
+function repositoryConfigurationSnapshots(
+  credentials: RepositoryCredentialPort,
 ) {
   const scratchDirectory = process.env[gitScratchRootVariable];
   if (scratchDirectory === undefined || scratchDirectory.length === 0)
@@ -310,14 +354,6 @@ function repositoryConfigurationSnapshots(
       .filter((name) => process.env[name] !== undefined)
       .map((name) => [name, process.env[name]]),
   );
-  const encodedSources = process.env[repositoryCredentialSourcesVariable];
-  const sources =
-    encodedSources === undefined || encodedSources.length === 0
-      ? []
-      : repositoryCredentialFilesOf(
-          encodedSources,
-          repositoryCredentialSourcesVariable,
-        );
   return gitRepositoryConfiguration({
     scratchDirectory,
     identity: {
@@ -325,20 +361,24 @@ function repositoryConfigurationSnapshots(
       email: "configuration-importer@chuggy.invalid",
     },
     environment,
-    credentials: repositoryCredentialsByHost(
-      minted,
-      credentialFiles({ sources }),
-    ),
+    credentials,
   });
 }
 
-/** What this deployment mints with, or nothing at all where it holds no app key. */
-export function forgeTokenOptions():
-  GithubInstallationTokensOptions | undefined {
+/**
+ * One app's key as this deployment names it, or nothing at all where it names
+ * neither half. The settings are read by the one reader every process holding
+ * an app key reads through, so what an app id named without its key file means
+ * is answered in a single place.
+ */
+function forgeAppOptions(
+  idVariable: string,
+  keyFileVariable: string,
+): GithubInstallationTokensOptions | undefined {
   return githubInstallationTokensSettings(
     {
-      appId: forgeAppIdVariable,
-      appKeyFile: forgeAppKeyFileVariable,
+      appId: idVariable,
+      appKeyFile: keyFileVariable,
       apiUrl: forgeApiUrlVariable,
       timeoutMs: forgeTimeoutVariable,
     },
@@ -347,54 +387,202 @@ export function forgeTokenOptions():
   );
 }
 
-/** Refuses to start on a key this process could not sign with, leaving no pool open behind it. */
-async function forgeKeyReady(
-  options: GithubInstallationTokensOptions,
-  pools: NativePools,
-): Promise<void> {
-  const verdict = await githubInstallationTokensPrecondition(options).check(
-    new AbortController().signal,
-  );
-  if (verdict.met === "Met") return;
-  await closePools(pools.pool, pools.selectorReviewPool);
-  throw new Error(`${forgeAppKeyFileVariable}: ${verdict.why}`);
-}
-
-/** The minting this process does: the source its own reads take, and the service its route answers from. */
-export interface NativeForge {
-  readonly hosts: readonly MintedCredentialHost[];
-  readonly minting: ForgeCredentialMinting | undefined;
+/** What this deployment mints with, or nothing at all where it holds no portal key. */
+export function forgeTokenOptions():
+  GithubInstallationTokensOptions | undefined {
+  return forgeAppOptions(forgeAppIdVariable, forgeAppKeyFileVariable);
 }
 
 /**
- * A deployment naming no app key mints nothing and reads every credential from
- * its files, which is the deployment this tree already had.
+ * Which file each app's key is named by. It is exhaustive over `ForgeApp`, so
+ * an app added to the roster without a pair here is a compile error rather than
+ * a claim route that silently answers `NotConfigured` forever.
+ */
+const forgeKeyFileVariables: Readonly<Record<ForgeApp, string>> = {
+  portal: forgeAppKeyFileVariable,
+  worker: forgeWorkerAppKeyFileVariable,
+};
+
+/** One app this deployment holds a key pair for. */
+export interface ForgeAppPair {
+  readonly app: ForgeApp;
+  readonly options: GithubInstallationTokensOptions;
+}
+
+/**
+ * Every app this deployment names a key pair for, portal first. The worker pair
+ * is held so a tenant can claim the plane's installation over the API and read
+ * what it grants, which is the only thing it mints for; naming no worker pair
+ * answers a worker claim `NotConfigured`.
+ */
+export function forgeAppPairs(): readonly ForgeAppPair[] {
+  const portal = forgeTokenOptions();
+  const worker = forgeAppOptions(
+    forgeWorkerAppIdVariable,
+    forgeWorkerAppKeyFileVariable,
+  );
+  return [
+    ...(portal === undefined ? [] : [{ app: forgeApp, options: portal }]),
+    ...(worker === undefined
+      ? []
+      : [{ app: "worker" as const, options: worker }]),
+  ];
+}
+
+/** Refuses to start on a key this process could not sign with, leaving no pool open behind it. */
+async function forgeKeyUnusable(
+  keyFileVariable: string,
+  options: GithubInstallationTokensOptions,
+): Promise<string | undefined> {
+  const verdict = await githubInstallationTokensPrecondition(options).check(
+    new AbortController().signal,
+  );
+  return verdict.met === "Met"
+    ? undefined
+    : `${keyFileVariable}: ${verdict.why}`;
+}
+
+/** The onboarding half for one app, which reads as that app and mints only to enumerate. */
+function forgeAppHalf(
+  app: ForgeApp,
+  options: GithubInstallationTokensOptions,
+  tokens: ForgeInstallationTokens,
+): RepositoryOnboardingForgeApp {
+  return {
+    forge: githubForgeId,
+    app,
+    apps: githubApps(options),
+    directory: githubInstallationDirectory(options),
+    installationRepositories: githubInstallationRepositories({
+      ...options,
+      tokens,
+      repositoriesMax: forgeRepositoriesMax(),
+    }),
+  };
+}
+
+/** The onboarding halves for every app but the portal's, each minting only to enumerate. */
+function otherForgeAppHalves(
+  pairs: readonly ForgeAppPair[],
+): readonly RepositoryOnboardingForgeApp[] {
+  return pairs.map((pair) =>
+    forgeAppHalf(
+      pair.app,
+      pair.options,
+      githubInstallationTokens(pair.options),
+    ),
+  );
+}
+
+/**
+ * The first key pair this process could not sign with, naming the variable the
+ * file was read from, and nothing at all where every key it holds is usable.
+ */
+export async function forgeKeysUnusable(
+  pairs: readonly ForgeAppPair[],
+): Promise<string | undefined> {
+  for (const pair of pairs) {
+    const unusable = await forgeKeyUnusable(
+      forgeKeyFileVariables[pair.app],
+      pair.options,
+    );
+    if (unusable !== undefined) return unusable;
+  }
+  return undefined;
+}
+
+/** Refuses to start on any key this process could not sign with, naming the file it read. */
+async function forgeKeysReady(
+  pairs: readonly ForgeAppPair[],
+  pools: NativePools,
+): Promise<void> {
+  const unusable = await forgeKeysUnusable(pairs);
+  if (unusable === undefined) return;
+  await closePools(pools.pool, pools.selectorReviewPool);
+  throw new Error(unusable);
+}
+
+/**
+ * How many repositories one installation listing pages for, refusing a bound
+ * past what the wire's own schema answers: a deployment that asked for more
+ * would send a body no reader's schema accepts.
+ */
+function forgeRepositoriesMax(): number {
+  const asked = positiveEnvironment(
+    forgeRepositoriesMaxVariable,
+    githubInstallationRepositoriesDefaults.repositoriesMax,
+  );
+  if (asked > forgeRepositoriesAnsweredMax)
+    throw new Error(
+      `${forgeRepositoriesMaxVariable} must be at most ${String(forgeRepositoriesAnsweredMax)}`,
+    );
+  return asked;
+}
+
+/** The forge this process talks to: the credential source its own reads take, the minting route's service, and onboarding's. */
+export interface NativeForge {
+  readonly credentials: RepositoryCredentialPort;
+  readonly minting: ForgeCredentialMinting | undefined;
+  readonly onboarding: RepositoryOnboarding;
+}
+
+/**
+ * A deployment naming no portal key mints nothing and reads every credential
+ * from its files, which is the deployment this tree already had. It still
+ * onboards: the routes that describe an app or an installation answer
+ * `ForgeNotConfigured` for an app it holds no key for, and the two that bind go
+ * on working, because a binding is proved by whichever source holds the
+ * repository's credential.
  */
 async function nativeForge(
   pools: NativePools,
   access: ProjectAccess,
 ): Promise<NativeForge> {
-  const options = forgeTokenOptions();
-  if (options === undefined) return { hosts: [], minting: undefined };
-  await forgeKeyReady(options, pools);
+  const pairs = forgeAppPairs();
+  await forgeKeysReady(pairs, pools);
+  const portal = pairs.find((pair) => pair.app === forgeApp);
+  const others = otherForgeAppHalves(
+    pairs.filter((pair) => pair.app !== forgeApp),
+  );
+  if (portal === undefined) {
+    const credentials = nativeRepositoryCredentials([]);
+    return {
+      credentials,
+      minting: undefined,
+      onboarding: composeRepositoryOnboarding(
+        pools.pool,
+        access,
+        credentials,
+        others,
+      ),
+    };
+  }
+  const options = portal.options;
+  const installationTokens = githubInstallationTokens(options);
   const tokens = mintedRepositoryTokens({
     forge: githubForgeId,
     app: forgeApp,
     repositoryHost: githubRepositoryHost,
     installations: postgresForgeInstallations(pools.pool),
-    tokens: githubInstallationTokens(options),
+    tokens: installationTokens,
   });
+  const hosts = [
+    {
+      repositoryHost: githubRepositoryHost,
+      credentials: mintedRepositoryCredentials({
+        tokens,
+        permissions: "read",
+      }),
+    },
+  ];
+  const credentials = nativeRepositoryCredentials(hosts);
   return {
-    hosts: [
-      {
-        repositoryHost: githubRepositoryHost,
-        credentials: mintedRepositoryCredentials({
-          tokens,
-          permissions: "read",
-        }),
-      },
-    ],
+    credentials,
     minting: composeForgeCredentialMinting(pools.pool, access, tokens),
+    onboarding: composeRepositoryOnboarding(pools.pool, access, credentials, [
+      forgeAppHalf(forgeApp, options, installationTokens),
+      ...others,
+    ]),
   };
 }
 
@@ -617,7 +805,7 @@ async function main(): Promise<void> {
     undefined,
     artifacts,
     selectorContextSource(pool, selectorReviewPool),
-    repositoryConfigurationSnapshots(forge.hosts),
+    repositoryConfigurationSnapshots(forge.credentials),
     nativeLeadPorts(pools, artifacts),
     nativeThreadPorts(pools, artifacts),
   );
@@ -631,6 +819,7 @@ async function main(): Promise<void> {
     hub,
     composeSelectorProjectSettings(pool, access),
     forge.minting,
+    forge.onboarding,
   );
   app.addHook("onClose", async () => {
     await hub.close();

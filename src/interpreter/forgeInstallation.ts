@@ -54,8 +54,16 @@ export type ForgeInstallationToken = string & {
   readonly [forgeInstallationTokenBrand]: true;
 };
 
+/**
+ * Every forge this tree has an adapter for, and the roster a supplied forge is
+ * narrowed against. It is a roster rather than one constant because a request
+ * body names a forge, and a body checked against nothing would name one no
+ * adapter answers for.
+ */
+export const allForgeIds = ["github"] as const;
+
 /** The forge this tree has an adapter for. */
-export const githubForgeId = "github" as ForgeId;
+export const githubForgeId = allForgeIds[0] as ForgeId;
 
 /** Every app a tenant installs, and the declaration `ForgeApp` derives from. */
 export const allForgeApps = ["portal", "worker"] as const;
@@ -192,10 +200,17 @@ export interface ForgeInstallationStore {
   ): Promise<ForgeInstallation | undefined>;
 }
 
-/** What one mint asks for: an installation, the repositories it is scoped to, and what it may do. */
+/**
+ * What one mint asks for: an installation, the repositories it is scoped to,
+ * and what it may do. NAMING NO REPOSITORY IS NOT NAMING AN EMPTY LIST — a
+ * token scoped to nothing is not a token and is refused where it is spelled,
+ * while naming none at all is the whole installation, which is what a caller
+ * enumerating an installation's repositories must ask for and no caller acting
+ * on one may.
+ */
 export interface ForgeTokenRequest {
   readonly installation: ForgeInstallation;
-  readonly repositories: readonly ForgeRepositoryName[];
+  readonly repositories?: readonly ForgeRepositoryName[] | undefined;
   readonly permissions: ForgePermissionSet;
 }
 

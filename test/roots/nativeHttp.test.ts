@@ -26,7 +26,11 @@
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { test } from "node:test";
+import { generateKeyPairSync } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test, { type TestContext } from "node:test";
 import { promisify } from "node:util";
 
 const execute = promisify(execFile);
@@ -350,26 +354,33 @@ const forgeOptionsProgram = `
   process.stdout.write(JSON.stringify(root.forgeTokenOptions() ?? null));
 `;
 
+const forgePairsProgram = `
+  const root = await import('./src/roots/nativeHttp.ts');
+  process.stdout.write(JSON.stringify(root.forgeAppPairs().map((pair) => ({
+    app: pair.app,
+    appId: pair.options.appId,
+    keyFile: pair.options.privateKeyPath,
+  }))));
+`;
+
 /** The root's forge composition under the variables one case names, and nothing else. */
 async function forgeOptionsRead(
   named: Readonly<Record<string, string>>,
+  program: string = forgeOptionsProgram,
 ): Promise<{ readonly code: number; readonly out: string }> {
   const environment = { ...process.env, ...named };
   for (const variable of [
     "CHUG_API_FORGE_APP_ID",
     "CHUG_API_FORGE_APP_KEY_FILE",
+    "CHUG_API_FORGE_WORKER_APP_ID",
+    "CHUG_API_FORGE_WORKER_APP_KEY_FILE",
     "CHUG_API_FORGE_API_URL",
   ])
     if (named[variable] === undefined) delete environment[variable];
   try {
     const ran = await execute(
       process.execPath,
-      [
-        "--experimental-strip-types",
-        "--input-type=module",
-        "--eval",
-        forgeOptionsProgram,
-      ],
+      ["--experimental-strip-types", "--input-type=module", "--eval", program],
       { cwd: process.cwd(), env: environment },
     );
     return { code: 0, out: ran.stdout };
@@ -418,6 +429,117 @@ test("a deployment naming both reaches the forge it named, or the public one", a
     ).out,
   ) as { apiUrl: string };
   assert.equal(elsewhere.apiUrl, "https://forge.invalid");
+});
+
+const workerNamed = {
+  CHUG_API_FORGE_APP_ID: "4708055",
+  CHUG_API_FORGE_APP_KEY_FILE: "/etc/chuggy/forge/portal.pem",
+  CHUG_API_FORGE_WORKER_APP_ID: "4728465",
+  CHUG_API_FORGE_WORKER_APP_KEY_FILE: "/etc/chuggy/forge/worker.pem",
+};
+
+/** What the root composed for one case: which apps, and the key pair each was named by. */
+async function forgePairsRead(
+  named: Readonly<Record<string, string>>,
+): Promise<readonly { app: string; appId: string; keyFile: string }[]> {
+  const ran = await forgeOptionsRead(named, forgePairsProgram);
+  assert.equal(ran.code, 0, ran.out);
+  return JSON.parse(ran.out) as readonly {
+    app: string;
+    appId: string;
+    keyFile: string;
+  }[];
+}
+
+const forgeKeysProgram = `
+  const root = await import('./src/roots/nativeHttp.ts');
+  const unusable = await root.forgeKeysUnusable(root.forgeAppPairs());
+  process.stdout.write(JSON.stringify(unusable ?? null));
+`;
+
+/**
+ * A directory holding one key this process can sign with and one file that is
+ * not a key, which is what a Secret mounted at the wrong path looks like.
+ */
+function forgeKeyFiles(t: TestContext): {
+  readonly usable: string;
+  readonly unusable: string;
+} {
+  const root = mkdtempSync(join(tmpdir(), "chuggy-root-forge-key-"));
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+  const usable = join(root, "usable.pem");
+  writeFileSync(
+    usable,
+    generateKeyPairSync("rsa", { modulusLength: 2048 })
+      .privateKey.export({ type: "pkcs1", format: "pem" })
+      .toString(),
+  );
+  const unusable = join(root, "unusable.pem");
+  writeFileSync(unusable, "this is a mounted Secret and not a private key\n");
+  return { usable, unusable };
+}
+
+test("a key pair this process cannot sign with is a refusal to start", async (t) => {
+  const keys = forgeKeyFiles(t);
+  const both = {
+    CHUG_API_FORGE_APP_ID: "4708055",
+    CHUG_API_FORGE_APP_KEY_FILE: keys.usable,
+    CHUG_API_FORGE_WORKER_APP_ID: "4728465",
+    CHUG_API_FORGE_WORKER_APP_KEY_FILE: keys.usable,
+  };
+  const ready = await forgeOptionsRead(both, forgeKeysProgram);
+  assert.equal(ready.code, 0, ready.out);
+  assert.equal(JSON.parse(ready.out), null);
+  for (const [variable, named] of [
+    [
+      "CHUG_API_FORGE_WORKER_APP_KEY_FILE",
+      {
+        ...both,
+        CHUG_API_FORGE_WORKER_APP_KEY_FILE: keys.unusable,
+      },
+    ],
+    [
+      "CHUG_API_FORGE_APP_KEY_FILE",
+      {
+        ...both,
+        CHUG_API_FORGE_APP_KEY_FILE: keys.unusable,
+      },
+    ],
+  ] as const) {
+    const ran = await forgeOptionsRead(named, forgeKeysProgram);
+    assert.equal(ran.code, 0, ran.out);
+    assert.match(JSON.parse(ran.out) as string, new RegExp(variable, "u"));
+  }
+});
+
+test("the worker app is its own pair, optional, and composed beside the portal's", async () => {
+  assert.deepEqual(await forgePairsRead({}), []);
+  const half = await forgeOptionsRead(
+    { CHUG_API_FORGE_WORKER_APP_ID: "4728465" },
+    forgePairsProgram,
+  );
+  assert.equal(half.code, 1, half.out);
+  assert.match(half.out, /CHUG_API_FORGE_WORKER_APP_KEY_FILE/u);
+  const both = await forgePairsRead(workerNamed);
+  assert.deepEqual(
+    both.map((pair) => pair.app),
+    ["portal", "worker"],
+  );
+  assert.equal(both[1]?.appId, workerNamed.CHUG_API_FORGE_WORKER_APP_ID);
+  assert.equal(
+    both[1]?.keyFile,
+    workerNamed.CHUG_API_FORGE_WORKER_APP_KEY_FILE,
+  );
+  const portalOnly = await forgePairsRead({
+    CHUG_API_FORGE_APP_ID: workerNamed.CHUG_API_FORGE_APP_ID,
+    CHUG_API_FORGE_APP_KEY_FILE: workerNamed.CHUG_API_FORGE_APP_KEY_FILE,
+  });
+  assert.deepEqual(
+    portalOnly.map((pair) => pair.app),
+    ["portal"],
+  );
 });
 
 async function authenticating(token: string): Promise<Authenticated> {

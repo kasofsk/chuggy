@@ -258,6 +258,7 @@ function boundary(
           : undefined,
       );
     },
+    authorizeTenant: () => Promise.resolve(undefined),
   };
   const web = nativeWeb(
     access,

@@ -13,6 +13,7 @@ import { after, before, test } from "node:test";
 import { randomUUID } from "node:crypto";
 
 import {
+  postgresForgeInstallationClaims,
   postgresForgeInstallationRecording,
   postgresForgeInstallations,
 } from "../../src/adapters/postgres/forgeInstallation.ts";
@@ -22,6 +23,7 @@ import {
   asForgeId,
   asForgeInstallationId,
 } from "../../src/interpreter/forgeInstallation.ts";
+import { forgeInstallationsAnsweredMax } from "../../src/contract/http.ts";
 import { asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   asAuthorityKind,
@@ -171,6 +173,66 @@ test("a claim another tenant holds is answered by nothing at all", async () => {
   );
 });
 
+test("a tenant reads back every claim it holds and none of another's", async () => {
+  const recording = postgresForgeInstallationRecording(harness.pool);
+  const tenant = asTenantId(`tenant-${randomUUID()}`);
+  const first = claim({ tenant });
+  const second = claim({
+    tenant,
+    installationId: asForgeInstallationId("156786211"),
+  });
+  const stranger = claim({ tenant: asTenantId(`tenant-${randomUUID()}`) });
+  for (const recorded of [first, second, stranger])
+    assert.equal(await recording.record(recorded), "Recorded");
+  const page = await postgresForgeInstallationClaims(harness.pool).claims(
+    tenant,
+  );
+  assert.equal(page.truncated, false);
+  assert.deepEqual(
+    page.claims.map((row) => row.account).sort(),
+    [first.account, second.account].sort(),
+  );
+  assert.deepEqual(
+    page.claims.map((row) => row.app),
+    ["portal", "portal"],
+  );
+});
+
+test("a tenant holding more claims than the page answers is told the page is partial", async () => {
+  const recording = postgresForgeInstallationRecording(harness.pool);
+  const tenant = asTenantId(`tenant-${randomUUID()}`);
+  for (let index = 0; index <= forgeInstallationsAnsweredMax; index += 1)
+    assert.equal(await recording.record(claim({ tenant })), "Recorded");
+  const page = await postgresForgeInstallationClaims(harness.pool).claims(
+    tenant,
+  );
+  assert.equal(page.truncated, true);
+  assert.equal(page.claims.length, forgeInstallationsAnsweredMax);
+});
+
+test("the claim under an installation identity is the asking tenant's own row", async () => {
+  const recording = postgresForgeInstallationRecording(harness.pool);
+  const tenant = asTenantId(`tenant-${randomUUID()}`);
+  const other = asTenantId(`tenant-${randomUUID()}`);
+  const installationId = asForgeInstallationId("156901733");
+  const own = claim({ tenant, installationId });
+  const theirs = claim({ tenant: other, installationId });
+  assert.equal(await recording.record(own), "Recorded");
+  assert.equal(await recording.record(theirs), "Recorded");
+  const claims = postgresForgeInstallationClaims(harness.pool);
+  const found = await claims.claim(tenant, installationId);
+  assert.equal(
+    found?.account,
+    own.account,
+    "the row read is the asking tenant's and not the other tenant's",
+  );
+  assert.equal(found?.installationId, installationId);
+  assert.equal(
+    await claims.claim(tenant, asForgeInstallationId("156901734")),
+    undefined,
+  );
+});
+
 test("a claim is never released and never changes hands, even by the owner", async () => {
   const recorded = claim();
   assert.equal(
@@ -236,7 +298,7 @@ test("an app and an account kind this tree does not declare are refused by the t
   );
 });
 
-test("the API reads the claimed installations and writes none of them", async () => {
+test("the API reads the claimed installations and writes none directly", async () => {
   assert.equal(
     await harness.attemptAs(
       apiRole,
@@ -251,13 +313,14 @@ test("the API reads the claimed installations and writes none of them", async ()
     )) ?? "",
     postgresHarnessDenial("forge_installation"),
   );
-  assert.match(
-    (await harness.attemptAs(
+  assert.equal(
+    await harness.attemptAs(
       apiRole,
       `SELECT ${forgeInstallationRecordFunction}(
-         'github','portal','a','Organization','1','vteng','Member','s')`,
-    )) ?? "",
-    postgresHarnessDenial(forgeInstallationRecordFunction),
+         'github','portal','api-claimed','Organization','88','api-tenant',
+         'Member','s')`,
+    ),
+    undefined,
   );
 });
 

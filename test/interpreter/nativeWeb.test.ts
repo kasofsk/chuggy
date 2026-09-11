@@ -197,6 +197,7 @@ function boundary(
       calls.push(`authorize:${kind}`);
       return Promise.resolve(allowed ? authority : undefined);
     },
+    authorizeTenant: () => Promise.resolve(undefined),
   };
   const reads = readStore(calls);
   const inbox: OperationInbox = {
@@ -943,6 +944,7 @@ function submittingBoundary(): {
     web: nativeWeb(
       {
         authorize: () => Promise.resolve(authority),
+        authorizeTenant: () => Promise.resolve(undefined),
       },
       readStore([]),
       inbox,

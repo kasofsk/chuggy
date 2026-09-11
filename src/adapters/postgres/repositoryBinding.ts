@@ -1,7 +1,28 @@
+/**
+ * PostgreSQL side of binding a repository to a project: the owner's door, and
+ * the epoch a binding is made under, which is the one reader every other holder
+ * of an epoch already asks.
+ *
+ * THE ABSENT PROJECT IS A RAISE AND IS READ AS ONE. The door refuses a binding
+ * against a project it cannot find by raising, because an operator's identity
+ * must stay unspent; the message it raises with is the only thing that tells
+ * that refusal apart from a foreign key this door could violate some other way,
+ * so both terms are matched and anything else is left to raise.
+ */
+
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
+import { projectRepositoriesAnsweredMax } from "../../contract/http.ts";
+
+import { postgresOwnershipEpoch } from "./ownership.ts";
+import { postgresTransaction } from "./pool.ts";
+
+import { asRepositoryId } from "../../interpreter/finalizer.ts";
+import type { Partition } from "../../interpreter/projectStore.ts";
 import type {
+  ProjectRepositoryBindings,
+  ProjectRepositoryBound,
   RepositoryBindingAdministration,
   RepositoryBindingOutcome,
 } from "../../interpreter/repositoryBinding.ts";
@@ -13,6 +34,56 @@ const allOutcomes: readonly RepositoryBindingOutcome[] = [
   "RecoveryEpochMismatch",
   "RepositoryBoundElsewhere",
 ];
+
+/** What the door raises with when the project it was asked to bind into is not there. */
+const projectAbsentCode = "23503";
+const projectAbsentMessage = "repository binding project is absent";
+
+function repositoryBindingProjectAbsent(failure: unknown): boolean {
+  return (
+    typeof failure === "object" &&
+    failure !== null &&
+    "code" in failure &&
+    failure.code === projectAbsentCode &&
+    "message" in failure &&
+    failure.message === projectAbsentMessage
+  );
+}
+
+/**
+ * Every repository one project binds, oldest first, through the door the API
+ * holds EXECUTE on. It is a door rather than a table read because
+ * `project_repository` is the finalizer's and the scheduler's relation, and a
+ * SELECT grant on it would hand the API every project's bindings to answer one
+ * project's question with.
+ */
+export function postgresProjectRepositoryBindings(
+  pool: pg.Pool,
+): ProjectRepositoryBindings {
+  return {
+    bindings: async (
+      partition: Partition,
+    ): Promise<readonly ProjectRepositoryBound[]> => {
+      const found = await pool.query<{
+        repository: string | null;
+        bound_at: string | null;
+      }>(
+        sql`SELECT repository,bound_at::text AS bound_at
+              FROM list_project_repository_bindings(
+                ${partition.tenant},${partition.project},
+                ${projectRepositoriesAnsweredMax})`,
+      );
+      return found.rows.map((row) => {
+        if (row.repository === null || row.bound_at === null)
+          throw new Error("repository binding: a binding is half a row");
+        return {
+          repository: asRepositoryId(row.repository),
+          boundAt: row.bound_at,
+        };
+      });
+    },
+  };
+}
 
 export function postgresRepositoryBinding(
   pool: pg.Pool,
@@ -33,13 +104,21 @@ export function postgresRepositoryBinding(
         throw new Error("repository binding: the server named no current role");
       return { role: row.writer_role, canExecute: row.can_execute === true };
     },
+    currentRecoveryEpoch: () =>
+      postgresTransaction(pool, postgresOwnershipEpoch),
     bind: async (command) => {
-      const result = await pool.query<{ outcome: string | null }>(
-        sql`SELECT bind_project_repository(
-          ${command.partition.tenant},${command.partition.project},
-          ${command.repository},${command.recoveryEpoch},${command.operation},
-          ${command.authority.kind},${command.authority.subject})::text AS outcome`,
-      );
+      let result: pg.QueryResult<{ outcome: string | null }>;
+      try {
+        result = await pool.query<{ outcome: string | null }>(
+          sql`SELECT bind_project_repository(
+            ${command.partition.tenant},${command.partition.project},
+            ${command.repository},${command.recoveryEpoch},${command.operation},
+            ${command.authority.kind},${command.authority.subject})::text AS outcome`,
+        );
+      } catch (failure) {
+        if (repositoryBindingProjectAbsent(failure)) return "ProjectAbsent";
+        throw failure;
+      }
       const outcome = result.rows[0]?.outcome;
       if (
         outcome === null ||
