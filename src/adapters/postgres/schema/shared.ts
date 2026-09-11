@@ -43,6 +43,7 @@ export const repositoryBindingReadFunction = "read_project_repository_binding";
 export const repositoryActivationFunction = "activate_project_repository";
 export const repositoryBindingWriteFunction = "bind_project_repository";
 export const repositoryBindingListFunction = "list_project_repository_bindings";
+export const repositoryBindingListAllFunction = "list_repository_bindings";
 export const forgeInstallationRecordFunction = "record_forge_installation";
 export const draftCreateFunction = "create_draft";
 export const draftReviseFunction = "revise_draft";

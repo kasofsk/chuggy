@@ -26,6 +26,7 @@ import {
 import {
   asForgeBindingId,
   asForgeCredentialReference,
+  type ChangeProposalCredentialRequest,
 } from "../../src/interpreter/changeProposal.ts";
 import {
   finalizerIdentityCharsMax,
@@ -211,23 +212,32 @@ function forgeBinding(path: string, reference = "forge-alpha-proposals") {
   };
 }
 
+/** One proposal's ask, the partition and the repository being the minting source's and not this one's. */
+function forgeRequest(reference: string): ChangeProposalCredentialRequest {
+  return {
+    binding: {
+      forge: asForgeBindingId("forge-alpha"),
+      credential: asForgeCredentialReference(reference),
+    },
+    partition: {
+      tenant: asTenantId("tenant"),
+      project: asProjectId("project"),
+    },
+    repository: asRepositoryId("https://example.invalid/chuggy.git"),
+  };
+}
+
 test("a forge resolves its own credential and never a repository's", async (t) => {
   const root = directory(t);
   const path = join(root, "forge");
   writeFileSync(path, "forge-secret\n");
   const source = forgeCredentialFiles({ bindings: [forgeBinding(path)] });
   assert.deepEqual(
-    await source.credential({
-      forge: asForgeBindingId("forge-alpha"),
-      credential: asForgeCredentialReference("forge-alpha-proposals"),
-    }),
+    await source.credential(forgeRequest("forge-alpha-proposals")),
     { resolved: "Credential", credential: "forge-secret" },
   );
   assert.deepEqual(
-    await source.credential({
-      forge: asForgeBindingId("forge-alpha"),
-      credential: asForgeCredentialReference("some-other-credential"),
-    }),
+    await source.credential(forgeRequest("some-other-credential")),
     { resolved: "Denied" },
   );
 });
@@ -242,10 +252,7 @@ test("a forge credential is refused rather than quoted where the file is not one
   for (const path of [absent, empty, oversized]) {
     const resolved = await forgeCredentialFiles({
       bindings: [forgeBinding(path)],
-    }).credential({
-      forge: asForgeBindingId("forge-alpha"),
-      credential: asForgeCredentialReference("forge-alpha-proposals"),
-    });
+    }).credential(forgeRequest("forge-alpha-proposals"));
     assert.deepEqual(resolved, { resolved: "Unavailable" }, path);
     assert.deepEqual(Object.keys(resolved), ["resolved"], path);
   }
@@ -292,10 +299,7 @@ test("two forge bindings naming one credential two files are refused at construc
     ],
   });
   assert.deepEqual(
-    await source.credential({
-      forge: asForgeBindingId("forge-alpha"),
-      credential: asForgeCredentialReference("forge-alpha-proposals"),
-    }),
+    await source.credential(forgeRequest("forge-alpha-proposals")),
     { resolved: "Credential", credential: "forge-secret" },
     "two hosts held under one account name one reference and one file",
   );

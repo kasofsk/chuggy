@@ -23,6 +23,11 @@
  */
 
 import { assertNever } from "../domain/assertNever.ts";
+import {
+  asForgeCredential,
+  type ChangeProposalCredentialRequest,
+  type ForgeCredentialPort,
+} from "./changeProposal.ts";
 import type {
   RepositoryBinding,
   RepositoryCredentialPort,
@@ -32,6 +37,7 @@ import type {
   ForgeInstallationToken,
   ForgePermissionSet,
   ForgeRepositoryTokens,
+  ForgeTokenMinted,
 } from "./forgeInstallation.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
@@ -74,6 +80,67 @@ export function repositoryCredentialsByHost(
       const host = repositoryCredentialHost(repository.repository);
       const source = host === undefined ? undefined : sources.get(host);
       return (source ?? files).credential(repository);
+    },
+  };
+}
+
+/** One host's minting source for the forge's own API, and what it may ask that forge for. */
+export interface MintedForgeCredentialHost {
+  readonly repositoryHost: string;
+  readonly tokens: ForgeRepositoryTokens;
+  readonly permissions: ForgePermissionSet;
+}
+
+/** What one forge credential port answers with, either source. */
+type ForgeCredentialResolved = Awaited<
+  ReturnType<ForgeCredentialPort["credential"]>
+>;
+
+/** One mint for the forge's own API, a store or a forge that raised being an outage. */
+async function mintedForgeCredential(
+  host: MintedForgeCredentialHost,
+  request: ChangeProposalCredentialRequest,
+): Promise<ForgeCredentialResolved> {
+  const minted = await host.tokens
+    .token(request.repository, request.partition.tenant, host.permissions)
+    .catch((): ForgeTokenMinted => ({ minted: "Unavailable" }));
+  switch (minted.minted) {
+    case "Token":
+      return {
+        resolved: "Credential",
+        credential: asForgeCredential(minted.token),
+      };
+    case "Denied":
+      return { resolved: "Denied" };
+    case "Unavailable":
+      return { resolved: "Unavailable" };
+    default:
+      return assertNever(minted);
+  }
+}
+
+/**
+ * The forge credential a deployment composes when some of its hosts mint: the
+ * minting source for a host it was given one for, and the file each binding
+ * names for everything else. The host in the repository's own address selects,
+ * exactly as it does for a repository credential.
+ */
+export function forgeCredentialsByHost(
+  minted: readonly MintedForgeCredentialHost[],
+  files: ForgeCredentialPort,
+): ForgeCredentialPort {
+  const sources = new Map(
+    minted.map((source) => [source.repositoryHost, source]),
+  );
+  if (sources.size !== minted.length)
+    throw new RangeError("forge credentials: a host names two sources");
+  return {
+    credential: (request) => {
+      const host = repositoryCredentialHost(request.repository);
+      const source = host === undefined ? undefined : sources.get(host);
+      return source === undefined
+        ? files.credential(request)
+        : mintedForgeCredential(source, request);
     },
   };
 }

@@ -347,14 +347,54 @@ test("the API reads the claimed installations and writes none directly", async (
   );
 });
 
-test("no other runtime role reaches a claim or the door onto one", async () => {
+/**
+ * 088 gave the three control-plane services that now mint their own repository
+ * credentials the read they mint from. It is SELECT and no more: none of them
+ * may claim an installation or move one, so the door onto a claim stays the
+ * API's alone and a service that mints cannot decide which account it mints
+ * under.
+ */
+test("every role that mints reads a claim, and none of them claims one", async () => {
   for (const role of [
-    ticketServiceRole,
-    selectorServiceRole,
-    schedulerRole,
     finalizerRole,
+    ticketServiceRole,
     configurationImporterRole,
   ]) {
+    assert.equal(
+      await harness.attemptAs(
+        role,
+        "SELECT installation_id,tenant FROM forge_installation",
+      ),
+      undefined,
+      role,
+    );
+    for (const written of [
+      "UPDATE forge_installation SET tenant=tenant",
+      `INSERT INTO forge_installation
+         (forge,app,account,account_kind,installation_id,tenant,authority_kind,
+          authority_subject)
+         VALUES ('github','portal','c','Organization','3','vteng','Member','s')`,
+      "DELETE FROM forge_installation",
+    ])
+      assert.match(
+        (await harness.attemptAs(role, written)) ?? "",
+        postgresHarnessDenial("forge_installation"),
+        `${role} ${written}`,
+      );
+    assert.match(
+      (await harness.attemptAs(
+        role,
+        `SELECT ${forgeInstallationRecordFunction}(
+           'github','portal','a','Organization','1','vteng','Member','s')`,
+      )) ?? "",
+      postgresHarnessDenial(forgeInstallationRecordFunction),
+      role,
+    );
+  }
+});
+
+test("no role that mints nothing reaches a claim or the door onto one", async () => {
+  for (const role of [selectorServiceRole, schedulerRole]) {
     assert.match(
       (await harness.attemptAs(role, "SELECT * FROM forge_installation")) ?? "",
       postgresHarnessDenial("forge_installation"),

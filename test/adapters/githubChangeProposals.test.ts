@@ -44,6 +44,7 @@ import {
   asGitRefName,
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
+import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { fixtureForge, type ForgeRecorder } from "./forgeFixtures.ts";
 
 /** The secret the fixture composition hands out, which must reach one header and nothing else. */
@@ -79,6 +80,10 @@ function fixtureRequest(
         credential: asForgeCredentialReference("forge-alpha-proposals"),
       },
       repository: asRepositoryId("https://github.com/kasofsk/chuggy"),
+      partition: {
+        tenant: asTenantId("tenant"),
+        project: asProjectId("project"),
+      },
       request: fixtureIdentity,
       headRef: fixtureHeadRef,
       headCommit: fixtureHeadCommit,

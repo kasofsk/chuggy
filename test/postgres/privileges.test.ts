@@ -14,6 +14,7 @@ import {
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
   repositoryBindingReadFunction,
+  repositoryBindingListAllFunction,
   repositoryBindingListFunction,
   repositoryBindingWriteFunction,
   schedulerRole,
@@ -108,6 +109,47 @@ test("no runtime role but the API reads a project's bindings through the door", 
     undefined,
     "the role whose route answers the listing still holds the door",
   );
+});
+
+/**
+ * 088's listing crosses partitions where 085's does not, so it is held apart
+ * from every role but the one whose job is every partition's. The API is
+ * refused it by name: an API caller is always asking on behalf of one project,
+ * and it already holds the per-project door that answers that question.
+ */
+test("only the importer lists every binding there is", async () => {
+  const listing = `SELECT tenant,project,repository FROM ${repositoryBindingListAllFunction}(NULL)`;
+  assert.equal(
+    await harness.attemptAs(configurationImporterRole, listing),
+    undefined,
+    "the role that imports for every partition holds the door",
+  );
+  for (const role of [
+    apiRole,
+    ticketServiceRole,
+    selectorServiceRole,
+    schedulerRole,
+    finalizerRole,
+    workerPlaneRole,
+  ])
+    assert.match(
+      (await harness.attemptAs(role, listing)) ?? "",
+      postgresHarnessDenial(repositoryBindingListAllFunction),
+      role,
+    );
+});
+
+test("the importer lists bindings and still cannot read the relation behind them", async () => {
+  for (const statement of [
+    "SELECT * FROM project_repository",
+    "INSERT INTO project_repository DEFAULT VALUES",
+    "UPDATE project_repository SET repository=repository",
+  ])
+    assert.match(
+      (await harness.attemptAs(configurationImporterRole, statement)) ?? "",
+      postgresHarnessDenial("project_repository"),
+      statement,
+    );
 });
 
 test("no runtime role but the API binds a repository, and none records one", async () => {

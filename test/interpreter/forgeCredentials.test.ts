@@ -21,8 +21,16 @@ import test from "node:test";
 
 import {
   forgeCredentialMinting,
+  forgeCredentialsByHost,
   repositoryCredentialsByHost,
 } from "../../src/interpreter/forgeCredentials.ts";
+import {
+  asForgeBindingId,
+  asForgeCredential,
+  asForgeCredentialReference,
+  type ChangeProposalCredentialRequest,
+  type ForgeCredentialPort,
+} from "../../src/interpreter/changeProposal.ts";
 import {
   asRepositoryCredential,
   asRepositoryId,
@@ -32,6 +40,7 @@ import {
 } from "../../src/interpreter/finalizer.ts";
 import {
   asForgeInstallationToken,
+  type ForgePermissionSet,
   type ForgeRepositoryTokens,
   type ForgeTokenMinted,
 } from "../../src/interpreter/forgeInstallation.ts";
@@ -135,6 +144,109 @@ function fixtureTokens(
   };
 }
 
+/** One proposal's ask against a named repository, which is what selects a source. */
+function fixtureProposal(
+  repository: RepositoryId,
+): ChangeProposalCredentialRequest {
+  return {
+    binding: {
+      forge: asForgeBindingId("forge-alpha"),
+      credential: asForgeCredentialReference("forge-alpha-proposals"),
+    },
+    partition: fixturePartition,
+    repository,
+  };
+}
+
+/** A forge credential source that answers its own name, so a case can tell which answered. */
+const fixtureForgeFiles: ForgeCredentialPort = {
+  credential: () =>
+    Promise.resolve({
+      resolved: "Credential" as const,
+      credential: asForgeCredential("files"),
+    }),
+};
+
+test("the host a repository names selects its forge credential source too", async () => {
+  const asked: RepositoryId[] = [];
+  const askedTenants: TenantId[] = [];
+  const askedPermissions: ForgePermissionSet[] = [];
+  const source = forgeCredentialsByHost(
+    [
+      {
+        repositoryHost: "github.com",
+        tokens: {
+          token: (repository, tenant, permissions) => {
+            asked.push(repository);
+            askedTenants.push(tenant);
+            askedPermissions.push(permissions);
+            return Promise.resolve({
+              minted: "Token" as const,
+              token: fixtureToken,
+              expiresAtMs: 1,
+            });
+          },
+        },
+        permissions: "propose",
+      },
+    ],
+    fixtureForgeFiles,
+  );
+
+  assert.deepEqual(
+    await source.credential(fixtureProposal(fixtureRepository)),
+    {
+      resolved: "Credential",
+      credential: fixtureToken,
+    },
+  );
+  assert.deepEqual(await source.credential(fixtureProposal(fixtureElsewhere)), {
+    resolved: "Credential",
+    credential: "files",
+  });
+  assert.deepEqual(asked, [fixtureRepository]);
+  assert.deepEqual(askedTenants, [fixturePartition.tenant]);
+  assert.deepEqual(
+    askedPermissions,
+    ["propose"],
+    "a finalizer asks to propose and never to write through this port",
+  );
+});
+
+test("a forge that refuses is denied and one that is down is an outage", async () => {
+  const of = (minted: ForgeTokenMinted | "raise"): ForgeCredentialPort =>
+    forgeCredentialsByHost(
+      [
+        {
+          repositoryHost: "github.com",
+          tokens: {
+            token: () =>
+              minted === "raise"
+                ? Promise.reject(new Error("the forge is down"))
+                : Promise.resolve(minted),
+          },
+          permissions: "propose",
+        },
+      ],
+      fixtureForgeFiles,
+    );
+  for (const [minted, resolved] of [
+    [{ minted: "Denied" as const }, "Denied"],
+    [{ minted: "Unavailable" as const }, "Unavailable"],
+    ["raise" as const, "Unavailable"],
+  ] as const) {
+    const answer = await of(minted).credential(
+      fixtureProposal(fixtureRepository),
+    );
+    assert.deepEqual(answer, { resolved }, String(resolved));
+    assert.deepEqual(
+      Object.keys(answer),
+      ["resolved"],
+      "a refusal carries no message that could quote what was minted",
+    );
+  }
+});
+
 test("the host a repository names is what selects its credential source", async () => {
   const source = repositoryCredentialsByHost(
     [{ repositoryHost: "github.com", credentials: fixtureSource("minted") }],
@@ -173,6 +285,18 @@ test("two sources for one host are refused at composition", () => {
         ],
         fixtureSource("files"),
       ),
+    /a host names two sources/u,
+  );
+});
+
+test("two forge sources for one host are refused at composition too", () => {
+  const source = {
+    repositoryHost: "github.com",
+    tokens: fixtureTokens({ minted: "Denied" }),
+    permissions: "propose",
+  } as const;
+  assert.throws(
+    () => forgeCredentialsByHost([source, source], fixtureForgeFiles),
     /a host names two sources/u,
   );
 });

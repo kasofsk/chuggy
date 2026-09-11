@@ -155,7 +155,9 @@ export function credentialFiles(
 
 /**
  * Where each forge's own credential stands, keyed by the reference a binding
- * names it under. Two forges may name one reference and one file — that is a
+ * names it under, and nothing for a binding naming no path — that forge is one
+ * this deployment mints for, so this source denies it and the minting source
+ * beside it answers. Two forges may name one reference and one file — a
  * deployment holding one account across two hosts — and only two files under
  * one reference is a mapping that would answer one forge two ways.
  */
@@ -164,6 +166,7 @@ function forgeCredentialFilesState(
 ): CredentialFilesState<ForgeCredential> {
   const paths = new Map<string, string>();
   for (const binding of options.bindings) {
+    if (binding.path === undefined) continue;
     const named = paths.get(binding.credentialReference);
     if (named !== undefined && named !== binding.path)
       throw new RangeError("forge credentials: a credential names two files");
@@ -183,8 +186,8 @@ export function forgeCredentialFiles(
 ): ForgeCredentialPort {
   const own = forgeCredentialFilesState(options);
   return {
-    credential: (binding) => {
-      const path = own.paths.get(binding.credential);
+    credential: (request) => {
+      const path = own.paths.get(request.binding.credential);
       if (path === undefined) return Promise.resolve({ resolved: "Denied" });
       return credentialFilesRead(path, own.credentialBytesMax, own.brand);
     },

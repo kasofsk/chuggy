@@ -1,15 +1,31 @@
 /**
- * One-shot import of one named repository's declarations at one exact commit.
+ * One-shot import of every bound repository's declarations at its own head.
  *
- * ONE RUN IS ONE REPOSITORY, applied to every partition the run names: a commit
- * belongs to a repository, so the two are configured together, and a deployment
- * that imports several repositories runs the importer once for each.
+ * THE RUN IS THE ESTATE AND NOT A REPOSITORY. A binding is what says a project
+ * takes its declarations from a repository, so the bindings are the list, and a
+ * deployment that had to name its repositories in a CronJob had a second copy
+ * of that list to keep true.
+ *
+ * THE HEAD IS ASKED OF THE REMOTE. There is no ticket here to take a commit
+ * from, so each repository is imported at whatever its own default branch
+ * points at when the run reaches it.
+ *
+ * A SKIP IS NOT A FAILURE AND A FAILURE IS NOT THE RUN'S END. A repository
+ * holding no commit, or no configuration directory at its head, is passed over
+ * — seeding one belongs to the bind and happens once. Everything else is
+ * reported on its own line, every other binding is still attempted, and the run
+ * exits non-zero if any failed.
+ *
+ * A RUN THAT FILLED ITS BOUND DID NOT IMPORT THE ESTATE, and leaves non-zero
+ * saying so. The listing is ordered by age, so a deployment holding more
+ * bindings than one run may read imports the same prefix for ever, and a clean
+ * exit would be the only thing telling anyone otherwise.
  */
 
-import { credentialFiles } from "../adapters/credentials/credentialFiles.ts";
 import { gitRepositoryConfiguration } from "../adapters/git/gitRepositoryConfiguration.ts";
 import { postgresAuthoring } from "../adapters/postgres/authoring.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
+import { postgresRepositoryBindingListing } from "../adapters/postgres/repositoryBinding.ts";
 import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
 import { configurationImporterRole } from "../adapters/postgres/schema.ts";
 import {
@@ -17,10 +33,19 @@ import {
   postgresRuntimeSchema,
 } from "../adapters/postgres/runtimeSchema.ts";
 import {
+  composeConfigurationImporterCredentials,
+  composeForgeRepositoryMinting,
+} from "../compose.ts";
+import {
   asAuthorityKind,
   asAuthoritySubject,
 } from "../interpreter/operationInbox.ts";
-import { importRepositoryConfigurationPartitions } from "../interpreter/repositoryConfiguration.ts";
+import {
+  boundRepositoryImportLine,
+  boundRepositoryImportRefusal,
+  importBoundRepositoryConfigurations,
+  repositoryBindingsPerImportMax,
+} from "../interpreter/repositoryConfiguration.ts";
 import { schemaCompatibilityPrecondition } from "../interpreter/serviceRuntime.ts";
 import { finalizerGitEnvironmentNames } from "../interpreter/finalizerSettings.ts";
 import { configurationImporterConfig } from "./configurationImporterConfig.ts";
@@ -51,6 +76,45 @@ async function importerDatabaseReady(
   );
 }
 
+function configurationImporterPorts(
+  config: ReturnType<typeof configurationImporterConfig>,
+  pool: ReturnType<typeof postgresPool>,
+): Parameters<typeof importBoundRepositoryConfigurations>[0]["ports"] {
+  const environment = Object.fromEntries(
+    finalizerGitEnvironmentNames
+      .filter((name) => process.env[name] !== undefined)
+      .map((name) => [name, process.env[name]]),
+  );
+  const snapshots = gitRepositoryConfiguration({
+    scratchDirectory: config.git.scratchDirectory,
+    identity: {
+      name: "Chuggy configuration importer",
+      email: "configuration-importer@chuggy.invalid",
+    },
+    environment,
+    credentials: composeConfigurationImporterCredentials(
+      { sources: config.git.credentials },
+      composeForgeRepositoryMinting(pool, config.forge),
+    ),
+    ...(config.git.credentialUsername === undefined
+      ? {}
+      : { credentialUsername: config.git.credentialUsername }),
+    ...(config.git.localTimeoutSecsMax === undefined
+      ? {}
+      : { localTimeoutSecsMax: config.git.localTimeoutSecsMax }),
+    ...(config.git.remoteTimeoutSecsMax === undefined
+      ? {}
+      : { remoteTimeoutSecsMax: config.git.remoteTimeoutSecsMax }),
+  });
+  return {
+    listing: postgresRepositoryBindingListing(pool),
+    bindings: postgresProjectRepositoryBinding(pool),
+    heads: snapshots,
+    snapshots,
+    store: postgresAuthoring(pool),
+  };
+}
+
 async function main(): Promise<void> {
   const config = configurationImporterConfig(process.env);
   const pool = postgresPool(config.database.url, config.database.limits);
@@ -59,59 +123,21 @@ async function main(): Promise<void> {
       throw new Error(
         `database must connect as ${configurationImporterLoginRole} with a current schema`,
       );
-    const environment = Object.fromEntries(
-      finalizerGitEnvironmentNames
-        .filter((name) => process.env[name] !== undefined)
-        .map((name) => [name, process.env[name]]),
-    );
-    const snapshots = gitRepositoryConfiguration({
-      scratchDirectory: config.git.scratchDirectory,
-      identity: {
-        name: "Chuggy configuration importer",
-        email: "configuration-importer@chuggy.invalid",
-      },
-      environment,
-      credentials: credentialFiles({ sources: config.git.credentials }),
-      ...(config.git.credentialUsername === undefined
-        ? {}
-        : { credentialUsername: config.git.credentialUsername }),
-      ...(config.git.localTimeoutSecsMax === undefined
-        ? {}
-        : { localTimeoutSecsMax: config.git.localTimeoutSecsMax }),
-      ...(config.git.remoteTimeoutSecsMax === undefined
-        ? {}
-        : { remoteTimeoutSecsMax: config.git.remoteTimeoutSecsMax }),
-    });
-    const authoring = postgresAuthoring(pool);
-    const ports = {
-      bindings: postgresProjectRepositoryBinding(pool),
-      snapshots,
-      store: authoring,
-    };
-    const imports = await importRepositoryConfigurationPartitions({
-      partitions: config.partitions,
-      repository: config.repository,
-      commit: config.commit,
+    const run = await importBoundRepositoryConfigurations({
       authority,
-      ports,
+      ports: configurationImporterPorts(config, pool),
+      bindingsMax: repositoryBindingsPerImportMax,
     });
-    const failures = imports.filter(
-      ({ outcome }) => outcome.result !== "Imported",
+    for (const bound of run.imports) {
+      const line = `${boundRepositoryImportLine(bound)}\n`;
+      if (bound.result.result === "Failed") process.stderr.write(line);
+      else process.stdout.write(line);
+    }
+    const refused = boundRepositoryImportRefusal(
+      run,
+      repositoryBindingsPerImportMax,
     );
-    for (const { partition, outcome } of imports)
-      if (outcome.result === "Imported")
-        process.stdout.write(
-          `${partition.tenant}/${partition.project} imported ${config.repository} ${config.commit}\n`,
-        );
-    if (failures.length > 0)
-      throw new Error(
-        failures
-          .map(
-            ({ partition, outcome }) =>
-              `${partition.tenant}/${partition.project}: ${JSON.stringify(outcome)}`,
-          )
-          .join("; "),
-      );
+    if (refused !== undefined) throw new Error(refused);
   } finally {
     await pool.end();
   }

@@ -69,15 +69,31 @@ function workerRepositoryConfiguration(repositories, repositoryId) {
 }
 
 /**
+ * The remote a minted credential reaches, which is the repository's own
+ * identity where the site names no configuration for it. A `RepositoryId` on
+ * this deployment IS the clone URL — `https://github.com/<owner>/<name>.git`,
+ * which `githubAddressOf` in `src/adapters/forge/githubAddress.ts` reads an
+ * owner and a name out of, and which `repositoryCredentialHost` in
+ * `src/interpreter/forgeCredentials.ts` takes the minting host from. (The brand
+ * itself is `src/interpreter/finalizer.ts`'s and not `src/domain`'s; the domain
+ * layer holds no repository identity at all.) So a repository bound from the
+ * console reaches a worker with nothing added to this map.
+ *
+ * The map still decides where it names one: an entry's URL is a mirror this
+ * deployment would rather clone from, and a mirror that stopped overriding
+ * would be a deployment quietly reaching past it.
+ *
  * @param {Record<string, WorkerRepositoryConfiguration>} repositories
  * @param {string} repositoryId
  */
 export function workerRepositoryUrl(repositories, repositoryId) {
-  return requiredText(
-    workerRepositoryConfiguration(repositories, repositoryId).url,
-    "URL",
-    repositoryId,
-  );
+  if (!Object.hasOwn(repositories, repositoryId)) return repositoryId;
+  const configured = repositories[repositoryId];
+  if (configured === null || typeof configured !== "object")
+    return repositoryId;
+  return configured.url === undefined
+    ? repositoryId
+    : requiredText(configured.url, "URL", repositoryId);
 }
 
 /**

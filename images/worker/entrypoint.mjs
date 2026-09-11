@@ -40,6 +40,19 @@ function required(name) {
   return value;
 }
 
+/**
+ * A site map this pod may run without. A minted credential reaches a repository
+ * at its own identity, so a deployment that mints names nothing here; a
+ * deployment that mounts still does, and the mounted arm refuses a repository
+ * the map leaves out exactly as before.
+ */
+function optionalRepositories(name) {
+  const value = process.env[name];
+  return value === undefined || value.length === 0
+    ? {}
+    : workerRepositories(value);
+}
+
 function parsed(name) {
   return JSON.parse(required(name));
 }
@@ -387,7 +400,7 @@ async function main() {
   const commands = workerCheckCommands(task);
   const agent = commands === undefined ? workerAgent(task) : undefined;
   await admitWorkerTask(task, agent);
-  const repositories = workerRepositories(required("CHUG_WORKER_REPOSITORIES"));
+  const repositories = optionalRepositories("CHUG_WORKER_REPOSITORIES");
   const credentialFiles = workerRepositories(
     required("CHUG_WORKER_CREDENTIAL_FILES"),
   );

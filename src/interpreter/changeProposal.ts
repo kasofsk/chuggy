@@ -32,6 +32,7 @@ import { textCodePointsCount } from "../contract/http.ts";
 import { asBoundedText } from "./boundedText.ts";
 import type { GitObjectId, GitRefName, RepositoryId } from "./finalizer.ts";
 import { finalizerIdentityCharsMax } from "./finalizer.ts";
+import type { Partition } from "./projectStore.ts";
 declare const forgeBindingIdBrand: unique symbol;
 declare const proposalRemoteIdentityBrand: unique symbol;
 declare const proposalMarkerBrand: unique symbol;
@@ -180,6 +181,13 @@ export interface ChangeProposalIdentity {
 
 export interface ChangeProposalRequest {
   readonly binding: ForgeBinding;
+  /**
+   * Whose project this proposal is opened for. It is no part of the proposal's
+   * identity — `canonicalChangeProposalRequest` digests the claim and never
+   * this — and is carried so a credential source that mints can be asked under
+   * the tenant whose claim covers the repository.
+   */
+  readonly partition: Partition;
   readonly repository: RepositoryId;
   readonly request: ChangeProposalRequestIdentity;
   readonly marker: ProposalMarker;
@@ -376,10 +384,22 @@ export interface ChangeProposalForges {
   bindingOf(repository: RepositoryId): ForgeBinding | undefined;
 }
 
+/**
+ * What one forge act is authorized for: the binding that selects the forge, and
+ * the partition and repository a source that mints needs to mint under. A
+ * source reading a mounted file answers from the binding alone, as it always
+ * has; the other two are what an installation token is scoped by.
+ */
+export interface ChangeProposalCredentialRequest {
+  readonly binding: ForgeBinding;
+  readonly partition: Partition;
+  readonly repository: RepositoryId;
+}
+
 /** Resolves proposal API authority independently of either repository credential. */
 export interface ForgeCredentialPort {
   credential(
-    binding: ForgeBinding,
+    request: ChangeProposalCredentialRequest,
   ): Promise<
     | { readonly resolved: "Credential"; readonly credential: ForgeCredential }
     | { readonly resolved: "Denied" }
@@ -389,6 +409,7 @@ export interface ForgeCredentialPort {
 
 export interface ChangeProposalRequestInput {
   readonly binding: ForgeBinding;
+  readonly partition: Partition;
   readonly repository: RepositoryId;
   readonly request: ChangeProposalRequestIdentity;
   readonly headRef: GitRefName;
@@ -447,6 +468,7 @@ export function changeProposalRequest(
     throw new RangeError("proposal body is not bounded text");
   return {
     binding: input.binding,
+    partition: input.partition,
     repository: input.repository,
     request: input.request,
     marker: proposalMarkerOf(input.request),

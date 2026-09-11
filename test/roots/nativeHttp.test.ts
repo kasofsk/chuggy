@@ -351,15 +351,18 @@ test("a deployment that names no credential slot for a thread is refused", async
 
 const forgeOptionsProgram = `
   const root = await import('./src/roots/nativeHttp.ts');
-  process.stdout.write(JSON.stringify(root.forgeTokenOptions() ?? null));
+  const forge = await import('./src/adapters/forge/githubInstallationTokens.ts');
+  const key = root.forgePortalKey();
+  process.stdout.write(JSON.stringify(
+    key === undefined ? null : forge.githubInstallationTokensOptions(key)));
 `;
 
 const forgePairsProgram = `
   const root = await import('./src/roots/nativeHttp.ts');
   process.stdout.write(JSON.stringify(root.forgeAppPairs().map((pair) => ({
     app: pair.app,
-    appId: pair.options.appId,
-    keyFile: pair.options.privateKeyPath,
+    appId: pair.key.appId,
+    keyFile: pair.key.keyFile,
   }))));
 `;
 

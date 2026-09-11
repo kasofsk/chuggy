@@ -36,6 +36,7 @@ import {
   type FinalizerOwnerId,
   type RepositoryId,
 } from "./finalizer.ts";
+import { forgeAppKeyOf, type ForgeAppKey } from "./forgeInstallation.ts";
 import { asRecoveryEpoch, type RecoveryEpoch } from "./projectStore.ts";
 import type { ServiceRuntimeConfig } from "./serviceRuntime.ts";
 
@@ -62,7 +63,13 @@ export interface ForgeBindingFile {
   readonly repositoryHost: string;
   readonly apiHost: string;
   readonly credentialReference: ForgeCredentialReference;
-  readonly path: string;
+  /**
+   * Where this forge's own credential is mounted, and nothing where a
+   * deployment mints it: a binding still names the forge, its two hosts and the
+   * reference a proposal is opened under, because those are the forge and not
+   * the secret.
+   */
+  readonly path?: string;
 }
 
 /** The most forges one finalizer deployment opens change proposals on. */
@@ -95,6 +102,7 @@ export interface FinalizerSettings {
   readonly git: FinalizerGitSettings;
   readonly credentials: readonly RepositoryCredentialFile[];
   readonly forges: readonly ForgeBindingFile[];
+  readonly forge?: ForgeAppKey;
   readonly credentialBytesMax?: number;
   readonly runtime: ServiceRuntimeConfig;
   readonly finalizer: FinalizerConfig;
@@ -130,6 +138,10 @@ const recoveryEpochVariable = "CHUG_FINALIZER_RECOVERY_EPOCH";
 const artifactRootVariable = "CHUG_FINALIZER_ARTIFACT_ROOT";
 const credentialSourcesVariable = "CHUG_FINALIZER_CREDENTIAL_SOURCES";
 const forgeBindingsVariable = "CHUG_FINALIZER_FORGE_BINDINGS";
+const forgeAppIdVariable = "CHUG_FINALIZER_FORGE_APP_ID";
+const forgeAppKeyFileVariable = "CHUG_FINALIZER_FORGE_APP_KEY_FILE";
+const forgeApiUrlVariable = "CHUG_FINALIZER_FORGE_API_URL";
+const forgeTimeoutVariable = "CHUG_FINALIZER_FORGE_TIMEOUT_MS";
 const credentialBytesVariable = "CHUG_FINALIZER_CREDENTIAL_BYTES_MAX";
 const gitScratchRootVariable = "CHUG_FINALIZER_GIT_SCRATCH_ROOT";
 const gitCommitNameVariable = "CHUG_FINALIZER_GIT_COMMIT_NAME";
@@ -217,14 +229,18 @@ function finalizerSettingsCredentialFile(
   };
 }
 
-/** Parses one bounded repository-to-credential-file mapping without reading its files. */
+/**
+ * Parses one bounded repository-to-credential-file mapping without reading its
+ * files. An empty list is a deployment that mounts nothing, which is what a
+ * deployment minting every credential it presents writes.
+ */
 export function repositoryCredentialFilesOf(
   encoded: string,
   variable: string,
 ): readonly RepositoryCredentialFile[] {
   const parsed: unknown = JSON.parse(encoded);
   if (!Array.isArray(parsed)) throw new Error(`${variable} must be an array`);
-  if (parsed.length === 0 || parsed.length > repositoryCredentialFilesMax)
+  if (parsed.length > repositoryCredentialFilesMax)
     throw new RangeError(
       `${variable} names ${String(parsed.length)} repositories, past the ${String(repositoryCredentialFilesMax)} one deployment holds`,
     );
@@ -282,11 +298,12 @@ function finalizerSettingsHost(
 }
 
 /**
- * One declared forge binding, refusing an entry that names no forge, host,
- * credential or path. Both hosts are named or the entry is refused, the
+ * One declared forge binding, refusing an entry that names no forge, host or
+ * credential reference, and taking a path where the credential is mounted
+ * rather than minted. Both hosts are named or the entry is refused, the
  * repositories a forge holds and the API it is asked through being one forge:
- * an entry naming only the first would have its credential sent to whatever API
- * the adapter composed for it defaults to.
+ * an entry naming only the first would have its credential sent to whatever
+ * API the adapter composed for it defaults to.
  */
 function finalizerSettingsForgeBinding(entry: unknown): ForgeBindingFile {
   if (typeof entry !== "object" || entry === null)
@@ -310,7 +327,9 @@ function finalizerSettingsForgeBinding(entry: unknown): ForgeBindingFile {
         finalizerIdentityCharsMax,
       ),
     ),
-    path: finalizerSettingsField(fields, "path", forgePathCharsMax),
+    ...(fields["path"] === undefined
+      ? {}
+      : { path: finalizerSettingsField(fields, "path", forgePathCharsMax) }),
   };
 }
 
@@ -340,13 +359,33 @@ export function forgeBindingFilesOf(
   return bindings;
 }
 
-/** Every repository this deployment holds a credential for, each named once. */
+/**
+ * Every repository this deployment holds a mounted credential for, each named
+ * once, and none at all where it names no files: a deployment whose repositories
+ * are all on the host its app key covers mounts nothing.
+ */
 function finalizerSettingsCredentials(
   environment: FinalizerEnvironment,
 ): readonly RepositoryCredentialFile[] {
-  return repositoryCredentialFilesOf(
-    finalizerSettingsRequired(environment, credentialSourcesVariable),
-    credentialSourcesVariable,
+  const encoded = environment[credentialSourcesVariable];
+  return encoded === undefined || encoded.length === 0
+    ? []
+    : repositoryCredentialFilesOf(encoded, credentialSourcesVariable);
+}
+
+/** The app key this deployment mints repository credentials under, where it names one. */
+function finalizerSettingsForgeApp(
+  environment: FinalizerEnvironment,
+): ForgeAppKey | undefined {
+  return forgeAppKeyOf(
+    {
+      appId: forgeAppIdVariable,
+      appKeyFile: forgeAppKeyFileVariable,
+      apiUrl: forgeApiUrlVariable,
+      timeoutMs: forgeTimeoutVariable,
+    },
+    environment,
+    (name) => finalizerSettingsBound(environment, name),
   );
 }
 
@@ -455,7 +494,12 @@ function finalizerSettingsFinalizer(
   });
 }
 
-/** Parses one deployment's whole finalizer configuration out of a plain environment record. */
+/**
+ * Parses one deployment's whole finalizer configuration out of a plain
+ * environment record. A deployment naming neither an app key nor a credential
+ * file is refused here: it could resolve a credential for no repository at all,
+ * and every promotion it claimed would be denied one request at a time.
+ */
 export function finalizerSettingsOf(
   environment: FinalizerEnvironment,
 ): FinalizerSettings {
@@ -463,6 +507,12 @@ export function finalizerSettingsOf(
     environment,
     credentialBytesVariable,
   );
+  const credentials = finalizerSettingsCredentials(environment);
+  const forge = finalizerSettingsForgeApp(environment);
+  if (forge === undefined && credentials.length === 0)
+    throw new Error(
+      `${forgeAppKeyFileVariable} or ${credentialSourcesVariable} is required`,
+    );
   return {
     databaseUrl: finalizerSettingsRequired(environment, databaseUrlVariable),
     owner: asFinalizerOwnerId(
@@ -473,8 +523,9 @@ export function finalizerSettingsOf(
     ),
     artifactRoot: finalizerSettingsRequired(environment, artifactRootVariable),
     git: finalizerSettingsGit(environment),
-    credentials: finalizerSettingsCredentials(environment),
+    credentials,
     forges: finalizerSettingsForges(environment),
+    ...(forge === undefined ? {} : { forge }),
     ...(credentialBytesMax === undefined ? {} : { credentialBytesMax }),
     runtime: {
       idleIntervalMilliseconds: finalizerSettingsBoundOr(

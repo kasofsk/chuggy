@@ -16,6 +16,21 @@ import {
   type ForgeCredentialFilesOptions,
 } from "./adapters/credentials/credentialFiles.ts";
 import { githubChangeProposals } from "./adapters/forge/githubChangeProposals.ts";
+import { githubRepositoryHost } from "./adapters/forge/githubAddress.ts";
+import {
+  githubInstallationTokens,
+  githubInstallationTokensOptions,
+  githubInstallationTokensPrecondition,
+} from "./adapters/forge/githubInstallationTokens.ts";
+import {
+  mintedRepositoryCredentials,
+  mintedRepositoryTokens,
+} from "./adapters/forge/mintedCredentials.ts";
+import { postgresForgeInstallations } from "./adapters/postgres/forgeInstallation.ts";
+import {
+  forgeCredentialsByHost,
+  repositoryCredentialsByHost,
+} from "./interpreter/forgeCredentials.ts";
 import {
   forgeBindingOf,
   type ChangeProposalForges,
@@ -37,7 +52,14 @@ import {
   forgeCredentialMinting,
   type ForgeCredentialMinting,
 } from "./interpreter/forgeCredentials.ts";
-import type { ForgeRepositoryTokens } from "./interpreter/forgeInstallation.ts";
+import {
+  githubForgeId,
+  portalForgeApp,
+  type ForgeAppKey,
+  type ForgeInstallationTokens,
+  type ForgePermissionSet,
+  type ForgeRepositoryTokens,
+} from "./interpreter/forgeInstallation.ts";
 import {
   repositoryOnboarding,
   type RepositoryConfigurationsPorts,
@@ -105,6 +127,7 @@ import type { FinalizerService } from "./interpreter/finalizerRun.ts";
 import type {
   FinalizerSettings,
   ForgeBindingFile,
+  RepositoryCredentialFile,
 } from "./interpreter/finalizerSettings.ts";
 import type { RuntimePrecondition } from "./interpreter/serviceRuntime.ts";
 import {
@@ -219,6 +242,143 @@ export function composeSelectorProjectSettings(
     access,
     postgresSelectorProjectSettings(apiPool),
   );
+}
+
+/**
+ * What one process resolves a repository's credential with: what it mints under
+ * where it holds an app key, the files it falls back to, and how much it may
+ * ask a mint for.
+ */
+export interface RepositoryCredentialComposition {
+  readonly minting?: RepositoryCredentialMinting;
+  readonly permissions: ForgePermissionSet;
+  readonly sources: readonly RepositoryCredentialFile[];
+  readonly credentialBytesMax?: number;
+}
+
+/** The minting half of one process's credentials, absent where it holds no app key. */
+export interface RepositoryCredentialMinting {
+  readonly installationTokens: ForgeInstallationTokens;
+  readonly tokens: ForgeRepositoryTokens;
+}
+
+/** The files half of one process's credentials, which is what a precondition holds to a path. */
+export function repositoryCredentialFileOptions(
+  composition: RepositoryCredentialComposition,
+): CredentialFilesOptions {
+  return {
+    sources: composition.sources,
+    ...(composition.credentialBytesMax === undefined
+      ? {}
+      : { credentialBytesMax: composition.credentialBytesMax }),
+  };
+}
+
+/**
+ * What a process mints with, over the pool it owns and the key it holds. The
+ * permission is not here: one process mints under one key for several acts, and
+ * each act's composition is what says how much it may ask for.
+ */
+export function composeForgeRepositoryMinting(
+  pool: pg.Pool,
+  forge: ForgeAppKey | undefined,
+): RepositoryCredentialMinting | undefined {
+  if (forge === undefined) return undefined;
+  const installationTokens = githubInstallationTokens(
+    githubInstallationTokensOptions(forge),
+  );
+  return {
+    installationTokens,
+    tokens: mintedRepositoryTokens({
+      forge: githubForgeId,
+      app: portalForgeApp,
+      repositoryHost: githubRepositoryHost,
+      installations: postgresForgeInstallations(pool),
+      tokens: installationTokens,
+    }),
+  };
+}
+
+/**
+ * The credential source every process that mints for itself composes: the
+ * minting source for the host its portal key covers, and the mounted files for
+ * every other repository. It is one function because the four control-plane
+ * processes each hold the same key for the same forge, and four wirings of it
+ * would be four answers to which repositories a deployment can still reach
+ * through a file.
+ */
+export function composeRepositoryCredentials(
+  composition: RepositoryCredentialComposition,
+): RepositoryCredentialPort {
+  const files = credentialFiles(repositoryCredentialFileOptions(composition));
+  const minting = composition.minting;
+  if (minting === undefined) return files;
+  return repositoryCredentialsByHost(
+    [
+      {
+        repositoryHost: githubRepositoryHost,
+        credentials: mintedRepositoryCredentials({
+          tokens: minting.tokens,
+          permissions: composition.permissions,
+        }),
+      },
+    ],
+    files,
+  );
+}
+
+/** What the finalizer asks a forge for to promote: it pushes a branch and reads nothing else. */
+export function composeFinalizerRepositoryCredentials(
+  options: CredentialFilesOptions,
+  minting: RepositoryCredentialMinting | undefined,
+): RepositoryCredentialPort {
+  return composeRepositoryCredentials({
+    ...(minting === undefined ? {} : { minting }),
+    permissions: "write",
+    ...options,
+  });
+}
+
+/**
+ * What the ticket service asks a forge for: it observes a source's refs and
+ * nothing else, so a token it holds can do nothing else either.
+ */
+export function composeTicketServiceCredentials(
+  options: CredentialFilesOptions,
+  minting: RepositoryCredentialMinting | undefined,
+): RepositoryCredentialPort {
+  return composeRepositoryCredentials({
+    ...(minting === undefined ? {} : { minting }),
+    permissions: "read",
+    ...options,
+  });
+}
+
+/**
+ * What the API asks a forge for: it proves a binding and reads a repository's
+ * declarations, and opens nothing and pushes nothing under its own credential.
+ */
+export function composeApiRepositoryCredentials(
+  options: CredentialFilesOptions,
+  minting: RepositoryCredentialMinting | undefined,
+): RepositoryCredentialPort {
+  return composeRepositoryCredentials({
+    ...(minting === undefined ? {} : { minting }),
+    permissions: "read",
+    ...options,
+  });
+}
+
+/** What the importer asks a forge for: it reads a repository and writes nothing to one. */
+export function composeConfigurationImporterCredentials(
+  options: CredentialFilesOptions,
+  minting: RepositoryCredentialMinting | undefined,
+): RepositoryCredentialPort {
+  return composeRepositoryCredentials({
+    ...(minting === undefined ? {} : { minting }),
+    permissions: "read",
+    ...options,
+  });
 }
 
 /**
@@ -406,14 +566,40 @@ export function composeFinalizerService(
 /** What one finalizer deployment must find before it runs, and the ports it finds it through. */
 export interface FinalizerRuntimeComposition {
   readonly preconditions: readonly RuntimePrecondition[];
-  service(): FinalizerServiceRuntime;
+  readonly service: (pool: pg.Pool) => FinalizerServiceRuntime;
+}
+
+/**
+ * The credential the pull-request path presents: one minted to propose for the
+ * host this deployment's app key covers, and the file each binding names for
+ * every other. A deployment holding no key composes the files alone, which is
+ * what it composed before it minted anything.
+ */
+export function composeFinalizerForgeCredentials(
+  options: ForgeCredentialFilesOptions,
+  minting: RepositoryCredentialMinting | undefined,
+): ForgeCredentialPort {
+  const files = forgeCredentialFiles(options);
+  if (minting === undefined) return files;
+  return forgeCredentialsByHost(
+    [
+      {
+        repositoryHost: githubRepositoryHost,
+        tokens: minting.tokens,
+        permissions: "propose",
+      },
+    ],
+    files,
+  );
 }
 
 /**
  * Wires a finalizer deployment's plain settings to the git, artifact and
- * credential ports it promotes through. The git port is built on demand,
- * because opening its scratch refuses what `git-available` and
- * `git-scratch-writable` are there to report.
+ * credential ports it promotes through. Both the git port and the pool the
+ * minting source reads a claim on are the service's arguments rather than the
+ * composition's: opening a scratch refuses what `git-available` and
+ * `git-scratch-writable` are there to report, and the pool is the process
+ * root's to own.
  */
 export function composeFinalizerRuntime(
   settings: FinalizerSettings,
@@ -424,7 +610,6 @@ export function composeFinalizerRuntime(
       ? {}
       : { credentialBytesMax: settings.credentialBytesMax }),
   };
-  const credentials = credentialFiles(credentialOptions);
   const forgeOptions: ForgeCredentialFilesOptions = {
     bindings: settings.forges,
     ...(settings.credentialBytesMax === undefined
@@ -439,32 +624,60 @@ export function composeFinalizerRuntime(
       artifactRootPrecondition(settings.artifactRoot),
       credentialFilesPrecondition(credentialOptions),
       forgeCredentialFilesPrecondition(forgeOptions),
+      ...(settings.forge === undefined
+        ? []
+        : [
+            githubInstallationTokensPrecondition(
+              githubInstallationTokensOptions(settings.forge),
+            ),
+          ]),
     ],
-    service: () => ({
-      forges: composeChangeProposalForges(
-        settings.forges,
-        forgeCredentialFiles(forgeOptions),
+    service: (pool) =>
+      finalizerServiceRuntime(
+        settings,
+        composeForgeRepositoryMinting(pool, settings.forge),
+        credentialOptions,
+        forgeOptions,
       ),
-      git: gitPromotion({
-        scratchDirectory: git.scratchDirectory,
-        identity: { name: git.commitName, email: git.commitEmail },
-        environment: git.environment,
-        credentials,
-        ...(git.credentialUsername === undefined
-          ? {}
-          : { credentialUsername: git.credentialUsername }),
-        ...(git.localTimeoutSecsMax === undefined
-          ? {}
-          : { localTimeoutSecsMax: git.localTimeoutSecsMax }),
-        ...(git.remoteTimeoutSecsMax === undefined
-          ? {}
-          : { remoteTimeoutSecsMax: git.remoteTimeoutSecsMax }),
-        ...(git.promotionTimeoutSecsMax === undefined
-          ? {}
-          : { promotionTimeoutSecsMax: git.promotionTimeoutSecsMax }),
-      }),
-      artifactRoot: settings.artifactRoot,
+  };
+}
+
+/** The ports one finalizer promotes and proposes through, over what it mints and mounts. */
+function finalizerServiceRuntime(
+  settings: FinalizerSettings,
+  minting: RepositoryCredentialMinting | undefined,
+  credentialOptions: CredentialFilesOptions,
+  forgeOptions: ForgeCredentialFilesOptions,
+): FinalizerServiceRuntime {
+  const git = settings.git;
+  const credentials = composeFinalizerRepositoryCredentials(
+    credentialOptions,
+    minting,
+  );
+  return {
+    forges: composeChangeProposalForges(
+      settings.forges,
+      composeFinalizerForgeCredentials(forgeOptions, minting),
+    ),
+    git: gitPromotion({
+      scratchDirectory: git.scratchDirectory,
+      identity: { name: git.commitName, email: git.commitEmail },
+      environment: git.environment,
+      credentials,
+      ...(git.credentialUsername === undefined
+        ? {}
+        : { credentialUsername: git.credentialUsername }),
+      ...(git.localTimeoutSecsMax === undefined
+        ? {}
+        : { localTimeoutSecsMax: git.localTimeoutSecsMax }),
+      ...(git.remoteTimeoutSecsMax === undefined
+        ? {}
+        : { remoteTimeoutSecsMax: git.remoteTimeoutSecsMax }),
+      ...(git.promotionTimeoutSecsMax === undefined
+        ? {}
+        : { promotionTimeoutSecsMax: git.promotionTimeoutSecsMax }),
     }),
+    artifactRoot: settings.artifactRoot,
   };
 }
 

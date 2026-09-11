@@ -25,7 +25,10 @@ import { z } from "zod";
 
 import {
   asForgeInstallationToken,
+  forgeAppKeyOf,
   forgePermissionSets,
+  type ForgeAppKey,
+  type ForgeAppKeyVariables,
   type ForgeInstallationToken,
   type ForgeInstallationTokens,
   type ForgeTokenMinted,
@@ -60,43 +63,38 @@ export const githubInstallationTokensDefaults = {
 } as const;
 
 /** The variables one process reads its app key and its forge from. */
-export interface GithubInstallationTokensVariables {
-  readonly appId: string;
-  readonly appKeyFile: string;
-  readonly apiUrl: string;
-  readonly timeoutMs: string;
+export type GithubInstallationTokensVariables = ForgeAppKeyVariables;
+
+/** This forge's spelling of one app key, each bound it left absent taken from above. */
+export function githubInstallationTokensOptions(
+  key: ForgeAppKey,
+): GithubInstallationTokensOptions {
+  return {
+    fetch,
+    appId: key.appId,
+    privateKeyPath: key.keyFile,
+    apiUrl: key.apiUrl ?? githubInstallationTokensDefaults.apiUrl,
+    requestTimeoutMs:
+      key.requestTimeoutMs ?? githubInstallationTokensDefaults.requestTimeoutMs,
+  };
 }
 
 /**
- * What a process mints with, or nothing at all where it holds no app key. Two
- * processes hold an app key under names of their own — the API the portal
- * App's, the worker plane the worker App's — and this is the one place either
- * is read: a second parse would be a second answer to what an app id named
- * without its key file means.
+ * What a process mints with, or nothing at all where it holds no app key. Each
+ * process holds an app key under names of its own — the API the portal App's,
+ * the worker plane the worker App's — and the pair is read through
+ * `forgeAppKeyOf`, so what an app id named without its key file means is
+ * answered in a single place.
  */
 export function githubInstallationTokensSettings(
   named: GithubInstallationTokensVariables,
   environment: Readonly<Record<string, string | undefined>>,
   positive: (name: string, fallback: number) => number,
 ): GithubInstallationTokensOptions | undefined {
-  const appId = environment[named.appId] ?? "";
-  const privateKeyPath = environment[named.appKeyFile] ?? "";
-  if (appId.length === 0 && privateKeyPath.length === 0) return undefined;
-  if (appId.length === 0 || privateKeyPath.length === 0)
-    throw new Error(
-      `${named.appId} and ${named.appKeyFile} are named together or not at all`,
-    );
-  return {
-    fetch,
-    appId,
-    privateKeyPath,
-    apiUrl:
-      environment[named.apiUrl] ?? githubInstallationTokensDefaults.apiUrl,
-    requestTimeoutMs: positive(
-      named.timeoutMs,
-      githubInstallationTokensDefaults.requestTimeoutMs,
-    ),
-  };
+  const key = forgeAppKeyOf(named, environment, (name) =>
+    positive(name, githubInstallationTokensDefaults.requestTimeoutMs),
+  );
+  return key === undefined ? undefined : githubInstallationTokensOptions(key);
 }
 
 /** The status a mint is answered with, a forge that made no token answering something else. */

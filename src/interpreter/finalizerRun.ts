@@ -1167,6 +1167,7 @@ async function finalizerAwaitApproval(
  */
 function finalizerStoredProposal(
   binding: ForgeBinding,
+  partition: Partition,
   repository: RepositoryId,
   stored: StoredChangeProposal,
 ): FinalizationProposalGathered {
@@ -1175,6 +1176,7 @@ function finalizerStoredProposal(
     gathered: "Request",
     request: changeProposalRequest({
       binding,
+      partition,
       repository,
       request: asked.request,
       headRef: asked.head.ref,
@@ -1221,6 +1223,7 @@ async function finalizerOpeningProposal(
     gathered: "Request",
     request: changeProposalRequest({
       binding,
+      partition: view.claim.partition,
       repository: pinned.repository.repository,
       request: identity,
       headRef: pinned.target.ref,
@@ -1251,7 +1254,12 @@ async function finalizerGatherProposal(
   const stored = await service.store.changeProposal(view.claim);
   return stored === undefined
     ? finalizerOpeningProposal(service, view, pinned, binding)
-    : finalizerStoredProposal(binding, repository, stored);
+    : finalizerStoredProposal(
+        binding,
+        view.claim.partition,
+        repository,
+        stored,
+      );
 }
 
 /**

@@ -82,6 +82,76 @@ test("the command parses its complete plain-data configuration", async () => {
   assert.deepEqual(JSON.parse(found.stdout), validConfiguration);
 });
 
+/** Runs one program against one configuration, which is how this root is asked anything. */
+async function configured(
+  program: string,
+  configuration: unknown,
+): Promise<Record<string, unknown>> {
+  const found = await execute(
+    process.execPath,
+    ["--experimental-strip-types", "--input-type=module", "--eval", program],
+    {
+      cwd: process.cwd(),
+      env: { CHUG_TICKET_SERVICE_CONFIG: JSON.stringify(configuration) },
+    },
+  );
+  return JSON.parse(found.stdout) as Record<string, unknown>;
+}
+
+const parseProgram = `
+  const { ticketServiceConfiguration } = await import('./src/roots/ticketService.ts');
+  try {
+    process.stdout.write(JSON.stringify(ticketServiceConfiguration(process.env)));
+  } catch (failure) {
+    process.stdout.write(JSON.stringify({ refused: failure.message }));
+  }
+`;
+
+test("a ticket service holding an app key mounts no repository credential", async () => {
+  const minting = {
+    ...validConfiguration,
+    forge: { appId: "1234", keyFile: "/run/secrets/portal.pem" },
+    source: { ...validConfiguration.source, sources: undefined },
+  };
+  const parsed = await configured(parseProgram, minting);
+  assert.deepEqual((parsed["source"] as { sources: unknown }).sources, []);
+  assert.deepEqual(parsed["forge"], {
+    appId: "1234",
+    keyFile: "/run/secrets/portal.pem",
+  });
+});
+
+test("a ticket service with neither a key nor a credential file is refused", async () => {
+  const neither = {
+    ...validConfiguration,
+    source: { ...validConfiguration.source, sources: [] },
+  };
+  const parsed = await configured(parseProgram, neither);
+  assert.match(
+    String(parsed["refused"]),
+    /CHUG_TICKET_SERVICE_CONFIG.forge or CHUG_TICKET_SERVICE_CONFIG.source.sources is required/u,
+  );
+});
+
+test("a forge api url and timeout reach the parsed key", async () => {
+  const minting = {
+    ...validConfiguration,
+    forge: {
+      appId: "1234",
+      keyFile: "/run/secrets/portal.pem",
+      apiUrl: "https://api.github.invalid",
+      timeoutMs: 9000,
+    },
+  };
+  const parsed = await configured(parseProgram, minting);
+  assert.deepEqual(parsed["forge"], {
+    appId: "1234",
+    keyFile: "/run/secrets/portal.pem",
+    apiUrl: "https://api.github.invalid",
+    requestTimeoutMs: 9000,
+  });
+});
+
 test("optional pool bounds are omitted rather than carried as undefined", async () => {
   const withoutLimits = {
     ...validConfiguration,

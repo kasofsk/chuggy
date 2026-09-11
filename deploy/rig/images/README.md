@@ -107,7 +107,7 @@ to start without the required ones.
 | `CHUG_API_ARTIFACT_ROOT` | required | see below |
 | `CHUG_API_GIT_SCRATCH_ROOT` | required | writable scratch for exact-commit configuration reads |
 | `CHUG_API_THREAD_CREDENTIAL_SLOT` | required | the named credential mount a member's thread speaks through |
-| `CHUG_API_REPOSITORY_CREDENTIAL_SOURCES` | required | JSON repository-to-credential-file mappings |
+| `CHUG_API_REPOSITORY_CREDENTIAL_SOURCES` | optional | JSON repository-to-credential-file mappings; a deployment that mints every credential it presents names none |
 | `CHUG_API_FORGE_APP_ID` | with the key file, or neither | the GitHub App this deployment mints installation tokens under |
 | `CHUG_API_FORGE_APP_KEY_FILE` | with the app id, or neither | a file holding that app's RSA private key, in either PEM encoding; the process refuses to start unless it can be read and used |
 | `CHUG_API_FORGE_WORKER_APP_ID` | with the worker key file, or neither | the GitHub App the worker plane mints under, held here only so a tenant can claim its installations over the API |
@@ -196,6 +196,56 @@ worker and session pod a memory-backed volume at `/var/run/chuggy/minted`, which
 is where the image writes the password it is answered with, at mode `0600`. That
 volume is the pod document's, so nothing about it is configured here; a
 deployment that mints nothing simply never writes to it.
+
+## Configuring the control plane's minting
+
+The finalizer, the ticket service and the importer each hold the portal App key
+and mint for themselves, exactly as the API does. Each still reads whatever
+credential files it is given, and the host in a repository's own address is what
+selects between the two: a repository on the forge the key covers is minted for,
+and every other repository is read from a file as before.
+
+| Variable | | |
+|---|---|---|
+| `CHUG_FINALIZER_FORGE_APP_ID` | with the key file, or neither | the portal App the finalizer pushes and proposes under |
+| `CHUG_FINALIZER_FORGE_APP_KEY_FILE` | with the app id, or neither | a file holding that app's RSA private key, in either PEM encoding; the finalizer refuses to start unless it can be read and used |
+| `CHUG_FINALIZER_FORGE_API_URL` | `https://api.github.com` | where the mint request is sent |
+| `CHUG_FINALIZER_FORGE_TIMEOUT_MS` | | how long one mint request may take before it is an outage |
+| `CHUG_FINALIZER_CREDENTIAL_SOURCES` | with the app key, or either | JSON repository-to-credential-file mappings; absent or `[]` is a finalizer that mounts nothing |
+| `CHUG_FINALIZER_FORGE_BINDINGS` | | JSON forge bindings; an entry's `path` is named where the forge credential is mounted and left out where it is minted |
+| `CHUG_TICKET_SERVICE_CONFIG` `.forge` | with `source.sources`, or either | `{appId, keyFile, apiUrl?, timeoutMs?}`, the portal App the ticket service observes a source under |
+| `CHUG_TICKET_SERVICE_CONFIG` `.source.sources` | with `.forge`, or either | absent or `[]` is a ticket service that mounts nothing |
+| `CHUG_CONFIGURATION_IMPORT_CONFIG` `.forge` | with `git.credentialSources`, or either | the same block, the portal App the importer reads a snapshot under |
+| `CHUG_CONFIGURATION_IMPORT_CONFIG` `.git.credentialSources` | with `.forge`, or either | `[]` is an importer that mounts nothing |
+
+**A service naming neither a key nor a file list is refused at start-up**, in
+each case by the configuration rather than at the first act: it could resolve no
+credential for any repository, which is not an outage that might clear.
+
+**Each service mints only what it does.** The ticket service mints `read`, the
+importer `read`, and the finalizer `write` for its git promotion and `propose`
+for its pull-request path. All three mint under the portal App, which the branch
+ruleset admits to protected `main` — a promotion and a proposal both need that,
+and `deploy/rig/forge/README.md` says which pods now hold that key.
+
+**The importer names no repository at all.** `CHUG_CONFIGURATION_IMPORT_CONFIG`
+no longer carries `repository`, `commit` or `partitions`: the run reads every
+binding in the database and imports each at its own default-branch head. A
+repository holding no commit, or none at its head's configuration directory, is
+skipped; one binding's failure does not stop the others, a port that raised
+included, and the run exits non-zero if any failed. One run reads a bounded
+listing, oldest binding first: a run whose listing came back at that bound
+imported a prefix of the estate and exits non-zero naming the bound, so only a
+run that exits zero imported every binding there is.
+
+**A worker or session pod needs no roster.** `CHUG_WORKER_REPOSITORIES` is
+optional for both pods: on the minted arm a repository the map does not name is
+cloned at its own identity, which on this deployment is its clone URL. The map
+still overrides where it names one, which is how a mirror is configured. The
+mounted arm is unchanged and still refuses a repository the map leaves out.
+`CHUG_WORKER_CREDENTIAL_FILES` stays required as a variable, and `{}` is an
+admissible value: a pod that mints every credential it presents reads nothing
+out of it.
 
 ## Prove it
 
