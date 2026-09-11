@@ -1033,6 +1033,27 @@ test("a deployment naming no bootstrap image makes the repository unseeded", asy
   );
 });
 
+test("the identity a creation is decided under is the one the caller keyed it with", async (t) => {
+  const composed = fixtureCase(t, {
+    answers: [madeAnswer(), madeAnswer()],
+    granted: ["Administer"],
+    store: fixtureCreationStore(),
+    creating: true,
+  });
+  for (const key of ["create-engine-1", "create-engine-2"])
+    await composed.app.inject({
+      method: "POST",
+      url: createRoot,
+      headers: { ...versioned, "idempotency-key": key },
+      payload: creating,
+    });
+  assert.deepEqual(
+    composed.store.commands.map((command) => command.operation),
+    ["create-engine-1", "create-engine-2"],
+    "two requests for one repository are two operations and not one",
+  );
+});
+
 test("a tenant missing either claim on the account creates nothing", async (t) => {
   const portalOnly = fixtureCase(t, {
     granted: ["Administer"],

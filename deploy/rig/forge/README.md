@@ -104,9 +104,10 @@ those are the operator's to verify on the App's settings page — GitHub grants 
 installation token only the permissions the App itself was granted, so an App
 without `Administration: write` is answered 403 on both the create and the
 ruleset: the create's reaches the caller as `ForgeRefused` naming the step, and
-the ruleset's is reported as `ruleset: "Refused"` beside a repository that
-stands. `deploy/rig/images/README.md` carries both settings above beside the
-rest of the API's environment.
+the ruleset's is reported beside a repository that stands, as
+`"ruleset": {"result": "Refused", "message": "<GitHub's own words>"}`.
+`deploy/rig/images/README.md` carries both settings above beside the rest of the
+API's environment.
 
 ## Claim an account over the API
 

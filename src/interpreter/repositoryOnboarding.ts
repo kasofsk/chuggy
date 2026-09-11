@@ -789,6 +789,10 @@ async function createRepositorySeeded(
     branch: made.defaultBranch,
     path: bootstrapConfigurationPath,
     message: bootstrapConfigurationCommitMessage,
+    /**
+     * Uncontained, unlike the bind's step: the generator's only raise is its
+     * postcondition, over inputs branded shorter than the bound it checks.
+     */
     content: bootstrapConfigurationFile({
       repository: made.url,
       defaultBranch: made.defaultBranch,

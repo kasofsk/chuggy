@@ -1588,19 +1588,57 @@ test("a created repository names what was made and how far each step got", () =>
   assert.deepEqual(created.ruleset, { result: "Created" });
 });
 
+/** One object without one of its own fields, which is what each partial is. */
+function onboardingWithout(
+  whole: Readonly<Record<string, unknown>>,
+  absent: string,
+): Readonly<Record<string, unknown>> {
+  return Object.fromEntries(
+    Object.entries(whole).filter(([named]) => named !== absent),
+  );
+}
+
+/**
+ * Every body one field short, named and one level deep. A loop over the top
+ * level alone leaves a nested field free to become optional unseen.
+ */
+function onboardingCreatedPartials(
+  body: Readonly<Record<string, unknown>>,
+): readonly (readonly [string, unknown])[] {
+  const partials: (readonly [string, unknown])[] = [];
+  for (const [named, value] of Object.entries(body)) {
+    partials.push([named, onboardingWithout(body, named)]);
+    if (typeof value !== "object" || value === null) continue;
+    const nested = value as Readonly<Record<string, unknown>>;
+    for (const inner of Object.keys(nested))
+      partials.push([
+        `${named}.${inner}`,
+        { ...body, [named]: onboardingWithout(nested, inner) },
+      ]);
+  }
+  return partials;
+}
+
 test("a created body is refused when any part of it is absent", () => {
-  const body = projectRepositoryCreateResponse(partition, onboardingCreated())
-    .body as Readonly<Record<string, unknown>>;
-  for (const absent of Object.keys(body)) {
-    assert.equal(
-      projectRepositoryCreatedSchema.safeParse(
-        Object.fromEntries(
-          Object.entries(body).filter(([named]) => named !== absent),
-        ),
-      ).success,
-      false,
-      absent,
-    );
+  const results: readonly ProjectRepositoryCreateResult[] = [
+    onboardingCreated(),
+    onboardingCreated({
+      ruleset: { result: "Refused", message: "rulesets are not available" },
+      configurations: {
+        result: "Bootstrapped",
+        revision: asConfigurationRevisionId("bootstrap"),
+      },
+    }),
+  ];
+  for (const result of results) {
+    const body = projectRepositoryCreateResponse(partition, result)
+      .body as Readonly<Record<string, unknown>>;
+    for (const [named, partial] of onboardingCreatedPartials(body))
+      assert.equal(
+        projectRepositoryCreatedSchema.safeParse(partial).success,
+        false,
+        named,
+      );
   }
 });
 

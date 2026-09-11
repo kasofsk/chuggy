@@ -28,6 +28,7 @@ import {
   asRepositoryCredential,
   asRepositoryId,
   type CredentialResolved,
+  type GitRefName,
   type RepositoryBinding,
   type RepositoryCredentialPort,
 } from "../../src/interpreter/finalizer.ts";
@@ -243,6 +244,7 @@ interface FixtureWrites {
   readonly heads: RepositoryBinding[];
   readonly snapshots: RepositoryConfigurationSnapshotRequest[];
   readonly authored: ConfigurationRevisionId[];
+  readonly authoredCanonical: string[];
   readonly creations: ForgeRepositoryCreationRequest[];
   readonly seeds: ForgeRepositorySeedRequest[];
   readonly rulesets: ForgeRepositoryRulesetRequest[];
@@ -333,6 +335,7 @@ function fixtureConfigurations(
     authoring: {
       createConfiguration: (input) => {
         wrote.authored.push(input.revision);
+        wrote.authoredCanonical.push(input.canonical);
         return Promise.resolve(
           given.authored ?? {
             created: "Created" as const,
@@ -429,6 +432,7 @@ function fixturePorts(
     heads: [],
     snapshots: [],
     authored: [],
+    authoredCanonical: [],
     creations: [],
     seeds: [],
     rulesets: [],
@@ -1081,6 +1085,28 @@ test("a repository declaring no configurations is authored the bootstrap", async
   assert.deepEqual(wrote.authored, ["bootstrap"]);
 });
 
+/** A branch neither fixture default is, so a constant fed in its place is visible. */
+const bootstrapBranch = asGitRefName("refs/heads/trunk");
+
+/** The brief line the generated document carries the default branch in. */
+function bootstrapConstraint(branch: GitRefName): string {
+  return `The repository's default branch is ${branch}.`;
+}
+
+test("the bootstrap a bind authors names the branch the repository is at", async () => {
+  const { wrote } = await fixtureBound({
+    configurations: {
+      head: { read: "Branch", branch: bootstrapBranch, commit: head },
+      snapshot: { read: "Absent", absent: "ConfigurationDirectory" },
+      image: workerImage,
+    },
+  });
+  assert.ok(
+    wrote.authoredCanonical[0]?.includes(bootstrapConstraint(bootstrapBranch)),
+    "the first ticket is briefed against the branch the repository was read at",
+  );
+});
+
 test("a deployment naming no bootstrap image authors none and says which", async () => {
   const { bound, wrote } = await fixtureBound({
     configurations: {
@@ -1283,6 +1309,21 @@ test("a repository is made, seeded, reserved and bound under one authority", asy
   assert.equal(wrote.seeds[0]?.branch, madeBranch);
   assert.equal(wrote.rulesets[0]?.name, creating.name);
   assert.deepEqual(wrote.commands[0]?.operation, operation);
+});
+
+test("the bootstrap a creation seeds names the branch the forge made", async () => {
+  const { wrote } = await fixtureCreated({
+    creation: {
+      created: {
+        created: "Repository",
+        repository: { url: repository, defaultBranch: bootstrapBranch },
+      },
+    },
+  });
+  assert.ok(
+    wrote.seeds[0]?.content.includes(bootstrapConstraint(bootstrapBranch)),
+    "the first ticket is briefed against the branch the repository was made at",
+  );
 });
 
 test("the repository is made under the portal claim of the account named", async () => {
