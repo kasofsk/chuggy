@@ -273,4 +273,32 @@ check "a container started from this model is reused" 0 "$RC" "reusing chuggy-ch
 OUT="$DOCKER_LOG"
 refute "a reused container is not started again" 0 0 "--label chuggy.keto.model="
 
+# --- A container that never answers is a could-not-run -----------------------
+#
+# The container branch has a wait of its own, and its failure is the one the
+# gate's header is about: the suites would otherwise run against a server that
+# never came up and their refusals would be reported as findings about the
+# adapter. The double starts nothing, so the port the gate then waits on is a
+# port nothing is listening on.
+
+fixture
+passing_suite "$R/test/keto/one.test.ts"
+git -C "$R" add -A
+docker_double ""
+KETO_PORT=1
+run_gate_over_docker
+check "a container that never answers is a could-not-run" 2 "$RC" "did not answer ready with both namespaces"
+
+# --- No model to start a container from is a could-not-run -------------------
+
+fixture
+passing_suite "$R/test/keto/one.test.ts"
+rm -rf "$R/.chug/tasks/keto"
+git -C "$R" add -A
+keto_double Project Tenant
+docker_double ""
+run_gate_over_docker
+keto_double_stop
+check "no model to start an authority from is a could-not-run" 2 "$RC" "no model to start an authority from"
+
 done_ "check-keto.test.sh"

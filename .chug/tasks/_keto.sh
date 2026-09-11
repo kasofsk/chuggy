@@ -143,7 +143,9 @@ keto_acquire() { # <message prefix>
 	fi
 
 	keto_model="$(git rev-parse --show-toplevel)/.chug/tasks/keto"
-	keto_digest="$(keto_model_digest "$keto_model")"
+	# `|| true` so the guard below is what reports a model that cannot be read,
+	# rather than the sourcing gate's own `set -e` ending the run unexplained.
+	keto_digest="$(keto_model_digest "$keto_model" || true)"
 	if [ -z "$keto_digest" ]; then
 		echo "$keto_prefix: LINTER ERROR — no model to start an authority from at $keto_model"
 		exit 2
