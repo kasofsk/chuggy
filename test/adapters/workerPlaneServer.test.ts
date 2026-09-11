@@ -24,6 +24,7 @@ import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
 import type { ReportIngested } from "../../src/interpreter/executionSchedulerReport.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
+import { fixtureForgeShapedToken } from "./forgeFixtures.ts";
 import { inertRunEvidence } from "./workerPlaneFixtures.ts";
 
 const authority = {
@@ -890,7 +891,7 @@ test("an ending the boundary refuses is a conflict and not a silent success", as
  */
 const credential = {
   username: "x-access-token",
-  password: asForgeInstallationToken("ghs_0123456789abcdefghij"),
+  password: asForgeInstallationToken(fixtureForgeShapedToken),
   expiresAtMs: 1_700_000_000_000,
 };
 

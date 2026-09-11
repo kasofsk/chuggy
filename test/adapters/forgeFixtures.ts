@@ -6,7 +6,23 @@
  * one would prove nothing about either, so the recorder treats a redirect the
  * way the platform does — a request that refused one is rejected — and one
  * recorder is what keeps that behaviour the same in both suites.
+ *
+ * A MINTED TOKEN IS THE FORGE'S OWN SHAPE HERE. A suite standing a short
+ * sentinel in for one proves nothing about the brand a token passes through,
+ * so the shape is written once and every suite needing a real one reads it.
  */
+
+/**
+ * A minted token as the forge issues one now: the prefix, then a structured
+ * tail whose length is past what a stored identity's bound admits.
+ */
+export const fixtureForgeShapedToken = `ghs_${[
+  "A1b2C3d4",
+  "E5f6G7h8",
+  "I9j0K1l2",
+]
+  .map((segment) => segment.repeat(16))
+  .join(".")}`;
 
 /** One recorded forge request, kept as plain strings so a case can assert the whole of it. */
 export interface ForgeCall {

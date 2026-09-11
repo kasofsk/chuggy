@@ -506,7 +506,7 @@ test("a bind for a different repository under the same operation waits for the f
 });
 
 /**
- * The listing 085 added, which is the read a project's own members are answered
+ * The listing 089 added, which is the read a project's own members are answered
  * from and which is a door rather than a grant, so the cases assert that the
  * relation behind it still refuses the same role. THE ORDER IS THE ELECTION:
  * `read_project_repository_binding` picks the oldest binding when a caller

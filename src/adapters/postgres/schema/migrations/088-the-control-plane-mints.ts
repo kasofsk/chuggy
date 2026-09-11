@@ -13,13 +13,13 @@
  * stays the owner's, so none of the three can move an installation onto
  * another account or claim one at all.
  *
- * THE LISTING IS A DOOR AND NOT A GRANT ON THE RELATION, for 085's reason:
+ * THE LISTING IS A DOOR AND NOT A GRANT ON THE RELATION, for 089's reason:
  * `project_repository` holds every project's rows, and a role that could
  * SELECT it could read one project's bindings while answering another's
  * question. This door answers with the four columns a run needs and nothing
  * else about the row.
  *
- * THIS DOOR IS CROSS-PARTITION WHERE 085'S IS NOT, AND ONLY THE IMPORTER HOLDS
+ * THIS DOOR IS CROSS-PARTITION WHERE 089'S IS NOT, AND ONLY THE IMPORTER HOLDS
  * IT. The API's listing takes a partition because an API caller is always
  * asking on behalf of one project; the importer has no caller and no project —
  * its whole job is every partition's declarations, so a door that took a

@@ -2810,12 +2810,13 @@ test("the session migrations compose into the schema a fresh generation renders"
 });
 
 /**
- * The versions no declared migration holds, which is none: the sibling branch
- * this image was numbered around has merged. It is written down rather than
+ * The versions no declared migration holds, and none ever will: 85 was vacated
+ * when the migration numbered there moved to 89, so that a ledger holding 84
+ * and then 86 is a prefix of this chain again. It is written down rather than
  * computed so that a hole nobody meant is a hole nobody can leave, renumbering
  * a migration upward opening one this list does not name.
  */
-const declaredVersionsAwaited: readonly number[] = [];
+const declaredVersionsVacant: readonly number[] = [85];
 
 /**
  * The ledger a whole chain leaves is exactly the versions this image declares,
@@ -2840,8 +2841,8 @@ test("the ledger a migrated database leaves is what the api image declares", asy
       Array.from({ length: declaredLatest }, (_, index) => index + 1).filter(
         (version) => !applied.some((each) => each.version === version),
       ),
-      declaredVersionsAwaited,
-      "the versions below the latest that no row holds are the siblings this image is numbered around",
+      declaredVersionsVacant,
+      "the versions below the latest that no row holds are the ones this image declares nothing at",
     );
     assert.ok(
       schemaContractAccepts(currentRuntimeSchemaContract, applied),
