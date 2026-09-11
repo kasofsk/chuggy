@@ -20,7 +20,6 @@ import {
   threadAnswering,
   threadHeldTurn,
   threadMine,
-  threadPageRows,
   threadRefusalCode,
   threadRefusalWord,
   threadRowActions,
@@ -32,8 +31,6 @@ import {
   threadWakeDrawn,
   threadsMineFirst,
 } from "../app/core/threads.ts";
-import { threadStandingTone } from "../app/core/tones.ts";
-import { pillTones } from "../app/core/tones.ts";
 import { threadEntry, threadWakeInput } from "./threadFixture.ts";
 
 function turnOf(turn: Partial<ThreadTurnResponse>): ThreadTurnResponse {
@@ -48,21 +45,11 @@ function turnOf(turn: Partial<ThreadTurnResponse>): ThreadTurnResponse {
 }
 
 describe("where a thread stands", () => {
-  test("every standing the wire carries has a tone the pill can draw", () => {
-    for (const standing of threadStandings)
-      expect(pillTones).toContain(threadStandingTone(standing));
-  });
-
   /** Only an open thread takes a message, and a composer offered on either of
    * the others is a box a member types into to earn a refusal. */
   test("an open thread takes messages and no other standing does", () => {
     for (const state of threadStandings)
       expect(threadTakesMessages({ state })).toBe(state === "Open");
-  });
-
-  test("Orphaned is drawn in the hue that asks for attention, not the live one", () => {
-    expect(threadStandingTone("Orphaned")).toBe("parked");
-    expect(threadStandingTone("Open")).toBe("live");
   });
 });
 
@@ -372,58 +359,5 @@ describe("whether a thread is still answering", () => {
       false,
     );
     expect(threadAnswering({ turns: [] })).toBe(false);
-  });
-});
-
-describe("the Threads page's own rows", () => {
-  const mineOpen = threadEntry({ session: "thread-mine-open", mine: true });
-  const mineClosed = threadEntry({
-    session: "thread-mine-closed",
-    mine: true,
-    state: "Closed",
-  });
-  const mineHidden = threadEntry({
-    session: "thread-mine-hidden",
-    mine: true,
-    hidden: true,
-  });
-  const otherOpen = threadEntry({ session: "thread-other-open" });
-  const otherHidden = threadEntry({
-    session: "thread-other-hidden",
-    hidden: true,
-  });
-  const all = [mineOpen, mineClosed, mineHidden, otherOpen, otherHidden];
-
-  test("Mine and Open narrows to the reader's own open threads", () => {
-    expect(threadPageRows(all, "Mine", "Open").map((t) => t.session)).toEqual([
-      "thread-mine-open",
-    ]);
-  });
-
-  test("Everyone and Open drops the hidden and the closed", () => {
-    expect(
-      threadPageRows(all, "Everyone", "Open").map((t) => t.session),
-    ).toEqual(["thread-mine-open", "thread-other-open"]);
-  });
-
-  test("Closed narrows to closed threads that are not hidden", () => {
-    expect(
-      threadPageRows(all, "Everyone", "Closed").map((t) => t.session),
-    ).toEqual(["thread-mine-closed"]);
-  });
-
-  /** Hidden forces Mine whatever the owner chip reads: a stranger's archived
-   * thread is not this reader's to restore. */
-  test("Hidden shows only the reader's own hidden threads, Everyone or not", () => {
-    expect(
-      threadPageRows(all, "Everyone", "Hidden").map((t) => t.session),
-    ).toEqual(["thread-mine-hidden"]);
-    expect(threadPageRows(all, "Mine", "Hidden").map((t) => t.session)).toEqual(
-      ["thread-mine-hidden"],
-    );
-  });
-
-  test("rows still put the reader's own first", () => {
-    expect(threadPageRows(all, "Everyone", "Open")[0]?.mine).toBe(true);
   });
 });

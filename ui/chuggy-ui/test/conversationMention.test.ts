@@ -115,6 +115,19 @@ describe("the span the popover replaces", () => {
   test("the caret before the address is outside the mention", () => {
     expect(conversationMentionMatch("@ticket", "@", 0)).toBeNull();
   });
+
+  /**
+   * Escape is answered by the library moving the caret back onto the `@` and
+   * asking again, so a match at that position would reopen the list at once —
+   * and here it would open on an earlier address, over a query nobody typed,
+   * swallowing the Enter that was meant to send the message.
+   */
+  test("the caret on an address opens nothing, which is how escape closes", () => {
+    const text = "cc @dave, also @tic";
+    expect(conversationMentionMatch(text, "@", text.length)).not.toBeNull();
+    expect(conversationMentionMatch(text, "@", 15)).toBeNull();
+    expect(conversationMentionMatch(text, "@", 3)).toBeNull();
+  });
 });
 
 describe("what a pick writes", () => {

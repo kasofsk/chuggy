@@ -16,6 +16,7 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { conversationMentionItem } from "../../core/conversationMention.ts";
@@ -35,6 +36,14 @@ export function useConversationMentions(
     ticketFilterList(partition, ticketFilterAll),
     (ports) => ticketRowsRead(client, ports, partition, ticketFilterAll),
   );
-  if (state.state !== "Ready") return [];
-  return state.value.tickets.map(conversationMentionItem);
+  /** The same array until the rows themselves change: the popover derives its
+   * navigable list from this, and a fresh array on every render would put the
+   * highlight back to the top under a reader's own arrow keys. */
+  return useMemo(
+    () =>
+      state.state === "Ready"
+        ? state.value.tickets.map(conversationMentionItem)
+        : [],
+    [state],
+  );
 }

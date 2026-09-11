@@ -350,7 +350,7 @@ module.exports = {
         "reaches its own files, the decision layer, the primitives under " +
         "browser/ui/, the contract and a package, and no other module of " +
         "browser/ — not the query client, the router adapters, the stream " +
-        "or the ports. What it buys is that the surface three pages share " +
+        "or the ports. What it buys is that the surface every screen shares " +
         "mounts in a suite with render() and no provider, so what a " +
         "conversation draws is asserted without a scripted API; a surface " +
         "that read for itself would also be a second place the pages' own " +

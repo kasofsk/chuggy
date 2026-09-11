@@ -120,17 +120,24 @@ export interface ConversationMentionMatch {
 
 /**
  * Where the mention the caret sits in began, reading back over the spaces the
- * library's own matcher stops at: a title is several words, so a query that
- * ended at the first space could never name one.
+ * library's own matcher stops at — a title is several words, so a query ending
+ * at the first space could never name one — and ending instead at a line break
+ * and at the bound above, so an `@` typed in the ordinary course of a sentence
+ * stops offering tickets a paragraph later.
  *
- * It ends at a line break instead, and at the bound above, so an `@` typed in
- * the ordinary course of a sentence stops offering tickets a paragraph later.
+ * A CARET ON THE TRIGGER IS OUTSIDE THE MENTION, WHICH IS HOW ESCAPE CLOSES:
+ * the library answers escape by moving the caret back to the `@` and asking
+ * again, and its own matcher refuses that position only incidentally, because
+ * it stops at the first space and a caret on an `@` has nothing behind it to
+ * find — this one reads back over spaces and would find an earlier `@` in the
+ * same line, reopening the list over a query nobody typed.
  */
 export function conversationMentionMatch(
   text: string,
   triggerChar: string,
   cursorPosition: number,
 ): ConversationMentionMatch | null {
+  if (text.startsWith(triggerChar, cursorPosition)) return null;
   const before = text.slice(0, cursorPosition);
   for (let at = before.length - triggerChar.length; at >= 0; at -= 1) {
     const query = before.slice(at + triggerChar.length);
