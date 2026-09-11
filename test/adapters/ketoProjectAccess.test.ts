@@ -149,6 +149,43 @@ const ready = (
       : json({ error: { code: 404 } }, 404);
   }).fetch;
 
+/**
+ * The bound is a property of the request rather than of the server, so the
+ * case supplies a server that never answers at all: what it proves is that the
+ * settings reach the fetch, which nothing else here asks.
+ */
+test(
+  "a request the authority never answers is abandoned at the bound the settings carry",
+  { timeout: 5_000 },
+  async () => {
+    const bounded = checkedProjectAccessSettings({
+      readUrl: "http://keto.test:4466",
+      requestTimeoutMs: 50,
+    });
+    let bound: AbortSignal | undefined;
+    const hanging: typeof fetch = (_at, init) =>
+      new Promise((_answer, abandon) => {
+        bound = init?.signal ?? undefined;
+        bound?.addEventListener("abort", () => {
+          abandon(new Error("the request was abandoned"));
+        });
+      });
+    await assert.rejects(
+      () =>
+        ketoProjectAccess(bounded, hanging).authorize(
+          principal,
+          partition,
+          "Read",
+        ),
+      ProjectAccessUnavailable,
+    );
+    assert.ok(
+      bound instanceof AbortSignal,
+      "the request carried no signal to abandon it by",
+    );
+  },
+);
+
 test("readiness needs the server up and every namespace the model declares", async () => {
   assert.equal(
     await ketoReadiness(settings, ready(wholeModel, everyPermit)).ready(),
