@@ -229,21 +229,6 @@
   background: var(--surface-2);
   border: 1px solid var(--edge);
   border-radius: var(--radius-2);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.run-report > :first-child {
-  margin-top: 0;
-}
-
-.run-report > :last-child {
-  margin-bottom: 0;
-}
-
-.run-report pre {
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 .turns {

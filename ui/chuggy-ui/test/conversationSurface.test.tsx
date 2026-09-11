@@ -302,6 +302,15 @@ test("a running exchange draws its state word and no answer", () => {
     <Conversation exchanges={[running]} empty="No conversation" />,
   );
   expect(screen.getByText("Queued")).toBeDefined();
+  expect(view.container.querySelector(".markdown-report")).toBeNull();
+  styleless();
+});
+
+test("an answered exchange draws its answer as a markdown report, not a run-evidence box", () => {
+  const view = render(
+    <Conversation exchanges={[answered]} empty="No conversation" />,
+  );
+  expect(view.container.querySelector(".markdown-report")).not.toBeNull();
   expect(view.container.querySelector(".run-report")).toBeNull();
   styleless();
 });

@@ -1,0 +1,70 @@
+/* MarkdownReport: the blocks a worker's markdown reads into, given the rhythm
+ * of prose rather than the single leading the element reset gives them. */
+
+@layer ui {
+  .markdown-report > * + * {
+    margin-top: var(--space-3);
+  }
+
+  .markdown-report h1,
+  .markdown-report h2,
+  .markdown-report h3,
+  .markdown-report h4,
+  .markdown-report h5,
+  .markdown-report h6 {
+    margin-top: var(--space-5);
+  }
+
+  .markdown-report > :first-child,
+  .markdown-report h1 + *,
+  .markdown-report h2 + *,
+  .markdown-report h3 + *,
+  .markdown-report h4 + *,
+  .markdown-report h5 + *,
+  .markdown-report h6 + * {
+    margin-top: 0;
+  }
+
+  .markdown-report ul,
+  .markdown-report ol {
+    padding-left: 1.25em;
+  }
+
+  .markdown-report ul {
+    list-style: disc;
+  }
+
+  .markdown-report ol {
+    list-style: decimal;
+  }
+
+  .markdown-report li + li {
+    margin-top: var(--space-1);
+  }
+
+  .markdown-report blockquote {
+    margin: 0;
+    padding-left: var(--space-3);
+    border-left: var(--hairline) solid var(--edge-strong);
+    color: var(--ink-3);
+  }
+
+  .markdown-report code {
+    background: var(--surface-2);
+    border-radius: var(--radius-1);
+    padding: 0 0.2em;
+  }
+
+  .markdown-report pre {
+    background: var(--surface-2);
+    border-radius: var(--radius-2);
+    padding: var(--space-2) var(--space-3);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .markdown-report pre code {
+    background: transparent;
+    padding: 0;
+  }
+}

@@ -283,7 +283,9 @@ function RunSummary(props: {
 }): ReactNode {
   const summary = runSummaryOf(props.attempt, props.result);
   return summary.summary === "Report" ? (
-    <MarkdownReport text={summary.report} />
+    <div className="run-report">
+      <MarkdownReport text={summary.report} />
+    </div>
   ) : (
     <p className="panel-note">{summary.sentence}</p>
   );
