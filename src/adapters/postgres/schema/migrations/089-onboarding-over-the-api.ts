@@ -29,6 +29,14 @@
  * THE CEILING IS THE DOOR'S AND NOT ONLY THE ROUTE'S. A caller may narrow what
  * it asks for and may not widen it, so a project that somehow binds more than
  * the contract answers costs one bounded read rather than an unbounded one.
+ *
+ * THIS ONE IS NUMBERED PAST 088 BECAUSE A LEDGER ALREADY SKIPPED IT. A
+ * deployment applied 086 before this migration had landed, so its ledger holds
+ * 084 and then 086, and the runner refuses a ledger that is not a prefix of the
+ * chain the image declares — nothing it declined to apply afterwards was
+ * applied either. Nothing in 086 through 088 reaches this migration's function
+ * or its grants, so moving it to the end of the chain restores that prefix
+ * without changing what any database ends up holding.
  */
 
 import { projectRepositoriesAnsweredMax } from "../../../../contract/http.ts";
@@ -74,8 +82,8 @@ const bindingListing = [
 ];
 
 /** Onboarding is done over the API, so the API holds the doors it is done through. */
-export const migration085: Migration = {
-  version: 85,
+export const migration089: Migration = {
+  version: 89,
   name: "onboarding over the api",
   statements: [...apiDoors, ...bindingListing],
 };

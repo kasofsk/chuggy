@@ -112,7 +112,7 @@ test("no runtime role but the API reads a project's bindings through the door", 
 });
 
 /**
- * 088's listing crosses partitions where 085's does not, so it is held apart
+ * 088's listing crosses partitions where 089's does not, so it is held apart
  * from every role but the one whose job is every partition's. The API is
  * refused it by name: an API caller is always asking on behalf of one project,
  * and it already holds the per-project door that answers that question.
@@ -186,7 +186,7 @@ test("no runtime role but the API binds a repository, and none records one", asy
 });
 
 /**
- * 085 gave the API the bind door, which is what its route drives. The door is
+ * 089 gave the API the bind door, which is what its route drives. The door is
  * still the only way in: the operation ledger behind it stays unreadable and
  * unwritable to this role, so a bind identity cannot be spent twice by any path
  * but the one that decides the outcome.

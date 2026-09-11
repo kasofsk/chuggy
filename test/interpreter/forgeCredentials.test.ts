@@ -14,6 +14,10 @@
  * the project does not bind are both not found, and a forge that could not be
  * reached is a wait — a service that collapsed them would tell a caller to
  * replace a credential the forge never objected to.
+ *
+ * A MINTED TOKEN'S OWN BOUND IS HERE TOO. It is the bound of the credential a
+ * token becomes rather than of a stored identity, so the case that holds it
+ * there belongs beside the sources that hand one out.
  */
 
 import assert from "node:assert/strict";
@@ -34,6 +38,7 @@ import {
 import {
   asRepositoryCredential,
   asRepositoryId,
+  repositoryCredentialCharsMax,
   type RepositoryBinding,
   type RepositoryCredentialPort,
   type RepositoryId,
@@ -166,6 +171,15 @@ const fixtureForgeFiles: ForgeCredentialPort = {
       credential: asForgeCredential("files"),
     }),
 };
+
+test("a minted token is held to the bound of the credential it becomes", () => {
+  const atBound = "g".repeat(repositoryCredentialCharsMax);
+  assert.equal(asForgeInstallationToken(atBound), atBound);
+  assert.throws(
+    () => asForgeInstallationToken(`${atBound}g`),
+    /forge installation token: .* is past the/u,
+  );
+});
 
 test("the host a repository names selects its forge credential source too", async () => {
   const asked: RepositoryId[] = [];

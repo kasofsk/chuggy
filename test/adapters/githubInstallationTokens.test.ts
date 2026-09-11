@@ -37,7 +37,12 @@ import {
   asForgeRepositoryName,
   type ForgeTokenRequest,
 } from "../../src/interpreter/forgeInstallation.ts";
-import { fixtureForge, type ForgeRecorder } from "./forgeFixtures.ts";
+import { finalizerIdentityCharsMax } from "../../src/interpreter/finalizer.ts";
+import {
+  fixtureForge,
+  fixtureForgeShapedToken,
+  type ForgeRecorder,
+} from "./forgeFixtures.ts";
 
 /** The minted token, which must reach the caller and appear in nothing sent. */
 const fixtureToken = "ghs-minted-q4w5e6";
@@ -251,6 +256,21 @@ test("one mint is one bounded request naming the installation and what it is for
   assert.deepEqual(JSON.parse(call.body ?? ""), {
     repositories: ["chuggy"],
     permissions: { contents: "write", pull_requests: "write" },
+  });
+});
+
+test("a token of the forge's current shape is minted rather than refused for its length", async (t) => {
+  assert.ok(
+    fixtureForgeShapedToken.length > finalizerIdentityCharsMax,
+    "the fixture no longer outruns the bound a stored identity carries",
+  );
+  const recorder = fixtureForge([
+    fixtureMinted({ token: fixtureForgeShapedToken }),
+  ]);
+  assert.deepEqual(await fixtureAdapter(t, recorder).mint(fixtureRequest()), {
+    minted: "Token",
+    token: fixtureForgeShapedToken,
+    expiresAtMs: Date.parse(fixtureExpiry),
   });
 });
 

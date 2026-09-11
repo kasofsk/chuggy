@@ -25,7 +25,11 @@
  */
 
 import { asBoundedText } from "./boundedText.ts";
-import { finalizerIdentityCharsMax, type RepositoryId } from "./finalizer.ts";
+import {
+  finalizerIdentityCharsMax,
+  repositoryCredentialCharsMax,
+  type RepositoryId,
+} from "./finalizer.ts";
 import type { TenantId } from "./projectStore.ts";
 
 declare const forgeIdBrand: unique symbol;
@@ -177,14 +181,17 @@ export function asForgeInstallationId(value: string): ForgeInstallationId {
   ) as ForgeInstallationId;
 }
 
-/** Brands a minted token, bounded as every other opaque credential is. */
+/**
+ * Brands a minted token, bounded as the repository credential it becomes
+ * rather than as a stored identity, because no row here holds one.
+ */
 export function asForgeInstallationToken(
   value: string,
 ): ForgeInstallationToken {
   return asBoundedText(
     value,
     "forge installation token",
-    finalizerIdentityCharsMax,
+    repositoryCredentialCharsMax,
   ) as ForgeInstallationToken;
 }
 

@@ -402,7 +402,7 @@ export function composeForgeCredentialMinting(
  * The onboarding service the API answers its onboarding routes with: the
  * relation authority for every question of standing, one forge half per app
  * this deployment holds a key for, the credential source a binding is proved
- * against, and the two doors 085 grants the API. THE APPS ARE OPTIONAL AND THE
+ * against, and the two doors 089 grants the API. THE APPS ARE OPTIONAL AND THE
  * REST IS NOT: a deployment naming no app key still binds and still lists what
  * a project binds, and has nothing to say about installations, which is what
  * `NotConfigured` is.
