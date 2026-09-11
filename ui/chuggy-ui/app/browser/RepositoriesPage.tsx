@@ -39,6 +39,7 @@ import {
   projectRepositoriesResource,
 } from "./repositories/AddRepository.tsx";
 import { ConnectAccount } from "./repositories/ConnectAccount.tsx";
+import { CreateRepository } from "./repositories/CreateRepository.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
@@ -202,11 +203,17 @@ function RepositoriesSection(props: {
       title="Repositories"
       about="What this project binds. A ticket names one of these."
       meta={
-        <AddRepository
-          partition={props.partition}
-          installations={forgePortalInstallations(props.installations)}
-          bound={bindings ?? []}
-        />
+        <span className="flex items-center gap-2">
+          <AddRepository
+            partition={props.partition}
+            installations={forgePortalInstallations(props.installations)}
+            bound={bindings ?? []}
+          />
+          <CreateRepository
+            partition={props.partition}
+            installations={props.installations}
+          />
+        </span>
       }
     >
       {props.unready}

@@ -186,7 +186,14 @@ interface Init {
   readonly headers?: Record<string, string>;
 }
 
-async function drawPage(claimed = installations): Promise<readonly Sent[]> {
+/** What a write is answered with, the deferral being what a case that is about
+ * the read rather than the write wants back. */
+const deferred = (): Response => answer({}, 503);
+
+async function drawPage(
+  claimed = installations,
+  posted: (url: string) => Response = deferred,
+): Promise<readonly Sent[]> {
   const sent: Sent[] = [];
   const fetching = ((url: string, init?: Init) => {
     sent.push({
@@ -195,7 +202,7 @@ async function drawPage(claimed = installations): Promise<readonly Sent[]> {
       key: init?.headers?.["idempotency-key"],
       body: init?.body === undefined ? undefined : JSON.parse(init.body),
     });
-    if (init?.method === "POST") return Promise.resolve(answer({}, 503));
+    if (init?.method === "POST") return Promise.resolve(posted(url));
     if (url.includes("/forge-installations/"))
       return Promise.resolve(answer(grantedBy(url)));
     if (url.includes("/forge-installations"))
@@ -303,4 +310,124 @@ test("an address carrying no outcome draws no line and clears nothing", async ()
   await drawPage();
   expect(screen.queryByText("Connected")).toBeNull();
   expect(routed.went).toStrictEqual([]);
+});
+
+function statusesOf(): readonly (string | null)[] {
+  return within(screen.getByRole("dialog"))
+    .getAllByRole("status")
+    .map((one) => one.textContent);
+}
+
+/** The `201` carries the configurations the binding found and the `200` carries
+ * the repository alone, so the second line is drawn for one and not the other. */
+test("a new binding draws what its own configurations came to", async () => {
+  await drawPage(installations, () =>
+    answer(
+      { repository: freeUrl, configurations: { result: "Imported", count: 2 } },
+      201,
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
+  await settled();
+  expect(statusesOf()).toStrictEqual(["Bound", "Imported"]);
+});
+
+test("a binding that already stood draws the one word and no more", async () => {
+  await drawPage(installations, () => answer({ repository: freeUrl }));
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
+  await settled();
+  expect(statusesOf()).toStrictEqual(["Already bound"]);
+});
+
+/** A create makes the repository through one app's installation and leaves the
+ * work to the other's, so an account holding one of them is not offered. */
+test("the create dialog offers only an account holding both apps", async () => {
+  await drawPage();
+  fireEvent.click(screen.getByRole("button", { name: "Create" }));
+  await settled();
+  fireEvent.keyDown(screen.getByRole("button", { name: /^Account / }), {
+    key: "ArrowDown",
+  });
+  await screen.findByRole("menu");
+  expect(
+    screen.getAllByRole("menuitemradio").map((one) => one.textContent),
+  ).toStrictEqual(["kasofsk"]);
+});
+
+test("a tenant holding no account with both apps cannot open the create dialog", async () => {
+  await drawPage({
+    truncated: false,
+    installations: installations.installations.filter(
+      (claim) => claim.app !== "worker",
+    ),
+  });
+  expect(
+    screen.getByRole<HTMLButtonElement>("button", { name: "Create" }).disabled,
+  ).toBe(true);
+});
+
+const madeUrl = "https://forge.test/kasofsk/scratch";
+
+const made = {
+  repository: madeUrl,
+  created: { account: "kasofsk", name: "scratch", url: madeUrl },
+  seeded: true,
+  ruleset: { result: "Refused", message: "no branch yet" },
+  configurations: { result: "Deferred", reason: "StepFailed" },
+};
+
+async function typeCreate(sent: readonly Sent[]): Promise<Sent | undefined> {
+  fireEvent.click(screen.getByRole("button", { name: "Create" }));
+  await settled();
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
+    target: { value: "scratch" },
+  });
+  fireEvent.click(screen.getByRole("radio", { name: "Public" }));
+  fireEvent.click(
+    within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }),
+  );
+  await settled();
+  return sent.find((one) => one.url.includes("/repositories/new"));
+}
+
+test("a create names what it asked for and draws every step it took", async () => {
+  const sent = await drawPage(installations, () => answer(made, 201));
+  const posted = await typeCreate(sent);
+  expect(posted?.body).toStrictEqual({
+    account: "kasofsk",
+    name: "scratch",
+    visibility: "public",
+  });
+  expect(posted?.key).toBeTruthy();
+  const rows = within(screen.getByRole("dialog")).getByRole("status");
+  expect(rows.textContent).toBe(
+    "Repositoryscratch" +
+      "SeedSeeded" +
+      "RulesetRefused · no branch yet" +
+      "ConfigurationsDeferred · StepFailed",
+  );
+  expect(
+    within(rows).getByRole<HTMLAnchorElement>("link", { name: "scratch" }).href,
+  ).toBe(madeUrl);
+});
+
+test("a create the route refuses is the one line it refused with", async () => {
+  const sent = await drawPage(installations, () =>
+    answer(
+      {
+        error: {
+          code: "InstallationMissing",
+          message:
+            "This tenant has claimed no worker installation on the account.",
+        },
+      },
+      422,
+    ),
+  );
+  await typeCreate(sent);
+  expect(statusesOf()).toStrictEqual(["Missing: worker"]);
 });

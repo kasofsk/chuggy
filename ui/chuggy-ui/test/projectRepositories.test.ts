@@ -11,15 +11,18 @@ import { expect, test } from "vitest";
 
 import type {
   ForgeRepositoryResponse,
-  ProjectRepositoryBoundResponse,
+  ProjectRepositoryConfigurationsResponse,
 } from "../../../src/contract/responses.ts";
 import type { ApiResult } from "../app/core/apiRequest.ts";
+import type { ProjectRepositoryBindAnswer } from "../app/core/apiRoutes.ts";
 import {
+  repositoryBindLines,
   repositoryBindOutcome,
   repositoryBindStatus,
   repositoryChoices,
   repositoryLabel,
 } from "../app/core/projectRepositories.ts";
+import { repositoryRefusalsDrawn } from "./repositoryRefusals.ts";
 
 function reachable(
   over: Partial<ForgeRepositoryResponse>,
@@ -60,24 +63,55 @@ test("a row is marked bound by the address the binding names", () => {
   expect(choices.map((choice) => choice.bound)).toEqual([true, false]);
 });
 
-function status(
-  result: ApiResult<ProjectRepositoryBoundResponse>,
-  boundBefore = false,
-): string {
-  return repositoryBindStatus(repositoryBindOutcome(result, boundBefore));
+function status(result: ApiResult<ProjectRepositoryBindAnswer>): string {
+  return repositoryBindStatus(repositoryBindOutcome(result));
 }
 
-const bound: ApiResult<ProjectRepositoryBoundResponse> = {
+function answered(
+  configurations: ProjectRepositoryConfigurationsResponse,
+): ApiResult<ProjectRepositoryBindAnswer> {
+  return {
+    outcome: "Ok",
+    value: { repository: "https://forge.test/kasofsk/chuggy", configurations },
+  };
+}
+
+const alreadyBound: ApiResult<ProjectRepositoryBindAnswer> = {
   outcome: "Ok",
   value: { repository: "https://forge.test/kasofsk/chuggy" },
 };
 
-/** The route answers `201` for a new binding and `200` for one that stood, and
- * the classifier keeps neither status, so the bindings already read are what
- * tell the two apart. */
-test("a bind of a row the page already showed bound says so", () => {
-  expect(status(bound)).toBe("Bound");
-  expect(status(bound, true)).toBe("Already bound");
+/** The route answers `201` carrying the configurations and `200` carrying the
+ * repository alone, and the classifier keeps neither status, so the body is
+ * what tells the two apart. */
+test("a bind of a repository already bound says so", () => {
+  expect(status(answered({ result: "Imported", count: 2 }))).toBe("Bound");
+  expect(status(alreadyBound)).toBe("Already bound");
+});
+
+test("a new binding draws what its own configurations came to", () => {
+  expect(repositoryBindLines(repositoryBindOutcome(alreadyBound))).toEqual([
+    "Already bound",
+  ]);
+  expect(
+    repositoryBindLines(
+      repositoryBindOutcome(answered({ result: "Imported", count: 3 })),
+    ),
+  ).toEqual(["Bound", "Imported"]);
+  expect(
+    repositoryBindLines(
+      repositoryBindOutcome(
+        answered({ result: "Bootstrapped", revision: "r1" }),
+      ),
+    ),
+  ).toEqual(["Bound", "Bootstrapped"]);
+  expect(
+    repositoryBindLines(
+      repositoryBindOutcome(
+        answered({ result: "Deferred", reason: "StepFailed" }),
+      ),
+    ),
+  ).toEqual(["Bound", "Deferred · StepFailed"]);
 });
 
 test("each refusal is the one line the picker draws under itself", () => {
@@ -89,18 +123,5 @@ test("each refusal is the one line the picker draws under itself", () => {
       body: undefined,
     }),
   ).toBe("Not installed");
-  expect(
-    status({ outcome: "Conflict", code: "RepositoryBound", body: undefined }),
-  ).toBe("Bound elsewhere");
-  expect(
-    status({ outcome: "Conflict", code: "OperationConflict", body: undefined }),
-  ).toBe("Conflict");
-  expect(
-    status({
-      outcome: "Retryable",
-      code: "ForgeUnavailable",
-      retryAfterSeconds: 5,
-    }),
-  ).toBe("Deferring");
-  expect(status({ outcome: "Absent" })).toBe("Not found");
+  repositoryRefusalsDrawn(status);
 });

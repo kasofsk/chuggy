@@ -27,8 +27,8 @@ import { operationIdBytesCount } from "../../core/operationFollow.ts";
 import { projectResourceKey } from "../../core/projectQueryKeys.ts";
 import {
   repositoriesTruncated,
+  repositoryBindLines,
   repositoryBindOutcome,
-  repositoryBindStatus,
   repositoryChoices,
 } from "../../core/projectRepositories.ts";
 import type { RepositoryChoice } from "../../core/projectRepositories.ts";
@@ -100,22 +100,22 @@ function RepositoryChoiceRow(props: {
   );
 }
 
-/** One bind, from the identity it spends to the line it leaves behind. */
+/** One bind, from the identity it spends to the lines it leaves behind. */
 function useRepositoryBind(partition: PartitionIdentity): {
-  readonly status: string | undefined;
+  readonly lines: readonly string[];
   readonly busy: boolean;
   readonly bind: (choice: RepositoryChoice) => void;
 } {
   const ports = useApiPorts();
   const client = useQueryClient();
-  const [status, setStatus] = useState<string | undefined>(undefined);
+  const [lines, setLines] = useState<readonly string[]>([]);
   const [busy, setBusy] = useState(false);
   return {
-    status,
+    lines,
     busy,
     bind: (choice) => {
       setBusy(true);
-      setStatus(undefined);
+      setLines([]);
       void (async () => {
         const outcome = repositoryBindOutcome(
           await apiBindProjectRepository(
@@ -124,10 +124,9 @@ function useRepositoryBind(partition: PartitionIdentity): {
             { repository: choice.repository.url },
             base64urlFromBytes(drawBytes(operationIdBytesCount)),
           ),
-          choice.bound,
         );
         setBusy(false);
-        setStatus(repositoryBindStatus(outcome));
+        setLines(repositoryBindLines(outcome));
         if (outcome.outcome === "Refused") return;
         await client.invalidateQueries({
           queryKey: projectResourceKey(
@@ -175,9 +174,9 @@ function AddRepositoryBody(props: {
       {state.state === "Ready" && state.value.truncated ? (
         <Notice tone="parked" inline detail={repositoriesTruncated} />
       ) : null}
-      {binding.status === undefined ? null : (
-        <Notice tone="info" inline detail={binding.status} role="status" />
-      )}
+      {binding.lines.map((line) => (
+        <Notice key={line} tone="info" inline detail={line} role="status" />
+      ))}
     </>
   );
 }

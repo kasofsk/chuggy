@@ -7,11 +7,12 @@
 
 import type {
   ForgeRepositoryResponse,
-  ProjectRepositoryBoundResponse,
+  ProjectRepositoryConfigurationsResponse,
   ProjectRepositoryResponse,
 } from "../../../../src/contract/responses.ts";
 
-import type { ApiResult } from "./apiRequest.ts";
+import type { ApiFailure, ApiResult } from "./apiRequest.ts";
+import type { ProjectRepositoryBindAnswer } from "./apiRoutes.ts";
 
 /**
  * A repository as a row names it. The address is opaque to this console, so
@@ -44,57 +45,93 @@ export function repositoryChoices(
 /** The line the picker draws when a listing is not all of what an installation holds. */
 export const repositoriesTruncated = "More than shown";
 
+/**
+ * A refusal that says nothing about the repository asked for, which every
+ * repository route draws the same way. The refusals that do say something are
+ * the ones carrying a code, and each route reads its own.
+ */
+export function repositoryRefusalStatus(
+  refusal: Exclude<
+    ApiFailure,
+    { readonly outcome: "Rejected" } | { readonly outcome: "Conflict" }
+  >,
+): string {
+  switch (refusal.outcome) {
+    case "Retryable":
+      return "Deferring";
+    case "Absent":
+      return "Not found";
+    case "Unauthenticated":
+      return "Not signed in";
+    case "Fault":
+      return "Failed";
+    case "Unreachable":
+      return "Unreachable";
+    case "Unreadable":
+      return "Unreadable";
+  }
+}
+
+/**
+ * What a newly bound repository's own configurations came to, as the one line
+ * drawn beside the binding. A `Deferred` names its reason because the reason
+ * is what says whether anything can be done about it.
+ */
+export function repositoryConfigurationsStatus(
+  configurations: ProjectRepositoryConfigurationsResponse,
+): string {
+  switch (configurations.result) {
+    case "Imported":
+      return "Imported";
+    case "Bootstrapped":
+      return "Bootstrapped";
+    case "Deferred":
+      return `Deferred · ${configurations.reason}`;
+  }
+}
+
 export type RepositoryBindOutcome =
-  | { readonly outcome: "Bound"; readonly repository: string }
+  | {
+      readonly outcome: "Bound";
+      readonly repository: string;
+      readonly configurations: ProjectRepositoryConfigurationsResponse;
+    }
   | { readonly outcome: "AlreadyBound"; readonly repository: string }
   | { readonly outcome: "Refused"; readonly status: string };
 
 /**
- * WHETHER IT WAS ALREADY BOUND IS THE CONSOLE'S OWN READING. The route answers
- * `201` for a new binding and `200` for one that already stood, and
- * `src/contract/outcomes.ts` classifies both as `Ok` without the status, so the
- * bindings this page already read are what the two are told apart by — an `Ok`
- * that carried its status is the follow-up, and is not this step's.
+ * THE SHAPE IS WHAT TELLS A NEW BINDING FROM ONE THAT STOOD. The route answers
+ * `201` carrying the configurations the binding found and `200` carrying the
+ * repository alone, and `src/contract/outcomes.ts` keeps neither status, so
+ * the body the wire parsed is what the two are told apart by.
  */
 export function repositoryBindOutcome(
-  result: ApiResult<ProjectRepositoryBoundResponse>,
-  boundBefore: boolean,
+  result: ApiResult<ProjectRepositoryBindAnswer>,
 ): RepositoryBindOutcome {
-  switch (result.outcome) {
-    case "Ok":
-      return boundBefore
-        ? { outcome: "AlreadyBound", repository: result.value.repository }
-        : { outcome: "Bound", repository: result.value.repository };
-    case "Rejected":
-      return {
-        outcome: "Refused",
-        status:
-          result.code === "RepositoryNotInstalled"
-            ? "Not installed"
-            : "Refused",
-      };
-    case "Conflict":
-      return {
-        outcome: "Refused",
-        status:
-          result.code === "RepositoryBound" ? "Bound elsewhere" : "Conflict",
-      };
-    case "Retryable":
-      return { outcome: "Refused", status: "Deferring" };
-    case "Absent":
-      return { outcome: "Refused", status: "Not found" };
-    case "Unauthenticated":
-      return { outcome: "Refused", status: "Not signed in" };
-    case "Fault":
-      return { outcome: "Refused", status: "Failed" };
-    case "Unreachable":
-      return { outcome: "Refused", status: "Unreachable" };
-    case "Unreadable":
-      return { outcome: "Refused", status: "Unreadable" };
-  }
+  if (result.outcome === "Ok")
+    return "configurations" in result.value
+      ? {
+          outcome: "Bound",
+          repository: result.value.repository,
+          configurations: result.value.configurations,
+        }
+      : { outcome: "AlreadyBound", repository: result.value.repository };
+  if (result.outcome === "Rejected")
+    return {
+      outcome: "Refused",
+      status:
+        result.code === "RepositoryNotInstalled" ? "Not installed" : "Refused",
+    };
+  if (result.outcome === "Conflict")
+    return {
+      outcome: "Refused",
+      status:
+        result.code === "RepositoryBound" ? "Bound elsewhere" : "Conflict",
+    };
+  return { outcome: "Refused", status: repositoryRefusalStatus(result) };
 }
 
-/** The one line a bind's outcome is drawn as. */
+/** The one word a bind's outcome is drawn as. */
 export function repositoryBindStatus(outcome: RepositoryBindOutcome): string {
   switch (outcome.outcome) {
     case "Bound":
@@ -104,4 +141,18 @@ export function repositoryBindStatus(outcome: RepositoryBindOutcome): string {
     case "Refused":
       return outcome.status;
   }
+}
+
+/**
+ * The lines a bind is drawn as. A new binding carries a second, because its
+ * configurations are beside the binding rather than part of it: the binding
+ * stands whatever that line says.
+ */
+export function repositoryBindLines(
+  outcome: RepositoryBindOutcome,
+): readonly string[] {
+  const status = repositoryBindStatus(outcome);
+  return outcome.outcome === "Bound"
+    ? [status, repositoryConfigurationsStatus(outcome.configurations)]
+    : [status];
 }

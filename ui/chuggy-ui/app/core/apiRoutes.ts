@@ -38,7 +38,9 @@ import {
   projectInventoryResponseSchema,
   projectNativeActionsResponseSchema,
   projectRepositoriesResponseSchema,
+  projectRepositoryAlreadyBoundSchema,
   projectRepositoryBoundSchema,
+  projectRepositoryCreatedSchema,
   projectResponseSchema,
   repositoryConfigurationImportedSchema,
   runConfigurationResponseSchema,
@@ -84,7 +86,9 @@ import type {
   ProjectInventoryResponse,
   ProjectNativeActionsResponse,
   ProjectRepositoriesResponse,
+  ProjectRepositoryAlreadyBoundResponse,
   ProjectRepositoryBoundResponse,
+  ProjectRepositoryCreatedResponse,
   ProjectResponse,
   RunConfigurationResponse,
   RunTranscriptResponse,
@@ -107,6 +111,7 @@ import type {
   forgeInstallationClaimSchema,
   leadInquirySchema,
   projectRepositoryBindSchema,
+  projectRepositoryCreateSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
   submissionSchema,
@@ -249,13 +254,26 @@ export function apiProjectRepositories(
   );
 }
 
+/**
+ * What a bind answers, which is one of two bodies. The route answers `201`
+ * with the configurations the new binding found and `200` with the repository
+ * alone, and `classify` keeps neither status, so the two are told apart by the
+ * shape the wire gave them.
+ */
+export type ProjectRepositoryBindAnswer =
+  ProjectRepositoryBoundResponse | ProjectRepositoryAlreadyBoundResponse;
+
+const projectRepositoryBindAnswerSchema = projectRepositoryBoundSchema.or(
+  projectRepositoryAlreadyBoundSchema,
+);
+
 /** One binding, under the operation identity the route refuses a bind without. */
 export function apiBindProjectRepository(
   ports: ApiPorts,
   partition: PartitionIdentity,
   bind: z.infer<typeof projectRepositoryBindSchema>,
   operation: string,
-): Promise<ApiResult<ProjectRepositoryBoundResponse>> {
+): Promise<ApiResult<ProjectRepositoryBindAnswer>> {
   return apiRead(
     ports,
     {
@@ -264,7 +282,30 @@ export function apiBindProjectRepository(
       body: bind,
       idempotencyKey: operation,
     },
-    (value) => projectRepositoryBoundSchema.parse(value),
+    (value) => projectRepositoryBindAnswerSchema.parse(value),
+  );
+}
+
+/**
+ * One repository made on the forge and bound here, under the same operation
+ * identity a bind is made under. The answer reports every step it took,
+ * because a step that did not take leaves a repository that stands.
+ */
+export function apiCreateProjectRepository(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  create: z.infer<typeof projectRepositoryCreateSchema>,
+  operation: string,
+): Promise<ApiResult<ProjectRepositoryCreatedResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "POST",
+      path: apiSegments(partition, "repositories", "new"),
+      body: create,
+      idempotencyKey: operation,
+    },
+    (value) => projectRepositoryCreatedSchema.parse(value),
   );
 }
 
