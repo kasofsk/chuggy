@@ -325,6 +325,37 @@ test("a minted credential is what git is given, and the mount is never read", as
   assert.deepEqual(kept, [minted.password]);
 });
 
+test("a minted repository the site names no map for is cloned at its own id", async () => {
+  const { asked } = askedFor(
+    { status: 200, ok: true, json: async () => minted },
+    [],
+  );
+
+  const resolved = await workerCredential({
+    ...asked,
+    repositories: {},
+    repositoryId: "https://github.com/kasofsk/chuggy.git",
+  });
+
+  assert.equal(resolved.repository, "https://github.com/kasofsk/chuggy.git");
+});
+
+test("a mounted repository the site names no map for is still refused", async () => {
+  const { asked } = askedFor({
+    status: 404,
+    json: async () => ({ reason: "ForgeNotConfigured" }),
+  });
+
+  await assert.rejects(
+    workerCredential({
+      ...asked,
+      repositories: {},
+      repositoryId: "https://github.com/kasofsk/chuggy.git",
+    }),
+    /no repository configuration for https:\/\/github.com\/kasofsk\/chuggy.git/u,
+  );
+});
+
 test("a plane that mints nothing leaves the launcher's mount answering", async () => {
   const { asked, kept, written } = askedFor({
     status: 404,

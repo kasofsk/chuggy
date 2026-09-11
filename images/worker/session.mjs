@@ -753,16 +753,16 @@ async function sessionCredentials(environment, read, slot) {
  * attempt the scheduler reaped while git ran would look like a pod that never
  * started.
  *
- * The site's repository map is read only where the placement bound one: a site
- * running sessions against projects with no binding owes no map, and reading
- * the variable regardless would refuse those pods for a fact they never use.
+ * The site's repository map is optional: a minted credential reaches a
+ * repository at its own identity, so a site that mints names nothing here, and
+ * a site that mounts still does — the mounted arm refuses a repository the map
+ * leaves out exactly as before.
  */
 async function sessionTree(take, task, environment, credentialFiles, logging) {
   const workspace = environment.CHUG_WORKER_WORKSPACE ?? defaultWorkspace;
+  const named = environment.CHUG_WORKER_REPOSITORIES;
   const repositories =
-    task.repository === undefined
-      ? {}
-      : workerRepositories(required(environment, "CHUG_WORKER_REPOSITORIES"));
+    named === undefined || named.length === 0 ? {} : workerRepositories(named);
   return take(task, repositories, credentialFiles, workspace, logging);
 }
 

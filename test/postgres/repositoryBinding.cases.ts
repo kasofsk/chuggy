@@ -8,8 +8,10 @@ import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   postgresProjectRepositoryBindings,
   postgresRepositoryBinding,
+  postgresRepositoryBindingListing,
 } from "../../src/adapters/postgres/repositoryBinding.ts";
 import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
+import { repositoryBindingsPerImportMax } from "../../src/interpreter/repositoryConfiguration.ts";
 import { checkedRepositoryBindingCommand } from "../../src/interpreter/repositoryBinding.ts";
 import {
   asAuthorityKind,
@@ -643,4 +645,53 @@ test("the API reads a project's bindings through the door and not the relation",
       "",
     postgresHarnessDenial("project_repository"),
   );
+});
+
+/**
+ * 088's listing, which the importer runs over. It crosses partitions because
+ * the importer's job is every partition's declarations: a run told to import
+ * one project's would need the list it is asking for before it could ask.
+ */
+test("the estate listing names every partition's bindings, oldest first", async () => {
+  const mine = await fixtureStandingAt({
+    tenant: asTenantId(`tenant-estate-mine-${randomUUID()}`),
+    project: asProjectId(`project-estate-mine-${randomUUID()}`),
+  });
+  const stranger = await fixtureStandingAt({
+    tenant: asTenantId(`tenant-estate-stranger-${randomUUID()}`),
+    project: asProjectId(`project-estate-stranger-${randomUUID()}`),
+  });
+  const administration = postgresRepositoryBinding(pool);
+  const ours = fixtureCommand(mine, `repository-estate-mine-${randomUUID()}`);
+  const theirs = fixtureCommand(
+    stranger,
+    `repository-estate-stranger-${randomUUID()}`,
+  );
+  assert.equal(await administration.bind(ours), "Bound");
+  assert.equal(await administration.bind(theirs), "Bound");
+
+  const listed = await postgresRepositoryBindingListing(pool).bindings(
+    repositoryBindingsPerImportMax,
+  );
+
+  const named = new Map(
+    listed.map((bound) => [String(bound.repository), bound]),
+  );
+  assert.deepEqual(named.get(ours.repository)?.partition, mine.partition);
+  assert.deepEqual(named.get(theirs.repository)?.partition, stranger.partition);
+  assert.equal(
+    listed.every((bound) => bound.boundAt.length > 0),
+    true,
+  );
+  const boundAt = listed.map((bound) => bound.boundAt);
+  assert.deepEqual(
+    boundAt,
+    [...boundAt].sort((a, b) => a.localeCompare(b)),
+    "the run reads a prefix of the estate, so the order is the age",
+  );
+});
+
+test("the estate listing is bounded by what the caller asks for", async () => {
+  const listed = await postgresRepositoryBindingListing(pool).bindings(1);
+  assert.equal(listed.length <= 1, true);
 });

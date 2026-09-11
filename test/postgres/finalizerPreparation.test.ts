@@ -953,6 +953,7 @@ function proposalRequestOf(project: FinalizerProject): ChangeProposalRequest {
       credential: asForgeCredentialReference("forge-rig-proposals"),
     },
     repository: asRepositoryId(project.repository),
+    partition: project.partition,
     request: identity,
     headRef: asGitRefName(briefBranch),
     headCommit: asGitObjectId(finalizerCommit()),

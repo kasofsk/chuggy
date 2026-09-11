@@ -48,6 +48,7 @@ import {
   asBriefIntent,
   asBriefTitle,
 } from "../../src/interpreter/ticketBrief.ts";
+import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { populated } from "./roster.ts";
 
 const identity = asChangeProposalRequestIdentity("a".repeat(64));
@@ -60,6 +61,10 @@ const request = changeProposalRequest({
     credential: asForgeCredentialReference("forge-alpha-proposals"),
   },
   repository: asRepositoryId("https://forge.invalid/acme/atlas.git"),
+  partition: {
+    tenant: asTenantId("tenant"),
+    project: asProjectId("project"),
+  },
   request: identity,
   headRef: asGitRefName("refs/heads/chuggy/footer-2026"),
   headCommit: asGitObjectId("b".repeat(40)),

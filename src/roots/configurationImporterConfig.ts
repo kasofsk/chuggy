@@ -1,12 +1,8 @@
 import { z } from "zod";
 
-import { asGitObjectId, asRepositoryId } from "../interpreter/finalizer.ts";
-import {
-  asProjectId,
-  asTenantId,
-  type Partition,
-} from "../interpreter/projectStore.ts";
+import { asRepositoryId } from "../interpreter/finalizer.ts";
 import type { RepositoryCredentialFile } from "../interpreter/finalizerSettings.ts";
+import type { ForgeAppKey } from "../interpreter/forgeInstallation.ts";
 import {
   commandDatabaseConfig,
   commandDatabaseSchema,
@@ -14,10 +10,8 @@ import {
   positiveInteger,
 } from "./commandConfig.ts";
 import type { ProcessDatabaseConfig } from "./controlPlane.ts";
-import type { GitObjectId, RepositoryId } from "../interpreter/finalizer.ts";
 
 const configurationImporterVariable = "CHUG_CONFIGURATION_IMPORT_CONFIG";
-export const configurationImporterPartitionsMax = 100;
 
 const configurationImporterSchema = z
   .object({
@@ -41,16 +35,15 @@ const configurationImporterSchema = z
         remoteTimeoutSecsMax: positiveInteger.optional(),
       })
       .strict(),
-    repository: z.string().min(1),
-    commit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u),
-    partitions: z
-      .array(
-        z
-          .object({ tenant: z.string().min(1), project: z.string().min(1) })
-          .strict(),
-      )
-      .min(1)
-      .max(configurationImporterPartitionsMax),
+    forge: z
+      .object({
+        appId: z.string().min(1),
+        keyFile: z.string().min(1),
+        apiUrl: z.string().min(1).optional(),
+        timeoutMs: positiveInteger.optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -63,9 +56,12 @@ export interface ConfigurationImporterConfig {
     readonly localTimeoutSecsMax?: number;
     readonly remoteTimeoutSecsMax?: number;
   };
-  readonly repository: RepositoryId;
-  readonly commit: GitObjectId;
-  readonly partitions: readonly Partition[];
+  /**
+   * The App key this run reads a repository under, where it holds one. A run
+   * naming neither a key nor a credential file could read nothing, so the
+   * configuration refuses it before the database is opened.
+   */
+  readonly forge?: ForgeAppKey;
 }
 
 export function configurationImporterConfig(
@@ -76,6 +72,10 @@ export function configurationImporterConfig(
     configurationImporterSchema,
     environment,
   );
+  if (parsed.forge === undefined && parsed.git.credentialSources.length === 0)
+    throw new Error(
+      `${configurationImporterVariable}.forge or ${configurationImporterVariable}.git.credentialSources is required`,
+    );
   return {
     database: commandDatabaseConfig(parsed.database),
     git: {
@@ -97,11 +97,19 @@ export function configurationImporterConfig(
         ? {}
         : { remoteTimeoutSecsMax: parsed.git.remoteTimeoutSecsMax }),
     },
-    repository: asRepositoryId(parsed.repository),
-    commit: asGitObjectId(parsed.commit),
-    partitions: parsed.partitions.map(({ tenant, project }) => ({
-      tenant: asTenantId(tenant),
-      project: asProjectId(project),
-    })),
+    ...(parsed.forge === undefined
+      ? {}
+      : {
+          forge: {
+            appId: parsed.forge.appId,
+            keyFile: parsed.forge.keyFile,
+            ...(parsed.forge.apiUrl === undefined
+              ? {}
+              : { apiUrl: parsed.forge.apiUrl }),
+            ...(parsed.forge.timeoutMs === undefined
+              ? {}
+              : { requestTimeoutMs: parsed.forge.timeoutMs }),
+          },
+        }),
   };
 }

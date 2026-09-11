@@ -35,6 +35,15 @@ const configurationSchema = z
       .strict(),
     domain: domainConfigurationSchema,
     owner: z.string().min(1),
+    forge: z
+      .object({
+        appId: z.string().min(1),
+        keyFile: z.string().min(1),
+        apiUrl: z.string().min(1).optional(),
+        timeoutMs: positiveInteger.optional(),
+      })
+      .strict()
+      .optional(),
     source: z
       .object({
         scratchDirectory: z.string().min(1),
@@ -52,7 +61,7 @@ const configurationSchema = z
               })
               .strict(),
           )
-          .min(1),
+          .optional(),
         credentialBytesMax: positiveInteger.optional(),
         credentialUsername: z.string().min(1).optional(),
         localTimeoutSecsMax: positiveInteger.optional(),
@@ -107,6 +116,11 @@ export function ticketServiceConfiguration(
     data.ticket.ordinarySoftLimit >= data.ticket.mailboxHardLimit
   )
     throw new Error(`${configurationVariable}.ticket count bounds are invalid`);
+  const sources = data.source.sources ?? [];
+  if (data.forge === undefined && sources.length === 0)
+    throw new Error(
+      `${configurationVariable}.forge or ${configurationVariable}.source.sources is required`,
+    );
   return {
     database: commandDatabaseConfig(data.database),
     runtime: data.runtime,
@@ -117,7 +131,7 @@ export function ticketServiceConfiguration(
       scratchDirectory: data.source.scratchDirectory,
       identity: data.source.identity,
       environment: data.source.environment,
-      sources: data.source.sources.map((source) => ({
+      sources: sources.map((source) => ({
         repository: asRepositoryId(source.repository),
         path: source.path,
         ...(source.credentialReference === undefined
@@ -140,6 +154,20 @@ export function ticketServiceConfiguration(
         ? {}
         : { promotionTimeoutSecsMax: data.source.promotionTimeoutSecsMax }),
     },
+    ...(data.forge === undefined
+      ? {}
+      : {
+          forge: {
+            appId: data.forge.appId,
+            keyFile: data.forge.keyFile,
+            ...(data.forge.apiUrl === undefined
+              ? {}
+              : { apiUrl: data.forge.apiUrl }),
+            ...(data.forge.timeoutMs === undefined
+              ? {}
+              : { requestTimeoutMs: data.forge.timeoutMs }),
+          },
+        }),
     ...(data.ticket === undefined ? {} : { ticket: data.ticket }),
   };
 }

@@ -80,6 +80,13 @@ export type ForgeApp = (typeof allForgeApps)[number];
  */
 export const workerPodForgeApp: ForgeApp = "worker";
 
+/**
+ * The app every control-plane act mints under: the branch ruleset admits it to
+ * a protected branch, which is what a promotion and a proposal both need and
+ * what the pod's app is refused.
+ */
+export const portalForgeApp: ForgeApp = "portal";
+
 /** Every kind of account a forge installs an app on. */
 export const allForgeAccountKinds = ["User", "Organization"] as const;
 
@@ -195,6 +202,53 @@ export function asForgeAccountKind(value: string): ForgeAccountKind {
   if (kind === undefined)
     throw new RangeError(`forge account kind: ${value} is not a known kind`);
   return kind;
+}
+
+/**
+ * Where one process's app key stands and how it reaches the forge, as plain
+ * data. A bound it leaves absent is the adapter's own, so the layer that spells
+ * a forge stays the one place a default for it is written.
+ */
+export interface ForgeAppKey {
+  readonly appId: string;
+  readonly keyFile: string;
+  readonly apiUrl?: string;
+  readonly requestTimeoutMs?: number;
+}
+
+/** The variables one process names its app key pair and its forge by. */
+export interface ForgeAppKeyVariables {
+  readonly appId: string;
+  readonly appKeyFile: string;
+  readonly apiUrl: string;
+  readonly timeoutMs: string;
+}
+
+/**
+ * The app key a deployment names, or nothing at all where it names neither
+ * half. Every process holding one reads it through here, so what an app id
+ * named without its key file means is answered in a single place.
+ */
+export function forgeAppKeyOf(
+  named: ForgeAppKeyVariables,
+  environment: Readonly<Record<string, string | undefined>>,
+  positive: (name: string) => number | undefined,
+): ForgeAppKey | undefined {
+  const appId = environment[named.appId] ?? "";
+  const keyFile = environment[named.appKeyFile] ?? "";
+  if (appId.length === 0 && keyFile.length === 0) return undefined;
+  if (appId.length === 0 || keyFile.length === 0)
+    throw new Error(
+      `${named.appId} and ${named.appKeyFile} are named together or not at all`,
+    );
+  const apiUrl = environment[named.apiUrl];
+  const requestTimeoutMs = positive(named.timeoutMs);
+  return {
+    appId,
+    keyFile,
+    ...(apiUrl === undefined || apiUrl.length === 0 ? {} : { apiUrl }),
+    ...(requestTimeoutMs === undefined ? {} : { requestTimeoutMs }),
+  };
 }
 
 /** One app installed on one account, read under the tenant that claimed it. */

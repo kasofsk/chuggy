@@ -36,9 +36,18 @@ import type {
 } from "../compose.ts";
 import {
   composeFinalizerService,
+  composeRepositoryCredentials,
   composeSelectorRuntime,
   type FinalizerServiceRuntime,
 } from "../compose.ts";
+import {
+  githubInstallationTokensOptions,
+  githubInstallationTokensPrecondition,
+} from "../adapters/forge/githubInstallationTokens.ts";
+import type {
+  ForgeAppKey,
+  ForgePermissionSet,
+} from "../interpreter/forgeInstallation.ts";
 import { ketoProjectAccess } from "../adapters/keto/projectAccess.ts";
 import { systemPacing } from "../adapters/runtime/systemPacing.ts";
 import type pg from "pg";
@@ -54,7 +63,6 @@ import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositor
 import { postgresExecutionSourceHistory } from "../adapters/postgres/executionSourceHistory.ts";
 import { executionSourceObservation } from "../interpreter/executionSourceObservation.ts";
 import {
-  credentialFiles,
   credentialFilesPrecondition,
   type CredentialFilesOptions,
 } from "../adapters/credentials/credentialFiles.ts";
@@ -415,6 +423,12 @@ function leadMailboxPrivilegePrecondition(pool: pg.Pool): RuntimePrecondition {
   };
 }
 
+/**
+ * What the ticket service asks a forge for: it observes a source's refs and
+ * nothing else, so a token it holds can do nothing else either.
+ */
+const ticketServicePermissions: ForgePermissionSet = "read";
+
 export interface TicketServiceProcessRootConfig {
   readonly database: ProcessDatabaseConfig;
   readonly runtime: ServiceRuntimeConfig;
@@ -424,6 +438,12 @@ export interface TicketServiceProcessRootConfig {
   readonly ticket?: TicketServiceConfig;
   readonly source: Omit<GitPromotionOptions, "credentials"> &
     CredentialFilesOptions;
+  /**
+   * The App key this deployment observes a source through, when it holds one.
+   * A deployment naming neither a key nor a credential file could observe
+   * nothing, which its configuration is what refuses.
+   */
+  readonly forge?: ForgeAppKey;
 }
 
 /** Owns the writer-role pool and composes the independently deployable ticket service. */
@@ -431,7 +451,12 @@ export function ticketServiceProcessRoot(
   config: TicketServiceProcessRootConfig,
 ): ServiceRuntime {
   const pool = processPool(config.database);
-  const credentials = credentialFiles(config.source);
+  const credentials = composeRepositoryCredentials({
+    pool,
+    ...(config.forge === undefined ? {} : { forge: config.forge }),
+    permissions: ticketServicePermissions,
+    ...config.source,
+  }).credentials;
   const git = gitPromotion({ ...config.source, credentials });
   const service: TicketServiceRuntimeService = {
     domain: config.domain,
@@ -464,6 +489,13 @@ export function ticketServiceProcessRoot(
           gitAvailablePrecondition(config.source.environment),
           gitScratchWritablePrecondition(config.source.scratchDirectory),
           credentialFilesPrecondition(config.source),
+          ...(config.forge === undefined
+            ? []
+            : [
+                githubInstallationTokensPrecondition(
+                  githubInstallationTokensOptions(config.forge),
+                ),
+              ]),
         ],
       },
       config.runtime,
@@ -562,7 +594,13 @@ export interface FinalizerProcessRootConfig {
     readonly owner: FinalizerOwnerId;
     readonly recoveryEpoch: RecoveryEpoch;
   };
-  readonly service: FinalizerServiceRuntime;
+  /**
+   * The ports one finalizer acts through, over the pool this root owns: a
+   * deployment that mints its own credentials reaches the forge installations
+   * through that same pool, and a second one would be a second connection
+   * limit to hold this role under.
+   */
+  readonly service: (pool: pg.Pool) => FinalizerServiceRuntime;
   readonly finalizer?: FinalizerConfig;
 }
 
@@ -573,7 +611,7 @@ export function finalizerProcessRoot(
   const pool = processPool(config.database);
   const service = composeFinalizerService(
     pool,
-    config.service,
+    config.service(pool),
     config.finalizer,
   );
   return ownedProcess(

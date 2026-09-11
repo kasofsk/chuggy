@@ -19,7 +19,12 @@ import { postgresOwnershipEpoch } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 
 import { asRepositoryId } from "../../interpreter/finalizer.ts";
-import type { Partition } from "../../interpreter/projectStore.ts";
+import {
+  asProjectId,
+  asTenantId,
+  type Partition,
+} from "../../interpreter/projectStore.ts";
+import type { RepositoryBindingListing } from "../../interpreter/repositoryConfiguration.ts";
 import type {
   ProjectRepositoryBindings,
   ProjectRepositoryBound,
@@ -77,6 +82,47 @@ export function postgresProjectRepositoryBindings(
         if (row.repository === null || row.bound_at === null)
           throw new Error("repository binding: a binding is half a row");
         return {
+          repository: asRepositoryId(row.repository),
+          boundAt: row.bound_at,
+        };
+      });
+    },
+  };
+}
+
+/**
+ * Every binding there is, through the door only the importer holds EXECUTE on.
+ * It is a door for `list_project_repository_bindings`'s reason and crosses
+ * partitions for the importer's: its caller imports for the whole estate, so
+ * the partition is a column of the answer rather than an argument to the ask.
+ */
+export function postgresRepositoryBindingListing(
+  pool: pg.Pool,
+): RepositoryBindingListing {
+  return {
+    bindings: async (max: number) => {
+      const found = await pool.query<{
+        tenant: string | null;
+        project: string | null;
+        repository: string | null;
+        bound_at: string | null;
+      }>(
+        sql`SELECT tenant,project,repository,bound_at::text AS bound_at
+              FROM list_repository_bindings(${max})`,
+      );
+      return found.rows.map((row) => {
+        if (
+          row.tenant === null ||
+          row.project === null ||
+          row.repository === null ||
+          row.bound_at === null
+        )
+          throw new Error("repository binding: a binding is half a row");
+        return {
+          partition: {
+            tenant: asTenantId(row.tenant),
+            project: asProjectId(row.project),
+          },
           repository: asRepositoryId(row.repository),
           boundAt: row.bound_at,
         };

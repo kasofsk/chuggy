@@ -284,6 +284,152 @@ export async function importRepositoryConfigurationPartitions(input: {
   return imports;
 }
 
+/**
+ * The most bindings one importer run takes, and the ceiling the door it reads
+ * them through enforces. A run that filled it imported a prefix of the estate
+ * and says so, rather than reading an estate of unbounded size into one pass.
+ */
+export const repositoryBindingsPerImportMax = 1_000;
+
+/** One binding a listing answered with: which project binds which repository, and since when. */
+export interface RepositoryBindingListed {
+  readonly partition: Partition;
+  readonly repository: RepositoryId;
+  readonly boundAt: string;
+}
+
+/**
+ * Every binding there is, oldest first and bounded. It crosses partitions
+ * because its only caller has no caller of its own: the importer's job is every
+ * project's declarations, so a listing that took a partition would need it to
+ * already know the answer it is asking for.
+ */
+export interface RepositoryBindingListing {
+  bindings(max: number): Promise<readonly RepositoryBindingListed[]>;
+}
+
+/** Why one bound repository was passed over rather than imported or failed. */
+export type BoundRepositoryImportSkip =
+  | "Unbound"
+  | "RepositoryEmpty"
+  | "CommitAbsent"
+  | "ConfigurationDirectoryAbsent";
+
+/**
+ * Why one bound repository could not be imported. Every term is a variant and
+ * carries no value read from a forge, so a run may print the whole of it.
+ */
+export type BoundRepositoryImportFailure =
+  | { readonly failure: "HeadUnavailable" }
+  | {
+      readonly failure: "Import";
+      readonly outcome: RepositoryConfigurationImportOutcome;
+    };
+
+/**
+ * What one bound repository came to. A skip is not a failure: a repository
+ * holding no commit, or holding no configuration directory at its head, is a
+ * repository this run has nothing to do with, and the bootstrap that seeds one
+ * belongs to the bind and happens once.
+ */
+export type BoundRepositoryImportResult =
+  | {
+      readonly result: "Imported";
+      readonly commit: GitObjectId;
+      readonly declarations: number;
+    }
+  | { readonly result: "Skipped"; readonly why: BoundRepositoryImportSkip }
+  | {
+      readonly result: "Failed";
+      readonly failure: BoundRepositoryImportFailure;
+    };
+
+export interface BoundRepositoryImport {
+  readonly partition: Partition;
+  readonly repository: RepositoryId;
+  readonly result: BoundRepositoryImportResult;
+}
+
+export interface BoundRepositoryImportPorts extends RepositoryConfigurationImportPorts {
+  readonly listing: RepositoryBindingListing;
+  readonly heads: RepositoryDefaultBranchPort;
+}
+
+/** One import's outcome in the terms a run over every binding reports. */
+function boundRepositoryImportResult(
+  commit: GitObjectId,
+  outcome: RepositoryConfigurationImportOutcome,
+): BoundRepositoryImportResult {
+  if (outcome.result === "Imported")
+    return { result: "Imported", commit, declarations: outcome.declarations };
+  if (outcome.result === "SnapshotAbsent")
+    return {
+      result: "Skipped",
+      why:
+        outcome.absent === "Commit"
+          ? "CommitAbsent"
+          : "ConfigurationDirectoryAbsent",
+    };
+  return { result: "Failed", failure: { failure: "Import", outcome } };
+}
+
+/** One bound repository, imported at whatever its own default branch points at now. */
+async function importBoundRepository(
+  bound: RepositoryBindingListed,
+  authority: Authority,
+  ports: BoundRepositoryImportPorts,
+): Promise<BoundRepositoryImportResult> {
+  const binding = await ports.bindings.binding(
+    bound.partition,
+    bound.repository,
+  );
+  if (binding === undefined) return { result: "Skipped", why: "Unbound" };
+  const head = await ports.heads.defaultBranch(binding);
+  switch (head.read) {
+    case "Absent":
+      return { result: "Skipped", why: "RepositoryEmpty" };
+    case "Unavailable":
+      return { result: "Failed", failure: { failure: "HeadUnavailable" } };
+    case "Branch":
+      return boundRepositoryImportResult(
+        head.commit,
+        await importRepositoryConfigurations({
+          partition: bound.partition,
+          repository: bound.repository,
+          commit: head.commit,
+          authority,
+          ports,
+        }),
+      );
+    default:
+      return assertNever(head);
+  }
+}
+
+/**
+ * Imports every binding in the estate at its own default-branch head, one
+ * binding's outcome never deciding another's: a forge that is down for one
+ * owner, or a repository whose declarations are refused, leaves every other
+ * binding imported and is reported on its own line.
+ */
+export async function importBoundRepositoryConfigurations(input: {
+  readonly authority: Authority;
+  readonly ports: BoundRepositoryImportPorts;
+  readonly bindingsMax?: number;
+}): Promise<readonly BoundRepositoryImport[]> {
+  const listed = await input.ports.listing.bindings(
+    input.bindingsMax ?? repositoryBindingsPerImportMax,
+  );
+  const imports: BoundRepositoryImport[] = [];
+  for (const bound of listed)
+    imports.push({
+      partition: bound.partition,
+      repository: bound.repository,
+      result: await importBoundRepository(bound, input.authority, input.ports),
+    });
+  return imports;
+}
+
 function repositoryConfigurationRevision(
   commit: GitObjectId,
   name: RepositoryConfigurationName,

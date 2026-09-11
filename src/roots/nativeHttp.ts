@@ -38,8 +38,11 @@ import { postgresSessionBearerAuthority } from "../adapters/postgres/sessionPlan
 import {
   composeForgeCredentialMinting,
   composeNativeWeb,
+  composeRepositoryCredentials,
   composeRepositoryOnboarding,
   composeSelectorProjectSettings,
+  type RepositoryCredentialMinting,
+  type RepositoryCredentialSource,
 } from "../compose.ts";
 import type { IdempotencyKeying } from "../adapters/postgres/keying.ts";
 import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
@@ -73,7 +76,6 @@ import { selectorOperationalContextRead } from "../interpreter/selectorOperation
 import { selectorReviewRole } from "../adapters/postgres/schema.ts";
 import { postgresSelectorContextReady } from "../adapters/postgres/selectorContextReadiness.ts";
 import { pathToFileURL } from "node:url";
-import { credentialFiles } from "../adapters/credentials/credentialFiles.ts";
 import { gitRepositoryConfiguration } from "../adapters/git/gitRepositoryConfiguration.ts";
 import {
   finalizerGitEnvironmentNames,
@@ -81,11 +83,10 @@ import {
 } from "../interpreter/finalizerSettings.ts";
 import {
   githubInstallationTokens,
+  githubInstallationTokensOptions,
   githubInstallationTokensPrecondition,
-  githubInstallationTokensSettings,
   type GithubInstallationTokensOptions,
 } from "../adapters/forge/githubInstallationTokens.ts";
-import { githubRepositoryHost } from "../adapters/forge/githubAddress.ts";
 import {
   githubApps,
   githubInstallationDirectory,
@@ -99,22 +100,16 @@ import type {
   RepositoryOnboardingForgeApp,
 } from "../interpreter/repositoryOnboarding.ts";
 import { forgeRepositoriesAnsweredMax } from "../contract/http.ts";
-import {
-  mintedRepositoryCredentials,
-  mintedRepositoryTokens,
-} from "../adapters/forge/mintedCredentials.ts";
-import { postgresForgeInstallations } from "../adapters/postgres/forgeInstallation.ts";
-import {
-  repositoryCredentialsByHost,
-  type ForgeCredentialMinting,
-  type MintedCredentialHost,
-} from "../interpreter/forgeCredentials.ts";
+import type { ForgeCredentialMinting } from "../interpreter/forgeCredentials.ts";
 import type { RepositoryCredentialPort } from "../interpreter/finalizer.ts";
 import {
   asForgeAccount,
   asForgeRepositoryName,
+  forgeAppKeyOf,
   githubForgeId,
+  portalForgeApp,
   type ForgeApp,
+  type ForgeAppKey,
   type ForgeInstallationTokens,
 } from "../interpreter/forgeInstallation.ts";
 import type { ForgeTemplateRepository } from "../interpreter/forgeRepositoryCreation.ts";
@@ -171,9 +166,6 @@ const forgeRepositoriesMaxVariable = "CHUG_API_FORGE_REPOSITORIES_MAX";
 const bootstrapWorkerImageVariable = "CHUG_API_BOOTSTRAP_WORKER_IMAGE";
 const forgeTemplateRepositoryVariable = "CHUG_API_FORGE_TEMPLATE_REPOSITORY";
 
-/** The app every act here mints under, the worker's mints being only to enumerate. */
-const forgeApp: ForgeApp = "portal";
-
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
   if (value === undefined || value.length === 0)
@@ -181,14 +173,18 @@ function requiredEnvironment(name: string): string {
   return value;
 }
 
-function positiveEnvironment(name: string, fallback: number): number {
+function positiveOptionalEnvironment(name: string): number | undefined {
   const value = process.env[name];
-  if (value === undefined) return fallback;
+  if (value === undefined) return undefined;
   if (!/^[1-9][0-9]*$/u.test(value))
     throw new Error(`${name} must be a positive integer`);
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed)) throw new Error(`${name} is too large`);
   return parsed;
+}
+
+function positiveEnvironment(name: string, fallback: number): number {
+  return positiveOptionalEnvironment(name) ?? fallback;
 }
 
 function idempotencyKeying(): IdempotencyKeying {
@@ -349,8 +345,9 @@ function nativePools(): NativePools {
  * clones with it, so a repository one of them can reach is one the other can.
  */
 function nativeRepositoryCredentials(
-  minted: readonly MintedCredentialHost[],
-): RepositoryCredentialPort {
+  pool: ReturnType<typeof postgresPool>,
+  forge: ForgeAppKey | undefined,
+): RepositoryCredentialSource {
   const encoded = process.env[repositoryCredentialSourcesVariable];
   const sources =
     encoded === undefined || encoded.length === 0
@@ -359,7 +356,12 @@ function nativeRepositoryCredentials(
           encoded,
           repositoryCredentialSourcesVariable,
         );
-  return repositoryCredentialsByHost(minted, credentialFiles({ sources }));
+  return composeRepositoryCredentials({
+    pool,
+    ...(forge === undefined ? {} : { forge }),
+    permissions: "read",
+    sources,
+  });
 }
 
 function repositoryConfigurationSnapshots(
@@ -390,11 +392,11 @@ function repositoryConfigurationSnapshots(
  * an app key reads through, so what an app id named without its key file means
  * is answered in a single place.
  */
-function forgeAppOptions(
+function forgeAppKey(
   idVariable: string,
   keyFileVariable: string,
-): GithubInstallationTokensOptions | undefined {
-  return githubInstallationTokensSettings(
+): ForgeAppKey | undefined {
+  return forgeAppKeyOf(
     {
       appId: idVariable,
       appKeyFile: keyFileVariable,
@@ -402,14 +404,13 @@ function forgeAppOptions(
       timeoutMs: forgeTimeoutVariable,
     },
     process.env,
-    positiveEnvironment,
+    positiveOptionalEnvironment,
   );
 }
 
 /** What this deployment mints with, or nothing at all where it holds no portal key. */
-export function forgeTokenOptions():
-  GithubInstallationTokensOptions | undefined {
-  return forgeAppOptions(forgeAppIdVariable, forgeAppKeyFileVariable);
+export function forgePortalKey(): ForgeAppKey | undefined {
+  return forgeAppKey(forgeAppIdVariable, forgeAppKeyFileVariable);
 }
 
 /**
@@ -425,7 +426,7 @@ const forgeKeyFileVariables: Readonly<Record<ForgeApp, string>> = {
 /** One app this deployment holds a key pair for. */
 export interface ForgeAppPair {
   readonly app: ForgeApp;
-  readonly options: GithubInstallationTokensOptions;
+  readonly key: ForgeAppKey;
 }
 
 /**
@@ -435,27 +436,25 @@ export interface ForgeAppPair {
  * answers a worker claim `NotConfigured`.
  */
 export function forgeAppPairs(): readonly ForgeAppPair[] {
-  const portal = forgeTokenOptions();
-  const worker = forgeAppOptions(
+  const portal = forgePortalKey();
+  const worker = forgeAppKey(
     forgeWorkerAppIdVariable,
     forgeWorkerAppKeyFileVariable,
   );
   return [
-    ...(portal === undefined ? [] : [{ app: forgeApp, options: portal }]),
-    ...(worker === undefined
-      ? []
-      : [{ app: "worker" as const, options: worker }]),
+    ...(portal === undefined ? [] : [{ app: portalForgeApp, key: portal }]),
+    ...(worker === undefined ? [] : [{ app: "worker" as const, key: worker }]),
   ];
 }
 
 /** Refuses to start on a key this process could not sign with, leaving no pool open behind it. */
 async function forgeKeyUnusable(
   keyFileVariable: string,
-  options: GithubInstallationTokensOptions,
+  key: ForgeAppKey,
 ): Promise<string | undefined> {
-  const verdict = await githubInstallationTokensPrecondition(options).check(
-    new AbortController().signal,
-  );
+  const verdict = await githubInstallationTokensPrecondition(
+    githubInstallationTokensOptions(key),
+  ).check(new AbortController().signal);
   return verdict.met === "Met"
     ? undefined
     : `${keyFileVariable}: ${verdict.why}`;
@@ -484,13 +483,10 @@ function forgeAppHalf(
 function otherForgeAppHalves(
   pairs: readonly ForgeAppPair[],
 ): readonly RepositoryOnboardingForgeApp[] {
-  return pairs.map((pair) =>
-    forgeAppHalf(
-      pair.app,
-      pair.options,
-      githubInstallationTokens(pair.options),
-    ),
-  );
+  return pairs.map((pair) => {
+    const options = githubInstallationTokensOptions(pair.key);
+    return forgeAppHalf(pair.app, options, githubInstallationTokens(options));
+  });
 }
 
 /**
@@ -503,7 +499,7 @@ export async function forgeKeysUnusable(
   for (const pair of pairs) {
     const unusable = await forgeKeyUnusable(
       forgeKeyFileVariables[pair.app],
-      pair.options,
+      pair.key,
     );
     if (unusable !== undefined) return unusable;
   }
@@ -564,16 +560,16 @@ function forgeTemplateRepository(): ForgeTemplateRepository | undefined {
 
 /** The three acts creating a repository is, under the portal app this process signs as. */
 function forgeRepositoryCreation(
-  portal: ForgeAppPair,
+  portal: GithubInstallationTokensOptions,
   tokens: ForgeInstallationTokens,
 ): RepositoryCreationPorts {
   const template = forgeTemplateRepository();
   return {
     forge: githubForgeId,
     repositories: githubRepositoryCreation({
-      ...portal.options,
+      ...portal,
       tokens,
-      appId: portal.options.appId,
+      appId: portal.appId,
     }),
     ...(template === undefined ? {} : { template }),
   };
@@ -608,64 +604,57 @@ async function nativeForge(
 ): Promise<NativeForge> {
   const pairs = forgeAppPairs();
   await forgeKeysReady(pairs, pools);
-  const portal = pairs.find((pair) => pair.app === forgeApp);
+  const portal = pairs.find((pair) => pair.app === portalForgeApp);
   const others = otherForgeAppHalves(
-    pairs.filter((pair) => pair.app !== forgeApp),
+    pairs.filter((pair) => pair.app !== portalForgeApp),
   );
   const image = bootstrapWorkerImage();
-  if (portal === undefined) {
-    const credentials = nativeRepositoryCredentials([]);
-    const repositories = repositoryConfigurationSnapshots(credentials);
-    return {
-      credentials,
-      minting: undefined,
-      repositories,
-      onboarding: composeRepositoryOnboarding({
-        apiPool: pools.pool,
-        access,
-        credentials,
-        forgeApps: others,
-        ...(repositories === undefined ? {} : { repositories }),
-        ...(image === undefined ? {} : { bootstrapImage: image }),
-      }),
-    };
-  }
-  const options = portal.options;
-  const installationTokens = githubInstallationTokens(options);
-  const tokens = mintedRepositoryTokens({
-    forge: githubForgeId,
-    app: forgeApp,
-    repositoryHost: githubRepositoryHost,
-    installations: postgresForgeInstallations(pools.pool),
-    tokens: installationTokens,
-  });
-  const hosts = [
-    {
-      repositoryHost: githubRepositoryHost,
-      credentials: mintedRepositoryCredentials({
-        tokens,
-        permissions: "read",
-      }),
-    },
-  ];
-  const credentials = nativeRepositoryCredentials(hosts);
+  const source = nativeRepositoryCredentials(pools.pool, portal?.key);
+  const credentials = source.credentials;
   const repositories = repositoryConfigurationSnapshots(credentials);
+  const half = nativePortalHalf(portal, source.minting);
   return {
     credentials,
-    minting: composeForgeCredentialMinting(pools.pool, access, tokens),
+    minting:
+      source.minting === undefined
+        ? undefined
+        : composeForgeCredentialMinting(
+            pools.pool,
+            access,
+            source.minting.tokens,
+          ),
     repositories,
     onboarding: composeRepositoryOnboarding({
       apiPool: pools.pool,
       access,
       credentials,
-      forgeApps: [
-        forgeAppHalf(forgeApp, options, installationTokens),
-        ...others,
-      ],
+      forgeApps: half === undefined ? others : [half.onboarding, ...others],
       ...(repositories === undefined ? {} : { repositories }),
       ...(image === undefined ? {} : { bootstrapImage: image }),
-      creation: forgeRepositoryCreation(portal, installationTokens),
+      ...(half === undefined ? {} : { creation: half.creation }),
     }),
+  };
+}
+
+/** What the portal app answers for, and nothing where this deployment holds no portal key. */
+interface NativePortalHalf {
+  readonly onboarding: RepositoryOnboardingForgeApp;
+  readonly creation: RepositoryCreationPorts;
+}
+
+function nativePortalHalf(
+  portal: ForgeAppPair | undefined,
+  minting: RepositoryCredentialMinting | undefined,
+): NativePortalHalf | undefined {
+  if (portal === undefined || minting === undefined) return undefined;
+  const options = githubInstallationTokensOptions(portal.key);
+  return {
+    onboarding: forgeAppHalf(
+      portalForgeApp,
+      options,
+      minting.installationTokens,
+    ),
+    creation: forgeRepositoryCreation(options, minting.installationTokens),
   };
 }
 

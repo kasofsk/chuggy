@@ -13,6 +13,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 
+import type pg from "pg";
+
 import { composeFinalizerRuntime } from "../../src/compose.ts";
 import { asForgeBindingId } from "../../src/interpreter/changeProposal.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
@@ -20,6 +22,13 @@ import {
   finalizerSettingsOf,
   type FinalizerSettings,
 } from "../../src/interpreter/finalizerSettings.ts";
+
+/**
+ * The pool a composition that mints nothing never reaches. A deployment naming
+ * no app key opens no installation read, so a case that would fail on a query
+ * is a case proving the key is what decides.
+ */
+const unusedPool = {} as unknown as pg.Pool;
 
 /** The repository the fixture forge binding holds, which is what selects that binding. */
 const forgeRepository = asRepositoryId("https://forge.invalid/acme/atlas.git");
@@ -87,8 +96,43 @@ test("a deployment is held to its git, its scratch, its storage and its credenti
     );
 });
 
+test("a deployment holding an app key is held to that key before it mints", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "chuggy-compose-finalizer-key-"));
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+  const keyFile = join(root, "portal.pem");
+  writeFileSync(keyFile, "not a key");
+  const composition = composeFinalizerRuntime({
+    ...settings(t),
+    forge: { appId: "1234", keyFile },
+  });
+  assert.ok(
+    composition.preconditions.some(
+      (precondition) => precondition.name === "forge-app-key-usable",
+    ),
+    "an unreadable key is refused at start-up and not at every mint",
+  );
+  const key = composition.preconditions.find(
+    (precondition) => precondition.name === "forge-app-key-usable",
+  );
+  assert.equal(
+    (await key?.check(new AbortController().signal))?.met,
+    "Refused",
+  );
+  assert.deepEqual(
+    composeFinalizerRuntime(settings(t)).preconditions.filter(
+      (precondition) => precondition.name === "forge-app-key-usable",
+    ),
+    [],
+    "a deployment naming no key is held to none",
+  );
+});
+
 test("a repository's forge is selected by the host its own address names", (t) => {
-  const forges = composeFinalizerRuntime(settings(t)).service().forges;
+  const forges = composeFinalizerRuntime(settings(t)).service(
+    unusedPool,
+  ).forges;
   const binding = forges.bindingOf(forgeRepository);
   assert.deepEqual(binding, {
     forge: "forge-alpha",
@@ -120,7 +164,7 @@ test("a deployment binding no forge composes one that opens no change proposal",
     ),
     "the precondition stands over the nothing it has to check",
   );
-  const forges = composition.service().forges;
+  const forges = composition.service(unusedPool).forges;
   assert.equal(forges.bindingOf(forgeRepository), undefined);
   assert.equal(
     forges.selector.select(asForgeBindingId("forge-alpha")),
@@ -143,7 +187,7 @@ test("a forge binding naming no API host composes no adapter at all", (t) => {
 
 test("the composed service promotes through the port and stores under the named root", (t) => {
   const parsed = settings(t);
-  const service = composeFinalizerRuntime(parsed).service();
+  const service = composeFinalizerRuntime(parsed).service(unusedPool);
   assert.equal(service.artifactRoot, parsed.artifactRoot);
   assert.equal(typeof service.git.promoteCandidate, "function");
 });
@@ -154,5 +198,5 @@ test("composing yields no git port until one is asked for", (t) => {
     ...parsed,
     git: { ...parsed.git, environment: { PATH: parsed.artifactRoot } },
   });
-  assert.throws(() => composition.service());
+  assert.throws(() => composition.service(unusedPool));
 });

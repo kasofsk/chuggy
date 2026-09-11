@@ -1121,6 +1121,36 @@ test("the checkout is asked for what the placement bound, under the session's ow
   assert.equal(asked[0].workspace, "/workspace");
 });
 
+test("a bound session placed with no repository map is given an empty one", async () => {
+  const plane = planeOf([], facts);
+  const { query } = queryOf(() => []);
+  const asked = [];
+
+  await run({
+    request: plane.request,
+    query,
+    environment: {
+      ...environment,
+      CHUG_SESSION_TASK: JSON.stringify({
+        ...task,
+        repository: { reference: "https://github.com/kasofsk/chuggy.git" },
+      }),
+    },
+    checkout: async (
+      checkoutTask,
+      repositories,
+      credentialFiles,
+      workspace,
+    ) => {
+      asked.push({ checkoutTask, repositories, credentialFiles, workspace });
+      return undefined;
+    },
+  });
+
+  assert.equal(asked.length, 1);
+  assert.deepEqual(asked[0].repositories, {});
+});
+
 /** The environment a session is placed with when the placement bound a repository. */
 const boundEnvironment = {
   ...environment,

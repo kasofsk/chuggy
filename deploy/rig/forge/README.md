@@ -36,6 +36,14 @@ naming no worker pair answers a worker claim `ForgeNotConfigured`.
 `deploy/rig/images/README.md` carries these rows and the two bounds beside
 them.
 
+**The finalizer, the ticket service and the importer mount the portal key too**
+and mint for themselves rather than asking the API, which widens the key from
+the API's pod to theirs: each of them can now do anything the portal App's
+installation may on any account a tenant claimed it under — the ruleset admits
+it to protected `main`, which is what a promotion and a proposal both need —
+where each was previously bounded by the per-repository tokens its deployment
+mounted.
+
 The key is read once per mint rather than held, and the process refuses to start
 unless the file it names is a readable RSA private key — so a Secret mounted at
 the wrong path is a pod that never becomes ready rather than a route that

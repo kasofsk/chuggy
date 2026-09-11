@@ -7,7 +7,11 @@ import test from "node:test";
 import { fileURLToPath, URL } from "node:url";
 import { promisify } from "node:util";
 
-import { workerRepositories, workerRepository } from "./repository.mjs";
+import {
+  workerRepositories,
+  workerRepository,
+  workerRepositoryUrl,
+} from "./repository.mjs";
 
 const executeFile = promisify(execFile);
 const askpass = fileURLToPath(new URL("./git-askpass.sh", import.meta.url));
@@ -75,6 +79,49 @@ test("a worker repository refuses incomplete credential configuration", () => {
   assert.throws(
     () => workerRepository({}, {}, "toString"),
     /no repository configuration for toString/u,
+  );
+});
+
+test("a minted repository the map does not name is cloned at its own id", () => {
+  assert.equal(
+    workerRepositoryUrl({}, "https://github.com/kasofsk/chuggy.git"),
+    "https://github.com/kasofsk/chuggy.git",
+  );
+  assert.equal(
+    workerRepositoryUrl(
+      { "https://github.com/kasofsk/chuggy.git": { credential: "github" } },
+      "https://github.com/kasofsk/chuggy.git",
+    ),
+    "https://github.com/kasofsk/chuggy.git",
+  );
+});
+
+test("a minted repository the map names is cloned at the map's url", () => {
+  assert.equal(
+    workerRepositoryUrl(
+      {
+        "https://github.com/kasofsk/chuggy.git": {
+          url: "http://mirror.internal/chuggy.git",
+        },
+      },
+      "https://github.com/kasofsk/chuggy.git",
+    ),
+    "http://mirror.internal/chuggy.git",
+  );
+  assert.throws(
+    () =>
+      workerRepositoryUrl(
+        { "https://github.com/kasofsk/chuggy.git": { url: "" } },
+        "https://github.com/kasofsk/chuggy.git",
+      ),
+    /has no URL/u,
+  );
+});
+
+test("a mounted repository the map does not name is still refused", () => {
+  assert.throws(
+    () => workerRepository({}, {}, "https://github.com/kasofsk/chuggy.git"),
+    /no repository configuration for https:\/\/github.com\/kasofsk\/chuggy.git/u,
   );
 });
 

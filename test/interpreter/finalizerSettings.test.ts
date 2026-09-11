@@ -180,6 +180,61 @@ test("a credential source is a repository and a path, and nothing else is one", 
   }
 });
 
+test("a finalizer holding an app key mounts no repository credential at all", () => {
+  const minting = {
+    ...without("CHUG_FINALIZER_CREDENTIAL_SOURCES"),
+    CHUG_FINALIZER_FORGE_APP_ID: "1234",
+    CHUG_FINALIZER_FORGE_APP_KEY_FILE: "/run/secrets/portal.pem",
+  };
+  const settings = finalizerSettingsOf(minting);
+  assert.deepEqual(settings.credentials, []);
+  assert.deepEqual(settings.forge, {
+    appId: "1234",
+    keyFile: "/run/secrets/portal.pem",
+  });
+  assert.deepEqual(
+    finalizerSettingsOf({
+      ...minting,
+      CHUG_FINALIZER_CREDENTIAL_SOURCES: "[]",
+      CHUG_FINALIZER_FORGE_API_URL: "https://api.github.invalid",
+      CHUG_FINALIZER_FORGE_TIMEOUT_MS: "9000",
+    }).forge,
+    {
+      appId: "1234",
+      keyFile: "/run/secrets/portal.pem",
+      apiUrl: "https://api.github.invalid",
+      requestTimeoutMs: 9000,
+    },
+  );
+});
+
+test("a finalizer with neither a key nor a credential file is refused", () => {
+  assert.throws(
+    () => finalizerSettingsOf(without("CHUG_FINALIZER_CREDENTIAL_SOURCES")),
+    /CHUG_FINALIZER_FORGE_APP_KEY_FILE or CHUG_FINALIZER_CREDENTIAL_SOURCES is required/u,
+  );
+  assert.throws(
+    () =>
+      finalizerSettingsOf({
+        ...complete,
+        CHUG_FINALIZER_CREDENTIAL_SOURCES: "[]",
+      }),
+    /CHUG_FINALIZER_FORGE_APP_KEY_FILE or CHUG_FINALIZER_CREDENTIAL_SOURCES is required/u,
+  );
+});
+
+test("an app id and a key file are named together or not at all", () => {
+  for (const half of [
+    { CHUG_FINALIZER_FORGE_APP_ID: "1234" },
+    { CHUG_FINALIZER_FORGE_APP_KEY_FILE: "/run/secrets/portal.pem" },
+  ])
+    assert.throws(
+      () => finalizerSettingsOf({ ...complete, ...half }),
+      /named together or not at all/u,
+    );
+  assert.equal(finalizerSettingsOf(complete).forge, undefined);
+});
+
 test("a deployment binding no forge opens no change proposal and still parses", () => {
   assert.deepEqual(finalizerSettingsOf(complete).forges, []);
   assert.deepEqual(
