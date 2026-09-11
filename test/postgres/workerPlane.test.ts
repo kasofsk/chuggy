@@ -119,6 +119,74 @@ test("the worker role settles once and terminal authority is immediately fenced"
   );
 });
 
+/**
+ * A second task of the attempt's own request, which is what a ticket's request
+ * carries: the Work task the attempt runs and the Evaluation tasks that judge
+ * it. An attempt's authority is one row, so the kind it reads is the one keyed
+ * to its own task and never a sibling's.
+ */
+async function siblingTask(attempt: Awaited<ReturnType<typeof placedAttempt>>) {
+  await rig.harness.query(
+    `INSERT INTO execution_request_task (tenant,project,request,task,kind,stage)
+     SELECT e.tenant,e.project,e.source_request,e.task+9,'Evaluation',0
+       FROM execution e
+      WHERE e.tenant=$1 AND e.project=$2 AND e.execution=$3`,
+    [attempt.partition.tenant, attempt.partition.project, attempt.execution],
+  );
+}
+
+/** Every row the attempt boundary answers for one capability, kinds only. */
+async function attemptRead(attempt: Awaited<ReturnType<typeof placedAttempt>>) {
+  const rows = await rig.harness.query(
+    `SELECT task_kind FROM read_worker_attempt($1)`,
+    [
+      createHash("sha256")
+        .update(attempt.capability.secret, "utf8")
+        .digest("hex"),
+    ],
+  );
+  return rows.map((row) => row["task_kind"]);
+}
+
+/**
+ * The permission set a credential is minted with follows from the kind of task
+ * the scheduler recorded, so the plane has to learn it from the durable row
+ * rather than from anything the pod says about itself. The recorded kind is
+ * moved under the standing attempt and the authority is read twice, because one
+ * read against a Work attempt agrees with a function that answers a constant.
+ */
+test("the authority carries the task kind the scheduler recorded for the attempt", async () => {
+  const attempt = await placedAttempt("worker-task-kind");
+  const authority = postgresWorkerPlaneAuthority(workerPool);
+  await siblingTask(attempt);
+  assert.deepEqual(await attemptRead(attempt), ["Work"]);
+  const recorded = async (kind: string) =>
+    rig.harness.query(
+      `UPDATE execution_request_task t SET kind=$4,stage=0
+         FROM execution e
+        WHERE t.tenant=e.tenant AND t.project=e.project
+          AND t.request=e.source_request AND t.task=e.task
+          AND e.tenant=$1 AND e.project=$2 AND e.execution=$3`,
+      [
+        attempt.partition.tenant,
+        attempt.partition.project,
+        attempt.execution,
+        kind,
+      ],
+    );
+
+  assert.equal(
+    (await authority.authenticate(attempt.capability.secret))?.taskKind,
+    "Work",
+  );
+  await recorded("Evaluation");
+  assert.equal(
+    (await authority.authenticate(attempt.capability.secret))?.taskKind,
+    "Evaluation",
+  );
+  assert.deepEqual(await attemptRead(attempt), ["Evaluation"]);
+});
+
 test("the worker boundary retains a source handoff with its manifest", async () => {
   const attempt = await placedAttempt("worker-source");
   const target = await rig.harness.query(

@@ -61,6 +61,7 @@ import {
   kubernetesAttemptDigest,
   kubernetesContainerResources,
   kubernetesCredentials,
+  kubernetesMintedCredentialVolumes,
   kubernetesPodNamePrefix,
   kubernetesPositive,
   kubernetesReservedVariables,
@@ -431,12 +432,13 @@ function kubernetesWorkerContainer(
         mountPath: config.workspacePath,
         readOnly: false,
       },
+      kubernetesMintedCredentialVolumes().mount,
       ...credentials.mounts,
     ],
   };
 }
 
-/** Every volume the pod mounts: the bearer, the workspace, the sidecar's data and the credentials. */
+/** Every volume the pod mounts: the bearer, the workspace, the sidecar's data, the mint and the credentials. */
 function kubernetesWorkerVolumes(
   config: KubernetesWorkerLaunchConfig,
   placement: AttemptPlacement,
@@ -448,6 +450,7 @@ function kubernetesWorkerVolumes(
       name: "worker-workspace",
       emptyDir: { sizeLimit: config.resources.ephemeralStorageLimit },
     },
+    kubernetesMintedCredentialVolumes().volume,
     ...(config.database === undefined
       ? []
       : [

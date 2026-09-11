@@ -80,8 +80,8 @@ import {
 } from "../interpreter/finalizerSettings.ts";
 import {
   githubInstallationTokens,
-  githubInstallationTokensDefaults,
   githubInstallationTokensPrecondition,
+  githubInstallationTokensSettings,
   type GithubInstallationTokensOptions,
 } from "../adapters/forge/githubInstallationTokens.ts";
 import { githubRepositoryHost } from "../adapters/forge/githubAddress.ts";
@@ -335,25 +335,16 @@ function repositoryConfigurationSnapshots(
 /** What this deployment mints with, or nothing at all where it holds no app key. */
 export function forgeTokenOptions():
   GithubInstallationTokensOptions | undefined {
-  const appId = process.env[forgeAppIdVariable] ?? "";
-  const privateKeyPath = process.env[forgeAppKeyFileVariable] ?? "";
-  if (appId.length === 0 && privateKeyPath.length === 0) return undefined;
-  if (appId.length === 0 || privateKeyPath.length === 0)
-    throw new Error(
-      `${forgeAppIdVariable} and ${forgeAppKeyFileVariable} are named together or not at all`,
-    );
-  return {
-    fetch,
-    appId,
-    privateKeyPath,
-    apiUrl:
-      process.env[forgeApiUrlVariable] ??
-      githubInstallationTokensDefaults.apiUrl,
-    requestTimeoutMs: positiveEnvironment(
-      forgeTimeoutVariable,
-      githubInstallationTokensDefaults.requestTimeoutMs,
-    ),
-  };
+  return githubInstallationTokensSettings(
+    {
+      appId: forgeAppIdVariable,
+      appKeyFile: forgeAppKeyFileVariable,
+      apiUrl: forgeApiUrlVariable,
+      timeoutMs: forgeTimeoutVariable,
+    },
+    process.env,
+    positiveEnvironment,
+  );
 }
 
 /** Refuses to start on a key this process could not sign with, leaving no pool open behind it. */

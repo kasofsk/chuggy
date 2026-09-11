@@ -1,3 +1,16 @@
+/**
+ * What the worker plane's PostgreSQL adapter sends, and what the schema it
+ * sends it to permits: the statement each boundary is reached by, the
+ * parameters bound to it, and the privileges the migrations grant the plane's
+ * own role.
+ *
+ * THE TEXT ASSERTIONS READ THE DEFINITION THE SCHEMA RUNS, not the migration
+ * that introduced it. A boundary dropped and created again by a later migration
+ * is a different body under the same name, so reading the introduction would
+ * guard something no server holds; `currentDefinition` is what keeps these
+ * pointed at the live one.
+ */
+
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -17,8 +30,29 @@ import {
 import { migration028 } from "../../src/adapters/postgres/schema/migrations/028-worker-plane-authority.ts";
 import { migration037 } from "../../src/adapters/postgres/schema/migrations/037-evaluation-work-reports.ts";
 import { migration049 } from "../../src/adapters/postgres/schema/migrations/049-run-evidence.ts";
+import { migrations } from "../../src/adapters/postgres/schema/migrations/index.ts";
 import { workerPlaneRole } from "../../src/adapters/postgres/schema.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+
+/**
+ * The definition the schema ends up running, which is the last creation of it
+ * in the chain rather than the one that introduced it. A later migration that
+ * only overloads a boundary is that boundary's current definition too, and the
+ * fence it delegates to is read from the creation that carries it.
+ */
+function currentDefinition(name: string): string {
+  const created = migrations.flatMap((migration) =>
+    migration.statements.filter((statement) =>
+      statement.includes(`CREATE FUNCTION ${name}`),
+    ),
+  );
+  const latest = created.at(-1);
+  if (latest === undefined)
+    throw new Error(
+      `no migration creates ${name}, so there is nothing to read`,
+    );
+  return latest;
+}
 
 const attempt = {
   partition: { tenant: asTenantId("tenant"), project: asProjectId("project") },
@@ -69,29 +103,27 @@ test("the report summary boundary grants no table authority to the worker role",
 });
 
 test("every worker boundary fences against the latest recovery epoch", () => {
-  const boundaries = migration028.statements.filter(
-    (statement) =>
-      statement.startsWith("CREATE FUNCTION") &&
-      /(?:read_worker_attempt|lose_worker_attempt|submit_worker_result)/u.test(
-        statement,
-      ),
+  const fence =
+    /SELECT epoch FROM recovery_epoch\s+ORDER BY ordinal DESC LIMIT 1/u;
+  for (const name of ["read_worker_attempt", "lose_worker_attempt"])
+    assert.match(currentDefinition(name), fence);
+  assert.match(
+    currentDefinition("submit_worker_result"),
+    /INTO submitted FROM submit_worker_result\(/u,
   );
-  assert.equal(boundaries.length, 3);
-  for (const boundary of boundaries)
-    assert.match(
-      boundary,
-      /SELECT epoch FROM recovery_epoch\s+ORDER BY ordinal DESC LIMIT 1/u,
-    );
+  assert.match(
+    migration028.statements.find((statement) =>
+      statement.includes("CREATE FUNCTION submit_worker_result"),
+    ) ?? "",
+    fence,
+  );
 });
 
 test("terminal attempts authenticate only as non-live report authority", () => {
-  const boundary = migration028.statements.find((statement) =>
-    statement.includes("CREATE FUNCTION read_worker_attempt"),
-  );
-  assert.notEqual(boundary, undefined);
-  assert.match(boundary ?? "", /a\.state IN \('Placing','Running'\)/u);
-  assert.match(boundary ?? "", /e\.status IN \('Launching','Running'\)/u);
-  assert.match(boundary ?? "", /a\.state='Reported' AND e\.status='Terminal'/u);
+  const boundary = currentDefinition("read_worker_attempt");
+  assert.match(boundary, /a\.state IN \('Placing','Running'\)/u);
+  assert.match(boundary, /e\.status IN \('Launching','Running'\)/u);
+  assert.match(boundary, /a\.state='Reported' AND e\.status='Terminal'/u);
 });
 
 test("result submission follows the scheduler completion lock order", () => {
@@ -294,7 +326,7 @@ test("run evidence grants the worker role four functions and no table", () => {
  * `cost_micros` and `duration_ms` are both `bigint` and both counts, so a swap
  * between them is type-clean: SafeQL under `check-queries` validates argument
  * types and cannot see it, and the durable suites would write and read the
- * swapped pair back unchanged. What refuses it is the position each value is
+ * swapped pair back unchanged; what refuses it is the position each value is
  * bound at, which is what this reads — off the parameter array the driver would
  * send, not off the source text.
  */

@@ -20,7 +20,7 @@
 
 import assert from "node:assert/strict";
 import { execFile, type ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -178,6 +178,52 @@ test("every prerequisite variable is refused by its own name", async () => {
     assert.equal(refused.code, 1, name);
     assert.match(refused.stderr, new RegExp(`${name} is required`, "u"), name);
   }
+});
+
+test("the credential route is composed and stands in front of the attempt authority", async () => {
+  const port = await freePort();
+  const child = planeProcess(planeEnvironment(port));
+  try {
+    await planeListening(port, child);
+    const answered = await fetch(
+      `http://127.0.0.1:${String(port)}/v1/credential`,
+      { method: "POST" },
+    );
+    assert.equal(answered.status, 401);
+    assert.deepEqual(await answered.json(), { action: "stop" });
+  } finally {
+    child.kill("SIGKILL");
+  }
+});
+
+test("an app id without its key, or a key without its id, refuses to start by name", async () => {
+  const port = await freePort();
+  for (const named of [
+    { CHUG_WORKER_PLANE_FORGE_APP_ID: "1234" },
+    { CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE: join(root, "absent.pem") },
+  ]) {
+    const refused = await planeRefusal({ ...planeEnvironment(port), ...named });
+    assert.equal(refused.code, 1, JSON.stringify(named));
+    assert.match(
+      refused.stderr,
+      /CHUG_WORKER_PLANE_FORGE_APP_ID and CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE are named together or not at all/u,
+    );
+  }
+});
+
+test("a key file the plane cannot mint with refuses to start rather than minting nothing", async () => {
+  const port = await freePort();
+  const unusable = join(root, "not-a-key.pem");
+  writeFileSync(unusable, "this is not a private key\n");
+
+  const refused = await planeRefusal({
+    ...planeEnvironment(port),
+    CHUG_WORKER_PLANE_FORGE_APP_ID: "1234",
+    CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE: unusable,
+  });
+
+  assert.equal(refused.code, 1);
+  assert.match(refused.stderr, /CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE:/u);
 });
 
 test("a session bound that is not a positive integer is refused by its own name", async () => {

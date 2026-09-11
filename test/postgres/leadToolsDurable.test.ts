@@ -489,9 +489,11 @@ test("the pod is answered the objectives its session was opened with", async () 
 /**
  * The two reads 061 opens or widens, beside every role that holds one. The
  * binding read was already the API's (021), the ticket service's (031) and the
- * configuration importer's (029), 061 adds the scheduler and 082 takes the
- * finalizer's (040) back with its caller, so the case names them all rather
- * than asserting a door has one holder it never had.
+ * configuration importer's (029), 061 adds the scheduler, 082 takes the
+ * finalizer's (040) back with its caller and 086 adds the worker plane, which
+ * holds a session to its project's own bindings before minting for the
+ * repository the session named — so the case names them all rather than
+ * asserting a door has one holder it never had.
  */
 const leadToolDoors: readonly {
   readonly door: string;
@@ -508,6 +510,7 @@ const leadToolDoors: readonly {
       ticketServiceRole,
       configurationImporterRole,
       schedulerRole,
+      workerPlaneRole,
     ],
   },
 ];
@@ -576,16 +579,29 @@ test("the scheduler's own credential can read a project's repository binding", a
   }
 });
 
-test("the worker plane's own credential cannot read a project's repository binding", async () => {
+/**
+ * The plane reads a binding to hold a session's named repository to what its
+ * project actually binds, and that read is all it holds: the table behind the
+ * function stays out of reach, so the plane can learn what a project binds and
+ * never which projects bind anything.
+ */
+test("the worker plane's own credential reads a binding through the function and nowhere else", async () => {
+  const partition = await leadToolsProject("plane-binding");
   const plane = postgresHarnessRolePool(workerPlaneRole);
   try {
-    await assert.rejects(
-      () =>
-        plane.query(
+    assert.deepEqual(
+      (
+        await plane.query(
           `SELECT repository FROM ${repositoryBindingReadFunction}($1,$2,NULL)`,
-          ["tenant", "project"],
-        ),
-      /permission denied for function read_project_repository_binding/u,
+          [partition.tenant, partition.project],
+        )
+      ).rows,
+      [],
+      "a project with no binding mints for no repository",
+    );
+    await assert.rejects(
+      () => plane.query("SELECT repository FROM project_repository"),
+      /permission denied for (table|relation) project_repository/u,
     );
   } finally {
     await plane.end();

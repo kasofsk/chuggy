@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   credentialScrub,
+  credentialScrubbing,
   credentialScrubCharsMin,
   endedEvidence,
   runEvidenceRecorder,
@@ -76,6 +77,17 @@ test("a value one character short of a credential is left alone", () => {
 test("a credential too short to be distinctive is not scrubbed", () => {
   const short = "a".repeat(credentialScrubCharsMin - 1);
   assert.equal(credentialScrub([short])(`x ${short} y`), `x ${short} y`);
+});
+
+test("a credential minted after the scrub was handed out is scrubbed by it", () => {
+  const { scrub, keepSecret } = credentialScrubbing([secret]);
+  const minted = "ghs_0123456789abcdefghijklmnopqrstuvwxyz";
+
+  assert.equal(scrub(`saw ${minted}`), `saw ${minted}`);
+  keepSecret(minted);
+
+  assert.equal(scrub(`saw ${minted}`), "saw [redacted credential]");
+  assert.equal(scrub(`saw ${secret}`), "saw [redacted credential]");
 });
 
 test("an oversized event keeps its type and position and loses its payload", () => {

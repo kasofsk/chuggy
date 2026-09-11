@@ -49,7 +49,7 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { workerRepository } from "./repository.mjs";
+import { workerRepository, workerRepositoryUrl } from "./repository.mjs";
 
 const executeFile = promisify(execFile);
 
@@ -111,11 +111,22 @@ async function discard(directory, log) {
  * remote and the environment to reach it with, or the reason this session
  * cannot reach it at all. Both arms are values, because both are things the
  * reader of a refused session has to be told.
+ *
+ * A MINTED CREDENTIAL NAMES NO CAPABILITY, so the grant check below is the
+ * mounted arm's alone: the plane decided this session may read this repository
+ * before it minted anything, and the attempt's credential roster is a statement
+ * about what its launcher mounted.
  */
-function sessionRemote(task, repositories, credentialFiles, reference) {
+function sessionRemote(task, repositories, credentialFiles, reference, minted) {
   let resolved;
   try {
-    resolved = workerRepository(repositories, credentialFiles, reference);
+    resolved =
+      minted === undefined
+        ? workerRepository(repositories, credentialFiles, reference)
+        : {
+            repository: workerRepositoryUrl(repositories, reference),
+            environment: minted,
+          };
   } catch (failure) {
     return {
       refused: `session checkout cannot resolve ${reference}: ${
@@ -123,7 +134,10 @@ function sessionRemote(task, repositories, credentialFiles, reference) {
       }`,
     };
   }
-  if (!task.authority.credentials.includes(resolved.credential))
+  if (
+    resolved.credential !== undefined &&
+    !task.authority.credentials.includes(resolved.credential)
+  )
     return {
       refused: `session checkout ${reference} needs ${resolved.credential}, which this session's authority does not grant`,
     };
@@ -137,6 +151,8 @@ function sessionRemote(task, repositories, credentialFiles, reference) {
  *
  * `run` and `log` are seams so a suite can drive a real clone and still say
  * where its output went; the defaults are `git` itself and the pod's stderr.
+ * `minted` is the askpass environment the plane's credential was written into,
+ * where the plane minted one; without it the site's mounted map is what answers.
  */
 export async function sessionCheckout(
   task,
@@ -149,10 +165,17 @@ export async function sessionCheckout(
     run = git,
     log = (text) => process.stderr.write(text),
     scrub = (text) => text,
+    minted,
   } = services;
   if (task.repository === undefined) return undefined;
   const reference = task.repository.reference;
-  const remote = sessionRemote(task, repositories, credentialFiles, reference);
+  const remote = sessionRemote(
+    task,
+    repositories,
+    credentialFiles,
+    reference,
+    minted,
+  );
   if (remote.refused !== undefined) return { refused: scrub(remote.refused) };
   const { repository, environment } = remote;
   const directory = join(workspace, sessionCheckoutDirectory);

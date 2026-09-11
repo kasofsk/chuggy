@@ -6,6 +6,7 @@ import type {
   AttemptSubmission,
   ReportIngested,
 } from "./executionSchedulerReport.ts";
+import type { ExecutionTaskKind } from "./executionRequirement.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
 
 /** The bounded metadata of one immutable reference pinned by an attempt's input bundle. */
@@ -19,6 +20,8 @@ export interface WorkerInputReference {
 /** Authority recovered only from a live attempt's bearer. */
 export interface WorkerAttemptAuthority extends FencedAttempt {
   readonly live: boolean;
+  /** What the scheduler recorded this attempt as doing, which no pod may claim for itself. */
+  readonly taskKind: ExecutionTaskKind;
   readonly manifest: ResultManifestId;
   readonly inputBundle: string;
   readonly inputBundleDigest: string;

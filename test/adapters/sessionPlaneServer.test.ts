@@ -45,6 +45,7 @@ import {
 } from "../../src/interpreter/agentSession.ts";
 import type { SessionPlaneIdentity } from "../../src/interpreter/sessionPlane.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
 import { inertWorkerPlane } from "./workerPlaneFixtures.ts";
 
 /** One bearer in the session language, which is the only token these routes read. */
@@ -125,6 +126,7 @@ const sessionCalls = [
   ["PUT", "/v1/session/store/1a2b/1", Buffer.from("{}\n"), octets],
   ["GET", "/v1/session/store/1a2b", undefined, {}],
   ["GET", "/v1/session/store", undefined, {}],
+  ["POST", "/v1/session/credential", { repository: "github.com/a/b" }, {}],
 ] as const;
 
 test("a session pod is told what its own session is, and nothing it has not got", async () => {
@@ -1334,6 +1336,129 @@ test("a plane composed with no session plane serves no session route at all", as
       "/v1/session/held",
       "/v1/session/store",
       "/v1/session/store/*",
+      "/v1/session/credential",
     ],
   );
+});
+
+/**
+ * The session's credential route. It is the one session route that names
+ * something, so what it names is checked here: the plane is handed the caller's
+ * own partition and never the pod's word for it, and a body that is not one
+ * repository reaches no minting.
+ */
+const sessionCredential = {
+  username: "x-access-token",
+  password: "ghs_0123456789abcdefghij",
+  expiresAtMs: 1_700_000_000_000,
+};
+
+function credentialPlane(
+  minted: WorkerPlaneCredentialMinted | undefined,
+  asked: unknown[] = [],
+) {
+  return createWorkerPlaneApp({
+    ...inertAttempt,
+    sessions: inertSessions,
+    ...(minted === undefined
+      ? {}
+      : {
+          credentials: {
+            attempt: () => Promise.resolve({ minted: "NotFound" } as const),
+            session: (partition: unknown, repository: unknown) => {
+              asked.push({ partition, repository });
+              return Promise.resolve(minted);
+            },
+          },
+        }),
+  });
+}
+
+test("a session's credential is minted under its own partition, for the name it gave", async () => {
+  const asked: unknown[] = [];
+  const app = credentialPlane(
+    {
+      minted: "Credential",
+      value: sessionCredential as never,
+    },
+    asked,
+  );
+
+  const answered = await app.inject({
+    method: "POST",
+    url: "/v1/session/credential",
+    headers: held,
+    payload: { repository: "git.vteng.io/mirror/chuggy" },
+  });
+
+  assert.equal(answered.statusCode, 200);
+  assert.deepEqual(answered.json(), sessionCredential);
+  assert.deepEqual(asked, [
+    { partition: identity.partition, repository: "git.vteng.io/mirror/chuggy" },
+  ]);
+  await app.close();
+});
+
+test("a body that does not name exactly one repository reaches no minting", async () => {
+  const asked: unknown[] = [];
+  const app = credentialPlane({ minted: "NotFound" }, asked);
+
+  for (const payload of [
+    {},
+    { repository: "" },
+    { repository: 1 },
+    { repository: "a", permissions: "write" },
+    { repository: "r".repeat(4_096) },
+  ]) {
+    const refused = await app.inject({
+      method: "POST",
+      url: "/v1/session/credential",
+      headers: held,
+      payload,
+    });
+    assert.equal(refused.statusCode, 400, JSON.stringify(payload));
+    assert.deepEqual(refused.json(), { action: "stop" });
+  }
+  assert.deepEqual(asked, [], "an unchecked body reached the minting");
+  await app.close();
+});
+
+test("a session naming a repository nothing is minted for keeps its mounted credential", async () => {
+  const notMinted = credentialPlane({ minted: "NotFound" });
+  const refused = await notMinted.inject({
+    method: "POST",
+    url: "/v1/session/credential",
+    headers: held,
+    payload: { repository: "github.com/kasofsk/chuggy" },
+  });
+  assert.equal(refused.statusCode, 404);
+  assert.deepEqual(refused.json(), { reason: "NotMinted" });
+  await notMinted.close();
+
+  const unconfigured = credentialPlane(undefined);
+  const absent = await unconfigured.inject({
+    method: "POST",
+    url: "/v1/session/credential",
+    headers: held,
+    payload: { repository: "github.com/kasofsk/chuggy" },
+  });
+  assert.equal(absent.statusCode, 404);
+  assert.deepEqual(absent.json(), { reason: "ForgeNotConfigured" });
+  await unconfigured.close();
+});
+
+test("a minting that could not be reached tells the session to wait rather than fall back", async () => {
+  const app = credentialPlane({ minted: "Unavailable" });
+
+  const waiting = await app.inject({
+    method: "POST",
+    url: "/v1/session/credential",
+    headers: held,
+    payload: { repository: "github.com/kasofsk/chuggy" },
+  });
+
+  assert.equal(waiting.statusCode, 503);
+  assert.deepEqual(waiting.json(), { action: "retry" });
+  assert.equal(waiting.headers["retry-after"], "1");
+  await app.close();
 });
