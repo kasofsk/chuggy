@@ -218,5 +218,7 @@ test("choosing a repository binds it by address under an idempotency key", async
   const bind = sent.find((one) => one.method === "POST");
   expect(bind?.body).toStrictEqual({ repository: freeUrl });
   expect(bind?.key).toBeTruthy();
-  expect(within(screen.getByRole("dialog")).getByText("Deferring")).toBeTruthy();
+  expect(
+    within(screen.getByRole("dialog")).getByText("Deferring"),
+  ).toBeTruthy();
 });

@@ -59,7 +59,9 @@ function ForgeSetupClaim(props: {
       });
     })();
   }, [ports, navigate, transaction, installationId]);
-  return <Notice tone="info" inline role="status" detail={forgeSetupClaiming} />;
+  return (
+    <Notice tone="info" inline role="status" detail={forgeSetupClaiming} />
+  );
 }
 
 function ForgeSetupAnswer(props: {

@@ -154,7 +154,11 @@ test("a title is sent where one is typed, and omitted where the field is blank",
   if (titled.assembled !== "Body") return;
   expect(titled.body.brief.title).toBe("Ship it");
 
-  const untitled = creationBodyFrom(creationInitialization, creationForm(), noBindings);
+  const untitled = creationBodyFrom(
+    creationInitialization,
+    creationForm(),
+    noBindings,
+  );
   expect(untitled.assembled).toBe("Body");
   if (untitled.assembled !== "Body") return;
   expect("title" in untitled.body.brief).toBe(false);
@@ -167,7 +171,11 @@ test("a title the wire will not take names the field a reader has to revisit", (
 });
 
 test("the fence the initialization stated is what the body carries", () => {
-  const assembled = creationBodyFrom(creationInitialization, creationForm(), noBindings);
+  const assembled = creationBodyFrom(
+    creationInitialization,
+    creationForm(),
+    noBindings,
+  );
   expect(assembled.assembled).toBe("Body");
   if (assembled.assembled !== "Body") return;
   expect(assembled.body.expectedProjectSequence).toBe(41);
@@ -181,7 +189,11 @@ test("a branch is a name here and a full reference on the wire", () => {
     ref: "refs/heads/topic/one",
   });
   expect(creationBranchOf("  ")).toStrictEqual({ named: "None" });
-  const assembled = creationBodyFrom(creationInitialization, creationForm(), noBindings);
+  const assembled = creationBodyFrom(
+    creationInitialization,
+    creationForm(),
+    noBindings,
+  );
   expect(assembled.assembled).toBe("Body");
   if (assembled.assembled !== "Body") return;
   expect("branch" in assembled.body.brief).toBe(false);

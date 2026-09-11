@@ -103,9 +103,7 @@ test("the configuration is walked for, newest first, until one is ready", async 
   });
   const read = await readCreationContext(held.ports, creationPartition);
   expect(read.outcome === "Ok" && read.value.context).toBe("Ready");
-  expect(held.calls).toContain(
-    `GET ${partitionBase}/draft-initializations/r3`,
-  );
+  expect(held.calls).toContain(`GET ${partitionBase}/draft-initializations/r3`);
   expect(held.calls.at(-1)).toBe(`GET ${partitionBase}/repositories`);
 });
 

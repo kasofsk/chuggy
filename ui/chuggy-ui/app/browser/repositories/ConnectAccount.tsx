@@ -80,7 +80,12 @@ export function ConnectAccount(props: {
 }): ReactNode {
   const [open, setOpen] = useState(false);
   return (
-    <Dialog title="Connect" trigger="Connect" open={open} onOpenChange={setOpen}>
+    <Dialog
+      title="Connect"
+      trigger="Connect"
+      open={open}
+      onOpenChange={setOpen}
+    >
       <ConnectAppLinks
         partition={props.partition}
         returnPath={props.returnPath}

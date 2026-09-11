@@ -92,17 +92,13 @@ function RepositoryChoiceRow(props: {
       >
         {choice.repository.fullName}
       </Button>
-      {choice.bound ? (
-        <span className="text-sm text-ink-3">Bound</span>
-      ) : null}
+      {choice.bound ? <span className="text-sm text-ink-3">Bound</span> : null}
     </li>
   );
 }
 
 /** One bind, from the identity it spends to the line it leaves behind. */
-function useRepositoryBind(
-  partition: PartitionIdentity,
-): {
+function useRepositoryBind(partition: PartitionIdentity): {
   readonly status: string | undefined;
   readonly busy: boolean;
   readonly bind: (choice: RepositoryChoice) => void;

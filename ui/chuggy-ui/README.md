@@ -133,9 +133,10 @@ publishes an endpoint for it.
 ## Connecting a forge account
 
 The console mints the install state, not the api. Before following an App's
-install link it draws 32 random bytes, stores the transaction — the state, the
-App, the tenant, the project and where the person was — in `sessionStorage`
-under one key, and appends the state to the link. The forge sends the person
+install link it draws one, the way the authorization state above is drawn,
+stores the transaction — the state, the App, the tenant, the project and where
+the person was — in `sessionStorage` under one key, and appends the state to
+the link. The forge sends the person
 back to `/forge/github/setup`, which takes that transaction once and claims the
 installation only when the state it was sent matches. An identity alone claims
 nothing, so a landing reached without a matching transaction says "Not

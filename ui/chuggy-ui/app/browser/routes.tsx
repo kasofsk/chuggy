@@ -150,8 +150,9 @@ const forgeSetupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/forge/github/setup",
   component: ForgeSetupPage,
-  validateSearch: (search: Readonly<Record<string, unknown>>): ForgeSetupQuery =>
-    forgeSetupQueryOf(search),
+  validateSearch: (
+    search: Readonly<Record<string, unknown>>,
+  ): ForgeSetupQuery => forgeSetupQueryOf(search),
 });
 
 const threadsRoute = createRoute({

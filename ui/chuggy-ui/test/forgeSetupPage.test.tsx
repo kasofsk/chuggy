@@ -69,7 +69,10 @@ beforeEach(() => {
     state: "a-state",
   };
   held.went.length = 0;
-  sessionStorage.setItem(forgeInstallTransactionKey, JSON.stringify(transaction));
+  sessionStorage.setItem(
+    forgeInstallTransactionKey,
+    JSON.stringify(transaction),
+  );
 });
 
 afterEach(() => {

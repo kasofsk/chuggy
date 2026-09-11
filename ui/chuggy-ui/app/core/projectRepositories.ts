@@ -50,8 +50,6 @@ export type RepositoryBindOutcome =
   | { readonly outcome: "Refused"; readonly status: string };
 
 /**
- * What one bind came to, in the one line the picker draws under itself.
- *
  * WHETHER IT WAS ALREADY BOUND IS THE CONSOLE'S OWN READING. The route answers
  * `201` for a new binding and `200` for one that already stood, and
  * `src/contract/outcomes.ts` classifies both as `Ok` without the status, so the
@@ -70,7 +68,9 @@ export function repositoryBindOutcome(
       return {
         outcome: "Refused",
         status:
-          result.code === "RepositoryNotInstalled" ? "Not installed" : "Refused",
+          result.code === "RepositoryNotInstalled"
+            ? "Not installed"
+            : "Refused",
       };
     case "Conflict":
       return {

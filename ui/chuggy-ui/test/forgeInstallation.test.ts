@@ -25,21 +25,7 @@ import {
   forgePortalInstallations,
 } from "../app/core/forgeInstallation.ts";
 import type { ForgeInstallTransaction } from "../app/core/forgeInstallation.ts";
-import type { KeyValuePort } from "../app/core/sessionHolder.ts";
-
-function store(): KeyValuePort & { readonly held: Map<string, string> } {
-  const held = new Map<string, string>();
-  return {
-    held,
-    read: (key) => held.get(key) ?? null,
-    write: (key, value) => {
-      held.set(key, value);
-    },
-    remove: (key) => {
-      held.delete(key);
-    },
-  };
-}
+import { keyValueDouble } from "./keyValueDouble.ts";
 
 const transaction: ForgeInstallTransaction = {
   state: "a-state",
@@ -75,14 +61,14 @@ test("the state is drawn from the bytes it is asked for", () => {
 });
 
 test("a stored transaction is read once and is gone the second time", () => {
-  const held = store();
+  const held = keyValueDouble();
   forgeInstallBegin(held, transaction);
   expect(forgeInstallTake(held)).toStrictEqual(transaction);
   expect(forgeInstallTake(held)).toBeUndefined();
 });
 
 test("a transaction that is not one is read as none", () => {
-  const held = store();
+  const held = keyValueDouble();
   held.write(forgeInstallTransactionKey, "{");
   expect(forgeInstallTake(held)).toBeUndefined();
   held.write(forgeInstallTransactionKey, JSON.stringify({ state: "a" }));

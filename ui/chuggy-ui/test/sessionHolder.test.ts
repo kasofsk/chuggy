@@ -15,11 +15,10 @@ import {
   sessionRefreshTokenKey,
   sessionTransactionKey,
 } from "../app/core/sessionHolder.ts";
-import type {
-  KeyValuePort,
-  SessionHolderPorts,
-} from "../app/core/sessionHolder.ts";
+import type { SessionHolderPorts } from "../app/core/sessionHolder.ts";
 import type { FormRequest } from "../app/core/authorization.ts";
+import { keyValueDouble } from "./keyValueDouble.ts";
+import type { HeldStore } from "./keyValueDouble.ts";
 
 const configuration = {
   issuer: "https://auth.example/",
@@ -36,24 +35,10 @@ const discovery = {
   revocation_endpoint: "https://auth.example/oauth2/revoke",
 };
 
-function store(): KeyValuePort & { readonly held: Map<string, string> } {
-  const held = new Map<string, string>();
-  return {
-    held,
-    read: (key) => held.get(key) ?? null,
-    write: (key, value) => {
-      held.set(key, value);
-    },
-    remove: (key) => {
-      held.delete(key);
-    },
-  };
-}
-
 interface Harness {
   readonly ports: SessionHolderPorts;
-  readonly persistent: ReturnType<typeof store>;
-  readonly transient: ReturnType<typeof store>;
+  readonly persistent: HeldStore;
+  readonly transient: HeldStore;
   readonly asked: (FormRequest | string)[];
   readonly redirects: string[];
   answer: (request: FormRequest | string) => unknown;
@@ -61,8 +46,8 @@ interface Harness {
 }
 
 function harness(): Harness {
-  const persistent = store();
-  const transient = store();
+  const persistent = keyValueDouble();
+  const transient = keyValueDouble();
   const asked: (FormRequest | string)[] = [];
   const redirects: string[] = [];
   const held: Harness = {

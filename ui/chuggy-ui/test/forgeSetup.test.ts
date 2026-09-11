@@ -38,8 +38,12 @@ test("the forge's own parameter names are what is read", () => {
     action: "install",
     state: "a-state",
   });
-  expect(forgeSetupQueryOf({ setup_action: "elsewhere" }).action).toBeUndefined();
-  expect(forgeSetupQueryOf({ installation_id: "" }).installationId).toBeUndefined();
+  expect(
+    forgeSetupQueryOf({ setup_action: "elsewhere" }).action,
+  ).toBeUndefined();
+  expect(
+    forgeSetupQueryOf({ installation_id: "" }).installationId,
+  ).toBeUndefined();
 });
 
 test("a matching state claims the installation for the app that was installed", () => {
@@ -52,10 +56,8 @@ test("a matching state claims the installation for the app that was installed", 
 
 test("a state that does not match this tab claims nothing", () => {
   expect(
-    forgeSetupDecision(
-      { ...arrived, state: "someone-else" },
-      transaction,
-    ).decision,
+    forgeSetupDecision({ ...arrived, state: "someone-else" }, transaction)
+      .decision,
   ).toBe("Unexpected");
 });
 
@@ -82,10 +84,8 @@ test("an update claims and a request does not", () => {
 
 test("a matching state with no installation claims nothing", () => {
   expect(
-    forgeSetupDecision(
-      { ...arrived, installationId: undefined },
-      transaction,
-    ).decision,
+    forgeSetupDecision({ ...arrived, installationId: undefined }, transaction)
+      .decision,
   ).toBe("Unexpected");
 });
 
