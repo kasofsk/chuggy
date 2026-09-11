@@ -157,6 +157,52 @@ test("a tenant administrator reaches every project the tenant relation names", a
 });
 
 /**
+ * The tenant question the onboarding routes ask, proved against the same store
+ * rather than against the adapter's idea of it: a tenant's administrator claims
+ * an installation, and a project's administrator under that tenant does not
+ * become one by reaching the project.
+ */
+test("administering a tenant is the tenant's own relation and not a project's", async () => {
+  const partition = ketoHarnessPartition("tenant-administer");
+  const administrator = oidcPrincipal(ketoHarnessIssuer, "tenant-onboarder");
+  assert.equal(
+    await access.authorizeTenant(
+      administrator,
+      partition.tenant,
+      "AdministerTenant",
+    ),
+    undefined,
+    "a tenant answered before anything was granted on it",
+  );
+  const projectOnly = await granted(partition, "project-admin", "admins");
+  assert.equal(
+    await access.authorizeTenant(
+      projectOnly,
+      partition.tenant,
+      "AdministerTenant",
+    ),
+    undefined,
+    "administering one project answered for the tenant it is under",
+  );
+  await grants.write(
+    tenantPrincipalGrant({
+      issuer: ketoHarnessIssuer,
+      subject: "tenant-onboarder",
+      tenant: partition.tenant,
+      relation: "admins",
+    }),
+  );
+  assert.deepEqual(
+    await access.authorizeTenant(
+      administrator,
+      partition.tenant,
+      "AdministerTenant",
+    ),
+    memberAuthority(administrator),
+  );
+});
+
+/**
  * The object encoding is what keeps two partitions apart, and both halves are
  * arbitrary text that may carry any separator. A joined encoding would let one
  * tenant's project answer for another's.

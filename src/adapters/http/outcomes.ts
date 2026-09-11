@@ -79,7 +79,15 @@ import type {
 } from "../../interpreter/threadRead.ts";
 import { ProjectAccessUnavailable } from "../../interpreter/projectAccess.ts";
 import type { ForgeCredentialMinted } from "../../interpreter/forgeCredentials.ts";
-import type { Partition } from "../../interpreter/projectStore.ts";
+import type {
+  ForgeAppResult,
+  ForgeInstallationClaimResult,
+  ForgeInstallationsResult,
+  ForgeRepositoriesResult,
+  ProjectRepositoriesResult,
+  ProjectRepositoryBindResult,
+} from "../../interpreter/repositoryOnboarding.ts";
+import type { Partition, TenantId } from "../../interpreter/projectStore.ts";
 import type { DraftBrief } from "../../interpreter/ticketBrief.ts";
 import type { RepositoryConfigurationImportOutcome } from "../../interpreter/repositoryConfiguration.ts";
 import { nativeHttpError, nativeHttpMediaType } from "../../contract/http.ts";
@@ -774,6 +782,195 @@ export function forgeCredentialResponse(
     default:
       return assertNever(result);
   }
+}
+
+/** The path one tenant-scoped resource is addressed by, beside `resourcePath`'s. */
+function tenantResourcePath(
+  tenant: TenantId,
+  collection: string,
+  identity: string,
+): string {
+  return [
+    "/api/v1/tenants",
+    encodeURIComponent(tenant),
+    collection,
+    encodeURIComponent(identity),
+  ].join("/");
+}
+
+/** A resource that is not found, which every refused permit in this file answers with. */
+function notFound(): NativeHttpResponse {
+  return response(404, nativeHttpError("NotFound", "Resource not found."));
+}
+
+/**
+ * The app this deployment is. A deployment holding no app key has no app to
+ * describe rather than one it is hiding, so that is 404 and not a refusal; a
+ * forge that could not be reached is a wait.
+ */
+function forgeNotConfigured(): NativeHttpResponse {
+  return response(
+    404,
+    nativeHttpError(
+      "ForgeNotConfigured",
+      "This deployment names no forge app.",
+    ),
+  );
+}
+
+export function forgeAppResponse(result: ForgeAppResult): NativeHttpResponse {
+  switch (result.result) {
+    case "App":
+      return response(200, { app: result.app });
+    case "NotConfigured":
+      return forgeNotConfigured();
+    case "Unavailable":
+      return retry(503, authorityRetryAfterSeconds, "ForgeUnavailable");
+    default:
+      return assertNever(result);
+  }
+}
+
+/**
+ * A claim. The first one is created at its own address; a claim of the same
+ * installation replays as it stands; an account another tenant holds is a
+ * conflict, because the claim exists and is not this caller's to move.
+ */
+export function forgeInstallationClaimResponse(
+  tenant: TenantId,
+  result: ForgeInstallationClaimResult,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "Claimed":
+      return response(201, result.installation, {
+        location: tenantResourcePath(
+          tenant,
+          "forge-installations",
+          result.installation.installationId,
+        ),
+      });
+    case "AlreadyClaimed":
+      return response(200, result.installation);
+    case "ClaimedElsewhere":
+      return response(
+        409,
+        nativeHttpError(
+          "InstallationClaimed",
+          "The installation is claimed by another tenant.",
+        ),
+      );
+    case "InstallationUnknown":
+      return response(
+        404,
+        nativeHttpError(
+          "InstallationUnknown",
+          "The installation is not one of this app's.",
+        ),
+      );
+    case "NotConfigured":
+      return forgeNotConfigured();
+    case "NotFound":
+      return notFound();
+    case "Unavailable":
+      return retry(503, authorityRetryAfterSeconds, "ForgeUnavailable");
+    default:
+      return assertNever(result);
+  }
+}
+
+/** Every installation one tenant holds. */
+export function forgeInstallationsResponse(
+  result: ForgeInstallationsResult,
+): NativeHttpResponse {
+  return result.result === "Installations"
+    ? response(200, { installations: result.installations })
+    : notFound();
+}
+
+/** What one installation grants, and whether the listing is all of it. */
+export function forgeRepositoriesResponse(
+  result: ForgeRepositoriesResult,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "Repositories":
+      return response(200, {
+        repositories: result.repositories,
+        truncated: result.truncated,
+      });
+    case "NotConfigured":
+      return forgeNotConfigured();
+    case "NotFound":
+      return notFound();
+    case "Unavailable":
+      return retry(503, authorityRetryAfterSeconds, "ForgeUnavailable");
+    default:
+      return assertNever(result);
+  }
+}
+
+/**
+ * A binding. A repository no claimed installation grants is refused as the
+ * request's own fault rather than as a missing resource, because the caller may
+ * see the project and the repository both; an epoch that moved under the
+ * request is a wait, because the same request will land once it is read again.
+ */
+export function projectRepositoryBindResponse(
+  partition: Partition,
+  result: ProjectRepositoryBindResult,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "Bound":
+      return response(
+        201,
+        { repository: result.repository },
+        {
+          location: resourcePath(partition, "repositories", result.repository),
+        },
+      );
+    case "AlreadyBound":
+      return response(200, { repository: result.repository });
+    case "NotInstalled":
+      return response(
+        422,
+        nativeHttpError(
+          "RepositoryNotInstalled",
+          "No claimed installation grants the repository.",
+        ),
+      );
+    case "OperationConflict":
+      return response(
+        409,
+        nativeHttpError(
+          "OperationConflict",
+          "The operation identity names a different request.",
+        ),
+      );
+    case "BoundElsewhere":
+      return response(
+        409,
+        nativeHttpError(
+          "RepositoryBound",
+          "The repository is bound to another project.",
+        ),
+      );
+    case "EpochChanged":
+      return retry(503, authorityRetryAfterSeconds, "RecoveryEpochChanged");
+    case "NotFound":
+      return notFound();
+    case "Unavailable":
+      return retry(503, authorityRetryAfterSeconds, "ForgeUnavailable");
+    default:
+      return assertNever(result);
+  }
+}
+
+/** Every repository one project binds, oldest first, which privileges none of them. */
+export function projectRepositoriesResponse(
+  result: ProjectRepositoriesResult,
+): NativeHttpResponse {
+  return result.result === "Repositories"
+    ? response(200, { repositories: result.repositories })
+    : notFound();
 }
 
 export function repositoryConfigurationImportResponse(

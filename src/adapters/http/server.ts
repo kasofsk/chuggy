@@ -18,7 +18,11 @@ import {
 } from "../../interpreter/executionScheduler.ts";
 import type { Principal } from "../../interpreter/nativeWeb.ts";
 import type { ExecutionListQuery } from "../../interpreter/operationsView.ts";
-import type { Partition } from "../../interpreter/projectStore.ts";
+import {
+  asTenantId,
+  type Partition,
+  type TenantId,
+} from "../../interpreter/projectStore.ts";
 import type { NativeWeb } from "../../interpreter/nativeWeb.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
 import {
@@ -35,6 +39,7 @@ import type {
 } from "../../interpreter/projectStream.ts";
 import type { SelectorProjectSettingsAdministration } from "../../interpreter/selectorProjectSettings.ts";
 import type { ForgeCredentialMinting } from "../../interpreter/forgeCredentials.ts";
+import type { RepositoryOnboarding } from "../../interpreter/repositoryOnboarding.ts";
 import { projectStreamSocket } from "./eventStream.ts";
 import { nativeHttpContractDocument } from "../../contract/document.ts";
 import {
@@ -61,6 +66,9 @@ import {
   parseTicketActivityCursor,
   parseConfigurationCreation,
   parseForgeCredentialRequest,
+  parseForgeInstallationClaim,
+  parseForgeInstallationId,
+  parseProjectRepositoryBind,
   parseRepositoryConfigurationImport,
   parseDraftCreation,
   parseDraftRevision,
@@ -86,7 +94,13 @@ import {
   draftRevisionResponse,
   draftsResponse,
   failureResponse,
+  forgeAppResponse,
   forgeCredentialResponse,
+  forgeInstallationClaimResponse,
+  forgeInstallationsResponse,
+  forgeRepositoriesResponse,
+  projectRepositoriesResponse,
+  projectRepositoryBindResponse,
   inventoryResponse,
   nativeActionsResponse,
   notificationsResponse,
@@ -883,6 +897,123 @@ function registerForgeCredentials(
   );
 }
 
+function tenantOf(request: FastifyRequest): TenantId {
+  return asTenantId(textField(record(request.params), "tenant"));
+}
+
+/**
+ * The app a tenant installs, the installations it has claimed, and what each of
+ * them grants. THE APP ROUTE IS AUTHENTICATED AND NOTHING ELSE: it says nothing
+ * about any tenant, so every bearer reads it, and it is not public because an
+ * unauthenticated route would make this deployment's forge rate limit spendable
+ * by anyone who can reach the port.
+ */
+function registerForgeInstallations(
+  app: FastifyInstance,
+  onboarding: RepositoryOnboarding,
+): void {
+  app.get("/api/v1/forge/github", async (_request, reply) => {
+    send(reply, forgeAppResponse(await onboarding.forgeApp()));
+  });
+  app.post(
+    "/api/v1/tenants/:tenant/forge-installations",
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const tenant = tenantOf(request);
+      send(
+        reply,
+        forgeInstallationClaimResponse(
+          tenant,
+          await onboarding.claimInstallation(
+            principalOf(request),
+            tenant,
+            parseForgeInstallationClaim(request.body),
+          ),
+        ),
+      );
+    },
+  );
+  app.get(
+    "/api/v1/tenants/:tenant/forge-installations",
+    async (request, reply) => {
+      send(
+        reply,
+        forgeInstallationsResponse(
+          await onboarding.installations(
+            principalOf(request),
+            tenantOf(request),
+          ),
+        ),
+      );
+    },
+  );
+  app.get(
+    "/api/v1/tenants/:tenant/forge-installations/:installationId/repositories",
+    async (request, reply) => {
+      send(
+        reply,
+        forgeRepositoriesResponse(
+          await onboarding.installationRepositories(
+            principalOf(request),
+            tenantOf(request),
+            parseForgeInstallationId(
+              textField(record(request.params), "installationId"),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/**
+ * What a project binds, and what it has bound already.
+ *
+ * THE IDENTITY OF A BIND IS THE HEADER'S, as it is for every other write that
+ * spends one: a body carrying its own would let two requests differ in what
+ * they bind while agreeing on what they are.
+ */
+function registerProjectRepositories(
+  app: FastifyInstance,
+  onboarding: RepositoryOnboarding,
+): void {
+  app.post(
+    "/api/v1/tenants/:tenant/projects/:project/repositories",
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const partition = partitionOf(request);
+      const key = request.headers["idempotency-key"];
+      if (typeof key !== "string")
+        throw new TypeError("idempotency key is absent");
+      send(
+        reply,
+        projectRepositoryBindResponse(
+          partition,
+          await onboarding.bindRepository(
+            principalOf(request),
+            partition,
+            parseProjectRepositoryBind(request.body, key),
+          ),
+        ),
+      );
+    },
+  );
+  app.get(
+    "/api/v1/tenants/:tenant/projects/:project/repositories",
+    async (request, reply) => {
+      send(
+        reply,
+        projectRepositoriesResponse(
+          await onboarding.projectRepositories(
+            principalOf(request),
+            partitionOf(request),
+          ),
+        ),
+      );
+    },
+  );
+}
+
 /** The executions read's own parameters: its cursor, its size and what it narrows to. */
 function executionListQuery(
   value: unknown,
@@ -1482,6 +1613,7 @@ export function createNativeHttpApp(
   hub?: ProjectStreamHub,
   selectorSettings?: SelectorProjectSettingsAdministration,
   forgeCredentials?: ForgeCredentialMinting,
+  onboarding?: RepositoryOnboarding,
 ): FastifyInstance {
   const app = fastify({
     bodyLimit: nativeHttpBodyBytesMax,
@@ -1516,6 +1648,10 @@ export function createNativeHttpApp(
     registerSelectorSettings(app, selectorSettings);
   if (forgeCredentials !== undefined)
     registerForgeCredentials(app, forgeCredentials);
+  if (onboarding !== undefined) {
+    registerForgeInstallations(app, onboarding);
+    registerProjectRepositories(app, onboarding);
+  }
   registerOperations(app, web);
   registerNotifications(app, web);
   if (hub !== undefined) registerProjectEvents(app, web, hub);

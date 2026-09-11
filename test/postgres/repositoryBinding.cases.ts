@@ -5,7 +5,10 @@ import { setTimeout } from "node:timers/promises";
 import type pg from "pg";
 
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
-import { postgresRepositoryBinding } from "../../src/adapters/postgres/repositoryBinding.ts";
+import {
+  postgresProjectRepositoryBindings,
+  postgresRepositoryBinding,
+} from "../../src/adapters/postgres/repositoryBinding.ts";
 import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
 import { checkedRepositoryBindingCommand } from "../../src/interpreter/repositoryBinding.ts";
 import {
@@ -19,7 +22,9 @@ import {
   type Partition,
   type RecoveryEpoch,
 } from "../../src/interpreter/projectStore.ts";
+import { apiRole } from "../../src/adapters/postgres/schema/shared.ts";
 import {
+  postgresHarnessDenial,
   postgresHarnessEpoch,
   postgresHarnessOpen,
   postgresHarnessProject,
@@ -496,4 +501,60 @@ test("a bind for a different repository under the same operation waits for the f
   assert.deepEqual(await fixtureRepositories(standing), [
     holderCommand.repository,
   ]);
+});
+
+/**
+ * The listing 085 added, which is the read a project's own members are answered
+ * from and which is a door rather than a grant, so the cases assert that the
+ * relation behind it still refuses the same role. THE ORDER IS THE ELECTION:
+ * `read_project_repository_binding` picks the oldest binding when a caller
+ * names no repository, so a listing in another order would put a different
+ * repository at the head than the one every such caller works against.
+ */
+test("the listing answers one project's bindings, oldest first", async () => {
+  const standing = await fixtureStanding("binding-listing");
+  const first = fixtureCommand(
+    standing,
+    `repository-listing-b-${randomUUID()}`,
+  );
+  const second = fixtureCommand(
+    standing,
+    `repository-listing-a-${randomUUID()}`,
+  );
+  const administration = postgresRepositoryBinding(pool);
+  assert.equal(await administration.bind(first), "Bound");
+  assert.equal(await administration.bind(second), "Bound");
+  const elsewhere = await fixture("binding-listing-elsewhere");
+  const listed = await postgresProjectRepositoryBindings(pool).bindings(
+    standing.partition,
+  );
+  assert.deepEqual(
+    listed.map((bound) => String(bound.repository)),
+    [first.repository, second.repository],
+  );
+  assert.equal(
+    listed.every((bound) => bound.boundAt.length > 0),
+    true,
+  );
+  assert.equal(
+    listed.some((bound) => String(bound.repository) === elsewhere.repository),
+    false,
+  );
+});
+
+test("the API reads a project's bindings through the door and not the relation", async () => {
+  const standing = await fixtureStanding("binding-listing-privilege");
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      `SELECT repository FROM list_project_repository_bindings(
+         '${standing.partition.tenant}','${standing.partition.project}',NULL)`,
+    ),
+    undefined,
+  );
+  assert.match(
+    (await harness.attemptAs(apiRole, "SELECT * FROM project_repository")) ??
+      "",
+    postgresHarnessDenial("project_repository"),
+  );
 });

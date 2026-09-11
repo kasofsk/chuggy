@@ -92,6 +92,7 @@ function fixtureAccess(
         answer === "Authorized" ? memberAuthority(fixturePrincipal) : undefined,
       );
     },
+    authorizeTenant: () => Promise.resolve(undefined),
   };
 }
 

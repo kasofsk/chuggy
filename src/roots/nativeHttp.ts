@@ -38,6 +38,7 @@ import { postgresSessionBearerAuthority } from "../adapters/postgres/sessionPlan
 import {
   composeForgeCredentialMinting,
   composeNativeWeb,
+  composeRepositoryOnboarding,
   composeSelectorProjectSettings,
 } from "../compose.ts";
 import type { IdempotencyKeying } from "../adapters/postgres/keying.ts";
@@ -86,6 +87,16 @@ import {
 } from "../adapters/forge/githubInstallationTokens.ts";
 import { githubRepositoryHost } from "../adapters/forge/githubAddress.ts";
 import {
+  githubApps,
+  githubInstallationDirectory,
+} from "../adapters/forge/githubApp.ts";
+import {
+  githubInstallationRepositories,
+  githubInstallationRepositoriesDefaults,
+} from "../adapters/forge/githubInstallationRepositories.ts";
+import type { RepositoryOnboarding } from "../interpreter/repositoryOnboarding.ts";
+import { forgeRepositoriesAnsweredMax } from "../contract/http.ts";
+import {
   mintedRepositoryCredentials,
   mintedRepositoryTokens,
 } from "../adapters/forge/mintedCredentials.ts";
@@ -95,6 +106,7 @@ import {
   type ForgeCredentialMinting,
   type MintedCredentialHost,
 } from "../interpreter/forgeCredentials.ts";
+import type { RepositoryCredentialPort } from "../interpreter/finalizer.ts";
 import { githubForgeId } from "../interpreter/forgeInstallation.ts";
 import type { ProjectAccess } from "../interpreter/projectAccess.ts";
 
@@ -127,6 +139,7 @@ const forgeAppIdVariable = "CHUG_API_FORGE_APP_ID";
 const forgeAppKeyFileVariable = "CHUG_API_FORGE_APP_KEY_FILE";
 const forgeApiUrlVariable = "CHUG_API_FORGE_API_URL";
 const forgeTimeoutVariable = "CHUG_API_FORGE_TIMEOUT_MS";
+const forgeRepositoriesMaxVariable = "CHUG_API_FORGE_REPOSITORIES_MAX";
 
 /** The app this process holds the key of, the other being the fabric's. */
 const forgeApp = "portal";
@@ -299,8 +312,28 @@ function nativePools(): NativePools {
   };
 }
 
-function repositoryConfigurationSnapshots(
+/**
+ * Where a repository's credential comes from in this process: the minting
+ * source for a host that has one, and the mounted files for every other. The
+ * onboarding routes prove a binding against it and the configuration importer
+ * clones with it, so a repository one of them can reach is one the other can.
+ */
+function nativeRepositoryCredentials(
   minted: readonly MintedCredentialHost[],
+): RepositoryCredentialPort {
+  const encoded = process.env[repositoryCredentialSourcesVariable];
+  const sources =
+    encoded === undefined || encoded.length === 0
+      ? []
+      : repositoryCredentialFilesOf(
+          encoded,
+          repositoryCredentialSourcesVariable,
+        );
+  return repositoryCredentialsByHost(minted, credentialFiles({ sources }));
+}
+
+function repositoryConfigurationSnapshots(
+  credentials: RepositoryCredentialPort,
 ) {
   const scratchDirectory = process.env[gitScratchRootVariable];
   if (scratchDirectory === undefined || scratchDirectory.length === 0)
@@ -310,14 +343,6 @@ function repositoryConfigurationSnapshots(
       .filter((name) => process.env[name] !== undefined)
       .map((name) => [name, process.env[name]]),
   );
-  const encodedSources = process.env[repositoryCredentialSourcesVariable];
-  const sources =
-    encodedSources === undefined || encodedSources.length === 0
-      ? []
-      : repositoryCredentialFilesOf(
-          encodedSources,
-          repositoryCredentialSourcesVariable,
-        );
   return gitRepositoryConfiguration({
     scratchDirectory,
     identity: {
@@ -325,10 +350,7 @@ function repositoryConfigurationSnapshots(
       email: "configuration-importer@chuggy.invalid",
     },
     environment,
-    credentials: repositoryCredentialsByHost(
-      minted,
-      credentialFiles({ sources }),
-    ),
+    credentials,
   });
 }
 
@@ -369,41 +391,91 @@ async function forgeKeyReady(
   throw new Error(`${forgeAppKeyFileVariable}: ${verdict.why}`);
 }
 
-/** The minting this process does: the source its own reads take, and the service its route answers from. */
+/**
+ * How many repositories one installation listing pages for, refusing a bound
+ * past what the wire's own schema answers: a deployment that asked for more
+ * would send a body no reader's schema accepts.
+ */
+function forgeRepositoriesMax(): number {
+  const asked = positiveEnvironment(
+    forgeRepositoriesMaxVariable,
+    githubInstallationRepositoriesDefaults.repositoriesMax,
+  );
+  if (asked > forgeRepositoriesAnsweredMax)
+    throw new Error(
+      `${forgeRepositoriesMaxVariable} must be at most ${String(forgeRepositoriesAnsweredMax)}`,
+    );
+  return asked;
+}
+
+/** The forge this process talks to: the credential source its own reads take, the minting route's service, and onboarding's. */
 export interface NativeForge {
   readonly hosts: readonly MintedCredentialHost[];
+  readonly credentials: RepositoryCredentialPort;
   readonly minting: ForgeCredentialMinting | undefined;
+  readonly onboarding: RepositoryOnboarding;
 }
 
 /**
  * A deployment naming no app key mints nothing and reads every credential from
- * its files, which is the deployment this tree already had.
+ * its files, which is the deployment this tree already had. It still onboards:
+ * the routes that describe an app or an installation answer `ForgeNotConfigured`
+ * and the two that bind go on working, because a binding is proved by whichever
+ * source holds the repository's credential.
  */
 async function nativeForge(
   pools: NativePools,
   access: ProjectAccess,
 ): Promise<NativeForge> {
   const options = forgeTokenOptions();
-  if (options === undefined) return { hosts: [], minting: undefined };
+  if (options === undefined) {
+    const credentials = nativeRepositoryCredentials([]);
+    return {
+      hosts: [],
+      credentials,
+      minting: undefined,
+      onboarding: composeRepositoryOnboarding(
+        pools.pool,
+        access,
+        credentials,
+        undefined,
+      ),
+    };
+  }
   await forgeKeyReady(options, pools);
+  const installationTokens = githubInstallationTokens(options);
   const tokens = mintedRepositoryTokens({
     forge: githubForgeId,
     app: forgeApp,
     repositoryHost: githubRepositoryHost,
     installations: postgresForgeInstallations(pools.pool),
-    tokens: githubInstallationTokens(options),
+    tokens: installationTokens,
   });
+  const hosts = [
+    {
+      repositoryHost: githubRepositoryHost,
+      credentials: mintedRepositoryCredentials({
+        tokens,
+        permissions: "read",
+      }),
+    },
+  ];
+  const credentials = nativeRepositoryCredentials(hosts);
   return {
-    hosts: [
-      {
-        repositoryHost: githubRepositoryHost,
-        credentials: mintedRepositoryCredentials({
-          tokens,
-          permissions: "read",
-        }),
-      },
-    ],
+    hosts,
+    credentials,
     minting: composeForgeCredentialMinting(pools.pool, access, tokens),
+    onboarding: composeRepositoryOnboarding(pools.pool, access, credentials, {
+      forge: githubForgeId,
+      app: forgeApp,
+      apps: githubApps(options),
+      directory: githubInstallationDirectory(options),
+      installationRepositories: githubInstallationRepositories({
+        ...options,
+        tokens: installationTokens,
+        repositoriesMax: forgeRepositoriesMax(),
+      }),
+    }),
   };
 }
 
@@ -626,7 +698,7 @@ async function main(): Promise<void> {
     undefined,
     artifacts,
     selectorContextSource(pool, selectorReviewPool),
-    repositoryConfigurationSnapshots(forge.hosts),
+    repositoryConfigurationSnapshots(forge.credentials),
     nativeLeadPorts(pools, artifacts),
     nativeThreadPorts(pools, artifacts),
   );
@@ -640,6 +712,7 @@ async function main(): Promise<void> {
     hub,
     composeSelectorProjectSettings(pool, access),
     forge.minting,
+    forge.onboarding,
   );
   app.addHook("onClose", async () => {
     await hub.close();

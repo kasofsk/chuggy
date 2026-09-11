@@ -244,6 +244,19 @@ export const threadBacklogMax = 8;
 /** How many threads one listing answers with. */
 export const threadsAnsweredMax = 64;
 
+/** How many claimed installations one tenant's listing answers with, oldest first. */
+export const forgeInstallationsAnsweredMax = 64;
+
+/** How many bindings one project's repository listing answers with, oldest first. */
+export const projectRepositoriesAnsweredMax = 200;
+
+/**
+ * How many repositories one installation's listing answers with at the most,
+ * whatever bound a deployment sets: a deployment naming a wider one is refused
+ * where the setting is read, so the wire's bound is the one a reader relies on.
+ */
+export const forgeRepositoriesAnsweredMax = 1_000;
+
 /** How many turns of one thread's mailbox a read answers with, newest last. */
 export const threadTurnsAnsweredMax = 32;
 
@@ -284,6 +297,9 @@ export const threadWakesPerPassMax = 64;
 export const nativeHttpRoutes = {
   contract: `${nativeHttpBasePath}/contract`,
   installation: `${nativeHttpBasePath}/installation`,
+  forgeApp: `${nativeHttpBasePath}/forge/github`,
+  forgeInstallations: `${nativeHttpBasePath}/tenants/:tenant/forge-installations`,
+  forgeInstallationRepositories: `${nativeHttpBasePath}/tenants/:tenant/forge-installations/:installationId/repositories`,
   projects: `${nativeHttpBasePath}/projects`,
   project: `${nativeHttpBasePath}/tenants/:tenant/projects/:project`,
   tickets: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets`,
@@ -315,6 +331,7 @@ export const nativeHttpRoutes = {
   configurationImports: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/imports`,
   configuration: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/:revision`,
   forgeCredentials: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/forge-credentials`,
+  projectRepositories: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories`,
   drafts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts`,
   draftInitialization: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/draft-initializations/:revision`,
   draft: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts/:ticket`,

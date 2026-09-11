@@ -34,9 +34,14 @@
   },
   "briefFinalization": "a PullRequest finalization requires the brief to name a branch, and a target that is not it",
   "selectorProjectSettings": "installation settings are defaults; an absent override inherits one, and a write replaces the whole set under the revision it was read at",
+  "forgeInstallations": "a tenant's administrator claims an installation of this deployment's app; an installation another tenant holds is a conflict, and a claim is never released",
+  "repositoryBinding": "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one a claimed installation of this tenant's grants",
   "routes": {
     "contract": "/api/v1/contract",
     "installation": "/api/v1/installation",
+    "forgeApp": "/api/v1/forge/github",
+    "forgeInstallations": "/api/v1/tenants/:tenant/forge-installations",
+    "forgeInstallationRepositories": "/api/v1/tenants/:tenant/forge-installations/:installationId/repositories",
     "projects": "/api/v1/projects",
     "project": "/api/v1/tenants/:tenant/projects/:project",
     "tickets": "/api/v1/tenants/:tenant/projects/:project/tickets",
@@ -68,6 +73,7 @@
     "configurationImports": "/api/v1/tenants/:tenant/projects/:project/configurations/imports",
     "configuration": "/api/v1/tenants/:tenant/projects/:project/configurations/:revision",
     "forgeCredentials": "/api/v1/tenants/:tenant/projects/:project/forge-credentials",
+    "projectRepositories": "/api/v1/tenants/:tenant/projects/:project/repositories",
     "drafts": "/api/v1/tenants/:tenant/projects/:project/drafts",
     "draftInitialization": "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
     "draft": "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",
@@ -727,6 +733,34 @@
         }
       },
       "required": ["repository", "permissions"],
+      "additionalProperties": false
+    },
+    "forgeInstallationClaim": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "forge": {
+          "type": "string",
+          "enum": ["github"]
+        },
+        "installationId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["forge", "installationId"],
+      "additionalProperties": false
+    },
+    "projectRepositoryBind": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["repository"],
       "additionalProperties": false
     },
     "leadInquiry": {

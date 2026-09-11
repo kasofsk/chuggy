@@ -595,7 +595,10 @@ test("a repository this caller may not mint for is not found and a forge that is
  */
 function realForgeCredentials(claimedBy: string): ForgeCredentialMinting {
   return forgeCredentialMinting(
-    { authorize: () => Promise.resolve(memberAuthority(asPrincipal("m"))) },
+    {
+      authorize: () => Promise.resolve(memberAuthority(asPrincipal("m"))),
+      authorizeTenant: () => Promise.resolve(undefined),
+    },
     {
       binding: (_partition, repository) =>
         Promise.resolve({

@@ -24,6 +24,8 @@ import {
   leadInquirySchema,
   publicMutationSchema,
   forgeCredentialRequestSchema,
+  forgeInstallationClaimSchema,
+  projectRepositoryBindSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
   threadHideRequestSchema,
@@ -57,6 +59,15 @@ import type {
 } from "../../interpreter/nativeWeb.ts";
 import { checkedSelectorDecisionReference } from "../../interpreter/dispatchView.ts";
 import type { ForgeCredentialRequest } from "../../interpreter/forgeCredentials.ts";
+import {
+  asForgeId,
+  asForgeInstallationId,
+  type ForgeInstallationId,
+} from "../../interpreter/forgeInstallation.ts";
+import type {
+  ForgeInstallationClaimRequest,
+  ProjectRepositoryBindRequest,
+} from "../../interpreter/repositoryOnboarding.ts";
 import type { ExecutionPageCursor } from "../../interpreter/operationsView.ts";
 import {
   asIdempotencyKey,
@@ -162,6 +173,34 @@ export function parseForgeCredentialRequest(
   return {
     repository: asRepositoryId(parsed.repository),
     permissions: parsed.permissions,
+  };
+}
+
+/** One claim as the wire carries it, both fields already narrowed. */
+export function parseForgeInstallationClaim(
+  body: unknown,
+): ForgeInstallationClaimRequest {
+  const parsed = forgeInstallationClaimSchema.parse(body);
+  return {
+    forge: asForgeId(parsed.forge),
+    installationId: asForgeInstallationId(parsed.installationId),
+  };
+}
+
+/** One installation identity out of a path segment. */
+export function parseForgeInstallationId(value: string): ForgeInstallationId {
+  return asForgeInstallationId(value);
+}
+
+/** One binding as the wire carries it, the identity coming from the header rather than the body. */
+export function parseProjectRepositoryBind(
+  body: unknown,
+  operation: string,
+): ProjectRepositoryBindRequest {
+  const parsed = projectRepositoryBindSchema.parse(body);
+  return {
+    repository: asRepositoryId(parsed.repository),
+    operation: asOperationId(operation),
   };
 }
 

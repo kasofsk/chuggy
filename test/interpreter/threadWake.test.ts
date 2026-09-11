@@ -209,6 +209,7 @@ function referenceAccess(
       }
       return Promise.resolve(memberAuthority(principal));
     },
+    authorizeTenant: () => Promise.resolve(undefined),
   };
 }
 

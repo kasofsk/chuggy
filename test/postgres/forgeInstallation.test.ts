@@ -236,7 +236,7 @@ test("an app and an account kind this tree does not declare are refused by the t
   );
 });
 
-test("the API reads the claimed installations and writes none of them", async () => {
+test("the API reads the claimed installations and writes none directly", async () => {
   assert.equal(
     await harness.attemptAs(
       apiRole,
@@ -251,13 +251,14 @@ test("the API reads the claimed installations and writes none of them", async ()
     )) ?? "",
     postgresHarnessDenial("forge_installation"),
   );
-  assert.match(
-    (await harness.attemptAs(
+  assert.equal(
+    await harness.attemptAs(
       apiRole,
       `SELECT ${forgeInstallationRecordFunction}(
-         'github','portal','a','Organization','1','vteng','Member','s')`,
-    )) ?? "",
-    postgresHarnessDenial(forgeInstallationRecordFunction),
+         'github','portal','api-claimed','Organization','88','api-tenant',
+         'Member','s')`,
+    ),
+    undefined,
   );
 });
 

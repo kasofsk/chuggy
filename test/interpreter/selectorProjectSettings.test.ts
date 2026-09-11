@@ -66,6 +66,7 @@ function access(kinds: readonly string[]): ProjectAccess {
   return {
     authorize: (_principal, _partition, kind) =>
       Promise.resolve(kinds.includes(kind) ? administrator : undefined),
+    authorizeTenant: () => Promise.resolve(undefined),
   };
 }
 

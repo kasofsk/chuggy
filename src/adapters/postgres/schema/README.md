@@ -298,8 +298,9 @@ one would be a duplicate of a derivable fact.
 `forge_installation` — one forge app installed on one account, the tenant that
 claimed it and the audited authority of the claim. Owned by the boundary owner,
 which is what `record_forge_installation` runs as and which is the only role
-that may write; the API role is granted SELECT alone, because minting reads the
-claim and never makes one. Its key and its identity are both `(forge, app,
+that may write; the API role is granted SELECT on the relation and EXECUTE on
+that door, so a claim is made only through the outcome the door decides. Its
+key and its identity are both `(forge, app,
 account)`, and the tenant is a column rather than part of that key: an account
 belongs to one tenant, so a second tenant claiming it is the door's
 `ClaimedElsewhere` rather than a second row. It is changed by that door alone,

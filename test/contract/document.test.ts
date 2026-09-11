@@ -25,11 +25,12 @@ test("the contract document renders the committed golden", () => {
   assert.equal(canonical(nativeHttpContractDocument()), canonical(golden));
 });
 
-test("the golden is the document and not an empty stand-in", () => {
-  const document = golden as {
-    routes: Readonly<Record<string, string>>;
-    schemas: Readonly<Record<string, unknown>>;
-  };
+const document = golden as {
+  routes: Readonly<Record<string, string>>;
+  schemas: Readonly<Record<string, unknown>>;
+};
+
+test("the golden names every route and not an empty stand-in", () => {
   assert.deepEqual(Object.keys(document.routes).sort(), [
     "agenticRefusals",
     "configuration",
@@ -43,7 +44,10 @@ test("the golden is the document and not an empty stand-in", () => {
     "events",
     "execution",
     "executions",
+    "forgeApp",
     "forgeCredentials",
+    "forgeInstallationRepositories",
+    "forgeInstallations",
     "installation",
     "lead",
     "leadInquiries",
@@ -56,6 +60,7 @@ test("the golden is the document and not an empty stand-in", () => {
     "operations",
     "outputContent",
     "project",
+    "projectRepositories",
     "projects",
     "runConfiguration",
     "runTranscript",
@@ -76,12 +81,17 @@ test("the golden is the document and not an empty stand-in", () => {
     "ticketNativeActions",
     "tickets",
   ]);
+});
+
+test("the golden names every request schema", () => {
   assert.deepEqual(Object.keys(document.schemas).sort(), [
     "configurationCreation",
     "draftCreation",
     "draftRevision",
     "forgeCredential",
+    "forgeInstallationClaim",
     "leadInquiry",
+    "projectRepositoryBind",
     "publicMutation",
     "repositoryConfigurationImport",
     "selectorProjectSettings",

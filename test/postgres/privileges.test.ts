@@ -82,9 +82,8 @@ test("every runtime role may read only the migration ledger contract", async () 
   }
 });
 
-test("runtime roles cannot bind a repository or record a bind operation", async () => {
+test("no runtime role but the API binds a repository, and none records one", async () => {
   for (const role of [
-    apiRole,
     ticketServiceRole,
     selectorServiceRole,
     schedulerRole,
@@ -111,6 +110,34 @@ test("runtime roles cannot bind a repository or record a bind operation", async 
         role,
         "SELECT * FROM project_repository_bind_operation",
       )) ?? "",
+      postgresHarnessDenial("project_repository_bind_operation"),
+    );
+  }
+});
+
+/**
+ * 085 gave the API the bind door, which is what its route drives. The door is
+ * still the only way in: the operation ledger behind it stays unreadable and
+ * unwritable to this role, so a bind identity cannot be spent twice by any path
+ * but the one that decides the outcome.
+ */
+test("the API drives the bind door and still cannot reach the rows behind it", async () => {
+  const raised =
+    (await harness.attemptAs(
+      apiRole,
+      `SELECT ${repositoryBindingWriteFunction}('tenant','project','new','epoch','operation','kind','subject')`,
+    )) ?? "";
+  assert.doesNotMatch(
+    raised,
+    postgresHarnessDenial(repositoryBindingWriteFunction),
+  );
+  assert.match(raised, /repository binding project is absent/u);
+  for (const statement of [
+    "INSERT INTO project_repository_bind_operation DEFAULT VALUES",
+    "SELECT * FROM project_repository_bind_operation",
+  ]) {
+    assert.match(
+      (await harness.attemptAs(apiRole, statement)) ?? "",
       postgresHarnessDenial("project_repository_bind_operation"),
     );
   }

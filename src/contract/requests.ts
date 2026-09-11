@@ -26,6 +26,7 @@ import { authoringSchema } from "./authoring.ts";
 import { briefSchema } from "./brief.ts";
 import {
   forgeCredentialPermissions,
+  forgeIds,
   nativeActionResolutions,
   selectorDispatchModes,
   selectorModes,
@@ -92,6 +93,20 @@ export const repositoryConfigurationImportSchema = z.strictObject({
 export const forgeCredentialRequestSchema = z.strictObject({
   repository: bodyIdentitySchema,
   permissions: z.enum(forgeCredentialPermissions),
+});
+
+/** One claim: which forge, and which installation of this deployment's app on it. */
+export const forgeInstallationClaimSchema = z.strictObject({
+  forge: z.enum(forgeIds),
+  installationId: bodyIdentitySchema,
+});
+
+/**
+ * One binding. The project is the path's and is not repeated here, and nothing
+ * else is chosen: a binding privileges no repository and elects none.
+ */
+export const projectRepositoryBindSchema = z.strictObject({
+  repository: bodyIdentitySchema,
 });
 
 export const draftCreationSchema = z.strictObject({

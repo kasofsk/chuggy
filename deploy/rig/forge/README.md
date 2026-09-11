@@ -31,16 +31,38 @@ unless the file it names is a readable RSA private key — so a Secret mounted a
 the wrong path is a pod that never becomes ready rather than a route that
 answers 503 for as long as it runs.
 
-**The deployed authority must declare `execute` on `Project`.** The credential
-route asks that permit, and the API's readiness probes every permit the code
-asks for, so an authority carrying a model without it reports NOT READY at the
-pod's door.
+**The deployed authority must declare `execute` and `administer` on `Project`
+and `administer` on `Tenant`.** The credential route asks the first, the
+onboarding routes ask the other two, and the API's readiness probes every permit
+the code asks for, so an authority carrying a model without one of them reports
+NOT READY at the pod's door.
 
-## Claim an account
+## Claim an account over the API
 
-`src/roots/provisionForgeInstallation.ts` is the only way a claim is written
-from this tree. It connects as the boundary owner, because no runtime role
-holds the door it goes through.
+A tenant's administrator claims an installation through the API, which is the
+path a console drives and the one that needs no operator:
+
+```
+POST /api/v1/tenants/<tenant>/forge-installations
+{"forge": "github", "installationId": "<the App's installation id>"}
+```
+
+It needs `administer` on the tenant, and the API verifies the installation with
+GitHub as the App before recording it — an installation of another App, or one
+that is not there, is refused. `GET /api/v1/forge/github` answers the address to
+install the App from, and
+`GET /api/v1/tenants/<tenant>/forge-installations/<id>/repositories` answers
+what the installation grants.
+
+A tenant administrator can claim any unclaimed installation of this App whose id
+they know. The first claim wins, and there is no route that undoes one: a wrong
+claim is the operator's to remove, as below.
+
+## Claim an account as the operator
+
+`src/roots/provisionForgeInstallation.ts` writes a claim without a bearer, for a
+tenant that has no administrator yet. It connects as the boundary owner, because
+the route's role reaches the door and nothing else.
 
 The installation id is the App's installation on that account, which is the last
 path segment of the App's installation settings URL.

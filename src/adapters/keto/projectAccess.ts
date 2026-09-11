@@ -24,9 +24,13 @@ import {
   projectAccessObject,
   projectAccessProbe,
   projectAccessTenantNamespace,
+  projectAccessTenantObject,
+  tenantAccessPermits,
   type ProjectAccess,
   type ProjectAccessSettings,
 } from "../../interpreter/projectAccess.ts";
+import type { Authority } from "../../interpreter/operationInbox.ts";
+import type { Principal } from "../../interpreter/principal.ts";
 import { ketoRequest } from "./request.ts";
 
 /** The read API's check, whose query names the tuple being asked about. */
@@ -49,26 +53,57 @@ function ketoAllowed(answered: unknown, what: string): boolean {
   return answered.allowed;
 }
 
+/** The check URL for one tuple, which is the only shape either question takes. */
+function ketoCheckUrl(
+  readUrl: string,
+  namespace: string,
+  object: string,
+  relation: string,
+  subject: string,
+): URL {
+  const url = new URL(ketoCheckPath, readUrl);
+  url.searchParams.set("namespace", namespace);
+  url.searchParams.set("object", object);
+  url.searchParams.set("relation", relation);
+  url.searchParams.set("subject_id", subject);
+  return url;
+}
+
 export function ketoProjectAccess(
   settings: ProjectAccessSettings,
   fetcher: typeof fetch = fetch,
 ): ProjectAccess {
+  const checked = async (
+    principal: Principal,
+    namespace: string,
+    object: string,
+    permit: string,
+  ): Promise<Authority | undefined> => {
+    const answered = await ketoRequest({
+      url: ketoCheckUrl(settings.readUrl, namespace, object, permit, principal),
+      method: "GET",
+      requestTimeoutMs: settings.requestTimeoutMs,
+      fetcher,
+    });
+    return ketoAllowed(answered, "the access check")
+      ? memberAuthority(principal)
+      : undefined;
+  };
   return {
-    authorize: async (principal, partition, access) => {
-      const authority = memberAuthority(principal);
-      const url = new URL(ketoCheckPath, settings.readUrl);
-      url.searchParams.set("namespace", projectAccessNamespace);
-      url.searchParams.set("object", projectAccessObject(partition));
-      url.searchParams.set("relation", projectAccessPermits[access]);
-      url.searchParams.set("subject_id", principal);
-      const answered = await ketoRequest({
-        url,
-        method: "GET",
-        requestTimeoutMs: settings.requestTimeoutMs,
-        fetcher,
-      });
-      return ketoAllowed(answered, "the access check") ? authority : undefined;
-    },
+    authorize: (principal, partition, access) =>
+      checked(
+        principal,
+        projectAccessNamespace,
+        projectAccessObject(partition),
+        projectAccessPermits[access],
+      ),
+    authorizeTenant: (principal, tenant, access) =>
+      checked(
+        principal,
+        projectAccessTenantNamespace,
+        projectAccessTenantObject(tenant),
+        tenantAccessPermits[access],
+      ),
   };
 }
 
@@ -95,14 +130,22 @@ export function ketoReadiness(
     url.searchParams.set("page_size", "1");
     return url;
   };
-  const probe = (permit: string): URL => {
-    const url = new URL(ketoCheckPath, settings.readUrl);
-    url.searchParams.set("namespace", projectAccessNamespace);
-    url.searchParams.set("object", projectAccessProbe);
-    url.searchParams.set("relation", permit);
-    url.searchParams.set("subject_id", projectAccessProbe);
-    return url;
-  };
+  const probe = (namespace: string, permit: string): URL =>
+    ketoCheckUrl(
+      settings.readUrl,
+      namespace,
+      projectAccessProbe,
+      permit,
+      projectAccessProbe,
+    );
+  const probed: readonly (readonly [string, string])[] = [
+    ...[...new Set(Object.values(projectAccessPermits))].map(
+      (permit) => [projectAccessNamespace, permit] as const,
+    ),
+    ...[...new Set(Object.values(tenantAccessPermits))].map(
+      (permit) => [projectAccessTenantNamespace, permit] as const,
+    ),
+  ];
   return {
     ready: async () => {
       try {
@@ -112,8 +155,11 @@ export function ketoReadiness(
           projectAccessTenantNamespace,
         ])
           await ask(listing(namespace));
-        for (const permit of new Set(Object.values(projectAccessPermits)))
-          ketoAllowed(await ask(probe(permit)), `the ${permit} probe`);
+        for (const [namespace, permit] of probed)
+          ketoAllowed(
+            await ask(probe(namespace, permit)),
+            `the ${namespace} ${permit} probe`,
+          );
         return true;
       } catch {
         return false;

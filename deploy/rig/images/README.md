@@ -112,6 +112,7 @@ to start without the required ones.
 | `CHUG_API_FORGE_APP_KEY_FILE` | with the app id, or neither | a file holding that app's RSA private key, in either PEM encoding; the process refuses to start unless it can be read and used |
 | `CHUG_API_FORGE_API_URL` | `https://api.github.com` | where the mint request is sent |
 | `CHUG_API_FORGE_TIMEOUT_MS` | | how long one mint request may take before it is an outage |
+| `CHUG_API_FORGE_REPOSITORIES_MAX` | 500 | how many repositories one installation listing pages for before it answers `truncated`; it may not exceed what the response schema answers |
 | `CHUG_API_HOST` | `0.0.0.0` in the image | the source default is loopback, which no kubelet can reach |
 | `CHUG_API_PORT` | 3000 | |
 | `CHUG_API_SHUTDOWN_DRAIN_MS` | | how long a drain runs before open connections are closed |

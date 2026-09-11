@@ -89,7 +89,10 @@ test("a refusal is superseded exactly where the ticket has been authored again",
 
 test("a reader without project read access is told the project is not there", async () => {
   const refused = agenticRefusals(
-    { authorize: () => Promise.resolve(undefined) },
+    {
+      authorize: () => Promise.resolve(undefined),
+      authorizeTenant: () => Promise.resolve(undefined),
+    },
     read,
   );
   assert.deepEqual(await refused.standing(principal, partition, 8), {
@@ -106,7 +109,10 @@ test("an authorized read answers the ledger and the standing it induces", async 
     subject: asAuthoritySubject("internal-subject"),
   };
   const service = agenticRefusals(
-    { authorize: () => Promise.resolve(authority) },
+    {
+      authorize: () => Promise.resolve(authority),
+      authorizeTenant: () => Promise.resolve(undefined),
+    },
     read,
   );
   const answered = await service.ledger(principal, partition, ticket, 8);

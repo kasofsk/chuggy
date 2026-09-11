@@ -13,7 +13,10 @@ test("authorized inventory bounds hidden-project scanning and returns progress",
   }));
   let reads = 0;
   const inventory = authorizedProjectInventory(
-    { authorize: () => Promise.resolve(undefined) },
+    {
+      authorize: () => Promise.resolve(undefined),
+      authorizeTenant: () => Promise.resolve(undefined),
+    },
     {
       projects: (after, limit) => {
         reads += 1;

@@ -38,7 +38,7 @@ import {
   type Authority,
 } from "./operationInbox.ts";
 import type { Principal } from "./principal.ts";
-import type { Partition } from "./projectStore.ts";
+import type { Partition, TenantId } from "./projectStore.ts";
 
 /** Every project access kind, and the declaration `ProjectAccessKind` derives from, so narrowing a supplied kind has one list to check. */
 export const allProjectAccessKinds = [
@@ -48,6 +48,7 @@ export const allProjectAccessKinds = [
   "ProposeDispatch",
   "ManageProjectSelector",
   "Execute",
+  "Administer",
 ] as const;
 
 export type ProjectAccessKind = (typeof allProjectAccessKinds)[number];
@@ -59,6 +60,16 @@ export function asProjectAccessKind(value: string): ProjectAccessKind {
     throw new RangeError(`project access kind: ${value} is not a known kind`);
   return kind;
 }
+
+/**
+ * Every tenant access kind. It is a roster of its own rather than more of
+ * `ProjectAccessKind`, because the two are asked of different namespaces and a
+ * single roster would let a caller ask the project namespace for a permit only
+ * a tenant declares.
+ */
+export const allTenantAccessKinds = ["AdministerTenant"] as const;
+
+export type TenantAccessKind = (typeof allTenantAccessKinds)[number];
 
 /** The namespace one project is an object in. */
 export const projectAccessNamespace = "Project";
@@ -79,7 +90,16 @@ export const projectAccessPermits: Readonly<Record<ProjectAccessKind, string>> =
     ProposeDispatch: "propose",
     ManageProjectSelector: "manage_selector",
     Execute: "execute",
+    Administer: "administer",
   };
+
+/**
+ * The permit each tenant access kind asks the tenant namespace for, exhaustive
+ * over `TenantAccessKind` for `projectAccessPermits`' reason.
+ */
+export const tenantAccessPermits: Readonly<Record<TenantAccessKind, string>> = {
+  AdministerTenant: "administer",
+};
 
 /**
  * The object string one partition is addressed by, length-prefixed for
@@ -171,12 +191,25 @@ export function checkedProjectAccessSettings(input: {
   };
 }
 
-/** Current project access and the non-reassignable authority it resolves to. */
+/**
+ * Current project access and the non-reassignable authority it resolves to.
+ *
+ * THE TENANT QUESTION IS ON THE SAME PORT because it is the same authority
+ * asked the same way, and a second port would be a second place a deployment
+ * could name a different one — a tenant administrator authorized against an
+ * authority the project questions never reach.
+ */
 export interface ProjectAccess {
   authorize(
     principal: Principal,
     partition: Partition,
     access: ProjectAccessKind,
+  ): Promise<Authority | undefined>;
+
+  authorizeTenant(
+    principal: Principal,
+    tenant: TenantId,
+    access: TenantAccessKind,
   ): Promise<Authority | undefined>;
 }
 

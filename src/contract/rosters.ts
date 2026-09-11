@@ -208,6 +208,14 @@ export const forgeCredentialPermissions = ["read", "write", "propose"] as const;
 export type ForgeCredentialPermission =
   (typeof forgeCredentialPermissions)[number];
 
+/** Every forge a tenant may claim an installation on. */
+export const forgeIds = ["github"] as const;
+export type ForgeIdentity = (typeof forgeIds)[number];
+
+/** Every kind of account a forge installs an app on. */
+export const forgeAccountKinds = ["User", "Organization"] as const;
+export type ForgeAccountKindName = (typeof forgeAccountKinds)[number];
+
 /** Whether a selector proposal is dispatched or held for a reviewer. */
 export const selectorDispatchModes = ["Automatic", "ApprovalRequired"] as const;
 export type SelectorDispatchMode = (typeof selectorDispatchModes)[number];

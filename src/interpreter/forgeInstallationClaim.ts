@@ -48,3 +48,27 @@ export type ForgeInstallationRecorded =
 export interface ForgeInstallationRecording {
   record(claim: ForgeInstallationClaim): Promise<ForgeInstallationRecorded>;
 }
+
+/**
+ * One claim as it is read back. The authority that made it is not part of it:
+ * it says who acted and decides nothing, so a reader handed it would hold an
+ * identity it has no question to ask of.
+ */
+export interface ForgeInstallationClaimed {
+  readonly forge: ForgeId;
+  readonly app: ForgeApp;
+  readonly account: ForgeAccount;
+  readonly accountKind: ForgeAccountKind;
+  readonly installationId: ForgeInstallationId;
+  readonly claimedAt: string;
+}
+
+/**
+ * Every claim one tenant holds, oldest first. The tenant is the whole of the
+ * question for `forgeInstallation.ts`'s reason: a claim another tenant made is
+ * one this tenant cannot read at all, so a caller cannot be handed a row it
+ * would have had to remember to compare.
+ */
+export interface ForgeInstallationClaims {
+  claims(tenant: TenantId): Promise<readonly ForgeInstallationClaimed[]>;
+}
