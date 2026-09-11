@@ -102,9 +102,11 @@ account already holds is `RepositoryExists` and points at the bind route.
 **The portal App must hold `Contents: write` and `Administration: write`**, and
 those are the operator's to verify on the App's settings page — GitHub grants an
 installation token only the permissions the App itself was granted, so an App
-without `Administration: write` answers the create and the ruleset 403, which
-reaches the caller as `ForgeRefused` naming the step. `deploy/rig/images/README.md`
-carries both settings above beside the rest of the API's environment.
+without `Administration: write` is answered 403 on both the create and the
+ruleset: the create's reaches the caller as `ForgeRefused` naming the step, and
+the ruleset's is reported as `ruleset: "Refused"` beside a repository that
+stands. `deploy/rig/images/README.md` carries both settings above beside the
+rest of the API's environment.
 
 ## Claim an account over the API
 

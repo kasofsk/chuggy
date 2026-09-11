@@ -225,15 +225,6 @@ export const forgeRepositoryVisibilities = ["private", "public"] as const;
 export type ForgeRepositoryVisibilityName =
   (typeof forgeRepositoryVisibilities)[number];
 
-/** What configuring a newly bound repository came to. */
-export const projectRepositoryConfigurationResults = [
-  "Imported",
-  "Bootstrapped",
-  "Deferred",
-] as const;
-export type ProjectRepositoryConfigurationResultName =
-  (typeof projectRepositoryConfigurationResults)[number];
-
 /** Why a newly bound repository came away with no configurations of its own. */
 export const projectRepositoryConfigurationDeferrals = [
   "NotConfigured",
@@ -249,24 +240,10 @@ export const projectRepositoryConfigurationDeferrals = [
   "StaleBinding",
   "NotFound",
   "ParentNotFound",
+  "StepFailed",
 ] as const;
 export type ProjectRepositoryConfigurationDeferralName =
   (typeof projectRepositoryConfigurationDeferrals)[number];
-
-/** What reserving a created repository's default branch came to. */
-export const projectRepositoryRulesetResults = [
-  "Created",
-  "Refused",
-  "Skipped",
-  "Unavailable",
-] as const;
-export type ProjectRepositoryRulesetResultName =
-  (typeof projectRepositoryRulesetResults)[number];
-
-/** The steps of a creation a forge can refuse outright, each named in the refusal. */
-export const projectRepositoryCreateSteps = ["create", "seed"] as const;
-export type ProjectRepositoryCreateStepName =
-  (typeof projectRepositoryCreateSteps)[number];
 
 /** Whether a selector proposal is dispatched or held for a reviewer. */
 export const selectorDispatchModes = ["Automatic", "ApprovalRequired"] as const;

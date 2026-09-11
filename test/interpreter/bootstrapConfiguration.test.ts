@@ -35,6 +35,7 @@ import {
   repositoryConfigurationImportReadiness,
   repositoryConfigurationRoot,
 } from "../../src/interpreter/repositoryConfiguration.ts";
+import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
 
 const repository = asRepositoryId("https://github.com/kasofsk/chuggy.git");
 const defaultBranch = asGitRefName("refs/heads/main");
@@ -103,4 +104,15 @@ test("the seeded file is a declaration an import reads back under its name", () 
 
 test("the seeded file lives under the directory an import reads", () => {
   assert.ok(bootstrapConfigurationPath.startsWith(repositoryConfigurationRoot));
+});
+
+test("a ticket carrying check lines is not releasable against it", () => {
+  const readiness = releaseConfigurationReadiness(
+    bootstrapConfiguration({ repository, defaultBranch, image }),
+    { checks: [asBriefCheckLine("npm test")] },
+  );
+  assert.deepEqual(readiness, {
+    readiness: "Incomplete",
+    fault: "BriefChecksUncommanded",
+  });
 });

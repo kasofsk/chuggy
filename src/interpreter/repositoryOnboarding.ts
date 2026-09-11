@@ -196,6 +196,7 @@ export const allProjectRepositoryConfigurationsDeferrals = [
   "StaleBinding",
   "NotFound",
   "ParentNotFound",
+  "StepFailed",
 ] as const;
 
 export type ProjectRepositoryConfigurationsDeferral =
@@ -619,6 +620,25 @@ async function bindRepositoryConfigurations(
   }
 }
 
+/**
+ * The configuration step under the binding it follows, contained. The binding
+ * row is committed before this runs, so a port that raises rather than answers
+ * — a store that lost its connection, a scratch the reader cannot write — is
+ * reported as a deferral beside a repository that is bound, never as a failure
+ * claiming it is not.
+ */
+async function boundRepositoryConfigurations(
+  ports: RepositoryOnboardingPorts,
+  binding: RepositoryBinding,
+  authority: Authority,
+): Promise<ProjectRepositoryConfigurationsResult> {
+  try {
+    return await bindRepositoryConfigurations(ports, binding, authority);
+  } catch {
+    return { result: "Deferred", reason: "StepFailed" };
+  }
+}
+
 /** One binding as the bind route asks for it, which is the permit and then the act. */
 async function bindRepository(
   ports: RepositoryOnboardingPorts,
@@ -672,7 +692,7 @@ async function boundRepository(
       return {
         result: "Bound",
         repository: request.repository,
-        configurations: await bindRepositoryConfigurations(
+        configurations: await boundRepositoryConfigurations(
           ports,
           binding,
           authority,
@@ -739,9 +759,20 @@ function createRepositoryMode(
 }
 
 /**
- * The first commit, which is what puts a branch under a created repository. A
- * deployment naming no bootstrap image seeds nothing: the file it would write
- * is a configuration commanding no image, which nothing could run.
+ * How far the first commit got, which is what puts a branch under a created
+ * repository. A refusal is the forge's own and settled; an outage is the
+ * caller's to retry, and the retry meets `RepositoryExists`.
+ */
+type CreateRepositorySeeding =
+  | { readonly seeding: "Seeded" }
+  | { readonly seeding: "Unseeded" }
+  | { readonly seeding: "Refused"; readonly message: string }
+  | { readonly seeding: "Unavailable" };
+
+/**
+ * The first commit, written where there is an image to command. A deployment
+ * naming no bootstrap image seeds nothing: the file it would write is a
+ * configuration commanding no image, which nothing could run.
  */
 async function createRepositorySeeded(
   ports: RepositoryOnboardingPorts,
@@ -749,9 +780,9 @@ async function createRepositorySeeded(
   installation: ForgeInstallation,
   request: ProjectRepositoryCreateRequest,
   made: ForgeRepositoryMade,
-): Promise<boolean | { readonly refused: string }> {
+): Promise<CreateRepositorySeeding> {
   const image = ports.configurations?.bootstrapImage;
-  if (image === undefined) return false;
+  if (image === undefined) return { seeding: "Unseeded" };
   const seeded = await creation.repositories.seed({
     installation,
     name: request.name,
@@ -766,11 +797,11 @@ async function createRepositorySeeded(
   });
   switch (seeded.seeded) {
     case "Seeded":
-      return true;
+      return { seeding: "Seeded" };
     case "Refused":
-      return { refused: seeded.message };
+      return { seeding: "Refused", message: seeded.message };
     case "Unavailable":
-      return { refused: "the forge did not answer the first commit" };
+      return { seeding: "Unavailable" };
     default:
       return assertNever(seeded);
   }
@@ -884,15 +915,17 @@ async function createRepositoryBound(
   context: CreateRepositoryContext,
   made: ForgeRepositoryMade,
 ): Promise<ProjectRepositoryCreateResult> {
-  const seeded = await createRepositorySeeded(
+  const seeding = await createRepositorySeeded(
     ports,
     creation,
     context.installation,
     context.request,
     made,
   );
-  if (typeof seeded !== "boolean")
-    return { result: "ForgeRefused", step: "seed", message: seeded.refused };
+  if (seeding.seeding === "Refused")
+    return { result: "ForgeRefused", step: "seed", message: seeding.message };
+  if (seeding.seeding === "Unavailable") return { result: "Unavailable" };
+  const seeded = seeding.seeding === "Seeded";
   const ruleset = await createRepositoryRuleset(
     creation,
     context.installation,

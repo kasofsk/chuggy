@@ -204,6 +204,7 @@ interface FixtureConfigurations {
   readonly stored?: RepositoryConfigurationsImported;
   readonly authored?: ConfigurationCreated;
   readonly image?: string;
+  readonly raising?: boolean;
 }
 
 /** What each of the three acts creating a repository answers, and what a personal account copies. */
@@ -299,7 +300,9 @@ function fixtureConfigurations(
     heads: {
       defaultBranch: (asked) => {
         wrote.heads.push(asked);
-        return Promise.resolve(given.head ?? { read: "Unavailable" as const });
+        return given.raising === true
+          ? Promise.reject(new Error("the scratch could not be written"))
+          : Promise.resolve(given.head ?? { read: "Unavailable" as const });
       },
     },
     imports: {
@@ -1093,6 +1096,19 @@ test("a deployment naming no bootstrap image authors none and says which", async
   assert.deepEqual(wrote.authored, []);
 });
 
+test("a port that raises inside the step is a deferral and not a failed bind", async () => {
+  const { bound, wrote } = await fixtureBound({
+    configurations: { raising: true, image: workerImage },
+  });
+  assert.deepEqual(bound, {
+    result: "Bound",
+    repository,
+    configurations: { result: "Deferred", reason: "StepFailed" },
+  });
+  assert.equal(wrote.commands.length, 1);
+  assert.deepEqual(wrote.authored, []);
+});
+
 test("a project already holding a different bootstrap is told so and stays bound", async () => {
   const { bound } = await fixtureBound({
     configurations: {
@@ -1356,6 +1372,15 @@ test("a forge that did not answer the create is a wait and not a refusal", async
     creation: { created: { created: "Unavailable" } },
   });
   assert.deepEqual(created, { result: "Unavailable" });
+});
+
+test("a seed the forge did not answer is a wait and not a refusal", async () => {
+  const { created, wrote } = await fixtureCreated({
+    creation: { seeded: { seeded: "Unavailable" } },
+  });
+  assert.deepEqual(created, { result: "Unavailable" });
+  assert.deepEqual(wrote.rulesets, []);
+  assert.deepEqual(wrote.commands, []);
 });
 
 test("a deployment naming no image creates the repository unseeded and reserves nothing", async () => {

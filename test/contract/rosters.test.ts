@@ -54,9 +54,11 @@ import {
   threadStandings,
   sessionTurnFailures,
   sessionTurnInputKinds,
+  projectRepositoryConfigurationDeferrals,
   sessionTurnStates,
 } from "../../src/contract/rosters.ts";
 import { allForgeCredentialPermissionSets } from "../../src/interpreter/forgeInstallation.ts";
+import { allProjectRepositoryConfigurationsDeferrals } from "../../src/interpreter/repositoryOnboarding.ts";
 import {
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
@@ -457,6 +459,11 @@ test("every session and refusal roster restates the interpreter's own", () => {
     forgeCredentialPermissions,
     allForgeCredentialPermissionSets,
     "a credential request never names the set that makes repositories",
+  );
+  assert.deepEqual(
+    projectRepositoryConfigurationDeferrals,
+    allProjectRepositoryConfigurationsDeferrals,
+    "a deferral the wire schema does not name is a bind answer nothing can parse",
   );
   assert.deepEqual(
     sorted(operationRefusalCodes),
