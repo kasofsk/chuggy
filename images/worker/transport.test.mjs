@@ -31,6 +31,48 @@ test("a refused connection is retried in the same worker", async () => {
   assert.equal(requests[0].init.headers.authorization, "Bearer secret");
 });
 
+/**
+ * A refusal the caller settles for is an answer, not a fault: without the list
+ * every non-ok status is a throw, and a not-found a caller means to read would
+ * be retried to the bound before reaching it.
+ */
+test("a status the caller settles for is handed back, and every other is a fault", async () => {
+  let requests = 0;
+  const refused = { ok: false, status: 404 };
+  const received = await workerRequest(
+    task,
+    "secret",
+    "/v1/credential",
+    {},
+    {
+      fetch: async () => {
+        requests += 1;
+        return refused;
+      },
+      wait: async () => undefined,
+      settled: [404],
+    },
+  );
+
+  assert.equal(received, refused);
+  assert.equal(requests, 1);
+
+  await assert.rejects(
+    workerRequest(
+      task,
+      "secret",
+      "/v1/credential",
+      {},
+      {
+        fetch: async () => ({ ok: false, status: 500 }),
+        wait: async () => undefined,
+        settled: [404],
+      },
+    ),
+    /answered 500/u,
+  );
+});
+
 test("worker-plane retries are bounded", async () => {
   let requests = 0;
   let waits = 0;

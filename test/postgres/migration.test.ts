@@ -2810,14 +2810,13 @@ test("the session migrations compose into the schema a fresh generation renders"
 });
 
 /**
- * The versions no declared migration holds, and the chain currently has none:
- * no version below the latest is unheld. It is written down rather than
- * computed so that a hole nobody meant is a hole nobody can leave —
- * renumbering a migration upward opens one this list does not name, and a
- * branch numbered around a sibling still on its own branch names it here until
- * that sibling merges.
+ * The versions no declared migration holds — 85 being a sibling branch's, which
+ * this branch numbered itself around and which leaves this list when that
+ * branch merges. It is written down rather than computed so that a hole nobody
+ * meant is a hole nobody can leave, renumbering a migration upward opening one
+ * this list does not name.
  */
-const declaredVersionsAwaited: readonly number[] = [];
+const declaredVersionsAwaited: readonly number[] = [85];
 
 /**
  * The ledger a whole chain leaves is exactly the versions this image declares,

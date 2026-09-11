@@ -266,7 +266,6 @@ test("no other runtime role reaches a claim or the door onto one", async () => {
     ticketServiceRole,
     selectorServiceRole,
     schedulerRole,
-    workerPlaneRole,
     finalizerRole,
     configurationImporterRole,
   ]) {
@@ -285,4 +284,41 @@ test("no other runtime role reaches a claim or the door onto one", async () => {
       role,
     );
   }
+});
+
+/**
+ * The worker plane is the second reader of a claim, because it mints a pod's
+ * credential at the moment the pod asks: the installation a repository's owner
+ * was claimed under is what selects the installation to mint from. It reads and
+ * it never claims, so the door onto a claim stays the API's alone.
+ */
+test("the worker plane reads a claim to mint from, and claims nothing itself", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      workerPlaneRole,
+      "SELECT installation_id,tenant FROM forge_installation",
+    ),
+    undefined,
+  );
+  for (const written of [
+    "UPDATE forge_installation SET tenant=tenant",
+    `INSERT INTO forge_installation
+       (forge,app,account,account_kind,installation_id,tenant,authority_kind,
+        authority_subject)
+       VALUES ('github','portal','b','Organization','2','vteng','Member','s')`,
+    "DELETE FROM forge_installation",
+  ])
+    assert.match(
+      (await harness.attemptAs(workerPlaneRole, written)) ?? "",
+      postgresHarnessDenial("forge_installation"),
+      written,
+    );
+  assert.match(
+    (await harness.attemptAs(
+      workerPlaneRole,
+      `SELECT ${forgeInstallationRecordFunction}(
+         'github','portal','a','Organization','1','vteng','Member','s')`,
+    )) ?? "",
+    postgresHarnessDenial(forgeInstallationRecordFunction),
+  );
 });

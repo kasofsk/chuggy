@@ -157,6 +157,31 @@ so the deployment mounts the artifact volume there and may mount it read-only.
 Nothing creates the directory for the API, and a path that is not there reads as
 an artifact that is missing rather than as a failure.
 
+## Configuring the worker plane's minting
+
+`src/roots/workerPlane.ts` reads the variables below beside the plane's own
+database, artifact-root and session variables.
+
+| Variable | | |
+|---|---|---|
+| `CHUG_WORKER_PLANE_FORGE_APP_ID` | with the key file, or neither | the GitHub App a pod's git credential is minted under |
+| `CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE` | with the app id, or neither | a file holding that app's RSA private key, in either PEM encoding; the plane refuses to start unless it can be read and used |
+| `CHUG_WORKER_PLANE_FORGE_API_URL` | `https://api.github.com` | where the mint request is sent |
+| `CHUG_WORKER_PLANE_FORGE_TIMEOUT_MS` | | how long one mint request may take before it is an outage |
+
+**A plane naming neither mints nothing, and no pod stops working.** Both
+credential routes answer not found, and a pod resolves `CHUG_WORKER_REPOSITORIES`
+and `CHUG_WORKER_CREDENTIAL_FILES` exactly as it did before the plane minted
+anything. The same not-found is what a pod gets for a repository whose owner no
+tenant of this installation has claimed, so a deployment can mint for some of its
+repositories and mount the rest. A plane naming one of the two meant to mint and
+cannot, so it refuses to start.
+
+**The key is the portal App's, the same one the API mints with.** It is a
+separate mount because it is a separate process: the plane reaches the forge from
+wherever it runs, and it holds the key for the pods it answers rather than for
+any caller of its own.
+
 ## Prove it
 
 ### The image, before any cluster is involved

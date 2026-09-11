@@ -10,9 +10,14 @@ import { createInterface } from "node:readline";
 import { workerAgent } from "./agent.mjs";
 import { runChecks, workerCheckCommands } from "./checks.mjs";
 import { keepWorkerLease } from "./lease.mjs";
+import { planeCredential, workerCredentialPath } from "./planeCredential.mjs";
 import { attemptDatabase } from "./postgres.mjs";
-import { workerRepositories, workerRepository } from "./repository.mjs";
-import { credentialScrub, runEvidenceRecorder } from "./runEvidence.mjs";
+import {
+  workerRepositories,
+  workerRepository,
+  workerRepositoryUrl,
+} from "./repository.mjs";
+import { credentialScrubbing, runEvidenceRecorder } from "./runEvidence.mjs";
 import { runConfigurationSnapshot } from "./snapshot.mjs";
 import { commitAndPushSource, resultDocument } from "./source.mjs";
 import { workerRequest } from "./transport.mjs";
@@ -182,16 +187,81 @@ async function workSource(task, workspace, verdict) {
   return commitAndPushSource({ task, ...workspace, command });
 }
 
-async function workerWorkspace(task, repositories, credentialFiles, bearer) {
+/**
+ * One mint from the plane, its password kept out of everything this pod writes
+ * before anything reaches a remote with it. Nothing where this deployment mints
+ * no credential for the attempt's repository.
+ */
+async function workerMinted({ task, bearer, keepSecret, request, write }) {
+  const minted = await planeCredential({
+    task,
+    bearer,
+    path: workerCredentialPath,
+    ...(request === undefined ? {} : { request }),
+    ...(write === undefined ? {} : { write }),
+  });
+  if (minted !== undefined) keepSecret(minted.password);
+  return minted;
+}
+
+/**
+ * A fresh mint immediately before the push. A minted token expires and an
+ * attempt may outlive one, so the credential the clone used is not the one the
+ * push presents. The plane refusing here is this attempt's failure: a clone that
+ * minted and a push that cannot is a deployment mid-change, and reaching the
+ * remote with something else is exactly what a minted credential is for.
+ */
+async function workerRefreshed(asked) {
+  const minted = await workerMinted(asked);
+  if (minted === undefined)
+    throw new Error("the worker plane mints no credential to push with");
+  return minted.environment;
+}
+
+/** The credential this attempt's launcher mounted, and the authority that must name it. */
+function workerMounted(task, repositories, credentialFiles, repositoryId) {
+  const mounted = workerRepository(repositories, credentialFiles, repositoryId);
+  if (!task.authority.credentials.includes(mounted.credential))
+    throw new Error(`worker authority does not grant ${mounted.credential}`);
+  return { repository: mounted.repository, environment: mounted.environment };
+}
+
+/**
+ * The remote one attempt reaches and the askpass environment it reaches it
+ * with. The plane's mint answers where there is one, and the launcher's mount
+ * where there is not — which is what answered before this plane minted
+ * anything, the attempt's own credential roster included. `refresh` comes back
+ * only from the minted arm, there being nothing to take again in the other.
+ */
+export async function workerCredential(asked) {
+  const { task, repositories, credentialFiles, repositoryId } = asked;
+  const minted = await workerMinted(asked);
+  return minted === undefined
+    ? workerMounted(task, repositories, credentialFiles, repositoryId)
+    : {
+        repository: workerRepositoryUrl(repositories, repositoryId),
+        environment: minted.environment,
+        refresh: () => workerRefreshed(asked),
+      };
+}
+
+async function workerWorkspace(
+  task,
+  repositories,
+  credentialFiles,
+  bearer,
+  keepSecret,
+) {
   const input = await (await workerRequest(task, bearer, "/v1/input")).json();
   const repositoryId = oneReference(input, "Repository");
-  const { repository, credential, environment } = workerRepository(
+  const { repository, environment, refresh } = await workerCredential({
+    task,
+    bearer,
     repositories,
     credentialFiles,
     repositoryId,
-  );
-  if (!task.authority.credentials.includes(credential))
-    throw new Error(`worker authority does not grant ${credential}`);
+    keepSecret,
+  });
   const base = oneReference(input, "TargetCommit");
   const directory = await cloneRepository(
     repository,
@@ -199,7 +269,14 @@ async function workerWorkspace(task, repositories, credentialFiles, bearer) {
     required("CHUG_WORKER_WORKSPACE"),
     environment,
   );
-  return { repositoryId, repository, base, directory, environment };
+  return {
+    repositoryId,
+    repository,
+    base,
+    directory,
+    environment,
+    ...(refresh === undefined ? {} : { refresh }),
+  };
 }
 
 async function diagnostic(context, path, result) {
@@ -250,7 +327,7 @@ async function workerRun(task, bearer, credentialFiles, agent) {
     agent === undefined
       ? { environment: {}, secrets: [] }
       : await agentCredential(credentialFiles, agent);
-  const scrub = credentialScrub([
+  const { scrub, keepSecret } = credentialScrubbing([
     ...prepared.secrets,
     bearer,
     ...(await credentialValues(credentialFiles)),
@@ -258,7 +335,12 @@ async function workerRun(task, bearer, credentialFiles, agent) {
   activeScrub = scrub;
   const evidence = runEvidenceRecorder(task, bearer, scrub);
   activeEvidence = evidence;
-  return { agentEnvironment: prepared.environment, scrub, evidence };
+  return {
+    agentEnvironment: prepared.environment,
+    scrub,
+    keepSecret,
+    evidence,
+  };
 }
 
 function scrubbed(text) {
@@ -303,7 +385,7 @@ async function main() {
     await readFile(task.workerPlane.capabilityFile, "utf8")
   ).trim();
   activeBearer = bearer;
-  const { agentEnvironment, scrub, evidence } = await workerRun(
+  const { agentEnvironment, scrub, keepSecret, evidence } = await workerRun(
     task,
     bearer,
     credentialFiles,
@@ -316,6 +398,7 @@ async function main() {
       repositories,
       credentialFiles,
       bearer,
+      keepSecret,
     );
     attemptDatabase(process.env);
     await prepareWorker(task, workspace.directory);

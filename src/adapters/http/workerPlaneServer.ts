@@ -75,6 +75,14 @@ import {
   type WorkerRunTurnsPort,
 } from "../../interpreter/runEvidence.ts";
 import {
+  asRepositoryId,
+  finalizerIdentityCharsMax,
+} from "../../interpreter/finalizer.ts";
+import type {
+  WorkerPlaneCredentialMinted,
+  WorkerPlaneCredentialMinting,
+} from "../../interpreter/workerPlaneCredentials.ts";
+import {
   artifactPathRejection,
   asArtifactDigest,
   resultManifestTextCharsMax,
@@ -105,6 +113,7 @@ export const workerPlaneRoutes = [
   "/v1/run/turns",
   "/v1/run/totals",
   "/v1/run/ended",
+  "/v1/credential",
   "/v1/session",
   "/v1/session/heartbeat",
   "/v1/session/reference",
@@ -114,6 +123,7 @@ export const workerPlaneRoutes = [
   "/v1/session/held",
   "/v1/session/store",
   "/v1/session/store/*",
+  "/v1/session/credential",
 ] as const;
 
 /** What marks a route as one only a composed session plane answers. */
@@ -170,6 +180,13 @@ export interface WorkerPlaneServerService {
    * there could only answer wrongly.
    */
   readonly sessions?: SessionPlaneService;
+  /**
+   * The minting a deployment holding a forge app key composes. Without one both
+   * credential routes answer not found, which is the pod resolving the
+   * credential its launcher mounted exactly as it did before this plane minted
+   * anything.
+   */
+  readonly credentials?: WorkerPlaneCredentialMinting;
   readonly ready: () => Promise<boolean>;
   readonly uploadBytesMax: number;
 }
@@ -641,6 +658,96 @@ function workerReportRoute(
   });
 }
 
+/** How long a pod leaves a plane that could not reach the forge before asking again. */
+const workerCredentialRetryAfterSeconds = 1;
+
+/** What a plane holding no app key answers, which is the pod's signal to fall back. */
+const workerCredentialNotConfigured = { reason: "ForgeNotConfigured" };
+
+/** What a plane that mints answers for a repository it may not mint for. */
+const workerCredentialNotMinted = { reason: "NotMinted" };
+
+/** One repository as a session names it, refused here rather than by the brand. */
+const sessionCredentialSchema = z.strictObject({
+  repository: z
+    .string()
+    .refine((value) => isBoundedText(value, finalizerIdentityCharsMax)),
+});
+
+/**
+ * One minted credential, or the refusal that sends a pod back to what its
+ * launcher mounted. A not-found carries no `action`, unlike every other refusal
+ * here: the pod neither stops nor retries on it, it resolves its own mounted
+ * credential instead, and an outage is the arm that says to wait.
+ */
+function workerCredentialAnswered(
+  reply: FastifyReply,
+  minted: WorkerPlaneCredentialMinted,
+): FastifyReply {
+  switch (minted.minted) {
+    case "Credential":
+      return reply.code(200).send(minted.value);
+    case "NotFound":
+      return reply.code(404).send(workerCredentialNotMinted);
+    case "Unavailable":
+      return workerPlaneRefused(reply, {
+        status: 503,
+        body: { action: "retry" },
+        retryAfterSeconds: workerCredentialRetryAfterSeconds,
+      });
+  }
+}
+
+/**
+ * The credential one attempt works under. It carries no body: the repository is
+ * the one the attempt's own input bundle pinned and the permission set follows
+ * from the kind of task the scheduler recorded, so there is nothing here for a
+ * pod to name and nothing for it to widen.
+ */
+function workerCredentialRoute(
+  app: FastifyInstance,
+  service: WorkerPlaneServerService,
+): void {
+  app.post(workerPlaneRoutes[11], async (request, reply) => {
+    const authority = await workerAuthority(service, request);
+    if (authority === undefined || !authority.live)
+      return reply.code(401).send({ action: "stop" });
+    const credentials = service.credentials;
+    return credentials === undefined
+      ? reply.code(404).send(workerCredentialNotConfigured)
+      : workerCredentialAnswered(reply, await credentials.attempt(authority));
+  });
+}
+
+/**
+ * The credential one session reads its tree under. It names its repository,
+ * because a site may have placed the session against a mirror of the binding
+ * rather than the binding itself; the minting holds that name to the project's
+ * own bindings, and a session is never minted more than a read.
+ */
+function sessionCredentialRoute(
+  app: FastifyInstance,
+  service: WorkerPlaneServerService,
+  sessions: SessionPlaneService,
+): void {
+  app.post(workerPlaneRoutes[21], async (request, reply) => {
+    const caller = await sessionCaller(sessions, request);
+    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+    const offered = sessionCredentialSchema.safeParse(request.body);
+    if (!offered.success) return reply.code(400).send({ action: "stop" });
+    const credentials = service.credentials;
+    return credentials === undefined
+      ? reply.code(404).send(workerCredentialNotConfigured)
+      : workerCredentialAnswered(
+          reply,
+          await credentials.session(
+            caller.identity.partition,
+            asRepositoryId(offered.data.repository),
+          ),
+        );
+  });
+}
+
 /** One session bearer as this plane reads it, or nothing where the token is not one. */
 function sessionBearer(
   request: FastifyRequest,
@@ -802,7 +909,7 @@ function sessionFactsRoute(
   app: FastifyInstance,
   sessions: SessionPlaneService,
 ): void {
-  app.get(workerPlaneRoutes[11], async (request, reply) => {
+  app.get(workerPlaneRoutes[12], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const identity = caller.identity;
@@ -830,7 +937,7 @@ function sessionHeartbeatRoute(
   app: FastifyInstance,
   sessions: SessionPlaneService,
 ): void {
-  app.post(workerPlaneRoutes[12], async (request, reply) => {
+  app.post(workerPlaneRoutes[13], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     return (await sessions.heartbeats.heartbeat(
@@ -847,7 +954,7 @@ function sessionReferenceRoute(
   app: FastifyInstance,
   sessions: SessionPlaneService,
 ): void {
-  app.put(workerPlaneRoutes[13], async (request, reply) => {
+  app.put(workerPlaneRoutes[14], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const offered = sessionReferenceSchema.safeParse(request.body);
@@ -878,7 +985,7 @@ function sessionTurnRoute(
     Math.ceil((sessions.turnPollSecsMax * 1_000) / sessions.turnPollIntervalMs),
   );
   let waiting = 0;
-  app.get(workerPlaneRoutes[14], async (request, reply) => {
+  app.get(workerPlaneRoutes[15], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     if (waiting >= sessions.pollsMax) return reply.code(204).send();
@@ -903,7 +1010,7 @@ function sessionSettleRoutes(
   app: FastifyInstance,
   sessions: SessionPlaneService,
 ): void {
-  app.post(workerPlaneRoutes[15], async (request, reply) => {
+  app.post(workerPlaneRoutes[16], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const offered = sessionTurnAnswerSchema.safeParse(request.body);
@@ -922,7 +1029,7 @@ function sessionSettleRoutes(
       }),
     );
   });
-  app.post(workerPlaneRoutes[16], async (request, reply) => {
+  app.post(workerPlaneRoutes[17], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const offered = sessionTurnFailureSchema.safeParse(request.body);
@@ -937,7 +1044,7 @@ function sessionSettleRoutes(
       }),
     );
   });
-  app.post(workerPlaneRoutes[17], async (request, reply) => {
+  app.post(workerPlaneRoutes[18], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const held = await sessions.holds.hold(
@@ -974,7 +1081,7 @@ function sessionStoreWriteRoute(
   app: FastifyInstance,
   sessions: SessionPlaneService,
 ): void {
-  app.put(workerPlaneRoutes[19], async (request, reply) => {
+  app.put(workerPlaneRoutes[20], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     if (!(request.body instanceof Uint8Array))
@@ -1033,7 +1140,7 @@ function sessionStoreReadRoute(
   app: FastifyInstance,
   sessions: SessionPlaneService,
 ): void {
-  app.get(workerPlaneRoutes[19], async (request, reply) => {
+  app.get(workerPlaneRoutes[20], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const segments = sessionStoreSegments(request);
@@ -1110,7 +1217,7 @@ function sessionStoreStreamsRoute(
   app: FastifyInstance,
   sessions: SessionPlaneService,
 ): void {
-  app.get(workerPlaneRoutes[18], async (request, reply) => {
+  app.get(workerPlaneRoutes[19], async (request, reply) => {
     const caller = await sessionCaller(sessions, request);
     if (caller === undefined) return reply.code(401).send({ action: "stop" });
     const asked = (request.query as Record<string, unknown>)["stream"];
@@ -1172,9 +1279,11 @@ export function createWorkerPlaneApp(
   workerRunConfigurationRoute(app, service);
   workerRunTranscriptRoute(app, service);
   workerRunFigureRoutes(app, service);
+  workerCredentialRoute(app, service);
   const sessions = service.sessions;
   if (sessions !== undefined) {
     sessionBoundsChecked(sessions);
+    sessionCredentialRoute(app, service, sessions);
     sessionFactsRoute(app, sessions);
     sessionHeartbeatRoute(app, sessions);
     sessionReferenceRoute(app, sessions);

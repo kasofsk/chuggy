@@ -119,6 +119,42 @@ test("the worker role settles once and terminal authority is immediately fenced"
   );
 });
 
+/**
+ * The permission set a credential is minted with follows from the kind of task
+ * the scheduler recorded, so the plane has to learn it from the durable row
+ * rather than from anything the pod says about itself. The recorded kind is
+ * moved under the standing attempt and the authority is read twice, because one
+ * read against a Work attempt agrees with a function that answers a constant.
+ */
+test("the authority carries the task kind the scheduler recorded for the attempt", async () => {
+  const attempt = await placedAttempt("worker-task-kind");
+  const authority = postgresWorkerPlaneAuthority(workerPool);
+  const recorded = async (kind: string) =>
+    rig.harness.query(
+      `UPDATE execution_request_task t SET kind=$4,stage=0
+         FROM execution e
+        WHERE t.tenant=e.tenant AND t.project=e.project
+          AND t.request=e.source_request AND t.task=e.task
+          AND e.tenant=$1 AND e.project=$2 AND e.execution=$3`,
+      [
+        attempt.partition.tenant,
+        attempt.partition.project,
+        attempt.execution,
+        kind,
+      ],
+    );
+
+  assert.equal(
+    (await authority.authenticate(attempt.capability.secret))?.taskKind,
+    "Work",
+  );
+  await recorded("Evaluation");
+  assert.equal(
+    (await authority.authenticate(attempt.capability.secret))?.taskKind,
+    "Evaluation",
+  );
+});
+
 test("the worker boundary retains a source handoff with its manifest", async () => {
   const attempt = await placedAttempt("worker-source");
   const target = await rig.harness.query(

@@ -5,11 +5,21 @@ import {
   artifactStore,
   type ArtifactStore,
 } from "../adapters/artifacts/artifactStore.ts";
+import { githubRepositoryHost } from "../adapters/forge/githubAddress.ts";
+import {
+  githubInstallationTokens,
+  githubInstallationTokensPrecondition,
+  githubInstallationTokensSettings,
+  type GithubInstallationTokensOptions,
+} from "../adapters/forge/githubInstallationTokens.ts";
+import { mintedRepositoryTokens } from "../adapters/forge/mintedCredentials.ts";
 import {
   createWorkerPlaneApp,
   type SessionPlaneService,
 } from "../adapters/http/workerPlaneServer.ts";
+import { postgresForgeInstallations } from "../adapters/postgres/forgeInstallation.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
+import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
 import { workerPlaneRole } from "../adapters/postgres/schema.ts";
 import { postgresSessionPlane } from "../adapters/postgres/sessionPlane.ts";
 import {
@@ -26,7 +36,12 @@ import {
 import { workerPlaneUploadBytesMax } from "../contract/http.ts";
 import { silentSchedulerTelemetry } from "../interpreter/executionScheduler.ts";
 import { executionSchedulerIngest } from "../interpreter/executionSchedulerReport.ts";
+import { githubForgeId } from "../interpreter/forgeInstallation.ts";
 import { sessionSchedulerDefaults } from "../interpreter/sessionScheduler.ts";
+import {
+  workerPlaneCredentialMinting,
+  type WorkerPlaneCredentialMinting,
+} from "../interpreter/workerPlaneCredentials.ts";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -86,6 +101,65 @@ function planeSessions(
   };
 }
 
+/**
+ * The app this plane mints under and the key it signs with. They are named
+ * together or not at all: one alone is a deployment that meant to mint and
+ * cannot, which is a refusal to start rather than a pod silently falling back
+ * to a credential its launcher may no longer mount.
+ */
+const forgeAppIdVariable = "CHUG_WORKER_PLANE_FORGE_APP_ID";
+const forgeAppKeyFileVariable = "CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE";
+const forgeApiUrlVariable = "CHUG_WORKER_PLANE_FORGE_API_URL";
+const forgeTimeoutVariable = "CHUG_WORKER_PLANE_FORGE_TIMEOUT_MS";
+
+/** The one app this tree mints under, the portal's, whoever is asking. */
+const forgeApp = "portal";
+
+/** What this plane mints with, or nothing at all where it holds no app key. */
+function planeForgeOptions(): GithubInstallationTokensOptions | undefined {
+  return githubInstallationTokensSettings(
+    {
+      appId: forgeAppIdVariable,
+      appKeyFile: forgeAppKeyFileVariable,
+      apiUrl: forgeApiUrlVariable,
+      timeoutMs: forgeTimeoutVariable,
+    },
+    process.env,
+    positive,
+  );
+}
+
+/**
+ * The minting a pod's credential routes answer from, or nothing where this
+ * deployment holds no app key and every pod resolves what its launcher mounted.
+ * A key this process could not sign with refuses the start, leaving no pool
+ * open behind it: minting that fails at every attempt is worse than not minting
+ * at all, because the pods cannot tell the two apart.
+ */
+async function planeCredentials(
+  pool: ReturnType<typeof postgresPool>,
+): Promise<WorkerPlaneCredentialMinting | undefined> {
+  const options = planeForgeOptions();
+  if (options === undefined) return undefined;
+  const verdict = await githubInstallationTokensPrecondition(options).check(
+    new AbortController().signal,
+  );
+  if (verdict.met !== "Met") {
+    await pool.end();
+    throw new Error(`${forgeAppKeyFileVariable}: ${verdict.why}`);
+  }
+  return workerPlaneCredentialMinting({
+    tokens: mintedRepositoryTokens({
+      forge: githubForgeId,
+      app: forgeApp,
+      repositoryHost: githubRepositoryHost,
+      installations: postgresForgeInstallations(pool),
+      tokens: githubInstallationTokens(options),
+    }),
+    bindings: postgresProjectRepositoryBinding(pool),
+  });
+}
+
 async function main(): Promise<void> {
   const pool = postgresPool(required("CHUG_WORKER_PLANE_DATABASE_URL"));
   const uploadBytesMax = positive(
@@ -96,6 +170,7 @@ async function main(): Promise<void> {
     root: required("CHUG_WORKER_PLANE_ARTIFACT_ROOT"),
     writeBytesMax: uploadBytesMax,
   });
+  const credentials = await planeCredentials(pool);
   const app = createWorkerPlaneApp({
     authority: postgresWorkerPlaneAuthority(pool),
     heartbeats: postgresWorkerAttemptHeartbeats(pool),
@@ -123,6 +198,7 @@ async function main(): Promise<void> {
         ),
     },
     sessions: planeSessions(pool, artifacts),
+    ...(credentials === undefined ? {} : { credentials }),
     uploadBytesMax,
     ready: async () => {
       try {

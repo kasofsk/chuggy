@@ -8,12 +8,50 @@ import {
   publishWorkerResult,
   reportWorkerFailure,
   runWorkerTask,
+  workerCredential,
   workerMode,
 } from "./entrypoint.mjs";
 import { credentialScrub, runEvidenceRecorder } from "./runEvidence.mjs";
 
 const task = { workerPlane: { url: "http://worker-plane.test:3001" } };
 const secret = "sk-ant-oat01-0123456789abcdefghijklmnop";
+const minted = {
+  username: "x-access-token",
+  password: "ghs_0123456789abcdefghijklmnopqrstuvwxyz",
+};
+
+/** The repository this attempt was placed against, as the launcher configured it. */
+const repositories = {
+  "repository-1": {
+    url: "https://github.com/kasofsk/chuggy.git",
+    credential: "forge",
+    credentialUsername: "x-access-token",
+  },
+};
+const credentialFiles = { forge: "/var/run/chuggy/credentials/forge" };
+
+/**
+ * One attempt asking the plane for its credential, with what the plane answers
+ * and what the pod is authorized to mount if it does not.
+ */
+function askedFor(answer, credentials = ["forge"]) {
+  const kept = [];
+  const written = [];
+  return {
+    kept,
+    written,
+    asked: {
+      task: { ...task, authority: { credentials } },
+      bearer: "capability",
+      repositories,
+      credentialFiles,
+      repositoryId: "repository-1",
+      keepSecret: (value) => kept.push(value),
+      request: async () => (typeof answer === "function" ? answer() : answer),
+      write: async (file, content) => written.push({ file, content }),
+    },
+  };
+}
 
 function published(calls, request, scrub, run) {
   return publishWorkerResult(
@@ -252,4 +290,93 @@ test("the failure text a crashed run uploads is scrubbed", async () => {
     .init.body.toString("utf8");
   assert.ok(!uploaded.includes(secret));
   assert.ok(uploaded.includes("[redacted credential]"));
+});
+
+test("a minted credential is what git is given, and the mount is never read", async () => {
+  const { asked, kept, written } = askedFor(
+    { status: 200, ok: true, json: async () => minted },
+    [],
+  );
+
+  const resolved = await workerCredential(asked);
+
+  assert.equal(resolved.repository, repositories["repository-1"].url);
+  assert.equal(
+    resolved.environment.CHUG_WORKER_GIT_CREDENTIAL_FILE,
+    written[0].file,
+  );
+  assert.equal(written[0].content, minted.password);
+  assert.equal(
+    resolved.environment.CHUG_WORKER_GIT_CREDENTIAL_USERNAME,
+    minted.username,
+  );
+  assert.notEqual(
+    resolved.environment.CHUG_WORKER_GIT_CREDENTIAL_FILE,
+    credentialFiles.forge,
+  );
+  assert.deepEqual(kept, [minted.password]);
+});
+
+test("a plane that mints nothing leaves the launcher's mount answering", async () => {
+  const { asked, kept, written } = askedFor({
+    status: 404,
+    json: async () => ({ reason: "ForgeNotConfigured" }),
+  });
+
+  const resolved = await workerCredential(asked);
+
+  assert.equal(resolved.repository, repositories["repository-1"].url);
+  assert.equal(
+    resolved.environment.CHUG_WORKER_GIT_CREDENTIAL_FILE,
+    credentialFiles.forge,
+  );
+  assert.equal(resolved.refresh, undefined);
+  assert.deepEqual(written, []);
+  assert.deepEqual(kept, []);
+});
+
+test("the mounted credential is still one the attempt's authority grants", async () => {
+  const { asked } = askedFor(
+    { status: 404, json: async () => ({ reason: "ForgeNotConfigured" }) },
+    ["claude-code"],
+  );
+
+  await assert.rejects(
+    workerCredential(asked),
+    /worker authority does not grant forge/u,
+  );
+});
+
+test("the push takes a fresh mint rather than the one the clone used", async () => {
+  const later = "ghs_zyxwvutsrqponmlkjihgfedcba9876543210";
+  let mints = 0;
+  const { asked, kept } = askedFor(() => {
+    mints += 1;
+    return {
+      status: 200,
+      ok: true,
+      json: async () => (mints === 1 ? minted : { ...minted, password: later }),
+    };
+  });
+
+  const resolved = await workerCredential(asked);
+  const refreshed = await resolved.refresh();
+
+  assert.equal(mints, 2);
+  assert.equal(refreshed.CHUG_WORKER_GIT_CREDENTIAL_USERNAME, minted.username);
+  assert.deepEqual(kept, [minted.password, later]);
+});
+
+test("a plane that stops minting mid-attempt fails it rather than pushing with a mount", async () => {
+  let mints = 0;
+  const { asked } = askedFor(() => {
+    mints += 1;
+    return mints === 1
+      ? { status: 200, ok: true, json: async () => minted }
+      : { status: 404, json: async () => ({ reason: "NotMinted" }) };
+  });
+
+  const resolved = await workerCredential(asked);
+
+  await assert.rejects(resolved.refresh(), /mints no credential to push with/u);
 });
