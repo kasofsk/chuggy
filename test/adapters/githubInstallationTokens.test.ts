@@ -11,8 +11,9 @@
  * converted by hand is PKCS#8, and a suite proving one would leave the other to
  * be discovered by the forge refusing a signature.
  *
- * THE TOKEN IS A SENTINEL. It is a value no other fixture string contains, so a
- * case can assert it reaches the caller and stands in nothing that was sent.
+ * THE TOKEN IS A SENTINEL AND SO IS THE KEY. Neither is a value any other
+ * fixture string contains, so a case can assert the token reaches the caller
+ * and that neither of them stands in anything that was sent.
  */
 
 import assert from "node:assert/strict";
@@ -26,6 +27,7 @@ import { jwtVerify, decodeProtectedHeader } from "jose";
 
 import {
   githubInstallationTokens,
+  githubInstallationTokensDefaults,
   githubInstallationTokensPrecondition,
 } from "../../src/adapters/forge/githubInstallationTokens.ts";
 import {
@@ -50,6 +52,14 @@ const fixtureKeyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
 
 /** A bound no PEM fits in, so a case can tell a refusal from a short read. */
 const fixtureShortKeyBound = 64;
+
+/**
+ * How far before its own expiry a held token stops being handed out. The case
+ * that observes it names it here rather than reading the adapter's own default,
+ * so a default narrowed to nothing is a case that fails rather than a case that
+ * narrows with it.
+ */
+const fixtureMarginMs = 60_000;
 
 /** The longest an app's JWT may live past its own issuance, which the forge enforces. */
 const fixtureJwtLifetimeSecsMax = 600;
@@ -79,12 +89,26 @@ function directory(t: TestContext): string {
 }
 
 /** The app's key on disk, in whichever PEM encoding the case is about. */
+/**
+ * Whether a value stands anywhere in what the forge was sent. The recorded
+ * calls are compared as the JSON they serialise to, so the needle is escaped
+ * the same way the haystack was: a PEM's own newlines are not what a request
+ * carrying it would show.
+ */
+function fixtureSent(recorder: ForgeRecorder, value: string): boolean {
+  return JSON.stringify(recorder.calls).includes(
+    JSON.stringify(value).slice(1, -1),
+  );
+}
+
+/** The app's key in one PEM encoding, which is what a request must not carry. */
+function fixturePrivateKeyPem(type: "pkcs1" | "pkcs8"): string {
+  return fixtureKeyPair.privateKey.export({ type, format: "pem" }).toString();
+}
+
 function fixtureKeyFile(t: TestContext, type: "pkcs1" | "pkcs8"): string {
   const path = join(directory(t), "app.pem");
-  writeFileSync(
-    path,
-    fixtureKeyPair.privateKey.export({ type, format: "pem" }).toString(),
-  );
+  writeFileSync(path, fixturePrivateKeyPem(type));
   return path;
 }
 
@@ -179,6 +203,12 @@ test("the app's assertion is signed RS256 and claims the app and nothing else", 
     "the assertion outlives what the forge admits",
   );
   assert.ok(expiry > issuedAt, "the assertion expires before it is issued");
+  assert.ok(!fixtureSent(recorder, fixtureToken), "a minted token is not sent");
+  for (const type of ["pkcs1", "pkcs8"] as const)
+    assert.ok(
+      !fixtureSent(recorder, fixturePrivateKeyPem(type)),
+      `the app's key is signed with and never carried (${type})`,
+    );
 });
 
 test("a key in either PEM encoding signs an assertion the forge can verify", async (t) => {
@@ -350,7 +380,7 @@ test("a key past its bound is refused rather than read as far as the bound allow
   }
 });
 
-test("a token is handed out again until its own expiry and minted again after it", async (t) => {
+test("a token is handed out again until its own expiry less the margin, and minted again inside it", async (t) => {
   const clock = fixtureClock(Date.parse("2026-09-10T11:00:00Z"));
   const recorder = fixtureForge([fixtureMinted(), fixtureMinted()]);
   const tokens = fixtureAdapter(t, recorder, {
@@ -359,9 +389,18 @@ test("a token is handed out again until its own expiry and minted again after it
   await tokens.mint(fixtureRequest());
   await tokens.mint(fixtureRequest());
   assert.equal(recorder.calls.length, 1, "a held token makes no request");
-  clock.advance(Date.parse(fixtureExpiry) - clock.now());
+  assert.equal(
+    githubInstallationTokensDefaults.tokenMarginMs,
+    fixtureMarginMs,
+    "the margin this case advances against is the one a deployment gets",
+  );
+  clock.advance(Date.parse(fixtureExpiry) - clock.now() - fixtureMarginMs + 1);
   await tokens.mint(fixtureRequest());
-  assert.equal(recorder.calls.length, 2, "an expired token is minted again");
+  assert.equal(
+    recorder.calls.length,
+    2,
+    "a token the forge still honours but the margin does not is minted again",
+  );
 });
 
 test("a token held is keyed by everything it is good for", async (t) => {
@@ -386,6 +425,38 @@ test("a token held is keyed by everything it is good for", async (t) => {
     }),
   );
   assert.equal(recorder.calls.length, 4, "two repositories are a third token");
+});
+
+test("one repository name under two installations is two tokens", async (t) => {
+  const second = "ghs-elsewhere-z7x8c9";
+  const recorder = fixtureForge([
+    fixtureMinted(),
+    fixtureMinted({ token: second }),
+  ]);
+  const tokens = fixtureAdapter(t, recorder);
+  const here = await tokens.mint(fixtureRequest());
+  const elsewhere = await tokens.mint(
+    fixtureRequest({
+      installation: {
+        ...fixtureRequest().installation,
+        installationId: asForgeInstallationId("156786211"),
+        account: asForgeAccount("otherco"),
+      },
+    }),
+  );
+  assert.equal(
+    recorder.calls.length,
+    2,
+    "a bare repository name is one name on every account, so the installation is what tells the two apart",
+  );
+  assert.deepEqual(
+    [
+      here.minted === "Token" ? here.token : here.minted,
+      elsewhere.minted === "Token" ? elsewhere.token : elsewhere.minted,
+    ],
+    [fixtureToken, second],
+    "neither caller is handed the other's token",
+  );
 });
 
 test("repositories name one token whichever order they arrive in", async (t) => {

@@ -196,6 +196,21 @@ test("a claim is never released and never changes hands, even by the owner", asy
       ),
     /does not change hands/u,
   );
+  await assert.rejects(
+    () =>
+      harness.query(
+        `UPDATE forge_installation SET forge='gitlab' WHERE ${named}`,
+      ),
+    /does not change hands/u,
+  );
+  await assert.rejects(
+    () =>
+      harness.query(
+        `UPDATE forge_installation SET app='worker' WHERE ${named}`,
+      ),
+    /does not change hands/u,
+    "an app the table declares is still not one a claim moves to",
+  );
 });
 
 test("an app and an account kind this tree does not declare are refused by the table", async () => {

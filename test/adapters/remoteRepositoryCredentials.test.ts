@@ -43,6 +43,9 @@ function fixtureAccessToken(spent: string[] = []): AccessTokenSource {
   };
 }
 
+/** How far before its own expiry a held token stops being handed out. */
+const fixtureMarginMs = 60_000;
+
 function fixtureSource(
   recorder: ForgeRecorder,
   accessToken: AccessTokenSource = fixtureAccessToken(),
@@ -56,7 +59,7 @@ function fixtureSource(
       requestTimeoutMs: 5_000,
       responseBytesMax: 65_536,
       responseReadsMax: 16,
-      tokenMarginMs: 60_000,
+      tokenMarginMs: fixtureMarginMs,
       cachedTokensMax: 2,
       ...(currentTimeEpochMs === undefined ? {} : { currentTimeEpochMs }),
     },
@@ -145,16 +148,20 @@ test("a fault and an answer this side cannot read are both a wait", async () => 
   }
 });
 
-test("a held token is handed out again until its own expiry and asked for again after it", async () => {
+test("a held token is handed out again until its own expiry less the margin, and asked for again inside it", async () => {
   let currentMs = Date.parse("2026-09-10T11:00:00Z");
   const recorder = fixtureForge([fixtureGranted(), fixtureGranted()]);
   const source = fixtureSource(recorder, fixtureAccessToken(), () => currentMs);
   await source.credential(fixtureBinding);
   await source.credential(fixtureBinding);
   assert.equal(recorder.calls.length, 1, "a held token makes no request");
-  currentMs = fixtureExpiresAtMs;
+  currentMs = fixtureExpiresAtMs - fixtureMarginMs + 1;
   await source.credential(fixtureBinding);
-  assert.equal(recorder.calls.length, 2, "an expired token is asked for again");
+  assert.equal(
+    recorder.calls.length,
+    2,
+    "a token the issuer still honours but the margin does not is asked for again",
+  );
 });
 
 test("each project's repository is its own held token", async () => {
