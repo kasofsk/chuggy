@@ -354,6 +354,21 @@ export function composeTicketServiceCredentials(
   });
 }
 
+/**
+ * What the API asks a forge for: it proves a binding and reads a repository's
+ * declarations, and opens nothing and pushes nothing under its own credential.
+ */
+export function composeApiRepositoryCredentials(
+  options: CredentialFilesOptions,
+  minting: RepositoryCredentialMinting | undefined,
+): RepositoryCredentialPort {
+  return composeRepositoryCredentials({
+    ...(minting === undefined ? {} : { minting }),
+    permissions: "read",
+    ...options,
+  });
+}
+
 /** What the importer asks a forge for: it reads a repository and writes nothing to one. */
 export function composeConfigurationImporterCredentials(
   options: CredentialFilesOptions,

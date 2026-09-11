@@ -20,6 +20,7 @@ import { test, type TestContext } from "node:test";
 
 import { githubRepositoryHost } from "../../src/adapters/forge/githubAddress.ts";
 import {
+  composeApiRepositoryCredentials,
   composeConfigurationImporterCredentials,
   composeFinalizerForgeCredentials,
   composeFinalizerRepositoryCredentials,
@@ -131,6 +132,18 @@ test("the ticket service observes a source under a token that only reads", async
 test("the importer reads a snapshot under a token that only reads", async () => {
   const asked: ForgePermissionSet[] = [];
   const credentials = composeConfigurationImporterCredentials(
+    { sources: [] },
+    recordingMinting(asked),
+  );
+
+  await credentials.credential(binding);
+
+  assert.deepEqual(asked, ["read"]);
+});
+
+test("the api reads a repository under a token that only reads", async () => {
+  const asked: ForgePermissionSet[] = [];
+  const credentials = composeApiRepositoryCredentials(
     { sources: [] },
     recordingMinting(asked),
   );

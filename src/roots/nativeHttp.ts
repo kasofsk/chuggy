@@ -36,10 +36,10 @@ import {
 import { twoBearerAuthentication } from "../adapters/http/sessionBearer.ts";
 import { postgresSessionBearerAuthority } from "../adapters/postgres/sessionPlane.ts";
 import {
+  composeApiRepositoryCredentials,
   composeForgeCredentialMinting,
   composeForgeRepositoryMinting,
   composeNativeWeb,
-  composeRepositoryCredentials,
   composeRepositoryOnboarding,
   composeSelectorProjectSettings,
   type RepositoryCredentialMinting,
@@ -355,11 +355,7 @@ function nativeRepositoryCredentials(
           encoded,
           repositoryCredentialSourcesVariable,
         );
-  return composeRepositoryCredentials({
-    ...(minting === undefined ? {} : { minting }),
-    permissions: "read",
-    sources,
-  });
+  return composeApiRepositoryCredentials({ sources }, minting);
 }
 
 function repositoryConfigurationSnapshots(
