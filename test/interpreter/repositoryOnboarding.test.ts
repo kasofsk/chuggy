@@ -184,6 +184,17 @@ function fixtureClaims(
           ? held.find((row) => row.installationId === askedInstallation)
           : undefined,
       ),
+    accountClaim: (query) =>
+      Promise.resolve(
+        query.tenant === tenant
+          ? held.find(
+              (row) =>
+                row.forge === query.forge &&
+                row.app === query.app &&
+                row.account === query.account,
+            )
+          : undefined,
+      ),
   };
 }
 

@@ -20,6 +20,7 @@ import {
   forgeInstallationClaimSchema,
   leadInquirySchema,
   projectRepositoryBindSchema,
+  projectRepositoryCreateSchema,
   publicMutationSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
@@ -72,6 +73,10 @@ export function nativeHttpContractDocument(): unknown {
       "a tenant's administrator claims an installation of this deployment's app; an installation another tenant holds is a conflict, and a claim is never released",
     repositoryBinding:
       "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one this deployment holds a credential for — on a host it mints for, that means an installation this tenant has claimed",
+    repositoryConfigurations:
+      "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it",
+    repositoryCreation:
+      "creating a repository requires this tenant's claims of both apps on the account; the repository is the forge's from the moment it answers, so a later refusal is reported beside one that stands and a name already taken is bound rather than created",
     routes: nativeHttpRoutes,
     schemas: {
       publicMutation: z.toJSONSchema(publicMutationSchema),
@@ -84,6 +89,7 @@ export function nativeHttpContractDocument(): unknown {
       forgeCredential: z.toJSONSchema(forgeCredentialRequestSchema),
       forgeInstallationClaim: z.toJSONSchema(forgeInstallationClaimSchema),
       projectRepositoryBind: z.toJSONSchema(projectRepositoryBindSchema),
+      projectRepositoryCreate: z.toJSONSchema(projectRepositoryCreateSchema),
       leadInquiry: z.toJSONSchema(leadInquirySchema),
       selectorProjectSettings: z.toJSONSchema(selectorProjectSettingsSchema),
       threadMessage: z.toJSONSchema(threadMessageSchema),

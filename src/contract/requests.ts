@@ -28,6 +28,7 @@ import {
   forgeCredentialPermissions,
   forgeApps,
   forgeIds,
+  forgeRepositoryVisibilities,
   nativeActionResolutions,
   selectorDispatchModes,
   selectorModes,
@@ -114,6 +115,18 @@ export const forgeInstallationClaimSchema = z.strictObject({
  */
 export const projectRepositoryBindSchema = z.strictObject({
   repository: bodyIdentitySchema,
+});
+
+/**
+ * One repository to create: whose account it is made under, what it is called,
+ * and whether it is that account's alone to read. The forge is not named
+ * because a deployment creates through the one its creation half is composed
+ * for, and the project is the path's.
+ */
+export const projectRepositoryCreateSchema = z.strictObject({
+  account: bodyIdentitySchema,
+  name: bodyIdentitySchema,
+  visibility: z.enum(forgeRepositoryVisibilities),
 });
 
 export const draftCreationSchema = z.strictObject({

@@ -18,6 +18,7 @@ import {
   countSchema,
   cursorSchema,
   forgeInstallationsAnsweredMax,
+  forgeRefusalMessageCharsMax,
   forgeRepositoriesAnsweredMax,
   projectRepositoriesAnsweredMax,
   digestSchema,
@@ -103,6 +104,7 @@ import {
   threadStandings,
   forgeAccountKinds,
   forgeApps,
+  projectRepositoryConfigurationDeferrals,
 } from "./rosters.ts";
 
 const page = <T extends z.ZodType>(item: T) =>
@@ -1270,15 +1272,84 @@ export type ForgeRepositoriesResponse = z.infer<
 >;
 
 /**
- * What binding one repository came to, which names the repository and nothing
- * else: the binding privileges no repository over another, so an answer
+ * What a newly bound repository's own configurations came to. It is beside the
+ * binding and not part of it: the binding is durable whatever this says, so a
+ * `Deferred` is a step to run again through the import and authoring routes
+ * rather than a repository that is not bound.
+ */
+export const projectRepositoryConfigurationsSchema = z.discriminatedUnion(
+  "result",
+  [
+    z.object({ result: z.literal("Imported"), count: countSchema }),
+    z.object({ result: z.literal("Bootstrapped"), revision: identitySchema }),
+    z.object({
+      result: z.literal("Deferred"),
+      reason: z.enum(projectRepositoryConfigurationDeferrals),
+    }),
+  ],
+);
+export type ProjectRepositoryConfigurationsResponse = z.infer<
+  typeof projectRepositoryConfigurationsSchema
+>;
+
+/**
+ * What binding one repository came to. It names the repository and what it
+ * carries: the binding privileges no repository over another, so an answer
  * carrying a position or a count would be saying something the row does not.
  */
 export const projectRepositoryBoundSchema = z.object({
   repository: z.string().min(1),
+  configurations: projectRepositoryConfigurationsSchema,
 });
 export type ProjectRepositoryBoundResponse = z.infer<
   typeof projectRepositoryBoundSchema
+>;
+
+/** The same repository already bound, which carries nothing this request did. */
+export const projectRepositoryAlreadyBoundSchema = z.object({
+  repository: z.string().min(1),
+});
+export type ProjectRepositoryAlreadyBoundResponse = z.infer<
+  typeof projectRepositoryAlreadyBoundSchema
+>;
+
+/**
+ * What reserving a created repository's default branch came to. A refusal
+ * carries the forge's own account of it and leaves the repository standing,
+ * unprotected and usable; `Skipped` is a repository with no branch to reserve.
+ */
+export const projectRepositoryRulesetSchema = z.discriminatedUnion("result", [
+  z.object({ result: z.literal("Created") }),
+  z.object({
+    result: z.literal("Refused"),
+    message: z.string().max(forgeRefusalMessageCharsMax),
+  }),
+  z.object({ result: z.literal("Skipped") }),
+  z.object({ result: z.literal("Unavailable") }),
+]);
+export type ProjectRepositoryRulesetResponse = z.infer<
+  typeof projectRepositoryRulesetSchema
+>;
+
+/**
+ * What creating one repository came to: the repository the forge made, whether
+ * a first commit was written into it, whether its default branch is reserved,
+ * and what the binding that followed found. Every part of it is reported
+ * because a step that did not take leaves a repository that stands.
+ */
+export const projectRepositoryCreatedSchema = z.object({
+  repository: z.string().min(1),
+  created: z.object({
+    account: identitySchema,
+    name: identitySchema,
+    url: z.string().min(1),
+  }),
+  seeded: z.boolean(),
+  ruleset: projectRepositoryRulesetSchema,
+  configurations: projectRepositoryConfigurationsSchema,
+});
+export type ProjectRepositoryCreatedResponse = z.infer<
+  typeof projectRepositoryCreatedSchema
 >;
 
 /** One repository a project binds, and when it was bound. */

@@ -241,11 +241,11 @@ function scratchWrittenObjectOf(ran: GitRan): GitObjectId | undefined {
 export async function scratchObserveHead(
   scratch: GitScratch,
   repository: RepositoryId,
-  credential: RepositoryCredential,
+  credential: RepositoryCredential | undefined,
 ): Promise<ScratchRead<ObservedTarget>> {
   const ran = await scratchRun(scratch, {
     repository,
-    credential,
+    ...(credential === undefined ? {} : { credential }),
     timeoutSecsMax: scratch.options.remoteTimeoutSecsMax,
     argv: [
       "ls-remote",

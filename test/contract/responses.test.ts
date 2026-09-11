@@ -1448,17 +1448,28 @@ test("a tenant's installations and what one grants say whether they are all of i
 });
 
 test("a binding and a project's bindings name the repository and its moment", () => {
-  for (const result of ["Bound", "AlreadyBound"] as const)
-    assert.deepEqual(
-      projectRepositoryBoundSchema.parse(
-        projectRepositoryBindResponse(partition, {
-          result,
-          repository: onboardingRepository,
-        }).body,
-      ),
-      { repository: onboardingRepository },
-      result,
-    );
+  assert.deepEqual(
+    projectRepositoryBoundSchema.parse(
+      projectRepositoryBindResponse(partition, {
+        result: "Bound",
+        repository: onboardingRepository,
+        configurations: { result: "Imported", count: 2 },
+      }).body,
+    ),
+    {
+      repository: onboardingRepository,
+      configurations: { result: "Imported", count: 2 },
+    },
+  );
+  assert.deepEqual(
+    projectRepositoryAlreadyBoundSchema.parse(
+      projectRepositoryBindResponse(partition, {
+        result: "AlreadyBound",
+        repository: onboardingRepository,
+      }).body,
+    ),
+    { repository: onboardingRepository },
+  );
   const bound = projectRepositoriesResponseSchema.parse(
     projectRepositoriesResponse({
       result: "Repositories",

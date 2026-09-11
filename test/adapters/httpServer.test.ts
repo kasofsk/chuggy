@@ -240,7 +240,7 @@ function fakeConfigurations(
       calls.push(
         `importRepositoryConfigurations:${source.repository}:${source.commit}`,
       );
-      return Promise.resolve({ result: "Imported" });
+      return Promise.resolve({ result: "Imported", declarations: 1 });
     },
   };
 }

@@ -220,6 +220,54 @@ export type ForgeAppName = (typeof forgeApps)[number];
 export const forgeAccountKinds = ["User", "Organization"] as const;
 export type ForgeAccountKindName = (typeof forgeAccountKinds)[number];
 
+/** Whether a repository this tree creates is its account's alone to read. */
+export const forgeRepositoryVisibilities = ["private", "public"] as const;
+export type ForgeRepositoryVisibilityName =
+  (typeof forgeRepositoryVisibilities)[number];
+
+/** What configuring a newly bound repository came to. */
+export const projectRepositoryConfigurationResults = [
+  "Imported",
+  "Bootstrapped",
+  "Deferred",
+] as const;
+export type ProjectRepositoryConfigurationResultName =
+  (typeof projectRepositoryConfigurationResults)[number];
+
+/** Why a newly bound repository came away with no configurations of its own. */
+export const projectRepositoryConfigurationDeferrals = [
+  "NotConfigured",
+  "NoBootstrapImage",
+  "DefaultBranchAbsent",
+  "DefaultBranchUnavailable",
+  "RepositoryAbsent",
+  "SnapshotAbsent",
+  "SnapshotUnavailable",
+  "SnapshotRefused",
+  "DeclarationsRefused",
+  "IdentityConflict",
+  "StaleBinding",
+  "NotFound",
+  "ParentNotFound",
+] as const;
+export type ProjectRepositoryConfigurationDeferralName =
+  (typeof projectRepositoryConfigurationDeferrals)[number];
+
+/** What reserving a created repository's default branch came to. */
+export const projectRepositoryRulesetResults = [
+  "Created",
+  "Refused",
+  "Skipped",
+  "Unavailable",
+] as const;
+export type ProjectRepositoryRulesetResultName =
+  (typeof projectRepositoryRulesetResults)[number];
+
+/** The steps of a creation a forge can refuse outright, each named in the refusal. */
+export const projectRepositoryCreateSteps = ["create", "seed"] as const;
+export type ProjectRepositoryCreateStepName =
+  (typeof projectRepositoryCreateSteps)[number];
+
 /** Whether a selector proposal is dispatched or held for a reviewer. */
 export const selectorDispatchModes = ["Automatic", "ApprovalRequired"] as const;
 export type SelectorDispatchMode = (typeof selectorDispatchModes)[number];

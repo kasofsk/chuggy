@@ -215,6 +215,17 @@ function fixtureClaims(store: OnboardingStore): ForgeInstallationClaims {
           ? store.held.find((row) => row.installationId === askedInstallation)
           : undefined,
       ),
+    accountClaim: (query) =>
+      Promise.resolve(
+        query.tenant === tenant
+          ? store.held.find(
+              (row) =>
+                row.forge === query.forge &&
+                row.app === query.app &&
+                row.account === query.account,
+            )
+          : undefined,
+      ),
   };
 }
 
