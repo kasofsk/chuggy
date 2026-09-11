@@ -1588,6 +1588,22 @@ test("a created repository names what was made and how far each step got", () =>
   assert.deepEqual(created.ruleset, { result: "Created" });
 });
 
+test("a created body is refused when any part of it is absent", () => {
+  const body = projectRepositoryCreateResponse(partition, onboardingCreated())
+    .body as Readonly<Record<string, unknown>>;
+  for (const absent of Object.keys(body)) {
+    assert.equal(
+      projectRepositoryCreatedSchema.safeParse(
+        Object.fromEntries(
+          Object.entries(body).filter(([named]) => named !== absent),
+        ),
+      ).success,
+      false,
+      absent,
+    );
+  }
+});
+
 test("every ruleset outcome parses as the schema answers it", () => {
   const rulesets: readonly ProjectRepositoryRulesetResult[] = [
     { result: "Created" },
