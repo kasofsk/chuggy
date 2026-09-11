@@ -35,7 +35,6 @@ import {
   asForgeRepositoryName,
   type ForgeTokenRequest,
 } from "../../src/interpreter/forgeInstallation.ts";
-import { asTenantId } from "../../src/interpreter/projectStore.ts";
 import { fixtureForge, type ForgeRecorder } from "./forgeFixtures.ts";
 
 /** The minted token, which must reach the caller and appear in nothing sent. */
@@ -98,7 +97,6 @@ function fixtureRequest(
       app: "portal",
       account: asForgeAccount("kasofsk"),
       installationId: asForgeInstallationId(fixtureInstallationId),
-      tenant: asTenantId("vteng"),
     },
     repositories: [asForgeRepositoryName("chuggy")],
     permissions: "read",

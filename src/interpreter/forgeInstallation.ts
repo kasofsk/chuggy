@@ -2,11 +2,11 @@
  * A forge installation: the account a tenant claimed an app on, and the tokens
  * minted under it for one repository at a time.
  *
- * AN INSTALLATION IS A ROW AND AN ACCOUNT BELONGS TO ONE TENANT, so the store
- * is read by the account alone and the tenant it answers is a fact rather than
- * a filter. A repository's owner therefore decides which installation mints for
- * it, and a repository no installation covers has no credential rather than a
- * wider one.
+ * THE ROW IS READ BY THE TENANT AND THE ACCOUNT TOGETHER, so a claim another
+ * tenant made is a missing claim here. A repository's owner selects the
+ * installation and the asking tenant decides whether it may be read at all;
+ * nothing above this holds an installation identity, and a repository no claim
+ * of this tenant's covers has no credential rather than a wider one.
  *
  * A MINT ANSWERS THE THREE WAYS `CredentialResolved` DOES. A forge that refused
  * this app is `Denied` and settled for as long as the composition stands; a
@@ -157,20 +157,23 @@ export function asForgeAccountKind(value: string): ForgeAccountKind {
   return kind;
 }
 
-/** One app installed on one account, and the tenant that claimed it. */
+/** One app installed on one account, read under the tenant that claimed it. */
 export interface ForgeInstallation {
   readonly forge: ForgeId;
   readonly app: ForgeApp;
   readonly account: ForgeAccount;
   readonly installationId: ForgeInstallationId;
-  readonly tenant: TenantId;
 }
 
-/** Which installation to read, an account naming at most one per forge and app. */
+/**
+ * Which installation to read. The tenant is part of the question rather than
+ * part of the answer, so a caller cannot read a row and forget to compare it.
+ */
 export interface ForgeInstallationQuery {
   readonly forge: ForgeId;
   readonly app: ForgeApp;
   readonly account: ForgeAccount;
+  readonly tenant: TenantId;
 }
 
 /** Where the claimed installations are read from, which is never the forge. */
@@ -205,11 +208,13 @@ export interface ForgeInstallationTokens {
 /**
  * A token for one repository, which is what every caller in this tree wants:
  * the owner in the repository's own address is what selects the installation,
- * so nothing above this names an account or an installation identity.
+ * so nothing above this names an account or an installation identity. The
+ * tenant is the one asking, not the one the account turns out to belong to.
  */
 export interface ForgeRepositoryTokens {
   token(
     repository: RepositoryId,
+    tenant: TenantId,
     permissions: ForgePermissionSet,
   ): Promise<ForgeTokenMinted>;
 }

@@ -12,7 +12,9 @@
  * `Execute` on the project and then asks the binding read for the repository the
  * caller named, so a member of one project cannot mint for another's
  * repository, and a bound repository whose owner no installation covers is
- * `NotFound` rather than an outage.
+ * `NotFound` rather than an outage. The caller's own tenant goes to the mint
+ * beside the repository, so a binding that reached across tenants mints nothing
+ * even though the binding itself stands.
  *
  * AN OUTAGE IS ITS OWN ANSWER. A forge that could not be reached is
  * `Unavailable`, which the boundary answers 503 with; a refusal is `NotFound`
@@ -117,7 +119,11 @@ export function forgeCredentialMinting(
         return { result: "NotFound" };
       const bound = await bindings.binding(partition, request.repository);
       if (bound === undefined) return { result: "NotFound" };
-      const minted = await tokens.token(bound.repository, request.permissions);
+      const minted = await tokens.token(
+        bound.repository,
+        partition.tenant,
+        request.permissions,
+      );
       switch (minted.minted) {
         case "Token":
           return {

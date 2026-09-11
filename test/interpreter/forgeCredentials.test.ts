@@ -6,6 +6,10 @@
  * a case asserting which one answered is asserting the routing rather than the
  * answer.
  *
+ * THE TENANT ASKING IS WHAT THE MINT IS ASKED UNDER. The caller's partition
+ * carries it, so a binding that reached across tenants cannot widen what the
+ * mint is allowed to look at.
+ *
  * THE REFUSALS ARE ASSERTED APART. A caller without the permit and a repository
  * the project does not bind are both not found, and a forge that could not be
  * reached is a wait — a service that collapsed them would tell a caller to
@@ -39,7 +43,11 @@ import {
 } from "../../src/interpreter/projectAccess.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { ProjectRepositoryBindingRead } from "../../src/interpreter/repositoryConfiguration.ts";
-import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import {
+  asProjectId,
+  asTenantId,
+  type TenantId,
+} from "../../src/interpreter/projectStore.ts";
 
 const fixturePartition = {
   tenant: asTenantId("vteng"),
@@ -50,6 +58,7 @@ const fixtureRepository = asRepositoryId("https://github.com/kasofsk/chuggy");
 const fixtureElsewhere = asRepositoryId("https://forge.invalid/kasofsk/other");
 const fixtureToken = asForgeInstallationToken("ghs-minted-q4w5e6");
 
+/** One binding of the caller's own, which is what the routing cases are about. */
 function fixtureBinding(repository: RepositoryId): RepositoryBinding {
   return {
     partition: fixturePartition,
@@ -86,6 +95,11 @@ function fixtureAccess(
   };
 }
 
+/**
+ * The binding read, answering a row recorded under a tenant of its own. The
+ * caller's partition is the one that must reach the mint, so a fixture whose
+ * row agreed with the caller could not tell the two apart.
+ */
 function fixtureBindings(
   bound: RepositoryId | undefined,
 ): ProjectRepositoryBindingRead {
@@ -93,7 +107,14 @@ function fixtureBindings(
     binding: (_partition, repository) =>
       Promise.resolve(
         bound !== undefined && repository === bound
-          ? fixtureBinding(bound)
+          ? ({
+              partition: {
+                tenant: asTenantId("elsewhere"),
+                project: asProjectId("crossed"),
+              },
+              repository: bound,
+              recoveryEpoch: "epoch",
+            } as RepositoryBinding)
           : undefined,
       ),
   };
@@ -102,10 +123,12 @@ function fixtureBindings(
 function fixtureTokens(
   minted: ForgeTokenMinted,
   asked: RepositoryId[] = [],
+  askedTenants: TenantId[] = [],
 ): ForgeRepositoryTokens {
   return {
-    token: (repository) => {
+    token: (repository, tenant) => {
       asked.push(repository);
+      askedTenants.push(tenant);
       return Promise.resolve(minted);
     },
   };
@@ -153,15 +176,17 @@ test("two sources for one host are refused at composition", () => {
   );
 });
 
-test("minting asks the execute permit and answers the token for the bound repository", async () => {
+test("minting asks the execute permit and answers the token for the bound repository under the caller's own tenant", async () => {
   const kinds: ProjectAccessKind[] = [];
   const asked: RepositoryId[] = [];
+  const askedTenants: TenantId[] = [];
   const minted = await forgeCredentialMinting(
     fixtureAccess("Authorized", kinds),
     fixtureBindings(fixtureRepository),
     fixtureTokens(
       { minted: "Token", token: fixtureToken, expiresAtMs: 1_000 },
       asked,
+      askedTenants,
     ),
   ).mint(fixturePrincipal, fixturePartition, {
     repository: fixtureRepository,
@@ -169,6 +194,11 @@ test("minting asks the execute permit and answers the token for the bound reposi
   });
   assert.deepEqual(kinds, ["Execute"]);
   assert.deepEqual(asked, [fixtureRepository]);
+  assert.deepEqual(
+    askedTenants,
+    [fixturePartition.tenant],
+    "the caller's partition is what the mint is asked under, not the binding's",
+  );
   assert.deepEqual(minted, {
     result: "Authorized",
     value: { token: fixtureToken, expiresAtMs: 1_000 },

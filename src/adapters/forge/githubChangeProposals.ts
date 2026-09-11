@@ -85,6 +85,7 @@ import {
   type ChangeProposalRead,
   type ChangeProposalRequest,
   type ChangeProposalStatus,
+  type ForgeBinding,
   type ForgeCredential,
   type ForgeCredentialPort,
 } from "../../interpreter/changeProposal.ts";
@@ -329,12 +330,9 @@ function githubChangeProposalsRefusalOf(response: Response): GithubAnswer {
 /** Resolves what authorizes one forge act, which is never stored and never folded into anything. */
 async function githubChangeProposalsCredentialOf(
   own: GithubChangeProposalsState,
-  request: ChangeProposalRequest,
+  binding: ForgeBinding,
 ): Promise<GithubAuthorized> {
-  const resolved = await own.credentials.credential(
-    request.binding,
-    request.repository,
-  );
+  const resolved = await own.credentials.credential(binding);
   return resolved.resolved === "Credential"
     ? { authorized: "Credential", credential: resolved.credential }
     : { authorized: "Refused", refusal: resolved.resolved };
@@ -565,7 +563,10 @@ async function githubChangeProposalsCreate(
 ): Promise<ChangeProposalCreated> {
   const target = githubChangeProposalsTargetOf(own, request);
   if (target === undefined) return { created: "Denied" };
-  const authorized = await githubChangeProposalsCredentialOf(own, request);
+  const authorized = await githubChangeProposalsCredentialOf(
+    own,
+    request.binding,
+  );
   if (authorized.authorized === "Refused") {
     return { created: authorized.refusal };
   }
@@ -615,7 +616,10 @@ async function githubChangeProposalsRead(
 ): Promise<ChangeProposalRead> {
   const target = githubChangeProposalsTargetOf(own, request);
   if (target === undefined) return { read: "Denied" };
-  const authorized = await githubChangeProposalsCredentialOf(own, request);
+  const authorized = await githubChangeProposalsCredentialOf(
+    own,
+    request.binding,
+  );
   if (authorized.authorized === "Refused") return { read: authorized.refusal };
   const answer = await githubChangeProposalsSend(
     own,

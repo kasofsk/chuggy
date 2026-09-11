@@ -1,17 +1,17 @@
 /**
- * The two minted sources over one installation store: which repository selects
- * which installation, and what a repository no claim covers comes to.
+ * The minted source over one installation store: which repository selects which
+ * installation, which tenant may read it, and what a repository no claim of
+ * that tenant's covers comes to.
  *
- * A MINT IS THE ASSERTION AND SO IS ITS ABSENCE. A repository on another host
- * and an account no tenant claimed are refused without a mint being attempted,
- * and the recorded requests are what prove it.
+ * A MINT IS THE ASSERTION AND SO IS ITS ABSENCE. A repository on another host,
+ * an account nobody claimed and an account another tenant claimed are refused
+ * without a mint being attempted, and the recorded requests are what prove it.
  */
 
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  mintedForgeCredentials,
   mintedRepositoryCredentials,
   mintedRepositoryTokens,
 } from "../../src/adapters/forge/mintedCredentials.ts";
@@ -32,35 +32,32 @@ import {
   type RepositoryBinding,
   type RepositoryId,
 } from "../../src/interpreter/finalizer.ts";
-import {
-  asForgeBindingId,
-  asForgeCredentialReference,
-} from "../../src/interpreter/changeProposal.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 
 const fixtureForgeId = asForgeId("github");
 const fixtureAccount = "kasofsk";
+const fixtureTenant = asTenantId("vteng");
+const fixtureOtherTenant = asTenantId("otherco");
 const fixtureToken = asForgeInstallationToken("ghs-minted-q4w5e6");
 const fixtureRepository = asRepositoryId(
   `https://${githubRepositoryHost}/${fixtureAccount}/chuggy`,
 );
 const fixtureInstallationId = asForgeInstallationId("156333284");
 
-const fixtureBinding = {
-  partition: {
-    tenant: asTenantId("vteng"),
-    project: asProjectId("chuggy"),
-  },
-  repository: fixtureRepository,
-  recoveryEpoch: "epoch",
-} as unknown as RepositoryBinding;
+/** One project's binding of the fixture repository, under the tenant it names. */
+function fixtureBinding(tenant = fixtureTenant): RepositoryBinding {
+  return {
+    partition: { tenant, project: asProjectId("chuggy") },
+    repository: fixtureRepository,
+    recoveryEpoch: "epoch",
+  } as unknown as RepositoryBinding;
+}
 
-const fixtureForgeBinding = {
-  forge: asForgeBindingId("forge-alpha"),
-  credential: asForgeCredentialReference("forge-alpha-proposals"),
-};
-
-/** The claimed installations this suite composes, recording every account asked about. */
+/**
+ * The claimed installations this suite composes, recording every query asked.
+ * The claim is one tenant's, and a query naming another answers nothing exactly
+ * as a row read by tenant and account does.
+ */
 function fixtureInstallations(
   claimed: readonly string[],
   asked: ForgeInstallationQuery[] = [],
@@ -69,13 +66,12 @@ function fixtureInstallations(
     installation: (query) => {
       asked.push(query);
       return Promise.resolve(
-        claimed.includes(query.account)
+        claimed.includes(query.account) && query.tenant === fixtureTenant
           ? {
               forge: query.forge,
               app: query.app,
               account: query.account,
               installationId: fixtureInstallationId,
-              tenant: asTenantId("vteng"),
             }
           : undefined,
       );
@@ -122,18 +118,19 @@ function fixtureRepositoryTokens(
   });
 }
 
-test("a repository's owner selects the installation and the mint names that repository alone", async () => {
+test("a repository's owner and the asking tenant select the installation, and the mint names that repository alone", async () => {
   const askedInstallations: ForgeInstallationQuery[] = [];
   const askedMints: ForgeTokenRequest[] = [];
   const minted = await fixtureRepositoryTokens({
     askedInstallations,
     askedMints,
-  }).token(fixtureRepository, "write");
+  }).token(fixtureRepository, fixtureTenant, "write");
   assert.deepEqual(askedInstallations, [
     {
       forge: fixtureForgeId,
       app: "portal",
       account: asForgeAccount(fixtureAccount),
+      tenant: fixtureTenant,
     },
   ]);
   assert.deepEqual(askedMints, [
@@ -143,7 +140,6 @@ test("a repository's owner selects the installation and the mint names that repo
         app: "portal",
         account: asForgeAccount(fixtureAccount),
         installationId: fixtureInstallationId,
-        tenant: asTenantId("vteng"),
       },
       repositories: ["chuggy"],
       permissions: "write",
@@ -165,7 +161,11 @@ test("a repository this forge does not hold and an account no tenant claimed are
   ];
   for (const repository of elsewhere) {
     assert.deepEqual(
-      await fixtureRepositoryTokens({ askedMints }).token(repository, "read"),
+      await fixtureRepositoryTokens({ askedMints }).token(
+        repository,
+        fixtureTenant,
+        "read",
+      ),
       { minted: "Denied" },
       repository,
     );
@@ -173,6 +173,7 @@ test("a repository this forge does not hold and an account no tenant claimed are
   assert.deepEqual(
     await fixtureRepositoryTokens({ claimed: [], askedMints }).token(
       fixtureRepository,
+      fixtureTenant,
       "read",
     ),
     { minted: "Denied" },
@@ -180,20 +181,53 @@ test("a repository this forge does not hold and an account no tenant claimed are
   assert.deepEqual(askedMints, [], "no refusal reaches the forge");
 });
 
-test("both minted sources answer the token, each in its own vocabulary", async () => {
-  const tokens = fixtureRepositoryTokens();
+test("an account another tenant claimed is denied to this one, and the tenant is what the store was asked", async () => {
+  const askedInstallations: ForgeInstallationQuery[] = [];
+  const askedMints: ForgeTokenRequest[] = [];
+  const tokens = fixtureRepositoryTokens({ askedInstallations, askedMints });
+  assert.deepEqual(
+    await tokens.token(fixtureRepository, fixtureOtherTenant, "write"),
+    { minted: "Denied" },
+  );
+  assert.deepEqual(
+    askedInstallations.map((query) => query.tenant),
+    [fixtureOtherTenant],
+    "the asking tenant is a term of the lookup",
+  );
+  assert.deepEqual(askedMints, [], "no crossing reaches the forge");
+});
+
+test("a binding of one tenant mints nothing against another tenant's claim", async () => {
+  const askedMints: ForgeTokenRequest[] = [];
+  const tokens = fixtureRepositoryTokens({ askedMints });
   assert.deepEqual(
     await mintedRepositoryCredentials({
       tokens,
-      permissions: "read",
-    }).credential(fixtureBinding),
-    { resolved: "Credential", credential: fixtureToken },
+      permissions: "write",
+    }).credential(fixtureBinding(fixtureOtherTenant)),
+    { resolved: "Denied" },
   );
   assert.deepEqual(
-    await mintedForgeCredentials({ tokens, permissions: "propose" }).credential(
-      fixtureForgeBinding,
-      fixtureRepository,
-    ),
+    await mintedRepositoryCredentials({
+      tokens,
+      permissions: "write",
+    }).credential(fixtureBinding()),
+    { resolved: "Credential", credential: fixtureToken },
+    "the same repository under the claiming tenant still mints",
+  );
+  assert.deepEqual(
+    askedMints.length,
+    1,
+    "only the tenant holding the claim reached the forge",
+  );
+});
+
+test("the minted source answers the token in the credential vocabulary", async () => {
+  assert.deepEqual(
+    await mintedRepositoryCredentials({
+      tokens: fixtureRepositoryTokens(),
+      permissions: "read",
+    }).credential(fixtureBinding()),
     { resolved: "Credential", credential: fixtureToken },
   );
 });
@@ -202,37 +236,28 @@ test("the permission set is the composition's rather than the caller's", async (
   const askedMints: ForgeTokenRequest[] = [];
   const tokens = fixtureRepositoryTokens({ askedMints });
   await mintedRepositoryCredentials({ tokens, permissions: "read" }).credential(
-    fixtureBinding,
+    fixtureBinding(),
   );
-  await mintedForgeCredentials({ tokens, permissions: "propose" }).credential(
-    fixtureForgeBinding,
-    fixtureRepository,
-  );
+  await mintedRepositoryCredentials({
+    tokens,
+    permissions: "propose",
+  }).credential(fixtureBinding());
   assert.deepEqual(
     askedMints.map((request) => request.permissions),
     ["read", "propose"],
   );
 });
 
-test("a refusal and an outage reach both sources unchanged", async () => {
+test("a refusal and an outage reach the source unchanged", async () => {
   for (const [minted, resolved] of [
     ["Denied", "Denied"],
     ["Unavailable", "Unavailable"],
   ] as const) {
-    const tokens = fixtureRepositoryTokens({ minted: { minted } });
     assert.deepEqual(
       await mintedRepositoryCredentials({
-        tokens,
+        tokens: fixtureRepositoryTokens({ minted: { minted } }),
         permissions: "read",
-      }).credential(fixtureBinding),
-      { resolved },
-      minted,
-    );
-    assert.deepEqual(
-      await mintedForgeCredentials({
-        tokens,
-        permissions: "read",
-      }).credential(fixtureForgeBinding, fixtureRepository),
+      }).credential(fixtureBinding()),
       { resolved },
       minted,
     );
@@ -240,21 +265,11 @@ test("a refusal and an outage reach both sources unchanged", async () => {
 });
 
 test("a store or a forge that raised is an outage rather than an answer", async () => {
-  const raising = {
-    token: () => Promise.reject(new Error("the store went away")),
-  };
   assert.deepEqual(
     await mintedRepositoryCredentials({
-      tokens: raising,
+      tokens: { token: () => Promise.reject(new Error("the store went away")) },
       permissions: "read",
-    }).credential(fixtureBinding),
-    { resolved: "Unavailable" },
-  );
-  assert.deepEqual(
-    await mintedForgeCredentials({
-      tokens: raising,
-      permissions: "read",
-    }).credential(fixtureForgeBinding, fixtureRepository),
+    }).credential(fixtureBinding()),
     { resolved: "Unavailable" },
   );
 });

@@ -81,13 +81,13 @@ test("a claim is recorded once and replays by equality", async () => {
       forge: first.forge,
       app: first.app,
       account: first.account,
+      tenant: first.tenant,
     }),
     {
       forge: first.forge,
       app: first.app,
       account: first.account,
       installationId: first.installationId,
-      tenant: first.tenant,
     },
   );
 });
@@ -104,8 +104,13 @@ test("an account another tenant holds is reported rather than taken", async () =
     forge: first.forge,
     app: first.app,
     account: first.account,
+    tenant: first.tenant,
   });
-  assert.equal(held?.tenant, first.tenant, "the standing claim did not move");
+  assert.equal(
+    held?.installationId,
+    first.installationId,
+    "the standing claim did not move",
+  );
 });
 
 test("a reinstall moves the claim onto the new installation", async () => {
@@ -122,6 +127,7 @@ test("a reinstall moves the claim onto the new installation", async () => {
     forge: first.forge,
     app: first.app,
     account: first.account,
+    tenant: first.tenant,
   });
   assert.equal(held?.installationId, again.installationId);
 });
@@ -132,8 +138,36 @@ test("an account no tenant claimed is answered by nothing at all", async () => {
       forge: asForgeId("github"),
       app: asForgeApp("portal"),
       account: asForgeAccount(`account-${randomUUID()}`),
+      tenant: asTenantId("vteng"),
     }),
     undefined,
+  );
+});
+
+test("a claim another tenant holds is answered by nothing at all", async () => {
+  const recording = postgresForgeInstallationRecording(harness.pool);
+  const first = claim();
+  assert.equal(await recording.record(first), "Recorded");
+  const installations = postgresForgeInstallations(harness.pool);
+  assert.equal(
+    await installations.installation({
+      forge: first.forge,
+      app: first.app,
+      account: first.account,
+      tenant: asTenantId("other"),
+    }),
+    undefined,
+    "the account is claimed, but not by the tenant asking",
+  );
+  assert.notEqual(
+    await installations.installation({
+      forge: first.forge,
+      app: first.app,
+      account: first.account,
+      tenant: first.tenant,
+    }),
+    undefined,
+    "the tenant holding the claim still reads it",
   );
 });
 

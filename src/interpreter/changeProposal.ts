@@ -376,15 +376,10 @@ export interface ChangeProposalForges {
   bindingOf(repository: RepositoryId): ForgeBinding | undefined;
 }
 
-/**
- * Resolves proposal API authority independently of either repository
- * credential. The repository is named because a source may mint an authority
- * scoped to one, which a binding alone could not ask for.
- */
+/** Resolves proposal API authority independently of either repository credential. */
 export interface ForgeCredentialPort {
   credential(
     binding: ForgeBinding,
-    repository: RepositoryId,
   ): Promise<
     | { readonly resolved: "Credential"; readonly credential: ForgeCredential }
     | { readonly resolved: "Denied" }

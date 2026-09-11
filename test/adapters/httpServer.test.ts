@@ -42,8 +42,22 @@ import {
   encodeExecutionCursor,
   parsePartition,
 } from "../../src/adapters/http/contract.ts";
-import type { ForgeCredentialMinting } from "../../src/interpreter/forgeCredentials.ts";
-import { asForgeInstallationToken } from "../../src/interpreter/forgeInstallation.ts";
+import {
+  forgeCredentialMinting,
+  type ForgeCredentialMinting,
+} from "../../src/interpreter/forgeCredentials.ts";
+import {
+  asForgeId,
+  asForgeInstallationId,
+  asForgeInstallationToken,
+} from "../../src/interpreter/forgeInstallation.ts";
+import { mintedRepositoryTokens } from "../../src/adapters/forge/mintedCredentials.ts";
+import { githubRepositoryHost } from "../../src/adapters/forge/githubAddress.ts";
+import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
+import {
+  asRepositoryId,
+  type RepositoryBinding,
+} from "../../src/interpreter/finalizer.ts";
 import { unreadableLeadReads } from "./leadReadFixtures.ts";
 import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
 import {
@@ -455,6 +469,7 @@ function appOf(
   calls: string[],
   authenticated = true,
   limits?: NativeHttpLimits,
+  minting?: ForgeCredentialMinting,
 ) {
   return createNativeHttpApp(
     fakeWeb(calls),
@@ -474,7 +489,7 @@ function appOf(
     limits,
     undefined,
     fakeSelectorSettings(calls),
-    fakeForgeCredentials(calls),
+    minting ?? fakeForgeCredentials(calls),
   );
 }
 
@@ -570,6 +585,74 @@ test("a repository this caller may not mint for is not found and a forge that is
     "ForgeUnavailable",
   );
   assert.ok(waiting.headers["retry-after"] !== undefined);
+});
+
+/**
+ * The route over the real minting stack, the store holding one claim: the
+ * tenant in the path is what decides whether that claim may be read, so a
+ * project of another tenant that has somehow bound the repository is answered
+ * exactly as an unbound one is.
+ */
+function realForgeCredentials(claimedBy: string): ForgeCredentialMinting {
+  return forgeCredentialMinting(
+    { authorize: () => Promise.resolve(memberAuthority(asPrincipal("m"))) },
+    {
+      binding: (_partition, repository) =>
+        Promise.resolve({
+          partition: { tenant: asTenantId("elsewhere") },
+          repository,
+        } as RepositoryBinding),
+    },
+    mintedRepositoryTokens({
+      forge: asForgeId("github"),
+      app: "portal",
+      repositoryHost: githubRepositoryHost,
+      installations: {
+        installation: (query) =>
+          Promise.resolve(
+            query.tenant === claimedBy
+              ? {
+                  forge: query.forge,
+                  app: query.app,
+                  account: query.account,
+                  installationId: asForgeInstallationId("156333284"),
+                }
+              : undefined,
+          ),
+      },
+      tokens: {
+        mint: () =>
+          Promise.resolve({
+            minted: "Token",
+            token: asForgeInstallationToken("ghs-minted-q4w5e6"),
+            expiresAtMs: 1_757_500_000_000,
+          }),
+      },
+    }),
+  );
+}
+
+test("a repository whose account another tenant claimed is not found through the route", async () => {
+  const repository = asRepositoryId(
+    `https://${githubRepositoryHost}/kasofsk/chuggy`,
+  );
+  await using crossing = appOf(
+    [],
+    true,
+    undefined,
+    realForgeCredentials("elsewhere"),
+  );
+  assert.equal(
+    (await crossing.inject(forgeCredentialRequest(repository))).statusCode,
+    404,
+  );
+  await using held = appOf([], true, undefined, realForgeCredentials("acme"));
+  const minted = await held.inject(forgeCredentialRequest(repository));
+  assert.equal(
+    minted.statusCode,
+    200,
+    "the tenant the path names holds the claim",
+  );
 });
 
 test("a credential request presenting no bearer or no version reaches no minting", async () => {
