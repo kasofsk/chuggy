@@ -1,5 +1,13 @@
 const askpass = "/usr/local/lib/chuggy/git-askpass.sh";
 
+/**
+ * Where a credential the worker plane minted is written, which both pod
+ * documents mount a memory-backed volume at. It is fixed rather than
+ * configured, because the image and the scheduler have to name one path and
+ * nothing either of them reads would tell them the other had moved.
+ */
+export const mintedCredentialDirectory = "/var/run/chuggy/minted";
+
 /** @typedef {{ url?: unknown, credential?: unknown, credentialUsername?: unknown }} WorkerRepositoryConfiguration */
 
 /**

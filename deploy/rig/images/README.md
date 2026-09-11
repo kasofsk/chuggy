@@ -164,8 +164,8 @@ database, artifact-root and session variables.
 
 | Variable | | |
 |---|---|---|
-| `CHUG_WORKER_PLANE_FORGE_APP_ID` | with the key file, or neither | the GitHub App a pod's git credential is minted under |
-| `CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE` | with the app id, or neither | a file holding that app's RSA private key, in either PEM encoding; the plane refuses to start unless it can be read and used |
+| `CHUG_WORKER_PLANE_FORGE_APP_ID` | with the key file, or neither | the id of the worker App, which is the one a pod's git credential is minted under |
+| `CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE` | with the app id, or neither | a file holding the worker App's RSA private key, in either PEM encoding; the plane refuses to start unless it can be read and used |
 | `CHUG_WORKER_PLANE_FORGE_API_URL` | `https://api.github.com` | where the mint request is sent |
 | `CHUG_WORKER_PLANE_FORGE_TIMEOUT_MS` | | how long one mint request may take before it is an outage |
 
@@ -177,10 +177,19 @@ tenant of this installation has claimed, so a deployment can mint for some of it
 repositories and mount the rest. A plane naming one of the two meant to mint and
 cannot, so it refuses to start.
 
-**The key is the portal App's, the same one the API mints with.** It is a
-separate mount because it is a separate process: the plane reaches the forge from
-wherever it runs, and it holds the key for the pods it answers rather than for
-any caller of its own.
+**The key is the worker App's, and deliberately not the one the API mints
+with.** The branch ruleset admits the portal App to update protected `main`, so
+a work attempt's write token minted under it would let an agent-executed pod
+push there; the worker App is the one the ruleset refuses. Mounting the portal
+App's key here does not widen anything — no installation is claimed for that
+pair, so every mint answers not found and every pod falls back — but it is a
+deployment that meant to mint and does not.
+
+**A minted token never rests on a node's disk.** The scheduler gives every
+worker and session pod a memory-backed volume at `/var/run/chuggy/minted`, which
+is where the image writes the password it is answered with, at mode `0600`. That
+volume is the pod document's, so nothing about it is configured here; a
+deployment that mints nothing simply never writes to it.
 
 ## Prove it
 

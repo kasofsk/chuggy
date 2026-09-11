@@ -36,7 +36,10 @@ import {
 import { workerPlaneUploadBytesMax } from "../contract/http.ts";
 import { silentSchedulerTelemetry } from "../interpreter/executionScheduler.ts";
 import { executionSchedulerIngest } from "../interpreter/executionSchedulerReport.ts";
-import { githubForgeId } from "../interpreter/forgeInstallation.ts";
+import {
+  githubForgeId,
+  workerPodForgeApp,
+} from "../interpreter/forgeInstallation.ts";
 import { sessionSchedulerDefaults } from "../interpreter/sessionScheduler.ts";
 import {
   workerPlaneCredentialMinting,
@@ -102,18 +105,16 @@ function planeSessions(
 }
 
 /**
- * The app this plane mints under and the key it signs with. They are named
- * together or not at all: one alone is a deployment that meant to mint and
- * cannot, which is a refusal to start rather than a pod silently falling back
- * to a credential its launcher may no longer mount.
+ * The key this plane signs with and the id of the app it belongs to, which is
+ * `workerPodForgeApp` rather than anything a deployment names here. They are
+ * given together or not at all: one alone is a deployment that meant to mint
+ * and cannot, which is a refusal to start rather than a pod silently falling
+ * back to a credential its launcher may no longer mount.
  */
 const forgeAppIdVariable = "CHUG_WORKER_PLANE_FORGE_APP_ID";
 const forgeAppKeyFileVariable = "CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE";
 const forgeApiUrlVariable = "CHUG_WORKER_PLANE_FORGE_API_URL";
 const forgeTimeoutVariable = "CHUG_WORKER_PLANE_FORGE_TIMEOUT_MS";
-
-/** The one app this tree mints under, the portal's, whoever is asking. */
-const forgeApp = "portal";
 
 /** What this plane mints with, or nothing at all where it holds no app key. */
 function planeForgeOptions(): GithubInstallationTokensOptions | undefined {
@@ -151,7 +152,7 @@ async function planeCredentials(
   return workerPlaneCredentialMinting({
     tokens: mintedRepositoryTokens({
       forge: githubForgeId,
-      app: forgeApp,
+      app: workerPodForgeApp,
       repositoryHost: githubRepositoryHost,
       installations: postgresForgeInstallations(pool),
       tokens: githubInstallationTokens(options),

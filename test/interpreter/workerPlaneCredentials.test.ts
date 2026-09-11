@@ -10,7 +10,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  allForgeApps,
   asForgeInstallationToken,
+  workerPodForgeApp,
   type ForgePermissionSet,
   type ForgeTokenMinted,
   type ForgeRepositoryTokens,
@@ -110,6 +112,19 @@ function authorityOf(
     inputs: inputs.map((input, ordinal) => ({ ordinal, ...input })),
   };
 }
+
+/**
+ * A work attempt is minted `write`, and the branch ruleset admits the portal
+ * App to update a protected branch. Minting a pod's credential under that app
+ * would therefore hand an agent-executed pod a push to main, so the app a pod
+ * is minted under is the one the ruleset refuses and is not a deployment's to
+ * choose.
+ */
+test("a pod is minted under the app the branch ruleset refuses, never the portal's", () => {
+  assert.equal(workerPodForgeApp, "worker");
+  assert.notEqual(workerPodForgeApp, "portal");
+  assert.ok(allForgeApps.includes(workerPodForgeApp));
+});
 
 test("a work attempt is minted write on the repository its own bundle pinned", async () => {
   const asked: Asked[] = [];

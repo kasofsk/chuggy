@@ -139,6 +139,11 @@
                 "readOnly": false
               },
               {
+                "name": "minted-credential",
+                "mountPath": "/var/run/chuggy/minted",
+                "readOnly": false
+              },
+              {
                 "name": "worker-credential-0",
                 "mountPath": "/var/run/golden/forge",
                 "readOnly": true
@@ -169,6 +174,13 @@
             "name": "worker-workspace",
             "emptyDir": {
               "sizeLimit": "20Gi"
+            }
+          },
+          {
+            "name": "minted-credential",
+            "emptyDir": {
+              "medium": "Memory",
+              "sizeLimit": "1Mi"
             }
           },
           {
@@ -311,6 +323,11 @@
                 "readOnly": false
               },
               {
+                "name": "minted-credential",
+                "mountPath": "/var/run/chuggy/minted",
+                "readOnly": false
+              },
+              {
                 "name": "worker-credential-0",
                 "mountPath": "/var/run/golden/forge",
                 "readOnly": true
@@ -341,6 +358,13 @@
             "name": "worker-workspace",
             "emptyDir": {
               "sizeLimit": "20Gi"
+            }
+          },
+          {
+            "name": "minted-credential",
+            "emptyDir": {
+              "medium": "Memory",
+              "sizeLimit": "1Mi"
             }
           },
           {

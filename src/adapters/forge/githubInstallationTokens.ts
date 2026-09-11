@@ -86,9 +86,10 @@ export interface GithubInstallationTokensVariables {
 
 /**
  * What a process mints with, or nothing at all where it holds no app key. Two
- * processes hold the portal App's key under names of their own, and this is the
- * one place either is read: a second parse would be a second answer to what an
- * app id named without its key file means.
+ * processes hold an app key under names of their own — the API the portal
+ * App's, the worker plane the worker App's — and this is the one place either
+ * is read: a second parse would be a second answer to what an app id named
+ * without its key file means.
  */
 export function githubInstallationTokensSettings(
   named: GithubInstallationTokensVariables,

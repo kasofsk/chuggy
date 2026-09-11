@@ -6,10 +6,13 @@ import {
   sessionCredentialPath,
   workerCredentialPath,
 } from "./planeCredential.mjs";
+import { mintedCredentialDirectory } from "./repository.mjs";
+import { sessionRequest } from "./sessionTransport.mjs";
 
 const task = { workerPlane: { url: "http://worker-plane.test:3001" } };
 const password = "ghs_0123456789abcdefghijklmnopqrstuvwxyz";
 const minted = { username: "x-access-token", password };
+const mintedFile = `${mintedCredentialDirectory}/chuggy-git-credential`;
 
 /** One plane answering one thing, recording everything it was asked. */
 function planeOf(answer) {
@@ -43,7 +46,6 @@ test("an attempt asks for nothing and is answered a credential git reads from a 
     bearer: "capability",
     path: workerCredentialPath,
     request: plane.request,
-    environment: { TMPDIR: "/scratch" },
     write: writer.write,
   });
 
@@ -54,16 +56,16 @@ test("an attempt asks for nothing and is answered a credential git reads from a 
   assert.equal(plane.asked[0].init.body, undefined);
   assert.deepEqual(writer.written, [
     {
-      file: "/scratch/chuggy-git-credential",
+      file: mintedFile,
       content: password,
       options: { mode: 0o600 },
     },
   ]);
-  assert.equal(credential.file, "/scratch/chuggy-git-credential");
+  assert.equal(credential.file, mintedFile);
   assert.equal(credential.password, password);
   assert.equal(
     credential.environment.CHUG_WORKER_GIT_CREDENTIAL_FILE,
-    "/scratch/chuggy-git-credential",
+    mintedFile,
   );
   assert.equal(
     credential.environment.CHUG_WORKER_GIT_CREDENTIAL_USERNAME,
@@ -88,7 +90,6 @@ test("a not-found is an answer the transport hands back rather than retries", as
     bearer: "capability",
     path: workerCredentialPath,
     request: plane.request,
-    environment: {},
     write: writer.write,
   });
 
@@ -107,7 +108,6 @@ test("a session names its repository and the plane is told nothing else", async 
     path: sessionCredentialPath,
     repository: "https://github.com/kasofsk/chuggy.git",
     request: plane.request,
-    environment: {},
     write: writer.write,
   });
 
@@ -118,6 +118,50 @@ test("a session names its repository and the plane is told nothing else", async 
   });
 });
 
+/**
+ * A fake request takes the fifth argument and ignores it, so only the real
+ * transport shows whether naming one field of it unset the rest.
+ */
+test("a session reaches the plane through the transport it is actually given", async () => {
+  const writer = writerOf();
+  const answers = [
+    { status: 404, ok: false, json: async () => ({ reason: "NotMinted" }) },
+    { status: 200, ok: true, json: async () => minted },
+  ];
+  const sent = [];
+  const restore = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    sent.push({ url: String(url), init });
+    return answers[sent.length - 1];
+  };
+  try {
+    const asked = {
+      task,
+      bearer: "chgs_0123456789abcdef0123456789abcdef",
+      path: sessionCredentialPath,
+      repository: "https://github.com/kasofsk/chuggy.git",
+      request: sessionRequest,
+      write: writer.write,
+    };
+
+    assert.equal(await planeCredential(asked), undefined);
+    const credential = await planeCredential(asked);
+
+    assert.equal(credential.file, mintedFile);
+    assert.equal(sent.length, 2);
+    assert.equal(
+      sent[0].url,
+      `http://worker-plane.test:3001${sessionCredentialPath}`,
+    );
+    assert.equal(
+      sent[0].init.headers.authorization,
+      "Bearer chgs_0123456789abcdef0123456789abcdef",
+    );
+  } finally {
+    globalThis.fetch = restore;
+  }
+});
+
 test("every refusal but a not-found is this pod's failure", async () => {
   const writer = writerOf();
   await assert.rejects(
@@ -126,7 +170,6 @@ test("every refusal but a not-found is this pod's failure", async () => {
       bearer: "capability",
       path: workerCredentialPath,
       request: planeOf({ status: 401, json: async () => ({}) }).request,
-      environment: {},
       write: writer.write,
     }),
     /answered 401 for a credential/u,

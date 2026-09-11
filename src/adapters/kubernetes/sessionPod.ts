@@ -42,6 +42,7 @@ import {
   kubernetesAttemptDigest,
   kubernetesContainerResources,
   kubernetesCredentials,
+  kubernetesMintedCredentialVolumes,
   kubernetesPodNamePrefix,
   kubernetesPositive,
   kubernetesPositiveNumber,
@@ -381,6 +382,7 @@ function kubernetesSessionContainer(
         mountPath: config.workspacePath,
         readOnly: false,
       },
+      kubernetesMintedCredentialVolumes().mount,
       ...credentials.mounts,
     ],
   };
@@ -449,6 +451,7 @@ export function kubernetesSessionPodRequest(
             name: kubernetesSessionWorkspaceVolume,
             emptyDir: { sizeLimit: config.resources.ephemeralStorageLimit },
           },
+          kubernetesMintedCredentialVolumes().volume,
           ...credentials.volumes,
         ],
       },

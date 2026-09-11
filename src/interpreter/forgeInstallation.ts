@@ -62,6 +62,15 @@ export const allForgeApps = ["portal", "worker"] as const;
 
 export type ForgeApp = (typeof allForgeApps)[number];
 
+/**
+ * The app a pod's git credential is minted under, which is never the one a
+ * person's browser session acts through. The branch ruleset admits the portal
+ * App to update a protected branch, so a work attempt's write token minted
+ * under it would let an agent-executed pod push to main; the worker App is the
+ * one that ruleset refuses, which is what makes it the pod's.
+ */
+export const workerPodForgeApp: ForgeApp = "worker";
+
 /** Every kind of account a forge installs an app on. */
 export const allForgeAccountKinds = ["User", "Organization"] as const;
 

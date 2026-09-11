@@ -21,12 +21,20 @@
  * script, which reads a file, so the value reaches no argument list and no
  * child's environment. The file is rewritten in place when an attempt that has
  * outlived its token asks again.
+ *
+ * THE TOKEN NEVER RESTS ON A NODE'S DISK. It is written under
+ * `mintedCredentialDirectory`, which both pod documents mount a memory-backed
+ * volume at, rather than under `TMPDIR`: a container's own writable layer is
+ * node-local disk, while every credential the launcher mounts is already tmpfs.
  */
 
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { workerCredentialEnvironment } from "./repository.mjs";
+import {
+  mintedCredentialDirectory,
+  workerCredentialEnvironment,
+} from "./repository.mjs";
 import { workerRequest } from "./transport.mjs";
 
 /** The route an attempt bearer asks its own credential through. */
@@ -72,7 +80,6 @@ export async function planeCredential({
   path,
   repository,
   request = workerRequest,
-  environment = process.env,
   write = writeFile,
 }) {
   const response = await request(
@@ -94,7 +101,7 @@ export async function planeCredential({
       `the worker plane answered ${String(response.status)} for a credential`,
     );
   const minted = planeCredentialChecked(await response.json());
-  const file = join(environment.TMPDIR ?? "/tmp", planeCredentialFileName);
+  const file = join(mintedCredentialDirectory, planeCredentialFileName);
   await write(file, minted.password, { mode: planeCredentialFileMode });
   return {
     file,

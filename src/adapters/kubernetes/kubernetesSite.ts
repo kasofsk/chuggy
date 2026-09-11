@@ -165,7 +165,10 @@ export interface KubernetesPod {
           readonly path: string;
         }[];
       };
-      readonly emptyDir?: { readonly sizeLimit?: string };
+      readonly emptyDir?: {
+        readonly medium?: "Memory";
+        readonly sizeLimit?: string;
+      };
       readonly projected?: {
         readonly defaultMode: number;
         readonly sources: readonly {
@@ -352,6 +355,38 @@ export function kubernetesContainerResources(
 }
 
 /** What resolving a grant's named credentials against a site's mounts produced. */
+/**
+ * Where a pod's image writes a credential the worker plane minted for it, which
+ * `images/worker/repository.mjs` names as `mintedCredentialDirectory`.
+ */
+export const kubernetesMintedCredentialPath = "/var/run/chuggy/minted";
+
+/** The volume that path is, named apart from the credentials a site mounts. */
+const kubernetesMintedCredentialVolume = "minted-credential";
+
+/**
+ * What the image writes a minted token into: memory rather than a node's disk,
+ * a container's own writable layer being disk while every credential a launcher
+ * mounts is already tmpfs. The size limit bounds what the pod's memory is
+ * charged for it, one file holding one token needing almost none of it.
+ */
+export function kubernetesMintedCredentialVolumes(): {
+  readonly volume: KubernetesPod["spec"]["volumes"][number];
+  readonly mount: KubernetesContainer["volumeMounts"][number];
+} {
+  return {
+    volume: {
+      name: kubernetesMintedCredentialVolume,
+      emptyDir: { medium: "Memory", sizeLimit: "1Mi" },
+    },
+    mount: {
+      name: kubernetesMintedCredentialVolume,
+      mountPath: kubernetesMintedCredentialPath,
+      readOnly: false,
+    },
+  };
+}
+
 export interface KubernetesCredentialSelection {
   readonly volumes: KubernetesPod["spec"]["volumes"];
   readonly mounts: KubernetesContainer["volumeMounts"];
