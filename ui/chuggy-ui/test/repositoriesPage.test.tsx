@@ -98,6 +98,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 const installations = {
@@ -126,6 +127,33 @@ const installations = {
       accountKind: "User",
       installationId: "13",
       claimedAt: "2026-09-11T00:00:02Z",
+    },
+  ],
+};
+
+/** The same tenant with one of the two apps installed nowhere at all. */
+function without(app: string): typeof installations {
+  return {
+    truncated: false,
+    installations: installations.installations.filter(
+      (claim) => claim.app !== app,
+    ),
+  };
+}
+
+/** A second account holding both apps, which is what makes the create dialog's
+ * account a choice rather than the only row. */
+const twoAccounts: typeof installations = {
+  truncated: false,
+  installations: [
+    ...installations.installations,
+    {
+      forge: "github",
+      app: "worker",
+      account: "gdoteof",
+      accountKind: "User",
+      installationId: "14",
+      claimedAt: "2026-09-11T00:00:03Z",
     },
   ],
 };
@@ -190,10 +218,19 @@ interface Init {
  * the read rather than the write wants back. */
 const deferred = (): Response => answer({}, 503);
 
-async function drawPage(
-  claimed = installations,
-  posted: (url: string) => Response = deferred,
-): Promise<readonly Sent[]> {
+interface Drawing {
+  /** The claims the tenant holds, which decide what either dialog offers. */
+  readonly claimed?: typeof installations;
+  /** What a write answers with. */
+  readonly posted?: (url: string) => Response;
+  /** What one installation's own listing answers with. */
+  readonly granting?: (url: string) => Response;
+}
+
+async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
+  const claimed = drawing.claimed ?? installations;
+  const posted = drawing.posted ?? deferred;
+  const granting = drawing.granting ?? ((url) => answer(grantedBy(url)));
   const sent: Sent[] = [];
   const fetching = ((url: string, init?: Init) => {
     sent.push({
@@ -204,7 +241,7 @@ async function drawPage(
     });
     if (init?.method === "POST") return Promise.resolve(posted(url));
     if (url.includes("/forge-installations/"))
-      return Promise.resolve(answer(grantedBy(url)));
+      return Promise.resolve(granting(url));
     if (url.includes("/forge-installations"))
       return Promise.resolve(answer(claimed));
     return Promise.resolve(answer(bindings));
@@ -225,6 +262,40 @@ async function drawPage(
 
 function sectionOf(title: string): HTMLElement {
   return screen.getByRole("region", { name: new RegExp(`^${title}`) });
+}
+
+/** The picker opened and the one repository this project does not bind chosen. */
+async function chooseFree(): Promise<void> {
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
+  await settled();
+}
+
+/** The key the page's own bindings are cached under, written out rather than
+ * built, because what a case holds is the key the page reads under. */
+const bindingsKey = [
+  "project",
+  leadPartition.tenant,
+  leadPartition.project,
+  "Project",
+  "project-repositories",
+];
+
+/**
+ * The keys a write stales, watched from after the draw so the reads the draw
+ * itself settles are not among them. The real invalidation is replaced rather
+ * than observed, a refetch being nothing the cases that watch this assert on.
+ */
+function invalidationsAfterDraw(): readonly unknown[] {
+  const raised: unknown[] = [];
+  vi.spyOn(QueryClient.prototype, "invalidateQueries").mockImplementation(
+    (filters?: { readonly queryKey?: unknown }) => {
+      raised.push(filters?.queryKey);
+      return Promise.resolve();
+    },
+  );
+  return raised;
 }
 
 test("an account is one row saying which of the two apps it holds", async () => {
@@ -268,10 +339,7 @@ test("the picker reads every portal installation and marks what is bound", async
 
 test("choosing a repository binds it by address under an idempotency key", async () => {
   const sent = await drawPage();
-  fireEvent.click(screen.getByRole("button", { name: "Add" }));
-  await settled();
-  fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
-  await settled();
+  await chooseFree();
   const bind = sent.find((one) => one.method === "POST");
   expect(bind?.body).toStrictEqual({ repository: freeUrl });
   expect(bind?.key).toBeTruthy();
@@ -286,12 +354,7 @@ test("choosing a repository binds it by address under an idempotency key", async
  * control says so by being unusable rather than by opening onto an empty list.
  */
 test("a tenant holding no portal claim cannot open the picker", async () => {
-  await drawPage({
-    truncated: false,
-    installations: installations.installations.filter(
-      (claim) => claim.app !== "portal",
-    ),
-  });
+  await drawPage({ claimed: without("portal") });
   expect(
     screen.getByRole<HTMLButtonElement>("button", { name: "Add" }).disabled,
   ).toBe(true);
@@ -321,25 +384,23 @@ function statusesOf(): readonly (string | null)[] {
 /** The `201` carries the configurations the binding found and the `200` carries
  * the repository alone, so the second line is drawn for one and not the other. */
 test("a new binding draws what its own configurations came to", async () => {
-  await drawPage(installations, () =>
-    answer(
-      { repository: freeUrl, configurations: { result: "Imported", count: 2 } },
-      201,
-    ),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Add" }));
-  await settled();
-  fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
-  await settled();
+  await drawPage({
+    posted: () =>
+      answer(
+        {
+          repository: freeUrl,
+          configurations: { result: "Imported", count: 2 },
+        },
+        201,
+      ),
+  });
+  await chooseFree();
   expect(statusesOf()).toStrictEqual(["Bound", "Imported"]);
 });
 
 test("a binding that already stood draws the one word and no more", async () => {
-  await drawPage(installations, () => answer({ repository: freeUrl }));
-  fireEvent.click(screen.getByRole("button", { name: "Add" }));
-  await settled();
-  fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
-  await settled();
+  await drawPage({ posted: () => answer({ repository: freeUrl }) });
+  await chooseFree();
   expect(statusesOf()).toStrictEqual(["Already bound"]);
 });
 
@@ -359,12 +420,7 @@ test("the create dialog offers only an account holding both apps", async () => {
 });
 
 test("a tenant holding no account with both apps cannot open the create dialog", async () => {
-  await drawPage({
-    truncated: false,
-    installations: installations.installations.filter(
-      (claim) => claim.app !== "worker",
-    ),
-  });
+  await drawPage({ claimed: without("worker") });
   expect(
     screen.getByRole<HTMLButtonElement>("button", { name: "Create" }).disabled,
   ).toBe(true);
@@ -380,13 +436,17 @@ const made = {
   configurations: { result: "Deferred", reason: "StepFailed" },
 };
 
-async function typeCreate(sent: readonly Sent[]): Promise<Sent | undefined> {
+async function typeCreate(
+  sent: readonly Sent[],
+  visibility: string | null = "Public",
+): Promise<Sent | undefined> {
   fireEvent.click(screen.getByRole("button", { name: "Create" }));
   await settled();
   fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
     target: { value: "scratch" },
   });
-  fireEvent.click(screen.getByRole("radio", { name: "Public" }));
+  if (visibility !== null)
+    fireEvent.click(screen.getByRole("radio", { name: visibility }));
   fireEvent.click(
     within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }),
   );
@@ -395,7 +455,7 @@ async function typeCreate(sent: readonly Sent[]): Promise<Sent | undefined> {
 }
 
 test("a create names what it asked for and draws every step it took", async () => {
-  const sent = await drawPage(installations, () => answer(made, 201));
+  const sent = await drawPage({ posted: () => answer(made, 201) });
   const posted = await typeCreate(sent);
   expect(posted?.body).toStrictEqual({
     account: "kasofsk",
@@ -416,18 +476,133 @@ test("a create names what it asked for and draws every step it took", async () =
 });
 
 test("a create the route refuses is the one line it refused with", async () => {
-  const sent = await drawPage(installations, () =>
-    answer(
-      {
-        error: {
-          code: "InstallationMissing",
-          message:
-            "This tenant has claimed no worker installation on the account.",
+  const sent = await drawPage({
+    posted: () =>
+      answer(
+        {
+          error: {
+            code: "InstallationMissing",
+            message:
+              "This tenant has claimed no worker installation on the account.",
+          },
         },
-      },
-      422,
-    ),
-  );
+        422,
+      ),
+  });
   await typeCreate(sent);
   expect(statusesOf()).toStrictEqual(["Missing: worker"]);
+});
+
+/**
+ * One installation that will not answer takes the whole roster down, because a
+ * repository the reader cannot find may be in the part that was not answered
+ * and a roster missing an account silently reads as the account holding none.
+ */
+test("a listing that fails is a picker that offers nothing", async () => {
+  await drawPage({
+    granting: (url) =>
+      url.includes("/13/repositories")
+        ? answer({}, 503)
+        : answer(grantedBy(url)),
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  const picker = within(screen.getByRole("dialog"));
+  expect(picker.queryByRole("button", { name: "kasofsk/chuggy" })).toBeNull();
+  expect(
+    picker.getByText(
+      "Failed to load · the API asked to be tried again and kept saying so",
+    ),
+  ).toBeTruthy();
+});
+
+/**
+ * The bindings table is a read the write does not answer and no frame names, so
+ * a bind that staled nothing would leave the row the reader just added off the
+ * page until they reloaded it.
+ */
+test("a bind stales the bindings the page drew", async () => {
+  await drawPage({
+    posted: () =>
+      answer(
+        {
+          repository: freeUrl,
+          configurations: { result: "Imported", count: 2 },
+        },
+        201,
+      ),
+  });
+  const raised = invalidationsAfterDraw();
+  await chooseFree();
+  expect(raised).toStrictEqual([bindingsKey]);
+});
+
+test("a create stales the bindings the page drew", async () => {
+  const sent = await drawPage({ posted: () => answer(made, 201) });
+  const raised = invalidationsAfterDraw();
+  await typeCreate(sent);
+  expect(raised).toStrictEqual([bindingsKey]);
+});
+
+/** Nothing was bound, so there is nothing to re-read: a refusal that staled the
+ * key would send the page back to the API on every failed attempt. */
+test("a refused bind stales nothing", async () => {
+  await drawPage({
+    posted: () =>
+      answer(
+        {
+          error: {
+            code: "RepositoryNotInstalled",
+            message: "The portal app is not installed on that repository.",
+          },
+        },
+        422,
+      ),
+  });
+  const raised = invalidationsAfterDraw();
+  await chooseFree();
+  expect(raised).toStrictEqual([]);
+});
+
+/** Private is what the dialog opens on, so a create nobody thought about does
+ * not put a repository on the open internet. */
+test("a create nobody chose a visibility for asks for a private one", async () => {
+  const sent = await drawPage({ posted: () => answer(made, 201) });
+  const posted = await typeCreate(sent, null);
+  expect(posted?.body).toStrictEqual({
+    account: "kasofsk",
+    name: "scratch",
+    visibility: "private",
+  });
+});
+
+/** The account is where the repository is made, so a choice that did not reach
+ * the body would make it under whichever account happened to be first. */
+test("the account chosen is the account the create is asked under", async () => {
+  const sent = await drawPage({
+    claimed: twoAccounts,
+    posted: () => answer(made, 201),
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create" }));
+  await settled();
+  fireEvent.keyDown(screen.getByRole("button", { name: /^Account / }), {
+    key: "ArrowDown",
+  });
+  await screen.findByRole("menu");
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "gdoteof" }));
+  await settled();
+  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
+    target: { value: "scratch" },
+  });
+  fireEvent.click(
+    within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }),
+  );
+  await settled();
+  expect(
+    sent.find((one) => one.url.includes("/repositories/new"))?.body,
+  ).toStrictEqual({
+    account: "gdoteof",
+    name: "scratch",
+    visibility: "private",
+  });
 });

@@ -19,7 +19,7 @@ import { useEffect } from "react";
 import type { ReactNode } from "react";
 
 import { apiProjectInventoryAll } from "../core/apiRoutes.ts";
-import { forgeSetupQueryOf } from "../core/forgeSetup.ts";
+import { forgeSetupQueryOf, forgeSetupRoutePath } from "../core/forgeSetup.ts";
 import type { ForgeSetupQuery } from "../core/forgeSetup.ts";
 import { lastProjectOrFirst, lastProjectRead } from "../core/lastProject.ts";
 import { usePanelInventory } from "./api.ts";
@@ -148,7 +148,7 @@ const repositoriesRoute = createRoute({
  */
 const forgeSetupRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/forge/github/setup",
+  path: forgeSetupRoutePath,
   component: ForgeSetupPage,
   validateSearch: (
     search: Readonly<Record<string, unknown>>,

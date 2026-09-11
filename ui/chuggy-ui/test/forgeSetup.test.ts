@@ -15,6 +15,7 @@ import {
   forgeSetupDecision,
   forgeSetupQueryOf,
   forgeSetupReturn,
+  forgeSetupRoutePath,
   forgeSetupStatusParam,
 } from "../app/core/forgeSetup.ts";
 
@@ -99,6 +100,15 @@ test("the way back carries the outcome and neither the state nor the identity", 
   expect(url.searchParams.get(forgeSetupStatusParam)).toBe(
     "Claimed by another tenant",
   );
+});
+
+/**
+ * The address is a deployment's own configuration rather than a detail of the
+ * router: an operator sets it on both Apps in the forge, and a deployment
+ * already set up against it stops working the day it changes.
+ */
+test("the landing's address is the one the README tells an operator to set", () => {
+  expect(forgeSetupRoutePath).toBe("/forge/github/setup");
 });
 
 test("a way back that already has a query keeps it", () => {

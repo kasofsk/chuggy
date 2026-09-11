@@ -85,6 +85,13 @@ export function forgeSetupDecision(
 export const forgeSetupStatusParam = "connected";
 
 /**
+ * The address the landing is served at, which is what an operator sets as both
+ * Apps' Setup URL on the forge. It is stated once here because changing it
+ * breaks every install in a deployment already configured against it.
+ */
+export const forgeSetupRoutePath = "/forge/github/setup";
+
+/**
  * Where the landing sends the person, with the outcome on it. The state and
  * the installation identity are not: what the next page draws is one word.
  */

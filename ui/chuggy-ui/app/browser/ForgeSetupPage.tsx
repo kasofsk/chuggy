@@ -21,6 +21,7 @@ import {
   forgeSetupDecision,
   forgeSetupRequested,
   forgeSetupReturn,
+  forgeSetupRoutePath,
   forgeSetupUnexpected,
 } from "../core/forgeSetup.ts";
 import type { ForgeSetupDecision } from "../core/forgeSetup.ts";
@@ -84,7 +85,7 @@ function ForgeSetupAnswer(props: {
 }
 
 export function ForgeSetupPage(): ReactNode {
-  const query = useSearch({ from: "/forge/github/setup" });
+  const query = useSearch({ from: forgeSetupRoutePath });
   const [decision] = useState<ForgeSetupDecision>(() =>
     forgeSetupDecision(query, forgeInstallTake(transientStore)),
   );
