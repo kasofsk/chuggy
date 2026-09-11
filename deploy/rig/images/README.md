@@ -174,8 +174,8 @@ credential routes answer not found, and a pod resolves `CHUG_WORKER_REPOSITORIES
 and `CHUG_WORKER_CREDENTIAL_FILES` exactly as it did before the plane minted
 anything. The same not-found is what a pod gets for a repository whose owner this
 pod's own tenant has not claimed — a claim by some other tenant is a not-found
-too — so a deployment can mint for some of its repositories and mount the rest. A plane naming one of the two meant to mint and
-cannot, so it refuses to start.
+too — so a deployment can mint for some of its repositories and mount the rest.
+A plane naming one of the two meant to mint and cannot, so it refuses to start.
 
 **The key is the worker App's, and deliberately not the one the API mints
 with.** The branch ruleset admits the portal App to update protected `main`, so
