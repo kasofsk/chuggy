@@ -83,6 +83,7 @@ import { migration083 } from "./083-access-is-a-relation.ts";
 import { migration084 } from "./084-forge-installations.ts";
 import { migration085 } from "./085-onboarding-over-the-api.ts";
 import { migration086 } from "./086-worker-plane-credentials.ts";
+import { migration087 } from "./087-ticket-service-provenance-read.ts";
 import { migration082 } from "./082-binding-read-names-its-repository.ts";
 import type { Migration } from "../shared.ts";
 
@@ -174,4 +175,5 @@ export const migrations: readonly Migration[] = [
   migration084,
   migration085,
   migration086,
+  migration087,
 ];
