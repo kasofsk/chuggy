@@ -36,7 +36,6 @@
  * interpreter now, so no writer can name a boundary's kind at all.
  */
 
-import { memberAuthorityKind } from "../../../../interpreter/projectAccess.ts";
 import {
   leadInquiriesReadFunction,
   leadInquiryReadFunction,
@@ -56,11 +55,20 @@ import {
   threadStandingCarriesTheRail,
 } from "./079-thread-rail.ts";
 
+/**
+ * The authority kind this migration was applied with. It is written out here
+ * rather than read from the interpreter because the ledger keeps no digest of
+ * a body it has applied, so a kind that moves later must not reach back into
+ * this one — and a rename that leaves the two disagreeing is then red on the
+ * next run rather than a bridge that silently matches nothing.
+ */
+const memberAuthorityKindApplied = "Member";
+
 /** A revision this session's principal authored, under the authority the interpreter derives for them. */
 const authoredUnderTheDerivedAuthority = `EXISTS(SELECT 1 FROM draft_revision r
                       WHERE r.tenant=c.tenant AND r.project=c.project
                         AND r.ticket::text=c.resource
-                        AND r.authority_kind='${memberAuthorityKind}'
+                        AND r.authority_kind='${memberAuthorityKindApplied}'
                         AND r.authority_subject=s.principal)`;
 
 const doorsStopAskingForAMembership = threadMailboxDoors.map(
