@@ -233,6 +233,16 @@
   word-break: break-word;
 }
 
+/* In a column too narrow for it, the report gives up its own panel: what it
+   sits on is already a surface, and the border and the inset are width the
+   words need more. */
+.run-report-bare {
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+
 .run-report > :first-child {
   margin-top: 0;
 }

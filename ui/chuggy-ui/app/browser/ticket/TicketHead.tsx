@@ -21,7 +21,7 @@ import { phaseLabel } from "../../core/codeLabels.ts";
 import { costFigure, spanFigure, tokensFigure } from "../../core/figures.ts";
 import { runSpanOf } from "../../core/runTotals.ts";
 import type { RunSpan } from "../../core/runTotals.ts";
-import { railRoutes } from "../../core/shellRail.ts";
+import { navRoutes } from "../../core/shellNav.ts";
 import { phaseTone } from "../../core/tones.ts";
 import type { Tone } from "../../core/tones.ts";
 import { Breadcrumb, BreadcrumbLink } from "../ui/Breadcrumb.tsx";
@@ -124,7 +124,7 @@ export function TicketTopBar(props: {
   return (
     <>
       <Breadcrumb>
-        <BreadcrumbLink to={railRoutes.overview} params={props.partition}>
+        <BreadcrumbLink to={navRoutes.overview} params={props.partition}>
           Overview
         </BreadcrumbLink>
       </Breadcrumb>

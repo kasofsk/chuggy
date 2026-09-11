@@ -76,7 +76,7 @@ function ConversationToolCall(props: {
   const result = call.result;
   return (
     <Collapsible.Root
-      className="grid min-w-0 gap-2"
+      className="flex flex-col gap-2"
       open={open}
       onOpenChange={setOpen}
     >
@@ -91,7 +91,7 @@ function ConversationToolCall(props: {
         </span>
         <ConversationChevron />
       </Collapsible.Trigger>
-      <Collapsible.Content className="grid min-w-0 gap-2">
+      <Collapsible.Content className="flex flex-col gap-2">
         <pre className={conversationResultClassName}>
           {conversationArgumentText(call.input)}
         </pre>
@@ -161,9 +161,9 @@ export function ConversationWorkCard(props: {
       label={conversationWorkLabel(props.work, props.running)}
       glyph={<ConversationGlyph running={props.running} />}
     >
-      <ol className="border-edge grid min-w-0 gap-3 border-l pl-4">
+      <ol className="border-edge flex flex-col gap-3 border-l pl-4">
         {props.work.map((step, at) => (
-          <li key={at} className="grid min-w-0 gap-1">
+          <li key={at} className="flex flex-col gap-1">
             <ConversationWorkStep step={step} />
           </li>
         ))}

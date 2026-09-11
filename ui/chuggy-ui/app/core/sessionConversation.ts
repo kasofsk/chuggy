@@ -31,11 +31,15 @@ import type {
 import { runCountLabel } from "./runTotals.ts";
 
 /** One session's store as a page holds it: what the walk gathered, the stream
- * the session's own read names, and whether the store's listing carries it. */
+ * the session's own read names, whether the store's listing carries it, and
+ * whether the session has taken a turn at all. */
 export interface SessionConversationRead {
   readonly held: LeadTranscriptHeld;
   readonly stream: string | undefined;
   readonly listed: boolean;
+  /** Whether anything has been asked of this session yet. A store is written by
+   * the first turn, so a session with none has no store to be missing. */
+  readonly turned: boolean;
 }
 
 /**
@@ -63,10 +67,16 @@ function sessionConversationElision(count: number): ConversationMarker {
   };
 }
 
+/** What the walk could not draw, said above the conversation — and nothing at
+ * all for a session nobody has asked anything. The store is written by the
+ * first turn, so a thread just opened names no stream, and `No store` over an
+ * empty pane would read as a fault where there is only a thread nobody has
+ * typed in yet. */
 function sessionConversationMarkers(
   read: SessionConversationRead,
 ): readonly ConversationMarker[] {
-  if (read.stream === undefined) return [{ marker: "NoStore" }];
+  if (read.stream === undefined)
+    return read.turned ? [{ marker: "NoStore" }] : [];
   const held = read.held;
   const shortfall = sessionConversationShortfall(held);
   const shortfalls: readonly ConversationMarker[] = [

@@ -42,7 +42,7 @@ export function ConversationCard(props: {
   const [open, setOpen] = useState(false);
   return (
     <Collapsible.Root
-      className="bg-surface-1 border-edge rounded-3 grid min-w-0 gap-3 border p-3"
+      className="bg-surface-1 border-edge rounded-3 flex flex-col gap-3 border p-3"
       open={open}
       onOpenChange={setOpen}
     >

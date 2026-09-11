@@ -12,7 +12,8 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { KeyValuePort } from "../app/core/sessionHolder.ts";
-import { ThemeControl } from "../app/browser/Shell.tsx";
+import { ChatPaneProvider } from "../app/browser/shell/chatPaneHeld.tsx";
+import { SettingsMenu } from "../app/browser/shell/SettingsMenu.tsx";
 import {
   themeChoiceApply,
   themeChoiceRead,
@@ -74,18 +75,39 @@ test("the attribute carries the choice, and System takes it off", () => {
   expect(root.hasAttribute("data-theme")).toBe(false);
 });
 
-test("the control checks one radio at a time and writes what it applied", () => {
-  render(<ThemeControl />);
-  fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
+/** The choice lives behind the bar's gear, and choosing closes the menu — so a
+ * second reading mounts the bar again, which is also what a reload does. */
+async function themeMenuOpened(): Promise<void> {
+  cleanup();
+  render(
+    <ChatPaneProvider>
+      <SettingsMenu />
+    </ChatPaneProvider>,
+  );
+  fireEvent.keyDown(screen.getByRole("button", { name: "Settings" }), {
+    key: "ArrowDown",
+  });
+  await screen.findByRole("menuitemradio", { name: "Dark" });
+}
+
+function themeChecked(name: string): string | null {
+  return screen
+    .getByRole("menuitemradio", { name })
+    .getAttribute("aria-checked");
+}
+
+test("the control checks one choice at a time and writes what it applied", async () => {
+  await themeMenuOpened();
+  expect(themeChecked("System")).toBe("true");
+  expect(themeChecked("Dark")).toBe("false");
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "Dark" }));
   expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
   expect(localStorage.getItem(themeStoreKey)).toBe("Dark");
-  expect(
-    screen.getByRole("radio", { name: "Dark" }).getAttribute("aria-checked"),
-  ).toBe("true");
-  expect(
-    screen.getByRole("radio", { name: "System" }).getAttribute("aria-checked"),
-  ).toBe("false");
-  fireEvent.click(screen.getByRole("radio", { name: "System" }));
+
+  await themeMenuOpened();
+  expect(themeChecked("Dark")).toBe("true");
+  expect(themeChecked("System")).toBe("false");
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "System" }));
   expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
   expect(localStorage.getItem(themeStoreKey)).toBeNull();
 });

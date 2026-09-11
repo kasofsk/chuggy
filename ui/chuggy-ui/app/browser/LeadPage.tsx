@@ -229,6 +229,7 @@ function LeadBody(props: {
       held: walked.held,
       stream: lead?.agentReference,
       listed,
+      turned: (lead?.turns.length ?? 0) > 0,
     }),
     sessionConversationTurns(lead?.turns ?? []),
   );

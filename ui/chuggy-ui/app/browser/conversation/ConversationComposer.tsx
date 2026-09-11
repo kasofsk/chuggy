@@ -12,6 +12,8 @@ import { ComposerPrimitive, useAuiState } from "@assistant-ui/react";
 import type { ReactNode } from "react";
 
 import { textCodePointsCount } from "../../../../../src/contract/http.ts";
+import type { ConversationMentionItem } from "../../core/conversationMention.ts";
+import { ConversationMentions } from "./ConversationMentions.tsx";
 
 import "./conversation.css";
 
@@ -30,6 +32,16 @@ export interface ConversationComposerProps {
    * about a press this text has since moved past. Fired on the box's own
    * change event, not on a programmatic restore of a kept message. */
   readonly onEdit?: () => void;
+  /** Whether this box takes the caret as it mounts, which is for a thread the
+   * reader just named — one they started, or picked out of the history. A box
+   * that took focus on every mount would take it from the page on the first
+   * paint, which nobody asked it to. */
+  readonly focusOnMount?: boolean;
+  /** The tickets the `@` list offers, which the page reads and this only shows
+   * — the box knows nothing of the API, and a list it fetched for itself would
+   * be the box knowing. Absent where the page offers none, and the list is then
+   * never opened. */
+  readonly mentions?: readonly ConversationMentionItem[];
 }
 
 /** The most rows the box grows to before it scrolls itself. */
@@ -67,35 +79,41 @@ export function ConversationComposer(
       </div>
     );
   return (
-    <ComposerPrimitive.Root className="grid min-w-0 gap-1">
-      <div className="conversation-field bg-surface-1 border-edge-control rounded-3 grid min-w-0 gap-2 border p-3">
-        <ComposerPrimitive.Input
-          className="conversation-input w-full min-w-0 resize-none border-0"
-          minRows={1}
-          maxRows={conversationRowsMax}
-          maxLength={props.charsMax}
-          submitMode="enter"
-          aria-label="Message"
-          onChange={
-            props.onEdit === undefined ? undefined : () => props.onEdit?.()
-          }
-        />
-        <ComposerPrimitive.Send
-          className="rounded-circle bg-surface-inverse text-ink-inverse disabled:bg-surface-2 disabled:text-ink-3 ml-auto flex size-6 items-center justify-center border-0"
-          aria-busy={props.busy}
-        >
-          <ConversationSendGlyph />
-          <span className="visually-hidden">Send</span>
-        </ComposerPrimitive.Send>
-      </div>
-      <div className="text-ink-3 flex flex-wrap items-baseline gap-3 text-xs">
-        {props.note}
-        {count < props.charsMax * conversationCounterShare ? null : (
-          <span className="num ml-auto">
-            {count} / {props.charsMax}
-          </span>
+    <ComposerPrimitive.Unstable_TriggerPopoverRoot>
+      <ComposerPrimitive.Root className="relative flex flex-col gap-1">
+        {props.mentions === undefined ? null : (
+          <ConversationMentions items={props.mentions} />
         )}
-      </div>
-    </ComposerPrimitive.Root>
+        <div className="conversation-field bg-surface-1 border-edge-control rounded-3 flex flex-col gap-2 border p-3">
+          <ComposerPrimitive.Input
+            className="conversation-input w-full min-w-0 resize-none border-0"
+            minRows={1}
+            maxRows={conversationRowsMax}
+            maxLength={props.charsMax}
+            submitMode="enter"
+            aria-label="Message"
+            autoFocus={props.focusOnMount === true}
+            onChange={
+              props.onEdit === undefined ? undefined : () => props.onEdit?.()
+            }
+          />
+          <ComposerPrimitive.Send
+            className="rounded-circle bg-surface-inverse text-ink-inverse disabled:bg-surface-2 disabled:text-ink-3 ml-auto flex size-6 items-center justify-center border-0"
+            aria-busy={props.busy}
+          >
+            <ConversationSendGlyph />
+            <span className="visually-hidden">Send</span>
+          </ComposerPrimitive.Send>
+        </div>
+        <div className="text-ink-3 flex flex-wrap items-baseline gap-3 text-xs">
+          {props.note}
+          {count < props.charsMax * conversationCounterShare ? null : (
+            <span className="num ml-auto">
+              {count} / {props.charsMax}
+            </span>
+          )}
+        </div>
+      </ComposerPrimitive.Root>
+    </ComposerPrimitive.Unstable_TriggerPopoverRoot>
   );
 }
