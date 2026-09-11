@@ -11,6 +11,10 @@
  * holding no commit, and one holding no configuration directory at its head,
  * are passed over — seeding one belongs to the bind. Everything else is that
  * binding's failure alone, and every binding after it is still attempted.
+ *
+ * A RUN THAT FILLED ITS BOUND IS NOT A RUN THAT IMPORTED THE ESTATE, and says
+ * so in what it leaves with. A clean exit from one would be the only thing
+ * telling anyone the newest bindings were never reached.
  */
 
 import assert from "node:assert/strict";
@@ -34,9 +38,13 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import {
+  boundRepositoryImportLine,
+  boundRepositoryImportRefusal,
   importBoundRepositoryConfigurations,
   repositoryBindingsPerImportMax,
+  type BoundRepositoryImport,
   type BoundRepositoryImportPorts,
+  type BoundRepositoryImportResult,
   type RepositoryBindingListed,
   type RepositoryConfigurationSnapshotRead,
   type RepositoryDefaultBranchRead,
@@ -318,4 +326,82 @@ test("a listing that came back at the bound is a run that did not read the estat
 
   assert.equal(filled.truncated, true);
   assert.equal(short.truncated, false);
+});
+
+/** One binding's outcome, which is what a run reports and leaves on. */
+function reported(result: BoundRepositoryImportResult): BoundRepositoryImport {
+  return {
+    partition: partitionOf("atlas"),
+    repository: asRepositoryId("https://github.com/acme/atlas.git"),
+    result,
+  };
+}
+
+const importedAtHead = reported({
+  result: "Imported",
+  commit: head,
+  declarations: 1,
+});
+
+test("a run that filled its listing's bound leaves non-zero naming the bound", () => {
+  assert.equal(
+    boundRepositoryImportRefusal(
+      { imports: [importedAtHead], truncated: false },
+      1000,
+    ),
+    undefined,
+    "a listing that came back short of the bound read the whole estate",
+  );
+  assert.match(
+    String(
+      boundRepositoryImportRefusal(
+        { imports: [importedAtHead], truncated: true },
+        1000,
+      ),
+    ),
+    /filled its bound of 1000 bindings/u,
+  );
+});
+
+test("a binding that failed leaves non-zero beside a bound that filled", () => {
+  const failed = reported({ result: "Failed", failure: { failure: "Raised" } });
+  assert.equal(
+    boundRepositoryImportRefusal(
+      { imports: [failed, importedAtHead], truncated: false },
+      1000,
+    ),
+    "1 of 2 bindings",
+  );
+  assert.match(
+    String(
+      boundRepositoryImportRefusal(
+        { imports: [failed], truncated: true },
+        1000,
+      ),
+    ),
+    /^1 of 1 bindings; the listing filled/u,
+  );
+});
+
+test("a refused declaration's path reaches its line escaped and not raw", () => {
+  const line = boundRepositoryImportLine(
+    reported({
+      result: "Failed",
+      failure: {
+        failure: "Import",
+        outcome: {
+          result: "DeclarationsRefused",
+          faults: [
+            {
+              path: ".chuggy/configurations/one\nfailed: acme/atlas",
+              fault: "PathInvalid",
+            },
+          ],
+        },
+      },
+    }),
+  );
+
+  assert.equal(line.includes("\n"), false);
+  assert.match(line, /one\\nfailed/u);
 });

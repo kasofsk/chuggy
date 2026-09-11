@@ -22,8 +22,6 @@
  * exit would be the only thing telling anyone otherwise.
  */
 
-import { pathToFileURL } from "node:url";
-
 import { gitRepositoryConfiguration } from "../adapters/git/gitRepositoryConfiguration.ts";
 import { postgresAuthoring } from "../adapters/postgres/authoring.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
@@ -43,10 +41,10 @@ import {
   asAuthoritySubject,
 } from "../interpreter/operationInbox.ts";
 import {
+  boundRepositoryImportLine,
+  boundRepositoryImportRefusal,
   importBoundRepositoryConfigurations,
   repositoryBindingsPerImportMax,
-  type BoundRepositoryImport,
-  type BoundRepositoryImportRun,
 } from "../interpreter/repositoryConfiguration.ts";
 import { schemaCompatibilityPrecondition } from "../interpreter/serviceRuntime.ts";
 import { finalizerGitEnvironmentNames } from "../interpreter/finalizerSettings.ts";
@@ -76,22 +74,6 @@ async function importerDatabaseReady(
       ).check(new AbortController().signal)
     ).met === "Met"
   );
-}
-
-/**
- * One binding's outcome as a line. Every term is a variant of the run's own
- * types but a refused declaration's path, which `JSON.stringify` escapes.
- */
-export function configurationImportLine(bound: BoundRepositoryImport): string {
-  const where = `${bound.partition.tenant}/${bound.partition.project} ${bound.repository}`;
-  switch (bound.result.result) {
-    case "Imported":
-      return `${where} imported at ${bound.result.commit}`;
-    case "Skipped":
-      return `${where} skipped: ${bound.result.why}`;
-    case "Failed":
-      return `${where} failed: ${JSON.stringify(bound.result.failure)}`;
-  }
 }
 
 function configurationImporterPorts(
@@ -133,30 +115,6 @@ function configurationImporterPorts(
   };
 }
 
-/**
- * Why a run may not leave zero: a binding it could not import, or a listing it
- * filled, which leaves every binding past the bound unimported.
- */
-export function configurationImportRefusal(
-  run: BoundRepositoryImportRun,
-  bindingsMax: number,
-): string | undefined {
-  const failed = run.imports.filter(
-    (bound) => bound.result.result === "Failed",
-  ).length;
-  const refusals = [
-    ...(failed === 0
-      ? []
-      : [`${String(failed)} of ${String(run.imports.length)} bindings`]),
-    ...(run.truncated
-      ? [
-          `the listing filled its bound of ${String(bindingsMax)} bindings and the rest of the estate is unimported`,
-        ]
-      : []),
-  ];
-  return refusals.length === 0 ? undefined : refusals.join("; ");
-}
-
 async function main(): Promise<void> {
   const config = configurationImporterConfig(process.env);
   const pool = postgresPool(config.database.url, config.database.limits);
@@ -171,11 +129,11 @@ async function main(): Promise<void> {
       bindingsMax: repositoryBindingsPerImportMax,
     });
     for (const bound of run.imports) {
-      const line = `${configurationImportLine(bound)}\n`;
+      const line = `${boundRepositoryImportLine(bound)}\n`;
       if (bound.result.result === "Failed") process.stderr.write(line);
       else process.stdout.write(line);
     }
-    const refused = configurationImportRefusal(
+    const refused = boundRepositoryImportRefusal(
       run,
       repositoryBindingsPerImportMax,
     );
@@ -185,13 +143,9 @@ async function main(): Promise<void> {
   }
 }
 
-if (
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-)
-  await main().catch((failure: unknown) => {
-    const message =
-      failure instanceof Error ? failure.message : "unknown failure";
-    process.stderr.write(`configuration import: ${message}\n`);
-    process.exitCode = 1;
-  });
+await main().catch((failure: unknown) => {
+  const message =
+    failure instanceof Error ? failure.message : "unknown failure";
+  process.stderr.write(`configuration import: ${message}\n`);
+  process.exitCode = 1;
+});

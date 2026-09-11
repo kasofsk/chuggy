@@ -1,31 +1,13 @@
 /**
- * What the importer refuses before it opens a database, and what it leaves
- * with once it has run. A run over every binding names no repository and no
- * commit at all, so what is left to refuse is a configuration that could read
- * nothing and a field this root does not know.
- *
- * A RUN THAT FILLED ITS BOUND IS NOT A RUN THAT IMPORTED THE ESTATE. The bound
- * is a prefix of a listing ordered by age, so a clean exit from one would be
- * the only thing telling anyone the newest bindings were never reached.
+ * What the importer refuses before it opens a database. A run over every
+ * binding names no repository and no commit at all, so what is left to refuse
+ * is a configuration that could read nothing and a field this root does not
+ * know.
  */
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { test } from "node:test";
-
-import {
-  configurationImportLine,
-  configurationImportRefusal,
-} from "../../src/roots/configurationImporter.ts";
-import {
-  asGitObjectId,
-  asRepositoryId,
-} from "../../src/interpreter/finalizer.ts";
-import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
-import type {
-  BoundRepositoryImport,
-  BoundRepositoryImportResult,
-} from "../../src/interpreter/repositoryConfiguration.ts";
 
 interface Ran {
   readonly code: number | null;
@@ -103,75 +85,4 @@ test("a run mounting a credential file needs no app key", async () => {
     false,
     "the configuration stood and the run reached its database",
   );
-});
-
-/** One binding's outcome, which is what a run reports and leaves on. */
-function bound(result: BoundRepositoryImportResult): BoundRepositoryImport {
-  return {
-    partition: { tenant: asTenantId("acme"), project: asProjectId("atlas") },
-    repository: asRepositoryId("https://github.com/acme/atlas.git"),
-    result,
-  };
-}
-
-const imported = bound({
-  result: "Imported",
-  commit: asGitObjectId("a".repeat(40)),
-  declarations: 1,
-});
-
-test("a run that filled its listing's bound leaves non-zero naming the bound", () => {
-  assert.equal(
-    configurationImportRefusal({ imports: [imported], truncated: false }, 1000),
-    undefined,
-    "a listing that came back short of the bound read the whole estate",
-  );
-  assert.match(
-    String(
-      configurationImportRefusal(
-        { imports: [imported], truncated: true },
-        1000,
-      ),
-    ),
-    /filled its bound of 1000 bindings/u,
-  );
-});
-
-test("a binding that failed leaves non-zero beside a bound that filled", () => {
-  const failed = bound({ result: "Failed", failure: { failure: "Raised" } });
-  assert.equal(
-    configurationImportRefusal(
-      { imports: [failed, imported], truncated: false },
-      1000,
-    ),
-    "1 of 2 bindings",
-  );
-  assert.match(
-    String(
-      configurationImportRefusal({ imports: [failed], truncated: true }, 1000),
-    ),
-    /^1 of 1 bindings; the listing filled/u,
-  );
-});
-
-test("a refused declaration's path reaches its line escaped and not raw", () => {
-  const line = configurationImportLine(
-    bound({
-      result: "Failed",
-      failure: {
-        failure: "Import",
-        outcome: {
-          result: "DeclarationsRefused",
-          faults: [
-            {
-              path: ".chuggy/configurations/one\nfailed: acme/atlas",
-              fault: "PathInvalid",
-            },
-          ],
-        },
-      },
-    }),
-  );
-  assert.equal(line.includes("\n"), false);
-  assert.match(line, /one\\nfailed/u);
 });

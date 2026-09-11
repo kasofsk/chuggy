@@ -458,6 +458,50 @@ export async function importBoundRepositoryConfigurations(input: {
   return { imports, truncated: listed.length >= bindingsMax };
 }
 
+/**
+ * One binding's outcome as a line. Every term is a variant of the run's own
+ * types but a refused declaration's path, which `JSON.stringify` escapes.
+ */
+export function boundRepositoryImportLine(
+  bound: BoundRepositoryImport,
+): string {
+  const where = `${bound.partition.tenant}/${bound.partition.project} ${bound.repository}`;
+  switch (bound.result.result) {
+    case "Imported":
+      return `${where} imported at ${bound.result.commit}`;
+    case "Skipped":
+      return `${where} skipped: ${bound.result.why}`;
+    case "Failed":
+      return `${where} failed: ${JSON.stringify(bound.result.failure)}`;
+    default:
+      return assertNever(bound.result);
+  }
+}
+
+/**
+ * Why a run may not leave zero: a binding it could not import, or a listing it
+ * filled, which leaves every binding past the bound unimported.
+ */
+export function boundRepositoryImportRefusal(
+  run: BoundRepositoryImportRun,
+  bindingsMax: number,
+): string | undefined {
+  const failed = run.imports.filter(
+    (bound) => bound.result.result === "Failed",
+  ).length;
+  const refusals = [
+    ...(failed === 0
+      ? []
+      : [`${String(failed)} of ${String(run.imports.length)} bindings`]),
+    ...(run.truncated
+      ? [
+          `the listing filled its bound of ${String(bindingsMax)} bindings and the rest of the estate is unimported`,
+        ]
+      : []),
+  ];
+  return refusals.length === 0 ? undefined : refusals.join("; ");
+}
+
 function repositoryConfigurationRevision(
   commit: GitObjectId,
   name: RepositoryConfigurationName,
