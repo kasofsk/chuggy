@@ -58,6 +58,8 @@ export interface TicketCreationForm extends CreationAuthoring {
   readonly checks: readonly string[];
   readonly branchName: string;
   readonly targetBranchName: string;
+  /** The bound repository the work happens in, empty where none is chosen. */
+  readonly repository: string;
 }
 
 export type CreationField =
@@ -67,6 +69,7 @@ export type CreationField =
   | "checks"
   | "branch"
   | "target"
+  | "repository"
   | "authoring"
   | "fence";
 
@@ -113,8 +116,28 @@ export function creationConfigurationSentence(
   };
 }
 
+/**
+ * Whether this form must name a repository. The server refuses a release that
+ * names none once the project binds one, so the form asks before rather than
+ * after; a project binding none neither asks nor sends.
+ */
+export function creationRepositoryRequired(
+  repositories: readonly string[],
+): boolean {
+  return repositories.length > 0;
+}
+
+/** The sole binding, where there is exactly one and so no choice to make. */
+export function creationRepositoryDefault(
+  repositories: readonly string[],
+): string {
+  const sole = repositories.length === 1 ? repositories[0] : undefined;
+  return sole ?? "";
+}
+
 export function creationFormFrom(
   initialization: DraftInitializationResponse,
+  repositories: readonly string[],
 ): TicketCreationForm {
   return {
     ...initialization.defaults,
@@ -124,6 +147,7 @@ export function creationFormFrom(
     checks: [],
     branchName: "",
     targetBranchName: "",
+    repository: creationRepositoryDefault(repositories),
   };
 }
 
@@ -186,6 +210,8 @@ export function creationFaultSentence(field: CreationField): string {
     case "branch":
     case "target":
       return `a branch is named here without its ${briefBranchPrefix} prefix, and the whole reference is at most ${String(briefBranchCharsMax)} characters`;
+    case "repository":
+      return "this project binds a repository, so a ticket in it names which one";
     case "authoring":
       return "one advanced setting is not one this project offers";
     case "fence":
@@ -200,6 +226,7 @@ function creationFieldOf(path: readonly PropertyKey[]): CreationField {
   if (path[1] === "intent") return "intent";
   if (path[1] === "branch") return "branch";
   if (path[1] === "checks") return "checks";
+  if (path[1] === "repository") return "repository";
   return path[1] === "finalization" ? "target" : "links";
 }
 
@@ -239,10 +266,16 @@ function creationBranchesOf(form: TicketCreationForm): CreationBranches {
 function creationStatedFaults(
   form: TicketCreationForm,
   branches: CreationBranches,
+  repositories: readonly string[],
 ): readonly CreationFault[] {
   const stated: CreationFault[] = [];
   if (creationIntentLines(form.intent).length > briefIntentLinesMax)
     stated.push({ field: "intent", reason: creationFaultSentence("intent") });
+  if (creationRepositoryRequired(repositories) && form.repository.trim() === "")
+    stated.push({
+      field: "repository",
+      reason: creationFaultSentence("repository"),
+    });
   if (branches.branch.named === "Prefixed")
     stated.push({ field: "branch", reason: creationBranchPrefixedSentence });
   if (branches.target.named === "Prefixed")
@@ -267,8 +300,10 @@ function creationBriefOf(
     .map((check) => check.trim())
     .filter((check) => check !== "");
   const title = form.title.trim();
+  const repository = form.repository.trim();
   return {
     ...(title === "" ? {} : { title }),
+    ...(repository === "" ? {} : { repository }),
     intent: creationIntentNormalized(form.intent).trim(),
     links: form.links.map((link) => link.trim()).filter((link) => link !== ""),
     ...(checks.length === 0 ? {} : { checks }),
@@ -292,6 +327,7 @@ function creationBriefOf(
 export function creationBodyFrom(
   initialization: DraftInitializationResponse,
   form: TicketCreationForm,
+  repositories: readonly string[],
 ): CreationAssembly {
   const branches = creationBranchesOf(form);
   const candidate = {
@@ -309,7 +345,7 @@ export function creationBodyFrom(
     },
     brief: creationBriefOf(form, branches),
   };
-  const stated = creationStatedFaults(form, branches);
+  const stated = creationStatedFaults(form, branches, repositories);
   const parsed = draftCreationSchema.safeParse(candidate);
   if (parsed.success && stated.length === 0)
     return { assembled: "Body", body: parsed.data };

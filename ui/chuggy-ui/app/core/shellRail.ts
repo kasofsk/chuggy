@@ -29,6 +29,7 @@ export const railRoutes = {
   threads: "/$tenant/$project/threads",
   thread: "/$tenant/$project/threads/$session",
   selector: "/$tenant/$project/selector",
+  repositories: "/$tenant/$project/repositories",
   ticketNew: "/$tenant/$project/tickets/new",
 } as const;
 
@@ -89,7 +90,8 @@ export interface RailConversations {
 }
 
 export interface ShellRail {
-  /** Ticket overview, Inbox, Selector, New ticket: entries that never scroll away. */
+  /** Ticket overview, Inbox, Selector, Repositories, New ticket: entries that
+   * never scroll away. */
   readonly fixed: readonly RailEntry[];
   readonly conversations: RailConversations;
   readonly allThreads: RailEntry;
@@ -200,6 +202,12 @@ function shellRailFixed(
       count: inboxCount,
     },
     { id: "selector", label: "Selector", to: railRoutes.selector, params },
+    {
+      id: "repositories",
+      label: "Repositories",
+      to: railRoutes.repositories,
+      params,
+    },
     { id: "ticket-new", label: "New ticket", to: railRoutes.ticketNew, params },
   ];
 }

@@ -15,9 +15,15 @@ import {
 import {
   apiAgenticRefusals,
   apiAskLead,
+  apiBindProjectRepository,
+  apiClaimForgeInstallation,
   apiConfiguration,
+  apiCreateProjectRepository,
   apiDispatchView,
   apiExecutions,
+  apiForgeApps,
+  apiForgeInstallationRepositories,
+  apiForgeInstallations,
   apiHideThread,
   apiLead,
   apiLeadInquiries,
@@ -28,6 +34,7 @@ import {
   apiProject,
   apiProjectInventory,
   apiProjectInventoryAll,
+  apiProjectRepositories,
   apiRenameThread,
   apiSelectorHistory,
   apiSelectorSettings,
@@ -65,7 +72,9 @@ function recording(bodyFor: (url: string) => unknown): {
 }
 
 /** Every request as it left, for the routes whose shape is the finding. */
-function recordingRequests(body: unknown): {
+function recordingRequests(
+  bodyFor: (url: string, init: ApiFetchInit) => unknown,
+): {
   readonly ports: ApiPorts;
   readonly requests: { readonly url: string; readonly init: ApiFetchInit }[];
 } {
@@ -78,7 +87,7 @@ function recordingRequests(body: unknown): {
         return Promise.resolve({
           status: 201,
           headers: { get: () => null },
-          text: () => Promise.resolve(JSON.stringify(body)),
+          text: () => Promise.resolve(JSON.stringify(bodyFor(url, init))),
         } as unknown as Response);
       },
       bearer: () => Promise.resolve("token"),
@@ -393,7 +402,7 @@ test("the settings are read, written whole and paged for their revisions", async
  * no media type to be versioned: an open that posts nothing is refused before
  * it reaches the caller's identity. */
 test("opening a thread posts the versioned empty object", async () => {
-  const held = recordingRequests({
+  const held = recordingRequests(() => ({
     session: "thread-1",
     state: "Open",
     mine: true,
@@ -402,7 +411,7 @@ test("opening a thread posts the versioned empty object", async () => {
     openedAt: "2026-09-02T09:00:00Z",
     lastActivityAt: "2026-09-02T10:00:00Z",
     hidden: false,
-  });
+  }));
   const opened = await apiOpenThread(held.ports, partition);
   expect(opened.outcome).toBe("Ok");
   expect(held.requests).toHaveLength(1);
@@ -429,7 +438,7 @@ test("naming and hiding a thread each post one field to their own door", async (
     lastActivityAt: "2026-09-02T10:00:00Z",
     hidden: true,
   };
-  const held = recordingRequests(entry);
+  const held = recordingRequests(() => entry);
 
   const named = await apiRenameThread(
     held.ports,
@@ -453,4 +462,113 @@ test("naming and hiding a thread each post one field to their own door", async (
     expect(request.init.method).toBe("POST");
     expect(request.init.headers["content-type"]).toBe(nativeHttpMediaType);
   }
+});
+
+const madeRepository = "https://forge.test/kasofsk/scratch";
+
+/**
+ * One body per forge route, chosen by the request rather than by the path: a
+ * project's bindings are read and written at the same address, and the two
+ * answer different shapes.
+ */
+function forgeBody(url: string, init: ApiFetchInit): unknown {
+  if (init.method === "POST" && url.endsWith("/repositories/new"))
+    return {
+      repository: madeRepository,
+      created: { account: "kasofsk", name: "scratch", url: madeRepository },
+      seeded: true,
+      ruleset: { result: "Skipped" },
+      configurations: { result: "Imported", count: 2 },
+    };
+  if (init.method === "POST" && url.endsWith("/repositories"))
+    return { repository: madeRepository };
+  if (init.method === "POST")
+    return {
+      forge: "github",
+      app: "worker",
+      account: "kasofsk",
+      accountKind: "Organization",
+      installationId: "42",
+    };
+  if (url.endsWith("/forge/github")) return { apps: [] };
+  if (url.includes("/forge-installations/"))
+    return { repositories: [], truncated: false };
+  if (url.endsWith("/forge-installations"))
+    return { installations: [], truncated: false };
+  return { repositories: [] };
+}
+
+/** The seven forge routes asked for in turn, so the path each names is read
+ * against the six others rather than on its own. */
+async function askForgeRoutes(ports: ApiPorts): Promise<void> {
+  await apiForgeApps(ports);
+  await apiForgeInstallations(ports, "acme");
+  await apiClaimForgeInstallation(ports, "acme", {
+    forge: "github",
+    app: "worker",
+    installationId: "42",
+  });
+  await apiForgeInstallationRepositories(ports, "acme", "42");
+  await apiProjectRepositories(ports, partition);
+  await apiBindProjectRepository(
+    ports,
+    partition,
+    { repository: madeRepository },
+    "op-one",
+  );
+  await apiCreateProjectRepository(
+    ports,
+    partition,
+    { account: "kasofsk", name: "scratch", visibility: "private" },
+    "op-two",
+  );
+}
+
+/**
+ * A path naming the wrong tenant or the wrong segment reaches a route about
+ * somebody else's account, and the two writes are refused outright without the
+ * operation identity they spend.
+ */
+test("each forge route is one path, and each write spends an identity", async () => {
+  const held = recordingRequests(forgeBody);
+  await askForgeRoutes(held.ports);
+  expect(held.requests.map((request) => request.url)).toStrictEqual([
+    `${nativeHttpBasePath}/forge/github`,
+    `${nativeHttpBasePath}/tenants/acme/forge-installations`,
+    `${nativeHttpBasePath}/tenants/acme/forge-installations`,
+    `${nativeHttpBasePath}/tenants/acme/forge-installations/42/repositories`,
+    `${partitionPath}/repositories`,
+    `${partitionPath}/repositories`,
+    `${partitionPath}/repositories/new`,
+  ]);
+  expect(held.requests.map((request) => request.init.method)).toStrictEqual([
+    "GET",
+    "GET",
+    "POST",
+    "GET",
+    "GET",
+    "POST",
+    "POST",
+  ]);
+  expect(
+    held.requests.map((request) => request.init.headers["idempotency-key"]),
+  ).toStrictEqual([
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    "op-one",
+    "op-two",
+  ]);
+});
+
+/** The tenant fills a template rather than being pasted into a path, so a
+ * tenant that looks like a path is still one segment. */
+test("a tenant that looks like a path stays one segment", async () => {
+  const held = recordingRequests(forgeBody);
+  await apiForgeInstallations(held.ports, "ac/me");
+  expect(held.requests[0]?.url).toBe(
+    `${nativeHttpBasePath}/tenants/ac%2Fme/forge-installations`,
+  );
 });

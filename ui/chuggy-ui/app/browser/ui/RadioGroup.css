@@ -1,0 +1,23 @@
+/* RadioGroup: the ring an option is chosen in, and the mark that fills it. */
+
+@layer ui {
+  .radio-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1em;
+    height: 1em;
+    padding: 0;
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge-control);
+    border-radius: var(--radius-circle);
+  }
+
+  .radio-mark {
+    display: block;
+    width: 0.5em;
+    height: 0.5em;
+    border-radius: var(--radius-circle);
+    background: var(--ink-1);
+  }
+}

@@ -24,6 +24,9 @@ export function Picker(props: {
   readonly options: readonly PickerOption[];
   readonly onChoose: (value: string) => void;
   readonly sideOffset?: number;
+  /** What the trigger says while the held value is none of the options, so a
+   * choice nobody has made yet reads as one rather than as a blank control. */
+  readonly placeholder?: string;
 }): ReactNode {
   const chosen = props.options.find(
     (candidate) => candidate.value === props.value,
@@ -32,7 +35,7 @@ export function Picker(props: {
     <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger className={buttonLookClassName({ size: "sm" })}>
         <span className="visually-hidden">{props.label}</span>
-        {` ${chosen?.text ?? props.value}`}
+        {` ${chosen?.text ?? props.placeholder ?? props.value}`}
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <MenuContent sideOffset={props.sideOffset ?? 4}>

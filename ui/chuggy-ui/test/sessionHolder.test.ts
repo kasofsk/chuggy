@@ -12,14 +12,14 @@ import { expect, test } from "vitest";
 import { sessionRefreshFailuresMax } from "../app/core/authorization.ts";
 import {
   createSessionHolder,
+  sessionCallbackPath,
   sessionRefreshTokenKey,
   sessionTransactionKey,
 } from "../app/core/sessionHolder.ts";
-import type {
-  KeyValuePort,
-  SessionHolderPorts,
-} from "../app/core/sessionHolder.ts";
+import type { SessionHolderPorts } from "../app/core/sessionHolder.ts";
 import type { FormRequest } from "../app/core/authorization.ts";
+import { keyValueDouble } from "./keyValueDouble.ts";
+import type { HeldStore } from "./keyValueDouble.ts";
 
 const configuration = {
   issuer: "https://auth.example/",
@@ -36,24 +36,10 @@ const discovery = {
   revocation_endpoint: "https://auth.example/oauth2/revoke",
 };
 
-function store(): KeyValuePort & { readonly held: Map<string, string> } {
-  const held = new Map<string, string>();
-  return {
-    held,
-    read: (key) => held.get(key) ?? null,
-    write: (key, value) => {
-      held.set(key, value);
-    },
-    remove: (key) => {
-      held.delete(key);
-    },
-  };
-}
-
 interface Harness {
   readonly ports: SessionHolderPorts;
-  readonly persistent: ReturnType<typeof store>;
-  readonly transient: ReturnType<typeof store>;
+  readonly persistent: HeldStore;
+  readonly transient: HeldStore;
   readonly asked: (FormRequest | string)[];
   readonly redirects: string[];
   answer: (request: FormRequest | string) => unknown;
@@ -61,8 +47,8 @@ interface Harness {
 }
 
 function harness(): Harness {
-  const persistent = store();
-  const transient = store();
+  const persistent = keyValueDouble();
+  const transient = keyValueDouble();
   const asked: (FormRequest | string)[] = [];
   const redirects: string[] = [];
   const held: Harness = {
@@ -154,9 +140,37 @@ test("a completed callback persists the refresh token and no access token", asyn
   const answer = await holder.completeCallback(
     `?code=abc&state=${String(state)}`,
   );
-  expect(answer).toEqual({ result: "SignedIn" });
+  expect(answer).toEqual({ result: "SignedIn", returnPath: undefined });
   expect(held.persistent.held.get(sessionRefreshTokenKey)).toBe("renew");
   expect([...held.persistent.held.values()]).not.toContain("access");
+});
+
+/** The issuer redirects to the one address this client is registered with, so
+ * a page reached with a query it needs is come back to from the transaction. */
+test("a sign-in that names a page answers that page back on the callback", async () => {
+  const held = harness();
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  await holder.signIn("/forge/github/setup?installation_id=9&state=s");
+  const state = new URLSearchParams(
+    new URL(held.redirects[0] ?? "").search,
+  ).get("state");
+  const answer = await holder.completeCallback(
+    `?code=abc&state=${String(state)}`,
+  );
+  expect(answer).toEqual({
+    result: "SignedIn",
+    returnPath: "/forge/github/setup?installation_id=9&state=s",
+  });
+});
+
+/** The path is in the transaction and nowhere the issuer is given it. */
+test("a named page is not sent to the authorization server", async () => {
+  const held = harness();
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  await holder.signIn("/forge/github/setup?installation_id=9");
+  expect(held.redirects[0] ?? "").not.toContain("installation_id");
 });
 
 test("an issuer that keeps declining ends the session once", async () => {
@@ -240,4 +254,20 @@ test("a renewal changes the generation, which is what reopens a stream", async (
   const before = holder.generation();
   await holder.refresh();
   expect(holder.generation()).toBeGreaterThan(before);
+});
+
+/** The process root replaces the address with this and with nothing else, so
+ * a refusal landing anywhere but the root would be a page the reader did not
+ * ask for drawn over a sign-in that did not happen. */
+test("the callback leaves the tab where the sign-in named, and at the root otherwise", () => {
+  expect(
+    sessionCallbackPath({
+      result: "SignedIn",
+      returnPath: "/vteng/chuggy/repositories?connected=Connected",
+    }),
+  ).toBe("/vteng/chuggy/repositories?connected=Connected");
+  expect(
+    sessionCallbackPath({ result: "SignedIn", returnPath: undefined }),
+  ).toBe("/");
+  expect(sessionCallbackPath({ result: "Denied", reason: "no" })).toBe("/");
 });

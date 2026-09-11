@@ -45,6 +45,7 @@ test("the fixed entries are the project's, in order, and carry the inbox count",
     "Ticket overview",
     "Inbox",
     "Selector",
+    "Repositories",
     "New ticket",
   ]);
   expect(result.fixed[1]?.count).toBe("3");

@@ -87,23 +87,48 @@ function creationAnswers(
 }
 
 test("the configuration is walked for, newest first, until one is ready", async () => {
-  const held = answering((_method, path) =>
-    path.includes("/configurations")
-      ? ok(
-          path.includes("cursor=next")
-            ? configurationsPage
-            : {
-                configurations: [creationSummary("r4", "Incomplete")],
-                nextCursor: "next",
-              },
-        )
-      : ok(creationInitialization),
-  );
+  const held = answering((_method, path) => {
+    if (path.includes("/configurations"))
+      return ok(
+        path.includes("cursor=next")
+          ? configurationsPage
+          : {
+              configurations: [creationSummary("r4", "Incomplete")],
+              nextCursor: "next",
+            },
+      );
+    return path.endsWith("/repositories")
+      ? ok({ repositories: [] })
+      : ok(creationInitialization);
+  });
   const read = await readCreationContext(held.ports, creationPartition);
   expect(read.outcome === "Ok" && read.value.context).toBe("Ready");
-  expect(held.calls.at(-1)).toBe(
-    `GET ${partitionBase}/draft-initializations/r3`,
-  );
+  expect(held.calls).toContain(`GET ${partitionBase}/draft-initializations/r3`);
+  expect(held.calls.at(-1)).toBe(`GET ${partitionBase}/repositories`);
+});
+
+/** The bindings are read in the same motion, because whether the form asks for
+ * a repository is decided by them and not by the initialization. */
+test("the context carries what the project binds", async () => {
+  const held = answering((_method, path) => {
+    if (path.includes("/configurations")) return ok(configurationsPage);
+    return path.endsWith("/repositories")
+      ? ok({
+          repositories: [
+            {
+              repository: "https://forge.test/kasofsk/chuggy",
+              boundAt: "2026-08-26T00:00:00Z",
+            },
+          ],
+        })
+      : ok(creationInitialization);
+  });
+  const read = await readCreationContext(held.ports, creationPartition);
+  expect(
+    read.outcome === "Ok" && read.value.context === "Ready"
+      ? read.value.repositories
+      : undefined,
+  ).toStrictEqual(["https://forge.test/kasofsk/chuggy"]);
 });
 
 test("a project whose revisions run out with none ready says exactly that", async () => {

@@ -26,6 +26,7 @@ import {
   apiConfigurations,
   apiCreateDraft,
   apiDraftInitialization,
+  apiProjectRepositories,
 } from "./apiRoutes.ts";
 import type { ApiPorts, ApiResult } from "./apiRequest.ts";
 import {
@@ -54,6 +55,9 @@ export type CreationContext =
       readonly context: "Ready";
       readonly configuration: ConfigurationSummary;
       readonly initialization: DraftInitializationResponse;
+      /** What the project binds, which decides whether the form asks for one
+       * and what it offers. Oldest first, as the listing answers. */
+      readonly repositories: readonly string[];
     }
   | { readonly context: "NoReadyConfiguration" }
   | {
@@ -170,16 +174,18 @@ export async function readCreationContext(
     partition,
     configuration.revision,
   );
-  return initialized.outcome === "Ok"
-    ? {
-        outcome: "Ok",
-        value: {
-          context: "Ready",
-          configuration,
-          initialization: initialized.value,
-        },
-      }
-    : initialized;
+  if (initialized.outcome !== "Ok") return initialized;
+  const bound = await apiProjectRepositories(ports, partition);
+  if (bound.outcome !== "Ok") return bound;
+  return {
+    outcome: "Ok",
+    value: {
+      context: "Ready",
+      configuration,
+      initialization: initialized.value,
+      repositories: bound.value.repositories.map((row) => row.repository),
+    },
+  };
 }
 
 async function createdDraft(
