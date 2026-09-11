@@ -154,9 +154,37 @@ test("a completed callback persists the refresh token and no access token", asyn
   const answer = await holder.completeCallback(
     `?code=abc&state=${String(state)}`,
   );
-  expect(answer).toEqual({ result: "SignedIn" });
+  expect(answer).toEqual({ result: "SignedIn", returnPath: undefined });
   expect(held.persistent.held.get(sessionRefreshTokenKey)).toBe("renew");
   expect([...held.persistent.held.values()]).not.toContain("access");
+});
+
+/** The issuer redirects to the one address this client is registered with, so
+ * a page reached with a query it needs is come back to from the transaction. */
+test("a sign-in that names a page answers that page back on the callback", async () => {
+  const held = harness();
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  await holder.signIn("/forge/github/setup?installation_id=9&state=s");
+  const state = new URLSearchParams(
+    new URL(held.redirects[0] ?? "").search,
+  ).get("state");
+  const answer = await holder.completeCallback(
+    `?code=abc&state=${String(state)}`,
+  );
+  expect(answer).toEqual({
+    result: "SignedIn",
+    returnPath: "/forge/github/setup?installation_id=9&state=s",
+  });
+});
+
+/** The path is in the transaction and nowhere the issuer is given it. */
+test("a named page is not sent to the authorization server", async () => {
+  const held = harness();
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  await holder.signIn("/forge/github/setup?installation_id=9");
+  expect(held.redirects[0] ?? "").not.toContain("installation_id");
 });
 
 test("an issuer that keeps declining ends the session once", async () => {

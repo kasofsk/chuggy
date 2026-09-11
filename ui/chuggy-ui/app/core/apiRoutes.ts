@@ -20,6 +20,10 @@ import {
   draftResponseSchema,
   executionResponseSchema,
   executionsResponseSchema,
+  forgeAppsResponseSchema,
+  forgeInstallationClaimedSchema,
+  forgeInstallationsResponseSchema,
+  forgeRepositoriesResponseSchema,
   installationResponseSchema,
   leadInquiriesResponseSchema,
   leadInquiryAcceptedSchema,
@@ -33,6 +37,8 @@ import {
   outputContentResponseSchema,
   projectInventoryResponseSchema,
   projectNativeActionsResponseSchema,
+  projectRepositoriesResponseSchema,
+  projectRepositoryBoundSchema,
   projectResponseSchema,
   repositoryConfigurationImportedSchema,
   runConfigurationResponseSchema,
@@ -60,6 +66,10 @@ import type {
   DraftResponse,
   ExecutionResponse,
   ExecutionsResponse,
+  ForgeAppsResponse,
+  ForgeInstallationClaimedResponse,
+  ForgeInstallationsResponse,
+  ForgeRepositoriesResponse,
   InstallationResponse,
   LeadInquiriesResponse,
   LeadInquiryAccepted,
@@ -73,6 +83,8 @@ import type {
   OutputContentResponse,
   ProjectInventoryResponse,
   ProjectNativeActionsResponse,
+  ProjectRepositoriesResponse,
+  ProjectRepositoryBoundResponse,
   ProjectResponse,
   RunConfigurationResponse,
   RunTranscriptResponse,
@@ -92,7 +104,9 @@ import type {
   configurationCreationSchema,
   draftCreationSchema,
   draftRevisionSchema,
+  forgeInstallationClaimSchema,
   leadInquirySchema,
+  projectRepositoryBindSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
   submissionSchema,
@@ -152,6 +166,105 @@ export function apiInstallation(
 ): Promise<ApiResult<InstallationResponse>> {
   return apiGet(ports, nativeHttpRoutes.installation, (value) =>
     installationResponseSchema.parse(value),
+  );
+}
+
+/**
+ * One route template with its named segments filled. A project-scoped path is
+ * `partitionPath`'s; a tenant-scoped one has no builder on the wire, so the
+ * template the wire publishes is what is filled here rather than a second
+ * spelling of the path beside it.
+ */
+function apiFilled(
+  route: string,
+  params: Readonly<Record<string, string>>,
+): string {
+  let path = route;
+  for (const [name, value] of Object.entries(params))
+    path = path.replace(`:${name}`, encodeURIComponent(value));
+  return path;
+}
+
+/** Every app this deployment holds a key for, and the address each is installed from. */
+export function apiForgeApps(
+  ports: ApiPorts,
+): Promise<ApiResult<ForgeAppsResponse>> {
+  return apiGet(ports, nativeHttpRoutes.forgeApps, (value) =>
+    forgeAppsResponseSchema.parse(value),
+  );
+}
+
+/** Every installation one tenant has claimed, oldest first. */
+export function apiForgeInstallations(
+  ports: ApiPorts,
+  tenant: string,
+): Promise<ApiResult<ForgeInstallationsResponse>> {
+  return apiGet(
+    ports,
+    apiFilled(nativeHttpRoutes.forgeInstallations, { tenant }),
+    (value) => forgeInstallationsResponseSchema.parse(value),
+  );
+}
+
+/** The claim a setup landing makes for the app the person went to install. */
+export function apiClaimForgeInstallation(
+  ports: ApiPorts,
+  tenant: string,
+  claim: z.infer<typeof forgeInstallationClaimSchema>,
+): Promise<ApiResult<ForgeInstallationClaimedResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "POST",
+      path: apiFilled(nativeHttpRoutes.forgeInstallations, { tenant }),
+      body: claim,
+    },
+    (value) => forgeInstallationClaimedSchema.parse(value),
+  );
+}
+
+/** What one claimed installation grants, and whether the listing is all of it. */
+export function apiForgeInstallationRepositories(
+  ports: ApiPorts,
+  tenant: string,
+  installationId: string,
+): Promise<ApiResult<ForgeRepositoriesResponse>> {
+  return apiGet(
+    ports,
+    apiFilled(nativeHttpRoutes.forgeInstallationRepositories, {
+      tenant,
+      installationId,
+    }),
+    (value) => forgeRepositoriesResponseSchema.parse(value),
+  );
+}
+
+/** Every repository one project binds, oldest first. */
+export function apiProjectRepositories(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+): Promise<ApiResult<ProjectRepositoriesResponse>> {
+  return apiGet(ports, apiSegments(partition, "repositories"), (value) =>
+    projectRepositoriesResponseSchema.parse(value),
+  );
+}
+
+/** One binding, under the operation identity the route refuses a bind without. */
+export function apiBindProjectRepository(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  bind: z.infer<typeof projectRepositoryBindSchema>,
+  operation: string,
+): Promise<ApiResult<ProjectRepositoryBoundResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "POST",
+      path: apiSegments(partition, "repositories"),
+      body: bind,
+      idempotencyKey: operation,
+    },
+    (value) => projectRepositoryBoundSchema.parse(value),
   );
 }
 

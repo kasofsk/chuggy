@@ -24,6 +24,9 @@ import { draftCreationSchema } from "../../../src/contract/requests.ts";
 import {
   creationBodyFrom,
   creationBranchOf,
+  creationFormFrom,
+  creationRepositoryDefault,
+  creationRepositoryRequired,
   creationBranchPrefixedSentence,
   creationConfigurationSentence,
   creationIntentLines,
@@ -61,15 +64,19 @@ function intentOfChars(chars: number): string {
   ].join("\n");
 }
 
+/** A project binding nothing, which is what every case but the repository
+ * rule's own is about. */
+const noBindings: readonly string[] = [];
+
 function faultFields(form: TicketCreationForm): readonly string[] {
-  const assembled = creationBodyFrom(creationInitialization, form);
+  const assembled = creationBodyFrom(creationInitialization, form, noBindings);
   return assembled.assembled === "Faults"
     ? assembled.faults.map((fault) => fault.field)
     : [];
 }
 
 function faultReasons(form: TicketCreationForm): readonly string[] {
-  const assembled = creationBodyFrom(creationInitialization, form);
+  const assembled = creationBodyFrom(creationInitialization, form, noBindings);
   return assembled.assembled === "Faults"
     ? assembled.faults.map((fault) => fault.reason)
     : [];
@@ -123,6 +130,7 @@ test("a filled form becomes a body the wire's own parser accepts", () => {
       links: ["https://example.test/a"],
       branchName: "topic/one",
     }),
+    noBindings,
   );
   expect(assembled.assembled).toBe("Body");
   if (assembled.assembled !== "Body") return;
@@ -140,12 +148,13 @@ test("a title is sent where one is typed, and omitted where the field is blank",
   const titled = creationBodyFrom(
     creationInitialization,
     creationForm({ title: "  Ship it  " }),
+    noBindings,
   );
   expect(titled.assembled).toBe("Body");
   if (titled.assembled !== "Body") return;
   expect(titled.body.brief.title).toBe("Ship it");
 
-  const untitled = creationBodyFrom(creationInitialization, creationForm());
+  const untitled = creationBodyFrom(creationInitialization, creationForm(), noBindings);
   expect(untitled.assembled).toBe("Body");
   if (untitled.assembled !== "Body") return;
   expect("title" in untitled.body.brief).toBe(false);
@@ -158,7 +167,7 @@ test("a title the wire will not take names the field a reader has to revisit", (
 });
 
 test("the fence the initialization stated is what the body carries", () => {
-  const assembled = creationBodyFrom(creationInitialization, creationForm());
+  const assembled = creationBodyFrom(creationInitialization, creationForm(), noBindings);
   expect(assembled.assembled).toBe("Body");
   if (assembled.assembled !== "Body") return;
   expect(assembled.body.expectedProjectSequence).toBe(41);
@@ -172,7 +181,7 @@ test("a branch is a name here and a full reference on the wire", () => {
     ref: "refs/heads/topic/one",
   });
   expect(creationBranchOf("  ")).toStrictEqual({ named: "None" });
-  const assembled = creationBodyFrom(creationInitialization, creationForm());
+  const assembled = creationBodyFrom(creationInitialization, creationForm(), noBindings);
   expect(assembled.assembled).toBe("Body");
   if (assembled.assembled !== "Body") return;
   expect("branch" in assembled.body.brief).toBe(false);
@@ -190,6 +199,7 @@ test("a reference pasted where a name was asked for is refused, not prefixed twi
   const assembled = creationBodyFrom(
     creationInitialization,
     creationForm({ branchName: "refs/heads/main" }),
+    noBindings,
   );
   expect(assembled.assembled).toBe("Faults");
   expect(assembled.assembled === "Faults" && assembled.faults).toStrictEqual([
@@ -206,6 +216,7 @@ test("a named target is a finalization on the wire, and no target is no field", 
   const landing = creationBodyFrom(
     creationInitialization,
     creationForm({ branchName: "topic/one", targetBranchName: "release/next" }),
+    noBindings,
   );
   expect(landing.assembled).toBe("Body");
   if (landing.assembled !== "Body") return;
@@ -218,6 +229,7 @@ test("a named target is a finalization on the wire, and no target is no field", 
   const worked = creationBodyFrom(
     creationInitialization,
     creationForm({ branchName: "topic/one" }),
+    noBindings,
   );
   expect(worked.assembled).toBe("Body");
   if (worked.assembled !== "Body") return;
@@ -228,6 +240,7 @@ test("a target names where work lands whether or not a branch says where it star
   const assembled = creationBodyFrom(
     creationInitialization,
     creationForm({ targetBranchName: "release/next" }),
+    noBindings,
   );
   expect(assembled.assembled).toBe("Body");
   if (assembled.assembled !== "Body") return;
@@ -242,6 +255,7 @@ test("a target is refused the way a branch is, and says the same edit fixes it",
   const assembled = creationBodyFrom(
     creationInitialization,
     creationForm({ targetBranchName: "refs/heads/main" }),
+    noBindings,
   );
   expect(assembled.assembled === "Faults" && assembled.faults).toStrictEqual([
     { field: "target", reason: creationBranchPrefixedSentence },
@@ -310,6 +324,7 @@ test("the links a brief carries are bounded and read over one scheme", () => {
   const assembled = creationBodyFrom(
     creationInitialization,
     creationForm({ links: ["  ", "https://a.test"] }),
+    noBindings,
   );
   expect(
     assembled.assembled === "Body" && assembled.body.brief.links,
@@ -325,6 +340,7 @@ test("the check lines a brief appends are bounded, trimmed and omitted when empt
   const appended = creationBodyFrom(
     creationInitialization,
     creationForm({ checks: ["  ", " npm test "] }),
+    noBindings,
   );
   expect(
     appended.assembled === "Body" && appended.body.brief.checks,
@@ -332,6 +348,7 @@ test("the check lines a brief appends are bounded, trimmed and omitted when empt
   const none = creationBodyFrom(
     creationInitialization,
     creationForm({ checks: ["   "] }),
+    noBindings,
   );
   expect(none.assembled === "Body" && none.body.brief.checks).toBe(undefined);
 });
@@ -388,4 +405,63 @@ test("the release names the draft it was answered with, and its authoring versio
     authoringVersion: 3,
     configurationRevision: "r3",
   });
+});
+
+const oneBinding = ["https://forge.test/kasofsk/chuggy"];
+const twoBindings = [
+  "https://forge.test/kasofsk/chuggy",
+  "https://forge.test/kasofsk/chuggy-fabric",
+];
+
+/**
+ * The server refuses a release naming no repository once the project binds one,
+ * so the form says so before the submit rather than after it.
+ */
+test("a repository is required exactly where the project binds one", () => {
+  expect(creationRepositoryRequired([])).toBe(false);
+  expect(creationRepositoryRequired(oneBinding)).toBe(true);
+  expect(creationRepositoryRequired(twoBindings)).toBe(true);
+});
+
+test("the sole binding is the default, and two bindings default to neither", () => {
+  expect(creationRepositoryDefault([])).toBe("");
+  expect(creationRepositoryDefault(oneBinding)).toBe(oneBinding[0]);
+  expect(creationRepositoryDefault(twoBindings)).toBe("");
+  expect(creationFormFrom(creationInitialization, oneBinding).repository).toBe(
+    oneBinding[0],
+  );
+});
+
+test("a form naming no repository is refused where the project binds one", () => {
+  const assembled = creationBodyFrom(
+    creationInitialization,
+    creationForm({ repository: "" }),
+    twoBindings,
+  );
+  expect(assembled.assembled).toBe("Faults");
+  if (assembled.assembled !== "Faults") return;
+  expect(assembled.faults.map((fault) => fault.field)).toStrictEqual([
+    "repository",
+  ]);
+});
+
+test("a chosen repository is on the brief, and a project binding none sends no field", () => {
+  const named = creationBodyFrom(
+    creationInitialization,
+    creationForm({ repository: oneBinding[0] ?? "" }),
+    oneBinding,
+  );
+  expect(named.assembled).toBe("Body");
+  if (named.assembled !== "Body") return;
+  expect(named.body.brief.repository).toBe(oneBinding[0]);
+  expect(draftCreationSchema.parse(named.body)).toStrictEqual(named.body);
+
+  const none = creationBodyFrom(
+    creationInitialization,
+    creationForm(),
+    noBindings,
+  );
+  expect(none.assembled).toBe("Body");
+  if (none.assembled !== "Body") return;
+  expect("repository" in none.body.brief).toBe(false);
 });

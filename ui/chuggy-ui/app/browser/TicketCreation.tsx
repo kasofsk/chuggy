@@ -30,6 +30,7 @@ import type {
 import type { ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import type { ProjectQueryKey } from "../core/projectQueryKeys.ts";
+import { repositoryLabel } from "../core/projectRepositories.ts";
 import {
   creationBodyFrom,
   creationBranchHint,
@@ -59,6 +60,7 @@ import { operationIdBytesCount } from "../core/operationFollow.ts";
 import { TopBarSlot } from "./shell/slots.tsx";
 import { TicketCreationAdvanced } from "./TicketCreationAdvanced.tsx";
 import { Button } from "./ui/Button.tsx";
+import { Picker } from "./ui/Picker.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
 type Attempt =
@@ -254,6 +256,32 @@ function TargetBranch(props: FormEdit): ReactNode {
   );
 }
 
+/** The repository the work happens in, drawn only where the project binds one:
+ * a project binding none names none, and the form neither asks nor sends. */
+function Repository(
+  props: FormEdit & { readonly repositories: readonly string[] },
+): ReactNode {
+  const { form, onChange, repositories } = props;
+  if (repositories.length === 0) return null;
+  return (
+    <div className="creation-row">
+      <span>repository</span>
+      <Picker
+        label="repository"
+        value={form.repository}
+        placeholder="choose"
+        options={repositories.map((repository) => ({
+          value: repository,
+          text: repositoryLabel(repository),
+        }))}
+        onChoose={(repository) => {
+          onChange({ ...form, repository });
+        }}
+      />
+    </div>
+  );
+}
+
 function AttemptNote(props: { readonly attempt: Attempt }): ReactNode {
   const attempt = props.attempt;
   switch (attempt.attempt) {
@@ -292,6 +320,7 @@ function CreationFields(
     readonly faults: readonly CreationFault[];
     readonly configuration: ConfigurationSummary;
     readonly initialization: DraftInitializationResponse;
+    readonly repositories: readonly string[];
   },
 ): ReactNode {
   const { faults, form, initialization, onChange } = props;
@@ -315,6 +344,12 @@ function CreationFields(
       )}
       <Branch form={form} onChange={onChange} />
       <Fault field="branch" faults={faults} />
+      <Repository
+        form={form}
+        onChange={onChange}
+        repositories={props.repositories}
+      />
+      <Fault field="repository" faults={faults} />
       <TargetBranch form={form} onChange={onChange} />
       <Fault field="target" faults={faults} />
       <TicketCreationAdvanced
@@ -363,17 +398,25 @@ function useCreationSubmit(props: {
   readonly partition: PartitionIdentity;
   readonly queryKey: ProjectQueryKey;
   readonly initialization: DraftInitializationResponse;
+  readonly repositories: readonly string[];
   readonly onFaults: (faults: readonly CreationFault[]) => void;
   readonly onCreated: (ticket: number) => void;
 }): CreationSubmit {
   const client = useQueryClient();
   const mounted = useMounted();
   const [attempt, setAttempt] = useState<Attempt>({ attempt: "Idle" });
-  const { initialization, onCreated, onFaults, ports, partition, queryKey } =
-    props;
+  const {
+    initialization,
+    onCreated,
+    onFaults,
+    ports,
+    partition,
+    queryKey,
+    repositories,
+  } = props;
 
   const submit = async (form: TicketCreationForm): Promise<void> => {
-    const assembled = creationBodyFrom(initialization, form);
+    const assembled = creationBodyFrom(initialization, form, repositories);
     if (assembled.assembled === "Faults") {
       onFaults(assembled.faults);
       return;
@@ -427,15 +470,17 @@ export function CreationForm(props: {
   );
   const [faults, setFaults] = useState<readonly CreationFault[]>([]);
   const initialization = props.context.initialization;
+  const repositories = props.context.repositories;
   const running = useCreationSubmit({
     ports: props.ports,
     partition: props.partition,
     queryKey: props.queryKey,
     initialization,
+    repositories,
     onFaults: setFaults,
     onCreated: props.onCreated,
   });
-  const form = edited ?? creationFormFrom(initialization);
+  const form = edited ?? creationFormFrom(initialization, repositories);
   return (
     <div className="creation">
       <CreationFields
@@ -444,6 +489,7 @@ export function CreationForm(props: {
         faults={faults}
         configuration={props.context.configuration}
         initialization={initialization}
+        repositories={repositories}
       />
       <Button
         variant="primary"

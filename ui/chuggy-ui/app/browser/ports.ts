@@ -133,3 +133,8 @@ export const transientStore = keyValuePort(() => sessionStorage);
 export function redirect(url: string): void {
   location.assign(url);
 }
+
+/** Where this tab is, as the path something that leaves it returns to. */
+export function currentPath(): string {
+  return `${location.pathname}${location.search}`;
+}

@@ -130,6 +130,20 @@ an issuer that keeps declining ends the session once rather than being asked
 forever. Signing out clears both and revokes the refresh token where the issuer
 publishes an endpoint for it.
 
+## Connecting a forge account
+
+The console mints the install state, not the api. Before following an App's
+install link it draws 32 random bytes, stores the transaction — the state, the
+App, the tenant, the project and where the person was — in `sessionStorage`
+under one key, and appends the state to the link. The forge sends the person
+back to `/forge/github/setup`, which takes that transaction once and claims the
+installation only when the state it was sent matches. An identity alone claims
+nothing, so a landing reached without a matching transaction says "Not
+expected" and posts nothing.
+
+Both Apps' Setup URL must be that route on the console's own host, and neither
+is set yet: an operator sets it on each App in the forge. <!-- intent -->
+
 ## The ticket page
 
 A ledger, not a dashboard. The cycles are the machine's own: every `work-passed`
