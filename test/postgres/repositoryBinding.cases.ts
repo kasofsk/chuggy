@@ -695,3 +695,31 @@ test("the estate listing is bounded by what the caller asks for", async () => {
   const listed = await postgresRepositoryBindingListing(pool).bindings(1);
   assert.equal(listed.length <= 1, true);
 });
+
+/**
+ * The door's own ceiling, which a caller may narrow and may not widen. The
+ * bindings are dated past every other case's so that a listing this case fills
+ * is still the oldest prefix for the cases that read one; the trigger 040
+ * installed lets nobody take them out again.
+ */
+test("a caller asking the estate listing for more than the bound gets the bound", async () => {
+  const standing = await fixtureStanding("binding-estate-ceiling");
+  await harness.query(
+    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,bound_at)
+       SELECT $1,$2,$3||n,$4,now()+interval '100 years'
+         FROM generate_series(1,$5::int) AS n`,
+    [
+      standing.partition.tenant,
+      standing.partition.project,
+      `repository-estate-ceiling-${randomUUID()}-`,
+      standing.recoveryEpoch,
+      repositoryBindingsPerImportMax + 1,
+    ],
+  );
+
+  const listed = await postgresRepositoryBindingListing(pool).bindings(
+    repositoryBindingsPerImportMax * 10,
+  );
+
+  assert.equal(listed.length, repositoryBindingsPerImportMax);
+});

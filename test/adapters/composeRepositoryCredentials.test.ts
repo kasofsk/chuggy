@@ -13,7 +13,10 @@
  */
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test, type TestContext } from "node:test";
 
 import { githubRepositoryHost } from "../../src/adapters/forge/githubAddress.ts";
 import {
@@ -46,6 +49,9 @@ const partition = {
 const repository = asRepositoryId(
   `https://${githubRepositoryHost}/kasofsk/chuggy`,
 );
+
+/** A repository on a host no portal key covers, which is what a file is still mounted for. */
+const elsewhere = asRepositoryId("https://forge.invalid/kasofsk/other");
 
 /** The binding a promotion or an observation presents a credential for. */
 const binding = {
@@ -143,4 +149,36 @@ test("a deployment holding no app key is answered by its files alone", async () 
   assert.deepEqual(await credentials.credential(binding), {
     resolved: "Denied",
   });
+});
+
+/** A file holding one credential, removed when the case that wrote it is done. */
+function mountedCredential(t: TestContext, value: string): string {
+  const root = mkdtempSync(join(tmpdir(), "chuggy-compose-"));
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+  const path = join(root, "elsewhere");
+  writeFileSync(path, `${value}\n`);
+  return path;
+}
+
+test("a deployment that mints still reaches another host through its files", async (t) => {
+  const asked: ForgePermissionSet[] = [];
+  const credentials = composeTicketServiceCredentials(
+    {
+      sources: [
+        {
+          repository: elsewhere,
+          path: mountedCredential(t, "mounted-a1b2c3"),
+        },
+      ],
+    },
+    recordingMinting(asked),
+  );
+
+  assert.deepEqual(
+    await credentials.credential({ ...binding, repository: elsewhere }),
+    { resolved: "Credential", credential: "mounted-a1b2c3" },
+  );
+  assert.deepEqual(asked, [], "the mint answers for its own host and no other");
 });

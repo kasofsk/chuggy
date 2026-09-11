@@ -282,6 +282,28 @@ test("a forge binding names a forge, a repository host, a credential and the fil
   ]);
 });
 
+test("a forge binding naming no file is the one this deployment mints for", () => {
+  const settings = finalizerSettingsOf({
+    ...complete,
+    CHUG_FINALIZER_FORGE_BINDINGS: JSON.stringify([
+      {
+        forge: "forge-alpha",
+        repositoryHost: "github.test",
+        apiHost: "api.github.test",
+        credentialReference: "forge-alpha-proposals",
+      },
+    ]),
+  });
+  assert.deepEqual(settings.forges, [
+    {
+      forge: "forge-alpha",
+      repositoryHost: "github.test",
+      apiHost: "api.github.test",
+      credentialReference: "forge-alpha-proposals",
+    },
+  ]);
+});
+
 /**
  * A forge is the repositories it holds and the API it is asked through
  * together. What this pins is that a binding naming only the first is refused

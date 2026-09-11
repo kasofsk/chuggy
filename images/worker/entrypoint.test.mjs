@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -129,6 +130,52 @@ test("exactly one task document is what a pod may be launched with", () => {
   assert.throws(
     () => workerMode({ CHUG_WORKER_TASK: "", CHUG_SESSION_TASK: "" }),
     /needs one of/u,
+  );
+});
+
+/**
+ * One pod launched as the image launches it, which is the only way into the
+ * environment `main` reads: it is not exported, and nothing imports it.
+ */
+function launched(environment) {
+  return new Promise((resolve) => {
+    const child = spawn(
+      process.execPath,
+      [join(dirname(fileURLToPath(import.meta.url)), "entrypoint.mjs")],
+      {
+        env: { PATH: process.env["PATH"] ?? "", ...environment },
+        stdio: ["ignore", "ignore", "pipe"],
+      },
+    );
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("close", (code) => {
+      resolve({ code, stderr });
+    });
+  });
+}
+
+test("a pod placed with an empty repository map is given an empty one", async () => {
+  const ran = await launched({
+    CHUG_WORKER_TASK: JSON.stringify({
+      worker: { mode: { type: "Commands", commands: ["true"] } },
+      authority: {
+        network: true,
+        filesystem: "WriteWorkspace",
+        credentials: [],
+      },
+    }),
+    CHUG_WORKER_REPOSITORIES: "",
+  });
+
+  assert.equal(ran.code, 1);
+  assert.match(
+    ran.stderr,
+    /^CHUG_WORKER_CREDENTIAL_FILES is required$/mu,
+    "the map stood empty and the launch went on to the next variable",
   );
 });
 

@@ -289,6 +289,18 @@ test("two sources for one host are refused at composition", () => {
   );
 });
 
+test("two forge sources for one host are refused at composition too", () => {
+  const source = {
+    repositoryHost: "github.com",
+    tokens: fixtureTokens({ minted: "Denied" }),
+    permissions: "propose",
+  } as const;
+  assert.throws(
+    () => forgeCredentialsByHost([source, source], fixtureForgeFiles),
+    /a host names two sources/u,
+  );
+});
+
 test("minting asks the execute permit and answers the token for the bound repository under the caller's own tenant", async () => {
   const kinds: ProjectAccessKind[] = [];
   const asked: RepositoryId[] = [];
