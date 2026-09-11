@@ -9,7 +9,8 @@
  * grant rather than from a typed address.
  */
 
-import { useParams, useSearch } from "@tanstack/react-router";
+import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -49,6 +50,9 @@ import { Tooltip } from "./ui/Tooltip.tsx";
 
 /** No frame names this read, so the partition's own refetch is what reaches it. */
 export const forgeInstallationsResource = "forge-installations";
+
+/** This page's own address, which its reads and its one navigation are from. */
+const repositoriesRoutePath = "/$tenant/$project/repositories";
 
 function AccountRow(props: { readonly row: ForgeAccountRow }): ReactNode {
   const row = props.row;
@@ -136,13 +140,26 @@ function BindingTable(props: {
   );
 }
 
-/** What the setup landing came back saying, drawn where the account it names
- * is: one word, and the row beside it is the rest of the answer. */
+/**
+ * What the setup landing came back saying: one word, and the row beside it is
+ * the rest of the answer.
+ *
+ * THE WORD IS AN EVENT AND NOT A PROPERTY OF THE ADDRESS. It is taken on the
+ * first draw and the parameter cleared behind it, so a reload — or an address
+ * somebody typed — does not redraw an answer to a claim that never happened.
+ */
 function ConnectedNotice(props: {
   readonly connected: string | undefined;
 }): ReactNode {
-  if (props.connected === undefined) return null;
-  return <Notice tone="info" inline role="status" detail={props.connected} />;
+  const navigate = useNavigate({ from: repositoriesRoutePath });
+  const [taken] = useState(props.connected);
+  const standing = props.connected !== undefined;
+  useEffect(() => {
+    if (!standing) return;
+    void navigate({ search: { connected: undefined }, replace: true });
+  }, [standing, navigate]);
+  if (taken === undefined) return null;
+  return <Notice tone="info" inline role="status" detail={taken} />;
 }
 
 function AccountsSection(props: {
@@ -199,8 +216,8 @@ function RepositoriesSection(props: {
 }
 
 export function RepositoriesPage(): ReactNode {
-  const params = useParams({ from: "/$tenant/$project/repositories" });
-  const search = useSearch({ from: "/$tenant/$project/repositories" });
+  const params = useParams({ from: repositoriesRoutePath });
+  const search = useSearch({ from: repositoriesRoutePath });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
     project: params.project,

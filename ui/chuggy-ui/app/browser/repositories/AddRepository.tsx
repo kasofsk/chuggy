@@ -53,6 +53,9 @@ interface Reachable {
  * What every portal installation the tenant holds grants, read one after
  * another: a listing that is partial makes the whole roster partial, because a
  * repository the reader cannot find may be in the part that was not answered.
+ * The first installation that does not answer `Ok` therefore takes the whole
+ * roster down deliberately, so one revoked claim is read as a refusal rather
+ * than as a roster silently missing the account it covered.
  */
 async function readReachable(
   ports: ApiPorts,

@@ -12,6 +12,7 @@ import { expect, test } from "vitest";
 import { sessionRefreshFailuresMax } from "../app/core/authorization.ts";
 import {
   createSessionHolder,
+  sessionCallbackPath,
   sessionRefreshTokenKey,
   sessionTransactionKey,
 } from "../app/core/sessionHolder.ts";
@@ -253,4 +254,20 @@ test("a renewal changes the generation, which is what reopens a stream", async (
   const before = holder.generation();
   await holder.refresh();
   expect(holder.generation()).toBeGreaterThan(before);
+});
+
+/** The process root replaces the address with this and with nothing else, so
+ * a refusal landing anywhere but the root would be a page the reader did not
+ * ask for drawn over a sign-in that did not happen. */
+test("the callback leaves the tab where the sign-in named, and at the root otherwise", () => {
+  expect(
+    sessionCallbackPath({
+      result: "SignedIn",
+      returnPath: "/vteng/chuggy/repositories?connected=Connected",
+    }),
+  ).toBe("/vteng/chuggy/repositories?connected=Connected");
+  expect(
+    sessionCallbackPath({ result: "SignedIn", returnPath: undefined }),
+  ).toBe("/");
+  expect(sessionCallbackPath({ result: "Denied", reason: "no" })).toBe("/");
 });

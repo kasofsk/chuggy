@@ -53,7 +53,8 @@ export type RepositoryBindOutcome =
  * WHETHER IT WAS ALREADY BOUND IS THE CONSOLE'S OWN READING. The route answers
  * `201` for a new binding and `200` for one that already stood, and
  * `src/contract/outcomes.ts` classifies both as `Ok` without the status, so the
- * bindings this page already read are what the two are told apart by.
+ * bindings this page already read are what the two are told apart by — an `Ok`
+ * that carried its status is the follow-up, and is not this step's.
  */
 export function repositoryBindOutcome(
   result: ApiResult<ProjectRepositoryBoundResponse>,

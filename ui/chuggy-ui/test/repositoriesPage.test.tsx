@@ -17,7 +17,7 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { RepositoriesPage } from "../app/browser/RepositoriesPage.tsx";
@@ -35,15 +35,65 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   sleepMs: () => Promise.resolve(),
 }));
 
-vi.mock("@tanstack/react-router", () => ({
-  createLink: (component: unknown) => component,
-  Link: (props: { readonly children?: ReactNode }) => (
-    <a href="/">{props.children}</a>
-  ),
-  useParams: () => ({ ...leadPartition }),
-  useSearch: () => ({ connected: undefined }),
-}));
+/**
+ * The address, as a router actually behaves: navigating rewrites the search
+ * and the subscribers are told, so a page that reads the search live redraws
+ * without it.
+ *
+ * A DOUBLE THAT LEFT THE SEARCH STANDING WOULD HIDE THE GUARD UNDER TEST: the
+ * outcome word is taken once precisely so it survives the clearing, and a
+ * search that never changed would make taking it and reading it live look the
+ * same.
+ */
+const routed = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  const went: unknown[] = [];
+  let search: { readonly connected: string | undefined } = {
+    connected: undefined,
+  };
+  const settle = (next: string | undefined): void => {
+    search = { connected: next };
+    for (const listener of listeners) listener();
+  };
+  return {
+    went,
+    reset: (next: string | undefined): void => {
+      went.length = 0;
+      listeners.clear();
+      search = { connected: next };
+    },
+    snapshot: () => search,
+    subscribe: (listener: () => void): (() => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    navigate: (to: unknown): Promise<void> => {
+      went.push(to);
+      settle(undefined);
+      return Promise.resolve();
+    },
+  };
+});
+
+vi.mock("@tanstack/react-router", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    createLink: (component: unknown) => component,
+    Link: (props: { readonly children?: ReactNode }) => (
+      <a href="/">{props.children}</a>
+    ),
+    useParams: () => ({ ...leadPartition }),
+    useSearch: () => useSyncExternalStore(routed.subscribe, routed.snapshot),
+    useNavigate: () => routed.navigate,
+  };
+});
 // jscpd:ignore-end -- the case's own doubles resume here
+
+beforeEach(() => {
+  routed.reset(undefined);
+});
 
 afterEach(() => {
   cleanup();
@@ -136,7 +186,7 @@ interface Init {
   readonly headers?: Record<string, string>;
 }
 
-async function drawPage(): Promise<readonly Sent[]> {
+async function drawPage(claimed = installations): Promise<readonly Sent[]> {
   const sent: Sent[] = [];
   const fetching = ((url: string, init?: Init) => {
     sent.push({
@@ -149,7 +199,7 @@ async function drawPage(): Promise<readonly Sent[]> {
     if (url.includes("/forge-installations/"))
       return Promise.resolve(answer(grantedBy(url)));
     if (url.includes("/forge-installations"))
-      return Promise.resolve(answer(installations));
+      return Promise.resolve(answer(claimed));
     return Promise.resolve(answer(bindings));
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", fetching);
@@ -221,4 +271,36 @@ test("choosing a repository binds it by address under an idempotency key", async
   expect(
     within(screen.getByRole("dialog")).getByText("Deferring"),
   ).toBeTruthy();
+});
+
+/**
+ * A binding is checked against a portal installation, so with none there is
+ * nothing the picker could offer and nothing a bind could be granted by — the
+ * control says so by being unusable rather than by opening onto an empty list.
+ */
+test("a tenant holding no portal claim cannot open the picker", async () => {
+  await drawPage({
+    truncated: false,
+    installations: installations.installations.filter(
+      (claim) => claim.app !== "portal",
+    ),
+  });
+  expect(
+    screen.getByRole<HTMLButtonElement>("button", { name: "Add" }).disabled,
+  ).toBe(true);
+});
+
+test("the landing's word is drawn once, and the address it came on is cleared", async () => {
+  routed.reset("Connected");
+  await drawPage();
+  expect(screen.getAllByText("Connected")).toHaveLength(1);
+  expect(routed.went).toStrictEqual([
+    { search: { connected: undefined }, replace: true },
+  ]);
+});
+
+test("an address carrying no outcome draws no line and clears nothing", async () => {
+  await drawPage();
+  expect(screen.queryByText("Connected")).toBeNull();
+  expect(routed.went).toStrictEqual([]);
 });

@@ -143,7 +143,7 @@ nothing, so a landing reached without a matching transaction says "Not
 expected" and posts nothing.
 
 Both Apps' Setup URL must be that route on the console's own host, and neither
-is set yet: an operator sets it on each App in the forge. <!-- intent -->
+is set yet: an operator sets it on each App in the forge.
 
 ## The ticket page
 

@@ -167,7 +167,8 @@ export type ForgeClaimOutcome =
  * `ForgeNotConfigured` and `InstallationUnknown` are both `404` and
  * `src/contract/outcomes.ts` folds every `404` into `Absent` without its code,
  * so the console cannot tell them apart and says the one thing that is true of
- * both: the installation is not one this deployment knows.
+ * both: the installation is not one this deployment knows — a `404` read for
+ * its code is the follow-up that would separate them, and is not this step's.
  */
 export function forgeClaimOutcome(
   result: ApiResult<ForgeInstallationClaimedResponse>,

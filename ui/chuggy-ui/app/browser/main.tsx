@@ -21,8 +21,11 @@ import { QueryClient } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { createSessionHolder } from "../core/sessionHolder.ts";
-import type { SessionCallback, SessionHolder } from "../core/sessionHolder.ts";
+import {
+  createSessionHolder,
+  sessionCallbackPath,
+} from "../core/sessionHolder.ts";
+import type { SessionHolder } from "../core/sessionHolder.ts";
 import { App } from "./App.tsx";
 import {
   digest,
@@ -57,19 +60,13 @@ const holder = createSessionHolder({
   redirect,
 });
 
-/** Where the callback leaves the tab: the page the sign-in was started from,
- * and the root where it named none. */
-function callbackPath(callback: SessionCallback): string {
-  return callback.result === "SignedIn" ? (callback.returnPath ?? "/") : "/";
-}
-
 /** A refused sign-in is drawn with its reason, not as a browser holding none. */
 async function begin(session: SessionHolder): Promise<void> {
   await session.load();
   const callback = await session.completeCallback(location.search);
   if (callback.result === "None") return;
   if (callback.result === "Denied") session.refuse(callback.reason);
-  history.replaceState(null, "", callbackPath(callback));
+  history.replaceState(null, "", sessionCallbackPath(callback));
 }
 
 themeChoiceApply(document.documentElement, themeChoiceRead(persistentStore));

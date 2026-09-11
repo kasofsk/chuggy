@@ -81,6 +81,12 @@ export type SessionCallback =
   | { readonly result: "Denied"; readonly reason: string }
   | { readonly result: "None" };
 
+/** Where a completed callback leaves the tab: the page the sign-in was started
+ * from, and the root where it named none or was refused. */
+export function sessionCallbackPath(callback: SessionCallback): string {
+  return callback.result === "SignedIn" ? (callback.returnPath ?? "/") : "/";
+}
+
 export interface SessionHolder {
   readonly load: () => Promise<void>;
   readonly completeCallback: (search: string) => Promise<SessionCallback>;
