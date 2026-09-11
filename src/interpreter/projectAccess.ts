@@ -95,10 +95,10 @@ export function projectAccessTenantObject(tenant: string): string {
 }
 
 /**
- * The object and the subject a readiness probe names, which no partition and no
- * principal encode to: both of those carry a decimal length and a colon before
- * their first half. It lets a probe ask whether a permit is declared without
- * naming anything a grant could have been written for.
+ * The object and the subject a readiness probe names. Any string the model
+ * accepts would do: the probe reads whether the relation is declared and
+ * discards the verdict, so a deployment that happens to have granted this one
+ * something answers the probe no differently.
  */
 export const projectAccessProbe = "readiness";
 
