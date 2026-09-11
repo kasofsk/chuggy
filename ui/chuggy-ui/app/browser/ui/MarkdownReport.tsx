@@ -16,6 +16,8 @@ import {
 } from "../../core/markdownReport.ts";
 import { Table } from "./Table.tsx";
 
+import "./MarkdownReport.css";
+
 function MarkdownInlineRun(props: {
   readonly nodes: readonly MarkdownInline[];
 }): ReactNode {
@@ -155,7 +157,7 @@ function MarkdownBlockView(props: {
 export function MarkdownReport(props: { readonly text: string }): ReactNode {
   const blocks = markdownReportBlocks(props.text);
   return (
-    <div className="run-report">
+    <div className="markdown-report">
       {blocks.map((block, at) => (
         <MarkdownBlockView key={at} block={block} />
       ))}
