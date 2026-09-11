@@ -47,6 +47,68 @@ onboarding routes ask the other two, and the API's readiness probes every permit
 the code asks for, so an authority carrying a model without one of them reports
 NOT READY at the pod's door.
 
+## What a bound repository starts on
+
+A repository is read the moment a project binds it: the API resolves where the
+repository's own HEAD points, imports the configurations it declares there, and
+where it declares none authors a **bootstrap** configuration for the project —
+a review-only configuration whose whole brief is to write the repository's own
+`.chug/configurations` and stop running on it. The worker image that
+configuration commands is a setting, and a deployment naming none authors no
+bootstrap:
+
+```
+CHUG_API_BOOTSTRAP_WORKER_IMAGE=<a digest reference the scheduler admits>
+```
+
+It is not checked against the scheduler's admitted images — the API does not
+hold that list — so an image the rig will not run is refused at placement with
+`ExecutionPolicyDenied` rather than here.
+
+The step runs after the binding row exists and never refuses one. The bind's
+answer carries `configurations`, which is an import, a bootstrap, or a
+`Deferred` naming what stopped it; a deferred step is re-run through
+`POST /api/v1/tenants/<tenant>/projects/<project>/configurations/imports` and
+the authoring route, both of which already exist.
+
+## Create a repository over the API
+
+```
+POST /api/v1/tenants/<tenant>/projects/<project>/repositories/new
+idempotency-key: <one per attempt>
+{"account": "kasofsk", "name": "engine", "visibility": "private"}
+```
+
+It needs `administer` on the project and **both** of this tenant's claims on the
+account — portal and worker — because a repository the API makes is meant to run
+attempts from the moment it exists. The claim's account kind decides how: an
+organization's repository is made in the organization, and a personal account's
+is copied from a template, which is the only shape GitHub admits from an App:
+
+```
+CHUG_API_FORGE_TEMPLATE_REPOSITORY=<owner>/<name>
+```
+
+A deployment naming no template answers a personal account
+`PersonalAccountCreatesOnGitHub`, which says to create the repository on GitHub
+and bind it here.
+
+The repository is GitHub's from the moment it answers, so nothing after that is
+undone. The answer reports how far the request got: whether the bootstrap file
+was seeded as the first commit, whether the ruleset reserving the default branch
+was created, and what the binding's own configuration step found. A name the
+account already holds is `RepositoryExists` and points at the bind route.
+
+**The portal App must hold `Contents: write` and `Administration: write`**, and
+those are the operator's to verify on the App's settings page — GitHub grants an
+installation token only the permissions the App itself was granted, so an App
+without `Administration: write` is answered 403 on both the create and the
+ruleset: the create's reaches the caller as `ForgeRefused` naming the step, and
+the ruleset's is reported beside a repository that stands, as
+`"ruleset": {"result": "Refused", "message": "<GitHub's own words>"}`.
+`deploy/rig/images/README.md` carries both settings above beside the rest of the
+API's environment.
+
 ## Claim an account over the API
 
 A tenant's administrator claims an installation through the API, which is the

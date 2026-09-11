@@ -13,10 +13,11 @@
  * forge that could not be reached, would not answer, or answered something this
  * side cannot read is `Unavailable` and may be asked again. Nothing falls open.
  *
- * A PERMISSION SET IS NAMED HERE AND SPELLED BY THE ADAPTER. The three sets
- * this tree asks for are the vocabulary of what an act needs — read a snapshot,
- * push a branch, open a change proposal — and the forge's own spelling of each
- * is the adapter's, so a second forge names the same three.
+ * A PERMISSION SET IS NAMED HERE AND SPELLED BY THE ADAPTER. The sets this tree
+ * asks for are the vocabulary of what an act needs — read a snapshot, push a
+ * branch, open a change proposal, make a repository and reserve its default
+ * branch — and the forge's own spelling of each is the adapter's, so a second
+ * forge names the same ones.
  *
  * A TOKEN IS A VALUE AND IS NEVER PART OF AN IDENTITY. It reaches one header
  * and one credential brand; no refusal here carries a message, so a mint that
@@ -84,15 +85,36 @@ export const allForgeAccountKinds = ["User", "Organization"] as const;
 
 export type ForgeAccountKind = (typeof allForgeAccountKinds)[number];
 
-/** Every permission set an act in this tree asks a forge for. */
-export const allForgePermissionSets = ["read", "write", "propose"] as const;
+/** Every permission set a credential request may name. */
+export const allForgeCredentialPermissionSets = [
+  "read",
+  "write",
+  "propose",
+] as const;
+
+/**
+ * Every permission set an act in this tree asks a forge for. `administer` is
+ * not among the requestable ones above: it makes repositories and reserves
+ * their default branches, which this tree does on a project's behalf rather
+ * than on anybody's word.
+ */
+export const allForgePermissionSets = [
+  ...allForgeCredentialPermissionSets,
+  "administer",
+] as const;
 
 export type ForgePermissionSet = (typeof allForgePermissionSets)[number];
 
-/** What one minted token may do to the repository it is scoped to. */
+/**
+ * What one minted token may do to the repository it is scoped to.
+ * `administration` is what makes a repository and what reserves its default
+ * branch, and it is the one permission a token minted before a repository
+ * exists is for, so it is named apart from what a token does to contents.
+ */
 export interface ForgeRepositoryPermissions {
   readonly contents: "read" | "write";
   readonly changeProposals?: "write";
+  readonly administration?: "write";
 }
 
 /**
@@ -106,6 +128,7 @@ export const forgePermissionSets: Readonly<
   read: { contents: "read" },
   write: { contents: "write" },
   propose: { contents: "write", changeProposals: "write" },
+  administer: { contents: "write", administration: "write" },
 };
 
 /** The segments a forge addresses an account or a repository by. */

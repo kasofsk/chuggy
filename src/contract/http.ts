@@ -257,6 +257,13 @@ export const projectRepositoriesAnsweredMax = 200;
  */
 export const forgeRepositoriesAnsweredMax = 1_000;
 
+/**
+ * The longest account of a refusal a forge's own answer reaches a caller as. It
+ * is the forge's words and never this tree's request, so an administrator is
+ * told what the forge would not do without a body being quoted back.
+ */
+export const forgeRefusalMessageCharsMax = 512;
+
 /** How many turns of one thread's mailbox a read answers with, newest last. */
 export const threadTurnsAnsweredMax = 32;
 
@@ -332,6 +339,7 @@ export const nativeHttpRoutes = {
   configuration: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/:revision`,
   forgeCredentials: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/forge-credentials`,
   projectRepositories: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories`,
+  projectRepositoriesNew: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/new`,
   drafts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts`,
   draftInitialization: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/draft-initializations/:revision`,
   draft: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts/:ticket`,

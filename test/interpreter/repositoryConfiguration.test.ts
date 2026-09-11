@@ -209,7 +209,7 @@ test("partition imports continue after one partition is refused", async () => {
   });
   assert.deepEqual(
     imports.map(({ outcome }) => outcome),
-    [{ result: "RepositoryAbsent" }, { result: "Imported" }],
+    [{ result: "RepositoryAbsent" }, { result: "Imported", declarations: 0 }],
   );
   assert.deepEqual(calls, [
     "binding:first",
@@ -289,8 +289,8 @@ test("each of one project's repositories imports against its own binding", async
       ).map(({ outcome }) => outcome),
     );
   assert.deepEqual(outcomes, [
-    { result: "Imported" },
-    { result: "Imported" },
+    { result: "Imported", declarations: 0 },
+    { result: "Imported", declarations: 0 },
     { result: "RepositoryAbsent" },
   ]);
   assert.deepEqual(asked, [repository, other, unbound]);

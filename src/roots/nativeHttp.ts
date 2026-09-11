@@ -111,10 +111,19 @@ import {
 } from "../interpreter/forgeCredentials.ts";
 import type { RepositoryCredentialPort } from "../interpreter/finalizer.ts";
 import {
+  asForgeAccount,
+  asForgeRepositoryName,
   githubForgeId,
   type ForgeApp,
   type ForgeInstallationTokens,
 } from "../interpreter/forgeInstallation.ts";
+import type { ForgeTemplateRepository } from "../interpreter/forgeRepositoryCreation.ts";
+import { githubRepositoryCreation } from "../adapters/forge/githubRepositoryCreation.ts";
+import type {
+  RepositoryConfigurationSnapshotPort,
+  RepositoryDefaultBranchPort,
+} from "../interpreter/repositoryConfiguration.ts";
+import type { RepositoryCreationPorts } from "../interpreter/repositoryOnboarding.ts";
 import type { ProjectAccess } from "../interpreter/projectAccess.ts";
 
 const databaseUrlVariable = "CHUG_API_DATABASE_URL";
@@ -151,6 +160,16 @@ const forgeWorkerAppKeyFileVariable = "CHUG_API_FORGE_WORKER_APP_KEY_FILE";
 const forgeApiUrlVariable = "CHUG_API_FORGE_API_URL";
 const forgeTimeoutVariable = "CHUG_API_FORGE_TIMEOUT_MS";
 const forgeRepositoriesMaxVariable = "CHUG_API_FORGE_REPOSITORIES_MAX";
+/**
+ * The worker image a bootstrap configuration commands, and the repository a
+ * personal account's is copied from. Both are optional and each withholds one
+ * thing — a deployment naming no image authors no bootstrap, and one naming no
+ * template creates for organizations only — and the image is not looked up
+ * here, the api holding no admitted list, so an image the rig will not run
+ * fails at placement where every other refused image does.
+ */
+const bootstrapWorkerImageVariable = "CHUG_API_BOOTSTRAP_WORKER_IMAGE";
+const forgeTemplateRepositoryVariable = "CHUG_API_FORGE_TEMPLATE_REPOSITORY";
 
 /** The app every act here mints under, the worker's mints being only to enumerate. */
 const forgeApp: ForgeApp = "portal";
@@ -519,11 +538,60 @@ function forgeRepositoriesMax(): number {
   return asked;
 }
 
-/** The forge this process talks to: the credential source its own reads take, the minting route's service, and onboarding's. */
+/** The image a bootstrap configuration commands, or nothing where this deployment names none. */
+function bootstrapWorkerImage(): string | undefined {
+  const image = process.env[bootstrapWorkerImageVariable];
+  return image === undefined || image.length === 0 ? undefined : image;
+}
+
+/**
+ * The repository a personal account's is copied from, named `owner/name`. A
+ * setting this side cannot read as one repository is refused where it is read
+ * rather than at the forge that would answer the request it composes.
+ */
+function forgeTemplateRepository(): ForgeTemplateRepository | undefined {
+  const named = process.env[forgeTemplateRepositoryVariable];
+  if (named === undefined || named.length === 0) return undefined;
+  const parts = named.split("/");
+  const [account, name] = parts;
+  if (parts.length !== 2 || account === undefined || name === undefined)
+    throw new Error(`${forgeTemplateRepositoryVariable} must be owner/name`);
+  return {
+    account: asForgeAccount(account),
+    name: asForgeRepositoryName(name),
+  };
+}
+
+/** The three acts creating a repository is, under the portal app this process signs as. */
+function forgeRepositoryCreation(
+  portal: ForgeAppPair,
+  tokens: ForgeInstallationTokens,
+): RepositoryCreationPorts {
+  const template = forgeTemplateRepository();
+  return {
+    forge: githubForgeId,
+    repositories: githubRepositoryCreation({
+      ...portal.options,
+      tokens,
+      appId: portal.options.appId,
+    }),
+    ...(template === undefined ? {} : { template }),
+  };
+}
+
+/**
+ * The forge this process talks to: the credential source its own reads take,
+ * the minting route's service, onboarding's, and the one adapter that reads a
+ * repository — composed once because it opens one scratch, and handed to the
+ * import route as well as to the bind's configuration step.
+ */
 export interface NativeForge {
   readonly credentials: RepositoryCredentialPort;
   readonly minting: ForgeCredentialMinting | undefined;
   readonly onboarding: RepositoryOnboarding;
+  readonly repositories:
+    | (RepositoryConfigurationSnapshotPort & RepositoryDefaultBranchPort)
+    | undefined;
 }
 
 /**
@@ -544,17 +612,22 @@ async function nativeForge(
   const others = otherForgeAppHalves(
     pairs.filter((pair) => pair.app !== forgeApp),
   );
+  const image = bootstrapWorkerImage();
   if (portal === undefined) {
     const credentials = nativeRepositoryCredentials([]);
+    const repositories = repositoryConfigurationSnapshots(credentials);
     return {
       credentials,
       minting: undefined,
-      onboarding: composeRepositoryOnboarding(
-        pools.pool,
+      repositories,
+      onboarding: composeRepositoryOnboarding({
+        apiPool: pools.pool,
         access,
         credentials,
-        others,
-      ),
+        forgeApps: others,
+        ...(repositories === undefined ? {} : { repositories }),
+        ...(image === undefined ? {} : { bootstrapImage: image }),
+      }),
     };
   }
   const options = portal.options;
@@ -576,13 +649,23 @@ async function nativeForge(
     },
   ];
   const credentials = nativeRepositoryCredentials(hosts);
+  const repositories = repositoryConfigurationSnapshots(credentials);
   return {
     credentials,
     minting: composeForgeCredentialMinting(pools.pool, access, tokens),
-    onboarding: composeRepositoryOnboarding(pools.pool, access, credentials, [
-      forgeAppHalf(forgeApp, options, installationTokens),
-      ...others,
-    ]),
+    repositories,
+    onboarding: composeRepositoryOnboarding({
+      apiPool: pools.pool,
+      access,
+      credentials,
+      forgeApps: [
+        forgeAppHalf(forgeApp, options, installationTokens),
+        ...others,
+      ],
+      ...(repositories === undefined ? {} : { repositories }),
+      ...(image === undefined ? {} : { bootstrapImage: image }),
+      creation: forgeRepositoryCreation(portal, installationTokens),
+    }),
   };
 }
 
@@ -805,7 +888,7 @@ async function main(): Promise<void> {
     undefined,
     artifacts,
     selectorContextSource(pool, selectorReviewPool),
-    repositoryConfigurationSnapshots(forge.credentials),
+    forge.repositories,
     nativeLeadPorts(pools, artifacts),
     nativeThreadPorts(pools, artifacts),
   );

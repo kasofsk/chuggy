@@ -115,6 +115,8 @@ to start without the required ones.
 | `CHUG_API_FORGE_API_URL` | `https://api.github.com` | where the mint request is sent |
 | `CHUG_API_FORGE_TIMEOUT_MS` | | how long one mint request may take before it is an outage |
 | `CHUG_API_FORGE_REPOSITORIES_MAX` | 500 | how many repositories one installation listing pages for before it answers `truncated`; it may not exceed what the response schema answers |
+| `CHUG_API_BOOTSTRAP_WORKER_IMAGE` | | the image a bootstrap configuration commands, which `deploy/rig/forge/README.md` describes; a deployment naming none authors no bootstrap and the bind reports its configuration step deferred |
+| `CHUG_API_FORGE_TEMPLATE_REPOSITORY` | | `<owner>/<name>`, the template a personal account's repository is generated from; a deployment naming none answers such a create `PersonalAccountCreatesOnGitHub` |
 | `CHUG_API_HOST` | `0.0.0.0` in the image | the source default is loopback, which no kubelet can reach |
 | `CHUG_API_PORT` | 3000 | |
 | `CHUG_API_SHUTDOWN_DRAIN_MS` | | how long a drain runs before open connections are closed |

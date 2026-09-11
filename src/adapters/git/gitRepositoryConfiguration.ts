@@ -1,8 +1,17 @@
-/** Git-backed immutable repository configuration snapshots, read without a checkout. */
+/**
+ * Git-backed immutable repository configuration snapshots, read without a
+ * checkout, and where the repository's own HEAD points.
+ *
+ * THE TWO READS SHARE ONE SCRATCH AND ONE CREDENTIAL RULE, because the second
+ * is what the first is asked at: a caller holding no commit reads the head to
+ * get one. A remote that answers the head and refuses the fetch is the same
+ * remote, so a second scratch would be a second set of bounds to keep in step.
+ */
 
 import { textCodePointsCount } from "../../contract/http.ts";
 import { assertNever } from "../../domain/assertNever.ts";
 import type {
+  RepositoryBinding,
   RepositoryCredential,
   RepositoryCredentialPort,
 } from "../../interpreter/finalizer.ts";
@@ -14,8 +23,11 @@ import {
   type RepositoryConfigurationSnapshotPort,
   type RepositoryConfigurationSnapshotRead,
   type RepositoryConfigurationSnapshotRequest,
+  type RepositoryDefaultBranchPort,
+  type RepositoryDefaultBranchRead,
 } from "../../interpreter/repositoryConfiguration.ts";
 import {
+  scratchObserveHead,
   scratchOpen,
   scratchRemoteArguments,
   scratchRun,
@@ -66,9 +78,9 @@ const gitRepositoryConfigurationBlobOutputBytesMax =
 
 async function gitRepositoryConfigurationCredential(
   own: GitRepositoryConfigurationState,
-  request: RepositoryConfigurationSnapshotRequest,
+  repository: RepositoryBinding,
 ): Promise<GitRepositoryConfigurationAuthorization> {
-  const resolved = await own.credentials.credential(request.repository);
+  const resolved = await own.credentials.credential(repository);
   switch (resolved.resolved) {
     case "Credential":
       return { authorized: "Credential", credential: resolved.credential };
@@ -205,7 +217,7 @@ async function gitRepositoryConfigurationSnapshot(
 ): Promise<RepositoryConfigurationSnapshotRead> {
   const authorization = await gitRepositoryConfigurationCredential(
     own,
-    request,
+    request.repository,
   );
   if (authorization.authorized === "Unavailable")
     return { read: "Unavailable", unavailable: "Credential" };
@@ -229,9 +241,47 @@ async function gitRepositoryConfigurationSnapshot(
     : { read: "Snapshot", files };
 }
 
+/**
+ * Where the remote's own HEAD points. A credential the source refuses is read
+ * as none rather than as a refusal, exactly as the snapshot reads one, so a
+ * public repository answers without one and a private one is unreachable.
+ */
+async function gitRepositoryDefaultBranch(
+  own: GitRepositoryConfigurationState,
+  repository: RepositoryBinding,
+): Promise<RepositoryDefaultBranchRead> {
+  const authorization = await gitRepositoryConfigurationCredential(
+    own,
+    repository,
+  );
+  if (authorization.authorized === "Unavailable")
+    return { read: "Unavailable" };
+  const observed = await scratchObserveHead(
+    own.scratch,
+    repository.repository,
+    authorization.authorized === "Credential"
+      ? authorization.credential
+      : undefined,
+  );
+  switch (observed.read) {
+    case "Value":
+      return {
+        read: "Branch",
+        branch: observed.value.ref,
+        commit: observed.value.commit,
+      };
+    case "Absent":
+      return { read: "Absent" };
+    case "Unreachable":
+      return { read: "Unavailable" };
+    default:
+      return assertNever(observed);
+  }
+}
+
 export function gitRepositoryConfiguration(
   options: GitRepositoryConfigurationOptions,
-): RepositoryConfigurationSnapshotPort {
+): RepositoryConfigurationSnapshotPort & RepositoryDefaultBranchPort {
   const own: GitRepositoryConfigurationState = {
     scratch: scratchOpen({
       directory: options.scratchDirectory,
@@ -254,5 +304,6 @@ export function gitRepositoryConfiguration(
   };
   return {
     snapshot: (request) => gitRepositoryConfigurationSnapshot(own, request),
+    defaultBranch: (repository) => gitRepositoryDefaultBranch(own, repository),
   };
 }

@@ -21,6 +21,7 @@ import {
 } from "./authoring.ts";
 import type {
   GitObjectId,
+  GitRefName,
   RepositoryBinding,
   RepositoryId,
 } from "./finalizer.ts";
@@ -75,6 +76,33 @@ export interface RepositoryConfigurationSnapshotPort {
   snapshot(
     request: RepositoryConfigurationSnapshotRequest,
   ): Promise<RepositoryConfigurationSnapshotRead>;
+}
+
+/**
+ * What reading where a repository's own HEAD points came to. `Absent` is a
+ * repository holding no commit under it, which is what a repository created and
+ * not yet seeded is, and is not an outage: there is nothing there to read at
+ * this commit or any other.
+ */
+export type RepositoryDefaultBranchRead =
+  | {
+      readonly read: "Branch";
+      readonly branch: GitRefName;
+      readonly commit: GitObjectId;
+    }
+  | { readonly read: "Absent" }
+  | { readonly read: "Unavailable" };
+
+/**
+ * Where a repository's own HEAD points, asked of the remote rather than
+ * remembered. It is what a caller holding no ticket to take a commit from
+ * imports at, and a binding that named its own branch would be a second place
+ * the answer could be stale.
+ */
+export interface RepositoryDefaultBranchPort {
+  defaultBranch(
+    repository: RepositoryBinding,
+  ): Promise<RepositoryDefaultBranchRead>;
 }
 
 export interface RepositoryConfigurationDeclaration {
@@ -168,7 +196,7 @@ export type RepositoryConfigurationImportOutcome =
     }
   | { readonly result: "IdentityConflict" }
   | { readonly result: "StaleBinding" }
-  | { readonly result: "Imported" };
+  | { readonly result: "Imported"; readonly declarations: number };
 
 /** Imports the declarations at one exact repository commit under an already-resolved authority. */
 export async function importRepositoryConfigurations(input: {
@@ -210,7 +238,10 @@ export async function importRepositoryConfigurations(input: {
       });
       switch (imported.imported) {
         case "Imported":
-          return { result: "Imported" };
+          return {
+            result: "Imported",
+            declarations: readiness.declarations.length,
+          };
         case "IdentityConflict":
           return { result: "IdentityConflict" };
         case "StaleBinding":

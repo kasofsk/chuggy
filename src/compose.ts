@@ -40,6 +40,8 @@ import {
 import type { ForgeRepositoryTokens } from "./interpreter/forgeInstallation.ts";
 import {
   repositoryOnboarding,
+  type RepositoryConfigurationsPorts,
+  type RepositoryCreationPorts,
   type RepositoryOnboarding,
   type RepositoryOnboardingForgeApp,
 } from "./interpreter/repositoryOnboarding.ts";
@@ -131,7 +133,10 @@ import { postgresRunEvidenceReads } from "./adapters/postgres/runEvidence.ts";
 import type { OutputContentPort } from "./interpreter/operationsView.ts";
 import type { RunEvidenceContentPort } from "./interpreter/runEvidence.ts";
 import type { SelectorOperationalContextRead } from "./interpreter/selectorOperationalContext.ts";
-import type { RepositoryConfigurationSnapshotPort } from "./interpreter/repositoryConfiguration.ts";
+import type {
+  RepositoryConfigurationSnapshotPort,
+  RepositoryDefaultBranchPort,
+} from "./interpreter/repositoryConfiguration.ts";
 import {
   silentTicketServiceMetrics,
   ticketServiceDefaults,
@@ -242,20 +247,65 @@ export function composeForgeCredentialMinting(
  * a project binds, and has nothing to say about installations, which is what
  * `NotConfigured` is.
  */
+export interface RepositoryOnboardingComposition {
+  readonly apiPool: pg.Pool;
+  readonly access: ProjectAccess;
+  readonly credentials: RepositoryCredentialPort;
+  readonly forgeApps: readonly RepositoryOnboardingForgeApp[];
+  /**
+   * The repository reads a bind's configuration step takes, which is one
+   * adapter answering both: a deployment with no scratch has neither, and a
+   * bind reports that step as deferred rather than refusing.
+   */
+  readonly repositories?: RepositoryConfigurationSnapshotPort &
+    RepositoryDefaultBranchPort;
+  readonly bootstrapImage?: string;
+  readonly creation?: RepositoryCreationPorts;
+}
+
+/** The configuration step's own half, over the one adapter that reads a repository. */
+function composeRepositoryConfigurations(
+  composition: RepositoryOnboardingComposition,
+  repositories: RepositoryConfigurationSnapshotPort &
+    RepositoryDefaultBranchPort,
+): RepositoryConfigurationsPorts {
+  const authoring = postgresAuthoring(composition.apiPool);
+  return {
+    heads: repositories,
+    imports: {
+      bindings: postgresProjectRepositoryBinding(composition.apiPool),
+      snapshots: repositories,
+      store: authoring,
+    },
+    authoring,
+    ...(composition.bootstrapImage === undefined
+      ? {}
+      : { bootstrapImage: composition.bootstrapImage }),
+  };
+}
+
 export function composeRepositoryOnboarding(
-  apiPool: pg.Pool,
-  access: ProjectAccess,
-  credentials: RepositoryCredentialPort,
-  forgeApps: readonly RepositoryOnboardingForgeApp[],
+  composition: RepositoryOnboardingComposition,
 ): RepositoryOnboarding {
   return repositoryOnboarding({
-    access,
-    forgeApps,
-    credentials,
-    recording: postgresForgeInstallationRecording(apiPool),
-    claims: postgresForgeInstallationClaims(apiPool),
-    bindings: postgresProjectRepositoryBindings(apiPool),
-    binding: postgresRepositoryBinding(apiPool),
+    access: composition.access,
+    forgeApps: composition.forgeApps,
+    credentials: composition.credentials,
+    recording: postgresForgeInstallationRecording(composition.apiPool),
+    claims: postgresForgeInstallationClaims(composition.apiPool),
+    bindings: postgresProjectRepositoryBindings(composition.apiPool),
+    binding: postgresRepositoryBinding(composition.apiPool),
+    ...(composition.repositories === undefined
+      ? {}
+      : {
+          configurations: composeRepositoryConfigurations(
+            composition,
+            composition.repositories,
+          ),
+        }),
+    ...(composition.creation === undefined
+      ? {}
+      : { creation: composition.creation }),
   });
 }
 

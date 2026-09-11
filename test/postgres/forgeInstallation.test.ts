@@ -233,6 +233,29 @@ test("the claim under an installation identity is the asking tenant's own row", 
   );
 });
 
+test("the claim on an account is the asking tenant's own row", async () => {
+  const recording = postgresForgeInstallationRecording(harness.pool);
+  const holder = asTenantId(`tenant-${randomUUID()}`);
+  const stranger = asTenantId(`tenant-${randomUUID()}`);
+  const held = claim({ tenant: holder });
+  assert.equal(await recording.record(held), "Recorded");
+  const claims = postgresForgeInstallationClaims(harness.pool);
+  const asked = {
+    forge: held.forge,
+    app: held.app,
+    account: held.account,
+  };
+  assert.equal(
+    (await claims.accountClaim({ tenant: holder, ...asked }))?.installationId,
+    held.installationId,
+  );
+  assert.equal(
+    await claims.accountClaim({ tenant: stranger, ...asked }),
+    undefined,
+    "an account another tenant claimed is not this tenant's to mint on",
+  );
+});
+
 test("a claim is never released and never changes hands, even by the owner", async () => {
   const recorded = claim();
   assert.equal(

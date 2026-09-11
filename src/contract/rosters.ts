@@ -220,6 +220,31 @@ export type ForgeAppName = (typeof forgeApps)[number];
 export const forgeAccountKinds = ["User", "Organization"] as const;
 export type ForgeAccountKindName = (typeof forgeAccountKinds)[number];
 
+/** Whether a repository this tree creates is its account's alone to read. */
+export const forgeRepositoryVisibilities = ["private", "public"] as const;
+export type ForgeRepositoryVisibilityName =
+  (typeof forgeRepositoryVisibilities)[number];
+
+/** Why a newly bound repository came away with no configurations of its own. */
+export const projectRepositoryConfigurationDeferrals = [
+  "NotConfigured",
+  "NoBootstrapImage",
+  "DefaultBranchAbsent",
+  "DefaultBranchUnavailable",
+  "RepositoryAbsent",
+  "SnapshotAbsent",
+  "SnapshotUnavailable",
+  "SnapshotRefused",
+  "DeclarationsRefused",
+  "IdentityConflict",
+  "StaleBinding",
+  "NotFound",
+  "ParentNotFound",
+  "StepFailed",
+] as const;
+export type ProjectRepositoryConfigurationDeferralName =
+  (typeof projectRepositoryConfigurationDeferrals)[number];
+
 /** Whether a selector proposal is dispatched or held for a reviewer. */
 export const selectorDispatchModes = ["Automatic", "ApprovalRequired"] as const;
 export type SelectorDispatchMode = (typeof selectorDispatchModes)[number];

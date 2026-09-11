@@ -27,6 +27,7 @@ import {
   type ForgeInstallationStore,
 } from "../../interpreter/forgeInstallation.ts";
 import type {
+  ForgeInstallationAccountQuery,
   ForgeInstallationClaim,
   ForgeInstallationClaimed,
   ForgeInstallationClaims,
@@ -140,6 +141,29 @@ async function forgeInstallationClaim(
   return row === undefined ? undefined : forgeInstallationClaimed(row);
 }
 
+/**
+ * The one claim a tenant holds of one app on one account, which is the whole
+ * key and the tenant. It answers the account's kind as well as its existence,
+ * so a caller deciding which of a forge's collections to make a repository in
+ * asks once rather than reading the row and then the forge.
+ */
+async function forgeInstallationAccountClaim(
+  pool: pg.Pool,
+  query: ForgeInstallationAccountQuery,
+): Promise<ForgeInstallationClaimed | undefined> {
+  const found = await pool.query<ForgeInstallationRow>(
+    sql`SELECT forge,app,account,account_kind,installation_id,
+               claimed_at::text AS claimed_at
+          FROM forge_installation
+          WHERE forge = ${query.forge}
+            AND app = ${query.app}
+            AND account = ${query.account}
+            AND tenant = ${query.tenant}`,
+  );
+  const row = found.rows[0];
+  return row === undefined ? undefined : forgeInstallationClaimed(row);
+}
+
 /** The tenant's own claims, read as a page and one row at a time. */
 export function postgresForgeInstallationClaims(
   pool: pg.Pool,
@@ -148,6 +172,7 @@ export function postgresForgeInstallationClaims(
     claims: (tenant) => forgeInstallationClaimsPage(pool, tenant),
     claim: (tenant, installationId) =>
       forgeInstallationClaim(pool, tenant, installationId),
+    accountClaim: (query) => forgeInstallationAccountClaim(pool, query),
   };
 }
 

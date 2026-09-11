@@ -69,12 +69,21 @@ export interface ForgeInstallationClaimsPage {
   readonly truncated: boolean;
 }
 
+/** The one claim a tenant may hold of one app on one account, which is the relation's key. */
+export interface ForgeInstallationAccountQuery {
+  readonly tenant: TenantId;
+  readonly forge: ForgeId;
+  readonly app: ForgeApp;
+  readonly account: ForgeAccount;
+}
+
 /**
  * A tenant's claims, oldest first, and the one claim it holds under an
- * installation identity. THE LISTING IS A PAGE AND THE LOOKUP IS NOT: a bound
- * that is right for a reader is wrong for an ownership test, so a caller asking
+ * installation identity or on an account. A LOOKUP IS NOT A PAGE: a bound that
+ * is right for a reader is wrong for an ownership test, so a caller asking
  * whether this tenant holds an installation asks for that row rather than
- * searching the first page of them.
+ * searching the first page of them, and the account lookup names the app
+ * because a tenant claims each of them separately on one account.
  */
 export interface ForgeInstallationClaims {
   claims(tenant: TenantId): Promise<ForgeInstallationClaimsPage>;
@@ -82,5 +91,9 @@ export interface ForgeInstallationClaims {
   claim(
     tenant: TenantId,
     installationId: ForgeInstallationId,
+  ): Promise<ForgeInstallationClaimed | undefined>;
+
+  accountClaim(
+    query: ForgeInstallationAccountQuery,
   ): Promise<ForgeInstallationClaimed | undefined>;
 }
