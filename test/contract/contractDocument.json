@@ -67,6 +67,7 @@
     "configurations": "/api/v1/tenants/:tenant/projects/:project/configurations",
     "configurationImports": "/api/v1/tenants/:tenant/projects/:project/configurations/imports",
     "configuration": "/api/v1/tenants/:tenant/projects/:project/configurations/:revision",
+    "forgeCredentials": "/api/v1/tenants/:tenant/projects/:project/forge-credentials",
     "drafts": "/api/v1/tenants/:tenant/projects/:project/drafts",
     "draftInitialization": "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
     "draft": "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",
@@ -712,6 +713,22 @@
       ],
       "additionalProperties": false
     },
+    "forgeCredential": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "permissions": {
+          "type": "string",
+          "enum": ["read", "write", "propose"]
+        }
+      },
+      "required": ["repository", "permissions"],
+      "additionalProperties": false
+    },
     "leadInquiry": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -838,8 +855,15 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
-        "turn": { "type": "string", "minLength": 1 },
-        "message": { "type": "string", "minLength": 1, "maxLength": 16384 }
+        "turn": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384
+        }
       },
       "required": ["turn", "message"],
       "additionalProperties": false

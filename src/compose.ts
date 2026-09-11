@@ -33,6 +33,11 @@ import { postgresLeadInquiries } from "./adapters/postgres/leadInquiry.ts";
 import { postgresNativeReads } from "./adapters/postgres/nativeReads.ts";
 import { postgresAuthoring } from "./adapters/postgres/authoring.ts";
 import { postgresProjectRepositoryBinding } from "./adapters/postgres/repositoryConfiguration.ts";
+import {
+  forgeCredentialMinting,
+  type ForgeCredentialMinting,
+} from "./interpreter/forgeCredentials.ts";
+import type { ForgeRepositoryTokens } from "./interpreter/forgeInstallation.ts";
 import { postgresNotifications } from "./adapters/postgres/notifications.ts";
 import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
 import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
@@ -194,6 +199,23 @@ export function composeSelectorProjectSettings(
   return selectorProjectSettingsAdministration(
     access,
     postgresSelectorProjectSettings(apiPool),
+  );
+}
+
+/**
+ * The minting service the API answers its credential route with: `Execute` on
+ * the project, then the project's own binding for the repository named, then
+ * one token for that repository alone.
+ */
+export function composeForgeCredentialMinting(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+  tokens: ForgeRepositoryTokens,
+): ForgeCredentialMinting {
+  return forgeCredentialMinting(
+    access,
+    postgresProjectRepositoryBinding(apiPool),
+    tokens,
   );
 }
 

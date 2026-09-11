@@ -42,6 +42,8 @@ import {
   encodeExecutionCursor,
   parsePartition,
 } from "../../src/adapters/http/contract.ts";
+import type { ForgeCredentialMinting } from "../../src/interpreter/forgeCredentials.ts";
+import { asForgeInstallationToken } from "../../src/interpreter/forgeInstallation.ts";
 import { unreadableLeadReads } from "./leadReadFixtures.ts";
 import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
 import {
@@ -423,6 +425,32 @@ function fakeSelectorSettings(
   };
 }
 
+/**
+ * The minting service the credential route answers from, refusing the
+ * repository this suite treats as unbound and reporting the forge as down for
+ * the one it treats as unreachable.
+ */
+function fakeForgeCredentials(calls: string[]): ForgeCredentialMinting {
+  return {
+    mint: (_principal, _partition, request) => {
+      calls.push(
+        `forge-credentials:${request.repository}:${request.permissions}`,
+      );
+      if (request.repository.endsWith("/unbound"))
+        return Promise.resolve({ result: "NotFound" });
+      if (request.repository.endsWith("/unreachable"))
+        return Promise.resolve({ result: "Unavailable" });
+      return Promise.resolve({
+        result: "Authorized",
+        value: {
+          token: asForgeInstallationToken("ghs-minted-q4w5e6"),
+          expiresAtMs: 1_757_500_000_000,
+        },
+      });
+    },
+  };
+}
+
 function appOf(
   calls: string[],
   authenticated = true,
@@ -446,6 +474,7 @@ function appOf(
     limits,
     undefined,
     fakeSelectorSettings(calls),
+    fakeForgeCredentials(calls),
   );
 }
 
@@ -491,6 +520,93 @@ test("a project's selector settings are read, written and historied", async () =
     "selector-settings:write:1:Land the panel.",
     "selector-settings:history:1:10",
   ]);
+});
+
+const forgeCredentialsPath =
+  "/api/v1/tenants/acme/projects/atlas/forge-credentials";
+
+/** One credential request, the repository being what each case is about. */
+function forgeCredentialRequest(repository: string) {
+  return {
+    method: "POST" as const,
+    url: forgeCredentialsPath,
+    headers: {
+      authorization: "Bearer valid",
+      "content-type": "application/vnd.chuggy.v1+json",
+    },
+    payload: JSON.stringify({ repository, permissions: "write" }),
+  };
+}
+
+test("a bound repository is answered with a token and when it stops working", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const minted = await app.inject(
+    forgeCredentialRequest("https://github.com/kasofsk/chuggy"),
+  );
+  assert.equal(minted.statusCode, 200);
+  assert.deepEqual(minted.json(), {
+    token: "ghs-minted-q4w5e6",
+    expiresAtMs: 1_757_500_000_000,
+  });
+  assert.deepEqual(calls, [
+    "forge-credentials:https://github.com/kasofsk/chuggy:write",
+  ]);
+});
+
+test("a repository this caller may not mint for is not found and a forge that is down is a wait", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const absent = await app.inject(
+    forgeCredentialRequest("https://github.com/kasofsk/unbound"),
+  );
+  assert.equal(absent.statusCode, 404);
+  const waiting = await app.inject(
+    forgeCredentialRequest("https://github.com/kasofsk/unreachable"),
+  );
+  assert.equal(waiting.statusCode, 503);
+  assert.equal(
+    waiting.json<HttpErrorEnvelope>().error.code,
+    "ForgeUnavailable",
+  );
+  assert.ok(waiting.headers["retry-after"] !== undefined);
+});
+
+test("a credential request presenting no bearer or no version reaches no minting", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const request = forgeCredentialRequest("https://github.com/kasofsk/chuggy");
+  assert.equal(
+    (
+      await app.inject({
+        ...request,
+        headers: { "content-type": "application/vnd.chuggy.v1+json" },
+      })
+    ).statusCode,
+    401,
+  );
+  assert.equal(
+    (
+      await app.inject({
+        ...request,
+        headers: {
+          authorization: "Bearer valid",
+          "content-type": "application/json",
+        },
+      })
+    ).statusCode,
+    415,
+  );
+  assert.equal(
+    (
+      await app.inject({
+        ...request,
+        payload: JSON.stringify({ repository: "r", permissions: "administer" }),
+      })
+    ).statusCode,
+    400,
+  );
+  assert.deepEqual(calls, []);
 });
 
 test("a settings write that lost its fence is a conflict rather than a rewrite", async () => {

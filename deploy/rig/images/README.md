@@ -108,6 +108,10 @@ to start without the required ones.
 | `CHUG_API_GIT_SCRATCH_ROOT` | required | writable scratch for exact-commit configuration reads |
 | `CHUG_API_THREAD_CREDENTIAL_SLOT` | required | the named credential mount a member's thread speaks through |
 | `CHUG_API_REPOSITORY_CREDENTIAL_SOURCES` | required | JSON repository-to-credential-file mappings |
+| `CHUG_API_FORGE_APP_ID` | with the key file, or neither | the GitHub App this deployment mints installation tokens under |
+| `CHUG_API_FORGE_APP_KEY_FILE` | with the app id, or neither | a file holding that app's RSA private key, in either PEM encoding; the process refuses to start unless it can be read and used |
+| `CHUG_API_FORGE_API_URL` | `https://api.github.com` | where the mint request is sent |
+| `CHUG_API_FORGE_TIMEOUT_MS` | | how long one mint request may take before it is an outage |
 | `CHUG_API_HOST` | `0.0.0.0` in the image | the source default is loopback, which no kubelet can reach |
 | `CHUG_API_PORT` | 3000 | |
 | `CHUG_API_SHUTDOWN_DRAIN_MS` | | how long a drain runs before open connections are closed |
@@ -122,6 +126,14 @@ to start without the required ones.
 | `CHUG_API_SELECTOR_FEEDBACK_MAX` | | how much review feedback one operational context carries |
 | `CHUG_SCHEDULER_PROJECT_BACKLOG_MAX` | | how much of a project's backlog it carries |
 | `CHUG_SCHEDULER_INSTALLATION_BACKLOG_MAX` | | how much of the installation's it carries |
+
+**The app id and the key file are named together or not at all.** A deployment
+naming neither mints nothing: every repository credential is read from
+`CHUG_API_REPOSITORY_CREDENTIAL_SOURCES` as before, and the credential route
+answers nothing. A deployment naming one of the two meant to mint and cannot, so
+it refuses to start rather than reporting an outage at every mint for as long as
+it runs. Where both are named, repositories on the forge the app is installed on
+are minted for and every other repository is still read from the files.
 
 **Both database URLs must become a group role, and they become different ones.**
 The API authenticates as `chuggy_api_login` for each and refuses to start unless
