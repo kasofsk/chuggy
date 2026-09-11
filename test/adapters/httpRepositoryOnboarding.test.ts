@@ -55,6 +55,7 @@ import {
 } from "../../src/interpreter/forgeInstallation.ts";
 import type {
   ForgeInstallationClaimed,
+  ForgeInstallationClaims,
   ForgeInstallationRecorded,
 } from "../../src/interpreter/forgeInstallationClaim.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
@@ -62,6 +63,7 @@ import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import type {
   ProjectRepositoryBound,
+  RepositoryBindingCommand,
   RepositoryBindingOutcome,
 } from "../../src/interpreter/repositoryBinding.ts";
 import {
@@ -170,10 +172,16 @@ function repositoriesAnswer(): Response {
   });
 }
 
-/** The durable side, which this suite holds in memory so a case can read back what it wrote. */
+/**
+ * The durable side, which this suite holds in memory so a case can read back
+ * what it wrote. The claims are one tenant's, and a read naming any other
+ * answers none of them: a store that ignored the tenant would let a route drop
+ * its permit and still pass.
+ */
 interface OnboardingStore {
   readonly held: ForgeInstallationClaimed[];
   readonly bound: ProjectRepositoryBound[];
+  readonly commands: RepositoryBindingCommand[];
   recorded: ForgeInstallationRecorded;
   outcome: RepositoryBindingOutcome;
   resolved: CredentialResolved;
@@ -183,12 +191,30 @@ function fixtureStore(): OnboardingStore {
   return {
     held: [],
     bound: [],
+    commands: [],
     recorded: "Recorded",
     outcome: "Bound",
     resolved: {
       resolved: "Credential",
       credential: asRepositoryCredential("ghs-proof"),
     },
+  };
+}
+
+/** The claims one tenant holds, which a read naming any other tenant is answered none of. */
+function fixtureClaims(store: OnboardingStore): ForgeInstallationClaims {
+  return {
+    claims: (askedTenant) =>
+      Promise.resolve({
+        claims: askedTenant === tenant ? store.held : [],
+        truncated: false,
+      }),
+    claim: (askedTenant, askedInstallation) =>
+      Promise.resolve(
+        askedTenant === tenant
+          ? store.held.find((row) => row.installationId === askedInstallation)
+          : undefined,
+      ),
   };
 }
 
@@ -250,17 +276,12 @@ function fixtureService(
         return Promise.resolve(store.recorded);
       },
     },
-    claims: {
-      claims: () => Promise.resolve({ claims: store.held, truncated: false }),
-      claim: (_tenant, askedInstallation) =>
-        Promise.resolve(
-          store.held.find((row) => row.installationId === askedInstallation),
-        ),
-    },
+    claims: fixtureClaims(store),
     bindings: { bindings: () => Promise.resolve(store.bound) },
     binding: {
       currentRecoveryEpoch: () => Promise.resolve(epoch),
       bind: (command) => {
+        store.commands.push(command);
         if (store.outcome === "Bound")
           store.bound.push({
             repository: command.repository,
@@ -586,6 +607,22 @@ test("an installation this tenant has not claimed is not found and asks no forge
   assert.deepEqual(other.recorder.calls, []);
 });
 
+test("a claim this tenant holds is still not a reader's without the permit", async (t) => {
+  const store = fixtureStore();
+  store.held.push(claimed);
+  const refused = fixtureCase(t, { answers: [repositoriesAnswer()], store });
+  const served = await refused.app.inject({
+    url: `${installationsRoot}/${installationId}/repositories`,
+    headers: authorized,
+  });
+  assert.equal(served.statusCode, 404);
+  assert.deepEqual(
+    refused.recorder.calls,
+    [],
+    "the forge is not asked on behalf of a caller the tenant does not admit",
+  );
+});
+
 test("a bind without the project permit is not found and writes nothing", async (t) => {
   const refused = fixtureCase(t, { granted: ["Read"] });
   const served = await refused.app.inject({
@@ -665,7 +702,29 @@ test("each outcome the bind door answers with reaches the wire as its own", asyn
     assert.equal(served.statusCode, status, outcome);
     if (error !== undefined)
       assert.equal(served.json<HttpErrorEnvelope>().error.code, error, outcome);
+    if (status === 503)
+      assert.equal(
+        typeof served.headers["retry-after"],
+        "string",
+        `${outcome} is a wait and says how long`,
+      );
   }
+});
+
+test("the identity a bind is decided under is the one the caller keyed it with", async (t) => {
+  const binding = fixtureCase(t, { granted: ["Administer"] });
+  for (const key of ["bind-atlas-1", "bind-atlas-2"])
+    await binding.app.inject({
+      method: "POST",
+      url: repositoriesRoot,
+      headers: { ...versioned, "idempotency-key": key },
+      payload: { repository },
+    });
+  assert.deepEqual(
+    binding.store.commands.map((command) => command.operation),
+    ["bind-atlas-1", "bind-atlas-2"],
+    "two requests for one repository are two operations and not one",
+  );
 });
 
 test("a bind naming no operation identity is refused", async (t) => {
@@ -687,4 +746,50 @@ test("what a project binds is its readers' and nobody else's", async (t) => {
     headers: authorized,
   });
   assert.equal(served.statusCode, 404);
+});
+
+/**
+ * Every address this slice adds, as a caller carrying no bearer sends it. The
+ * writes still carry their media type and their key, because a request refused
+ * for its framing would say nothing about who may send it.
+ */
+const unauthenticatedRequests = [
+  { method: "GET" as const, url: "/api/v1/forge/github" },
+  { method: "GET" as const, url: installationsRoot },
+  {
+    method: "POST" as const,
+    url: installationsRoot,
+    headers: { "content-type": nativeHttpMediaType },
+    payload: { forge: "github", app: "portal", installationId },
+  },
+  {
+    method: "GET" as const,
+    url: `${installationsRoot}/${installationId}/repositories`,
+  },
+  { method: "GET" as const, url: repositoriesRoot },
+  {
+    method: "POST" as const,
+    url: repositoriesRoot,
+    headers: {
+      "content-type": nativeHttpMediaType,
+      "idempotency-key": "bind-atlas-1",
+    },
+    payload: { repository },
+  },
+];
+
+test("every route this slice adds answers an unauthenticated caller with 401", async (t) => {
+  const served = fixtureCase(t, {
+    answers: [appAnswer(), installationAnswer(), repositoriesAnswer()],
+    granted: ["AdministerTenant", "Administer", "Read"],
+  });
+  for (const request of unauthenticatedRequests) {
+    const refused = await served.app.inject(request);
+    const named = `${request.method} ${request.url}`;
+    assert.equal(refused.statusCode, 401, named);
+    assert.equal(refused.headers["www-authenticate"], "Bearer", named);
+  }
+  assert.deepEqual(served.recorder.calls, []);
+  assert.deepEqual(served.store.commands, []);
+  assert.deepEqual(served.store.held, []);
 });

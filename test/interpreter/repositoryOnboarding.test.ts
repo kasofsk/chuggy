@@ -612,6 +612,26 @@ test("an installation another tenant claimed is not this tenant's to read", asyn
   assert.deepEqual(other.wrote.listed, []);
 });
 
+test("a claim this tenant holds is still not a reader's without the permit", async () => {
+  const refused = fixtureService([], {
+    held: [claimed],
+    repositories: {
+      read: "Repositories",
+      repositories: [summary],
+      truncated: false,
+    },
+  });
+  assert.deepEqual(
+    await refused.service.installationRepositories(
+      principal,
+      tenant,
+      installationId,
+    ),
+    { result: "NotFound" },
+  );
+  assert.deepEqual(refused.wrote.listed, []);
+});
+
 test("an installation this tenant has not claimed grants it nothing", async () => {
   const other = fixtureService(["AdministerTenant"], {
     held: [{ ...claimed, installationId: asForgeInstallationId("9999") }],

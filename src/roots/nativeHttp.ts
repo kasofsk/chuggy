@@ -434,17 +434,16 @@ export function forgeAppPairs(): readonly ForgeAppPair[] {
 }
 
 /** Refuses to start on a key this process could not sign with, leaving no pool open behind it. */
-async function forgeKeyReady(
+async function forgeKeyUnusable(
   keyFileVariable: string,
   options: GithubInstallationTokensOptions,
-  pools: NativePools,
-): Promise<void> {
+): Promise<string | undefined> {
   const verdict = await githubInstallationTokensPrecondition(options).check(
     new AbortController().signal,
   );
-  if (verdict.met === "Met") return;
-  await closePools(pools.pool, pools.selectorReviewPool);
-  throw new Error(`${keyFileVariable}: ${verdict.why}`);
+  return verdict.met === "Met"
+    ? undefined
+    : `${keyFileVariable}: ${verdict.why}`;
 }
 
 /** The onboarding half for one app, which reads as that app and mints only to enumerate. */
@@ -479,13 +478,32 @@ function otherForgeAppHalves(
   );
 }
 
+/**
+ * The first key pair this process could not sign with, naming the variable the
+ * file was read from, and nothing at all where every key it holds is usable.
+ */
+export async function forgeKeysUnusable(
+  pairs: readonly ForgeAppPair[],
+): Promise<string | undefined> {
+  for (const pair of pairs) {
+    const unusable = await forgeKeyUnusable(
+      forgeKeyFileVariables[pair.app],
+      pair.options,
+    );
+    if (unusable !== undefined) return unusable;
+  }
+  return undefined;
+}
+
 /** Refuses to start on any key this process could not sign with, naming the file it read. */
 async function forgeKeysReady(
   pairs: readonly ForgeAppPair[],
   pools: NativePools,
 ): Promise<void> {
-  for (const pair of pairs)
-    await forgeKeyReady(forgeKeyFileVariables[pair.app], pair.options, pools);
+  const unusable = await forgeKeysUnusable(pairs);
+  if (unusable === undefined) return;
+  await closePools(pools.pool, pools.selectorReviewPool);
+  throw new Error(unusable);
 }
 
 /**

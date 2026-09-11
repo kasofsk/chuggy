@@ -84,7 +84,10 @@ import {
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
   errorEnvelopeSchema,
+  forgeInstallationsAnsweredMax,
+  forgeRepositoriesAnsweredMax,
   nativeHttpPageItemsMax,
+  projectRepositoriesAnsweredMax,
   runModelCharsMax,
   runTranscriptPageBatchesMax,
   selectorHandoffNoteBytesMax,
@@ -1393,15 +1396,17 @@ test("what onboarding answers about a forge parses as the contract names it", ()
     slug: "chuggy-portal",
     installUrl: "https://github.com/apps/chuggy-portal/installations/new",
   });
-  assert.deepEqual(
-    forgeInstallationClaimedSchema.parse(
-      forgeInstallationClaimResponse(partition.tenant, {
-        result: "Claimed",
-        installation: onboardingClaim,
-      }).body,
-    ),
-    { ...onboardingClaim, installationId: "4242" },
-  );
+  for (const result of ["Claimed", "AlreadyClaimed"] as const)
+    assert.deepEqual(
+      forgeInstallationClaimedSchema.parse(
+        forgeInstallationClaimResponse(partition.tenant, {
+          result,
+          installation: onboardingClaim,
+        }).body,
+      ),
+      { ...onboardingClaim, installationId: "4242" },
+      result,
+    );
 });
 
 test("a tenant's installations and what one grants say whether they are all of it", () => {
@@ -1443,15 +1448,17 @@ test("a tenant's installations and what one grants say whether they are all of i
 });
 
 test("a binding and a project's bindings name the repository and its moment", () => {
-  assert.deepEqual(
-    projectRepositoryBoundSchema.parse(
-      projectRepositoryBindResponse(partition, {
-        result: "Bound",
-        repository: onboardingRepository,
-      }).body,
-    ),
-    { repository: onboardingRepository },
-  );
+  for (const result of ["Bound", "AlreadyBound"] as const)
+    assert.deepEqual(
+      projectRepositoryBoundSchema.parse(
+        projectRepositoryBindResponse(partition, {
+          result,
+          repository: onboardingRepository,
+        }).body,
+      ),
+      { repository: onboardingRepository },
+      result,
+    );
   const bound = projectRepositoriesResponseSchema.parse(
     projectRepositoriesResponse({
       result: "Repositories",
@@ -1462,4 +1469,41 @@ test("a binding and a project's bindings name the repository and its moment", ()
     repository: onboardingRepository,
     boundAt: instant,
   });
+});
+
+test("each onboarding listing refuses one row past the bound it answers under", () => {
+  const installation = { ...onboardingClaim, claimedAt: instant };
+  assert.throws(() =>
+    forgeInstallationsResponseSchema.parse({
+      truncated: true,
+      installations: Array.from(
+        { length: forgeInstallationsAnsweredMax + 1 },
+        () => installation,
+      ),
+    }),
+  );
+  const granted = {
+    name: "chuggy",
+    fullName: "kasofsk/chuggy",
+    url: onboardingRepository,
+    defaultBranch: "main",
+    private: true,
+  };
+  assert.throws(() =>
+    forgeRepositoriesResponseSchema.parse({
+      truncated: true,
+      repositories: Array.from(
+        { length: forgeRepositoriesAnsweredMax + 1 },
+        () => granted,
+      ),
+    }),
+  );
+  assert.throws(() =>
+    projectRepositoriesResponseSchema.parse({
+      repositories: Array.from(
+        { length: projectRepositoriesAnsweredMax + 1 },
+        () => ({ repository: onboardingRepository, boundAt: instant }),
+      ),
+    }),
+  );
 });

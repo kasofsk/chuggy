@@ -1,6 +1,7 @@
 /**
  * PostgreSQL side of binding a repository to a project: the owner's door, and
- * the epoch a binding is made under.
+ * the epoch a binding is made under, which is the one reader every other holder
+ * of an epoch already asks.
  *
  * THE ABSENT PROJECT IS A RAISE AND IS READ AS ONE. The door refuses a binding
  * against a project it cannot find by raising, because an operator's identity
@@ -14,12 +15,11 @@ import type pg from "pg";
 
 import { projectRepositoriesAnsweredMax } from "../../contract/http.ts";
 
+import { postgresOwnershipEpoch } from "./ownership.ts";
+import { postgresTransaction } from "./pool.ts";
+
 import { asRepositoryId } from "../../interpreter/finalizer.ts";
-import { asRecoveryEpoch } from "../../interpreter/projectStore.ts";
-import type {
-  Partition,
-  RecoveryEpoch,
-} from "../../interpreter/projectStore.ts";
+import type { Partition } from "../../interpreter/projectStore.ts";
 import type {
   ProjectRepositoryBindings,
   ProjectRepositoryBound,
@@ -48,19 +48,6 @@ function repositoryBindingProjectAbsent(failure: unknown): boolean {
     "message" in failure &&
     failure.message === projectAbsentMessage
   );
-}
-
-/** The latest epoch, a database that has never had one being a failure rather than a refusal. */
-async function currentRecoveryEpoch(pool: pg.Pool): Promise<RecoveryEpoch> {
-  const found = await pool.query<{ epoch: string }>(
-    sql`SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1`,
-  );
-  const latest = found.rows[0];
-  if (latest === undefined)
-    throw new Error(
-      "repository binding: this database has no recovery epoch, so nothing can be bound under one",
-    );
-  return asRecoveryEpoch(latest.epoch);
 }
 
 /**
@@ -117,7 +104,8 @@ export function postgresRepositoryBinding(
         throw new Error("repository binding: the server named no current role");
       return { role: row.writer_role, canExecute: row.can_execute === true };
     },
-    currentRecoveryEpoch: () => currentRecoveryEpoch(pool),
+    currentRecoveryEpoch: () =>
+      postgresTransaction(pool, postgresOwnershipEpoch),
     bind: async (command) => {
       let result: pg.QueryResult<{ outcome: string | null }>;
       try {

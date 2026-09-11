@@ -71,7 +71,7 @@ export function nativeHttpContractDocument(): unknown {
     forgeInstallations:
       "a tenant's administrator claims an installation of this deployment's app; an installation another tenant holds is a conflict, and a claim is never released",
     repositoryBinding:
-      "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one a claimed installation of this tenant's grants",
+      "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one this deployment holds a credential for — on a host it mints for, that means an installation this tenant has claimed",
     routes: nativeHttpRoutes,
     schemas: {
       publicMutation: z.toJSONSchema(publicMutationSchema),

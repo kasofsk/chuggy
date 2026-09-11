@@ -23,6 +23,7 @@ import {
   asForgeId,
   asForgeInstallationId,
 } from "../../src/interpreter/forgeInstallation.ts";
+import { forgeInstallationsAnsweredMax } from "../../src/contract/http.ts";
 import { asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   asAuthorityKind,
@@ -195,6 +196,18 @@ test("a tenant reads back every claim it holds and none of another's", async () 
     page.claims.map((row) => row.app),
     ["portal", "portal"],
   );
+});
+
+test("a tenant holding more claims than the page answers is told the page is partial", async () => {
+  const recording = postgresForgeInstallationRecording(harness.pool);
+  const tenant = asTenantId(`tenant-${randomUUID()}`);
+  for (let index = 0; index <= forgeInstallationsAnsweredMax; index += 1)
+    assert.equal(await recording.record(claim({ tenant })), "Recorded");
+  const page = await postgresForgeInstallationClaims(harness.pool).claims(
+    tenant,
+  );
+  assert.equal(page.truncated, true);
+  assert.equal(page.claims.length, forgeInstallationsAnsweredMax);
 });
 
 test("the claim under an installation identity is the asking tenant's own row", async () => {

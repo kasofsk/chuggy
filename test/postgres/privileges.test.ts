@@ -14,6 +14,7 @@ import {
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
   repositoryBindingReadFunction,
+  repositoryBindingListFunction,
   repositoryBindingWriteFunction,
   schedulerRole,
   selectorReviewRole,
@@ -80,6 +81,33 @@ test("every runtime role may read only the migration ledger contract", async () 
       undefined,
     );
   }
+});
+
+test("no runtime role but the API reads a project's bindings through the door", async () => {
+  for (const role of [
+    ticketServiceRole,
+    selectorServiceRole,
+    schedulerRole,
+    finalizerRole,
+    workerPlaneRole,
+    configurationImporterRole,
+  ])
+    assert.match(
+      (await harness.attemptAs(
+        role,
+        `SELECT repository FROM ${repositoryBindingListFunction}('tenant','project',NULL)`,
+      )) ?? "",
+      postgresHarnessDenial(repositoryBindingListFunction),
+      role,
+    );
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      `SELECT repository FROM ${repositoryBindingListFunction}('tenant','project',NULL)`,
+    ),
+    undefined,
+    "the role whose route answers the listing still holds the door",
+  );
 });
 
 test("no runtime role but the API binds a repository, and none records one", async () => {
