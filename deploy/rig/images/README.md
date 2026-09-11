@@ -232,8 +232,11 @@ and `deploy/rig/forge/README.md` says which pods now hold that key.
 no longer carries `repository`, `commit` or `partitions`: the run reads every
 binding in the database and imports each at its own default-branch head. A
 repository holding no commit, or none at its head's configuration directory, is
-skipped; one binding's failure does not stop the others, and the run exits
-non-zero if any failed.
+skipped; one binding's failure does not stop the others, a port that raised
+included, and the run exits non-zero if any failed. One run reads a bounded
+listing, oldest binding first: a run whose listing came back at that bound
+imported a prefix of the estate and exits non-zero naming the bound, so only a
+run that exits zero imported every binding there is.
 
 **A worker or session pod needs no roster.** `CHUG_WORKER_REPOSITORIES` is
 optional for both pods: on the minted arm a repository the map does not name is
