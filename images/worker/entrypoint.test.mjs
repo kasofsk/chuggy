@@ -10,7 +10,9 @@ import {
   runWorkerTask,
   workerCredential,
   workerMode,
+  workerWorkspace,
 } from "./entrypoint.mjs";
+import { workerCredentialPath } from "./planeCredential.mjs";
 import { credentialScrub, runEvidenceRecorder } from "./runEvidence.mjs";
 
 const task = { workerPlane: { url: "http://worker-plane.test:3001" } };
@@ -37,9 +39,11 @@ const credentialFiles = { forge: "/var/run/chuggy/credentials/forge" };
 function askedFor(answer, credentials = ["forge"]) {
   const kept = [];
   const written = [];
+  const paths = [];
   return {
     kept,
     written,
+    paths,
     asked: {
       task: { ...task, authority: { credentials } },
       bearer: "capability",
@@ -47,7 +51,10 @@ function askedFor(answer, credentials = ["forge"]) {
       credentialFiles,
       repositoryId: "repository-1",
       keepSecret: (value) => kept.push(value),
-      request: async () => (typeof answer === "function" ? answer() : answer),
+      request: async (_task, _bearer, path) => {
+        paths.push(path);
+        return typeof answer === "function" ? answer() : answer;
+      },
       write: async (file, content) => written.push({ file, content }),
     },
   };
@@ -293,13 +300,14 @@ test("the failure text a crashed run uploads is scrubbed", async () => {
 });
 
 test("a minted credential is what git is given, and the mount is never read", async () => {
-  const { asked, kept, written } = askedFor(
+  const { asked, kept, written, paths } = askedFor(
     { status: 200, ok: true, json: async () => minted },
     [],
   );
 
   const resolved = await workerCredential(asked);
 
+  assert.deepEqual(paths, [workerCredentialPath]);
   assert.equal(resolved.repository, repositories["repository-1"].url);
   assert.equal(
     resolved.environment.CHUG_WORKER_GIT_CREDENTIAL_FILE,
@@ -365,6 +373,122 @@ test("the push takes a fresh mint rather than the one the clone used", async () 
   assert.equal(mints, 2);
   assert.equal(refreshed.CHUG_WORKER_GIT_CREDENTIAL_USERNAME, minted.username);
   assert.deepEqual(kept, [minted.password, later]);
+});
+
+test("an outage at the clone fails the attempt rather than falling back", async () => {
+  const { asked, written } = askedFor({
+    status: 503,
+    json: async () => ({ action: "retry" }),
+  });
+
+  await assert.rejects(
+    workerCredential(asked),
+    /answered 503 for a credential/u,
+  );
+  assert.deepEqual(written, []);
+});
+
+/**
+ * One attempt's workspace, over a plane answering the input bundle and then the
+ * mint. `clone` stands in for git, the directory it would have made being all
+ * the workspace carries of it.
+ */
+function workspaceFrom(mint) {
+  const asks = [];
+  return workerWorkspace(
+    { ...task, authority: { credentials: ["forge"] } },
+    repositories,
+    credentialFiles,
+    "capability",
+    () => undefined,
+    {
+      request: async (_task, _bearer, path) => {
+        asks.push(path);
+        if (path !== "/v1/input") return mint;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            references: [
+              { kind: "Repository", reference: "repository-1" },
+              { kind: "TargetCommit", reference: "0".repeat(40) },
+            ],
+          }),
+        };
+      },
+      clone: async () => "/workspace/repository",
+      write: async () => undefined,
+    },
+  );
+}
+
+test("a workspace the plane minted for carries the refresh its push takes", async () => {
+  process.env.CHUG_WORKER_WORKSPACE = "/workspace";
+
+  const workspace = await workspaceFrom({
+    status: 200,
+    ok: true,
+    json: async () => minted,
+  });
+
+  assert.equal(typeof workspace.refresh, "function");
+  assert.equal(
+    workspace.environment.CHUG_WORKER_GIT_CREDENTIAL_USERNAME,
+    minted.username,
+  );
+});
+
+test("a workspace the launcher's mount answered carries no refresh", async () => {
+  process.env.CHUG_WORKER_WORKSPACE = "/workspace";
+
+  const workspace = await workspaceFrom({
+    status: 404,
+    json: async () => ({ reason: "ForgeNotConfigured" }),
+  });
+
+  assert.equal(workspace.refresh, undefined);
+  assert.equal(
+    workspace.environment.CHUG_WORKER_GIT_CREDENTIAL_FILE,
+    credentialFiles.forge,
+  );
+});
+
+test("a passing work attempt pushes under the credential its workspace refreshes", async () => {
+  const cloned = { CHUG_WORKER_GIT_CREDENTIAL_FILE: "/minted/at-clone" };
+  const fresh = { CHUG_WORKER_GIT_CREDENTIAL_FILE: "/minted/at-push" };
+  const runs = [];
+  const { calls, request } = planeCalls();
+
+  await publishWorkerResult(
+    {
+      task: { ...task, taskKind: "Work", ticket: 7, attempt: "attempt-1" },
+      bearer: "bearer",
+      evidence: evidenceFor(request),
+      scrub: (text) => text,
+      stopLease: async () => calls.push({ path: "lease/stopped" }),
+      request,
+      command: async (executable, args, options) => {
+        runs.push({ executable, args, options });
+        return { stdout: `${"a".repeat(40)}\n` };
+      },
+    },
+    {
+      repositoryId: "repository-1",
+      repository: repositories["repository-1"].url,
+      base: "0".repeat(40),
+      directory: "/workspace/repository",
+      environment: cloned,
+      refresh: async () => fresh,
+    },
+    {
+      output: { type: "result", structured_output: { summary: "done" } },
+      result: { verdict: "Pass", summary: "the attempt passed" },
+      diagnosticPath: ".chuggy/agent-result.json",
+    },
+  );
+
+  const push = runs.find(({ args }) => args[0] === "push");
+  assert.deepEqual(push.options.env, fresh);
 });
 
 test("a plane that stops minting mid-attempt fails it rather than pushing with a mount", async () => {

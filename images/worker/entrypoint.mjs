@@ -182,9 +182,9 @@ async function upload(task, bearer, path, content, request = workerRequest) {
   return artifact(path, content);
 }
 
-async function workSource(task, workspace, verdict) {
+async function workSource(task, workspace, verdict, run = command) {
   if (task.taskKind !== "Work" || verdict !== "Pass") return undefined;
-  return commitAndPushSource({ task, ...workspace, command });
+  return commitAndPushSource({ task, ...workspace, command: run });
 }
 
 /**
@@ -245,14 +245,22 @@ export async function workerCredential(asked) {
       };
 }
 
-async function workerWorkspace(
+/**
+ * What one attempt works in: the repository its own bundle pinned, cloned with
+ * the credential this pod resolved, and that credential's `refresh` where the
+ * plane minted it. `seams` names the plane, the clone and the file the password
+ * is written to, this module's own where it names none.
+ */
+export async function workerWorkspace(
   task,
   repositories,
   credentialFiles,
   bearer,
   keepSecret,
+  seams = {},
 ) {
-  const input = await (await workerRequest(task, bearer, "/v1/input")).json();
+  const { request = workerRequest, clone = cloneRepository, write } = seams;
+  const input = await (await request(task, bearer, "/v1/input")).json();
   const repositoryId = oneReference(input, "Repository");
   const { repository, environment, refresh } = await workerCredential({
     task,
@@ -261,9 +269,11 @@ async function workerWorkspace(
     credentialFiles,
     repositoryId,
     keepSecret,
+    request,
+    ...(write === undefined ? {} : { write }),
   });
   const base = oneReference(input, "TargetCommit");
-  const directory = await cloneRepository(
+  const directory = await clone(
     repository,
     base,
     required("CHUG_WORKER_WORKSPACE"),
@@ -427,7 +437,9 @@ async function main() {
 /**
  * What a finished run leaves behind, in the order it has to leave it: the run's
  * totals reach the plane before the report that terminalizes the execution, so
- * a settled task never carries figures nothing wrote.
+ * a settled task never carries figures nothing wrote. `context.command` is the
+ * seam a passing work attempt's push runs through, this module's own where it
+ * is absent.
  */
 export async function publishWorkerResult(
   context,
@@ -435,7 +447,12 @@ export async function publishWorkerResult(
   { output, result, diagnosticPath },
 ) {
   await context.evidence.finish();
-  const source = await workSource(context.task, workspace, result.verdict);
+  const source = await workSource(
+    context.task,
+    workspace,
+    result.verdict,
+    context.command,
+  );
   const diagnostics = [await diagnostic(context, diagnosticPath, output)];
   await context.stopLease();
   await report(context, {

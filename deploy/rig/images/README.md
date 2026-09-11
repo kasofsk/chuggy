@@ -172,18 +172,19 @@ database, artifact-root and session variables.
 **A plane naming neither mints nothing, and no pod stops working.** Both
 credential routes answer not found, and a pod resolves `CHUG_WORKER_REPOSITORIES`
 and `CHUG_WORKER_CREDENTIAL_FILES` exactly as it did before the plane minted
-anything. The same not-found is what a pod gets for a repository whose owner no
-tenant of this installation has claimed, so a deployment can mint for some of its
-repositories and mount the rest. A plane naming one of the two meant to mint and
+anything. The same not-found is what a pod gets for a repository whose owner this
+pod's own tenant has not claimed — a claim by some other tenant is a not-found
+too — so a deployment can mint for some of its repositories and mount the rest. A plane naming one of the two meant to mint and
 cannot, so it refuses to start.
 
 **The key is the worker App's, and deliberately not the one the API mints
 with.** The branch ruleset admits the portal App to update protected `main`, so
 a work attempt's write token minted under it would let an agent-executed pod
 push there; the worker App is the one the ruleset refuses. Mounting the portal
-App's key here does not widen anything — no installation is claimed for that
-pair, so every mint answers not found and every pod falls back — but it is a
-deployment that meant to mint and does not.
+App's key here does not widen anything, because which app a claim is looked up
+under is the code's and not this variable's: the claim row found is the worker
+App's installation, and GitHub refuses a token for it to a request the portal
+App signed. It is a deployment that meant to mint and does not.
 
 **A minted token never rests on a node's disk.** The scheduler gives every
 worker and session pod a memory-backed volume at `/var/run/chuggy/minted`, which

@@ -105,11 +105,17 @@ function planeSessions(
 }
 
 /**
- * The key this plane signs with and the id of the app it belongs to, which is
- * `workerPodForgeApp` rather than anything a deployment names here. They are
- * given together or not at all: one alone is a deployment that meant to mint
- * and cannot, which is a refusal to start rather than a pod silently falling
- * back to a credential its launcher may no longer mount.
+ * The key this plane signs with and the id of the app it belongs to, both the
+ * deployment's to name and named together or not at all: one alone is a
+ * deployment that meant to mint and cannot, which is a refusal to start rather
+ * than a pod silently falling back to a credential its launcher may no longer
+ * mount.
+ *
+ * WHICH app a claim is looked up under is the code's: `workerPodForgeApp`
+ * selects the claim row, and nothing here checks that the id below is that
+ * app's, so a deployment naming the portal App's id and key mints nothing at
+ * all — the installation that row claims is the worker App's, and GitHub
+ * refuses a token request another app signed for it.
  */
 const forgeAppIdVariable = "CHUG_WORKER_PLANE_FORGE_APP_ID";
 const forgeAppKeyFileVariable = "CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE";

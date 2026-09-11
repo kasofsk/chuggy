@@ -75,13 +75,22 @@ function tokensOf(
 
 const granted: ForgeTokenMinted = { minted: "Token", token, expiresAtMs };
 
+/**
+ * What one binding was read for, the partition included: a session is held to
+ * its own project's bindings and not to whatever else its tenant has bound.
+ */
+interface Read {
+  readonly partition: Partition;
+  readonly named: RepositoryId | undefined;
+}
+
 function bindingsOf(
   bound: RepositoryBinding | Error | undefined,
-  asked: (RepositoryId | undefined)[] = [],
+  asked: Read[] = [],
 ): ProjectRepositoryBindingRead {
   return {
-    binding: (_partition, named) => {
-      asked.push(named);
+    binding: (partitionRead, named) => {
+      asked.push({ partition: partitionRead, named });
       return bound instanceof Error
         ? Promise.reject(bound)
         : Promise.resolve(bound);
@@ -204,7 +213,7 @@ test("a forge that could not be reached is an outage and never a fallback", asyn
 
 test("a session is minted read on what its own project binds, never on what it named", async () => {
   const asked: Asked[] = [];
-  const named: (RepositoryId | undefined)[] = [];
+  const named: Read[] = [];
   const minting = workerPlaneCredentialMinting({
     tokens: tokensOf(granted, asked),
     bindings: bindingsOf(bindingOf(repository), named),
@@ -214,7 +223,7 @@ test("a session is minted read on what its own project binds, never on what it n
     minted: "Credential",
     value: { username: forgeCredentialUsername, password: token, expiresAtMs },
   });
-  assert.deepEqual(named, [mirror]);
+  assert.deepEqual(named, [{ partition, named: mirror }]);
   assert.deepEqual(asked, [
     { repository, tenant: partition.tenant, permissions: "read" },
   ]);

@@ -354,7 +354,6 @@ export function kubernetesContainerResources(
   };
 }
 
-/** What resolving a grant's named credentials against a site's mounts produced. */
 /**
  * Where a pod's image writes a credential the worker plane minted for it, which
  * `images/worker/repository.mjs` names as `mintedCredentialDirectory`.
@@ -387,6 +386,7 @@ export function kubernetesMintedCredentialVolumes(): {
   };
 }
 
+/** What resolving a grant's named credentials against a site's mounts produced. */
 export interface KubernetesCredentialSelection {
   readonly volumes: KubernetesPod["spec"]["volumes"];
   readonly mounts: KubernetesContainer["volumeMounts"];
