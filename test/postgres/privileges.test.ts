@@ -429,6 +429,35 @@ test("the ticket service reads one repository binding only through its boundary"
   );
 });
 
+/**
+ * A release reads the repository its configuration was imported from inside
+ * the decision transaction, so the writer's own role reads the provenance
+ * table directly. Writing one is still the import function's alone: a writer
+ * that could would be saying a configuration came from a repository nobody
+ * imported it from.
+ */
+test("the ticket service reads configuration provenance and writes none", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      ticketServiceRole,
+      "SELECT repository FROM repository_configuration_provenance",
+    ),
+    undefined,
+  );
+  for (const statement of [
+    "INSERT INTO repository_configuration_provenance DEFAULT VALUES",
+    "UPDATE repository_configuration_provenance SET name='changed'",
+    "DELETE FROM repository_configuration_provenance",
+  ]) {
+    const refusal = await harness.attemptAs(ticketServiceRole, statement);
+    assert.match(
+      refusal ?? "",
+      postgresHarnessDenial("repository_configuration_provenance"),
+      statement,
+    );
+  }
+});
+
 test("runtime roles cannot write notification rows directly", async () => {
   for (const role of [apiRole, ticketServiceRole]) {
     for (const [statement, object] of [
