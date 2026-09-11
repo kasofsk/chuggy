@@ -37,12 +37,12 @@ import { twoBearerAuthentication } from "../adapters/http/sessionBearer.ts";
 import { postgresSessionBearerAuthority } from "../adapters/postgres/sessionPlane.ts";
 import {
   composeForgeCredentialMinting,
+  composeForgeRepositoryMinting,
   composeNativeWeb,
   composeRepositoryCredentials,
   composeRepositoryOnboarding,
   composeSelectorProjectSettings,
   type RepositoryCredentialMinting,
-  type RepositoryCredentialSource,
 } from "../compose.ts";
 import type { IdempotencyKeying } from "../adapters/postgres/keying.ts";
 import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
@@ -345,9 +345,8 @@ function nativePools(): NativePools {
  * clones with it, so a repository one of them can reach is one the other can.
  */
 function nativeRepositoryCredentials(
-  pool: ReturnType<typeof postgresPool>,
-  forge: ForgeAppKey | undefined,
-): RepositoryCredentialSource {
+  minting: RepositoryCredentialMinting | undefined,
+): RepositoryCredentialPort {
   const encoded = process.env[repositoryCredentialSourcesVariable];
   const sources =
     encoded === undefined || encoded.length === 0
@@ -357,8 +356,7 @@ function nativeRepositoryCredentials(
           repositoryCredentialSourcesVariable,
         );
   return composeRepositoryCredentials({
-    pool,
-    ...(forge === undefined ? {} : { forge }),
+    ...(minting === undefined ? {} : { minting }),
     permissions: "read",
     sources,
   });
@@ -609,20 +607,16 @@ async function nativeForge(
     pairs.filter((pair) => pair.app !== portalForgeApp),
   );
   const image = bootstrapWorkerImage();
-  const source = nativeRepositoryCredentials(pools.pool, portal?.key);
-  const credentials = source.credentials;
+  const minting = composeForgeRepositoryMinting(pools.pool, portal?.key);
+  const credentials = nativeRepositoryCredentials(minting);
   const repositories = repositoryConfigurationSnapshots(credentials);
-  const half = nativePortalHalf(portal, source.minting);
+  const half = nativePortalHalf(portal, minting);
   return {
     credentials,
     minting:
-      source.minting === undefined
+      minting === undefined
         ? undefined
-        : composeForgeCredentialMinting(
-            pools.pool,
-            access,
-            source.minting.tokens,
-          ),
+        : composeForgeCredentialMinting(pools.pool, access, minting.tokens),
     repositories,
     onboarding: composeRepositoryOnboarding({
       apiPool: pools.pool,

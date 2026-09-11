@@ -245,13 +245,12 @@ export function composeSelectorProjectSettings(
 }
 
 /**
- * What one process resolves a repository's credential with: the app key it
- * mints under where it holds one, the files it falls back to, and the tenant
- * side of every mint, which is the binding's own partition.
+ * What one process resolves a repository's credential with: what it mints under
+ * where it holds an app key, the files it falls back to, and how much it may
+ * ask a mint for.
  */
 export interface RepositoryCredentialComposition {
-  readonly pool: pg.Pool;
-  readonly forge?: ForgeAppKey;
+  readonly minting?: RepositoryCredentialMinting;
   readonly permissions: ForgePermissionSet;
   readonly sources: readonly RepositoryCredentialFile[];
   readonly credentialBytesMax?: number;
@@ -261,12 +260,6 @@ export interface RepositoryCredentialComposition {
 export interface RepositoryCredentialMinting {
   readonly installationTokens: ForgeInstallationTokens;
   readonly tokens: ForgeRepositoryTokens;
-}
-
-/** Where a repository's credential comes from in one process, and what it mints with. */
-export interface RepositoryCredentialSource {
-  readonly credentials: RepositoryCredentialPort;
-  readonly minting?: RepositoryCredentialMinting;
 }
 
 /** The files half of one process's credentials, which is what a precondition holds to a path. */
@@ -282,6 +275,31 @@ export function repositoryCredentialFileOptions(
 }
 
 /**
+ * What a process mints with, over the pool it owns and the key it holds. The
+ * permission is not here: one process mints under one key for several acts, and
+ * each act's composition is what says how much it may ask for.
+ */
+export function composeForgeRepositoryMinting(
+  pool: pg.Pool,
+  forge: ForgeAppKey | undefined,
+): RepositoryCredentialMinting | undefined {
+  if (forge === undefined) return undefined;
+  const installationTokens = githubInstallationTokens(
+    githubInstallationTokensOptions(forge),
+  );
+  return {
+    installationTokens,
+    tokens: mintedRepositoryTokens({
+      forge: githubForgeId,
+      app: portalForgeApp,
+      repositoryHost: githubRepositoryHost,
+      installations: postgresForgeInstallations(pool),
+      tokens: installationTokens,
+    }),
+  };
+}
+
+/**
  * The credential source every process that mints for itself composes: the
  * minting source for the host its portal key covers, and the mounted files for
  * every other repository. It is one function because the four control-plane
@@ -291,34 +309,61 @@ export function repositoryCredentialFileOptions(
  */
 export function composeRepositoryCredentials(
   composition: RepositoryCredentialComposition,
-): RepositoryCredentialSource {
+): RepositoryCredentialPort {
   const files = credentialFiles(repositoryCredentialFileOptions(composition));
-  if (composition.forge === undefined) return { credentials: files };
-  const installationTokens = githubInstallationTokens(
-    githubInstallationTokensOptions(composition.forge),
+  const minting = composition.minting;
+  if (minting === undefined) return files;
+  return repositoryCredentialsByHost(
+    [
+      {
+        repositoryHost: githubRepositoryHost,
+        credentials: mintedRepositoryCredentials({
+          tokens: minting.tokens,
+          permissions: composition.permissions,
+        }),
+      },
+    ],
+    files,
   );
-  const tokens = mintedRepositoryTokens({
-    forge: githubForgeId,
-    app: portalForgeApp,
-    repositoryHost: githubRepositoryHost,
-    installations: postgresForgeInstallations(composition.pool),
-    tokens: installationTokens,
+}
+
+/** What the finalizer asks a forge for to promote: it pushes a branch and reads nothing else. */
+export function composeFinalizerRepositoryCredentials(
+  options: CredentialFilesOptions,
+  minting: RepositoryCredentialMinting | undefined,
+): RepositoryCredentialPort {
+  return composeRepositoryCredentials({
+    ...(minting === undefined ? {} : { minting }),
+    permissions: "write",
+    ...options,
   });
-  return {
-    credentials: repositoryCredentialsByHost(
-      [
-        {
-          repositoryHost: githubRepositoryHost,
-          credentials: mintedRepositoryCredentials({
-            tokens,
-            permissions: composition.permissions,
-          }),
-        },
-      ],
-      files,
-    ),
-    minting: { installationTokens, tokens },
-  };
+}
+
+/**
+ * What the ticket service asks a forge for: it observes a source's refs and
+ * nothing else, so a token it holds can do nothing else either.
+ */
+export function composeTicketServiceCredentials(
+  options: CredentialFilesOptions,
+  minting: RepositoryCredentialMinting | undefined,
+): RepositoryCredentialPort {
+  return composeRepositoryCredentials({
+    ...(minting === undefined ? {} : { minting }),
+    permissions: "read",
+    ...options,
+  });
+}
+
+/** What the importer asks a forge for: it reads a repository and writes nothing to one. */
+export function composeConfigurationImporterCredentials(
+  options: CredentialFilesOptions,
+  minting: RepositoryCredentialMinting | undefined,
+): RepositoryCredentialPort {
+  return composeRepositoryCredentials({
+    ...(minting === undefined ? {} : { minting }),
+    permissions: "read",
+    ...options,
+  });
 }
 
 /**
@@ -515,13 +560,12 @@ export interface FinalizerRuntimeComposition {
  * every other. A deployment holding no key composes the files alone, which is
  * what it composed before it minted anything.
  */
-function composeFinalizerForgeCredentials(
-  settings: FinalizerSettings,
+export function composeFinalizerForgeCredentials(
   options: ForgeCredentialFilesOptions,
   minting: RepositoryCredentialMinting | undefined,
 ): ForgeCredentialPort {
   const files = forgeCredentialFiles(options);
-  if (settings.forge === undefined || minting === undefined) return files;
+  if (minting === undefined) return files;
   return forgeCredentialsByHost(
     [
       {
@@ -573,33 +617,32 @@ export function composeFinalizerRuntime(
             ),
           ]),
     ],
-    service: (pool) => {
-      const source = composeRepositoryCredentials({
-        pool,
-        ...(settings.forge === undefined ? {} : { forge: settings.forge }),
-        permissions: "write",
-        sources: settings.credentials,
-        ...(settings.credentialBytesMax === undefined
-          ? {}
-          : { credentialBytesMax: settings.credentialBytesMax }),
-      });
-      return finalizerServiceRuntime(settings, source, forgeOptions);
-    },
+    service: (pool) =>
+      finalizerServiceRuntime(
+        settings,
+        composeForgeRepositoryMinting(pool, settings.forge),
+        credentialOptions,
+        forgeOptions,
+      ),
   };
 }
 
-/** The ports one finalizer promotes and proposes through, over the credentials it resolved. */
+/** The ports one finalizer promotes and proposes through, over what it mints and mounts. */
 function finalizerServiceRuntime(
   settings: FinalizerSettings,
-  source: RepositoryCredentialSource,
+  minting: RepositoryCredentialMinting | undefined,
+  credentialOptions: CredentialFilesOptions,
   forgeOptions: ForgeCredentialFilesOptions,
 ): FinalizerServiceRuntime {
   const git = settings.git;
-  const credentials = source.credentials;
+  const credentials = composeFinalizerRepositoryCredentials(
+    credentialOptions,
+    minting,
+  );
   return {
     forges: composeChangeProposalForges(
       settings.forges,
-      composeFinalizerForgeCredentials(settings, forgeOptions, source.minting),
+      composeFinalizerForgeCredentials(forgeOptions, minting),
     ),
     git: gitPromotion({
       scratchDirectory: git.scratchDirectory,

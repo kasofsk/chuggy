@@ -686,7 +686,7 @@ test("the estate listing names every partition's bindings, oldest first", async 
   const boundAt = listed.map((bound) => bound.boundAt);
   assert.deepEqual(
     boundAt,
-    [...boundAt].sort((a, b) => a.localeCompare(b)),
+    [...boundAt].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
     "the run reads a prefix of the estate, so the order is the age",
   );
 });

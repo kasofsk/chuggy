@@ -107,7 +107,7 @@ to start without the required ones.
 | `CHUG_API_ARTIFACT_ROOT` | required | see below |
 | `CHUG_API_GIT_SCRATCH_ROOT` | required | writable scratch for exact-commit configuration reads |
 | `CHUG_API_THREAD_CREDENTIAL_SLOT` | required | the named credential mount a member's thread speaks through |
-| `CHUG_API_REPOSITORY_CREDENTIAL_SOURCES` | with the app key, or either | JSON repository-to-credential-file mappings; a deployment that mints every credential it presents names none |
+| `CHUG_API_REPOSITORY_CREDENTIAL_SOURCES` | optional | JSON repository-to-credential-file mappings; a deployment that mints every credential it presents names none |
 | `CHUG_API_FORGE_APP_ID` | with the key file, or neither | the GitHub App this deployment mints installation tokens under |
 | `CHUG_API_FORGE_APP_KEY_FILE` | with the app id, or neither | a file holding that app's RSA private key, in either PEM encoding; the process refuses to start unless it can be read and used |
 | `CHUG_API_FORGE_WORKER_APP_ID` | with the worker key file, or neither | the GitHub App the worker plane mints under, held here only so a tenant can claim its installations over the API |

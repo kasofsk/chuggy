@@ -36,18 +36,16 @@ import type {
 } from "../compose.ts";
 import {
   composeFinalizerService,
-  composeRepositoryCredentials,
+  composeForgeRepositoryMinting,
   composeSelectorRuntime,
+  composeTicketServiceCredentials,
   type FinalizerServiceRuntime,
 } from "../compose.ts";
 import {
   githubInstallationTokensOptions,
   githubInstallationTokensPrecondition,
 } from "../adapters/forge/githubInstallationTokens.ts";
-import type {
-  ForgeAppKey,
-  ForgePermissionSet,
-} from "../interpreter/forgeInstallation.ts";
+import type { ForgeAppKey } from "../interpreter/forgeInstallation.ts";
 import { ketoProjectAccess } from "../adapters/keto/projectAccess.ts";
 import { systemPacing } from "../adapters/runtime/systemPacing.ts";
 import type pg from "pg";
@@ -423,12 +421,6 @@ function leadMailboxPrivilegePrecondition(pool: pg.Pool): RuntimePrecondition {
   };
 }
 
-/**
- * What the ticket service asks a forge for: it observes a source's refs and
- * nothing else, so a token it holds can do nothing else either.
- */
-const ticketServicePermissions: ForgePermissionSet = "read";
-
 export interface TicketServiceProcessRootConfig {
   readonly database: ProcessDatabaseConfig;
   readonly runtime: ServiceRuntimeConfig;
@@ -451,12 +443,10 @@ export function ticketServiceProcessRoot(
   config: TicketServiceProcessRootConfig,
 ): ServiceRuntime {
   const pool = processPool(config.database);
-  const credentials = composeRepositoryCredentials({
-    pool,
-    ...(config.forge === undefined ? {} : { forge: config.forge }),
-    permissions: ticketServicePermissions,
-    ...config.source,
-  }).credentials;
+  const credentials = composeTicketServiceCredentials(
+    config.source,
+    composeForgeRepositoryMinting(pool, config.forge),
+  );
   const git = gitPromotion({ ...config.source, credentials });
   const service: TicketServiceRuntimeService = {
     domain: config.domain,

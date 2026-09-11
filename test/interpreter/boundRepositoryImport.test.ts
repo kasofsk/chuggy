@@ -69,7 +69,9 @@ interface Fixture {
 
 function fixture(input: {
   readonly bindings: readonly RepositoryBindingListed[];
-  readonly heads?: (repository: RepositoryId) => RepositoryDefaultBranchRead;
+  readonly heads?: (
+    repository: RepositoryId,
+  ) => RepositoryDefaultBranchRead | Promise<RepositoryDefaultBranchRead>;
   readonly snapshots?: (
     repository: RepositoryId,
   ) => RepositoryConfigurationSnapshotRead;
@@ -140,7 +142,7 @@ test("every binding is imported at its own head, in the order listed", async () 
   const bindings = [listed("atlas", "atlas"), listed("beacon", "beacon")];
   const { ports, asked, maxima } = fixture({ bindings });
 
-  const imports = await importBoundRepositoryConfigurations({
+  const { imports } = await importBoundRepositoryConfigurations({
     authority,
     ports,
   });
@@ -188,7 +190,7 @@ test("a repository with nothing at its head is skipped and not failed", async ()
         : { read: "Snapshot", files: [] },
   });
 
-  const imports = await importBoundRepositoryConfigurations({
+  const { imports } = await importBoundRepositoryConfigurations({
     authority,
     ports,
   });
@@ -213,7 +215,7 @@ test("one binding's failure leaves every other binding imported", async () => {
         : { read: "Snapshot", files: [] },
   });
 
-  const imports = await importBoundRepositoryConfigurations({
+  const { imports } = await importBoundRepositoryConfigurations({
     authority,
     ports,
   });
@@ -234,7 +236,7 @@ test("a forge that could not be reached for a head is that binding's failure", a
     heads: () => ({ read: "Unavailable" }),
   });
 
-  const imports = await importBoundRepositoryConfigurations({
+  const { imports } = await importBoundRepositoryConfigurations({
     authority,
     ports,
   });
@@ -252,7 +254,7 @@ test("a binding unbound between the listing and the read is skipped", async () =
     unbound: [atlas.repository],
   });
 
-  const imports = await importBoundRepositoryConfigurations({
+  const { imports } = await importBoundRepositoryConfigurations({
     authority,
     ports,
   });
@@ -264,7 +266,7 @@ test("a binding unbound between the listing and the read is skipped", async () =
 test("the run asks the listing for no more than the bound it was given", async () => {
   const { ports, maxima } = fixture({ bindings: [] });
 
-  const imports = await importBoundRepositoryConfigurations({
+  const { imports } = await importBoundRepositoryConfigurations({
     authority,
     ports,
     bindingsMax: 3,
@@ -272,4 +274,48 @@ test("the run asks the listing for no more than the bound it was given", async (
 
   assert.deepEqual(imports, []);
   assert.deepEqual(maxima, [3]);
+});
+
+test("a port that raised is that binding's failure and not the run's", async () => {
+  const atlas = listed("atlas", "atlas");
+  const { ports } = fixture({
+    bindings: [atlas, listed("beacon", "beacon")],
+    heads: (repository) =>
+      repository === atlas.repository
+        ? Promise.reject(new Error("the forge is down"))
+        : {
+            read: "Branch",
+            branch: asGitRefName("refs/heads/main"),
+            commit: head,
+          },
+  });
+
+  const { imports } = await importBoundRepositoryConfigurations({
+    authority,
+    ports,
+  });
+
+  assert.deepEqual(imports[0]?.result, {
+    result: "Failed",
+    failure: { failure: "Raised" },
+  });
+  assert.equal(imports[1]?.result.result, "Imported");
+});
+
+test("a listing that came back at the bound is a run that did not read the estate", async () => {
+  const bindings = [listed("atlas", "atlas"), listed("beacon", "beacon")];
+
+  const filled = await importBoundRepositoryConfigurations({
+    authority,
+    ports: fixture({ bindings }).ports,
+    bindingsMax: 2,
+  });
+  const short = await importBoundRepositoryConfigurations({
+    authority,
+    ports: fixture({ bindings }).ports,
+    bindingsMax: 3,
+  });
+
+  assert.equal(filled.truncated, true);
+  assert.equal(short.truncated, false);
 });

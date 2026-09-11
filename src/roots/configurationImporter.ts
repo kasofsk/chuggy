@@ -15,7 +15,14 @@
  * — seeding one belongs to the bind and happens once. Everything else is
  * reported on its own line, every other binding is still attempted, and the run
  * exits non-zero if any failed.
+ *
+ * A RUN THAT FILLED ITS BOUND DID NOT IMPORT THE ESTATE, and leaves non-zero
+ * saying so. The listing is ordered by age, so a deployment holding more
+ * bindings than one run may read imports the same prefix for ever, and a clean
+ * exit would be the only thing telling anyone otherwise.
  */
+
+import { pathToFileURL } from "node:url";
 
 import { gitRepositoryConfiguration } from "../adapters/git/gitRepositoryConfiguration.ts";
 import { postgresAuthoring } from "../adapters/postgres/authoring.ts";
@@ -27,14 +34,19 @@ import {
   currentRuntimeSchemaContract,
   postgresRuntimeSchema,
 } from "../adapters/postgres/runtimeSchema.ts";
-import { composeRepositoryCredentials } from "../compose.ts";
+import {
+  composeConfigurationImporterCredentials,
+  composeForgeRepositoryMinting,
+} from "../compose.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
 } from "../interpreter/operationInbox.ts";
 import {
   importBoundRepositoryConfigurations,
+  repositoryBindingsPerImportMax,
   type BoundRepositoryImport,
+  type BoundRepositoryImportRun,
 } from "../interpreter/repositoryConfiguration.ts";
 import { schemaCompatibilityPrecondition } from "../interpreter/serviceRuntime.ts";
 import { finalizerGitEnvironmentNames } from "../interpreter/finalizerSettings.ts";
@@ -45,9 +57,6 @@ const authority = {
   kind: asAuthorityKind("Service"),
   subject: asAuthoritySubject("configuration-mirror-importer"),
 };
-
-/** What the importer asks a forge for: it reads a repository and writes nothing to one. */
-const importerPermissions = "read" as const;
 
 async function importerDatabaseReady(
   pool: ReturnType<typeof postgresPool>,
@@ -71,9 +80,9 @@ async function importerDatabaseReady(
 
 /**
  * One binding's outcome as a line. Every term is a variant of the run's own
- * types, so nothing a forge answered with reaches a line here.
+ * types but a refused declaration's path, which `JSON.stringify` escapes.
  */
-function configurationImportLine(bound: BoundRepositoryImport): string {
+export function configurationImportLine(bound: BoundRepositoryImport): string {
   const where = `${bound.partition.tenant}/${bound.partition.project} ${bound.repository}`;
   switch (bound.result.result) {
     case "Imported":
@@ -101,12 +110,10 @@ function configurationImporterPorts(
       email: "configuration-importer@chuggy.invalid",
     },
     environment,
-    credentials: composeRepositoryCredentials({
-      pool,
-      ...(config.forge === undefined ? {} : { forge: config.forge }),
-      permissions: importerPermissions,
-      sources: config.git.credentials,
-    }).credentials,
+    credentials: composeConfigurationImporterCredentials(
+      { sources: config.git.credentials },
+      composeForgeRepositoryMinting(pool, config.forge),
+    ),
     ...(config.git.credentialUsername === undefined
       ? {}
       : { credentialUsername: config.git.credentialUsername }),
@@ -126,6 +133,30 @@ function configurationImporterPorts(
   };
 }
 
+/**
+ * Why a run may not leave zero: a binding it could not import, or a listing it
+ * filled, which leaves every binding past the bound unimported.
+ */
+export function configurationImportRefusal(
+  run: BoundRepositoryImportRun,
+  bindingsMax: number,
+): string | undefined {
+  const failed = run.imports.filter(
+    (bound) => bound.result.result === "Failed",
+  ).length;
+  const refusals = [
+    ...(failed === 0
+      ? []
+      : [`${String(failed)} of ${String(run.imports.length)} bindings`]),
+    ...(run.truncated
+      ? [
+          `the listing filled its bound of ${String(bindingsMax)} bindings and the rest of the estate is unimported`,
+        ]
+      : []),
+  ];
+  return refusals.length === 0 ? undefined : refusals.join("; ");
+}
+
 async function main(): Promise<void> {
   const config = configurationImporterConfig(process.env);
   const pool = postgresPool(config.database.url, config.database.limits);
@@ -134,30 +165,33 @@ async function main(): Promise<void> {
       throw new Error(
         `database must connect as ${configurationImporterLoginRole} with a current schema`,
       );
-    const imports = await importBoundRepositoryConfigurations({
+    const run = await importBoundRepositoryConfigurations({
       authority,
       ports: configurationImporterPorts(config, pool),
+      bindingsMax: repositoryBindingsPerImportMax,
     });
-    let failed = 0;
-    for (const bound of imports) {
+    for (const bound of run.imports) {
       const line = `${configurationImportLine(bound)}\n`;
-      if (bound.result.result === "Failed") {
-        failed += 1;
-        process.stderr.write(line);
-      } else process.stdout.write(line);
+      if (bound.result.result === "Failed") process.stderr.write(line);
+      else process.stdout.write(line);
     }
-    if (failed > 0)
-      throw new Error(
-        `${String(failed)} of ${String(imports.length)} bindings`,
-      );
+    const refused = configurationImportRefusal(
+      run,
+      repositoryBindingsPerImportMax,
+    );
+    if (refused !== undefined) throw new Error(refused);
   } finally {
     await pool.end();
   }
 }
 
-await main().catch((failure: unknown) => {
-  const message =
-    failure instanceof Error ? failure.message : "unknown failure";
-  process.stderr.write(`configuration import: ${message}\n`);
-  process.exitCode = 1;
-});
+if (
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+)
+  await main().catch((failure: unknown) => {
+    const message =
+      failure instanceof Error ? failure.message : "unknown failure";
+    process.stderr.write(`configuration import: ${message}\n`);
+    process.exitCode = 1;
+  });

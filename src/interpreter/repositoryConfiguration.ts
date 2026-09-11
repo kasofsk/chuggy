@@ -316,11 +316,13 @@ export type BoundRepositoryImportSkip =
   | "ConfigurationDirectoryAbsent";
 
 /**
- * Why one bound repository could not be imported. Every term is a variant and
- * carries no value read from a forge, so a run may print the whole of it.
+ * Why one bound repository could not be imported. Every term is a variant but a
+ * refused declaration's `path`, which is the tree path `ls-tree` answered and is
+ * the one value here a forge supplied.
  */
 export type BoundRepositoryImportFailure =
   | { readonly failure: "HeadUnavailable" }
+  | { readonly failure: "Raised" }
   | {
       readonly failure: "Import";
       readonly outcome: RepositoryConfigurationImportOutcome;
@@ -373,8 +375,25 @@ function boundRepositoryImportResult(
   return { result: "Failed", failure: { failure: "Import", outcome } };
 }
 
-/** One bound repository, imported at whatever its own default branch points at now. */
+/**
+ * One bound repository, imported at whatever its own default branch points at
+ * now. A port that raised is this binding's failure and not the run's, and
+ * carries nothing of what it raised with.
+ */
 async function importBoundRepository(
+  bound: RepositoryBindingListed,
+  authority: Authority,
+  ports: BoundRepositoryImportPorts,
+): Promise<BoundRepositoryImportResult> {
+  try {
+    return await importBoundRepositoryAttempt(bound, authority, ports);
+  } catch {
+    return { result: "Failed", failure: { failure: "Raised" } };
+  }
+}
+
+/** The ports one binding is imported through, each of which may raise. */
+async function importBoundRepositoryAttempt(
   bound: RepositoryBindingListed,
   authority: Authority,
   ports: BoundRepositoryImportPorts,
@@ -407,6 +426,16 @@ async function importBoundRepository(
 }
 
 /**
+ * What one run over the estate came to. `truncated` is a listing that came back
+ * at the bound, which means the run imported a prefix and the bindings past it
+ * were never attempted.
+ */
+export interface BoundRepositoryImportRun {
+  readonly imports: readonly BoundRepositoryImport[];
+  readonly truncated: boolean;
+}
+
+/**
  * Imports every binding in the estate at its own default-branch head, one
  * binding's outcome never deciding another's: a forge that is down for one
  * owner, or a repository whose declarations are refused, leaves every other
@@ -416,10 +445,9 @@ export async function importBoundRepositoryConfigurations(input: {
   readonly authority: Authority;
   readonly ports: BoundRepositoryImportPorts;
   readonly bindingsMax?: number;
-}): Promise<readonly BoundRepositoryImport[]> {
-  const listed = await input.ports.listing.bindings(
-    input.bindingsMax ?? repositoryBindingsPerImportMax,
-  );
+}): Promise<BoundRepositoryImportRun> {
+  const bindingsMax = input.bindingsMax ?? repositoryBindingsPerImportMax;
+  const listed = await input.ports.listing.bindings(bindingsMax);
   const imports: BoundRepositoryImport[] = [];
   for (const bound of listed)
     imports.push({
@@ -427,7 +455,7 @@ export async function importBoundRepositoryConfigurations(input: {
       repository: bound.repository,
       result: await importBoundRepository(bound, input.authority, input.ports),
     });
-  return imports;
+  return { imports, truncated: listed.length >= bindingsMax };
 }
 
 function repositoryConfigurationRevision(
