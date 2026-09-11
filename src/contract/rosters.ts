@@ -200,13 +200,13 @@ export type DispatchViewResult = (typeof dispatchViewResults)[number];
 export const schedulerFreshnesses = ["Unknown"] as const;
 
 /** Whether the selector is running at all, at an installation or for one project. */
+export const selectorModes = ["Running", "Paused"] as const;
+export type SelectorMode = (typeof selectorModes)[number];
+
 /** What a minted forge credential may do to the repository it is scoped to. */
 export const forgeCredentialPermissions = ["read", "write", "propose"] as const;
 export type ForgeCredentialPermission =
   (typeof forgeCredentialPermissions)[number];
-
-export const selectorModes = ["Running", "Paused"] as const;
-export type SelectorMode = (typeof selectorModes)[number];
 
 /** Whether a selector proposal is dispatched or held for a reviewer. */
 export const selectorDispatchModes = ["Automatic", "ApprovalRequired"] as const;

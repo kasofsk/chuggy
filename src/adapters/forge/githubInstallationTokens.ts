@@ -24,10 +24,12 @@
  * `Denied` and settled; a throttle, a fault, a timeout and an answer this side
  * cannot read are `Unavailable` and may be asked again.
  *
- * A TOKEN IS CACHED UNTIL ITS OWN EXPIRY, LESS A MARGIN, KEYED BY WHAT IT IS
- * GOOD FOR. Two mints for the same installation, repositories and permissions
- * are one request; anything else is a different token, because a cache keyed
- * more loosely would hand a reader a credential that can push.
+ * A TOKEN IS HELD UNTIL ITS OWN EXPIRY, LESS A MARGIN, KEYED BY WHAT IT IS GOOD
+ * FOR. Repeated mints for one key are one request for as long as the held token
+ * lasts; anything else is a different key, because a cache keyed more loosely
+ * would hand a reader a credential that can push. Nothing tracks a request in
+ * flight, so mints racing on one key each send and each get a valid token, the
+ * last of them being the one held.
  */
 
 import { open } from "node:fs/promises";
