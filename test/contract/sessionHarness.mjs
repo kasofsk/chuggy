@@ -57,7 +57,18 @@ export const environment = {
   CHUG_WORKER_WORKSPACE: "/workspace",
 };
 
-export function planeOf(turns, facts, refuse = () => undefined) {
+/** What a plane that mints answers, and what this pod would then present to git. */
+export const mintedCredential = {
+  username: "x-access-token",
+  password: "ghs_0123456789abcdefghijklmnopqrstuvwxyz",
+};
+
+/**
+ * The plane a case drives. `minted` is what `/v1/session/credential` answers;
+ * without one the plane mints nothing, which is the deployment every case that
+ * is about something else runs under.
+ */
+export function planeOf(turns, facts, refuse = () => undefined, minted) {
   const calls = [];
   let claims = 0;
   return {
@@ -75,7 +86,14 @@ export function planeOf(turns, facts, refuse = () => undefined) {
         body: type === "application/json" ? JSON.parse(init.body) : init?.body,
       });
       if (path === "/v1/session")
-        return { status: 200, json: async () => facts };
+        return { status: 200, ok: true, json: async () => facts };
+      if (path === "/v1/session/credential")
+        return minted === undefined
+          ? {
+              status: 404,
+              json: async () => ({ reason: "ForgeNotConfigured" }),
+            }
+          : { status: 200, ok: true, json: async () => minted };
       if (path === "/v1/session/turn") {
         const turn = turns[claims];
         claims += 1;

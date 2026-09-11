@@ -9,6 +9,16 @@ export function resultDocument(manifest) {
   return { version: 3, ...manifest };
 }
 
+/**
+ * The branch one passing work attempt leaves behind.
+ *
+ * THE PUSH ASKS FOR ITS CREDENTIAL AGAIN. `refresh` is present where the plane
+ * minted the one the clone used: a minted token expires, an attempt may outlive
+ * one, and the push is the last thing it does — so the credential is taken
+ * immediately before it rather than carried from the clone. Where the launcher
+ * mounted the credential there is nothing to refresh, and the clone's own
+ * environment is what pushes.
+ */
 export async function commitAndPushSource({
   task,
   repositoryId,
@@ -17,6 +27,7 @@ export async function commitAndPushSource({
   directory,
   command,
   environment,
+  refresh,
 }) {
   await command("git", ["config", "user.name", "Chuggy Worker"], {
     cwd: directory,
@@ -46,7 +57,7 @@ export async function commitAndPushSource({
   const ref = ticketBranch(task);
   await command("git", ["push", repository, `HEAD:${ref}`], {
     cwd: directory,
-    env: environment,
+    env: refresh === undefined ? environment : await refresh(),
   });
   return { repository: repositoryId, ref, commit, base };
 }

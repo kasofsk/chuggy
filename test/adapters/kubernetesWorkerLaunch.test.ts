@@ -21,6 +21,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import {
+  mintedCredentialDirectory,
   workerRepositories,
   workerRepository,
 } from "../../images/worker/repository.mjs";
@@ -41,6 +42,7 @@ import {
   type KubernetesWorkerTask,
 } from "../../src/adapters/kubernetes/workerPod.ts";
 import {
+  kubernetesMintedCredentialPath,
   kubernetesNameCharsMax,
   kubernetesSessionTaskVariable,
   kubernetesWorkerCredentialFilesVariable,
@@ -346,6 +348,11 @@ function expectedContainer(): unknown {
       },
       { name: "worker-workspace", mountPath: "/workspace", readOnly: false },
       {
+        name: "minted-credential",
+        mountPath: mintedCredentialDirectory,
+        readOnly: false,
+      },
+      {
         name: "worker-credential-0",
         mountPath: "/run/chuggy/credentials",
         readOnly: true,
@@ -390,6 +397,40 @@ function expectedDatabaseContainer(): unknown {
   };
 }
 
+/** Every volume the pod carries, in the order the document writes them. */
+function expectedVolumes(name: string): unknown {
+  return [
+    {
+      name: "worker-capability",
+      secret: {
+        secretName: name,
+        defaultMode: 0o400,
+        items: [{ key: "bearer", path: "bearer" }],
+      },
+    },
+    { name: "worker-workspace", emptyDir: { sizeLimit: "10Gi" } },
+    {
+      name: "minted-credential",
+      emptyDir: { medium: "Memory", sizeLimit: "1Mi" },
+    },
+    { name: "worker-database", emptyDir: { sizeLimit: "4Gi" } },
+    {
+      name: "worker-credential-0",
+      projected: {
+        defaultMode: 0o400,
+        sources: [
+          {
+            secret: {
+              name: "workspace-credential",
+              items: [{ key: "token", path: "workspace" }],
+            },
+          },
+        ],
+      },
+    },
+  ];
+}
+
 /** The whole pod this placement is, so the assertion is the document and not a sample of it. */
 function expectedPod(name: string): unknown {
   return {
@@ -429,32 +470,7 @@ function expectedPod(name: string): unknown {
       securityContext: { runAsNonRoot: true },
       initContainers: [expectedDatabaseContainer()],
       containers: [expectedContainer()],
-      volumes: [
-        {
-          name: "worker-capability",
-          secret: {
-            secretName: name,
-            defaultMode: 0o400,
-            items: [{ key: "bearer", path: "bearer" }],
-          },
-        },
-        { name: "worker-workspace", emptyDir: { sizeLimit: "10Gi" } },
-        { name: "worker-database", emptyDir: { sizeLimit: "4Gi" } },
-        {
-          name: "worker-credential-0",
-          projected: {
-            defaultMode: 0o400,
-            sources: [
-              {
-                secret: {
-                  name: "workspace-credential",
-                  items: [{ key: "token", path: "workspace" }],
-                },
-              },
-            ],
-          },
-        },
-      ],
+      volumes: expectedVolumes(name),
     },
   };
 }
@@ -485,6 +501,26 @@ test("the launched repository configuration is accepted by the worker", () => {
   assert.equal(
     selected.environment.CHUG_WORKER_GIT_CREDENTIAL_FILE,
     workspaceCredentialMount.mountPath,
+  );
+});
+
+/**
+ * The image writes a minted token to a path the pod document has to mount, and
+ * only a memory volume keeps it off the node's disk.
+ */
+test("the pod mounts memory where the image writes a minted credential", () => {
+  const requested = kubernetesWorkerPodRequest(config, placement);
+  assert.equal(requested.requested, "Pod");
+  if (requested.requested !== "Pod") return;
+  assert.equal(kubernetesMintedCredentialPath, mintedCredentialDirectory);
+  const mount = requested.pod.spec.containers[0]?.volumeMounts.find(
+    ({ mountPath }) => mountPath === mintedCredentialDirectory,
+  );
+  assert.equal(mount?.readOnly, false);
+  assert.deepEqual(
+    requested.pod.spec.volumes.find(({ name }) => name === mount?.name)
+      ?.emptyDir,
+    { medium: "Memory", sizeLimit: "1Mi" },
   );
 });
 

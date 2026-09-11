@@ -160,6 +160,41 @@ so the deployment mounts the artifact volume there and may mount it read-only.
 Nothing creates the directory for the API, and a path that is not there reads as
 an artifact that is missing rather than as a failure.
 
+## Configuring the worker plane's minting
+
+`src/roots/workerPlane.ts` reads the variables below beside the plane's own
+database, artifact-root and session variables.
+
+| Variable | | |
+|---|---|---|
+| `CHUG_WORKER_PLANE_FORGE_APP_ID` | with the key file, or neither | the id of the worker App, which is the one a pod's git credential is minted under |
+| `CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE` | with the app id, or neither | a file holding the worker App's RSA private key, in either PEM encoding; the plane refuses to start unless it can be read and used |
+| `CHUG_WORKER_PLANE_FORGE_API_URL` | `https://api.github.com` | where the mint request is sent |
+| `CHUG_WORKER_PLANE_FORGE_TIMEOUT_MS` | | how long one mint request may take before it is an outage |
+
+**A plane naming neither mints nothing, and no pod stops working.** Both
+credential routes answer not found, and a pod resolves `CHUG_WORKER_REPOSITORIES`
+and `CHUG_WORKER_CREDENTIAL_FILES` exactly as it did before the plane minted
+anything. The same not-found is what a pod gets for a repository whose owner this
+pod's own tenant has not claimed — a claim by some other tenant is a not-found
+too — so a deployment can mint for some of its repositories and mount the rest.
+A plane naming one of the two meant to mint and cannot, so it refuses to start.
+
+**The key is the worker App's, and deliberately not the one the API mints
+with.** The branch ruleset admits the portal App to update protected `main`, so
+a work attempt's write token minted under it would let an agent-executed pod
+push there; the worker App is the one the ruleset refuses. Mounting the portal
+App's key here does not widen anything, because which app a claim is looked up
+under is the code's and not this variable's: the claim row found is the worker
+App's installation, and GitHub refuses a token for it to a request the portal
+App signed. It is a deployment that meant to mint and does not.
+
+**A minted token never rests on a node's disk.** The scheduler gives every
+worker and session pod a memory-backed volume at `/var/run/chuggy/minted`, which
+is where the image writes the password it is answered with, at mode `0600`. That
+volume is the pod document's, so nothing about it is configured here; a
+deployment that mints nothing simply never writes to it.
+
 ## Prove it
 
 ### The image, before any cluster is involved

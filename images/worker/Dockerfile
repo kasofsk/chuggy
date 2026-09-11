@@ -66,6 +66,7 @@ COPY images/worker/claude.mjs /usr/local/lib/chuggy/claude.mjs
 COPY images/worker/codex.mjs /usr/local/lib/chuggy/codex.mjs
 COPY images/worker/leadDecision.mjs /usr/local/lib/chuggy/leadDecision.mjs
 COPY images/worker/lease.mjs /usr/local/lib/chuggy/lease.mjs
+COPY images/worker/planeCredential.mjs /usr/local/lib/chuggy/planeCredential.mjs
 COPY images/worker/postgres.mjs /usr/local/lib/chuggy/postgres.mjs
 COPY images/worker/rateLimit.mjs /usr/local/lib/chuggy/rateLimit.mjs
 COPY images/worker/repository.mjs /usr/local/lib/chuggy/repository.mjs

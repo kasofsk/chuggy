@@ -36,6 +36,7 @@ import type {
   WorkerPlaneAuthority,
 } from "../../interpreter/workerPlane.ts";
 import { projectRowCounter } from "./rows.ts";
+import { executionRowTaskKind } from "./schedulerRows.ts";
 import { postgresTransaction } from "./pool.ts";
 
 /** The digest an attempt's bearer is keyed by, which is all the database holds of it. */
@@ -62,6 +63,7 @@ interface WorkerAuthorityRow {
   readonly execution: string | null;
   readonly attempt: string | null;
   readonly generation: string | null;
+  readonly task_kind: string | null;
   readonly manifest: string | null;
   readonly input_bundle: string | null;
   readonly input_bundle_digest: string | null;
@@ -98,7 +100,7 @@ async function workerAuthenticate(
   const digest = createHash("sha256").update(secret, "utf8").digest("hex");
   const found = await pool.query<WorkerAuthorityRow>(
     sql`SELECT tenant,project,execution,attempt,generation::text AS generation,
-               manifest,input_bundle,input_bundle_digest,live,inputs
+               task_kind,manifest,input_bundle,input_bundle_digest,live,inputs
           FROM read_worker_attempt(${digest})`,
   );
   const row = found.rows[0];
@@ -109,6 +111,7 @@ async function workerAuthenticate(
     row.execution === null ||
     row.attempt === null ||
     row.generation === null ||
+    row.task_kind === null ||
     row.manifest === null ||
     row.input_bundle === null ||
     row.input_bundle_digest === null ||
@@ -129,6 +132,7 @@ async function workerAuthenticate(
     attempt: asAttemptId(row.attempt),
     generation: projectRowCounter(row.generation, "attempt generation"),
     live: row.live,
+    taskKind: executionRowTaskKind(row.task_kind),
     manifest: asResultManifestId(row.manifest),
     inputBundle: row.input_bundle,
     inputBundleDigest: row.input_bundle_digest,

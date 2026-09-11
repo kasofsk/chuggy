@@ -59,6 +59,46 @@ export const githubInstallationTokensDefaults = {
   cachedTokensMax: 256,
 } as const;
 
+/** The variables one process reads its app key and its forge from. */
+export interface GithubInstallationTokensVariables {
+  readonly appId: string;
+  readonly appKeyFile: string;
+  readonly apiUrl: string;
+  readonly timeoutMs: string;
+}
+
+/**
+ * What a process mints with, or nothing at all where it holds no app key. Two
+ * processes hold an app key under names of their own — the API the portal
+ * App's, the worker plane the worker App's — and this is the one place either
+ * is read: a second parse would be a second answer to what an app id named
+ * without its key file means.
+ */
+export function githubInstallationTokensSettings(
+  named: GithubInstallationTokensVariables,
+  environment: Readonly<Record<string, string | undefined>>,
+  positive: (name: string, fallback: number) => number,
+): GithubInstallationTokensOptions | undefined {
+  const appId = environment[named.appId] ?? "";
+  const privateKeyPath = environment[named.appKeyFile] ?? "";
+  if (appId.length === 0 && privateKeyPath.length === 0) return undefined;
+  if (appId.length === 0 || privateKeyPath.length === 0)
+    throw new Error(
+      `${named.appId} and ${named.appKeyFile} are named together or not at all`,
+    );
+  return {
+    fetch,
+    appId,
+    privateKeyPath,
+    apiUrl:
+      environment[named.apiUrl] ?? githubInstallationTokensDefaults.apiUrl,
+    requestTimeoutMs: positive(
+      named.timeoutMs,
+      githubInstallationTokensDefaults.requestTimeoutMs,
+    ),
+  };
+}
+
 /** The status a mint is answered with, a forge that made no token answering something else. */
 const githubMintedStatus = 201;
 

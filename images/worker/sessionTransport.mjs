@@ -8,6 +8,13 @@
  * asking any of those again gets the same answer fifteen times before the caller
  * is told anything. So a thrown fetch and a server error are retried and every
  * other status is returned for the caller to read.
+ *
+ * THE FIFTH ARGUMENT IS THE SAME BAG `workerRequest` TAKES. A caller reaching
+ * the plane through whichever of the two its mode was given cannot name the
+ * module, so naming one field here must not unset the others: each is
+ * destructured with its own default. `settled` names statuses that are answers
+ * rather than conditions, which for everything below the server range this
+ * already returns, so it only ever adds to what a caller reads back.
  */
 
 import { setTimeout as wait } from "node:timers/promises";
@@ -33,20 +40,26 @@ export async function sessionRequest(
   bearer,
   path,
   init = {},
-  transport = { fetch: globalThis.fetch, wait },
+  transport = {},
 ) {
+  const {
+    fetch: send = globalThis.fetch,
+    wait: pause = wait,
+    settled = [],
+  } = transport;
   let refusal;
   for (let attempt = 1; attempt <= attemptsMax; attempt += 1) {
     let delay = retryMilliseconds;
     try {
-      const response = await transport.fetch(
-        new URL(path, task.workerPlane.url),
-        {
-          ...init,
-          headers: { authorization: `Bearer ${bearer}`, ...init.headers },
-        },
-      );
-      if (response.status < serverErrorStatusMin) return response;
+      const response = await send(new URL(path, task.workerPlane.url), {
+        ...init,
+        headers: { authorization: `Bearer ${bearer}`, ...init.headers },
+      });
+      if (
+        response.status < serverErrorStatusMin ||
+        settled.includes(response.status)
+      )
+        return response;
       refusal = new Error(
         `worker plane ${path} answered ${String(response.status)}`,
       );
@@ -55,7 +68,7 @@ export async function sessionRequest(
       refusal = failure;
     }
     if (attempt === attemptsMax) throw refusal;
-    await transport.wait(delay);
+    await pause(delay);
   }
   throw refusal ?? new Error("worker plane retry bound was exhausted");
 }

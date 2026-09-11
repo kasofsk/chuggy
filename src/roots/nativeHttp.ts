@@ -81,8 +81,8 @@ import {
 } from "../interpreter/finalizerSettings.ts";
 import {
   githubInstallationTokens,
-  githubInstallationTokensDefaults,
   githubInstallationTokensPrecondition,
+  githubInstallationTokensSettings,
   type GithubInstallationTokensOptions,
 } from "../adapters/forge/githubInstallationTokens.ts";
 import { githubRepositoryHost } from "../adapters/forge/githubAddress.ts";
@@ -365,30 +365,26 @@ function repositoryConfigurationSnapshots(
   });
 }
 
-/** One app's key as this deployment names it, or nothing at all where it names neither half. */
+/**
+ * One app's key as this deployment names it, or nothing at all where it names
+ * neither half. The settings are read by the one reader every process holding
+ * an app key reads through, so what an app id named without its key file means
+ * is answered in a single place.
+ */
 function forgeAppOptions(
   idVariable: string,
   keyFileVariable: string,
 ): GithubInstallationTokensOptions | undefined {
-  const appId = process.env[idVariable] ?? "";
-  const privateKeyPath = process.env[keyFileVariable] ?? "";
-  if (appId.length === 0 && privateKeyPath.length === 0) return undefined;
-  if (appId.length === 0 || privateKeyPath.length === 0)
-    throw new Error(
-      `${idVariable} and ${keyFileVariable} are named together or not at all`,
-    );
-  return {
-    fetch,
-    appId,
-    privateKeyPath,
-    apiUrl:
-      process.env[forgeApiUrlVariable] ??
-      githubInstallationTokensDefaults.apiUrl,
-    requestTimeoutMs: positiveEnvironment(
-      forgeTimeoutVariable,
-      githubInstallationTokensDefaults.requestTimeoutMs,
-    ),
-  };
+  return githubInstallationTokensSettings(
+    {
+      appId: idVariable,
+      appKeyFile: keyFileVariable,
+      apiUrl: forgeApiUrlVariable,
+      timeoutMs: forgeTimeoutVariable,
+    },
+    process.env,
+    positiveEnvironment,
+  );
 }
 
 /** What this deployment mints with, or nothing at all where it holds no portal key. */

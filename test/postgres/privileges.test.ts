@@ -390,6 +390,28 @@ test("the API reads one repository binding only through its boundary", async () 
   );
 });
 
+/**
+ * The worker plane holds a session to its project's own bindings before it
+ * mints anything for the repository the session named, so it reads the binding
+ * through the same door every other role does and holds nothing on the table.
+ */
+test("the worker plane reads one repository binding only through its boundary", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      workerPlaneRole,
+      `SELECT * FROM ${repositoryBindingReadFunction}('tenant','project',NULL)`,
+    ),
+    undefined,
+  );
+  assert.match(
+    (await harness.attemptAs(
+      workerPlaneRole,
+      "SELECT * FROM project_repository",
+    )) ?? "",
+    postgresHarnessDenial("project_repository"),
+  );
+});
+
 test("the ticket service reads one repository binding only through its boundary", async () => {
   assert.equal(
     await harness.attemptAs(

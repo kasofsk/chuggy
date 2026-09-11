@@ -1,5 +1,13 @@
 const askpass = "/usr/local/lib/chuggy/git-askpass.sh";
 
+/**
+ * Where a credential the worker plane minted is written, which both pod
+ * documents mount a memory-backed volume at. It is fixed rather than
+ * configured, because the image and the scheduler have to name one path and
+ * nothing either of them reads would tell them the other had moved.
+ */
+export const mintedCredentialDirectory = "/var/run/chuggy/minted";
+
 /** @typedef {{ url?: unknown, credential?: unknown, credentialUsername?: unknown }} WorkerRepositoryConfiguration */
 
 /**
@@ -24,16 +32,61 @@ export function workerRepositories(value) {
 }
 
 /**
- * @param {Record<string, WorkerRepositoryConfiguration>} repositories
- * @param {Record<string, unknown>} credentialFiles
- * @param {string} repositoryId
+ * The askpass environment one credential is presented to git through, whether
+ * the value behind the file was mounted by the launcher or minted by the plane.
+ *
+ * @param {string} credentialFile
+ * @param {string} credentialUsername
  */
-export function workerRepository(repositories, credentialFiles, repositoryId) {
+export function workerCredentialEnvironment(
+  credentialFile,
+  credentialUsername,
+) {
+  return {
+    ...process.env,
+    CHUG_WORKER_GIT_CREDENTIAL_FILE: credentialFile,
+    CHUG_WORKER_GIT_CREDENTIAL_USERNAME: credentialUsername,
+    GIT_ASKPASS: askpass,
+    GIT_TERMINAL_PROMPT: "0",
+  };
+}
+
+/**
+ * The configuration the site holds for one reference, which carries the remote
+ * whichever credential ends up reaching it.
+ *
+ * @param {Record<string, WorkerRepositoryConfiguration>} repositories
+ * @param {string} repositoryId
+ * @returns {WorkerRepositoryConfiguration}
+ */
+function workerRepositoryConfiguration(repositories, repositoryId) {
   if (!Object.hasOwn(repositories, repositoryId))
     throw new Error(`no repository configuration for ${repositoryId}`);
   const configured = repositories[repositoryId];
   if (configured === null || typeof configured !== "object")
     throw new Error(`no repository configuration for ${repositoryId}`);
+  return configured;
+}
+
+/**
+ * @param {Record<string, WorkerRepositoryConfiguration>} repositories
+ * @param {string} repositoryId
+ */
+export function workerRepositoryUrl(repositories, repositoryId) {
+  return requiredText(
+    workerRepositoryConfiguration(repositories, repositoryId).url,
+    "URL",
+    repositoryId,
+  );
+}
+
+/**
+ * @param {Record<string, WorkerRepositoryConfiguration>} repositories
+ * @param {Record<string, unknown>} credentialFiles
+ * @param {string} repositoryId
+ */
+export function workerRepository(repositories, credentialFiles, repositoryId) {
+  const configured = workerRepositoryConfiguration(repositories, repositoryId);
   const repository = requiredText(configured.url, "URL", repositoryId);
   const credential = requiredText(
     configured.credential,
@@ -59,12 +112,9 @@ export function workerRepository(repositories, credentialFiles, repositoryId) {
   return {
     repository,
     credential,
-    environment: {
-      ...process.env,
-      CHUG_WORKER_GIT_CREDENTIAL_FILE: credentialFile,
-      CHUG_WORKER_GIT_CREDENTIAL_USERNAME: credentialUsername,
-      GIT_ASKPASS: askpass,
-      GIT_TERMINAL_PROMPT: "0",
-    },
+    environment: workerCredentialEnvironment(
+      credentialFile,
+      credentialUsername,
+    ),
   };
 }
