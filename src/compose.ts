@@ -235,22 +235,22 @@ export function composeForgeCredentialMinting(
 
 /**
  * The onboarding service the API answers its onboarding routes with: the
- * relation authority for every question of standing, this deployment's own
- * forge for what an installation is and what it holds, the credential source a
- * binding is proved against, and the two doors 085 grants the API. THE APP IS
- * OPTIONAL AND THE REST IS NOT: a deployment naming no app key still binds and
- * still lists what a project binds, and has nothing to say about installations,
- * which is what `NotConfigured` is.
+ * relation authority for every question of standing, one forge half per app
+ * this deployment holds a key for, the credential source a binding is proved
+ * against, and the two doors 085 grants the API. THE APPS ARE OPTIONAL AND THE
+ * REST IS NOT: a deployment naming no app key still binds and still lists what
+ * a project binds, and has nothing to say about installations, which is what
+ * `NotConfigured` is.
  */
 export function composeRepositoryOnboarding(
   apiPool: pg.Pool,
   access: ProjectAccess,
   credentials: RepositoryCredentialPort,
-  forgeApp: RepositoryOnboardingForgeApp | undefined,
+  forgeApps: readonly RepositoryOnboardingForgeApp[],
 ): RepositoryOnboarding {
   return repositoryOnboarding({
     access,
-    forgeApp,
+    forgeApps,
     credentials,
     recording: postgresForgeInstallationRecording(apiPool),
     claims: postgresForgeInstallationClaims(apiPool),

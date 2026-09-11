@@ -26,6 +26,7 @@ import { authoringSchema } from "./authoring.ts";
 import { briefSchema } from "./brief.ts";
 import {
   forgeCredentialPermissions,
+  forgeApps,
   forgeIds,
   nativeActionResolutions,
   selectorDispatchModes,
@@ -95,9 +96,15 @@ export const forgeCredentialRequestSchema = z.strictObject({
   permissions: z.enum(forgeCredentialPermissions),
 });
 
-/** One claim: which forge, and which installation of this deployment's app on it. */
+/**
+ * One claim: which forge, which of the apps a tenant installs, and which
+ * installation of that app on it. The app is the caller's to name because a
+ * tenant installs two and the installation identities are the forge's, so
+ * nothing in an identity says which app it belongs to.
+ */
 export const forgeInstallationClaimSchema = z.strictObject({
   forge: z.enum(forgeIds),
+  app: z.enum(forgeApps),
   installationId: bodyIdentitySchema,
 });
 

@@ -39,6 +39,7 @@ import {
   asForgeId,
   asForgeInstallationId,
   asForgeRepositoryName,
+  type ForgeApp,
 } from "../../src/interpreter/forgeInstallation.ts";
 import type {
   ForgeInstallationClaim,
@@ -74,6 +75,7 @@ const partition = { tenant, project: asProjectId("chuggy") };
 const principal = asPrincipal("14:https://issuer/member");
 const forge = asForgeId("github");
 const app = asForgeApp("portal");
+const worker = asForgeApp("worker");
 const installationId = asForgeInstallationId("4242");
 const repository = asRepositoryId("https://github.com/kasofsk/chuggy.git");
 const operation = asOperationId("bind-chuggy-1");
@@ -139,7 +141,7 @@ interface FixturePorts {
   readonly held?: readonly ForgeInstallationClaimed[];
   readonly resolved?: CredentialResolved;
   readonly outcome?: RepositoryBindingOutcome;
-  readonly configured?: boolean;
+  readonly apps?: readonly ForgeApp[];
 }
 
 /** What a case reads back: the claim recorded, and the command the door was asked. */
@@ -156,9 +158,9 @@ function fixturePorts(
   readonly wrote: FixtureWrites;
 } {
   const wrote: FixtureWrites = { claims: [], commands: [] };
-  const forgeApp: RepositoryOnboardingForgeApp = {
+  const forgeHalf = (held: ForgeApp): RepositoryOnboardingForgeApp => ({
     forge,
-    app,
+    app: held,
     apps: {
       app: () =>
         Promise.resolve(
@@ -173,7 +175,7 @@ function fixturePorts(
       repositories: () =>
         Promise.resolve(given.repositories ?? { read: "Unavailable" as const }),
     },
-  };
+  });
   const credentials: RepositoryCredentialPort = {
     credential: () =>
       Promise.resolve(given.resolved ?? { resolved: "Denied" as const }),
@@ -182,7 +184,7 @@ function fixturePorts(
     wrote,
     ports: {
       access,
-      forgeApp: given.configured === false ? undefined : forgeApp,
+      forgeApps: (given.apps ?? [app]).map(forgeHalf),
       credentials,
       recording: {
         record: (claim) => {
@@ -219,21 +221,28 @@ function fixtureService(
   return { service: repositoryOnboarding(ports), asked, wrote };
 }
 
-test("the app is described, and a deployment holding none says so", async () => {
+const description = {
+  id: "1",
+  slug: "chuggy",
+  installUrl: "https://forge/new",
+} as const;
+
+test("every app this deployment holds is described, and holding none says so", async () => {
   const described = fixtureService([], {
-    described: {
-      described: "App",
-      app: { id: "1", slug: "chuggy", installUrl: "https://forge/new" },
-    },
+    described: { described: "App", app: description },
+    apps: [app, worker],
   });
-  assert.deepEqual(await described.service.forgeApp(), {
-    result: "App",
-    app: { id: "1", slug: "chuggy", installUrl: "https://forge/new" },
+  assert.deepEqual(await described.service.forgeApps(), {
+    result: "Apps",
+    apps: [
+      { app, ...description },
+      { app: worker, ...description },
+    ],
   });
-  const none = fixtureService([], { configured: false });
-  assert.deepEqual(await none.service.forgeApp(), { result: "NotConfigured" });
+  const none = fixtureService([], { apps: [] });
+  assert.deepEqual(await none.service.forgeApps(), { result: "NotConfigured" });
   const down = fixtureService([], { described: { described: "Unavailable" } });
-  assert.deepEqual(await down.service.forgeApp(), { result: "Unavailable" });
+  assert.deepEqual(await down.service.forgeApps(), { result: "Unavailable" });
 });
 
 test("a claim is the tenant administrator's and nobody else's", async () => {
@@ -241,6 +250,7 @@ test("a claim is the tenant administrator's and nobody else's", async () => {
   assert.deepEqual(
     await refused.service.claimInstallation(principal, tenant, {
       forge,
+      app,
       installationId,
     }),
     { result: "NotFound" },
@@ -262,6 +272,7 @@ test("a claim is read as the app before it is recorded as the tenant's", async (
   assert.deepEqual(
     await claiming.service.claimInstallation(principal, tenant, {
       forge,
+      app,
       installationId,
     }),
     {
@@ -287,6 +298,7 @@ test("an installation this app does not hold is unknown, and so is another forge
   assert.deepEqual(
     await unknown.service.claimInstallation(principal, tenant, {
       forge,
+      app,
       installationId,
     }),
     { result: "InstallationUnknown" },
@@ -304,6 +316,7 @@ test("an installation this app does not hold is unknown, and so is another forge
   assert.deepEqual(
     await elsewhere.service.claimInstallation(principal, tenant, {
       forge: asForgeId("gitlab"),
+      app,
       installationId,
     }),
     { result: "InstallationUnknown" },
@@ -327,6 +340,7 @@ test("a replay is already claimed and another tenant's account is a conflict", a
     (
       await replay.service.claimInstallation(principal, tenant, {
         forge,
+        app,
         installationId,
       })
     ).result,
@@ -340,6 +354,7 @@ test("a replay is already claimed and another tenant's account is a conflict", a
     (
       await moved.service.claimInstallation(principal, tenant, {
         forge,
+        app,
         installationId,
       })
     ).result,
@@ -352,6 +367,7 @@ test("a replay is already claimed and another tenant's account is a conflict", a
   assert.deepEqual(
     await taken.service.claimInstallation(principal, tenant, {
       forge,
+      app,
       installationId,
     }),
     { result: "ClaimedElsewhere" },
@@ -365,6 +381,7 @@ test("a forge that could not be reached is a wait rather than a refusal", async 
   assert.deepEqual(
     await down.service.claimInstallation(principal, tenant, {
       forge,
+      app,
       installationId,
     }),
     { result: "Unavailable" },
@@ -374,12 +391,13 @@ test("a forge that could not be reached is a wait rather than a refusal", async 
 
 test("a deployment holding no app claims nothing and lists what it holds", async () => {
   const none = fixtureService(["AdministerTenant"], {
-    configured: false,
+    apps: [],
     held: [claimed],
   });
   assert.deepEqual(
     await none.service.claimInstallation(principal, tenant, {
       forge,
+      app,
       installationId,
     }),
     { result: "NotConfigured" },
@@ -390,6 +408,77 @@ test("a deployment holding no app claims nothing and lists what it holds", async
   });
   assert.deepEqual(
     await none.service.installationRepositories(
+      principal,
+      tenant,
+      installationId,
+    ),
+    { result: "NotConfigured" },
+  );
+});
+
+test("a worker claim is the worker app's, and holding no worker key says so", async () => {
+  const read: ForgeInstallationRead = {
+    read: "Installation",
+    installation: {
+      account: claimed.account,
+      accountKind: claimed.accountKind,
+    },
+  };
+  const both = fixtureService(["AdministerTenant"], {
+    read,
+    apps: [app, worker],
+  });
+  assert.deepEqual(
+    await both.service.claimInstallation(principal, tenant, {
+      forge,
+      app: worker,
+      installationId,
+    }),
+    {
+      result: "Claimed",
+      installation: {
+        forge,
+        app: worker,
+        account: claimed.account,
+        accountKind: claimed.accountKind,
+        installationId,
+      },
+    },
+  );
+  const portalOnly = fixtureService(["AdministerTenant"], { read });
+  assert.deepEqual(
+    await portalOnly.service.claimInstallation(principal, tenant, {
+      forge,
+      app: worker,
+      installationId,
+    }),
+    { result: "NotConfigured" },
+  );
+  assert.deepEqual(portalOnly.wrote.claims, []);
+});
+
+test("what a worker installation grants is read as the worker app", async () => {
+  const held = { ...claimed, app: worker };
+  const reading = fixtureService(["AdministerTenant"], {
+    held: [held],
+    apps: [app, worker],
+    repositories: {
+      read: "Repositories",
+      repositories: [summary],
+      truncated: false,
+    },
+  });
+  assert.deepEqual(
+    await reading.service.installationRepositories(
+      principal,
+      tenant,
+      installationId,
+    ),
+    { result: "Repositories", repositories: [summary], truncated: false },
+  );
+  const portalOnly = fixtureService(["AdministerTenant"], { held: [held] });
+  assert.deepEqual(
+    await portalOnly.service.installationRepositories(
       principal,
       tenant,
       installationId,

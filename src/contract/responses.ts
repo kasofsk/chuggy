@@ -102,6 +102,7 @@ import {
   sessionTurnStates,
   threadStandings,
   forgeAccountKinds,
+  forgeApps,
 } from "./rosters.ts";
 
 const page = <T extends z.ZodType>(item: T) =>
@@ -1186,24 +1187,29 @@ export const leadInquiryAcceptedSchema = z.object({
 });
 export type LeadInquiryAccepted = z.infer<typeof leadInquiryAcceptedSchema>;
 
-/**
- * The forge app this deployment is, and the address a tenant's administrator
- * installs it from. Every bearer reads it, because it says nothing about any
- * tenant: it is the identity of the deployment's own app.
- */
+/** One app this deployment holds the key of, and the address a tenant's administrator installs it from. */
 export const forgeAppResponseSchema = z.object({
-  app: z.object({
-    id: identitySchema,
-    slug: identitySchema,
-    installUrl: z.string().min(1),
-  }),
+  app: z.enum(forgeApps),
+  id: identitySchema,
+  slug: identitySchema,
+  installUrl: z.string().min(1),
 });
 export type ForgeAppResponse = z.infer<typeof forgeAppResponseSchema>;
+
+/**
+ * Every app this deployment holds a key for. Every bearer reads it, because it
+ * says nothing about any tenant: it is the identity of the deployment's own
+ * apps, and onboarding installs each of them.
+ */
+export const forgeAppsResponseSchema = z.object({
+  apps: z.array(forgeAppResponseSchema).max(forgeApps.length),
+});
+export type ForgeAppsResponse = z.infer<typeof forgeAppsResponseSchema>;
 
 /** One installation a tenant has claimed, as the claim route answers it. */
 export const forgeInstallationClaimedSchema = z.object({
   forge: identitySchema,
-  app: identitySchema,
+  app: z.enum(forgeApps),
   account: identitySchema,
   accountKind: z.enum(forgeAccountKinds),
   installationId: identitySchema,

@@ -80,7 +80,7 @@ import type {
 import { ProjectAccessUnavailable } from "../../interpreter/projectAccess.ts";
 import type { ForgeCredentialMinted } from "../../interpreter/forgeCredentials.ts";
 import type {
-  ForgeAppResult,
+  ForgeAppsResult,
   ForgeInstallationClaimResult,
   ForgeInstallationsResult,
   ForgeRepositoriesResult,
@@ -804,24 +804,25 @@ function notFound(): NativeHttpResponse {
 }
 
 /**
- * The app this deployment is. A deployment holding no app key has no app to
- * describe rather than one it is hiding, so that is 404 and not a refusal; a
- * forge that could not be reached is a wait.
+ * A deployment holding no key for the app asked about has no app to describe
+ * rather than one it is hiding, so that is 404 and not a refusal. A forge that
+ * could not be reached is a wait instead.
  */
 function forgeNotConfigured(): NativeHttpResponse {
   return response(
     404,
     nativeHttpError(
       "ForgeNotConfigured",
-      "This deployment names no forge app.",
+      "This deployment names no such forge app.",
     ),
   );
 }
 
-export function forgeAppResponse(result: ForgeAppResult): NativeHttpResponse {
+/** Every app this deployment holds a key for, which onboarding installs all of. */
+export function forgeAppsResponse(result: ForgeAppsResult): NativeHttpResponse {
   switch (result.result) {
-    case "App":
-      return response(200, { app: result.app });
+    case "Apps":
+      return response(200, { apps: result.apps });
     case "NotConfigured":
       return forgeNotConfigured();
     case "Unavailable":

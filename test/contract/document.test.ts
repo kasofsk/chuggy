@@ -44,7 +44,7 @@ test("the golden names every route and not an empty stand-in", () => {
     "events",
     "execution",
     "executions",
-    "forgeApp",
+    "forgeApps",
     "forgeCredentials",
     "forgeInstallationRepositories",
     "forgeInstallations",

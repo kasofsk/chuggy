@@ -212,6 +212,10 @@ export type ForgeCredentialPermission =
 export const forgeIds = ["github"] as const;
 export type ForgeIdentity = (typeof forgeIds)[number];
 
+/** Every app a tenant installs, the api holding a key for each it answers a claim on. */
+export const forgeApps = ["portal", "worker"] as const;
+export type ForgeAppName = (typeof forgeApps)[number];
+
 /** Every kind of account a forge installs an app on. */
 export const forgeAccountKinds = ["User", "Organization"] as const;
 export type ForgeAccountKindName = (typeof forgeAccountKinds)[number];

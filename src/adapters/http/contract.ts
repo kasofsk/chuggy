@@ -60,6 +60,7 @@ import type {
 import { checkedSelectorDecisionReference } from "../../interpreter/dispatchView.ts";
 import type { ForgeCredentialRequest } from "../../interpreter/forgeCredentials.ts";
 import {
+  asForgeApp,
   asForgeId,
   asForgeInstallationId,
   type ForgeInstallationId,
@@ -176,13 +177,14 @@ export function parseForgeCredentialRequest(
   };
 }
 
-/** One claim as the wire carries it, both fields already narrowed. */
+/** One claim as the wire carries it, every field already narrowed. */
 export function parseForgeInstallationClaim(
   body: unknown,
 ): ForgeInstallationClaimRequest {
   const parsed = forgeInstallationClaimSchema.parse(body);
   return {
     forge: asForgeId(parsed.forge),
+    app: asForgeApp(parsed.app),
     installationId: asForgeInstallationId(parsed.installationId),
   };
 }

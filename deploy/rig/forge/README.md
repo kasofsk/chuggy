@@ -4,13 +4,13 @@ The API mints a GitHub installation token for every repository act it serves,
 from the portal App's own private key. `deploy/rig/keto/README.md` is the
 procedure for who may ask; this is the procedure for what the API asks with.
 
-Two Apps are installed on each account. The **portal** App is the API's, and
-its key is the one this deployment mounts; the **worker** App is the fabric's,
-and nothing in this checkout holds its key. Which tenant may mint under an
-account is a row in the rig's PostgreSQL, written by the command below and read
-by nothing else.
+Two Apps are installed on each account. The **portal** App is the API's, and it
+is the one every act here mints under; the **worker** App is the plane's, and the
+API holds its key only to verify a claim, never to mint. Which tenant may mint
+under an account is a row in the rig's PostgreSQL, written by a route or by the
+command below and read by nothing else.
 
-## Mount the portal App's key
+## Mount the Apps' keys
 
 The API reads the key from a file. Create a Secret from the PEM GitHub issued —
 `-----BEGIN RSA PRIVATE KEY-----`, which is PKCS#1 and is accepted as it stands
@@ -21,10 +21,19 @@ CHUG_API_FORGE_APP_ID=<the App's numeric id>
 CHUG_API_FORGE_APP_KEY_FILE=/etc/chuggy/forge/portal.pem
 ```
 
-Both or neither: a deployment naming one of the two refuses to start, and one
-naming neither mints nothing and reads every credential from
-`CHUG_API_REPOSITORY_CREDENTIAL_SOURCES` as before. `deploy/rig/images/README.md`
-carries these rows and the two bounds beside them.
+The worker App's key is mounted the same way and is optional:
+
+```
+CHUG_API_FORGE_WORKER_APP_ID=<the worker App's numeric id>
+CHUG_API_FORGE_WORKER_APP_KEY_FILE=/etc/chuggy/forge/worker.pem
+```
+
+Both or neither, per pair: a deployment naming one half of either refuses to
+start. A deployment naming no portal pair mints nothing and reads every
+credential from `CHUG_API_REPOSITORY_CREDENTIAL_SOURCES` as before, and one
+naming no worker pair answers a worker claim `ForgeNotConfigured`.
+`deploy/rig/images/README.md` carries these rows and the two bounds beside
+them.
 
 The key is read once per mint rather than held, and the process refuses to start
 unless the file it names is a readable RSA private key — so a Secret mounted at
@@ -44,19 +53,33 @@ path a console drives and the one that needs no operator:
 
 ```
 POST /api/v1/tenants/<tenant>/forge-installations
-{"forge": "github", "installationId": "<the App's installation id>"}
+{"forge": "github", "app": "portal", "installationId": "<that App's installation id>"}
 ```
 
-It needs `administer` on the tenant, and the API verifies the installation with
-GitHub as the App before recording it — an installation of another App, or one
-that is not there, is refused. `GET /api/v1/forge/github` answers the address to
-install the App from, and
-`GET /api/v1/tenants/<tenant>/forge-installations/<id>/repositories` answers
-what the installation grants.
+Onboarding installs **two** Apps on the account, and the claim names which: the
+portal App the API, finalizer, ticket service and importer act as, and the
+worker App the plane mints under. Each has its own installation id on the same
+account, so a claim is made twice — once per App.
 
-A tenant administrator can claim any unclaimed installation of this App whose id
-they know. The first claim wins, and there is no route that undoes one: a wrong
-claim is the operator's to remove, as below.
+It needs `administer` on the tenant, and the API verifies the installation with
+GitHub as the App it is claimed for before recording it — an installation of
+another App, or one that is not there, is refused. An App the API holds no key
+for is `ForgeNotConfigured`: the worker key is `CHUG_API_FORGE_WORKER_APP_ID`
+and `CHUG_API_FORGE_WORKER_APP_KEY_FILE`.
+
+`GET /api/v1/forge/github` answers one row per App this deployment holds, each
+with the address to install it from, and
+`GET /api/v1/tenants/<tenant>/forge-installations/<id>/repositories` answers
+what one claimed installation grants, read as the App the claim names.
+
+A tenant administrator can claim any unclaimed installation of these Apps whose
+id they know. The first claim wins, and there is no route that undoes one: a
+wrong claim is the operator's to remove, as below.
+
+Binding a repository to a project proves it against the **portal** claim,
+because the API's own reads mint under the portal App. Whether the tenant also
+claimed the worker App on that owner is the plane's question when it mints, not
+this route's.
 
 ## Claim an account as the operator
 

@@ -39,7 +39,7 @@
   "routes": {
     "contract": "/api/v1/contract",
     "installation": "/api/v1/installation",
-    "forgeApp": "/api/v1/forge/github",
+    "forgeApps": "/api/v1/forge/github",
     "forgeInstallations": "/api/v1/tenants/:tenant/forge-installations",
     "forgeInstallationRepositories": "/api/v1/tenants/:tenant/forge-installations/:installationId/repositories",
     "projects": "/api/v1/projects",
@@ -743,12 +743,16 @@
           "type": "string",
           "enum": ["github"]
         },
+        "app": {
+          "type": "string",
+          "enum": ["portal", "worker"]
+        },
         "installationId": {
           "type": "string",
           "minLength": 1
         }
       },
-      "required": ["forge", "installationId"],
+      "required": ["forge", "app", "installationId"],
       "additionalProperties": false
     },
     "projectRepositoryBind": {

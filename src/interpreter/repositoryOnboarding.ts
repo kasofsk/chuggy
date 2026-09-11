@@ -16,7 +16,7 @@
  *
  * THE FORGE DECIDES WHAT AN INSTALLATION HOLDS, AND A ROW DECIDES WHOSE IT IS.
  * Claiming reads the installation as the app before recording it, so a tenant
- * cannot claim an identity that is not an installation of this app; binding
+ * cannot claim an identity that is not an installation of that app; binding
  * mints against the claim the repository's own owner is covered by, so a
  * repository no claimed installation grants is refused without this tree
  * holding a roster of what an installation contains.
@@ -25,6 +25,12 @@
  * that is not there is `NotFound` rather than a project this route makes: what
  * a project is and who may make one is 083's question, and a route that created
  * one on the way past would answer it a second way.
+ *
+ * A TENANT INSTALLS TWO APPS AND A CLAIM NAMES WHICH. The portal app is what
+ * this deployment reads and mints through and the worker app is the plane's, so
+ * a claim carries the app it is of: an installation identity is the forge's and
+ * says nothing about which app it belongs to, and the api verifies one as the
+ * app it is claimed for or not at all.
  *
  * A DEPLOYMENT HOLDING NO APP STILL BINDS. Only the three questions that are
  * the forge's — what the app is, what an installation is, and what one grants —
@@ -66,9 +72,18 @@ import type {
   ProjectRepositoryBound,
 } from "./repositoryBinding.ts";
 
-/** What describing this deployment's app came to, a deployment holding none being its own answer. */
-export type ForgeAppResult =
-  | { readonly result: "App"; readonly app: ForgeAppDescription }
+/** One app this deployment holds the key of, as its own forge describes it. */
+export interface ForgeAppSummary extends ForgeAppDescription {
+  readonly app: ForgeApp;
+}
+
+/**
+ * What describing this deployment's apps came to. A deployment holding none is
+ * its own answer, and one app this side could not read makes the whole listing
+ * a wait: a partial roster would read as an app the deployment does not hold.
+ */
+export type ForgeAppsResult =
+  | { readonly result: "Apps"; readonly apps: readonly ForgeAppSummary[] }
   | { readonly result: "NotConfigured" }
   | { readonly result: "Unavailable" };
 
@@ -135,9 +150,10 @@ export type ProjectRepositoriesResult =
     }
   | { readonly result: "NotFound" };
 
-/** One claim as a caller sends it: which forge, and which installation of this app on it. */
+/** One claim as a caller sends it: which forge, which app, and which installation of it. */
 export interface ForgeInstallationClaimRequest {
   readonly forge: ForgeId;
+  readonly app: ForgeApp;
   readonly installationId: ForgeInstallationId;
 }
 
@@ -147,7 +163,7 @@ export interface ProjectRepositoryBindRequest {
   readonly operation: OperationId;
 }
 
-/** The app half of the composition, which a deployment holding no app key has none of. */
+/** One app's half of the composition, composed for each app this deployment holds a key for. */
 export interface RepositoryOnboardingForgeApp {
   readonly forge: ForgeId;
   readonly app: ForgeApp;
@@ -156,10 +172,10 @@ export interface RepositoryOnboardingForgeApp {
   readonly installationRepositories: ForgeInstallationRepositories;
 }
 
-/** Everything the service is composed with, the forge half of it one forge's. */
+/** Everything the service is composed with, one forge half per app a key is held for. */
 export interface RepositoryOnboardingPorts {
   readonly access: ProjectAccess;
-  readonly forgeApp: RepositoryOnboardingForgeApp | undefined;
+  readonly forgeApps: readonly RepositoryOnboardingForgeApp[];
   readonly credentials: RepositoryCredentialPort;
   readonly recording: ForgeInstallationRecording;
   readonly claims: ForgeInstallationClaims;
@@ -169,7 +185,7 @@ export interface RepositoryOnboardingPorts {
 
 /** The six questions the onboarding routes ask, each behind the permit it needs. */
 export interface RepositoryOnboarding {
-  forgeApp(): Promise<ForgeAppResult>;
+  forgeApps(): Promise<ForgeAppsResult>;
 
   claimInstallation(
     principal: Principal,
@@ -203,12 +219,34 @@ export interface RepositoryOnboarding {
 /** The claim this tenant holds under the identity asked about, and nothing where it holds none. */
 function claimedInstallation(
   held: readonly ForgeInstallationClaimed[],
-  forge: ForgeId,
   installationId: ForgeInstallationId,
 ): ForgeInstallationClaimed | undefined {
-  return held.find(
-    (claim) => claim.forge === forge && claim.installationId === installationId,
+  return held.find((claim) => claim.installationId === installationId);
+}
+
+/** The half composed for one app on one forge, and nothing where this deployment holds no key for it. */
+function heldForgeApp(
+  ports: RepositoryOnboardingPorts,
+  forge: ForgeId,
+  app: ForgeApp,
+): RepositoryOnboardingForgeApp | undefined {
+  return ports.forgeApps.find(
+    (held) => held.forge === forge && held.app === app,
   );
+}
+
+/** Every app this deployment holds, as each of their forges describes them. */
+async function describedForgeApps(
+  ports: RepositoryOnboardingPorts,
+): Promise<ForgeAppsResult> {
+  if (ports.forgeApps.length === 0) return { result: "NotConfigured" };
+  const apps: ForgeAppSummary[] = [];
+  for (const held of ports.forgeApps) {
+    const described = await held.apps.app();
+    if (described.described !== "App") return { result: "Unavailable" };
+    apps.push({ app: held.app, ...described.app });
+  }
+  return { result: "Apps", apps };
 }
 
 /** What a recorded claim answers with, the outcome deciding only whether it is new. */
@@ -248,9 +286,11 @@ async function claimInstallation(
     "AdministerTenant",
   );
   if (authority === undefined) return { result: "NotFound" };
-  const forge = ports.forgeApp;
+  if (ports.forgeApps.length === 0) return { result: "NotConfigured" };
+  if (!ports.forgeApps.some((held) => held.forge === request.forge))
+    return { result: "InstallationUnknown" };
+  const forge = heldForgeApp(ports, request.forge, request.app);
   if (forge === undefined) return { result: "NotConfigured" };
-  if (request.forge !== forge.forge) return { result: "InstallationUnknown" };
   const read = await forge.directory.installation(request.installationId);
   if (read.read === "Unavailable") return { result: "Unavailable" };
   if (read.read === "Unknown") return { result: "InstallationUnknown" };
@@ -280,10 +320,10 @@ async function installationRepositories(
 ): Promise<ForgeRepositoriesResult> {
   const held = await tenantClaims(ports, principal, tenant);
   if (held === undefined) return { result: "NotFound" };
-  const forge = ports.forgeApp;
-  if (forge === undefined) return { result: "NotConfigured" };
-  const claim = claimedInstallation(held, forge.forge, installationId);
+  const claim = claimedInstallation(held, installationId);
   if (claim === undefined) return { result: "NotFound" };
+  const forge = heldForgeApp(ports, claim.forge, claim.app);
+  if (forge === undefined) return { result: "NotConfigured" };
   const read = await forge.installationRepositories.repositories({
     forge: claim.forge,
     app: claim.app,
@@ -307,13 +347,13 @@ async function installationRepositories(
 }
 
 /**
- * One binding, proved against the credential source before the door is asked.
- *
- * THE PROOF IS A CREDENTIAL AND NOT A ROSTER. A repository this deployment
- * cannot get a credential for is one no act on it could ever run, so the source
- * that would have to answer at execution time is the one asked here; nothing in
- * this tree holds a list of what an installation contains, and the token that
- * comes back is read for its verdict and dropped.
+ * One binding, proved against the credential source before the door is asked:
+ * a repository this deployment cannot get a credential for is one no act on it
+ * could ever run, so the source that would have to answer at execution time is
+ * the one asked here, and the token that comes back is read for its verdict and
+ * dropped. It is the portal claim that is proved, the api's own reads minting
+ * under the portal app, and whether the tenant also claimed the worker app on
+ * the repository's owner is the plane's question at execution time.
  */
 async function bindRepository(
   ports: RepositoryOnboardingPorts,
@@ -364,14 +404,7 @@ export function repositoryOnboarding(
   ports: RepositoryOnboardingPorts,
 ): RepositoryOnboarding {
   return {
-    forgeApp: async () => {
-      const forge = ports.forgeApp;
-      if (forge === undefined) return { result: "NotConfigured" };
-      const described = await forge.apps.app();
-      return described.described === "App"
-        ? { result: "App", app: described.app }
-        : { result: "Unavailable" };
-    },
+    forgeApps: () => describedForgeApps(ports),
 
     claimInstallation: (principal, tenant, request) =>
       claimInstallation(ports, principal, tenant, request),

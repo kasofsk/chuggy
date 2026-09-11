@@ -110,6 +110,8 @@ to start without the required ones.
 | `CHUG_API_REPOSITORY_CREDENTIAL_SOURCES` | required | JSON repository-to-credential-file mappings |
 | `CHUG_API_FORGE_APP_ID` | with the key file, or neither | the GitHub App this deployment mints installation tokens under |
 | `CHUG_API_FORGE_APP_KEY_FILE` | with the app id, or neither | a file holding that app's RSA private key, in either PEM encoding; the process refuses to start unless it can be read and used |
+| `CHUG_API_FORGE_WORKER_APP_ID` | with the worker key file, or neither | the GitHub App the worker plane mints under, held here only so a tenant can claim its installations over the API |
+| `CHUG_API_FORGE_WORKER_APP_KEY_FILE` | with the worker app id, or neither | a file holding that app's RSA private key; the process refuses to start unless it can be read and used, and a worker claim is `ForgeNotConfigured` without it |
 | `CHUG_API_FORGE_API_URL` | `https://api.github.com` | where the mint request is sent |
 | `CHUG_API_FORGE_TIMEOUT_MS` | | how long one mint request may take before it is an outage |
 | `CHUG_API_FORGE_REPOSITORIES_MAX` | 500 | how many repositories one installation listing pages for before it answers `truncated`; it may not exceed what the response schema answers |

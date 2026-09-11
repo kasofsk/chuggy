@@ -94,7 +94,7 @@ import {
   draftRevisionResponse,
   draftsResponse,
   failureResponse,
-  forgeAppResponse,
+  forgeAppsResponse,
   forgeCredentialResponse,
   forgeInstallationClaimResponse,
   forgeInstallationsResponse,
@@ -902,8 +902,8 @@ function tenantOf(request: FastifyRequest): TenantId {
 }
 
 /**
- * The app a tenant installs, the installations it has claimed, and what each of
- * them grants. THE APP ROUTE IS AUTHENTICATED AND NOTHING ELSE: it says nothing
+ * The apps a tenant installs, the installations it has claimed, and what each of
+ * them grants. THE APPS ROUTE IS AUTHENTICATED AND NOTHING ELSE: it says nothing
  * about any tenant, so every bearer reads it, and it is not public because an
  * unauthenticated route would make this deployment's forge rate limit spendable
  * by anyone who can reach the port.
@@ -913,7 +913,7 @@ function registerForgeInstallations(
   onboarding: RepositoryOnboarding,
 ): void {
   app.get("/api/v1/forge/github", async (_request, reply) => {
-    send(reply, forgeAppResponse(await onboarding.forgeApp()));
+    send(reply, forgeAppsResponse(await onboarding.forgeApps()));
   });
   app.post(
     "/api/v1/tenants/:tenant/forge-installations",

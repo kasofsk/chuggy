@@ -50,6 +50,7 @@ import {
   asForgeId,
   asForgeInstallationId,
   asForgeInstallationToken,
+  type ForgeApp,
   type ForgeInstallationTokens,
 } from "../../src/interpreter/forgeInstallation.ts";
 import type {
@@ -76,6 +77,8 @@ const partition = { tenant, project: asProjectId("atlas") };
 const principal = asPrincipal("issuer geoff");
 const forge = asForgeId("github");
 const app = asForgeApp("portal");
+const worker = asForgeApp("worker");
+const bothApps = [app, worker] as const;
 const installationId = asForgeInstallationId("156333284");
 const repository = asRepositoryId("https://github.com/acme/atlas.git");
 const epoch = asRecoveryEpoch("epoch-1");
@@ -189,6 +192,7 @@ function fixtureService(
   store: OnboardingStore,
   recorder: ForgeRecorder,
   access: ReturnType<typeof memoryProjectAccess>,
+  apps: readonly ForgeApp[],
 ): RepositoryOnboarding {
   const options = {
     fetch: recorder.requestFetch,
@@ -199,20 +203,21 @@ function fixtureService(
   const credentials: RepositoryCredentialPort = {
     credential: () => Promise.resolve(store.resolved),
   };
+  const half = (held: ForgeApp) => ({
+    forge,
+    app: held,
+    apps: githubApps(options),
+    directory: githubInstallationDirectory(options),
+    installationRepositories: githubInstallationRepositories({
+      fetch: recorder.requestFetch,
+      apiUrl: fixtureApiUrl,
+      tokens: listingTokens,
+    }),
+  });
   return repositoryOnboarding({
     access,
     credentials,
-    forgeApp: {
-      forge,
-      app,
-      apps: githubApps(options),
-      directory: githubInstallationDirectory(options),
-      installationRepositories: githubInstallationRepositories({
-        fetch: recorder.requestFetch,
-        apiUrl: fixtureApiUrl,
-        tokens: listingTokens,
-      }),
-    },
+    forgeApps: apps.map(half),
     recording: {
       record: (claim) => {
         if (store.recorded !== "ClaimedElsewhere")
@@ -250,6 +255,7 @@ function fixtureCase(
     readonly answers?: readonly (Response | Error)[];
     readonly granted?: readonly ("AdministerTenant" | "Administer" | "Read")[];
     readonly store?: OnboardingStore;
+    readonly apps?: readonly ForgeApp[];
   } = {},
 ) {
   const store = given.store ?? fixtureStore();
@@ -267,32 +273,77 @@ function fixtureCase(
     access.grant({ partition, principal, access: new Set(project) });
   const app = servedNativeHttpApp(
     unservedNativeWeb,
-    fixtureService(t, store, recorder, access),
+    fixtureService(t, store, recorder, access, given.apps ?? bothApps),
   );
   t.after(() => app.close());
   return { app, store, recorder, access };
 }
 
-test("the app route answers every bearer and asks the forge once", async (t) => {
-  const one = fixtureCase(t, { answers: [appAnswer()] });
+const describedApp = {
+  id: fixtureAppId,
+  slug: "chuggy-portal",
+  installUrl: "https://github.com/apps/chuggy-portal/installations/new",
+} as const;
+
+test("the apps route answers every bearer and asks each forge once", async (t) => {
+  const one = fixtureCase(t, {
+    answers: [appAnswer(), appAnswer()],
+    apps: [app, worker],
+  });
   const first = await one.app.inject({
     url: "/api/v1/forge/github",
     headers: authorized,
   });
   assert.equal(first.statusCode, 200);
   assert.deepEqual(first.json(), {
-    app: {
-      id: fixtureAppId,
-      slug: "chuggy-portal",
-      installUrl: "https://github.com/apps/chuggy-portal/installations/new",
-    },
+    apps: [
+      { app, ...describedApp },
+      { app: worker, ...describedApp },
+    ],
   });
   const second = await one.app.inject({
     url: "/api/v1/forge/github",
     headers: authorized,
   });
   assert.equal(second.statusCode, 200);
-  assert.equal(one.recorder.calls.length, 1);
+  assert.equal(one.recorder.calls.length, 2);
+});
+
+test("a claim for an app this deployment holds no key for is not configured", async (t) => {
+  const portalOnly = fixtureCase(t, {
+    answers: [installationAnswer()],
+    granted: ["AdministerTenant"],
+    apps: [app],
+  });
+  const served = await portalOnly.app.inject({
+    method: "POST",
+    url: installationsRoot,
+    headers: versioned,
+    payload: { forge: "github", app: "worker", installationId },
+  });
+  assert.equal(served.statusCode, 404);
+  assert.equal(
+    served.json<HttpErrorEnvelope>().error.code,
+    "ForgeNotConfigured",
+  );
+  assert.deepEqual(portalOnly.recorder.calls, []);
+  assert.deepEqual(portalOnly.store.held, []);
+});
+
+test("a worker installation is claimed as the worker app", async (t) => {
+  const both = fixtureCase(t, {
+    answers: [installationAnswer()],
+    granted: ["AdministerTenant"],
+    apps: [app, worker],
+  });
+  const served = await both.app.inject({
+    method: "POST",
+    url: installationsRoot,
+    headers: versioned,
+    payload: { forge: "github", app: "worker", installationId },
+  });
+  assert.equal(served.statusCode, 201);
+  assert.equal(both.store.held[0]?.app, worker);
 });
 
 test("a forge that could not be reached is a wait and not an app", async (t) => {
@@ -312,7 +363,7 @@ test("a claim without the tenant permit is not found and asks no forge", async (
     method: "POST",
     url: installationsRoot,
     headers: versioned,
-    payload: { forge: "github", installationId },
+    payload: { forge: "github", app: "portal", installationId },
   });
   assert.equal(served.statusCode, 404);
   assert.deepEqual(served.json(), {
@@ -331,7 +382,7 @@ test("a claim is created at its own address and read back by the listing", async
     method: "POST",
     url: installationsRoot,
     headers: versioned,
-    payload: { forge: "github", installationId },
+    payload: { forge: "github", app: "portal", installationId },
   });
   assert.equal(served.statusCode, 201);
   assert.equal(
@@ -376,7 +427,7 @@ test("a replayed claim is the claim as it stands and a taken one is a conflict",
     method: "POST",
     url: installationsRoot,
     headers: versioned,
-    payload: { forge: "github", installationId },
+    payload: { forge: "github", app: "portal", installationId },
   });
   assert.equal(replayed.statusCode, 200);
   assert.equal(replayed.headers["location"], undefined);
@@ -392,7 +443,7 @@ test("a replayed claim is the claim as it stands and a taken one is a conflict",
     method: "POST",
     url: installationsRoot,
     headers: versioned,
-    payload: { forge: "github", installationId },
+    payload: { forge: "github", app: "portal", installationId },
   });
   assert.equal(refused.statusCode, 409);
   assert.equal(
@@ -410,7 +461,7 @@ test("an installation this app does not hold is unknown", async (t) => {
     method: "POST",
     url: installationsRoot,
     headers: versioned,
-    payload: { forge: "github", installationId },
+    payload: { forge: "github", app: "portal", installationId },
   });
   assert.equal(served.statusCode, 404);
   assert.equal(
@@ -429,7 +480,7 @@ test("a claim sent as unversioned json is refused before it reaches the forge", 
     method: "POST",
     url: installationsRoot,
     headers: { ...authorized, "content-type": "application/json" },
-    payload: { forge: "github", installationId },
+    payload: { forge: "github", app: "portal", installationId },
   });
   assert.equal(served.statusCode, 415);
   assert.deepEqual(plain.recorder.calls, []);
