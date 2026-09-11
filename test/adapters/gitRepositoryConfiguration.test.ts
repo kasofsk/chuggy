@@ -282,3 +282,59 @@ test("the adapter refuses snapshots beyond either collection or content bound", 
     { read: "Refused", refused: "Snapshot" },
   );
 });
+
+test("the head read answers the branch the remote's own HEAD points at", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "one\n");
+  const first = fixtureCommit(fixture, "one");
+  assert.deepEqual(
+    await fixturePort(fixture).defaultBranch(fixtureBinding(fixture.remote)),
+    {
+      read: "Branch",
+      branch: "refs/heads/main",
+      commit: asGitObjectId(first),
+    },
+  );
+});
+
+test("the head moves with the branch, because it is read and not remembered", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "one\n");
+  fixtureCommit(fixture, "one");
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "two\n");
+  const second = fixtureCommit(fixture, "two");
+  const read = await fixturePort(fixture).defaultBranch(
+    fixtureBinding(fixture.remote),
+  );
+  assert.equal(read.read === "Branch" ? read.commit : undefined, second);
+});
+
+test("a repository holding no commit is absent rather than an outage", async (t) => {
+  const fixture = fixtureOpen(t);
+  assert.deepEqual(
+    await fixturePort(fixture).defaultBranch(fixtureBinding(fixture.remote)),
+    { read: "Absent" },
+  );
+});
+
+test("a remote nothing can reach is an outage and not an absent head", async (t) => {
+  const fixture = fixtureOpen(t);
+  assert.deepEqual(
+    await fixturePort(fixture).defaultBranch(
+      fixtureBinding(join(fixture.directory, "no-such.git")),
+    ),
+    { read: "Unavailable" },
+  );
+});
+
+test("a credential source that could not answer stops the head read", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "one\n");
+  fixtureCommit(fixture, "one");
+  assert.deepEqual(
+    await fixturePort(fixture, { resolved: "Unavailable" }).defaultBranch(
+      fixtureBinding(fixture.remote),
+    ),
+    { read: "Unavailable" },
+  );
+});
