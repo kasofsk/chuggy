@@ -6,9 +6,10 @@ procedure for who may ask; this is the procedure for what the API asks with.
 
 Two Apps are installed on each account. The **portal** App is the API's, and it
 is the one every act here mints under; the **worker** App is the plane's, and the
-API holds its key only to verify a claim, never to mint. Which tenant may mint
-under an account is a row in the rig's PostgreSQL, written by a route or by the
-command below and read by nothing else.
+API holds its key to verify a worker claim and to enumerate what one grants —
+never for an act on a repository, which is the plane's own mint. Which tenant
+may mint under an account is a row in the rig's PostgreSQL, written by a route
+or by the command below and read by nothing else.
 
 ## Mount the Apps' keys
 

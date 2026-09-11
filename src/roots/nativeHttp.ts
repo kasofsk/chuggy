@@ -138,10 +138,11 @@ const gitScratchRootVariable = "CHUG_API_GIT_SCRATCH_ROOT";
 const repositoryCredentialSourcesVariable =
   "CHUG_API_REPOSITORY_CREDENTIAL_SOURCES";
 /**
- * The portal app this process mints under and the key it signs with, and the
- * worker app it verifies a claim for without ever minting through. Each pair is
- * named together or not at all: one alone is a deployment that meant to hold an
- * app and cannot, which is a refusal to start rather than an outage per request.
+ * The portal app this process acts under and the key it signs with, and the
+ * worker app it verifies a claim for and enumerates an installation of. Each
+ * pair is named together or not at all: one alone is a deployment that meant to
+ * hold an app and cannot, which is a refusal to start rather than an outage per
+ * request.
  */
 const forgeAppIdVariable = "CHUG_API_FORGE_APP_ID";
 const forgeAppKeyFileVariable = "CHUG_API_FORGE_APP_KEY_FILE";
@@ -151,7 +152,7 @@ const forgeApiUrlVariable = "CHUG_API_FORGE_API_URL";
 const forgeTimeoutVariable = "CHUG_API_FORGE_TIMEOUT_MS";
 const forgeRepositoriesMaxVariable = "CHUG_API_FORGE_REPOSITORIES_MAX";
 
-/** The app this process mints under, the worker's key being held only to verify a claim. */
+/** The app every act here mints under, the worker's mints being only to enumerate. */
 const forgeApp: ForgeApp = "portal";
 
 function requiredEnvironment(name: string): string {
@@ -414,9 +415,9 @@ export interface ForgeAppPair {
 
 /**
  * Every app this deployment names a key pair for, portal first. The worker pair
- * is held only so a tenant can claim the plane's installation over the API:
- * nothing here mints for an act, and naming no worker pair answers a worker
- * claim `NotConfigured`.
+ * is held so a tenant can claim the plane's installation over the API and read
+ * what it grants, which is the only thing it mints for; naming no worker pair
+ * answers a worker claim `NotConfigured`.
  */
 export function forgeAppPairs(): readonly ForgeAppPair[] {
   const portal = forgeTokenOptions();
@@ -506,7 +507,6 @@ function forgeRepositoriesMax(): number {
 
 /** The forge this process talks to: the credential source its own reads take, the minting route's service, and onboarding's. */
 export interface NativeForge {
-  readonly hosts: readonly MintedCredentialHost[];
   readonly credentials: RepositoryCredentialPort;
   readonly minting: ForgeCredentialMinting | undefined;
   readonly onboarding: RepositoryOnboarding;
@@ -533,7 +533,6 @@ async function nativeForge(
   if (portal === undefined) {
     const credentials = nativeRepositoryCredentials([]);
     return {
-      hosts: [],
       credentials,
       minting: undefined,
       onboarding: composeRepositoryOnboarding(
@@ -564,7 +563,6 @@ async function nativeForge(
   ];
   const credentials = nativeRepositoryCredentials(hosts);
   return {
-    hosts,
     credentials,
     minting: composeForgeCredentialMinting(pools.pool, access, tokens),
     onboarding: composeRepositoryOnboarding(pools.pool, access, credentials, [

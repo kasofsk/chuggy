@@ -90,7 +90,22 @@ const authorized = { authorization: "Bearer valid" };
 const versioned = { ...authorized, "content-type": nativeHttpMediaType };
 const keyed = { ...versioned, "idempotency-key": "bind-atlas-1" };
 
-const fixtureAppId = "4708055";
+/**
+ * One App id per app, which is what tells the two halves apart: GitHub answers
+ * an installation with the id of the App it belongs to, and the directory
+ * refuses one that is not its own, so a service reading through the wrong
+ * half's adapter is answered `Unknown` here rather than passing on the label it
+ * recorded.
+ */
+const fixtureAppIds: Readonly<Record<ForgeApp, string>> = {
+  portal: "4708055",
+  worker: "4728465",
+};
+
+const fixtureSlugs: Readonly<Record<ForgeApp, string>> = {
+  portal: "chuggy-portal",
+  worker: "chuggy-worker",
+};
 const fixtureApiUrl = "https://forge.invalid";
 const fixtureKeyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
 
@@ -125,17 +140,17 @@ function answer(status: number, body: unknown): Response {
  * body is read once, and a shared one would answer the first case and be empty
  * for the next.
  */
-function appAnswer(): Response {
+function appAnswer(held: ForgeApp = app): Response {
   return answer(200, {
-    id: Number(fixtureAppId),
-    slug: "chuggy-portal",
-    html_url: "https://github.com/apps/chuggy-portal",
+    id: Number(fixtureAppIds[held]),
+    slug: fixtureSlugs[held],
+    html_url: `https://github.com/apps/${fixtureSlugs[held]}`,
   });
 }
 
-function installationAnswer(): Response {
+function installationAnswer(held: ForgeApp = app): Response {
   return answer(200, {
-    app_id: Number(fixtureAppId),
+    app_id: Number(fixtureAppIds[held]),
     account: { login: "acme", type: "Organization" },
   });
 }
@@ -194,26 +209,29 @@ function fixtureService(
   access: ReturnType<typeof memoryProjectAccess>,
   apps: readonly ForgeApp[],
 ): RepositoryOnboarding {
-  const options = {
-    fetch: recorder.requestFetch,
-    apiUrl: fixtureApiUrl,
-    appId: fixtureAppId,
-    privateKeyPath: keyFile(t),
-  };
+  const privateKeyPath = keyFile(t);
   const credentials: RepositoryCredentialPort = {
     credential: () => Promise.resolve(store.resolved),
   };
-  const half = (held: ForgeApp) => ({
-    forge,
-    app: held,
-    apps: githubApps(options),
-    directory: githubInstallationDirectory(options),
-    installationRepositories: githubInstallationRepositories({
+  const half = (held: ForgeApp) => {
+    const options = {
       fetch: recorder.requestFetch,
       apiUrl: fixtureApiUrl,
-      tokens: listingTokens,
-    }),
-  });
+      appId: fixtureAppIds[held],
+      privateKeyPath,
+    };
+    return {
+      forge,
+      app: held,
+      apps: githubApps(options),
+      directory: githubInstallationDirectory(options),
+      installationRepositories: githubInstallationRepositories({
+        fetch: recorder.requestFetch,
+        apiUrl: fixtureApiUrl,
+        tokens: listingTokens,
+      }),
+    };
+  };
   return repositoryOnboarding({
     access,
     credentials,
@@ -232,7 +250,13 @@ function fixtureService(
         return Promise.resolve(store.recorded);
       },
     },
-    claims: { claims: () => Promise.resolve(store.held) },
+    claims: {
+      claims: () => Promise.resolve({ claims: store.held, truncated: false }),
+      claim: (_tenant, askedInstallation) =>
+        Promise.resolve(
+          store.held.find((row) => row.installationId === askedInstallation),
+        ),
+    },
     bindings: { bindings: () => Promise.resolve(store.bound) },
     binding: {
       currentRecoveryEpoch: () => Promise.resolve(epoch),
@@ -279,15 +303,19 @@ function fixtureCase(
   return { app, store, recorder, access };
 }
 
-const describedApp = {
-  id: fixtureAppId,
-  slug: "chuggy-portal",
-  installUrl: "https://github.com/apps/chuggy-portal/installations/new",
-} as const;
+/** The app as the route answers it, which is that app's own identity and no other's. */
+function describedApp(held: ForgeApp) {
+  return {
+    app: held,
+    id: fixtureAppIds[held],
+    slug: fixtureSlugs[held],
+    installUrl: `https://github.com/apps/${fixtureSlugs[held]}/installations/new`,
+  };
+}
 
 test("the apps route answers every bearer and asks each forge once", async (t) => {
   const one = fixtureCase(t, {
-    answers: [appAnswer(), appAnswer()],
+    answers: [appAnswer(app), appAnswer(worker)],
     apps: [app, worker],
   });
   const first = await one.app.inject({
@@ -296,10 +324,7 @@ test("the apps route answers every bearer and asks each forge once", async (t) =
   });
   assert.equal(first.statusCode, 200);
   assert.deepEqual(first.json(), {
-    apps: [
-      { app, ...describedApp },
-      { app: worker, ...describedApp },
-    ],
+    apps: [describedApp(app), describedApp(worker)],
   });
   const second = await one.app.inject({
     url: "/api/v1/forge/github",
@@ -311,7 +336,7 @@ test("the apps route answers every bearer and asks each forge once", async (t) =
 
 test("a claim for an app this deployment holds no key for is not configured", async (t) => {
   const portalOnly = fixtureCase(t, {
-    answers: [installationAnswer()],
+    answers: [installationAnswer(worker)],
     granted: ["AdministerTenant"],
     apps: [app],
   });
@@ -330,9 +355,9 @@ test("a claim for an app this deployment holds no key for is not configured", as
   assert.deepEqual(portalOnly.store.held, []);
 });
 
-test("a worker installation is claimed as the worker app", async (t) => {
+test("a worker installation is claimed through the worker's own app", async (t) => {
   const both = fixtureCase(t, {
-    answers: [installationAnswer()],
+    answers: [installationAnswer(worker)],
     granted: ["AdministerTenant"],
     apps: [app, worker],
   });
@@ -344,6 +369,26 @@ test("a worker installation is claimed as the worker app", async (t) => {
   });
   assert.equal(served.statusCode, 201);
   assert.equal(both.store.held[0]?.app, worker);
+});
+
+test("a worker installation read through the portal's app is not the worker's", async (t) => {
+  const both = fixtureCase(t, {
+    answers: [installationAnswer(app)],
+    granted: ["AdministerTenant"],
+    apps: [app, worker],
+  });
+  const served = await both.app.inject({
+    method: "POST",
+    url: installationsRoot,
+    headers: versioned,
+    payload: { forge: "github", app: "worker", installationId },
+  });
+  assert.equal(served.statusCode, 404);
+  assert.equal(
+    served.json<HttpErrorEnvelope>().error.code,
+    "InstallationUnknown",
+  );
+  assert.deepEqual(both.store.held, []);
 });
 
 test("a forge that could not be reached is a wait and not an app", async (t) => {
@@ -402,6 +447,7 @@ test("a claim is created at its own address and read back by the listing", async
   });
   assert.equal(listed.statusCode, 200);
   assert.deepEqual(listed.json(), {
+    truncated: false,
     installations: [
       {
         forge,

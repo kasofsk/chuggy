@@ -62,7 +62,7 @@ import type {
   ForgeInstallationClaims,
   ForgeInstallationRecording,
 } from "./forgeInstallationClaim.ts";
-import type { OperationId } from "./operationInbox.ts";
+import type { Authority, OperationId } from "./operationInbox.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition, TenantId } from "./projectStore.ts";
@@ -112,11 +112,12 @@ export type ForgeInstallationClaimResult =
   | { readonly result: "NotFound" }
   | { readonly result: "Unavailable" };
 
-/** What reading a tenant's claims came to. */
+/** What reading a tenant's claims came to, `truncated` saying it holds more. */
 export type ForgeInstallationsResult =
   | {
       readonly result: "Installations";
       readonly installations: readonly ForgeInstallationClaimed[];
+      readonly truncated: boolean;
     }
   | { readonly result: "NotFound" };
 
@@ -216,14 +217,6 @@ export interface RepositoryOnboarding {
   ): Promise<ProjectRepositoriesResult>;
 }
 
-/** The claim this tenant holds under the identity asked about, and nothing where it holds none. */
-function claimedInstallation(
-  held: readonly ForgeInstallationClaimed[],
-  installationId: ForgeInstallationId,
-): ForgeInstallationClaimed | undefined {
-  return held.find((claim) => claim.installationId === installationId);
-}
-
 /** The half composed for one app on one forge, and nothing where this deployment holds no key for it. */
 function heldForgeApp(
   ports: RepositoryOnboardingPorts,
@@ -259,18 +252,13 @@ function claimResult(
     : { result: "Claimed", installation };
 }
 
-/** The claims this tenant holds, and nothing at all where the permit is refused. */
-async function tenantClaims(
+/** Whether this principal administers the tenant, which every claim question asks first. */
+function administersTenant(
   ports: RepositoryOnboardingPorts,
   principal: Principal,
   tenant: TenantId,
-): Promise<readonly ForgeInstallationClaimed[] | undefined> {
-  const authority = await ports.access.authorizeTenant(
-    principal,
-    tenant,
-    "AdministerTenant",
-  );
-  return authority === undefined ? undefined : ports.claims.claims(tenant);
+): Promise<Authority | undefined> {
+  return ports.access.authorizeTenant(principal, tenant, "AdministerTenant");
 }
 
 /** One claim, read as the app before it is recorded as the tenant's. */
@@ -280,11 +268,7 @@ async function claimInstallation(
   tenant: TenantId,
   request: ForgeInstallationClaimRequest,
 ): Promise<ForgeInstallationClaimResult> {
-  const authority = await ports.access.authorizeTenant(
-    principal,
-    tenant,
-    "AdministerTenant",
-  );
+  const authority = await administersTenant(ports, principal, tenant);
   if (authority === undefined) return { result: "NotFound" };
   if (ports.forgeApps.length === 0) return { result: "NotConfigured" };
   if (!ports.forgeApps.some((held) => held.forge === request.forge))
@@ -311,16 +295,20 @@ async function claimInstallation(
     : claimResult(recorded, installation);
 }
 
-/** What one claimed installation grants, the claim itself being the tenant's proof. */
+/**
+ * What one claimed installation grants, the claim itself being the tenant's
+ * proof. The claim is looked up rather than searched for in the listing, whose
+ * bound is a reader's and would refuse a tenant the claim it holds past it.
+ */
 async function installationRepositories(
   ports: RepositoryOnboardingPorts,
   principal: Principal,
   tenant: TenantId,
   installationId: ForgeInstallationId,
 ): Promise<ForgeRepositoriesResult> {
-  const held = await tenantClaims(ports, principal, tenant);
-  if (held === undefined) return { result: "NotFound" };
-  const claim = claimedInstallation(held, installationId);
+  if ((await administersTenant(ports, principal, tenant)) === undefined)
+    return { result: "NotFound" };
+  const claim = await ports.claims.claim(tenant, installationId);
   if (claim === undefined) return { result: "NotFound" };
   const forge = heldForgeApp(ports, claim.forge, claim.app);
   if (forge === undefined) return { result: "NotConfigured" };
@@ -410,10 +398,14 @@ export function repositoryOnboarding(
       claimInstallation(ports, principal, tenant, request),
 
     installations: async (principal, tenant) => {
-      const held = await tenantClaims(ports, principal, tenant);
-      return held === undefined
-        ? { result: "NotFound" }
-        : { result: "Installations", installations: held };
+      if ((await administersTenant(ports, principal, tenant)) === undefined)
+        return { result: "NotFound" };
+      const page = await ports.claims.claims(tenant);
+      return {
+        result: "Installations",
+        installations: page.claims,
+        truncated: page.truncated,
+      };
     },
 
     installationRepositories: (principal, tenant, installationId) =>

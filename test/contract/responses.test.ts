@@ -20,11 +20,17 @@ import {
   draftResponse,
   executionResponse,
   executionsResponse,
+  forgeAppsResponse,
+  forgeInstallationClaimResponse,
+  forgeInstallationsResponse,
+  forgeRepositoriesResponse,
   inventoryResponse,
   notificationsResponse,
   operationResponse,
   operationalStatusResponse,
   outputContentResponse,
+  projectRepositoriesResponse,
+  projectRepositoryBindResponse,
   projectResponse,
   runConfigurationResponse,
   runTranscriptResponse,
@@ -47,12 +53,18 @@ import {
   executionRequirementSchema,
   executionResponseSchema,
   executionsResponseSchema,
+  forgeAppsResponseSchema,
+  forgeInstallationClaimedSchema,
+  forgeInstallationsResponseSchema,
+  forgeRepositoriesResponseSchema,
   notificationsResponseSchema,
   operationAcceptanceSchema,
   operationResponseSchema,
   operationalStatusResponseSchema,
   outputContentResponseSchema,
   projectInventoryResponseSchema,
+  projectRepositoriesResponseSchema,
+  projectRepositoryBoundSchema,
   projectResponseSchema,
   repositoryConfigurationRefusalsSchema,
   runConfigurationResponseSchema,
@@ -78,6 +90,14 @@ import {
   selectorHandoffNoteBytesMax,
 } from "../../src/contract/http.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
+import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
+import {
+  asForgeAccount,
+  asForgeApp,
+  asForgeId,
+  asForgeInstallationId,
+  asForgeRepositoryName,
+} from "../../src/interpreter/forgeInstallation.ts";
 import { resolvedSelectorSettings } from "../../src/interpreter/selector.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
@@ -1335,4 +1355,111 @@ test("a drafts page carries whole drafts, its cursor and whether it ends them", 
       drafts: [{ ...body, authoringVersion: -1 }],
     }),
   );
+});
+
+const onboardingForge = asForgeId("github");
+const onboardingApp = asForgeApp("portal");
+const onboardingInstallation = asForgeInstallationId("4242");
+const onboardingRepository = asRepositoryId(
+  "https://github.com/kasofsk/chuggy.git",
+);
+
+/** One installation as the claim route names it, which the listing dates as well. */
+const onboardingClaim = {
+  forge: onboardingForge,
+  app: onboardingApp,
+  account: asForgeAccount("kasofsk"),
+  accountKind: "Organization" as const,
+  installationId: onboardingInstallation,
+};
+
+test("what onboarding answers about a forge parses as the contract names it", () => {
+  const apps = forgeAppsResponseSchema.parse(
+    forgeAppsResponse({
+      result: "Apps",
+      apps: [
+        {
+          app: onboardingApp,
+          id: "4708055",
+          slug: "chuggy-portal",
+          installUrl: "https://github.com/apps/chuggy-portal/installations/new",
+        },
+      ],
+    }).body,
+  );
+  assert.deepEqual(apps.apps[0], {
+    app: "portal",
+    id: "4708055",
+    slug: "chuggy-portal",
+    installUrl: "https://github.com/apps/chuggy-portal/installations/new",
+  });
+  assert.deepEqual(
+    forgeInstallationClaimedSchema.parse(
+      forgeInstallationClaimResponse(partition.tenant, {
+        result: "Claimed",
+        installation: onboardingClaim,
+      }).body,
+    ),
+    { ...onboardingClaim, installationId: "4242" },
+  );
+});
+
+test("a tenant's installations and what one grants say whether they are all of it", () => {
+  const installations = forgeInstallationsResponseSchema.parse(
+    forgeInstallationsResponse({
+      result: "Installations",
+      installations: [{ ...onboardingClaim, claimedAt: instant }],
+      truncated: true,
+    }).body,
+  );
+  assert.equal(installations.truncated, true);
+  assert.deepEqual(installations.installations[0], {
+    ...onboardingClaim,
+    claimedAt: instant,
+  });
+  const repositories = forgeRepositoriesResponseSchema.parse(
+    forgeRepositoriesResponse({
+      result: "Repositories",
+      repositories: [
+        {
+          name: asForgeRepositoryName("chuggy"),
+          fullName: "kasofsk/chuggy",
+          url: onboardingRepository,
+          defaultBranch: "main",
+          private: true,
+        },
+      ],
+      truncated: false,
+    }).body,
+  );
+  assert.equal(repositories.truncated, false);
+  assert.deepEqual(repositories.repositories[0], {
+    name: "chuggy",
+    fullName: "kasofsk/chuggy",
+    url: onboardingRepository,
+    defaultBranch: "main",
+    private: true,
+  });
+});
+
+test("a binding and a project's bindings name the repository and its moment", () => {
+  assert.deepEqual(
+    projectRepositoryBoundSchema.parse(
+      projectRepositoryBindResponse(partition, {
+        result: "Bound",
+        repository: onboardingRepository,
+      }).body,
+    ),
+    { repository: onboardingRepository },
+  );
+  const bound = projectRepositoriesResponseSchema.parse(
+    projectRepositoriesResponse({
+      result: "Repositories",
+      repositories: [{ repository: onboardingRepository, boundAt: instant }],
+    }).body,
+  );
+  assert.deepEqual(bound.repositories[0], {
+    repository: onboardingRepository,
+    boundAt: instant,
+  });
 });

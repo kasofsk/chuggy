@@ -21,6 +21,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { forgeInstallationsAnsweredMax } from "../../src/contract/http.ts";
 import {
   asRepositoryCredential,
   asRepositoryId,
@@ -44,6 +45,7 @@ import {
 import type {
   ForgeInstallationClaim,
   ForgeInstallationClaimed,
+  ForgeInstallationClaims,
   ForgeInstallationRecorded,
 } from "../../src/interpreter/forgeInstallationClaim.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
@@ -144,10 +146,45 @@ interface FixturePorts {
   readonly apps?: readonly ForgeApp[];
 }
 
-/** What a case reads back: the claim recorded, and the command the door was asked. */
+/**
+ * What a case reads back: the claim recorded, the command the door was asked,
+ * and which app's own half answered each forge question — without which a
+ * service reading through the first half while recording the requested app
+ * would pass every case that only asserts the label.
+ */
 interface FixtureWrites {
   readonly claims: ForgeInstallationClaim[];
   readonly commands: RepositoryBindingCommand[];
+  readonly asked: ForgeApp[];
+  readonly listed: ForgeApp[];
+}
+
+/**
+ * The claims this tenant holds, paged the way the durable side pages them and
+ * looked up the way it looks one up. The page and the lookup are bounded
+ * differently on purpose, so a service searching the page for an ownership test
+ * misses a claim held past the bound.
+ */
+function fixtureClaims(
+  held: readonly ForgeInstallationClaimed[],
+): ForgeInstallationClaims {
+  return {
+    claims: (askedTenant) =>
+      Promise.resolve(
+        askedTenant === tenant
+          ? {
+              claims: held.slice(0, forgeInstallationsAnsweredMax),
+              truncated: held.length > forgeInstallationsAnsweredMax,
+            }
+          : { claims: [], truncated: false },
+      ),
+    claim: (askedTenant, askedInstallation) =>
+      Promise.resolve(
+        askedTenant === tenant
+          ? held.find((row) => row.installationId === askedInstallation)
+          : undefined,
+      ),
+  };
 }
 
 function fixturePorts(
@@ -157,7 +194,12 @@ function fixturePorts(
   readonly ports: RepositoryOnboardingPorts;
   readonly wrote: FixtureWrites;
 } {
-  const wrote: FixtureWrites = { claims: [], commands: [] };
+  const wrote: FixtureWrites = {
+    claims: [],
+    commands: [],
+    asked: [],
+    listed: [],
+  };
   const forgeHalf = (held: ForgeApp): RepositoryOnboardingForgeApp => ({
     forge,
     app: held,
@@ -168,12 +210,18 @@ function fixturePorts(
         ),
     },
     directory: {
-      installation: () =>
-        Promise.resolve(given.read ?? { read: "Unknown" as const }),
+      installation: () => {
+        wrote.asked.push(held);
+        return Promise.resolve(given.read ?? { read: "Unknown" as const });
+      },
     },
     installationRepositories: {
-      repositories: () =>
-        Promise.resolve(given.repositories ?? { read: "Unavailable" as const }),
+      repositories: () => {
+        wrote.listed.push(held);
+        return Promise.resolve(
+          given.repositories ?? { read: "Unavailable" as const },
+        );
+      },
     },
   });
   const credentials: RepositoryCredentialPort = {
@@ -192,7 +240,7 @@ function fixturePorts(
           return Promise.resolve(given.recorded ?? "Recorded");
         },
       },
-      claims: { claims: () => Promise.resolve(given.held ?? []) },
+      claims: fixtureClaims(given.held ?? []),
       bindings: {
         bindings: () =>
           Promise.resolve([{ repository, boundAt: "2026-09-11T01:00:00Z" }]),
@@ -261,6 +309,7 @@ test("a claim is the tenant administrator's and nobody else's", async () => {
 
 test("a claim is read as the app before it is recorded as the tenant's", async () => {
   const claiming = fixtureService(["AdministerTenant"], {
+    apps: [app, worker],
     read: {
       read: "Installation",
       installation: {
@@ -286,6 +335,7 @@ test("a claim is read as the app before it is recorded as the tenant's", async (
       },
     },
   );
+  assert.deepEqual(claiming.wrote.asked, [app]);
   const [recorded] = claiming.wrote.claims;
   assert.equal(recorded?.tenant, tenant);
   assert.equal(recorded?.authority.subject, memberAuthority(principal).subject);
@@ -405,6 +455,7 @@ test("a deployment holding no app claims nothing and lists what it holds", async
   assert.deepEqual(await none.service.installations(principal, tenant), {
     result: "Installations",
     installations: [claimed],
+    truncated: false,
   });
   assert.deepEqual(
     await none.service.installationRepositories(
@@ -445,6 +496,7 @@ test("a worker claim is the worker app's, and holding no worker key says so", as
       },
     },
   );
+  assert.deepEqual(both.wrote.asked, [worker]);
   const portalOnly = fixtureService(["AdministerTenant"], { read });
   assert.deepEqual(
     await portalOnly.service.claimInstallation(principal, tenant, {
@@ -476,6 +528,7 @@ test("what a worker installation grants is read as the worker app", async () => 
     ),
     { result: "Repositories", repositories: [summary], truncated: false },
   );
+  assert.deepEqual(reading.wrote.listed, [worker]);
   const portalOnly = fixtureService(["AdministerTenant"], { held: [held] });
   assert.deepEqual(
     await portalOnly.service.installationRepositories(
@@ -496,7 +549,67 @@ test("the installations a tenant holds are the tenant administrator's to read", 
   assert.deepEqual(await reading.service.installations(principal, tenant), {
     result: "Installations",
     installations: [claimed],
+    truncated: false,
   });
+});
+
+/** One tenant's claims, one per installation identity, past the listing's own bound. */
+function manyClaims(): readonly ForgeInstallationClaimed[] {
+  return Array.from(
+    { length: forgeInstallationsAnsweredMax + 1 },
+    (_unused, index) => ({
+      ...claimed,
+      account: asForgeAccount(`account-${String(index)}`),
+      installationId: asForgeInstallationId(String(index + 1)),
+    }),
+  );
+}
+
+test("a claim past the listing's page is still one the tenant holds", async () => {
+  const held = manyClaims();
+  const last = held[held.length - 1];
+  const many = fixtureService(["AdministerTenant"], {
+    held,
+    repositories: {
+      read: "Repositories",
+      repositories: [summary],
+      truncated: false,
+    },
+  });
+  assert.deepEqual(
+    await many.service.installationRepositories(
+      principal,
+      tenant,
+      last?.installationId ?? installationId,
+    ),
+    { result: "Repositories", repositories: [summary], truncated: false },
+  );
+  const listed = await many.service.installations(principal, tenant);
+  assert.equal(listed.result === "Installations" && listed.truncated, true);
+  assert.equal(
+    listed.result === "Installations" && listed.installations.length,
+    forgeInstallationsAnsweredMax,
+  );
+});
+
+test("an installation another tenant claimed is not this tenant's to read", async () => {
+  const other = fixtureService(["AdministerTenant"], {
+    held: [claimed],
+    repositories: {
+      read: "Repositories",
+      repositories: [summary],
+      truncated: false,
+    },
+  });
+  assert.deepEqual(
+    await other.service.installationRepositories(
+      principal,
+      asTenantId("stranger"),
+      installationId,
+    ),
+    { result: "NotFound" },
+  );
+  assert.deepEqual(other.wrote.listed, []);
 });
 
 test("an installation this tenant has not claimed grants it nothing", async () => {

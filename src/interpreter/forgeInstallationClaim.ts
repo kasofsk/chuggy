@@ -63,12 +63,24 @@ export interface ForgeInstallationClaimed {
   readonly claimedAt: string;
 }
 
+/** One page of a tenant's claims, `truncated` saying it holds more than this answers. */
+export interface ForgeInstallationClaimsPage {
+  readonly claims: readonly ForgeInstallationClaimed[];
+  readonly truncated: boolean;
+}
+
 /**
- * Every claim one tenant holds, oldest first. The tenant is the whole of the
- * question for `forgeInstallation.ts`'s reason: a claim another tenant made is
- * one this tenant cannot read at all, so a caller cannot be handed a row it
- * would have had to remember to compare.
+ * A tenant's claims, oldest first, and the one claim it holds under an
+ * installation identity. THE LISTING IS A PAGE AND THE LOOKUP IS NOT: a bound
+ * that is right for a reader is wrong for an ownership test, so a caller asking
+ * whether this tenant holds an installation asks for that row rather than
+ * searching the first page of them.
  */
 export interface ForgeInstallationClaims {
-  claims(tenant: TenantId): Promise<readonly ForgeInstallationClaimed[]>;
+  claims(tenant: TenantId): Promise<ForgeInstallationClaimsPage>;
+
+  claim(
+    tenant: TenantId,
+    installationId: ForgeInstallationId,
+  ): Promise<ForgeInstallationClaimed | undefined>;
 }

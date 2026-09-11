@@ -884,7 +884,10 @@ export function forgeInstallationsResponse(
   result: ForgeInstallationsResult,
 ): NativeHttpResponse {
   return result.result === "Installations"
-    ? response(200, { installations: result.installations })
+    ? response(200, {
+        installations: result.installations,
+        truncated: result.truncated,
+      })
     : notFound();
 }
 

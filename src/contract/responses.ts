@@ -1227,11 +1227,16 @@ export type ForgeInstallationResponse = z.infer<
   typeof forgeInstallationResponseSchema
 >;
 
-/** Every installation one tenant holds, oldest first. */
+/**
+ * Every installation one tenant holds, oldest first. `truncated` says the tenant
+ * holds more than this deployment answers, so a reader that cannot find one
+ * knows the listing is partial rather than that the claim is absent.
+ */
 export const forgeInstallationsResponseSchema = z.object({
   installations: z
     .array(forgeInstallationResponseSchema)
     .max(forgeInstallationsAnsweredMax),
+  truncated: z.boolean(),
 });
 export type ForgeInstallationsResponse = z.infer<
   typeof forgeInstallationsResponseSchema

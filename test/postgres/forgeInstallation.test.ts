@@ -13,6 +13,7 @@ import { after, before, test } from "node:test";
 import { randomUUID } from "node:crypto";
 
 import {
+  postgresForgeInstallationClaims,
   postgresForgeInstallationRecording,
   postgresForgeInstallations,
 } from "../../src/adapters/postgres/forgeInstallation.ts";
@@ -168,6 +169,54 @@ test("a claim another tenant holds is answered by nothing at all", async () => {
     }),
     undefined,
     "the tenant holding the claim still reads it",
+  );
+});
+
+test("a tenant reads back every claim it holds and none of another's", async () => {
+  const recording = postgresForgeInstallationRecording(harness.pool);
+  const tenant = asTenantId(`tenant-${randomUUID()}`);
+  const first = claim({ tenant });
+  const second = claim({
+    tenant,
+    installationId: asForgeInstallationId("156786211"),
+  });
+  const stranger = claim({ tenant: asTenantId(`tenant-${randomUUID()}`) });
+  for (const recorded of [first, second, stranger])
+    assert.equal(await recording.record(recorded), "Recorded");
+  const page = await postgresForgeInstallationClaims(harness.pool).claims(
+    tenant,
+  );
+  assert.equal(page.truncated, false);
+  assert.deepEqual(
+    page.claims.map((row) => row.account).sort(),
+    [first.account, second.account].sort(),
+  );
+  assert.deepEqual(
+    page.claims.map((row) => row.app),
+    ["portal", "portal"],
+  );
+});
+
+test("the claim under an installation identity is the asking tenant's own row", async () => {
+  const recording = postgresForgeInstallationRecording(harness.pool);
+  const tenant = asTenantId(`tenant-${randomUUID()}`);
+  const other = asTenantId(`tenant-${randomUUID()}`);
+  const installationId = asForgeInstallationId("156901733");
+  const own = claim({ tenant, installationId });
+  const theirs = claim({ tenant: other, installationId });
+  assert.equal(await recording.record(own), "Recorded");
+  assert.equal(await recording.record(theirs), "Recorded");
+  const claims = postgresForgeInstallationClaims(harness.pool);
+  const found = await claims.claim(tenant, installationId);
+  assert.equal(
+    found?.account,
+    own.account,
+    "the row read is the asking tenant's and not the other tenant's",
+  );
+  assert.equal(found?.installationId, installationId);
+  assert.equal(
+    await claims.claim(tenant, asForgeInstallationId("156901734")),
+    undefined,
   );
 });
 
