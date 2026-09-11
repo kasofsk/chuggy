@@ -73,6 +73,8 @@ import type {
 } from "../../src/interpreter/repositoryBinding.ts";
 import {
   repositoryOnboarding,
+  type RepositoryConfigurationsPorts,
+  type RepositoryCreationPorts,
   type RepositoryOnboarding,
 } from "../../src/interpreter/repositoryOnboarding.ts";
 import { memoryProjectAccess } from "../postgres/projectAccessMemory.ts";
@@ -244,6 +246,75 @@ const listingTokens: ForgeInstallationTokens = {
     }),
 };
 
+/** One app's half of the service, composed over the recorder's own fetch. */
+function fixtureServiceHalf(
+  recorder: ForgeRecorder,
+  privateKeyPath: string,
+  held: ForgeApp,
+) {
+  const options = {
+    fetch: recorder.requestFetch,
+    apiUrl: fixtureApiUrl,
+    appId: fixtureAppIds[held],
+    privateKeyPath,
+  };
+  return {
+    forge,
+    app: held,
+    apps: githubApps(options),
+    directory: githubInstallationDirectory(options),
+    installationRepositories: githubInstallationRepositories({
+      fetch: recorder.requestFetch,
+      apiUrl: fixtureApiUrl,
+      tokens: listingTokens,
+    }),
+  };
+}
+
+/**
+ * The half a bind's configuration step runs through. Every port in it defers,
+ * so a case asserting a route's own answer never asserts a read of a repository
+ * this suite does not have.
+ */
+function fixtureServiceConfigurations(
+  image: string,
+): RepositoryConfigurationsPorts {
+  return {
+    heads: { defaultBranch: () => Promise.resolve({ read: "Absent" }) },
+    imports: {
+      bindings: { binding: () => Promise.resolve(undefined) },
+      snapshots: {
+        snapshot: () =>
+          Promise.resolve({ read: "Unavailable", unavailable: "Repository" }),
+      },
+      store: {
+        importRepositoryConfigurations: () =>
+          Promise.resolve({ imported: "StaleBinding" }),
+      },
+    },
+    authoring: {
+      createConfiguration: () =>
+        Promise.resolve({ created: "IdentityConflict" }),
+    },
+    bootstrapImage: image,
+  };
+}
+
+/** The half the create route makes repositories through, over the same fetch. */
+function fixtureServiceCreation(
+  recorder: ForgeRecorder,
+): RepositoryCreationPorts {
+  return {
+    forge,
+    repositories: githubRepositoryCreation({
+      fetch: recorder.requestFetch,
+      apiUrl: fixtureApiUrl,
+      appId: fixtureAppIds[app],
+      tokens: listingTokens,
+    }),
+  };
+}
+
 function fixtureService(
   t: TestContext,
   store: OnboardingStore,
@@ -257,29 +328,12 @@ function fixtureService(
   const credentials: RepositoryCredentialPort = {
     credential: () => Promise.resolve(store.resolved),
   };
-  const half = (held: ForgeApp) => {
-    const options = {
-      fetch: recorder.requestFetch,
-      apiUrl: fixtureApiUrl,
-      appId: fixtureAppIds[held],
-      privateKeyPath,
-    };
-    return {
-      forge,
-      app: held,
-      apps: githubApps(options),
-      directory: githubInstallationDirectory(options),
-      installationRepositories: githubInstallationRepositories({
-        fetch: recorder.requestFetch,
-        apiUrl: fixtureApiUrl,
-        tokens: listingTokens,
-      }),
-    };
-  };
   return repositoryOnboarding({
     access,
     credentials,
-    forgeApps: apps.map(half),
+    forgeApps: apps.map((held) =>
+      fixtureServiceHalf(recorder, privateKeyPath, held),
+    ),
     recording: {
       record: (claim) => {
         if (store.recorded !== "ClaimedElsewhere")
@@ -310,41 +364,10 @@ function fixtureService(
     },
     ...(image === undefined
       ? {}
-      : {
-          configurations: {
-            heads: { defaultBranch: () => Promise.resolve({ read: "Absent" }) },
-            imports: {
-              bindings: { binding: () => Promise.resolve(undefined) },
-              snapshots: {
-                snapshot: () =>
-                  Promise.resolve({
-                    read: "Unavailable",
-                    unavailable: "Repository",
-                  }),
-              },
-              store: {
-                importRepositoryConfigurations: () =>
-                  Promise.resolve({ imported: "StaleBinding" }),
-              },
-            },
-            authoring: {
-              createConfiguration: () =>
-                Promise.resolve({ created: "IdentityConflict" }),
-            },
-            bootstrapImage: image,
-          },
-        }),
+      : { configurations: fixtureServiceConfigurations(image) }),
     ...(creating
       ? {
-          creation: {
-            forge,
-            repositories: githubRepositoryCreation({
-              fetch: recorder.requestFetch,
-              apiUrl: fixtureApiUrl,
-              appId: fixtureAppIds[app],
-              tokens: listingTokens,
-            }),
-          },
+          creation: fixtureServiceCreation(recorder),
         }
       : {}),
   });

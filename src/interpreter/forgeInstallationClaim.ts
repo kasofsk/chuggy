@@ -79,14 +79,11 @@ export interface ForgeInstallationAccountQuery {
 
 /**
  * A tenant's claims, oldest first, and the one claim it holds under an
- * installation identity or on an account. THE LISTING IS A PAGE AND A LOOKUP IS
- * NOT: a bound that is right for a reader is wrong for an ownership test, so a
- * caller asking whether this tenant holds an installation asks for that row
- * rather than searching the first page of them.
- *
- * THE ACCOUNT LOOKUP NAMES THE APP because a tenant claims each of them
- * separately on one account, and a caller that needs both is asking two
- * questions rather than one that answers whichever was claimed first.
+ * installation identity or on an account. A LOOKUP IS NOT A PAGE: a bound that
+ * is right for a reader is wrong for an ownership test, so a caller asking
+ * whether this tenant holds an installation asks for that row rather than
+ * searching the first page of them, and the account lookup names the app
+ * because a tenant claims each of them separately on one account.
  */
 export interface ForgeInstallationClaims {
   claims(tenant: TenantId): Promise<ForgeInstallationClaimsPage>;

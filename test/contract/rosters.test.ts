@@ -56,7 +56,7 @@ import {
   sessionTurnInputKinds,
   sessionTurnStates,
 } from "../../src/contract/rosters.ts";
-import { allForgePermissionSets } from "../../src/interpreter/forgeInstallation.ts";
+import { allForgeCredentialPermissionSets } from "../../src/interpreter/forgeInstallation.ts";
 import {
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
@@ -453,7 +453,11 @@ test("every session and refusal roster restates the interpreter's own", () => {
     ...allPlatformTurnFailures,
   ]);
   assert.deepEqual(threadStandings, allThreadStandings);
-  assert.deepEqual(forgeCredentialPermissions, allForgePermissionSets);
+  assert.deepEqual(
+    forgeCredentialPermissions,
+    allForgeCredentialPermissionSets,
+    "a credential request never names the set that makes repositories",
+  );
   assert.deepEqual(
     sorted(operationRefusalCodes),
     sorted([...allRefusalCodes, "CommandUnreadable"]),

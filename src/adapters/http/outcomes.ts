@@ -975,9 +975,9 @@ export function projectRepositoryBindResponse(
 /**
  * A creation. A repository the forge made and then refused something about is
  * the request's own fault and not a missing resource: the caller may see the
- * project and the account both, and the refusal names how far it got so the
- * bind route can finish what this one started. A name already taken is a
- * conflict and points at that route.
+ * project and the account both, the refusal names how far it got so the bind
+ * route can finish what this one started, and a name already taken is a
+ * conflict pointing at that same route.
  */
 export function projectRepositoryCreateResponse(
   partition: Partition,

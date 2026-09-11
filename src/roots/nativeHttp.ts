@@ -163,9 +163,9 @@ const forgeRepositoriesMaxVariable = "CHUG_API_FORGE_REPOSITORIES_MAX";
 /**
  * The worker image a bootstrap configuration commands, and the repository a
  * personal account's is copied from. Both are optional and each withholds one
- * thing: a deployment naming no image authors no bootstrap, and one naming no
- * template creates for organizations only. The image is not looked up — the api
- * does not hold the scheduler's admitted list, and an image it will not run
+ * thing — a deployment naming no image authors no bootstrap, and one naming no
+ * template creates for organizations only — and the image is not looked up
+ * here, the api holding no admitted list, so an image the rig will not run
  * fails at placement where every other refused image does.
  */
 const bootstrapWorkerImageVariable = "CHUG_API_BOOTSTRAP_WORKER_IMAGE";

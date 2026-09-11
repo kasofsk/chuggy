@@ -379,26 +379,13 @@ function fixtureCreationPorts(
   };
 }
 
-function fixturePorts(
-  access: ProjectAccess,
+/** One app's half of the ports, every read answering what the case gave it. */
+function fixturePortsForgeHalf(
   given: FixturePorts,
-): {
-  readonly ports: RepositoryOnboardingPorts;
-  readonly wrote: FixtureWrites;
-} {
-  const wrote: FixtureWrites = {
-    claims: [],
-    commands: [],
-    asked: [],
-    listed: [],
-    heads: [],
-    snapshots: [],
-    authored: [],
-    creations: [],
-    seeds: [],
-    rulesets: [],
-  };
-  const forgeHalf = (held: ForgeApp): RepositoryOnboardingForgeApp => ({
+  wrote: FixtureWrites,
+  held: ForgeApp,
+): RepositoryOnboardingForgeApp {
+  return {
     forge,
     app: held,
     apps: {
@@ -421,7 +408,28 @@ function fixturePorts(
         );
       },
     },
-  });
+  };
+}
+
+function fixturePorts(
+  access: ProjectAccess,
+  given: FixturePorts,
+): {
+  readonly ports: RepositoryOnboardingPorts;
+  readonly wrote: FixtureWrites;
+} {
+  const wrote: FixtureWrites = {
+    claims: [],
+    commands: [],
+    asked: [],
+    listed: [],
+    heads: [],
+    snapshots: [],
+    authored: [],
+    creations: [],
+    seeds: [],
+    rulesets: [],
+  };
   const credentials: RepositoryCredentialPort = {
     credential: () =>
       Promise.resolve(given.resolved ?? { resolved: "Denied" as const }),
@@ -430,7 +438,9 @@ function fixturePorts(
     wrote,
     ports: {
       access,
-      forgeApps: (given.apps ?? [app]).map(forgeHalf),
+      forgeApps: (given.apps ?? [app]).map((held) =>
+        fixturePortsForgeHalf(given, wrote, held),
+      ),
       credentials,
       recording: {
         record: (claim) => {

@@ -24,6 +24,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { githubRepositoryCreation } from "../../src/adapters/forge/githubRepositoryCreation.ts";
+import { bootstrapConfigurationPath } from "../../src/interpreter/bootstrapConfiguration.ts";
 import {
   asForgeAccount,
   asForgeApp,
@@ -111,7 +112,7 @@ function fixtureSeed() {
     installation: fixtureInstallation,
     name: fixtureName,
     branch: fixtureBranch,
-    path: ".chug/configurations/bootstrap.json",
+    path: bootstrapConfigurationPath,
     message: "Add the bootstrap chuggy configuration",
     content: "{}\n",
   };

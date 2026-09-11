@@ -572,7 +572,7 @@ test("repository imports authorize, pin one snapshot, then persist ready declara
       repository,
       commit,
     }),
-    { result: "Imported" },
+    { result: "Imported", declarations: 1 },
   );
   assert.deepEqual(subject.calls, ["authorize:Mutate"]);
   assert.deepEqual(calls, [

@@ -85,11 +85,21 @@ export const allForgeAccountKinds = ["User", "Organization"] as const;
 
 export type ForgeAccountKind = (typeof allForgeAccountKinds)[number];
 
-/** Every permission set an act in this tree asks a forge for. */
-export const allForgePermissionSets = [
+/** Every permission set a credential request may name. */
+export const allForgeCredentialPermissionSets = [
   "read",
   "write",
   "propose",
+] as const;
+
+/**
+ * Every permission set an act in this tree asks a forge for. `administer` is
+ * not among the requestable ones above: it makes repositories and reserves
+ * their default branches, which this tree does on a project's behalf rather
+ * than on anybody's word.
+ */
+export const allForgePermissionSets = [
+  ...allForgeCredentialPermissionSets,
   "administer",
 ] as const;
 
