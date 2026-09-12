@@ -75,6 +75,14 @@ async function fixtureAt(
   label: string,
 ): Promise<FixtureBinding> {
   await harness.store.createProject(partition);
+  return bindAt(partition, label);
+}
+
+/** One more repository bound into a project that already exists. */
+async function bindAt(
+  partition: Partition,
+  label: string,
+): Promise<FixtureBinding> {
   const recoveryEpoch = await postgresHarnessEpoch(harness.store);
   const repository = `repository-${label}-${randomUUID()}`;
   assert.equal(
@@ -231,6 +239,31 @@ test("a binding another project holds is not this project's to move", async () =
     ),
     undefined,
     "nor is it this project's to read",
+  );
+});
+
+test("moving one binding's landing leaves the project's others where they were", async () => {
+  const moved = await fixture("landing-sibling-moved");
+  const stands = await bindAt(moved.partition, "landing-sibling-stands");
+  assert.equal(
+    (
+      await landingStore().setLanding({
+        partition: moved.partition,
+        repository: asRepositoryId(moved.repository),
+        expected: { mode: "Push" },
+        landing: { mode: "PullRequest" },
+      })
+    ).outcome,
+    "Written",
+  );
+  assert.deepEqual(
+    (
+      await landingStore().landing(
+        moved.partition,
+        asRepositoryId(stands.repository),
+      )
+    )?.landing,
+    { mode: "Push" },
   );
 });
 

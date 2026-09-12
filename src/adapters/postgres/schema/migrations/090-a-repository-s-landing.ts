@@ -23,9 +23,13 @@
  * THE DRAFT DOORS RESOLVE THE MODE RATHER THAN THE ADAPTER, because the value
  * they resolve against is a column of a row the caller never read. A brief
  * naming a mode keeps it; one naming none takes its repository's; one naming
- * neither a mode nor a repository takes the installation's. Both doors keep
+ * neither a mode nor a repository takes the tree's own default. Both doors keep
  * their signatures, so each is replaced rather than dropped, which leaves the
  * owner and the grants they already carry standing.
+ *
+ * A TICKET THAT RUNS NO FINALIZER STORES NO LANDING, so `finalization_mode`
+ * becomes nullable and the doors resolve nothing for one, refusing a caller
+ * that named a landing anyway rather than keeping it.
  */
 
 import { projectRepositoriesAnsweredMax } from "../../../../contract/http.ts";
@@ -135,12 +139,44 @@ const bindingListing = [
      TO ${apiRole}`,
 ];
 
-/** What a brief naming no mode resolves to, which is its repository's and then the installation's. */
+/** What a brief naming no mode resolves to, which is its repository's and then the tree's own. */
 const resolvedLanding = `coalesce(in_finalization_mode,
        (SELECT b.landing_mode FROM project_repository b
          WHERE b.tenant=in_tenant AND b.project=in_project
            AND b.repository=in_repository),
        '${briefFinalizationDefault.mode}')`;
+
+/**
+ * The mode a ticket that lands nothing stores. 050's `mode_is_known` and 051's
+ * `is_whole` already pass on a null one, so only the target needs a rule of its
+ * own: a reference to land on says nothing without a way of landing.
+ */
+const briefLanding = [
+  `ALTER TABLE draft_brief
+     ALTER COLUMN finalization_mode DROP NOT NULL,
+     ADD CONSTRAINT draft_brief_finalization_target_needs_a_mode
+       CHECK (finalization_target IS NULL OR finalization_mode IS NOT NULL)`,
+];
+
+/**
+ * The finalizer a draft is authored to run, read out of the event the caller
+ * hands the door. It is guarded because nothing constrains that column to be
+ * JSON, and a door that raised on a row it used to write would refuse a draft
+ * over a value it does not decide with.
+ */
+const authoredFinalizer = `(CASE WHEN in_authoring IS JSON OBJECT
+         THEN in_authoring::jsonb->'value'->>'finalizer' END)`;
+
+/** What a ticket that lands nothing is refused for naming a landing anyway. */
+const landsNothing = `IF ${authoredFinalizer} = 'NoFinalizer' THEN
+         IF in_finalization_mode IS NOT NULL OR in_finalization_target IS NOT NULL THEN
+           RAISE EXCEPTION 'a ticket with no finalizer lands nothing'
+             USING ERRCODE='check_violation';
+         END IF;
+       ELSE
+         landing := ${resolvedLanding};
+         target := in_finalization_target;
+       END IF;`;
 
 /** 81's writers, each resolving the mode it stores rather than being handed one. */
 const briefWriters = [
@@ -151,7 +187,7 @@ const briefWriters = [
       in_kind text,in_subject text)
      RETURNS TABLE(result text,ticket bigint,authoring_version bigint,state text)
      LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
-     DECLARE minted bigint; landing text;
+     DECLARE minted bigint; landing text; target text;
      BEGIN
        IF NOT EXISTS (SELECT 1 FROM configuration_revision WHERE tenant=in_tenant AND project=in_project
             AND revision=in_configuration AND digest=in_configuration_digest)
@@ -159,7 +195,7 @@ const briefWriters = [
        IF in_repository IS NOT NULL AND NOT EXISTS (SELECT 1 FROM project_repository
             WHERE tenant=in_tenant AND project=in_project AND repository=in_repository)
          THEN RETURN QUERY SELECT 'RepositoryNotBound',NULL::bigint,NULL::bigint,NULL::text; RETURN; END IF;
-       landing := ${resolvedLanding};
+       ${landsNothing}
        UPDATE project SET ticket_next=ticket_next+1
         WHERE tenant=in_tenant AND project=in_project AND lifecycle='Active' AND head=in_expected_head
         RETURNING ticket_next-1 INTO minted;
@@ -168,7 +204,7 @@ const briefWriters = [
        INSERT INTO draft_revision (tenant,project,ticket,authoring_version,configuration_revision,authoring,authority_kind,authority_subject)
          VALUES (in_tenant,in_project,minted,1,in_configuration,in_authoring,in_kind,in_subject);
        INSERT INTO draft_brief (tenant,project,ticket,title,intent,branch,finalization_mode,finalization_target,repository)
-         VALUES (in_tenant,in_project,minted,in_title,in_intent,in_branch,landing,in_finalization_target,in_repository);
+         VALUES (in_tenant,in_project,minted,in_title,in_intent,in_branch,landing,target,in_repository);
        INSERT INTO draft_brief_link (tenant,project,ticket,ordinal,url)
          SELECT in_tenant,in_project,minted,link.ordinal,link.url
            FROM unnest(in_links) WITH ORDINALITY AS link(url,ordinal);
@@ -185,7 +221,7 @@ const briefWriters = [
       in_kind text,in_subject text)
      RETURNS TABLE(result text,authoring_version bigint,state text)
      LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
-     DECLARE current draft%ROWTYPE; next_version bigint; landing text;
+     DECLARE current draft%ROWTYPE; next_version bigint; landing text; target text;
      BEGIN
        SELECT * INTO current FROM draft WHERE tenant=in_tenant AND project=in_project AND ticket=in_ticket FOR UPDATE;
        IF NOT FOUND THEN RETURN QUERY SELECT 'NotFound',NULL::bigint,NULL::text; RETURN; END IF;
@@ -196,12 +232,12 @@ const briefWriters = [
        IF in_repository IS NOT NULL AND NOT EXISTS (SELECT 1 FROM project_repository
             WHERE tenant=in_tenant AND project=in_project AND repository=in_repository)
          THEN RETURN QUERY SELECT 'RepositoryNotBound',current.authoring_version,current.state; RETURN; END IF;
-       landing := ${resolvedLanding};
+       ${landsNothing}
        next_version := current.authoring_version+1;
        INSERT INTO draft_revision (tenant,project,ticket,authoring_version,configuration_revision,authoring,authority_kind,authority_subject)
          VALUES (in_tenant,in_project,in_ticket,next_version,in_configuration,in_authoring,in_kind,in_subject);
        INSERT INTO draft_brief (tenant,project,ticket,title,intent,branch,finalization_mode,finalization_target,repository)
-         VALUES (in_tenant,in_project,in_ticket,in_title,in_intent,in_branch,landing,in_finalization_target,in_repository)
+         VALUES (in_tenant,in_project,in_ticket,in_title,in_intent,in_branch,landing,target,in_repository)
          ON CONFLICT (tenant,project,ticket) DO UPDATE SET title=EXCLUDED.title,intent=EXCLUDED.intent,
            branch=EXCLUDED.branch,repository=EXCLUDED.repository,
            finalization_mode=EXCLUDED.finalization_mode,finalization_target=EXCLUDED.finalization_target;
@@ -231,6 +267,7 @@ export const migration090: Migration = {
     ...landingRead,
     ...landingWrite,
     ...bindingListing,
+    ...briefLanding,
     ...briefWriters,
   ],
 };

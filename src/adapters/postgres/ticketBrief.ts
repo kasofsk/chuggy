@@ -45,10 +45,9 @@ export interface DraftBriefRow extends DraftBriefFinalizationRow {
 }
 
 /**
- * The finalization a row states, or none where the row joined no brief at all.
- * A stored landing always reads back: the door resolved the mode against the
- * repository's own default when it wrote the row, so a target-less `Push` read
- * as no landing would be a repository's default answered as a brief's silence.
+ * The finalization a row states, which is none exactly where the mode column is
+ * null: the door resolves what a brief left unsaid and stores what it resolved,
+ * so the column is empty only for a ticket that lands nothing.
  */
 export function draftBriefFinalizationOf(
   row: DraftBriefFinalizationRow,
@@ -64,16 +63,17 @@ export function draftBriefFinalizationOf(
 
 /**
  * What release reads of one row's brief, or none where the row joined no brief
- * at all. The mode column is `NOT NULL`, so a null one is the miss and not a
- * brief that named no finalization.
+ * at all. The miss is read off `intent`, which every brief row carries: a null
+ * mode is a ticket that lands nothing and is a brief like any other.
  */
 export function draftReleaseBriefOf(
   row: DraftBriefFinalizationRow & {
+    readonly intent: string | null;
     readonly checks: string[] | null;
     readonly repository: string | null;
   },
 ): ReleaseBrief | undefined {
-  if (row.finalization_mode === null) return undefined;
+  if (row.intent === null) return undefined;
   const finalization = draftBriefFinalizationOf(row);
   return {
     checks: (row.checks ?? []).map(asBriefCheckLine),
@@ -110,7 +110,7 @@ export function postgresTicketBrief(pool: pg.Pool): TicketBriefPort {
         intent: string;
         branch: string | null;
         repository: string | null;
-        finalization_mode: string;
+        finalization_mode: string | null;
         finalization_target: string | null;
         links: string[] | null;
         checks: string[] | null;
