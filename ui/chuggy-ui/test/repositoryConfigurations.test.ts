@@ -100,36 +100,67 @@ test("a ready row states four facts, and an incomplete one states none", () => {
  * rather than run to the end of a project's history: a listing that never stops
  * paging would hang the page.
  */
-test("the revisions are walked to the cursor's end, and no further than the budget", async () => {
-  const calls: string[] = [];
-  const ports: ApiPorts = {
+function pagingPorts(
+  calls: string[],
+  page: (call: number) => Record<string, unknown>,
+): ApiPorts {
+  return {
     fetch: (path) => {
       calls.push(path);
       return Promise.resolve({
         status: 200,
         headers: { get: () => null },
-        text: () =>
-          Promise.resolve(
-            JSON.stringify({
-              configurations: [
-                declared(`r${String(calls.length)}`, chuggy, "chuggy"),
-              ],
-              nextCursor: "more",
-            }),
-          ),
+        text: () => Promise.resolve(JSON.stringify(page(calls.length))),
       } as unknown as Response);
     },
     bearer: () => Promise.resolve("token"),
     sleepMs: () => Promise.resolve(),
   };
+}
+
+test("the revisions are walked to the cursor's end, and no further than the budget", async () => {
+  const calls: string[] = [];
+  const ports = pagingPorts(calls, (call) => ({
+    configurations: [declared(`r${String(call)}`, chuggy, "chuggy")],
+    nextCursor: "more",
+  }));
   const walked = await readProjectConfigurations(ports, creationPartition);
-  expect(walked.outcome === "Ok" && walked.value.length).toBe(
+  expect(walked.outcome === "Ok" && walked.value.configurations.length).toBe(
     configurationPagesMax,
   );
+  expect(walked.outcome === "Ok" && walked.value.partial).toBe(true);
   expect(calls[0]).toBe(
     `${nativeHttpBasePath}/tenants/acme/projects/atlas/configurations`,
   );
   expect(calls.length).toBe(configurationPagesMax);
+});
+
+test("a walk the cursor ended read all of it", async () => {
+  const calls: string[] = [];
+  const ports = pagingPorts(calls, (call) => ({
+    configurations: [declared(`r${String(call)}`, chuggy, "chuggy")],
+    nextCursor: call === 2 ? undefined : "more",
+  }));
+  const walked = await readProjectConfigurations(ports, creationPartition);
+  expect(walked.outcome === "Ok" && walked.value.partial).toBe(false);
+  expect(calls.length).toBe(2);
+});
+
+/**
+ * A budget that stops over another repository's revisions reads as this one
+ * declaring nothing, which is the reading the flag exists to stop.
+ */
+test("a walk stopped by the budget says so, whether or not it drew rows", async () => {
+  const calls: string[] = [];
+  const ports = pagingPorts(calls, () => ({
+    configurations: [],
+    nextCursor: "more",
+  }));
+  const walked = await readProjectConfigurations(ports, creationPartition);
+  expect(walked.outcome === "Ok" && walked.value.configurations).toStrictEqual(
+    [],
+  );
+  expect(walked.outcome === "Ok" && walked.value.partial).toBe(true);
 });
 
 test("a refused page is the answer, and no rows are drawn from a partial read", async () => {

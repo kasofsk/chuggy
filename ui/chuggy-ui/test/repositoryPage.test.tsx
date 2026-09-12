@@ -157,8 +157,14 @@ interface Drawing {
   readonly repository?: string;
   /** The bindings the project answers with. */
   readonly bound?: readonly unknown[];
-  /** What the landing write answers with, in turn. */
+  /** What the landing write answers with, in turn, each in the route's own
+   * envelope: the row the write left, or the row it lost to. */
   readonly written?: readonly Response[];
+  /** Whether every configurations page holds a cursor, so the walk hits the
+   * budget rather than the listing's end. */
+  readonly truncated?: boolean;
+  /** The revisions the project answers with, the default being the fixture. */
+  readonly declares?: readonly unknown[];
 }
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
@@ -173,11 +179,18 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
       body: init?.body === undefined ? undefined : JSON.parse(init.body),
     });
     if (init?.method === "PUT")
-      return Promise.resolve(written.shift() ?? answer(binding("Push")));
+      return Promise.resolve(
+        written.shift() ?? answer({ repository: binding("Push") }),
+      );
     if (url.includes("/draft-initializations/"))
       return Promise.resolve(answer(initialization));
     if (url.includes("/configurations"))
-      return Promise.resolve(answer(configurations));
+      return Promise.resolve(
+        answer({
+          configurations: drawing.declares ?? configurations.configurations,
+          ...(drawing.truncated === true ? { nextCursor: "more" } : {}),
+        }),
+      );
     return Promise.resolve(answer({ repositories: bound }));
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", fetching);
@@ -246,7 +259,7 @@ test("a repository this project does not bind draws nothing but Not bound", asyn
 
 test("a saved landing is written against the mode the page read", async () => {
   const sent = await drawPage({
-    written: [answer(binding("PullRequest"))],
+    written: [answer({ repository: binding("PullRequest") })],
   });
   await press("Edit");
   await turned(() => {
@@ -283,7 +296,7 @@ test("a landing that moved under the write says so, and rebases onto what stands
         },
         409,
       ),
-      answer(binding("Push")),
+      answer({ repository: binding("Push") }),
     ],
   });
   await press("Edit");
@@ -335,6 +348,11 @@ test("cancelling a choice leaves the landing the page read", async () => {
 test("the finalizer is the newest ready revision's, and says when it runs", async () => {
   await drawPage();
   const finalizer = sectionOf("Finalizer");
+  expect(
+    within(finalizer).getByText(
+      "What a new ticket is authored to run. A ticket may choose otherwise.",
+    ),
+  ).toBeTruthy();
   expect(finalizer.textContent).toContain("Managed");
   expect(finalizer.textContent).toContain("Runs after evaluation passes");
 });
@@ -353,4 +371,29 @@ test("the configurations are this repository's own, incomplete rows saying so", 
     ["chuggy #12", "worker:1", "2", "Required", "Direct commit"],
     ["nightly #12", "Incomplete"],
   ]);
+});
+
+/**
+ * The rows a budget stopped short of are indistinguishable from rows that do
+ * not exist, so a walk that stopped says so instead of the page reading as a
+ * repository that declares nothing.
+ */
+test("a walk the budget stopped says so, in place of the empty state", async () => {
+  await drawPage({ truncated: true, declares: [] });
+  const section = sectionOf("Configurations");
+  expect(
+    within(section).getByText("Not every configuration was read"),
+  ).toBeTruthy();
+  expect(within(section).queryByText("No configuration declared")).toBeNull();
+  expect(within(section).queryByRole("table")).toBeNull();
+});
+
+test("a walk the budget stopped says so under the rows it did read", async () => {
+  await drawPage({ truncated: true });
+  const section = sectionOf("Configurations");
+  expect(within(section).getAllByRole("row").length).toBe(3);
+  expect(
+    within(section).getByText("Not every configuration was read"),
+  ).toBeTruthy();
+  styleless();
 });

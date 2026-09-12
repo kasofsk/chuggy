@@ -80,11 +80,22 @@ export function repositoryReadyConfiguration(
   );
 }
 
-/** Every revision the project holds, read to exhaustion under a page budget. */
+/** What a walk of the listing read, and whether the budget cut it short. */
+export interface ProjectConfigurationsRead {
+  readonly configurations: readonly ConfigurationSummary[];
+  readonly partial: boolean;
+}
+
+/**
+ * Every revision the project holds, read to exhaustion under a page budget.
+ *
+ * A WALK THAT STOPS SAYS SO: a page whose rows all fall past the budget would
+ * otherwise read as a repository that declares nothing.
+ */
 export async function readProjectConfigurations(
   ports: ApiPorts,
   partition: PartitionIdentity,
-): Promise<ApiResult<readonly ConfigurationSummary[]>> {
+): Promise<ApiResult<ProjectConfigurationsRead>> {
   const held: ConfigurationSummary[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < configurationPagesMax; page += 1) {
@@ -94,5 +105,8 @@ export async function readProjectConfigurations(
     cursor = answered.value.nextCursor;
     if (cursor === undefined) break;
   }
-  return { outcome: "Ok", value: held };
+  return {
+    outcome: "Ok",
+    value: { configurations: held, partial: cursor !== undefined },
+  };
 }

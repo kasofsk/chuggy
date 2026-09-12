@@ -31,6 +31,7 @@ import {
   outputContentResponse,
   projectRepositoriesResponse,
   projectRepositoryBindResponse,
+  projectRepositoryLandingResponse,
   projectRepositoryCreateResponse,
   projectResponse,
   runConfigurationResponse,
@@ -65,6 +66,7 @@ import {
   outputContentResponseSchema,
   projectInventoryResponseSchema,
   projectRepositoriesResponseSchema,
+  projectRepositoryLandingWrittenSchema,
   projectRepositoryAlreadyBoundSchema,
   projectRepositoryBoundSchema,
   projectRepositoryCreatedSchema,
@@ -1531,14 +1533,28 @@ test("a binding and a project's bindings name the repository and its moment", ()
   });
 });
 
-test("a binding names a landing, and a conflict answers the row that stands", () => {
+test("a binding names a landing, and both answers carry the row that stands", () => {
   const binding = {
     repository: onboardingRepository,
     boundAt: instant,
-    landing: { mode: "PullRequest" },
+    landing: { mode: "PullRequest" as const },
   };
   assert.deepEqual(
-    projectRepositoryLandingConflictSchema.parse({ repository: binding }),
+    projectRepositoryLandingWrittenSchema.parse(
+      projectRepositoryLandingResponse({
+        result: "Written",
+        repository: binding,
+      }).body,
+    ),
+    { repository: binding },
+  );
+  assert.deepEqual(
+    projectRepositoryLandingConflictSchema.parse(
+      projectRepositoryLandingResponse({
+        result: "LandingMoved",
+        repository: binding,
+      }).body,
+    ),
     { repository: binding },
   );
   assert.throws(() =>

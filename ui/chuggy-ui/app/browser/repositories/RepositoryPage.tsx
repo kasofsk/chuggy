@@ -48,8 +48,8 @@ function repositoryInitializationResource(revision: string): string {
   return `draft-initialization:${revision}`;
 }
 
-/** What runs once a ticket here is evaluated, as the initialization of this
- * repository's newest ready revision defaults it. */
+/** What a new ticket here is authored to run once it is evaluated, which the
+ * initialization of this repository's newest ready revision defaults. */
 function RepositoryFinalizerSection(props: {
   readonly partition: PartitionIdentity;
   readonly revision: string;
@@ -65,7 +65,11 @@ function RepositoryFinalizerSection(props: {
   const finalizer =
     state.state === "Ready" ? state.value.defaults.finalizer : undefined;
   return (
-    <Panel variant="section" title="Finalizer">
+    <Panel
+      variant="section"
+      title="Finalizer"
+      about="What a new ticket is authored to run. A ticket may choose otherwise."
+    >
       <PanelUnready state={state} />
       {finalizer === undefined ? null : (
         <Fields variant="inline">
@@ -98,7 +102,8 @@ function RepositoryDeclared(props: {
     repositoryConfigurationsResource,
     (ports) => readProjectConfigurations(ports, partition),
   );
-  const held = state.state === "Ready" ? state.value : [];
+  const read = state.state === "Ready" ? state.value : undefined;
+  const held = read?.configurations ?? [];
   const ready = repositoryReadyConfiguration(held, props.repository);
   return (
     <>
@@ -114,13 +119,14 @@ function RepositoryDeclared(props: {
         about="What this repository declares under .chug/configurations."
       >
         <PanelUnready state={state} />
-        {state.state === "Ready" ? (
+        {read === undefined ? null : (
           <RepositoryConfigurationTable
             rows={repositoryConfigurations(held, props.repository).map(
               repositoryConfigurationRow,
             )}
+            partial={read.partial}
           />
-        ) : null}
+        )}
       </Panel>
     </>
   );
