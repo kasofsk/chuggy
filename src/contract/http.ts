@@ -340,6 +340,7 @@ export const nativeHttpRoutes = {
   forgeCredentials: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/forge-credentials`,
   projectRepositories: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories`,
   projectRepositoriesNew: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/new`,
+  projectRepositoryLanding: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/landing`,
   drafts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts`,
   draftInitialization: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/draft-initializations/:revision`,
   draft: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts/:ticket`,

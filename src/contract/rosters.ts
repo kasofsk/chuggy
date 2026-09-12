@@ -279,6 +279,14 @@ export type FinalizerChoice = (typeof finalizers)[number];
 export const briefFinalizationModes = ["Push", "PullRequest"] as const;
 export type BriefFinalizationMode = (typeof briefFinalizationModes)[number];
 
+/**
+ * What a configuration hands its work off as, `None` standing for a
+ * configuration that declares no handoff at all — the interpreter says that by
+ * carrying no handoff shape rather than by a mode, so the wire names it.
+ */
+export const configurationHandoffs = ["None", "DirectCommit"] as const;
+export type ConfigurationHandoff = (typeof configurationHandoffs)[number];
+
 export const configurationReadinesses = ["Ready", "Incomplete"] as const;
 export type ConfigurationReadiness = (typeof configurationReadinesses)[number];
 

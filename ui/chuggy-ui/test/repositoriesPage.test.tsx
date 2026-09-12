@@ -162,7 +162,13 @@ const boundUrl = "https://forge.test/kasofsk/chuggy";
 const freeUrl = "https://forge.test/gdoteof/scratch";
 
 const bindings = {
-  repositories: [{ repository: boundUrl, boundAt: "2026-09-11T00:00:00Z" }],
+  repositories: [
+    {
+      repository: boundUrl,
+      boundAt: "2026-09-11T00:00:00Z",
+      landing: { mode: "Push" },
+    },
+  ],
 };
 
 /** What each portal installation grants, which is disjoint: a repository is
