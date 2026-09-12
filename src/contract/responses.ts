@@ -1308,6 +1308,7 @@ export type ProjectRepositoryConfigurationsResponse = z.infer<
  */
 export const projectRepositoryBoundSchema = z.object({
   repository: z.string().min(1),
+  landing: repositoryLandingSchema,
   configurations: projectRepositoryConfigurationsSchema,
 });
 export type ProjectRepositoryBoundResponse = z.infer<
@@ -1348,6 +1349,7 @@ export type ProjectRepositoryRulesetResponse = z.infer<
  */
 export const projectRepositoryCreatedSchema = z.object({
   repository: z.string().min(1),
+  landing: repositoryLandingSchema,
   created: z.object({
     account: identitySchema,
     name: identitySchema,

@@ -160,7 +160,7 @@ test("the door binds a second repository, and the leftover read still answers th
   await assert.rejects(
     () =>
       harness.query(
-        `UPDATE project_repository SET repository=repository
+        `UPDATE project_repository SET repository=repository||'-moved'
           WHERE tenant=$1 AND project=$2 AND repository=$3`,
         [standing.partition.tenant, standing.partition.project, later],
       ),

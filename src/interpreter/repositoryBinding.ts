@@ -7,6 +7,10 @@
  * rather than in Core.
  */
 
+import {
+  briefFinalizationModes,
+  type BriefFinalizationMode,
+} from "../contract/rosters.ts";
 import { asRepositoryId, type RepositoryId } from "./finalizer.ts";
 import {
   asAuthorityKind,
@@ -96,10 +100,31 @@ export interface RepositoryBindingAdministration extends ProjectRepositoryBindin
   writer(): Promise<RepositoryBindingWriter>;
 }
 
+/**
+ * How a finished ticket in one repository lands when its brief names no
+ * landing of its own. The mode alone: which reference a proposal is opened
+ * into stays the ticket's, because stacked work names a different one per
+ * ticket.
+ */
+export interface RepositoryLanding {
+  readonly mode: BriefFinalizationMode;
+}
+
+/** Narrows one landing mode, whatever door or wire it arrived by. */
+export function asRepositoryLanding(mode: string): RepositoryLanding {
+  const known = briefFinalizationModes.find((each) => each === mode);
+  if (known === undefined)
+    throw new RangeError(
+      "repository landing: the mode is not one this tree lands under",
+    );
+  return { mode: known };
+}
+
 /** One of a project's bindings, as a reader choosing between them sees it. */
 export interface ProjectRepositoryBound {
   readonly repository: RepositoryId;
   readonly boundAt: string;
+  readonly landing: RepositoryLanding;
 }
 
 /**
@@ -109,4 +134,43 @@ export interface ProjectRepositoryBound {
  */
 export interface ProjectRepositoryBindings {
   bindings(partition: Partition): Promise<readonly ProjectRepositoryBound[]>;
+}
+
+/** One landing move, against the landing the writer read. */
+export interface ProjectRepositoryLandingCommand {
+  readonly partition: Partition;
+  readonly repository: RepositoryId;
+  readonly expected: RepositoryLanding;
+  readonly landing: RepositoryLanding;
+}
+
+/**
+ * What moving one repository's landing came to. `LandingMoved` answers the row
+ * standing at neither the landing the writer read nor the one it asked for,
+ * because the writer's next act is to read it again, and `Unavailable` is a
+ * write that did not complete under its lock and can be made again.
+ */
+export type ProjectRepositoryLandingOutcome =
+  | { readonly outcome: "Written"; readonly binding: ProjectRepositoryBound }
+  | {
+      readonly outcome: "LandingMoved";
+      readonly binding: ProjectRepositoryBound;
+    }
+  | { readonly outcome: "NotBound" }
+  | { readonly outcome: "Unavailable" };
+
+/**
+ * One binding's landing, read and moved. It is a port of its own rather than a
+ * pair of methods on the bind, because binding is an administration a project
+ * does once and a landing is a setting it edits.
+ */
+export interface ProjectRepositoryLandingStore {
+  landing(
+    partition: Partition,
+    repository: RepositoryId,
+  ): Promise<ProjectRepositoryBound | undefined>;
+
+  setLanding(
+    command: ProjectRepositoryLandingCommand,
+  ): Promise<ProjectRepositoryLandingOutcome>;
 }

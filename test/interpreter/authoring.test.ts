@@ -5,6 +5,7 @@ import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
   canonicalConfigurationOf,
+  checkedDraftLanding,
   checkedDraftPageQuery,
   configurationRevisionSummary,
   draftPageLimitDefault,
@@ -17,8 +18,11 @@ import {
 import {
   asBriefBranch,
   asBriefCheckLine,
+  asBriefIntent,
 } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
+import { approvalRequiredField } from "../../src/interpreter/finalizerPreparation.ts";
+import { handoffConfigurationField } from "../../src/interpreter/handoffConfiguration.ts";
 import { handoffFixture } from "./handoffFixture.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
@@ -352,6 +356,8 @@ test("configuration summaries expose registry fields without canonical content",
       practices: [],
       workInstructionsCount: 0,
       reviewInstructionsCount: 0,
+      finalization: { approvalRequired: false, handoff: "None" },
+      evaluationStagesCount: 0,
     },
   );
   assert.deepEqual(
@@ -361,6 +367,102 @@ test("configuration summaries expose registry fields without canonical content",
     }),
     { ...base, readiness: "Incomplete" },
   );
+});
+
+/** The ready document with whichever of its fields a finalization case varies. */
+function summaryOf(fields: Record<string, unknown>) {
+  const summary = configurationRevisionSummary({
+    revision: asConfigurationRevisionId("revision"),
+    digest: "digest",
+    createdAt: asPublicInstant("2026-08-24T12:00:00Z"),
+    provenance: { source: "Authored" },
+    canonical: canonicalConfigurationOf({
+      ...JSON.parse(readyConfiguration),
+      ...fields,
+    }),
+  });
+  return summary.readiness === "Ready"
+    ? {
+        finalization: summary.finalization,
+        evaluationStagesCount: summary.evaluationStagesCount,
+      }
+    : summary.readiness;
+}
+
+/**
+ * What a page says about finishing one revision. An approval policy this tree
+ * cannot read is answered as an approval, because that is what the finalizer
+ * does with it: a candidate under one is refused rather than promoted.
+ */
+test("a summary answers what its revision decides about finishing and evaluating", () => {
+  assert.deepEqual(summaryOf({ [approvalRequiredField]: true }), {
+    finalization: { approvalRequired: true, handoff: "None" },
+    evaluationStagesCount: 0,
+  });
+  assert.deepEqual(summaryOf({ [approvalRequiredField]: false }), {
+    finalization: { approvalRequired: false, handoff: "None" },
+    evaluationStagesCount: 0,
+  });
+  assert.deepEqual(
+    summaryOf({}),
+    {
+      finalization: { approvalRequired: false, handoff: "None" },
+      evaluationStagesCount: 0,
+    },
+    "a revision saying nothing about approval asks for none",
+  );
+  assert.deepEqual(
+    summaryOf({ [approvalRequiredField]: "yes" }),
+    {
+      finalization: { approvalRequired: true, handoff: "None" },
+      evaluationStagesCount: 0,
+    },
+    "a policy this tree cannot read is a person in the way",
+  );
+  assert.deepEqual(
+    summaryOf({ [handoffConfigurationField]: handoffFixture() }),
+    {
+      finalization: { approvalRequired: false, handoff: "DirectCommit" },
+      evaluationStagesCount: 0,
+    },
+  );
+  assert.deepEqual(
+    summaryOf({
+      evaluations: [
+        { purpose: "Review", instructions: ["Review it."], practices: [] },
+        { purpose: "Check", checks: [".chug/tasks/ci.sh"] },
+      ],
+    }),
+    {
+      finalization: { approvalRequired: false, handoff: "None" },
+      evaluationStagesCount: 2,
+    },
+  );
+});
+
+/**
+ * A ticket authored to run no finalizer has nowhere to land, so a landing on
+ * its brief is a pair the store must never hold — whichever door the caller
+ * reached it by.
+ */
+test("a ticket that runs no finalizer is refused a brief that lands somewhere", () => {
+  const landing = {
+    intent: asBriefIntent("Land it."),
+    links: [],
+    checks: [],
+    finalization: { mode: "Push" },
+  } as const;
+  assert.throws(() => {
+    checkedDraftLanding({
+      authoring: { ...plainAuthoring, finalizer: "NoFinalizer" },
+      brief: landing,
+    });
+  }, /lands nothing/u);
+  checkedDraftLanding({
+    authoring: { ...plainAuthoring, finalizer: "NoFinalizer" },
+    brief: { intent: asBriefIntent("Land it."), links: [], checks: [] },
+  });
+  checkedDraftLanding({ authoring: plainAuthoring, brief: landing });
 });
 
 test("a raw ReleaseTicket is not a public Decide command", () => {

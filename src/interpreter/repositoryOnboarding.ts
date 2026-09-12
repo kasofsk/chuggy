@@ -115,6 +115,8 @@ import type {
   ProjectRepositoryBindings,
   ProjectRepositoryBindingWrite,
   ProjectRepositoryBound,
+  ProjectRepositoryLandingStore,
+  RepositoryLanding,
 } from "./repositoryBinding.ts";
 
 /** One app this deployment holds the key of, as its own forge describes it. */
@@ -219,6 +221,7 @@ export type ProjectRepositoryBindResult =
   | {
       readonly result: "Bound";
       readonly repository: RepositoryId;
+      readonly landing: RepositoryLanding;
       readonly configurations: ProjectRepositoryConfigurationsResult;
     }
   | { readonly result: "AlreadyBound"; readonly repository: RepositoryId }
@@ -264,6 +267,7 @@ export type ProjectRepositoryCreateResult =
   | {
       readonly result: "Created";
       readonly repository: RepositoryId;
+      readonly landing: RepositoryLanding;
       readonly created: ProjectRepositoryMade;
       readonly seeded: boolean;
       readonly ruleset: ProjectRepositoryRulesetResult;
@@ -295,6 +299,21 @@ export type ProjectRepositoriesResult =
       readonly repositories: readonly ProjectRepositoryBound[];
     }
   | { readonly result: "NotFound" };
+
+/**
+ * What moving one repository's landing came to. A conflict answers the binding
+ * as it stands, because the writer's next act is to read it again; a repository
+ * this project does not bind is the same miss as a project it may not see.
+ */
+export type ProjectRepositoryLandingResult =
+  | { readonly result: "Written"; readonly repository: ProjectRepositoryBound }
+  | {
+      readonly result: "LandingMoved";
+      readonly repository: ProjectRepositoryBound;
+    }
+  | { readonly result: "NotBound" }
+  | { readonly result: "NotFound" }
+  | { readonly result: "Unavailable" };
 
 /** One claim as a caller sends it: which forge, which app, and which installation of it. */
 export interface ForgeInstallationClaimRequest {
@@ -364,11 +383,12 @@ export interface RepositoryOnboardingPorts {
   readonly claims: ForgeInstallationClaims;
   readonly bindings: ProjectRepositoryBindings;
   readonly binding: ProjectRepositoryBindingWrite;
+  readonly landing: ProjectRepositoryLandingStore;
   readonly configurations?: RepositoryConfigurationsPorts;
   readonly creation?: RepositoryCreationPorts;
 }
 
-/** The seven questions the onboarding routes ask, each behind the permit it needs. */
+/** The eight questions the onboarding routes ask, each behind the permit it needs. */
 export interface RepositoryOnboarding {
   forgeApps(): Promise<ForgeAppsResult>;
 
@@ -405,6 +425,14 @@ export interface RepositoryOnboarding {
     principal: Principal,
     partition: Partition,
   ): Promise<ProjectRepositoriesResult>;
+
+  setLanding(
+    principal: Principal,
+    partition: Partition,
+    repository: RepositoryId,
+    expected: RepositoryLanding,
+    landing: RepositoryLanding,
+  ): Promise<ProjectRepositoryLandingResult>;
 }
 
 /** The half composed for one app on one forge, and nothing where this deployment holds no key for it. */
@@ -639,6 +667,22 @@ async function boundRepositoryConfigurations(
   }
 }
 
+/**
+ * The landing the row a bind just made stands at, read rather than assumed:
+ * what a repository nobody has edited lands by is the durable column's default
+ * and not a value this tree also holds.
+ */
+async function boundRepositoryLanding(
+  ports: RepositoryOnboardingPorts,
+  partition: Partition,
+  request: ProjectRepositoryBindRequest,
+): Promise<RepositoryLanding> {
+  const bound = await ports.landing.landing(partition, request.repository);
+  if (bound === undefined)
+    throw new Error("repository onboarding: a bound repository has no binding");
+  return bound.landing;
+}
+
 /** One binding as the bind route asks for it, which is the permit and then the act. */
 async function bindRepository(
   ports: RepositoryOnboardingPorts,
@@ -692,6 +736,7 @@ async function boundRepository(
       return {
         result: "Bound",
         repository: request.repository,
+        landing: await boundRepositoryLanding(ports, partition, request),
         configurations: await boundRepositoryConfigurations(
           ports,
           binding,
@@ -946,6 +991,7 @@ async function createRepositoryBound(
   return {
     result: "Created",
     repository: bound.repository,
+    landing: bound.landing,
     created: {
       account: context.installation.account,
       name: context.request.name,
@@ -955,6 +1001,45 @@ async function createRepositoryBound(
     ruleset,
     configurations: bound.configurations,
   };
+}
+
+/**
+ * One landing moved, behind the permit that binds: what a repository lands by
+ * is the same administration as what a project binds, and a project this
+ * caller may not administer is not there.
+ */
+async function setLanding(
+  ports: RepositoryOnboardingPorts,
+  principal: Principal,
+  partition: Partition,
+  repository: RepositoryId,
+  expected: RepositoryLanding,
+  landing: RepositoryLanding,
+): Promise<ProjectRepositoryLandingResult> {
+  const authority = await ports.access.authorize(
+    principal,
+    partition,
+    "Administer",
+  );
+  if (authority === undefined) return { result: "NotFound" };
+  const written = await ports.landing.setLanding({
+    partition,
+    repository,
+    expected,
+    landing,
+  });
+  switch (written.outcome) {
+    case "Written":
+      return { result: "Written", repository: written.binding };
+    case "LandingMoved":
+      return { result: "LandingMoved", repository: written.binding };
+    case "NotBound":
+      return { result: "NotBound" };
+    case "Unavailable":
+      return { result: "Unavailable" };
+    default:
+      return assertNever(written);
+  }
 }
 
 export function repositoryOnboarding(
@@ -997,5 +1082,8 @@ export function repositoryOnboarding(
         repositories: await ports.bindings.bindings(partition),
       };
     },
+
+    setLanding: (principal, partition, repository, expected, landing) =>
+      setLanding(ports, principal, partition, repository, expected, landing),
   };
 }
