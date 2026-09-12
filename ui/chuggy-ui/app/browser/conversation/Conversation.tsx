@@ -10,6 +10,13 @@
  * THE MAILBOX IS THE QUEUE. Without a queue adapter the library refuses a send
  * while a turn is pending; the mailbox already queues, so the adapter holds no
  * items of its own and both lanes post.
+ *
+ * NOTHING HERE STACKS WITH A GRID. Every stack is a column flex, whose
+ * automatic minimum size falls on the block axis: a report holding a wide table
+ * overflows its own box and the column keeps the width its container gave it. A
+ * grid track sized `auto` does the opposite — it grows to its content's
+ * min-content width — so one such track above the text pushes the whole thread
+ * past the pane holding it.
  */
 
 import {
@@ -179,30 +186,54 @@ function ConversationEmpty(props: {
   readonly sentence: string;
 }): ReactNode {
   return (
-    <div className="grid min-h-full place-content-center justify-items-center gap-2 text-center">
+    <div className="flex min-h-full flex-col items-center justify-center gap-2 text-center">
       {props.title === undefined ? null : <h2>{props.title}</h2>}
       <p className="text-ink-3">{props.sentence}</p>
     </div>
   );
 }
 
+/** What the scrolling column holds: what it is still reading, what it has
+ * nothing to draw, or the thread itself. A caller that worded no empty state
+ * gets none, which is what a chat nobody has typed in yet wants. */
+function ConversationBody(props: {
+  readonly reading: boolean;
+  readonly empty: boolean;
+  readonly emptyTitle: string | undefined;
+  readonly sentence: string | undefined;
+}): ReactNode {
+  if (props.reading) return <Notice tone="info" inline detail="Loading…" />;
+  if (props.empty)
+    return props.sentence === undefined ? null : (
+      <ConversationEmpty title={props.emptyTitle} sentence={props.sentence} />
+    );
+  return (
+    <ThreadPrimitive.Messages>
+      {conversationMessageDrawn}
+    </ThreadPrimitive.Messages>
+  );
+}
+
 /**
  * The conversation as a page holds it: a column of exchanges that scrolls, and
- * the composer beneath it. The two rows are one grid so that a bounded height
- * pins the composer to the bottom of it, and an unbounded one — a transcript
- * pane inside a panel — leaves both in normal flow.
+ * the composer beneath it. A bounded height pins the composer to the foot of
+ * it, and an unbounded one — a transcript inside a panel — leaves both in
+ * normal flow.
  */
 export function Conversation(props: {
   readonly exchanges: readonly ConversationExchange[];
   readonly composer?: ConversationComposerProps;
-  readonly empty: string;
+  /** The one line a column with nothing in it says. A caller that words none
+   * draws nothing at all, which is what a chat nobody has typed in yet wants:
+   * the composer under it already says what to do. */
+  readonly empty?: string;
   readonly emptyTitle?: string;
   /** Whether the exchanges are still being read, which the column says in
    * their place and the composer below it does not wait on. */
   readonly reading?: boolean;
-  /** Whether this mount is the pane's own scroller — lead and thread pages,
-   * whose `DetailsPane` wrapper gave up its inset for it — rather than a
-   * panel that already pads itself. */
+  /** Whether this mount is the pane's own scroller — lead, thread and chat,
+   * whose wrapper gave up its inset for it — rather than a panel that already
+   * pads itself. */
   readonly pane?: boolean;
 }): ReactNode {
   const reading = props.reading === true;
@@ -212,32 +243,25 @@ export function Conversation(props: {
     composer: props.composer,
   });
   const waiting = held.sending || conversationRunning(activeExchanges);
-  const inset = props.pane === true;
+  const inset = props.pane === true ? "px-4 py-4" : "";
   return (
     <AssistantRuntimeProvider runtime={held.runtime}>
-      <ThreadPrimitive.Root className="grid h-full min-h-0 grid-rows-[1fr_auto] gap-4">
-        {/* The column centers inside the scroller; only a pane caller carries the inset the pane gave up. */}
-        <ThreadPrimitive.Viewport className="min-h-0 overflow-y-auto">
+      <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col gap-4">
+        <ThreadPrimitive.Viewport className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
           <div
-            className={`max-w-column mx-auto grid min-w-0 gap-6${inset ? " px-4 py-4" : ""}`}
+            className={`max-w-column mx-auto flex w-full flex-col gap-6 ${inset}`}
           >
-            {reading ? (
-              <Notice tone="info" inline detail="Loading…" />
-            ) : props.exchanges.length === 0 ? (
-              <ConversationEmpty
-                title={props.emptyTitle}
-                sentence={props.empty}
-              />
-            ) : (
-              <ThreadPrimitive.Messages>
-                {conversationMessageDrawn}
-              </ThreadPrimitive.Messages>
-            )}
+            <ConversationBody
+              reading={reading}
+              empty={props.exchanges.length === 0}
+              emptyTitle={props.emptyTitle}
+              sentence={props.empty}
+            />
           </div>
         </ThreadPrimitive.Viewport>
         {props.composer === undefined ? null : (
           <div
-            className={`max-w-column mx-auto w-full min-w-0${inset ? " px-4 pb-4" : ""}`}
+            className={`max-w-column mx-auto w-full ${props.pane === true ? "px-4 pb-4" : ""}`}
           >
             <ConversationWaiting waiting={waiting} />
             <ConversationComposer {...props.composer} busy={held.sending} />

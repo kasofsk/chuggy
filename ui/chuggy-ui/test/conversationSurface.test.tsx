@@ -89,6 +89,73 @@ test("the viewport and the composer cap width at the column token, not a call-si
   styleless();
 });
 
+/** With `mx-auto` and no width, a shrink-to-fit column resolves to its own cap
+ * whatever its container is, and a pane narrower than that cap clips it. */
+test("the scroller column takes its container's width, not its own cap", () => {
+  const view = render(
+    <Conversation exchanges={[answered]} empty="No conversation" pane />,
+  );
+  const column = view.container.querySelector(".max-w-column");
+  expect(column?.classList.contains("w-full")).toBe(true);
+  styleless();
+});
+
+/** The report's own bordered panel is a box inside a box wherever this surface
+ * draws it, and width the words need more. */
+test("the report gives up its own panel on this surface", () => {
+  const view = render(
+    <Conversation exchanges={[answered]} empty="No conversation" pane />,
+  );
+  expect(
+    view.container
+      .querySelector(".run-report")
+      ?.classList.contains("run-report-bare"),
+  ).toBe(true);
+  styleless();
+});
+
+/**
+ * A grid track sized `auto` grows to its content's min-content width, so a
+ * report holding a wide table pushed every ancestor past the pane and no
+ * `min-w-0` could hold it — that governs an element as its parent's item, never
+ * its own tracks. A column flex takes its automatic minimum on the block axis
+ * instead, so the same content overflows its own box and the column keeps the
+ * width it was given.
+ */
+test("every stack down an exchange is a column flex, so nothing widens past the pane", () => {
+  const view = render(
+    <Conversation exchanges={[answered]} empty="No conversation" pane />,
+  );
+  const stacks = [
+    view.container.querySelector(".max-w-column"),
+    view.container.querySelector(".bg-bubble")?.parentElement,
+    view.container.querySelector(".run-report")?.closest("[class*='flex-col']"),
+  ];
+  for (const stack of stacks) {
+    expect(stack?.className).toContain("flex-col");
+    expect(stack?.className).not.toContain("grid");
+  }
+  expect(
+    view.container
+      .querySelector(".bg-bubble")
+      ?.classList.contains("wrap-anywhere"),
+  ).toBe(true);
+  styleless();
+});
+
+/** `overflow-y` alone makes a scroller of both axes — CSS computes the
+ * `visible` half to `auto` — so a column narrow enough to overflow scrolls
+ * sideways unless the other half is stated, and what is too wide to fit
+ * carries its own scroller instead. */
+test("the scroller states both axes, so a narrow column never scrolls sideways", () => {
+  const view = render(
+    <Conversation exchanges={[answered]} empty="No conversation" pane />,
+  );
+  const viewport = view.container.querySelector(".overflow-y-auto");
+  expect(viewport?.classList.contains("overflow-x-hidden")).toBe(true);
+  styleless();
+});
+
 test("only a pane caller carries the pane's own inset on the column and the composer", () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
   const paneView = render(
@@ -142,6 +209,15 @@ test("exchanges still being read draw the waiting word and keep the composer", (
   ).toBeNull();
   expect(screen.queryByText("No conversation")).toBeNull();
   expect(screen.getByRole("textbox")).toBeDefined();
+  styleless();
+});
+
+/** The chat pane words no empty state: a thread nobody has typed in yet is an
+ * empty column and a composer, which says what to do without a line saying it
+ * is empty. */
+test("a caller that words no empty state draws nothing in its place", () => {
+  const view = render(<Conversation exchanges={[]} />);
+  expect(view.container.textContent).toBe("");
   styleless();
 });
 

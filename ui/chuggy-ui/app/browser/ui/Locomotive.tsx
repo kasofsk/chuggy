@@ -26,10 +26,11 @@
  * first frame — the engine at rest — and if this drawing ever changes, both
  * copies change together in the same commit.
  *
- * `LocomotiveEngine` is the sprite alone, exported so a caller elsewhere in
- * the console — the strip above a waiting composer — draws the same engine
- * without the ground this card slides under it, and without a second copy of
- * the drawing to keep in step with the favicon.
+ * `LocomotiveEngine` is the sprite alone, kept apart from the ground so the
+ * card reads as one thing that holds its place and one that passes under it.
+ * It is this card's alone: the strip above a waiting composer draws
+ * chuggernaut's train instead, which crosses the strip rather than standing on
+ * a ground, and so shares no drawing with the favicon.
  */
 
 import type { ReactNode } from "react";
@@ -196,7 +197,7 @@ const spriteRects: readonly PixelRect[] = [
   ...spriteFrameRects(3, 1, "B", "fading"),
 ];
 
-export function LocomotiveEngine(): ReactNode {
+function LocomotiveEngine(): ReactNode {
   return (
     <span className="locomotive-engine" aria-hidden="true">
       <svg

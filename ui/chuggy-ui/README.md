@@ -22,14 +22,15 @@ builds with.
   drive all of it with no renderer.
 - `ui/chuggy-ui/app/browser/` — the effects and the drawing: the platform
   adapters, the React providers for the session and the stream, the shell with
-  its project switcher, its theme control and its live/degraded banner, the
-  compositions a screen is built from, and the route tree.
+  its bar, its chat pane and its live/degraded banner, the compositions a
+  screen is built from, and the route tree.
 - `ui/chuggy-ui/app/browser/ui/` — the primitives: a component and its
   stylesheet beside it, drawing values it is handed and reaching nothing else
   in `browser/`, which is the rule `chuggy-ui-primitives-reach-no-effect`
   states and is why each mounts in a suite with no provider around it.
 - `ui/chuggy-ui/app/browser/conversation/` — the one conversation surface,
-  shared by the thread page, a run's transcript and the lead's dispatches.
+  shared by the shell's chat pane, a run's transcript and the lead's
+  dispatches.
   `chuggy-ui-conversation-owns-assistant-ui` makes it the only module that
   names `@assistant-ui`; `chuggy-ui-conversation-reaches-only-primitives`
   bounds it to itself, `browser/ui/`, the decision layer and the contract, so

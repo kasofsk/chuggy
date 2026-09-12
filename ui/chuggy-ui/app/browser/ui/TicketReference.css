@@ -1,0 +1,25 @@
+/* TicketReference: the phase chip, made a link and given a title to carry. */
+
+@layer ui {
+  .ticket-reference {
+    text-decoration: none;
+    max-width: 100%;
+    vertical-align: baseline;
+  }
+
+  .ticket-reference:hover {
+    background: var(--surface-1);
+    box-shadow: inset 0 0 0 var(--hairline) var(--edge-strong);
+  }
+
+  /* A title is a line of a brief, so it is cut rather than allowed to set the
+   * width of the prose the chip sits in. */
+  .ticket-reference-title {
+    display: inline-block;
+    overflow: hidden;
+    max-width: 24ch;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+    color: var(--ink-3);
+  }
+}

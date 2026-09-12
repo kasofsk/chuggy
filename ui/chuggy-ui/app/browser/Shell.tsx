@@ -1,26 +1,41 @@
 /**
- * One frame for every screen: the rail beside the page or over it, the bar
- * above it, the page scrolling between them, and the slot under it a composer
- * is pinned to. A page without a composer leaves that slot empty and scrolls in
- * the same middle a conversation does, which is what makes a ticket page and a
- * thread page the same frame.
+ * One frame for every screen: the bar across the top, and under it the pages
+ * and the chat dividing what is left.
+ *
+ * THE BAR SPANS THE FRAME AND OUTLIVES EVERY STATE OF IT. The nav reaches every
+ * screen and the banner speaks for all of them, so the bar is neither something
+ * the chat pane takes width from nor something a full screen covers — a reader
+ * who filled the frame with the chat still has every screen one press away.
+ *
+ * The chat pane is where the reader talks to the project, so it outlives every
+ * navigation under it: the pages change beneath the bar and the conversation
+ * does not. It takes the body three ways and no fourth — a column beside the
+ * pages, the whole body, or the strip its own control expands — and a viewport
+ * too narrow to divide stacks that column under the pages instead.
  *
  * The banner is not decoration — it is the only place a reader learns that what
  * the screens below are showing is no longer arriving live.
  */
 
 import { Outlet } from "@tanstack/react-router";
-import { Dialog, Separator } from "radix-ui";
-import { useState } from "react";
+import { Separator } from "radix-ui";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import {
+  chatPaneContentDrawn,
+  chatPaneNarrowed,
+  chatPaneStripped,
+} from "../core/chatPane.ts";
+import type { ChatPanePlacement, ChatPaneState } from "../core/chatPane.ts";
+import {
   projectStreamCarrying,
   projectStreamUnanswered,
 } from "../core/projectStream.ts";
+import { ChatPane } from "./shell/ChatPane.tsx";
+import { ChatPaneProvider, useChatPane } from "./shell/chatPaneHeld.tsx";
 import { DetailsPane } from "./shell/DetailsPane.tsx";
-import { Rail } from "./shell/Rail.tsx";
+import { TicketReferenceWiring } from "./ticket/TicketReferenceWiring.tsx";
 import { ShellSlots } from "./shell/slots.tsx";
 import { TopBar } from "./shell/TopBar.tsx";
 import { useViewportAtLeastEm, viewportTwoColumnEm } from "./shell/viewport.ts";
@@ -30,8 +45,6 @@ import {
 } from "./stream.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import "./shell/shell.css";
-
-export { ThemeControl } from "./shell/Rail.tsx";
 
 /**
  * What the reader is told, which is the other half of what `useStreamFallback`
@@ -58,73 +71,88 @@ export function StreamBanner(): ReactNode {
   );
 }
 
+/** The tracks the body below the bar takes, total over the placements so a
+ * placement the roster grows stops compiling rather than drawing one column. */
+const shellBodyTracks: Readonly<Record<ChatPanePlacement, string>> = {
+  Right: "grid-cols-[minmax(0,1fr)_var(--width-chat)]",
+  Left: "grid-cols-[var(--width-chat)_minmax(0,1fr)]",
+  Bottom: "grid-rows-[minmax(0,1fr)_var(--height-chat)]",
+};
+
+/** The same tracks for a collapsed pane, which is a strip of its own width
+ * rather than a share of the frame. */
+const shellStripTracks: Readonly<Record<ChatPanePlacement, string>> = {
+  Right: "grid-cols-[minmax(0,1fr)_var(--width-chat-strip)]",
+  Left: "grid-cols-[var(--width-chat-strip)_minmax(0,1fr)]",
+  Bottom: "grid-rows-[minmax(0,1fr)_var(--width-chat-strip)]",
+};
+
+/** The edge the pane draws against the pages, which is the side the pages are
+ * on. */
+const shellPaneEdges: Readonly<Record<ChatPanePlacement, string>> = {
+  Right: "border-l border-edge",
+  Left: "border-r border-edge",
+  Bottom: "border-t border-edge",
+};
+
+function shellBodyTracksDrawn(chat: ChatPaneState): string {
+  if (!chatPaneContentDrawn(chat)) return "grid-cols-1";
+  return chatPaneStripped(chat)
+    ? shellStripTracks[chat.placement]
+    : shellBodyTracks[chat.placement];
+}
+
 /**
  * The shell's own element, which states whether the stream is carrying because
  * the banner no longer answers that: the banner is silent when the stream is
- * live and silent again when a first connection has not been answered. A reader
- * has the banner; anything watching the console from outside has this.
+ * live and silent again when a first connection has not been answered.
  *
  * It is also the containing block for anything positioned inside it, so a
  * hidden caption placed absolutely is clipped with the frame rather than
  * lengthening the document below it.
  */
-export function ShellFrame(props: {
-  readonly children: ReactNode;
-  readonly twoColumn?: boolean | undefined;
-}): ReactNode {
+export function ShellFrame(props: { readonly children: ReactNode }): ReactNode {
   const carrying = projectStreamCarrying(useProjectStreamStatus());
-  const columns =
-    props.twoColumn === true
-      ? "grid-cols-[var(--width-rail)_auto_minmax(0,1fr)]"
-      : "grid-cols-1";
   return (
     <div
       data-stream={carrying ? "live" : "not-live"}
-      className={`relative grid h-dvh overflow-hidden bg-surface-0 ${columns}`}
+      className="bg-surface-0 relative grid h-dvh grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
     >
       {props.children}
     </div>
   );
 }
 
-function ShellMain(props: {
-  readonly narrow: boolean;
-  readonly title: string;
+/** The bar and what stands above it, across the whole frame and through every
+ * state of it: the banner speaks for every screen and the nav reaches every one
+ * of them, so neither is a thing the chat pane takes width from or covers. */
+function ShellHeader(props: {
+  readonly partition: PartitionIdentity;
 }): ReactNode {
   return (
-    <div className="grid min-h-0 grid-rows-[auto_auto_auto_minmax(0,1fr)]">
+    <div className="grid grid-cols-[minmax(0,1fr)]">
       <div className="shell-banner">
         <StreamBanner />
       </div>
-      <TopBar narrow={props.narrow} title={props.title} />
+      <TopBar partition={props.partition} />
       <Separator.Root decorative className="h-px bg-edge" />
-      <DetailsPane>
-        <Outlet />
-      </DetailsPane>
     </div>
   );
 }
 
-/**
- * The rail as a drawer. Radix's dialog in its non-modal form, which is the one
- * that mounts no `<style>` element: the modal form's scroll lock appends one
- * and the served `style-src 'self'` refuses it.
- */
-function ShellDrawer(props: {
-  readonly partition: PartitionIdentity;
-  readonly onNavigate: () => void;
+/** Everything under the bar, which is what the pages and the pane divide
+ * between them. */
+function ShellBody(props: {
+  readonly children: ReactNode;
+  readonly chat: ChatPaneState;
 }): ReactNode {
   return (
-    <Dialog.Portal>
-      <div aria-hidden="true" className="fixed inset-0 z-10 bg-scrim" />
-      <Dialog.Content
-        aria-describedby={undefined}
-        className="fixed inset-y-0 left-0 z-20 w-rail outline-none"
-      >
-        <Dialog.Title className="visually-hidden">Console</Dialog.Title>
-        <Rail partition={props.partition} onNavigate={props.onNavigate} />
-      </Dialog.Content>
-    </Dialog.Portal>
+    <div
+      data-chat={props.chat.presentation.toLowerCase()}
+      className={`grid min-h-0 min-w-0 ${shellBodyTracksDrawn(props.chat)}`}
+    >
+      {props.children}
+    </div>
   );
 }
 
@@ -132,34 +160,41 @@ function ShellDrawn(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const twoColumn = useViewportAtLeastEm(viewportTwoColumnEm);
-  const [railOpen, setRailOpen] = useState(false);
-  const partition = props.partition;
+  const chat = chatPaneNarrowed(useChatPane().state, twoColumn);
+  const drawn = chatPaneContentDrawn(chat);
+  const pages = drawn ? (
+    <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)]">
+      <DetailsPane>
+        <Outlet />
+      </DetailsPane>
+    </div>
+  ) : null;
+  const pane = (
+    <div
+      className={`grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] ${
+        pages === null ? "" : shellPaneEdges[chat.placement]
+      }`}
+    >
+      <ChatPane partition={props.partition} chat={chat} />
+    </div>
+  );
   return (
-    <Dialog.Root open={railOpen} onOpenChange={setRailOpen} modal={false}>
-      <ShellFrame twoColumn={twoColumn}>
-        {twoColumn ? (
+    <ShellFrame>
+      <ShellHeader partition={props.partition} />
+      <ShellBody chat={chat}>
+        {chat.placement === "Left" ? (
           <>
-            <Rail partition={partition} />
-            <Separator.Root
-              decorative
-              orientation="vertical"
-              className="w-px bg-edge"
-            />
+            {pane}
+            {pages}
           </>
         ) : (
-          <ShellDrawer
-            partition={partition}
-            onNavigate={() => {
-              setRailOpen(false);
-            }}
-          />
+          <>
+            {pages}
+            {pane}
+          </>
         )}
-        <ShellMain
-          narrow={!twoColumn}
-          title={`${partition.tenant} / ${partition.project}`}
-        />
-      </ShellFrame>
-    </Dialog.Root>
+      </ShellBody>
+    </ShellFrame>
   );
 }
 
@@ -168,7 +203,11 @@ export function Shell(props: {
 }): ReactNode {
   return (
     <ShellSlots>
-      <ShellDrawn partition={props.partition} />
+      <TicketReferenceWiring partition={props.partition}>
+        <ChatPaneProvider>
+          <ShellDrawn partition={props.partition} />
+        </ChatPaneProvider>
+      </TicketReferenceWiring>
     </ShellSlots>
   );
 }

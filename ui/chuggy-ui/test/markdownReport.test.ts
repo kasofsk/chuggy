@@ -3,6 +3,10 @@
  * written with, and the marks a worker reaches for most often — bold,
  * italic, inline code, a link — read as themselves rather than as the
  * asterisks and brackets that spelled them.
+ *
+ * A ticket named in the prose is one more mark, and the case that matters is
+ * where it is not one: a reference a worker showed inside a code span is the
+ * characters they meant to show.
  */
 
 import { expect, test } from "vitest";
@@ -153,4 +157,37 @@ test("a table past the column or row bound is cut rather than read in full", () 
     throw new Error("expected the report's first block to be a table");
   expect(table.header.length).toBe(markdownTableColumnsMax);
   expect(table.rows.length).toBe(markdownTableRowsMax);
+});
+
+test("a ticket named in the prose reads as the ticket rather than as brackets", () => {
+  expect(markdownInlineOf("filed [[ticket:15]] for it")).toEqual([
+    { kind: "Text", text: "filed " },
+    { kind: "Reference", ticket: 15 },
+    { kind: "Text", text: " for it" },
+  ]);
+});
+
+test("a reference inside a mark is the characters the worker showed", () => {
+  expect(markdownInlineOf("write `[[ticket:15]]` to name it")).toEqual([
+    { kind: "Text", text: "write " },
+    { kind: "Code", text: "[[ticket:15]]" },
+    { kind: "Text", text: " to name it" },
+  ]);
+  expect(markdownInlineOf("**[[ticket:15]]**")).toEqual([
+    { kind: "Bold", text: "[[ticket:15]]" },
+  ]);
+});
+
+test("a reference is read wherever a line's marks are read", () => {
+  expect(markdownReportBlocks("- closed [[ticket:15]]")).toEqual([
+    {
+      kind: "BulletList",
+      items: [
+        [
+          { kind: "Text", text: "closed " },
+          { kind: "Reference", ticket: 15 },
+        ],
+      ],
+    },
+  ]);
 });

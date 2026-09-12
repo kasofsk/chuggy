@@ -56,6 +56,7 @@ function itemsOf(
     held: heldOf(held),
     stream,
     listed: true,
+    turned: true,
   });
 }
 
@@ -127,15 +128,30 @@ test("the seam stands above the entry the compaction cut at and nowhere else", (
   });
 });
 
-test("a session with no store says so, and nothing else", () => {
+test("a session that was asked something and has no store says so, and nothing else", () => {
   const items = sessionConversationItems({
     held: heldOf({}),
     stream: undefined,
     listed: false,
+    turned: true,
   });
   expect(items).toStrictEqual([
     { item: "Marker", marker: { marker: "NoStore" } },
   ]);
+});
+
+/** The store is written by the first turn, so a thread just opened names no
+ * stream — and `No store` over an empty pane reads as a fault where there is
+ * only a thread nobody has typed in yet. */
+test("a session nobody has asked anything says nothing at all", () => {
+  expect(
+    sessionConversationItems({
+      held: heldOf({}),
+      stream: undefined,
+      listed: false,
+      turned: false,
+    }),
+  ).toStrictEqual([]);
 });
 
 /**
@@ -149,6 +165,7 @@ test("a stream the listing does not carry says so and still draws what was gathe
     held: heldOf({ entries: [entryOf({ type: "user", message: said("hi") })] }),
     stream,
     listed: false,
+    turned: true,
   });
   expect(items.map((item) => item.item)).toStrictEqual(["Marker", "Entry"]);
   expect(items[0]).toStrictEqual({
@@ -172,6 +189,7 @@ test("an unlisted stream's shortfalls stand beside the marker and what was gathe
     }),
     stream,
     listed: false,
+    turned: true,
   });
   expect(markers(items)).toStrictEqual([
     "Failure",

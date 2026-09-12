@@ -359,8 +359,13 @@ test("a Queued lead turn appends a running exchange with the kind word and no te
   expect(within(conversation).getByText("Queued")).toBeDefined();
 });
 
-/** One state, one word. A lead with no store yet says so once. */
-test("a lead with no store says so", async () => {
+/**
+ * The store is written by the first turn, so a lead nobody has woken names no
+ * stream — and `No store` over an empty conversation reads as a fault where
+ * there is only a lead that has not been asked anything. What a lead that WAS
+ * asked and has no store says is `sessionConversation.test.ts`'s.
+ */
+test("a lead nobody has asked anything says nothing about a store", async () => {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
@@ -372,7 +377,7 @@ test("a lead with no store says so", async () => {
   });
   vi.stubGlobal("fetch", api.fetch);
   await mountLead();
-  expect(screen.getByText("No store")).toBeDefined();
+  expect(screen.queryByText("No store")).toBeNull();
   expect(
     screen.queryByText("Loading…"),
     "a lead with no store to read was drawn as one still being read",

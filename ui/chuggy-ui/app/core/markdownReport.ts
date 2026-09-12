@@ -15,14 +15,22 @@
  * pass rather than nested, so `**a *b* c**` reads as bold text naming its own
  * asterisks instead of a tree — the same plain-over-wrong choice at the
  * inline grain.
+ *
+ * A ticket named in the prose is one more inline node, read by the grammar the
+ * contract owns rather than by a mark of this scanner's own — the console and
+ * the agent writing that form have to agree about it, and a second reading of
+ * it here is a second thing to keep in step.
  */
+
+import { ticketReferenceSplit } from "../../../../src/contract/ticketReference.ts";
 
 export type MarkdownInline =
   | { readonly kind: "Text"; readonly text: string }
   | { readonly kind: "Bold"; readonly text: string }
   | { readonly kind: "Italic"; readonly text: string }
   | { readonly kind: "Code"; readonly text: string }
-  | { readonly kind: "Link"; readonly text: string; readonly href: string };
+  | { readonly kind: "Link"; readonly text: string; readonly href: string }
+  | { readonly kind: "Reference"; readonly ticket: number };
 
 export type MarkdownLines = readonly (readonly MarkdownInline[])[];
 
@@ -57,6 +65,26 @@ export const markdownTableRowsMax = 100;
 const markdownInlineTokenPattern =
   /`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*|_([^_]+)_|\[([^[\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
 
+/**
+ * The ticket references inside the runs of plain text, drawn out after the
+ * marks rather than beside them: a reference is only ever a reference where the
+ * words are, so one written inside a code span or a link's own text stays the
+ * characters a worker meant to show.
+ */
+function markdownInlineReferenced(
+  nodes: readonly MarkdownInline[],
+): readonly MarkdownInline[] {
+  return nodes.flatMap((node) =>
+    node.kind !== "Text"
+      ? [node]
+      : ticketReferenceSplit(node.text).map((segment): MarkdownInline =>
+          segment.kind === "Text"
+            ? { kind: "Text", text: segment.text }
+            : { kind: "Reference", ticket: segment.ticket },
+        ),
+  );
+}
+
 /** One line's marks, read left to right without nesting. */
 export function markdownInlineOf(text: string): readonly MarkdownInline[] {
   const nodes: MarkdownInline[] = [];
@@ -79,7 +107,7 @@ export function markdownInlineOf(text: string): readonly MarkdownInline[] {
   }
   if (consumed < text.length)
     nodes.push({ kind: "Text", text: text.slice(consumed) });
-  return nodes;
+  return markdownInlineReferenced(nodes);
 }
 
 type MarkdownLineKind =

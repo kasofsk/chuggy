@@ -45,6 +45,10 @@ import {
   threadStandingRulesDefault,
   threadTurnBoundaryHeading,
 } from "../../src/contract/threadSeeding.ts";
+import {
+  ticketReferenceInstruction,
+  ticketReferenceSplit,
+} from "../../src/contract/ticketReference.ts";
 
 /** What one project says instead of the installation's, said once here. */
 const projectStandingRules = "- You draft, and you do nothing else.";
@@ -285,6 +289,24 @@ test("the purpose says the draft is the job and the checkout is for reading", ()
   assert.match(threadPurposeStanding, /never do the work yourself/u);
   assert.match(threadPurposeStanding, /change nothing/u);
   assert.match(threadPurposeStanding, /what you filed/u);
+});
+
+/** The console draws a reference only where the agent wrote the form, so the
+ * objectives carrying that form is what makes the widget reachable at all. */
+test("every thread is told the form the console draws a ticket from", () => {
+  const objectives = threadSystemPrompt({
+    partition,
+    owner: "geoff",
+    standingRules: threadStandingRulesDefault,
+  });
+
+  assert.ok(objectives.includes(ticketReferenceInstruction));
+  assert.deepEqual(
+    ticketReferenceSplit(objectives).filter(
+      (segment) => segment.kind === "Ticket",
+    ),
+    [{ kind: "Ticket", ticket: 15 }],
+  );
 });
 
 test("a North Star is named where there is one and no heading where there is none", () => {

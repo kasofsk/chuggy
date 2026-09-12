@@ -46,6 +46,7 @@ import {
   threadStandingSection,
   threadTurnBoundaryHeading,
 } from "../contract/threadSeeding.ts";
+import { ticketReferenceInstruction } from "../contract/ticketReference.ts";
 import type { SessionCapability, SessionState } from "./agentSession.ts";
 import type { Partition } from "./projectStore.ts";
 
@@ -225,6 +226,9 @@ this session, so you may do exactly what they may do and nothing further.`,
     `# What you are for
 
 ${threadPurposeStanding}`,
+    `# How to name a ticket
+
+${ticketReferenceInstruction}`,
     ...(northStar === undefined
       ? []
       : [`${threadNorthStarHeading}\n\n${northStar}`]),

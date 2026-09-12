@@ -69,7 +69,7 @@ function mount(children: ReactNode): void {
   );
 }
 
-test("the footer is drawn at the foot of the shell's rail", async () => {
+test("the footer is drawn in the bar above every page", async () => {
   mount(<Shell partition={atlas} />);
   await settled();
   expect(screen.getByText(footerText)).toBeDefined();

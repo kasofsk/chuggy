@@ -1,15 +1,12 @@
 /**
- * One thread's name and the menu that renames, closes and hides it — the
- * pieces are separate because the rail draws them side by side in one row and
- * the Threads page draws them in two columns, and the state behind both is
- * `useThreadEntryActions`, called once per row either way.
+ * The menu that renames, closes and hides one thread, and the editor the
+ * rename opens into.
  *
- * THE MENU'S TRIGGER IS NEVER INSIDE THE LINK. Radix's dropdown needs its own
- * button, and a button nested in an anchor is invalid markup a screen reader
- * cannot parse either arm of.
+ * The pieces are separate from the state behind them because the chat pane
+ * draws the trigger in its header and swaps the whole header for the editor
+ * while a rename is open, over one call to `useThreadEntryActions`.
  */
 
-import { Link } from "@tanstack/react-router";
 import { DropdownMenu } from "radix-ui";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -23,10 +20,9 @@ import {
   apiRenameThread,
 } from "../../core/apiRoutes.ts";
 import { panelReason } from "../../core/freshness.ts";
-import { threadLabel, threadRowActions } from "../../core/threads.ts";
+import { threadRowActions } from "../../core/threads.ts";
 import { useApiPorts } from "../api.ts";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
-import { Notice } from "../ui/Notice.tsx";
 
 export interface ThreadEntryActions {
   readonly renaming: boolean;
@@ -183,39 +179,5 @@ export function ThreadEntryMenu(props: {
         </MenuContent>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
-  );
-}
-
-/** The rail's own row: name, menu and refusal side by side, over one call to
- * the actions hook. */
-export function ThreadEntryLabel(props: {
-  readonly partition: PartitionIdentity;
-  readonly thread: ThreadEntryResponse;
-  readonly onNavigate?: (() => void) | undefined;
-}): ReactNode {
-  const thread = props.thread;
-  const actions = useThreadEntryActions(props.partition, thread);
-  return (
-    <>
-      {actions.renaming ? (
-        <ThreadEntryRename initial={thread.title ?? ""} actions={actions} />
-      ) : (
-        <>
-          <Link
-            to="/$tenant/$project/threads/$session"
-            params={{ ...props.partition, session: thread.session }}
-            onClick={props.onNavigate}
-            className="min-w-0 flex-1 truncate no-underline"
-            activeProps={{ className: "text-ink-1" }}
-          >
-            {threadLabel(thread)}
-          </Link>
-          <ThreadEntryMenu actions={actions} />
-        </>
-      )}
-      {actions.refused === undefined ? null : (
-        <Notice tone="danger" inline detail={`Refused · ${actions.refused}`} />
-      )}
-    </>
   );
 }

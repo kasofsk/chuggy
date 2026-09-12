@@ -1,19 +1,26 @@
 /**
  * One exchange drawn as a chat turn: the member's bubble on the right, the
- * assistant flush left behind its mark, and one quiet line under the answer.
+ * assistant's answer flush left, and one quiet line under it.
  *
  * A TURN NOBODY HAS ANSWERED DRAWS NO ANSWER BLOCK. The parts primitive draws
  * an empty part where a running message holds no content, so the answer is
  * asked for only once there is one: an exchange still running is its work card
  * and its meta line, and nothing between them.
+ *
+ * Both halves stack with a column flex and neither draws a gutter beside the
+ * text, so an exchange is the same shape in a pane as on a page and the words
+ * take the whole width wherever it is drawn.
  */
 
 import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
 import type { TextMessagePartComponent } from "@assistant-ui/react";
+import { Fragment } from "react";
 import type { ReactNode } from "react";
 
+import { ticketReferenceSplit } from "../../../../../src/contract/ticketReference.ts";
 import type { ConversationExchange } from "../../core/conversation.ts";
 import { threadTurnKindWord } from "../../core/threads.ts";
+import { TicketReference } from "../ui/TicketReference.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { ConversationCard } from "./ConversationCard.tsx";
@@ -43,10 +50,28 @@ function useConversationExchange(): ConversationExchange | undefined {
   );
 }
 
-const ConversationSaid: TextMessagePartComponent = (props) => <>{props.text}</>;
+/**
+ * The member's own words are not marked-up text and are never read as any, so
+ * the only thing drawn out of them is a ticket they named — which they named by
+ * picking it out of the composer's own list, and would not expect to read back
+ * as brackets.
+ */
+const ConversationSaid: TextMessagePartComponent = (props) => (
+  <>
+    {ticketReferenceSplit(props.text).map((segment, at) =>
+      segment.kind === "Text" ? (
+        <Fragment key={at}>{segment.text}</Fragment>
+      ) : (
+        <TicketReference key={at} ticket={segment.ticket} />
+      ),
+    )}
+  </>
+);
 
+/** The report gives up its own panel here: what it sits on is already a
+ * surface, and a box inside a box is width the words need more. */
 const ConversationReport: TextMessagePartComponent = (props) => (
-  <MarkdownReport text={props.text} />
+  <MarkdownReport text={props.text} bare />
 );
 
 /** The member's own words, on the right, as they were typed — with the block
@@ -56,15 +81,13 @@ function ConversationBubble(props: {
   readonly context: string | undefined;
 }): ReactNode {
   return (
-    <div className="grid min-w-0 justify-items-end gap-2">
+    <div className="flex flex-col items-end gap-2">
       {props.context === undefined ? null : (
-        <div className="max-w-3/4 min-w-0">
-          <ConversationCard label="Context">
-            <MarkdownReport text={props.context} />
-          </ConversationCard>
-        </div>
+        <ConversationCard label="Context">
+          <MarkdownReport text={props.context} bare />
+        </ConversationCard>
       )}
-      <div className="bg-bubble rounded-3 max-w-3/4 px-4 py-3 whitespace-pre-wrap">
+      <div className="bg-bubble rounded-3 max-w-[85%] px-4 py-3 wrap-anywhere whitespace-pre-wrap">
         <MessagePrimitive.Parts components={{ Text: ConversationSaid }} />
       </div>
     </div>
@@ -116,7 +139,7 @@ export function ConversationAskMessage(): ReactNode {
   const exchange = useConversationExchange();
   if (exchange === undefined) return null;
   return (
-    <MessagePrimitive.Root className="grid min-w-0 gap-3">
+    <MessagePrimitive.Root className="flex flex-col gap-3">
       {exchange.before.map((marker, at) => (
         <ConversationSystemLine
           key={at}
@@ -129,19 +152,6 @@ export function ConversationAskMessage(): ReactNode {
   );
 }
 
-/** The mark the assistant's side of the column is read by, at the column's
- * left edge where a chat puts it. */
-function ConversationMark(): ReactNode {
-  return (
-    <span
-      className="rounded-circle bg-surface-inverse text-ink-inverse flex size-5 shrink-0 items-center justify-center text-xs"
-      aria-hidden="true"
-    >
-      c
-    </span>
-  );
-}
-
 /** The answer half of one exchange: what it took, what came back, and where it
  * ended up. */
 export function ConversationAnswerMessage(): ReactNode {
@@ -150,24 +160,18 @@ export function ConversationAnswerMessage(): ReactNode {
   const standing = exchange.standing;
   if (standing.standing === "Markers") return null;
   return (
-    <MessagePrimitive.Root className="grid min-w-0 grid-cols-[auto_1fr] gap-3">
-      <ConversationMark />
-      <div className="grid min-w-0 gap-3">
-        <ConversationWorkCard
-          work={exchange.work}
-          running={standing.standing === "Running"}
-        />
-        {standing.standing === "Failed" && standing.failure !== undefined ? (
-          <Notice tone="danger" detail={standing.failure} />
-        ) : null}
-        {exchange.answer === undefined ? null : (
-          <MessagePrimitive.Parts components={{ Text: ConversationReport }} />
-        )}
-        <ConversationMetaLine
-          standing={standing}
-          measures={exchange.measures}
-        />
-      </div>
+    <MessagePrimitive.Root className="flex flex-col gap-3">
+      <ConversationWorkCard
+        work={exchange.work}
+        running={standing.standing === "Running"}
+      />
+      {standing.standing === "Failed" && standing.failure !== undefined ? (
+        <Notice tone="danger" detail={standing.failure} />
+      ) : null}
+      {exchange.answer === undefined ? null : (
+        <MessagePrimitive.Parts components={{ Text: ConversationReport }} />
+      )}
+      <ConversationMetaLine standing={standing} measures={exchange.measures} />
     </MessagePrimitive.Root>
   );
 }

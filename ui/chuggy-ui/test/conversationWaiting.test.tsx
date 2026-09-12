@@ -1,9 +1,10 @@
 /**
- * The locomotive strip above the composer, mounted with no provider as
+ * The train strip above the composer, mounted with no provider as
  * `conversationSurface.test.tsx` mounts the rest of the surface: the strip
  * holds its height with or without the engine, the engine is drawn while a
- * turn is out and absent once every exchange has settled, and the strip is
- * never drawn where there is no composer to run above.
+ * turn is out and absent once every exchange has settled, the strip is never
+ * drawn where there is no composer to run above, and the sprite states neither
+ * a colour nor a style of its own so the theme and the served policy both hold.
  */
 
 import { cleanup, render } from "@testing-library/react";
@@ -93,11 +94,26 @@ test("the strip shares the composer's own width rather than the pane's", () => {
   expect(strip?.parentElement).toBe(composer?.closest("form")?.parentElement);
 });
 
-test("the engine trails three puffs of smoke while it is drawn", () => {
+test("the engine runs a rail, and turns a wheel under every axle", () => {
   const running = render(<ConversationWaiting waiting />);
   expect(
-    running.container.querySelectorAll(".conversation-waiting-smoke"),
-  ).toHaveLength(3);
+    running.container.querySelector(".conversation-waiting-track"),
+  ).not.toBeNull();
+  expect(
+    running.container.querySelector(".conversation-waiting-steam"),
+  ).not.toBeNull();
+  const wheels = running.container.querySelectorAll(
+    ".conversation-waiting-wheel",
+  );
+  expect(wheels.length).toBeGreaterThan(0);
+  for (const wheel of wheels)
+    expect(wheel.querySelector("path")).not.toBeNull();
+});
+
+test("the sprite states no colour and no style of its own", () => {
+  const running = render(<ConversationWaiting waiting />);
+  expect(running.container.querySelector("[style]")).toBeNull();
+  expect(running.container.querySelector("[fill]")).toBeNull();
 });
 
 test("every exchange settled draws the strip with no engine", () => {

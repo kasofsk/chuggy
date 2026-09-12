@@ -28,6 +28,29 @@
     box-shadow: none;
   }
 
+  /* The list stands over the thread rather than inside the composer, because
+   * the box it opens from is the last thing on the pane and a list below it
+   * would be off the bottom of the screen. */
+  .conversation-mentions {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    z-index: 1;
+    margin-bottom: var(--space-1);
+    max-height: 14em;
+  }
+
+  .conversation-mention {
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .conversation-mention[data-highlighted],
+  .conversation-mention:hover {
+    background: var(--surface-2);
+  }
+
   .conversation-chevron {
     transition: rotate var(--duration-1) var(--ease-out);
   }
@@ -51,20 +74,65 @@
     }
   }
 
-  /* The strip holds this height whether or not the engine is drawn inside
-   * it, so a turn starting or ending never shifts the composer under it. */
+  /* The strip holds this height whether or not the train is drawn inside it,
+   * so a turn starting or ending never shifts the composer under it. The three
+   * mixes are the sprite's own shades, each a step of one token toward the
+   * panel or toward the frame rather than a second colour. */
   .conversation-waiting {
+    --waiting-boiler-light: color-mix(
+      in srgb,
+      var(--tone-live) 45%,
+      var(--surface-1)
+    );
+    --waiting-boiler-dark: color-mix(
+      in srgb,
+      var(--tone-live) 65%,
+      var(--ink-1)
+    );
+    --waiting-gilt: color-mix(
+      in srgb,
+      var(--tone-parked) 45%,
+      var(--surface-1)
+    );
+    --waiting-beam-light: color-mix(
+      in srgb,
+      var(--tone-fail) 45%,
+      var(--surface-1)
+    );
     position: relative;
     height: 2.5em;
+    overflow: hidden;
+  }
+
+  /* The rail the engine runs on, still while the engine crosses it: the ground
+   * moves under the Loading card's engine because that one holds its place,
+   * and this one does not. */
+  .conversation-waiting-track {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0.25em;
+    height: 0.125em;
+    background-image: repeating-linear-gradient(
+      to right,
+      var(--edge-strong) 0,
+      var(--edge-strong) 0.375em,
+      transparent 0.375em,
+      transparent 0.75em
+    );
   }
 
   .conversation-waiting-engine {
     position: absolute;
-    top: 0;
-    width: 2.5em;
-    height: 2.5em;
+    bottom: 0.3em;
+    width: 5em;
     animation: conversation-waiting-travel var(--duration-waiting-travel) linear
       infinite;
+  }
+
+  .conversation-waiting-sprite {
+    display: block;
+    width: 100%;
+    height: auto;
   }
 
   /* `left` is a percentage of the strip, which `transform` cannot read
@@ -79,12 +147,12 @@
     }
 
     49.99% {
-      left: calc(100% - 2.5em);
+      left: calc(100% - 5em);
       transform: scaleX(1);
     }
 
     50% {
-      left: calc(100% - 2.5em);
+      left: calc(100% - 5em);
       transform: scaleX(-1);
     }
 
@@ -94,44 +162,115 @@
     }
   }
 
-  /* A puff rests over the smokestack and drifts back and up from there, in
-   * the engine's own local coordinates: the parent's flip at each end of the
-   * crossing carries it to the trailing side without a keyframe of its own
-   * for that. Three copies stagger off one cycle so a puff is always aloft. */
-  .conversation-waiting-smoke {
-    position: absolute;
-    top: 0.3em;
-    left: 1.1em;
-    width: 0.4em;
-    height: 0.4em;
-    border-radius: var(--radius-circle);
-    background: var(--ink-3);
-    opacity: 0;
-    animation: conversation-waiting-smoke calc(var(--duration-chug) * 3)
-      ease-out infinite;
+  /* Every fill the sprite draws with, stated once here so the drawing itself
+   * states none: the frame takes the ink that contrasts most with the page and
+   * what recedes takes the ink that contrasts least, so the engine inverts
+   * whole rather than going dark on a dark page. */
+  .conversation-waiting-ink {
+    fill: var(--ink-1);
   }
 
-  .conversation-waiting-smoke:nth-of-type(2) {
-    animation-delay: calc(var(--duration-chug) * -1);
+  .conversation-waiting-shade {
+    fill: var(--ink-3);
   }
 
-  .conversation-waiting-smoke:nth-of-type(3) {
-    animation-delay: calc(var(--duration-chug) * -2);
+  .conversation-waiting-mist {
+    fill: var(--edge);
   }
 
-  @keyframes conversation-waiting-smoke {
-    0% {
-      opacity: 0;
-      transform: translate(0, 0) scale(0.5);
-    }
+  .conversation-waiting-boiler {
+    fill: var(--tone-live);
+  }
 
-    15% {
-      opacity: 0.6;
-    }
+  .conversation-waiting-boiler-light {
+    fill: var(--waiting-boiler-light);
+  }
 
+  .conversation-waiting-boiler-dark {
+    fill: var(--waiting-boiler-dark);
+  }
+
+  .conversation-waiting-glass {
+    fill: var(--surface-1);
+  }
+
+  .conversation-waiting-gold {
+    fill: var(--tone-parked);
+  }
+
+  .conversation-waiting-gilt {
+    fill: var(--waiting-gilt);
+  }
+
+  .conversation-waiting-beam {
+    fill: var(--tone-fail);
+  }
+
+  .conversation-waiting-beam-light {
+    fill: var(--waiting-beam-light);
+  }
+
+  /* Each part moves against the frame rather than against its own drawing, so
+   * a share is a share of the `viewBox` the sprite states and stays true when
+   * a path is redrawn. */
+  .conversation-waiting-body,
+  .conversation-waiting-rod,
+  .conversation-waiting-steam {
+    transform-box: view-box;
+  }
+
+  .conversation-waiting-body {
+    animation: conversation-waiting-bounce calc(var(--duration-chug) / 2)
+      steps(1, end) infinite;
+  }
+
+  .conversation-waiting-rod {
+    fill: var(--waiting-gilt);
+    animation: conversation-waiting-bounce calc(var(--duration-chug) * 0.75)
+      steps(2, end) infinite;
+  }
+
+  .conversation-waiting-steam {
+    animation: conversation-waiting-steam calc(var(--duration-chug) * 1.5)
+      steps(4, end) infinite;
+  }
+
+  /* A wheel turns about its axle, which sits two thirds along its own box and
+   * five sixths down it — the same share for every wheel, because every wheel
+   * is one drawing moved along the frame. */
+  .conversation-waiting-wheel {
+    transform-box: fill-box;
+    transform-origin: 66.667% 83.333%;
+    animation: conversation-waiting-wheel calc(var(--duration-chug) * 0.75)
+      steps(4, end) infinite;
+  }
+
+  @keyframes conversation-waiting-bounce {
+    0%,
     100% {
+      transform: translateY(0);
+    }
+
+    50% {
+      transform: translateY(-3.571%);
+    }
+  }
+
+  @keyframes conversation-waiting-wheel {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes conversation-waiting-steam {
+    from {
+      transform: translate(0, 3.571%);
+      opacity: 0.9;
+    }
+
+    to {
+      transform: translate(-6.25%, -7.143%);
       opacity: 0;
-      transform: translate(-1.1em, -0.9em) scale(1.6);
     }
   }
 }

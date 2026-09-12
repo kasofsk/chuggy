@@ -14,6 +14,7 @@ import {
   type MarkdownInline,
   type MarkdownLines,
 } from "../../core/markdownReport.ts";
+import { TicketReference } from "./TicketReference.tsx";
 import { Table } from "./Table.tsx";
 
 function MarkdownInlineRun(props: {
@@ -35,6 +36,8 @@ function MarkdownInlineRun(props: {
             {node.text}
           </a>
         );
+      case "Reference":
+        return <TicketReference key={at} ticket={node.ticket} />;
     }
   });
 }
@@ -151,11 +154,19 @@ function MarkdownBlockView(props: {
   }
 }
 
-/** The worker's report, laid out as the markdown it tends to write. */
-export function MarkdownReport(props: { readonly text: string }): ReactNode {
+/** The worker's report, laid out as the markdown it tends to write. `bare`
+ * drops the panel it draws itself in, for a column with no width to spare. */
+export function MarkdownReport(props: {
+  readonly text: string;
+  readonly bare?: boolean;
+}): ReactNode {
   const blocks = markdownReportBlocks(props.text);
   return (
-    <div className="run-report">
+    <div
+      className={
+        props.bare === true ? "run-report run-report-bare" : "run-report"
+      }
+    >
       {blocks.map((block, at) => (
         <MarkdownBlockView key={at} block={block} />
       ))}

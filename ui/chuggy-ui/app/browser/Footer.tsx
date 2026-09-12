@@ -1,6 +1,6 @@
 /**
- * The line the rail's foot ends on, and the one the landing route ends on —
- * that route assembles its own markup and never mounts `Shell`.
+ * The line the bar above every page ends on, and the one the landing route ends
+ * on — that route assembles its own markup and never mounts `Shell`.
  */
 
 import type { ReactNode } from "react";
