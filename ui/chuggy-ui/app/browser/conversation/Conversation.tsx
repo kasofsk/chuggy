@@ -101,12 +101,28 @@ function conversationMessages(
   ]);
 }
 
-/** Whether any exchange is still being worked, the half of the waiting
- * predicate that outlives one send. */
+/** Whether any exchange is still being worked, in the mailbox's own terms:
+ * fed to the library's `isRunning` so its own affordances follow the mailbox,
+ * whatever the transcript already shows. */
 function conversationRunning(
   exchanges: readonly ConversationExchange[],
 ): boolean {
   return exchanges.some((exchange) => exchange.standing.standing === "Running");
+}
+
+/** Whether a turn is out with nothing said for it yet, the half of the
+ * waiting predicate that outlives one send. An exchange already carrying an
+ * answer has said its piece even while the mailbox still holds it Claimed;
+ * `conversationWorked` demotes that answer the moment further work arrives,
+ * so an agent that speaks and keeps going resumes the engine on its own, with
+ * no flag or timer needed here. */
+function conversationOutUnanswered(
+  exchanges: readonly ConversationExchange[],
+): boolean {
+  return exchanges.some(
+    (exchange) =>
+      exchange.standing.standing === "Running" && exchange.answer === undefined,
+  );
 }
 
 function conversationAppendedText(message: AppendMessage): string {
@@ -242,7 +258,7 @@ export function Conversation(props: {
     exchanges: activeExchanges,
     composer: props.composer,
   });
-  const waiting = held.sending || conversationRunning(activeExchanges);
+  const waiting = held.sending || conversationOutUnanswered(activeExchanges);
   const inset = props.pane === true ? "px-4 py-4" : "";
   return (
     <AssistantRuntimeProvider runtime={held.runtime}>

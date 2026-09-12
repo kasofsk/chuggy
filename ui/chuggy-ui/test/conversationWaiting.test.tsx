@@ -2,9 +2,10 @@
  * The train strip above the composer, mounted with no provider as
  * `conversationSurface.test.tsx` mounts the rest of the surface: the strip
  * holds its height with or without the engine, the engine is drawn while a
- * turn is out and absent once every exchange has settled, the strip is never
- * drawn where there is no composer to run above, and the sprite states neither
- * a colour nor a style of its own so the theme and the served policy both hold.
+ * turn is out with nothing said for it yet and absent once it has an answer or
+ * every exchange has settled, the strip is never drawn where there is no
+ * composer to run above, and the sprite states neither a colour nor a style of
+ * its own so the theme and the served policy both hold.
  */
 
 import { cleanup, render } from "@testing-library/react";
@@ -114,6 +115,23 @@ test("the sprite states no colour and no style of its own", () => {
   const running = render(<ConversationWaiting waiting />);
   expect(running.container.querySelector("[style]")).toBeNull();
   expect(running.container.querySelector("[fill]")).toBeNull();
+});
+
+test("a running exchange already carrying an answer draws no engine", () => {
+  const running = exchangeOf({
+    standing: { standing: "Running", state: "Claimed" },
+    answer: "the answer is already here",
+  });
+  const view = render(
+    <Conversation
+      exchanges={[running]}
+      composer={composerOf()}
+      empty="No conversation"
+    />,
+  );
+  expect(
+    view.container.querySelector(".conversation-waiting-engine"),
+  ).toBeNull();
 });
 
 test("every exchange settled draws the strip with no engine", () => {
