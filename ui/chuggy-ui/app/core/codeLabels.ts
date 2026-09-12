@@ -17,7 +17,10 @@
 
 import {
   operationRefusalCodes,
+  type BriefFinalizationMode,
+  type ConfigurationHandoff,
   type EscalationReason,
+  type FinalizerChoice,
   type OperationRefusalCode,
   type OperationState,
   type ResumePoint,
@@ -159,6 +162,74 @@ export function phaseLabel(phase: TicketPhase): string {
     case "Revoked":
       return phase;
   }
+}
+
+/** How a finished ticket lands, in the word the choice is made by. */
+export function landingLabel(mode: BriefFinalizationMode): string {
+  switch (mode) {
+    case "Push":
+      return "Push";
+    case "PullRequest":
+      return "Pull request";
+  }
+}
+
+/** What choosing that landing does to the branch the work lands on. */
+export function landingEffect(mode: BriefFinalizationMode): string {
+  switch (mode) {
+    case "Push":
+      return "Commits straight onto the target branch";
+    case "PullRequest":
+      return "Opens a pull request into the target branch";
+  }
+}
+
+/** How a landing reaches the reference it names, which is all its two modes
+ * differ in once one is named. */
+function landingTargetName(mode: BriefFinalizationMode): string {
+  switch (mode) {
+    case "Push":
+      return "lands on";
+    case "PullRequest":
+      return "into";
+  }
+}
+
+/** A brief's landing read back: the mode, and the reference where it names one. */
+export function briefLandingLine(finalization: {
+  readonly mode: BriefFinalizationMode;
+  readonly target?: string | undefined;
+}): string {
+  const target = finalization.target;
+  const mode = finalization.mode;
+  return target === undefined
+    ? landingLabel(mode)
+    : `${landingLabel(mode)} · ${landingTargetName(mode)} ${target}`;
+}
+
+/** What runs a ticket's finalization, `None` being a ticket that lands nothing. */
+export function finalizerLabel(finalizer: FinalizerChoice): string {
+  switch (finalizer) {
+    case "ManagedFinalizer":
+      return "Managed";
+    case "NoFinalizer":
+      return "None";
+  }
+}
+
+/** What a configuration hands its finished work off as. */
+export function handoffLabel(handoff: ConfigurationHandoff): string {
+  switch (handoff) {
+    case "None":
+      return "None";
+    case "DirectCommit":
+      return "Direct commit";
+  }
+}
+
+/** Whether finalization waits for a person before it runs. */
+export function approvalLabel(required: boolean): string {
+  return required ? "Required" : "Not required";
 }
 
 /**

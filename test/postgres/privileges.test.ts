@@ -17,6 +17,8 @@ import {
   repositoryBindingListAllFunction,
   repositoryBindingListFunction,
   repositoryBindingWriteFunction,
+  repositoryLandingReadFunction,
+  repositoryLandingWriteFunction,
   schedulerRole,
   selectorReviewRole,
   selectorServiceRole,
@@ -1137,4 +1139,73 @@ test("the binding every evidence function opens with is nobody's to call", async
       )) ?? "",
       /permission denied for function/u,
     );
+});
+
+/**
+ * The two landing doors. Reading and moving a binding's landing is the API's
+ * question, asked on behalf of one project by a route it already gates; every
+ * other runtime role reads a landing as part of a row it already holds a door
+ * for, so none of them holds these.
+ */
+test("no runtime role but the API reads or moves a binding's landing", async () => {
+  const calls = [
+    `SELECT landing_mode FROM ${repositoryLandingReadFunction}('tenant','project','repository')`,
+    `SELECT outcome FROM ${repositoryLandingWriteFunction}('tenant','project','repository','Push','Push')`,
+  ];
+  for (const call of calls) {
+    for (const role of [
+      ticketServiceRole,
+      selectorServiceRole,
+      schedulerRole,
+      finalizerRole,
+      workerPlaneRole,
+      configurationImporterRole,
+    ])
+      assert.match(
+        (await harness.attemptAs(role, call)) ?? "",
+        postgresHarnessDenial(
+          call.includes(repositoryLandingWriteFunction)
+            ? repositoryLandingWriteFunction
+            : repositoryLandingReadFunction,
+        ),
+        `${role}: ${call}`,
+      );
+    assert.equal(
+      await harness.attemptAs(apiRole, call),
+      undefined,
+      `the role whose routes answer a landing holds the door: ${call}`,
+    );
+  }
+});
+
+/** The one column a binding's row lets an update move, and the one role holding it. */
+test("only the boundary owner may move the column the doors write", async () => {
+  for (const role of [
+    apiRole,
+    ticketServiceRole,
+    selectorServiceRole,
+    schedulerRole,
+    finalizerRole,
+    workerPlaneRole,
+    configurationImporterRole,
+  ])
+    assert.equal(
+      (
+        await harness.query(
+          "SELECT has_column_privilege($1,'project_repository','landing_mode','UPDATE') AS granted",
+          [role],
+        )
+      )[0]?.["granted"],
+      false,
+      role,
+    );
+  assert.equal(
+    (
+      await harness.query(
+        "SELECT has_column_privilege($1,'project_repository','landing_mode','UPDATE') AS granted",
+        [boundaryOwnerRole],
+      )
+    )[0]?.["granted"],
+    true,
+  );
 });

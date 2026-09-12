@@ -58,7 +58,7 @@
  */
 
 import { asBoundedText } from "./boundedText.ts";
-import type { CanonicalConfiguration } from "./authoring.ts";
+import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 import {
   finalizerIdentityCharsMax,
   type CandidateFile,
@@ -244,7 +244,7 @@ export type HandoffAccepted =
   | { readonly accepted: "NoPassedWork" };
 
 /** Whether the pinned revision asks a person to approve one candidate, or says nothing this module reads. */
-function handoffApprovalRequired(
+export function handoffApprovalRequired(
   canonical: CanonicalConfiguration,
 ): boolean | undefined {
   let parsed: unknown;

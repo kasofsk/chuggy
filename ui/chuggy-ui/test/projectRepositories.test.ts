@@ -57,6 +57,7 @@ test("a row is marked bound by the address the binding names", () => {
       {
         repository: "https://forge.test/kasofsk/chuggy",
         boundAt: "2026-09-11T00:00:00Z",
+        landing: { mode: "Push" as const },
       },
     ],
   );
@@ -72,7 +73,11 @@ function answered(
 ): ApiResult<ProjectRepositoryBindAnswer> {
   return {
     outcome: "Ok",
-    value: { repository: "https://forge.test/kasofsk/chuggy", configurations },
+    value: {
+      repository: "https://forge.test/kasofsk/chuggy",
+      landing: { mode: "Push" },
+      configurations,
+    },
   };
 }
 

@@ -67,8 +67,13 @@ import {
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
 import type {
+  ProjectRepositoryBound,
+  ProjectRepositoryLandingCommand,
+  ProjectRepositoryLandingOutcome,
+  ProjectRepositoryLandingStore,
   RepositoryBindingCommand,
   RepositoryBindingOutcome,
+  RepositoryLanding,
 } from "../../src/interpreter/repositoryBinding.ts";
 import {
   repositoryOnboarding,
@@ -225,6 +230,8 @@ interface FixturePorts {
   readonly held?: readonly ForgeInstallationClaimed[];
   readonly resolved?: CredentialResolved;
   readonly outcome?: RepositoryBindingOutcome;
+  readonly landing?: RepositoryLanding;
+  readonly landingOutcome?: ProjectRepositoryLandingOutcome;
   readonly apps?: readonly ForgeApp[];
   readonly configurations?: FixtureConfigurations;
   readonly creation?: FixtureCreation;
@@ -248,6 +255,7 @@ interface FixtureWrites {
   readonly creations: ForgeRepositoryCreationRequest[];
   readonly seeds: ForgeRepositorySeedRequest[];
   readonly rulesets: ForgeRepositoryRulesetRequest[];
+  readonly landings: ProjectRepositoryLandingCommand[];
 }
 
 /**
@@ -417,6 +425,34 @@ function fixturePortsForgeHalf(
   };
 }
 
+/** The one binding every case's durable side holds, at whatever landing the case gives it. */
+function fixtureBinding(given: FixturePorts): ProjectRepositoryBound {
+  return {
+    repository,
+    boundAt: "2026-09-11T01:00:00Z",
+    landing: given.landing ?? { mode: "Push" },
+  };
+}
+
+/** The landing half, answering the one binding and recording what it was asked to write. */
+function fixturePortsLanding(
+  given: FixturePorts,
+  wrote: FixtureWrites,
+): ProjectRepositoryLandingStore {
+  return {
+    landing: () => Promise.resolve(fixtureBinding(given)),
+    setLanding: (command) => {
+      wrote.landings.push(command);
+      return Promise.resolve(
+        given.landingOutcome ?? {
+          outcome: "Written",
+          binding: { ...fixtureBinding(given), landing: command.landing },
+        },
+      );
+    },
+  };
+}
+
 function fixturePorts(
   access: ProjectAccess,
   given: FixturePorts,
@@ -436,6 +472,7 @@ function fixturePorts(
     creations: [],
     seeds: [],
     rulesets: [],
+    landings: [],
   };
   const credentials: RepositoryCredentialPort = {
     credential: () =>
@@ -457,8 +494,7 @@ function fixturePorts(
       },
       claims: fixtureClaims(given.held ?? []),
       bindings: {
-        bindings: () =>
-          Promise.resolve([{ repository, boundAt: "2026-09-11T01:00:00Z" }]),
+        bindings: () => Promise.resolve([fixtureBinding(given)]),
       },
       binding: {
         currentRecoveryEpoch: () => Promise.resolve(epoch),
@@ -467,6 +503,7 @@ function fixturePorts(
           return Promise.resolve(given.outcome ?? "Bound");
         },
       },
+      landing: fixturePortsLanding(given, wrote),
       ...(given.configurations === undefined
         ? {}
         : {
@@ -943,6 +980,7 @@ test("a binding is the project administrator's, under the epoch the service read
     {
       result: "Bound",
       repository,
+      landing: { mode: "Push" },
       configurations: { result: "Deferred", reason: "NotConfigured" },
     },
   );
@@ -1017,7 +1055,13 @@ test("what a project binds is its readers' to read and nobody else's", async () 
     await reading.service.projectRepositories(principal, partition),
     {
       result: "Repositories",
-      repositories: [{ repository, boundAt: "2026-09-11T01:00:00Z" }],
+      repositories: [
+        {
+          repository,
+          boundAt: "2026-09-11T01:00:00Z",
+          landing: { mode: "Push" },
+        },
+      ],
     },
   );
 });
@@ -1045,6 +1089,7 @@ test("a bind with no configuration step composed defers and says so", async () =
   assert.deepEqual(bound, {
     result: "Bound",
     repository,
+    landing: { mode: "Push" },
     configurations: { result: "Deferred", reason: "NotConfigured" },
   });
 });
@@ -1060,6 +1105,7 @@ test("a bound repository is imported at its own head and not at a remembered one
   assert.deepEqual(bound, {
     result: "Bound",
     repository,
+    landing: { mode: "Push" },
     configurations: { result: "Imported", count: 0 },
   });
   assert.deepEqual(wrote.heads, [
@@ -1080,6 +1126,7 @@ test("a repository declaring no configurations is authored the bootstrap", async
   assert.deepEqual(bound, {
     result: "Bound",
     repository,
+    landing: { mode: "Push" },
     configurations: { result: "Bootstrapped", revision: "bootstrap" },
   });
   assert.deepEqual(wrote.authored, ["bootstrap"]);
@@ -1117,6 +1164,7 @@ test("a deployment naming no bootstrap image authors none and says which", async
   assert.deepEqual(bound, {
     result: "Bound",
     repository,
+    landing: { mode: "Push" },
     configurations: { result: "Deferred", reason: "NoBootstrapImage" },
   });
   assert.deepEqual(wrote.authored, []);
@@ -1129,6 +1177,7 @@ test("a port that raises inside the step is a deferral and not a failed bind", a
   assert.deepEqual(bound, {
     result: "Bound",
     repository,
+    landing: { mode: "Push" },
     configurations: { result: "Deferred", reason: "StepFailed" },
   });
   assert.equal(wrote.commands.length, 1);
@@ -1147,6 +1196,7 @@ test("a project already holding a different bootstrap is told so and stays bound
   assert.deepEqual(bound, {
     result: "Bound",
     repository,
+    landing: { mode: "Push" },
     configurations: { result: "Deferred", reason: "IdentityConflict" },
   });
 });
@@ -1171,6 +1221,7 @@ test("the same bootstrap authored twice is the revision it already is", async ()
   assert.deepEqual(bound, {
     result: "Bound",
     repository,
+    landing: { mode: "Push" },
     configurations: { result: "Bootstrapped", revision: "bootstrap" },
   });
 });
@@ -1231,6 +1282,7 @@ test("every way the step can stop is its own deferral and never a refused bind",
       {
         result: "Bound",
         repository,
+        landing: { mode: "Push" },
         configurations: { result: "Deferred", reason },
       },
       reason,
@@ -1296,6 +1348,7 @@ test("a repository is made, seeded, reserved and bound under one authority", asy
   assert.deepEqual(created, {
     result: "Created",
     repository,
+    landing: { mode: "Push" },
     created: {
       account: creating.account,
       name: creating.name,
@@ -1431,6 +1484,7 @@ test("a deployment naming no image creates the repository unseeded and reserves 
   assert.deepEqual(created, {
     result: "Created",
     repository,
+    landing: { mode: "Push" },
     created: {
       account: creating.account,
       name: creating.name,
@@ -1474,5 +1528,78 @@ test("a binding the door refused is answered as that refusal and not as a creati
   assert.deepEqual(created, {
     result: "BindRefused",
     bind: { result: "BoundElsewhere" },
+  });
+});
+
+/** A landing neither fixture default is, so a value the service invented is visible. */
+const proposing: RepositoryLanding = { mode: "PullRequest" };
+
+async function fixtureLanded(
+  granted: readonly (ProjectAccessKind | TenantAccessKind)[],
+  given: FixturePorts = {},
+) {
+  const composed = fixtureService(granted, given);
+  const written = await composed.service.setLanding(
+    principal,
+    partition,
+    repository,
+    { mode: "Push" },
+    proposing,
+  );
+  return { written, asked: composed.asked, wrote: composed.wrote };
+}
+
+test("moving where a repository lands is asked behind the permit that binds one", async () => {
+  const { written, asked, wrote } = await fixtureLanded(["Administer"]);
+  assert.deepEqual(asked.askedProject, ["Administer"]);
+  assert.deepEqual(wrote.landings, [
+    {
+      partition,
+      repository,
+      expected: { mode: "Push" },
+      landing: proposing,
+    },
+  ]);
+  assert.deepEqual(written, {
+    result: "Written",
+    repository: { ...fixtureBinding({}), landing: proposing },
+  });
+});
+
+test("a project this caller may only read is not one whose landing they may move", async () => {
+  const { written, wrote } = await fixtureLanded(["Read"]);
+  assert.deepEqual(written, { result: "NotFound" });
+  assert.deepEqual(wrote.landings, [], "the door was never asked");
+});
+
+test("a landing that moved under the writer is answered with the one that stands", async () => {
+  const standing = { ...fixtureBinding({}), landing: proposing };
+  const { written } = await fixtureLanded(["Administer"], {
+    landingOutcome: { outcome: "LandingMoved", binding: standing },
+  });
+  assert.deepEqual(written, { result: "LandingMoved", repository: standing });
+});
+
+test("a repository this project does not bind has no landing to move", async () => {
+  const { written } = await fixtureLanded(["Administer"], {
+    landingOutcome: { outcome: "NotBound" },
+  });
+  assert.deepEqual(written, { result: "NotBound" });
+});
+
+test("a write that could not be completed is answered as a write to try again", async () => {
+  const { written } = await fixtureLanded(["Administer"], {
+    landingOutcome: { outcome: "Unavailable" },
+  });
+  assert.deepEqual(written, { result: "Unavailable" });
+});
+
+test("a bound repository answers the landing its binding holds and not an assumed one", async () => {
+  const { bound } = await fixtureBound({ landing: proposing });
+  assert.deepEqual(bound, {
+    result: "Bound",
+    repository,
+    landing: proposing,
+    configurations: { result: "Deferred", reason: "NotConfigured" },
   });
 });

@@ -87,6 +87,7 @@ import type {
   ProjectRepositoriesResult,
   ProjectRepositoryBindResult,
   ProjectRepositoryCreateResult,
+  ProjectRepositoryLandingResult,
 } from "../../interpreter/repositoryOnboarding.ts";
 import type { Partition, TenantId } from "../../interpreter/projectStore.ts";
 import type { DraftBrief } from "../../interpreter/ticketBrief.ts";
@@ -929,6 +930,7 @@ export function projectRepositoryBindResponse(
         201,
         {
           repository: result.repository,
+          landing: result.landing,
           configurations: result.configurations,
         },
         {
@@ -989,6 +991,7 @@ export function projectRepositoryCreateResponse(
         201,
         {
           repository: result.repository,
+          landing: result.landing,
           created: result.created,
           seeded: result.seeded,
           ruleset: result.ruleset,
@@ -1050,6 +1053,40 @@ export function projectRepositoriesResponse(
   return result.result === "Repositories"
     ? response(200, { repositories: result.repositories })
     : notFound();
+}
+
+/**
+ * One landing moved. A conflict answers the binding as it stands rather than a
+ * bare code, because the writer's next act is to read it again; a repository
+ * this project does not bind is the same miss as a project the caller may not
+ * see, which is what every refused permit here answers.
+ */
+export function projectRepositoryLandingResponse(
+  result: ProjectRepositoryLandingResult,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "Written":
+      return response(200, { repository: result.repository });
+    case "LandingMoved":
+      return response(409, {
+        ...nativeHttpError(
+          "RepositoryLandingMoved",
+          "The repository's landing is not the one this write was made against.",
+        ),
+        repository: result.repository,
+      });
+    case "NotBound":
+    case "NotFound":
+      return notFound();
+    case "Unavailable":
+      return retry(
+        503,
+        authorityRetryAfterSeconds,
+        "RepositoryLandingContended",
+      );
+    default:
+      return assertNever(result);
+  }
 }
 
 export function repositoryConfigurationImportResponse(

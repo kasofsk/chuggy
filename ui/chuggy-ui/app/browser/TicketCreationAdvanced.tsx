@@ -11,6 +11,7 @@
 import type { ReactNode } from "react";
 
 import type { DraftInitializationResponse } from "../../../../src/contract/responses.ts";
+import { finalizerLabel } from "../core/codeLabels.ts";
 import {
   creationFanoutLabel,
   creationFinalizationLabel,
@@ -210,7 +211,7 @@ function Pricing(
         label="finalizer"
         offered={choices.finalizers}
         chosen={form.finalizer}
-        render={(value) => value}
+        render={finalizerLabel}
         onChoose={(finalizer) => {
           onChange({ ...form, finalizer });
         }}

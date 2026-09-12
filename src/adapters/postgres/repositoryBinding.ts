@@ -25,11 +25,14 @@ import {
   type Partition,
 } from "../../interpreter/projectStore.ts";
 import type { RepositoryBindingListing } from "../../interpreter/repositoryConfiguration.ts";
-import type {
-  ProjectRepositoryBindings,
-  ProjectRepositoryBound,
-  RepositoryBindingAdministration,
-  RepositoryBindingOutcome,
+import {
+  asRepositoryLanding,
+  type ProjectRepositoryBindings,
+  type ProjectRepositoryBound,
+  type ProjectRepositoryLandingOutcome,
+  type ProjectRepositoryLandingStore,
+  type RepositoryBindingAdministration,
+  type RepositoryBindingOutcome,
 } from "../../interpreter/repositoryBinding.ts";
 
 const allOutcomes: readonly RepositoryBindingOutcome[] = [
@@ -55,6 +58,29 @@ function repositoryBindingProjectAbsent(failure: unknown): boolean {
   );
 }
 
+/** One binding as every door that answers a whole one selects it. */
+interface ProjectRepositoryBoundRow {
+  readonly repository: string | null;
+  readonly bound_at: string | null;
+  readonly landing_mode: string | null;
+}
+
+function projectRepositoryBoundOf(
+  row: ProjectRepositoryBoundRow,
+): ProjectRepositoryBound {
+  if (
+    row.repository === null ||
+    row.bound_at === null ||
+    row.landing_mode === null
+  )
+    throw new Error("repository binding: a binding is half a row");
+  return {
+    repository: asRepositoryId(row.repository),
+    boundAt: row.bound_at,
+    landing: asRepositoryLanding(row.landing_mode),
+  };
+}
+
 /**
  * Every repository one project binds, oldest first, through the door the API
  * holds EXECUTE on. It is a door rather than a table read because
@@ -69,23 +95,13 @@ export function postgresProjectRepositoryBindings(
     bindings: async (
       partition: Partition,
     ): Promise<readonly ProjectRepositoryBound[]> => {
-      const found = await pool.query<{
-        repository: string | null;
-        bound_at: string | null;
-      }>(
-        sql`SELECT repository,bound_at::text AS bound_at
+      const found = await pool.query<ProjectRepositoryBoundRow>(
+        sql`SELECT repository,bound_at::text AS bound_at,landing_mode
               FROM list_project_repository_bindings(
                 ${partition.tenant},${partition.project},
                 ${projectRepositoriesAnsweredMax})`,
       );
-      return found.rows.map((row) => {
-        if (row.repository === null || row.bound_at === null)
-          throw new Error("repository binding: a binding is half a row");
-        return {
-          repository: asRepositoryId(row.repository),
-          boundAt: row.bound_at,
-        };
-      });
+      return found.rows.map(projectRepositoryBoundOf);
     },
   };
 }
@@ -175,6 +191,77 @@ export function postgresRepositoryBinding(
           `repository binding: unknown outcome ${String(outcome)}`,
         );
       return outcome as RepositoryBindingOutcome;
+    },
+  };
+}
+
+/**
+ * The SQLSTATEs a landing write did not complete under. `query_canceled` is
+ * every cancellation a statement can meet, its deadline included, and
+ * `deadlock_detected` is the cycle a server broke to let one write through;
+ * both leave a write that can be made again.
+ */
+const landingIncompleteWriteCodes: readonly string[] = ["57014", "40P01"];
+
+function repositoryLandingIncomplete(failure: unknown): boolean {
+  if (typeof failure !== "object" || failure === null) return false;
+  const code = (failure as { readonly code?: unknown }).code;
+  return typeof code === "string" && landingIncompleteWriteCodes.includes(code);
+}
+
+/** The row a landing write answered with, whichever outcome it answered. */
+interface ProjectRepositoryLandingRow extends ProjectRepositoryBoundRow {
+  readonly outcome: string | null;
+}
+
+function postgresRepositoryLandingOutcome(
+  row: ProjectRepositoryLandingRow | undefined,
+): ProjectRepositoryLandingOutcome {
+  if (row === undefined)
+    throw new Error("repository landing: the door answered no row");
+  if (row.outcome === "NotBound") return { outcome: "NotBound" };
+  if (row.outcome !== "Written" && row.outcome !== "LandingMoved")
+    throw new Error(
+      `repository landing: unknown outcome ${String(row.outcome)}`,
+    );
+  return { outcome: row.outcome, binding: projectRepositoryBoundOf(row) };
+}
+
+/**
+ * One binding's landing, read and moved through the two doors the API holds
+ * EXECUTE on. The point read is a door of its own rather than a search of the
+ * listing, because a project binding more repositories than the listing
+ * answers would have the one asked about fall off the end of it.
+ */
+export function postgresProjectRepositoryLanding(
+  pool: pg.Pool,
+): ProjectRepositoryLandingStore {
+  return {
+    landing: async (partition, repository) => {
+      const found = await pool.query<ProjectRepositoryBoundRow>(
+        sql`SELECT repository,bound_at::text AS bound_at,landing_mode
+              FROM read_project_repository_landing(
+                ${partition.tenant},${partition.project},${repository})`,
+      );
+      const row = found.rows[0];
+      return row === undefined ? undefined : projectRepositoryBoundOf(row);
+    },
+    setLanding: async (command) => {
+      let found: pg.QueryResult<ProjectRepositoryLandingRow>;
+      try {
+        found = await pool.query<ProjectRepositoryLandingRow>(
+          sql`SELECT outcome,repository,bound_at::text AS bound_at,landing_mode
+                FROM set_project_repository_landing(
+                  ${command.partition.tenant},${command.partition.project},
+                  ${command.repository},${command.expected.mode},
+                  ${command.landing.mode})`,
+        );
+      } catch (failure) {
+        if (repositoryLandingIncomplete(failure))
+          return { outcome: "Unavailable" };
+        throw failure;
+      }
+      return postgresRepositoryLandingOutcome(found.rows[0]);
     },
   };
 }

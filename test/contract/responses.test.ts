@@ -31,6 +31,7 @@ import {
   outputContentResponse,
   projectRepositoriesResponse,
   projectRepositoryBindResponse,
+  projectRepositoryLandingResponse,
   projectRepositoryCreateResponse,
   projectResponse,
   runConfigurationResponse,
@@ -65,9 +66,12 @@ import {
   outputContentResponseSchema,
   projectInventoryResponseSchema,
   projectRepositoriesResponseSchema,
+  projectRepositoryLandingWrittenSchema,
   projectRepositoryAlreadyBoundSchema,
   projectRepositoryBoundSchema,
   projectRepositoryCreatedSchema,
+  projectRepositoryLandingConflictSchema,
+  projectRepositoryResponseSchema,
   projectResponseSchema,
   repositoryConfigurationRefusalsSchema,
   runConfigurationResponseSchema,
@@ -801,7 +805,35 @@ const readyConfiguration = {
   workInstructionsCount: 2,
   reviewInstructionsCount: 1,
   provenance: { source: "Authored" },
+  finalization: { approvalRequired: true, handoff: "DirectCommit" },
+  evaluationStagesCount: 2,
 } as const;
+
+test("a ready configuration names its finalization facts and its evaluation stages", () => {
+  const summary = configurationsResponseSchema.parse({
+    configurations: [readyConfiguration],
+  }).configurations[0];
+  assert.deepEqual(summary?.readiness === "Ready" ? summary : undefined, {
+    ...readyConfiguration,
+  });
+  for (const configuration of [
+    { ...readyConfiguration, finalization: undefined },
+    { ...readyConfiguration, evaluationStagesCount: undefined },
+    {
+      ...readyConfiguration,
+      finalization: { approvalRequired: true, handoff: "PullRequest" },
+    },
+    {
+      ...readyConfiguration,
+      finalization: { handoff: "DirectCommit" },
+    },
+  ])
+    assert.throws(
+      () =>
+        configurationsResponseSchema.parse({ configurations: [configuration] }),
+      `a ready summary is refused: ${JSON.stringify(configuration.finalization)}`,
+    );
+});
 
 test("a configuration read and its page parse with readiness and provenance", () => {
   const read = configurationResponseSchema.parse(
@@ -1463,11 +1495,13 @@ test("a binding and a project's bindings name the repository and its moment", ()
       projectRepositoryBindResponse(partition, {
         result: "Bound",
         repository: onboardingRepository,
+        landing: { mode: "Push" },
         configurations: { result: "Imported", count: 2 },
       }).body,
     ),
     {
       repository: onboardingRepository,
+      landing: { mode: "Push" },
       configurations: { result: "Imported", count: 2 },
     },
   );
@@ -1483,13 +1517,58 @@ test("a binding and a project's bindings name the repository and its moment", ()
   const bound = projectRepositoriesResponseSchema.parse(
     projectRepositoriesResponse({
       result: "Repositories",
-      repositories: [{ repository: onboardingRepository, boundAt: instant }],
+      repositories: [
+        {
+          repository: onboardingRepository,
+          boundAt: instant,
+          landing: { mode: "Push" },
+        },
+      ],
     }).body,
   );
   assert.deepEqual(bound.repositories[0], {
     repository: onboardingRepository,
     boundAt: instant,
+    landing: { mode: "Push" },
   });
+});
+
+test("a binding names a landing, and both answers carry the row that stands", () => {
+  const binding = {
+    repository: onboardingRepository,
+    boundAt: instant,
+    landing: { mode: "PullRequest" as const },
+  };
+  assert.deepEqual(
+    projectRepositoryLandingWrittenSchema.parse(
+      projectRepositoryLandingResponse({
+        result: "Written",
+        repository: binding,
+      }).body,
+    ),
+    { repository: binding },
+  );
+  assert.deepEqual(
+    projectRepositoryLandingConflictSchema.parse(
+      projectRepositoryLandingResponse({
+        result: "LandingMoved",
+        repository: binding,
+      }).body,
+    ),
+    { repository: binding },
+  );
+  assert.throws(() =>
+    projectRepositoryResponseSchema.parse({
+      repository: onboardingRepository,
+      boundAt: instant,
+    }),
+  );
+  assert.throws(() =>
+    projectRepositoryResponseSchema.parse({
+      ...binding,
+      landing: { mode: "Merge" },
+    }),
+  );
 });
 
 test("each onboarding listing refuses one row past the bound it answers under", () => {
@@ -1546,6 +1625,7 @@ test("every configuration outcome a bind reports parses as the schema answers it
         projectRepositoryBindResponse(partition, {
           result: "Bound",
           repository: onboardingRepository,
+          landing: { mode: "Push" },
           configurations,
         }).body,
       ).configurations,
@@ -1563,6 +1643,7 @@ function onboardingCreated(
   return {
     result: "Created",
     repository: onboardingRepository,
+    landing: { mode: "Push" },
     created: {
       account: asForgeAccount("kasofsk"),
       name: asForgeRepositoryName("engine"),

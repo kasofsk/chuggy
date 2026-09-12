@@ -21,6 +21,7 @@ import {
   briefChecksMax,
   briefIntentCharsMax,
   briefIntentLinesMax,
+  briefLandingIsWhole,
   briefLineCharsMax,
   briefLinkScheme,
   briefLinksMax,
@@ -33,6 +34,7 @@ import type {
   ConfigurationSummary,
   DraftInitializationResponse,
   DraftResponse,
+  ProjectRepositoryResponse,
 } from "../../../../src/contract/responses.ts";
 import type { z } from "zod";
 
@@ -60,6 +62,9 @@ export interface TicketCreationForm extends CreationAuthoring {
   readonly targetBranchName: string;
   /** The bound repository the work happens in, empty where none is chosen. */
   readonly repository: string;
+  /** How this ticket lands, seeded from the repository's default and the
+   * reader's from the moment they move it. */
+  readonly landingMode: BriefFinalizationMode;
 }
 
 export type CreationField =
@@ -69,6 +74,7 @@ export type CreationField =
   | "checks"
   | "branch"
   | "target"
+  | "landing"
   | "repository"
   | "authoring"
   | "fence";
@@ -122,23 +128,38 @@ export function creationConfigurationSentence(
  * after; a project binding none neither asks nor sends.
  */
 export function creationRepositoryRequired(
-  repositories: readonly string[],
+  repositories: readonly ProjectRepositoryResponse[],
 ): boolean {
   return repositories.length > 0;
 }
 
 /** The sole binding, where there is exactly one and so no choice to make. */
 export function creationRepositoryDefault(
-  repositories: readonly string[],
+  repositories: readonly ProjectRepositoryResponse[],
 ): string {
   const sole = repositories.length === 1 ? repositories[0] : undefined;
-  return sole ?? "";
+  return sole?.repository ?? "";
+}
+
+/** How this console lands work where no binding says otherwise, which is a form
+ * in a project that binds nothing and a repository the listing no longer holds. */
+const creationLandingUnbound: BriefFinalizationMode = "Push";
+
+/** The landing the chosen repository defaults to, which is what an untouched
+ * field shows and what a repository change re-seeds it with. */
+export function creationLandingDefault(
+  repositories: readonly ProjectRepositoryResponse[],
+  repository: string,
+): BriefFinalizationMode {
+  const bound = repositories.find((row) => row.repository === repository);
+  return bound?.landing.mode ?? creationLandingUnbound;
 }
 
 export function creationFormFrom(
   initialization: DraftInitializationResponse,
-  repositories: readonly string[],
+  repositories: readonly ProjectRepositoryResponse[],
 ): TicketCreationForm {
+  const repository = creationRepositoryDefault(repositories);
   return {
     ...initialization.defaults,
     title: "",
@@ -147,7 +168,29 @@ export function creationFormFrom(
     checks: [],
     branchName: "",
     targetBranchName: "",
-    repository: creationRepositoryDefault(repositories),
+    repository,
+    landingMode: creationLandingDefault(repositories, repository),
+  };
+}
+
+/**
+ * The form with another repository named. A landing the reader has not moved
+ * takes the new repository's default and a moved one stands, because the seed
+ * is a starting point and the choice is theirs.
+ */
+export function creationRepositoryChosen(
+  form: TicketCreationForm,
+  repositories: readonly ProjectRepositoryResponse[],
+  repository: string,
+): TicketCreationForm {
+  const seeded = creationLandingDefault(repositories, form.repository);
+  return {
+    ...form,
+    repository,
+    landingMode:
+      form.landingMode === seeded
+        ? creationLandingDefault(repositories, repository)
+        : form.landingMode,
   };
 }
 
@@ -192,6 +235,14 @@ export const creationTargetBranchHint = `where the finished work lands, created 
 /** The one input either branch field refuses, said as the edit that fixes it. */
 export const creationBranchPrefixedSentence = `enter the branch name, not the ref: this console adds ${briefBranchPrefix} itself`;
 
+/** What a proposal names that a push may leave out. */
+export const creationLandingTargetSentence =
+  "a pull request names the branch it opens into";
+
+/** What `briefLandingIsWhole` refuses, said as the two boxes that fix it. */
+export const creationLandingWholeSentence =
+  "a pull request opens from the branch above into a different target branch";
+
 /**
  * What this form checked and the reader has to satisfy, and no more than that.
  * The grammar a reference name obeys is not among them — the contract carries
@@ -210,6 +261,8 @@ export function creationFaultSentence(field: CreationField): string {
     case "branch":
     case "target":
       return `a branch is named here without its ${briefBranchPrefix} prefix, and the whole reference is at most ${String(briefBranchCharsMax)} characters`;
+    case "landing":
+      return "a ticket with no finalizer lands nothing";
     case "repository":
       return "this project binds a repository, so a ticket in it names which one";
     case "authoring":
@@ -219,6 +272,11 @@ export function creationFaultSentence(field: CreationField): string {
   }
 }
 
+/**
+ * The field an issue belongs to. The brief's own pairing refine names no field
+ * at all, and the pair it refuses is the finalization's target against the
+ * branch, so a bare brief issue is the target's.
+ */
 function creationFieldOf(path: readonly PropertyKey[]): CreationField {
   if (path[0] === "authoring") return "authoring";
   if (path[0] !== "brief") return "fence";
@@ -227,7 +285,9 @@ function creationFieldOf(path: readonly PropertyKey[]): CreationField {
   if (path[1] === "branch") return "branch";
   if (path[1] === "checks") return "checks";
   if (path[1] === "repository") return "repository";
-  return path[1] === "finalization" ? "target" : "links";
+  if (path[1] === "finalization")
+    return path[2] === "target" ? "target" : "landing";
+  return path[1] === undefined ? "target" : "links";
 }
 
 /**
@@ -262,11 +322,41 @@ function creationBranchesOf(form: TicketCreationForm): CreationBranches {
   };
 }
 
-/** The faults this form decides for itself, the wire's parser deciding the rest. */
+/**
+ * What a proposal needs that a push does not: a reference to open into, and a
+ * branch of its own that is not it. A branch box the form already refuses for
+ * its prefix earns no second fault, because the prefix is the edit to make
+ * first and the pairing is decided on what the fixed box would name.
+ */
+function creationLandingFault(
+  form: TicketCreationForm,
+  branches: CreationBranches,
+): CreationFault | undefined {
+  if (form.landingMode !== "PullRequest") return undefined;
+  if (branches.branch.named === "Prefixed") return undefined;
+  if (branches.target.named === "Prefixed") return undefined;
+  if (branches.target.named !== "Ref")
+    return { field: "target", reason: creationLandingTargetSentence };
+  return briefLandingIsWhole({
+    ...(branches.branch.named === "Ref" ? { branch: branches.branch.ref } : {}),
+    finalization: { mode: form.landingMode, target: branches.target.ref },
+  })
+    ? undefined
+    : { field: "target", reason: creationLandingWholeSentence };
+}
+
+/**
+ * The faults this form decides for itself, the wire's parser deciding the rest.
+ *
+ * A FORM STATES NO FAULT IN A BOX IT DOES NOT DRAW: a ticket running no
+ * finalizer is asked for neither a landing nor a target and sends neither, so a
+ * value left in the target box from before that choice would stop a submission
+ * with no field on screen to read the reason beside.
+ */
 function creationStatedFaults(
   form: TicketCreationForm,
   branches: CreationBranches,
-  repositories: readonly string[],
+  repositories: readonly ProjectRepositoryResponse[],
 ): readonly CreationFault[] {
   const stated: CreationFault[] = [];
   if (creationIntentLines(form.intent).length > briefIntentLinesMax)
@@ -278,19 +368,38 @@ function creationStatedFaults(
     });
   if (branches.branch.named === "Prefixed")
     stated.push({ field: "branch", reason: creationBranchPrefixedSentence });
+  if (form.finalizer !== "ManagedFinalizer") return stated;
   if (branches.target.named === "Prefixed")
     stated.push({ field: "target", reason: creationBranchPrefixedSentence });
+  const landing = creationLandingFault(form, branches);
+  if (landing !== undefined) stated.push(landing);
   return stated;
 }
 
-/** The one way this console lands work, named rather than read off the roster. */
-const creationFinalizationMode: BriefFinalizationMode = "Push";
+/**
+ * How this brief lands, which is the finalizer's parameter and so is sent
+ * whenever one runs — explicitly, even where it is the repository's own
+ * default, so the ticket records the landing it was released with. A ticket
+ * authored to run no finalizer lands nothing and names nothing.
+ */
+function creationFinalizationOf(
+  form: TicketCreationForm,
+  branches: CreationBranches,
+): Record<string, unknown> {
+  if (form.finalizer !== "ManagedFinalizer") return {};
+  return {
+    finalization: {
+      mode: form.landingMode,
+      ...(branches.target.named === "Ref"
+        ? { target: branches.target.ref }
+        : {}),
+    },
+  };
+}
 
 /**
- * The brief a form becomes. A finalization is what naming a target means, so a
- * form that names none sends none rather than a target repeating the branch, a
- * form adding no check lines sends none rather than an empty list, and a form
- * naming no title sends none rather than an empty one.
+ * The brief a form becomes. A form adding no check lines sends none rather than
+ * an empty list, and a form naming no title sends none rather than an empty one.
  */
 function creationBriefOf(
   form: TicketCreationForm,
@@ -308,14 +417,7 @@ function creationBriefOf(
     links: form.links.map((link) => link.trim()).filter((link) => link !== ""),
     ...(checks.length === 0 ? {} : { checks }),
     ...(branches.branch.named === "Ref" ? { branch: branches.branch.ref } : {}),
-    ...(branches.target.named === "Ref"
-      ? {
-          finalization: {
-            mode: creationFinalizationMode,
-            target: branches.target.ref,
-          },
-        }
-      : {}),
+    ...creationFinalizationOf(form, branches),
   };
 }
 
@@ -327,7 +429,7 @@ function creationBriefOf(
 export function creationBodyFrom(
   initialization: DraftInitializationResponse,
   form: TicketCreationForm,
-  repositories: readonly string[],
+  repositories: readonly ProjectRepositoryResponse[],
 ): CreationAssembly {
   const branches = creationBranchesOf(form);
   const candidate = {

@@ -36,6 +36,7 @@
   "selectorProjectSettings": "installation settings are defaults; an absent override inherits one, and a write replaces the whole set under the revision it was read at",
   "forgeInstallations": "a tenant's administrator claims an installation of this deployment's app; an installation another tenant holds is a conflict, and a claim is never released",
   "repositoryBinding": "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one this deployment holds a credential for — on a host it mints for, that means an installation this tenant has claimed",
+  "repositoryLanding": "a repository's landing default is the mode a ticket in it lands by unless its brief names one; it is written against the value the writer read, and a ticket authored with no finalizer may name no landing",
   "repositoryConfigurations": "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it",
   "repositoryCreation": "creating a repository requires this tenant's claims of both apps on the account; the repository is the forge's from the moment it answers, so a later refusal is reported beside one that stands and a name already taken is bound rather than created",
   "routes": {
@@ -77,6 +78,7 @@
     "forgeCredentials": "/api/v1/tenants/:tenant/projects/:project/forge-credentials",
     "projectRepositories": "/api/v1/tenants/:tenant/projects/:project/repositories",
     "projectRepositoriesNew": "/api/v1/tenants/:tenant/projects/:project/repositories/new",
+    "projectRepositoryLanding": "/api/v1/tenants/:tenant/projects/:project/repositories/landing",
     "drafts": "/api/v1/tenants/:tenant/projects/:project/drafts",
     "draftInitialization": "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
     "draft": "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",
@@ -788,6 +790,40 @@
         }
       },
       "required": ["account", "name", "visibility"],
+      "additionalProperties": false
+    },
+    "projectRepositoryLanding": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["Push", "PullRequest"]
+            }
+          },
+          "required": ["mode"],
+          "additionalProperties": false
+        },
+        "landing": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["Push", "PullRequest"]
+            }
+          },
+          "required": ["mode"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["repository", "expected", "landing"],
       "additionalProperties": false
     },
     "leadInquiry": {

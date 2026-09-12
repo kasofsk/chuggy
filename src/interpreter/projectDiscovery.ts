@@ -45,6 +45,7 @@ import type {
 import type { FinalizationEvidence } from "./finalizerPreparation.ts";
 import type { NativeActionAnswer } from "./projectDecision.ts";
 import type { Partition } from "./projectStore.ts";
+import type { ReleaseBrief } from "./ticketBrief.ts";
 
 /** One project's discovery record: the partition with work waiting, and the generation that wake-up carries. */
 export interface Readiness {
@@ -74,6 +75,7 @@ export interface DecisionInput {
           readonly configurationRevision: string;
           readonly configurationDigest: string;
           readonly configurationCanonical: string;
+          readonly brief?: ReleaseBrief;
         };
         readonly nativeAction?: NativeActionAnswer;
         readonly finalizationRequest?: {

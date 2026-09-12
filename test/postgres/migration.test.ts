@@ -18,8 +18,11 @@ import {
   projectChangeSweepFunction,
   schedulerRole,
   repositoryActivationFunction,
+  repositoryBindingListFunction,
   repositoryBindingReadFunction,
   repositoryBindingWriteFunction,
+  repositoryLandingReadFunction,
+  repositoryLandingWriteFunction,
   schemaTextSet,
   selectorServiceRole,
   sessionStoreReadFunction,
@@ -50,6 +53,7 @@ import {
   sessionTurnResultCharsMax,
 } from "../../src/contract/http.ts";
 import { briefFinalizationModes } from "../../src/contract/rosters.ts";
+import { briefFinalizationDefault } from "../../src/interpreter/ticketBrief.ts";
 import {
   leadMillisecondsPerDecision,
   leadTokensPerDecision,
@@ -79,6 +83,8 @@ import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.t
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { asInstallationId, asTicketId } from "../../src/domain/ids.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
+import { encodeDraftAuthoring } from "../../src/interpreter/authoring.ts";
+import { plainAuthoring } from "../actor/harness.ts";
 import type { ProjectRead } from "../../src/interpreter/nativeWeb.ts";
 
 const retainedImageRequired = [
@@ -4270,6 +4276,189 @@ test("the table and the function project access was answered from are gone", asy
       left.rows[0]?.function_left,
       null,
       "authorize_project_access is still there",
+    );
+  });
+});
+
+/** A project holding a binding filed before a binding said where its work lands. */
+async function seedLandinglessBinding(subject: pg.Pool): Promise<void> {
+  await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-90')`);
+  await subject.query(
+    `INSERT INTO project(tenant,project,lifecycle,head,ingress_next)
+     VALUES('tenant-90','project-90','Active',0,1)`,
+  );
+  await subject.query(
+    `INSERT INTO project_repository(tenant,project,repository,recovery_epoch)
+     VALUES('tenant-90','project-90','bound-90','epoch-90')`,
+  );
+}
+
+test("a repository bound before a landing was said lands where its work happened", async () => {
+  await migrationDatabase("i90", async (subject) => {
+    await migrationSeedApplied(subject, 90);
+    await seedLandinglessBinding(subject);
+
+    await applyMigration(subject, 90);
+
+    assert.deepEqual(
+      (
+        await subject.query<{ repository: string; landing_mode: string }>(
+          `SELECT repository,landing_mode
+             FROM ${repositoryBindingListFunction}('tenant-90','project-90',10)`,
+        )
+      ).rows,
+      [{ repository: "bound-90", landing_mode: briefFinalizationDefault.mode }],
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ landing_mode: string }>(
+          `SELECT landing_mode
+             FROM ${repositoryLandingReadFunction}('tenant-90','project-90','bound-90')`,
+        )
+      ).rows,
+      [{ landing_mode: briefFinalizationDefault.mode }],
+    );
+  });
+});
+
+/** Two drafts filed before a brief could say its ticket lands nothing, each storing the default. */
+async function seedLandedBriefs(subject: pg.Pool): Promise<void> {
+  await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-90b')`);
+  await subject.query(
+    `INSERT INTO project(tenant,project,lifecycle,head,ingress_next,ticket_next)
+     VALUES('tenant-90b','project-90b','Active',1,1,3)`,
+  );
+  await subject.query(
+    `INSERT INTO configuration_revision
+       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+     VALUES('tenant-90b','project-90b','revision-90b','{}','digest','User','author')`,
+  );
+  for (const [ticket, finalizer] of [
+    [1, "NoFinalizer"],
+    [2, "ManagedFinalizer"],
+  ] as const) {
+    await subject.query(
+      `INSERT INTO draft VALUES('tenant-90b','project-90b',$1,1,'Draft','revision-90b')`,
+      [ticket],
+    );
+    await subject.query(
+      `INSERT INTO draft_revision
+         (tenant,project,ticket,authoring_version,configuration_revision,authoring,
+          authority_kind,authority_subject)
+       VALUES('tenant-90b','project-90b',$1,1,'revision-90b',$2,'User','author')`,
+      [ticket, encodeDraftAuthoring({ ...plainAuthoring, finalizer })],
+    );
+    await subject.query(
+      `INSERT INTO draft_brief
+         (tenant,project,ticket,intent,finalization_mode,finalization_target)
+       VALUES('tenant-90b','project-90b',$1,'Land it.',$2,NULL)`,
+      [ticket, briefFinalizationDefault.mode],
+    );
+  }
+}
+
+/** What each seeded ticket's brief holds for its landing, in ticket order. */
+async function seededLandings(subject: pg.Pool) {
+  return (
+    await subject.query<{
+      ticket: string;
+      finalization_mode: string | null;
+      finalization_target: string | null;
+    }>(
+      `SELECT ticket::text,finalization_mode,finalization_target FROM draft_brief
+        WHERE tenant='tenant-90b' AND project='project-90b' ORDER BY ticket`,
+    )
+  ).rows;
+}
+
+test("a ticket filed before a brief could land nothing is emptied of the landing it never authored", async () => {
+  await migrationDatabase("i90backfill", async (subject) => {
+    await migrationSeedApplied(subject, 90);
+    await seedLandedBriefs(subject);
+
+    await applyMigration(subject, 90);
+
+    assert.deepEqual((await seededLandings(subject))[0], {
+      ticket: "1",
+      finalization_mode: null,
+      finalization_target: null,
+    });
+  });
+});
+
+test("a ticket filed before that runs a finalizer keeps the landing it was written", async () => {
+  await migrationDatabase("i90kept", async (subject) => {
+    await migrationSeedApplied(subject, 90);
+    await seedLandedBriefs(subject);
+
+    await applyMigration(subject, 90);
+
+    assert.deepEqual((await seededLandings(subject))[1], {
+      ticket: "2",
+      finalization_mode: briefFinalizationDefault.mode,
+      finalization_target: null,
+    });
+  });
+});
+
+test("the landing doors migrate without exposing the relation they read", async () => {
+  await migrationDatabase("i90grants", async (subject) => {
+    await migrationSeedApplied(subject, 90);
+    await applyMigration(subject, 90);
+    for (const signature of [
+      `${repositoryLandingReadFunction}(text,text,text)`,
+      `${repositoryLandingWriteFunction}(text,text,text,text,text)`,
+    ])
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
+            [apiRole, signature],
+          )
+        ).rows[0]?.granted,
+        true,
+        signature,
+      );
+    for (const privilege of ["SELECT", "UPDATE", "DELETE"])
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_table_privilege($1,'project_repository',$2) AS granted",
+            [apiRole, privilege],
+          )
+        ).rows[0]?.granted,
+        false,
+        privilege,
+      );
+    assert.equal(
+      (
+        await subject.query<{ granted: boolean }>(
+          "SELECT has_column_privilege($1,'project_repository','landing_mode','UPDATE') AS granted",
+          [boundaryOwnerRole],
+        )
+      ).rows[0]?.granted,
+      true,
+    );
+  });
+});
+
+test("a landing no roster names is refused by the column's own constraint", async () => {
+  await migrationDatabase("i90roster", async (subject) => {
+    await migrationSeedApplied(subject, 90);
+    await seedLandinglessBinding(subject);
+    await applyMigration(subject, 90);
+    for (const mode of briefFinalizationModes)
+      await subject.query(
+        `UPDATE project_repository SET landing_mode=$1
+          WHERE tenant='tenant-90' AND project='project-90'`,
+        [mode],
+      );
+    await assert.rejects(
+      subject.query(
+        `UPDATE project_repository SET landing_mode='Merge'
+          WHERE tenant='tenant-90' AND project='project-90'`,
+      ),
+      /project_repository_landing_mode_is_known/u,
     );
   });
 });

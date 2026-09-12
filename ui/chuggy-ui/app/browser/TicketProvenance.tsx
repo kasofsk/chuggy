@@ -15,6 +15,7 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { TicketBriefBody } from "../../../../src/contract/brief.ts";
 import type { DraftResponse } from "../../../../src/contract/responses.ts";
 import { apiConfiguration } from "../core/apiRoutes.ts";
+import { briefLandingLine, finalizerLabel } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { configurationLabel } from "../core/labels.ts";
 import { usePanelResource } from "./api.ts";
@@ -34,24 +35,10 @@ function Field(props: {
   );
 }
 
-/** How a brief reaches the reference it lands on, which is the whole of what
- * its two modes differ in. */
-function briefLandingName(
-  finalization: NonNullable<TicketBriefBody["finalization"]>,
-): string {
-  switch (finalization.mode) {
-    case "Push":
-      return "lands on";
-    case "PullRequest":
-      return "proposed into";
-  }
-}
-
 /**
  * What a person asked for. A ticket released before the brief was on the wire
- * carries none and says so rather than drawing empty fields, and where the
- * work lands is drawn only where the brief names a second reference — the
- * branch above it is the answer whenever it does not.
+ * carries none and says so rather than drawing empty fields, and one released
+ * before a landing was recorded draws no landing at all.
  */
 function Brief(props: { readonly brief: TicketBriefBody }): ReactNode {
   const { intent, links, checks, branch, finalization } = props.brief;
@@ -87,10 +74,8 @@ function Brief(props: { readonly brief: TicketBriefBody }): ReactNode {
         )}
       </Field>
       <Field name="branch">{branch ?? "none"}</Field>
-      {finalization?.target === undefined ? null : (
-        <Field name={briefLandingName(finalization)}>
-          {finalization.target}
-        </Field>
+      {finalization === undefined ? null : (
+        <Field name="landing">{briefLandingLine(finalization)}</Field>
       )}
     </>
   );
@@ -162,7 +147,7 @@ function Authoring(props: { readonly draft: DraftResponse }): ReactNode {
         {pricingLabel(authoring.finalizationPricing)}
       </Field>
       <Field name="resume pricing">{authoring.resumePricing}</Field>
-      <Field name="finalizer">{authoring.finalizer}</Field>
+      <Field name="finalizer">{finalizerLabel(authoring.finalizer)}</Field>
     </dl>
   );
 }
