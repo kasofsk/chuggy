@@ -41,6 +41,7 @@ import {
   projectRepositoryAlreadyBoundSchema,
   projectRepositoryBoundSchema,
   projectRepositoryCreatedSchema,
+  projectRepositoryResponseSchema,
   projectResponseSchema,
   repositoryConfigurationImportedSchema,
   runConfigurationResponseSchema,
@@ -89,6 +90,7 @@ import type {
   ProjectRepositoryAlreadyBoundResponse,
   ProjectRepositoryBoundResponse,
   ProjectRepositoryCreatedResponse,
+  ProjectRepositoryResponse,
   ProjectResponse,
   RunConfigurationResponse,
   RunTranscriptResponse,
@@ -112,6 +114,7 @@ import type {
   leadInquirySchema,
   projectRepositoryBindSchema,
   projectRepositoryCreateSchema,
+  projectRepositoryLandingSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
   submissionSchema,
@@ -123,6 +126,10 @@ import { apiRead } from "./apiRequest.ts";
 import type { ApiPorts, ApiRequest, ApiResult } from "./apiRequest.ts";
 
 export const projectInventoryPagesMax = 32;
+
+/** How many pages of a project's configurations the ticket form and a
+ * repository's page read before they stop and say what they read. */
+export const configurationPagesMax = 8;
 
 type QueryValue = string | number | readonly string[] | undefined;
 
@@ -306,6 +313,27 @@ export function apiCreateProjectRepository(
       idempotencyKey: operation,
     },
     (value) => projectRepositoryCreatedSchema.parse(value),
+  );
+}
+
+/**
+ * One binding's landing default, written against the one the writer read. A
+ * write the landing moved under is a `Conflict` carrying the binding as it
+ * stands, which is the caller's to draw and never this function's to retry.
+ */
+export function apiWriteProjectRepositoryLanding(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  written: z.infer<typeof projectRepositoryLandingSchema>,
+): Promise<ApiResult<ProjectRepositoryResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "PUT",
+      path: apiSegments(partition, "repositories", "landing"),
+      body: written,
+    },
+    (value) => projectRepositoryResponseSchema.parse(value),
   );
 }
 

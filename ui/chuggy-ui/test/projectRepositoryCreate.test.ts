@@ -25,6 +25,7 @@ function created(
 ): ProjectRepositoryCreatedResponse {
   return {
     repository: "https://forge.test/kasofsk/scratch",
+    landing: { mode: "Push" },
     created: {
       account: "kasofsk",
       name: "scratch",

@@ -16,14 +16,17 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { briefChecksMax, briefLinksMax } from "../../../src/contract/brief.ts";
+import type { ProjectRepositoryResponse } from "../../../src/contract/responses.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
 import {
+  creationBinding,
   creationDraft,
   creationInitialization,
   creationPartition,
@@ -119,7 +122,7 @@ function draw(
   ports: ApiPorts,
   created: number[],
   initialization = creationInitialization,
-  repositories: readonly string[] = [],
+  repositories: readonly ProjectRepositoryResponse[] = [],
 ): { readonly rerender: (next: typeof creationInitialization) => void } {
   const tree = (next: typeof creationInitialization) => (
     <QueryClientProvider client={new QueryClient()}>
@@ -389,6 +392,7 @@ test("each list editor stops adding rows exactly at the bound the wire states", 
 
 const chuggy = "https://forge.test/kasofsk/chuggy";
 const scratch = "https://forge.test/gdoteof/scratch";
+const fabric = "https://forge.test/kasofsk/chuggy-fabric";
 
 function picker(): HTMLElement | null {
   return screen.queryByRole("button", { name: /^repository/u });
@@ -417,7 +421,7 @@ test("a project binding nothing is neither asked for a repository nor sends one"
 
 test("a sole binding is the choice already made, and it reaches the wire", async () => {
   const held = api({ state: "Succeeded" });
-  draw(held.ports, [], creationInitialization, [chuggy]);
+  draw(held.ports, [], creationInitialization, [creationBinding(chuggy)]);
   expect(picker()?.textContent).toContain("kasofsk/chuggy");
   typeIntent("ship it");
   submit();
@@ -434,10 +438,156 @@ test("a sole binding is the choice already made, and it reaches the wire", async
  */
 test("two bindings ask, and a submission naming none sends nothing", () => {
   const held = api({ state: "Succeeded" });
-  draw(held.ports, [], creationInitialization, [chuggy, scratch]);
+  draw(held.ports, [], creationInitialization, [
+    creationBinding(chuggy),
+    creationBinding(scratch),
+  ]);
   expect(picker()?.textContent).toContain("choose");
   typeIntent("ship it");
   submit();
   expect(screen.getByText(/names which one/u)).toBeTruthy();
   expect(drafts(held.sent).length).toBe(0);
+});
+
+/** The landing is the managed finalizer's parameter, so a form running none
+ * asks for neither it nor the target the finalizer would land on. */
+const unfinalized = {
+  ...creationInitialization,
+  defaults: { ...creationInitialization.defaults, finalizer: "NoFinalizer" },
+  choices: {
+    ...creationInitialization.choices,
+    finalizers: ["NoFinalizer", "ManagedFinalizer"],
+  },
+} as typeof creationInitialization;
+
+function landing(): HTMLElement | null {
+  return screen.queryByRole("radiogroup", { name: "landing" });
+}
+
+/** What the group draws as chosen, read by name because the label sits beside
+ * the control rather than inside it. */
+function landingChosen(): string | undefined {
+  return ["Push", "Pull request"].find(
+    (name) =>
+      screen.getByRole("radio", { name }).getAttribute("aria-checked") ===
+      "true",
+  );
+}
+
+async function chooseRepository(name: string): Promise<void> {
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+  fireEvent.keyDown(screen.getByRole("button", { name: /^repository/u }), {
+    key: "ArrowDown",
+  });
+  const menu = await screen.findByRole("menu");
+  fireEvent.click(within(menu).getByRole("menuitemradio", { name }));
+  await waitFor(() => {
+    expect(picker()?.textContent).toContain(name);
+  });
+}
+
+test("a form running no finalizer asks for neither a landing nor a target", () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, [], unfinalized);
+  expect(landing()).toBeNull();
+  expect(screen.queryByPlaceholderText("the branch to land on")).toBeNull();
+});
+
+test("a managed form asks for its landing, preselected from the repository", () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, [], creationInitialization, [
+    creationBinding(chuggy, "PullRequest"),
+  ]);
+  expect(landing()).toBeTruthy();
+  expect(landingChosen()).toBe("Pull request");
+});
+
+/**
+ * A LANDING THE READER CHOSE IS NOT RE-SEEDED. The second repository's default
+ * takes an untouched field, because a reader who never looked at it wants the
+ * repository's answer; a reader who moved it has already given their own.
+ */
+test("changing repositories re-seeds an untouched landing and leaves a touched one", async () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, [], creationInitialization, [
+    creationBinding(chuggy, "Push"),
+    creationBinding(scratch, "PullRequest"),
+    creationBinding(fabric, "PullRequest"),
+  ]);
+  expect(landingChosen()).toBe("Push");
+  await chooseRepository("gdoteof/scratch");
+  expect(landingChosen()).toBe("Pull request");
+  fireEvent.click(screen.getByRole("radio", { name: "Push" }));
+  await chooseRepository("kasofsk/chuggy-fabric");
+  expect(landingChosen()).toBe("Push");
+});
+
+test("the landing reaches the wire, with the target only where one is typed", async () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, [], creationInitialization, [
+    creationBinding(chuggy, "Push"),
+  ]);
+  typeIntent("ship it");
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  expect(briefOf(held.sent)?.["finalization"]).toStrictEqual({ mode: "Push" });
+});
+
+test("a pull request without a target is refused before the wire sees it", () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, [], creationInitialization, [
+    creationBinding(chuggy, "PullRequest"),
+  ]);
+  typeIntent("ship it");
+  submit();
+  expect(screen.getByText(/names the branch it opens into/u)).toBeTruthy();
+  expect(drafts(held.sent).length).toBe(0);
+});
+
+/**
+ * The finalizer is chosen in the wire's own vocabulary nowhere on this screen,
+ * and it is what decides whether a landing is asked for at all.
+ */
+test("the advanced finalizer reads as a noun, and Managed is what asks for a landing", () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, [], unfinalized);
+  fireEvent.click(screen.getByRole("button", { name: /^Advanced/u }));
+  const chooser = screen.getByLabelText<HTMLSelectElement>("finalizer");
+  expect([...chooser.options].map((option) => option.text)).toStrictEqual([
+    "None",
+    "Managed",
+  ]);
+  expect(landing()).toBeNull();
+  fireEvent.change(chooser, { target: { value: "Managed" } });
+  expect(landing()).toBeTruthy();
+});
+
+/**
+ * The target is typed under a managed finalizer and the finalizer then changed,
+ * which leaves a value in a box the form no longer draws. The submission must
+ * still go out — a form stopped by a fault nobody can see is a form nobody can
+ * fix.
+ */
+test("changing the finalizer to None releases a ticket the target box would have refused", async () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, [], unfinalized);
+  fireEvent.click(screen.getByRole("button", { name: /^Advanced/u }));
+  const chooser = screen.getByLabelText<HTMLSelectElement>("finalizer");
+  fireEvent.change(chooser, { target: { value: "Managed" } });
+  fireEvent.change(screen.getByPlaceholderText("the branch to land on"), {
+    target: { value: "refs/heads/release/next" },
+  });
+  typeIntent("ship it");
+  submit();
+  expect(drafts(held.sent).length).toBe(0);
+  fireEvent.change(chooser, { target: { value: "None" } });
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  expect(briefOf(held.sent)).not.toHaveProperty("finalization");
 });

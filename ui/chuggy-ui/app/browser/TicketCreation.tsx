@@ -26,16 +26,20 @@ import type {
   ConfigurationSummary,
   DraftInitializationResponse,
   DraftResponse,
+  ProjectRepositoryResponse,
 } from "../../../../src/contract/responses.ts";
+import { briefFinalizationModes } from "../../../../src/contract/rosters.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import type { ProjectQueryKey } from "../core/projectQueryKeys.ts";
+import { landingEffect, landingLabel } from "../core/codeLabels.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
 import {
   creationBodyFrom,
   creationBranchHint,
   creationConfigurationSentence,
   creationFormFrom,
+  creationRepositoryChosen,
   creationStepSentence,
   creationTargetBranchHint,
 } from "../core/ticketCreation.ts";
@@ -61,6 +65,7 @@ import { TopBarSlot } from "./shell/slots.tsx";
 import { TicketCreationAdvanced } from "./TicketCreationAdvanced.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Picker } from "./ui/Picker.tsx";
+import { RadioGroup } from "./ui/RadioGroup.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
 type Attempt =
@@ -259,7 +264,9 @@ function TargetBranch(props: FormEdit): ReactNode {
 /** The repository the work happens in, drawn only where the project binds one:
  * a project binding none names none, and the form neither asks nor sends. */
 function Repository(
-  props: FormEdit & { readonly repositories: readonly string[] },
+  props: FormEdit & {
+    readonly repositories: readonly ProjectRepositoryResponse[];
+  },
 ): ReactNode {
   const { form, onChange, repositories } = props;
   if (repositories.length === 0) return null;
@@ -270,12 +277,37 @@ function Repository(
         label="repository"
         value={form.repository}
         placeholder="choose"
-        options={repositories.map((repository) => ({
-          value: repository,
-          text: repositoryLabel(repository),
+        options={repositories.map((binding) => ({
+          value: binding.repository,
+          text: repositoryLabel(binding.repository),
         }))}
         onChoose={(repository) => {
-          onChange({ ...form, repository });
+          onChange(creationRepositoryChosen(form, repositories, repository));
+        }}
+      />
+    </div>
+  );
+}
+
+const landingOptions = briefFinalizationModes.map((mode) => ({
+  value: mode,
+  text: landingLabel(mode),
+  description: landingEffect(mode),
+}));
+
+/** How this ticket lands, seeded from the repository's default. */
+function Landing(props: FormEdit): ReactNode {
+  const { form, onChange } = props;
+  return (
+    <div className="creation-row">
+      <span>landing</span>
+      <RadioGroup
+        label="landing"
+        value={form.landingMode}
+        options={landingOptions}
+        onChoose={(value) => {
+          const chosen = briefFinalizationModes.find((mode) => mode === value);
+          if (chosen !== undefined) onChange({ ...form, landingMode: chosen });
         }}
       />
     </div>
@@ -320,7 +352,7 @@ function CreationFields(
     readonly faults: readonly CreationFault[];
     readonly configuration: ConfigurationSummary;
     readonly initialization: DraftInitializationResponse;
-    readonly repositories: readonly string[];
+    readonly repositories: readonly ProjectRepositoryResponse[];
   },
 ): ReactNode {
   const { faults, form, initialization, onChange } = props;
@@ -350,8 +382,14 @@ function CreationFields(
         repositories={props.repositories}
       />
       <Fault field="repository" faults={faults} />
-      <TargetBranch form={form} onChange={onChange} />
-      <Fault field="target" faults={faults} />
+      {form.finalizer === "ManagedFinalizer" ? (
+        <>
+          <Landing form={form} onChange={onChange} />
+          <TargetBranch form={form} onChange={onChange} />
+          <Fault field="target" faults={faults} />
+        </>
+      ) : null}
+      <Fault field="landing" faults={faults} />
       <TicketCreationAdvanced
         form={form}
         onChange={onChange}
@@ -398,7 +436,7 @@ function useCreationSubmit(props: {
   readonly partition: PartitionIdentity;
   readonly queryKey: ProjectQueryKey;
   readonly initialization: DraftInitializationResponse;
-  readonly repositories: readonly string[];
+  readonly repositories: readonly ProjectRepositoryResponse[];
   readonly onFaults: (faults: readonly CreationFault[]) => void;
   readonly onCreated: (ticket: number) => void;
 }): CreationSubmit {

@@ -21,10 +21,15 @@ import {
   briefTitleCharsMax,
 } from "../../../src/contract/brief.ts";
 import { draftCreationSchema } from "../../../src/contract/requests.ts";
+import type { ProjectRepositoryResponse } from "../../../src/contract/responses.ts";
 import {
   creationBodyFrom,
   creationBranchOf,
   creationFormFrom,
+  creationLandingDefault,
+  creationLandingTargetSentence,
+  creationLandingWholeSentence,
+  creationRepositoryChosen,
   creationRepositoryDefault,
   creationRepositoryRequired,
   creationBranchPrefixedSentence,
@@ -36,6 +41,7 @@ import {
 } from "../app/core/ticketCreation.ts";
 import type { TicketCreationForm } from "../app/core/ticketCreation.ts";
 import {
+  creationBinding,
   creationDigest,
   creationDraft,
   creationForm,
@@ -66,7 +72,7 @@ function intentOfChars(chars: number): string {
 
 /** A project binding nothing, which is what every case but the repository
  * rule's own is about. */
-const noBindings: readonly string[] = [];
+const noBindings: readonly ProjectRepositoryResponse[] = [];
 
 function faultFields(form: TicketCreationForm): readonly string[] {
   const assembled = creationBodyFrom(creationInitialization, form, noBindings);
@@ -141,6 +147,7 @@ test("a filled form becomes a body the wire's own parser accepts", () => {
     intent: "ship it",
     links: ["https://example.test/a"],
     branch: "refs/heads/topic/one",
+    finalization: { mode: "Push" },
   });
 });
 
@@ -220,11 +227,11 @@ test("a reference pasted where a name was asked for is refused, not prefixed twi
 });
 
 /**
- * Naming a target is the whole of what asking for a finalization is, so the
- * field is absent from a brief that names none rather than repeating the
- * branch the work started from.
+ * A managed finalizer is given the landing it runs, so the finalization is on
+ * every such brief; the target is what a brief naming none leaves off, and the
+ * work then lands on the branch it was done on.
  */
-test("a named target is a finalization on the wire, and no target is no field", () => {
+test("a landing is on the wire under a managed finalizer, with a target only where one is named", () => {
   const landing = creationBodyFrom(
     creationInitialization,
     creationForm({ branchName: "topic/one", targetBranchName: "release/next" }),
@@ -245,7 +252,7 @@ test("a named target is a finalization on the wire, and no target is no field", 
   );
   expect(worked.assembled).toBe("Body");
   if (worked.assembled !== "Body") return;
-  expect("finalization" in worked.body.brief).toBe(false);
+  expect(worked.body.brief.finalization).toStrictEqual({ mode: "Push" });
 });
 
 test("a target names where work lands whether or not a branch says where it starts", () => {
@@ -419,10 +426,11 @@ test("the release names the draft it was answered with, and its authoring versio
   });
 });
 
-const oneBinding = ["https://forge.test/kasofsk/chuggy"];
+const soleRepository = "https://forge.test/kasofsk/chuggy";
+const oneBinding = [creationBinding(soleRepository)];
 const twoBindings = [
-  "https://forge.test/kasofsk/chuggy",
-  "https://forge.test/kasofsk/chuggy-fabric",
+  creationBinding(soleRepository),
+  creationBinding("https://forge.test/kasofsk/chuggy-fabric", "PullRequest"),
 ];
 
 /**
@@ -437,10 +445,10 @@ test("a repository is required exactly where the project binds one", () => {
 
 test("the sole binding is the default, and two bindings default to neither", () => {
   expect(creationRepositoryDefault([])).toBe("");
-  expect(creationRepositoryDefault(oneBinding)).toBe(oneBinding[0]);
+  expect(creationRepositoryDefault(oneBinding)).toBe(soleRepository);
   expect(creationRepositoryDefault(twoBindings)).toBe("");
   expect(creationFormFrom(creationInitialization, oneBinding).repository).toBe(
-    oneBinding[0],
+    soleRepository,
   );
 });
 
@@ -460,12 +468,12 @@ test("a form naming no repository is refused where the project binds one", () =>
 test("a chosen repository is on the brief, and a project binding none sends no field", () => {
   const named = creationBodyFrom(
     creationInitialization,
-    creationForm({ repository: oneBinding[0] ?? "" }),
+    creationForm({ repository: soleRepository }),
     oneBinding,
   );
   expect(named.assembled).toBe("Body");
   if (named.assembled !== "Body") return;
-  expect(named.body.brief.repository).toBe(oneBinding[0]);
+  expect(named.body.brief.repository).toBe(soleRepository);
   expect(draftCreationSchema.parse(named.body)).toStrictEqual(named.body);
 
   const none = creationBodyFrom(
@@ -476,4 +484,163 @@ test("a chosen repository is on the brief, and a project binding none sends no f
   expect(none.assembled).toBe("Body");
   if (none.assembled !== "Body") return;
   expect("repository" in none.body.brief).toBe(false);
+});
+
+/**
+ * The landing a form starts on is the repository's, so a person who changes
+ * nothing releases the ticket the binding says it should be. A project binding
+ * nothing, and a repository its listing no longer holds, land on the mode this
+ * console defaults to rather than on nothing at all.
+ */
+test("a form's landing is the chosen repository's, and Push where none says", () => {
+  expect(creationLandingDefault(twoBindings, soleRepository)).toBe("Push");
+  expect(
+    creationLandingDefault(
+      twoBindings,
+      "https://forge.test/kasofsk/chuggy-fabric",
+    ),
+  ).toBe("PullRequest");
+  expect(creationLandingDefault(twoBindings, "")).toBe("Push");
+  expect(creationLandingDefault(noBindings, soleRepository)).toBe("Push");
+  expect(
+    creationFormFrom(creationInitialization, [
+      creationBinding(soleRepository, "PullRequest"),
+    ]).landingMode,
+  ).toBe("PullRequest");
+});
+
+/**
+ * A LANDING THE READER CHOSE IS NOT RE-SEEDED. Changing repositories re-seeds
+ * only where the choice on screen is still the one the old repository seeded;
+ * a reader who moved it has said what they want and the second repository does
+ * not overrule them.
+ */
+test("changing repositories re-seeds an untouched landing and leaves a touched one", () => {
+  const fabric = "https://forge.test/kasofsk/chuggy-fabric";
+  const docs = "https://forge.test/kasofsk/chuggy-docs";
+  const bound = [...twoBindings, creationBinding(docs)];
+  const seeded = creationFormFrom(creationInitialization, bound);
+  const onPush = { ...seeded, repository: soleRepository };
+  expect(creationRepositoryChosen(onPush, bound, fabric)).toStrictEqual({
+    ...onPush,
+    repository: fabric,
+    landingMode: "PullRequest",
+  });
+  const touched = { ...onPush, landingMode: "PullRequest" as const };
+  expect(creationRepositoryChosen(touched, bound, docs)).toStrictEqual({
+    ...touched,
+    repository: docs,
+  });
+});
+
+/** A ticket authored to run no finalizer lands nothing, so no landing reaches
+ * the wire and neither does the target box beside it. */
+test("a form with no finalizer sends no finalization at all", () => {
+  const assembled = creationBodyFrom(
+    creationInitialization,
+    creationForm({
+      finalizer: "NoFinalizer",
+      landingMode: "PullRequest",
+      targetBranchName: "release/next",
+    }),
+    noBindings,
+  );
+  expect(assembled.assembled).toBe("Body");
+  if (assembled.assembled !== "Body") return;
+  expect("finalization" in assembled.body.brief).toBe(false);
+});
+
+test("a chosen landing is on the wire whatever the repository's default is", () => {
+  const assembled = creationBodyFrom(
+    creationInitialization,
+    creationForm(
+      {
+        repository: soleRepository,
+        landingMode: "PullRequest",
+        branchName: "topic/one",
+        targetBranchName: "release/next",
+      },
+      oneBinding,
+    ),
+    oneBinding,
+  );
+  expect(assembled.assembled).toBe("Body");
+  if (assembled.assembled !== "Body") return;
+  expect(assembled.body.brief.finalization).toStrictEqual({
+    mode: "PullRequest",
+    target: "refs/heads/release/next",
+  });
+  expect(draftCreationSchema.parse(assembled.body)).toStrictEqual(
+    assembled.body,
+  );
+});
+
+/**
+ * A pull request is opened from one reference into another, so both boxes are
+ * the reader's to fill: the empty one and the one repeating the branch are
+ * refused before the wire sees either.
+ */
+test("a pull request names a target, and one that is not the branch", () => {
+  expect(
+    faultReasons(
+      creationForm({ landingMode: "PullRequest", branchName: "topic/one" }),
+    ),
+  ).toStrictEqual([creationLandingTargetSentence]);
+  expect(
+    faultReasons(
+      creationForm({
+        landingMode: "PullRequest",
+        branchName: "topic/one",
+        targetBranchName: "topic/one",
+      }),
+    ),
+  ).toStrictEqual([creationLandingWholeSentence]);
+  expect(
+    faultFields(
+      creationForm({ landingMode: "PullRequest", branchName: "topic/one" }),
+    ),
+  ).toStrictEqual(["target"]);
+});
+
+/** A push lands on the branch the work was done on, so it names no target and
+ * is not refused for naming none. */
+test("a push with no target is accepted, and so is a pull request with one", () => {
+  expect(faultFields(creationForm({ branchName: "topic/one" }))).toStrictEqual(
+    [],
+  );
+  expect(
+    faultFields(
+      creationForm({
+        landingMode: "PullRequest",
+        branchName: "topic/one",
+        targetBranchName: "release/next",
+      }),
+    ),
+  ).toStrictEqual([]);
+});
+
+/**
+ * The target box is neither drawn nor sent under no finalizer, so a value left
+ * in it from before that choice must not refuse the form: the reason would name
+ * a field the reader cannot see, and the submission would stop with nothing on
+ * screen saying why.
+ */
+test("a form with no finalizer is not refused for a target it neither draws nor sends", () => {
+  const parked = creationForm({
+    finalizer: "NoFinalizer",
+    branchName: "topic/one",
+    targetBranchName: "refs/heads/release/next",
+  });
+  expect(faultFields(parked)).toStrictEqual([]);
+  const assembled = creationBodyFrom(
+    creationInitialization,
+    parked,
+    noBindings,
+  );
+  expect(assembled.assembled).toBe("Body");
+  if (assembled.assembled !== "Body") return;
+  expect("finalization" in assembled.body.brief).toBe(false);
+  expect(draftCreationSchema.parse(assembled.body)).toStrictEqual(
+    assembled.body,
+  );
 });
