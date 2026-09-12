@@ -163,3 +163,89 @@ test("404 and 401 stay the outcomes the contract classified them as", async () =
   expect(absent.outcome).toBe("Absent");
   expect(refused.outcome).toBe("Unauthenticated");
 });
+
+const installation = { method: "GET", path: "/api/v1/installation" } as const;
+
+/** A renewing port, and the record of how often each end of it was asked. */
+function renewing(
+  held: Harness,
+  answers: readonly boolean[],
+): {
+  readonly ports: ApiPorts;
+  readonly asked: () => number;
+  readonly told: () => number;
+} {
+  let asked = 0;
+  let told = 0;
+  return {
+    asked: () => asked,
+    told: () => told,
+    ports: {
+      ...held.ports,
+      renew: () => {
+        const answer = answers[asked] ?? false;
+        asked += 1;
+        return Promise.resolve(answer);
+      },
+      refused: () => {
+        told += 1;
+        return Promise.resolve();
+      },
+    },
+  };
+}
+
+test("a refused bearer is renewed once and the request is sent again", async () => {
+  const held = harness([{ status: 401 }, { status: 200, body: {} }]);
+  const port = renewing(held, [true]);
+
+  const result = await apiSend(port.ports, installation);
+
+  expect(result.outcome).toBe("Ok");
+  expect(port.asked()).toBe(1);
+  expect(port.told()).toBe(0);
+  expect(held.sent).toHaveLength(2);
+});
+
+/** A second refusal after a fresh token is an answer about the session, not
+ * about the request, so it is said to be one rather than renewed again. */
+test("a refusal that survives the renewal is told to the port, not renewed", async () => {
+  const held = harness([{ status: 401 }, { status: 401 }]);
+  const port = renewing(held, [true, true]);
+
+  const result = await apiSend(port.ports, installation);
+
+  expect(result.outcome).toBe("Unauthenticated");
+  expect(port.asked()).toBe(1);
+  expect(port.told()).toBe(1);
+  expect(held.sent).toHaveLength(2);
+});
+
+test("a session that will not renew is not sent again", async () => {
+  const held = harness([{ status: 401 }]);
+  const port = renewing(held, [false]);
+
+  const result = await apiSend(port.ports, installation);
+
+  expect(result.outcome).toBe("Unauthenticated");
+  expect(port.asked()).toBe(1);
+  expect(held.sent).toHaveLength(1);
+});
+
+test("nothing but a refused bearer asks for a renewal", async () => {
+  for (const status of [200, 404, 409, 500]) {
+    const held = harness([{ status, body: {} }]);
+    const port = renewing(held, [true]);
+    await apiSend(port.ports, installation);
+    expect(port.asked(), String(status)).toBe(0);
+  }
+});
+
+test("a port holding no renewal leaves the refusal as it arrived", async () => {
+  const held = harness([{ status: 401 }]);
+
+  const result = await apiSend(held.ports, installation);
+
+  expect(result.outcome).toBe("Unauthenticated");
+  expect(held.sent).toHaveLength(1);
+});
