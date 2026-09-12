@@ -28,6 +28,16 @@
 # reference is this archive's: an import that exits clean having written
 # something else would pass here.
 #
+# THE BUILD NAMES THE PLATFORM AND BUILDS NO ATTESTATION, because neither
+# default is the rig's. A builder left to itself builds for its own host, and
+# `ctr images import` takes a foreign-arch archive without complaint, so a
+# build from an arm64 desk lands an image the amd64 node cannot exec; and a
+# builder that attaches provenance exports an index whose attestation content
+# `docker save` does not carry, which imports as an index the node cannot then
+# push. So `--platform` says the node's architecture out loud and
+# `--provenance=false` asks for the single manifest every image already on the
+# node is.
+#
 # A NODE THAT CANNOT BE ASKED IS NOT A NODE WITHOUT THE IMAGE. Whether the
 # reference is there is then unknown, and unknown exits 2.
 #
@@ -48,6 +58,9 @@
 #                       is a name no resolver will ever answer, so an image
 #                       missing from the node fails loudly instead of pulling
 #                       whatever stands at that name on Docker Hub.
+#   CHUG_IMAGE_PLATFORM the platform to build for. Default `linux/amd64`, which
+#                       is the rig node's architecture; a node of another one is
+#                       what this is for.
 #   CHUG_WEB_SITE       the repository-relative directory whose contents become
 #                       the web image's document root. Required by `web`, and
 #                       it has no default: this serves what it is pointed at.
@@ -103,6 +116,7 @@ if [ -z "$tag" ]; then
 	tag="$(git rev-parse --short HEAD)"
 fi
 prefix="${CHUG_IMAGE_PREFIX:-chuggy.invalid}"
+platform="${CHUG_IMAGE_PLATFORM:-linux/amd64}"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -128,9 +142,9 @@ for name in "$@"; do
 
 	set +e
 	if [ "$name" = "web" ]; then
-		docker build -f "images/$name/Dockerfile" --build-arg "site=$CHUG_WEB_SITE" -t "$reference" .
+		docker build --platform "$platform" --provenance=false -f "images/$name/Dockerfile" --build-arg "site=$CHUG_WEB_SITE" -t "$reference" .
 	else
-		docker build -f "images/$name/Dockerfile" -t "$reference" .
+		docker build --platform "$platform" --provenance=false -f "images/$name/Dockerfile" -t "$reference" .
 	fi
 	built=$?
 	set -e
