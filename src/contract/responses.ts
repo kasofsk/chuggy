@@ -1373,6 +1373,14 @@ export type ProjectRepositoryResponse = z.infer<
   typeof projectRepositoryResponseSchema
 >;
 
+/** The row the write left, which is the newest read of it a writer holds. */
+export const projectRepositoryLandingWrittenSchema = z.object({
+  repository: projectRepositoryResponseSchema,
+});
+export type ProjectRepositoryLandingWrittenResponse = z.infer<
+  typeof projectRepositoryLandingWrittenSchema
+>;
+
 /** The landing another write moved first, and the row as it stands. */
 export const projectRepositoryLandingConflictSchema = z.object({
   repository: projectRepositoryResponseSchema,

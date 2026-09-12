@@ -3,7 +3,9 @@
  * work on, how many stages judge it, and what finalizing it takes.
  *
  * A revision that is not ready decides none of those yet, so the row says that
- * instead of drawing four blanks a reader would read as answers.
+ * instead of drawing four blanks a reader would read as answers. A walk the
+ * page budget cut short says so under the rows, because the ones it did not
+ * reach are otherwise indistinguishable from ones that do not exist.
  */
 
 import type { ReactNode } from "react";
@@ -38,34 +40,47 @@ function RepositoryConfigurationFacts(props: {
   );
 }
 
+/** What the budget left unread, which is a fact about the table, not a row. */
+function RepositoryConfigurationsPartial(): ReactNode {
+  return <p className="text-ink-3 text-sm">Not every configuration was read</p>;
+}
+
 export function RepositoryConfigurationTable(props: {
   readonly rows: readonly RepositoryConfigurationRow[];
+  readonly partial: boolean;
 }): ReactNode {
   if (props.rows.length === 0)
-    return <EmptyState label="No configuration declared" />;
+    return props.partial ? (
+      <RepositoryConfigurationsPartial />
+    ) : (
+      <EmptyState label="No configuration declared" />
+    );
   return (
-    <Table caption="Declared configurations">
-      <thead>
-        <tr>
-          <th scope="col">Configuration</th>
-          <th scope="col">Worker</th>
-          <th scope="col">Stages</th>
-          <th scope="col">Approval</th>
-          <th scope="col">Handoff</th>
-        </tr>
-      </thead>
-      <tbody>
-        {props.rows.map((row) => (
-          <tr key={row.revision}>
-            <th scope="row">
-              <Tooltip text={row.configuration.title}>
-                <span>{row.configuration.text}</span>
-              </Tooltip>
-            </th>
-            <RepositoryConfigurationFacts row={row} />
+    <>
+      <Table caption="Declared configurations">
+        <thead>
+          <tr>
+            <th scope="col">Configuration</th>
+            <th scope="col">Worker</th>
+            <th scope="col">Stages</th>
+            <th scope="col">Approval</th>
+            <th scope="col">Handoff</th>
           </tr>
-        ))}
-      </tbody>
-    </Table>
+        </thead>
+        <tbody>
+          {props.rows.map((row) => (
+            <tr key={row.revision}>
+              <th scope="row">
+                <Tooltip text={row.configuration.title}>
+                  <span>{row.configuration.text}</span>
+                </Tooltip>
+              </th>
+              <RepositoryConfigurationFacts row={row} />
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+      {props.partial ? <RepositoryConfigurationsPartial /> : null}
+    </>
   );
 }

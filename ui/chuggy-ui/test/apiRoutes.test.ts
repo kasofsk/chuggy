@@ -576,21 +576,28 @@ test("a tenant that looks like a path stays one segment", async () => {
 
 /**
  * The landing is written at its own address and never at the binding list's,
- * because a PUT to the list would read as a write of the whole roster.
+ * because a PUT to the list would read as a write of the whole roster. What it
+ * answers is the row inside an envelope, and the caller is handed the row.
  */
 test("a landing is written by PUT at the bindings' own landing path", async () => {
-  const held = recordingRequests(() => ({
+  const row = {
     repository: madeRepository,
     boundAt: "2026-08-26T00:00:00Z",
     landing: { mode: "PullRequest" },
-  }));
-  await apiWriteProjectRepositoryLanding(held.ports, partition, {
-    repository: madeRepository,
-    expected: { mode: "Push" },
-    landing: { mode: "PullRequest" },
-  });
+  };
+  const held = recordingRequests(() => ({ repository: row }));
+  const answered = await apiWriteProjectRepositoryLanding(
+    held.ports,
+    partition,
+    {
+      repository: madeRepository,
+      expected: { mode: "Push" },
+      landing: { mode: "PullRequest" },
+    },
+  );
   expect(held.requests.map((request) => request.url)).toStrictEqual([
     `${partitionPath}/repositories/landing`,
   ]);
   expect(held.requests[0]?.init.method).toBe("PUT");
+  expect(answered).toStrictEqual({ outcome: "Ok", value: row });
 });

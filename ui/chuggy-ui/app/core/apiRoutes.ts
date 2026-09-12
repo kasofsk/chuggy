@@ -41,7 +41,7 @@ import {
   projectRepositoryAlreadyBoundSchema,
   projectRepositoryBoundSchema,
   projectRepositoryCreatedSchema,
-  projectRepositoryResponseSchema,
+  projectRepositoryLandingWrittenSchema,
   projectResponseSchema,
   repositoryConfigurationImportedSchema,
   runConfigurationResponseSchema,
@@ -333,7 +333,7 @@ export function apiWriteProjectRepositoryLanding(
       path: apiSegments(partition, "repositories", "landing"),
       body: written,
     },
-    (value) => projectRepositoryResponseSchema.parse(value),
+    (value) => projectRepositoryLandingWrittenSchema.parse(value).repository,
   );
 }
 
