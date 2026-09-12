@@ -31,7 +31,8 @@
  * becomes nullable and the doors resolve nothing for one, refusing a caller
  * that named a landing anyway rather than keeping it. Every brief already
  * stored for one is emptied of the landing the old door resolved for it,
- * because the column is otherwise empty for two reasons and answers for one.
+ * because a mode left standing there says a landing was authored, and for
+ * these it was not.
  */
 
 import { projectRepositoriesAnsweredMax } from "../../../../contract/http.ts";
