@@ -73,7 +73,11 @@ function answered(
 ): ApiResult<ProjectRepositoryBindAnswer> {
   return {
     outcome: "Ok",
-    value: { repository: "https://forge.test/kasofsk/chuggy", configurations },
+    value: {
+      repository: "https://forge.test/kasofsk/chuggy",
+      landing: { mode: "Push" },
+      configurations,
+    },
   };
 }
 

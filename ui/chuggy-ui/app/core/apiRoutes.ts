@@ -127,8 +127,8 @@ import type { ApiPorts, ApiRequest, ApiResult } from "./apiRequest.ts";
 
 export const projectInventoryPagesMax = 32;
 
-/** How far a caller walks a project's revisions. A walk that ends here has read
- * part of the project rather than all of it, and says so in its own words. */
+/** How many pages of a project's configurations the ticket form and a
+ * repository's page read before they stop and say what they read. */
 export const configurationPagesMax = 8;
 
 type QueryValue = string | number | readonly string[] | undefined;

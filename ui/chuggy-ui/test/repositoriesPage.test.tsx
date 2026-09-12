@@ -405,6 +405,7 @@ test("a new binding draws what its own configurations came to", async () => {
       answer(
         {
           repository: freeUrl,
+          landing: { mode: "Push" },
           configurations: { result: "Imported", count: 2 },
         },
         201,
@@ -446,6 +447,7 @@ const madeUrl = "https://forge.test/kasofsk/scratch";
 
 const made = {
   repository: madeUrl,
+  landing: { mode: "Push" },
   created: { account: "kasofsk", name: "scratch", url: madeUrl },
   seeded: true,
   ruleset: { result: "Refused", message: "no branch yet" },
@@ -543,6 +545,7 @@ test("a bind stales the bindings the page drew", async () => {
       answer(
         {
           repository: freeUrl,
+          landing: { mode: "Push" },
           configurations: { result: "Imported", count: 2 },
         },
         201,
