@@ -43,6 +43,11 @@ export interface ApiPorts {
    * stands as it arrived.
    */
   readonly renew?: () => Promise<boolean>;
+  /**
+   * Told when the API refused the fresh bearer too, which is an answer about
+   * the session and not about the request.
+   */
+  readonly refused?: () => Promise<void>;
 }
 
 export interface ApiRequest {
@@ -203,9 +208,9 @@ async function apiAttempts(
  * THE RENEWAL IS ASKED FOR ONCE AND IS NOT THE RETRY BUDGET: that budget is the
  * server's own `Retryable` instruction and is spent inside each attempt, while
  * a second refusal after a fresh token is an answer about the session rather
- * than about the request, so it is handed back rather than renewed again — and
- * a body that goes twice goes under the idempotency key it already carried,
- * repeating a send that was refused before it reached the work.
+ * than about the request, so it is said to be one and handed back rather than
+ * renewed again — and a body that goes twice goes under the idempotency key it
+ * already carried, repeating a send that was refused before it reached the work.
  */
 export async function apiSend(
   ports: ApiPorts,
@@ -216,7 +221,10 @@ export async function apiSend(
   const answered = await apiAttempts(ports, request);
   if (answered.outcome !== "Unauthenticated" || ports.renew === undefined)
     return answered;
-  return (await ports.renew()) ? apiAttempts(ports, request) : answered;
+  if (!(await ports.renew())) return answered;
+  const again = await apiAttempts(ports, request);
+  if (again.outcome === "Unauthenticated") await ports.refused?.();
+  return again;
 }
 
 /** The parser is the wire's; a body it rejects is a server fault, drawn as one. */

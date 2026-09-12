@@ -6,7 +6,8 @@
  * only once the holder says `SignedIn` — so a session the API refuses and the
  * holder keeps is a console whose every read fails and whose only remedy is the
  * browser's own storage. The renewal port is what closes that, and these cases
- * are the two ends of it: a token the issuer replaces, and one it will not.
+ * drive a real holder rather than a double, because the snapshot the reader is
+ * drawn from is exactly what forgetting the session in the wrong order loses.
  */
 
 import { renderHook } from "@testing-library/react";
@@ -15,61 +16,57 @@ import type { ReactNode } from "react";
 
 import { useApiPorts } from "../app/browser/api.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
+import {
+  createSessionHolder,
+  sessionRefreshTokenKey,
+} from "../app/core/sessionHolder.ts";
 import type { SessionHolder } from "../app/core/sessionHolder.ts";
+import { sessionHarness } from "./sessionHolderHarness.ts";
+import type { SessionHarness } from "./sessionHolderHarness.ts";
 
-function holderDouble(refreshes: boolean): {
-  readonly holder: SessionHolder;
-  readonly signedOut: () => number;
-  readonly reasons: readonly string[];
-} {
-  let signedOut = 0;
-  const reasons: string[] = [];
-  return {
-    signedOut: () => signedOut,
-    reasons,
-    holder: {
-      load: () => Promise.resolve(),
-      completeCallback: () => Promise.resolve({ result: "None" as const }),
-      signIn: () => Promise.resolve(),
-      signOut: () => {
-        signedOut += 1;
-        return Promise.resolve();
-      },
-      bearer: () => Promise.resolve("token"),
-      refresh: () => Promise.resolve(refreshes),
-      refuse: (reason: string) => reasons.push(reason),
-      refreshDueAtMs: () => undefined,
-      generation: () => 1,
-      snapshot: () => ({
-        phase: "SignedIn" as const,
-        reason: undefined,
-        configuration: undefined,
-      }),
-      subscribe: () => () => undefined,
-    },
-  };
+/** A holder signed in from a stored token, whose issuer renews or does not. */
+async function signedIn(renews: boolean): Promise<SessionHolder> {
+  const held: SessionHarness = sessionHarness();
+  held.persistent.held.set(sessionRefreshTokenKey, "renew");
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  if (!renews)
+    held.answer = () => {
+      throw new Error("the issuer would not renew this session");
+    };
+  return holder;
 }
 
-function portsOf(held: { readonly holder: SessionHolder }) {
+function portsOf(holder: SessionHolder) {
   const wrapper = (props: { readonly children: ReactNode }): ReactNode => (
-    <SessionProvider holder={held.holder}>{props.children}</SessionProvider>
+    <SessionProvider holder={holder}>{props.children}</SessionProvider>
   );
   return renderHook(() => useApiPorts(), { wrapper }).result.current;
 }
 
 test("a token the issuer replaces renews, and the session is left standing", async () => {
-  const held = holderDouble(true);
+  const holder = await signedIn(true);
 
-  expect(await portsOf(held).renew?.()).toBe(true);
-  expect(held.signedOut()).toBe(0);
-  expect(held.reasons).toHaveLength(0);
+  expect(await portsOf(holder).renew?.()).toBe(true);
+  expect(holder.snapshot().phase).toBe("SignedIn");
+  expect(holder.snapshot().reason).toBeUndefined();
 });
 
 test("a session the issuer will not renew is signed out and said to be", async () => {
-  const held = holderDouble(false);
+  const holder = await signedIn(false);
 
-  expect(await portsOf(held).renew?.()).toBe(false);
-  expect(held.signedOut()).toBe(1);
-  expect(held.reasons).toHaveLength(1);
-  expect(held.reasons[0]).toContain("refused");
+  expect(await portsOf(holder).renew?.()).toBe(false);
+  expect(holder.snapshot().phase).toBe("SignedOut");
+  expect(holder.snapshot().reason).toContain("refused");
+});
+
+/** A token the issuer mints happily and the API rejects anyway — an audience or
+ * a key set changed under a stored session — is the other way out of itself. */
+test("a fresh token the API refuses too ends the session", async () => {
+  const holder = await signedIn(true);
+
+  await portsOf(holder).refused?.();
+
+  expect(holder.snapshot().phase).toBe("SignedOut");
+  expect(holder.snapshot().reason).toContain("refused");
 });

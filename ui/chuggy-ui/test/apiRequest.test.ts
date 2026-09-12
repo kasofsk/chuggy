@@ -166,20 +166,30 @@ test("404 and 401 stay the outcomes the contract classified them as", async () =
 
 const installation = { method: "GET", path: "/api/v1/installation" } as const;
 
-/** A renewing port, and the record of how often it was asked. */
+/** A renewing port, and the record of how often each end of it was asked. */
 function renewing(
   held: Harness,
   answers: readonly boolean[],
-): { readonly ports: ApiPorts; readonly asked: () => number } {
+): {
+  readonly ports: ApiPorts;
+  readonly asked: () => number;
+  readonly told: () => number;
+} {
   let asked = 0;
+  let told = 0;
   return {
     asked: () => asked,
+    told: () => told,
     ports: {
       ...held.ports,
       renew: () => {
         const answer = answers[asked] ?? false;
         asked += 1;
         return Promise.resolve(answer);
+      },
+      refused: () => {
+        told += 1;
+        return Promise.resolve();
       },
     },
   };
@@ -193,12 +203,13 @@ test("a refused bearer is renewed once and the request is sent again", async () 
 
   expect(result.outcome).toBe("Ok");
   expect(port.asked()).toBe(1);
+  expect(port.told()).toBe(0);
   expect(held.sent).toHaveLength(2);
 });
 
 /** A second refusal after a fresh token is an answer about the session, not
- * about the request, so it is handed back rather than renewed again. */
-test("a refusal that survives the renewal is not renewed a second time", async () => {
+ * about the request, so it is said to be one rather than renewed again. */
+test("a refusal that survives the renewal is told to the port, not renewed", async () => {
   const held = harness([{ status: 401 }, { status: 401 }]);
   const port = renewing(held, [true, true]);
 
@@ -206,6 +217,7 @@ test("a refusal that survives the renewal is not renewed a second time", async (
 
   expect(result.outcome).toBe("Unauthenticated");
   expect(port.asked()).toBe(1);
+  expect(port.told()).toBe(1);
   expect(held.sent).toHaveLength(2);
 });
 

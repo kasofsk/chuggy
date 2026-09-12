@@ -48,26 +48,31 @@ type PanelRead<T> = (
  * a failed read while `Sign out`, the only control that could clear it, sits on
  * a bar the landing page never draws.
  *
- * So the token is renewed once against the issuer, and a session the issuer
- * will not renew is forgotten and said to be.
+ * So the token is renewed once against the issuer, and the session is forgotten
+ * and said to be where the issuer will not renew it or where the API refuses
+ * the fresh one too — a token minted happily and rejected anyway, which is what
+ * an audience or a key set changing under a stored session looks like.
  */
 export function useApiPorts(): ApiPorts {
   const holder = useSessionHolder();
-  return useMemo<ApiPorts>(
-    () => ({
+  return useMemo<ApiPorts>(() => {
+    const abandon = async (): Promise<void> => {
+      await holder.signOut();
+      holder.refuse("the API refused this session, so it was signed out");
+    };
+    return {
       fetch: apiFetch,
       bearer: () => holder.bearer(),
       sleepMs: (ms: number, signal: AbortSignal | undefined) =>
         sleepMs(ms, signal),
       renew: async () => {
         if (await holder.refresh()) return true;
-        await holder.signOut();
-        holder.refuse("the API refused this session, so it was signed out");
+        await abandon();
         return false;
       },
-    }),
-    [holder],
-  );
+      refused: abandon,
+    };
+  }, [holder]);
 }
 
 function usePanelQuery<T>(

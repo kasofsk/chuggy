@@ -16,74 +16,11 @@ import {
   sessionRefreshTokenKey,
   sessionTransactionKey,
 } from "../app/core/sessionHolder.ts";
-import type { SessionHolderPorts } from "../app/core/sessionHolder.ts";
-import type { FormRequest } from "../app/core/authorization.ts";
-import { keyValueDouble } from "./keyValueDouble.ts";
-import type { HeldStore } from "./keyValueDouble.ts";
-
-const configuration = {
-  issuer: "https://auth.example/",
-  clientId: "chuggy-web",
-  audience: "https://chuggy.example/api",
-  redirectUri: "https://chuggy.example/auth/callback",
-  scopes: ["openid", "offline_access"],
-};
-
-const discovery = {
-  issuer: "https://auth.example",
-  authorization_endpoint: "https://auth.example/oauth2/auth",
-  token_endpoint: "https://auth.example/oauth2/token",
-  revocation_endpoint: "https://auth.example/oauth2/revoke",
-};
-
-interface Harness {
-  readonly ports: SessionHolderPorts;
-  readonly persistent: HeldStore;
-  readonly transient: HeldStore;
-  readonly asked: (FormRequest | string)[];
-  readonly redirects: string[];
-  answer: (request: FormRequest | string) => unknown;
-  nowMs: number;
-}
-
-function harness(): Harness {
-  const persistent = keyValueDouble();
-  const transient = keyValueDouble();
-  const asked: (FormRequest | string)[] = [];
-  const redirects: string[] = [];
-  const held: Harness = {
-    persistent,
-    transient,
-    asked,
-    redirects,
-    nowMs: 1_000,
-    answer: (request) =>
-      request === "/config.json"
-        ? configuration
-        : typeof request === "string"
-          ? discovery
-          : { access_token: "access", refresh_token: "renew", expires_in: 600 },
-    ports: {
-      nowMs: () => held.nowMs,
-      fetchJson: (request) => {
-        asked.push(request);
-        try {
-          return Promise.resolve(held.answer(request));
-        } catch (failure: unknown) {
-          return Promise.reject(
-            failure instanceof Error ? failure : new Error("refused"),
-          );
-        }
-      },
-      persistent,
-      transient,
-      digest: (message) => Promise.resolve(message.slice(0, 32)),
-      drawBytes: (count) => new Uint8Array(count).fill(7),
-      redirect: (url) => redirects.push(url),
-    },
-  };
-  return held;
-}
+import {
+  sessionHarness as harness,
+  sessionHarnessConfiguration as configuration,
+  sessionHarnessDiscovery as discovery,
+} from "./sessionHolderHarness.ts";
 
 test("a console that cannot read its configuration says so and stops", async () => {
   const held = harness();
