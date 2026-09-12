@@ -1,7 +1,8 @@
 /**
  * The strip above the composer, holding its height whether or not the train is
- * drawn in it, so a turn starting or ending never shifts the composer beneath
- * it.
+ * drawn in it, so a turn starting, or its answer landing, never shifts the
+ * composer beneath it. The train runs while a turn is out and nothing has
+ * been said for it yet, not for the whole of the turn.
  *
  * The train is chuggernaut's own sprite, redrawn against the theme: not one
  * fill is stated here, each is a class `conversation.css` fills from a token,
