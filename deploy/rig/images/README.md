@@ -297,11 +297,12 @@ sudo k3s ctr --namespace k8s.io images ls -q | grep chuggy.invalid
 - **One node.** There is no registry, so nothing replicates the image. A second
   node would not have it, and neither would this one after the node's image
   store is reset.
-- **One architecture, and nothing here checks it.** `docker save` writes the
-  build host's platform alone, and `ctr images import` takes a foreign-arch
-  archive without complaint — after which the read-back passes and the kubelet
-  fails at exec. Build on a host whose architecture is the node's, or say
-  `--platform` and mean it.
+- **One architecture, named rather than checked.** The build says
+  `--platform linux/amd64`, which is the rig node's, because `docker save`
+  writes the build host's platform alone and `ctr images import` takes a
+  foreign-arch archive without complaint — after which the read-back passes and
+  the kubelet fails at exec. A node of another architecture wants
+  `CHUG_IMAGE_PLATFORM`; nothing here reads the node to find out.
 - **The read-back is containerd's, not the kubelet's.** It says the reference is
   there to be found; it says nothing about a pod starting, a probe passing, or a
   secret being mounted.

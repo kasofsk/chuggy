@@ -126,7 +126,7 @@ fresh_case() {
 	: > "$LOG"
 	: > "$PRESENT"
 	rm -f "$REPO/dirt"
-	unset CHUG_IMAGE_TAG CHUG_WEB_SITE CHUG_RIG_SSH
+	unset CHUG_IMAGE_TAG CHUG_IMAGE_PLATFORM CHUG_WEB_SITE CHUG_RIG_SSH
 	unset CHUG_STUB_BUILD_RC CHUG_STUB_EMPTY_SAVE CHUG_STUB_IMPORT_RC CHUG_STUB_LS_RC
 }
 
@@ -183,6 +183,10 @@ printf 'chuggy.invalid/web:fixed\n' > "$PRESENT"
 run web
 check "web builds with the site it was given" 0 "$RC" "build-arg site=site"
 check "the web build is tagged for the node" 0 "$RC" "chuggy.invalid/web:fixed"
+# The site is the only thing the two builds differ by, so it is the branch a
+# flag can go missing from while the other one still carries it.
+check "the web build names the node's architecture" 0 "$RC" "platform linux/amd64"
+check "the web build asks for no attestation" 0 "$RC" "provenance=false"
 
 # The refusal is per named image and comes before any of them is built, so a run
 # that names a buildable image alongside an unbuildable one builds neither.
@@ -217,6 +221,21 @@ printf 'example.test/api:%s\n' "$HEAD_TAG" > "$PRESENT"
 run api
 check "the prefix is the caller's to change" 0 "$RC" "example.test/api:$HEAD_TAG"
 unset CHUG_IMAGE_PREFIX
+
+# A build left to its own defaults is the arm64 desk's image on the amd64 node,
+# and an attested index whose content `docker save` does not carry.
+fresh_case
+printf '%s\n' "chuggy.invalid/api:$HEAD_TAG" > "$PRESENT"
+run api
+check "the build names the node's architecture" 0 "$RC" "platform linux/amd64"
+check "the build asks for no attestation" 0 "$RC" "provenance=false"
+
+fresh_case
+export CHUG_IMAGE_PLATFORM=linux/arm64
+printf '%s\n' "chuggy.invalid/api:$HEAD_TAG" > "$PRESENT"
+run api
+check "the platform is the caller's to change" 0 "$RC" "platform linux/arm64"
+unset CHUG_IMAGE_PLATFORM
 
 # --- what stands between a status and the claim that the node holds it -------
 
