@@ -156,7 +156,7 @@ async function main(): Promise<void> {
         owner: settings.owner,
         recoveryEpoch: settings.recoveryEpoch,
       },
-      service: composition.service(),
+      service: composition.service,
       finalizer: settings.finalizer,
     }),
   );

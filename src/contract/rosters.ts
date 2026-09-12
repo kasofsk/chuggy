@@ -203,6 +203,48 @@ export const schedulerFreshnesses = ["Unknown"] as const;
 export const selectorModes = ["Running", "Paused"] as const;
 export type SelectorMode = (typeof selectorModes)[number];
 
+/** What a minted forge credential may do to the repository it is scoped to. */
+export const forgeCredentialPermissions = ["read", "write", "propose"] as const;
+export type ForgeCredentialPermission =
+  (typeof forgeCredentialPermissions)[number];
+
+/** Every forge a tenant may claim an installation on. */
+export const forgeIds = ["github"] as const;
+export type ForgeIdentity = (typeof forgeIds)[number];
+
+/** Every app a tenant installs, the api holding a key for each it answers a claim on. */
+export const forgeApps = ["portal", "worker"] as const;
+export type ForgeAppName = (typeof forgeApps)[number];
+
+/** Every kind of account a forge installs an app on. */
+export const forgeAccountKinds = ["User", "Organization"] as const;
+export type ForgeAccountKindName = (typeof forgeAccountKinds)[number];
+
+/** Whether a repository this tree creates is its account's alone to read. */
+export const forgeRepositoryVisibilities = ["private", "public"] as const;
+export type ForgeRepositoryVisibilityName =
+  (typeof forgeRepositoryVisibilities)[number];
+
+/** Why a newly bound repository came away with no configurations of its own. */
+export const projectRepositoryConfigurationDeferrals = [
+  "NotConfigured",
+  "NoBootstrapImage",
+  "DefaultBranchAbsent",
+  "DefaultBranchUnavailable",
+  "RepositoryAbsent",
+  "SnapshotAbsent",
+  "SnapshotUnavailable",
+  "SnapshotRefused",
+  "DeclarationsRefused",
+  "IdentityConflict",
+  "StaleBinding",
+  "NotFound",
+  "ParentNotFound",
+  "StepFailed",
+] as const;
+export type ProjectRepositoryConfigurationDeferralName =
+  (typeof projectRepositoryConfigurationDeferrals)[number];
+
 /** Whether a selector proposal is dispatched or held for a reviewer. */
 export const selectorDispatchModes = ["Automatic", "ApprovalRequired"] as const;
 export type SelectorDispatchMode = (typeof selectorDispatchModes)[number];
@@ -336,7 +378,6 @@ export type ThreadStanding = (typeof threadStandings)[number];
 export const threadMessageRefusalCodes = [
   "NotYourThread",
   "ThreadClosed",
-  "ThreadOrphaned",
   "ThreadBacklogged",
   "ThreadTurnTooLarge",
 ] as const;

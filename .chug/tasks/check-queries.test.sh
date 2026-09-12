@@ -27,7 +27,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 SUT="$HERE/check-queries.sh"
 R="$WORK/repo"
 
-. "$HERE/_socket.sh"
+. "$HERE/_gate-fixture.sh"
 
 # The stub migrates without a server; the gate's own inline runner imports it
 # from the fixture the way the real gate imports the real pool.
@@ -89,14 +89,6 @@ fixture() { # a throwaway repo with a stubbed pool and a clean fake eslint
 	fresh_repo "$R"
 	stub_pool
 	fake_eslint 0
-}
-
-run_gate() { # <dir> [env=value...]
-	OUT="$WORK/.out"
-	set +e
-	(cd "$1" && shift && env "$@" "$SUT") >"$OUT" 2>&1
-	RC=$?
-	set -e
 }
 
 # --- No eslint to run is a could-not-run --------------------------------------

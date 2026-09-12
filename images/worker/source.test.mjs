@@ -61,6 +61,45 @@ test("source publication commits all changes and pushes a new attempt ref", asyn
   );
 });
 
+test("a push that can take a fresh credential takes one, and uses it", async () => {
+  const calls = [];
+  const command = async (executable, args, options) => {
+    calls.push({ executable, args, options });
+    return args[0] === "rev-parse" ? { stdout: "abc123\n" } : { stdout: "" };
+  };
+  const refreshed = {
+    GIT_ASKPASS: "askpass",
+    CHUG_WORKER_GIT_CREDENTIAL_FILE: "/tmp/later",
+  };
+  let refreshes = 0;
+
+  await commitAndPushSource({
+    task: { ticket: 7, attempt: "opaque", worker: {} },
+    repositoryId: "chuggy",
+    repository: "http://git/rig.git",
+    base: "base123",
+    directory: "/workspace/repository",
+    command,
+    environment: {
+      GIT_ASKPASS: "askpass",
+      CHUG_WORKER_GIT_CREDENTIAL_FILE: "/tmp/earlier",
+    },
+    refresh: async () => {
+      assert.equal(
+        calls.at(-1).args[0],
+        "rev-parse",
+        "the credential is taken after everything the commit needed, not before",
+      );
+      refreshes += 1;
+      return refreshed;
+    },
+  });
+
+  assert.equal(refreshes, 1);
+  assert.equal(calls.at(-1).args[0], "push");
+  assert.deepEqual(calls.at(-1).options.env, refreshed);
+});
+
 test("every worker report uses the schema that carries its summary", () => {
   assert.equal(
     resultDocument({ verdict: "Fail", report: "failed" }).version,

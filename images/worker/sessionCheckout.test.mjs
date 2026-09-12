@@ -128,6 +128,73 @@ test("a credential the attempt's authority does not grant is refused, not raised
   assert.deepEqual(taken, [], "an ungranted credential still reached git");
 });
 
+test("a minted credential is what the clone reaches the remote with", async () => {
+  const minted = {
+    CHUG_WORKER_GIT_CREDENTIAL_FILE: "/tmp/chuggy-git-credential",
+    CHUG_WORKER_GIT_CREDENTIAL_USERNAME: "x-access-token",
+    GIT_ASKPASS: "/usr/local/lib/chuggy/git-askpass.sh",
+    GIT_TERMINAL_PROMPT: "0",
+  };
+  const taken = [];
+
+  const checkout = await sessionCheckout(
+    taskOf({ authority: { ...grant, credentials: [] } }),
+    repositories("/nowhere"),
+    credentialFiles,
+    "/workspace",
+    {
+      run: (args, options) => {
+        taken.push({ args, options });
+        return { stdout: "abc123\n" };
+      },
+      log: () => undefined,
+      minted,
+    },
+  );
+
+  assert.deepEqual(checkout, {
+    directory: "/workspace/repository",
+    commit: "abc123",
+  });
+  assert.equal(taken.length, 2);
+  for (const { options } of taken) assert.deepEqual(options.env, minted);
+  assert.deepEqual(taken[0].args, [
+    "clone",
+    "/nowhere",
+    "/workspace/repository",
+  ]);
+});
+
+test("a minted session clones a reference the site's map does not name", async () => {
+  const taken = [];
+  const reference = "https://github.com/kasofsk/chuggy.git";
+
+  const checkout = await sessionCheckout(
+    taskOf({ repository: { reference } }),
+    repositories("/nowhere"),
+    credentialFiles,
+    "/workspace",
+    {
+      run: (args) => {
+        taken.push(args);
+        return { stdout: "abc123\n" };
+      },
+      log: () => undefined,
+      minted: { GIT_ASKPASS: "/usr/local/lib/chuggy/git-askpass.sh" },
+    },
+  );
+
+  assert.deepEqual(checkout, {
+    directory: "/workspace/repository",
+    commit: "abc123",
+  });
+  assert.deepEqual(
+    taken[0],
+    ["clone", reference, "/workspace/repository"],
+    "a repository the map does not name is cloned at its own identity",
+  );
+});
+
 test("a reference the site's map does not carry is refused, not raised", async () => {
   const checkout = await sessionCheckout(
     taskOf({ repository: { reference: "elsewhere" } }),

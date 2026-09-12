@@ -18,7 +18,11 @@ import {
 } from "../../interpreter/executionScheduler.ts";
 import type { Principal } from "../../interpreter/nativeWeb.ts";
 import type { ExecutionListQuery } from "../../interpreter/operationsView.ts";
-import type { Partition } from "../../interpreter/projectStore.ts";
+import {
+  asTenantId,
+  type Partition,
+  type TenantId,
+} from "../../interpreter/projectStore.ts";
 import type { NativeWeb } from "../../interpreter/nativeWeb.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
 import {
@@ -34,6 +38,8 @@ import type {
   ProjectStreamHub,
 } from "../../interpreter/projectStream.ts";
 import type { SelectorProjectSettingsAdministration } from "../../interpreter/selectorProjectSettings.ts";
+import type { ForgeCredentialMinting } from "../../interpreter/forgeCredentials.ts";
+import type { RepositoryOnboarding } from "../../interpreter/repositoryOnboarding.ts";
 import { projectStreamSocket } from "./eventStream.ts";
 import { nativeHttpContractDocument } from "../../contract/document.ts";
 import {
@@ -59,6 +65,11 @@ import {
   parseNativeActionCursor,
   parseTicketActivityCursor,
   parseConfigurationCreation,
+  parseForgeCredentialRequest,
+  parseForgeInstallationClaim,
+  parseForgeInstallationId,
+  parseProjectRepositoryBind,
+  parseProjectRepositoryCreate,
   parseRepositoryConfigurationImport,
   parseDraftCreation,
   parseDraftRevision,
@@ -84,6 +95,14 @@ import {
   draftRevisionResponse,
   draftsResponse,
   failureResponse,
+  forgeAppsResponse,
+  forgeCredentialResponse,
+  forgeInstallationClaimResponse,
+  forgeInstallationsResponse,
+  forgeRepositoriesResponse,
+  projectRepositoriesResponse,
+  projectRepositoryBindResponse,
+  projectRepositoryCreateResponse,
   inventoryResponse,
   nativeActionsResponse,
   notificationsResponse,
@@ -120,6 +139,7 @@ import {
   threadResponse,
   threadsResponse,
   type NativeHttpResponse,
+  authorityRetryAfterSeconds,
 } from "./outcomes.ts";
 
 /** Who the bearer is, and when it stops saying so, for a route that outlives one request. */
@@ -300,9 +320,6 @@ declare module "fastify" {
     viaSession?: SessionId;
   }
 }
-
-/** How long a caller is told to wait before asking this server to verify again. */
-const authorityRetryAfterSeconds = 1;
 
 /**
  * RFC 6750's two challenges. A request that offered nothing is told what to
@@ -853,6 +870,171 @@ function registerSelectorSettings(
       ),
     );
   });
+}
+
+/**
+ * A credential for one repository this project binds, minted per request under
+ * `Execute`. The answer is the token and its expiry and nothing else, so
+ * nothing a caller stores can outlive what the forge will honour.
+ */
+function registerForgeCredentials(
+  app: FastifyInstance,
+  minting: ForgeCredentialMinting,
+): void {
+  app.post(
+    "/api/v1/tenants/:tenant/projects/:project/forge-credentials",
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        forgeCredentialResponse(
+          await minting.mint(
+            principalOf(request),
+            partitionOf(request),
+            parseForgeCredentialRequest(request.body),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+function tenantOf(request: FastifyRequest): TenantId {
+  return asTenantId(textField(record(request.params), "tenant"));
+}
+
+/**
+ * The apps a tenant installs, the installations it has claimed, and what each of
+ * them grants. THE APPS ROUTE IS AUTHENTICATED AND NOTHING ELSE: it says nothing
+ * about any tenant, so every bearer reads it, and it is not public because an
+ * unauthenticated route would make this deployment's forge rate limit spendable
+ * by anyone who can reach the port.
+ */
+function registerForgeInstallations(
+  app: FastifyInstance,
+  onboarding: RepositoryOnboarding,
+): void {
+  app.get("/api/v1/forge/github", async (_request, reply) => {
+    send(reply, forgeAppsResponse(await onboarding.forgeApps()));
+  });
+  app.post(
+    "/api/v1/tenants/:tenant/forge-installations",
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const tenant = tenantOf(request);
+      send(
+        reply,
+        forgeInstallationClaimResponse(
+          tenant,
+          await onboarding.claimInstallation(
+            principalOf(request),
+            tenant,
+            parseForgeInstallationClaim(request.body),
+          ),
+        ),
+      );
+    },
+  );
+  app.get(
+    "/api/v1/tenants/:tenant/forge-installations",
+    async (request, reply) => {
+      send(
+        reply,
+        forgeInstallationsResponse(
+          await onboarding.installations(
+            principalOf(request),
+            tenantOf(request),
+          ),
+        ),
+      );
+    },
+  );
+  app.get(
+    "/api/v1/tenants/:tenant/forge-installations/:installationId/repositories",
+    async (request, reply) => {
+      send(
+        reply,
+        forgeRepositoriesResponse(
+          await onboarding.installationRepositories(
+            principalOf(request),
+            tenantOf(request),
+            parseForgeInstallationId(
+              textField(record(request.params), "installationId"),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/**
+ * What a project binds, and what it has bound already.
+ *
+ * THE IDENTITY OF A BIND IS THE HEADER'S, as it is for every other write that
+ * spends one: a body carrying its own would let two requests differ in what
+ * they bind while agreeing on what they are.
+ */
+function registerProjectRepositories(
+  app: FastifyInstance,
+  onboarding: RepositoryOnboarding,
+): void {
+  app.post(
+    "/api/v1/tenants/:tenant/projects/:project/repositories",
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const partition = partitionOf(request);
+      const key = request.headers["idempotency-key"];
+      if (typeof key !== "string")
+        throw new TypeError("idempotency key is absent");
+      send(
+        reply,
+        projectRepositoryBindResponse(
+          partition,
+          await onboarding.bindRepository(
+            principalOf(request),
+            partition,
+            parseProjectRepositoryBind(request.body, key),
+          ),
+        ),
+      );
+    },
+  );
+  app.post(
+    "/api/v1/tenants/:tenant/projects/:project/repositories/new",
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const partition = partitionOf(request);
+      const key = request.headers["idempotency-key"];
+      if (typeof key !== "string")
+        throw new TypeError("idempotency key is absent");
+      send(
+        reply,
+        projectRepositoryCreateResponse(
+          partition,
+          await onboarding.createRepository(
+            principalOf(request),
+            partition,
+            parseProjectRepositoryCreate(request.body, key),
+          ),
+        ),
+      );
+    },
+  );
+  app.get(
+    "/api/v1/tenants/:tenant/projects/:project/repositories",
+    async (request, reply) => {
+      send(
+        reply,
+        projectRepositoriesResponse(
+          await onboarding.projectRepositories(
+            principalOf(request),
+            partitionOf(request),
+          ),
+        ),
+      );
+    },
+  );
 }
 
 /** The executions read's own parameters: its cursor, its size and what it narrows to. */
@@ -1453,6 +1635,8 @@ export function createNativeHttpApp(
   limits: NativeHttpLimits = nativeHttpLimitsDefault,
   hub?: ProjectStreamHub,
   selectorSettings?: SelectorProjectSettingsAdministration,
+  forgeCredentials?: ForgeCredentialMinting,
+  onboarding?: RepositoryOnboarding,
 ): FastifyInstance {
   const app = fastify({
     bodyLimit: nativeHttpBodyBytesMax,
@@ -1485,6 +1669,12 @@ export function createNativeHttpApp(
   registerSelectorHistory(app, web, partitionRoot);
   if (selectorSettings !== undefined)
     registerSelectorSettings(app, selectorSettings);
+  if (forgeCredentials !== undefined)
+    registerForgeCredentials(app, forgeCredentials);
+  if (onboarding !== undefined) {
+    registerForgeInstallations(app, onboarding);
+    registerProjectRepositories(app, onboarding);
+  }
   registerOperations(app, web);
   registerNotifications(app, web);
   if (hub !== undefined) registerProjectEvents(app, web, hub);

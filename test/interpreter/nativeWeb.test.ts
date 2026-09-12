@@ -197,6 +197,7 @@ function boundary(
       calls.push(`authorize:${kind}`);
       return Promise.resolve(allowed ? authority : undefined);
     },
+    authorizeTenant: () => Promise.resolve(undefined),
   };
   const reads = readStore(calls);
   const inbox: OperationInbox = {
@@ -571,7 +572,7 @@ test("repository imports authorize, pin one snapshot, then persist ready declara
       repository,
       commit,
     }),
-    { result: "Imported" },
+    { result: "Imported", declarations: 1 },
   );
   assert.deepEqual(subject.calls, ["authorize:Mutate"]);
   assert.deepEqual(calls, [
@@ -943,6 +944,7 @@ function submittingBoundary(): {
     web: nativeWeb(
       {
         authorize: () => Promise.resolve(authority),
+        authorizeTenant: () => Promise.resolve(undefined),
       },
       readStore([]),
       inbox,

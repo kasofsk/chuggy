@@ -116,8 +116,8 @@ test("a project's own standing is what stands, and the default stands for the re
 
 test("a thread with no membership left stands apart from one that is closed", () => {
   assert.equal(threadStanding({ state: "Open", owner: "geoff" }), "Open");
-  assert.equal(threadStanding({ state: "Open" }), "Orphaned");
-  assert.equal(threadStanding({ state: "Closed" }), "Closed");
+  assert.equal(threadStanding({ state: "Open", owner: undefined }), "Orphaned");
+  assert.equal(threadStanding({ state: "Closed", owner: undefined }), "Closed");
   assert.equal(threadStanding({ state: "Closed", owner: "geoff" }), "Closed");
 });
 

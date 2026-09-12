@@ -106,7 +106,7 @@ const asked = "what stopped ticket 14?";
 async function inquirySubject(label: string, batches = 1) {
   const partition = await inquiryRigProject(rig, label);
   const lead = await inquiryRigLead(rig, partition, label, { batches });
-  const member = await inquiryRigMember(rig, partition, label);
+  const member = inquiryRigMember(rig, partition, label);
   return { partition, lead, member };
 }
 
@@ -188,7 +188,7 @@ test("a member's question forks the lead once, and a retry is the same fork", as
   assert.equal(parseInquiry(held?.input ?? "").question, asked);
   assert.equal(held?.state, "Open");
   assert.equal(held?.turnState, "Queued");
-  assert.equal(held?.asker, member.authority.subject);
+  assert.equal(held?.principal, member.principal);
   assert.equal(lead.session.length > 0, true);
 });
 
@@ -227,7 +227,7 @@ test("a retry is answered its own ordinal even once the lead is closed", async (
 
 test("the four refusals each answer their own condition and write nothing", async () => {
   const leadless = await inquiryRigProject(rig, "no-lead");
-  const nobody = await inquiryRigMember(rig, leadless, "no-lead");
+  const nobody = inquiryRigMember(rig, leadless, "no-lead");
   assert.deepEqual(
     await inquiryAsk(leadless, nobody, "no-lead").then((a) => a.opened),
     {
@@ -237,7 +237,7 @@ test("the four refusals each answer their own condition and write nothing", asyn
   assert.equal((await inquiryRows(leadless)).length, 0);
 
   const unstarted = await inquiryRigProject(rig, "unstarted");
-  const waiting = await inquiryRigMember(rig, unstarted, "unstarted");
+  const waiting = inquiryRigMember(rig, unstarted, "unstarted");
   await sessionRigSession(rig.sessions, unstarted, "unstarted", {
     kind: "Lead",
     capabilities: ["ProjectRead"],
@@ -282,7 +282,7 @@ test("the four refusals each answer their own condition and write nothing", asyn
     inquiriesOpenPerMemberMax,
   );
 
-  const other = await inquiryRigMember(rig, quota.partition, "quota-other");
+  const other = inquiryRigMember(rig, quota.partition, "quota-other");
   assert.equal(
     await inquiryAsk(quota.partition, other, "quota-other").then(
       (a) => a.opened.opened,
@@ -360,7 +360,7 @@ test("a member spent out in one project may still ask in another of the tenant",
   );
 
   const sibling = await threadRigSiblingProject(rig, partition, "tenant-quota");
-  await threadRigMemberAlso(rig, sibling, member);
+  threadRigMemberAlso(rig, sibling, member);
   await inquiryRigLead(rig, sibling, "tenant-quota-sibling");
   assert.equal(
     await inquiryAsk(sibling, member, "tenant-quota-sibling").then(
@@ -382,7 +382,7 @@ test("a member spent out in one project may still ask in another of the tenant",
 test("the listing is this project's inquiries, each named once by its own membership", async () => {
   const { partition, member } = await inquirySubject("sibling");
   const sibling = await threadRigSiblingProject(rig, partition, "sibling");
-  await threadRigMemberAlso(rig, sibling, member);
+  threadRigMemberAlso(rig, sibling, member);
   await inquiryRigLead(rig, sibling, "sibling");
 
   const here = await inquiryAsk(partition, member, "sibling-here");
@@ -392,9 +392,9 @@ test("the listing is this project's inquiries, each named once by its own member
 
   assert.deepEqual(
     (await rig.inquiries.inquiries(partition, inquiriesAnsweredMax)).map(
-      ({ session, asker }) => ({ session, asker }),
+      ({ session, principal }) => ({ session, principal }),
     ),
-    [{ session: here.session, asker: member.authority.subject }],
+    [{ session: here.session, principal: member.principal }],
     "the listing answered a sibling project's inquiry, or this one more than once",
   );
   assert.deepEqual(
@@ -418,7 +418,7 @@ test("the listing is this project's inquiries, each named once by its own member
  */
 test("a lead with a store and no runtime reference is a lead with nothing to fork", async () => {
   const partition = await inquiryRigProject(rig, "referenceless");
-  const member = await inquiryRigMember(rig, partition, "referenceless");
+  const member = inquiryRigMember(rig, partition, "referenceless");
   const session = await sessionRigSession(
     rig.sessions,
     partition,
@@ -467,7 +467,7 @@ test("a lead with a store and no runtime reference is a lead with nothing to for
  */
 test("a lead whose settled turn flushed nothing is a lead with no head", async () => {
   const partition = await inquiryRigProject(rig, "no-head");
-  const member = await inquiryRigMember(rig, partition, "no-head");
+  const member = inquiryRigMember(rig, partition, "no-head");
   await inquiryRigLead(rig, partition, "no-head", { batches: 0 });
 
   assert.deepEqual(
@@ -506,7 +506,7 @@ test("the fork's row is the asker's, the lead's parent and a roster of reads", a
  */
 test("a fork of a lead at its own ceiling fits the column 063 widened", async () => {
   const partition = await inquiryRigProject(rig, "ceiling");
-  const member = await inquiryRigMember(rig, partition, "ceiling");
+  const member = inquiryRigMember(rig, partition, "ceiling");
   const widest = "o".repeat(sessionSystemPromptCharsMax);
   assert.equal(
     inquirySystemPrompt(widest).length <= agentSessionPromptCharsMax,
@@ -904,7 +904,7 @@ test("a failed turn closes its inquiry as an answered one does", async () => {
 
 test("the listing is newest first, whole, and names who asked", async () => {
   const { partition, member } = await inquirySubject("listing");
-  const other = await inquiryRigMember(rig, partition, "listing-other");
+  const other = inquiryRigMember(rig, partition, "listing-other");
   const first = await inquiryAsk(partition, member, "listing-1");
   const second = await inquiryAsk(partition, other, "listing-2");
   assert.equal(first.opened.opened, "Opened");
@@ -916,12 +916,12 @@ test("the listing is newest first, whole, and names who asked", async () => {
     [second.session, first.session],
   );
   assert.deepEqual(
-    listed.map(({ asker }) => asker),
-    [other.authority.subject, member.authority.subject],
+    listed.map(({ principal }) => principal),
+    [other.principal, member.principal],
   );
 
   const entries = listed.map((record) =>
-    leadInquiryEntry(record, member.principal),
+    leadInquiryEntry(record, member.principal, record.principal),
   );
   assert.deepEqual(
     entries.map(({ mine }) => mine),
@@ -970,6 +970,7 @@ test("the listing carries the answer and what the turn cost", async () => {
   const entry = leadInquiryEntry(
     held ?? assert.fail("the inquiry was not read back"),
     member.principal,
+    member.authority.subject,
   );
   assert.equal(entry.answer, "its brief names no branch");
   assert.equal(entry.turnState, "Answered");
@@ -979,22 +980,28 @@ test("the listing carries the answer and what the turn cost", async () => {
   assert.equal(entry.askedAt.length > 0, true);
 });
 
-test("an inquiry whose asker's membership is gone is listed with no asker", async () => {
+/**
+ * The read names the principal and nothing about access, so an inquiry whose
+ * asker the project has withdrawn is listed exactly as it was — and the entry
+ * composed with no asker is what a reader is shown.
+ */
+test("an inquiry whose asker is no longer admitted is listed with no asker", async () => {
   const { partition, member } = await inquirySubject("orphaned");
   const opened = await inquiryAsk(partition, member, "orphaned");
   assert.equal(opened.opened.opened, "Opened");
-  await threadRigRevoke(rig, partition, member);
+  threadRigRevoke(rig, partition, member);
 
   const listed = await rig.inquiries.inquiries(partition, inquiriesAnsweredMax);
   assert.deepEqual(
     listed.map(({ session }) => session),
     [opened.session],
   );
-  assert.equal(listed[0]?.asker, undefined);
+  assert.equal(listed[0]?.principal, member.principal);
   assert.equal(
     leadInquiryEntry(
       listed[0] ?? assert.fail("the inquiry was not listed"),
       member.principal,
+      undefined,
     ).asker,
     undefined,
   );
@@ -1113,7 +1120,7 @@ test("a session identity another member holds raises rather than being answered"
   const { partition, member } = await inquirySubject("collide");
   const mine = await inquiryAsk(partition, member, "collide");
   assert.equal(mine.opened.opened, "Opened");
-  const other = await inquiryRigMember(rig, partition, "collide-other");
+  const other = inquiryRigMember(rig, partition, "collide-other");
 
   await assert.rejects(
     rig.inquiries.open({
@@ -1301,7 +1308,7 @@ test("the door takes no roster, no account and no credential slot", async () => 
     );
 });
 
-test("a principal with no membership at all still cannot spend another's quota", async () => {
+test("a principal the project never admitted still cannot spend another's quota", async () => {
   const { partition } = await inquirySubject("stranger-principal");
   const opened = await rig.inquiries.open({
     partition,
@@ -1317,9 +1324,9 @@ test("a principal with no membership at all still cannot spend another's quota",
   );
   assert.deepEqual(
     (await rig.inquiries.inquiries(partition, inquiriesAnsweredMax)).map(
-      ({ asker }) => asker,
+      ({ principal }) => principal,
     ),
-    [undefined],
-    "a principal with no membership was joined to one",
+    [asPrincipal("principal-nobody-holds")],
+    "the read named someone other than the principal that opened the inquiry",
   );
 });

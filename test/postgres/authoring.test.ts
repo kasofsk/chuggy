@@ -6,6 +6,10 @@ import type pg from "pg";
 import { postgresAuthoring } from "../../src/adapters/postgres/authoring.ts";
 import { postgresDomainConfigurationPrecondition } from "../../src/adapters/postgres/domainConfiguration.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
+import { postgresProjectDecision } from "../../src/adapters/postgres/projectDecision.ts";
+import { postgresProjectDiscovery } from "../../src/adapters/postgres/projectDiscovery.ts";
+import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
+import { ticketServiceRole } from "../../src/adapters/postgres/schema.ts";
 import { migration048 } from "../../src/adapters/postgres/schema/migrations/048-repository-configuration-version.ts";
 import {
   asCanonicalConfiguration,
@@ -64,6 +68,7 @@ import {
   postgresHarnessReleaseSubmission,
   postgresHarnessOpen,
   postgresHarnessProject,
+  postgresHarnessRolePool,
   postgresHarnessStalled,
   postgresHarnessUrl,
   postgresHarnessWriter,
@@ -1074,6 +1079,44 @@ test("release journals the retained draft only while its revision is current", a
       },
     ],
   );
+});
+
+/**
+ * The same release under the credential a deployment runs the writer with.
+ * Every other case here decides as whoever migrated, who holds every grant in
+ * the database and so answers for no role; the decision transaction reads the
+ * repository a configuration was imported from, and a role that may not is a
+ * deployment whose every activation raises while this suite stays green.
+ */
+test("the writer's own role commits a release", async () => {
+  const fixture = await draftFixture();
+  const submission = releaseSubmission(fixture);
+  assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
+  const ticketService = postgresHarnessRolePool(ticketServiceRole);
+  try {
+    const writer = {
+      ...postgresHarnessWriter(harness),
+      store: postgresProjectStore(ticketService),
+      decisions: postgresProjectDecision(ticketService),
+    };
+    const input = await postgresProjectDiscovery(ticketService).next(
+      fixture.partition,
+    );
+    assert.ok(input !== undefined);
+    const lease = await postgresHarnessHeld(
+      writer.store,
+      fixture.partition,
+      "writer-role-release",
+    );
+    const result = await projectWriterDecide(
+      writer,
+      await projectWriterLoad(writer, lease),
+      input,
+    );
+    assert.equal(result.decided.decided, "Committed");
+  } finally {
+    await ticketService.end();
+  }
 });
 
 /** The configuration a handing-off project pins, which no proposal may be opened under. */

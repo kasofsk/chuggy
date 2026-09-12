@@ -294,3 +294,19 @@ because a transcript that could be edited is not a memory. It has no unfinished
 work — a batch is committed or it was rolled back — and it carries no path,
 because a store object's path is a total function of the key above and a stored
 one would be a duplicate of a derivable fact.
+
+`forge_installation` — one forge app installed on one account, the tenant that
+claimed it and the audited authority of the claim. Owned by the boundary owner,
+which is what `record_forge_installation` runs as and which is the only role
+that may write; the API role is granted SELECT on the relation and EXECUTE on
+that door, so a claim is made only through the outcome the door decides. Its
+key and its identity are both `(forge, app,
+account)`, and the tenant is a column rather than part of that key: an account
+belongs to one tenant, so a second tenant claiming it is the door's
+`ClaimedElsewhere` rather than a second row. It is changed by that door alone,
+which moves a standing claim onto a new installation identity when an app is
+removed and installed again, and `forge_installation_keeps_its_claim` refuses
+every delete and every change to the forge, the app, the account or the tenant.
+It has no unfinished work: a claim is committed or it was rolled back, and a
+repository whose owner carries no row has no credential rather than a partial
+one.

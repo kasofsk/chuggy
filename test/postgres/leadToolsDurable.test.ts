@@ -67,7 +67,6 @@ import {
   type PostgresHarness,
 } from "./harness.ts";
 import {
-  projectAccessProvision,
   sessionRigAttempt,
   sessionRigProvision,
   sessionRigBearer,
@@ -490,9 +489,11 @@ test("the pod is answered the objectives its session was opened with", async () 
 /**
  * The two reads 061 opens or widens, beside every role that holds one. The
  * binding read was already the API's (021), the ticket service's (031) and the
- * configuration importer's (029), 061 adds the scheduler and 082 takes the
- * finalizer's (040) back with its caller, so the case names them all rather
- * than asserting a door has one holder it never had.
+ * configuration importer's (029), 061 adds the scheduler, 082 takes the
+ * finalizer's (040) back with its caller and 086 adds the worker plane, which
+ * holds a session to its project's own bindings before minting for the
+ * repository the session named — so the case names them all rather than
+ * asserting a door has one holder it never had.
  */
 const leadToolDoors: readonly {
   readonly door: string;
@@ -509,6 +510,7 @@ const leadToolDoors: readonly {
       ticketServiceRole,
       configurationImporterRole,
       schedulerRole,
+      workerPlaneRole,
     ],
   },
 ];
@@ -577,16 +579,29 @@ test("the scheduler's own credential can read a project's repository binding", a
   }
 });
 
-test("the worker plane's own credential cannot read a project's repository binding", async () => {
+/**
+ * The plane reads a binding to hold a session's named repository to what its
+ * project actually binds, and that read is all it holds: the table behind the
+ * function stays out of reach, so the plane can learn what a project binds and
+ * never which projects bind anything.
+ */
+test("the worker plane's own credential reads a binding through the function and nowhere else", async () => {
+  const partition = await leadToolsProject("plane-binding");
   const plane = postgresHarnessRolePool(workerPlaneRole);
   try {
-    await assert.rejects(
-      () =>
-        plane.query(
+    assert.deepEqual(
+      (
+        await plane.query(
           `SELECT repository FROM ${repositoryBindingReadFunction}($1,$2,NULL)`,
-          ["tenant", "project"],
-        ),
-      /permission denied for function read_project_repository_binding/u,
+          [partition.tenant, partition.project],
+        )
+      ).rows,
+      [],
+      "a project with no binding mints for no repository",
+    );
+    await assert.rejects(
+      () => plane.query("SELECT repository FROM project_repository"),
+      /permission denied for (table|relation) project_repository/u,
     );
   } finally {
     await plane.end();
@@ -687,14 +702,10 @@ test("a session provisioned from an issuer and a subject is the membership's own
     "the session authenticates as the principal a membership is granted to",
   );
 
-  await harness.membership.grant({
+  harness.access.grant({
     partition,
     principal,
     access: new Set(["Read", "Mutate", "ProposeDispatch"] as const),
-    authority: {
-      kind: asAuthorityKind("OidcUser"),
-      subject: asAuthoritySubject(subject),
-    },
   });
   assert.notEqual(
     await harness.access.authorize(principal, partition, "ProposeDispatch"),
@@ -723,58 +734,6 @@ test("a session may be named by one principal form and never by two", async () =
   });
   assert.equal(neither.code, 1);
   assert.match(neither.output, /CHUG_PROVISION_SESSION_PRINCIPAL is required/u);
-});
-
-/**
- * ONE ISSUER VARIABLE ACROSS BOTH PROVISIONING ROOTS, because a session and the
- * membership authorizing it must derive the same principal and two names for
- * one issuer is the one-character difference the derived form exists to close.
- *
- * So the case drives both commands with that variable alone and asks the server
- * whether the membership one wrote authorizes the session the other opened.
- */
-test("both provisioning roots derive one principal from one issuer variable", async () => {
-  const partition = await leadToolsProject("one-issuer");
-  const issuer = "https://accounts.example.test";
-  const subject = `member-${randomUUID()}`;
-  const session = `session-one-issuer-${randomUUID()}`;
-
-  const granted = await projectAccessProvision({
-    CHUG_API_OIDC_ISSUER: issuer,
-    CHUG_PROVISION_ACTION: "grant",
-    CHUG_PROVISION_SUBJECT: subject,
-    CHUG_PROVISION_TENANT: partition.tenant,
-    CHUG_PROVISION_PROJECT: partition.project,
-    CHUG_PROVISION_ACCESS: "Read",
-    CHUG_PROVISION_AUTHORITY_KIND: "OidcUser",
-    CHUG_PROVISION_AUTHORITY_SUBJECT: subject,
-  });
-  assert.equal(granted.code, 0, granted.output);
-
-  const opened = await provisionSession({
-    CHUG_PROVISION_SESSION_TENANT: partition.tenant,
-    CHUG_PROVISION_SESSION_PROJECT: partition.project,
-    CHUG_PROVISION_SESSION_SESSION: session,
-    CHUG_API_OIDC_ISSUER: issuer,
-    CHUG_PROVISION_SESSION_SUBJECT: subject,
-  });
-  assert.equal(opened.code, 0, opened.output);
-
-  const held = await harness.query(
-    "SELECT principal FROM agent_session WHERE session=$1",
-    [session],
-  );
-  const principal = held[0]?.["principal"];
-  assert.equal(principal, oidcPrincipal(issuer, subject));
-  assert.notEqual(
-    await harness.access.authorize(
-      oidcPrincipal(issuer, subject),
-      partition,
-      "Read",
-    ),
-    undefined,
-    "the membership one root wrote authorizes the session the other opened",
-  );
 });
 
 /**

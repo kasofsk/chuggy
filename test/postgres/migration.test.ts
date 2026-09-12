@@ -2810,14 +2810,13 @@ test("the session migrations compose into the schema a fresh generation renders"
 });
 
 /**
- * The versions no declared migration holds, and the chain currently has none:
- * no version below the latest is unheld. It is written down rather than
- * computed so that a hole nobody meant is a hole nobody can leave —
- * renumbering a migration upward opens one this list does not name, and a
- * branch numbered around a sibling still on its own branch names it here until
- * that sibling merges.
+ * The versions no declared migration holds, and none ever will: 85 was vacated
+ * when the migration numbered there moved to 89, so that a ledger holding 84
+ * and then 86 is a prefix of this chain again. It is written down rather than
+ * computed so that a hole nobody meant is a hole nobody can leave, renumbering
+ * a migration upward opening one this list does not name.
  */
-const declaredVersionsAwaited: readonly number[] = [];
+const declaredVersionsVacant: readonly number[] = [85];
 
 /**
  * The ledger a whole chain leaves is exactly the versions this image declares,
@@ -2842,8 +2841,8 @@ test("the ledger a migrated database leaves is what the api image declares", asy
       Array.from({ length: declaredLatest }, (_, index) => index + 1).filter(
         (version) => !applied.some((each) => each.version === version),
       ),
-      declaredVersionsAwaited,
-      "the versions below the latest that no row holds are the siblings this image is numbered around",
+      declaredVersionsVacant,
+      "the versions below the latest that no row holds are the ones this image declares nothing at",
     );
     assert.ok(
       schemaContractAccepts(currentRuntimeSchemaContract, applied),
@@ -4243,6 +4242,34 @@ test("migration 82 leaves a released ticket's brief null where its own project b
         "project-82-unbound",
       ),
       [{ ticket: "1", repository: null }],
+    );
+  });
+});
+
+/**
+ * The two objects migration 83 drops. A migrated database is what answers
+ * this, because the statements that drop them are what a later edit would
+ * touch and a suite reading those would agree with the edit.
+ */
+test("the table and the function project access was answered from are gone", async () => {
+  await migrationDatabase("i83", async (subject) => {
+    await migrationSeedApplied(subject, declaredLatest + 1);
+    const left = await subject.query<{
+      readonly table_left: string | null;
+      readonly function_left: string | null;
+    }>(
+      `SELECT to_regclass('project_membership')::text AS table_left,
+              to_regprocedure('authorize_project_access(text,text,text,text)')::text AS function_left`,
+    );
+    assert.equal(
+      left.rows[0]?.table_left,
+      null,
+      "project_membership is still there",
+    );
+    assert.equal(
+      left.rows[0]?.function_left,
+      null,
+      "authorize_project_access is still there",
     );
   });
 });

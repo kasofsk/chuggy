@@ -30,7 +30,12 @@ import {
   finalizerIdentityCharsMax,
   gitRefNameCharsMax,
 } from "../../src/interpreter/finalizer.ts";
+import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 const requestIdentity = asChangeProposalRequestIdentity("a".repeat(64));
+const requestPartition = {
+  tenant: asTenantId("tenant"),
+  project: asProjectId("project"),
+};
 const forge = asForgeBindingId("forge-alpha");
 const requestHeadRef = asGitRefName("refs/heads/chuggy/footer-2026");
 const request = changeProposalRequest({
@@ -39,6 +44,7 @@ const request = changeProposalRequest({
     credential: asForgeCredentialReference("forge-alpha-proposals"),
   },
   repository: asRepositoryId("platform-desires"),
+  partition: requestPartition,
   request: requestIdentity,
   headRef: requestHeadRef,
   headCommit: asGitObjectId("b".repeat(40)),
@@ -416,6 +422,7 @@ test("proposal metadata is bounded and the head is the branch the caller named",
         changeProposalRequest({
           binding: request.binding,
           repository: request.repository,
+          partition: requestPartition,
           request: requestIdentity,
           headRef: requestHeadRef,
           headCommit: request.head.commit,

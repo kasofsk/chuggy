@@ -1,4 +1,11 @@
-/** Owner-role command that binds a repository to a project and elects nothing. */
+/**
+ * Owner-role command that binds a repository to a project and elects nothing.
+ *
+ * IT IS NO LONGER THE ONLY WAY IN. `POST /api/v1/tenants/:tenant/projects/:project/repositories`
+ * binds through the same door under a project administrator's permit, and this
+ * stays for the case a bearer cannot reach: a project whose tenant has no
+ * administrator yet, or a deployment whose authority is down.
+ */
 
 import { pathToFileURL } from "node:url";
 

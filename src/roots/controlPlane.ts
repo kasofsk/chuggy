@@ -9,6 +9,7 @@ import {
   finalizerPass,
   type FinalizerService,
 } from "../interpreter/finalizerRun.ts";
+import type { ProjectAccessSettings } from "../interpreter/projectAccess.ts";
 import type { Partition, RecoveryEpoch } from "../interpreter/projectStore.ts";
 import {
   sessionSchedulerPass,
@@ -35,9 +36,17 @@ import type {
 } from "../compose.ts";
 import {
   composeFinalizerService,
+  composeForgeRepositoryMinting,
   composeSelectorRuntime,
+  composeTicketServiceCredentials,
   type FinalizerServiceRuntime,
 } from "../compose.ts";
+import {
+  githubInstallationTokensOptions,
+  githubInstallationTokensPrecondition,
+} from "../adapters/forge/githubInstallationTokens.ts";
+import type { ForgeAppKey } from "../interpreter/forgeInstallation.ts";
+import { ketoProjectAccess } from "../adapters/keto/projectAccess.ts";
 import { systemPacing } from "../adapters/runtime/systemPacing.ts";
 import type pg from "pg";
 import {
@@ -52,7 +61,6 @@ import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositor
 import { postgresExecutionSourceHistory } from "../adapters/postgres/executionSourceHistory.ts";
 import { executionSourceObservation } from "../interpreter/executionSourceObservation.ts";
 import {
-  credentialFiles,
   credentialFilesPrecondition,
   type CredentialFilesOptions,
 } from "../adapters/credentials/credentialFiles.ts";
@@ -334,6 +342,11 @@ export interface SelectorProcessRootConfig {
    * lives and an arm in which a deployment's bound is not the bound that runs.
    */
   readonly wakes: { readonly wakesPerPassMax: number };
+  /**
+   * Where the project authority is. The wake pass asks it whether a thread's
+   * principal may still read the project, which no row in this database says.
+   */
+  readonly access: ProjectAccessSettings;
 }
 
 /**
@@ -362,6 +375,7 @@ export function selectorProcessRoot(
       service,
       {
         store: postgresThreadWakes(pool),
+        access: ketoProjectAccess(config.access),
         clock: { nowIso: () => new Date().toISOString() },
         wakesPerPassMax: config.wakes.wakesPerPassMax,
       },
@@ -416,6 +430,12 @@ export interface TicketServiceProcessRootConfig {
   readonly ticket?: TicketServiceConfig;
   readonly source: Omit<GitPromotionOptions, "credentials"> &
     CredentialFilesOptions;
+  /**
+   * The App key this deployment observes a source through, when it holds one.
+   * A deployment naming neither a key nor a credential file could observe
+   * nothing, which its configuration is what refuses.
+   */
+  readonly forge?: ForgeAppKey;
 }
 
 /** Owns the writer-role pool and composes the independently deployable ticket service. */
@@ -423,7 +443,10 @@ export function ticketServiceProcessRoot(
   config: TicketServiceProcessRootConfig,
 ): ServiceRuntime {
   const pool = processPool(config.database);
-  const credentials = credentialFiles(config.source);
+  const credentials = composeTicketServiceCredentials(
+    config.source,
+    composeForgeRepositoryMinting(pool, config.forge),
+  );
   const git = gitPromotion({ ...config.source, credentials });
   const service: TicketServiceRuntimeService = {
     domain: config.domain,
@@ -456,6 +479,13 @@ export function ticketServiceProcessRoot(
           gitAvailablePrecondition(config.source.environment),
           gitScratchWritablePrecondition(config.source.scratchDirectory),
           credentialFilesPrecondition(config.source),
+          ...(config.forge === undefined
+            ? []
+            : [
+                githubInstallationTokensPrecondition(
+                  githubInstallationTokensOptions(config.forge),
+                ),
+              ]),
         ],
       },
       config.runtime,
@@ -554,7 +584,13 @@ export interface FinalizerProcessRootConfig {
     readonly owner: FinalizerOwnerId;
     readonly recoveryEpoch: RecoveryEpoch;
   };
-  readonly service: FinalizerServiceRuntime;
+  /**
+   * The ports one finalizer acts through, over the pool this root owns: a
+   * deployment that mints its own credentials reaches the forge installations
+   * through that same pool, and a second one would be a second connection
+   * limit to hold this role under.
+   */
+  readonly service: (pool: pg.Pool) => FinalizerServiceRuntime;
   readonly finalizer?: FinalizerConfig;
 }
 
@@ -565,7 +601,7 @@ export function finalizerProcessRoot(
   const pool = processPool(config.database);
   const service = composeFinalizerService(
     pool,
-    config.service,
+    config.service(pool),
     config.finalizer,
   );
   return ownedProcess(

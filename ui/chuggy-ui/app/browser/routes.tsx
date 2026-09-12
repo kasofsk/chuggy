@@ -19,14 +19,18 @@ import { useEffect } from "react";
 import type { ReactNode } from "react";
 
 import { apiProjectInventoryAll } from "../core/apiRoutes.ts";
+import { forgeSetupQueryOf, forgeSetupRoutePath } from "../core/forgeSetup.ts";
+import type { ForgeSetupQuery } from "../core/forgeSetup.ts";
 import { lastProjectOrFirst, lastProjectRead } from "../core/lastProject.ts";
 import { usePanelInventory } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { Footer } from "./Footer.tsx";
+import { ForgeSetupPage } from "./ForgeSetupPage.tsx";
 import { Inbox } from "./Inbox.tsx";
 import { LeadPage } from "./LeadPage.tsx";
 import { persistentStore } from "./ports.ts";
 import { ProjectTable } from "./ProjectTable.tsx";
+import { RepositoriesPage } from "./RepositoriesPage.tsx";
 import { SelectorSettingsPage } from "./SelectorSettingsPage.tsx";
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
@@ -117,6 +121,38 @@ const selectorRoute = createRoute({
   component: SelectorSettingsPage,
 });
 
+/** What the setup landing sends back: one word about the claim it made, and
+ * nothing the landing was handed by the forge. */
+interface RepositoriesSearch {
+  readonly connected: string | undefined;
+}
+
+const repositoriesRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/repositories",
+  component: RepositoriesPage,
+  validateSearch: (
+    search: Readonly<Record<string, unknown>>,
+  ): RepositoriesSearch => {
+    const connected = search["connected"];
+    return { connected: typeof connected === "string" ? connected : undefined };
+  },
+});
+
+/**
+ * The address both apps' Setup URL points at. It is outside the partition
+ * because the forge is given one fixed address and is told no project; which
+ * project the install belongs to is the stored transaction's to say.
+ */
+const forgeSetupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: forgeSetupRoutePath,
+  component: ForgeSetupPage,
+  validateSearch: (
+    search: Readonly<Record<string, unknown>>,
+  ): ForgeSetupQuery => forgeSetupQueryOf(search),
+});
+
 const ticketCreationRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/tickets/new",
@@ -131,11 +167,13 @@ const ticketRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   landingRoute,
+  forgeSetupRoute,
   partitionRoute.addChildren([
     projectRoute,
     inboxRoute,
     leadRoute,
     selectorRoute,
+    repositoriesRoute,
     ticketCreationRoute,
     ticketRoute,
   ]),

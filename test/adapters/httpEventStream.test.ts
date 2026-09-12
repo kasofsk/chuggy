@@ -172,7 +172,7 @@ async function served(
             ? {
                 authenticated: "Bearer" as const,
                 bearer: {
-                  principal: asPrincipal("issuer\u0000subject"),
+                  principal: asPrincipal("issuer-subject"),
                   ...(options.expiresInMs === undefined
                     ? {}
                     : { expiresAtMs: Date.now() + options.expiresInMs }),
@@ -391,7 +391,7 @@ test("a kind whose read the API does not hold is a tombstone, not a raise", asyn
     await assert.doesNotReject(
       () =>
         reader.read(
-          asPrincipal("issuer\u0000subject"),
+          asPrincipal("issuer-subject"),
           partition,
           kind,
           kindResources[kind],
@@ -401,7 +401,7 @@ test("a kind whose read the API does not hold is a tombstone, not a raise", asyn
   for (const kind of kindsWithoutReads)
     assert.equal(
       await reader.read(
-        asPrincipal("issuer\u0000subject"),
+        asPrincipal("issuer-subject"),
         partition,
         kind,
         kindResources[kind],

@@ -17,6 +17,10 @@ import {
   agenticRefusalsAnsweredMax,
   countSchema,
   cursorSchema,
+  forgeInstallationsAnsweredMax,
+  forgeRefusalMessageCharsMax,
+  forgeRepositoriesAnsweredMax,
+  projectRepositoriesAnsweredMax,
   digestSchema,
   dispatchViewSchemaVersion,
   identitySchema,
@@ -98,6 +102,9 @@ import {
   sessionTurnInputKinds,
   sessionTurnStates,
   threadStandings,
+  forgeAccountKinds,
+  forgeApps,
+  projectRepositoryConfigurationDeferrals,
 } from "./rosters.ts";
 
 const page = <T extends z.ZodType>(item: T) =>
@@ -1029,8 +1036,8 @@ export type SelectorHistoryResponse = z.infer<
 >;
 
 /**
- * One member thread as a listing names it, `owner` being the membership's own
- * authority subject and absent where that membership has been revoked — a
+ * One member thread as a listing names it, `owner` being the authority its
+ * member acts under and absent where the project no longer admits them — a
  * thread its owner must still see and close rather than one to hide. `mine` is
  * computed against the request's own principal, which is what lets a browser
  * name "my thread" without ever decoding a token.
@@ -1147,8 +1154,8 @@ const inquiryMeasureShape = leadTurnResponseSchema.pick({
  * One inquiry against the project's lead, carrying its `question` and its
  * `answer` where `leadTurnResponseSchema` carries neither: a lead's input is
  * the observation its decision log already holds, and an inquiry's is what the
- * member typed and the answer they are waiting for. `asker` is the membership's
- * own authority subject, absent where that membership has been revoked
+ * member typed and the answer they are waiting for. `asker` is the authority
+ * its member acts under, absent where the project no longer admits them
  * (`threadEntryResponseSchema.owner`'s shape, for its reason), and `mine` is
  * computed against the request's own principal so a browser can name "my
  * inquiry" without decoding a token.
@@ -1181,3 +1188,185 @@ export const leadInquiryAcceptedSchema = z.object({
   ordinal: countSchema,
 });
 export type LeadInquiryAccepted = z.infer<typeof leadInquiryAcceptedSchema>;
+
+/** One app this deployment holds the key of, and the address a tenant's administrator installs it from. */
+export const forgeAppResponseSchema = z.object({
+  app: z.enum(forgeApps),
+  id: identitySchema,
+  slug: identitySchema,
+  installUrl: z.string().min(1),
+});
+export type ForgeAppResponse = z.infer<typeof forgeAppResponseSchema>;
+
+/**
+ * Every app this deployment holds a key for. Every bearer reads it, because it
+ * says nothing about any tenant: it is the identity of the deployment's own
+ * apps, and onboarding installs each of them.
+ */
+export const forgeAppsResponseSchema = z.object({
+  apps: z.array(forgeAppResponseSchema).max(forgeApps.length),
+});
+export type ForgeAppsResponse = z.infer<typeof forgeAppsResponseSchema>;
+
+/** One installation a tenant has claimed, as the claim route answers it. */
+export const forgeInstallationClaimedSchema = z.object({
+  forge: identitySchema,
+  app: z.enum(forgeApps),
+  account: identitySchema,
+  accountKind: z.enum(forgeAccountKinds),
+  installationId: identitySchema,
+});
+export type ForgeInstallationClaimedResponse = z.infer<
+  typeof forgeInstallationClaimedSchema
+>;
+
+/** The same, with the moment it was claimed, as a listing answers it. */
+export const forgeInstallationResponseSchema =
+  forgeInstallationClaimedSchema.extend({
+    claimedAt: instantSchema,
+  });
+export type ForgeInstallationResponse = z.infer<
+  typeof forgeInstallationResponseSchema
+>;
+
+/**
+ * Every installation one tenant holds, oldest first. `truncated` says the tenant
+ * holds more than this deployment answers, so a reader that cannot find one
+ * knows the listing is partial rather than that the claim is absent.
+ */
+export const forgeInstallationsResponseSchema = z.object({
+  installations: z
+    .array(forgeInstallationResponseSchema)
+    .max(forgeInstallationsAnsweredMax),
+  truncated: z.boolean(),
+});
+export type ForgeInstallationsResponse = z.infer<
+  typeof forgeInstallationsResponseSchema
+>;
+
+/** One repository an installation grants, `url` being the address a binding names it by. */
+export const forgeRepositoryResponseSchema = z.object({
+  name: identitySchema,
+  fullName: z.string().min(1),
+  url: z.string().min(1),
+  defaultBranch: z.string().min(1),
+  private: z.boolean(),
+});
+export type ForgeRepositoryResponse = z.infer<
+  typeof forgeRepositoryResponseSchema
+>;
+
+/**
+ * What one installation grants. `truncated` says the installation holds more
+ * than this deployment pages for, so a reader that cannot find a repository
+ * knows the listing is partial rather than that the repository is absent.
+ */
+export const forgeRepositoriesResponseSchema = z.object({
+  repositories: z
+    .array(forgeRepositoryResponseSchema)
+    .max(forgeRepositoriesAnsweredMax),
+  truncated: z.boolean(),
+});
+export type ForgeRepositoriesResponse = z.infer<
+  typeof forgeRepositoriesResponseSchema
+>;
+
+/**
+ * What a newly bound repository's own configurations came to. It is beside the
+ * binding and not part of it: the binding is durable whatever this says, so a
+ * `Deferred` is a step to run again through the import and authoring routes
+ * rather than a repository that is not bound.
+ */
+export const projectRepositoryConfigurationsSchema = z.discriminatedUnion(
+  "result",
+  [
+    z.object({ result: z.literal("Imported"), count: countSchema }),
+    z.object({ result: z.literal("Bootstrapped"), revision: identitySchema }),
+    z.object({
+      result: z.literal("Deferred"),
+      reason: z.enum(projectRepositoryConfigurationDeferrals),
+    }),
+  ],
+);
+export type ProjectRepositoryConfigurationsResponse = z.infer<
+  typeof projectRepositoryConfigurationsSchema
+>;
+
+/**
+ * What binding one repository came to. It names the repository and what it
+ * carries: the binding privileges no repository over another, so an answer
+ * carrying a position or a count would be saying something the row does not.
+ */
+export const projectRepositoryBoundSchema = z.object({
+  repository: z.string().min(1),
+  configurations: projectRepositoryConfigurationsSchema,
+});
+export type ProjectRepositoryBoundResponse = z.infer<
+  typeof projectRepositoryBoundSchema
+>;
+
+/** The same repository already bound, which carries nothing this request did. */
+export const projectRepositoryAlreadyBoundSchema = z.object({
+  repository: z.string().min(1),
+});
+export type ProjectRepositoryAlreadyBoundResponse = z.infer<
+  typeof projectRepositoryAlreadyBoundSchema
+>;
+
+/**
+ * What reserving a created repository's default branch came to. A refusal
+ * carries the forge's own account of it and leaves the repository standing,
+ * unprotected and usable; `Skipped` is a repository with no branch to reserve.
+ */
+export const projectRepositoryRulesetSchema = z.discriminatedUnion("result", [
+  z.object({ result: z.literal("Created") }),
+  z.object({
+    result: z.literal("Refused"),
+    message: z.string().max(forgeRefusalMessageCharsMax),
+  }),
+  z.object({ result: z.literal("Skipped") }),
+  z.object({ result: z.literal("Unavailable") }),
+]);
+export type ProjectRepositoryRulesetResponse = z.infer<
+  typeof projectRepositoryRulesetSchema
+>;
+
+/**
+ * What creating one repository came to: the repository the forge made, whether
+ * a first commit was written into it, whether its default branch is reserved,
+ * and what the binding that followed found. Every part of it is reported
+ * because a step that did not take leaves a repository that stands.
+ */
+export const projectRepositoryCreatedSchema = z.object({
+  repository: z.string().min(1),
+  created: z.object({
+    account: identitySchema,
+    name: identitySchema,
+    url: z.string().min(1),
+  }),
+  seeded: z.boolean(),
+  ruleset: projectRepositoryRulesetSchema,
+  configurations: projectRepositoryConfigurationsSchema,
+});
+export type ProjectRepositoryCreatedResponse = z.infer<
+  typeof projectRepositoryCreatedSchema
+>;
+
+/** One repository a project binds, and when it was bound. */
+export const projectRepositoryResponseSchema = z.object({
+  repository: z.string().min(1),
+  boundAt: instantSchema,
+});
+export type ProjectRepositoryResponse = z.infer<
+  typeof projectRepositoryResponseSchema
+>;
+
+/** Every repository one project binds, oldest first, which privileges none of them. */
+export const projectRepositoriesResponseSchema = z.object({
+  repositories: z
+    .array(projectRepositoryResponseSchema)
+    .max(projectRepositoriesAnsweredMax),
+});
+export type ProjectRepositoriesResponse = z.infer<
+  typeof projectRepositoriesResponseSchema
+>;

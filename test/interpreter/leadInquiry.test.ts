@@ -70,13 +70,13 @@ function accessHolding(...held: readonly string[]): ProjectAccess {
             }
           : undefined,
       ),
+    authorizeTenant: () => Promise.resolve(undefined),
   };
 }
 
 const record: LeadInquiryRecord = {
   session,
   principal: reader,
-  asker: "geoff",
   state: "Open",
   turn,
   turnState: "Queued",
@@ -235,8 +235,8 @@ test("the listing asks for a page and never for a project's whole history", asyn
 });
 
 test("mine is decided against the reader and the principal never crosses", () => {
-  const mine = leadInquiryEntry(record, reader);
-  const theirs = leadInquiryEntry(record, stranger);
+  const mine = leadInquiryEntry(record, reader, "geoff");
+  const theirs = leadInquiryEntry(record, stranger, "geoff");
   assert.equal(mine.mine, true);
   assert.equal(theirs.mine, false);
   assert.equal("principal" in mine, false);
@@ -261,6 +261,7 @@ test("an answered inquiry carries the answer and what the pod measured", () => {
       },
     },
     reader,
+    "geoff",
   );
   assert.equal(entry.answer, "its brief names no branch");
   assert.equal(entry.model, "claude-opus-5");
@@ -269,10 +270,8 @@ test("an answered inquiry carries the answer and what the pod measured", () => {
   assert.equal(entry.durationMs, 74_210);
 });
 
-test("an inquiry whose asker's membership is gone carries no asker", () => {
-  const { asker, ...ownerless } = record;
-  assert.equal(asker, "geoff");
-  const entry = leadInquiryEntry(ownerless, reader);
+test("an inquiry the project no longer admits its asker to carries no asker", () => {
+  const entry = leadInquiryEntry(record, reader, undefined);
   assert.equal("asker" in entry, false);
 });
 
@@ -283,7 +282,8 @@ test("an inquiry whose asker's membership is gone carries no asker", () => {
  */
 test("an inquiry carrying a document no door wrote is refused", () => {
   assert.throws(
-    () => leadInquiryEntry({ ...record, input: "not a document" }, reader),
+    () =>
+      leadInquiryEntry({ ...record, input: "not a document" }, reader, "geoff"),
     RangeError,
   );
   assert.throws(
@@ -299,6 +299,7 @@ test("an inquiry carrying a document no door wrote is refused", () => {
           }),
         },
         reader,
+        "geoff",
       ),
     RangeError,
   );

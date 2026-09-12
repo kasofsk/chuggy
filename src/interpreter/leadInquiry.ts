@@ -55,8 +55,6 @@ import type { PublicInstant } from "./publicResource.ts";
 export interface LeadInquiryRecord {
   readonly session: SessionId;
   readonly principal: Principal;
-  /** The membership's own authority subject, absent where that membership is gone. */
-  readonly asker?: string;
   readonly state: SessionState;
   readonly turn: SessionTurnId;
   readonly turnState: SessionTurnState;
@@ -134,16 +132,18 @@ export interface LeadInquiryEntry {
 /**
  * One record as the wire carries it: the question parsed out of the turn's
  * document, the measure flattened, and `mine` decided here because nothing
- * under `ui/` knows who is signed in.
+ * under `ui/` knows who is signed in. `asker` is passed in because it is the
+ * project authority's answer about the record's principal, not the store's.
  */
 export function leadInquiryEntry(
   record: LeadInquiryRecord,
   reader: Principal,
+  asker: string | undefined,
 ): LeadInquiryEntry {
   const { question } = parseInquiry(record.input);
   return {
     session: record.session,
-    ...(record.asker === undefined ? {} : { asker: record.asker }),
+    ...(asker === undefined ? {} : { asker }),
     mine: record.principal === reader,
     state: record.state,
     turnState: record.turnState,

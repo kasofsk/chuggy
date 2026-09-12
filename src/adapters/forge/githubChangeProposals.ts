@@ -85,7 +85,6 @@ import {
   type ChangeProposalRead,
   type ChangeProposalRequest,
   type ChangeProposalStatus,
-  type ForgeBinding,
   type ForgeCredential,
   type ForgeCredentialPort,
 } from "../../interpreter/changeProposal.ts";
@@ -97,6 +96,12 @@ import {
   type GitRefName,
   type RepositoryId,
 } from "../../interpreter/finalizer.ts";
+import {
+  githubAddressOf,
+  githubRepositoryHost,
+  type GithubAddress,
+} from "./githubAddress.ts";
+import { githubResponseTextOf } from "./githubResponse.ts";
 
 /**
  * The two hosts one forge stands at: the repositories it holds and the API it
@@ -121,7 +126,7 @@ export interface GithubChangeProposalsOptions {
 
 /** The hosts and the bounds a deployment gets when it names none. */
 export const githubChangeProposalsDefaults = {
-  hosts: { apiHost: "api.github.com", repositoryHost: "github.com" },
+  hosts: { apiHost: "api.github.com", repositoryHost: githubRepositoryHost },
   requestTimeoutSecsMax: 30,
   responseBytesMax: 1_048_576,
   proposalsPerReadMax: 32,
@@ -165,9 +170,6 @@ const githubBusyStatus = 429;
 
 const millisecondsPerSecond = 1_000;
 
-/** The segments a repository address may be made of, which is what keeps an address out of a path it could escape. */
-const githubAddressSegmentPattern = /^[A-Za-z0-9._-]+$/u;
-
 /** What the adapter holds across acts: its bounds, its hosts and the port its credentials come from. */
 interface GithubChangeProposalsState {
   readonly credentials: ForgeCredentialPort;
@@ -177,12 +179,6 @@ interface GithubChangeProposalsState {
   readonly requestTimeoutSecsMax: number;
   readonly responseBytesMax: number;
   readonly proposalsPerReadMax: number;
-}
-
-/** One repository as this forge addresses it. */
-interface GithubAddress {
-  readonly owner: string;
-  readonly name: string;
 }
 
 /**
@@ -274,38 +270,6 @@ function githubChangeProposalsHostsOf(
   };
 }
 
-/**
- * The owner and name this forge addresses a repository by, read out of the
- * remote address the repository identity is. Anything but an HTTPS URL naming
- * exactly two path segments on this forge's host is no address of one.
- */
-function githubChangeProposalsAddressOf(
-  repository: RepositoryId,
-  host: string,
-): GithubAddress | undefined {
-  let url: URL;
-  try {
-    url = new URL(repository);
-  } catch {
-    return undefined;
-  }
-  if (url.protocol !== "https:" || url.host !== host) return undefined;
-  if (url.username !== "" || url.password !== "") return undefined;
-  if (url.search !== "" || url.hash !== "") return undefined;
-  const segments = url.pathname
-    .replace(/\.git$/u, "")
-    .split("/")
-    .slice(1);
-  const [owner, name] = segments;
-  if (segments.length !== 2 || owner === undefined || name === undefined) {
-    return undefined;
-  }
-  return githubAddressSegmentPattern.test(owner) &&
-    githubAddressSegmentPattern.test(name)
-    ? { owner, name }
-    : undefined;
-}
-
 /** The branch a fully qualified ref names, and nothing for a ref outside the branch namespace. */
 function githubChangeProposalsBranchOf(ref: GitRefName): string | undefined {
   if (!ref.startsWith(githubBranchRefPrefix)) return undefined;
@@ -362,47 +326,16 @@ function githubChangeProposalsRefusalOf(response: Response): GithubAnswer {
   return { answer: "Unsettled" };
 }
 
-/**
- * One response's whole text, refused rather than truncated once it passes the
- * bound. A body refused before it is read is cancelled first, because a refusal
- * that leaves the stream open holds the connection it refused.
- */
-async function githubChangeProposalsTextOf(
-  response: Response,
-  bytesMax: number,
-): Promise<string> {
-  const declared = response.headers.get("content-length");
-  if (declared !== null && Number(declared) > bytesMax) {
-    await response.body?.cancel().catch(() => undefined);
-    throw new RangeError(
-      "github proposals: a response declares too many bytes",
-    );
-  }
-  if (response.body === null) {
-    throw new TypeError("github proposals: a response carried no body");
-  }
-  const decoder = new TextDecoder("utf-8", { fatal: true });
-  const reader = response.body.getReader();
-  let text = "";
-  let bytes = 0;
-  for (let chunks = 0; chunks <= bytesMax; chunks += 1) {
-    const read = await reader.read();
-    if (read.done) return text + decoder.decode();
-    const chunk = read.value as Uint8Array;
-    bytes += chunk.byteLength;
-    if (bytes > bytesMax) break;
-    text += decoder.decode(chunk, { stream: true });
-  }
-  await reader.cancel();
-  throw new RangeError("github proposals: a response passed its byte bound");
-}
-
 /** Resolves what authorizes one forge act, which is never stored and never folded into anything. */
 async function githubChangeProposalsCredentialOf(
   own: GithubChangeProposalsState,
-  binding: ForgeBinding,
+  request: ChangeProposalRequest,
 ): Promise<GithubAuthorized> {
-  const resolved = await own.credentials.credential(binding);
+  const resolved = await own.credentials.credential({
+    binding: request.binding,
+    partition: request.partition,
+    repository: request.repository,
+  });
   return resolved.resolved === "Credential"
     ? { authorized: "Credential", credential: resolved.credential }
     : { authorized: "Refused", refusal: resolved.resolved };
@@ -434,9 +367,10 @@ async function githubChangeProposalsSend(
     return githubChangeProposalsRefusalOf(response);
   }
   try {
-    const text = await githubChangeProposalsTextOf(
+    const text = await githubResponseTextOf(
       response,
       own.responseBytesMax,
+      "github proposals",
     );
     return { answer: "Read", body: JSON.parse(text) };
   } catch {
@@ -614,10 +548,7 @@ function githubChangeProposalsTargetOf(
   own: GithubChangeProposalsState,
   request: ChangeProposalRequest,
 ): GithubProposalTarget | undefined {
-  const address = githubChangeProposalsAddressOf(
-    request.repository,
-    own.repositoryHost,
-  );
+  const address = githubAddressOf(request.repository, own.repositoryHost);
   const head = githubChangeProposalsBranchOf(request.head.ref);
   const base = githubChangeProposalsBranchOf(request.base.ref);
   if (address === undefined || head === undefined || base === undefined) {
@@ -635,10 +566,7 @@ async function githubChangeProposalsCreate(
 ): Promise<ChangeProposalCreated> {
   const target = githubChangeProposalsTargetOf(own, request);
   if (target === undefined) return { created: "Denied" };
-  const authorized = await githubChangeProposalsCredentialOf(
-    own,
-    request.binding,
-  );
+  const authorized = await githubChangeProposalsCredentialOf(own, request);
   if (authorized.authorized === "Refused") {
     return { created: authorized.refusal };
   }
@@ -688,10 +616,7 @@ async function githubChangeProposalsRead(
 ): Promise<ChangeProposalRead> {
   const target = githubChangeProposalsTargetOf(own, request);
   if (target === undefined) return { read: "Denied" };
-  const authorized = await githubChangeProposalsCredentialOf(
-    own,
-    request.binding,
-  );
+  const authorized = await githubChangeProposalsCredentialOf(own, request);
   if (authorized.authorized === "Refused") return { read: authorized.refusal };
   const answer = await githubChangeProposalsSend(
     own,

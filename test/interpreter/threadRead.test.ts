@@ -29,11 +29,12 @@ import type {
   NativeThreadPorts,
   ProjectAccess,
 } from "../../src/interpreter/nativeWeb.ts";
+import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
 import {
-  asAuthorityKind,
-  asAuthoritySubject,
-} from "../../src/interpreter/operationInbox.ts";
-import { asPrincipal, oidcPrincipal } from "../../src/interpreter/principal.ts";
+  asPrincipal,
+  oidcPrincipal,
+  type Principal,
+} from "../../src/interpreter/principal.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { unaskedNativeWebPorts } from "./nativeWebFixtures.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
@@ -59,12 +60,8 @@ const partition = {
   tenant: asTenantId("acme"),
   project: asProjectId("atlas"),
 };
-const geoff = asPrincipal("issuer\u0000geoff");
-const dana = asPrincipal("issuer\u0000dana");
-const authority = {
-  kind: asAuthorityKind("OidcSubject"),
-  subject: asAuthoritySubject("geoff"),
-};
+const geoff = asPrincipal("issuer-geoff");
+const dana = asPrincipal("issuer-dana");
 const mine = asSessionId("thread-geoff");
 const hers = asSessionId("thread-dana");
 
@@ -72,7 +69,6 @@ const hers = asSessionId("thread-dana");
 interface ThreadOverrides {
   readonly state?: ThreadRecord["state"];
   readonly turns?: number;
-  readonly owner?: string | undefined;
   readonly agentReference?: string | undefined;
   readonly firstMessage?: string;
   readonly memberTitle?: string;
@@ -89,12 +85,6 @@ function record(
   principal: typeof geoff,
   overrides: ThreadOverrides = {},
 ): ThreadRecord {
-  const owner =
-    "owner" in overrides
-      ? overrides.owner
-      : principal === geoff
-        ? "geoff"
-        : "dana";
   const agentReference =
     "agentReference" in overrides ? overrides.agentReference : "1a2b";
   return {
@@ -102,7 +92,6 @@ function record(
     principal,
     state: overrides.state ?? "Open",
     turns: overrides.turns ?? 2,
-    ...(owner === undefined ? {} : { owner }),
     ...(agentReference === undefined ? {} : { agentReference }),
     ...(overrides.firstMessage === undefined
       ? {}
@@ -119,6 +108,8 @@ function record(
 interface ThreadDoubles {
   readonly calls: string[];
   readonly threads: readonly ThreadRecord[];
+  /** The principals the project no longer admits, which is what orphans a thread. */
+  readonly unadmitted: readonly Principal[];
   readonly enqueued: ThreadMessageEnqueued;
   /** What the close door answers where a case sets it; else the record named, closed. */
   readonly closed?: ThreadClosed;
@@ -254,15 +245,20 @@ function boundary(
     calls: [],
     threads: [record(mine, geoff), record(hers, dana)],
     enqueued: { enqueued: "Enqueued", session: mine, ordinal: 7 },
+    unadmitted: [],
     ...doubles,
   };
   const access: ProjectAccess = {
-    authorize: (_principal, _partition, kind) => {
+    authorize: (principal, _partition, kind) => {
       held.calls.push(`authorize:${kind}`);
       return Promise.resolve(
-        (allowed as readonly string[]).includes(kind) ? authority : undefined,
+        (allowed as readonly string[]).includes(kind) &&
+          !held.unadmitted.includes(principal)
+          ? memberAuthority(principal)
+          : undefined,
       );
     },
+    authorizeTenant: () => Promise.resolve(undefined),
   };
   const web = nativeWeb(
     access,
@@ -296,8 +292,8 @@ test("every member reads every thread, and `mine` is the reader's own", async ()
         ])
       : [],
     [
-      [mine, false, "geoff"],
-      [hers, true, "dana"],
+      [mine, false, geoff],
+      [hers, true, dana],
     ],
   );
   assert.ok(held.calls.includes("authorize:Read"));
@@ -340,7 +336,25 @@ test("a member reads another member's thread, and it is not theirs", async () =>
 
   assert.equal(read.result, "Found");
   assert.equal(read.result === "Found" ? read.thread.mine : true, false);
-  assert.equal(read.result === "Found" ? read.thread.owner : "", "geoff");
+  assert.equal(read.result === "Found" ? read.thread.owner : "", geoff);
+});
+
+/**
+ * The listing derives one owner per distinct principal and a single read
+ * derives one for the thread it answers, so the two would otherwise disagree
+ * about a thread the listing had just drawn as orphaned.
+ */
+test("a thread's own route names no owner the project no longer admits", async () => {
+  const { web } = boundary({ unadmitted: [geoff] });
+
+  const read = await web.thread(dana, partition, mine, { limit: 4 });
+
+  assert.equal(read.result, "Found");
+  assert.equal(read.result === "Found" ? read.thread.owner : "", undefined);
+  assert.equal(
+    read.result === "Found" ? read.thread.state : "Open",
+    "Orphaned",
+  );
 });
 
 /**
@@ -362,7 +376,7 @@ test("a member with Read alone opens a thread and its transcript", async () => {
   assert.equal(page.read, "Page");
   assert.deepEqual(
     one.held.calls.filter((call) => call.startsWith("authorize:")),
-    ["authorize:Read"],
+    ["authorize:Read", "authorize:Read"],
   );
   assert.deepEqual(
     walk.held.calls.filter((call) => call.startsWith("authorize:")),
@@ -503,7 +517,7 @@ test("any member who may mutate closes any thread, and is answered it closed", a
     result: "Closed",
     thread: {
       session: hers,
-      owner: "dana",
+      owner: dana,
       state: "Closed",
       mine: false,
       turns: 2,
@@ -513,7 +527,11 @@ test("any member who may mutate closes any thread, and is answered it closed", a
       hidden: false,
     },
   });
-  assert.deepEqual(held.calls, ["authorize:Mutate", `close:${hers}`]);
+  assert.deepEqual(held.calls, [
+    "authorize:Mutate",
+    `close:${hers}`,
+    "authorize:Read",
+  ]);
 });
 
 test("a member with Read alone cannot close a thread, and no door is reached", async () => {
@@ -713,23 +731,18 @@ test("hiding another member's thread is refused, not silently done", async () =>
 });
 
 /**
- * The prompt names the membership's authority subject, which is the value an
- * operation is audited to and the value the console shows. A principal is not
- * that: `oidcPrincipal` composes `${issuer.length}:${issuer}${subject}`, so a
- * prompt built from one greets its owner as `24:https://auth.example/geoff` and
- * matches nothing they have ever seen.
+ * The prompt names the authority the door authorized, which is the value an
+ * operation is audited to and the value the console shows. It is derived from
+ * the principal, so it is the principal, and nothing composes a second name.
  */
-test("the recorded prompt names the owner and never the principal behind them", async () => {
+test("the recorded prompt names the authority the door authorized", async () => {
   const { web, held } = boundary();
+  const principal = oidcPrincipal("https://auth.example", "geoff");
 
-  await web.openThread(
-    oidcPrincipal("https://auth.example", "geoff"),
-    partition,
-  );
+  await web.openThread(principal, partition);
 
   const open = held.calls.find((call) => call.startsWith("open:")) ?? "";
-  assert.ok(open.includes("You are geoff's thread on acme/atlas"));
-  assert.ok(!open.includes("https://auth.example"));
+  assert.ok(open.includes(`You are ${principal}'s thread on acme/atlas`));
   assert.ok(open.includes(threadStandingRulesDefault));
 });
 
@@ -755,19 +768,19 @@ test("a project's own standing is what the opened thread's prompt carries", asyn
 
 /**
  * `threadSystemPromptCharsMax` budgets three PATH SEGMENTS, one of them the
- * owner, and `authority_subject` is what the schema bounds. A principal is
- * bounded by nothing, so a prompt built from one raises on a long issuer — and
- * that member could then never open a thread at all.
+ * owner, and the owner is the principal. An issuer too long for a stored row is
+ * therefore refused where the principal is composed, rather than at the door
+ * that would have written a prompt nothing could hold.
  */
-test("a member behind a long issuer can still open a thread", async () => {
-  const { web } = boundary();
-
-  const opened = await web.openThread(
-    oidcPrincipal(`https://${"a".repeat(threadSystemPromptCharsMax)}`, "geoff"),
-    partition,
+test("an issuer too long to audit is refused before any door is reached", () => {
+  assert.throws(
+    () =>
+      oidcPrincipal(
+        `https://${"a".repeat(threadSystemPromptCharsMax)}`,
+        "geoff",
+      ),
+    RangeError,
   );
-
-  assert.equal(opened.result, "Opened");
 });
 
 test("a member may not put a message in another member's thread", async () => {
@@ -985,13 +998,16 @@ test("the door's bound counts code points, matching the schema in front of it", 
   );
 });
 
-test("a closed thread and an ownerless one each refuse the message they cannot take", async () => {
+/**
+ * A member the project no longer admits is refused by the authorization the
+ * door already does, so the mailbox is never reached and the refusal is the one
+ * every other unadmitted read answers.
+ */
+test("a closed thread and an unadmitted member each refuse the message they cannot take", async () => {
   const closed = boundary({
     threads: [record(mine, geoff, { state: "Closed" })],
   });
-  const orphaned = boundary({
-    threads: [record(mine, geoff, { owner: undefined })],
-  });
+  const orphaned = boundary({ unadmitted: [geoff] });
   const message = {
     session: mine,
     turn: asSessionTurnId("thread-turn-1"),
@@ -1004,13 +1020,33 @@ test("a closed thread and an ownerless one each refuse the message they cannot t
   );
   assert.equal(
     (await orphaned.web.sendThreadMessage(geoff, partition, message)).result,
-    "Orphaned",
+    "NotFound",
   );
   for (const held of [closed.held, orphaned.held])
     assert.equal(
       held.calls.filter((call) => call.startsWith("enqueue:")).length,
       0,
     );
+});
+
+/**
+ * A thread whose principal the project no longer admits is `Orphaned` in a
+ * listing, which is the fact a rail draws and the one no row holds.
+ */
+test("a thread the project no longer admits its owner to stands orphaned", async () => {
+  const { web } = boundary({ unadmitted: [geoff] });
+
+  const read = await web.threads(dana, partition);
+
+  assert.deepEqual(
+    read.result === "Found"
+      ? read.threads.map((thread) => [thread.session, thread.state])
+      : [],
+    [
+      [mine, "Orphaned"],
+      [hers, "Open"],
+    ],
+  );
 });
 
 test("a backlogged thread is told when to come back rather than told nothing", async () => {
@@ -1149,8 +1185,9 @@ test("an entry is titled by its first message and untitled without one", () => {
     threadEntry(
       { ...record(mine, geoff), firstMessage: "why is 42 blocked?\nand 43?" },
       geoff,
+      geoff,
     ).title,
     "why is 42 blocked?",
   );
-  assert.equal(threadEntry(record(mine, geoff), geoff).title, undefined);
+  assert.equal(threadEntry(record(mine, geoff), geoff, geoff).title, undefined);
 });

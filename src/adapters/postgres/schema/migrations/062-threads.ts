@@ -231,22 +231,27 @@ const memberThread = [
      END $$`,
 ];
 
-/**
- * What both mailbox doors do, differing in the input kind they write and the
- * two arm names they answer under. It is one body taken twice rather than one
- * function with a kind argument, because the two are granted to different roles
- * and a shared function would be a shared grant.
- */
-function threadMailboxDoor(door: {
+/** What one mailbox door is, apart from the body every door shares. */
+export interface ThreadMailboxDoor {
   readonly name: string;
   readonly inputKind: string;
   readonly enqueued: string;
   readonly already: string;
   /** Whether the caller names the session it means, which only the member's door does. */
   readonly named: boolean;
-}): string {
+  /** Whether the door reads a membership row to answer `Orphaned`, which 083 stops doing. */
+  readonly orphaned?: boolean;
+}
+
+/**
+ * What both mailbox doors do, differing in the input kind they write and the
+ * two arm names they answer under. It is one body taken twice rather than one
+ * function with a kind argument, because the two are granted to different roles
+ * and a shared function would be a shared grant.
+ */
+export function threadMailboxDoor(door: ThreadMailboxDoor): string {
   const { name, inputKind, enqueued, already } = door;
-  return `CREATE FUNCTION ${name}(
+  return `FUNCTION ${name}(
      in_tenant text,in_project text,in_principal text,${
        door.named ? "in_session text," : ""
      }in_turn text,in_input text)
@@ -279,12 +284,16 @@ ${
        IF FOUND THEN
          RETURN QUERY SELECT '${already}'::text,standing,held.session; RETURN;
        END IF;
-       IF NOT EXISTS(SELECT 1 FROM project_membership m
+${
+  door.orphaned === false
+    ? ""
+    : `       IF NOT EXISTS(SELECT 1 FROM project_membership m
                       WHERE m.principal=in_principal AND m.tenant=in_tenant
                         AND m.project=in_project) THEN
          RETURN QUERY SELECT 'Orphaned'::text,NULL::bigint,held.session; RETURN;
        END IF;
-       SELECT count(*) INTO queued FROM session_turn t
+`
+}       SELECT count(*) INTO queued FROM session_turn t
         WHERE t.tenant=in_tenant AND t.project=in_project
           AND t.session=held.session AND t.state='Queued';
        IF queued>=${threadBacklogMax} THEN
@@ -300,22 +309,27 @@ ${
      END $$`;
 }
 
-const mailboxDoors = [
-  threadMailboxDoor({
+/** The two doors, each named where both migrations that emit them can reach it. */
+export const threadMailboxDoors: readonly ThreadMailboxDoor[] = [
+  {
     name: threadMessageEnqueueFunction,
     inputKind: "UserMessage",
     enqueued: "Enqueued",
     already: "AlreadyEnqueued",
     named: true,
-  }),
-  threadMailboxDoor({
+  },
+  {
     name: threadWakeFunction,
     inputKind: "Wake",
     enqueued: "Woken",
     already: "AlreadyWoken",
     named: false,
-  }),
+  },
 ];
+
+const mailboxDoors = threadMailboxDoors.map(
+  (door) => `CREATE ${threadMailboxDoor(door)}`,
+);
 
 /**
  * The two reads a thread page is drawn from: the listing, which LEFT JOINs the

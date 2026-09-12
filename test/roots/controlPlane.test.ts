@@ -357,6 +357,7 @@ const containedFaultProgram = `
 const truncatedWakeProgram = `
     const roots = await import('./src/roots/controlPlane.ts');
     const schema = await import('./src/adapters/postgres/runtimeSchema.ts');
+    const projectAccess = await import('./src/interpreter/projectAccess.ts');
     const rows = schema.currentRuntimeSchemaContract.required;
     const requirements = { pool: { query: async () => ({ rows }) } };
     const config = { idleIntervalMilliseconds: 1000, shutdownDrainMilliseconds: 1000 };
@@ -376,6 +377,7 @@ const truncatedWakeProgram = `
         wake: async () => ({ woken: 'Woken', ordinal: 1 }),
         advance: async (sequence) => sequence,
       },
+      access: { authorize: async (principal) => projectAccess.memberAuthority(principal) },
       clock: { nowIso: () => '2026-09-02T00:00:00.000Z' },
       wakesPerPassMax: 2,
     };

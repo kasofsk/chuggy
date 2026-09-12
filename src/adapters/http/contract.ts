@@ -23,6 +23,10 @@ import {
   draftRevisionSchema,
   leadInquirySchema,
   publicMutationSchema,
+  forgeCredentialRequestSchema,
+  forgeInstallationClaimSchema,
+  projectRepositoryBindSchema,
+  projectRepositoryCreateSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
   threadHideRequestSchema,
@@ -55,6 +59,20 @@ import type {
   TicketActivityPosition,
 } from "../../interpreter/nativeWeb.ts";
 import { checkedSelectorDecisionReference } from "../../interpreter/dispatchView.ts";
+import type { ForgeCredentialRequest } from "../../interpreter/forgeCredentials.ts";
+import {
+  asForgeAccount,
+  asForgeApp,
+  asForgeId,
+  asForgeInstallationId,
+  asForgeRepositoryName,
+  type ForgeInstallationId,
+} from "../../interpreter/forgeInstallation.ts";
+import type {
+  ForgeInstallationClaimRequest,
+  ProjectRepositoryBindRequest,
+  ProjectRepositoryCreateRequest,
+} from "../../interpreter/repositoryOnboarding.ts";
 import type { ExecutionPageCursor } from "../../interpreter/operationsView.ts";
 import {
   asIdempotencyKey,
@@ -149,6 +167,60 @@ export function parseRepositoryConfigurationImport(
   return {
     repository: asRepositoryId(parsed.repository),
     commit: asGitObjectId(parsed.commit),
+  };
+}
+
+/** One minting request as the wire carries it, both fields already narrowed. */
+export function parseForgeCredentialRequest(
+  body: unknown,
+): ForgeCredentialRequest {
+  const parsed = forgeCredentialRequestSchema.parse(body);
+  return {
+    repository: asRepositoryId(parsed.repository),
+    permissions: parsed.permissions,
+  };
+}
+
+/** One claim as the wire carries it, every field already narrowed. */
+export function parseForgeInstallationClaim(
+  body: unknown,
+): ForgeInstallationClaimRequest {
+  const parsed = forgeInstallationClaimSchema.parse(body);
+  return {
+    forge: asForgeId(parsed.forge),
+    app: asForgeApp(parsed.app),
+    installationId: asForgeInstallationId(parsed.installationId),
+  };
+}
+
+/** One installation identity out of a path segment. */
+export function parseForgeInstallationId(value: string): ForgeInstallationId {
+  return asForgeInstallationId(value);
+}
+
+/** One binding as the wire carries it, the identity coming from the header rather than the body. */
+export function parseProjectRepositoryBind(
+  body: unknown,
+  operation: string,
+): ProjectRepositoryBindRequest {
+  const parsed = projectRepositoryBindSchema.parse(body);
+  return {
+    repository: asRepositoryId(parsed.repository),
+    operation: asOperationId(operation),
+  };
+}
+
+/** One creation as the wire carries it, the identity coming from the header rather than the body. */
+export function parseProjectRepositoryCreate(
+  body: unknown,
+  operation: string,
+): ProjectRepositoryCreateRequest {
+  const parsed = projectRepositoryCreateSchema.parse(body);
+  return {
+    account: asForgeAccount(parsed.account),
+    name: asForgeRepositoryName(parsed.name),
+    visibility: parsed.visibility,
+    operation: asOperationId(operation),
   };
 }
 

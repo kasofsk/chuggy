@@ -66,22 +66,22 @@ export const threadCapabilitiesDefault = [
 
 /**
  * Where one thread stands, as a listing names it: a session state, or that the
- * membership the thread acts under is gone. It is derived rather than stored,
- * from one fact on the session row and one on the membership join a listing
- * already makes, so the join is what discovers an ownerless thread.
+ * project no longer admits the principal the thread acts under. It is derived
+ * rather than stored, from one fact on the session row and one the authority
+ * answers, so no row has to be written when access is withdrawn.
  */
 export const allThreadStandings = ["Open", "Closed", "Orphaned"] as const;
 export type ThreadStanding = (typeof allThreadStandings)[number];
 
 /**
- * An open thread whose owner has no membership left stands `Orphaned`, and
- * every other thread stands where its session does. A closed one is `Closed`
- * whatever became of its owner, because a session that takes no more turns
- * needs no owner and hiding that it is closed would be the wrong warning.
+ * An open thread whose owner may no longer read the project stands `Orphaned`,
+ * and every other thread stands where its session does. A closed one is
+ * `Closed` whatever became of its owner, because a session that takes no more
+ * turns needs no owner and hiding that it is closed would be the wrong warning.
  */
 export function threadStanding(input: {
   readonly state: SessionState;
-  readonly owner?: string;
+  readonly owner: string | undefined;
 }): ThreadStanding {
   return input.state === "Open" && input.owner === undefined
     ? "Orphaned"

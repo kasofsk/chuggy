@@ -18,10 +18,13 @@ import {
   asAttemptId,
   asExecutionId,
 } from "../../src/interpreter/executionScheduler.ts";
+import { asForgeInstallationToken } from "../../src/interpreter/forgeInstallation.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
+import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
 import type { ReportIngested } from "../../src/interpreter/executionSchedulerReport.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
+import { fixtureForgeShapedToken } from "./forgeFixtures.ts";
 import { inertRunEvidence } from "./workerPlaneFixtures.ts";
 
 const authority = {
@@ -30,6 +33,7 @@ const authority = {
   execution: asExecutionId("execution"),
   attempt: asAttemptId("attempt"),
   generation: 1,
+  taskKind: "Work",
   manifest: asResultManifestId("manifest"),
   inputBundle: "bundle",
   inputBundleDigest: "digest",
@@ -878,4 +882,150 @@ test("an ending the boundary refuses is a conflict and not a silent success", as
   });
   assert.equal(refused.statusCode, 409);
   await app.close();
+});
+
+/**
+ * The credential route, whose refusals a pod reads as three different things: a
+ * not-found sends it back to what its launcher mounted, an outage tells it to
+ * ask again, and a dead bearer stops it.
+ */
+const credential = {
+  username: "x-access-token",
+  password: asForgeInstallationToken(fixtureForgeShapedToken),
+  expiresAtMs: 1_700_000_000_000,
+};
+
+function credentialPlane(
+  minted: WorkerPlaneCredentialMinted | undefined,
+  asked: unknown[] = [],
+  live = true,
+) {
+  return createWorkerPlaneApp({
+    ...heartbeatService,
+    ...runEvidenceService,
+    authority: {
+      authenticate: (secret) =>
+        Promise.resolve(
+          secret === asAttemptCapabilitySecret("held")
+            ? { ...authority, live }
+            : undefined,
+        ),
+    },
+    reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
+    artifacts: { store: () => Promise.resolve({ stored: "Stored" }) },
+    reports: { report: () => Promise.resolve({ ingested: "Fenced" }) },
+    ready: () => Promise.resolve(true),
+    uploadBytesMax: 64,
+    ...(minted === undefined
+      ? {}
+      : {
+          credentials: {
+            attempt: (offered: unknown) => {
+              asked.push(offered);
+              return Promise.resolve(minted);
+            },
+            session: () => Promise.resolve({ minted: "NotFound" } as const),
+          },
+        }),
+  });
+}
+
+test("an attempt is answered the credential minted for its own authority", async () => {
+  const asked: unknown[] = [];
+  const app = credentialPlane(
+    { minted: "Credential", value: credential },
+    asked,
+  );
+
+  const answered = await app.inject({
+    method: "POST",
+    url: "/v1/credential",
+    headers: held,
+  });
+
+  assert.equal(answered.statusCode, 200);
+  assert.deepEqual(answered.json(), credential);
+  assert.deepEqual(asked, [authority], "the minting was handed something else");
+  await app.close();
+});
+
+test("a credential is minted for no bearer the attempt authority does not know", async () => {
+  const asked: unknown[] = [];
+  const app = credentialPlane(
+    { minted: "Credential", value: credential },
+    asked,
+  );
+
+  for (const headers of [
+    {},
+    { authorization: "Bearer unknown" },
+    { authorization: `Bearer chgs_${"a".repeat(32)}` },
+  ]) {
+    const refused = await app.inject({
+      method: "POST",
+      url: "/v1/credential",
+      headers,
+    });
+    assert.equal(refused.statusCode, 401);
+    assert.deepEqual(refused.json(), { action: "stop" });
+  }
+  assert.deepEqual(asked, [], "an unauthenticated pod reached the minting");
+  await app.close();
+});
+
+test("an attempt that is no longer live is minted nothing further", async () => {
+  const asked: unknown[] = [];
+  const app = credentialPlane(
+    { minted: "Credential", value: credential },
+    asked,
+    false,
+  );
+
+  const refused = await app.inject({
+    method: "POST",
+    url: "/v1/credential",
+    headers: held,
+  });
+
+  assert.equal(refused.statusCode, 401);
+  assert.deepEqual(refused.json(), { action: "stop" });
+  assert.deepEqual(asked, [], "a reported attempt was minted a credential");
+  await app.close();
+});
+
+test("a plane holding no app key says so, and the pod keeps its mounted credential", async () => {
+  const app = credentialPlane(undefined);
+
+  const refused = await app.inject({
+    method: "POST",
+    url: "/v1/credential",
+    headers: held,
+  });
+
+  assert.equal(refused.statusCode, 404);
+  assert.deepEqual(refused.json(), { reason: "ForgeNotConfigured" });
+  await app.close();
+});
+
+test("a refusal carries no action and an outage carries the wait, so a pod can tell them apart", async () => {
+  const notMinted = credentialPlane({ minted: "NotFound" });
+  const refused = await notMinted.inject({
+    method: "POST",
+    url: "/v1/credential",
+    headers: held,
+  });
+  assert.equal(refused.statusCode, 404);
+  assert.deepEqual(refused.json(), { reason: "NotMinted" });
+  await notMinted.close();
+
+  const unavailable = credentialPlane({ minted: "Unavailable" });
+  const waiting = await unavailable.inject({
+    method: "POST",
+    url: "/v1/credential",
+    headers: held,
+  });
+  assert.equal(waiting.statusCode, 503);
+  assert.deepEqual(waiting.json(), { action: "retry" });
+  assert.equal(waiting.headers["retry-after"], "1");
+  await unavailable.close();
 });

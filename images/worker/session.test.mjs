@@ -22,6 +22,7 @@ import {
   credentialFile,
   environment,
   facts,
+  mintedCredential,
   planeOf,
   queryOf,
   rejection,
@@ -1118,6 +1119,165 @@ test("the checkout is asked for what the placement bound, under the session's ow
   assert.deepEqual(asked[0].repositories, { chuggy: { url: "git://x" } });
   assert.deepEqual(asked[0].credentialFiles, { "claude-code": credentialFile });
   assert.equal(asked[0].workspace, "/workspace");
+});
+
+test("a bound session placed with an empty repository map is given an empty one", async () => {
+  const plane = planeOf([], facts);
+  const { query } = queryOf(() => []);
+  const asked = [];
+
+  await run({
+    request: plane.request,
+    query,
+    environment: {
+      ...environment,
+      CHUG_SESSION_TASK: JSON.stringify({
+        ...task,
+        repository: { reference: "https://github.com/kasofsk/chuggy.git" },
+      }),
+      CHUG_WORKER_REPOSITORIES: "",
+    },
+    checkout: async (
+      checkoutTask,
+      repositories,
+      credentialFiles,
+      workspace,
+    ) => {
+      asked.push({ checkoutTask, repositories, credentialFiles, workspace });
+      return undefined;
+    },
+  });
+
+  assert.equal(asked.length, 1);
+  assert.deepEqual(asked[0].repositories, {});
+});
+
+test("a bound session placed with no repository map is given an empty one", async () => {
+  const plane = planeOf([], facts);
+  const { query } = queryOf(() => []);
+  const asked = [];
+
+  await run({
+    request: plane.request,
+    query,
+    environment: {
+      ...environment,
+      CHUG_SESSION_TASK: JSON.stringify({
+        ...task,
+        repository: { reference: "https://github.com/kasofsk/chuggy.git" },
+      }),
+    },
+    checkout: async (
+      checkoutTask,
+      repositories,
+      credentialFiles,
+      workspace,
+    ) => {
+      asked.push({ checkoutTask, repositories, credentialFiles, workspace });
+      return undefined;
+    },
+  });
+
+  assert.equal(asked.length, 1);
+  assert.deepEqual(asked[0].repositories, {});
+});
+
+/** The environment a session is placed with when the placement bound a repository. */
+const boundEnvironment = {
+  ...environment,
+  CHUG_SESSION_TASK: JSON.stringify({
+    ...task,
+    repository: { reference: "chuggy" },
+  }),
+  CHUG_WORKER_REPOSITORIES: JSON.stringify({ chuggy: { url: "git://x" } }),
+};
+
+test("a bound session asks the plane for its own repository and hands the mint to the checkout", async () => {
+  const plane = planeOf([], facts, () => undefined, mintedCredential);
+  const { query } = queryOf(() => []);
+  const written = [];
+  let handed;
+
+  await run({
+    request: plane.request,
+    query,
+    environment: boundEnvironment,
+    write: async (file, content) => written.push({ file, content }),
+    checkout: async (_task, _repositories, _files, _workspace, services) => {
+      handed = services.minted;
+      return undefined;
+    },
+  });
+
+  const asked = plane.calls.find(
+    ({ path }) => path === "/v1/session/credential",
+  );
+  assert.deepEqual(asked.body, { repository: "chuggy" });
+  assert.equal(written.length, 1);
+  assert.equal(written[0].content, mintedCredential.password);
+  assert.equal(handed.CHUG_WORKER_GIT_CREDENTIAL_FILE, written[0].file);
+  assert.equal(
+    handed.CHUG_WORKER_GIT_CREDENTIAL_USERNAME,
+    mintedCredential.username,
+  );
+});
+
+test("a minted password is scrubbed out of everything this pod writes", async () => {
+  const plane = planeOf([turnOne], facts, () => undefined, mintedCredential);
+  const { query } = queryOf(() => [
+    result("success", { result: `pushed with ${mintedCredential.password}` }),
+  ]);
+
+  await run({
+    request: plane.request,
+    query,
+    environment: boundEnvironment,
+    write: async () => undefined,
+    checkout: async () => undefined,
+  });
+
+  const answered = plane.calls.find(
+    ({ path }) => path === "/v1/session/turn/answer",
+  ).body.result;
+  assert.ok(!answered.includes(mintedCredential.password));
+  assert.ok(answered.includes("[redacted credential]"));
+});
+
+test("a plane that mints nothing leaves the checkout on the launcher's mount", async () => {
+  const plane = planeOf([], facts);
+  const { query } = queryOf(() => []);
+  const written = [];
+  let services;
+
+  await run({
+    request: plane.request,
+    query,
+    environment: boundEnvironment,
+    write: async (file, content) => written.push({ file, content }),
+    checkout: async (_task, _repositories, _files, _workspace, handed) => {
+      services = handed;
+      return undefined;
+    },
+  });
+
+  assert.ok(
+    plane.calls.some(({ path }) => path === "/v1/session/credential"),
+    "a bound session never asked",
+  );
+  assert.equal(services.minted, undefined);
+  assert.deepEqual(written, []);
+});
+
+test("a session binding no repository asks the plane for no credential", async () => {
+  const plane = planeOf([], facts, () => undefined, mintedCredential);
+  const { query } = queryOf(() => []);
+
+  await run({ request: plane.request, query, checkout: async () => undefined });
+
+  assert.deepEqual(
+    plane.calls.filter(({ path }) => path === "/v1/session/credential"),
+    [],
+  );
 });
 
 test("a site that names no repository map still runs the sessions that bind none", async () => {

@@ -30,21 +30,6 @@ R="$WORK/repo"
 unset CHUG_CI_FULL CHUG_CI_BASE GITHUB_BASE_REF \
 	CHUG_CI_SUITE_TIMEOUT_SECS CHUG_CI_SUITES_BUDGET_SECS
 
-# THE SUITE'S ONE NEGATIVE ASSERTION. A stage that was skipped prints a line of
-# its own, and every other stage's output is still there — so "did this run" is
-# not a substring test, it is the absence of that line.
-refute() { # <name> <expected-rc> <actual-rc> <must-not-contain>
-	_name="$1"; _want="$2"; _got="$3"; _needle="$4"
-	if [ "$_got" = "$_want" ] && ! grep -qF -- "$_needle" "$OUT"; then
-		echo "ok   - $_name (rc=$_got)"
-		pass=$((pass + 1))
-	else
-		echo "FAIL - $_name: rc want=$_want got=$_got; expected output NOT to contain: $_needle"
-		echo "----- output -----"; cat "$OUT"; echo "------------------"
-		fail=$((fail + 1))
-	fi
-}
-
 ROOT="$(cd "$HERE/../.." && pwd)"
 grep -F '    ./.chug/tasks/ci.sh' "$ROOT/justfile" >/dev/null
 grep -F '    CHUG_CI_FULL=1 ./.chug/tasks/ci.sh' "$ROOT/justfile" >/dev/null
@@ -172,6 +157,25 @@ RC=$?
 set -e
 refute "a script-only change runs the suites, not just the static checks" 0 "$RC" "check-source unit: SKIPPED"
 check "a script-only change still skips Quint" 0 "$RC" "check-model: SKIPPED"
+
+# `check-keto`'s end-to-end suite composes the boundary over the postgres
+# harnesses, so a cone naming only the Keto adapter leaves the one suite that
+# proves a derived owner against a real authority unrun on a changed run.
+stub_repo 0
+mkdir -p "$R/test/postgres"
+printf 'export const before = 1;\n' > "$R/test/postgres/threadHarness.ts"
+git -C "$R" add -A
+git -C "$R" commit -qm baseline
+printf 'export const after = 2;\n' > "$R/test/postgres/threadHarness.ts"
+git -C "$R" add -A
+git -C "$R" commit -qm harness
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "a postgres harness change selects the authority gate" 0 "$RC" "stub check-keto"
 
 stub_repo 0
 mkdir -p "$R/model"

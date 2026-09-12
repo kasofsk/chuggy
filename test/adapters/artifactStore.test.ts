@@ -84,6 +84,7 @@ const workerAuthority: WorkerAttemptAuthority = {
   execution,
   attempt,
   generation: 1,
+  taskKind: "Work",
   manifest: asResultManifestId("manifest-1"),
   inputBundle: "bundle-1",
   inputBundleDigest: "digest-1",

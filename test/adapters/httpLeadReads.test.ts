@@ -309,6 +309,7 @@ function appOf(shape: LeadCase = {}) {
   const access: ProjectAccess = {
     authorize: () =>
       Promise.resolve((shape.allowed ?? true) ? authority : undefined),
+    authorizeTenant: () => Promise.resolve(undefined),
   };
   const inbox: OperationInbox = {
     accept: () => Promise.resolve({ accepted: "InvalidCommand" }),
@@ -341,7 +342,7 @@ function appOf(shape: LeadCase = {}) {
       authenticateBearer: () =>
         Promise.resolve({
           authenticated: "Bearer" as const,
-          bearer: { principal: asPrincipal("issuer\u0000subject") },
+          bearer: { principal: asPrincipal("issuer-subject") },
         }),
     },
     { ready: () => Promise.resolve(true) },

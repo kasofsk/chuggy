@@ -19,7 +19,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { mintedCredentialDirectory } from "../../images/worker/repository.mjs";
 import {
+  kubernetesMintedCredentialPath,
   kubernetesNameCharsMax,
   kubernetesSessionTaskVariable,
   kubernetesWorkerCredentialFilesVariable,
@@ -304,6 +306,10 @@ test("only the credentials the grant names are mounted, and the workspace is eph
     },
     { name: "session-workspace", emptyDir: { sizeLimit: "10Gi" } },
     {
+      name: "minted-credential",
+      emptyDir: { medium: "Memory", sizeLimit: "1Mi" },
+    },
+    {
       name: "session-credential-0",
       projected: {
         defaultMode: 0o400,
@@ -327,11 +333,33 @@ test("only the credentials the grant names are mounted, and the workspace is eph
     },
     { name: "session-workspace", mountPath: "/workspace", readOnly: false },
     {
+      name: "minted-credential",
+      mountPath: mintedCredentialDirectory,
+      readOnly: false,
+    },
+    {
       name: "session-credential-0",
       mountPath: "/var/run/chuggy/claude-code",
       readOnly: true,
     },
   ]);
+});
+
+/**
+ * A session mints its own credential too, so the same memory mount has to be in
+ * its document and at the path its image writes.
+ */
+test("a session pod mounts memory where the image writes a minted credential", () => {
+  assert.equal(kubernetesMintedCredentialPath, mintedCredentialDirectory);
+  const mount = renderedContainer().volumeMounts.find(
+    ({ mountPath }) => mountPath === mintedCredentialDirectory,
+  );
+  assert.equal(mount?.readOnly, false);
+  assert.deepEqual(
+    renderedPod().spec.volumes.find(({ name }) => name === mount?.name)
+      ?.emptyDir,
+    { medium: "Memory", sizeLimit: "1Mi" },
+  );
 });
 
 test("a grant naming a credential this site does not mount is denied", () => {

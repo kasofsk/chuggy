@@ -119,6 +119,7 @@ function draw(
   ports: ApiPorts,
   created: number[],
   initialization = creationInitialization,
+  repositories: readonly string[] = [],
 ): { readonly rerender: (next: typeof creationInitialization) => void } {
   const tree = (next: typeof creationInitialization) => (
     <QueryClientProvider client={new QueryClient()}>
@@ -141,6 +142,7 @@ function draw(
             reviewInstructionsCount: 1,
           },
           initialization: next,
+          repositories,
         }}
         onCreated={(ticket) => created.push(ticket)}
       />
@@ -381,4 +383,59 @@ test("each list editor stops adding rows exactly at the bound the wire states", 
     }
     expect(add.disabled).toBe(true);
   }
+});
+
+const chuggy = "https://forge.test/kasofsk/chuggy";
+const scratch = "https://forge.test/gdoteof/scratch";
+
+function picker(): HTMLElement | null {
+  return screen.queryByRole("button", { name: /^repository/u });
+}
+
+function briefOf(sent: readonly Sent[]): Record<string, unknown> | undefined {
+  const body = drafts(sent)[0]?.body;
+  if (body === null || typeof body !== "object" || !("brief" in body))
+    return undefined;
+  return body.brief as Record<string, unknown>;
+}
+
+/** A project that binds nothing is every project until an operator connects
+ * one, so the field is absent rather than empty and the body says nothing. */
+test("a project binding nothing is neither asked for a repository nor sends one", async () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, []);
+  expect(picker()).toBeNull();
+  typeIntent("ship it");
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  expect(briefOf(held.sent)).not.toHaveProperty("repository");
+});
+
+test("a sole binding is the choice already made, and it reaches the wire", async () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, [], creationInitialization, [chuggy]);
+  expect(picker()?.textContent).toContain("kasofsk/chuggy");
+  typeIntent("ship it");
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  expect(briefOf(held.sent)?.["repository"]).toBe(chuggy);
+});
+
+/**
+ * Two bindings is where the rule has teeth: nothing can be chosen for the
+ * person, so a submission with none chosen must not reach the wire naming
+ * whichever the project happened to bind first.
+ */
+test("two bindings ask, and a submission naming none sends nothing", () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, [], creationInitialization, [chuggy, scratch]);
+  expect(picker()?.textContent).toContain("choose");
+  typeIntent("ship it");
+  submit();
+  expect(screen.getByText(/names which one/u)).toBeTruthy();
+  expect(drafts(held.sent).length).toBe(0);
 });

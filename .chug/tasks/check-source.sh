@@ -142,13 +142,13 @@ if [ "$run_unit" -eq 1 ]; then
 # A suite an image ships is discovered here for the same reason: it is a suite
 # no other gate owns, and one this stage does not run is one nothing runs.
 #
-# The three server-side arms mirror how those gates find their own work — the
+# The server-side arms mirror how those gates find their own work — the
 # directory itself, not below it — so a suite nested deeper than they look is
 # this stage's, which is what keeps the two halves a partition. The `ui/` arm
 # is the whole subtree instead, because a console owns every file under its own
 # directory and there is no depth at which one of its suites becomes this
 # runner's.
-	owned='^test/conformance/[^/]*\.test\.ts$|^test/random/[^/]*\.test\.ts$|^test/postgres/[^/]*\.test\.ts$|^ui/'
+	owned='^test/conformance/[^/]*\.test\.ts$|^test/random/[^/]*\.test\.ts$|^test/postgres/[^/]*\.test\.ts$|^test/keto/[^/]*\.test\.ts$|^ui/'
 	unit_suites="$(printf '%s\n' "$suites" | grep -Ev "$owned" || true)"
 	if [ -z "$unit_suites" ]; then
 		echo "check-source: LINTER ERROR — every tracked suite belongs to another gate; this stage would run nothing"
@@ -166,7 +166,7 @@ if [ "$run_unit" -eq 1 ]; then
 	set +f
 
 	stage "  unit     " node --test --test-reporter=dot "$@"
-	echo "check-source: unit ran $unit_count suite(s); $owned_count left to check-conformance, check-random, check-postgres and check-console"
+	echo "check-source: unit ran $unit_count suite(s); $owned_count left to check-conformance, check-random, check-postgres, check-keto and check-console"
 fi
 
 echo "check-source: $failed stage(s) failed, $ran run"

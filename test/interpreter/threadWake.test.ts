@@ -7,11 +7,11 @@
  * suite is about are properties of the pass ACROSS passes, and a stub that
  * forgot what it was told could not refute either the replay or the drop.
  *
- * EVERY SKIP ARM IS A RACE. The candidate read admits open threads whose owner
- * holds a membership, so `NoThread`, `Closed` and `Orphaned` can only be a
- * mailbox that changed between the read and the wake; the reference store draws
- * that the same way, per offer, rather than by a candidate the read would never
- * have answered.
+ * A MAILBOX SKIP IS A RACE AND AN UNADMITTED PRINCIPAL IS NOT. `NoThread` and
+ * `Closed` can only be a mailbox that changed between the read and the wake, so
+ * the reference store draws them per offer; whether the project still admits a
+ * principal is the authority's answer and is drawn by the reference authority
+ * beside it, before any offer is made.
  */
 
 import assert from "node:assert/strict";
@@ -31,6 +31,11 @@ import {
   asPrincipal,
   type Principal,
 } from "../../src/interpreter/principal.ts";
+import {
+  memberAuthority,
+  ProjectAccessUnavailable,
+  type ProjectAccess,
+} from "../../src/interpreter/projectAccess.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   allThreadWakeReasons,
@@ -87,7 +92,7 @@ interface WakeOffer {
 }
 
 /** How a mailbox stands when a wake reaches it, which the read cannot have known. */
-type MailboxStanding = "Open" | "Closed" | "Orphaned" | "NoThread";
+type MailboxStanding = "Open" | "Closed" | "NoThread";
 
 interface ReferenceStoreOptions {
   readonly log: readonly ThreadWakeCandidate[];
@@ -179,11 +184,41 @@ function referenceStore(options: ReferenceStoreOptions): ReferenceStore {
   };
 }
 
+/**
+ * The project authority the pass asks, admitting every principal a case has not
+ * named. It counts its refusals, because a candidate the authority turned away
+ * reaches no store and a case has nowhere else to read that from.
+ */
+function referenceAccess(
+  options: {
+    readonly unadmitted?: ReadonlySet<Principal>;
+    readonly undecided?: ReadonlySet<Principal>;
+  } = {},
+): ProjectAccess & { readonly refused: readonly Principal[] } {
+  const refused: Principal[] = [];
+  return {
+    refused,
+    authorize: (principal) => {
+      if (options.undecided?.has(principal) === true)
+        return Promise.reject(
+          new ProjectAccessUnavailable("the authority did not answer"),
+        );
+      if (options.unadmitted?.has(principal) === true) {
+        refused.push(principal);
+        return Promise.resolve(undefined);
+      }
+      return Promise.resolve(memberAuthority(principal));
+    },
+    authorizeTenant: () => Promise.resolve(undefined),
+  };
+}
+
 function serviceOf(
   store: ThreadWakeStore,
   wakesPerPassMax = threadWakesPerPassMax,
+  access: ProjectAccess = referenceAccess(),
 ): ThreadWakeService {
-  return { store, clock, wakesPerPassMax };
+  return { store, access, clock, wakesPerPassMax };
 }
 
 test("an empty page costs one bounded read, writes nothing and moves nothing", async () => {
@@ -312,7 +347,7 @@ test("a pass that already advanced reads nothing and enqueues nothing", async ()
 });
 
 test("each mailbox a wake cannot reach is skipped, and the pass carries on", async () => {
-  for (const held of ["NoThread", "Closed", "Orphaned"] as const) {
+  for (const held of ["NoThread", "Closed"] as const) {
     const log = [candidateAt(1, "gone"), candidateAt(2, "here")];
     const store = referenceStore({
       log,
@@ -333,6 +368,55 @@ test("each mailbox a wake cannot reach is skipped, and the pass carries on", asy
     );
     assert.deepEqual(store.mailbox(member("gone").session), [], held);
   }
+});
+
+/**
+ * A thread the project no longer admits its principal to is the derivation of
+ * `Orphaned`, and it is answered before the mailbox rather than by it.
+ */
+test("a thread whose principal is no longer admitted is skipped unoffered", async () => {
+  const log = [candidateAt(1, "gone"), candidateAt(2, "here")];
+  const store = referenceStore({ log });
+  const access = referenceAccess({
+    unadmitted: new Set([member("gone").principal]),
+  });
+  const report = await threadWakePass(serviceOf(store, undefined, access));
+
+  assert.deepEqual(report, { read: 2, woken: 1, skipped: 1, cursor: 2 });
+  assert.deepEqual(
+    store.offers.map((offer) => offer.session),
+    [member("here").session],
+  );
+  assert.deepEqual(access.refused, [member("gone").principal]);
+});
+
+/**
+ * An authority that could not answer is neither a wake nor an orphaned thread,
+ * so the cursor stops below the sequence it could not decide and the next pass
+ * reads it again.
+ */
+test("an authority that could not answer holds the cursor below that sequence", async () => {
+  const log = [candidateAt(1, "first"), candidateAt(2, "silent")];
+  const store = referenceStore({ log });
+  const access = referenceAccess({
+    undecided: new Set([member("silent").principal]),
+  });
+  const report = await threadWakePass(serviceOf(store, undefined, access));
+
+  assert.deepEqual(report, { read: 2, woken: 1, skipped: 1, cursor: 1 });
+  assert.deepEqual(store.advances, [1]);
+});
+
+test("an authority that could not answer the first candidate moves nothing", async () => {
+  const log = [candidateAt(1, "silent"), candidateAt(2, "second")];
+  const store = referenceStore({ log });
+  const access = referenceAccess({
+    undecided: new Set([member("silent").principal]),
+  });
+  const report = await threadWakePass(serviceOf(store, undefined, access));
+
+  assert.deepEqual(report, { read: 2, woken: 1, skipped: 1, cursor: 0 });
+  assert.deepEqual(store.advances, []);
 });
 
 test("a full mailbox is skipped and the cursor still moves past the notice", async () => {
@@ -580,13 +664,14 @@ interface WalkTally {
 /** One pass of the walk, with a crash drawn inside it, and every per-pass invariant. */
 async function walkPass(input: {
   readonly store: ReferenceStore;
+  readonly access: ProjectAccess;
   readonly random: Random;
   readonly limit: number;
   readonly cursor: number;
   readonly seed: number;
   readonly tally: WalkTally;
 }): Promise<ThreadWakeReport | undefined> {
-  const { store, random, limit, cursor, seed, tally } = input;
+  const { store, access, random, limit, cursor, seed, tally } = input;
   const crashAt = random.coin() ? random.below(limit) + 1 : undefined;
   let offered = 0;
   const running: ThreadWakeService = {
@@ -599,6 +684,7 @@ async function walkPass(input: {
         return store.wake(offer);
       },
     },
+    access,
     clock,
     wakesPerPassMax: limit,
   };
@@ -640,8 +726,9 @@ function walkSettled(input: {
   readonly reports: readonly ThreadWakeReport[];
   readonly cursor: number;
   readonly seed: number;
+  readonly unadmitted: ReadonlySet<Principal>;
 }): void {
-  const { store, log, sessions, reports, cursor, seed } = input;
+  const { store, log, sessions, reports, cursor, seed, unadmitted } = input;
   const truncated = new Set(
     reports.flatMap((report) =>
       report.truncatedAt === undefined ? [] : [report.truncatedAt],
@@ -663,6 +750,7 @@ function walkSettled(input: {
   for (const candidate of log) {
     if (candidate.sequence > cursor) continue;
     if (truncated.has(candidate.sequence)) continue;
+    if (unadmitted.has(candidate.principal)) continue;
     const turn = threadWakeTurn(candidate);
     assert.ok(
       store.offers.some((offer) => offer.turn === turn),
@@ -679,17 +767,30 @@ const walkSeeds = 200;
 const walkPasses = 12;
 const walkSessions = ["one", "two", "three", "four"];
 /**
- * Every standing a mailbox can be in when a wake reaches it. `Open` is drawn
- * twice so a walk that only ever closed threads could not be mistaken for one
- * that woke them.
+ * Every standing a mailbox can be in when a wake reaches it, `Open` drawn twice
+ * so a walk that only ever closed threads could not be mistaken for one that
+ * woke them. Whether the project admits a principal is settled for the whole
+ * walk instead, because the pass holds no state about it.
  */
 const walkStandings: readonly MailboxStanding[] = [
   "Open",
   "Open",
   "Closed",
-  "Orphaned",
   "NoThread",
 ];
+
+/** What one seed's offers add to the walk's tally, so every arm is reached somewhere. */
+function walkOffersTallied(
+  offers: readonly { readonly offered: ThreadWakeOffered["woken"] }[],
+  tally: WalkTally,
+): void {
+  for (const offer of offers) {
+    if (offer.offered === "Backlogged") tally.backlogged += 1;
+    if (offer.offered === "Closed") tally.closed += 1;
+    if (offer.offered === "NoThread") tally.noThread += 1;
+    if (offer.offered === "AlreadyWoken") tally.replayed += 1;
+  }
+}
 
 test("a walk of passes wakes each candidate at most once and skips none silently", async () => {
   const tally: WalkTally = {
@@ -714,6 +815,12 @@ test("a walk of passes wakes each candidate at most once and skips none silently
       backlogMax: random.below(threadBacklogMax) + 1,
       standing: (session) => standings.get(session) ?? "NoThread",
     });
+    const unadmitted = new Set(
+      walkSessions
+        .filter(() => random.below(4) === 0)
+        .map((label) => member(label).principal),
+    );
+    const access = referenceAccess({ unadmitted });
     const reports: ThreadWakeReport[] = [];
     let cursor = 0;
     for (let pass = 0; pass < walkPasses; pass += 1) {
@@ -725,6 +832,7 @@ test("a walk of passes wakes each candidate at most once and skips none silently
       }
       const report = await walkPass({
         store,
+        access,
         random,
         limit,
         cursor,
@@ -735,14 +843,17 @@ test("a walk of passes wakes each candidate at most once and skips none silently
       reports.push(report);
       cursor = report.cursor;
     }
-    walkSettled({ store, log, sessions: walkSessions, reports, cursor, seed });
-    for (const offer of store.offers) {
-      if (offer.offered === "Backlogged") tally.backlogged += 1;
-      if (offer.offered === "Closed") tally.closed += 1;
-      if (offer.offered === "Orphaned") tally.orphaned += 1;
-      if (offer.offered === "NoThread") tally.noThread += 1;
-      if (offer.offered === "AlreadyWoken") tally.replayed += 1;
-    }
+    walkSettled({
+      store,
+      log,
+      sessions: walkSessions,
+      reports,
+      cursor,
+      seed,
+      unadmitted,
+    });
+    tally.orphaned += access.refused.length;
+    walkOffersTallied(store.offers, tally);
   }
   for (const [what, count] of Object.entries(tally))
     assert.ok(count > 0, `the walk never reached ${what}`);

@@ -83,8 +83,6 @@ import {
 export interface ThreadRecord {
   readonly session: SessionId;
   readonly principal: Principal;
-  /** The membership's own authority subject, absent where that membership is gone. */
-  readonly owner?: string;
   readonly state: SessionState;
   readonly turns: number;
   readonly agentReference?: string;
@@ -181,9 +179,9 @@ export type ThreadHidden =
 
 /**
  * What the message door's durable half answered. `NoThread`, `Closed` and
- * `Orphaned` are each a mailbox that takes no message, and they are three arms
- * rather than one because a member whose thread is closed reopens it and a
- * member whose membership is gone cannot.
+ * `Backlogged` are each a mailbox that takes no message, and they are separate
+ * arms because a member whose thread is closed reopens it, a member whose
+ * mailbox is full waits, and a session that is not a thread is neither.
  */
 export type ThreadMessageEnqueued =
   | {
@@ -192,8 +190,7 @@ export type ThreadMessageEnqueued =
       readonly ordinal: number;
     }
   | {
-      readonly enqueued:
-        "NoThread" | "NotYourThread" | "Closed" | "Orphaned" | "Backlogged";
+      readonly enqueued: "NoThread" | "NotYourThread" | "Closed" | "Backlogged";
     };
 
 /**
@@ -369,7 +366,7 @@ export type ThreadHiding =
 export type ThreadMessageSent =
   | { readonly result: "NotFound" }
   | { readonly result: "NotYourThread" }
-  | { readonly result: "Closed" | "Orphaned" }
+  | { readonly result: "Closed" }
   /** The first turn's seeding block and the message will not fit one turn together. */
   | { readonly result: "TooLarge"; readonly charsMax: number }
   | { readonly result: "Backlogged"; readonly retryAfterSeconds: number }
@@ -396,7 +393,6 @@ export function threadMessageSent(
     case "NotYourThread":
       return { result: "NotYourThread" };
     case "Closed":
-    case "Orphaned":
       return { result: enqueued.enqueued };
     case "Backlogged":
       return {
@@ -465,16 +461,21 @@ export function threadTitle(named: {
     : threadTitleDerived(named.firstMessage);
 }
 
-/** One record as the wire names it, with the reader's own principal deciding `mine`. */
+/**
+ * One record as the wire names it, with the reader's own principal deciding
+ * `mine`. `owner` is the authority its principal acts under and is passed in
+ * because it is the project authority's answer rather than the store's.
+ */
 export function threadEntry(
   record: ThreadRecord,
   principal: Principal,
+  owner: string | undefined,
 ): ThreadEntry {
   const title = threadTitle(record);
   return {
     session: record.session,
-    ...(record.owner === undefined ? {} : { owner: record.owner }),
-    state: threadStanding(record),
+    ...(owner === undefined ? {} : { owner }),
+    state: threadStanding({ state: record.state, owner }),
     mine: record.principal === principal,
     turns: record.turns,
     ...(record.agentReference === undefined

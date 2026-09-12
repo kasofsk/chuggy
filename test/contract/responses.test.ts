@@ -20,11 +20,18 @@ import {
   draftResponse,
   executionResponse,
   executionsResponse,
+  forgeAppsResponse,
+  forgeInstallationClaimResponse,
+  forgeInstallationsResponse,
+  forgeRepositoriesResponse,
   inventoryResponse,
   notificationsResponse,
   operationResponse,
   operationalStatusResponse,
   outputContentResponse,
+  projectRepositoriesResponse,
+  projectRepositoryBindResponse,
+  projectRepositoryCreateResponse,
   projectResponse,
   runConfigurationResponse,
   runTranscriptResponse,
@@ -47,12 +54,20 @@ import {
   executionRequirementSchema,
   executionResponseSchema,
   executionsResponseSchema,
+  forgeAppsResponseSchema,
+  forgeInstallationClaimedSchema,
+  forgeInstallationsResponseSchema,
+  forgeRepositoriesResponseSchema,
   notificationsResponseSchema,
   operationAcceptanceSchema,
   operationResponseSchema,
   operationalStatusResponseSchema,
   outputContentResponseSchema,
   projectInventoryResponseSchema,
+  projectRepositoriesResponseSchema,
+  projectRepositoryAlreadyBoundSchema,
+  projectRepositoryBoundSchema,
+  projectRepositoryCreatedSchema,
   projectResponseSchema,
   repositoryConfigurationRefusalsSchema,
   runConfigurationResponseSchema,
@@ -68,16 +83,34 @@ import {
 } from "../../src/contract/responses.ts";
 import { authoringSchema } from "../../src/contract/authoring.ts";
 import { draftRevisionSchema } from "../../src/contract/requests.ts";
+import { projectRepositoryConfigurationDeferrals } from "../../src/contract/rosters.ts";
+import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
+import type {
+  ProjectRepositoryConfigurationsResult,
+  ProjectRepositoryCreateResult,
+  ProjectRepositoryRulesetResult,
+} from "../../src/interpreter/repositoryOnboarding.ts";
 import {
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
   errorEnvelopeSchema,
+  forgeInstallationsAnsweredMax,
+  forgeRepositoriesAnsweredMax,
   nativeHttpPageItemsMax,
+  projectRepositoriesAnsweredMax,
   runModelCharsMax,
   runTranscriptPageBatchesMax,
   selectorHandoffNoteBytesMax,
 } from "../../src/contract/http.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
+import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
+import {
+  asForgeAccount,
+  asForgeApp,
+  asForgeId,
+  asForgeInstallationId,
+  asForgeRepositoryName,
+} from "../../src/interpreter/forgeInstallation.ts";
 import { resolvedSelectorSettings } from "../../src/interpreter/selector.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
@@ -1335,4 +1368,320 @@ test("a drafts page carries whole drafts, its cursor and whether it ends them", 
       drafts: [{ ...body, authoringVersion: -1 }],
     }),
   );
+});
+
+const onboardingForge = asForgeId("github");
+const onboardingApp = asForgeApp("portal");
+const onboardingInstallation = asForgeInstallationId("4242");
+const onboardingRepository = asRepositoryId(
+  "https://github.com/kasofsk/chuggy.git",
+);
+
+/** One installation as the claim route names it, which the listing dates as well. */
+const onboardingClaim = {
+  forge: onboardingForge,
+  app: onboardingApp,
+  account: asForgeAccount("kasofsk"),
+  accountKind: "Organization" as const,
+  installationId: onboardingInstallation,
+};
+
+test("what onboarding answers about a forge parses as the contract names it", () => {
+  const apps = forgeAppsResponseSchema.parse(
+    forgeAppsResponse({
+      result: "Apps",
+      apps: [
+        {
+          app: onboardingApp,
+          id: "4708055",
+          slug: "chuggy-portal",
+          installUrl: "https://github.com/apps/chuggy-portal/installations/new",
+        },
+      ],
+    }).body,
+  );
+  assert.deepEqual(apps.apps[0], {
+    app: "portal",
+    id: "4708055",
+    slug: "chuggy-portal",
+    installUrl: "https://github.com/apps/chuggy-portal/installations/new",
+  });
+  for (const result of ["Claimed", "AlreadyClaimed"] as const)
+    assert.deepEqual(
+      forgeInstallationClaimedSchema.parse(
+        forgeInstallationClaimResponse(partition.tenant, {
+          result,
+          installation: onboardingClaim,
+        }).body,
+      ),
+      { ...onboardingClaim, installationId: "4242" },
+      result,
+    );
+});
+
+test("a tenant's installations and what one grants say whether they are all of it", () => {
+  const installations = forgeInstallationsResponseSchema.parse(
+    forgeInstallationsResponse({
+      result: "Installations",
+      installations: [{ ...onboardingClaim, claimedAt: instant }],
+      truncated: true,
+    }).body,
+  );
+  assert.equal(installations.truncated, true);
+  assert.deepEqual(installations.installations[0], {
+    ...onboardingClaim,
+    claimedAt: instant,
+  });
+  const repositories = forgeRepositoriesResponseSchema.parse(
+    forgeRepositoriesResponse({
+      result: "Repositories",
+      repositories: [
+        {
+          name: asForgeRepositoryName("chuggy"),
+          fullName: "kasofsk/chuggy",
+          url: onboardingRepository,
+          defaultBranch: "main",
+          private: true,
+        },
+      ],
+      truncated: false,
+    }).body,
+  );
+  assert.equal(repositories.truncated, false);
+  assert.deepEqual(repositories.repositories[0], {
+    name: "chuggy",
+    fullName: "kasofsk/chuggy",
+    url: onboardingRepository,
+    defaultBranch: "main",
+    private: true,
+  });
+});
+
+test("a binding and a project's bindings name the repository and its moment", () => {
+  assert.deepEqual(
+    projectRepositoryBoundSchema.parse(
+      projectRepositoryBindResponse(partition, {
+        result: "Bound",
+        repository: onboardingRepository,
+        configurations: { result: "Imported", count: 2 },
+      }).body,
+    ),
+    {
+      repository: onboardingRepository,
+      configurations: { result: "Imported", count: 2 },
+    },
+  );
+  assert.deepEqual(
+    projectRepositoryAlreadyBoundSchema.parse(
+      projectRepositoryBindResponse(partition, {
+        result: "AlreadyBound",
+        repository: onboardingRepository,
+      }).body,
+    ),
+    { repository: onboardingRepository },
+  );
+  const bound = projectRepositoriesResponseSchema.parse(
+    projectRepositoriesResponse({
+      result: "Repositories",
+      repositories: [{ repository: onboardingRepository, boundAt: instant }],
+    }).body,
+  );
+  assert.deepEqual(bound.repositories[0], {
+    repository: onboardingRepository,
+    boundAt: instant,
+  });
+});
+
+test("each onboarding listing refuses one row past the bound it answers under", () => {
+  const installation = { ...onboardingClaim, claimedAt: instant };
+  assert.throws(() =>
+    forgeInstallationsResponseSchema.parse({
+      truncated: true,
+      installations: Array.from(
+        { length: forgeInstallationsAnsweredMax + 1 },
+        () => installation,
+      ),
+    }),
+  );
+  const granted = {
+    name: "chuggy",
+    fullName: "kasofsk/chuggy",
+    url: onboardingRepository,
+    defaultBranch: "main",
+    private: true,
+  };
+  assert.throws(() =>
+    forgeRepositoriesResponseSchema.parse({
+      truncated: true,
+      repositories: Array.from(
+        { length: forgeRepositoriesAnsweredMax + 1 },
+        () => granted,
+      ),
+    }),
+  );
+  assert.throws(() =>
+    projectRepositoriesResponseSchema.parse({
+      repositories: Array.from(
+        { length: projectRepositoriesAnsweredMax + 1 },
+        () => ({ repository: onboardingRepository, boundAt: instant }),
+      ),
+    }),
+  );
+});
+
+test("every configuration outcome a bind reports parses as the schema answers it", () => {
+  const outcomes: readonly ProjectRepositoryConfigurationsResult[] = [
+    { result: "Imported", count: 0 },
+    {
+      result: "Bootstrapped",
+      revision: asConfigurationRevisionId("bootstrap"),
+    },
+    ...projectRepositoryConfigurationDeferrals.map(
+      (reason) => ({ result: "Deferred", reason }) as const,
+    ),
+  ];
+  for (const configurations of outcomes) {
+    assert.deepEqual(
+      projectRepositoryBoundSchema.parse(
+        projectRepositoryBindResponse(partition, {
+          result: "Bound",
+          repository: onboardingRepository,
+          configurations,
+        }).body,
+      ).configurations,
+      configurations,
+    );
+  }
+});
+
+/** One created repository as the route answers it, whichever part a case varies. */
+function onboardingCreated(
+  given: Partial<
+    Extract<ProjectRepositoryCreateResult, { readonly result: "Created" }>
+  > = {},
+): ProjectRepositoryCreateResult {
+  return {
+    result: "Created",
+    repository: onboardingRepository,
+    created: {
+      account: asForgeAccount("kasofsk"),
+      name: asForgeRepositoryName("engine"),
+      url: onboardingRepository,
+    },
+    seeded: true,
+    ruleset: { result: "Created" },
+    configurations: { result: "Imported", count: 1 },
+    ...given,
+  };
+}
+
+test("a created repository names what was made and how far each step got", () => {
+  const created = projectRepositoryCreatedSchema.parse(
+    projectRepositoryCreateResponse(partition, onboardingCreated()).body,
+  );
+  assert.deepEqual(created.created, {
+    account: "kasofsk",
+    name: "engine",
+    url: onboardingRepository,
+  });
+  assert.equal(created.seeded, true);
+  assert.deepEqual(created.ruleset, { result: "Created" });
+});
+
+/** One object without one of its own fields, which is what each partial is. */
+function onboardingWithout(
+  whole: Readonly<Record<string, unknown>>,
+  absent: string,
+): Readonly<Record<string, unknown>> {
+  return Object.fromEntries(
+    Object.entries(whole).filter(([named]) => named !== absent),
+  );
+}
+
+/**
+ * Every body one field short, named and one level deep. A loop over the top
+ * level alone leaves a nested field free to become optional unseen.
+ */
+function onboardingCreatedPartials(
+  body: Readonly<Record<string, unknown>>,
+): readonly (readonly [string, unknown])[] {
+  const partials: (readonly [string, unknown])[] = [];
+  for (const [named, value] of Object.entries(body)) {
+    partials.push([named, onboardingWithout(body, named)]);
+    if (typeof value !== "object" || value === null) continue;
+    const nested = value as Readonly<Record<string, unknown>>;
+    for (const inner of Object.keys(nested))
+      partials.push([
+        `${named}.${inner}`,
+        { ...body, [named]: onboardingWithout(nested, inner) },
+      ]);
+  }
+  return partials;
+}
+
+test("a created body is refused when any part of it is absent", () => {
+  const results: readonly ProjectRepositoryCreateResult[] = [
+    onboardingCreated(),
+    onboardingCreated({
+      ruleset: { result: "Refused", message: "rulesets are not available" },
+      configurations: {
+        result: "Bootstrapped",
+        revision: asConfigurationRevisionId("bootstrap"),
+      },
+    }),
+  ];
+  for (const result of results) {
+    const body = projectRepositoryCreateResponse(partition, result)
+      .body as Readonly<Record<string, unknown>>;
+    for (const [named, partial] of onboardingCreatedPartials(body))
+      assert.equal(
+        projectRepositoryCreatedSchema.safeParse(partial).success,
+        false,
+        named,
+      );
+  }
+});
+
+test("every ruleset outcome parses as the schema answers it", () => {
+  const rulesets: readonly ProjectRepositoryRulesetResult[] = [
+    { result: "Created" },
+    { result: "Refused", message: "rulesets are not available" },
+    { result: "Skipped" },
+    { result: "Unavailable" },
+  ];
+  for (const ruleset of rulesets) {
+    assert.deepEqual(
+      projectRepositoryCreatedSchema.parse(
+        projectRepositoryCreateResponse(
+          partition,
+          onboardingCreated({ ruleset }),
+        ).body,
+      ).ruleset,
+      ruleset,
+    );
+  }
+});
+
+test("each way a creation is refused is its own status and never a creation", () => {
+  const refusals: readonly (readonly [
+    ProjectRepositoryCreateResult,
+    number,
+  ])[] = [
+    [{ result: "InstallationMissing", app: asForgeApp("worker") }, 422],
+    [{ result: "PersonalAccountCreatesOnGitHub" }, 422],
+    [{ result: "RepositoryExists" }, 409],
+    [{ result: "ForgeRefused", step: "create", message: "no such org" }, 422],
+    [{ result: "BindRefused", bind: { result: "BoundElsewhere" } }, 409],
+    [{ result: "NotConfigured" }, 404],
+    [{ result: "NotFound" }, 404],
+    [{ result: "Unavailable" }, 503],
+  ];
+  for (const [result, status] of refusals) {
+    const answer = projectRepositoryCreateResponse(partition, result);
+    assert.equal(answer.status, status, result.result);
+    assert.equal(
+      errorEnvelopeSchema.parse(answer.body).error.code.length > 0,
+      true,
+    );
+  }
 });

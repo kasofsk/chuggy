@@ -78,7 +78,10 @@ test("repository import outcomes distinguish retry, refusal, and conflict", () =
     409,
   );
   assert.equal(
-    repositoryConfigurationImportResponse({ result: "Imported" }).status,
+    repositoryConfigurationImportResponse({
+      result: "Imported",
+      declarations: 1,
+    }).status,
     200,
   );
 });

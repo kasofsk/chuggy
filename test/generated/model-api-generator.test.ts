@@ -30,7 +30,13 @@ function fixture(mutator: (ir: Record<string, unknown>) => void): {
       "--step=apiStep",
       `--out=${ir}`,
     ],
-    { cwd: root },
+    /**
+     * quint writes the IR to stdout as well as to `--out`, and how much of it
+     * reaches a pipe before the process exits depends on load. The file is
+     * what is read, so stdout is discarded rather than buffered against a
+     * bound the IR has already outgrown.
+     */
+    { cwd: root, stdio: ["ignore", "ignore", "pipe"] },
   );
   const parsed = JSON.parse(readFileSync(ir, "utf8")) as Record<
     string,

@@ -1,7 +1,7 @@
 /**
  * What every thread case needs of a real PostgreSQL: the lead rig 059's suites
  * already stand on, the two thread stores over the roles 062 grants, and a
- * member with a membership for a thread to act under.
+ * member the project admits for a thread to act under.
  *
  * EACH DOOR STANDS ON THE ROLE IT IS GRANTED TO. The five API-side doors run as
  * `chuggy_api` and the three wake-side ones as `chuggy_selector_service`,
@@ -9,15 +9,22 @@
  * a grant that had never been made — which is a defect only the deployed
  * credential meets.
  *
- * A MEMBER IS AN ISSUER, A SUBJECT AND A PRINCIPAL DERIVED FROM BOTH.
- * `project_membership` is keyed by the derived principal and `draft_revision` is
- * keyed by the authority, and the wake join is exactly the step between them, so
- * a fixture that made up either half independently could pass a join that never
- * matches in a deployment.
+ * A MEMBER IS AN ISSUER, A SUBJECT AND A PRINCIPAL DERIVED FROM BOTH. The
+ * authority `draft_revision` is keyed by is derived from that principal and
+ * from nothing else, and the wake join matches the two, so a fixture that made
+ * up either half independently could pass a join that never matches in a
+ * deployment.
  */
 
 import { randomUUID } from "node:crypto";
 
+import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
+import { postgresAgenticRefusalReads } from "../../src/adapters/postgres/agenticRefusal.ts";
+import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
+import { postgresLeadReads } from "../../src/adapters/postgres/leadReads.ts";
+import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
+import { postgresSessionStoreRows } from "../../src/adapters/postgres/sessionStoreReads.ts";
+import { composeNativeWeb } from "../../src/compose.ts";
 import { threadSessionMint } from "../../src/adapters/crypto/threadSessionMint.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 import { postgresThreadSeeding } from "../../src/adapters/postgres/thread.ts";
@@ -28,9 +35,9 @@ import {
 import { sessionStoreStreamsAnswered } from "../../src/contract/http.ts";
 import type { Authority } from "../../src/interpreter/operationInbox.ts";
 import {
-  asAuthorityKind,
-  asAuthoritySubject,
-} from "../../src/interpreter/operationInbox.ts";
+  memberAuthority,
+  type ProjectAccess,
+} from "../../src/interpreter/projectAccess.ts";
 import {
   oidcPrincipal,
   type Principal,
@@ -46,6 +53,8 @@ import type {
 } from "../../src/interpreter/threadRead.ts";
 import type { ThreadWakeStore } from "../../src/interpreter/threadWake.ts";
 import { leadRigOpen, leadRigProject, type LeadRig } from "./leadHarness.ts";
+import { postgresHarnessKeying } from "./harness.ts";
+import type { SessionStoreDouble } from "./storeDouble.ts";
 
 /** One opened subject: the lead rig, and the three stores 062 answers. */
 export interface ThreadRig extends LeadRig {
@@ -93,27 +102,26 @@ export const threadRigAccess = new Set(["Read", "Mutate"] as const);
  * deployment derives one: the subject is what an operation is audited to and
  * the principal is `oidcPrincipal` of the issuer and that subject.
  */
-export async function threadRigMember(
+export function threadRigMember(
   rig: ThreadRig,
   partition: Partition,
   label: string,
   access: ReadonlySet<
     "Read" | "Mutate" | "DispatchTicket" | "ProposeDispatch"
   > = threadRigAccess,
-): Promise<ThreadRigMember> {
-  const subject = `member-${label}-${randomUUID()}`;
+): ThreadRigMember {
+  const principal = oidcPrincipal(
+    threadRigIssuer,
+    `member-${label}-${randomUUID()}`,
+  );
   const member: ThreadRigMember = {
-    principal: oidcPrincipal(threadRigIssuer, subject),
-    authority: {
-      kind: asAuthorityKind("OidcUser"),
-      subject: asAuthoritySubject(subject),
-    },
+    principal,
+    authority: memberAuthority(principal),
   };
-  await rig.sessions.harness.membership.grant({
+  rig.sessions.harness.access.grant({
     partition,
     principal: member.principal,
     access,
-    authority: member.authority,
   });
   return member;
 }
@@ -137,34 +145,34 @@ export async function threadRigSiblingProject(
 }
 
 /** Grants a member the same access on a further project, under the same authority. */
-export async function threadRigMemberAlso(
+export function threadRigMemberAlso(
   rig: ThreadRig,
   partition: Partition,
   member: ThreadRigMember,
   access: ReadonlySet<
     "Read" | "Mutate" | "DispatchTicket" | "ProposeDispatch"
   > = threadRigAccess,
-): Promise<void> {
-  await rig.sessions.harness.membership.grant({
+): void {
+  rig.sessions.harness.access.grant({
     partition,
     principal: member.principal,
     access,
-    authority: member.authority,
   });
 }
 
-/** Withdraws a member's membership, which is what makes their thread ownerless. */
-export async function threadRigRevoke(
+/** Withdraws a member's access, which is what makes their thread ownerless. */
+export function threadRigRevoke(
   rig: ThreadRig,
   partition: Partition,
   member: ThreadRigMember,
-): Promise<void> {
-  const revoked = await rig.sessions.harness.membership.revoke({
-    partition,
-    principal: member.principal,
-  });
-  if (!revoked)
-    throw new Error("thread rig: there was no membership to withdraw");
+): void {
+  if (
+    !rig.sessions.harness.access.revoke({
+      partition,
+      principal: member.principal,
+    })
+  )
+    throw new Error("thread rig: there was no access to withdraw");
 }
 
 /** What a thread is opened with where a case is about neither the prompt nor the slot. */
@@ -216,5 +224,61 @@ export async function threadRigTicketPhase(
   await rig.sessions.harness.query(
     `SELECT append_project_change($1,$2,'Ticket',$3)`,
     [partition.tenant, partition.project, String(ticket)],
+  );
+}
+
+/**
+ * The app the thread routes are driven through, composed from the bundle the
+ * ROOT composes. It is here rather than in either suite because the two that
+ * drive it differ in one thing — which project access answers — and a second
+ * copy of the composition is a second place a port is added to.
+ */
+export function threadRigApp(input: {
+  readonly rig: ThreadRig;
+  readonly principal: Principal;
+  readonly access: ProjectAccess;
+  readonly store: SessionStoreDouble;
+}) {
+  const pool = input.rig.apiPool;
+  const leads = postgresLeadReads(pool);
+  const web = composeNativeWeb(
+    pool,
+    postgresHarnessKeying(),
+    input.access,
+    postgresExecutionBacklogGuard(pool),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      leads,
+      store: input.store,
+      refusals: postgresAgenticRefusalReads(pool),
+      history: leads,
+    },
+    {
+      threads: postgresThreads(pool, {
+        streamsMax: sessionStoreStreamsAnswered,
+      }),
+      sessions: threadSessionMint(),
+      seeding: postgresThreadSeeding(pool),
+      rows: postgresSessionStoreRows(pool),
+      store: input.store,
+      credentialSlot: threadRigSlot,
+    },
+  );
+  return createNativeHttpApp(
+    web,
+    {
+      authenticateBearer: () =>
+        Promise.resolve({
+          authenticated: "Bearer" as const,
+          bearer: { principal: input.principal },
+        }),
+    },
+    { ready: () => Promise.resolve(true) },
+    postgresInstallationAuthority(pool),
   );
 }

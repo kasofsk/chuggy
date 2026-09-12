@@ -86,6 +86,25 @@ export function credentialScrub(secrets) {
     );
 }
 
+/**
+ * The same scrub over a set of secrets that grows. A credential the plane mints
+ * after the run started is as much this pod's to hide as one its launcher
+ * mounted, and the evidence recorder, the diagnostics and the failure path all
+ * took the function before that mint — so what the one they hold delegates to is
+ * what a later secret replaces.
+ */
+export function credentialScrubbing(secrets) {
+  const held = [...secrets];
+  let scrubbing = credentialScrub(held);
+  return {
+    scrub: (text) => scrubbing(text),
+    keepSecret: (secret) => {
+      held.push(secret);
+      scrubbing = credentialScrub(held);
+    },
+  };
+}
+
 function digestOf(value) {
   return createHash("sha256").update(value).digest("hex");
 }

@@ -10,11 +10,12 @@ import {
   continuationFunction,
   finalizerRole,
   notificationPublishFunction,
-  projectAuthorizationFunction,
   projectChangeAppendFunction,
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
   repositoryBindingReadFunction,
+  repositoryBindingListAllFunction,
+  repositoryBindingListFunction,
   repositoryBindingWriteFunction,
   schedulerRole,
   selectorReviewRole,
@@ -83,9 +84,76 @@ test("every runtime role may read only the migration ledger contract", async () 
   }
 });
 
-test("runtime roles cannot bind a repository or record a bind operation", async () => {
+test("no runtime role but the API reads a project's bindings through the door", async () => {
+  for (const role of [
+    ticketServiceRole,
+    selectorServiceRole,
+    schedulerRole,
+    finalizerRole,
+    workerPlaneRole,
+    configurationImporterRole,
+  ])
+    assert.match(
+      (await harness.attemptAs(
+        role,
+        `SELECT repository FROM ${repositoryBindingListFunction}('tenant','project',NULL)`,
+      )) ?? "",
+      postgresHarnessDenial(repositoryBindingListFunction),
+      role,
+    );
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      `SELECT repository FROM ${repositoryBindingListFunction}('tenant','project',NULL)`,
+    ),
+    undefined,
+    "the role whose route answers the listing still holds the door",
+  );
+});
+
+/**
+ * 088's listing crosses partitions where 089's does not, so it is held apart
+ * from every role but the one whose job is every partition's. The API is
+ * refused it by name: an API caller is always asking on behalf of one project,
+ * and it already holds the per-project door that answers that question.
+ */
+test("only the importer lists every binding there is", async () => {
+  const listing = `SELECT tenant,project,repository FROM ${repositoryBindingListAllFunction}(NULL)`;
+  assert.equal(
+    await harness.attemptAs(configurationImporterRole, listing),
+    undefined,
+    "the role that imports for every partition holds the door",
+  );
   for (const role of [
     apiRole,
+    ticketServiceRole,
+    selectorServiceRole,
+    schedulerRole,
+    finalizerRole,
+    workerPlaneRole,
+  ])
+    assert.match(
+      (await harness.attemptAs(role, listing)) ?? "",
+      postgresHarnessDenial(repositoryBindingListAllFunction),
+      role,
+    );
+});
+
+test("the importer lists bindings and still cannot read the relation behind them", async () => {
+  for (const statement of [
+    "SELECT * FROM project_repository",
+    "INSERT INTO project_repository DEFAULT VALUES",
+    "UPDATE project_repository SET repository=repository",
+  ])
+    assert.match(
+      (await harness.attemptAs(configurationImporterRole, statement)) ?? "",
+      postgresHarnessDenial("project_repository"),
+      statement,
+    );
+});
+
+test("no runtime role but the API binds a repository, and none records one", async () => {
+  for (const role of [
     ticketServiceRole,
     selectorServiceRole,
     schedulerRole,
@@ -112,6 +180,34 @@ test("runtime roles cannot bind a repository or record a bind operation", async 
         role,
         "SELECT * FROM project_repository_bind_operation",
       )) ?? "",
+      postgresHarnessDenial("project_repository_bind_operation"),
+    );
+  }
+});
+
+/**
+ * 089 gave the API the bind door, which is what its route drives. The door is
+ * still the only way in: the operation ledger behind it stays unreadable and
+ * unwritable to this role, so a bind identity cannot be spent twice by any path
+ * but the one that decides the outcome.
+ */
+test("the API drives the bind door and still cannot reach the rows behind it", async () => {
+  const raised =
+    (await harness.attemptAs(
+      apiRole,
+      `SELECT ${repositoryBindingWriteFunction}('tenant','project','new','epoch','operation','kind','subject')`,
+    )) ?? "";
+  assert.doesNotMatch(
+    raised,
+    postgresHarnessDenial(repositoryBindingWriteFunction),
+  );
+  assert.match(raised, /repository binding project is absent/u);
+  for (const statement of [
+    "INSERT INTO project_repository_bind_operation DEFAULT VALUES",
+    "SELECT * FROM project_repository_bind_operation",
+  ]) {
+    assert.match(
+      (await harness.attemptAs(apiRole, statement)) ?? "",
       postgresHarnessDenial("project_repository_bind_operation"),
     );
   }
@@ -275,25 +371,6 @@ test("a well-formed completion is refused whatever authority it claims", async (
   );
 });
 
-test("no membership may be granted the authority a boundary submits under", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "privilege-boundary-membership",
-  );
-  for (const kind of ["ExecutionScheduler", "Finalizer"]) {
-    await assert.rejects(
-      harness.query(
-        `INSERT INTO project_membership
-           (principal,tenant,project,authority_kind,authority_subject,
-            may_read,may_mutate,may_dispatch,may_propose)
-         VALUES ($1,$2,$3,$4,'subject',true,true,false,false)`,
-        [`principal-${kind}`, partition.tenant, partition.project, kind],
-      ),
-      /project_membership_grants_no_boundary_authority/,
-    );
-  }
-});
-
 test("the API cannot append history or create focused work", async () => {
   for (const relation of [
     "journal_entry",
@@ -355,6 +432,28 @@ test("the API reads one repository binding only through its boundary", async () 
   );
 });
 
+/**
+ * The worker plane holds a session to its project's own bindings before it
+ * mints anything for the repository the session named, so it reads the binding
+ * through the same door every other role does and holds nothing on the table.
+ */
+test("the worker plane reads one repository binding only through its boundary", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      workerPlaneRole,
+      `SELECT * FROM ${repositoryBindingReadFunction}('tenant','project',NULL)`,
+    ),
+    undefined,
+  );
+  assert.match(
+    (await harness.attemptAs(
+      workerPlaneRole,
+      "SELECT * FROM project_repository",
+    )) ?? "",
+    postgresHarnessDenial("project_repository"),
+  );
+});
+
 test("the ticket service reads one repository binding only through its boundary", async () => {
   assert.equal(
     await harness.attemptAs(
@@ -370,6 +469,35 @@ test("the ticket service reads one repository binding only through its boundary"
     )) ?? "",
     postgresHarnessDenial("project_repository"),
   );
+});
+
+/**
+ * A release reads the repository its configuration was imported from inside
+ * the decision transaction, so the writer's own role reads the provenance
+ * table directly. Writing one is still the import function's alone: a writer
+ * that could would be saying a configuration came from a repository nobody
+ * imported it from.
+ */
+test("the ticket service reads configuration provenance and writes none", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      ticketServiceRole,
+      "SELECT repository FROM repository_configuration_provenance",
+    ),
+    undefined,
+  );
+  for (const statement of [
+    "INSERT INTO repository_configuration_provenance DEFAULT VALUES",
+    "UPDATE repository_configuration_provenance SET name='changed'",
+    "DELETE FROM repository_configuration_provenance",
+  ]) {
+    const refusal = await harness.attemptAs(ticketServiceRole, statement);
+    assert.match(
+      refusal ?? "",
+      postgresHarnessDenial("repository_configuration_provenance"),
+      statement,
+    );
+  }
 });
 
 test("runtime roles cannot write notification rows directly", async () => {
@@ -534,25 +662,6 @@ test("the API read credential cannot inspect private operation columns", async (
     await harness.attemptAs(
       apiRole,
       "SELECT ticket,phase,seq FROM ticket_projection LIMIT 1",
-    ),
-    undefined,
-  );
-});
-
-test("the API can resolve access but cannot enumerate or change memberships", async () => {
-  for (const statement of [
-    "SELECT * FROM project_membership",
-    "INSERT INTO project_membership DEFAULT VALUES",
-    "UPDATE project_membership SET may_read=true",
-    "DELETE FROM project_membership",
-  ]) {
-    const refusal = await harness.attemptAs(apiRole, statement);
-    assert.match(refusal ?? "", postgresHarnessDenial("project_membership"));
-  }
-  assert.equal(
-    await harness.attemptAs(
-      apiRole,
-      `SELECT * FROM ${projectAuthorizationFunction}('principal','tenant','project','Read')`,
     ),
     undefined,
   );

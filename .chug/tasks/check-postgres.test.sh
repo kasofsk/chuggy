@@ -10,7 +10,7 @@
 # THE CASES SUPPLY THEIR OWN SERVER URL AND THEIR FIXTURE SUITES IGNORE IT.
 # What is under test here is the gate's sequencing and its verdict, not the
 # adapter — the adapter is tested against a real server by the gate itself. So
-# the URL they pass names a socket `_socket.sh` opens, which answers the gate's
+# the URL they pass names a socket `_gate-fixture.sh` opens, which answers the gate's
 # reachability probe and nothing else: a fixture that needed a database to say
 # anything about a script would leave a machine without one unable to check the
 # script either.
@@ -42,35 +42,12 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 SUT="$HERE/check-postgres.sh"
 R="$WORK/repo"
 
-. "$HERE/_socket.sh"
+. "$HERE/_gate-fixture.sh"
 
 fixture() { # a throwaway repo with a test/postgres directory
 	fresh_repo "$R"
 	mkdir -p "$R/test/postgres"
-	mkdir -p "$R/.chug/tasks"
-	export CHUG_PG_HELPER_LOG="$WORK/.helper"
-	: >"$CHUG_PG_HELPER_LOG"
-	cat >"$R/.chug/tasks/postgres-databases.ts" <<'TS'
-import { appendFileSync } from "node:fs";
-const [command, , ...databases] = process.argv.slice(2);
-appendFileSync(process.env.CHUG_PG_HELPER_LOG, `${command} ${databases.join(" ")}\n`);
-if (process.env.CHUG_PG_HELPER_FAIL === command) process.exitCode = 1;
-TS
-}
-
-passing_suite() { # <path>
-	cat > "$1" <<'TS'
-import { test } from "node:test";
-test("a fixture case that needs no server", () => undefined);
-TS
-}
-
-failing_suite() { # <path>
-	cat > "$1" <<'TS'
-import assert from "node:assert/strict";
-import { test } from "node:test";
-test("a fixture case that fails on purpose", () => assert.fail("as designed"));
-TS
+	database_helper_double "$R"
 }
 
 blocking_suite() { # <path>
@@ -80,14 +57,6 @@ test("a fixture case that waits to be interrupted", async () => {
   await new Promise((resolve) => setTimeout(resolve, 30_000));
 });
 TS
-}
-
-run_gate() { # <dir> [env=value...]
-	OUT="$WORK/.out"
-	set +e
-	(cd "$1" && shift && env "$@" "$SUT") >"$OUT" 2>&1
-	RC=$?
-	set -e
 }
 
 suite_moves() { # <worker> — that worker's per-suite clones and drops, in order

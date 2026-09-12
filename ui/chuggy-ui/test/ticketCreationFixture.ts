@@ -84,9 +84,10 @@ export const creationDraft: DraftResponse = {
 
 export function creationForm(
   over: Partial<TicketCreationForm> = {},
+  repositories: readonly string[] = [],
 ): TicketCreationForm {
   return {
-    ...creationFormFrom(creationInitialization),
+    ...creationFormFrom(creationInitialization, repositories),
     intent: "ship it",
     ...over,
   };

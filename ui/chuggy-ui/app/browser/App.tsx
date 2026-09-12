@@ -4,6 +4,10 @@
  * A console with no readable configuration says so rather than showing a blank
  * page, because a mounted `/config.json` is the one thing a deployment has to
  * get right and a blank page names nothing.
+ *
+ * The sign-in names the page it was pressed on, because the issuer redirects to
+ * the one address this client is registered with: a page reached with a query
+ * it needs — the forge's setup return — would otherwise come back without it.
  */
 
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -12,6 +16,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import { consoleConfigurationPath } from "../core/configuration.ts";
+import { currentPath } from "./ports.ts";
 import { consoleRouter } from "./routes.tsx";
 import {
   useSessionHolder,
@@ -65,7 +70,7 @@ export function App(props: { readonly queryClient: QueryClient }): ReactNode {
           <Button
             variant="primary"
             onClick={() => {
-              void holder.signIn();
+              void holder.signIn(currentPath());
             }}
           >
             sign in

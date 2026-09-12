@@ -18,6 +18,7 @@ import type {
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
 import type { ConversationStanding } from "./conversation.ts";
+import type { ForgeAppStanding } from "./forgeInstallation.ts";
 import { leadDispatchLanded } from "./leadTranscript.ts";
 import type { AgenticRefusalStanding, LeadDispatch } from "./leadTranscript.ts";
 import type { CycleStanding, SetVerdict, StageRow } from "./ticketLedger.ts";
@@ -110,6 +111,16 @@ export function sessionStateTone(state: SessionState): Tone {
       return "live";
     case "Closed":
       return "retired";
+  }
+}
+
+/** Whether one of this deployment's apps is installed on an account, or is not. */
+export function forgeAppStandingTone(standing: ForgeAppStanding): Tone {
+  switch (standing) {
+    case "Installed":
+      return "pass";
+    case "Missing":
+      return "parked";
   }
 }
 

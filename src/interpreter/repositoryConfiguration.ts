@@ -21,6 +21,7 @@ import {
 } from "./authoring.ts";
 import type {
   GitObjectId,
+  GitRefName,
   RepositoryBinding,
   RepositoryId,
 } from "./finalizer.ts";
@@ -75,6 +76,33 @@ export interface RepositoryConfigurationSnapshotPort {
   snapshot(
     request: RepositoryConfigurationSnapshotRequest,
   ): Promise<RepositoryConfigurationSnapshotRead>;
+}
+
+/**
+ * What reading where a repository's own HEAD points came to. `Absent` is a
+ * repository holding no commit under it, which is what a repository created and
+ * not yet seeded is, and is not an outage: there is nothing there to read at
+ * this commit or any other.
+ */
+export type RepositoryDefaultBranchRead =
+  | {
+      readonly read: "Branch";
+      readonly branch: GitRefName;
+      readonly commit: GitObjectId;
+    }
+  | { readonly read: "Absent" }
+  | { readonly read: "Unavailable" };
+
+/**
+ * Where a repository's own HEAD points, asked of the remote rather than
+ * remembered. It is what a caller holding no ticket to take a commit from
+ * imports at, and a binding that named its own branch would be a second place
+ * the answer could be stale.
+ */
+export interface RepositoryDefaultBranchPort {
+  defaultBranch(
+    repository: RepositoryBinding,
+  ): Promise<RepositoryDefaultBranchRead>;
 }
 
 export interface RepositoryConfigurationDeclaration {
@@ -168,7 +196,7 @@ export type RepositoryConfigurationImportOutcome =
     }
   | { readonly result: "IdentityConflict" }
   | { readonly result: "StaleBinding" }
-  | { readonly result: "Imported" };
+  | { readonly result: "Imported"; readonly declarations: number };
 
 /** Imports the declarations at one exact repository commit under an already-resolved authority. */
 export async function importRepositoryConfigurations(input: {
@@ -210,7 +238,10 @@ export async function importRepositoryConfigurations(input: {
       });
       switch (imported.imported) {
         case "Imported":
-          return { result: "Imported" };
+          return {
+            result: "Imported",
+            declarations: readiness.declarations.length,
+          };
         case "IdentityConflict":
           return { result: "IdentityConflict" };
         case "StaleBinding":
@@ -251,6 +282,224 @@ export async function importRepositoryConfigurationPartitions(input: {
     });
   }
   return imports;
+}
+
+/**
+ * The most bindings one importer run takes, and the ceiling the door it reads
+ * them through enforces. A run that filled it imported a prefix of the estate
+ * and says so, rather than reading an estate of unbounded size into one pass.
+ */
+export const repositoryBindingsPerImportMax = 1_000;
+
+/** One binding a listing answered with: which project binds which repository, and since when. */
+export interface RepositoryBindingListed {
+  readonly partition: Partition;
+  readonly repository: RepositoryId;
+  readonly boundAt: string;
+}
+
+/**
+ * Every binding there is, oldest first and bounded. It crosses partitions
+ * because its only caller has no caller of its own: the importer's job is every
+ * project's declarations, so a listing that took a partition would need it to
+ * already know the answer it is asking for.
+ */
+export interface RepositoryBindingListing {
+  bindings(max: number): Promise<readonly RepositoryBindingListed[]>;
+}
+
+/** Why one bound repository was passed over rather than imported or failed. */
+export type BoundRepositoryImportSkip =
+  | "Unbound"
+  | "RepositoryEmpty"
+  | "CommitAbsent"
+  | "ConfigurationDirectoryAbsent";
+
+/**
+ * Why one bound repository could not be imported. Every term is a variant but a
+ * refused declaration's `path`, which is the tree path `ls-tree` answered and is
+ * the one value here a forge supplied.
+ */
+export type BoundRepositoryImportFailure =
+  | { readonly failure: "HeadUnavailable" }
+  | { readonly failure: "Raised" }
+  | {
+      readonly failure: "Import";
+      readonly outcome: RepositoryConfigurationImportOutcome;
+    };
+
+/**
+ * What one bound repository came to. A skip is not a failure: a repository
+ * holding no commit, or holding no configuration directory at its head, is a
+ * repository this run has nothing to do with, and the bootstrap that seeds one
+ * belongs to the bind and happens once.
+ */
+export type BoundRepositoryImportResult =
+  | {
+      readonly result: "Imported";
+      readonly commit: GitObjectId;
+      readonly declarations: number;
+    }
+  | { readonly result: "Skipped"; readonly why: BoundRepositoryImportSkip }
+  | {
+      readonly result: "Failed";
+      readonly failure: BoundRepositoryImportFailure;
+    };
+
+export interface BoundRepositoryImport {
+  readonly partition: Partition;
+  readonly repository: RepositoryId;
+  readonly result: BoundRepositoryImportResult;
+}
+
+export interface BoundRepositoryImportPorts extends RepositoryConfigurationImportPorts {
+  readonly listing: RepositoryBindingListing;
+  readonly heads: RepositoryDefaultBranchPort;
+}
+
+/** One import's outcome in the terms a run over every binding reports. */
+function boundRepositoryImportResult(
+  commit: GitObjectId,
+  outcome: RepositoryConfigurationImportOutcome,
+): BoundRepositoryImportResult {
+  if (outcome.result === "Imported")
+    return { result: "Imported", commit, declarations: outcome.declarations };
+  if (outcome.result === "SnapshotAbsent")
+    return {
+      result: "Skipped",
+      why:
+        outcome.absent === "Commit"
+          ? "CommitAbsent"
+          : "ConfigurationDirectoryAbsent",
+    };
+  return { result: "Failed", failure: { failure: "Import", outcome } };
+}
+
+/**
+ * One bound repository, imported at whatever its own default branch points at
+ * now. A port that raised is this binding's failure and not the run's, and
+ * carries nothing of what it raised with.
+ */
+async function importBoundRepository(
+  bound: RepositoryBindingListed,
+  authority: Authority,
+  ports: BoundRepositoryImportPorts,
+): Promise<BoundRepositoryImportResult> {
+  try {
+    return await importBoundRepositoryAttempt(bound, authority, ports);
+  } catch {
+    return { result: "Failed", failure: { failure: "Raised" } };
+  }
+}
+
+/** The ports one binding is imported through, each of which may raise. */
+async function importBoundRepositoryAttempt(
+  bound: RepositoryBindingListed,
+  authority: Authority,
+  ports: BoundRepositoryImportPorts,
+): Promise<BoundRepositoryImportResult> {
+  const binding = await ports.bindings.binding(
+    bound.partition,
+    bound.repository,
+  );
+  if (binding === undefined) return { result: "Skipped", why: "Unbound" };
+  const head = await ports.heads.defaultBranch(binding);
+  switch (head.read) {
+    case "Absent":
+      return { result: "Skipped", why: "RepositoryEmpty" };
+    case "Unavailable":
+      return { result: "Failed", failure: { failure: "HeadUnavailable" } };
+    case "Branch":
+      return boundRepositoryImportResult(
+        head.commit,
+        await importRepositoryConfigurations({
+          partition: bound.partition,
+          repository: bound.repository,
+          commit: head.commit,
+          authority,
+          ports,
+        }),
+      );
+    default:
+      return assertNever(head);
+  }
+}
+
+/**
+ * What one run over the estate came to. `truncated` is a listing that came back
+ * at the bound, which means the run imported a prefix and the bindings past it
+ * were never attempted.
+ */
+export interface BoundRepositoryImportRun {
+  readonly imports: readonly BoundRepositoryImport[];
+  readonly truncated: boolean;
+}
+
+/**
+ * Imports every binding in the estate at its own default-branch head, one
+ * binding's outcome never deciding another's: a forge that is down for one
+ * owner, or a repository whose declarations are refused, leaves every other
+ * binding imported and is reported on its own line.
+ */
+export async function importBoundRepositoryConfigurations(input: {
+  readonly authority: Authority;
+  readonly ports: BoundRepositoryImportPorts;
+  readonly bindingsMax?: number;
+}): Promise<BoundRepositoryImportRun> {
+  const bindingsMax = input.bindingsMax ?? repositoryBindingsPerImportMax;
+  const listed = await input.ports.listing.bindings(bindingsMax);
+  const imports: BoundRepositoryImport[] = [];
+  for (const bound of listed)
+    imports.push({
+      partition: bound.partition,
+      repository: bound.repository,
+      result: await importBoundRepository(bound, input.authority, input.ports),
+    });
+  return { imports, truncated: listed.length >= bindingsMax };
+}
+
+/**
+ * One binding's outcome as a line. Every term is a variant of the run's own
+ * types but a refused declaration's path, which `JSON.stringify` escapes.
+ */
+export function boundRepositoryImportLine(
+  bound: BoundRepositoryImport,
+): string {
+  const where = `${bound.partition.tenant}/${bound.partition.project} ${bound.repository}`;
+  switch (bound.result.result) {
+    case "Imported":
+      return `${where} imported at ${bound.result.commit}`;
+    case "Skipped":
+      return `${where} skipped: ${bound.result.why}`;
+    case "Failed":
+      return `${where} failed: ${JSON.stringify(bound.result.failure)}`;
+    default:
+      return assertNever(bound.result);
+  }
+}
+
+/**
+ * Why a run may not leave zero: a binding it could not import, or a listing it
+ * filled, which leaves every binding past the bound unimported.
+ */
+export function boundRepositoryImportRefusal(
+  run: BoundRepositoryImportRun,
+  bindingsMax: number,
+): string | undefined {
+  const failed = run.imports.filter(
+    (bound) => bound.result.result === "Failed",
+  ).length;
+  const refusals = [
+    ...(failed === 0
+      ? []
+      : [`${String(failed)} of ${String(run.imports.length)} bindings`]),
+    ...(run.truncated
+      ? [
+          `the listing filled its bound of ${String(bindingsMax)} bindings and the rest of the estate is unimported`,
+        ]
+      : []),
+  ];
+  return refusals.length === 0 ? undefined : refusals.join("; ");
 }
 
 function repositoryConfigurationRevision(

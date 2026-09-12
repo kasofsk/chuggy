@@ -779,8 +779,8 @@ test("a message body outside the schema is refused at the door", async () => {
  * The map carries the code it expects, because a set comparison against the
  * roster stays green for two arms that swapped codes while each arm is a
  * different thing for a member to do about it — someone else's thread is theirs
- * to write, a closed one is reopened, an ownerless one cannot be, and a full one
- * waits — and the set comparison stays beside it so no member of the roster goes
+ * to write, a closed one is reopened, and a full one waits — and the set
+ * comparison stays beside it so no member of the roster goes
  * unreached either, `NotFound` excepted as the general one every read answers
  * with.
  */
@@ -789,7 +789,6 @@ test("every refusal the door can meet reaches the wire as its own status", async
     ["NotYourThread", 403, "NotYourThread", undefined],
     ["TooLarge", 400, "ThreadTurnTooLarge", undefined],
     ["Closed", 409, "ThreadClosed", undefined],
-    ["Orphaned", 409, "ThreadOrphaned", undefined],
     ["NotFound", 404, "NotFound", undefined],
     ["Backlogged", 429, "ThreadBacklogged", String(threadBacklogRetrySeconds)],
   ] as const;

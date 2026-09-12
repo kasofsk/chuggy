@@ -63,6 +63,7 @@ import {
   rateLimitSightings,
   rateLimited,
 } from "./rateLimit.mjs";
+import { planeCredential, sessionCredentialPath } from "./planeCredential.mjs";
 import { workerRepositories } from "./repository.mjs";
 import { credentialScrub } from "./runEvidence.mjs";
 import { sessionCheckout } from "./sessionCheckout.mjs";
@@ -752,17 +753,64 @@ async function sessionCredentials(environment, read, slot) {
  * attempt the scheduler reaped while git ran would look like a pod that never
  * started.
  *
- * The site's repository map is read only where the placement bound one: a site
- * running sessions against projects with no binding owes no map, and reading
- * the variable regardless would refuse those pods for a fact they never use.
+ * The site's repository map is optional: a minted credential reaches a
+ * repository at its own identity, so a site that mints names nothing here, and
+ * a site that mounts still does — the mounted arm refuses a repository the map
+ * leaves out exactly as before.
  */
 async function sessionTree(take, task, environment, credentialFiles, logging) {
   const workspace = environment.CHUG_WORKER_WORKSPACE ?? defaultWorkspace;
+  const named = environment.CHUG_WORKER_REPOSITORIES;
   const repositories =
-    task.repository === undefined
-      ? {}
-      : workerRepositories(required(environment, "CHUG_WORKER_REPOSITORIES"));
+    named === undefined || named.length === 0 ? {} : workerRepositories(named);
   return take(task, repositories, credentialFiles, workspace, logging);
+}
+
+/**
+ * The credential the plane mints for the repository this session was placed
+ * against, or nothing where the session has no repository or the plane mints
+ * none for it — a mirror the project does not bind among them, which is the
+ * mounted credential's case exactly as before.
+ */
+async function sessionMintedCredential(task, bearer, request, write) {
+  if (task.repository === undefined) return undefined;
+  return planeCredential({
+    task,
+    bearer,
+    path: sessionCredentialPath,
+    repository: task.repository.reference,
+    request,
+    ...(write === undefined ? {} : { write }),
+  });
+}
+
+/**
+ * Every secret this session holds: the runtime token behind the slot its
+ * launcher mounted, the credential the plane minted for the repository it was
+ * placed against, and the scrub covering both along with its own bearer.
+ *
+ * THE SCRUB IS BUILT HERE BECAUSE THE MINT IS THE LAST SECRET TO ARRIVE. One
+ * built before it would leave the minted password in whatever this pod printed
+ * or answered, and everything downstream takes the scrub once.
+ */
+async function sessionHeld(context, environment, read, write, facts) {
+  const { task, bearer, request } = context;
+  const { files, token } = await sessionCredentials(
+    environment,
+    read,
+    facts.credentialSlot,
+  );
+  const minted = await sessionMintedCredential(task, bearer, request, write);
+  return {
+    credentialFiles: files,
+    token,
+    minted,
+    scrub: credentialScrub([
+      token,
+      bearer,
+      ...(minted === undefined ? [] : [minted.password]),
+    ]),
+  };
 }
 
 /**
@@ -885,6 +933,7 @@ export async function sessionMain(services = {}) {
   const {
     environment = process.env,
     read = (path) => readFile(path, "utf8"),
+    write,
     request = sessionRequest,
     now = Date.now,
     pause = unreffed,
@@ -910,12 +959,9 @@ export async function sessionMain(services = {}) {
       measure: sessionMeasure(),
     };
     const facts = await sessionFacts(context);
-    const { files: credentialFiles, token } = await sessionCredentials(
-      environment,
-      read,
-      facts.credentialSlot,
-    );
-    scrub = credentialScrub([token, bearer]);
+    const held = await sessionHeld(context, environment, read, write, facts);
+    const { credentialFiles, token, minted } = held;
+    scrub = held.scrub;
     context.scrub = scrub;
     const workspace = environment.CHUG_WORKER_WORKSPACE ?? defaultWorkspace;
     await ensureDirectory(sessionConfigDirectory(environment, workspace));
@@ -925,7 +971,11 @@ export async function sessionMain(services = {}) {
       task,
       environment,
       credentialFiles,
-      { log: warn, scrub },
+      {
+        log: warn,
+        scrub,
+        ...(minted === undefined ? {} : { minted: minted.environment }),
+      },
     );
     return await sessionRun(context, facts, {
       environment,

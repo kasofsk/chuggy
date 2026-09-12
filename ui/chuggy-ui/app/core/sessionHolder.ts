@@ -72,14 +72,25 @@ export interface SessionSnapshot {
 }
 
 export type SessionCallback =
-  | { readonly result: "SignedIn" }
+  | {
+      readonly result: "SignedIn";
+      /** Where the sign-in was started from, where it was started from a page
+       * that asked to be returned to. */
+      readonly returnPath: string | undefined;
+    }
   | { readonly result: "Denied"; readonly reason: string }
   | { readonly result: "None" };
+
+/** Where a completed callback leaves the tab: the page the sign-in was started
+ * from, and the root where it named none or was refused. */
+export function sessionCallbackPath(callback: SessionCallback): string {
+  return callback.result === "SignedIn" ? (callback.returnPath ?? "/") : "/";
+}
 
 export interface SessionHolder {
   readonly load: () => Promise<void>;
   readonly completeCallback: (search: string) => Promise<SessionCallback>;
-  readonly signIn: () => Promise<void>;
+  readonly signIn: (returnPath?: string) => Promise<void>;
   readonly signOut: () => Promise<void>;
   readonly bearer: () => Promise<string | undefined>;
   readonly refresh: () => Promise<boolean>;
@@ -234,7 +245,17 @@ async function sessionBearer(inner: SessionInner): Promise<string | undefined> {
     : undefined;
 }
 
-async function sessionSignIn(inner: SessionInner): Promise<void> {
+/**
+ * A sign-in, remembering where it was started from when the caller names a
+ * path. The issuer redirects to the one address this client is registered
+ * with, so a page reached from elsewhere — the forge's own setup return, which
+ * carries a query the page needs — is come back to from the transaction rather
+ * than from the redirect.
+ */
+async function sessionSignIn(
+  inner: SessionInner,
+  returnPath: string | undefined,
+): Promise<void> {
   const { configuration, endpoints, ports } = inner;
   if (configuration === undefined || endpoints === undefined) return;
   const verifier = pkceVerifierFromBytes(
@@ -244,7 +265,11 @@ async function sessionSignIn(inner: SessionInner): Promise<void> {
   const challenge = await pkceChallengeFromVerifier(ports.digest, verifier);
   ports.transient.write(
     sessionTransactionKey,
-    JSON.stringify({ state, verifier }),
+    JSON.stringify({
+      state,
+      verifier,
+      ...(returnPath === undefined ? {} : { returnPath }),
+    }),
   );
   ports.redirect(
     authorizeUrl(configuration, endpoints, { state, verifier, challenge }),
@@ -254,6 +279,7 @@ async function sessionSignIn(inner: SessionInner): Promise<void> {
 interface SessionTransaction {
   readonly state: string;
   readonly verifier: string;
+  readonly returnPath: string | undefined;
 }
 
 /** Read once and removed, so a replayed callback finds nothing to match. */
@@ -266,10 +292,19 @@ function sessionTakeTransaction(
   try {
     const parsed: unknown = JSON.parse(stored);
     if (typeof parsed !== "object" || parsed === null) return undefined;
-    const fields = parsed as { state?: unknown; verifier?: unknown };
+    const fields = parsed as {
+      state?: unknown;
+      verifier?: unknown;
+      returnPath?: unknown;
+    };
     if (typeof fields.state !== "string" || typeof fields.verifier !== "string")
       return undefined;
-    return { state: fields.state, verifier: fields.verifier };
+    return {
+      state: fields.state,
+      verifier: fields.verifier,
+      returnPath:
+        typeof fields.returnPath === "string" ? fields.returnPath : undefined,
+    };
   } catch {
     return undefined;
   }
@@ -298,7 +333,7 @@ async function sessionCompleteCallback(
         }),
       ),
     );
-    return { result: "SignedIn" };
+    return { result: "SignedIn", returnPath: transaction.returnPath };
   } catch (failure: unknown) {
     return { result: "Denied", reason: sessionReason(failure) };
   }
@@ -357,7 +392,7 @@ export function createSessionHolder(ports: SessionHolderPorts): SessionHolder {
     load: () => sessionLoad(inner),
     completeCallback: (search: string) =>
       sessionCompleteCallback(inner, search),
-    signIn: () => sessionSignIn(inner),
+    signIn: (returnPath?: string) => sessionSignIn(inner, returnPath),
     signOut: () => sessionSignOut(inner),
     bearer: () => sessionBearer(inner),
     refresh: () => sessionRefresh(inner),

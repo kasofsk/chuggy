@@ -79,6 +79,12 @@ import { migration078 } from "./078-ticket-brief-title.ts";
 import { migration079 } from "./079-thread-rail.ts";
 import { migration080 } from "./080-bind-without-activating.ts";
 import { migration081 } from "./081-brief-repository.ts";
+import { migration083 } from "./083-access-is-a-relation.ts";
+import { migration084 } from "./084-forge-installations.ts";
+import { migration086 } from "./086-worker-plane-credentials.ts";
+import { migration087 } from "./087-ticket-service-provenance-read.ts";
+import { migration088 } from "./088-the-control-plane-mints.ts";
+import { migration089 } from "./089-onboarding-over-the-api.ts";
 import { migration082 } from "./082-binding-read-names-its-repository.ts";
 import type { Migration } from "../shared.ts";
 
@@ -166,4 +172,10 @@ export const migrations: readonly Migration[] = [
   migration080,
   migration081,
   migration082,
+  migration083,
+  migration084,
+  migration086,
+  migration087,
+  migration088,
+  migration089,
 ];
