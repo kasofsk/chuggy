@@ -29,7 +29,9 @@
  *
  * A TICKET THAT RUNS NO FINALIZER STORES NO LANDING, so `finalization_mode`
  * becomes nullable and the doors resolve nothing for one, refusing a caller
- * that named a landing anyway rather than keeping it.
+ * that named a landing anyway rather than keeping it. Every brief already
+ * stored for one is emptied of the landing the old door resolved for it,
+ * because the column is otherwise empty for two reasons and answers for one.
  */
 
 import { projectRepositoriesAnsweredMax } from "../../../../contract/http.ts";
@@ -157,13 +159,20 @@ const briefLanding = [
      ALTER COLUMN finalization_mode DROP DEFAULT,
      ADD CONSTRAINT draft_brief_finalization_target_needs_a_mode
        CHECK (finalization_target IS NULL OR finalization_mode IS NOT NULL)`,
+  `UPDATE draft_brief b SET finalization_mode=NULL,finalization_target=NULL
+     FROM draft d
+     JOIN draft_revision r USING (tenant,project,ticket,authoring_version)
+    WHERE d.tenant=b.tenant AND d.project=b.project AND d.ticket=b.ticket
+      AND ${authoredFinalizer("r.authoring")} = 'NoFinalizer'`,
 ];
 
-/** The finalizer a draft is authored to run, read out of the event the caller hands the door. */
-const authoredFinalizer = `in_authoring::jsonb->'value'->>'finalizer'`;
+/** The finalizer a draft is authored to run, read out of the release event that states it. */
+function authoredFinalizer(authoring: string): string {
+  return `${authoring}::jsonb->'value'->>'finalizer'`;
+}
 
 /** What a ticket that lands nothing is refused for naming a landing anyway. */
-const landsNothing = `IF ${authoredFinalizer} = 'NoFinalizer' THEN
+const landsNothing = `IF ${authoredFinalizer("in_authoring")} = 'NoFinalizer' THEN
          IF in_finalization_mode IS NOT NULL OR in_finalization_target IS NOT NULL THEN
            RAISE EXCEPTION 'a ticket with no finalizer lands nothing'
              USING ERRCODE='check_violation';
