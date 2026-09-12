@@ -40,8 +40,9 @@
  * WHERE THE WORK LANDS IS SAID APART FROM WHERE IT STARTS. `branch` is the
  * branch the work happens on and the ref its executions are observed at; a
  * finalization's `target` is the reference the finalizer promotes onto. A
- * brief naming no finalization means `briefFinalizationDefault` and lands on
- * `branch`, so a ticket that named only a branch works and lands there.
+ * brief naming no finalization takes the landing its repository is bound
+ * under, and `briefFinalizationDefault` where it names no repository either,
+ * so a ticket that named only a branch works and lands there.
  *
  * A MODE IS A VARIANT AND NOT A FLAG BESIDE AN OPTIONAL FIELD. A push may land
  * where the work happened and so may leave its target unsaid; a pull request
@@ -111,7 +112,7 @@ export interface BriefPullRequestFinalization {
 export type BriefFinalization =
   BriefPushFinalization | BriefPullRequestFinalization;
 
-/** What a brief naming no finalization says, and what a row saying it reads back as none. */
+/** What a brief naming neither a finalization nor a repository to take one from lands by. */
 export const briefFinalizationDefault: BriefFinalization = { mode: "Push" };
 
 /** One ticket's brief, as everything but the wire holds it. */

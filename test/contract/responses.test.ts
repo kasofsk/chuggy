@@ -803,31 +803,26 @@ const readyConfiguration = {
   workInstructionsCount: 2,
   reviewInstructionsCount: 1,
   provenance: { source: "Authored" },
-} as const;
-
-/** The same summary as the wire carries it, which the encoder alone assembles. */
-const readyConfigurationBody = {
-  ...readyConfiguration,
   finalization: { approvalRequired: true, handoff: "DirectCommit" },
   evaluationStagesCount: 2,
-};
+} as const;
 
 test("a ready configuration names its finalization facts and its evaluation stages", () => {
   const summary = configurationsResponseSchema.parse({
-    configurations: [readyConfigurationBody],
+    configurations: [readyConfiguration],
   }).configurations[0];
   assert.deepEqual(summary?.readiness === "Ready" ? summary : undefined, {
-    ...readyConfigurationBody,
+    ...readyConfiguration,
   });
   for (const configuration of [
-    { ...readyConfigurationBody, finalization: undefined },
-    { ...readyConfigurationBody, evaluationStagesCount: undefined },
+    { ...readyConfiguration, finalization: undefined },
+    { ...readyConfiguration, evaluationStagesCount: undefined },
     {
-      ...readyConfigurationBody,
+      ...readyConfiguration,
       finalization: { approvalRequired: true, handoff: "PullRequest" },
     },
     {
-      ...readyConfigurationBody,
+      ...readyConfiguration,
       finalization: { handoff: "DirectCommit" },
     },
   ])
@@ -1498,11 +1493,13 @@ test("a binding and a project's bindings name the repository and its moment", ()
       projectRepositoryBindResponse(partition, {
         result: "Bound",
         repository: onboardingRepository,
+        landing: { mode: "Push" },
         configurations: { result: "Imported", count: 2 },
       }).body,
     ),
     {
       repository: onboardingRepository,
+      landing: { mode: "Push" },
       configurations: { result: "Imported", count: 2 },
     },
   );
@@ -1518,7 +1515,13 @@ test("a binding and a project's bindings name the repository and its moment", ()
   const bound = projectRepositoriesResponseSchema.parse(
     projectRepositoriesResponse({
       result: "Repositories",
-      repositories: [{ repository: onboardingRepository, boundAt: instant }],
+      repositories: [
+        {
+          repository: onboardingRepository,
+          boundAt: instant,
+          landing: { mode: "Push" },
+        },
+      ],
     }).body,
   );
   assert.deepEqual(bound.repositories[0], {
@@ -1606,6 +1609,7 @@ test("every configuration outcome a bind reports parses as the schema answers it
         projectRepositoryBindResponse(partition, {
           result: "Bound",
           repository: onboardingRepository,
+          landing: { mode: "Push" },
           configurations,
         }).body,
       ).configurations,
@@ -1623,6 +1627,7 @@ function onboardingCreated(
   return {
     result: "Created",
     repository: onboardingRepository,
+    landing: { mode: "Push" },
     created: {
       account: asForgeAccount("kasofsk"),
       name: asForgeRepositoryName("engine"),

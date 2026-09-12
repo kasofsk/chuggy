@@ -19,7 +19,6 @@ import {
   asBriefIntent,
   asBriefLinkUrl,
   asBriefTitle,
-  briefFinalizationDefault,
   type BriefFinalization,
   type DraftBrief,
   type ReleaseBrief,
@@ -46,19 +45,15 @@ export interface DraftBriefRow extends DraftBriefFinalizationRow {
 }
 
 /**
- * The finalization a row states, or none where it states what a brief naming
- * none means — which is what leaves a draft written before the columns existed
- * reading back as it always did.
+ * The finalization a row states, or none where the row joined no brief at all.
+ * A stored landing always reads back: the door resolved the mode against the
+ * repository's own default when it wrote the row, so a target-less `Push` read
+ * as no landing would be a repository's default answered as a brief's silence.
  */
 export function draftBriefFinalizationOf(
   row: DraftBriefFinalizationRow,
 ): BriefFinalization | undefined {
   if (row.finalization_mode === null) return undefined;
-  if (
-    row.finalization_target === null &&
-    row.finalization_mode === briefFinalizationDefault.mode
-  )
-    return undefined;
   return asBriefFinalization({
     mode: row.finalization_mode,
     ...(row.finalization_target === null

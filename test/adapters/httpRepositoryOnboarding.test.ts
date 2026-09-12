@@ -68,6 +68,7 @@ import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import type {
   ProjectRepositoryBound,
+  ProjectRepositoryLandingStore,
   RepositoryBindingCommand,
   RepositoryBindingOutcome,
 } from "../../src/interpreter/repositoryBinding.ts";
@@ -192,6 +193,7 @@ interface OnboardingStore {
   recorded: ForgeInstallationRecorded;
   outcome: RepositoryBindingOutcome;
   resolved: CredentialResolved;
+  landingUnavailable: boolean;
 }
 
 function fixtureStore(): OnboardingStore {
@@ -201,6 +203,7 @@ function fixtureStore(): OnboardingStore {
     commands: [],
     recorded: "Recorded",
     outcome: "Bound",
+    landingUnavailable: false,
     resolved: {
       resolved: "Credential",
       credential: asRepositoryCredential("ghs-proof"),
@@ -358,10 +361,12 @@ function fixtureService(
           store.bound.push({
             repository: command.repository,
             boundAt: "2026-09-11T01:00:00Z",
+            landing: { mode: "Push" },
           });
         return Promise.resolve(store.outcome);
       },
     },
+    landing: fixtureLanding(store),
     ...(image === undefined
       ? {}
       : { configurations: fixtureServiceConfigurations(image) }),
@@ -371,6 +376,35 @@ function fixtureService(
         }
       : {}),
   });
+}
+
+/** The landing half, over the same rows the listing answers from. */
+function fixtureLanding(store: OnboardingStore): ProjectRepositoryLandingStore {
+  return {
+    landing: (_partition, repository) =>
+      Promise.resolve(store.bound.find((row) => row.repository === repository)),
+    setLanding: (command) => {
+      if (store.landingUnavailable)
+        return Promise.resolve({ outcome: "Unavailable" } as const);
+      const at = store.bound.findIndex(
+        (row) => row.repository === command.repository,
+      );
+      const standing = store.bound[at];
+      if (standing === undefined)
+        return Promise.resolve({ outcome: "NotBound" } as const);
+      if (
+        standing.landing.mode !== command.expected.mode &&
+        standing.landing.mode !== command.landing.mode
+      )
+        return Promise.resolve({
+          outcome: "LandingMoved",
+          binding: standing,
+        } as const);
+      const written = { ...standing, landing: command.landing };
+      store.bound[at] = written;
+      return Promise.resolve({ outcome: "Written", binding: written } as const);
+    },
+  };
 }
 
 /** One case: the server, what the forge was asked, and what the durable side holds. */
@@ -740,6 +774,7 @@ test("a bind is created at its own address and read back by the listing", async 
   );
   assert.deepEqual(served.json(), {
     repository,
+    landing: { mode: "Push" },
     configurations: { result: "Deferred", reason: "NotConfigured" },
   });
   const listed = await binding.app.inject({
@@ -874,6 +909,16 @@ const unauthenticatedRequests = [
       "idempotency-key": "bind-atlas-1",
     },
     payload: { repository },
+  },
+  {
+    method: "PUT" as const,
+    url: `${repositoriesRoot}/landing`,
+    headers: { "content-type": nativeHttpMediaType },
+    payload: {
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "PullRequest" },
+    },
   },
   {
     method: "POST" as const,
@@ -1012,7 +1057,7 @@ test("a repository is made, seeded, reserved and bound, and the answer locates i
     ],
   );
   assert.deepEqual(composed.store.bound, [
-    { repository, boundAt: "2026-09-11T01:00:00Z" },
+    { repository, boundAt: "2026-09-11T01:00:00Z", landing: { mode: "Push" } },
   ]);
 });
 
@@ -1157,4 +1202,151 @@ test("a body the creation schema does not name is refused", async (t) => {
   });
   assert.equal(served.statusCode, 400);
   assert.deepEqual(composed.recorder.calls, []);
+});
+
+/** The landing route, as the console sends a move of one repository's landing. */
+function landingRequest(body: Record<string, unknown>) {
+  return {
+    method: "PUT" as const,
+    url: `${repositoriesRoot}/landing`,
+    headers: versioned,
+    payload: body,
+  };
+}
+
+/** A project holding one binding, made through the bind route the console uses. */
+async function fixtureLanded(
+  t: TestContext,
+  granted: readonly ("Administer" | "Read")[] = ["Administer", "Read"],
+) {
+  const landed = fixtureCase(t, { granted, store: fixtureStore() });
+  assert.equal(
+    (
+      await landed.app.inject({
+        method: "POST",
+        url: repositoriesRoot,
+        headers: keyed,
+        payload: { repository },
+      })
+    ).statusCode,
+    201,
+  );
+  return landed;
+}
+
+test("moving where a repository lands answers the row and the listing agrees", async (t) => {
+  const landed = await fixtureLanded(t);
+  const served = await landed.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "PullRequest" },
+    }),
+  );
+  assert.equal(served.statusCode, 200);
+  assert.deepEqual(served.json(), {
+    repository: {
+      repository,
+      boundAt: "2026-09-11T01:00:00Z",
+      landing: { mode: "PullRequest" },
+    },
+  });
+  const listed = await landed.app.inject({
+    url: repositoriesRoot,
+    headers: authorized,
+  });
+  assert.deepEqual(listed.json(), {
+    repositories: [
+      {
+        repository,
+        boundAt: "2026-09-11T01:00:00Z",
+        landing: { mode: "PullRequest" },
+      },
+    ],
+  });
+});
+
+test("a landing that moved under the writer is a conflict carrying the row that stands", async (t) => {
+  const landed = await fixtureLanded(t);
+  await landed.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "PullRequest" },
+    }),
+  );
+  const served = await landed.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "Push" },
+    }),
+  );
+  assert.equal(served.statusCode, 409);
+  assert.equal(
+    served.json<HttpErrorEnvelope>().error.code,
+    "RepositoryLandingMoved",
+  );
+  assert.deepEqual(served.json<{ repository: unknown }>().repository, {
+    repository,
+    boundAt: "2026-09-11T01:00:00Z",
+    landing: { mode: "PullRequest" },
+  });
+});
+
+test("a repository this project does not bind has no landing to answer", async (t) => {
+  const landed = await fixtureLanded(t);
+  const served = await landed.app.inject(
+    landingRequest({
+      repository: "https://github.com/acme/unbound.git",
+      expected: { mode: "Push" },
+      landing: { mode: "PullRequest" },
+    }),
+  );
+  assert.equal(served.statusCode, 404);
+});
+
+test("a landing move without the project permit is not found and writes nothing", async (t) => {
+  const landed = await fixtureLanded(t, ["Administer", "Read"]);
+  const reader = fixtureCase(t, { granted: ["Read"], store: landed.store });
+  const served = await reader.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "PullRequest" },
+    }),
+  );
+  assert.equal(served.statusCode, 404);
+  assert.deepEqual(landed.store.bound[0]?.landing, { mode: "Push" });
+});
+
+test("a write the durable side could not complete is a wait and says how long", async (t) => {
+  const landed = await fixtureLanded(t);
+  landed.store.landingUnavailable = true;
+  const served = await landed.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "PullRequest" },
+    }),
+  );
+  assert.equal(served.statusCode, 503);
+  assert.equal(
+    served.json<HttpErrorEnvelope>().error.code,
+    "RepositoryLandingContended",
+  );
+  assert.equal(typeof served.headers["retry-after"], "string");
+});
+
+test("a landing no roster names is refused before the durable side is asked", async (t) => {
+  const landed = await fixtureLanded(t);
+  for (const body of [
+    { repository, expected: { mode: "Push" }, landing: { mode: "Merge" } },
+    { repository, landing: { mode: "Push" } },
+    { expected: { mode: "Push" }, landing: { mode: "Push" } },
+  ]) {
+    const served = await landed.app.inject(landingRequest(body));
+    assert.equal(served.statusCode, 400, JSON.stringify(body));
+  }
+  assert.deepEqual(landed.store.bound[0]?.landing, { mode: "Push" });
 });

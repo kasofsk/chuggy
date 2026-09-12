@@ -54,6 +54,7 @@ import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts"
 import {
   asBriefIntent,
   asDraftBrief,
+  briefFinalizationDefault,
   briefIntentLines,
   type DraftBrief,
 } from "../../src/interpreter/ticketBrief.ts";
@@ -1535,14 +1536,31 @@ test("release acceptance rejects a revision that was never retained", async () =
   assert.equal(await harness.discovery.next(fixture.partition), undefined);
 });
 
+/**
+ * What a brief reads back as. The door resolves the landing a brief left
+ * unsaid — against the repository it names, and against the tree's own default
+ * where it names none — and stores what it resolved, so every stored brief
+ * carries one whether or not the caller wrote it.
+ */
+function briefAsStored(brief: DraftBrief): DraftBrief {
+  return brief.finalization === undefined
+    ? { ...brief, finalization: briefFinalizationDefault }
+    : brief;
+}
+
 test("the brief is written with the draft, replaced with it, and read back beside it", async () => {
   const { partition, store, revision, repository, draft } =
     await draftFixture();
-  assert.deepEqual(draft.brief, postgresHarnessBriefIn(repository));
-  const later = asDraftBrief({
-    intent: "Serve it on the ticket too.\nAnd on the draft.",
-    links: ["https://example.test/one", "https://example.test/two"],
-  });
+  assert.deepEqual(
+    draft.brief,
+    briefAsStored(postgresHarnessBriefIn(repository)),
+  );
+  const later = briefAsStored(
+    asDraftBrief({
+      intent: "Serve it on the ticket too.\nAnd on the draft.",
+      links: ["https://example.test/one", "https://example.test/two"],
+    }),
+  );
   const revised = await store.reviseDraft({
     partition,
     authority,
@@ -1593,7 +1611,11 @@ test("a page of drafts answers each one's repository, undefined for a brief nami
 
 test("where a brief lands is written, replaced and read back apart from where it works", async () => {
   const { partition, store, revision, draft } = await draftFixture();
-  assert.equal(draft.brief?.finalization, undefined);
+  assert.deepEqual(
+    draft.brief?.finalization,
+    briefFinalizationDefault,
+    "a brief naming no landing was stored with the one its repository is bound under",
+  );
   const landing = asDraftBrief({
     intent: "Land it on the release branch.",
     links: [],
@@ -1633,12 +1655,12 @@ test("where a brief lands is written, replaced and read back apart from where it
   });
   assert.deepEqual(
     cleared.revised === "Revised" ? cleared.draft.brief : undefined,
-    postgresHarnessBrief,
+    briefAsStored(postgresHarnessBrief),
     "a revision naming no finalization lands the work where it happens again",
   );
   assert.deepEqual(
     await postgresTicketBrief(pool).brief(partition, draft.ticket),
-    postgresHarnessBrief,
+    briefAsStored(postgresHarnessBrief),
   );
 });
 
@@ -1653,7 +1675,7 @@ test("a draft is created with the check lines its brief appends", async () => {
     postgresHarnessConfiguration,
     appendingBrief,
   );
-  const appending = { ...appendingBrief, repository };
+  const appending = briefAsStored({ ...appendingBrief, repository });
   assert.deepEqual(draft.brief, appending);
   assert.deepEqual(
     await postgresTicketBrief(pool).brief(partition, draft.ticket),
@@ -1665,7 +1687,7 @@ test("a draft is created with the check lines its brief appends", async () => {
 test("the check lines a brief appends are written, ordered, replaced and read back", async () => {
   const { partition, store, revision, draft } = await draftFixture();
   assert.deepEqual(draft.brief?.checks, []);
-  const appending = appendingBrief;
+  const appending = briefAsStored(appendingBrief);
   const revised = await store.reviseDraft({
     partition,
     authority,
@@ -1705,7 +1727,7 @@ test("the check lines a brief appends are written, ordered, replaced and read ba
   );
   assert.deepEqual(
     await postgresTicketBrief(pool).brief(partition, draft.ticket),
-    postgresHarnessBrief,
+    briefAsStored(postgresHarnessBrief),
   );
 });
 
@@ -1811,7 +1833,10 @@ test("a released ticket's brief no longer moves, which is what lets a retry read
   await releaseFixtureDraft(fixture, "brief-freeze");
   const reader = postgresTicketBrief(pool);
   const released = await reader.brief(fixture.partition, fixture.draft.ticket);
-  assert.deepEqual(released, postgresHarnessBriefIn(fixture.repository));
+  assert.deepEqual(
+    released,
+    briefAsStored(postgresHarnessBriefIn(fixture.repository)),
+  );
   assert.deepEqual(
     await fixture.store.reviseDraft({
       partition: fixture.partition,
@@ -1861,10 +1886,10 @@ test("a brief's title is what the listing and the ticket's own read call it", as
     fixture.draft.ticket,
   );
   assert.equal(read?.title, titledBrief.title);
-  assert.deepEqual(read?.brief, {
-    ...titledBrief,
-    repository: fixture.repository,
-  });
+  assert.deepEqual(
+    read?.brief,
+    briefAsStored({ ...titledBrief, repository: fixture.repository }),
+  );
 });
 
 test("a brief that names no title is called by the first line of its intent", async () => {
@@ -1912,4 +1937,122 @@ test("the server refuses a title that reached it around the interpreter's rules"
       `the server refuses ${JSON.stringify(value)}`,
     );
   }
+});
+
+/** Moves what a project's one binding lands by, which only the migration owner may do directly. */
+async function landingSetTo(
+  partition: Partition,
+  repository: RepositoryId,
+  mode: string,
+): Promise<void> {
+  await harness.query(
+    `UPDATE project_repository SET landing_mode=$4
+      WHERE tenant=$1 AND project=$2 AND repository=$3`,
+    [partition.tenant, partition.project, repository, mode],
+  );
+}
+
+test("a brief naming a landing keeps it over the one its repository is bound under", async () => {
+  const { partition, store, revision, repository, draft } =
+    await draftFixture();
+  assert.deepEqual(
+    draft.brief?.finalization,
+    { mode: "Push" },
+    "the binding this project was made with lands where the work happened",
+  );
+  await landingSetTo(partition, repository, "PullRequest");
+  const revised = await store.reviseDraft({
+    partition,
+    authority,
+    ticket: draft.ticket,
+    expectedVersion: 1,
+    configurationRevision: revision,
+    authoring: plainAuthoring,
+    brief: {
+      ...postgresHarnessBrief,
+      repository,
+      finalization: { mode: "Push" },
+    },
+  });
+  assert.deepEqual(
+    revised.revised === "Revised"
+      ? revised.draft.brief?.finalization
+      : undefined,
+    { mode: "Push" },
+    "the mode the brief named is the one stored, not the binding's",
+  );
+});
+
+test("a brief naming no repository lands where the work happened", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "authoring-landing-unbound",
+  );
+  const bound = await postgresHarnessBinding(harness, partition);
+  await landingSetTo(partition, bound, "PullRequest");
+  const store = postgresAuthoring(pool);
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  await store.createConfiguration({
+    partition,
+    authority,
+    revision,
+    canonical: postgresHarnessConfiguration,
+  });
+  const initialized = await store.initializeDraft(partition, revision, 100);
+  if (initialized === undefined || initialized === "PolicyUnavailable")
+    throw new Error("the unbound draft was not initialized");
+  const created = await store.createDraft({
+    partition,
+    authority,
+    configurationRevision: revision,
+    configurationDigest: initialized.configuration.digest,
+    expectedProjectSequence: initialized.projectSequence,
+    authoring: plainAuthoring,
+    brief: postgresHarnessBrief,
+  });
+  assert.deepEqual(
+    created.created === "Created"
+      ? created.draft.brief?.finalization
+      : undefined,
+    { mode: "Push" },
+    "no repository names no landing to take, so the tree's own default stands",
+  );
+});
+
+/**
+ * A repository bound to propose and a brief naming nothing to propose into,
+ * refused where a brief's landing has always been made whole. It is also what
+ * proves the door reads the binding at all: a resolution that skipped to the
+ * tree's own default would store a push here and pass.
+ */
+test("a repository landing by proposal refuses a brief naming nothing to propose into", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "authoring-landing-halved",
+  );
+  const repository = await postgresHarnessBinding(harness, partition);
+  await landingSetTo(partition, repository, "PullRequest");
+  const store = postgresAuthoring(pool);
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  await store.createConfiguration({
+    partition,
+    authority,
+    revision,
+    canonical: postgresHarnessConfiguration,
+  });
+  const initialized = await store.initializeDraft(partition, revision, 100);
+  if (initialized === undefined || initialized === "PolicyUnavailable")
+    throw new Error("the halved draft was not initialized");
+  await assert.rejects(
+    store.createDraft({
+      partition,
+      authority,
+      configurationRevision: revision,
+      configurationDigest: initialized.configuration.digest,
+      expectedProjectSequence: initialized.projectSequence,
+      authoring: plainAuthoring,
+      brief: { ...postgresHarnessBrief, repository },
+    }),
+    /draft_brief_finalization_is_whole/u,
+  );
 });

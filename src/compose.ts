@@ -73,6 +73,7 @@ import {
 } from "./adapters/postgres/forgeInstallation.ts";
 import {
   postgresProjectRepositoryBindings,
+  postgresProjectRepositoryLanding,
   postgresRepositoryBinding,
 } from "./adapters/postgres/repositoryBinding.ts";
 import { postgresNotifications } from "./adapters/postgres/notifications.ts";
@@ -455,6 +456,7 @@ export function composeRepositoryOnboarding(
     claims: postgresForgeInstallationClaims(composition.apiPool),
     bindings: postgresProjectRepositoryBindings(composition.apiPool),
     binding: postgresRepositoryBinding(composition.apiPool),
+    landing: postgresProjectRepositoryLanding(composition.apiPool),
     ...(composition.repositories === undefined
       ? {}
       : {
