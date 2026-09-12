@@ -11,13 +11,22 @@
 import { expect, test } from "vitest";
 
 import {
+  briefFinalizationModes,
+  configurationHandoffs,
   escalationReasons,
+  finalizers,
   operationRefusalCodes,
   operationStates,
   phaseRoster,
   resumePoints,
 } from "../../../src/contract/rosters.ts";
 import {
+  approvalLabel,
+  briefLandingLine,
+  finalizerLabel,
+  handoffLabel,
+  landingEffect,
+  landingLabel,
   resumeActionEffect,
   resumeNotReadReason,
   wallExitLine,
@@ -378,4 +387,58 @@ test("every step of a follow draws one line, and only a settled one stops", () =
   );
   expect(refused.text).toBe("Resume refused · Ticket changed");
   expect(refused.wrong).toBe(true);
+});
+
+test("every landing, finalizer, handoff and approval label is inside the budget", () => {
+  const drawn = [
+    ...briefFinalizationModes.map(landingLabel),
+    ...briefFinalizationModes.map(landingEffect),
+    ...finalizers.map(finalizerLabel),
+    ...configurationHandoffs.map(handoffLabel),
+    approvalLabel(true),
+    approvalLabel(false),
+  ];
+  for (const label of drawn) {
+    expect(label.length).toBeGreaterThan(0);
+    expect(label.length).toBeLessThanOrEqual(copyBudgetChars);
+    expect(label).not.toMatch(/[.:;]/u);
+  }
+});
+
+/**
+ * The choice is made by the label and understood by the line under it, so both
+ * are pinned: a mode renamed on the wire must not silently rename the choice a
+ * person already made.
+ */
+test("a landing is named as a noun and explained as what it does", () => {
+  expect(briefFinalizationModes.map(landingLabel)).toStrictEqual([
+    "Push",
+    "Pull request",
+  ]);
+  expect(briefFinalizationModes.map(landingEffect)).toStrictEqual([
+    "Commits straight onto the target branch",
+    "Opens a pull request into the target branch",
+  ]);
+});
+
+test("a finalizer, a handoff and an approval each read as one noun", () => {
+  expect(finalizers.map(finalizerLabel)).toStrictEqual(["None", "Managed"]);
+  expect(configurationHandoffs.map(handoffLabel)).toStrictEqual([
+    "None",
+    "Direct commit",
+  ]);
+  expect(approvalLabel(true)).toBe("Required");
+  expect(approvalLabel(false)).toBe("Not required");
+});
+
+/** A landing with no target lands on the branch the work was done on, which is
+ * a mode and no reference rather than a reference the page invents. */
+test("a landing read back names its reference only where the brief named one", () => {
+  expect(briefLandingLine({ mode: "Push", target: "refs/heads/main" })).toBe(
+    "Push · lands on refs/heads/main",
+  );
+  expect(
+    briefLandingLine({ mode: "PullRequest", target: "refs/heads/main" }),
+  ).toBe("Pull request · into refs/heads/main");
+  expect(briefLandingLine({ mode: "Push", target: undefined })).toBe("Push");
 });

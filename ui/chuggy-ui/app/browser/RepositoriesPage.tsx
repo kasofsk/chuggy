@@ -9,7 +9,12 @@
  * grant rather than from a typed address.
  */
 
-import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearch,
+} from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -40,6 +45,7 @@ import {
 } from "./repositories/AddRepository.tsx";
 import { ConnectAccount } from "./repositories/ConnectAccount.tsx";
 import { CreateRepository } from "./repositories/CreateRepository.tsx";
+import { repositoryRoutePath } from "./repositories/RepositoryPage.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
@@ -96,6 +102,7 @@ function AccountTable(props: {
 }
 
 function BindingRow(props: {
+  readonly partition: PartitionIdentity;
   readonly binding: ProjectRepositoryResponse;
   readonly nowMs: number;
 }): ReactNode {
@@ -104,7 +111,12 @@ function BindingRow(props: {
     <tr>
       <th scope="row">
         <Tooltip text={binding.repository}>
-          <span>{repositoryLabel(binding.repository)}</span>
+          <Link
+            to={repositoryRoutePath}
+            params={{ ...props.partition, repository: binding.repository }}
+          >
+            {repositoryLabel(binding.repository)}
+          </Link>
         </Tooltip>
       </th>
       <td>
@@ -115,6 +127,7 @@ function BindingRow(props: {
 }
 
 function BindingTable(props: {
+  readonly partition: PartitionIdentity;
   readonly bindings: readonly ProjectRepositoryResponse[];
 }): ReactNode {
   const nowMs = useNowMs();
@@ -132,6 +145,7 @@ function BindingTable(props: {
         {props.bindings.map((binding) => (
           <BindingRow
             key={binding.repository}
+            partition={props.partition}
             binding={binding}
             nowMs={nowMs}
           />
@@ -217,7 +231,9 @@ function RepositoriesSection(props: {
       }
     >
       {props.unready}
-      {bindings === undefined ? null : <BindingTable bindings={bindings} />}
+      {bindings === undefined ? null : (
+        <BindingTable partition={props.partition} bindings={bindings} />
+      )}
     </Panel>
   );
 }

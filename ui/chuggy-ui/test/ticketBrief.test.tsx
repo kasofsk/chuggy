@@ -144,6 +144,12 @@ test("a brief with no branch says so rather than drawing an empty field", () => 
   );
 });
 
+/** The landing is one field, so the mode is on it whether or not a reference
+ * is: a reader who sees no reference has still been told how it lands. */
+function landingLine(): string | undefined {
+  return screen.getByText("landing").nextElementSibling?.textContent;
+}
+
 test("a brief that names where its work lands draws that reference too", () => {
   render(
     <TicketBrief
@@ -155,13 +161,11 @@ test("a brief that names where its work lands draws that reference too", () => {
       })}
     />,
   );
-  expect(screen.getByText("lands on").nextElementSibling?.textContent).toBe(
-    "refs/heads/release/next",
-  );
+  expect(landingLine()).toBe("Push · lands on refs/heads/release/next");
 });
 
 /** A proposal into a reference and a push onto it name the same reference, so
- * the field's name is the only thing that tells the two apart. */
+ * the mode before it is the only thing that tells the two apart. */
 test("a brief proposing its work into a reference does not say it lands there", () => {
   render(
     <TicketBrief
@@ -173,15 +177,12 @@ test("a brief proposing its work into a reference does not say it lands there", 
       })}
     />,
   );
-  expect(
-    screen.getByText("proposed into").nextElementSibling?.textContent,
-  ).toBe("refs/heads/main");
-  expect(screen.queryByText("lands on")).toBeNull();
+  expect(landingLine()).toBe("Pull request · into refs/heads/main");
 });
 
-/** The branch is where a brief naming no target lands, so a second field
- * saying "none" would read as a landing nobody chose. */
-test("a brief naming no target draws no field for one", () => {
+/** A ticket authored to run no finalizer lands nothing, so the field a landing
+ * would be read in is absent rather than saying "none". */
+test("a brief carrying no finalization draws no landing at all", () => {
   render(
     <TicketBrief
       state={draft({
@@ -191,12 +192,12 @@ test("a brief naming no target draws no field for one", () => {
       })}
     />,
   );
-  expect(screen.queryByText("lands on")).toBeNull();
+  expect(screen.queryByText("landing")).toBeNull();
 });
 
 /** The contract lets a finalization name a mode and no reference, which is the
- * work landing where it happened; the field would draw empty. */
-test("a finalization naming no reference draws no field either", () => {
+ * work landing on the branch it was done on. */
+test("a finalization naming no reference is still read back as its mode", () => {
   render(
     <TicketBrief
       state={draft({
@@ -207,7 +208,7 @@ test("a finalization naming no reference draws no field either", () => {
       })}
     />,
   );
-  expect(screen.queryByText("lands on")).toBeNull();
+  expect(landingLine()).toBe("Push");
 });
 
 test("a ticket with no brief says why, and draws no empty intent", () => {

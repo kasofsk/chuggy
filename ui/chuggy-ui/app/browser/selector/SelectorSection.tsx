@@ -1,10 +1,9 @@
 /**
- * One setting group as a card: what it is, whether it stands on the
- * installation's value, and the edit it opens.
+ * One selector setting group as a card: whether it stands on the installation's
+ * value, and what its own last write answered.
  *
- * A section is read until its Edit is pressed and only one is open at a time,
- * so the chrome is here and each section supplies only its own body and the
- * left half of its foot.
+ * The chrome is `SettingsSection`'s and only what is the selector's is here:
+ * the Default pill, and the notice this route's five answers are drawn as.
  */
 
 import type { ReactNode } from "react";
@@ -12,12 +11,11 @@ import type { ReactNode } from "react";
 import { instantFigure } from "../../core/figures.ts";
 import type { SelectorSettingsSaved } from "../../core/selectorSettingsForm.ts";
 import { useNowMs } from "../Freshness.tsx";
-import { Button } from "../ui/Button.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { Notice } from "../ui/Notice.tsx";
-import { Panel } from "../ui/Panel.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import { SettingsSection } from "../ui/SettingsSection.tsx";
 
 import "./selector.css";
 
@@ -80,50 +78,6 @@ export function SelectorSettingsSavedNotice(props: {
   }
 }
 
-/** What the last write of this section did, beside the one action a conflict
- * leaves open: taking the settings that moved. */
-function SelectorSectionSaved(props: {
-  readonly saved: SelectorSettingsSaved;
-  readonly onReload: () => void;
-}): ReactNode {
-  if (props.saved.saved === "Idle") return null;
-  return (
-    <div className="flex items-center gap-2">
-      <SelectorSettingsSavedNotice saved={props.saved} />
-      {props.saved.saved === "Conflict" ? (
-        <Button size="sm" onClick={props.onReload}>
-          Reload
-        </Button>
-      ) : null}
-    </div>
-  );
-}
-
-function SelectorSectionFoot(props: {
-  readonly lead: ReactNode;
-  readonly savable: boolean;
-  readonly onCancel: () => void;
-  readonly onSave: () => void;
-}): ReactNode {
-  return (
-    <>
-      {props.lead}
-      <span className="grow" />
-      <Button variant="quiet" size="sm" onClick={props.onCancel}>
-        Cancel
-      </Button>
-      <Button
-        variant="primary"
-        size="sm"
-        disabled={!props.savable}
-        onClick={props.onSave}
-      >
-        Save changes
-      </Button>
-    </>
-  );
-}
-
 export function SelectorSection(props: {
   readonly title: string;
   readonly about: string;
@@ -139,9 +93,9 @@ export function SelectorSection(props: {
   readonly onReload: () => void;
   readonly children: ReactNode;
 }): ReactNode {
+  const saved = props.saved;
   return (
-    <Panel
-      variant="section"
+    <SettingsSection
       title={
         <span className="flex items-center gap-2">
           {props.title}
@@ -149,31 +103,19 @@ export function SelectorSection(props: {
         </span>
       }
       about={props.about}
-      meta={
-        props.editing ? undefined : (
-          <Button
-            variant="quiet"
-            size="sm"
-            disabled={!props.editable}
-            onClick={props.onEdit}
-          >
-            Edit
-          </Button>
-        )
-      }
-      foot={
-        props.editing ? (
-          <SelectorSectionFoot
-            lead={props.footLead}
-            savable={props.savable}
-            onCancel={props.onCancel}
-            onSave={props.onSave}
-          />
-        ) : undefined
-      }
+      editing={props.editing}
+      editable={props.editable}
+      savable={props.savable}
+      footLead={props.footLead}
+      {...(saved.saved === "Idle"
+        ? {}
+        : { notice: <SelectorSettingsSavedNotice saved={saved} /> })}
+      {...(saved.saved === "Conflict" ? { onReload: props.onReload } : {})}
+      onEdit={props.onEdit}
+      onCancel={props.onCancel}
+      onSave={props.onSave}
     >
       {props.children}
-      <SelectorSectionSaved saved={props.saved} onReload={props.onReload} />
-    </Panel>
+    </SettingsSection>
   );
 }

@@ -1,6 +1,18 @@
-/* RadioGroup: the ring an option is chosen in, and the mark that fills it. */
+/* RadioGroup: the ring an option is chosen in, the mark that fills it, and the
+   described option's two rows. */
 
 @layer ui {
+  .radio-option {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: var(--space-2);
+  }
+
+  .radio-about {
+    grid-column: 2;
+  }
+
   .radio-item {
     display: inline-flex;
     align-items: center;

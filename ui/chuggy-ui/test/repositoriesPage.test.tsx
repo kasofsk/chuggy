@@ -81,8 +81,8 @@ vi.mock("@tanstack/react-router", async () => {
   const { useSyncExternalStore } = await import("react");
   return {
     createLink: (component: unknown) => component,
-    Link: (props: { readonly children?: ReactNode }) => (
-      <a href="/">{props.children}</a>
+    Link: (props: { readonly to?: string; readonly children?: ReactNode }) => (
+      <a href={props.to ?? "/"}>{props.children}</a>
     ),
     useParams: () => ({ ...leadPartition }),
     useSearch: () => useSyncExternalStore(routed.subscribe, routed.snapshot),
@@ -321,6 +321,16 @@ test("the bindings are drawn by the account and name they are under", async () =
   expect(
     within(repositories).getByRole("rowheader", { name: "kasofsk/chuggy" }),
   ).toBeTruthy();
+});
+
+/** A binding is a row and a page, and the row is the only way to the page. */
+test("a binding's name is the link to its own page", async () => {
+  await drawPage();
+  expect(
+    within(sectionOf("Repositories"))
+      .getByRole("link", { name: "kasofsk/chuggy" })
+      .getAttribute("href"),
+  ).toBe("/$tenant/$project/repositories/$repository");
 });
 
 /**

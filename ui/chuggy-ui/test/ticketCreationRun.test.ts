@@ -107,8 +107,9 @@ test("the configuration is walked for, newest first, until one is ready", async 
   expect(held.calls.at(-1)).toBe(`GET ${partitionBase}/repositories`);
 });
 
-/** The bindings are read in the same motion, because whether the form asks for
- * a repository is decided by them and not by the initialization. */
+/** The bindings are read in the same motion, and whole: whether the form asks
+ * for a repository and what landing it starts on are both theirs to say, and
+ * neither is the initialization's. */
 test("the context carries what the project binds", async () => {
   const held = answering((_method, path) => {
     if (path.includes("/configurations")) return ok(configurationsPage);
@@ -129,7 +130,13 @@ test("the context carries what the project binds", async () => {
     read.outcome === "Ok" && read.value.context === "Ready"
       ? read.value.repositories
       : undefined,
-  ).toStrictEqual(["https://forge.test/kasofsk/chuggy"]);
+  ).toStrictEqual([
+    {
+      repository: "https://forge.test/kasofsk/chuggy",
+      boundAt: "2026-08-26T00:00:00Z",
+      landing: { mode: "Push" },
+    },
+  ]);
 });
 
 test("a project whose revisions run out with none ready says exactly that", async () => {

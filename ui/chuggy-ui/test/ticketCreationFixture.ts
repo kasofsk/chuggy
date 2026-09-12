@@ -10,7 +10,9 @@ import type {
   ConfigurationSummary,
   DraftInitializationResponse,
   DraftResponse,
+  ProjectRepositoryResponse,
 } from "../../../src/contract/responses.ts";
+import type { BriefFinalizationMode } from "../../../src/contract/rosters.ts";
 import { creationFormFrom } from "../app/core/ticketCreation.ts";
 import type { TicketCreationForm } from "../app/core/ticketCreation.ts";
 
@@ -84,9 +86,22 @@ export const creationDraft: DraftResponse = {
   authoring: creationInitialization.defaults,
 };
 
+/** One binding as the listing answers it, whose landing is what a form seeded
+ * from it starts on. */
+export function creationBinding(
+  repository: string,
+  mode: BriefFinalizationMode = "Push",
+): ProjectRepositoryResponse {
+  return {
+    repository,
+    boundAt: "2026-08-26T00:00:00Z",
+    landing: { mode },
+  };
+}
+
 export function creationForm(
   over: Partial<TicketCreationForm> = {},
-  repositories: readonly string[] = [],
+  repositories: readonly ProjectRepositoryResponse[] = [],
 ): TicketCreationForm {
   return {
     ...creationFormFrom(creationInitialization, repositories),

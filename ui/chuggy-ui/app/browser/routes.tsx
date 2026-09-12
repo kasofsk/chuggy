@@ -31,6 +31,7 @@ import { LeadPage } from "./LeadPage.tsx";
 import { persistentStore } from "./ports.ts";
 import { ProjectTable } from "./ProjectTable.tsx";
 import { RepositoriesPage } from "./RepositoriesPage.tsx";
+import { RepositoryPage } from "./repositories/RepositoryPage.tsx";
 import { SelectorSettingsPage } from "./SelectorSettingsPage.tsx";
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
@@ -124,7 +125,7 @@ const selectorRoute = createRoute({
 /** What the setup landing sends back: one word about the claim it made, and
  * nothing the landing was handed by the forge. */
 interface RepositoriesSearch {
-  readonly connected: string | undefined;
+  readonly connected?: string | undefined;
 }
 
 const repositoriesRoute = createRoute({
@@ -137,6 +138,14 @@ const repositoriesRoute = createRoute({
     const connected = search["connected"];
     return { connected: typeof connected === "string" ? connected : undefined };
   },
+});
+
+/** One binding's own page. The repository is an address, which the router
+ * encodes into the segment and decodes back out of it. */
+const repositoryRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/repositories/$repository",
+  component: RepositoryPage,
 });
 
 /**
@@ -174,6 +183,7 @@ const routeTree = rootRoute.addChildren([
     leadRoute,
     selectorRoute,
     repositoriesRoute,
+    repositoryRoute,
     ticketCreationRoute,
     ticketRoute,
   ]),

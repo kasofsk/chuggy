@@ -18,6 +18,7 @@ import type {
   ConfigurationSummary,
   DraftInitializationResponse,
   DraftResponse,
+  ProjectRepositoryResponse,
 } from "../../../../src/contract/responses.ts";
 import type { draftCreationSchema } from "../../../../src/contract/requests.ts";
 import type { z } from "zod";
@@ -55,9 +56,10 @@ export type CreationContext =
       readonly context: "Ready";
       readonly configuration: ConfigurationSummary;
       readonly initialization: DraftInitializationResponse;
-      /** What the project binds, which decides whether the form asks for one
-       * and what it offers. Oldest first, as the listing answers. */
-      readonly repositories: readonly string[];
+      /** What the project binds, which decides whether the form asks for one,
+       * what it offers, and the landing each one defaults to. Oldest first, as
+       * the listing answers. */
+      readonly repositories: readonly ProjectRepositoryResponse[];
     }
   | { readonly context: "NoReadyConfiguration" }
   | {
@@ -183,7 +185,7 @@ export async function readCreationContext(
       context: "Ready",
       configuration,
       initialization: initialized.value,
-      repositories: bound.value.repositories.map((row) => row.repository),
+      repositories: bound.value.repositories,
     },
   };
 }
