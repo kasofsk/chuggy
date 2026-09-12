@@ -748,7 +748,13 @@ test("a bind is created at its own address and read back by the listing", async 
   });
   assert.equal(listed.statusCode, 200);
   assert.deepEqual(listed.json(), {
-    repositories: [{ repository, boundAt: "2026-09-11T01:00:00Z" }],
+    repositories: [
+      {
+        repository,
+        boundAt: "2026-09-11T01:00:00Z",
+        landing: { mode: "Push" },
+      },
+    ],
   });
 });
 

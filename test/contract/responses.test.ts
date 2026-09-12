@@ -68,6 +68,8 @@ import {
   projectRepositoryAlreadyBoundSchema,
   projectRepositoryBoundSchema,
   projectRepositoryCreatedSchema,
+  projectRepositoryLandingConflictSchema,
+  projectRepositoryResponseSchema,
   projectResponseSchema,
   repositoryConfigurationRefusalsSchema,
   runConfigurationResponseSchema,
@@ -803,6 +805,39 @@ const readyConfiguration = {
   provenance: { source: "Authored" },
 } as const;
 
+/** The same summary as the wire carries it, which the encoder alone assembles. */
+const readyConfigurationBody = {
+  ...readyConfiguration,
+  finalization: { approvalRequired: true, handoff: "DirectCommit" },
+  evaluationStagesCount: 2,
+};
+
+test("a ready configuration names its finalization facts and its evaluation stages", () => {
+  const summary = configurationsResponseSchema.parse({
+    configurations: [readyConfigurationBody],
+  }).configurations[0];
+  assert.deepEqual(summary?.readiness === "Ready" ? summary : undefined, {
+    ...readyConfigurationBody,
+  });
+  for (const configuration of [
+    { ...readyConfigurationBody, finalization: undefined },
+    { ...readyConfigurationBody, evaluationStagesCount: undefined },
+    {
+      ...readyConfigurationBody,
+      finalization: { approvalRequired: true, handoff: "PullRequest" },
+    },
+    {
+      ...readyConfigurationBody,
+      finalization: { handoff: "DirectCommit" },
+    },
+  ])
+    assert.throws(
+      () =>
+        configurationsResponseSchema.parse({ configurations: [configuration] }),
+      `a ready summary is refused: ${JSON.stringify(configuration.finalization)}`,
+    );
+});
+
 test("a configuration read and its page parse with readiness and provenance", () => {
   const read = configurationResponseSchema.parse(
     configurationResponse(configuration).body,
@@ -1489,7 +1524,32 @@ test("a binding and a project's bindings name the repository and its moment", ()
   assert.deepEqual(bound.repositories[0], {
     repository: onboardingRepository,
     boundAt: instant,
+    landing: { mode: "Push" },
   });
+});
+
+test("a binding names a landing, and a conflict answers the row that stands", () => {
+  const binding = {
+    repository: onboardingRepository,
+    boundAt: instant,
+    landing: { mode: "PullRequest" },
+  };
+  assert.deepEqual(
+    projectRepositoryLandingConflictSchema.parse({ repository: binding }),
+    { repository: binding },
+  );
+  assert.throws(() =>
+    projectRepositoryResponseSchema.parse({
+      repository: onboardingRepository,
+      boundAt: instant,
+    }),
+  );
+  assert.throws(() =>
+    projectRepositoryResponseSchema.parse({
+      ...binding,
+      landing: { mode: "Merge" },
+    }),
+  );
 });
 
 test("each onboarding listing refuses one row past the bound it answers under", () => {

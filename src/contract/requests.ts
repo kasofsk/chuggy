@@ -25,6 +25,7 @@ import {
 import { authoringSchema } from "./authoring.ts";
 import { briefSchema } from "./brief.ts";
 import {
+  briefFinalizationModes,
   forgeCredentialPermissions,
   forgeApps,
   forgeIds,
@@ -129,20 +130,58 @@ export const projectRepositoryCreateSchema = z.strictObject({
   visibility: z.enum(forgeRepositoryVisibilities),
 });
 
-export const draftCreationSchema = z.strictObject({
-  configurationRevision: bodyIdentitySchema,
-  configurationDigest: digestSchema,
-  expectedProjectSequence: countSchema,
-  authoring: authoringSchema,
-  brief: briefSchema,
+/** How a finished ticket lands: the mode alone today, the reference it lands on staying the brief's. */
+export const repositoryLandingSchema = z.strictObject({
+  mode: z.enum(briefFinalizationModes),
+});
+export type RepositoryLanding = z.infer<typeof repositoryLandingSchema>;
+
+/** A repository's landing default, written against the one the writer read so two administrators cannot cross. */
+export const projectRepositoryLandingSchema = z.strictObject({
+  repository: bodyIdentitySchema,
+  expected: repositoryLandingSchema,
+  landing: repositoryLandingSchema,
 });
 
-export const draftRevisionSchema = z.strictObject({
-  expectedVersion: countSchema,
-  configurationRevision: bodyIdentitySchema,
-  authoring: authoringSchema,
-  brief: briefSchema,
-});
+/**
+ * Whether a ticket's authoring and its brief agree about landing. Landing is a
+ * parameter of the managed finalizer, so a ticket authored to run none names
+ * none: the pairing is stated here rather than on either schema, neither of
+ * which can see the other.
+ */
+function draftLandingIsAuthored(value: {
+  readonly authoring: { readonly finalizer: string };
+  readonly brief: { readonly finalization?: unknown };
+}): boolean {
+  return (
+    value.authoring.finalizer !== "NoFinalizer" ||
+    value.brief.finalization === undefined
+  );
+}
+
+const draftLandingIsAuthoredIssue = {
+  error: "a ticket with no finalizer lands nothing",
+  path: ["brief", "finalization"],
+};
+
+export const draftCreationSchema = z
+  .strictObject({
+    configurationRevision: bodyIdentitySchema,
+    configurationDigest: digestSchema,
+    expectedProjectSequence: countSchema,
+    authoring: authoringSchema,
+    brief: briefSchema,
+  })
+  .refine(draftLandingIsAuthored, draftLandingIsAuthoredIssue);
+
+export const draftRevisionSchema = z
+  .strictObject({
+    expectedVersion: countSchema,
+    configurationRevision: bodyIdentitySchema,
+    authoring: authoringSchema,
+    brief: briefSchema,
+  })
+  .refine(draftLandingIsAuthored, draftLandingIsAuthoredIssue);
 
 export const submissionSchema = z.strictObject({
   operation: bodyIdentitySchema,

@@ -5,6 +5,7 @@ import type {
   ConfigurationCreated,
   ConfigurationPage,
   ConfigurationRevisionResource,
+  ConfigurationRevisionSummary,
   DraftCreated,
   DraftInitializationRead,
   DraftDeleted,
@@ -711,13 +712,37 @@ export function configurationResponse(
     : response(200, resource);
 }
 
+/** What a ready configuration's finalization reads as until the summary carries one; step A2 replaces it. */
+const configurationFinalizationPlaceholder = {
+  approvalRequired: false,
+  handoff: "None",
+} as const;
+
+/** How many evaluation stages a ready configuration reads as until the summary counts them; step A2 replaces it. */
+const configurationEvaluationStagesCountPlaceholder = 0;
+
+/** One summary as the wire carries it, the ready arm alone naming what it finalizes. */
+function configurationSummaryBody(
+  summary: ConfigurationRevisionSummary,
+): unknown {
+  return summary.readiness === "Ready"
+    ? {
+        ...summary,
+        finalization: configurationFinalizationPlaceholder,
+        evaluationStagesCount: configurationEvaluationStagesCountPlaceholder,
+      }
+    : summary;
+}
+
 export function configurationsResponse(
   result: AuthorizedResult<ConfigurationPage>,
 ): NativeHttpResponse {
   return result.result === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
     : response(200, {
-        configurations: result.value.configurations,
+        configurations: result.value.configurations.map(
+          configurationSummaryBody,
+        ),
         ...(result.value.nextAfter === undefined
           ? {}
           : {
@@ -1043,12 +1068,20 @@ export function projectRepositoryCreateResponse(
   }
 }
 
+/** What every binding's landing reads as until the durable row carries one; step A2 replaces it. */
+const projectRepositoryLandingPlaceholder = { mode: "Push" } as const;
+
 /** Every repository one project binds, oldest first, which privileges none of them. */
 export function projectRepositoriesResponse(
   result: ProjectRepositoriesResult,
 ): NativeHttpResponse {
   return result.result === "Repositories"
-    ? response(200, { repositories: result.repositories })
+    ? response(200, {
+        repositories: result.repositories.map((binding) => ({
+          ...binding,
+          landing: projectRepositoryLandingPlaceholder,
+        })),
+      })
     : notFound();
 }
 

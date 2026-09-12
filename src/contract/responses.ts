@@ -62,12 +62,16 @@ import {
   reworkPolicyResponseSchema,
 } from "./authoring.ts";
 import { briefResponseSchema, briefTitleCharsMax } from "./brief.ts";
-import { selectorProjectOverridesSchema } from "./requests.ts";
+import {
+  repositoryLandingSchema,
+  selectorProjectOverridesSchema,
+} from "./requests.ts";
 import {
   architectures,
   artifactRoles,
   attemptEvidences,
   attemptStates,
+  configurationHandoffs,
   draftStates,
   escalationReasons,
   executionCapabilities,
@@ -744,6 +748,11 @@ const configurationSummarySchema = z.discriminatedUnion("readiness", [
     practices: page(z.string().min(1)),
     workInstructionsCount: countSchema,
     reviewInstructionsCount: countSchema,
+    finalization: z.strictObject({
+      approvalRequired: z.boolean(),
+      handoff: z.enum(configurationHandoffs),
+    }),
+    evaluationStagesCount: countSchema,
   }),
 ]);
 export type ConfigurationSummary = z.infer<typeof configurationSummarySchema>;
@@ -1352,13 +1361,22 @@ export type ProjectRepositoryCreatedResponse = z.infer<
   typeof projectRepositoryCreatedSchema
 >;
 
-/** One repository a project binds, and when it was bound. */
+/** One repository a project binds, when it was bound, and how a ticket in it lands. */
 export const projectRepositoryResponseSchema = z.object({
   repository: z.string().min(1),
   boundAt: instantSchema,
+  landing: repositoryLandingSchema,
 });
 export type ProjectRepositoryResponse = z.infer<
   typeof projectRepositoryResponseSchema
+>;
+
+/** The landing another write moved first, and the row as it stands. */
+export const projectRepositoryLandingConflictSchema = z.object({
+  repository: projectRepositoryResponseSchema,
+});
+export type ProjectRepositoryLandingConflictResponse = z.infer<
+  typeof projectRepositoryLandingConflictSchema
 >;
 
 /** Every repository one project binds, oldest first, which privileges none of them. */

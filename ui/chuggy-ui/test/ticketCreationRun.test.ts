@@ -118,6 +118,7 @@ test("the context carries what the project binds", async () => {
             {
               repository: "https://forge.test/kasofsk/chuggy",
               boundAt: "2026-08-26T00:00:00Z",
+              landing: { mode: "Push" },
             },
           ],
         })
