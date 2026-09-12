@@ -27,6 +27,7 @@ import {
   forgeInstallationClaimSchema,
   projectRepositoryBindSchema,
   projectRepositoryCreateSchema,
+  projectRepositoryLandingSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
   threadHideRequestSchema,
@@ -97,6 +98,10 @@ import {
   asDraftBrief,
   type DraftBrief,
 } from "../../interpreter/ticketBrief.ts";
+import {
+  asRepositoryLanding,
+  type RepositoryLanding,
+} from "../../interpreter/repositoryBinding.ts";
 
 /**
  * What a cursor carries once decoded. The reader is always the server that
@@ -207,6 +212,20 @@ export function parseProjectRepositoryBind(
   return {
     repository: asRepositoryId(parsed.repository),
     operation: asOperationId(operation),
+  };
+}
+
+/** One landing move as the wire carries it: the binding, the landing read, and the one wanted. */
+export function parseProjectRepositoryLanding(body: unknown): {
+  readonly repository: RepositoryId;
+  readonly expected: RepositoryLanding;
+  readonly landing: RepositoryLanding;
+} {
+  const parsed = projectRepositoryLandingSchema.parse(body);
+  return {
+    repository: asRepositoryId(parsed.repository),
+    expected: asRepositoryLanding(parsed.expected.mode),
+    landing: asRepositoryLanding(parsed.landing.mode),
   };
 }
 

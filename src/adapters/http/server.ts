@@ -70,6 +70,7 @@ import {
   parseForgeInstallationId,
   parseProjectRepositoryBind,
   parseProjectRepositoryCreate,
+  parseProjectRepositoryLanding,
   parseRepositoryConfigurationImport,
   parseDraftCreation,
   parseDraftRevision,
@@ -103,6 +104,7 @@ import {
   projectRepositoriesResponse,
   projectRepositoryBindResponse,
   projectRepositoryCreateResponse,
+  projectRepositoryLandingResponse,
   inventoryResponse,
   nativeActionsResponse,
   notificationsResponse,
@@ -1037,6 +1039,36 @@ function registerProjectRepositories(
   );
 }
 
+/**
+ * Where a project's bound repository lands its work. It is a write against the
+ * landing the caller last read rather than a plain replacement, so a console
+ * that read a stale row moves nothing and is told which one stands.
+ */
+function registerProjectRepositoryLanding(
+  app: FastifyInstance,
+  onboarding: RepositoryOnboarding,
+): void {
+  app.put(
+    "/api/v1/tenants/:tenant/projects/:project/repositories/landing",
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const written = parseProjectRepositoryLanding(request.body);
+      send(
+        reply,
+        projectRepositoryLandingResponse(
+          await onboarding.setLanding(
+            principalOf(request),
+            partitionOf(request),
+            written.repository,
+            written.expected,
+            written.landing,
+          ),
+        ),
+      );
+    },
+  );
+}
+
 /** The executions read's own parameters: its cursor, its size and what it narrows to. */
 function executionListQuery(
   value: unknown,
@@ -1674,6 +1706,7 @@ export function createNativeHttpApp(
   if (onboarding !== undefined) {
     registerForgeInstallations(app, onboarding);
     registerProjectRepositories(app, onboarding);
+    registerProjectRepositoryLanding(app, onboarding);
   }
   registerOperations(app, web);
   registerNotifications(app, web);

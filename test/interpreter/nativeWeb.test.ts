@@ -39,7 +39,8 @@ import {
   asConfigurationRevisionId,
   type AuthoringStore,
 } from "../../src/interpreter/authoring.ts";
-import { refinementInstance } from "../actor/harness.ts";
+import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
+import { asBriefIntent } from "../../src/interpreter/ticketBrief.ts";
 import { id } from "../domain/fixtures.ts";
 import type { NotificationStore } from "../../src/interpreter/notifications.ts";
 import {
@@ -975,4 +976,45 @@ test("the session a submission came through reaches the inbox, and the authority
     accepted.map((submission) => submission.authority),
     [authority, authority],
   );
+});
+
+/**
+ * The pairing the doors refuse before they ask anything else. It is asserted
+ * here rather than only where the refusal is written, because a door that
+ * stopped asking would otherwise store the pair the wire refuses.
+ */
+test("neither draft door will write a landing onto a ticket that runs no finalizer", async () => {
+  const { web, calls } = boundary(true);
+  const authoring = { ...plainAuthoring, finalizer: "NoFinalizer" } as const;
+  const brief = {
+    intent: asBriefIntent("Land it."),
+    links: [],
+    checks: [],
+    finalization: { mode: "Push" },
+  } as const;
+  await assert.rejects(
+    () =>
+      web.createDraft(principal, {
+        partition,
+        configurationRevision: asConfigurationRevisionId("revision"),
+        configurationDigest: "digest",
+        expectedProjectSequence: 0,
+        authoring,
+        brief,
+      }),
+    /lands nothing/u,
+  );
+  await assert.rejects(
+    () =>
+      web.reviseDraft(principal, {
+        partition,
+        ticket: id(1),
+        expectedVersion: 1,
+        configurationRevision: asConfigurationRevisionId("revision"),
+        authoring,
+        brief,
+      }),
+    /lands nothing/u,
+  );
+  assert.deepEqual(calls, [], "neither door reached the permit or the store");
 });

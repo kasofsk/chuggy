@@ -18,8 +18,11 @@ import {
   projectChangeSweepFunction,
   schedulerRole,
   repositoryActivationFunction,
+  repositoryBindingListFunction,
   repositoryBindingReadFunction,
   repositoryBindingWriteFunction,
+  repositoryLandingReadFunction,
+  repositoryLandingWriteFunction,
   schemaTextSet,
   selectorServiceRole,
   sessionStoreReadFunction,
@@ -50,6 +53,7 @@ import {
   sessionTurnResultCharsMax,
 } from "../../src/contract/http.ts";
 import { briefFinalizationModes } from "../../src/contract/rosters.ts";
+import { briefFinalizationDefault } from "../../src/interpreter/ticketBrief.ts";
 import {
   leadMillisecondsPerDecision,
   leadTokensPerDecision,
@@ -4270,6 +4274,109 @@ test("the table and the function project access was answered from are gone", asy
       left.rows[0]?.function_left,
       null,
       "authorize_project_access is still there",
+    );
+  });
+});
+
+/** A project holding a binding filed before a binding said where its work lands. */
+async function seedLandinglessBinding(subject: pg.Pool): Promise<void> {
+  await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-90')`);
+  await subject.query(
+    `INSERT INTO project(tenant,project,lifecycle,head,ingress_next)
+     VALUES('tenant-90','project-90','Active',0,1)`,
+  );
+  await subject.query(
+    `INSERT INTO project_repository(tenant,project,repository,recovery_epoch)
+     VALUES('tenant-90','project-90','bound-90','epoch-90')`,
+  );
+}
+
+test("a repository bound before a landing was said lands where its work happened", async () => {
+  await migrationDatabase("i90", async (subject) => {
+    await migrationSeedApplied(subject, 90);
+    await seedLandinglessBinding(subject);
+
+    await applyMigration(subject, 90);
+
+    assert.deepEqual(
+      (
+        await subject.query<{ repository: string; landing_mode: string }>(
+          `SELECT repository,landing_mode
+             FROM ${repositoryBindingListFunction}('tenant-90','project-90',10)`,
+        )
+      ).rows,
+      [{ repository: "bound-90", landing_mode: briefFinalizationDefault.mode }],
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ landing_mode: string }>(
+          `SELECT landing_mode
+             FROM ${repositoryLandingReadFunction}('tenant-90','project-90','bound-90')`,
+        )
+      ).rows,
+      [{ landing_mode: briefFinalizationDefault.mode }],
+    );
+  });
+});
+
+test("the landing doors migrate without exposing the relation they read", async () => {
+  await migrationDatabase("i90grants", async (subject) => {
+    await migrationSeedApplied(subject, 90);
+    await applyMigration(subject, 90);
+    for (const signature of [
+      `${repositoryLandingReadFunction}(text,text,text)`,
+      `${repositoryLandingWriteFunction}(text,text,text,text,text)`,
+    ])
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
+            [apiRole, signature],
+          )
+        ).rows[0]?.granted,
+        true,
+        signature,
+      );
+    for (const privilege of ["SELECT", "UPDATE", "DELETE"])
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_table_privilege($1,'project_repository',$2) AS granted",
+            [apiRole, privilege],
+          )
+        ).rows[0]?.granted,
+        false,
+        privilege,
+      );
+    assert.equal(
+      (
+        await subject.query<{ granted: boolean }>(
+          "SELECT has_column_privilege($1,'project_repository','landing_mode','UPDATE') AS granted",
+          [boundaryOwnerRole],
+        )
+      ).rows[0]?.granted,
+      true,
+    );
+  });
+});
+
+test("a landing no roster names is refused by the column's own constraint", async () => {
+  await migrationDatabase("i90roster", async (subject) => {
+    await migrationSeedApplied(subject, 90);
+    await seedLandinglessBinding(subject);
+    await applyMigration(subject, 90);
+    for (const mode of briefFinalizationModes)
+      await subject.query(
+        `UPDATE project_repository SET landing_mode=$1
+          WHERE tenant='tenant-90' AND project='project-90'`,
+        [mode],
+      );
+    await assert.rejects(
+      subject.query(
+        `UPDATE project_repository SET landing_mode='Merge'
+          WHERE tenant='tenant-90' AND project='project-90'`,
+      ),
+      /project_repository_landing_mode_is_known/u,
     );
   });
 });

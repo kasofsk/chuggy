@@ -9,6 +9,7 @@ import {
   nativeHttpPageItemsDefault,
   nativeHttpPageItemsMax,
 } from "../contract/http.ts";
+import type { ConfigurationHandoff } from "../contract/rosters.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import {
   defaultProgram,
@@ -37,6 +38,7 @@ import {
   handoffConfigurationField,
   type HandoffConfigurationFault,
 } from "./handoffConfiguration.ts";
+import { handoffApprovalRequired } from "./finalizerPreparation.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 import type { DraftBrief, ReleaseBrief } from "./ticketBrief.ts";
 import {
@@ -296,6 +298,16 @@ export type ConfigurationRevisionProvenance =
       readonly name: RepositoryConfigurationName;
     };
 
+/**
+ * What one ready configuration decides about finishing, for a reader choosing
+ * between configurations without opening either. `None` is a configuration
+ * declaring no handoff at all, which is what carrying no handoff shape means.
+ */
+export interface ConfigurationFinalization {
+  readonly approvalRequired: boolean;
+  readonly handoff: ConfigurationHandoff;
+}
+
 export type ConfigurationRevisionSummary =
   | (ConfigurationRevisionSummaryBase & { readonly readiness: "Incomplete" })
   | (ConfigurationRevisionSummaryBase & {
@@ -305,6 +317,8 @@ export type ConfigurationRevisionSummary =
       readonly practices: readonly string[];
       readonly workInstructionsCount: number;
       readonly reviewInstructionsCount: number;
+      readonly finalization: ConfigurationFinalization;
+      readonly evaluationStagesCount: number;
     });
 
 /**
@@ -332,6 +346,25 @@ export interface ConfigurationPageQuery {
 }
 
 export const configurationPageLimitMax = 100;
+
+/**
+ * What a ready configuration decides about finishing. An approval policy this
+ * tree cannot read is not read as no approval: the finalizer refuses such a
+ * candidate rather than promoting it, so the summary says a person is in the
+ * way of one.
+ */
+function configurationFinalizationOf(
+  canonical: CanonicalConfiguration,
+  configuration: ReleaseConfiguration,
+): ConfigurationFinalization {
+  return {
+    approvalRequired: handoffApprovalRequired(canonical) ?? true,
+    handoff:
+      configuration[handoffConfigurationField] === undefined
+        ? "None"
+        : "DirectCommit",
+  };
+}
 
 export function configurationRevisionSummary(input: {
   readonly revision: ConfigurationRevisionId;
@@ -361,7 +394,31 @@ export function configurationRevisionSummary(input: {
         workInstructionsCount: readiness.configuration.work.instructions.length,
         reviewInstructionsCount:
           readiness.configuration.review.instructions.length,
+        finalization: configurationFinalizationOf(
+          input.canonical,
+          readiness.configuration,
+        ),
+        evaluationStagesCount: readiness.configuration.evaluations?.length ?? 0,
       };
+}
+
+/**
+ * The pairing neither half of a draft can state about the other: landing is a
+ * parameter of the managed finalizer, so a ticket authored to run none names
+ * none. The wire refuses it on the composed body; this is the same refusal for
+ * a caller that reached the store by any other door.
+ */
+export function checkedDraftLanding(input: {
+  readonly authoring: ReleaseAuthoring;
+  readonly brief: DraftBrief;
+}): void {
+  if (
+    input.authoring.finalizer === "NoFinalizer" &&
+    input.brief.finalization !== undefined
+  )
+    throw new RangeError(
+      "draft authoring: a ticket with no finalizer lands nothing",
+    );
 }
 
 export function checkedConfigurationPageQuery(

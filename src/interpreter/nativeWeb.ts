@@ -63,6 +63,7 @@ import type {
 } from "./authoring.ts";
 import {
   checkedConfigurationPageQuery,
+  checkedDraftLanding,
   checkedDraftPageQuery,
   draftInitializationPolicy,
   releaseConfigurationReadiness,
@@ -876,6 +877,7 @@ function nativeAuthoringMethods(
           };
     },
     createDraft: async (principal, input) => {
+      checkedDraftLanding(input);
       const authority = await access.authorize(
         principal,
         input.partition,
@@ -889,6 +891,7 @@ function nativeAuthoringMethods(
           };
     },
     reviseDraft: async (principal, input) => {
+      checkedDraftLanding(input);
       const authority = await access.authorize(
         principal,
         input.partition,
