@@ -83,6 +83,8 @@ import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.t
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { asInstallationId, asTicketId } from "../../src/domain/ids.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
+import { encodeDraftAuthoring } from "../../src/interpreter/authoring.ts";
+import { plainAuthoring } from "../actor/harness.ts";
 import type { ProjectRead } from "../../src/interpreter/nativeWeb.ts";
 
 const retainedImageRequired = [
@@ -4316,6 +4318,86 @@ test("a repository bound before a landing was said lands where its work happened
       ).rows,
       [{ landing_mode: briefFinalizationDefault.mode }],
     );
+  });
+});
+
+/** Two drafts filed before a brief could say its ticket lands nothing, each storing the default. */
+async function seedLandedBriefs(subject: pg.Pool): Promise<void> {
+  await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-90b')`);
+  await subject.query(
+    `INSERT INTO project(tenant,project,lifecycle,head,ingress_next,ticket_next)
+     VALUES('tenant-90b','project-90b','Active',1,1,3)`,
+  );
+  await subject.query(
+    `INSERT INTO configuration_revision
+       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+     VALUES('tenant-90b','project-90b','revision-90b','{}','digest','User','author')`,
+  );
+  for (const [ticket, finalizer] of [
+    [1, "NoFinalizer"],
+    [2, "ManagedFinalizer"],
+  ] as const) {
+    await subject.query(
+      `INSERT INTO draft VALUES('tenant-90b','project-90b',$1,1,'Draft','revision-90b')`,
+      [ticket],
+    );
+    await subject.query(
+      `INSERT INTO draft_revision
+         (tenant,project,ticket,authoring_version,configuration_revision,authoring,
+          authority_kind,authority_subject)
+       VALUES('tenant-90b','project-90b',$1,1,'revision-90b',$2,'User','author')`,
+      [ticket, encodeDraftAuthoring({ ...plainAuthoring, finalizer })],
+    );
+    await subject.query(
+      `INSERT INTO draft_brief
+         (tenant,project,ticket,intent,finalization_mode,finalization_target)
+       VALUES('tenant-90b','project-90b',$1,'Land it.',$2,NULL)`,
+      [ticket, briefFinalizationDefault.mode],
+    );
+  }
+}
+
+/** What each seeded ticket's brief holds for its landing, in ticket order. */
+async function seededLandings(subject: pg.Pool) {
+  return (
+    await subject.query<{
+      ticket: string;
+      finalization_mode: string | null;
+      finalization_target: string | null;
+    }>(
+      `SELECT ticket::text,finalization_mode,finalization_target FROM draft_brief
+        WHERE tenant='tenant-90b' AND project='project-90b' ORDER BY ticket`,
+    )
+  ).rows;
+}
+
+test("a ticket filed before a brief could land nothing is emptied of the landing it never authored", async () => {
+  await migrationDatabase("i90backfill", async (subject) => {
+    await migrationSeedApplied(subject, 90);
+    await seedLandedBriefs(subject);
+
+    await applyMigration(subject, 90);
+
+    assert.deepEqual((await seededLandings(subject))[0], {
+      ticket: "1",
+      finalization_mode: null,
+      finalization_target: null,
+    });
+  });
+});
+
+test("a ticket filed before that runs a finalizer keeps the landing it was written", async () => {
+  await migrationDatabase("i90kept", async (subject) => {
+    await migrationSeedApplied(subject, 90);
+    await seedLandedBriefs(subject);
+
+    await applyMigration(subject, 90);
+
+    assert.deepEqual((await seededLandings(subject))[1], {
+      ticket: "2",
+      finalization_mode: briefFinalizationDefault.mode,
+      finalization_target: null,
+    });
   });
 });
 
