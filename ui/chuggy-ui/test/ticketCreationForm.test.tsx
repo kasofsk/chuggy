@@ -565,3 +565,29 @@ test("the advanced finalizer reads as a noun, and Managed is what asks for a lan
   fireEvent.change(chooser, { target: { value: "Managed" } });
   expect(landing()).toBeTruthy();
 });
+
+/**
+ * The target is typed under a managed finalizer and the finalizer then changed,
+ * which leaves a value in a box the form no longer draws. The submission must
+ * still go out — a form stopped by a fault nobody can see is a form nobody can
+ * fix.
+ */
+test("changing the finalizer to None releases a ticket the target box would have refused", async () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, [], unfinalized);
+  fireEvent.click(screen.getByRole("button", { name: /^Advanced/u }));
+  const chooser = screen.getByLabelText<HTMLSelectElement>("finalizer");
+  fireEvent.change(chooser, { target: { value: "Managed" } });
+  fireEvent.change(screen.getByPlaceholderText("the branch to land on"), {
+    target: { value: "refs/heads/release/next" },
+  });
+  typeIntent("ship it");
+  submit();
+  expect(drafts(held.sent).length).toBe(0);
+  fireEvent.change(chooser, { target: { value: "None" } });
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  expect(briefOf(held.sent)).not.toHaveProperty("finalization");
+});

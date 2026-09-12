@@ -127,6 +127,10 @@ import type { ApiPorts, ApiRequest, ApiResult } from "./apiRequest.ts";
 
 export const projectInventoryPagesMax = 32;
 
+/** How far a caller walks a project's revisions. A walk that ends here has read
+ * part of the project rather than all of it, and says so in its own words. */
+export const configurationPagesMax = 8;
+
 type QueryValue = string | number | readonly string[] | undefined;
 
 type Query = Readonly<Record<string, QueryValue>>;

@@ -618,3 +618,29 @@ test("a push with no target is accepted, and so is a pull request with one", () 
     ),
   ).toStrictEqual([]);
 });
+
+/**
+ * The target box is neither drawn nor sent under no finalizer, so a value left
+ * in it from before that choice must not refuse the form: the reason would name
+ * a field the reader cannot see, and the submission would stop with nothing on
+ * screen saying why.
+ */
+test("a form with no finalizer is not refused for a target it neither draws nor sends", () => {
+  const parked = creationForm({
+    finalizer: "NoFinalizer",
+    branchName: "topic/one",
+    targetBranchName: "refs/heads/release/next",
+  });
+  expect(faultFields(parked)).toStrictEqual([]);
+  const assembled = creationBodyFrom(
+    creationInitialization,
+    parked,
+    noBindings,
+  );
+  expect(assembled.assembled).toBe("Body");
+  if (assembled.assembled !== "Body") return;
+  expect("finalization" in assembled.body.brief).toBe(false);
+  expect(draftCreationSchema.parse(assembled.body)).toStrictEqual(
+    assembled.body,
+  );
+});

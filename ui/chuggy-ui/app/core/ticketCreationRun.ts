@@ -28,6 +28,7 @@ import {
   apiCreateDraft,
   apiDraftInitialization,
   apiProjectRepositories,
+  configurationPagesMax,
 } from "./apiRoutes.ts";
 import type { ApiPorts, ApiResult } from "./apiRequest.ts";
 import {
@@ -43,13 +44,6 @@ import {
   creationReleaseMutation,
   latestReadyConfiguration,
 } from "./ticketCreation.ts";
-
-/**
- * How far back through a project's revisions a ready one is looked for. A walk
- * that ends here has established nothing about the project, so it answers
- * `ReadyConfigurationUnknown` and the reader is told how far it looked.
- */
-export const configurationPagesMax = 8;
 
 export type CreationContext =
   | {

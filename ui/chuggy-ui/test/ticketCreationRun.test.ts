@@ -11,8 +11,8 @@ import { expect, test } from "vitest";
 
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
+import { configurationPagesMax } from "../app/core/apiRoutes.ts";
 import {
-  configurationPagesMax,
   createAndReleaseTicket,
   creationContextSentence,
   readCreationContext,

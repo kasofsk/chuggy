@@ -332,7 +332,6 @@ function creationLandingFault(
   form: TicketCreationForm,
   branches: CreationBranches,
 ): CreationFault | undefined {
-  if (form.finalizer !== "ManagedFinalizer") return undefined;
   if (form.landingMode !== "PullRequest") return undefined;
   if (branches.branch.named === "Prefixed") return undefined;
   if (branches.target.named === "Prefixed") return undefined;
@@ -346,7 +345,14 @@ function creationLandingFault(
     : { field: "target", reason: creationLandingWholeSentence };
 }
 
-/** The faults this form decides for itself, the wire's parser deciding the rest. */
+/**
+ * The faults this form decides for itself, the wire's parser deciding the rest.
+ *
+ * A FORM STATES NO FAULT IN A BOX IT DOES NOT DRAW: a ticket running no
+ * finalizer is asked for neither a landing nor a target and sends neither, so a
+ * value left in the target box from before that choice would stop a submission
+ * with no field on screen to read the reason beside.
+ */
 function creationStatedFaults(
   form: TicketCreationForm,
   branches: CreationBranches,
@@ -362,6 +368,7 @@ function creationStatedFaults(
     });
   if (branches.branch.named === "Prefixed")
     stated.push({ field: "branch", reason: creationBranchPrefixedSentence });
+  if (form.finalizer !== "ManagedFinalizer") return stated;
   if (branches.target.named === "Prefixed")
     stated.push({ field: "target", reason: creationBranchPrefixedSentence });
   const landing = creationLandingFault(form, branches);

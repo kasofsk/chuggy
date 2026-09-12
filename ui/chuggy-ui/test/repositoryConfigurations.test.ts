@@ -12,9 +12,9 @@ import { expect, test } from "vitest";
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import type { ConfigurationSummary } from "../../../src/contract/responses.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
+import { configurationPagesMax } from "../app/core/apiRoutes.ts";
 import {
   readProjectConfigurations,
-  repositoryConfigurationPagesMax,
   repositoryConfigurationRow,
   repositoryConfigurations,
   repositoryReadyConfiguration,
@@ -124,12 +124,12 @@ test("the revisions are walked to the cursor's end, and no further than the budg
   };
   const walked = await readProjectConfigurations(ports, creationPartition);
   expect(walked.outcome === "Ok" && walked.value.length).toBe(
-    repositoryConfigurationPagesMax,
+    configurationPagesMax,
   );
   expect(calls[0]).toBe(
     `${nativeHttpBasePath}/tenants/acme/projects/atlas/configurations`,
   );
-  expect(calls.length).toBe(repositoryConfigurationPagesMax);
+  expect(calls.length).toBe(configurationPagesMax);
 });
 
 test("a refused page is the answer, and no rows are drawn from a partial read", async () => {

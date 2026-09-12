@@ -385,11 +385,11 @@ function CreationFields(
       {form.finalizer === "ManagedFinalizer" ? (
         <>
           <Landing form={form} onChange={onChange} />
-          <Fault field="landing" faults={faults} />
           <TargetBranch form={form} onChange={onChange} />
           <Fault field="target" faults={faults} />
         </>
       ) : null}
+      <Fault field="landing" faults={faults} />
       <TicketCreationAdvanced
         form={form}
         onChange={onChange}

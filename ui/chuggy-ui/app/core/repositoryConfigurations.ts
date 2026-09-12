@@ -12,18 +12,11 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ConfigurationSummary } from "../../../../src/contract/responses.ts";
 
 import type { ApiPorts, ApiResult } from "./apiRequest.ts";
-import { apiConfigurations } from "./apiRoutes.ts";
+import { apiConfigurations, configurationPagesMax } from "./apiRoutes.ts";
 import { approvalLabel, handoffLabel } from "./codeLabels.ts";
 import { configurationLabel, workerLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
 import { latestReadyConfiguration } from "./ticketCreation.ts";
-
-/**
- * How far back through a project's revisions one repository's are gathered. A
- * walk that ends here has read part of the project, and the rows it drew are
- * the newest of what it read.
- */
-export const repositoryConfigurationPagesMax = 8;
 
 /** What a ready revision decides, which is the whole of what the row says. */
 export interface RepositoryConfigurationFacts {
@@ -94,7 +87,7 @@ export async function readProjectConfigurations(
 ): Promise<ApiResult<readonly ConfigurationSummary[]>> {
   const held: ConfigurationSummary[] = [];
   let cursor: string | undefined;
-  for (let page = 0; page < repositoryConfigurationPagesMax; page += 1) {
+  for (let page = 0; page < configurationPagesMax; page += 1) {
     const answered = await apiConfigurations(ports, partition, { cursor });
     if (answered.outcome !== "Ok") return answered;
     held.push(...answered.value.configurations);
