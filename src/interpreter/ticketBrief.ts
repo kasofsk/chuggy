@@ -42,7 +42,9 @@
  * finalization's `target` is the reference the finalizer promotes onto. A
  * brief naming no finalization takes the landing its repository is bound
  * under, and `briefFinalizationDefault` where it names no repository either,
- * so a ticket that named only a branch works and lands there.
+ * so a ticket that named only a branch works and lands there. Landing is a
+ * parameter of the managed finalizer, so a ticket authored to run none
+ * resolves nothing and stores no landing.
  *
  * A MODE IS A VARIANT AND NOT A FLAG BESIDE AN OPTIONAL FIELD. A push may land
  * where the work happened and so may leave its target unsaid; a pull request

@@ -43,6 +43,7 @@ import {
   asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
+import type { Finalizer } from "../../src/domain/generated/modelTypes.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import {
   briefChecksMax,
@@ -1539,8 +1540,8 @@ test("release acceptance rejects a revision that was never retained", async () =
 /**
  * What a brief reads back as. The door resolves the landing a brief left
  * unsaid — against the repository it names, and against the tree's own default
- * where it names none — and stores what it resolved, so every stored brief
- * carries one whether or not the caller wrote it.
+ * where it names none — and stores what it resolved, so a brief whose ticket
+ * runs a finalizer carries one whether or not the caller wrote it.
  */
 function briefAsStored(brief: DraftBrief): DraftBrief {
   return brief.finalization === undefined
@@ -2082,14 +2083,14 @@ async function landlessFixture(label: string, landing = "Push") {
     store,
     revision,
     repository,
-    create: (brief: DraftBrief) =>
+    create: (brief: DraftBrief, finalizer: Finalizer = "NoFinalizer") =>
       store.createDraft({
         partition,
         authority,
         configurationRevision: revision,
         configurationDigest: initialized.configuration.digest,
         expectedProjectSequence: initialized.projectSequence,
-        authoring: { ...plainAuthoring, finalizer: "NoFinalizer" },
+        authoring: { ...plainAuthoring, finalizer },
         brief,
       }),
   };
@@ -2214,6 +2215,50 @@ test("a reference to land on is not a landing without a way of landing", async (
       ],
     ),
     /draft_brief_finalization_target_needs_a_mode/u,
+  );
+});
+
+test("a ticket that stops running a finalizer drops its landing and takes it back", async () => {
+  const landless = await landlessFixture("authoring-landless-roundtrip");
+  const brief = { ...postgresHarnessBrief, repository: landless.repository };
+  const created = await landless.create(brief, "ManagedFinalizer");
+  if (created.created !== "Created")
+    throw new Error(`the managed draft was ${created.created}`);
+  assert.deepEqual(
+    await storedLanding(landless.partition, created.draft.ticket),
+    { finalization_mode: "Push", finalization_target: null },
+    "a ticket that runs a finalizer stores the landing its repository is bound under",
+  );
+  const dropped = await landless.store.reviseDraft({
+    partition: landless.partition,
+    authority,
+    ticket: created.draft.ticket,
+    expectedVersion: created.draft.authoringVersion,
+    configurationRevision: landless.revision,
+    authoring: { ...plainAuthoring, finalizer: "NoFinalizer" },
+    brief,
+  });
+  assert.equal(dropped.revised, "Revised");
+  assert.deepEqual(
+    await storedLanding(landless.partition, created.draft.ticket),
+    { finalization_mode: null, finalization_target: null },
+    "the landing it stored is emptied by the revision that stops it landing",
+  );
+  const taken = await landless.store.reviseDraft({
+    partition: landless.partition,
+    authority,
+    ticket: created.draft.ticket,
+    expectedVersion:
+      dropped.revised === "Revised" ? dropped.draft.authoringVersion : 0,
+    configurationRevision: landless.revision,
+    authoring: { ...plainAuthoring, finalizer: "ManagedFinalizer" },
+    brief,
+  });
+  assert.equal(taken.revised, "Revised");
+  assert.deepEqual(
+    await storedLanding(landless.partition, created.draft.ticket),
+    { finalization_mode: "Push", finalization_target: null },
+    "and resolved again by the revision that starts it landing",
   );
 });
 

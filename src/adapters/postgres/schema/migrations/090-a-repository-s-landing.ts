@@ -154,18 +154,13 @@ const resolvedLanding = `coalesce(in_finalization_mode,
 const briefLanding = [
   `ALTER TABLE draft_brief
      ALTER COLUMN finalization_mode DROP NOT NULL,
+     ALTER COLUMN finalization_mode DROP DEFAULT,
      ADD CONSTRAINT draft_brief_finalization_target_needs_a_mode
        CHECK (finalization_target IS NULL OR finalization_mode IS NOT NULL)`,
 ];
 
-/**
- * The finalizer a draft is authored to run, read out of the event the caller
- * hands the door. It is guarded because nothing constrains that column to be
- * JSON, and a door that raised on a row it used to write would refuse a draft
- * over a value it does not decide with.
- */
-const authoredFinalizer = `(CASE WHEN in_authoring IS JSON OBJECT
-         THEN in_authoring::jsonb->'value'->>'finalizer' END)`;
+/** The finalizer a draft is authored to run, read out of the event the caller hands the door. */
+const authoredFinalizer = `in_authoring::jsonb->'value'->>'finalizer'`;
 
 /** What a ticket that lands nothing is refused for naming a landing anyway. */
 const landsNothing = `IF ${authoredFinalizer} = 'NoFinalizer' THEN
