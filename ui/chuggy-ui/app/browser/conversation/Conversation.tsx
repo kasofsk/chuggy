@@ -101,12 +101,30 @@ function conversationMessages(
   ]);
 }
 
-/** Whether any exchange is still being worked, the half of the waiting
- * predicate that outlives one send. */
+/** Whether any exchange is still being worked, the mailbox's own state: true
+ * for a turn in `Queued` or `Claimed`, whatever the transcript already holds.
+ * This is what `useExternalStoreRuntime`'s `isRunning` follows, so the
+ * library's own affordances stay bound to the mailbox rather than the
+ * transcript. */
 function conversationRunning(
   exchanges: readonly ConversationExchange[],
 ): boolean {
   return exchanges.some((exchange) => exchange.standing.standing === "Running");
+}
+
+/** Whether a turn is out and nothing has been said for it yet — the strip's
+ * own half of the waiting predicate, distinct from `conversationRunning`
+ * because an exchange can be `Running` in the mailbox while its answer is
+ * already on the transcript. `conversationWorked` demotes a text out of
+ * `answer` the moment further work arrives, so an agent that speaks and then
+ * keeps working reopens this without help from here. */
+function conversationUnanswered(
+  exchanges: readonly ConversationExchange[],
+): boolean {
+  return exchanges.some(
+    (exchange) =>
+      exchange.standing.standing === "Running" && exchange.answer === undefined,
+  );
 }
 
 function conversationAppendedText(message: AppendMessage): string {
@@ -242,7 +260,7 @@ export function Conversation(props: {
     exchanges: activeExchanges,
     composer: props.composer,
   });
-  const waiting = held.sending || conversationRunning(activeExchanges);
+  const waiting = held.sending || conversationUnanswered(activeExchanges);
   const inset = props.pane === true ? "px-4 py-4" : "";
   return (
     <AssistantRuntimeProvider runtime={held.runtime}>

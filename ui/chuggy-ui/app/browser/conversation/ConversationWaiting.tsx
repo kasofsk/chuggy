@@ -1,7 +1,9 @@
 /**
  * The strip above the composer, holding its height whether or not the train is
- * drawn in it, so a turn starting or ending never shifts the composer beneath
- * it.
+ * drawn in it, so a turn starting or its answer landing never shifts the
+ * composer beneath it. `waiting` is not "a turn is out": it is a turn out with
+ * nothing said for it yet, so an answer already on the transcript stops the
+ * engine before the mailbox itself settles.
  *
  * The train is chuggernaut's own sprite, redrawn against the theme: not one
  * fill is stated here, each is a class `conversation.css` fills from a token,
