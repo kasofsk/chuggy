@@ -610,6 +610,15 @@ test("a pull request names a branch, and a target that is not it", () => {
       }),
     ),
   ).toStrictEqual(["branch"]);
+  expect(
+    faultFields(
+      creationForm({
+        landingMode: "PullRequest",
+        branchName: "topic/one",
+        targetBranchName: "topic/one",
+      }),
+    ),
+  ).toStrictEqual(["target"]);
 });
 
 /** The empty target box means two different references, so it says which. */

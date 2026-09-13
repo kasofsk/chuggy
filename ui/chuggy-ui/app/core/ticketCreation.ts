@@ -253,7 +253,7 @@ export const creationLandingBranchSentence =
 
 /** What `briefLandingIsWhole` refuses, said as the two boxes that fix it. */
 export const creationLandingWholeSentence =
-  "a pull request opens from this branch into a different target branch";
+  "a pull request opens from the branch above into a different target branch";
 
 /**
  * What this form checked and the reader has to satisfy, and no more than that.
@@ -285,11 +285,13 @@ export function creationFaultSentence(field: CreationField): string {
 }
 
 /**
- * The field an issue belongs to. The brief's own pairing refine names no field
- * at all, and what it refuses is the branch a proposal is opened from, against
- * the target where one is named, so a bare brief issue is the branch's.
+ * The field an issue belongs to, the brief's own pairing naming none: it is
+ * refused for a branch or for a target depending on which of them the reader
+ * wrote, which is what the form's own sentence already says beside the box.
  */
-function creationFieldOf(path: readonly PropertyKey[]): CreationField {
+function creationFieldOf(
+  path: readonly PropertyKey[],
+): CreationField | undefined {
   if (path[0] === "authoring") return "authoring";
   if (path[0] !== "brief") return "fence";
   if (path[1] === "title") return "title";
@@ -299,20 +301,25 @@ function creationFieldOf(path: readonly PropertyKey[]): CreationField {
   if (path[1] === "repository") return "repository";
   if (path[1] === "finalization")
     return path[2] === "target" ? "target" : "landing";
-  return path[1] === undefined ? "branch" : "links";
+  return path[1] === undefined ? undefined : "links";
 }
 
 /**
  * The faults a field earns, with the ones this form stated itself first: a
  * field the form already has a sentence for is not given the field's general
- * one a second time.
+ * one a second time, and an issue belonging to no field is left to the sentence
+ * the form states beside the box that fixes it.
  */
 function creationFaultsOf(
   issues: readonly { readonly path: readonly PropertyKey[] }[],
   stated: readonly CreationFault[],
 ): readonly CreationFault[] {
   const named = new Set(stated.map((fault) => fault.field));
-  const fields = new Set(issues.map((issue) => creationFieldOf(issue.path)));
+  const fields = new Set(
+    issues
+      .map((issue) => creationFieldOf(issue.path))
+      .filter((field) => field !== undefined),
+  );
   return [
     ...stated,
     ...[...fields]
@@ -355,7 +362,7 @@ function creationLandingFault(
     finalization: { mode: form.landingMode, target: branches.target.ref },
   })
     ? undefined
-    : { field: "branch", reason: creationLandingWholeSentence };
+    : { field: "target", reason: creationLandingWholeSentence };
 }
 
 /**

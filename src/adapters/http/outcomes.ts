@@ -1215,7 +1215,7 @@ export function draftInitializationResponse(
  */
 const draftLandingUnbranched = nativeHttpError(
   "LandingUnbranched",
-  "A pull request is opened from a branch the brief names.",
+  "The brief names no branch to open a pull request from.",
 );
 
 function draftCreated(value: DraftCreated): NativeHttpResponse {
