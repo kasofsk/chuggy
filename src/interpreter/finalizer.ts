@@ -364,6 +364,18 @@ export function repositoryBindingNarrowed(
 }
 
 /**
+ * The binding with whatever narrowed it taken back off, which is what reads the
+ * remote's own default branch rather than a ref. The rest carries every other
+ * field across, so the ref is the only thing dropped here.
+ */
+export function repositoryBindingWidened(
+  binding: RepositoryBinding,
+): RepositoryBinding {
+  const { targetRef, ...widened } = binding;
+  return targetRef === undefined ? binding : widened;
+}
+
+/**
  * What a branch the brief names resolves to: the branch itself, or the
  * binding's own target under that branch's name where the remote does not hold
  * it yet. A branch nobody has created is not an unreadable ref — it is where
@@ -554,6 +566,7 @@ export type FinalizationHoldKind =
   | "ProposalUnavailable"
   | "ProposalDenied"
   | "ProposalBaseUnreadable"
+  | "ProposalBaseIsHead"
   | "ProposalEvidenceUnstorable"
   | "ProposalCreationsExhausted";
 
@@ -569,6 +582,7 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "ProposalUnavailable",
   "ProposalDenied",
   "ProposalBaseUnreadable",
+  "ProposalBaseIsHead",
   "ProposalEvidenceUnstorable",
   "ProposalCreationsExhausted",
 ];

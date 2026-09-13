@@ -1208,6 +1208,16 @@ export function draftInitializationResponse(
   });
 }
 
+/**
+ * What a brief is refused for where the landing it resolves to proposes and it
+ * names no branch. The brief may have named no landing at all, so the reason
+ * names the branch rather than the mode the caller never wrote.
+ */
+const draftLandingUnbranched = nativeHttpError(
+  "LandingUnbranched",
+  "A pull request is opened from a branch the brief names.",
+);
+
 function draftCreated(value: DraftCreated): NativeHttpResponse {
   switch (value.created) {
     case "Created":
@@ -1221,6 +1231,8 @@ function draftCreated(value: DraftCreated): NativeHttpResponse {
     case "ConfigurationNotFound":
     case "RepositoryNotBound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "LandingUnbranched":
+      return response(422, draftLandingUnbranched);
     case "Stale":
       return response(
         409,
@@ -1248,6 +1260,8 @@ function draftRevised(value: DraftRevised): NativeHttpResponse {
     case "ConfigurationNotFound":
     case "RepositoryNotBound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "LandingUnbranched":
+      return response(422, draftLandingUnbranched);
     case "Stale":
       return response(409, {
         ...nativeHttpError("DraftChanged", "The draft has changed."),
