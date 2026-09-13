@@ -229,15 +229,27 @@ export function creationBranchOf(branchName: string): CreationBranch {
 /** What the branch field asks for and what naming it does, said beside it rather than only when refused. */
 export const creationBranchHint = `the branch this work starts from, and lands on unless a target names another, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>`;
 
+/** Where the work lands when the target box is left empty, which each landing answers for itself. */
+function creationTargetBranchUnnamed(mode: BriefFinalizationMode): string {
+  switch (mode) {
+    case "Push":
+      return "the branch the work happened on";
+    case "PullRequest":
+      return "the repository's default branch";
+  }
+}
+
 /** The same, for the field that names where the work ends up instead. */
-export const creationTargetBranchHint = `where the finished work lands, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>`;
+export function creationTargetBranchHint(mode: BriefFinalizationMode): string {
+  return `where the finished work lands, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>, and ${creationTargetBranchUnnamed(mode)} where it is left empty`;
+}
 
 /** The one input either branch field refuses, said as the edit that fixes it. */
 export const creationBranchPrefixedSentence = `enter the branch name, not the ref: this console adds ${briefBranchPrefix} itself`;
 
-/** What a proposal names that a push may leave out. */
-export const creationLandingTargetSentence =
-  "a pull request names the branch it opens into";
+/** What a proposal is opened from, which is the one box a push may leave empty. */
+export const creationLandingBranchSentence =
+  "a pull request is opened from a branch of its own, so name one above";
 
 /** What `briefLandingIsWhole` refuses, said as the two boxes that fix it. */
 export const creationLandingWholeSentence =
@@ -273,11 +285,13 @@ export function creationFaultSentence(field: CreationField): string {
 }
 
 /**
- * The field an issue belongs to. The brief's own pairing refine names no field
- * at all, and the pair it refuses is the finalization's target against the
- * branch, so a bare brief issue is the target's.
+ * The field an issue belongs to, the brief's own pairing naming none: it is
+ * refused for a branch or for a target depending on which of them the reader
+ * wrote, which is what the form's own sentence already says beside the box.
  */
-function creationFieldOf(path: readonly PropertyKey[]): CreationField {
+function creationFieldOf(
+  path: readonly PropertyKey[],
+): CreationField | undefined {
   if (path[0] === "authoring") return "authoring";
   if (path[0] !== "brief") return "fence";
   if (path[1] === "title") return "title";
@@ -287,20 +301,25 @@ function creationFieldOf(path: readonly PropertyKey[]): CreationField {
   if (path[1] === "repository") return "repository";
   if (path[1] === "finalization")
     return path[2] === "target" ? "target" : "landing";
-  return path[1] === undefined ? "target" : "links";
+  return path[1] === undefined ? undefined : "links";
 }
 
 /**
  * The faults a field earns, with the ones this form stated itself first: a
  * field the form already has a sentence for is not given the field's general
- * one a second time.
+ * one a second time, and an issue belonging to no field is left to the sentence
+ * the form states beside the box that fixes it.
  */
 function creationFaultsOf(
   issues: readonly { readonly path: readonly PropertyKey[] }[],
   stated: readonly CreationFault[],
 ): readonly CreationFault[] {
   const named = new Set(stated.map((fault) => fault.field));
-  const fields = new Set(issues.map((issue) => creationFieldOf(issue.path)));
+  const fields = new Set(
+    issues
+      .map((issue) => creationFieldOf(issue.path))
+      .filter((field) => field !== undefined),
+  );
   return [
     ...stated,
     ...[...fields]
@@ -323,8 +342,8 @@ function creationBranchesOf(form: TicketCreationForm): CreationBranches {
 }
 
 /**
- * What a proposal needs that a push does not: a reference to open into, and a
- * branch of its own that is not it. A branch box the form already refuses for
+ * What a proposal needs that a push does not: a branch of its own, and a target
+ * that is not it where it names one. A branch box the form already refuses for
  * its prefix earns no second fault, because the prefix is the edit to make
  * first and the pairing is decided on what the fixed box would name.
  */
@@ -335,10 +354,11 @@ function creationLandingFault(
   if (form.landingMode !== "PullRequest") return undefined;
   if (branches.branch.named === "Prefixed") return undefined;
   if (branches.target.named === "Prefixed") return undefined;
-  if (branches.target.named !== "Ref")
-    return { field: "target", reason: creationLandingTargetSentence };
+  if (branches.branch.named !== "Ref")
+    return { field: "branch", reason: creationLandingBranchSentence };
+  if (branches.target.named !== "Ref") return undefined;
   return briefLandingIsWhole({
-    ...(branches.branch.named === "Ref" ? { branch: branches.branch.ref } : {}),
+    branch: branches.branch.ref,
     finalization: { mode: form.landingMode, target: branches.target.ref },
   })
     ? undefined

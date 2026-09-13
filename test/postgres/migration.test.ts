@@ -8,6 +8,8 @@ import {
   apiRole,
   boundaryOwnerRole,
   configurationImporterRole,
+  draftCreateFunction,
+  draftReviseFunction,
   finalizationFunction,
   finalizerRole,
   migrationLedger,
@@ -4460,5 +4462,194 @@ test("a landing no roster names is refused by the column's own constraint", asyn
       ),
       /project_repository_landing_mode_is_known/u,
     );
+  });
+});
+
+/** A project whose one binding lands by proposal, and the revision a draft may name. */
+async function seedProposingBinding(subject: pg.Pool): Promise<void> {
+  await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-91')`);
+  await subject.query(
+    `INSERT INTO project(tenant,project,lifecycle,head,ingress_next,ticket_next)
+     VALUES('tenant-91','project-91','Active',0,1,1)`,
+  );
+  await subject.query(
+    `INSERT INTO project_repository(tenant,project,repository,recovery_epoch,landing_mode)
+     VALUES('tenant-91','project-91','bound-91','epoch-91','PullRequest')`,
+  );
+  await subject.query(
+    `INSERT INTO configuration_revision
+       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+     VALUES('tenant-91','project-91','revision-91','{}','digest-91','User','author')`,
+  );
+}
+
+/** One brief written through the door itself, naming the branch a case gives it and no target. */
+async function createdProposingDraft(subject: pg.Pool, branch: string | null) {
+  return (
+    await subject.query<{ result: string; ticket: string | null }>(
+      `SELECT result,ticket::text AS ticket FROM ${draftCreateFunction}(
+         'tenant-91','project-91','revision-91','digest-91',0,$1,
+         NULL,'Land it.','{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91','User','author')`,
+      [
+        encodeDraftAuthoring({
+          ...plainAuthoring,
+          finalizer: "ManagedFinalizer",
+        }),
+        branch,
+      ],
+    )
+  ).rows;
+}
+
+/** One brief written through the door naming no repository, which is the landing 91 writes out itself. */
+async function createdUnboundDraft(subject: pg.Pool) {
+  return (
+    await subject.query<{ result: string }>(
+      `SELECT result FROM ${draftCreateFunction}(
+         'tenant-91','project-91','revision-91','digest-91',0,$1,
+         NULL,'Land it.','{}'::text[],'{}'::text[],NULL,NULL,NULL,NULL,'User','author')`,
+      [
+        encodeDraftAuthoring({
+          ...plainAuthoring,
+          finalizer: "ManagedFinalizer",
+        }),
+      ],
+    )
+  ).rows;
+}
+
+/**
+ * 91 writes the landing a brief takes where neither it nor a repository names
+ * one as a literal rather than from the roster, so the two are pinned to each
+ * other here.
+ */
+test("the landing 91's door falls back to is the one this tree defaults to", async () => {
+  assert.equal(briefFinalizationDefault.mode, "Push");
+  await migrationDatabase("i91fallback", async (subject) => {
+    await migrationSeedApplied(subject, 91);
+    await seedProposingBinding(subject);
+    await applyMigration(subject, 91);
+    assert.deepEqual(await createdUnboundDraft(subject), [
+      { result: "Created" },
+    ]);
+    assert.deepEqual(
+      (
+        await subject.query<{ finalization_mode: string }>(
+          `SELECT finalization_mode FROM draft_brief`,
+        )
+      ).rows,
+      [{ finalization_mode: briefFinalizationDefault.mode }],
+    );
+  });
+});
+
+test("migration 91 opens a proposal into the default branch where 90's door could only fail", async () => {
+  await migrationDatabase("i91default", async (subject) => {
+    await migrationSeedApplied(subject, 91);
+    await seedProposingBinding(subject);
+    await assert.rejects(
+      createdProposingDraft(subject, "refs/heads/rt/work"),
+      /draft_brief_finalization_is_whole/u,
+      "the door installed with 90 could only raise for a brief naming no base",
+    );
+
+    await applyMigration(subject, 91);
+
+    assert.deepEqual(
+      await createdProposingDraft(subject, "refs/heads/rt/work"),
+      [{ result: "Created", ticket: "1" }],
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ mode: string | null; target: string | null }>(
+          `SELECT finalization_mode AS mode,finalization_target AS target
+             FROM draft_brief WHERE tenant='tenant-91' AND project='project-91'`,
+        )
+      ).rows,
+      [{ mode: "PullRequest", target: null }],
+    );
+  });
+});
+
+test("migration 91's door refuses the brief its own resolution left with no head", async () => {
+  await migrationDatabase("i91unbranched", async (subject) => {
+    await migrationSeedApplied(subject, 91);
+    await seedProposingBinding(subject);
+
+    await applyMigration(subject, 91);
+
+    assert.deepEqual(await createdProposingDraft(subject, null), [
+      { result: "LandingUnbranched", ticket: null },
+    ]);
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT ticket FROM draft WHERE tenant='tenant-91' AND project='project-91'`,
+        )
+      ).rows,
+      [],
+      "a refused brief mints no ticket",
+    );
+  });
+});
+
+test("migration 91 relaxes the base and keeps every other half of the pairing", async () => {
+  await migrationDatabase("i91pairing", async (subject) => {
+    await migrationSeedApplied(subject, 91);
+    await seedProposingBinding(subject);
+
+    await applyMigration(subject, 91);
+
+    const created = await createdProposingDraft(subject, "refs/heads/rt/work");
+    assert.equal(created[0]?.result, "Created");
+    for (const [written, why] of [
+      ["branch=NULL", "names no branch to open from"],
+      ["finalization_target=branch", "opens from its own base"],
+    ] as const)
+      await assert.rejects(
+        subject.query(
+          `UPDATE draft_brief SET ${written}
+            WHERE tenant='tenant-91' AND project='project-91'`,
+        ),
+        /draft_brief_finalization_is_whole/u,
+        `no pull request ${why}`,
+      );
+    await subject.query(
+      `UPDATE draft_brief SET finalization_target='refs/heads/rt/landing'
+        WHERE tenant='tenant-91' AND project='project-91'`,
+    );
+  });
+});
+
+test("migration 91 replaces the draft doors without moving the grants they carry", async () => {
+  await migrationDatabase("i91grants", async (subject) => {
+    await migrationSeedApplied(subject, 91);
+    await applyMigration(subject, 91);
+    for (const signature of [
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text,text,text,text,text,text)`,
+      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text,text,text,text,text,text)`,
+    ]) {
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
+            [apiRole, signature],
+          )
+        ).rows[0]?.granted,
+        true,
+        signature,
+      );
+      assert.equal(
+        (
+          await subject.query<{ owner: string }>(
+            `SELECT pg_get_userbyid(proowner) AS owner FROM pg_proc
+              WHERE oid = $1::regprocedure`,
+            [signature],
+          )
+        ).rows[0]?.owner,
+        boundaryOwnerRole,
+        signature,
+      );
+    }
   });
 });

@@ -52,7 +52,8 @@
  * A PULL REQUEST MOVES THAT TARGET, AND ONLY FOR THE FINALIZATION THAT OPENS
  * ONE. Under `RunFinalizer` a brief that proposes lands on the branch its work
  * happened on, because that branch is the head the proposal is opened from and
- * the reference its finalization names is the base. A handoff request narrows
+ * the reference its finalization names is the base, the remote's own default
+ * branch standing as that base where it names none. A handoff request narrows
  * by that reference exactly as a push does: its promotion is into a repository
  * the ticket never worked in and has nothing to do with the brief's mode. The
  * pairing is refused where the two are written — a configuration that hands off
@@ -208,6 +209,7 @@ import {
   type TargetObserved,
   inputBundleReferencesMax,
   repositoryBindingNarrowed,
+  repositoryBindingWidened,
   repositoryTargetObserved,
 } from "./finalizer.ts";
 import {
@@ -447,6 +449,21 @@ interface FinalizerBranches {
 }
 
 /**
+ * Whether this claim lands its work by opening a proposal, which is what makes
+ * the brief's branch the head rather than the destination. A handoff publishes
+ * into a repository of its own, whatever the ticket's brief says.
+ */
+function finalizerProposes(
+  view: FinalizationView,
+  brief: DraftBrief | undefined,
+): boolean {
+  return (
+    view.claim.kind === "RunFinalizer" &&
+    brief?.finalization?.mode === "PullRequest"
+  );
+}
+
+/**
  * What the ticket's brief says about each: a push lands on the reference its
  * finalization names or on the work's own branch where it names none, a pull
  * request always lands on the work's branch — that branch being the head a
@@ -467,8 +484,7 @@ async function finalizerGatherBranches(
   );
   if (brief === undefined) return {};
   const finalization = brief.finalization;
-  const proposing =
-    view.claim.kind === "RunFinalizer" && finalization?.mode === "PullRequest";
+  const proposing = finalizerProposes(view, brief);
   if (proposing && brief.branch === undefined) return undefined;
   const target = proposing
     ? brief.branch
@@ -504,6 +520,26 @@ async function finalizerGatherWorkBranch(
 }
 
 /**
+ * What reading the base a proposing brief naming none opens into found, which
+ * is the branch the remote itself defaults to. It is read before anything is
+ * built, because a promotion lands a proposing ticket on its own branch and
+ * would push onto that base first; what the answer means is the pure pass's.
+ */
+async function finalizerGatherProposalBase(
+  service: FinalizerService,
+  view: FinalizationView,
+  binding: RepositoryBinding,
+  branches: FinalizerBranches,
+): Promise<TargetObserved | undefined> {
+  if (
+    !finalizerProposes(view, branches.brief) ||
+    branches.brief?.finalization?.target !== undefined
+  )
+    return undefined;
+  return service.git.observeTarget(repositoryBindingWidened(binding));
+}
+
+/**
  * What one gathering came to: the view a decision is made from, or the reason
  * one could not be made from what was read. A request nothing durable answers
  * for at all is neither, and is left to the sweep that reopens it.
@@ -527,6 +563,12 @@ async function finalizerGather(
   const branches = await finalizerGatherBranches(service, durable);
   if (branches === undefined)
     return { gathered: "Held", hold: "ProposalUnbranched" };
+  const base = await finalizerGatherProposalBase(
+    service,
+    durable,
+    durable.repository,
+    branches,
+  );
   const observed = await repositoryTargetObserved(
     service.git,
     durable.repository,
@@ -539,6 +581,7 @@ async function finalizerGather(
     ...(branches.brief?.finalization === undefined
       ? {}
       : { finalizationMode: branches.brief.finalization.mode }),
+    ...(base === undefined ? {} : { proposalBase: base }),
   };
   if (observed.observed !== "Target") return { gathered: "View", view };
   const work = await finalizerGatherWorkBranch(
@@ -1191,10 +1234,26 @@ function finalizerStoredProposal(
 }
 
 /**
- * The request a proposal nobody has opened yet would ask for. This is the one
- * place the base is observed, and it is read as itself rather than through the
- * binding's fallback, so a base the remote does not hold is unreadable instead
- * of silently becoming the default branch.
+ * The base as the remote holds it: the reference the finalization names, read
+ * as itself rather than through the binding's fallback, or the branch the
+ * remote defaults to where it names none.
+ */
+async function finalizerProposalBase(
+  service: FinalizerService,
+  binding: RepositoryBinding,
+  target: GitRefName | undefined,
+): Promise<ObservedTarget | undefined> {
+  const observed = await service.git.observeTarget(
+    repositoryBindingNarrowed(repositoryBindingWidened(binding), target),
+  );
+  return observed.observed === "Target" ? observed.target : undefined;
+}
+
+/**
+ * The request a proposal nobody has opened yet would ask for, over the base the
+ * gathering already read where it read one. A base read back as the head is
+ * nothing to open a proposal between, which the gathering decides for the
+ * shape it can see and this backstops for the rest.
  */
 async function finalizerOpeningProposal(
   service: FinalizerService,
@@ -1212,10 +1271,17 @@ async function finalizerOpeningProposal(
       "finalizer proposal: a proposal was authorized by no brief that opens one",
     );
   }
-  const observed = await service.git.observeTarget(
-    repositoryBindingNarrowed(pinned.repository, finalization.target),
-  );
-  if (observed.observed !== "Target") return { gathered: "BaseUnreadable" };
+  const carried =
+    finalization.target === undefined ? view.proposalBase : undefined;
+  const observed =
+    (carried?.observed === "Target" ? carried.target : undefined) ??
+    (await finalizerProposalBase(
+      service,
+      pinned.repository,
+      finalization.target,
+    ));
+  if (observed === undefined) return { gathered: "BaseUnreadable" };
+  if (observed.ref === pinned.target.ref) return { gathered: "BaseIsHead" };
   const identity = asChangeProposalRequestIdentity(
     service.digestOf(canonicalChangeProposalRequest(view.claim)),
   );
@@ -1228,8 +1294,8 @@ async function finalizerOpeningProposal(
       request: identity,
       headRef: pinned.target.ref,
       headCommit: pinned.candidate,
-      baseRef: observed.target.ref,
-      baseCommit: observed.target.commit,
+      baseRef: observed.ref,
+      baseCommit: observed.commit,
       title: finalizationProposalTitle(view.claim.ticket, brief),
       body: finalizationProposalBody(brief.intent, proposalMarkerOf(identity)),
     }),

@@ -488,12 +488,15 @@ export type ConfigurationCreated =
  * `RepositoryNotBound` is the brief's repository refused: the door names it
  * rather than letting the foreign key raise, because a body naming a referent
  * the project does not have is a refusal like `ConfigurationNotFound` and not a
- * fault.
+ * fault. `LandingUnbranched` is the same for a brief whose resolved landing
+ * proposes and which names no branch to propose from: the landing it is refused
+ * for is the repository's, which the caller never named and cannot see.
  */
 export type DraftCreated =
   | { readonly created: "Created"; readonly draft: DraftResource }
   | { readonly created: "ConfigurationNotFound" }
   | { readonly created: "RepositoryNotBound" }
+  | { readonly created: "LandingUnbranched" }
   | { readonly created: "Stale" };
 
 export interface DraftInitialization {
@@ -572,7 +575,7 @@ export function draftInitializationPolicy(
   };
 }
 
-/** `RepositoryNotBound` is the same refusal `DraftCreated` documents. */
+/** `RepositoryNotBound` and `LandingUnbranched` are the refusals `DraftCreated` documents. */
 export type DraftRevised =
   | { readonly revised: "Revised"; readonly draft: DraftResource }
   | { readonly revised: "NotFound" }
@@ -582,7 +585,8 @@ export type DraftRevised =
       readonly state: Exclude<DraftState, "Draft">;
     }
   | { readonly revised: "ConfigurationNotFound" }
-  | { readonly revised: "RepositoryNotBound" };
+  | { readonly revised: "RepositoryNotBound" }
+  | { readonly revised: "LandingUnbranched" };
 
 export type DraftDeleted =
   | { readonly deleted: "Deleted"; readonly draft: DraftResource }
