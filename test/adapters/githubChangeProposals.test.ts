@@ -138,8 +138,8 @@ function fixtureAdapter(
   });
 }
 
-/** One pull request as this forge reports it, which every case narrows to what it is about. */
-function fixturePull(
+/** One pull request as this forge lists it, which every case narrows to what it is about. */
+function fixtureListedPull(
   request: ChangeProposalRequest,
   overrides: Readonly<Record<string, unknown>> = {},
 ): Readonly<Record<string, unknown>> {
@@ -159,6 +159,22 @@ function fixturePull(
     },
     ...overrides,
   };
+}
+
+/**
+ * One pull request as this forge answers a create with, which is the whole
+ * representation and so carries what the forge says about merging a proposal
+ * nobody has asked it about yet.
+ */
+function fixturePull(
+  request: ChangeProposalRequest,
+  overrides: Readonly<Record<string, unknown>> = {},
+): Readonly<Record<string, unknown>> {
+  return fixtureListedPull(request, {
+    mergeable: null,
+    mergeable_state: "unknown",
+    ...overrides,
+  });
 }
 
 /**
@@ -237,7 +253,7 @@ test("a created proposal is asked for once, addressed and headed exactly", async
   const created = await fixtureAdapter(recorder).create(request);
   assert.deepEqual(created, {
     created: "Created",
-    evidence: fixtureEvidence(request),
+    evidence: { ...fixtureEvidence(request), mergeability: "Unknown" },
   });
   assert.equal(recorder.calls.length, 1);
   const call = recorder.calls[0];
@@ -262,7 +278,7 @@ test("a proposal the forge says already exists is unsettled until it is read bac
   const request = fixtureRequest();
   const recorder = fixtureForge([
     fixtureAnswer(422, { message: "A pull request already exists." }),
-    fixtureAnswer(200, [fixturePull(request)]),
+    fixtureAnswer(200, [fixtureListedPull(request)]),
   ]);
   const adapter = fixtureAdapter(recorder);
   assert.deepEqual(await adapter.create(request), { created: "Ambiguous" });
@@ -320,9 +336,9 @@ test("a forge that failed or stopped leaves a create ambiguous and a read unavai
 
 test("a read answers with the proposal carrying this request's marker and nothing else", async () => {
   const request = fixtureRequest();
-  const foreign = fixturePull(request, { body: "somebody else's work" });
+  const foreign = fixtureListedPull(request, { body: "somebody else's work" });
   const recorder = fixtureForge([
-    fixtureAnswer(200, [foreign, fixturePull(request)]),
+    fixtureAnswer(200, [foreign, fixtureListedPull(request)]),
     fixtureAnswer(200, [foreign]),
     fixtureAnswer(200, []),
   ]);
@@ -337,7 +353,7 @@ test("a read answers with the proposal carrying this request's marker and nothin
 
 test("a page filled to the bound with no match is not an absence", async () => {
   const request = fixtureRequest();
-  const foreign = fixturePull(request, { body: "somebody else's work" });
+  const foreign = fixtureListedPull(request, { body: "somebody else's work" });
   const page = Array.from(
     { length: githubChangeProposalsDefaults.proposalsPerReadMax },
     () => foreign,
@@ -354,15 +370,19 @@ test("a page filled to the bound with no match is not an absence", async () => {
 
 test("a response past its byte bound is not read", async () => {
   const request = fixtureRequest();
-  const wide = fixturePull(request, { title: "w".repeat(4_096) });
-  const creating = fixtureForge([fixtureAnswer(201, wide)]);
+  const wide = { title: "w".repeat(4_096) };
+  const creating = fixtureForge([
+    fixtureAnswer(201, fixturePull(request, wide)),
+  ]);
   assert.deepEqual(
     await fixtureAdapter(creating, "Credential", 64).create(request),
     {
       created: "Ambiguous",
     },
   );
-  const reading = fixtureForge([fixtureAnswer(200, [wide])]);
+  const reading = fixtureForge([
+    fixtureAnswer(200, [fixtureListedPull(request, wide)]),
+  ]);
   assert.deepEqual(
     await fixtureAdapter(reading, "Credential", 64).readByMarker(request),
     { read: "Unavailable" },
@@ -425,7 +445,7 @@ test("a proposal carrying the marker past the bounds a stored row holds is not a
   ];
   for (const overrides of unholdable) {
     const recorder = fixtureForge([
-      fixtureAnswer(200, [fixturePull(request, overrides)]),
+      fixtureAnswer(200, [fixtureListedPull(request, overrides)]),
     ]);
     assert.deepEqual(
       await fixtureAdapter(recorder).readByMarker(request),
@@ -480,7 +500,7 @@ test("a forge answer carrying a NUL is unsettled rather than thrown", async () =
       `a create is unsettled: ${answered}`,
     );
     const reading = fixtureForge([
-      fixtureAnswer(200, [fixturePull(request, overrides)]),
+      fixtureAnswer(200, [fixtureListedPull(request, overrides)]),
     ]);
     assert.deepEqual(
       await fixtureAdapter(reading).readByMarker(request),
@@ -524,10 +544,10 @@ test("a repository the forge spells its own way is the one this request addresse
   ]);
   assert.deepEqual(await fixtureAdapter(creating).create(request), {
     created: "Created",
-    evidence: fixtureEvidence(request),
+    evidence: { ...fixtureEvidence(request), mergeability: "Unknown" },
   });
   const reading = fixtureForge([
-    fixtureAnswer(200, [fixturePull(request, answered)]),
+    fixtureAnswer(200, [fixtureListedPull(request, answered)]),
   ]);
   assert.deepEqual(await fixtureAdapter(reading).readByMarker(request), {
     read: "Found",
@@ -539,7 +559,7 @@ test("the credential reaches one header and nothing the adapter returns", async 
   const request = fixtureRequest();
   const recorder = fixtureForge([
     fixtureAnswer(201, fixturePull(request)),
-    fixtureAnswer(200, [fixturePull(request)]),
+    fixtureAnswer(200, [fixtureListedPull(request)]),
   ]);
   const adapter = fixtureAdapter(recorder);
   const created = await adapter.create(request);
@@ -633,7 +653,7 @@ test("evidence carries what the forge answered and never what the request asked"
   ] as const;
   for (const one of cases) {
     const recorder = fixtureForge([
-      fixtureAnswer(200, [fixturePull(request, one.answered)]),
+      fixtureAnswer(200, [fixtureListedPull(request, one.answered)]),
     ]);
     const read = await fixtureAdapter(recorder).readByMarker(request);
     const answered = { ...fixtureEvidence(request), ...one.evidence };
@@ -650,7 +670,7 @@ test("a proposal the forge has closed or merged carries that standing", async ()
   const request = fixtureRequest();
   const closed = fixtureForge([
     fixtureAnswer(200, [
-      fixturePull(request, { state: "closed", merged_at: null }),
+      fixtureListedPull(request, { state: "closed", merged_at: null }),
     ]),
   ]);
   assert.deepEqual(await fixtureAdapter(closed).readByMarker(request), {
@@ -659,7 +679,7 @@ test("a proposal the forge has closed or merged carries that standing", async ()
   });
   const merged = fixtureForge([
     fixtureAnswer(200, [
-      fixturePull(request, {
+      fixtureListedPull(request, {
         state: "closed",
         merged_at: fixtureMergedAt,
         merge_commit_sha: fixtureMergeCommit,
@@ -714,7 +734,7 @@ test("a display URL this forge did not serve is not carried into evidence", asyn
   const request = fixtureRequest();
   const recorder = fixtureForge([
     fixtureAnswer(200, [
-      fixturePull(request, {
+      fixtureListedPull(request, {
         html_url: "https://elsewhere.invalid/kasofsk/chuggy/pull/17",
       }),
     ]),
@@ -724,7 +744,9 @@ test("a display URL this forge did not serve is not carried into evidence", asyn
   assert.equal(read.read === "Found" ? read.evidence.url : "unread", undefined);
   const nulled = fixtureForge([
     fixtureAnswer(200, [
-      fixturePull(request, { html_url: `${fixtureDisplayUrl}${fixtureNul}` }),
+      fixtureListedPull(request, {
+        html_url: `${fixtureDisplayUrl}${fixtureNul}`,
+      }),
     ]),
   ]);
   const carried = await fixtureAdapter(nulled).readByMarker(request);
@@ -786,7 +808,7 @@ test("a redirect on the create is refused rather than followed", async () => {
       status: 301,
       headers: { location: "https://api.github.com/repositories/9/pulls" },
     }),
-    fixtureAnswer(200, [fixturePull(request)]),
+    fixtureAnswer(200, [fixtureListedPull(request)]),
   ]);
   assert.deepEqual(await fixtureAdapter(recorder).create(request), {
     created: "Ambiguous",
@@ -957,7 +979,9 @@ test("what this forge says about merging a proposal reaches its evidence", async
  */
 test("a proposal read out of a collection says nothing about merging", async () => {
   const request = fixtureRequest();
-  const listed = fixtureForge([fixtureAnswer(200, [fixturePull(request)])]);
+  const listed = fixtureForge([
+    fixtureAnswer(200, [fixtureListedPull(request)]),
+  ]);
   const read = await fixtureAdapter(listed).readByMarker(request);
   assert.deepEqual(read, { read: "Found", evidence: fixtureEvidence(request) });
   assert.equal(
@@ -995,7 +1019,12 @@ test("a number addressing another request's proposal rules this one out", async 
     { read: "Absent" },
   );
   const unholdable = fixtureForge([
-    fixtureAnswer(200, fixtureNumberedPull(request, { node_id: "" })),
+    fixtureAnswer(
+      200,
+      fixtureNumberedPull(request, {
+        node_id: `${fixtureRemote}${fixtureNul}`,
+      }),
+    ),
   ]);
   assert.deepEqual(
     await fixtureAdapter(unholdable).readByNumber(fixtureMergeRequest()),
@@ -1024,7 +1053,7 @@ test("only a merged proposal carries the commit a merge left", async () => {
   const request = fixtureRequest();
   const trial = fixtureForge([
     fixtureAnswer(200, [
-      fixturePull(request, { merge_commit_sha: fixtureMergeCommit }),
+      fixtureListedPull(request, { merge_commit_sha: fixtureMergeCommit }),
     ]),
   ]);
   assert.deepEqual(
@@ -1035,7 +1064,7 @@ test("only a merged proposal carries the commit a merge left", async () => {
   for (const answered of [null, "short"]) {
     const unnamed = fixtureForge([
       fixtureAnswer(200, [
-        fixturePull(request, {
+        fixtureListedPull(request, {
           state: "closed",
           merged_at: fixtureMergedAt,
           merge_commit_sha: answered,

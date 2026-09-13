@@ -5,10 +5,10 @@
  * for that proposal to be merged.
  *
  * WHAT A COLLECTION ANSWERS IS LESS THAN WHAT ONE PROPOSAL ANSWERS. This forge
- * leaves what it says about merging out of the proposals it lists, so only the
- * read addressing one by number carries it — and evidence read out of an answer
- * that does not carry it says nothing about merging rather than saying the
- * forge did not know.
+ * leaves what it says about merging out of the proposals it lists, so a read
+ * addressing one by number is what a merging is answered from — and evidence
+ * read out of an answer that does not carry it says nothing about merging
+ * rather than saying the forge did not know.
  *
  * A CREATE MAY BE AMBIGUOUS AND THAT IS AN ANSWER. A forge that failed, stopped
  * or answered something this tree cannot read leaves the proposal neither made
