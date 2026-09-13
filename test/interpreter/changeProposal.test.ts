@@ -78,7 +78,6 @@ function evidence(
     title: request.title,
     body: request.body,
     status: "Open",
-    mergeability: "Unknown",
     url: asProposalDisplayUrl("https://forge.invalid/proposals/proposal-17"),
     ...overrides,
   };
@@ -412,6 +411,10 @@ test("the same contract selects adapters with unrelated provider vocabularies", 
         calls.push(`${vocabulary}:read`);
         return Promise.resolve({ read: "Found", evidence: evidence() });
       },
+      readByNumber: () => {
+        calls.push(`${vocabulary}:read-by-number`);
+        return Promise.resolve({ read: "Found", evidence: evidence() });
+      },
       merge: () => {
         calls.push(`${vocabulary}:merge`);
         return Promise.resolve({ merged: "Ambiguous" });
@@ -427,10 +430,14 @@ test("the same contract selects adapters with unrelated provider vocabularies", 
   };
   await selector.select(asForgeBindingId("forge-alpha"))?.create(request);
   await selector.select(asForgeBindingId("forge-beta"))?.readByMarker(request);
+  await selector
+    .select(asForgeBindingId("forge-beta"))
+    ?.readByNumber(mergeRequest);
   await selector.select(asForgeBindingId("forge-beta"))?.merge(mergeRequest);
   assert.deepEqual(calls, [
     "change-request:create",
     "merge-proposal:read",
+    "merge-proposal:read-by-number",
     "merge-proposal:merge",
   ]);
   assert.equal(selector.select(asForgeBindingId("unbound-forge")), undefined);
@@ -484,6 +491,7 @@ const mergeRequest = changeProposalMergeRequest({
   partition: requestPartition,
   repository: request.repository,
   proposal: evidence().identity,
+  marker: request.marker,
   headCommit: request.head.commit,
 });
 
@@ -607,13 +615,13 @@ test("a merge nobody heard back from is read back within its bound and then rele
   assert.deepEqual(
     changeProposalMergeNext(request, unheard(1, 0), mergeBounds),
     {
-      next: "Read",
+      next: "ReadByNumber",
     },
   );
   const open = { reconciled: "Unmerged", evidence: evidence() } as const;
   assert.deepEqual(
     changeProposalMergeNext(request, unheard(1, 1, open), mergeBounds),
-    { next: "Read" },
+    { next: "ReadByNumber" },
   );
   assert.deepEqual(
     changeProposalMergeNext(request, unheard(1, 2, open), mergeBounds),
@@ -621,13 +629,18 @@ test("a merge nobody heard back from is read back within its bound and then rele
     "readings that all found it open prove the merge was never made",
   );
   assert.deepEqual(
+    changeProposalMergeNext(request, unheard(2, 3, open), mergeBounds),
+    { next: "ReadByNumber" },
+    "the second attempt is read back under a budget of its own",
+  );
+  assert.deepEqual(
     changeProposalMergeNext(
       request,
-      unheard(2, 3, { reconciled: "Absent" }),
+      unheard(1, 1, { reconciled: "Absent" }),
       mergeBounds,
     ),
-    { next: "Read" },
-    "the second attempt is read back under a budget of its own",
+    { next: "Held", reason: "ProposalAbsent" },
+    "a number that addresses another proposal is merged nothing again",
   );
 });
 
@@ -656,6 +669,7 @@ test("only a merging with nothing in flight merges, and only while the merges ar
   );
   for (const merging of [
     unheard(1, 0),
+    unheard(1, 1, { reconciled: "Absent" }),
     unheard(1, 2, { reconciled: "Unmerged", evidence: evidence() }),
     { merging: "Idle" as const, merges: 2 },
     { merging: "Answered" as const, merge: { merged: "HeadMoved" as const } },
@@ -694,7 +708,7 @@ test("a reading of the merged proposal concludes the merge, whatever the merge i
       }),
       mergeBounds,
     ),
-    { next: "Read" },
+    { next: "ReadByNumber" },
     "a merge whose commit nothing names is asked about again",
   );
 });
@@ -720,14 +734,21 @@ test("what the forge says about merging is what tells a conflict from its own ru
     { next: "Held", reason: "Blocked" },
     "the forge's own protections hold the merge for an operator",
   );
-  const mergeable = {
-    reconciled: "Unmerged",
-    evidence: evidence({ mergeability: "Mergeable" }),
-  } as const;
-  assert.deepEqual(
-    changeProposalMergeNext(request, unheard(1, 1, mergeable), mergeBounds),
-    { next: "Read" },
-  );
+  for (const said of [
+    evidence({ mergeability: "Mergeable" }),
+    evidence({ mergeability: "Unknown" }),
+    evidence(),
+  ]) {
+    assert.deepEqual(
+      changeProposalMergeNext(
+        request,
+        unheard(1, 1, { reconciled: "Unmerged", evidence: said }),
+        mergeBounds,
+      ),
+      { next: "ReadByNumber" },
+      JSON.stringify(said.mergeability),
+    );
+  }
 });
 
 test("a merge the forge answered is concluded from the row, a blocked one held", () => {

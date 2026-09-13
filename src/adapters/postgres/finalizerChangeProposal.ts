@@ -150,7 +150,7 @@ const changeProposalStoredEvidenceSchema = z.object({
   title: z.string(),
   body: z.string(),
   status: z.string(),
-  mergeability: z.string(),
+  mergeability: z.string().optional(),
   mergeCommit: z.string().optional(),
   url: z.string().optional(),
 });
@@ -188,11 +188,15 @@ function changeProposalEvidenceOf(
       value.status,
       "change proposal status",
     ),
-    mergeability: finalizerRowValue(
-      allChangeProposalMergeabilities,
-      value.mergeability,
-      "change proposal mergeability",
-    ),
+    ...(value.mergeability === undefined
+      ? {}
+      : {
+          mergeability: finalizerRowValue(
+            allChangeProposalMergeabilities,
+            value.mergeability,
+            "change proposal mergeability",
+          ),
+        }),
     ...(value.mergeCommit === undefined
       ? {}
       : { mergeCommit: asGitObjectId(value.mergeCommit) }),

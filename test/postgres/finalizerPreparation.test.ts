@@ -372,7 +372,7 @@ function proposalEvidence(request: ChangeProposalRequest) {
     title: request.title,
     body: request.body,
     status: "Open" as const,
-    mergeability: "Unknown" as const,
+    mergeability: "Mergeable" as const,
     url: asProposalDisplayUrl("https://forge.invalid/proposals/1"),
   };
 }
@@ -416,6 +416,9 @@ function proposalPort(): ProposalPort {
           ? { read: "Found" as const, evidence: proposalEvidence(request) }
           : { read: "Absent" as const },
       );
+    },
+    readByNumber: () => {
+      throw new Error("the pass read a proposal by number");
     },
     merge: () => {
       throw new Error("the pass asked this forge to merge a proposal");
@@ -850,7 +853,6 @@ function proposalEvidenceTitled(
     title,
     body: `propose it\n\n${proposalMarkerOf(request)}`,
     status: "Open",
-    mergeability: "Unknown",
     url: asProposalDisplayUrl("https://forge.invalid/proposals/1"),
   };
 }

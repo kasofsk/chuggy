@@ -92,7 +92,6 @@ function evidence(
     title: request.title,
     body: request.body,
     status: "Open",
-    mergeability: "Unknown",
     ...overrides,
   };
 }

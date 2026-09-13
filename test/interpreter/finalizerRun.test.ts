@@ -662,7 +662,6 @@ function forgeEvidence(
     title: request.title,
     body: request.body,
     status: "Open",
-    mergeability: "Unknown",
     url: asProposalDisplayUrl("https://forge.invalid/proposals/1"),
     ...overrides,
   };
@@ -702,6 +701,9 @@ function recordingForge(store: FinalizerRecorder): ForgeRecorder {
           ? { read, evidence: forgeEvidence(request) }
           : { read },
       );
+    },
+    readByNumber: () => {
+      throw new Error("the pass read a proposal by number");
     },
     merge: () => {
       throw new Error("the pass asked this forge to merge a proposal");

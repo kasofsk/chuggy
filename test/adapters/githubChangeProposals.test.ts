@@ -161,6 +161,21 @@ function fixturePull(
   };
 }
 
+/**
+ * One pull request as this forge reports it when a number addresses it, which
+ * is the shape that carries what it says about merging.
+ */
+function fixtureNumberedPull(
+  request: ChangeProposalRequest,
+  overrides: Readonly<Record<string, unknown>> = {},
+): Readonly<Record<string, unknown>> {
+  return fixturePull(request, {
+    mergeable: true,
+    mergeable_state: "clean",
+    ...overrides,
+  });
+}
+
 function fixtureAnswer(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status });
 }
@@ -212,7 +227,6 @@ function fixtureEvidence(
     title: request.title,
     body: request.body,
     status: "Open",
-    mergeability: "Unknown",
     url: asProposalDisplayUrl(fixtureDisplayUrl),
   };
 }
@@ -812,6 +826,7 @@ function fixtureMergeRequest(
       partition: request.partition,
       repository: request.repository,
       proposal: fixtureEvidence(request).identity,
+      marker: request.marker,
       headCommit: fixtureHeadCommit,
     }),
     ...overrides,
@@ -917,15 +932,15 @@ test("what this forge says about merging a proposal reaches its evidence", async
     [{ mergeable: false, mergeable_state: "unknown" }, "Conflicting"],
     [{ mergeable: true, mergeable_state: "blocked" }, "Blocked"],
     [{ mergeable: true, mergeable_state: "draft" }, "Blocked"],
+    [{ mergeable: true, mergeable_state: "behind" }, "Blocked"],
     [{ mergeable: null, mergeable_state: "unknown" }, "Unknown"],
-    [{}, "Unknown"],
   ] as const;
   for (const [answered, mergeability] of cases) {
     const recorder = fixtureForge([
-      fixtureAnswer(200, [fixturePull(request, answered)]),
+      fixtureAnswer(200, fixtureNumberedPull(request, answered)),
     ]);
     assert.deepEqual(
-      await fixtureAdapter(recorder).readByMarker(request),
+      await fixtureAdapter(recorder).readByNumber(fixtureMergeRequest()),
       {
         read: "Found",
         evidence: { ...fixtureEvidence(request), mergeability },
@@ -933,6 +948,76 @@ test("what this forge says about merging a proposal reaches its evidence", async
       JSON.stringify(answered),
     );
   }
+});
+
+/**
+ * This forge leaves what it says about merging out of the proposals it lists,
+ * so evidence read out of a collection carries none rather than carrying the
+ * answer a caller would act on.
+ */
+test("a proposal read out of a collection says nothing about merging", async () => {
+  const request = fixtureRequest();
+  const listed = fixtureForge([fixtureAnswer(200, [fixturePull(request)])]);
+  const read = await fixtureAdapter(listed).readByMarker(request);
+  assert.deepEqual(read, { read: "Found", evidence: fixtureEvidence(request) });
+  assert.equal(
+    read.read === "Found" ? "mergeability" in read.evidence : true,
+    false,
+  );
+  const numbered = fixtureForge([
+    fixtureAnswer(200, fixtureNumberedPull(request)),
+  ]);
+  const asked = await fixtureAdapter(numbered).readByNumber(
+    fixtureMergeRequest(),
+  );
+  assert.deepEqual(asked, {
+    read: "Found",
+    evidence: { ...fixtureEvidence(request), mergeability: "Mergeable" },
+  });
+  assert.equal(
+    numbered.calls[0]?.url,
+    `https://api.github.com/repos/kasofsk/chuggy/pulls/${String(fixtureNumber)}`,
+  );
+  assert.equal(numbered.calls.length, 1);
+  assert.equal(numbered.calls[0]?.method, "GET");
+});
+
+test("a number addressing another request's proposal rules this one out", async () => {
+  const request = fixtureRequest();
+  const foreign = fixtureForge([
+    fixtureAnswer(
+      200,
+      fixtureNumberedPull(request, { body: "somebody else's work" }),
+    ),
+  ]);
+  assert.deepEqual(
+    await fixtureAdapter(foreign).readByNumber(fixtureMergeRequest()),
+    { read: "Absent" },
+  );
+  const unholdable = fixtureForge([
+    fixtureAnswer(200, fixtureNumberedPull(request, { node_id: "" })),
+  ]);
+  assert.deepEqual(
+    await fixtureAdapter(unholdable).readByNumber(fixtureMergeRequest()),
+    { read: "Unavailable" },
+    "a proposal this request's own that no row holds is not ruled out",
+  );
+  const denied = fixtureForge([]);
+  assert.deepEqual(
+    await fixtureAdapter(denied).readByNumber(
+      fixtureMergeRequest({
+        repository: asRepositoryId("https://gitlab.invalid/kasofsk/chuggy"),
+      }),
+    ),
+    { read: "Denied" },
+  );
+  assert.deepEqual(
+    await fixtureAdapter(denied, "Unavailable").readByNumber(
+      fixtureMergeRequest(),
+    ),
+    { read: "Unavailable" },
+  );
+  assert.equal(denied.calls.length, 0);
 });
 
 test("only a merged proposal carries the commit a merge left", async () => {

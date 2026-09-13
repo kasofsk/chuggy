@@ -1,7 +1,14 @@
 /**
  * The adapter behind `ChangeProposalPort` for GitHub: the one request that asks
  * for a pull request, the one that reads back the proposal carrying a request's
- * marker, and the one that asks for that proposal to be merged.
+ * marker, the one that reads a proposal by its number, and the one that asks
+ * for that proposal to be merged.
+ *
+ * WHAT A COLLECTION ANSWERS IS LESS THAN WHAT ONE PROPOSAL ANSWERS. This forge
+ * leaves what it says about merging out of the proposals it lists, so only the
+ * read addressing one by number carries it — and evidence read out of an answer
+ * that does not carry it says nothing about merging rather than saying the
+ * forge did not know.
  *
  * A CREATE MAY BE AMBIGUOUS AND THAT IS AN ANSWER. A forge that failed, stopped
  * or answered something this tree cannot read leaves the proposal neither made
@@ -83,7 +90,6 @@ import {
   type ChangeProposalCreated,
   type ChangeProposalCredentialRequest,
   type ChangeProposalEvidence,
-  type ChangeProposalMergeability,
   type ChangeProposalMerged,
   type ChangeProposalMergeRequest,
   type ChangeProposalPort,
@@ -251,7 +257,7 @@ const githubMergeSchema = z.object({
 
 /** The mergeable state a conflict is named by, and the ones the forge's own rules are. */
 const githubConflictingState = "dirty";
-const githubBlockedStates: readonly string[] = ["blocked", "draft"];
+const githubBlockedStates: readonly string[] = ["behind", "blocked", "draft"];
 
 /** Refuses a bound no later call could work around, a ceiling among them where the forge sets one. */
 function githubChangeProposalsBound(
@@ -457,16 +463,17 @@ function githubChangeProposalsStatusOf(
     : "Merged";
 }
 
-/** What this forge last said about merging one proposal, unknown where it said nothing this tree reads. */
+/** What one answer says about merging a proposal, and nothing where it carries neither field. */
 function githubChangeProposalsMergeabilityOf(
   pull: GithubPullRequest,
-): ChangeProposalMergeability {
+): Pick<ChangeProposalEvidence, "mergeability"> {
   const state = pull.mergeable_state;
+  if (pull.mergeable === undefined && state === undefined) return {};
   if (state !== undefined && githubBlockedStates.includes(state))
-    return "Blocked";
+    return { mergeability: "Blocked" };
   if (pull.mergeable === false || state === githubConflictingState)
-    return "Conflicting";
-  return pull.mergeable === true ? "Mergeable" : "Unknown";
+    return { mergeability: "Conflicting" };
+  return { mergeability: pull.mergeable === true ? "Mergeable" : "Unknown" };
 }
 
 /**
@@ -503,6 +510,12 @@ function githubChangeProposalsUrlOf(
   return display === undefined ? {} : { url: display };
 }
 
+/** What says one answered proposal is a given request's, which both reads and the merge carry. */
+type GithubProposalOwner = Pick<
+  ChangeProposalRequest,
+  "binding" | "repository" | "marker"
+>;
+
 /**
  * The repository one pull request was answered for: the identity this request
  * already carries where the forge named the repository it addressed — without
@@ -512,7 +525,7 @@ function githubChangeProposalsUrlOf(
  * repository leaves nothing to say which it was.
  */
 function githubChangeProposalsRepositoryOf(
-  request: ChangeProposalRequest,
+  request: GithubProposalOwner,
   address: GithubAddress,
   host: string,
   pull: GithubPullRequest,
@@ -546,7 +559,7 @@ type GithubProposalMatch =
  * it found and unusable rather than absent.
  */
 function githubChangeProposalsEvidenceOf(
-  request: ChangeProposalRequest,
+  request: GithubProposalOwner,
   address: GithubAddress,
   host: string,
   pull: GithubPullRequest,
@@ -601,7 +614,7 @@ function githubChangeProposalsEvidenceOf(
       title,
       body,
       status,
-      mergeability: githubChangeProposalsMergeabilityOf(pull),
+      ...githubChangeProposalsMergeabilityOf(pull),
       ...merge,
       ...githubChangeProposalsUrlOf(pull, host),
     },
@@ -718,17 +731,75 @@ async function githubChangeProposalsRead(
     : { read: "Unavailable" };
 }
 
-/** The merge endpoint of one addressed proposal, which its number is what reaches. */
-function githubChangeProposalsMergeUrl(
+/** The one proposal a number addresses, whose answer is the whole of what this forge holds about it. */
+function githubChangeProposalsProposalUrl(
   own: GithubChangeProposalsState,
   address: GithubAddress,
   number: number,
 ): URL {
   const pulls = githubChangeProposalsPullsUrl(own, address);
   return new URL(
-    `${pulls.pathname}/${encodeURIComponent(String(number))}/merge`,
+    `${pulls.pathname}/${encodeURIComponent(String(number))}`,
     pulls.origin,
   );
+}
+
+/** The merge endpoint of one addressed proposal. */
+function githubChangeProposalsMergeUrl(
+  own: GithubChangeProposalsState,
+  address: GithubAddress,
+  number: number,
+): URL {
+  const proposal = githubChangeProposalsProposalUrl(own, address, number);
+  return new URL(`${proposal.pathname}/merge`, proposal.origin);
+}
+
+/** What one request addresses when it names a proposal by number, and nothing where this forge holds no such repository. */
+function githubChangeProposalsNumberedAddress(
+  own: GithubChangeProposalsState,
+  request: ChangeProposalMergeRequest,
+): GithubAddress | undefined {
+  const address = githubAddressOf(request.repository, own.repositoryHost);
+  return address === undefined ||
+    request.proposal.forge !== request.binding.forge
+    ? undefined
+    : address;
+}
+
+/**
+ * Reads the one proposal a number addresses. A proposal carrying another
+ * request's marker is this request's ruled out of that number rather than a
+ * proposal to ask about again.
+ */
+async function githubChangeProposalsReadNumbered(
+  own: GithubChangeProposalsState,
+  request: ChangeProposalMergeRequest,
+): Promise<ChangeProposalRead> {
+  const address = githubChangeProposalsNumberedAddress(own, request);
+  if (address === undefined) return { read: "Denied" };
+  const authorized = await githubChangeProposalsCredentialOf(own, request);
+  if (authorized.authorized === "Refused") return { read: authorized.refusal };
+  const answer = await githubChangeProposalsSend(
+    own,
+    githubChangeProposalsProposalUrl(own, address, request.proposal.number),
+    authorized.credential,
+    { method: "GET" },
+  );
+  if (answer.answer === "Denied") return { read: "Denied" };
+  if (answer.answer !== "Read") return { read: "Unavailable" };
+  const parsed = githubPullRequestSchema.safeParse(answer.body);
+  if (!parsed.success) return { read: "Unavailable" };
+  const match = githubChangeProposalsEvidenceOf(
+    request,
+    address,
+    own.repositoryHost,
+    parsed.data,
+  );
+  if (match.matched === "Evidence")
+    return { read: "Found", evidence: match.evidence };
+  return match.matched === "Unmarked"
+    ? { read: "Absent" }
+    : { read: "Unavailable" };
 }
 
 /** What a refusal this forge named no answer of its own for comes to. */
@@ -747,9 +818,8 @@ async function githubChangeProposalsMerge(
   own: GithubChangeProposalsState,
   request: ChangeProposalMergeRequest,
 ): Promise<ChangeProposalMerged> {
-  const address = githubAddressOf(request.repository, own.repositoryHost);
-  if (address === undefined || request.proposal.forge !== request.binding.forge)
-    return { merged: "Denied" };
+  const address = githubChangeProposalsNumberedAddress(own, request);
+  if (address === undefined) return { merged: "Denied" };
   const authorized = await githubChangeProposalsCredentialOf(own, request);
   if (authorized.authorized === "Refused") {
     return authorized.refusal === "Denied"
@@ -808,6 +878,7 @@ export function githubChangeProposals(
   return {
     create: (request) => githubChangeProposalsCreate(own, request),
     readByMarker: (request) => githubChangeProposalsRead(own, request),
+    readByNumber: (request) => githubChangeProposalsReadNumbered(own, request),
     merge: (request) => githubChangeProposalsMerge(own, request),
   };
 }

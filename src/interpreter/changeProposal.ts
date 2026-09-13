@@ -239,7 +239,8 @@ export interface ChangeProposalEvidence {
   readonly title: string;
   readonly body: string;
   readonly status: ChangeProposalStatus;
-  readonly mergeability: ChangeProposalMergeability;
+  /** What the forge said about merging this proposal, absent where the answer it was read out of does not carry it. */
+  readonly mergeability?: ChangeProposalMergeability;
   /** The commit a merge left, carried only where the proposal is merged: a forge names one on an open proposal for the merge it would make. */
   readonly mergeCommit?: GitObjectId;
   readonly url?: ProposalDisplayUrl;
@@ -395,6 +396,9 @@ export type ChangeProposalPublicationNext =
 export interface ChangeProposalPort {
   create(request: ChangeProposalRequest): Promise<ChangeProposalCreated>;
   readByMarker(request: ChangeProposalRequest): Promise<ChangeProposalRead>;
+  readByNumber(
+    request: ChangeProposalMergeRequest,
+  ): Promise<ChangeProposalRead>;
   merge(request: ChangeProposalMergeRequest): Promise<ChangeProposalMerged>;
 }
 
@@ -631,9 +635,14 @@ export function changeProposalPublicationNext(
   }
 }
 
-/** What one merge is asked under: the proposal, the commit it is conditional on, and what authorizes the act. */
+/**
+ * What one merge and the reading that settles it are asked under: the proposal
+ * the number addresses, the marker that says it is this request's, the commit
+ * the merge is conditional on, and what authorizes the act.
+ */
 export interface ChangeProposalMergeRequest extends ChangeProposalCredentialRequest {
   readonly proposal: ChangeProposalIdentity;
+  readonly marker: ProposalMarker;
   readonly headCommit: GitObjectId;
 }
 
@@ -745,7 +754,7 @@ export interface ChangeProposalMergingBounds {
 
 export type ChangeProposalMergingNext =
   | { readonly next: "Merge" }
-  | { readonly next: "Read" }
+  | { readonly next: "ReadByNumber" }
   | { readonly next: "RefuseAttempt" }
   | { readonly next: "Concluded"; readonly merge: ChangeProposalMergeAnswer }
   | {
@@ -755,7 +764,8 @@ export type ChangeProposalMergingNext =
     }
   | {
       readonly next: "Held";
-      readonly reason: "MergesExhausted" | "Blocked" | "EvidenceUnstorable";
+      readonly reason:
+        "MergesExhausted" | "Blocked" | "ProposalAbsent" | "EvidenceUnstorable";
     };
 
 /** Refuses a merge naming a proposal on another forge, and a number no proposal is addressed by. */
@@ -773,6 +783,7 @@ export function changeProposalMergeRequest(
       remote: input.proposal.remote,
       number: asProposalNumber(input.proposal.number),
     },
+    marker: asProposalMarker(input.marker),
     headCommit: input.headCommit,
   };
 }
@@ -819,8 +830,8 @@ function proposalMergingBoundsAsserted(
 
 /**
  * What evidence read back settles this merge to, and nothing where it settles
- * nothing: a proposal still open and still mergeable is one the next reading is
- * spent on.
+ * nothing: a proposal still open, and one the answer it was read out of said
+ * nothing about merging, are both what the next reading is spent on.
  */
 function proposalMergeEvidenceNext(
   request: ChangeProposalRequest,
@@ -849,7 +860,8 @@ function proposalMergeEvidenceNext(
 /**
  * What a merge nobody has heard the fate of authorizes. Its readings are spent
  * on it alone, so a merge none of them found landed is one the forge never made
- * and the attempt it stands on is released.
+ * and the attempt it stands on is released, while a reading that ruled this
+ * request's proposal out of the number it addressed merges nothing again.
  */
 function proposalMergeUnansweredNext(
   request: ChangeProposalRequest,
@@ -861,13 +873,15 @@ function proposalMergeUnansweredNext(
   const reading = merging.reading;
   if (reading?.reconciled === "Unstorable")
     return { next: "Held", reason: "EvidenceUnstorable" };
+  if (reading?.reconciled === "Absent")
+    return { next: "Held", reason: "ProposalAbsent" };
   const settled =
-    reading === undefined || reading.reconciled === "Absent"
+    reading === undefined
       ? undefined
       : proposalMergeEvidenceNext(request, reading.evidence);
   if (settled !== undefined) return settled;
   return merging.readings < merging.merges * bounds.readingsMax
-    ? { next: "Read" }
+    ? { next: "ReadByNumber" }
     : { next: "RefuseAttempt" };
 }
 
