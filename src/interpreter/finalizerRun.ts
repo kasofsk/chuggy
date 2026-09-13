@@ -520,28 +520,23 @@ async function finalizerGatherWorkBranch(
 }
 
 /**
- * The base a proposing brief naming none opens into, which is the branch the
- * remote itself defaults to, and `IsHead` where that is the very branch the
- * work happened on. It is read before anything is built, because a promotion
- * lands a proposing ticket on its own branch and would push onto that base
- * first.
+ * What reading the base a proposing brief naming none opens into found, which
+ * is the branch the remote itself defaults to. It is read before anything is
+ * built, because a promotion lands a proposing ticket on its own branch and
+ * would push onto that base first; what the answer means is the pure pass's.
  */
 async function finalizerGatherProposalBase(
   service: FinalizerService,
   view: FinalizationView,
   binding: RepositoryBinding,
   branches: FinalizerBranches,
-): Promise<ObservedTarget | "IsHead" | undefined> {
+): Promise<TargetObserved | undefined> {
   if (
     !finalizerProposes(view, branches.brief) ||
     branches.brief?.finalization?.target !== undefined
   )
     return undefined;
-  const observed = await service.git.observeTarget(
-    repositoryBindingWidened(binding),
-  );
-  if (observed.observed !== "Target") return undefined;
-  return observed.target.ref === branches.target ? "IsHead" : observed.target;
+  return service.git.observeTarget(repositoryBindingWidened(binding));
 }
 
 /**
@@ -574,8 +569,6 @@ async function finalizerGather(
     durable.repository,
     branches,
   );
-  if (base === "IsHead")
-    return { gathered: "Held", hold: "ProposalBaseIsHead" };
   const observed = await repositoryTargetObserved(
     service.git,
     durable.repository,
@@ -588,7 +581,7 @@ async function finalizerGather(
     ...(branches.brief?.finalization === undefined
       ? {}
       : { finalizationMode: branches.brief.finalization.mode }),
-    ...(base === undefined ? {} : { observedProposalBase: base }),
+    ...(base === undefined ? {} : { proposalBase: base }),
   };
   if (observed.observed !== "Target") return { gathered: "View", view };
   const work = await finalizerGatherWorkBranch(
@@ -1278,10 +1271,10 @@ async function finalizerOpeningProposal(
       "finalizer proposal: a proposal was authorized by no brief that opens one",
     );
   }
+  const carried =
+    finalization.target === undefined ? view.proposalBase : undefined;
   const observed =
-    (finalization.target === undefined
-      ? view.observedProposalBase
-      : undefined) ??
+    (carried?.observed === "Target" ? carried.target : undefined) ??
     (await finalizerProposalBase(
       service,
       pinned.repository,
