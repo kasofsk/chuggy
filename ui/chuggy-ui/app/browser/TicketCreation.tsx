@@ -255,7 +255,7 @@ function TargetBranch(props: FormEdit): ReactNode {
         }}
       />
       <span className="col-start-2 -col-end-1 text-ink-3 text-xs">
-        {creationTargetBranchHint}
+        {creationTargetBranchHint(form.landingMode)}
       </span>
     </label>
   );

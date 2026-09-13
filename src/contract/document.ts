@@ -90,7 +90,7 @@ export function nativeHttpContractDocument(): unknown {
       mismatch: "a cursor resuming an unselected ticket is refused",
     },
     briefFinalization:
-      "a PullRequest finalization requires the brief to name a branch, and a target that is not it",
+      "a PullRequest finalization requires the brief to name a branch, and a target that is not it where it names one; a proposal naming no target opens into the repository's default branch",
     selectorProjectSettings:
       "installation settings are defaults; an absent override inherits one, and a write replaces the whole set under the revision it was read at",
     forgeInstallations:

@@ -27,7 +27,8 @@ import {
   creationBranchOf,
   creationFormFrom,
   creationLandingDefault,
-  creationLandingTargetSentence,
+  creationLandingBranchSentence,
+  creationTargetBranchHint,
   creationLandingWholeSentence,
   creationRepositoryChosen,
   creationRepositoryDefault,
@@ -576,16 +577,22 @@ test("a chosen landing is on the wire whatever the repository's default is", () 
 });
 
 /**
- * A pull request is opened from one reference into another, so both boxes are
- * the reader's to fill: the empty one and the one repeating the branch are
- * refused before the wire sees either.
+ * A pull request is opened from the branch the work happened on, so that box is
+ * the reader's to fill whatever the target box holds: the empty branch and the
+ * target repeating it are refused before the wire sees either.
  */
-test("a pull request names a target, and one that is not the branch", () => {
+test("a pull request names a branch, and a target that is not it", () => {
   expect(
     faultReasons(
-      creationForm({ landingMode: "PullRequest", branchName: "topic/one" }),
+      creationForm({
+        landingMode: "PullRequest",
+        targetBranchName: "release/next",
+      }),
     ),
-  ).toStrictEqual([creationLandingTargetSentence]);
+  ).toStrictEqual([creationLandingBranchSentence]);
+  expect(
+    faultReasons(creationForm({ landingMode: "PullRequest" })),
+  ).toStrictEqual([creationLandingBranchSentence]);
   expect(
     faultReasons(
       creationForm({
@@ -597,9 +604,57 @@ test("a pull request names a target, and one that is not the branch", () => {
   ).toStrictEqual([creationLandingWholeSentence]);
   expect(
     faultFields(
-      creationForm({ landingMode: "PullRequest", branchName: "topic/one" }),
+      creationForm({
+        landingMode: "PullRequest",
+        targetBranchName: "release/next",
+      }),
+    ),
+  ).toStrictEqual(["branch"]);
+  expect(
+    faultFields(
+      creationForm({
+        landingMode: "PullRequest",
+        branchName: "topic/one",
+        targetBranchName: "topic/one",
+      }),
     ),
   ).toStrictEqual(["target"]);
+});
+
+/** The empty target box means two different references, so it says which. */
+test("the target hint names what leaving it empty lands on under each landing", () => {
+  expect(creationTargetBranchHint("PullRequest")).toContain(
+    "the repository's default branch",
+  );
+  expect(creationTargetBranchHint("Push")).toContain(
+    "the branch the work happened on",
+  );
+});
+
+/**
+ * The base a proposal opens into is the repository's default branch where the
+ * brief names none, so the empty target box is a form to submit and not a fault
+ * to state.
+ */
+test("a pull request naming no target is sent with the branch alone", () => {
+  expect(
+    faultFields(
+      creationForm({ landingMode: "PullRequest", branchName: "topic/one" }),
+    ),
+  ).toStrictEqual([]);
+  const assembled = creationBodyFrom(
+    creationInitialization,
+    creationForm({ landingMode: "PullRequest", branchName: "topic/one" }),
+    noBindings,
+  );
+  expect(assembled.assembled).toBe("Body");
+  if (assembled.assembled !== "Body") return;
+  expect(assembled.body.brief.finalization).toStrictEqual({
+    mode: "PullRequest",
+  });
+  expect(draftCreationSchema.parse(assembled.body)).toStrictEqual(
+    assembled.body,
+  );
 });
 
 /** A push lands on the branch the work was done on, so it names no target and

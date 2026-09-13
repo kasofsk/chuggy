@@ -364,6 +364,18 @@ export function repositoryBindingNarrowed(
 }
 
 /**
+ * The binding with whatever narrowed it taken back off, which is what reads the
+ * remote's own default branch rather than a ref. The rest carries every other
+ * field across, so the ref is the only thing dropped here.
+ */
+export function repositoryBindingWidened(
+  binding: RepositoryBinding,
+): RepositoryBinding {
+  const { targetRef, ...widened } = binding;
+  return targetRef === undefined ? binding : widened;
+}
+
+/**
  * What a branch the brief names resolves to: the branch itself, or the
  * binding's own target under that branch's name where the remote does not hold
  * it yet. A branch nobody has created is not an unreadable ref — it is where
@@ -535,6 +547,8 @@ export interface FinalizationView {
   readonly observedTarget?: ObservedTarget;
   /** What the branch the work happened on holds, which is the tree a candidate is built over. */
   readonly observedWorkBranch?: ObservedTarget;
+  /** What reading the branch the remote defaults to found, present only for a proposing brief that names no base of its own. */
+  readonly proposalBase?: TargetObserved;
   readonly attempt?: FinalizationAttempt;
   readonly approval: ApprovalStanding;
   readonly permit?: CommitPermit;
@@ -554,6 +568,7 @@ export type FinalizationHoldKind =
   | "ProposalUnavailable"
   | "ProposalDenied"
   | "ProposalBaseUnreadable"
+  | "ProposalBaseIsHead"
   | "ProposalEvidenceUnstorable"
   | "ProposalCreationsExhausted";
 
@@ -569,6 +584,7 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "ProposalUnavailable",
   "ProposalDenied",
   "ProposalBaseUnreadable",
+  "ProposalBaseIsHead",
   "ProposalEvidenceUnstorable",
   "ProposalCreationsExhausted",
 ];
@@ -747,7 +763,9 @@ function finalizationNextUnderPermit(
 /**
  * What a finalization that has obtained no permit may do next, the revision
  * fence and the closure abort included. A failure already recorded is concluded
- * before anything is read of the remote, because the evidence is the rows.
+ * before anything is read of the remote, because the evidence is the rows, and
+ * a proposal with nothing to open between is held before the branch it would
+ * be opened from is built or pushed.
  */
 function finalizationNextBeforePermit(
   config: FinalizerConfig,
@@ -768,6 +786,13 @@ function finalizationNextBeforePermit(
     return aborting === undefined
       ? { decide: "Hold", hold: "TargetUnreadable" }
       : { decide: "Abort", target: aborting };
+  }
+  const base = view.proposalBase;
+  if (base !== undefined) {
+    if (base.observed !== "Target")
+      return { decide: "Hold", hold: "ProposalBaseUnreadable" };
+    if (base.target.ref === view.targetBranch)
+      return { decide: "Hold", hold: "ProposalBaseIsHead" };
   }
   const target = view.observedTarget;
   if (target === undefined) return { decide: "Hold", hold: "TargetUnreadable" };

@@ -431,9 +431,11 @@ test("a finalizer, a handoff and an approval each read as one noun", () => {
   expect(approvalLabel(false)).toBe("Not required");
 });
 
-/** A landing with no target lands on the branch the work was done on, which is
- * a mode and no reference rather than a reference the page invents. */
-test("a landing read back names its reference only where the brief named one", () => {
+/** A push with no target lands on the branch the work was done on, which is a
+ * mode and no reference rather than a reference the page invents. A proposal
+ * with none opens into the branch the repository defaults to, which is where
+ * the reader would otherwise have to know it goes. */
+test("a landing read back names its reference, and a proposal names the default", () => {
   expect(briefLandingLine({ mode: "Push", target: "refs/heads/main" })).toBe(
     "Push · lands on refs/heads/main",
   );
@@ -441,4 +443,7 @@ test("a landing read back names its reference only where the brief named one", (
     briefLandingLine({ mode: "PullRequest", target: "refs/heads/main" }),
   ).toBe("Pull request · into refs/heads/main");
   expect(briefLandingLine({ mode: "Push", target: undefined })).toBe("Push");
+  expect(briefLandingLine({ mode: "PullRequest", target: undefined })).toBe(
+    "Pull request · into the default branch",
+  );
 });

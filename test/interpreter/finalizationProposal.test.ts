@@ -205,6 +205,18 @@ test("a deployment binding no forge and an unreadable base are holds and not con
   );
 });
 
+test("a base that is the head it would be opened from is a hold this tree declares", () => {
+  const decision = finalizationProposalNext({ gathered: "BaseIsHead" }, bounds);
+  assert.deepEqual(decision, {
+    decide: "Hold",
+    hold: "ProposalBaseIsHead",
+  });
+  assert.ok(
+    new Set<string>(allFinalizationHoldKinds).has("ProposalBaseIsHead"),
+    "ProposalBaseIsHead is not on the roster a suite iterates",
+  );
+});
+
 test("no publication carrying a create in flight reaches a create", () => {
   const publications: readonly ChangeProposalPublication[] = [
     unanswered(1, 0),

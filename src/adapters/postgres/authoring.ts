@@ -563,6 +563,8 @@ async function createDraft(
     return { created: "ConfigurationNotFound" };
   if (row?.result === "RepositoryNotBound")
     return { created: "RepositoryNotBound" };
+  if (row?.result === "LandingUnbranched")
+    return { created: "LandingUnbranched" };
   if (row?.result === "Stale") return { created: "Stale" };
   if (row?.result !== "Created" || row.ticket === null)
     throw new Error("draft creation returned no ticket");
@@ -590,6 +592,8 @@ async function reviseDraft(
     return { revised: "ConfigurationNotFound" };
   if (row.result === "RepositoryNotBound")
     return { revised: "RepositoryNotBound" };
+  if (row.result === "LandingUnbranched")
+    return { revised: "LandingUnbranched" };
   if (row.result === "Stale") {
     if (row.authoring_version === null)
       throw new Error("draft revision returned Stale with no current version");

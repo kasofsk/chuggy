@@ -537,15 +537,33 @@ test("the landing reaches the wire, with the target only where one is typed", as
   expect(briefOf(held.sent)?.["finalization"]).toStrictEqual({ mode: "Push" });
 });
 
-test("a pull request without a target is refused before the wire sees it", () => {
+test("a pull request without a branch is refused before the wire sees it", () => {
   const held = api({ state: "Succeeded" });
   draw(held.ports, [], creationInitialization, [
     creationBinding(chuggy, "PullRequest"),
   ]);
   typeIntent("ship it");
   submit();
-  expect(screen.getByText(/names the branch it opens into/u)).toBeTruthy();
+  expect(screen.getByText(/opened from a branch of its own/u)).toBeTruthy();
   expect(drafts(held.sent).length).toBe(0);
+});
+
+test("a pull request without a target reaches the wire, into the default branch", async () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, [], creationInitialization, [
+    creationBinding(chuggy, "PullRequest"),
+  ]);
+  typeIntent("ship it");
+  fireEvent.change(screen.getByPlaceholderText("the branch name"), {
+    target: { value: "topic/one" },
+  });
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  expect(briefOf(held.sent)?.["finalization"]).toStrictEqual({
+    mode: "PullRequest",
+  });
 });
 
 /**
