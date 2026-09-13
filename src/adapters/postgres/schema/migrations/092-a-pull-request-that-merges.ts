@@ -11,7 +11,6 @@
  * nothing underneath it.
  */
 
-import { briefFinalizationModes } from "../../../../contract/rosters.ts";
 import {
   draftCreateFunction,
   draftReviseFunction,
@@ -20,13 +19,20 @@ import {
   type Migration,
 } from "../shared.ts";
 
+/** The roster as it stood when this migration ran; a later widening moves in its own migration, not here. */
+const briefFinalizationModesAt92 = [
+  "Push",
+  "PullRequest",
+  "PullRequestMerge",
+] as const;
+
 /** 050's and 090's rosters, widened to what this tree now lands by. */
 const draftBriefWidened = [
   `ALTER TABLE draft_brief
      DROP CONSTRAINT draft_brief_finalization_mode_is_known,
      ADD CONSTRAINT draft_brief_finalization_mode_is_known
        CHECK (finalization_mode IN (${schemaTextSet([
-         ...briefFinalizationModes,
+         ...briefFinalizationModesAt92,
        ])})),
      DROP CONSTRAINT draft_brief_finalization_is_whole,
      ADD CONSTRAINT draft_brief_finalization_is_whole
@@ -40,7 +46,9 @@ const projectRepositoryWidened = [
   `ALTER TABLE project_repository
      DROP CONSTRAINT project_repository_landing_mode_is_known,
      ADD CONSTRAINT project_repository_landing_mode_is_known
-       CHECK (landing_mode IN (${schemaTextSet([...briefFinalizationModes])}))`,
+       CHECK (landing_mode IN (${schemaTextSet([
+         ...briefFinalizationModesAt92,
+       ])}))`,
 ];
 
 /** 090's resolution, carried forward unchanged: a brief naming no mode still takes its repository's. */
