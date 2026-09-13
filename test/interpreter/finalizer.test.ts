@@ -633,13 +633,15 @@ test("a promoted candidate whose brief proposes is not concluded by the promotio
     permit: permitIn("Concluded"),
     reconciliation: reconciliationOf("Promoted"),
   };
-  assert.deepEqual(
-    finalizationNext(
-      finalizerDefaults,
-      viewWith({ ...promoted, finalizationMode: "PullRequest" }),
-    ),
-    { decide: "Propose" },
-  );
+  for (const finalizationMode of ["PullRequest", "PullRequestMerge"] as const)
+    assert.deepEqual(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({ ...promoted, finalizationMode }),
+      ),
+      { decide: "Propose" },
+      finalizationMode,
+    );
   assert.deepEqual(
     finalizationNext(
       finalizerDefaults,

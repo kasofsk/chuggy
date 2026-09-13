@@ -582,41 +582,44 @@ test("a chosen landing is on the wire whatever the repository's default is", () 
  * target repeating it are refused before the wire sees either.
  */
 test("a pull request names a branch, and a target that is not it", () => {
-  expect(
-    faultReasons(
-      creationForm({
-        landingMode: "PullRequest",
-        targetBranchName: "release/next",
-      }),
-    ),
-  ).toStrictEqual([creationLandingBranchSentence]);
-  expect(
-    faultReasons(creationForm({ landingMode: "PullRequest" })),
-  ).toStrictEqual([creationLandingBranchSentence]);
-  expect(
-    faultReasons(
-      creationForm({
-        landingMode: "PullRequest",
-        branchName: "topic/one",
-        targetBranchName: "topic/one",
-      }),
-    ),
-  ).toStrictEqual([creationLandingWholeSentence]);
-  expect(
-    faultFields(
-      creationForm({
-        landingMode: "PullRequest",
-        targetBranchName: "release/next",
-      }),
-    ),
-  ).toStrictEqual(["branch"]);
+  for (const landingMode of ["PullRequest", "PullRequestMerge"] as const) {
+    expect(
+      faultReasons(
+        creationForm({
+          landingMode,
+          targetBranchName: "release/next",
+        }),
+      ),
+    ).toStrictEqual([creationLandingBranchSentence]);
+    expect(faultReasons(creationForm({ landingMode }))).toStrictEqual([
+      creationLandingBranchSentence,
+    ]);
+    expect(
+      faultReasons(
+        creationForm({
+          landingMode,
+          branchName: "topic/one",
+          targetBranchName: "topic/one",
+        }),
+      ),
+    ).toStrictEqual([creationLandingWholeSentence]);
+    expect(
+      faultFields(
+        creationForm({
+          landingMode,
+          targetBranchName: "release/next",
+        }),
+      ),
+    ).toStrictEqual(["branch"]);
+  }
 });
 
 /** The empty target box means two different references, so it says which. */
 test("the target hint names what leaving it empty lands on under each landing", () => {
-  expect(creationTargetBranchHint("PullRequest")).toContain(
-    "the repository's default branch",
-  );
+  for (const landingMode of ["PullRequest", "PullRequestMerge"] as const)
+    expect(creationTargetBranchHint(landingMode)).toContain(
+      "the repository's default branch",
+    );
   expect(creationTargetBranchHint("Push")).toContain(
     "the branch the work happened on",
   );

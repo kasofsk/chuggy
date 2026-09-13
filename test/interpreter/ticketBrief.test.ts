@@ -272,22 +272,25 @@ test("a finalization target takes the branch's own grammar and no other mode lan
     );
 });
 
+/** Both modes that open a proposal, which brand the same way. */
+const proposingModes = ["PullRequest", "PullRequestMerge"] as const;
+
 test("a pull request lands into the reference it names, or into none at all", () => {
-  assert.deepEqual(
-    asBriefFinalization({
-      mode: "PullRequest",
-      target: "refs/heads/rt/landing",
-    }),
-    { mode: "PullRequest", target: "refs/heads/rt/landing" },
-  );
-  assert.deepEqual(asBriefFinalization({ mode: "PullRequest" }), {
-    mode: "PullRequest",
-  });
-  assert.throws(
-    () => asBriefFinalization({ mode: "PullRequest", target: "rt/landing" }),
-    RangeError,
-    "a target is a reference name under either mode",
-  );
+  for (const mode of proposingModes) {
+    assert.deepEqual(
+      asBriefFinalization({
+        mode,
+        target: "refs/heads/rt/landing",
+      }),
+      { mode, target: "refs/heads/rt/landing" },
+    );
+    assert.deepEqual(asBriefFinalization({ mode }), { mode });
+    assert.throws(
+      () => asBriefFinalization({ mode, target: "rt/landing" }),
+      RangeError,
+      "a target is a reference name under every mode",
+    );
+  }
 });
 
 test("a whole brief brands where it lands apart from where its work happens", () => {
@@ -319,50 +322,54 @@ test("a whole brief brands where it lands apart from where its work happens", ()
 });
 
 test("a brief that proposes brands a branch of its own and not the one it opens into", () => {
-  const proposing = (branch?: string, target = "refs/heads/rt/landing") =>
-    asDraftBrief({
+  for (const mode of proposingModes) {
+    const proposing = (branch?: string, target = "refs/heads/rt/landing") =>
+      asDraftBrief({
+        intent: "Fix the importer.",
+        links: [],
+        ...(branch === undefined ? {} : { branch }),
+        finalization: { mode, target },
+      });
+    assert.deepEqual(proposing("refs/heads/rt/work"), {
       intent: "Fix the importer.",
       links: [],
-      ...(branch === undefined ? {} : { branch }),
-      finalization: { mode: "PullRequest", target },
+      checks: [],
+      branch: "refs/heads/rt/work",
+      finalization: { mode, target: "refs/heads/rt/landing" },
     });
-  assert.deepEqual(proposing("refs/heads/rt/work"), {
-    intent: "Fix the importer.",
-    links: [],
-    checks: [],
-    branch: "refs/heads/rt/work",
-    finalization: { mode: "PullRequest", target: "refs/heads/rt/landing" },
-  });
-  assert.throws(
-    () => proposing(),
-    RangeError,
-    "a proposal has no head where the brief names no branch",
-  );
-  assert.throws(
-    () => proposing("refs/heads/rt/landing"),
-    RangeError,
-    "a proposal is never opened from its own base",
-  );
+    assert.throws(
+      () => proposing(),
+      RangeError,
+      "a proposal has no head where the brief names no branch",
+    );
+    assert.throws(
+      () => proposing("refs/heads/rt/landing"),
+      RangeError,
+      "a proposal is never opened from its own base",
+    );
+  }
 });
 
 test("a brief proposing into the default branch brands its head and no base", () => {
-  const proposing = (branch?: string) =>
-    asDraftBrief({
+  for (const mode of proposingModes) {
+    const proposing = (branch?: string) =>
+      asDraftBrief({
+        intent: "Fix the importer.",
+        links: [],
+        ...(branch === undefined ? {} : { branch }),
+        finalization: { mode },
+      });
+    assert.deepEqual(proposing("refs/heads/rt/work"), {
       intent: "Fix the importer.",
       links: [],
-      ...(branch === undefined ? {} : { branch }),
-      finalization: { mode: "PullRequest" },
+      checks: [],
+      branch: "refs/heads/rt/work",
+      finalization: { mode },
     });
-  assert.deepEqual(proposing("refs/heads/rt/work"), {
-    intent: "Fix the importer.",
-    links: [],
-    checks: [],
-    branch: "refs/heads/rt/work",
-    finalization: { mode: "PullRequest" },
-  });
-  assert.throws(
-    () => proposing(),
-    RangeError,
-    "a proposal into the default branch has no head where the brief names no branch",
-  );
+    assert.throws(
+      () => proposing(),
+      RangeError,
+      "a proposal into the default branch has no head where the brief names no branch",
+    );
+  }
 });

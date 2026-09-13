@@ -1935,9 +1935,7 @@ test("migration 51 admits a mode installed before it existed and refuses one ope
       `ALTER TABLE draft_brief
          DROP CONSTRAINT draft_brief_finalization_mode_is_known,
          ADD CONSTRAINT draft_brief_finalization_mode_is_known CHECK
-           (finalization_mode IN (${schemaTextSet(
-             briefFinalizationModes.filter((mode) => mode !== "PullRequest"),
-           )}))`,
+           (finalization_mode IN (${schemaTextSet(["Push"])}))`,
     );
     await seedBrieflessDraft(subject);
     await subject.query(
@@ -4449,6 +4447,28 @@ test("a landing no roster names is refused by the column's own constraint", asyn
     await migrationSeedApplied(subject, 90);
     await seedLandinglessBinding(subject);
     await applyMigration(subject, 90);
+    for (const mode of ["Push", "PullRequest"])
+      await subject.query(
+        `UPDATE project_repository SET landing_mode=$1
+          WHERE tenant='tenant-90' AND project='project-90'`,
+        [mode],
+      );
+    await assert.rejects(
+      subject.query(
+        `UPDATE project_repository SET landing_mode='PullRequestMerge'
+          WHERE tenant='tenant-90' AND project='project-90'`,
+      ),
+      /project_repository_landing_mode_is_known/u,
+      "90's own CHECK is frozen to the roster it was written against",
+    );
+  });
+});
+
+test("92 widens both mode rosters to the mode it adds", async () => {
+  await migrationDatabase("i92roster", async (subject) => {
+    await migrationSeedApplied(subject, 92);
+    await applyMigration(subject, 92);
+    await seedLandinglessBinding(subject);
     for (const mode of briefFinalizationModes)
       await subject.query(
         `UPDATE project_repository SET landing_mode=$1
@@ -4461,6 +4481,23 @@ test("a landing no roster names is refused by the column's own constraint", asyn
           WHERE tenant='tenant-90' AND project='project-90'`,
       ),
       /project_repository_landing_mode_is_known/u,
+    );
+    await seedBrieflessDraft(subject);
+    await subject.query(
+      `INSERT INTO draft_brief (tenant,project,ticket,intent,branch)
+       VALUES ('tenant','project',1,'Fix the importer.','refs/heads/rt/ticket-brief')`,
+    );
+    for (const mode of briefFinalizationModes)
+      await subject.query(
+        `UPDATE draft_brief SET finalization_mode=$1,finalization_target=NULL
+          WHERE ticket=1`,
+        [mode],
+      );
+    await assert.rejects(
+      subject.query(
+        `UPDATE draft_brief SET finalization_mode='Merge' WHERE ticket=1`,
+      ),
+      /draft_brief_finalization_mode_is_known/u,
     );
   });
 });

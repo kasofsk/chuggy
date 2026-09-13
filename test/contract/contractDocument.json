@@ -507,6 +507,22 @@
                   },
                   "required": ["mode"],
                   "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "PullRequestMerge"
+                    },
+                    "target": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "pattern": "^refs\\/heads\\/.*"
+                    }
+                  },
+                  "required": ["mode"],
+                  "additionalProperties": false
                 }
               ]
             }
@@ -708,6 +724,22 @@
                   },
                   "required": ["mode"],
                   "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "PullRequestMerge"
+                    },
+                    "target": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "pattern": "^refs\\/heads\\/.*"
+                    }
+                  },
+                  "required": ["mode"],
+                  "additionalProperties": false
                 }
               ]
             }
@@ -805,7 +837,7 @@
           "properties": {
             "mode": {
               "type": "string",
-              "enum": ["Push", "PullRequest"]
+              "enum": ["Push", "PullRequest", "PullRequestMerge"]
             }
           },
           "required": ["mode"],
@@ -816,7 +848,7 @@
           "properties": {
             "mode": {
               "type": "string",
-              "enum": ["Push", "PullRequest"]
+              "enum": ["Push", "PullRequest", "PullRequestMerge"]
             }
           },
           "required": ["mode"],

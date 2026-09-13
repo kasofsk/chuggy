@@ -87,6 +87,7 @@ import { migration088 } from "./088-the-control-plane-mints.ts";
 import { migration089 } from "./089-onboarding-over-the-api.ts";
 import { migration090 } from "./090-a-repository-s-landing.ts";
 import { migration091 } from "./091-a-proposal-into-the-default-branch.ts";
+import { migration092 } from "./092-a-pull-request-that-merges.ts";
 import { migration082 } from "./082-binding-read-names-its-repository.ts";
 import type { Migration } from "../shared.ts";
 
@@ -182,4 +183,5 @@ export const migrations: readonly Migration[] = [
   migration089,
   migration090,
   migration091,
+  migration092,
 ];

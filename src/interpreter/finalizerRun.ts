@@ -158,6 +158,7 @@
  * and cannot be read back.
  */
 
+import { briefFinalizationProposes } from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import {
   asChangeProposalRequestIdentity,
@@ -470,7 +471,8 @@ async function finalizerGatherBranches(
   if (brief === undefined) return {};
   const finalization = brief.finalization;
   const proposing =
-    view.claim.kind === "RunFinalizer" && finalization?.mode === "PullRequest";
+    view.claim.kind === "RunFinalizer" &&
+    briefFinalizationProposes(finalization?.mode);
   if (proposing && brief.branch === undefined) return undefined;
   const target = proposing
     ? brief.branch
@@ -1211,7 +1213,11 @@ async function finalizerOpeningProposal(
     view.claim.ticket,
   );
   const finalization = brief?.finalization;
-  if (brief === undefined || finalization?.mode !== "PullRequest") {
+  if (
+    brief === undefined ||
+    finalization === undefined ||
+    !briefFinalizationProposes(finalization.mode)
+  ) {
     throw new Error(
       "finalizer proposal: a proposal was authorized by no brief that opens one",
     );

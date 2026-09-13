@@ -14,6 +14,7 @@
 import { z } from "zod";
 
 import { textCodePointsCount } from "./http.ts";
+import { briefFinalizationProposes } from "./rosters.ts";
 
 /**
  * The longest line a briefing renders, which is the whole of what a brief is
@@ -137,9 +138,9 @@ export const briefIntentSchema = z
 /**
  * How and where a finalization lands the work, as one variant per mode: a push
  * names the reference it lands on only where that is not the branch the work
- * happened on, and a pull request only where that is not the branch its
- * repository defaults to. The target shares the branch's grammar, being the
- * same kind of name.
+ * happened on, and a pull request — merged afterwards or left for a human —
+ * only where that is not the branch its repository defaults to. The target
+ * shares the branch's grammar, being the same kind of name.
  */
 const briefFinalizationShapes = {
   Push: { mode: z.literal("Push"), target: briefBranchSchema.optional() },
@@ -147,11 +148,16 @@ const briefFinalizationShapes = {
     mode: z.literal("PullRequest"),
     target: briefBranchSchema.optional(),
   },
+  PullRequestMerge: {
+    mode: z.literal("PullRequestMerge"),
+    target: briefBranchSchema.optional(),
+  },
 } as const;
 
 export const briefFinalizationSchema = z.discriminatedUnion("mode", [
   z.strictObject(briefFinalizationShapes.Push),
   z.strictObject(briefFinalizationShapes.PullRequest),
+  z.strictObject(briefFinalizationShapes.PullRequestMerge),
 ]);
 
 /**
@@ -168,7 +174,11 @@ export function briefLandingIsWhole(value: {
     { readonly mode: string; readonly target?: string | undefined } | undefined;
 }): boolean {
   const finalization = value.finalization;
-  if (finalization?.mode !== "PullRequest") return true;
+  if (
+    finalization === undefined ||
+    !briefFinalizationProposes(finalization.mode)
+  )
+    return true;
   if (value.branch === undefined) return false;
   return (
     finalization.target === undefined || value.branch !== finalization.target
@@ -203,6 +213,7 @@ export type TicketBriefBody = z.infer<typeof briefSchema>;
 export const briefFinalizationResponseSchema = z.discriminatedUnion("mode", [
   z.object(briefFinalizationShapes.Push),
   z.object(briefFinalizationShapes.PullRequest),
+  z.object(briefFinalizationShapes.PullRequestMerge),
 ]);
 
 /**

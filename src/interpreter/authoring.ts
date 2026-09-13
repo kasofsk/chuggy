@@ -9,7 +9,10 @@ import {
   nativeHttpPageItemsDefault,
   nativeHttpPageItemsMax,
 } from "../contract/http.ts";
-import type { ConfigurationHandoff } from "../contract/rosters.ts";
+import {
+  briefFinalizationProposes,
+  type ConfigurationHandoff,
+} from "../contract/rosters.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import {
   defaultProgram,
@@ -165,7 +168,7 @@ export function releaseConfigurationReadiness(
   if (
     (value as Record<string, unknown>)[handoffConfigurationField] !== undefined
   ) {
-    if (brief?.finalization?.mode === "PullRequest")
+    if (briefFinalizationProposes(brief?.finalization?.mode))
       return { readiness: "Incomplete", fault: "HandoffProposesChange" };
     const handoff = authoredHandoffConfigurationReadiness(value);
     if (handoff.readiness === "Incomplete") return handoff;

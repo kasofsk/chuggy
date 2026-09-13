@@ -1187,32 +1187,37 @@ test("the promotion pushes the branch the brief names and never the binding defa
 });
 
 test("a proposing brief naming no branch of its own is held and never promoted", async () => {
-  const emitted: FinalizerHoldReason[] = [];
-  const metrics = finalizerTelemetry({
-    ...silentFinalizerMetrics,
-    holding: (reason) => emitted.push(reason),
-  });
-  const store = recordingStore([promotableView("request-one")]);
-  const git = recordingGit();
+  for (const mode of ["PullRequest", "PullRequestMerge"] as const) {
+    const emitted: FinalizerHoldReason[] = [];
+    const metrics = finalizerTelemetry({
+      ...silentFinalizerMetrics,
+      holding: (reason) => emitted.push(reason),
+    });
+    const store = recordingStore([promotableView("request-one")]);
+    const git = recordingGit();
 
-  const report = await passOver({
-    ...serviceOf(store, git, {}, recordingArtifacts(), metrics),
-    ticketBriefs: briefsOf(undefined, landingBranch, "PullRequest"),
-  });
+    const report = await passOver({
+      ...serviceOf(store, git, {}, recordingArtifacts(), metrics),
+      ticketBriefs: briefsOf(undefined, landingBranch, mode),
+    });
 
-  assert.equal(report.promotions, 0);
-  assert.deepEqual(git.promotions, []);
-  assert.deepEqual(store.grants, [], "no permit was asked for");
-  assert.deepEqual(git.observations, [], "the remote was not asked either");
-  assert.equal(report.holds, 1);
-  assert.deepEqual(emitted, ["ProposalUnbranched"]);
+    assert.equal(report.promotions, 0, mode);
+    assert.deepEqual(git.promotions, [], mode);
+    assert.deepEqual(store.grants, [], "no permit was asked for");
+    assert.deepEqual(git.observations, [], "the remote was not asked either");
+    assert.equal(report.holds, 1, mode);
+    assert.deepEqual(emitted, ["ProposalUnbranched"], mode);
+  }
 });
 
 /** One view whose candidate is promoted and whose brief lands it by opening a proposal. */
-function proposedView(request: string): FinalizationView {
+function proposedView(
+  request: string,
+  mode: BriefFinalizationMode = "PullRequest",
+): FinalizationView {
   return {
     ...promotableView(request),
-    finalizationMode: "PullRequest",
+    finalizationMode: mode,
     permit: { ...permitOf(request), state: "Concluded" },
     attempt: {
       ...attemptOf(request),
@@ -1237,11 +1242,12 @@ function proposingService(
   git: GitPromotionPort,
   forge: ForgeRecorder | undefined,
   bounds: Partial<typeof finalizerDefaults> = {},
+  mode: BriefFinalizationMode = "PullRequest",
 ): FinalizerService {
   return {
     ...serviceOf(store, git, bounds),
     forges: forgesOf(forge),
-    ticketBriefs: briefsOf(briefBranch, landingBranch, "PullRequest"),
+    ticketBriefs: briefsOf(briefBranch, landingBranch, mode),
   };
 }
 
@@ -1282,6 +1288,32 @@ test("a promoted candidate whose brief proposes opens one from its branch into i
   assert.equal(forge.creates.length, 1, "no second create was authorized");
   assert.deepEqual(forge.reads, []);
   assert.deepEqual(store.submitted, ["request-one"]);
+});
+
+test("a brief that lands by merging its proposal opens one exactly as a brief that proposes alone", async () => {
+  const store = recordingStore([
+    proposedView("request-one", "PullRequestMerge"),
+  ]);
+  const forge = recordingForge(store);
+  forge.created = "Created";
+  const service = proposingService(
+    store,
+    recordingGit(),
+    forge,
+    {},
+    "PullRequestMerge",
+  );
+
+  const opening = await passOver(service);
+
+  assert.equal(opening.proposals, 1);
+  assert.equal(forge.creates[0]?.head.ref, briefBranch);
+  assert.equal(forge.creates[0]?.base.ref, landingBranch);
+
+  const proved = await passOver(service);
+
+  assert.equal(proved.conclusions, 1);
+  assert.equal(forge.creates.length, 1, "no second create was authorized");
 });
 
 test("a proposing brief naming no base opens into the branch the remote defaults to", async () => {

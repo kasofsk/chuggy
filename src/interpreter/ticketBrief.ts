@@ -108,9 +108,17 @@ export interface BriefPullRequestFinalization {
   readonly target?: GitRefName;
 }
 
+/** Landing by opening that same change proposal and merging it, the repository's default where it names none. */
+export interface BriefPullRequestMergeFinalization {
+  readonly mode: Extract<BriefFinalizationMode, "PullRequestMerge">;
+  readonly target?: GitRefName;
+}
+
 /** How and where one ticket's work is landed, which is the finalizer's half of a brief. */
 export type BriefFinalization =
-  BriefPushFinalization | BriefPullRequestFinalization;
+  | BriefPushFinalization
+  | BriefPullRequestFinalization
+  | BriefPullRequestMergeFinalization;
 
 /** What a brief naming neither a finalization nor a repository to take one from lands by. */
 export const briefFinalizationDefault: BriefFinalization = { mode: "Push" };
