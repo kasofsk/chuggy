@@ -34,6 +34,7 @@ import {
   asForgeBindingId,
   asForgeCredentialReference,
   asProposalDisplayUrl,
+  asProposalNumber,
   asProposalRemoteIdentity,
   changeProposalRequest,
   proposalEvidenceCharsMax,
@@ -362,6 +363,7 @@ function proposalEvidence(request: ChangeProposalRequest) {
     identity: {
       forge: request.binding.forge,
       remote: asProposalRemoteIdentity("proposal-rig"),
+      number: asProposalNumber(1),
     },
     repository: request.repository,
     marker: request.marker,
@@ -370,6 +372,7 @@ function proposalEvidence(request: ChangeProposalRequest) {
     title: request.title,
     body: request.body,
     status: "Open" as const,
+    mergeability: "Unknown" as const,
     url: asProposalDisplayUrl("https://forge.invalid/proposals/1"),
   };
 }
@@ -413,6 +416,9 @@ function proposalPort(): ProposalPort {
           ? { read: "Found" as const, evidence: proposalEvidence(request) }
           : { read: "Absent" as const },
       );
+    },
+    merge: () => {
+      throw new Error("the pass asked this forge to merge a proposal");
     },
   };
   return own;
@@ -829,6 +835,7 @@ function proposalEvidenceTitled(
     identity: {
       forge: asForgeBindingId("forge-rig"),
       remote: asProposalRemoteIdentity("proposal-rig"),
+      number: asProposalNumber(1),
     },
     repository: asRepositoryId(project.repository),
     marker: proposalMarkerOf(request),
@@ -843,6 +850,7 @@ function proposalEvidenceTitled(
     title,
     body: `propose it\n\n${proposalMarkerOf(request)}`,
     status: "Open",
+    mergeability: "Unknown",
     url: asProposalDisplayUrl("https://forge.invalid/proposals/1"),
   };
 }

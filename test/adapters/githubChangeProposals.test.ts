@@ -24,17 +24,22 @@ import {
   githubChangeProposalsPerPageMax,
   type GithubChangeProposalsHosts,
 } from "../../src/adapters/forge/githubChangeProposals.ts";
+import { allChangeProposalMerges } from "../../src/interpreter/changeProposal.ts";
 import {
   asChangeProposalRequestIdentity,
   asForgeBindingId,
   asForgeCredential,
   asForgeCredentialReference,
   asProposalDisplayUrl,
+  asProposalNumber,
   asProposalRemoteIdentity,
+  changeProposalMergeRequest,
   changeProposalRequest,
   proposalTitleCharsMax,
   reconcileChangeProposal,
   type ChangeProposalEvidence,
+  type ChangeProposalMerged,
+  type ChangeProposalMergeRequest,
   type ChangeProposalPort,
   type ChangeProposalRequest,
   type ForgeCredentialPort,
@@ -59,10 +64,17 @@ const fixtureHeadRef = asGitRefName(`refs/heads/${fixtureHeadBranch}`);
 const fixtureHeadCommit = asGitObjectId("b".repeat(40));
 const fixtureBaseCommit = asGitObjectId("c".repeat(40));
 const fixtureRemote = "PR_kwDOnode17";
+const fixtureNumber = 17;
 const fixtureDisplayUrl = "https://github.com/kasofsk/chuggy/pull/17";
 
 /** The code point no stored row holds, written as an escape so a fixture stays text. */
 const fixtureNul = "\u0000";
+
+/** The commit a merge of the fixture proposal leaves. */
+const fixtureMergeCommit = asGitObjectId("f".repeat(40));
+
+/** The moment this forge names a merge at, which is what tells a merged proposal from a closed one. */
+const fixtureMergedAt = "2026-08-28T09:00:00Z";
 
 /** Two commits no request names, so a case can tell an answered field from an echoed one. */
 const fixtureAnsweredHeadCommit = asGitObjectId("d".repeat(40));
@@ -133,6 +145,7 @@ function fixturePull(
 ): Readonly<Record<string, unknown>> {
   return {
     node_id: fixtureRemote,
+    number: fixtureNumber,
     html_url: fixtureDisplayUrl,
     title: request.title,
     body: request.body,
@@ -190,6 +203,7 @@ function fixtureEvidence(
     identity: {
       forge: fixtureForgeBinding,
       remote: asProposalRemoteIdentity(fixtureRemote),
+      number: asProposalNumber(fixtureNumber),
     },
     repository: request.repository,
     marker: request.marker,
@@ -198,6 +212,7 @@ function fixtureEvidence(
     title: request.title,
     body: request.body,
     status: "Open",
+    mergeability: "Unknown",
     url: asProposalDisplayUrl(fixtureDisplayUrl),
   };
 }
@@ -389,6 +404,7 @@ test("a proposal carrying the marker past the bounds a stored row holds is not a
   const request = fixtureRequest();
   const unholdable = [
     { title: "t".repeat(proposalTitleCharsMax + 1) },
+    { number: 0 },
     { head: { ref: fixtureHeadBranch, sha: "short" } },
     { base: { ref: "main", sha: fixtureBaseCommit, repo: null } },
     { node_id: "n".repeat(4_096) },
@@ -631,13 +647,18 @@ test("a proposal the forge has closed or merged carries that standing", async ()
     fixtureAnswer(200, [
       fixturePull(request, {
         state: "closed",
-        merged_at: "2026-08-28T09:00:00Z",
+        merged_at: fixtureMergedAt,
+        merge_commit_sha: fixtureMergeCommit,
       }),
     ]),
   ]);
   assert.deepEqual(await fixtureAdapter(merged).readByMarker(request), {
     read: "Found",
-    evidence: { ...fixtureEvidence(request), status: "Merged" },
+    evidence: {
+      ...fixtureEvidence(request),
+      status: "Merged",
+      mergeCommit: fixtureMergeCommit,
+    },
   });
 });
 
@@ -778,4 +799,168 @@ test("a brand's own refusal is an absence and anything else it raises escapes", 
     TypeError,
     "a throw that is no refusal is not an answer",
   );
+});
+
+/** The merge one case asks for, addressing the proposal this forge answers with. */
+function fixtureMergeRequest(
+  overrides: Partial<ChangeProposalMergeRequest> = {},
+): ChangeProposalMergeRequest {
+  const request = fixtureRequest();
+  return {
+    ...changeProposalMergeRequest({
+      binding: request.binding,
+      partition: request.partition,
+      repository: request.repository,
+      proposal: fixtureEvidence(request).identity,
+      headCommit: fixtureHeadCommit,
+    }),
+    ...overrides,
+  };
+}
+
+test("a merge is one request, addressed by number and conditional on the head", async () => {
+  const recorder = fixtureForge([
+    fixtureAnswer(200, { sha: fixtureMergeCommit, merged: true }),
+  ]);
+  const merged = await fixtureAdapter(recorder).merge(fixtureMergeRequest());
+  assert.deepEqual(merged, {
+    merged: "Merged",
+    mergeCommit: fixtureMergeCommit,
+  });
+  assert.equal(recorder.calls.length, 1);
+  const call = recorder.calls[0];
+  assert.equal(
+    call?.url,
+    `https://api.github.com/repos/kasofsk/chuggy/pulls/${String(fixtureNumber)}/merge`,
+  );
+  assert.equal(call?.method, "PUT");
+  assert.equal(call?.redirect, "error");
+  assert.deepEqual(JSON.parse(call?.body ?? ""), {
+    sha: fixtureHeadCommit,
+    merge_method: "merge",
+  });
+  assert.equal(call?.headers["authorization"], `Bearer ${fixtureSecret}`);
+  assert.equal(JSON.stringify(merged).includes(fixtureSecret), false);
+});
+
+test("every way this forge answers a merge is its own value", async () => {
+  const cases: readonly [Response | Error, ChangeProposalMerged][] = [
+    [fixtureRefusal(405), { merged: "NotMergeable", reason: "Unknown" }],
+    [fixtureRefusal(409), { merged: "HeadMoved" }],
+    [fixtureRefusal(403), { merged: "Denied" }],
+    [fixtureRefusal(404), { merged: "Denied" }],
+    [
+      fixtureRefusal(403, { "x-ratelimit-remaining": "0" }),
+      { merged: "Unavailable" },
+    ],
+    [fixtureRefusal(429), { merged: "Unavailable" }],
+    [fixtureRefusal(500), { merged: "Ambiguous" }],
+    [new Error("the forge stopped"), { merged: "Ambiguous" }],
+    [new Response("{not json", { status: 200 }), { merged: "Ambiguous" }],
+    [
+      new Response("", {
+        status: 301,
+        headers: { location: "https://api.github.com/repositories/9/merge" },
+      }),
+      { merged: "Ambiguous" },
+    ],
+    [
+      fixtureAnswer(200, { sha: fixtureMergeCommit, merged: false }),
+      { merged: "Ambiguous" },
+    ],
+    [
+      fixtureAnswer(200, { sha: "short", merged: true }),
+      { merged: "Ambiguous" },
+    ],
+  ];
+  const answered = new Set<string>(["Merged"]);
+  for (const [answer, expected] of cases) {
+    const recorder = fixtureForge([answer]);
+    const merged = await fixtureAdapter(recorder).merge(fixtureMergeRequest());
+    assert.deepEqual(merged, expected, JSON.stringify(expected));
+    assert.equal(recorder.calls.length, 1, JSON.stringify(expected));
+    answered.add(merged.merged);
+  }
+  assert.deepEqual([...answered].sort(), [...allChangeProposalMerges].sort());
+});
+
+test("a merge this forge could never be asked is answered without a request", async () => {
+  const recorder = fixtureForge([]);
+  const elsewhere = fixtureMergeRequest({
+    repository: asRepositoryId("https://gitlab.invalid/kasofsk/chuggy"),
+  });
+  assert.deepEqual(await fixtureAdapter(recorder).merge(elsewhere), {
+    merged: "Denied",
+  });
+  const asked = fixtureMergeRequest();
+  const elsewhereBound = {
+    ...asked,
+    proposal: { ...asked.proposal, forge: asForgeBindingId("forge-beta") },
+  };
+  assert.deepEqual(await fixtureAdapter(recorder).merge(elsewhereBound), {
+    merged: "Denied",
+  });
+  assert.deepEqual(await fixtureAdapter(recorder, "Denied").merge(asked), {
+    merged: "Denied",
+  });
+  assert.deepEqual(await fixtureAdapter(recorder, "Unavailable").merge(asked), {
+    merged: "Unavailable",
+  });
+  assert.equal(recorder.calls.length, 0);
+});
+
+test("what this forge says about merging a proposal reaches its evidence", async () => {
+  const request = fixtureRequest();
+  const cases = [
+    [{ mergeable: true, mergeable_state: "clean" }, "Mergeable"],
+    [{ mergeable: false, mergeable_state: "dirty" }, "Conflicting"],
+    [{ mergeable: false, mergeable_state: "unknown" }, "Conflicting"],
+    [{ mergeable: true, mergeable_state: "blocked" }, "Blocked"],
+    [{ mergeable: true, mergeable_state: "draft" }, "Blocked"],
+    [{ mergeable: null, mergeable_state: "unknown" }, "Unknown"],
+    [{}, "Unknown"],
+  ] as const;
+  for (const [answered, mergeability] of cases) {
+    const recorder = fixtureForge([
+      fixtureAnswer(200, [fixturePull(request, answered)]),
+    ]);
+    assert.deepEqual(
+      await fixtureAdapter(recorder).readByMarker(request),
+      {
+        read: "Found",
+        evidence: { ...fixtureEvidence(request), mergeability },
+      },
+      JSON.stringify(answered),
+    );
+  }
+});
+
+test("only a merged proposal carries the commit a merge left", async () => {
+  const request = fixtureRequest();
+  const trial = fixtureForge([
+    fixtureAnswer(200, [
+      fixturePull(request, { merge_commit_sha: fixtureMergeCommit }),
+    ]),
+  ]);
+  assert.deepEqual(
+    await fixtureAdapter(trial).readByMarker(request),
+    { read: "Found", evidence: fixtureEvidence(request) },
+    "the commit an open proposal would merge at is no merge",
+  );
+  for (const answered of [null, "short"]) {
+    const unnamed = fixtureForge([
+      fixtureAnswer(200, [
+        fixturePull(request, {
+          state: "closed",
+          merged_at: fixtureMergedAt,
+          merge_commit_sha: answered,
+        }),
+      ]),
+    ]);
+    assert.deepEqual(
+      await fixtureAdapter(unnamed).readByMarker(request),
+      { read: "Unavailable" },
+      "a merged proposal whose commit no row holds is found and unusable",
+    );
+  }
 });

@@ -67,12 +67,14 @@ import { textCodePointsCount } from "../../contract/http.ts";
 import {
   allChangeProposalContradictions,
   allChangeProposalCreationsStored,
+  allChangeProposalMergeabilities,
   allChangeProposalReconciliationsStored,
   allChangeProposalStatuses,
   asChangeProposalRequestIdentity,
   asForgeBindingId,
   asProposalDisplayUrl,
   asProposalMarker,
+  asProposalNumber,
   asProposalRemoteIdentity,
   proposalEvidenceCharsMax,
   type ChangeProposalContradiction,
@@ -136,7 +138,11 @@ const changeProposalStoredRef = z.object({
 
 /** The evidence a stored result carries, in the shape this code writes it. */
 const changeProposalStoredEvidenceSchema = z.object({
-  identity: z.object({ forge: z.string(), remote: z.string() }),
+  identity: z.object({
+    forge: z.string(),
+    remote: z.string(),
+    number: z.number(),
+  }),
   repository: z.string(),
   marker: z.string(),
   head: changeProposalStoredRef,
@@ -144,6 +150,8 @@ const changeProposalStoredEvidenceSchema = z.object({
   title: z.string(),
   body: z.string(),
   status: z.string(),
+  mergeability: z.string(),
+  mergeCommit: z.string().optional(),
   url: z.string().optional(),
 });
 
@@ -161,6 +169,7 @@ function changeProposalEvidenceOf(
     identity: {
       forge: asForgeBindingId(value.identity.forge),
       remote: asProposalRemoteIdentity(value.identity.remote),
+      number: asProposalNumber(value.identity.number),
     },
     repository: asRepositoryId(value.repository),
     marker: asProposalMarker(value.marker),
@@ -179,6 +188,14 @@ function changeProposalEvidenceOf(
       value.status,
       "change proposal status",
     ),
+    mergeability: finalizerRowValue(
+      allChangeProposalMergeabilities,
+      value.mergeability,
+      "change proposal mergeability",
+    ),
+    ...(value.mergeCommit === undefined
+      ? {}
+      : { mergeCommit: asGitObjectId(value.mergeCommit) }),
     ...(value.url === undefined
       ? {}
       : { url: asProposalDisplayUrl(value.url) }),

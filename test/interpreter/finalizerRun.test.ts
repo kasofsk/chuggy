@@ -23,6 +23,7 @@ import {
   asForgeBindingId,
   asForgeCredentialReference,
   asProposalDisplayUrl,
+  asProposalNumber,
   asProposalRemoteIdentity,
   type ChangeProposalCreated,
   type ChangeProposalEvidence,
@@ -652,6 +653,7 @@ function forgeEvidence(
     identity: {
       forge: request.binding.forge,
       remote: asProposalRemoteIdentity("proposal-run"),
+      number: asProposalNumber(3),
     },
     repository: request.repository,
     marker: request.marker,
@@ -660,6 +662,7 @@ function forgeEvidence(
     title: request.title,
     body: request.body,
     status: "Open",
+    mergeability: "Unknown",
     url: asProposalDisplayUrl("https://forge.invalid/proposals/1"),
     ...overrides,
   };
@@ -699,6 +702,9 @@ function recordingForge(store: FinalizerRecorder): ForgeRecorder {
           ? { read, evidence: forgeEvidence(request) }
           : { read },
       );
+    },
+    merge: () => {
+      throw new Error("the pass asked this forge to merge a proposal");
     },
   };
   return own;
