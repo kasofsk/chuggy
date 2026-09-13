@@ -1158,20 +1158,22 @@ test("a ticket whose brief names no branch is finalized against the binding's ow
   assert.equal(store.attempts[0]?.target.ref, "refs/heads/main");
 });
 
-test("the promotion pushes the branch the brief names and never the binding default", async () => {
-  const view = promotableView("request-one");
-  const store = recordingStore([
-    {
-      ...view,
-      attempt: {
-        ...attemptOf("request-one"),
-        target: {
-          ref: asGitRefName(briefBranch),
-          commit: asGitObjectId(commitOf("a")),
-        },
+/** One view whose candidate is promoted onto the branch the ticket's brief names. */
+function promotableOnBriefBranch(request: string): FinalizationView {
+  return {
+    ...promotableView(request),
+    attempt: {
+      ...attemptOf(request),
+      target: {
+        ref: asGitRefName(briefBranch),
+        commit: asGitObjectId(commitOf("a")),
       },
     },
-  ]);
+  };
+}
+
+test("the promotion pushes the branch the brief names and never the binding default", async () => {
+  const store = recordingStore([promotableOnBriefBranch("request-one")]);
   const git = recordingGit();
 
   const report = await passOver({
@@ -1210,22 +1212,59 @@ test("a proposing brief naming no branch of its own is held and never promoted",
   }
 });
 
+test("a proposing brief whose base is the branch it works on is held before anything is built", async () => {
+  const emitted: FinalizerHoldReason[] = [];
+  const metrics = finalizerTelemetry({
+    ...silentFinalizerMetrics,
+    holding: (reason) => emitted.push(reason),
+  });
+  const store = recordingStore([
+    preparableView("request-one"),
+    promotableView("request-two"),
+  ]);
+  const git = recordingGit();
+
+  const report = await passOver({
+    ...serviceOf(store, git, {}, recordingArtifacts(), metrics),
+    ticketBriefs: briefsOf("refs/heads/main", undefined, "PullRequest"),
+  });
+
+  assert.equal(report.holds, 2);
+  assert.deepEqual(emitted, ["ProposalBaseIsHead", "ProposalBaseIsHead"]);
+  assert.equal(report.preparations, 0);
+  assert.equal(report.promotions, 0);
+  assert.deepEqual(git.preparations, [], "nothing was built over the base");
+  assert.deepEqual(git.promotions, [], "nothing was pushed onto it either");
+  assert.deepEqual(store.attempts, []);
+  assert.deepEqual(store.grants, [], "no permit was asked for");
+});
+
+test("a proposing brief naming no base is promoted onto its own branch", async () => {
+  const store = recordingStore([promotableOnBriefBranch("request-one")]);
+  const git = recordingGit();
+
+  const report = await passOver({
+    ...serviceOf(store, git),
+    ticketBriefs: briefsOf(briefBranch, undefined, "PullRequest"),
+  });
+
+  assert.equal(report.holds, 0);
+  assert.equal(report.promotions, 1);
+  assert.deepEqual(
+    git.promotions.map((each) => each.target.ref),
+    [briefBranch],
+  );
+});
+
 /** One view whose candidate is promoted and whose brief lands it by opening a proposal. */
 function proposedView(
   request: string,
   mode: BriefFinalizationMode = "PullRequest",
 ): FinalizationView {
   return {
-    ...promotableView(request),
+    ...promotableOnBriefBranch(request),
     finalizationMode: mode,
     permit: { ...permitOf(request), state: "Concluded" },
-    attempt: {
-      ...attemptOf(request),
-      target: {
-        ref: asGitRefName(briefBranch),
-        commit: asGitObjectId(commitOf("a")),
-      },
-    },
     reconciliation: {
       permit: asCommitPermitId(`permit-${request}`),
       candidate: asGitObjectId(commitOf("c")),
@@ -1333,22 +1372,39 @@ test("a proposing brief naming no base opens into the branch the remote defaults
   assert.equal(forge.creates[0]?.base.ref, "refs/heads/main");
   assert.deepEqual(
     git.observations.map((each) => each.targetRef),
-    [briefBranch, undefined],
-    "the base is read through the binding itself, which is the remote's default",
+    [undefined, briefBranch],
+    "the base is read through the binding itself, which is the remote's default, and read once",
   );
 });
 
-test("a proposal whose base is read back as its own head is held, and the forge is never asked", async () => {
+/**
+ * A remote whose default branch is unreadable once and the work's own branch
+ * after that, which is the base moving between the gathering and the proposal.
+ */
+function gitWithLateDefault(): GitRecorder {
+  const git = recordingGit();
+  const answers: TargetObserved[] = [
+    { observed: "Unreadable", evidence: "RefUnreadable" },
+    {
+      observed: "Target",
+      target: {
+        ref: asGitRefName(briefBranch),
+        commit: asGitObjectId(commitOf("a")),
+      },
+    },
+  ];
+  const observeTarget = git.observeTarget.bind(git);
+  git.observeTarget = (repository) =>
+    repository.targetRef === undefined
+      ? Promise.resolve(answers.shift() ?? git.observed)
+      : observeTarget(repository);
+  return git;
+}
+
+test("a base that becomes the head between the gathering and the proposal is held, and the forge is never asked", async () => {
   const store = recordingStore([proposedView("request-one")]);
   const forge = recordingForge(store);
-  const git = recordingGit();
-  git.observed = {
-    observed: "Target",
-    target: {
-      ref: asGitRefName(briefBranch),
-      commit: asGitObjectId(commitOf("a")),
-    },
-  };
+  const git = gitWithLateDefault();
   const emitted: FinalizerHoldReason[] = [];
   const service = {
     ...proposingService(store, git, forge),

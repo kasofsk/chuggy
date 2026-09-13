@@ -550,6 +550,8 @@ export interface FinalizationView {
   readonly observedTarget?: ObservedTarget;
   /** What the branch the work happened on holds, which is the tree a candidate is built over. */
   readonly observedWorkBranch?: ObservedTarget;
+  /** The branch the remote defaults to, read only for a proposing brief that names no base of its own. */
+  readonly observedProposalBase?: ObservedTarget;
   readonly attempt?: FinalizationAttempt;
   readonly approval: ApprovalStanding;
   readonly permit?: CommitPermit;

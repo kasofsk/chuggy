@@ -4538,6 +4538,48 @@ async function createdProposingDraft(subject: pg.Pool, branch: string | null) {
   ).rows;
 }
 
+/** One brief written through the door naming no repository, which is the landing 91 writes out itself. */
+async function createdUnboundDraft(subject: pg.Pool) {
+  return (
+    await subject.query<{ result: string }>(
+      `SELECT result FROM ${draftCreateFunction}(
+         'tenant-91','project-91','revision-91','digest-91',0,$1,
+         NULL,'Land it.','{}'::text[],'{}'::text[],NULL,NULL,NULL,NULL,'User','author')`,
+      [
+        encodeDraftAuthoring({
+          ...plainAuthoring,
+          finalizer: "ManagedFinalizer",
+        }),
+      ],
+    )
+  ).rows;
+}
+
+/**
+ * 91 writes the landing a brief takes where neither it nor a repository names
+ * one as a literal rather than from the roster, so the two are pinned to each
+ * other here.
+ */
+test("the landing 91's door falls back to is the one this tree defaults to", async () => {
+  assert.equal(briefFinalizationDefault.mode, "Push");
+  await migrationDatabase("i91fallback", async (subject) => {
+    await migrationSeedApplied(subject, 91);
+    await seedProposingBinding(subject);
+    await applyMigration(subject, 91);
+    assert.deepEqual(await createdUnboundDraft(subject), [
+      { result: "Created" },
+    ]);
+    assert.deepEqual(
+      (
+        await subject.query<{ finalization_mode: string }>(
+          `SELECT finalization_mode FROM draft_brief`,
+        )
+      ).rows,
+      [{ finalization_mode: briefFinalizationDefault.mode }],
+    );
+  });
+});
+
 test("migration 91 opens a proposal into the default branch where 90's door could only fail", async () => {
   await migrationDatabase("i91default", async (subject) => {
     await migrationSeedApplied(subject, 91);

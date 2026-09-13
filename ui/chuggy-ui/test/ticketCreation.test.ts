@@ -611,6 +611,15 @@ test("a pull request names a branch, and a target that is not it", () => {
         }),
       ),
     ).toStrictEqual(["branch"]);
+    expect(
+      faultFields(
+        creationForm({
+          landingMode,
+          branchName: "topic/one",
+          targetBranchName: "topic/one",
+        }),
+      ),
+    ).toStrictEqual(["target"]);
   }
 });
 
