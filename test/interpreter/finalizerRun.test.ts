@@ -1239,6 +1239,41 @@ test("a proposing brief whose base is the branch it works on is held before anyt
   assert.deepEqual(store.grants, [], "no permit was asked for");
 });
 
+test("a proposing brief whose default branch will not read is held with nothing built", async () => {
+  const emitted: FinalizerHoldReason[] = [];
+  const metrics = finalizerTelemetry({
+    ...silentFinalizerMetrics,
+    holding: (reason) => emitted.push(reason),
+  });
+  const store = recordingStore([
+    preparableView("request-one"),
+    promotableView("request-two"),
+  ]);
+  const git = recordingGit();
+  git.observed = { observed: "Unreadable", evidence: "RefUnreadable" };
+
+  const report = await passOver({
+    ...serviceOf(store, git, {}, recordingArtifacts(), metrics),
+    ticketBriefs: briefsOf(briefBranch, undefined, "PullRequest"),
+  });
+
+  assert.equal(report.holds, 2);
+  assert.deepEqual(emitted, [
+    "ProposalBaseUnreadable",
+    "ProposalBaseUnreadable",
+  ]);
+  assert.equal(report.preparations, 0);
+  assert.equal(report.promotions, 0);
+  assert.deepEqual(
+    git.preparations,
+    [],
+    "a base nobody could read builds nothing",
+  );
+  assert.deepEqual(git.promotions, [], "and pushes nothing onto it either");
+  assert.deepEqual(store.attempts, []);
+  assert.deepEqual(store.grants, [], "no permit was asked for");
+});
+
 test("a proposing brief naming no base is promoted onto its own branch", async () => {
   const store = recordingStore([promotableOnBriefBranch("request-one")]);
   const git = recordingGit();

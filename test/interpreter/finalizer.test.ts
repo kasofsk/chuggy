@@ -363,6 +363,66 @@ test("a closing project aborts every finalization that holds no permit", () => {
   }
 });
 
+test("a proposal into the branch it would be opened from is held before anything is built", () => {
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        targetBranch: target.ref,
+        proposalBase: { observed: "Target", target },
+      }),
+    ),
+    { decide: "Hold", hold: "ProposalBaseIsHead" },
+  );
+});
+
+test("a base nobody could read is held rather than built over the branch that did read", () => {
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        targetBranch: target.ref,
+        proposalBase: { observed: "Unreadable", evidence: "RefUnreadable" },
+      }),
+    ),
+    { decide: "Hold", hold: "ProposalBaseUnreadable" },
+  );
+});
+
+test("a base read back as another branch is prepared over the target like any other", () => {
+  assert.equal(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        targetBranch: asGitRefName("refs/heads/chuggy/work"),
+        proposalBase: { observed: "Target", target },
+      }),
+    ).decide,
+    "Prepare",
+  );
+});
+
+test("a closing project aborts a proposal it would otherwise hold forever", () => {
+  for (const lifecycle of populated(
+    allClosingLifecycles,
+    "allClosingLifecycles",
+  )) {
+    for (const proposalBase of [
+      { observed: "Target", target } as const,
+      { observed: "Unreadable", evidence: "RefUnreadable" } as const,
+    ]) {
+      assert.deepEqual(
+        finalizationNext(
+          finalizerDefaults,
+          viewWith({ lifecycle, targetBranch: target.ref, proposalBase }),
+        ),
+        { decide: "Abort", target },
+        `${lifecycle}/${proposalBase.observed}`,
+      );
+    }
+  }
+});
+
 test("a lifecycle that is not closing prepares and promotes exactly as before", () => {
   for (const lifecycle of populated(
     allLifecycles.filter((each) => !allClosingLifecycles.includes(each)),
