@@ -164,16 +164,18 @@ test("a configuration that hands off refuses a brief that would propose a change
     ...parsed,
     finalizationHandoff: handoffFixture(),
   });
-  assert.deepEqual(
-    releaseConfigurationReadiness(handing, {
-      checks: [],
-      finalization: {
-        mode: "PullRequest",
-        target: asBriefBranch("refs/heads/rt/landing"),
-      },
-    }),
-    { readiness: "Incomplete", fault: "HandoffProposesChange" },
-  );
+  for (const mode of ["PullRequest", "PullRequestMerge"] as const)
+    assert.deepEqual(
+      releaseConfigurationReadiness(handing, {
+        checks: [],
+        finalization: {
+          mode,
+          target: asBriefBranch("refs/heads/rt/landing"),
+        },
+      }),
+      { readiness: "Incomplete", fault: "HandoffProposesChange" },
+      mode,
+    );
   assert.equal(
     releaseConfigurationReadiness(handing, {
       checks: [],

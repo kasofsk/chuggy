@@ -66,7 +66,10 @@
  * it runs, so a decision never acquires a mock.
  */
 
-import type { BriefFinalizationMode } from "../contract/rosters.ts";
+import {
+  briefFinalizationProposes,
+  type BriefFinalizationMode,
+} from "../contract/rosters.ts";
 import type { FinalizationOutcome } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import { asBoundedText } from "./boundedText.ts";
@@ -712,7 +715,7 @@ function finalizationNextPromoted(
   }
   if (
     view.claim.kind === "RunFinalizer" &&
-    view.finalizationMode === "PullRequest"
+    briefFinalizationProposes(view.finalizationMode)
   ) {
     return { decide: "Propose" };
   }

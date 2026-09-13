@@ -171,6 +171,8 @@ export function landingLabel(mode: BriefFinalizationMode): string {
       return "Push";
     case "PullRequest":
       return "Pull request";
+    case "PullRequestMerge":
+      return "Pull request, then merge";
   }
 }
 
@@ -181,16 +183,18 @@ export function landingEffect(mode: BriefFinalizationMode): string {
       return "Commits straight onto the target branch";
     case "PullRequest":
       return "Opens a pull request into the target branch";
+    case "PullRequestMerge":
+      return "Opens a pull request into the target branch and merges it";
   }
 }
 
-/** How a landing reaches the reference it names, which is all its two modes
- * differ in once one is named. */
+/** How a landing reaches the reference it names, the preposition each mode reads before it. */
 function landingTargetName(mode: BriefFinalizationMode): string {
   switch (mode) {
     case "Push":
       return "lands on";
     case "PullRequest":
+    case "PullRequestMerge":
       return "into";
   }
 }
@@ -201,6 +205,7 @@ function landingDefaultTarget(mode: BriefFinalizationMode): string | undefined {
     case "Push":
       return undefined;
     case "PullRequest":
+    case "PullRequestMerge":
       return "the default branch";
   }
 }

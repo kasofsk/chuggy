@@ -276,8 +276,17 @@ export type FinalizerChoice = (typeof finalizers)[number];
  * by advancing that reference, or by opening a change proposal into it.
  * `src/interpreter/ticketBrief.ts` takes `BriefFinalizationMode` from here.
  */
-export const briefFinalizationModes = ["Push", "PullRequest"] as const;
+export const briefFinalizationModes = [
+  "Push",
+  "PullRequest",
+  "PullRequestMerge",
+] as const;
 export type BriefFinalizationMode = (typeof briefFinalizationModes)[number];
+
+/** Whether a mode lands by opening a change proposal rather than advancing a reference directly. */
+export function briefFinalizationProposes(mode: string | undefined): boolean {
+  return mode === "PullRequest" || mode === "PullRequestMerge";
+}
 
 /**
  * What a configuration hands its work off as, `None` standing for a
