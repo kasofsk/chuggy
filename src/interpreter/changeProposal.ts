@@ -1,7 +1,7 @@
 /**
  * The provider-neutral change proposal: the deterministic request one is opened
- * under, the evidence a forge answers with, and the bounded publication that
- * turns an unsettled create into an answer.
+ * under, the evidence a forge answers with, and the bounded publication and
+ * merging that turn an unsettled act into an answer.
  *
  * EVERY REQUEST NAMES THE BRANCH ITS WORK LANDED ON. The commit a person will
  * review is the one the promotion put on the ticket's own branch, so the head
@@ -40,6 +40,7 @@ declare const forgeCredentialBrand: unique symbol;
 declare const proposalDisplayUrlBrand: unique symbol;
 declare const changeProposalRequestIdentityBrand: unique symbol;
 declare const forgeCredentialReferenceBrand: unique symbol;
+declare const proposalNumberBrand: unique symbol;
 
 export type ForgeBindingId = string & {
   readonly [forgeBindingIdBrand]: true;
@@ -61,6 +62,9 @@ export type ChangeProposalRequestIdentity = string & {
 };
 export type ForgeCredentialReference = string & {
   readonly [forgeCredentialReferenceBrand]: true;
+};
+export type ProposalNumber = number & {
+  readonly [proposalNumberBrand]: true;
 };
 
 export const proposalTitleCharsMax = 256;
@@ -131,6 +135,13 @@ export function asForgeCredentialReference(
   ) as ForgeCredentialReference;
 }
 
+/** The count one proposal is numbered at, which a safe integer is the whole of. */
+export function asProposalNumber(value: number): ProposalNumber {
+  if (!Number.isSafeInteger(value) || value < 1)
+    throw new RangeError("proposal number is not a positive count");
+  return value as ProposalNumber;
+}
+
 export function asProposalMarker(value: string): ProposalMarker {
   return asBoundedText(
     value,
@@ -174,9 +185,15 @@ export function forgeBindingOf(
   return bindings.find((bound) => bound.repositoryHost === host)?.binding;
 }
 
+/**
+ * What one proposal is on its forge. The number is beside the forge's own
+ * identity for it because that identity names a proposal and does not address
+ * one, and the acts a proposal is asked to perform are addressed by number.
+ */
 export interface ChangeProposalIdentity {
   readonly forge: ForgeBindingId;
   readonly remote: ProposalRemoteIdentity;
+  readonly number: ProposalNumber;
 }
 
 export interface ChangeProposalRequest {
@@ -205,6 +222,14 @@ export interface ChangeProposalRequest {
 
 export type ChangeProposalStatus = "Open" | "Closed" | "Merged" | "Superseded";
 
+/** What the forge last said about merging a proposal, `Unknown` where it said nothing this tree reads. */
+export type ChangeProposalMergeability =
+  "Mergeable" | "Conflicting" | "Blocked" | "Unknown";
+
+/** Every mergeability, so a suite and a database CHECK iterate rather than restate. */
+export const allChangeProposalMergeabilities: readonly ChangeProposalMergeability[] =
+  ["Mergeable", "Conflicting", "Blocked", "Unknown"];
+
 export interface ChangeProposalEvidence {
   readonly identity: ChangeProposalIdentity;
   readonly repository: RepositoryId;
@@ -214,6 +239,10 @@ export interface ChangeProposalEvidence {
   readonly title: string;
   readonly body: string;
   readonly status: ChangeProposalStatus;
+  /** What the forge said about merging this proposal, absent where the answer it was read out of does not carry it. */
+  readonly mergeability?: ChangeProposalMergeability;
+  /** The commit a merge left, carried only where the proposal is merged: a forge names one on an open proposal for the merge it would make. */
+  readonly mergeCommit?: GitObjectId;
   readonly url?: ProposalDisplayUrl;
 }
 
@@ -367,6 +396,10 @@ export type ChangeProposalPublicationNext =
 export interface ChangeProposalPort {
   create(request: ChangeProposalRequest): Promise<ChangeProposalCreated>;
   readByMarker(request: ChangeProposalRequest): Promise<ChangeProposalRead>;
+  readByNumber(
+    request: ChangeProposalMergeRequest,
+  ): Promise<ChangeProposalRead>;
+  merge(request: ChangeProposalMergeRequest): Promise<ChangeProposalMerged>;
 }
 
 /** The composition boundary selects one adapter by the configured forge binding. */
@@ -599,5 +632,291 @@ export function changeProposalPublicationNext(
         : proposalEvidenceNext(request, publication.creation.evidence);
     default:
       return assertNever(publication);
+  }
+}
+
+/**
+ * What one merge and the reading that settles it are asked under: the proposal
+ * the number addresses, the marker that says it is this request's, the commit
+ * the merge is conditional on, and what authorizes the act.
+ */
+export interface ChangeProposalMergeRequest extends ChangeProposalCredentialRequest {
+  readonly proposal: ChangeProposalIdentity;
+  readonly marker: ProposalMarker;
+  readonly headCommit: GitObjectId;
+}
+
+/**
+ * Why a forge will not merge a proposal. `Unknown` is a refusal that named
+ * neither, which a reading of the proposal is what tells apart.
+ */
+export type ChangeProposalUnmergeableSettled = "Conflict" | "Blocked";
+export type ChangeProposalUnmergeableReason =
+  ChangeProposalUnmergeableSettled | "Unknown";
+
+/** The reasons a refusal settles a row with. */
+export const allChangeProposalUnmergeableSettled: readonly ChangeProposalUnmergeableSettled[] =
+  ["Conflict", "Blocked"];
+
+/** Every reason a merge is refused for, so a suite and a database CHECK iterate rather than restate. */
+export const allChangeProposalUnmergeableReasons: readonly ChangeProposalUnmergeableReason[] =
+  [...allChangeProposalUnmergeableSettled, "Unknown"];
+
+export type ChangeProposalMerged =
+  | { readonly merged: "Merged"; readonly mergeCommit: GitObjectId }
+  | {
+      readonly merged: "NotMergeable";
+      readonly reason: ChangeProposalUnmergeableReason;
+    }
+  | { readonly merged: "HeadMoved" }
+  | { readonly merged: "Denied" }
+  | { readonly merged: "Unavailable" }
+  | { readonly merged: "Ambiguous" };
+
+/** Every arm a merge answers with, so a suite and a database CHECK iterate rather than restate. */
+export const allChangeProposalMerges: readonly ChangeProposalMerged["merged"][] =
+  ["Merged", "NotMergeable", "HeadMoved", "Denied", "Unavailable", "Ambiguous"];
+
+/** The arms that settle a merge, which are the only ones that settle a row. */
+export type ChangeProposalMergeAnswer =
+  | Extract<ChangeProposalMerged, { readonly merged: "Merged" | "HeadMoved" }>
+  | {
+      readonly merged: "NotMergeable";
+      readonly reason: ChangeProposalUnmergeableSettled;
+    };
+
+export type ChangeProposalMergeReconciled =
+  | {
+      readonly reconciled: "Accepted";
+      readonly evidence: ChangeProposalEvidence;
+    }
+  | {
+      readonly reconciled: "Unmerged";
+      readonly evidence: ChangeProposalEvidence;
+    }
+  | {
+      readonly reconciled: "Contradictory";
+      readonly contradiction: ChangeProposalContradiction;
+      readonly evidence: ChangeProposalEvidence;
+    }
+  | { readonly reconciled: "Absent" }
+  | { readonly reconciled: "Unavailable" }
+  | { readonly reconciled: "Denied" };
+
+/** Every arm a merge reading answers with, so a suite and a database CHECK iterate rather than restate. */
+export const allChangeProposalMergeReconciliations: readonly ChangeProposalMergeReconciled["reconciled"][] =
+  ["Accepted", "Unmerged", "Contradictory", "Absent", "Unavailable", "Denied"];
+
+/** The arms a reading that reached the forge answers with, which are the only readings about a proposal. */
+export type ChangeProposalMergeReconciliationAnswer = Exclude<
+  ChangeProposalMergeReconciled,
+  { readonly reconciled: "Unavailable" | "Denied" }
+>;
+
+/**
+ * What a row says one merge reading came to: what the forge answered, or that
+ * this deployment could not store the evidence of it.
+ */
+export type ChangeProposalMergeReconciliationStored =
+  | ChangeProposalMergeReconciliationAnswer
+  | { readonly reconciled: "Unstorable" };
+
+/** Every answer a merge reading records, so a suite and a database CHECK iterate. */
+export const allChangeProposalMergeReconciliationAnswers: readonly ChangeProposalMergeReconciliationAnswer["reconciled"][] =
+  ["Accepted", "Unmerged", "Contradictory", "Absent"];
+
+/** Every arm a row records a merge reading as. */
+export const allChangeProposalMergeReconciliationsStored: readonly ChangeProposalMergeReconciliationStored["reconciled"][] =
+  [...allChangeProposalMergeReconciliationAnswers, "Unstorable"];
+
+/**
+ * The three states one merge stands in, and whether a row records it at all.
+ * A merge is in flight in exactly one of them, and `merges` counts the merges
+ * that may have reached the forge, which is what both ceilings below are spent
+ * from.
+ */
+export type ChangeProposalMerging =
+  | { readonly merging: "Unasked" }
+  | { readonly merging: "Idle"; readonly merges: number }
+  | {
+      readonly merging: "Unanswered";
+      readonly merges: number;
+      readonly readings: number;
+      readonly reading: ChangeProposalMergeReconciliationStored | undefined;
+    }
+  | { readonly merging: "Answered"; readonly merge: ChangeProposalMergeAnswer };
+
+/** How many merges one request may ask for, and how many readings each of them is read back by. */
+export interface ChangeProposalMergingBounds {
+  readonly mergesMax: number;
+  readonly readingsMax: number;
+}
+
+export type ChangeProposalMergingNext =
+  | { readonly next: "Merge" }
+  | { readonly next: "ReadByNumber" }
+  | { readonly next: "RefuseAttempt" }
+  | { readonly next: "Concluded"; readonly merge: ChangeProposalMergeAnswer }
+  | {
+      readonly next: "Refused";
+      readonly contradiction: ChangeProposalContradiction;
+      readonly evidence: ChangeProposalEvidence;
+    }
+  | {
+      readonly next: "Held";
+      readonly reason:
+        "MergesExhausted" | "Blocked" | "ProposalAbsent" | "EvidenceUnstorable";
+    };
+
+/** Refuses a merge naming a proposal on another forge, and a number no proposal is addressed by. */
+export function changeProposalMergeRequest(
+  input: ChangeProposalMergeRequest,
+): ChangeProposalMergeRequest {
+  if (input.proposal.forge !== input.binding.forge)
+    throw new TypeError("a merge names a proposal on another forge");
+  return {
+    binding: input.binding,
+    partition: input.partition,
+    repository: input.repository,
+    proposal: {
+      forge: input.proposal.forge,
+      remote: input.proposal.remote,
+      number: asProposalNumber(input.proposal.number),
+    },
+    marker: asProposalMarker(input.marker),
+    headCommit: input.headCommit,
+  };
+}
+
+/**
+ * Verifies a reading of the proposal a merge was asked of. The status the
+ * create's reconciliation calls a contradiction is what this one is waiting
+ * for, and every other contradiction is one here too.
+ */
+export function reconcileChangeProposalMerge(
+  request: ChangeProposalRequest,
+  read: ChangeProposalRead,
+): ChangeProposalMergeReconciled {
+  switch (read.read) {
+    case "Absent":
+      return { reconciled: "Absent" };
+    case "Unavailable":
+      return { reconciled: "Unavailable" };
+    case "Denied":
+      return { reconciled: "Denied" };
+    case "Found": {
+      const evidence = read.evidence;
+      const contradiction = proposalContradiction(request, evidence);
+      if (contradiction === undefined)
+        return { reconciled: "Unmerged", evidence };
+      if (contradiction !== "Merged")
+        return { reconciled: "Contradictory", contradiction, evidence };
+      return evidence.mergeCommit === undefined
+        ? { reconciled: "Unavailable" }
+        : { reconciled: "Accepted", evidence };
+    }
+  }
+}
+
+/** Refuses a bound that is not a count, which no ceiling below could then fire on. */
+function proposalMergingBoundsAsserted(
+  bounds: ChangeProposalMergingBounds,
+): void {
+  if (!Number.isSafeInteger(bounds.mergesMax) || bounds.mergesMax < 1)
+    throw new RangeError("proposal merge bound must be positive");
+  if (!Number.isSafeInteger(bounds.readingsMax) || bounds.readingsMax < 1)
+    throw new RangeError("proposal merge reading bound must be positive");
+}
+
+/**
+ * What evidence read back settles this merge to, and nothing where it settles
+ * nothing: a proposal still open, and one the answer it was read out of said
+ * nothing about merging, are both what the next reading is spent on.
+ */
+function proposalMergeEvidenceNext(
+  request: ChangeProposalRequest,
+  evidence: ChangeProposalEvidence,
+): ChangeProposalMergingNext | undefined {
+  const contradiction = proposalContradiction(request, evidence);
+  if (contradiction !== undefined && contradiction !== "Merged")
+    return { next: "Refused", contradiction, evidence };
+  if (contradiction === "Merged")
+    return evidence.mergeCommit === undefined
+      ? undefined
+      : {
+          next: "Concluded",
+          merge: { merged: "Merged", mergeCommit: evidence.mergeCommit },
+        };
+  if (evidence.mergeability === "Conflicting")
+    return {
+      next: "Concluded",
+      merge: { merged: "NotMergeable", reason: "Conflict" },
+    };
+  return evidence.mergeability === "Blocked"
+    ? { next: "Held", reason: "Blocked" }
+    : undefined;
+}
+
+/**
+ * What a merge nobody has heard the fate of authorizes. Its readings are spent
+ * on it alone, so a merge none of them found landed is one the forge never made
+ * and the attempt it stands on is released, while a reading that ruled this
+ * request's proposal out of the number it addressed merges nothing again.
+ */
+function proposalMergeUnansweredNext(
+  request: ChangeProposalRequest,
+  merging: Extract<ChangeProposalMerging, { readonly merging: "Unanswered" }>,
+  bounds: ChangeProposalMergingBounds,
+): ChangeProposalMergingNext {
+  if (merging.merges < 1)
+    throw new RangeError("proposal merging: nothing is in flight");
+  const reading = merging.reading;
+  if (reading?.reconciled === "Unstorable")
+    return { next: "Held", reason: "EvidenceUnstorable" };
+  if (reading?.reconciled === "Absent")
+    return { next: "Held", reason: "ProposalAbsent" };
+  const settled =
+    reading === undefined
+      ? undefined
+      : proposalMergeEvidenceNext(request, reading.evidence);
+  if (settled !== undefined) return settled;
+  return merging.readings < merging.merges * bounds.readingsMax
+    ? { next: "ReadByNumber" }
+    : { next: "RefuseAttempt" };
+}
+
+/** What a merge the forge answered concludes, a refusal its own rules make holding it for an operator. */
+function proposalMergeAnsweredNext(
+  merge: ChangeProposalMergeAnswer,
+): ChangeProposalMergingNext {
+  return merge.merged === "NotMergeable" && merge.reason === "Blocked"
+    ? { next: "Held", reason: "Blocked" }
+    : { next: "Concluded", merge };
+}
+
+/**
+ * Continues one merging from the state its row is in. A merge whose outcome is
+ * unknown can only be read back; only a state with nothing in flight authorizes
+ * another merge, and only while the merges are unspent.
+ */
+export function changeProposalMergeNext(
+  request: ChangeProposalRequest,
+  merging: ChangeProposalMerging,
+  bounds: ChangeProposalMergingBounds,
+): ChangeProposalMergingNext {
+  proposalMergingBoundsAsserted(bounds);
+  switch (merging.merging) {
+    case "Unasked":
+      return { next: "Merge" };
+    case "Idle":
+      return merging.merges < bounds.mergesMax
+        ? { next: "Merge" }
+        : { next: "Held", reason: "MergesExhausted" };
+    case "Unanswered":
+      return proposalMergeUnansweredNext(request, merging, bounds);
+    case "Answered":
+      return proposalMergeAnsweredNext(merging.merge);
+    default:
+      return assertNever(merging);
   }
 }

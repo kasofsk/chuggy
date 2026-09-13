@@ -27,6 +27,7 @@ import {
   asChangeProposalRequestIdentity,
   asForgeBindingId,
   asForgeCredentialReference,
+  asProposalNumber,
   asProposalRemoteIdentity,
   changeProposalRequest,
   proposalBodyCharsMax,
@@ -82,6 +83,7 @@ function evidence(
     identity: {
       forge: request.binding.forge,
       remote: asProposalRemoteIdentity("proposal-7"),
+      number: asProposalNumber(7),
     },
     repository: request.repository,
     marker: request.marker,
