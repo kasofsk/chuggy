@@ -465,6 +465,30 @@ test("draft initialization outcomes remain discriminated at HTTP", () => {
   });
 });
 
+test("draft creation maps every closed result, a branchless landing among them", () => {
+  const creations = [
+    { value: { created: "ConfigurationNotFound" }, status: 404 },
+    { value: { created: "RepositoryNotBound" }, status: 404 },
+    { value: { created: "Stale" }, status: 409 },
+    { value: { created: "LandingUnbranched" }, status: 422 },
+  ] as const;
+  for (const each of populated(creations, "draft creation outcomes")) {
+    assert.equal(
+      draftCreationResponse({ result: "Authorized", value: each.value }).status,
+      each.status,
+    );
+  }
+  const refused = draftCreationResponse({
+    result: "Authorized",
+    value: { created: "LandingUnbranched" },
+  });
+  assert.equal(
+    (refused.body as { error: { code: string } }).error.code,
+    "LandingUnbranched",
+    "the reason a caller acts on is the code and not the status",
+  );
+});
+
 test("draft revision and deletion map every closed result", () => {
   const revisions = [
     { value: { revised: "Revised", draft }, status: 200 },
@@ -473,6 +497,7 @@ test("draft revision and deletion map every closed result", () => {
     { value: { revised: "NotDraft", state: "Released" }, status: 409 },
     { value: { revised: "ConfigurationNotFound" }, status: 404 },
     { value: { revised: "RepositoryNotBound" }, status: 404 },
+    { value: { revised: "LandingUnbranched" }, status: 422 },
   ] as const;
   for (const each of populated(revisions, "draft revision outcomes")) {
     assert.equal(

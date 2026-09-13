@@ -272,7 +272,7 @@ test("a finalization target takes the branch's own grammar and no other mode lan
     );
 });
 
-test("a pull request lands into the reference it names and is refused without one", () => {
+test("a pull request lands into the reference it names, or into none at all", () => {
   assert.deepEqual(
     asBriefFinalization({
       mode: "PullRequest",
@@ -280,15 +280,14 @@ test("a pull request lands into the reference it names and is refused without on
     }),
     { mode: "PullRequest", target: "refs/heads/rt/landing" },
   );
-  for (const value of [
-    { mode: "PullRequest" },
-    { mode: "PullRequest", target: "rt/landing" },
-  ])
-    assert.throws(
-      () => asBriefFinalization(value),
-      RangeError,
-      `refused: ${JSON.stringify(value)}`,
-    );
+  assert.deepEqual(asBriefFinalization({ mode: "PullRequest" }), {
+    mode: "PullRequest",
+  });
+  assert.throws(
+    () => asBriefFinalization({ mode: "PullRequest", target: "rt/landing" }),
+    RangeError,
+    "a target is a reference name under either mode",
+  );
 });
 
 test("a whole brief brands where it lands apart from where its work happens", () => {
@@ -320,12 +319,12 @@ test("a whole brief brands where it lands apart from where its work happens", ()
 });
 
 test("a brief that proposes brands a branch of its own and not the one it opens into", () => {
-  const proposing = (branch?: string) =>
+  const proposing = (branch?: string, target = "refs/heads/rt/landing") =>
     asDraftBrief({
       intent: "Fix the importer.",
       links: [],
       ...(branch === undefined ? {} : { branch }),
-      finalization: { mode: "PullRequest", target: "refs/heads/rt/landing" },
+      finalization: { mode: "PullRequest", target },
     });
   assert.deepEqual(proposing("refs/heads/rt/work"), {
     intent: "Fix the importer.",
@@ -343,5 +342,27 @@ test("a brief that proposes brands a branch of its own and not the one it opens 
     () => proposing("refs/heads/rt/landing"),
     RangeError,
     "a proposal is never opened from its own base",
+  );
+});
+
+test("a brief proposing into the default branch brands its head and no base", () => {
+  const proposing = (branch?: string) =>
+    asDraftBrief({
+      intent: "Fix the importer.",
+      links: [],
+      ...(branch === undefined ? {} : { branch }),
+      finalization: { mode: "PullRequest" },
+    });
+  assert.deepEqual(proposing("refs/heads/rt/work"), {
+    intent: "Fix the importer.",
+    links: [],
+    checks: [],
+    branch: "refs/heads/rt/work",
+    finalization: { mode: "PullRequest" },
+  });
+  assert.throws(
+    () => proposing(),
+    RangeError,
+    "a proposal into the default branch has no head where the brief names no branch",
   );
 });

@@ -295,9 +295,13 @@ test("a brief lands where its work happened unless its finalization says otherwi
     }).data?.finalization,
     { mode: "PullRequest", target: "refs/heads/rt/landing" },
   );
+  assert.deepEqual(
+    landing({ mode: "PullRequest" }).data?.finalization,
+    { mode: "PullRequest" },
+    "a proposal naming no base is opened into the repository's default branch",
+  );
   for (const value of [
     {},
-    { mode: "PullRequest" },
     { mode: "Push", target: "rt/landing" },
     { mode: "PullRequest", target: "rt/landing" },
     {
@@ -315,24 +319,35 @@ test("a brief lands where its work happened unless its finalization says otherwi
 });
 
 test("a brief that proposes is opened from a branch of its own into another", () => {
-  const proposing = (branch?: string) =>
+  const proposing = (branch?: string, target?: string) =>
     briefSchema.safeParse({
       intent: "Do it.",
       links: [],
       ...(branch === undefined ? {} : { branch }),
       finalization: {
         mode: "PullRequest",
-        target: `${briefBranchPrefix}rt/landing`,
+        ...(target === undefined ? {} : { target }),
       },
     });
-  assert.equal(proposing(`${briefBranchPrefix}rt/work`).success, true);
+  const landing = `${briefBranchPrefix}rt/landing`;
+  assert.equal(proposing(`${briefBranchPrefix}rt/work`, landing).success, true);
   assert.equal(
-    proposing().success,
+    proposing(`${briefBranchPrefix}rt/work`).success,
+    true,
+    "a proposal naming no base still names the branch it opens from",
+  );
+  assert.equal(
+    proposing(undefined, landing).success,
     false,
     "a proposal has no head where the brief names no branch",
   );
   assert.equal(
-    proposing(`${briefBranchPrefix}rt/landing`).success,
+    proposing().success,
+    false,
+    "a proposal into the default branch has no head either",
+  );
+  assert.equal(
+    proposing(landing, landing).success,
     false,
     "a proposal is never opened from its own base",
   );
@@ -357,9 +372,22 @@ test("a brief read back is refused the pairings a written one is", () => {
     true,
   );
   assert.equal(
+    reading({
+      branch: `${briefBranchPrefix}rt/work`,
+      finalization: { mode: "PullRequest" },
+    }).success,
+    true,
+    "a proposal read back names no base where it was written with none",
+  );
+  assert.equal(
     reading({ finalization: proposing }).success,
     false,
     "a proposal has no head where the brief names no branch",
+  );
+  assert.equal(
+    reading({ finalization: { mode: "PullRequest" } }).success,
+    false,
+    "a proposal into the default branch has no head either",
   );
   assert.equal(
     reading({

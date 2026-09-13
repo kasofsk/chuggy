@@ -46,17 +46,15 @@
  * parameter of the managed finalizer, so a ticket authored to run none
  * resolves nothing and stores no landing.
  *
- * A MODE IS A VARIANT AND NOT A FLAG BESIDE AN OPTIONAL FIELD. A push may land
- * where the work happened and so may leave its target unsaid; a pull request
- * has to be opened into something, so the reference is part of what that mode
- * is rather than a field every reader re-asks about.
- *
  * A PULL REQUEST NAMES BOTH SIDES AND THEY ARE NOT THE SAME SIDE. The head is
- * the branch the work happened on and the base is the reference the mode names,
- * so a brief that proposes and names no branch has no head to propose from, and
- * one naming the target as its branch proposes a change into itself. Neither is
- * a brief: the pairing is refused where the whole is branded, on the wire by
- * the same statement of it, and by the brief's own relation.
+ * the branch the work happened on; the base is the reference the finalization
+ * names, or the repository's default branch where it names none. A brief that
+ * proposes and names no branch has no head to propose from, and one naming the
+ * target as its branch proposes a change into itself. Neither is a brief: the
+ * pairing is refused where the whole is branded, on the wire by the same
+ * statement of it, and by the brief's own relation. A base nobody named is read
+ * from the remote, so a branch that is itself the default is the finalizer's to
+ * hold and the doors' to refuse where no branch is named at all.
  *
  * A RELEASED TICKET'S BRIEF NO LONGER MOVES, which is what lets a retry read it
  * rather than pin it: a revision is refused for a draft that is not one, so the
@@ -104,10 +102,10 @@ export interface BriefPushFinalization {
   readonly target?: GitRefName;
 }
 
-/** Landing by opening a change proposal into the reference, which one must always name. */
+/** Landing by opening a change proposal into the reference, the repository's default where it names none. */
 export interface BriefPullRequestFinalization {
   readonly mode: Extract<BriefFinalizationMode, "PullRequest">;
-  readonly target: GitRefName;
+  readonly target?: GitRefName;
 }
 
 /** How and where one ticket's work is landed, which is the finalizer's half of a brief. */
@@ -225,8 +223,8 @@ export function asBriefBranch(value: string): GitRefName {
 
 /**
  * Brands a finalization, its target through the grammar a branch takes. The
- * variant a mode selects is what says whether that target is optional, so a
- * mode added to the roster and to no variant is refused by the compiler here.
+ * mode selects the variant it is, so a mode added to the roster and to no
+ * variant is refused by the compiler here.
  */
 export function asBriefFinalization(value: {
   readonly mode: string;
@@ -239,13 +237,6 @@ export function asBriefFinalization(value: {
     );
   const target =
     value.target === undefined ? undefined : asBriefBranch(value.target);
-  if (mode === "PullRequest") {
-    if (target === undefined)
-      throw new RangeError(
-        "ticket finalization: a pull request names no reference to open it into",
-      );
-    return { mode, target };
-  }
   return { mode, ...(target === undefined ? {} : { target }) };
 }
 
@@ -286,7 +277,7 @@ export function asDraftBrief(value: {
   };
   if (!briefLandingIsWhole(brief))
     throw new RangeError(
-      "ticket brief: a pull request opens from a branch of its own into another",
+      "ticket brief: a pull request opens from a branch of its own, into another where it names one",
     );
   return brief;
 }

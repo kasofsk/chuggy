@@ -195,13 +195,23 @@ function landingTargetName(mode: BriefFinalizationMode): string {
   }
 }
 
-/** A brief's landing read back: the mode, and the reference where it names one. */
+/** Where a landing that names no reference goes, which a push says by naming its branch. */
+function landingDefaultTarget(mode: BriefFinalizationMode): string | undefined {
+  switch (mode) {
+    case "Push":
+      return undefined;
+    case "PullRequest":
+      return "the default branch";
+  }
+}
+
+/** A brief's landing read back: the mode, and the reference it reaches. */
 export function briefLandingLine(finalization: {
   readonly mode: BriefFinalizationMode;
   readonly target?: string | undefined;
 }): string {
-  const target = finalization.target;
   const mode = finalization.mode;
+  const target = finalization.target ?? landingDefaultTarget(mode);
   return target === undefined
     ? landingLabel(mode)
     : `${landingLabel(mode)} · ${landingTargetName(mode)} ${target}`;

@@ -44,6 +44,7 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import type { Finalizer } from "../../src/domain/generated/modelTypes.ts";
+import type { TicketId } from "../../src/domain/ids.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import {
   briefChecksMax,
@@ -1782,7 +1783,7 @@ test("the server refuses a brief that reached it around the interpreter's rules"
     ["intent", ""],
     ["intent", "Fix it.\u0007"],
     ["branch", "rt/ticket-brief"],
-    ["finalization_mode", "PullRequest"],
+    ["finalization_mode", "Merge"],
     ["finalization_target", "rt/ticket-brief"],
   ] as const)
     await assert.rejects(
@@ -2020,17 +2021,15 @@ test("a brief naming no repository lands where the work happened", async () => {
   );
 });
 
-/**
- * A repository bound to propose and a brief naming nothing to propose into,
- * refused where a brief's landing has always been made whole. It is also what
- * proves the door reads the binding at all: a resolution that skipped to the
- * tree's own default would store a push here and pass.
- */
-test("a repository landing by proposal refuses a brief naming nothing to propose into", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "authoring-landing-halved",
-  );
+/** The same brief with no branch on it, which is a proposal with no head to open from. */
+function briefWithoutBranch(brief: DraftBrief): DraftBrief {
+  const { branch, ...branchless } = brief;
+  return branch === undefined ? brief : branchless;
+}
+
+/** One project bound to land by proposal, and the door its briefs are written by. */
+async function proposingFixture(label: string) {
+  const partition = await postgresHarnessProject(harness.store, label);
   const repository = await postgresHarnessBinding(harness, partition);
   await landingSetTo(partition, repository, "PullRequest");
   const store = postgresAuthoring(pool);
@@ -2043,17 +2042,121 @@ test("a repository landing by proposal refuses a brief naming nothing to propose
   });
   const initialized = await store.initializeDraft(partition, revision, 100);
   if (initialized === undefined || initialized === "PolicyUnavailable")
-    throw new Error("the halved draft was not initialized");
-  await assert.rejects(
-    store.createDraft({
-      partition,
-      authority,
-      configurationRevision: revision,
-      configurationDigest: initialized.configuration.digest,
-      expectedProjectSequence: initialized.projectSequence,
-      authoring: plainAuthoring,
-      brief: { ...postgresHarnessBrief, repository },
+    throw new Error(`the ${label} draft was not initialized`);
+  return {
+    partition,
+    repository,
+    create: (brief: DraftBrief) =>
+      store.createDraft({
+        partition,
+        authority,
+        configurationRevision: revision,
+        configurationDigest: initialized.configuration.digest,
+        expectedProjectSequence: initialized.projectSequence,
+        authoring: plainAuthoring,
+        brief,
+      }),
+    revise: (ticket: TicketId, brief: DraftBrief) =>
+      store.reviseDraft({
+        partition,
+        authority,
+        ticket,
+        expectedVersion: 1,
+        configurationRevision: revision,
+        authoring: plainAuthoring,
+        brief,
+      }),
+  };
+}
+
+/**
+ * A repository bound to propose and a brief naming nothing to propose into,
+ * which is the repository's own default branch. It is also what proves the door
+ * reads the binding at all: a resolution that skipped to the tree's own default
+ * would store a push here and pass.
+ */
+test("a repository landing by proposal stores a brief that names no base", async () => {
+  const proposing = await proposingFixture("authoring-landing-halved");
+  const created = await proposing.create({
+    ...postgresHarnessBrief,
+    repository: proposing.repository,
+  });
+  if (created.created !== "Created")
+    throw new Error(`the proposing draft was ${created.created}`);
+  assert.deepEqual(created.draft.brief?.finalization, {
+    mode: "PullRequest",
+  });
+  assert.deepEqual(
+    await storedLanding(proposing.partition, created.draft.ticket),
+    { finalization_mode: "PullRequest", finalization_target: null },
+    "the row holds the resolved mode and no reference at all",
+  );
+});
+
+/**
+ * The head a proposal is opened from is the brief's own branch, and the landing
+ * that needs one is the repository's rather than anything the caller wrote. So
+ * the door answers a refusal the caller can act on, and writes nothing.
+ */
+test("a repository landing by proposal refuses a brief naming no branch", async () => {
+  const proposing = await proposingFixture("authoring-landing-headless");
+  const created = await proposing.create({
+    ...briefWithoutBranch(postgresHarnessBrief),
+    repository: proposing.repository,
+  });
+  assert.deepEqual(created, { created: "LandingUnbranched" });
+  assert.deepEqual(
+    await harness.query(
+      `SELECT ticket FROM draft WHERE tenant=$1 AND project=$2`,
+      [proposing.partition.tenant, proposing.partition.project],
+    ),
+    [],
+    "a refused brief mints no ticket",
+  );
+});
+
+/** The same refusal from the door beside it, which answers in columns of its own. */
+test("a revision that leaves a proposing brief with no branch is refused too", async () => {
+  const proposing = await proposingFixture("authoring-landing-unheaded");
+  const created = await proposing.create({
+    ...postgresHarnessBrief,
+    repository: proposing.repository,
+  });
+  if (created.created !== "Created")
+    throw new Error(`the proposing draft was ${created.created}`);
+  assert.deepEqual(
+    await proposing.revise(created.draft.ticket, {
+      ...briefWithoutBranch(postgresHarnessBrief),
+      repository: proposing.repository,
     }),
+    { revised: "LandingUnbranched" },
+  );
+  assert.deepEqual(
+    await storedLanding(proposing.partition, created.draft.ticket),
+    { finalization_mode: "PullRequest", finalization_target: null },
+    "the brief the refusal left standing is the one that was already whole",
+  );
+});
+
+/** The pairing the relaxed check still refuses: a head that is its own base. */
+test("a brief proposing from the branch it opens into is refused by the check", async () => {
+  const proposing = await proposingFixture("authoring-landing-into-itself");
+  const created = await proposing.create({
+    ...postgresHarnessBrief,
+    repository: proposing.repository,
+  });
+  if (created.created !== "Created")
+    throw new Error(`the proposing draft was ${created.created}`);
+  await assert.rejects(
+    harness.query(
+      `UPDATE draft_brief SET finalization_target=branch
+        WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+      [
+        proposing.partition.tenant,
+        proposing.partition.project,
+        created.draft.ticket,
+      ],
+    ),
     /draft_brief_finalization_is_whole/u,
   );
 });

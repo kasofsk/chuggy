@@ -71,7 +71,8 @@ const finalizationProposalMarkerSeparator = "\n\n";
 
 /**
  * Everything the step below reads of one proposal, absent where this deployment
- * could not build a request at all.
+ * could not build a request at all and where the base read for it turned out to
+ * be the head it would be opened from.
  */
 export type FinalizationProposalGathered =
   | {
@@ -80,7 +81,8 @@ export type FinalizationProposalGathered =
       readonly publication: ChangeProposalPublication;
     }
   | { readonly gathered: "Unbound" }
-  | { readonly gathered: "BaseUnreadable" };
+  | { readonly gathered: "BaseUnreadable" }
+  | { readonly gathered: "BaseIsHead" };
 
 /**
  * The one act a promoted candidate's proposal authorizes, in the finalizer's own
@@ -129,6 +131,8 @@ export function finalizationProposalNext(
     return { decide: "Hold", hold: "ProposalDenied" };
   if (gathered.gathered === "BaseUnreadable")
     return { decide: "Hold", hold: "ProposalBaseUnreadable" };
+  if (gathered.gathered === "BaseIsHead")
+    return { decide: "Hold", hold: "ProposalBaseIsHead" };
   const { request } = gathered;
   const next = changeProposalPublicationNext(
     request,

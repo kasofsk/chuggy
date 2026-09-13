@@ -52,7 +52,8 @@
  * A PULL REQUEST MOVES THAT TARGET, AND ONLY FOR THE FINALIZATION THAT OPENS
  * ONE. Under `RunFinalizer` a brief that proposes lands on the branch its work
  * happened on, because that branch is the head the proposal is opened from and
- * the reference its finalization names is the base. A handoff request narrows
+ * the reference its finalization names is the base, the remote's own default
+ * branch standing as that base where it names none. A handoff request narrows
  * by that reference exactly as a push does: its promotion is into a repository
  * the ticket never worked in and has nothing to do with the brief's mode. The
  * pairing is refused where the two are written — a configuration that hands off
@@ -208,6 +209,7 @@ import {
   type TargetObserved,
   inputBundleReferencesMax,
   repositoryBindingNarrowed,
+  repositoryBindingWidened,
   repositoryTargetObserved,
 } from "./finalizer.ts";
 import {
@@ -1192,9 +1194,11 @@ function finalizerStoredProposal(
 
 /**
  * The request a proposal nobody has opened yet would ask for. This is the one
- * place the base is observed, and it is read as itself rather than through the
- * binding's fallback, so a base the remote does not hold is unreadable instead
- * of silently becoming the default branch.
+ * place the base is observed: a base the brief names is read as itself rather
+ * than through the binding's fallback, so one the remote does not hold is
+ * unreadable instead of silently becoming the default branch, and a brief that
+ * names none reads that fallback because the default branch is what it meant;
+ * a base read back as the head is nothing to open a proposal between.
  */
 async function finalizerOpeningProposal(
   service: FinalizerService,
@@ -1213,9 +1217,14 @@ async function finalizerOpeningProposal(
     );
   }
   const observed = await service.git.observeTarget(
-    repositoryBindingNarrowed(pinned.repository, finalization.target),
+    repositoryBindingNarrowed(
+      repositoryBindingWidened(pinned.repository),
+      finalization.target,
+    ),
   );
   if (observed.observed !== "Target") return { gathered: "BaseUnreadable" };
+  if (observed.target.ref === pinned.target.ref)
+    return { gathered: "BaseIsHead" };
   const identity = asChangeProposalRequestIdentity(
     service.digestOf(canonicalChangeProposalRequest(view.claim)),
   );

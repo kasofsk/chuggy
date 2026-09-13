@@ -137,15 +137,15 @@ export const briefIntentSchema = z
 /**
  * How and where a finalization lands the work, as one variant per mode: a push
  * names the reference it lands on only where that is not the branch the work
- * happened on, and a pull request must name one, because a proposal opened into
- * nothing is not a proposal. The target shares the branch's grammar, being the
+ * happened on, and a pull request only where that is not the branch its
+ * repository defaults to. The target shares the branch's grammar, being the
  * same kind of name.
  */
 const briefFinalizationShapes = {
   Push: { mode: z.literal("Push"), target: briefBranchSchema.optional() },
   PullRequest: {
     mode: z.literal("PullRequest"),
-    target: briefBranchSchema,
+    target: briefBranchSchema.optional(),
   },
 } as const;
 
@@ -156,9 +156,11 @@ export const briefFinalizationSchema = z.discriminatedUnion("mode", [
 
 /**
  * Whether one brief's branch and its finalization stand together. A proposal is
- * opened from the branch the work happened on into the reference it names, so a
- * brief that proposes names a branch of its own and names a different one; a
- * brief that lands any other way pairs with either.
+ * opened from the branch the work happened on, so a brief that proposes names a
+ * branch of its own and a different base where it names a base at all, a brief
+ * that lands any other way pairs with either, and a base left unnamed is the
+ * repository's default branch — which only the remote knows, so the finalizer
+ * is what holds a branch that is itself that default.
  */
 export function briefLandingIsWhole(value: {
   readonly branch?: string | undefined;
@@ -167,7 +169,10 @@ export function briefLandingIsWhole(value: {
 }): boolean {
   const finalization = value.finalization;
   if (finalization?.mode !== "PullRequest") return true;
-  return value.branch !== undefined && value.branch !== finalization.target;
+  if (value.branch === undefined) return false;
+  return (
+    finalization.target === undefined || value.branch !== finalization.target
+  );
 }
 
 /**
@@ -188,7 +193,8 @@ export const briefSchema = z
     finalization: briefFinalizationSchema.optional(),
   })
   .refine(briefLandingIsWhole, {
-    error: "a pull request is opened from a branch of its own into another",
+    error:
+      "a pull request is opened from a branch of its own, into another where it names one",
   });
 
 export type TicketBriefBody = z.infer<typeof briefSchema>;
