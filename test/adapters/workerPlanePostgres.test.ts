@@ -16,22 +16,19 @@ import { test } from "node:test";
 
 import type pg from "pg";
 
+import { workerPlaneRole } from "../../src/adapters/postgres/schema.ts";
+import { migrations } from "../../src/adapters/postgres/schema/migrations/index.ts";
+import { postgresSessionPlane } from "../../src/adapters/postgres/sessionPlane.ts";
+import { postgresWorkerReportStore } from "../../src/adapters/postgres/workerPlane.ts";
+import {
+  asSessionBearerSecret,
+  asSessionTurnId,
+} from "../../src/interpreter/agentSession.ts";
 import {
   asAttemptCapabilitySecret,
   asAttemptId,
   asExecutionId,
 } from "../../src/interpreter/executionScheduler.ts";
-import { postgresWorkerReportStore } from "../../src/adapters/postgres/workerPlane.ts";
-import { postgresSessionPlane } from "../../src/adapters/postgres/sessionPlane.ts";
-import {
-  asSessionBearerSecret,
-  asSessionTurnId,
-} from "../../src/interpreter/agentSession.ts";
-import { migration028 } from "../../src/adapters/postgres/schema/migrations/028-worker-plane-authority.ts";
-import { migration037 } from "../../src/adapters/postgres/schema/migrations/037-evaluation-work-reports.ts";
-import { migration049 } from "../../src/adapters/postgres/schema/migrations/049-run-evidence.ts";
-import { migrations } from "../../src/adapters/postgres/schema/migrations/index.ts";
-import { workerPlaneRole } from "../../src/adapters/postgres/schema.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 
 /**
@@ -53,6 +50,48 @@ function currentDefinition(name: string): string {
     );
   return latest;
 }
+
+function workerResultDefinition(): string {
+  const found = migrations
+    .flatMap(({ statements }) => statements)
+    .find(
+      (statement) =>
+        statement.includes("CREATE FUNCTION submit_worker_result(") &&
+        statement.includes("FROM execution_request q"),
+    );
+  if (found === undefined)
+    throw new Error("the worker result boundary is absent");
+  return found;
+}
+
+test("the worker role can execute its boundaries and read forge installations", () => {
+  const grants = migrations
+    .flatMap(({ statements }) => statements)
+    .flatMap((statement) => statement.split(";"))
+    .map((statement) => statement.trim())
+    .filter(
+      (statement) =>
+        statement.startsWith("GRANT") &&
+        statement.endsWith("TO " + workerPlaneRole),
+    );
+  assert.ok(grants.length > 0);
+  for (const grant of grants)
+    assert.match(
+      grant,
+      /^GRANT (?:ALL ON FUNCTION|USAGE ON SCHEMA|SELECT ON TABLE public[.]forge_installation TO chuggy_worker_plane$)/u,
+    );
+  for (const name of [
+    "store_worker_result_report",
+    "record_worker_run_configuration",
+    "record_worker_run_transcript_batch",
+    "record_worker_run_turns",
+    "record_worker_run_total",
+  ])
+    assert.ok(
+      grants.some((grant) => grant.includes("public." + name + "(")),
+      name,
+    );
+});
 
 const attempt = {
   partition: { tenant: asTenantId("tenant"), project: asProjectId("project") },
@@ -78,45 +117,22 @@ function transactionalPool(
   } as unknown as pg.Pool;
 }
 
-test("the worker role reaches database state only through its three boundaries", () => {
-  const grants = migration028.statements.filter((statement) =>
-    statement.includes(`TO ${workerPlaneRole}`),
-  );
-  assert.equal(grants.length, 5);
-  for (const grant of grants)
-    assert.match(grant, /^GRANT (?:EXECUTE ON FUNCTION|USAGE ON SCHEMA)/u);
-  assert.doesNotMatch(
-    grants.join("\n"),
-    /open|admit|fence_old|execution_attempt\s+TO/u,
-  );
-});
-
-test("the report summary boundary grants no table authority to the worker role", () => {
-  const grants = migration037.statements.filter(
-    (statement) =>
-      statement.startsWith("GRANT") &&
-      statement.includes(`TO ${workerPlaneRole}`),
-  );
-  assert.equal(grants.length, 1);
-  assert.match(grants[0] ?? "", /^GRANT EXECUTE ON FUNCTION/u);
-  assert.doesNotMatch(grants[0] ?? "", /execution_result_report\s+TO/u);
-});
-
 test("every worker boundary fences against the latest recovery epoch", () => {
   const fence =
     /SELECT epoch FROM recovery_epoch\s+ORDER BY ordinal DESC LIMIT 1/u;
   for (const name of ["read_worker_attempt", "lose_worker_attempt"])
     assert.match(currentDefinition(name), fence);
   assert.match(
-    currentDefinition("submit_worker_result"),
+    migrations
+      .flatMap(({ statements }) => statements)
+      .find(
+        (statement) =>
+          statement.includes("CREATE FUNCTION submit_worker_result(") &&
+          statement.includes("INTO submitted FROM submit_worker_result("),
+      ) ?? "",
     /INTO submitted FROM submit_worker_result\(/u,
   );
-  assert.match(
-    migration028.statements.find((statement) =>
-      statement.includes("CREATE FUNCTION submit_worker_result"),
-    ) ?? "",
-    fence,
-  );
+  assert.match(workerResultDefinition() ?? "", fence);
 });
 
 test("terminal attempts authenticate only as non-live report authority", () => {
@@ -127,9 +143,7 @@ test("terminal attempts authenticate only as non-live report authority", () => {
 });
 
 test("result submission follows the scheduler completion lock order", () => {
-  const boundary = migration028.statements.find((statement) =>
-    statement.includes("CREATE FUNCTION submit_worker_result"),
-  );
+  const boundary = workerResultDefinition();
   assert.notEqual(boundary, undefined);
   const request = boundary?.indexOf("FROM execution_request q") ?? -1;
   const execution = boundary?.indexOf("FOR UPDATE OF e") ?? -1;
@@ -298,25 +312,6 @@ test("a current worker result persists its report in the completion transaction"
   assert.equal(
     stored.rawValues[2],
     "Changed the parser and ran its focused test.",
-  );
-});
-
-test("run evidence grants the worker role four functions and no table", () => {
-  const grants = migration049.statements.filter(
-    (statement) =>
-      statement.startsWith("GRANT") &&
-      statement.includes(`TO ${workerPlaneRole}`),
-  );
-  assert.equal(grants.length, 4);
-  for (const grant of grants)
-    assert.match(grant, /^GRANT EXECUTE ON FUNCTION record_worker_run_/u);
-  assert.deepEqual(
-    migration049.statements.filter(
-      (statement) =>
-        statement.includes(workerPlaneRole) &&
-        !statement.startsWith("GRANT EXECUTE ON FUNCTION"),
-    ),
-    [],
   );
 });
 

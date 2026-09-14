@@ -7,11 +7,6 @@
 export { migrations } from "./schema/migrations/index.ts";
 
 export * from "./schema/shared.ts";
-export {
-  retrofitBundleDigest,
-  retrofitBundleIdentity,
-} from "./schema/migrations/013-durable-finalizer.ts";
-
 /** The ledger of applied migrations, which the runner creates before it reads anything. */
 export const migrationLedger = `
   CREATE TABLE IF NOT EXISTS schema_migration (

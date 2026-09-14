@@ -8,10 +8,7 @@
  * A LEDGER THAT IS NOT A PREFIX OF THIS IMAGE'S OWN IS A COULD-NOT-RUN. A
  * database carrying a version this image does not declare, or declaring one
  * under another name, is refused with nothing applied — which is why the
- * planning runner is the one called here and `postgresMigrate` is not. That
- * one subtracts the applied set and applies the difference, so against a
- * database ahead of this image it fills the gaps it recognises and reports the
- * success of a schema nobody has.
+ * planning runner checks the ledger before applying any statements.
  *
  * IT IS SAFE TO RUN TWICE AND SAYS WHICH RUN DID THE WORK. Applying nothing is
  * the ordinary outcome of a second run and is reported as such, so an operator
@@ -46,7 +43,6 @@ import {
 } from "../adapters/postgres/pool.ts";
 import { currentRuntimeSchemaContract } from "../adapters/postgres/runtimeSchema.ts";
 import type { RuntimeDeploymentSchema } from "../interpreter/serviceRuntime.ts";
-import { asInstallationId, type InstallationId } from "../domain/ids.ts";
 
 /** An environment as this command takes it: names to values, and never a global. */
 export type MigrateEnvironment = Readonly<Record<string, string | undefined>>;
@@ -73,7 +69,6 @@ export interface MigrateSettings {
   readonly databaseUrl: string;
   readonly limits: PostgresLimits;
   readonly deployment: RuntimeDeploymentSchema;
-  readonly adoptingInstallationId?: InstallationId;
 }
 
 /** The one value a deployment may not leave to a default. */
@@ -110,7 +105,10 @@ function migrateSettingsBoundOr(
 export function migrateSettingsOf(
   environment: MigrateEnvironment,
 ): MigrateSettings {
-  const adoptingInstallationId = environment[adoptingInstallationIdVariable];
+  if (environment[adoptingInstallationIdVariable])
+    throw new Error(
+      "CHUG_MIGRATE_ADOPT_INSTALLATION_ID is no longer supported; the baseline requires a fresh database",
+    );
   return {
     databaseUrl: migrateSettingsRequired(environment, databaseUrlVariable),
     limits: {
@@ -126,10 +124,6 @@ export function migrateSettingsOf(
       current: currentRuntimeSchemaContract,
       retainedPrevious: currentRuntimeSchemaContract,
     },
-    ...(adoptingInstallationId === undefined ||
-    adoptingInstallationId.length === 0
-      ? {}
-      : { adoptingInstallationId: asInstallationId(adoptingInstallationId) }),
   };
 }
 
@@ -150,11 +144,7 @@ export async function migrateRun(
       );
     });
     proved.release();
-    return await postgresMigrateCompatible(
-      pool,
-      settings.deployment,
-      settings.adoptingInstallationId,
-    );
+    return await postgresMigrateCompatible(pool, settings.deployment);
   } finally {
     await pool.end();
   }

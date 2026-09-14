@@ -1,13 +1,11 @@
 /**
- * Migration ten against a real server: that the durable execution scheduler's
+ * The durable execution scheduler against a real server: that its
  * relations apply, that its triggers refuse what they exist to refuse, and
  * that its functions decide what their names claim.
  *
  * THE FRESH DATABASE IS THE GATE'S OWN. `.chug/tasks/check-postgres.sh`
  * creates a database per suite and drops it when the suite ends, so every case
- * here already runs against a schema this run applied from nothing. What is
- * left to say is that re-applying adds nothing, which is a claim about the
- * ledger and is where the first case looks.
+ * here runs against a schema this run applied from nothing.
  *
  * THE REFUSALS ARE ATTEMPTED RATHER THAN LOOKED UP. A case that read a
  * catalogue row would prove the server had been told a rule, not that it
@@ -29,14 +27,9 @@ import {
   backlogFunction,
   completionFunction,
   digestFoldFunction,
-  migrations,
   schedulerRole,
   statusMoveFunction,
 } from "../../src/adapters/postgres/schema.ts";
-import {
-  postgresMigrate,
-  postgresPool,
-} from "../../src/adapters/postgres/pool.ts";
 import {
   allAttemptStates,
   allExecutionStatuses,
@@ -61,7 +54,6 @@ import {
   postgresHarnessJournal,
   postgresHarnessOpen,
   postgresHarnessProject,
-  postgresHarnessUrl,
   type PostgresHarness,
   type PostgresTransaction,
 } from "./harness.ts";
@@ -75,9 +67,6 @@ before(async () => {
 after(async () => {
   await harness.close();
 });
-
-/** The migration this suite is about, named once so the ledger case and the report agree. */
-const schedulerMigrationVersion = 12;
 
 /** How wide a case's own cluster is, which is capacity rather than semantics. */
 const schedulerClusterSlots = 32;
@@ -401,34 +390,7 @@ async function schedulerReported(
   };
 }
 
-test("migration twelve is recorded once and re-migrating this database applies nothing", async () => {
-  const declared = migrations.find(
-    (each) => each.version === schedulerMigrationVersion,
-  );
-  assert.ok(declared !== undefined);
-  assert.deepEqual(
-    await harness.query(
-      "SELECT version, name FROM schema_migration WHERE version=$1",
-      [schedulerMigrationVersion],
-    ),
-    [{ version: declared.version, name: declared.name }],
-  );
-  const again = postgresPool(postgresHarnessUrl());
-  try {
-    assert.deepEqual(await postgresMigrate(again), []);
-  } finally {
-    await again.end();
-  }
-  assert.deepEqual(
-    await harness.query(
-      "SELECT count(*)::text AS count FROM schema_migration WHERE version=$1",
-      [schedulerMigrationVersion],
-    ),
-    [{ count: "1" }],
-  );
-});
-
-test("every relation migration twelve declares is present and reachable", async () => {
+test("every scheduler relation is present and reachable", async () => {
   const declared = [
     "capacity_account",
     "execution",

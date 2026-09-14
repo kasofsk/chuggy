@@ -1,7 +1,9 @@
 # PostgreSQL schema invariants
 
 The relations the PostgreSQL foundation owns, as the migrations that create
-them.
+them. The baseline installs the current schema directly into a fresh database;
+historical migration ledgers are incompatible. Future migrations follow the
+baseline in version order.
 
 issue #180 requires 5 things of every
 new mutable relation, so each one states them here rather than in a doc that

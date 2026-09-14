@@ -106,7 +106,7 @@ function migrationLedgerReaders(): ReadonlySet<string> {
   const found = new Set<string>();
   for (const statement of migrationStatements)
     for (const [, granted] of statement.matchAll(
-      /GRANT SELECT ON schema_migration TO ((?:\s*chuggy_\w+\s*,?)+)/gu,
+      /GRANT SELECT ON (?:TABLE public\.)?schema_migration TO ((?:\s*chuggy_\w+\s*,?)+)/gu,
     ))
       for (const [role] of String(granted).matchAll(/chuggy_\w+/gu))
         found.add(role);
@@ -176,10 +176,8 @@ test("it restates the attributes of every one of them", () => {
   assert.deepEqual(attributed, declared);
 });
 
-test("the worker plane migration leaves its role attributes to the deployment", () => {
-  const migration = migrations.find(
-    ({ name }) => name === "attempt-scoped worker plane authority",
-  );
+test("the baseline leaves worker role attributes to the deployment", () => {
+  const migration = migrations[0];
   assert.notEqual(migration, undefined);
   assert.ok(
     migration?.statements.some((statement) =>

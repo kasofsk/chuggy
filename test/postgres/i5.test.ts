@@ -29,7 +29,7 @@ import {
   selectorServiceRole,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
-import { interactionsReadSignature } from "../../src/adapters/postgres/schema/migrations/059-lead-decisions.ts";
+import { interactionsReadSignature } from "../../src/adapters/postgres/schema/lead.ts";
 import { decisionSemanticsVersionCurrent } from "../../src/actor/decisionSemantics.ts";
 import { ticketAt } from "../../src/domain/core.ts";
 import {

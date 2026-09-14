@@ -190,8 +190,3 @@ export function roleStatement(role: string): string {
   $$
 `;
 }
-
-/** A closed set of text values as the SQL list a CHECK compares against. */
-export function schemaTextSet(values: readonly string[]): string {
-  return values.map((value) => `'${value}'`).join(", ");
-}

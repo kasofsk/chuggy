@@ -555,20 +555,22 @@ test("a whitespace-only title clears the override rather than storing it", async
     input: "why is 42 blocked?",
   });
 
-  const named = await rig.threads.rename({
-    partition,
-    session: thread.session,
-    title: "\n\n",
-  });
-  assert.equal(named.renamed, "Renamed");
-  assert.equal(
-    threadEntry(
-      named.renamed === "Renamed" ? named.thread : thread,
-      member.principal,
-      member.authority.subject,
-    ).title,
-    "why is 42 blocked?",
-  );
+  for (const title of ["\n\n", "\r", "\r\n", " \t\r\n "]) {
+    const named = await rig.threads.rename({
+      partition,
+      session: thread.session,
+      title,
+    });
+    assert.equal(named.renamed, "Renamed");
+    assert.equal(
+      threadEntry(
+        named.renamed === "Renamed" ? named.thread : thread,
+        member.principal,
+        member.authority.subject,
+      ).title,
+      "why is 42 blocked?",
+    );
+  }
 });
 
 /**
