@@ -58,7 +58,16 @@
   }
 
   .btn-quiet:hover {
-    background: var(--surface-2);
+    background: color-mix(in srgb, var(--ink-1) 12%, transparent);
+  }
+
+  .btn-quiet[aria-pressed="true"]:hover,
+  .btn-quiet[aria-checked="true"]:hover {
+    background: color-mix(
+      in srgb,
+      var(--surface-inverse) 85%,
+      var(--surface-1)
+    );
   }
 
   .btn-danger {
