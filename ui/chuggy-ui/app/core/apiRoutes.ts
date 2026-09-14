@@ -1,12 +1,10 @@
-/**
- * One function per public route, each returning the route's own parsed
- * response or the outcome that replaced it.
- *
- * Every path is built from `partitionPath` and every body is read by the
- * schema `src/contract/responses.ts` publishes for that route, so nothing about
- * the wire is restated here. A submission carries an idempotency key because
- * the route refuses one that does not.
- */
+/** Public route calls return their parsed response or the outcome that replaced it. */
+
+import {
+  nativeHttpEndpoints,
+  endpointPath,
+  type EndpointParameters,
+} from "../../../../src/contract/endpoints.ts";
 
 import { partitionPath } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -18,22 +16,15 @@ import {
   dispatchViewResponseSchema,
   draftInitializationResponseSchema,
   draftResponseSchema,
-  executionResponseSchema,
   executionsResponseSchema,
   forgeAppsResponseSchema,
   forgeInstallationClaimedSchema,
   forgeInstallationsResponseSchema,
   forgeRepositoriesResponseSchema,
   installationResponseSchema,
-  leadInquiriesResponseSchema,
-  leadInquiryAcceptedSchema,
-  leadInquiryResponseSchema,
-  leadResponseSchema,
-  leadTranscriptResponseSchema,
   notificationsResponseSchema,
   operationAcceptanceSchema,
   operationResponseSchema,
-  operationalStatusResponseSchema,
   outputContentResponseSchema,
   projectInventoryResponseSchema,
   projectNativeActionsResponseSchema,
@@ -44,19 +35,9 @@ import {
   projectRepositoryLandingWrittenSchema,
   projectResponseSchema,
   repositoryConfigurationImportedSchema,
-  runConfigurationResponseSchema,
-  runTranscriptResponseSchema,
-  runTurnsResponseSchema,
   selectorHistoryResponseSchema,
   selectorProjectSettingsResponseSchema,
   selectorSettingsHistoryResponseSchema,
-  threadEntryResponseSchema,
-  threadHideResponseSchema,
-  threadRenameResponseSchema,
-  threadMessageAcceptedSchema,
-  threadResponseSchema,
-  threadTranscriptResponseSchema,
-  threadsResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
 } from "../../../../src/contract/responses.ts";
@@ -67,22 +48,15 @@ import type {
   DispatchViewResponse,
   DraftInitializationResponse,
   DraftResponse,
-  ExecutionResponse,
   ExecutionsResponse,
   ForgeAppsResponse,
   ForgeInstallationClaimedResponse,
   ForgeInstallationsResponse,
   ForgeRepositoriesResponse,
   InstallationResponse,
-  LeadInquiriesResponse,
-  LeadInquiryAccepted,
-  LeadInquiryResponse,
-  LeadResponse,
-  LeadTranscriptResponse,
   NotificationsResponse,
   OperationAcceptance,
   OperationResponse,
-  OperationalStatusResponse,
   OutputContentResponse,
   ProjectInventoryResponse,
   ProjectNativeActionsResponse,
@@ -92,17 +66,9 @@ import type {
   ProjectRepositoryCreatedResponse,
   ProjectRepositoryResponse,
   ProjectResponse,
-  RunConfigurationResponse,
-  RunTranscriptResponse,
-  RunTurnsResponse,
   SelectorHistoryResponse,
   SelectorProjectSettingsResponse,
   SelectorSettingsHistoryResponse,
-  ThreadEntryResponse,
-  ThreadMessageAccepted,
-  ThreadResponse,
-  ThreadTranscriptResponse,
-  ThreadsResponse,
   TicketNativeActionsResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
@@ -171,6 +137,48 @@ function apiGet<T>(
     ...(signal ? { signal } : {}),
   };
   return apiRead(ports, request, parse);
+}
+
+function apiProjectEndpoint<
+  Value,
+  Body,
+  Path extends string,
+  Arguments extends unknown[],
+>(
+  endpoint: {
+    readonly method: "GET" | "POST";
+    readonly path: Path;
+    readonly response: z.ZodType<Value>;
+    readonly body?: z.ZodType<Body>;
+  },
+  input: (
+    partition: PartitionIdentity,
+    ...args: Arguments
+  ) => {
+    readonly parameters: EndpointParameters<Path>;
+    readonly query?: Query;
+    readonly body?: Body;
+  },
+) {
+  return (
+    ports: ApiPorts,
+    partition: PartitionIdentity,
+    ...args: Arguments
+  ): Promise<ApiResult<Value>> => {
+    const request = input(partition, ...args);
+    return apiRead(
+      ports,
+      {
+        method: endpoint.method,
+        path: apiPath(
+          endpointPath(endpoint.path, request.parameters),
+          request.query,
+        ),
+        ...(request.body === undefined ? {} : { body: request.body }),
+      },
+      (value) => endpoint.response.parse(value),
+    );
+  };
 }
 
 export function apiInstallation(
@@ -453,14 +461,10 @@ export function apiNativeActions(
   );
 }
 
-export function apiOperationalStatus(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-): Promise<ApiResult<OperationalStatusResponse>> {
-  return apiGet(ports, apiSegments(partition, "operational-status"), (value) =>
-    operationalStatusResponseSchema.parse(value),
-  );
-}
+export const apiOperationalStatus = apiProjectEndpoint(
+  nativeHttpEndpoints.operationalStatus,
+  (partition) => ({ parameters: partition }),
+);
 
 export interface ExecutionsPage {
   readonly cursor?: string | undefined;
@@ -487,17 +491,12 @@ export function apiExecutions(
   );
 }
 
-export function apiExecution(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  execution: string,
-): Promise<ApiResult<ExecutionResponse>> {
-  return apiGet(
-    ports,
-    apiSegments(partition, "executions", execution),
-    (value) => executionResponseSchema.parse(value),
-  );
-}
+export const apiExecution = apiProjectEndpoint(
+  nativeHttpEndpoints.execution,
+  (partition, execution: string) => ({
+    parameters: { ...partition, execution },
+  }),
+);
 
 export function apiOutputContent(
   ports: ApiPorts,
@@ -517,69 +516,30 @@ export interface RunTurnsPage {
   readonly limit?: number | undefined;
 }
 
-function apiAttemptSegments(
-  partition: PartitionIdentity,
-  execution: string,
-  attempt: string,
-  read: string,
-): string {
-  return apiSegments(
-    partition,
-    "executions",
-    execution,
-    "attempts",
-    attempt,
-    read,
-  );
-}
-
 /** One run's per-turn series, ascending, resumed by the ordinal already held. */
-export function apiRunTurns(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  execution: string,
-  attempt: string,
-  page: RunTurnsPage = {},
-): Promise<ApiResult<RunTurnsResponse>> {
-  return apiGet(
-    ports,
-    apiPath(apiAttemptSegments(partition, execution, attempt, "turns"), {
-      after: page.after,
-      limit: page.limit,
-    }),
-    (value) => runTurnsResponseSchema.parse(value),
-  );
-}
+export const apiRunTurns = apiProjectEndpoint(
+  nativeHttpEndpoints.runTurns,
+  (partition, execution: string, attempt: string, page: RunTurnsPage = {}) => ({
+    parameters: { ...partition, execution, attempt },
+    query: { after: page.after, limit: page.limit },
+  }),
+);
 
 /** The batches above the one named, which is the highest a pane already holds. */
-export function apiRunTranscript(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  execution: string,
-  attempt: string,
-  after: number,
-): Promise<ApiResult<RunTranscriptResponse>> {
-  return apiGet(
-    ports,
-    apiPath(apiAttemptSegments(partition, execution, attempt, "transcript"), {
-      after,
-    }),
-    (value) => runTranscriptResponseSchema.parse(value),
-  );
-}
+export const apiRunTranscript = apiProjectEndpoint(
+  nativeHttpEndpoints.runTranscript,
+  (partition, execution: string, attempt: string, after: number) => ({
+    parameters: { ...partition, execution, attempt },
+    query: { after },
+  }),
+);
 
-export function apiRunConfiguration(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  execution: string,
-  attempt: string,
-): Promise<ApiResult<RunConfigurationResponse>> {
-  return apiGet(
-    ports,
-    apiAttemptSegments(partition, execution, attempt, "configuration"),
-    (value) => runConfigurationResponseSchema.parse(value),
-  );
-}
+export const apiRunConfiguration = apiProjectEndpoint(
+  nativeHttpEndpoints.runConfiguration,
+  (partition, execution: string, attempt: string) => ({
+    parameters: { ...partition, execution, attempt },
+  }),
+);
 
 export function apiOperation(
   ports: ApiPorts,
@@ -654,14 +614,10 @@ export function apiDraft(
 }
 
 /** The project's lead session, its mailbox tail and the streams its store holds. */
-export function apiLead(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-): Promise<ApiResult<LeadResponse>> {
-  return apiGet(ports, apiSegments(partition, "lead"), (value) =>
-    leadResponseSchema.parse(value),
-  );
-}
+export const apiLead = apiProjectEndpoint(
+  nativeHttpEndpoints.lead,
+  (partition) => ({ parameters: partition }),
+);
 
 export interface LeadTranscriptPage {
   readonly stream?: string | undefined;
@@ -670,138 +626,88 @@ export interface LeadTranscriptPage {
 }
 
 /** The chain over the batches above the one named, with the held subset marked. */
-export function apiLeadTranscript(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  page: LeadTranscriptPage = {},
-): Promise<ApiResult<LeadTranscriptResponse>> {
-  return apiGet(
-    ports,
-    apiPath(apiSegments(partition, "lead", "transcript"), {
-      stream: page.stream,
-      after: page.after,
-      limit: page.limit,
-    }),
-    (value) => leadTranscriptResponseSchema.parse(value),
-  );
-}
+export const apiLeadTranscript = apiProjectEndpoint(
+  nativeHttpEndpoints.leadTranscript,
+  (partition, page: LeadTranscriptPage = {}) => ({
+    parameters: partition,
+    query: { stream: page.stream, after: page.after, limit: page.limit },
+  }),
+);
 
 /**
  * The project's member threads, each saying whether it is the caller's own.
  * `mine` is the server's answer and never this browser's: nothing here decodes
  * a token, so who is signed in is a question only the API can be asked.
  */
-export function apiThreads(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-): Promise<ApiResult<ThreadsResponse>> {
-  return apiGet(ports, apiSegments(partition, "threads"), (value) =>
-    threadsResponseSchema.parse(value),
-  );
-}
+export const apiThreads = apiProjectEndpoint(
+  nativeHttpEndpoints.threads,
+  (partition) => ({ parameters: partition }),
+);
 
 /** The caller's own thread, opened where they have none and answered where they
  * have: the route is idempotent, so this is safe to press twice. The body is
  * an empty object rather than nothing, because the door takes only versioned
  * JSON and a request with no body carries no media type to be versioned. */
-export function apiOpenThread(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-): Promise<ApiResult<ThreadEntryResponse>> {
-  return apiRead(
-    ports,
-    { method: "POST", path: apiSegments(partition, "threads"), body: {} },
-    (value) => threadEntryResponseSchema.parse(value),
-  );
-}
+export const apiOpenThread = apiProjectEndpoint(
+  nativeHttpEndpoints.openThread,
+  (partition) => ({ parameters: partition, body: {} }),
+);
 
 /**
  * One thread: whose it is, where it stands, and a page of its mailbox. The
  * unparameterised read is the newest page; `before` walks backwards from a
  * cursor the read before it answered.
  */
-export function apiThread(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  session: string,
-  page: { readonly before?: number; readonly limit?: number } = {},
-): Promise<ApiResult<ThreadResponse>> {
-  return apiGet(
-    ports,
-    apiPath(apiSegments(partition, "threads", session), {
-      before: page.before,
-      limit: page.limit,
-    }),
-    (value) => threadResponseSchema.parse(value),
-  );
-}
+export const apiThread = apiProjectEndpoint(
+  nativeHttpEndpoints.thread,
+  (
+    partition,
+    session: string,
+    page: { readonly before?: number; readonly limit?: number } = {},
+  ) => ({
+    parameters: { ...partition, session },
+    query: { before: page.before, limit: page.limit },
+  }),
+);
 
 /** One thread's store, paged exactly as the lead's is and by the same walk. */
-export function apiThreadTranscript(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  session: string,
-  page: LeadTranscriptPage = {},
-): Promise<ApiResult<ThreadTranscriptResponse>> {
-  return apiGet(
-    ports,
-    apiPath(apiSegments(partition, "threads", session, "transcript"), {
-      stream: page.stream,
-      after: page.after,
-      limit: page.limit,
-    }),
-    (value) => threadTranscriptResponseSchema.parse(value),
-  );
-}
+export const apiThreadTranscript = apiProjectEndpoint(
+  nativeHttpEndpoints.threadTranscript,
+  (partition, session: string, page: LeadTranscriptPage = {}) => ({
+    parameters: { ...partition, session },
+    query: { stream: page.stream, after: page.after, limit: page.limit },
+  }),
+);
 
 /**
  * Every inquiry against this project's lead, newest first and bounded by the
  * route. There is no page and no limit: the listing takes neither, so asking
  * for one would be a query arm the route rejects the whole read for.
  */
-export function apiLeadInquiries(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-): Promise<ApiResult<LeadInquiriesResponse>> {
-  return apiGet(ports, apiSegments(partition, "lead", "inquiries"), (value) =>
-    leadInquiriesResponseSchema.parse(value),
-  );
-}
+export const apiLeadInquiries = apiProjectEndpoint(
+  nativeHttpEndpoints.leadInquiries,
+  (partition) => ({ parameters: partition }),
+);
 
 /** One inquiry: what was asked, and the answer where the fork has given one. */
-export function apiLeadInquiry(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  session: string,
-): Promise<ApiResult<LeadInquiryResponse>> {
-  return apiGet(
-    ports,
-    apiSegments(partition, "lead", "inquiries", session),
-    (value) => leadInquiryResponseSchema.parse(value),
-  );
-}
+export const apiLeadInquiry = apiProjectEndpoint(
+  nativeHttpEndpoints.leadInquiry,
+  (partition, session: string) => ({ parameters: { ...partition, session } }),
+);
 
 /**
  * A message into the caller's own thread. The turn identity is in the body
  * rather than an idempotency header because enqueuing is idempotent on it, so a
  * retried post answers the ordinal it already has instead of a second turn.
  */
-export function apiSendThreadMessage(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  session: string,
-  message: z.infer<typeof threadMessageSchema>,
-): Promise<ApiResult<ThreadMessageAccepted>> {
-  return apiRead(
-    ports,
-    {
-      method: "POST",
-      path: apiSegments(partition, "threads", session, "messages"),
-      body: message,
-    },
-    (value) => threadMessageAcceptedSchema.parse(value),
-  );
-}
+export const apiSendThreadMessage = apiProjectEndpoint(
+  nativeHttpEndpoints.sendThreadMessage,
+  (
+    partition,
+    session: string,
+    message: z.infer<typeof threadMessageSchema>,
+  ) => ({ parameters: { ...partition, session }, body: message }),
+);
 
 /**
  * Closes one thread, whoever's it is: the door is the project's `Mutate` and
@@ -809,60 +715,34 @@ export function apiSendThreadMessage(
  * answered the closed thread rather than refused; the body is an empty object
  * for the reason `apiOpenThread`'s is.
  */
-export function apiCloseThread(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  session: string,
-): Promise<ApiResult<ThreadEntryResponse>> {
-  return apiRead(
-    ports,
-    {
-      method: "POST",
-      path: apiSegments(partition, "threads", session, "close"),
-      body: {},
-    },
-    (value) => threadEntryResponseSchema.parse(value),
-  );
-}
+export const apiCloseThread = apiProjectEndpoint(
+  nativeHttpEndpoints.closeThread,
+  (partition, session: string) => ({
+    parameters: { ...partition, session },
+    body: {},
+  }),
+);
 
 /**
  * Names one thread. An empty title clears the member's name and leaves the
  * title derived from the first message, so a rail row never goes blank.
  */
-export function apiRenameThread(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  session: string,
-  title: string,
-): Promise<ApiResult<ThreadEntryResponse>> {
-  return apiRead(
-    ports,
-    {
-      method: "POST",
-      path: apiSegments(partition, "threads", session, "rename"),
-      body: { title },
-    },
-    (value) => threadRenameResponseSchema.parse(value),
-  );
-}
+export const apiRenameThread = apiProjectEndpoint(
+  nativeHttpEndpoints.renameThread,
+  (partition, session: string, title: string) => ({
+    parameters: { ...partition, session },
+    body: { title },
+  }),
+);
 
 /** Takes one thread off the reader's rail, or puts it back. Nothing is deleted. */
-export function apiHideThread(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  session: string,
-  hidden: boolean,
-): Promise<ApiResult<ThreadEntryResponse>> {
-  return apiRead(
-    ports,
-    {
-      method: "POST",
-      path: apiSegments(partition, "threads", session, "hide"),
-      body: { hidden },
-    },
-    (value) => threadHideResponseSchema.parse(value),
-  );
-}
+export const apiHideThread = apiProjectEndpoint(
+  nativeHttpEndpoints.hideThread,
+  (partition, session: string, hidden: boolean) => ({
+    parameters: { ...partition, session },
+    body: { hidden },
+  }),
+);
 
 /**
  * A question asked aside, which opens one fork and one turn.
@@ -873,21 +753,13 @@ export function apiHideThread(
  * write here with no idempotency key: the key is in the body, and a header
  * carrying a third identity would be a second account of one fact.
  */
-export function apiAskLead(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  asked: z.infer<typeof leadInquirySchema>,
-): Promise<ApiResult<LeadInquiryAccepted>> {
-  return apiRead(
-    ports,
-    {
-      method: "POST",
-      path: apiSegments(partition, "lead", "inquiries"),
-      body: asked,
-    },
-    (value) => leadInquiryAcceptedSchema.parse(value),
-  );
-}
+export const apiAskLead = apiProjectEndpoint(
+  nativeHttpEndpoints.askLead,
+  (partition, asked: z.infer<typeof leadInquirySchema>) => ({
+    parameters: partition,
+    body: asked,
+  }),
+);
 
 /** Every ticket in the project whose latest refusal entry still stands. */
 export function apiAgenticRefusals(

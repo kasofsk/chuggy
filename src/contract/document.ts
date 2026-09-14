@@ -5,6 +5,7 @@
  */
 
 import { z } from "zod";
+import { nativeHttpEndpoints } from "./endpoints.ts";
 
 import {
   nativeHttpBasePath,
@@ -18,7 +19,6 @@ import {
   draftRevisionSchema,
   forgeCredentialRequestSchema,
   forgeInstallationClaimSchema,
-  leadInquirySchema,
   projectRepositoryBindSchema,
   projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
@@ -26,9 +26,6 @@ import {
   publicMutationSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
-  threadHideRequestSchema,
-  threadMessageSchema,
-  threadRenameRequestSchema,
 } from "./requests.ts";
 
 /** Every request body the document publishes, as the JSON Schema its own parser induces. */
@@ -49,11 +46,11 @@ function nativeHttpContractDocumentSchemas(): unknown {
     projectRepositoryRetirement: z.toJSONSchema(
       projectRepositoryRetirementSchema,
     ),
-    leadInquiry: z.toJSONSchema(leadInquirySchema),
+    leadInquiry: z.toJSONSchema(nativeHttpEndpoints.askLead.body),
     selectorProjectSettings: z.toJSONSchema(selectorProjectSettingsSchema),
-    threadMessage: z.toJSONSchema(threadMessageSchema),
-    threadRename: z.toJSONSchema(threadRenameRequestSchema),
-    threadHide: z.toJSONSchema(threadHideRequestSchema),
+    threadMessage: z.toJSONSchema(nativeHttpEndpoints.sendThreadMessage.body),
+    threadRename: z.toJSONSchema(nativeHttpEndpoints.renameThread.body),
+    threadHide: z.toJSONSchema(nativeHttpEndpoints.hideThread.body),
   };
 }
 

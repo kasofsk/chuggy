@@ -7,6 +7,7 @@
  */
 
 import { z } from "zod";
+import { nativeHttpEndpoints } from "../../contract/endpoints.ts";
 
 import { revokeEvent, resumeTicketEvent } from "../../actor/decisionEvent.ts";
 import type { ReleaseAuthoring } from "../../actor/decisionEvent.ts";
@@ -21,7 +22,6 @@ import {
   configurationCreationSchema,
   draftCreationSchema,
   draftRevisionSchema,
-  leadInquirySchema,
   publicMutationSchema,
   forgeCredentialRequestSchema,
   forgeInstallationClaimSchema,
@@ -31,9 +31,6 @@ import {
   projectRepositoryRetirementSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
-  threadHideRequestSchema,
-  threadMessageSchema,
-  threadRenameRequestSchema,
   type PublicMutation,
 } from "../../contract/requests.ts";
 import {
@@ -670,7 +667,7 @@ export function parseThreadMessage(body: unknown): {
   readonly turn: SessionTurnId;
   readonly message: string;
 } {
-  const value = threadMessageSchema.parse(body);
+  const value = nativeHttpEndpoints.sendThreadMessage.body.parse(body);
   return { turn: asSessionTurnId(value.turn), message: value.message };
 }
 
@@ -680,12 +677,12 @@ export function parseThreadMessage(body: unknown): {
  * that quietly ignored half of what was sent.
  */
 export function parseThreadRename(body: unknown): { readonly title: string } {
-  return { title: threadRenameRequestSchema.parse(body).title };
+  return { title: nativeHttpEndpoints.renameThread.body.parse(body).title };
 }
 
 /** Which side of its owner's rail this thread is on, strictly as `hidden`. */
 export function parseThreadHide(body: unknown): { readonly hidden: boolean } {
-  return { hidden: threadHideRequestSchema.parse(body).hidden };
+  return { hidden: nativeHttpEndpoints.hideThread.body.parse(body).hidden };
 }
 
 /**
@@ -699,7 +696,7 @@ export function parseLeadInquiry(body: unknown): {
   readonly turn: SessionTurnId;
   readonly question: string;
 } {
-  const value = leadInquirySchema.parse(body);
+  const value = nativeHttpEndpoints.askLead.body.parse(body);
   return {
     session: asSessionId(value.session),
     turn: asSessionTurnId(value.turn),
