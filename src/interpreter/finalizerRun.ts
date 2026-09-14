@@ -1579,6 +1579,32 @@ async function finalizerReconcileProposalMerge(
 }
 
 /**
+ * Prices one preparation this pass, or refuses it the budget. An attempt row
+ * reached out of a proposal costs what one reached out of a preparation costs,
+ * so both are counted against the one ceiling and neither can starve the other.
+ */
+function finalizerPreparationPriced(
+  service: FinalizerService,
+  tally: FinalizerTally,
+): boolean {
+  const config = checkedFinalizerConfig(service.config);
+  if (
+    finalizerCeilingReached(
+      service,
+      tally,
+      "preparations",
+      config.preparationsPerPassMax,
+    )
+  )
+    return false;
+  tally.preparations += 1;
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.preparation(0);
+  });
+  return true;
+}
+
+/**
  * Records the conflict the forge refused the merge for as this finalization's
  * own failure, which the pass after it concludes exactly as it concludes the
  * conflict a preparation reached. No manifest is written beside it: the forge
@@ -1589,10 +1615,10 @@ async function finalizerMergeConflicted(
   view: FinalizationView,
   tally: FinalizerTally,
 ): Promise<void> {
+  if (!finalizerPreparationPriced(service, tally)) return;
   const { target } = finalizerCandidateOf(view);
   const gathered = await finalizerGathered(service, view, target, tally);
   if (gathered === undefined) return;
-  tally.preparations += 1;
   await finalizerRecordAttempt(
     service,
     finalizerAttemptOf(service, {
@@ -1657,10 +1683,7 @@ async function finalizerProposalDecided(
       await finalizerMergeConflicted(service, view, tally);
       return;
     case "Abort":
-      tally.preparations += 1;
-      recordFinalizer(service.metrics, (metrics) => {
-        metrics.preparation(0);
-      });
+      if (!finalizerPreparationPriced(service, tally)) return;
       await finalizerAbort(
         service,
         view,

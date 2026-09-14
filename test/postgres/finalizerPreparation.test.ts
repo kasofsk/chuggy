@@ -42,6 +42,7 @@ import {
   proposalMarkerOf,
   type ChangeProposalEvidence,
   type ChangeProposalForges,
+  type ChangeProposalMergeAnswer,
   type ChangeProposalPort,
   type ChangeProposalRequest,
 } from "../../src/interpreter/changeProposal.ts";
@@ -1184,15 +1185,37 @@ test("a merge is counted before it is asked, and released by what came of it", a
     { merging: "Idle", merges: 1 },
     "a released attempt takes its reading with it and leaves the merge it spent counted",
   );
+});
+
+test("a merge the forge would not take is released unspent, and its reading goes with it", async () => {
+  const { claim, store } = await proposalMergeProved("proposalmergedeclined");
 
   await store.markChangeProposalMergeAttempt(claim);
+  assert.deepEqual(
+    await store.recordChangeProposalMerge({
+      claim,
+      result: { records: "Reading", reconciled: { reconciled: "Absent" } },
+    }),
+    { wrote: "Row" },
+  );
+  assert.deepEqual(
+    (await store.changeProposal(claim))?.merging,
+    {
+      merging: "Unanswered",
+      merges: 1,
+      readings: 1,
+      reading: { reconciled: "Absent" },
+    },
+    "a reading that found no proposal names none, and is stored as that",
+  );
+
   assert.deepEqual(await store.declineChangeProposalMergeAttempt(claim), {
     wrote: "Row",
   });
   assert.deepEqual(
     (await store.changeProposal(claim))?.merging,
-    { merging: "Idle", merges: 1 },
-    "and one the forge would not take is released unspent",
+    { merging: "Idle", merges: 0 },
+    "an attempt the forge would not take leaves no merge behind it",
   );
   await proposalMergeWritesRefused(
     store,
@@ -1201,30 +1224,101 @@ test("a merge is counted before it is asked, and released by what came of it", a
   );
 });
 
-test("a merge the forge answered is written once and closes what the row admits", async () => {
-  const { claim, store } = await proposalMergeProved("proposalmergeanswered");
-  const mergeCommit = asGitObjectId(finalizerCommit());
+/** Every arm a merge settles a row with, each of which a row must read back as its own. */
+const proposalMergeAnswers: readonly ChangeProposalMergeAnswer[] = [
+  { merged: "Merged", mergeCommit: asGitObjectId(finalizerCommit()) },
+  { merged: "HeadMoved" },
+  { merged: "NotMergeable", reason: "Conflict" },
+];
 
-  await store.markChangeProposalMergeAttempt(claim);
-  assert.deepEqual(
+test("every answer a merge settles a row with is written once and closes what the row admits", async () => {
+  for (const [ordinal, merged] of proposalMergeAnswers.entries()) {
+    const { claim, store } = await proposalMergeProved(
+      `proposalmergeanswer${String(ordinal)}`,
+    );
+    await store.markChangeProposalMergeAttempt(claim);
+    assert.deepEqual(
+      await store.recordChangeProposalMerge({
+        claim,
+        result: { records: "Merge", merged },
+      }),
+      { wrote: "Row" },
+      merged.merged,
+    );
+    assert.deepEqual(
+      (await store.changeProposal(claim))?.merging,
+      { merging: "Answered", merge: merged },
+      merged.merged,
+    );
+    const why = `an answered merge authorizes nothing further: ${merged.merged}`;
+    assert.deepEqual(
+      await store.markChangeProposalMergeAttempt(claim),
+      { wrote: "Nothing" },
+      why,
+    );
+    await proposalMergeWritesRefused(store, claim, why);
+  }
+});
+
+/** Every column one settled merge carries, and the rewrite of it the trigger refuses. */
+const proposalMergeRewritesRefused: readonly (readonly [
+  ChangeProposalMergeAnswer,
+  string,
+])[] = [
+  [{ merged: "HeadMoved" }, "merge='NotMergeable', merge_reason='Conflict'"],
+  [
+    { merged: "Merged", mergeCommit: asGitObjectId(finalizerCommit()) },
+    `merge_commit='${finalizerCommit()}'`,
+  ],
+  [{ merged: "NotMergeable", reason: "Conflict" }, "merge_reason='Blocked'"],
+];
+
+test("what a merge answered is written once, in every column that carries it", async () => {
+  for (const [
+    ordinal,
+    [merged, rewrite],
+  ] of proposalMergeRewritesRefused.entries()) {
+    const { project, claim, store } = await proposalMergeProved(
+      `proposalmergerewrite${String(ordinal)}`,
+    );
+    await store.markChangeProposalMergeAttempt(claim);
     await store.recordChangeProposalMerge({
       claim,
-      result: { records: "Merge", merged: { merged: "Merged", mergeCommit } },
-    }),
-    { wrote: "Row" },
-  );
+      result: { records: "Merge", merged },
+    });
+    assert.match(
+      await rig.refusal(
+        `UPDATE finalization_change_proposal SET ${rewrite}
+          WHERE tenant=$1 AND project=$2 AND request=$3`,
+        proposalRowKey(project),
+      ),
+      /merged once and read back after/u,
+      rewrite,
+    );
+  }
+});
 
-  assert.deepEqual((await store.changeProposal(claim))?.merging, {
-    merging: "Answered",
-    merge: { merged: "Merged", mergeCommit },
+test("a merge is asked over a create only a reading answered, as over one the create answered", async () => {
+  const { project, claim } =
+    await proposalMergeStoreSubject("proposalmergeread");
+  const store = postgresFinalizer(rig.pool);
+
+  await store.recordChangeProposal({
+    claim,
+    result: {
+      records: "Reconciliation",
+      reconciled: {
+        reconciled: "Accepted",
+        evidence: proposalStoredEvidence(project),
+      },
+    },
   });
-  const why = "an answered merge authorizes nothing further";
+
   assert.deepEqual(
     await store.markChangeProposalMergeAttempt(claim),
-    { wrote: "Nothing" },
-    why,
+    { wrote: "Row" },
+    "the number the merge addresses came out of the reading's own evidence",
   );
-  await proposalMergeWritesRefused(store, claim, why);
 });
 
 test("no answer about a merge is recorded by a holder a takeover has retired", async () => {
@@ -1578,14 +1672,6 @@ test("what a merge answered carries exactly what its arm has, in both directions
     (await proposalOf(project))?.merge,
     "Merged",
     "the same answer whole is admitted",
-  );
-  assert.match(
-    await rig.refusal(
-      `UPDATE finalization_change_proposal SET merge='HeadMoved', merge_commit=NULL
-        WHERE tenant=$1 AND project=$2 AND request=$3`,
-      key,
-    ),
-    /merged once and read back after/u,
   );
 });
 
