@@ -579,7 +579,7 @@ function taskConfigurationFault(
   switch (issue?.path[0] ?? "") {
     case "evaluations":
       return (
-        allTaskConfigurationFaults.find((fault) => fault === issue.message) ??
+        allTaskConfigurationFaults.find((fault) => fault === issue?.message) ??
         "EvaluationsInvalid"
       );
     case "authority":
