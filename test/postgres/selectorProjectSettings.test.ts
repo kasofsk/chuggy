@@ -39,7 +39,7 @@ import {
   dispatchesPerDecisionUnstated,
   leadDispatchesMax,
 } from "../../src/interpreter/selector.ts";
-import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/064-multi-dispatch-delivery.ts";
+import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import type { SelectorProjectSettingsRecord } from "../../src/interpreter/selectorProjectSettings.ts";
 import {
   postgresHarnessDenial,

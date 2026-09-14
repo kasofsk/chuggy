@@ -20,7 +20,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { leadObservationTokensPerDecision } from "../../src/adapters/postgres/schema/migrations/070-lead-token-budget.ts";
+import { leadObservationTokensPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import { sessionTurnInputCharsMax } from "../../src/contract/http.ts";
 import { leadObservationBytesMax } from "../../src/interpreter/selector.ts";
 

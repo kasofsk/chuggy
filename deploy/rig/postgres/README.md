@@ -131,34 +131,19 @@ CHUG_MIGRATE_DATABASE_URL="$owner_url" npm run migrate
 It prints the versions it applied, or says the schema was already current, and
 running it twice is how you see the difference.
 
-Migration 25 refuses a journal whose migration ledger already exists, because
-silently assigning that history a new installation identity would change the
-authority its local ticket identifiers belong to. To adopt such a journal,
-the operator names its permanent canonical UUID for that one migration run:
-
-```sh
-installation_id="$(node -e "process.stdout.write(crypto.randomUUID())")"
-CHUG_MIGRATE_ADOPT_INSTALLATION_ID="$installation_id" \
-  CHUG_MIGRATE_DATABASE_URL="$owner_url" npm run migrate
-```
-
-Record that value with the installation's backup inventory. The command
-refuses it for a fresh journal and after migration 25 has already landed, so a
-persisted adoption setting cannot silently reassign an authority.
+The baseline requires a fresh database. A database carrying the historical
+migration ledger is refused without changes; recreating it discards its data
+and requires explicit operator approval. Each fresh database receives a new
+installation identity. Future migrations extend the baseline normally.
 
 A ledger this checkout does not declare — a version it has never heard of, or
 one under another name — is a **could-not-run** that applies nothing and exits
-2. That is the case the command exists to refuse: the runner underneath it
-subtracts the applied set and applies the difference, so against a database
-ahead of this checkout it would fill the gaps it recognised and report the
-success of a schema nobody has.
+2. Both migration runners check the ledger before applying statements.
 
 ## Grant a project access
 
 Not here any more. Access is a relation tuple in the authority rather than a
-row in this database, and `deploy/rig/keto/README.md` is that procedure — run
-it before the release that reads it, because migration 83 drops the table this
-one used to write.
+row in this database, and `deploy/rig/keto/README.md` is that procedure.
 
 ## Open an agent session
 

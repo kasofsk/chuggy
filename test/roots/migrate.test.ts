@@ -70,7 +70,7 @@ test("a statement bound that is not a positive count is refused by name", async 
   }
 });
 
-test("an adoption identity must be a canonical UUID", async () => {
+test("the retired adoption option is refused", async () => {
   assert.deepEqual(
     await migrateMainExit({
       CHUG_MIGRATE_DATABASE_URL: "postgres://host/chuggy",
@@ -78,7 +78,8 @@ test("an adoption identity must be a canonical UUID", async () => {
     }),
     {
       code: 1,
-      report: "installation id: not-an-installation-id is not a canonical UUID",
+      report:
+        "CHUG_MIGRATE_ADOPT_INSTALLATION_ID is no longer supported; the baseline requires a fresh database",
     },
   );
 });

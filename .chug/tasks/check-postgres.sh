@@ -12,8 +12,8 @@
 # sources. The gate migrates one template database, clones it once per suite,
 # and removes every clone and the template before returning. Ordinary suites
 # therefore exercise the current schema without replaying migrations;
-# `migration.test.ts` remains responsible for the chain and historical upgrade
-# paths.
+# `migration.test.ts` exercises fresh installation, ledger compatibility and
+# migration atomicity.
 #
 # WORKERS RUN CONCURRENTLY AND EACH WORKER RUNS ITS SUITES SERIALLY, each suite
 # against a clone of its own that is dropped as the suite ends. A suite reading

@@ -31,12 +31,8 @@ import {
 } from "../../src/adapters/artifacts/artifactKey.ts";
 import { finalizerRowValue } from "../../src/adapters/postgres/finalizerRows.ts";
 import { ticketAt } from "../../src/domain/core.ts";
-import { asTicketId } from "../../src/domain/ids.ts";
 import type { Ticket } from "../../src/domain/generated/modelTypes.ts";
-import {
-  retrofitBundleDigest,
-  retrofitBundleIdentity,
-} from "../../src/adapters/postgres/schema.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
 import {
   allInputBundleReferenceKinds,
   asInputBundleId,
@@ -410,39 +406,4 @@ test("a target ref that moved afterwards changes nothing the bundle names", asyn
   );
   assert.notEqual(reworkReference(bundle, "TargetCommit")?.reference_id, moved);
   assert.deepEqual(await reworkBundleOf(project), bundle);
-});
-
-test("the retrofit expressions spell the identity and canonical bytes this tree digests", async () => {
-  const { project } = await reworked("rework-backfill");
-  const rows = (await rig.harness.query(
-    `SELECT ${retrofitBundleIdentity} AS retrofit,
-            ${retrofitBundleDigest} AS digest,
-            r.configuration_revision, r.configuration_digest
-       FROM execution_request r
-      WHERE r.tenant=$1 AND r.project=$2 AND r.kind='SpawnWork'
-      ORDER BY r.authorizing_seq LIMIT 1`,
-    [project.partition.tenant, project.partition.project],
-  )) as readonly {
-    retrofit: string;
-    digest: string;
-    configuration_revision: string;
-    configuration_digest: string;
-  }[];
-  const row = rows[0];
-  assert.ok(row !== undefined);
-  assert.equal(
-    row.digest,
-    createHash("sha256")
-      .update(
-        canonicalInputBundle(project.partition, asInputBundleId(row.retrofit), [
-          {
-            kind: "ConfigurationRevision",
-            reference: row.configuration_revision,
-            digest: row.configuration_digest,
-          },
-        ]),
-        "utf8",
-      )
-      .digest("hex"),
-  );
 });

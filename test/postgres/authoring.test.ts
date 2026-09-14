@@ -5,17 +5,26 @@ import type pg from "pg";
 
 import { postgresAuthoring } from "../../src/adapters/postgres/authoring.ts";
 import { postgresDomainConfigurationPrecondition } from "../../src/adapters/postgres/domainConfiguration.ts";
+import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { postgresProjectDecision } from "../../src/adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "../../src/adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
 import { postgresProjectRepositoryRetirement } from "../../src/adapters/postgres/repositoryBinding.ts";
 import { ticketServiceRole } from "../../src/adapters/postgres/schema.ts";
-import { migration048 } from "../../src/adapters/postgres/schema/migrations/048-repository-configuration-version.ts";
+import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
+import {
+  briefChecksMax,
+  briefLineCharsMax,
+  briefLinksMax,
+  briefTitleCharsMax,
+} from "../../src/contract/brief.ts";
+import type { Finalizer } from "../../src/domain/generated/modelTypes.ts";
+import type { TicketId } from "../../src/domain/ids.ts";
 import {
   asCanonicalConfiguration,
-  canonicalConfigurationOf,
   asConfigurationRevisionId,
+  canonicalConfigurationOf,
   type ConfigurationRevisionId,
 } from "../../src/interpreter/authoring.ts";
 import {
@@ -24,10 +33,6 @@ import {
   type RepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import {
-  repositoryConfigurationImportReadiness,
-  type RepositoryConfigurationDeclaration,
-} from "../../src/interpreter/repositoryConfiguration.ts";
-import {
   asAuthorityKind,
   asAuthoritySubject,
   asIdempotencyKey,
@@ -35,25 +40,19 @@ import {
   type Submission,
 } from "../../src/interpreter/operationInbox.ts";
 import {
-  projectWriterDecide,
-  projectWriterLoad,
-} from "../../src/interpreter/projectWriter.ts";
-import {
   asProjectId,
   asRecoveryEpoch,
   asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
-import type { Finalizer } from "../../src/domain/generated/modelTypes.ts";
-import type { TicketId } from "../../src/domain/ids.ts";
-import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import {
-  briefChecksMax,
-  briefLineCharsMax,
-  briefLinksMax,
-  briefTitleCharsMax,
-} from "../../src/contract/brief.ts";
-import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
+  projectWriterDecide,
+  projectWriterLoad,
+} from "../../src/interpreter/projectWriter.ts";
+import {
+  repositoryConfigurationImportReadiness,
+  type RepositoryConfigurationDeclaration,
+} from "../../src/interpreter/repositoryConfiguration.ts";
 import {
   asBriefIntent,
   asDraftBrief,
@@ -61,17 +60,17 @@ import {
   briefIntentLines,
   type DraftBrief,
 } from "../../src/interpreter/ticketBrief.ts";
-import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
+import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import { handoffFixture } from "../interpreter/handoffFixture.ts";
 import {
   postgresHarnessBinding,
   postgresHarnessBrief,
   postgresHarnessBriefIn,
-  postgresHarnessHeld,
   postgresHarnessConfiguration,
-  postgresHarnessReleaseSubmission,
+  postgresHarnessHeld,
   postgresHarnessOpen,
   postgresHarnessProject,
+  postgresHarnessReleaseSubmission,
   postgresHarnessRolePool,
   postgresHarnessStalled,
   postgresHarnessUrl,
@@ -94,16 +93,6 @@ const authority = {
   kind: asAuthorityKind("User"),
   subject: asAuthoritySubject("author"),
 };
-
-/** The migration's own backfill, so a case proves that statement and not a copy. */
-function configurationVersionBackfill(): string {
-  const statement = migration048.statements.find((value) =>
-    value.startsWith("INSERT INTO repository_configuration_version"),
-  );
-  if (statement === undefined)
-    throw new Error("the configuration version backfill is absent");
-  return statement;
-}
 
 async function repositoryBinding(partition: Partition, label = "sole") {
   const [row] = await harness.query(`SELECT epoch FROM recovery_epoch LIMIT 1`);
@@ -536,40 +525,6 @@ test("a configuration version is per name and per distinct declaration", async (
     { number: "1" },
     { number: "2" },
   ]);
-});
-
-test("the version backfill reproduces the numbers the import assigned", async () => {
-  const partition = await postgresHarnessProject(
-    harness.store,
-    "configuration-version-backfill",
-  );
-  const binding = await repositoryBinding(partition);
-  for (const declarations of [
-    repositoryDeclarations("4".repeat(40), ["work"]),
-    repositoryDeclarations("5".repeat(40), ["work"], "worker:v2"),
-    repositoryDeclarations("6".repeat(40), ["work"]),
-  ])
-    await importedConfigurationVersion(partition, binding, declarations);
-  const assigned = await harness.query(
-    `SELECT digest,number::text AS number FROM repository_configuration_version
-      WHERE tenant=$1 AND project=$2 ORDER BY number`,
-    [partition.tenant, partition.project],
-  );
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    await client.query("DELETE FROM repository_configuration_version");
-    await client.query(configurationVersionBackfill());
-    const backfilled = await client.query(
-      `SELECT digest,number::text AS number FROM repository_configuration_version
-        WHERE tenant=$1 AND project=$2 ORDER BY number`,
-      [partition.tenant, partition.project],
-    );
-    assert.deepEqual(backfilled.rows, assigned);
-  } finally {
-    await client.query("ROLLBACK");
-    client.release();
-  }
 });
 
 test("repository imports retain changed commits and partition their identity", async () => {

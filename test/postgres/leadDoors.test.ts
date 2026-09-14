@@ -49,7 +49,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
-import { systemPromptSetSignature } from "../../src/adapters/postgres/schema/migrations/061-lead-tools.ts";
+import { systemPromptSetSignature } from "../../src/adapters/postgres/schema/lead.ts";
 import { postgresHarnessRolePool, postgresHarnessUrl } from "./harness.ts";
 import type pg from "pg";
 
