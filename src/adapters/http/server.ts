@@ -1,3 +1,12 @@
+import {
+  record,
+  fieldsOnly,
+  textField,
+  integerField,
+} from "../../contract/fields.ts";
+import type { z } from "zod";
+import { nativeHttpEndpoints } from "../../contract/endpoints.ts";
+
 import fastify, {
   type FastifyInstance,
   type FastifyReply,
@@ -54,8 +63,6 @@ import {
   nativeHttpMediaType,
   nativeHttpPathSegmentCharsMax,
   selectorHistoryLimitMax,
-  sessionStorePageBatchesMax,
-  threadTurnsAnsweredMax,
 } from "../../contract/http.ts";
 import {
   parseConfigurationCursor,
@@ -235,46 +242,6 @@ function send(reply: FastifyReply, result: NativeHttpResponse): void {
     void reply.header(name, value);
   }
   void reply.code(result.status).send(result.body);
-}
-
-function record(value: unknown): Readonly<Record<string, unknown>> {
-  if (typeof value !== "object" || value === null || Array.isArray(value))
-    throw new TypeError("request fields are not an object");
-  return value as Readonly<Record<string, unknown>>;
-}
-
-function fieldsOnly(
-  value: unknown,
-  allowed: readonly string[],
-): Readonly<Record<string, unknown>> {
-  const found = record(value);
-  if (Object.keys(found).some((name) => !allowed.includes(name)))
-    throw new TypeError("request has an unknown field");
-  return found;
-}
-
-function textField(
-  fields: Readonly<Record<string, unknown>>,
-  name: string,
-): string {
-  const value = fields[name];
-  if (typeof value !== "string") throw new TypeError(`${name} is not text`);
-  return value;
-}
-
-function integerField(
-  fields: Readonly<Record<string, unknown>>,
-  name: string,
-  fallback?: number,
-): number {
-  const value = fields[name];
-  if (value === undefined && fallback !== undefined) return fallback;
-  if (typeof value !== "string" || !/^(?:0|[1-9][0-9]*)$/u.test(value))
-    throw new TypeError(`${name} is not a canonical non-negative integer`);
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed))
-    throw new RangeError(`${name} is too large`);
-  return parsed;
 }
 
 function bearer(authorization: string | undefined): string | undefined {
@@ -548,41 +515,33 @@ function registerProject(app: FastifyInstance, web: InitialNativeWeb): void {
   registerNativeActions(app, web, root);
   registerAgenticRefusals(app, web, root);
   registerOperationalRoutes(app, web, root);
-  registerRunEvidenceRoutes(app, web, root);
+  registerRunEvidenceRoutes(app, web);
 }
 
-/**
- * The lead's own read and a page of its transcript. The transcript defaults to
- * the session's own stream, because a reader who has not asked for one wants
- * the conversation rather than a subagent's.
- */
-function registerLead(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-  root: string,
-): void {
-  app.get(`${root}/lead`, async (request, reply) => {
-    send(
-      reply,
-      leadResponse(await web.lead(principalOf(request), partitionOf(request))),
-    );
-  });
-  app.get(`${root}/lead/transcript`, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["stream", "after", "limit"]);
-    const stream = query["stream"];
-    send(
-      reply,
-      leadTranscriptResponse(
-        await web.leadTranscript(principalOf(request), partitionOf(request), {
-          ...(stream === undefined
-            ? {}
-            : { stream: asSessionStoreStream(textField(query, "stream")) }),
-          after: integerField(query, "after", 0),
-          limit: integerField(query, "limit", sessionStorePageBatchesMax),
-        }),
-      ),
-    );
-  });
+function registerLead(app: FastifyInstance, web: InitialNativeWeb): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.lead,
+    (_request, principal, partition) => web.lead(principal, partition),
+    leadResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.leadTranscript,
+    (request, principal, partition) => {
+      const query = nativeHttpEndpoints.leadTranscript.query.parse(
+        request.query,
+      );
+      return web.leadTranscript(principal, partition, {
+        ...(query.stream === undefined
+          ? {}
+          : { stream: asSessionStoreStream(query.stream) }),
+        after: query.after,
+        limit: query.limit,
+      });
+    },
+    leadTranscriptResponse,
+  );
 }
 
 /** The lead's refusals, across a project and under the one ticket each names. */
@@ -657,60 +616,58 @@ function registerSelectorHistory(
 function registerRunEvidenceRoutes(
   app: FastifyInstance,
   web: InitialNativeWeb,
-  root: string,
 ): void {
-  const run = `${root}/executions/:execution/attempts/:attempt`;
-  app.get(`${run}/turns`, async (request, reply) => {
-    const params = record(request.params);
-    const query = fieldsOnly(request.query, ["after", "limit"]);
-    send(
-      reply,
-      runTurnsResponse(
-        await web.runTurns(
-          principalOf(request),
-          partitionOf(request),
-          asExecutionId(textField(params, "execution")),
-          asAttemptId(textField(params, "attempt")),
-          {
-            ...(query["after"] === undefined
-              ? {}
-              : { after: integerField(query, "after") }),
-            limit: integerField(query, "limit", 50),
-          },
-        ),
-      ),
-    );
-  });
-  app.get(`${run}/transcript`, async (request, reply) => {
-    const params = record(request.params);
-    const query = fieldsOnly(request.query, ["after"]);
-    send(
-      reply,
-      runTranscriptResponse(
-        await web.runTranscript(
-          principalOf(request),
-          partitionOf(request),
-          asExecutionId(textField(params, "execution")),
-          asAttemptId(textField(params, "attempt")),
-          integerField(query, "after", 0),
-        ),
-      ),
-    );
-  });
-  app.get(`${run}/configuration`, async (request, reply) => {
-    const params = record(request.params);
-    send(
-      reply,
-      runConfigurationResponse(
-        await web.runConfiguration(
-          principalOf(request),
-          partitionOf(request),
-          asExecutionId(textField(params, "execution")),
-          asAttemptId(textField(params, "attempt")),
-        ),
-      ),
-    );
-  });
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.runTurns,
+    (request, principal, partition) => {
+      const params = record(request.params);
+      const query = nativeHttpEndpoints.runTurns.query.parse(request.query);
+      return web.runTurns(
+        principal,
+        partition,
+        asExecutionId(textField(params, "execution")),
+        asAttemptId(textField(params, "attempt")),
+        {
+          ...(query.after === undefined ? {} : { after: query.after }),
+          limit: query.limit,
+        },
+      );
+    },
+    runTurnsResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.runTranscript,
+    (request, principal, partition) => {
+      const params = record(request.params);
+      const query = nativeHttpEndpoints.runTranscript.query.parse(
+        request.query,
+      );
+      return web.runTranscript(
+        principal,
+        partition,
+        asExecutionId(textField(params, "execution")),
+        asAttemptId(textField(params, "attempt")),
+        query.after,
+      );
+    },
+    runTranscriptResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.runConfiguration,
+    (request, principal, partition) => {
+      const params = record(request.params);
+      return web.runConfiguration(
+        principal,
+        partition,
+        asExecutionId(textField(params, "execution")),
+        asAttemptId(textField(params, "attempt")),
+      );
+    },
+    runConfigurationResponse,
+  );
 }
 
 function registerNativeActions(
@@ -750,14 +707,13 @@ function registerOperationalRoutes(
   web: InitialNativeWeb,
   root: string,
 ): void {
-  app.get(`${root}/operational-status`, async (request, reply) => {
-    send(
-      reply,
-      operationalStatusResponse(
-        await web.operationalStatus(principalOf(request), partitionOf(request)),
-      ),
-    );
-  });
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.operationalStatus,
+    (_request, principal, partition) =>
+      web.operationalStatus(principal, partition),
+    operationalStatusResponse,
+  );
   app.get(`${root}/executions`, async (request, reply) => {
     const partition = partitionOf(request);
     send(
@@ -772,19 +728,17 @@ function registerOperationalRoutes(
       ),
     );
   });
-  app.get(`${root}/executions/:execution`, async (request, reply) => {
-    const params = record(request.params);
-    send(
-      reply,
-      executionResponse(
-        await web.execution(
-          principalOf(request),
-          partitionOf(request),
-          asExecutionId(textField(params, "execution")),
-        ),
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.execution,
+    (request, principal, partition) =>
+      web.execution(
+        principal,
+        partition,
+        asExecutionId(textField(record(request.params), "execution")),
       ),
-    );
-  });
+    executionResponse,
+  );
   app.get(
     `${root}/executions/:execution/artifacts/:ordinal`,
     async (request, reply) => {
@@ -1351,220 +1305,175 @@ function registerDrafts(app: FastifyInstance, web: InitialNativeWeb): void {
   });
 }
 
-/**
- * The project's threads and one thread's own pages, every bound checked at this
- * door so a bad cursor or a bad stream is a status rather than a raise from a
- * store.
- */
+function registerEndpoint<Value>(
+  app: FastifyInstance,
+  endpoint: {
+    readonly method: "GET" | "POST";
+    readonly path: string;
+    readonly body?: z.ZodType;
+  },
+  read: (
+    request: FastifyRequest,
+    principal: Principal,
+    partition: Partition,
+  ) => Promise<Value>,
+  respond: (value: Value, partition: Partition) => NativeHttpResponse,
+): void {
+  app.route({
+    method: endpoint.method,
+    url: endpoint.path,
+    ...(endpoint.body === undefined
+      ? {}
+      : { preValidation: requireVersionedJson }),
+    handler: async (request, reply) => {
+      const partition = partitionOf(request);
+      send(
+        reply,
+        respond(
+          await read(request, principalOf(request), partition),
+          partition,
+        ),
+      );
+    },
+  });
+}
+
+function registerEndpointSession(request: FastifyRequest): SessionId {
+  return asSessionId(textField(record(request.params), "session"));
+}
+
 function registerThreadReads(
   app: FastifyInstance,
   web: InitialNativeWeb,
-  root: string,
 ): void {
-  app.get(`${root}/threads`, async (request, reply) => {
-    send(
-      reply,
-      threadsResponse(
-        await web.threads(principalOf(request), partitionOf(request)),
-      ),
-    );
-  });
-  app.get(`${root}/threads/:session`, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["before", "limit"]);
-    const before = query["before"];
-    send(
-      reply,
-      threadResponse(
-        await web.thread(
-          principalOf(request),
-          partitionOf(request),
-          asSessionId(textField(record(request.params), "session")),
-          {
-            ...(before === undefined
-              ? {}
-              : { before: integerField(query, "before") }),
-            limit: integerField(query, "limit", threadTurnsAnsweredMax),
-          },
-        ),
-      ),
-    );
-  });
-  app.get(`${root}/threads/:session/transcript`, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["stream", "after", "limit"]);
-    const stream = query["stream"];
-    send(
-      reply,
-      leadTranscriptResponse(
-        await web.threadTranscript(
-          principalOf(request),
-          partitionOf(request),
-          asSessionId(textField(record(request.params), "session")),
-          {
-            ...(stream === undefined
-              ? {}
-              : { stream: asSessionStoreStream(textField(query, "stream")) }),
-            after: integerField(query, "after", 0),
-            limit: integerField(query, "limit", sessionStorePageBatchesMax),
-          },
-        ),
-      ),
-    );
-  });
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.threads,
+    (_request, principal, partition) => web.threads(principal, partition),
+    threadsResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.thread,
+    (request, principal, partition) => {
+      const query = nativeHttpEndpoints.thread.query.parse(request.query);
+      return web.thread(
+        principal,
+        partition,
+        registerEndpointSession(request),
+        {
+          ...(query.before === undefined ? {} : { before: query.before }),
+          limit: query.limit,
+        },
+      );
+    },
+    threadResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.threadTranscript,
+    (request, principal, partition) => {
+      const query = nativeHttpEndpoints.threadTranscript.query.parse(
+        request.query,
+      );
+      return web.threadTranscript(
+        principal,
+        partition,
+        registerEndpointSession(request),
+        {
+          ...(query.stream === undefined
+            ? {}
+            : { stream: asSessionStoreStream(query.stream) }),
+          after: query.after,
+          limit: query.limit,
+        },
+      );
+    },
+    leadTranscriptResponse,
+  );
 }
 
-/**
- * The five thread doors, each behind the versioned media type. Opening takes an
- * empty body because a thread is the caller's own, a message takes the turn
- * identity the caller minted because that identity is the idempotency, closing
- * takes an empty body because the URL already names the thread, and renaming
- * and hiding take the one field each writes.
- */
 function registerThreadWrites(
   app: FastifyInstance,
   web: InitialNativeWeb,
-  root: string,
 ): void {
-  app.post(
-    `${root}/threads`,
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      fieldsOnly(request.body ?? {}, []);
-      send(
-        reply,
-        openThreadResponse(
-          partitionOf(request),
-          await web.openThread(principalOf(request), partitionOf(request)),
-        ),
-      );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.openThread,
+    (request, principal, partition) => {
+      nativeHttpEndpoints.openThread.body.parse(request.body);
+      return web.openThread(principal, partition);
     },
+    (result, partition) => openThreadResponse(partition, result),
   );
-  app.post(
-    `${root}/threads/:session/messages`,
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      send(
-        reply,
-        threadMessageResponse(
-          await web.sendThreadMessage(
-            principalOf(request),
-            partitionOf(request),
-            {
-              session: asSessionId(
-                textField(record(request.params), "session"),
-              ),
-              ...parseThreadMessage(request.body),
-            },
-          ),
-        ),
-      );
-    },
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.sendThreadMessage,
+    (request, principal, partition) =>
+      web.sendThreadMessage(principal, partition, {
+        session: registerEndpointSession(request),
+        ...parseThreadMessage(request.body),
+      }),
+    threadMessageResponse,
   );
-  app.post(
-    `${root}/threads/:session/close`,
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      fieldsOnly(request.body ?? {}, []);
-      send(
-        reply,
-        closeThreadResponse(
-          await web.closeThread(
-            principalOf(request),
-            partitionOf(request),
-            asSessionId(textField(record(request.params), "session")),
-          ),
-        ),
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.closeThread,
+    (request, principal, partition) => {
+      nativeHttpEndpoints.closeThread.body.parse(request.body);
+      return web.closeThread(
+        principal,
+        partition,
+        registerEndpointSession(request),
       );
     },
+    closeThreadResponse,
   );
-  registerThreadWritesMemberView(app, web, root);
-}
-
-/** The two doors that write a member's own view of a thread: its name and whether it is on their rail. */
-function registerThreadWritesMemberView(
-  app: FastifyInstance,
-  web: InitialNativeWeb,
-  root: string,
-): void {
-  app.post(
-    `${root}/threads/:session/rename`,
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      send(
-        reply,
-        renameThreadResponse(
-          await web.renameThread(principalOf(request), partitionOf(request), {
-            session: asSessionId(textField(record(request.params), "session")),
-            ...parseThreadRename(request.body),
-          }),
-        ),
-      );
-    },
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.renameThread,
+    (request, principal, partition) =>
+      web.renameThread(principal, partition, {
+        session: registerEndpointSession(request),
+        ...parseThreadRename(request.body),
+      }),
+    renameThreadResponse,
   );
-  app.post(
-    `${root}/threads/:session/hide`,
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      send(
-        reply,
-        hideThreadResponse(
-          await web.hideThread(principalOf(request), partitionOf(request), {
-            session: asSessionId(textField(record(request.params), "session")),
-            ...parseThreadHide(request.body),
-          }),
-        ),
-      );
-    },
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.hideThread,
+    (request, principal, partition) =>
+      web.hideThread(principal, partition, {
+        session: registerEndpointSession(request),
+        ...parseThreadHide(request.body),
+      }),
+    hideThreadResponse,
   );
 }
 
-/**
- * The lead's inquiries: the listing, one of them, and the door that asks. All
- * three are gated on `Read` inside the boundary, so nothing about the gate is
- * decided here; what IS decided here is that the ask door sits behind the
- * versioned media type like every other write, and that the two identities come
- * off the body because they are the idempotency.
- */
 function registerLeadInquiries(
   app: FastifyInstance,
   web: InitialNativeWeb,
-  root: string,
 ): void {
-  app.get(`${root}/lead/inquiries`, async (request, reply) => {
-    send(
-      reply,
-      leadInquiriesResponse(
-        await web.leadInquiries(principalOf(request), partitionOf(request)),
-      ),
-    );
-  });
-  app.get(`${root}/lead/inquiries/:session`, async (request, reply) => {
-    send(
-      reply,
-      leadInquiryResponse(
-        await web.leadInquiry(
-          principalOf(request),
-          partitionOf(request),
-          asSessionId(textField(record(request.params), "session")),
-        ),
-      ),
-    );
-  });
-  app.post(
-    `${root}/lead/inquiries`,
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      send(
-        reply,
-        askLeadResponse(
-          partitionOf(request),
-          await web.askLead(
-            principalOf(request),
-            partitionOf(request),
-            parseLeadInquiry(request.body),
-          ),
-        ),
-      );
-    },
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.leadInquiries,
+    (_request, principal, partition) => web.leadInquiries(principal, partition),
+    leadInquiriesResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.leadInquiry,
+    (request, principal, partition) =>
+      web.leadInquiry(principal, partition, registerEndpointSession(request)),
+    leadInquiryResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.askLead,
+    (request, principal, partition) =>
+      web.askLead(principal, partition, parseLeadInquiry(request.body)),
+    (result, partition) => askLeadResponse(partition, result),
   );
 }
 
@@ -1725,7 +1634,7 @@ export function createNativeHttpApp(
   registerInstallation(app, authority);
   registerInventory(app, web);
   registerProject(app, web);
-  registerLead(app, web, partitionRoot);
+  registerLead(app, web);
   registerSelectorContext(app, web);
   registerSelectorHistory(app, web, partitionRoot);
   if (selectorSettings !== undefined)
@@ -1743,9 +1652,9 @@ export function createNativeHttpApp(
   if (hub !== undefined) registerProjectEvents(app, web, hub);
   registerConfigurations(app, web);
   registerDrafts(app, web);
-  registerThreadReads(app, web, partitionRoot);
-  registerThreadWrites(app, web, partitionRoot);
-  registerLeadInquiries(app, web, partitionRoot);
+  registerThreadReads(app, web);
+  registerThreadWrites(app, web);
+  registerLeadInquiries(app, web);
   registerDispatchView(app, web);
   app.setErrorHandler((failure, _request, reply) => {
     send(reply, failureResponse(failure));
