@@ -49,6 +49,7 @@ import { assertNever } from "../domain/assertNever.ts";
 import type { TicketId } from "../domain/ids.ts";
 import {
   changeProposalMergeNext,
+  changeProposalAddressed,
   changeProposalMergeRequest,
   changeProposalPublicationNext,
   proposalBodyCharsMax,
@@ -215,19 +216,29 @@ function finalizationProposalMerged(
   }
 }
 
-/** The merge one proved proposal is asked for, addressed by the number its evidence carries. */
-function finalizationProposalMergeRequest(
+/**
+ * The one act a merge address authorizes, and a hold where the evidence names
+ * a proposal no number addresses. Evidence stored before a landing could merge
+ * carries no number, and a proposal nothing can be asked of is an operator's
+ * to settle rather than a reason to stop reading the row.
+ */
+function finalizationProposalAddressed(
   request: ChangeProposalRequest,
   evidence: ChangeProposalEvidence,
-): ChangeProposalMergeRequest {
-  return changeProposalMergeRequest({
+  decide: "MergeProposal" | "ReconcileMerge",
+): FinalizationProposalDecision {
+  const proposal = changeProposalAddressed(evidence.identity);
+  if (proposal === undefined)
+    return { decide: "Hold", hold: "ProposalUnaddressed" };
+  const merge = changeProposalMergeRequest({
     binding: request.binding,
     partition: request.partition,
     repository: request.repository,
-    proposal: evidence.identity,
+    proposal,
     marker: request.marker,
     headCommit: request.head.commit,
   });
+  return { decide, request, merge };
 }
 
 /**
@@ -251,17 +262,9 @@ function finalizationProposalMergeNext(
     case "Merge":
       return allClosingLifecycles.includes(finalization.lifecycle)
         ? { decide: "Abort" }
-        : {
-            decide: "MergeProposal",
-            request,
-            merge: finalizationProposalMergeRequest(request, evidence),
-          };
+        : finalizationProposalAddressed(request, evidence, "MergeProposal");
     case "ReadByNumber":
-      return {
-        decide: "ReconcileMerge",
-        request,
-        merge: finalizationProposalMergeRequest(request, evidence),
-      };
+      return finalizationProposalAddressed(request, evidence, "ReconcileMerge");
     case "RefuseAttempt":
       return { decide: "RefuseMergeAttempt" };
     case "Concluded":

@@ -407,6 +407,24 @@ test("a proved proposal is merged only under the landing that merges it", () => 
   );
 });
 
+test("a proposal no number addresses holds the merge rather than raising out of the pass", () => {
+  const named: Partial<ChangeProposalEvidence> = {
+    identity: {
+      forge: request.binding.forge,
+      remote: asProposalRemoteIdentity("proposal-7"),
+    },
+  };
+  for (const merged of [
+    { merging: "Unasked" },
+    unheard(1, 0),
+  ] satisfies readonly ChangeProposalMerging[])
+    assert.deepEqual(
+      finalizationProposalNext(merging, proved(merged, named), bounds),
+      { decide: "Hold", hold: "ProposalUnaddressed" },
+      merged.merging,
+    );
+});
+
 test("a proposal somebody else already merged is the success only a merging landing asked for", () => {
   const landed = { status: "Merged", mergeCommit } as const;
   assert.deepEqual(

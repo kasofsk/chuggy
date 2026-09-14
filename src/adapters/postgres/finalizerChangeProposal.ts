@@ -159,7 +159,7 @@ const changeProposalStoredEvidenceSchema = z.object({
   identity: z.object({
     forge: z.string(),
     remote: z.string(),
-    number: z.number(),
+    number: z.number().optional(),
   }),
   repository: z.string(),
   marker: z.string(),
@@ -187,7 +187,9 @@ function changeProposalEvidenceOf(
     identity: {
       forge: asForgeBindingId(value.identity.forge),
       remote: asProposalRemoteIdentity(value.identity.remote),
-      number: asProposalNumber(value.identity.number),
+      ...(value.identity.number === undefined
+        ? {}
+        : { number: asProposalNumber(value.identity.number) }),
     },
     repository: asRepositoryId(value.repository),
     marker: asProposalMarker(value.marker),

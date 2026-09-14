@@ -1784,11 +1784,7 @@ async function finalizerAdvance(
       await finalizerPrepare(service, view, decision.target, tally);
       return;
     case "Abort":
-      if (ceilingReached("preparations", config.preparationsPerPassMax)) return;
-      tally.preparations += 1;
-      recordFinalizer(service.metrics, (metrics) => {
-        metrics.preparation(0);
-      });
+      if (!finalizerPreparationPriced(service, tally)) return;
       await finalizerAbort(service, view, decision.target, tally);
       return;
     case "AwaitApproval":

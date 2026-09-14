@@ -1816,16 +1816,21 @@ function fannedOut(views: FinalizationView[], lifecycle: Lifecycle): void {
   );
 }
 
-/** What one pass held, so a case can say which reason refused the work it did not do. */
+/**
+ * What one pass held and what it priced, so a case can say which reason refused
+ * the work it did not do, and that the work it did was reported.
+ */
 function holdingService(
   service: FinalizerService,
   emitted: FinalizerHoldReason[],
+  priced: number[],
 ): FinalizerService {
   return {
     ...service,
     metrics: finalizerTelemetry({
       ...silentFinalizerMetrics,
       holding: (reason) => emitted.push(reason),
+      preparation: (restartsSpent) => priced.push(restartsSpent),
     }),
   };
 }
@@ -1838,16 +1843,24 @@ test("an abort out of a proposal is priced against the preparations the pass all
   const forge = recordingForge(store);
   forge.created = "Created";
   const emitted: FinalizerHoldReason[] = [];
+  const priced: number[] = [];
   const service = holdingService(
     mergingService(store, forge, { preparationsPerPassMax: 1 }),
     emitted,
+    priced,
   );
 
   await passOver(service);
   fannedOut(views, "Deleting");
+  const spentBefore = priced.length;
   const aborting = await passOver(service);
 
   assert.equal(aborting.preparations, 1);
+  assert.deepEqual(
+    priced.slice(spentBefore),
+    [0],
+    "the one abort the ceiling admitted is reported, and it restarts nothing",
+  );
   assert.equal(
     store.attempts.length,
     1,
@@ -1865,17 +1878,25 @@ test("a merge refused for a conflict is priced against the same preparations", a
   forge.created = "Created";
   forge.merged = { merged: "NotMergeable", reason: "Conflict" };
   const emitted: FinalizerHoldReason[] = [];
+  const priced: number[] = [];
   const service = holdingService(
     mergingService(store, forge, { preparationsPerPassMax: 1 }),
     emitted,
+    priced,
   );
 
   await passOver(service);
   await passOver(service);
   fannedOut(views, "Active");
+  const spentBefore = priced.length;
   const conflicted = await passOver(service);
 
   assert.equal(conflicted.preparations, 1);
+  assert.deepEqual(
+    priced.slice(spentBefore),
+    [0],
+    "the one conflict the ceiling admitted is reported, and it restarts nothing",
+  );
   assert.equal(store.attempts.length, 1);
   assert.equal(store.attempts[0]?.failureKind, "MergeConflict");
   assert.deepEqual(emitted, ["PassCeilingReached", "PassCeilingReached"]);
