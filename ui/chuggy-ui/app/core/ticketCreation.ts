@@ -126,6 +126,17 @@ export function creationConfigurationSentence(
 }
 
 /**
+ * The bindings a new ticket may name. A retired binding is one the project has
+ * stopped reading and the authority refuses a brief against, so the form neither
+ * offers it nor seeds itself with it.
+ */
+export function creationRepositories(
+  bound: readonly ProjectRepositoryResponse[],
+): readonly ProjectRepositoryResponse[] {
+  return bound.filter((binding) => binding.retiredAt === undefined);
+}
+
+/**
  * Whether this form must name a repository. The server refuses a release that
  * names none once the project binds one, so the form asks before rather than
  * after; a project binding none neither asks nor sends.

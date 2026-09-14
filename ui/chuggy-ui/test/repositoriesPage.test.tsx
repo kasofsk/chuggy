@@ -231,12 +231,15 @@ interface Drawing {
   readonly posted?: (url: string) => Response;
   /** What one installation's own listing answers with. */
   readonly granting?: (url: string) => Response;
+  /** The bindings this project holds, where a case is about how one is drawn. */
+  readonly bound?: unknown;
 }
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
   const claimed = drawing.claimed ?? installations;
   const posted = drawing.posted ?? deferred;
   const granting = drawing.granting ?? ((url) => answer(grantedBy(url)));
+  const bound: unknown = drawing.bound ?? bindings;
   const sent: Sent[] = [];
   const fetching = ((url: string, init?: Init) => {
     sent.push({
@@ -250,7 +253,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
       return Promise.resolve(granting(url));
     if (url.includes("/forge-installations"))
       return Promise.resolve(answer(claimed));
-    return Promise.resolve(answer(bindings));
+    return Promise.resolve(answer(bound));
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", fetching);
   render(
@@ -321,6 +324,24 @@ test("the bindings are drawn by the account and name they are under", async () =
   expect(
     within(repositories).getByRole("rowheader", { name: "kasofsk/chuggy" }),
   ).toBeTruthy();
+});
+
+/**
+ * A retired binding is still bound, so it is still a row and still a page; the
+ * one word beside its name is what says a ticket may no longer name it.
+ */
+test("a retired binding is drawn as retired and a live one carries no word", async () => {
+  await drawPage({
+    bound: {
+      repositories: [
+        { ...bindings.repositories[0], retiredAt: "2026-09-14T00:00:00Z" },
+      ],
+    },
+  });
+  const row = within(sectionOf("Repositories")).getByRole("rowheader", {
+    name: /kasofsk\/chuggy/,
+  });
+  expect(row.textContent).toBe("kasofsk/chuggyRetired");
 });
 
 /** A binding is a row and a page, and the row is the only way to the page. */

@@ -46,7 +46,9 @@ export interface RepositoryBindingCommand {
 }
 
 /**
- * What binding came to. `ProjectAbsent` is the one the door raises rather than
+ * What binding came to, `Bound` covering a reinstatement, since binding a
+ * repository this project retired clears the retirement and is a bind rather
+ * than a repeat of one. `ProjectAbsent` is the one the door raises rather than
  * returns, because a project that is not there is not a refusal an operator may
  * retry into, and the adapter turns that raise into this outcome so a caller
  * reads one roster rather than a roster and a fault.

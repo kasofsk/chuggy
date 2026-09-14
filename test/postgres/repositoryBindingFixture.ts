@@ -11,29 +11,40 @@ import type pg from "pg";
 import { postgresRepositoryBinding } from "../../src/adapters/postgres/repositoryBinding.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { checkedRepositoryBindingCommand } from "../../src/interpreter/repositoryBinding.ts";
+import type { RepositoryBindingOutcome } from "../../src/interpreter/repositoryBinding.ts";
 import { postgresHarnessEpoch, type PostgresHarness } from "./harness.ts";
 
-/** Binds one repository named for the case, under the epoch that stands, and answers its identity. */
+/** Binds the named repository under the epoch that stands, and answers the door's own outcome. */
+export async function fixtureBindRepository(
+  harness: PostgresHarness,
+  pool: pg.Pool,
+  partition: Partition,
+  repository: string,
+): Promise<RepositoryBindingOutcome> {
+  const recoveryEpoch = await postgresHarnessEpoch(harness.store);
+  return postgresRepositoryBinding(pool).bind(
+    checkedRepositoryBindingCommand({
+      tenant: partition.tenant,
+      project: partition.project,
+      repository,
+      recoveryEpoch,
+      operation: `operation-${randomUUID()}`,
+      authorityKind: "Administrator",
+      authoritySubject: "test-operator",
+    }),
+  );
+}
+
+/** Binds one repository named for the case and answers its identity. */
 export async function fixtureBoundRepository(
   harness: PostgresHarness,
   pool: pg.Pool,
   partition: Partition,
   label: string,
 ): Promise<string> {
-  const recoveryEpoch = await postgresHarnessEpoch(harness.store);
   const repository = `repository-${label}-${randomUUID()}`;
   assert.equal(
-    await postgresRepositoryBinding(pool).bind(
-      checkedRepositoryBindingCommand({
-        tenant: partition.tenant,
-        project: partition.project,
-        repository,
-        recoveryEpoch,
-        operation: `operation-${randomUUID()}`,
-        authorityKind: "Administrator",
-        authoritySubject: "test-operator",
-      }),
-    ),
+    await fixtureBindRepository(harness, pool, partition, repository),
     "Bound",
   );
   return repository;

@@ -1178,8 +1178,15 @@ test("no runtime role but the API reads or moves a binding's landing", async () 
   }
 });
 
-/** The one column a binding's row lets an update move, and the one role holding it. */
-test("only the boundary owner may move the column the doors write", async () => {
+/** The two columns a binding's row lets an update move, and the one role holding them. */
+test("only the boundary owner may move the columns the doors write", async () => {
+  const granted = async (role: string, column: string): Promise<unknown> =>
+    (
+      await harness.query(
+        "SELECT has_column_privilege($1,'project_repository',$2,'UPDATE') AS granted",
+        [role, column],
+      )
+    )[0]?.["granted"];
   for (const role of [
     apiRole,
     ticketServiceRole,
@@ -1189,23 +1196,9 @@ test("only the boundary owner may move the column the doors write", async () => 
     workerPlaneRole,
     configurationImporterRole,
   ])
-    assert.equal(
-      (
-        await harness.query(
-          "SELECT has_column_privilege($1,'project_repository','landing_mode','UPDATE') AS granted",
-          [role],
-        )
-      )[0]?.["granted"],
-      false,
-      role,
-    );
-  assert.equal(
-    (
-      await harness.query(
-        "SELECT has_column_privilege($1,'project_repository','landing_mode','UPDATE') AS granted",
-        [boundaryOwnerRole],
-      )
-    )[0]?.["granted"],
-    true,
-  );
+    for (const column of ["landing_mode", "retired_at", "bound_at"])
+      assert.equal(await granted(role, column), false, `${role}: ${column}`);
+  for (const column of ["landing_mode", "retired_at"])
+    assert.equal(await granted(boundaryOwnerRole, column), true, column);
+  assert.equal(await granted(boundaryOwnerRole, "bound_at"), false);
 });

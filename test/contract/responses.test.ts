@@ -32,6 +32,7 @@ import {
   projectRepositoriesResponse,
   projectRepositoryBindResponse,
   projectRepositoryLandingResponse,
+  projectRepositoryRetirementResponse,
   projectRepositoryCreateResponse,
   projectResponse,
   runConfigurationResponse,
@@ -71,6 +72,7 @@ import {
   projectRepositoryBoundSchema,
   projectRepositoryCreatedSchema,
   projectRepositoryLandingConflictSchema,
+  projectRepositoryRetiredSchema,
   projectRepositoryResponseSchema,
   projectResponseSchema,
   repositoryConfigurationRefusalsSchema,
@@ -1567,6 +1569,39 @@ test("a binding names a landing, and both answers carry the row that stands", ()
     projectRepositoryResponseSchema.parse({
       ...binding,
       landing: { mode: "Merge" },
+    }),
+  );
+});
+
+test("a retirement answers the row it left, carrying the instant it was retired at", () => {
+  const retired = {
+    repository: onboardingRepository,
+    boundAt: instant,
+    landing: { mode: "Push" as const },
+    retiredAt: instant,
+  };
+  assert.deepEqual(
+    projectRepositoryRetiredSchema.parse(
+      projectRepositoryRetirementResponse({
+        result: "Retired",
+        repository: retired,
+      }).body,
+    ),
+    { repository: retired },
+  );
+  assert.equal(
+    projectRepositoryRetirementResponse({ result: "NotBound" }).status,
+    404,
+  );
+  assert.deepEqual(
+    projectRepositoryRetiredSchema.parse({
+      repository: { ...retired, retiredAt: undefined },
+    }),
+    { repository: { ...retired, retiredAt: undefined } },
+  );
+  assert.throws(() =>
+    projectRepositoryRetiredSchema.parse({
+      repository: { ...retired, retiredAt: null },
     }),
   );
 });

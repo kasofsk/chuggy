@@ -21,7 +21,10 @@ import { apiRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { repositoryBindingsPerImportMax } from "../../src/interpreter/repositoryConfiguration.ts";
-import { fixtureBoundRepository } from "./repositoryBindingFixture.ts";
+import {
+  fixtureBindRepository,
+  fixtureBoundRepository,
+} from "./repositoryBindingFixture.ts";
 import {
   postgresHarnessOpen,
   postgresHarnessPartition,
@@ -53,6 +56,10 @@ async function bindAt(partition: Partition, label: string): Promise<string> {
 
 function retirementStore() {
   return postgresProjectRepositoryRetirement(pool);
+}
+
+async function rebind(partition: Partition, repository: string) {
+  return fixtureBindRepository(harness, pool, partition, repository);
 }
 
 async function retire(partition: Partition, repository: string) {
@@ -184,10 +191,10 @@ test("a repository this project does not bind is not this project's to retire", 
 });
 
 /**
- * The trigger 090 narrowed to one column now stands at two. Retirement is a
- * column an administrator owns like the landing, so the table lets it move
- * either way and the door above is what only ever sets it; every other column
- * is still nobody's, and the row is still nobody's to delete.
+ * The trigger 090 narrowed to one column now stands at two, retirement being a
+ * column an administrator owns like the landing, with a door each way: the
+ * retirement door sets it and a re-bind clears it. Every other column is still
+ * nobody's, and the row is still nobody's to delete.
  */
 test("a retirement is the second column an update may move, and nothing else is", async () => {
   const partition = await fixtureProject("retire-trigger");
@@ -239,6 +246,37 @@ test("a retirement is the second column an update may move, and nothing else is"
     )?.retiredAt,
     undefined,
   );
+});
+
+/**
+ * Reinstatement, which is what makes a mistyped retirement recoverable: a bind
+ * of a live binding has nothing to do and says so, and a bind of a retired one
+ * clears the retirement and answers as the fresh bind it is, leaving the row
+ * that stood — same identity, same instant.
+ */
+test("binding a retired repository again reinstates it and answers as a bind", async () => {
+  const partition = await fixtureProject("retire-reinstate");
+  const repository = await bindAt(partition, "retire-reinstate");
+  const named = asRepositoryId(repository);
+  const landing = postgresProjectRepositoryLanding(pool);
+  const boundAt = (await landing.landing(partition, named))?.boundAt;
+  assert.equal(await rebind(partition, repository), "AlreadyBound");
+
+  assert.equal((await retire(partition, repository)).outcome, "Retired");
+  assert.equal(
+    await postgresProjectRepositoryBinding(pool).binding(partition),
+    undefined,
+  );
+
+  assert.equal(await rebind(partition, repository), "Bound");
+  assert.equal((await landing.landing(partition, named))?.retiredAt, undefined);
+  assert.equal((await landing.landing(partition, named))?.boundAt, boundAt);
+  assert.equal(
+    (await postgresProjectRepositoryBinding(pool).binding(partition))
+      ?.repository,
+    repository,
+  );
+  assert.equal(await rebind(partition, repository), "AlreadyBound");
 });
 
 /**

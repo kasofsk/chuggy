@@ -18,20 +18,33 @@
  * left and the importer stops asking a remote nobody serves. The rule between
  * live bindings is unchanged: oldest wins, as 080's election left it.
  *
+ * AND NOTHING NEW IS AUTHORED AGAINST ONE. 092's two brief writers refuse a
+ * repository the project has not bound; they refuse one it has retired by the
+ * same answer, because an author naming an unbound repository and an author
+ * naming a retired one are asking for the same impossible thing. A released
+ * ticket is untouched: its brief named its repository while the binding stood,
+ * and every read that resolves one names it.
+ *
  * THE TRIGGER TREATS IT EXACTLY AS IT TREATS THE LANDING. 090 narrowed 040's
  * refusal by removing one column from the comparison; this removes a second,
  * so `retired_at` is an administrator's to move in either direction and every
- * other column is still nobody's. A one-way column would have made an
- * operator's mistyped retirement unreachable without disabling the trigger,
- * and the door above is what only ever sets it: there is no route that clears
- * one, which is where "settable once" is enforced and where it belongs, since
- * the table cannot tell a retraction from a repair.
+ * other column is still nobody's. Both directions are a door's: the door below
+ * sets it, and binding the repository again clears it, so an operator's
+ * mistyped retirement is undone by the route that made the binding rather than
+ * by disabling the trigger.
  *
- * THE DOOR IS IDEMPOTENT AND UNFENCED. Retiring is one-way and names its own
- * repository, so two administrators retiring cannot cross the way two moving a
- * landing can: there is no second value for one of them to be deciding
- * against. A row already retired keeps the instant it was retired at and
- * answers `Retired`, for the reason 090 gave for answering `Written` to a
+ * BINDING IT AGAIN REINSTATES IT. 080's door answers `AlreadyBound` where the
+ * project already holds the repository, because there was nothing to do; where
+ * the row it holds is retired there is, so it clears the retirement and answers
+ * `Bound`, which is the fact the project is being told. The row keeps the
+ * identity, the instant and the landing it always had, because a reinstated
+ * binding is the binding that stood.
+ *
+ * THE DOOR IS IDEMPOTENT AND UNFENCED. Retiring names its own repository and
+ * moves the column one way, so two administrators retiring cannot cross the way
+ * two moving a landing can: there is no second value for one of them to be
+ * deciding against. A row already retired keeps the instant it was retired at
+ * and answers `Retired`, for the reason 090 gave for answering `Written` to a
  * repeat.
  *
  * THE THREE DOORS THAT ANSWER A WHOLE BINDING ANSWER THIS TOO. A listing that
@@ -46,9 +59,13 @@ import { repositoryBindingsPerImportMax } from "../../../../interpreter/reposito
 import {
   apiRole,
   boundaryOwnerRole,
+  draftCreateFunction,
+  draftReviseFunction,
+  notificationPublishFunction,
   repositoryBindingListAllFunction,
   repositoryBindingListFunction,
   repositoryBindingReadFunction,
+  repositoryBindingWriteFunction,
   repositoryLandingReadFunction,
   repositoryLandingWriteFunction,
   repositoryRetirementWriteFunction,
@@ -134,6 +151,168 @@ const electingReads = [
      $$`,
 ];
 
+/** 090's resolution as 092 restated it, reached only where the guard above let the brief through. */
+const resolvedLanding = `coalesce(in_finalization_mode,
+       (SELECT b.landing_mode FROM project_repository b
+         WHERE b.tenant=in_tenant AND b.project=in_project
+           AND b.repository=in_repository),
+       'Push')`;
+
+/** 092's branchless refusal, restated because its writers are. */
+function briefLandingResolved(unbranched: string): string {
+  return `IF in_authoring::jsonb->'value'->>'finalizer' = 'NoFinalizer' THEN
+         IF in_finalization_mode IS NOT NULL OR in_finalization_target IS NOT NULL THEN
+           RAISE EXCEPTION 'a ticket with no finalizer lands nothing'
+             USING ERRCODE='check_violation';
+         END IF;
+       ELSE
+         landing := ${resolvedLanding};
+         target := in_finalization_target;
+         IF landing IN ('PullRequest','PullRequestMerge') AND in_branch IS NULL THEN
+           RETURN QUERY SELECT 'LandingUnbranched',${unbranched}; RETURN;
+         END IF;
+       END IF;`;
+}
+
+/** 092's writers, restated because a brief may only name a binding that is live. */
+const authoringDoors = [
+  `CREATE OR REPLACE FUNCTION ${draftCreateFunction}(in_tenant text,in_project text,in_configuration text,
+      in_configuration_digest text,in_expected_head bigint,in_authoring text,
+      in_title text,in_intent text,in_links text[],in_checks text[],in_branch text,
+      in_finalization_mode text,in_finalization_target text,in_repository text,
+      in_kind text,in_subject text)
+     RETURNS TABLE(result text,ticket bigint,authoring_version bigint,state text)
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE minted bigint; landing text; target text;
+     BEGIN
+       IF NOT EXISTS (SELECT 1 FROM configuration_revision WHERE tenant=in_tenant AND project=in_project
+            AND revision=in_configuration AND digest=in_configuration_digest)
+         THEN RETURN QUERY SELECT 'ConfigurationNotFound',NULL::bigint,NULL::bigint,NULL::text; RETURN; END IF;
+       IF in_repository IS NOT NULL AND NOT EXISTS (SELECT 1 FROM project_repository
+            WHERE tenant=in_tenant AND project=in_project AND repository=in_repository
+              AND retired_at IS NULL)
+         THEN RETURN QUERY SELECT 'RepositoryNotBound',NULL::bigint,NULL::bigint,NULL::text; RETURN; END IF;
+       ${briefLandingResolved("NULL::bigint,NULL::bigint,NULL::text")}
+       UPDATE project SET ticket_next=ticket_next+1
+        WHERE tenant=in_tenant AND project=in_project AND lifecycle='Active' AND head=in_expected_head
+        RETURNING ticket_next-1 INTO minted;
+       IF minted IS NULL THEN RETURN QUERY SELECT 'Stale',NULL::bigint,NULL::bigint,NULL::text; RETURN; END IF;
+       INSERT INTO draft VALUES (in_tenant,in_project,minted,1,'Draft',in_configuration);
+       INSERT INTO draft_revision (tenant,project,ticket,authoring_version,configuration_revision,authoring,authority_kind,authority_subject)
+         VALUES (in_tenant,in_project,minted,1,in_configuration,in_authoring,in_kind,in_subject);
+       INSERT INTO draft_brief (tenant,project,ticket,title,intent,branch,finalization_mode,finalization_target,repository)
+         VALUES (in_tenant,in_project,minted,in_title,in_intent,in_branch,landing,target,in_repository);
+       INSERT INTO draft_brief_link (tenant,project,ticket,ordinal,url)
+         SELECT in_tenant,in_project,minted,link.ordinal,link.url
+           FROM unnest(in_links) WITH ORDINALITY AS link(url,ordinal);
+       INSERT INTO draft_brief_check (tenant,project,ticket,ordinal,command)
+         SELECT in_tenant,in_project,minted,line.ordinal,line.command
+           FROM unnest(in_checks) WITH ORDINALITY AS line(command,ordinal);
+       PERFORM ${notificationPublishFunction}(in_tenant,in_project,'Draft',minted::text,NULL,1);
+       RETURN QUERY SELECT 'Created',minted,1::bigint,'Draft'::text;
+     END $$`,
+  `CREATE OR REPLACE FUNCTION ${draftReviseFunction}(in_tenant text,in_project text,in_ticket bigint,
+      in_expected bigint,in_configuration text,in_authoring text,
+      in_title text,in_intent text,in_links text[],in_checks text[],in_branch text,
+      in_finalization_mode text,in_finalization_target text,in_repository text,
+      in_kind text,in_subject text)
+     RETURNS TABLE(result text,authoring_version bigint,state text)
+     LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public,pg_temp AS $$
+     DECLARE current draft%ROWTYPE; next_version bigint; landing text; target text;
+     BEGIN
+       SELECT * INTO current FROM draft WHERE tenant=in_tenant AND project=in_project AND ticket=in_ticket FOR UPDATE;
+       IF NOT FOUND THEN RETURN QUERY SELECT 'NotFound',NULL::bigint,NULL::text; RETURN; END IF;
+       IF current.state <> 'Draft' THEN RETURN QUERY SELECT 'NotDraft',current.authoring_version,current.state; RETURN; END IF;
+       IF current.authoring_version <> in_expected THEN RETURN QUERY SELECT 'Stale',current.authoring_version,current.state; RETURN; END IF;
+       IF NOT EXISTS (SELECT 1 FROM configuration_revision WHERE tenant=in_tenant AND project=in_project AND revision=in_configuration)
+         THEN RETURN QUERY SELECT 'ConfigurationNotFound',current.authoring_version,current.state; RETURN; END IF;
+       IF in_repository IS NOT NULL AND NOT EXISTS (SELECT 1 FROM project_repository
+            WHERE tenant=in_tenant AND project=in_project AND repository=in_repository
+              AND retired_at IS NULL)
+         THEN RETURN QUERY SELECT 'RepositoryNotBound',current.authoring_version,current.state; RETURN; END IF;
+       ${briefLandingResolved("current.authoring_version,current.state")}
+       next_version := current.authoring_version+1;
+       INSERT INTO draft_revision (tenant,project,ticket,authoring_version,configuration_revision,authoring,authority_kind,authority_subject)
+         VALUES (in_tenant,in_project,in_ticket,next_version,in_configuration,in_authoring,in_kind,in_subject);
+       INSERT INTO draft_brief (tenant,project,ticket,title,intent,branch,finalization_mode,finalization_target,repository)
+         VALUES (in_tenant,in_project,in_ticket,in_title,in_intent,in_branch,landing,target,in_repository)
+         ON CONFLICT (tenant,project,ticket) DO UPDATE SET title=EXCLUDED.title,intent=EXCLUDED.intent,
+           branch=EXCLUDED.branch,repository=EXCLUDED.repository,
+           finalization_mode=EXCLUDED.finalization_mode,finalization_target=EXCLUDED.finalization_target;
+       DELETE FROM draft_brief_link
+        WHERE tenant=in_tenant AND project=in_project AND ticket=in_ticket;
+       INSERT INTO draft_brief_link (tenant,project,ticket,ordinal,url)
+         SELECT in_tenant,in_project,in_ticket,link.ordinal,link.url
+           FROM unnest(in_links) WITH ORDINALITY AS link(url,ordinal);
+       DELETE FROM draft_brief_check
+        WHERE tenant=in_tenant AND project=in_project AND ticket=in_ticket;
+       INSERT INTO draft_brief_check (tenant,project,ticket,ordinal,command)
+         SELECT in_tenant,in_project,in_ticket,line.ordinal,line.command
+           FROM unnest(in_checks) WITH ORDINALITY AS line(command,ordinal);
+       UPDATE draft SET authoring_version=next_version,configuration_revision=in_configuration
+        WHERE tenant=in_tenant AND project=in_project AND ticket=in_ticket;
+       PERFORM ${notificationPublishFunction}(in_tenant,in_project,'Draft',in_ticket::text,NULL,next_version);
+       RETURN QUERY SELECT 'Revised',next_version,'Draft'::text;
+     END $$`,
+];
+
+/** 080's door, restated because a bind of a retired binding has something to do. */
+const reinstatement = [
+  `CREATE OR REPLACE FUNCTION ${repositoryBindingWriteFunction}(
+     in_tenant text,in_project text,in_repository text,in_recovery_epoch text,
+     in_operation text,in_authority_kind text,in_authority_subject text)
+     RETURNS text LANGUAGE plpgsql SECURITY DEFINER
+     SET search_path=pg_catalog,public,pg_temp AS $$
+   DECLARE existing project_repository_bind_operation%ROWTYPE;
+           holder project_repository%ROWTYPE;
+           current_epoch text;
+           accepted text;
+   BEGIN
+     PERFORM pg_advisory_xact_lock(hashtextextended('operation:'||in_operation,0));
+     SELECT * INTO existing FROM project_repository_bind_operation
+      WHERE operation=in_operation;
+     IF FOUND THEN
+       IF existing.tenant=in_tenant AND existing.project=in_project
+          AND existing.repository=in_repository
+          AND existing.recovery_epoch=in_recovery_epoch
+          AND existing.authority_kind=in_authority_kind
+          AND existing.authority_subject=in_authority_subject
+         THEN RETURN 'AlreadyBound'; END IF;
+       RETURN 'OperationConflict';
+     END IF;
+     PERFORM pg_advisory_xact_lock(hashtextextended('repository:'||in_repository,0));
+     PERFORM 1 FROM project WHERE tenant=in_tenant AND project=in_project FOR UPDATE;
+     IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='foreign_key_violation',
+       MESSAGE='repository binding project is absent'; END IF;
+     SELECT epoch INTO current_epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1;
+     IF current_epoch IS DISTINCT FROM in_recovery_epoch
+       THEN RETURN 'RecoveryEpochMismatch'; END IF;
+     SELECT * INTO holder FROM project_repository WHERE repository=in_repository;
+     IF FOUND THEN
+       IF holder.tenant<>in_tenant OR holder.project<>in_project
+         THEN RETURN 'RepositoryBoundElsewhere'; END IF;
+       IF holder.retired_at IS NULL THEN
+         accepted := 'AlreadyBound';
+       ELSE
+         UPDATE project_repository b SET retired_at=NULL
+          WHERE b.tenant=in_tenant AND b.project=in_project
+            AND b.repository=in_repository;
+         accepted := 'Bound';
+       END IF;
+     ELSE
+       INSERT INTO project_repository(tenant,project,repository,recovery_epoch)
+         VALUES(in_tenant,in_project,in_repository,in_recovery_epoch);
+       accepted := 'Bound';
+     END IF;
+     INSERT INTO project_repository_bind_operation
+       (operation,tenant,project,repository,recovery_epoch,
+        authority_kind,authority_subject,outcome)
+       VALUES(in_operation,in_tenant,in_project,in_repository,in_recovery_epoch,
+              in_authority_kind,in_authority_subject,accepted);
+     RETURN accepted;
+   END $$`,
+];
+
 /** 90's three doors, each answering the retirement beside the binding it belongs to. */
 const wholeBindingDoors = [
   `DROP FUNCTION ${repositoryBindingListFunction}(${listSignature})`,
@@ -205,7 +384,7 @@ const wholeBindingDoors = [
      TO ${apiRole}`,
 ];
 
-/** A retired binding stays readable by name and stops being the one a session or an import elects. */
+/** A retired binding stays readable by name and stops being the one a session, an import or a brief elects. */
 export const migration094: Migration = {
   version: 94,
   name: "a binding is retired",
@@ -213,6 +392,8 @@ export const migration094: Migration = {
     ...retirement,
     ...retirementWrite,
     ...electingReads,
+    ...authoringDoors,
+    ...reinstatement,
     ...wholeBindingDoors,
   ],
 };

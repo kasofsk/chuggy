@@ -9,6 +9,7 @@ import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { postgresProjectDecision } from "../../src/adapters/postgres/projectDecision.ts";
 import { postgresProjectDiscovery } from "../../src/adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
+import { postgresProjectRepositoryRetirement } from "../../src/adapters/postgres/repositoryBinding.ts";
 import { ticketServiceRole } from "../../src/adapters/postgres/schema.ts";
 import { migration048 } from "../../src/adapters/postgres/schema/migrations/048-repository-configuration-version.ts";
 import {
@@ -1297,12 +1298,16 @@ async function importedRevision(
   return declaration.revision;
 }
 
-test("a brief naming a repository the project does not bind is refused", async () => {
-  const fixture = await draftFixture();
-  const unbound = {
-    ...postgresHarnessBrief,
-    repository: asRepositoryId(`unbound-${randomUUID()}`),
-  };
+/**
+ * Both authoring doors refusing a brief that names this repository, which is
+ * the one answer a repository the project never bound and one it has retired
+ * are each refused by.
+ */
+async function assertBriefRepositoryRefused(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+  repository: RepositoryId,
+): Promise<void> {
+  const brief = { ...postgresHarnessBrief, repository };
   const initialized = await fixture.store.initializeDraft(
     fixture.partition,
     fixture.revision,
@@ -1318,7 +1323,7 @@ test("a brief naming a repository the project does not bind is refused", async (
       configurationDigest: initialized.configuration.digest,
       expectedProjectSequence: initialized.projectSequence,
       authoring: plainAuthoring,
-      brief: unbound,
+      brief,
     }),
     { created: "RepositoryNotBound" },
   );
@@ -1330,9 +1335,17 @@ test("a brief naming a repository the project does not bind is refused", async (
       expectedVersion: fixture.draft.authoringVersion,
       configurationRevision: fixture.revision,
       authoring: plainAuthoring,
-      brief: unbound,
+      brief,
     }),
     { revised: "RepositoryNotBound" },
+  );
+}
+
+test("a brief naming a repository the project does not bind is refused", async () => {
+  const fixture = await draftFixture();
+  await assertBriefRepositoryRefused(
+    fixture,
+    asRepositoryId(`unbound-${randomUUID()}`),
   );
   assert.deepEqual(
     (await fixture.store.draft(fixture.partition, fixture.draft.ticket))?.brief
@@ -1340,6 +1353,26 @@ test("a brief naming a repository the project does not bind is refused", async (
     fixture.repository,
     "the refused revision left the repository the draft already named",
   );
+});
+
+/**
+ * A retired binding is one the project has stopped reading, so a brief naming
+ * it is asking for the same impossible thing as a brief naming a repository the
+ * project never bound, and the two are refused by the one answer. The draft the
+ * refusal left still names the repository it named before.
+ */
+test("a brief naming a repository the project has retired is refused the same way", async () => {
+  const fixture = await draftFixture();
+  assert.equal(
+    (
+      await postgresProjectRepositoryRetirement(pool).retire({
+        partition: fixture.partition,
+        repository: fixture.repository,
+      })
+    ).outcome,
+    "Retired",
+  );
+  await assertBriefRepositoryRefused(fixture, fixture.repository);
 });
 
 test("a release is refused for a configuration imported from another repository", async () => {

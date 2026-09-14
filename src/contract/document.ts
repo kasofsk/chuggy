@@ -104,7 +104,7 @@ export function nativeHttpContractDocument(): unknown {
     repositoryLanding:
       "a repository's landing default is the mode a ticket in it lands by unless its brief names one; it is written against the value the writer read, and a ticket authored with no finalizer may name no landing",
     repositoryRetirement:
-      "a retired repository stays bound and stays readable by name, and stops being the one a session is placed against or the importer reads; retiring is one-way and repeating it changes nothing",
+      "a retired repository stays bound and stays readable by name, and stops being the one a session is placed against, the importer reads or a brief may name; this route only retires and repeating it changes nothing, and binding the repository again reinstates it",
     repositoryConfigurations:
       "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it",
     repositoryCreation:
