@@ -25,6 +25,7 @@ import {
   repositoryBindingWriteFunction,
   repositoryLandingReadFunction,
   repositoryLandingWriteFunction,
+  repositoryRetirementWriteFunction,
   schemaTextSet,
   selectorServiceRole,
   sessionStoreReadFunction,
@@ -4671,35 +4672,87 @@ test("migration 91 relaxes the base and keeps every other half of the pairing", 
   });
 });
 
+/** Each named door still executable by the API role and still owned by the boundary owner. */
+async function assertDoorsStandOwned(
+  subject: pg.Pool,
+  signatures: readonly string[],
+): Promise<void> {
+  for (const signature of signatures) {
+    assert.equal(
+      (
+        await subject.query<{ granted: boolean }>(
+          "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
+          [apiRole, signature],
+        )
+      ).rows[0]?.granted,
+      true,
+      signature,
+    );
+    assert.equal(
+      (
+        await subject.query<{ owner: string }>(
+          `SELECT pg_get_userbyid(proowner) AS owner FROM pg_proc
+            WHERE oid = $1::regprocedure`,
+          [signature],
+        )
+      ).rows[0]?.owner,
+      boundaryOwnerRole,
+      signature,
+    );
+  }
+}
+
 test("migration 91 replaces the draft doors without moving the grants they carry", async () => {
   await migrationDatabase("i91grants", async (subject) => {
     await migrationSeedApplied(subject, 91);
     await applyMigration(subject, 91);
-    for (const signature of [
+    await assertDoorsStandOwned(subject, [
       `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text,text,text,text,text,text)`,
       `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text,text,text,text,text,text)`,
-    ]) {
+    ]);
+  });
+});
+
+test("migration 94 replaces its doors without moving the grants they carry", async () => {
+  await migrationDatabase("i94grants", async (subject) => {
+    await migrationSeedApplied(subject, 94);
+    await applyMigration(subject, 94);
+    await assertDoorsStandOwned(subject, [
+      `${repositoryRetirementWriteFunction}(text,text,text)`,
+      `${repositoryBindingListFunction}(text,text,bigint)`,
+      `${repositoryLandingReadFunction}(text,text,text)`,
+      `${repositoryLandingWriteFunction}(text,text,text,text,text)`,
+      `${repositoryBindingWriteFunction}(text,text,text,text,text,text,text)`,
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text,text,text,text,text,text)`,
+      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text,text,text,text,text,text)`,
+    ]);
+    for (const privilege of ["SELECT", "UPDATE", "DELETE"])
       assert.equal(
         (
           await subject.query<{ granted: boolean }>(
-            "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
-            [apiRole, signature],
+            "SELECT has_table_privilege($1,'project_repository',$2) AS granted",
+            [apiRole, privilege],
           )
         ).rows[0]?.granted,
-        true,
-        signature,
+        false,
+        privilege,
       );
+    for (const [role, column, held] of [
+      [boundaryOwnerRole, "retired_at", true],
+      [boundaryOwnerRole, "landing_mode", true],
+      [boundaryOwnerRole, "bound_at", false],
+      [apiRole, "retired_at", false],
+      [apiRole, "landing_mode", false],
+    ] as const)
       assert.equal(
         (
-          await subject.query<{ owner: string }>(
-            `SELECT pg_get_userbyid(proowner) AS owner FROM pg_proc
-              WHERE oid = $1::regprocedure`,
-            [signature],
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_column_privilege($1,'project_repository',$2,'UPDATE') AS granted",
+            [role, column],
           )
-        ).rows[0]?.owner,
-        boundaryOwnerRole,
-        signature,
+        ).rows[0]?.granted,
+        held,
+        `${role}: ${column}`,
       );
-    }
   });
 });

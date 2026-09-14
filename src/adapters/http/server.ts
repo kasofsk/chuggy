@@ -71,6 +71,7 @@ import {
   parseProjectRepositoryBind,
   parseProjectRepositoryCreate,
   parseProjectRepositoryLanding,
+  parseProjectRepositoryRetirement,
   parseRepositoryConfigurationImport,
   parseDraftCreation,
   parseDraftRevision,
@@ -105,6 +106,7 @@ import {
   projectRepositoryBindResponse,
   projectRepositoryCreateResponse,
   projectRepositoryLandingResponse,
+  projectRepositoryRetirementResponse,
   inventoryResponse,
   nativeActionsResponse,
   notificationsResponse,
@@ -1069,6 +1071,33 @@ function registerProjectRepositoryLanding(
   );
 }
 
+/**
+ * One binding retired. It is a PUT rather than a DELETE because the binding
+ * stays: what the call writes is a fact on the row, and a caller repeating it
+ * gets the same answer.
+ */
+function registerProjectRepositoryRetirement(
+  app: FastifyInstance,
+  onboarding: RepositoryOnboarding,
+): void {
+  app.put(
+    "/api/v1/tenants/:tenant/projects/:project/repositories/retirement",
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        projectRepositoryRetirementResponse(
+          await onboarding.retireRepository(
+            principalOf(request),
+            partitionOf(request),
+            parseProjectRepositoryRetirement(request.body),
+          ),
+        ),
+      );
+    },
+  );
+}
+
 /** The executions read's own parameters: its cursor, its size and what it narrows to. */
 function executionListQuery(
   value: unknown,
@@ -1707,6 +1736,7 @@ export function createNativeHttpApp(
     registerForgeInstallations(app, onboarding);
     registerProjectRepositories(app, onboarding);
     registerProjectRepositoryLanding(app, onboarding);
+    registerProjectRepositoryRetirement(app, onboarding);
   }
   registerOperations(app, web);
   registerNotifications(app, web);

@@ -70,6 +70,9 @@ import type {
   ProjectRepositoryBound,
   ProjectRepositoryLandingCommand,
   ProjectRepositoryLandingOutcome,
+  ProjectRepositoryRetirementCommand,
+  ProjectRepositoryRetirementOutcome,
+  ProjectRepositoryRetirementStore,
   ProjectRepositoryLandingStore,
   RepositoryBindingCommand,
   RepositoryBindingOutcome,
@@ -232,6 +235,7 @@ interface FixturePorts {
   readonly outcome?: RepositoryBindingOutcome;
   readonly landing?: RepositoryLanding;
   readonly landingOutcome?: ProjectRepositoryLandingOutcome;
+  readonly retirementOutcome?: ProjectRepositoryRetirementOutcome;
   readonly apps?: readonly ForgeApp[];
   readonly configurations?: FixtureConfigurations;
   readonly creation?: FixtureCreation;
@@ -256,6 +260,7 @@ interface FixtureWrites {
   readonly seeds: ForgeRepositorySeedRequest[];
   readonly rulesets: ForgeRepositoryRulesetRequest[];
   readonly landings: ProjectRepositoryLandingCommand[];
+  readonly retirements: ProjectRepositoryRetirementCommand[];
 }
 
 /**
@@ -425,6 +430,9 @@ function fixturePortsForgeHalf(
   };
 }
 
+/** The instant the fixture retires at, so a case can assert the row it reads back. */
+const fixtureRetiredAt = "2026-09-14T02:00:00Z";
+
 /** The one binding every case's durable side holds, at whatever landing the case gives it. */
 function fixtureBinding(given: FixturePorts): ProjectRepositoryBound {
   return {
@@ -453,6 +461,24 @@ function fixturePortsLanding(
   };
 }
 
+/** The retirement half, answering the one binding and recording what it was asked to retire. */
+function fixturePortsRetirement(
+  given: FixturePorts,
+  wrote: FixtureWrites,
+): ProjectRepositoryRetirementStore {
+  return {
+    retire: (command) => {
+      wrote.retirements.push(command);
+      return Promise.resolve(
+        given.retirementOutcome ?? {
+          outcome: "Retired",
+          binding: { ...fixtureBinding(given), retiredAt: fixtureRetiredAt },
+        },
+      );
+    },
+  };
+}
+
 function fixturePorts(
   access: ProjectAccess,
   given: FixturePorts,
@@ -473,6 +499,7 @@ function fixturePorts(
     seeds: [],
     rulesets: [],
     landings: [],
+    retirements: [],
   };
   const credentials: RepositoryCredentialPort = {
     credential: () =>
@@ -504,6 +531,7 @@ function fixturePorts(
         },
       },
       landing: fixturePortsLanding(given, wrote),
+      retirement: fixturePortsRetirement(given, wrote),
       ...(given.configurations === undefined
         ? {}
         : {
@@ -1602,4 +1630,47 @@ test("a bound repository answers the landing its binding holds and not an assume
     landing: proposing,
     configurations: { result: "Deferred", reason: "NotConfigured" },
   });
+});
+
+async function fixtureRetired(
+  granted: readonly (ProjectAccessKind | TenantAccessKind)[],
+  given: FixturePorts = {},
+) {
+  const composed = fixtureService(granted, given);
+  const written = await composed.service.retireRepository(
+    principal,
+    partition,
+    repository,
+  );
+  return { written, asked: composed.asked, wrote: composed.wrote };
+}
+
+test("retiring a binding is asked behind the permit that binds one", async () => {
+  const { written, asked, wrote } = await fixtureRetired(["Administer"]);
+  assert.deepEqual(asked.askedProject, ["Administer"]);
+  assert.deepEqual(wrote.retirements, [{ partition, repository }]);
+  assert.deepEqual(written, {
+    result: "Retired",
+    repository: { ...fixtureBinding({}), retiredAt: fixtureRetiredAt },
+  });
+});
+
+test("a project this caller may only read is not one whose binding they may retire", async () => {
+  const { written, wrote } = await fixtureRetired(["Read"]);
+  assert.deepEqual(written, { result: "NotFound" });
+  assert.deepEqual(wrote.retirements, [], "the door was never asked");
+});
+
+test("a repository this project does not bind has no binding to retire", async () => {
+  const { written } = await fixtureRetired(["Administer"], {
+    retirementOutcome: { outcome: "NotBound" },
+  });
+  assert.deepEqual(written, { result: "NotBound" });
+});
+
+test("a retirement that could not be completed is answered as one to try again", async () => {
+  const { written } = await fixtureRetired(["Administer"], {
+    retirementOutcome: { outcome: "Unavailable" },
+  });
+  assert.deepEqual(written, { result: "Unavailable" });
 });

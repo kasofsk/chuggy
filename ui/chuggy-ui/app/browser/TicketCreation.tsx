@@ -39,6 +39,7 @@ import {
   creationBranchHint,
   creationConfigurationSentence,
   creationFormFrom,
+  creationRepositories,
   creationRepositoryChosen,
   creationStepSentence,
   creationTargetBranchHint,
@@ -261,8 +262,8 @@ function TargetBranch(props: FormEdit): ReactNode {
   );
 }
 
-/** The repository the work happens in, drawn only where the project binds one:
- * a project binding none names none, and the form neither asks nor sends. */
+/** The repository the work happens in, drawn only where the project holds a live
+ * binding: holding none names none, and the form neither asks nor sends. */
 function Repository(
   props: FormEdit & {
     readonly repositories: readonly ProjectRepositoryResponse[];
@@ -508,7 +509,7 @@ export function CreationForm(props: {
   );
   const [faults, setFaults] = useState<readonly CreationFault[]>([]);
   const initialization = props.context.initialization;
-  const repositories = props.context.repositories;
+  const repositories = creationRepositories(props.context.repositories);
   const running = useCreationSubmit({
     ports: props.ports,
     partition: props.partition,

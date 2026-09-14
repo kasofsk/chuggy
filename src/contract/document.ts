@@ -22,6 +22,7 @@ import {
   projectRepositoryBindSchema,
   projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
+  projectRepositoryRetirementSchema,
   publicMutationSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
@@ -45,6 +46,9 @@ function nativeHttpContractDocumentSchemas(): unknown {
     projectRepositoryBind: z.toJSONSchema(projectRepositoryBindSchema),
     projectRepositoryCreate: z.toJSONSchema(projectRepositoryCreateSchema),
     projectRepositoryLanding: z.toJSONSchema(projectRepositoryLandingSchema),
+    projectRepositoryRetirement: z.toJSONSchema(
+      projectRepositoryRetirementSchema,
+    ),
     leadInquiry: z.toJSONSchema(leadInquirySchema),
     selectorProjectSettings: z.toJSONSchema(selectorProjectSettingsSchema),
     threadMessage: z.toJSONSchema(threadMessageSchema),
@@ -99,6 +103,8 @@ export function nativeHttpContractDocument(): unknown {
       "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one this deployment holds a credential for — on a host it mints for, that means an installation this tenant has claimed",
     repositoryLanding:
       "a repository's landing default is the mode a ticket in it lands by unless its brief names one; it is written against the value the writer read, and a ticket authored with no finalizer may name no landing",
+    repositoryRetirement:
+      "a retired repository stays bound and stays readable by name, and stops being the one a session is placed against, the importer reads or a brief may name; this route only retires and repeating it changes nothing, and binding the repository again reinstates it",
     repositoryConfigurations:
       "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it",
     repositoryCreation:

@@ -46,6 +46,7 @@ export const repositoryBindingListFunction = "list_project_repository_bindings";
 export const repositoryBindingListAllFunction = "list_repository_bindings";
 export const repositoryLandingReadFunction = "read_project_repository_landing";
 export const repositoryLandingWriteFunction = "set_project_repository_landing";
+export const repositoryRetirementWriteFunction = "retire_project_repository";
 export const forgeInstallationRecordFunction = "record_forge_installation";
 export const draftCreateFunction = "create_draft";
 export const draftReviseFunction = "revise_draft";

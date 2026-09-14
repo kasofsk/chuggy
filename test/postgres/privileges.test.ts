@@ -19,6 +19,7 @@ import {
   repositoryBindingWriteFunction,
   repositoryLandingReadFunction,
   repositoryLandingWriteFunction,
+  repositoryRetirementWriteFunction,
   schedulerRole,
   selectorReviewRole,
   selectorServiceRole,
@@ -1142,17 +1143,27 @@ test("the binding every evidence function opens with is nobody's to call", async
 });
 
 /**
- * The two landing doors. Reading and moving a binding's landing is the API's
- * question, asked on behalf of one project by a route it already gates; every
- * other runtime role reads a landing as part of a row it already holds a door
- * for, so none of them holds these.
+ * The two landing doors and the retirement. Reading a binding's landing, moving
+ * it and ending the binding are the API's questions, asked on behalf of one
+ * project by routes it already gates; every other runtime role reads a binding
+ * as part of a row it already holds a door for, so none of them holds these.
  */
-test("no runtime role but the API reads or moves a binding's landing", async () => {
+test("no runtime role but the API reads or moves a binding's landing, or retires one", async () => {
   const calls = [
-    `SELECT landing_mode FROM ${repositoryLandingReadFunction}('tenant','project','repository')`,
-    `SELECT outcome FROM ${repositoryLandingWriteFunction}('tenant','project','repository','Push','Push')`,
-  ];
-  for (const call of calls) {
+    [
+      repositoryLandingReadFunction,
+      `SELECT landing_mode FROM ${repositoryLandingReadFunction}('tenant','project','repository')`,
+    ],
+    [
+      repositoryLandingWriteFunction,
+      `SELECT outcome FROM ${repositoryLandingWriteFunction}('tenant','project','repository','Push','Push')`,
+    ],
+    [
+      repositoryRetirementWriteFunction,
+      `SELECT outcome FROM ${repositoryRetirementWriteFunction}('tenant','project','repository')`,
+    ],
+  ] as const;
+  for (const [door, call] of calls) {
     for (const role of [
       ticketServiceRole,
       selectorServiceRole,
@@ -1163,23 +1174,26 @@ test("no runtime role but the API reads or moves a binding's landing", async () 
     ])
       assert.match(
         (await harness.attemptAs(role, call)) ?? "",
-        postgresHarnessDenial(
-          call.includes(repositoryLandingWriteFunction)
-            ? repositoryLandingWriteFunction
-            : repositoryLandingReadFunction,
-        ),
+        postgresHarnessDenial(door),
         `${role}: ${call}`,
       );
     assert.equal(
       await harness.attemptAs(apiRole, call),
       undefined,
-      `the role whose routes answer a landing holds the door: ${call}`,
+      `the role whose routes answer a binding holds the door: ${call}`,
     );
   }
 });
 
-/** The one column a binding's row lets an update move, and the one role holding it. */
-test("only the boundary owner may move the column the doors write", async () => {
+/** The two columns a binding's row lets an update move, and the one role holding them. */
+test("only the boundary owner may move the columns the doors write", async () => {
+  const granted = async (role: string, column: string): Promise<unknown> =>
+    (
+      await harness.query(
+        "SELECT has_column_privilege($1,'project_repository',$2,'UPDATE') AS granted",
+        [role, column],
+      )
+    )[0]?.["granted"];
   for (const role of [
     apiRole,
     ticketServiceRole,
@@ -1189,23 +1203,9 @@ test("only the boundary owner may move the column the doors write", async () => 
     workerPlaneRole,
     configurationImporterRole,
   ])
-    assert.equal(
-      (
-        await harness.query(
-          "SELECT has_column_privilege($1,'project_repository','landing_mode','UPDATE') AS granted",
-          [role],
-        )
-      )[0]?.["granted"],
-      false,
-      role,
-    );
-  assert.equal(
-    (
-      await harness.query(
-        "SELECT has_column_privilege($1,'project_repository','landing_mode','UPDATE') AS granted",
-        [boundaryOwnerRole],
-      )
-    )[0]?.["granted"],
-    true,
-  );
+    for (const column of ["landing_mode", "retired_at", "bound_at"])
+      assert.equal(await granted(role, column), false, `${role}: ${column}`);
+  for (const column of ["landing_mode", "retired_at"])
+    assert.equal(await granted(boundaryOwnerRole, column), true, column);
+  assert.equal(await granted(boundaryOwnerRole, "bound_at"), false);
 });

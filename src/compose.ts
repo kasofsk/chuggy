@@ -74,6 +74,7 @@ import {
 import {
   postgresProjectRepositoryBindings,
   postgresProjectRepositoryLanding,
+  postgresProjectRepositoryRetirement,
   postgresRepositoryBinding,
 } from "./adapters/postgres/repositoryBinding.ts";
 import { postgresNotifications } from "./adapters/postgres/notifications.ts";
@@ -457,6 +458,7 @@ export function composeRepositoryOnboarding(
     bindings: postgresProjectRepositoryBindings(composition.apiPool),
     binding: postgresRepositoryBinding(composition.apiPool),
     landing: postgresProjectRepositoryLanding(composition.apiPool),
+    retirement: postgresProjectRepositoryRetirement(composition.apiPool),
     ...(composition.repositories === undefined
       ? {}
       : {

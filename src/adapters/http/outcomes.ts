@@ -88,6 +88,7 @@ import type {
   ProjectRepositoryBindResult,
   ProjectRepositoryCreateResult,
   ProjectRepositoryLandingResult,
+  ProjectRepositoryRetirementResult,
 } from "../../interpreter/repositoryOnboarding.ts";
 import type { Partition, TenantId } from "../../interpreter/projectStore.ts";
 import type { DraftBrief } from "../../interpreter/ticketBrief.ts";
@@ -1083,6 +1084,33 @@ export function projectRepositoryLandingResponse(
         503,
         authorityRetryAfterSeconds,
         "RepositoryLandingContended",
+      );
+    default:
+      return assertNever(result);
+  }
+}
+
+/**
+ * One binding retired, answering the row as it now stands: a caller reads the
+ * retirement off the answer rather than asking for the listing again. A repeat
+ * is the same answer, because retirement has one direction and no second
+ * value, and a repository this project does not bind is the same miss as a
+ * project the caller may not see.
+ */
+export function projectRepositoryRetirementResponse(
+  result: ProjectRepositoryRetirementResult,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "Retired":
+      return response(200, { repository: result.repository });
+    case "NotBound":
+    case "NotFound":
+      return notFound();
+    case "Unavailable":
+      return retry(
+        503,
+        authorityRetryAfterSeconds,
+        "RepositoryRetirementContended",
       );
     default:
       return assertNever(result);

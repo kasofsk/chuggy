@@ -91,11 +91,13 @@ export const creationDraft: DraftResponse = {
 export function creationBinding(
   repository: string,
   mode: BriefFinalizationMode = "Push",
+  retiredAt?: string,
 ): ProjectRepositoryResponse {
   return {
     repository,
     boundAt: "2026-08-26T00:00:00Z",
     landing: { mode },
+    ...(retiredAt === undefined ? {} : { retiredAt }),
   };
 }
 

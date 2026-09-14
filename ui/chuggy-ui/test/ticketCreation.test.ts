@@ -31,6 +31,7 @@ import {
   creationTargetBranchHint,
   creationLandingWholeSentence,
   creationRepositoryChosen,
+  creationRepositories,
   creationRepositoryDefault,
   creationRepositoryRequired,
   creationBranchPrefixedSentence,
@@ -442,6 +443,32 @@ test("a repository is required exactly where the project binds one", () => {
   expect(creationRepositoryRequired([])).toBe(false);
   expect(creationRepositoryRequired(oneBinding)).toBe(true);
   expect(creationRepositoryRequired(twoBindings)).toBe(true);
+});
+
+/**
+ * The authority refuses a brief naming a retired binding exactly as it refuses
+ * one naming a repository the project never bound, so the form drops those rows
+ * before anything reads them: a project whose only live binding is one has one
+ * to seed with, and a project whose bindings are all retired names none.
+ */
+test("a retired binding is not one a new ticket may name", () => {
+  const retired = creationBinding(
+    "https://forge.test/kasofsk/chuggy-mirror",
+    "Push",
+    "2026-09-14T00:00:00Z",
+  );
+  expect(
+    creationRepositories([...oneBinding, retired]).map(
+      (binding) => binding.repository,
+    ),
+  ).toStrictEqual([soleRepository]);
+  expect(
+    creationRepositoryDefault(creationRepositories([...oneBinding, retired])),
+  ).toBe(soleRepository);
+  expect(creationRepositories([retired])).toStrictEqual([]);
+  expect(creationRepositoryRequired(creationRepositories([retired]))).toBe(
+    false,
+  );
 });
 
 test("the sole binding is the default, and two bindings default to neither", () => {

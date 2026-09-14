@@ -341,6 +341,7 @@ export const nativeHttpRoutes = {
   projectRepositories: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories`,
   projectRepositoriesNew: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/new`,
   projectRepositoryLanding: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/landing`,
+  projectRepositoryRetirement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/retirement`,
   drafts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts`,
   draftInitialization: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/draft-initializations/:revision`,
   draft: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts/:ticket`,

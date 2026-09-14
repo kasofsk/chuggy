@@ -5,8 +5,9 @@
  * An account is a row per account and not per installation, because what
  * onboarding needs to know is whether both of this deployment's apps are on it;
  * a missing one is what the Connect action is for. The bindings below are what
- * a ticket may name, and a binding is added from what those installations
- * grant rather than from a typed address.
+ * a ticket may name, except a retired one, which is drawn as retired because it
+ * is still bound and no longer read; a binding is added from what those
+ * installations grant rather than from a typed address.
  */
 
 import {
@@ -110,14 +111,19 @@ function BindingRow(props: {
   return (
     <tr>
       <th scope="row">
-        <Tooltip text={binding.repository}>
-          <Link
-            to={repositoryRoutePath}
-            params={{ ...props.partition, repository: binding.repository }}
-          >
-            {repositoryLabel(binding.repository)}
-          </Link>
-        </Tooltip>
+        <span className="flex items-center gap-2">
+          <Tooltip text={binding.repository}>
+            <Link
+              to={repositoryRoutePath}
+              params={{ ...props.partition, repository: binding.repository }}
+            >
+              {repositoryLabel(binding.repository)}
+            </Link>
+          </Tooltip>
+          {binding.retiredAt === undefined ? undefined : (
+            <Pill tone="retired">Retired</Pill>
+          )}
+        </span>
       </th>
       <td>
         <Figure figure={instantFigure(binding.boundAt, props.nowMs)} />

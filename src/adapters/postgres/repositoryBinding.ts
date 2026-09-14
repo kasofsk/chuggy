@@ -31,6 +31,8 @@ import {
   type ProjectRepositoryBound,
   type ProjectRepositoryLandingOutcome,
   type ProjectRepositoryLandingStore,
+  type ProjectRepositoryRetirementOutcome,
+  type ProjectRepositoryRetirementStore,
   type RepositoryBindingAdministration,
   type RepositoryBindingOutcome,
 } from "../../interpreter/repositoryBinding.ts";
@@ -58,11 +60,16 @@ function repositoryBindingProjectAbsent(failure: unknown): boolean {
   );
 }
 
-/** One binding as every door that answers a whole one selects it. */
+/**
+ * One binding as every door that answers a whole one selects it. `retired_at`
+ * is null on a live binding, which is the one column here whose absence says
+ * something rather than being a half-read row.
+ */
 interface ProjectRepositoryBoundRow {
   readonly repository: string | null;
   readonly bound_at: string | null;
   readonly landing_mode: string | null;
+  readonly retired_at: string | null;
 }
 
 function projectRepositoryBoundOf(
@@ -78,6 +85,7 @@ function projectRepositoryBoundOf(
     repository: asRepositoryId(row.repository),
     boundAt: row.bound_at,
     landing: asRepositoryLanding(row.landing_mode),
+    ...(row.retired_at === null ? {} : { retiredAt: row.retired_at }),
   };
 }
 
@@ -96,7 +104,8 @@ export function postgresProjectRepositoryBindings(
       partition: Partition,
     ): Promise<readonly ProjectRepositoryBound[]> => {
       const found = await pool.query<ProjectRepositoryBoundRow>(
-        sql`SELECT repository,bound_at::text AS bound_at,landing_mode
+        sql`SELECT repository,bound_at::text AS bound_at,landing_mode,
+                   retired_at::text AS retired_at
               FROM list_project_repository_bindings(
                 ${partition.tenant},${partition.project},
                 ${projectRepositoriesAnsweredMax})`,
@@ -107,7 +116,9 @@ export function postgresProjectRepositoryBindings(
 }
 
 /**
- * Every binding there is, through the door only the importer holds EXECUTE on.
+ * Every LIVE binding there is, through the door only the importer holds
+ * EXECUTE on: a retired one names a remote the estate has moved on from, and
+ * an import that kept asking it would fail every run.
  * It is a door for `list_project_repository_bindings`'s reason and crosses
  * partitions for the importer's: its caller imports for the whole estate, so
  * the partition is a column of the answer rather than an argument to the ask.
@@ -196,26 +207,26 @@ export function postgresRepositoryBinding(
 }
 
 /**
- * The SQLSTATEs a landing write did not complete under. `query_canceled` is
- * every cancellation a statement can meet, its deadline included, and
- * `deadlock_detected` is the cycle a server broke to let one write through;
- * both leave a write that can be made again.
+ * The SQLSTATEs a write against one binding did not complete under.
+ * `query_canceled` is every cancellation a statement can meet, its deadline
+ * included, and `deadlock_detected` is the cycle a server broke to let one
+ * write through; both leave a write that can be made again.
  */
-const landingIncompleteWriteCodes: readonly string[] = ["57014", "40P01"];
+const bindingIncompleteWriteCodes: readonly string[] = ["57014", "40P01"];
 
-function repositoryLandingIncomplete(failure: unknown): boolean {
+function repositoryBindingWriteIncomplete(failure: unknown): boolean {
   if (typeof failure !== "object" || failure === null) return false;
   const code = (failure as { readonly code?: unknown }).code;
-  return typeof code === "string" && landingIncompleteWriteCodes.includes(code);
+  return typeof code === "string" && bindingIncompleteWriteCodes.includes(code);
 }
 
-/** The row a landing write answered with, whichever outcome it answered. */
-interface ProjectRepositoryLandingRow extends ProjectRepositoryBoundRow {
+/** The row a write against one binding answered with, whichever outcome it answered. */
+interface ProjectRepositoryWrittenRow extends ProjectRepositoryBoundRow {
   readonly outcome: string | null;
 }
 
 function postgresRepositoryLandingOutcome(
-  row: ProjectRepositoryLandingRow | undefined,
+  row: ProjectRepositoryWrittenRow | undefined,
 ): ProjectRepositoryLandingOutcome {
   if (row === undefined)
     throw new Error("repository landing: the door answered no row");
@@ -239,7 +250,8 @@ export function postgresProjectRepositoryLanding(
   return {
     landing: async (partition, repository) => {
       const found = await pool.query<ProjectRepositoryBoundRow>(
-        sql`SELECT repository,bound_at::text AS bound_at,landing_mode
+        sql`SELECT repository,bound_at::text AS bound_at,landing_mode,
+                   retired_at::text AS retired_at
               FROM read_project_repository_landing(
                 ${partition.tenant},${partition.project},${repository})`,
       );
@@ -247,21 +259,65 @@ export function postgresProjectRepositoryLanding(
       return row === undefined ? undefined : projectRepositoryBoundOf(row);
     },
     setLanding: async (command) => {
-      let found: pg.QueryResult<ProjectRepositoryLandingRow>;
+      let found: pg.QueryResult<ProjectRepositoryWrittenRow>;
       try {
-        found = await pool.query<ProjectRepositoryLandingRow>(
-          sql`SELECT outcome,repository,bound_at::text AS bound_at,landing_mode
+        found = await pool.query<ProjectRepositoryWrittenRow>(
+          sql`SELECT outcome,repository,bound_at::text AS bound_at,landing_mode,
+                     retired_at::text AS retired_at
                 FROM set_project_repository_landing(
                   ${command.partition.tenant},${command.partition.project},
                   ${command.repository},${command.expected.mode},
                   ${command.landing.mode})`,
         );
       } catch (failure) {
-        if (repositoryLandingIncomplete(failure))
+        if (repositoryBindingWriteIncomplete(failure))
           return { outcome: "Unavailable" };
         throw failure;
       }
       return postgresRepositoryLandingOutcome(found.rows[0]);
+    },
+  };
+}
+
+function postgresRepositoryRetirementOutcome(
+  row: ProjectRepositoryWrittenRow | undefined,
+): ProjectRepositoryRetirementOutcome {
+  if (row === undefined)
+    throw new Error("repository retirement: the door answered no row");
+  if (row.outcome === "NotBound") return { outcome: "NotBound" };
+  if (row.outcome !== "Retired")
+    throw new Error(
+      `repository retirement: unknown outcome ${String(row.outcome)}`,
+    );
+  return { outcome: row.outcome, binding: projectRepositoryBoundOf(row) };
+}
+
+/**
+ * One binding retired through the door the API holds EXECUTE on. It takes the
+ * same row lock and answers the same incompleteness as the landing write, for
+ * the same reason: the caller's next act is to read the binding again, and a
+ * write cancelled under its lock is one that can be made again.
+ */
+export function postgresProjectRepositoryRetirement(
+  pool: pg.Pool,
+): ProjectRepositoryRetirementStore {
+  return {
+    retire: async (command) => {
+      let found: pg.QueryResult<ProjectRepositoryWrittenRow>;
+      try {
+        found = await pool.query<ProjectRepositoryWrittenRow>(
+          sql`SELECT outcome,repository,bound_at::text AS bound_at,landing_mode,
+                     retired_at::text AS retired_at
+                FROM retire_project_repository(
+                  ${command.partition.tenant},${command.partition.project},
+                  ${command.repository})`,
+        );
+      } catch (failure) {
+        if (repositoryBindingWriteIncomplete(failure))
+          return { outcome: "Unavailable" };
+        throw failure;
+      }
+      return postgresRepositoryRetirementOutcome(found.rows[0]);
     },
   };
 }

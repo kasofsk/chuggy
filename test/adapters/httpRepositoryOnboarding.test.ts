@@ -67,8 +67,10 @@ import { asPrincipal } from "../../src/interpreter/principal.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import type {
+  ProjectRepositoryBindingWrite,
   ProjectRepositoryBound,
   ProjectRepositoryLandingStore,
+  ProjectRepositoryRetirementStore,
   RepositoryBindingCommand,
   RepositoryBindingOutcome,
 } from "../../src/interpreter/repositoryBinding.ts";
@@ -194,7 +196,11 @@ interface OnboardingStore {
   outcome: RepositoryBindingOutcome;
   resolved: CredentialResolved;
   landingUnavailable: boolean;
+  retirementUnavailable: boolean;
 }
+
+/** The instant the fixture retires at, so a case can assert the row it reads back. */
+const fixtureRetiredAt = "2026-09-14T02:00:00Z";
 
 function fixtureStore(): OnboardingStore {
   return {
@@ -204,6 +210,7 @@ function fixtureStore(): OnboardingStore {
     recorded: "Recorded",
     outcome: "Bound",
     landingUnavailable: false,
+    retirementUnavailable: false,
     resolved: {
       resolved: "Credential",
       credential: asRepositoryCredential("ghs-proof"),
@@ -353,20 +360,9 @@ function fixtureService(
     },
     claims: fixtureClaims(store),
     bindings: { bindings: () => Promise.resolve(store.bound) },
-    binding: {
-      currentRecoveryEpoch: () => Promise.resolve(epoch),
-      bind: (command) => {
-        store.commands.push(command);
-        if (store.outcome === "Bound")
-          store.bound.push({
-            repository: command.repository,
-            boundAt: "2026-09-11T01:00:00Z",
-            landing: { mode: "Push" },
-          });
-        return Promise.resolve(store.outcome);
-      },
-    },
+    binding: fixtureBinding(store),
     landing: fixtureLanding(store),
+    retirement: fixtureRetirement(store),
     ...(image === undefined
       ? {}
       : { configurations: fixtureServiceConfigurations(image) }),
@@ -376,6 +372,41 @@ function fixtureService(
         }
       : {}),
   });
+}
+
+/**
+ * The bind half, over the same rows the listing answers from. It reinstates as
+ * the door does, a bind of a retired row clearing the retirement and answering
+ * `Bound` where a bind of a live one has nothing to do.
+ */
+function fixtureBinding(store: OnboardingStore): ProjectRepositoryBindingWrite {
+  return {
+    currentRecoveryEpoch: () => Promise.resolve(epoch),
+    bind: (command) => {
+      store.commands.push(command);
+      if (store.outcome !== "Bound") return Promise.resolve(store.outcome);
+      const at = store.bound.findIndex(
+        (row) => row.repository === command.repository,
+      );
+      const standing = store.bound[at];
+      if (standing === undefined) {
+        store.bound.push({
+          repository: command.repository,
+          boundAt: "2026-09-11T01:00:00Z",
+          landing: { mode: "Push" },
+        });
+        return Promise.resolve("Bound" as const);
+      }
+      if (standing.retiredAt === undefined)
+        return Promise.resolve("AlreadyBound" as const);
+      store.bound[at] = {
+        repository: standing.repository,
+        boundAt: standing.boundAt,
+        landing: standing.landing,
+      };
+      return Promise.resolve("Bound" as const);
+    },
+  };
 }
 
 /** The landing half, over the same rows the listing answers from. */
@@ -403,6 +434,30 @@ function fixtureLanding(store: OnboardingStore): ProjectRepositoryLandingStore {
       const written = { ...standing, landing: command.landing };
       store.bound[at] = written;
       return Promise.resolve({ outcome: "Written", binding: written } as const);
+    },
+  };
+}
+
+/** The retirement half, over the same rows the listing answers from. */
+function fixtureRetirement(
+  store: OnboardingStore,
+): ProjectRepositoryRetirementStore {
+  return {
+    retire: (command) => {
+      if (store.retirementUnavailable)
+        return Promise.resolve({ outcome: "Unavailable" } as const);
+      const at = store.bound.findIndex(
+        (row) => row.repository === command.repository,
+      );
+      const standing = store.bound[at];
+      if (standing === undefined)
+        return Promise.resolve({ outcome: "NotBound" } as const);
+      const retired =
+        standing.retiredAt === undefined
+          ? { ...standing, retiredAt: fixtureRetiredAt }
+          : standing;
+      store.bound[at] = retired;
+      return Promise.resolve({ outcome: "Retired", binding: retired } as const);
     },
   };
 }
@@ -921,6 +976,12 @@ const unauthenticatedRequests = [
     },
   },
   {
+    method: "PUT" as const,
+    url: `${repositoriesRoot}/retirement`,
+    headers: { "content-type": nativeHttpMediaType },
+    payload: { repository },
+  },
+  {
     method: "POST" as const,
     url: `${repositoriesRoot}/new`,
     headers: {
@@ -1349,4 +1410,136 @@ test("a landing no roster names is refused before the durable side is asked", as
     assert.equal(served.statusCode, 400, JSON.stringify(body));
   }
   assert.deepEqual(landed.store.bound[0]?.landing, { mode: "Push" });
+});
+
+/** The retirement route, as an administrator sends the end of one binding. */
+function retirementRequest(body: Record<string, unknown>) {
+  return {
+    method: "PUT" as const,
+    url: `${repositoriesRoot}/retirement`,
+    headers: versioned,
+    payload: body,
+  };
+}
+
+test("retiring a binding answers the row it left and the listing agrees", async (t) => {
+  const landed = await fixtureLanded(t);
+  const served = await landed.app.inject(retirementRequest({ repository }));
+  assert.equal(served.statusCode, 200);
+  const retired = {
+    repository,
+    boundAt: "2026-09-11T01:00:00Z",
+    landing: { mode: "Push" },
+    retiredAt: fixtureRetiredAt,
+  };
+  assert.deepEqual(served.json(), { repository: retired });
+  const listed = await landed.app.inject({
+    url: repositoriesRoot,
+    headers: authorized,
+  });
+  assert.deepEqual(listed.json(), { repositories: [retired] });
+});
+
+test("a repeat of a retirement answers the instant the first one wrote", async (t) => {
+  const landed = await fixtureLanded(t);
+  await landed.app.inject(retirementRequest({ repository }));
+  const again = await landed.app.inject(retirementRequest({ repository }));
+  assert.equal(again.statusCode, 200);
+  assert.equal(
+    again.json<{ repository: { retiredAt: string } }>().repository.retiredAt,
+    fixtureRetiredAt,
+  );
+});
+
+/**
+ * The undo, which is the bind route rather than one of its own: binding a
+ * repository the project retired clears the retirement and answers as the fresh
+ * bind it is, so the listing draws it live again. A repository still live has
+ * nothing to do and is still `AlreadyBound`.
+ */
+test("binding a retired repository again reinstates it and answers as a bind", async (t) => {
+  const landed = await fixtureLanded(t);
+  const rebind = async (key: string) =>
+    landed.app.inject({
+      method: "POST",
+      url: repositoriesRoot,
+      headers: { ...versioned, "idempotency-key": key },
+      payload: { repository },
+    });
+  assert.equal((await rebind("bind-atlas-live")).statusCode, 200);
+
+  assert.equal(
+    (await landed.app.inject(retirementRequest({ repository }))).statusCode,
+    200,
+  );
+  assert.equal(landed.store.bound[0]?.retiredAt, fixtureRetiredAt);
+
+  assert.equal((await rebind("bind-atlas-again")).statusCode, 201);
+  assert.equal(landed.store.bound[0]?.retiredAt, undefined);
+  assert.deepEqual(
+    (
+      await landed.app.inject({ url: repositoriesRoot, headers: authorized })
+    ).json(),
+    {
+      repositories: [
+        {
+          repository,
+          boundAt: "2026-09-11T01:00:00Z",
+          landing: { mode: "Push" },
+        },
+      ],
+    },
+  );
+});
+
+test("a repository this project does not bind has no binding to retire", async (t) => {
+  const landed = await fixtureLanded(t);
+  const served = await landed.app.inject(
+    retirementRequest({ repository: "https://github.com/acme/unbound.git" }),
+  );
+  assert.equal(served.statusCode, 404);
+});
+
+test("a retirement without the project permit is not found and writes nothing", async (t) => {
+  const landed = await fixtureLanded(t, ["Administer", "Read"]);
+  const reader = fixtureCase(t, { granted: ["Read"], store: landed.store });
+  const served = await reader.app.inject(retirementRequest({ repository }));
+  assert.equal(served.statusCode, 404);
+  assert.equal(landed.store.bound[0]?.retiredAt, undefined);
+});
+
+test("a retirement the durable side could not complete is a wait and says how long", async (t) => {
+  const landed = await fixtureLanded(t);
+  landed.store.retirementUnavailable = true;
+  const served = await landed.app.inject(retirementRequest({ repository }));
+  assert.equal(served.statusCode, 503);
+  assert.equal(
+    served.json<HttpErrorEnvelope>().error.code,
+    "RepositoryRetirementContended",
+  );
+  assert.equal(typeof served.headers["retry-after"], "string");
+});
+
+test("a retirement body the schema does not name is refused before the door is asked", async (t) => {
+  const landed = await fixtureLanded(t);
+  for (const body of [{ repository, expected: { mode: "Push" } }, {}] as Record<
+    string,
+    unknown
+  >[]) {
+    const served = await landed.app.inject(retirementRequest(body));
+    assert.equal(served.statusCode, 400, JSON.stringify(body));
+  }
+  assert.equal(landed.store.bound[0]?.retiredAt, undefined);
+});
+
+test("a retirement sent as unversioned json is refused before the door is asked", async (t) => {
+  const landed = await fixtureLanded(t);
+  const served = await landed.app.inject({
+    method: "PUT",
+    url: `${repositoriesRoot}/retirement`,
+    headers: { ...authorized, "content-type": "application/json" },
+    payload: { repository },
+  });
+  assert.equal(served.statusCode, 415);
+  assert.equal(landed.store.bound[0]?.retiredAt, undefined);
 });

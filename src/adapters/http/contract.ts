@@ -28,6 +28,7 @@ import {
   projectRepositoryBindSchema,
   projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
+  projectRepositoryRetirementSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
   threadHideRequestSchema,
@@ -227,6 +228,13 @@ export function parseProjectRepositoryLanding(body: unknown): {
     expected: asRepositoryLanding(parsed.expected.mode),
     landing: asRepositoryLanding(parsed.landing.mode),
   };
+}
+
+/** One retirement as the wire carries it, which is the binding and nothing else. */
+export function parseProjectRepositoryRetirement(body: unknown): RepositoryId {
+  return asRepositoryId(
+    projectRepositoryRetirementSchema.parse(body).repository,
+  );
 }
 
 /** One creation as the wire carries it, the identity coming from the header rather than the body. */
