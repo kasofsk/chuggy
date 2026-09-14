@@ -128,7 +128,10 @@
  * nobody heard back from, which sends the next pass to `readByMarker` rather
  * than to a second create. The ticket concludes on evidence that the forge
  * holds the proposal: a create answering with evidence is that proof itself,
- * and a create answering with none is read back by its marker.
+ * and a create answering with none is read back by its marker. A brief that
+ * merges its proposal too asks for the merge over an attempt counted the same
+ * way, read back by the proposal's number, and concludes on that answer
+ * instead.
  *
  * A FORGE THAT DECLINED TO BE ASKED HAS ANSWERED NOTHING. A create the forge
  * would not take — a rate limit, a credential this deployment could not read,
@@ -165,6 +168,7 @@ import {
   changeProposalRequest,
   proposalMarkerOf,
   reconcileChangeProposal,
+  reconcileChangeProposalMerge,
   type ChangeProposalForges,
   type ChangeProposalRequest,
   type ForgeBinding,
@@ -172,10 +176,15 @@ import {
 import {
   finalizationProposalBody,
   finalizationProposalCreationRecording,
+  finalizationProposalMergedStanding,
+  finalizationProposalMergeReadingRecording,
+  finalizationProposalMergeRecording,
   finalizationProposalNext,
   finalizationProposalReadingRecording,
   finalizationProposalTitle,
+  type FinalizationProposalDecision,
   type FinalizationProposalGathered,
+  type FinalizationProposalMergeRecording,
   type FinalizationProposalRecording,
   type FinalizerProposalStore,
   type StoredChangeProposal,
@@ -1231,6 +1240,7 @@ function finalizerStoredProposal(
       body: asked.body,
     }),
     publication: stored.publication,
+    merging: stored.merging,
   };
 }
 
@@ -1305,6 +1315,7 @@ async function finalizerOpeningProposal(
       body: finalizationProposalBody(brief.intent, proposalMarkerOf(identity)),
     }),
     publication: { publication: "Unopened" },
+    merging: { merging: "Unasked" },
   };
 }
 
@@ -1447,26 +1458,159 @@ async function finalizerReconcileProposal(
     service,
     view,
     finalizationProposalReadingRecording(
-      reconcileChangeProposal(request, read),
+      reconcileChangeProposal(
+        request,
+        read,
+        finalizationProposalMergedStanding(view.finalizationMode),
+      ),
     ),
     tally,
   );
 }
 
-/** Advances one promoted candidate's own change proposal by at most one act. */
-async function finalizerProposal(
+/**
+ * Releases the merge attempt in flight so that a later pass may ask for
+ * another, spending the merge it stood for where the forge may have made it and
+ * nothing where the forge would not.
+ */
+async function finalizerReleaseProposalMergeAttempt(
+  service: FinalizerService,
+  view: FinalizationView,
+  released: "Refused" | "Declined",
+  tally: FinalizerTally,
+  hold: FinalizerHoldReason | undefined,
+): Promise<void> {
+  const wrote =
+    released === "Refused"
+      ? await service.store.refuseChangeProposalMergeAttempt(view.claim)
+      : await service.store.declineChangeProposalMergeAttempt(view.claim);
+  if (wrote.wrote !== "Row")
+    finalizerHold(service, tally, "ProposalUnrecorded");
+  else if (hold !== undefined) finalizerHold(service, tally, hold);
+}
+
+/** Performs the one recording a forge answer about merging authorizes, which the pure step named. */
+async function finalizerRecordProposalMerge(
+  service: FinalizerService,
+  view: FinalizationView,
+  recording: FinalizationProposalMergeRecording,
+  tally: FinalizerTally,
+): Promise<void> {
+  if (recording.record === "Unanswered") return;
+  if (recording.record === "Nothing") {
+    finalizerHold(service, tally, recording.hold);
+    return;
+  }
+  if (recording.record === "Decline") {
+    await finalizerReleaseProposalMergeAttempt(
+      service,
+      view,
+      "Declined",
+      tally,
+      recording.hold,
+    );
+    return;
+  }
+  const wrote = await service.store.recordChangeProposalMerge({
+    claim: view.claim,
+    result:
+      recording.record === "Merge"
+        ? { records: "Merge", merged: recording.merged }
+        : { records: "Reading", reconciled: recording.reconciled },
+  });
+  if (wrote.wrote !== "Row")
+    finalizerHold(service, tally, "ProposalUnrecorded");
+}
+
+/**
+ * Asks the forge to merge the proposal this request proved, over an attempt
+ * counted and committed before the merge is called — so a crash between the two
+ * leaves a merge in flight nobody heard back from, which reads back as one to
+ * be read rather than as authority for a second merge.
+ */
+async function finalizerMergeProposal(
+  service: FinalizerService,
+  view: FinalizationView,
+  decision: Extract<FinalizationProposalDecision, { decide: "MergeProposal" }>,
+  tally: FinalizerTally,
+): Promise<void> {
+  const port = service.forges.selector.select(decision.request.binding.forge);
+  if (port === undefined) {
+    finalizerHold(service, tally, "ProposalDenied");
+    return;
+  }
+  const marked = await service.store.markChangeProposalMergeAttempt(view.claim);
+  if (marked.wrote !== "Row") {
+    finalizerHold(service, tally, "ProposalUnattempted");
+    return;
+  }
+  tally.proposals += 1;
+  const merged = await port.merge(decision.merge);
+  await finalizerRecordProposalMerge(
+    service,
+    view,
+    finalizationProposalMergeRecording(merged),
+    tally,
+  );
+}
+
+/** Reads back what became of the merge, by the number the forge addresses that proposal at. */
+async function finalizerReconcileProposalMerge(
+  service: FinalizerService,
+  view: FinalizationView,
+  decision: Extract<FinalizationProposalDecision, { decide: "ReconcileMerge" }>,
+  tally: FinalizerTally,
+): Promise<void> {
+  const port = service.forges.selector.select(decision.request.binding.forge);
+  if (port === undefined) {
+    finalizerHold(service, tally, "ProposalDenied");
+    return;
+  }
+  tally.proposals += 1;
+  const read = await port.readByNumber(decision.merge);
+  await finalizerRecordProposalMerge(
+    service,
+    view,
+    finalizationProposalMergeReadingRecording(
+      reconcileChangeProposalMerge(decision.request, read),
+    ),
+    tally,
+  );
+}
+
+/**
+ * Records the conflict the forge refused the merge for as this finalization's
+ * own failure, which the pass after it concludes exactly as it concludes the
+ * conflict a preparation reached. No manifest is written beside it: the forge
+ * named no paths, and an empty one would be evidence of nothing.
+ */
+async function finalizerMergeConflicted(
   service: FinalizerService,
   view: FinalizationView,
   tally: FinalizerTally,
 ): Promise<void> {
-  const config = checkedFinalizerConfig(service.config);
-  const decision = finalizationProposalNext(
-    await finalizerGatherProposal(service, view),
-    {
-      creationsMax: config.proposalCreationsMax,
-      reconciliationsMax: config.proposalReconciliationsMax,
-    },
+  const { target } = finalizerCandidateOf(view);
+  const gathered = await finalizerGathered(service, view, target, tally);
+  if (gathered === undefined) return;
+  tally.preparations += 1;
+  await finalizerRecordAttempt(
+    service,
+    finalizerAttemptOf(service, {
+      ...finalizerAttemptBase(gathered.subject, target),
+      outcome: "Failed",
+      failureKind: "MergeConflict",
+    }),
+    tally,
   );
+}
+
+/** Performs the one act the proposal step named, every arm of it a durable move or a hold. */
+async function finalizerProposalDecided(
+  service: FinalizerService,
+  view: FinalizationView,
+  decision: FinalizationProposalDecision,
+  tally: FinalizerTally,
+): Promise<void> {
   switch (decision.decide) {
     case "Hold":
       finalizerHold(service, tally, decision.hold);
@@ -1494,9 +1638,63 @@ async function finalizerProposal(
     case "ReconcileProposal":
       await finalizerReconcileProposal(service, view, decision.request, tally);
       return;
+    case "MergeProposal":
+      await finalizerMergeProposal(service, view, decision, tally);
+      return;
+    case "ReconcileMerge":
+      await finalizerReconcileProposalMerge(service, view, decision, tally);
+      return;
+    case "RefuseMergeAttempt":
+      await finalizerReleaseProposalMergeAttempt(
+        service,
+        view,
+        "Refused",
+        tally,
+        undefined,
+      );
+      return;
+    case "RecordMergeConflict":
+      await finalizerMergeConflicted(service, view, tally);
+      return;
+    case "Abort":
+      tally.preparations += 1;
+      recordFinalizer(service.metrics, (metrics) => {
+        metrics.preparation(0);
+      });
+      await finalizerAbort(
+        service,
+        view,
+        finalizerCandidateOf(view).target,
+        tally,
+      );
+      return;
     default:
       return assertNever(decision);
   }
+}
+
+/** Advances one promoted candidate's own change proposal by at most one act. */
+async function finalizerProposal(
+  service: FinalizerService,
+  view: FinalizationView,
+  tally: FinalizerTally,
+): Promise<void> {
+  const config = checkedFinalizerConfig(service.config);
+  const decision = finalizationProposalNext(
+    { mode: view.finalizationMode, lifecycle: view.lifecycle },
+    await finalizerGatherProposal(service, view),
+    {
+      publication: {
+        creationsMax: config.proposalCreationsMax,
+        reconciliationsMax: config.proposalReconciliationsMax,
+      },
+      merging: {
+        mergesMax: config.proposalMergesMax,
+        readingsMax: config.proposalMergeReadingsMax,
+      },
+    },
+  );
+  await finalizerProposalDecided(service, view, decision, tally);
 }
 
 /** Offers the one conclusion to the one authenticated door. */

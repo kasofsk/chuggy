@@ -18,6 +18,7 @@ import {
 import { asTicketId } from "../../src/domain/ids.ts";
 import { textCodePointsCount } from "../../src/contract/http.ts";
 import {
+  allClosingLifecycles,
   allFinalizationHoldKinds,
   asGitObjectId,
   asGitRefName,
@@ -29,21 +30,28 @@ import {
   asForgeCredentialReference,
   asProposalNumber,
   asProposalRemoteIdentity,
+  changeProposalMergeRequest,
   changeProposalRequest,
   proposalBodyCharsMax,
   proposalMarkerOf,
   proposalTitleCharsMax,
   type ChangeProposalEvidence,
+  type ChangeProposalMergeReconciliationStored,
+  type ChangeProposalMerging,
   type ChangeProposalPublication,
   type ChangeProposalReconciliationStored,
 } from "../../src/interpreter/changeProposal.ts";
 import {
   finalizationProposalBody,
   finalizationProposalCreationRecording,
+  finalizationProposalMergeReadingRecording,
+  finalizationProposalMergeRecording,
   finalizationProposalNext,
   finalizationProposalReadingRecording,
   finalizationProposalTitle,
+  type FinalizationProposalDecision,
   type FinalizationProposalGathered,
+  type FinalizationProposalStanding,
 } from "../../src/interpreter/finalizationProposal.ts";
 import {
   asBriefIntent,
@@ -96,14 +104,30 @@ function evidence(
   };
 }
 
-/** The ceilings every case below continues a publication under. */
-const bounds = { creationsMax: 2, reconciliationsMax: 2 };
+/** The ceilings every case below continues a proposal under. */
+const bounds = {
+  publication: { creationsMax: 2, reconciliationsMax: 2 },
+  merging: { mergesMax: 2, readingsMax: 2 },
+};
 
-/** One gathered proposal over the publication a case names. */
+/** The finalization every case below stands in unless it names another: one that only proposes. */
+const proposing: FinalizationProposalStanding = {
+  mode: "PullRequest",
+  lifecycle: "Active",
+};
+
+/** The same finalization under the landing that merges what it proposed. */
+const merging: FinalizationProposalStanding = {
+  mode: "PullRequestMerge",
+  lifecycle: "Active",
+};
+
+/** One gathered proposal over the publication a case names, and whatever its merge has come to. */
 function gathered(
   publication: ChangeProposalPublication,
+  merged: ChangeProposalMerging = { merging: "Unasked" },
 ): FinalizationProposalGathered {
-  return { gathered: "Request", request, publication };
+  return { gathered: "Request", request, publication, merging: merged };
 }
 
 /** One create in flight, with however many readings a case has already taken. */
@@ -117,15 +141,20 @@ function unanswered(
 
 test("a proposal nobody has attempted is created, and one in flight is read back", () => {
   assert.deepEqual(
-    finalizationProposalNext(gathered({ publication: "Unopened" }), bounds),
+    finalizationProposalNext(
+      proposing,
+      gathered({ publication: "Unopened" }),
+      bounds,
+    ),
     { decide: "ProposeChange", request },
   );
   assert.deepEqual(
-    finalizationProposalNext(gathered(unanswered(1, 0)), bounds),
+    finalizationProposalNext(proposing, gathered(unanswered(1, 0)), bounds),
     { decide: "ReconcileProposal", request },
   );
   assert.deepEqual(
     finalizationProposalNext(
+      proposing,
       gathered({ publication: "Idle", creations: 1 }),
       bounds,
     ),
@@ -138,6 +167,7 @@ test("a proposal the forge proves it holds is the one thing that concludes", () 
   for (const created of ["Created", "AlreadyExists"] as const) {
     assert.deepEqual(
       finalizationProposalNext(
+        proposing,
         gathered({
           publication: "Answered",
           creation: { created, evidence: evidence() },
@@ -150,6 +180,7 @@ test("a proposal the forge proves it holds is the one thing that concludes", () 
   }
   assert.deepEqual(
     finalizationProposalNext(
+      proposing,
       gathered(
         unanswered(1, 1, { reconciled: "Accepted", evidence: evidence() }),
       ),
@@ -184,7 +215,7 @@ test("every reason a publication is held reaches a hold this tree declares", () 
   ];
   for (const [publication, hold] of held) {
     assert.deepEqual(
-      finalizationProposalNext(gathered(publication), bounds),
+      finalizationProposalNext(proposing, gathered(publication), bounds),
       { decide: "Hold", hold },
       hold,
     );
@@ -193,12 +224,15 @@ test("every reason a publication is held reaches a hold this tree declares", () 
 });
 
 test("a deployment binding no forge and an unreadable base are holds and not conclusions", () => {
-  assert.deepEqual(finalizationProposalNext({ gathered: "Unbound" }, bounds), {
-    decide: "Hold",
-    hold: "ProposalDenied",
-  });
   assert.deepEqual(
-    finalizationProposalNext({ gathered: "BaseUnreadable" }, bounds),
+    finalizationProposalNext(proposing, { gathered: "Unbound" }, bounds),
+    {
+      decide: "Hold",
+      hold: "ProposalDenied",
+    },
+  );
+  assert.deepEqual(
+    finalizationProposalNext(proposing, { gathered: "BaseUnreadable" }, bounds),
     {
       decide: "Hold",
       hold: "ProposalBaseUnreadable",
@@ -208,7 +242,11 @@ test("a deployment binding no forge and an unreadable base are holds and not con
 });
 
 test("a base that is the head it would be opened from is a hold this tree declares", () => {
-  const decision = finalizationProposalNext({ gathered: "BaseIsHead" }, bounds);
+  const decision = finalizationProposalNext(
+    proposing,
+    { gathered: "BaseIsHead" },
+    bounds,
+  );
   assert.deepEqual(decision, {
     decide: "Hold",
     hold: "ProposalBaseIsHead",
@@ -238,7 +276,7 @@ test("no publication carrying a create in flight reaches a create", () => {
   ];
   for (const publication of populated(publications, "the publications")) {
     assert.notEqual(
-      finalizationProposalNext(gathered(publication), bounds).decide,
+      finalizationProposalNext(proposing, gathered(publication), bounds).decide,
       "ProposeChange",
       JSON.stringify(publication).slice(0, 60),
     );
@@ -249,9 +287,22 @@ test("a bound that is not a positive count is refused rather than treated as non
   for (const bound of [0, -1, 1.5]) {
     assert.throws(
       () =>
-        finalizationProposalNext(gathered({ publication: "Unopened" }), {
-          creationsMax: bound,
-          reconciliationsMax: bound,
+        finalizationProposalNext(
+          proposing,
+          gathered({ publication: "Unopened" }),
+          {
+            publication: { creationsMax: bound, reconciliationsMax: bound },
+            merging: bounds.merging,
+          },
+        ),
+      RangeError,
+      String(bound),
+    );
+    assert.throws(
+      () =>
+        finalizationProposalNext(merging, proved(), {
+          publication: bounds.publication,
+          merging: { mergesMax: bound, readingsMax: bound },
         }),
       RangeError,
       String(bound),
@@ -298,6 +349,284 @@ test("an answer about this deployment is never recorded as one about the proposa
       reconciled: { reconciled: "Absent" },
     },
   );
+});
+
+/** The commit a merge that landed left behind. */
+const mergeCommit = asGitObjectId("d".repeat(40));
+
+/** One proposal the create proved, standing at whatever its merge has come to. */
+function proved(
+  merged: ChangeProposalMerging = { merging: "Unasked" },
+  overrides: Partial<ChangeProposalEvidence> = {},
+): FinalizationProposalGathered {
+  return gathered(
+    {
+      publication: "Answered",
+      creation: { created: "Created", evidence: evidence(overrides) },
+    },
+    merged,
+  );
+}
+
+/** The merge the step names for that proved proposal, addressed by the number its evidence carries. */
+const mergeRequest = changeProposalMergeRequest({
+  binding: request.binding,
+  partition: request.partition,
+  repository: request.repository,
+  proposal: evidence().identity,
+  marker: request.marker,
+  headCommit: request.head.commit,
+});
+
+/** One merge in flight, with however many readings a case has already taken. */
+function unheard(
+  merges: number,
+  readings: number,
+  reading?: ChangeProposalMergeReconciliationStored,
+): ChangeProposalMerging {
+  return { merging: "Unanswered", merges, readings, reading };
+}
+
+test("a proved proposal is merged only under the landing that merges it", () => {
+  assert.deepEqual(finalizationProposalNext(proposing, proved(), bounds), {
+    decide: "Conclude",
+  });
+  assert.deepEqual(finalizationProposalNext(merging, proved(), bounds), {
+    decide: "MergeProposal",
+    request,
+    merge: mergeRequest,
+  });
+  assert.deepEqual(
+    finalizationProposalNext(merging, proved(unheard(1, 0)), bounds),
+    { decide: "ReconcileMerge", request, merge: mergeRequest },
+  );
+  assert.deepEqual(
+    finalizationProposalNext(merging, proved(unheard(1, 2)), bounds),
+    { decide: "RefuseMergeAttempt" },
+    "readings that found nothing release the attempt rather than holding it",
+  );
+});
+
+test("a proposal somebody else already merged is the success only a merging landing asked for", () => {
+  const landed = { status: "Merged", mergeCommit } as const;
+  assert.deepEqual(
+    finalizationProposalNext(
+      merging,
+      proved({ merging: "Unasked" }, landed),
+      bounds,
+    ),
+    {
+      decide: "Conclude",
+    },
+  );
+  assert.deepEqual(
+    finalizationProposalNext(
+      proposing,
+      proved({ merging: "Unasked" }, landed),
+      bounds,
+    ),
+    { decide: "Hold", hold: "ProposalRefused" },
+    "a landing that leaves merging to somebody else is contradicted by one that happened",
+  );
+  assert.deepEqual(
+    finalizationProposalNext(
+      merging,
+      proved({ merging: "Unasked" }, { status: "Merged" }),
+      bounds,
+    ),
+    { decide: "MergeProposal", request, merge: mergeRequest },
+    "a merge the forge named no commit for is asked for rather than believed",
+  );
+});
+
+test("what the merge answered is what the finalization does next", () => {
+  const answered: readonly [
+    Parameters<typeof proved>[0],
+    FinalizationProposalDecision,
+  ][] = [
+    [
+      { merging: "Answered", merge: { merged: "Merged", mergeCommit } },
+      { decide: "Conclude" },
+    ],
+    [
+      { merging: "Answered", merge: { merged: "HeadMoved" } },
+      { decide: "Hold", hold: "ProposalHeadMoved" },
+    ],
+    [
+      {
+        merging: "Answered",
+        merge: { merged: "NotMergeable", reason: "Conflict" },
+      },
+      { decide: "RecordMergeConflict" },
+    ],
+    [
+      {
+        merging: "Answered",
+        merge: { merged: "NotMergeable", reason: "Blocked" },
+      },
+      { decide: "Hold", hold: "ProposalMergeBlocked" },
+    ],
+    [
+      unheard(1, 1, {
+        reconciled: "Accepted",
+        evidence: evidence({ status: "Merged", mergeCommit }),
+      }),
+      { decide: "Conclude" },
+    ],
+    [
+      unheard(1, 1, {
+        reconciled: "Unmerged",
+        evidence: evidence({ mergeability: "Conflicting" }),
+      }),
+      { decide: "RecordMergeConflict" },
+    ],
+    [
+      unheard(1, 1, {
+        reconciled: "Unmerged",
+        evidence: evidence({ mergeability: "Blocked" }),
+      }),
+      { decide: "Hold", hold: "ProposalMergeBlocked" },
+    ],
+    [
+      unheard(1, 1, {
+        reconciled: "Contradictory",
+        contradiction: "Closed",
+        evidence: evidence({ status: "Closed" }),
+      }),
+      { decide: "Hold", hold: "ProposalRefused" },
+    ],
+  ];
+  for (const [merged, decision] of answered) {
+    assert.deepEqual(
+      finalizationProposalNext(merging, proved(merged), bounds),
+      decision,
+      JSON.stringify(merged).slice(0, 70),
+    );
+  }
+});
+
+test("every reason a merge is held reaches a hold this tree declares", () => {
+  const holds = new Set<string>(allFinalizationHoldKinds);
+  const held: readonly [Parameters<typeof proved>[0], string][] = [
+    [{ merging: "Idle", merges: 2 }, "ProposalMergesExhausted"],
+    [unheard(1, 1, { reconciled: "Absent" }), "ProposalAbsent"],
+    [unheard(1, 1, { reconciled: "Unstorable" }), "ProposalEvidenceUnstorable"],
+    [
+      {
+        merging: "Answered",
+        merge: { merged: "NotMergeable", reason: "Blocked" },
+      },
+      "ProposalMergeBlocked",
+    ],
+    [
+      { merging: "Answered", merge: { merged: "HeadMoved" } },
+      "ProposalHeadMoved",
+    ],
+  ];
+  for (const [merged, hold] of populated(held, "the merge holds")) {
+    assert.deepEqual(
+      finalizationProposalNext(merging, proved(merged), bounds),
+      { decide: "Hold", hold },
+      hold,
+    );
+    assert.ok(holds.has(hold), `${hold} is not a declared hold`);
+  }
+});
+
+test("a project that will admit no further act aborts rather than merging", () => {
+  for (const lifecycle of allClosingLifecycles) {
+    assert.deepEqual(
+      finalizationProposalNext(
+        { mode: "PullRequestMerge", lifecycle },
+        proved(),
+        bounds,
+      ),
+      { decide: "Abort" },
+      lifecycle,
+    );
+    assert.deepEqual(
+      finalizationProposalNext(
+        { mode: "PullRequestMerge", lifecycle },
+        proved(unheard(1, 0)),
+        bounds,
+      ),
+      { decide: "ReconcileMerge", request, merge: mergeRequest },
+      "a merge already asked is read back whatever the lifecycle says",
+    );
+    assert.deepEqual(
+      finalizationProposalNext(
+        { mode: "PullRequestMerge", lifecycle },
+        proved({
+          merging: "Answered",
+          merge: { merged: "Merged", mergeCommit },
+        }),
+        bounds,
+      ),
+      { decide: "Conclude" },
+      "and a merge that landed is the success it is whatever became of the project",
+    );
+  }
+});
+
+test("an answer about this deployment is never recorded as one about the merge", () => {
+  assert.deepEqual(
+    finalizationProposalMergeRecording({ merged: "Unavailable" }),
+    {
+      record: "Decline",
+      hold: "ProposalUnavailable",
+    },
+  );
+  assert.deepEqual(finalizationProposalMergeRecording({ merged: "Denied" }), {
+    record: "Decline",
+    hold: "ProposalDenied",
+  });
+  assert.deepEqual(
+    finalizationProposalMergeRecording({ merged: "Ambiguous" }),
+    {
+      record: "Unanswered",
+    },
+  );
+  assert.deepEqual(
+    finalizationProposalMergeRecording({
+      merged: "NotMergeable",
+      reason: "Unknown",
+    }),
+    { record: "Unanswered" },
+    "a refusal naming no reason settles nothing and is read back",
+  );
+  assert.deepEqual(
+    finalizationProposalMergeRecording({ merged: "Merged", mergeCommit }),
+    { record: "Merge", merged: { merged: "Merged", mergeCommit } },
+  );
+  assert.deepEqual(
+    finalizationProposalMergeReadingRecording({ reconciled: "Unavailable" }),
+    { record: "Nothing", hold: "ProposalUnavailable" },
+  );
+  assert.deepEqual(
+    finalizationProposalMergeReadingRecording({ reconciled: "Denied" }),
+    { record: "Nothing", hold: "ProposalDenied" },
+  );
+  assert.deepEqual(
+    finalizationProposalMergeReadingRecording({ reconciled: "Absent" }),
+    { record: "Reading", reconciled: { reconciled: "Absent" } },
+  );
+});
+
+test("no merging in flight and no answered one reaches a second merge", () => {
+  const merged: readonly ChangeProposalMerging[] = [
+    unheard(1, 0),
+    unheard(1, 1, { reconciled: "Unmerged", evidence: evidence() }),
+    { merging: "Idle", merges: 2 },
+    { merging: "Answered", merge: { merged: "Merged", mergeCommit } },
+    { merging: "Answered", merge: { merged: "HeadMoved" } },
+  ];
+  for (const state of populated(merged, "the mergings")) {
+    assert.notEqual(
+      finalizationProposalNext(merging, proved(state), bounds).decide,
+      "MergeProposal",
+      JSON.stringify(state).slice(0, 60),
+    );
+  }
 });
 
 test("the words a proposal carries name its ticket and always end on its marker", () => {

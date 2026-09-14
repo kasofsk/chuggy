@@ -9,9 +9,12 @@
  * proposal is what follows. A ticket concludes `FinalizationSucceeded` on
  * evidence that the forge holds a proposal for it: a create that answered with
  * evidence is that proof itself, and a create nobody heard back from is read
- * back by its marker under the ceilings this step is given. Who merges that
- * proposal, and when, is outside this machine entirely, so `model/` sees the
- * same success it always did.
+ * back by its marker under the ceilings this step is given. Under
+ * `PullRequestMerge` the finalizer then asks the forge to merge that proposal
+ * and the ticket concludes on proof of the merge instead — the approval that
+ * gated the promotion being the only human gate either landing has, and the
+ * forge's own rules still refusing whatever this step asks, so `model/` sees
+ * the same four outcomes it always did.
  *
  * WHICH ANSWERS ARE WRITTEN DOWN IS DECIDED HERE AND NOWHERE ELSE. A forge that
  * would not be asked has said nothing about a proposal, so it is not recorded
@@ -41,14 +44,26 @@
  */
 
 import { textCodePointsCount } from "../contract/http.ts";
+import type { BriefFinalizationMode } from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import type { TicketId } from "../domain/ids.ts";
 import {
+  changeProposalMergeNext,
+  changeProposalMergeRequest,
   changeProposalPublicationNext,
   proposalBodyCharsMax,
   proposalTitleCharsMax,
   type ChangeProposalCreated,
   type ChangeProposalCreationAnswer,
+  type ChangeProposalEvidence,
+  type ChangeProposalMerged,
+  type ChangeProposalMergedStanding,
+  type ChangeProposalMergeAnswer,
+  type ChangeProposalMergeReconciled,
+  type ChangeProposalMergeReconciliationAnswer,
+  type ChangeProposalMergeRequest,
+  type ChangeProposalMerging,
+  type ChangeProposalMergingBounds,
   type ChangeProposalPublication,
   type ChangeProposalPublicationBounds,
   type ChangeProposalReconciled,
@@ -58,8 +73,10 @@ import {
   type OpenedChangeProposalPublication,
   type ProposalMarker,
 } from "./changeProposal.ts";
+import { allClosingLifecycles } from "./finalizer.ts";
 import type { CommitPermitId, FinalizationClaim } from "./finalizer.ts";
 import type { FinalizationHoldKind } from "./finalizer.ts";
+import type { Lifecycle } from "./projectStore.ts";
 import {
   briefIntentLines,
   type BriefIntent,
@@ -79,6 +96,7 @@ export type FinalizationProposalGathered =
       readonly gathered: "Request";
       readonly request: ChangeProposalRequest;
       readonly publication: ChangeProposalPublication;
+      readonly merging: ChangeProposalMerging;
     }
   | { readonly gathered: "Unbound" }
   | { readonly gathered: "BaseUnreadable" }
@@ -98,8 +116,44 @@ export type FinalizationProposalDecision =
       readonly request: ChangeProposalRequest;
     }
   | { readonly decide: "RefuseProposalAttempt" }
+  | {
+      readonly decide: "MergeProposal";
+      readonly request: ChangeProposalRequest;
+      readonly merge: ChangeProposalMergeRequest;
+    }
+  | {
+      readonly decide: "ReconcileMerge";
+      readonly request: ChangeProposalRequest;
+      readonly merge: ChangeProposalMergeRequest;
+    }
+  | { readonly decide: "RefuseMergeAttempt" }
+  | { readonly decide: "RecordMergeConflict" }
+  | { readonly decide: "Abort" }
   | { readonly decide: "Conclude" }
   | { readonly decide: "Hold"; readonly hold: FinalizationHoldKind };
+
+/** What the finalization itself brings to this step: how its brief lands, and what its project will still admit. */
+export interface FinalizationProposalStanding {
+  readonly mode: BriefFinalizationMode | undefined;
+  readonly lifecycle: Lifecycle;
+}
+
+/** The ceilings the two halves of one proposal are continued under. */
+export interface FinalizationProposalBounds {
+  readonly publication: ChangeProposalPublicationBounds;
+  readonly merging: ChangeProposalMergingBounds;
+}
+
+/**
+ * What a proposal the forge has already merged is to a landing: the thing it
+ * asked for where it would have merged the proposal itself, and a contradiction
+ * where merging it was somebody else's to do.
+ */
+export function finalizationProposalMergedStanding(
+  mode: BriefFinalizationMode | undefined,
+): ChangeProposalMergedStanding {
+  return mode === "PullRequestMerge" ? "Accepted" : "Contradictory";
+}
 
 /** The hold each reason a publication is held under is, named as this layer names it. */
 function finalizationProposalHeld(
@@ -118,14 +172,121 @@ function finalizationProposalHeld(
   }
 }
 
+/** The hold each reason a merge is held under is, named as this layer names it. */
+function finalizationProposalMergeHeld(
+  reason: Extract<
+    ReturnType<typeof changeProposalMergeNext>,
+    { next: "Held" }
+  >["reason"],
+): FinalizationHoldKind {
+  switch (reason) {
+    case "MergesExhausted":
+      return "ProposalMergesExhausted";
+    case "Blocked":
+      return "ProposalMergeBlocked";
+    case "ProposalAbsent":
+      return "ProposalAbsent";
+    case "EvidenceUnstorable":
+      return "ProposalEvidenceUnstorable";
+    default:
+      return assertNever(reason);
+  }
+}
+
+/**
+ * What one settled merge answer leaves the finalization to do. A head the forge
+ * found moved is held rather than merged again, because the commit the permit
+ * landed is the only one this request ever asked to have merged.
+ */
+function finalizationProposalMerged(
+  merge: ChangeProposalMergeAnswer,
+): FinalizationProposalDecision {
+  switch (merge.merged) {
+    case "Merged":
+      return { decide: "Conclude" };
+    case "HeadMoved":
+      return { decide: "Hold", hold: "ProposalHeadMoved" };
+    case "NotMergeable":
+      return merge.reason === "Conflict"
+        ? { decide: "RecordMergeConflict" }
+        : { decide: "Hold", hold: "ProposalMergeBlocked" };
+    default:
+      return assertNever(merge);
+  }
+}
+
+/** The merge one proved proposal is asked for, addressed by the number its evidence carries. */
+function finalizationProposalMergeRequest(
+  request: ChangeProposalRequest,
+  evidence: ChangeProposalEvidence,
+): ChangeProposalMergeRequest {
+  return changeProposalMergeRequest({
+    binding: request.binding,
+    partition: request.partition,
+    repository: request.repository,
+    proposal: evidence.identity,
+    marker: request.marker,
+    headCommit: request.head.commit,
+  });
+}
+
+/**
+ * What one proved proposal's merge authorizes. A proposal the create already
+ * found merged is the success it asked for and reaches no forge again; a
+ * project that will admit no further irreversible act aborts rather than
+ * merges; and a merge already in flight is read back whatever the lifecycle
+ * says, the forge being the only authority on whether it landed.
+ */
+function finalizationProposalMergeNext(
+  finalization: FinalizationProposalStanding,
+  request: ChangeProposalRequest,
+  evidence: ChangeProposalEvidence,
+  merging: ChangeProposalMerging,
+  bounds: ChangeProposalMergingBounds,
+): FinalizationProposalDecision {
+  if (evidence.status === "Merged" && evidence.mergeCommit !== undefined)
+    return { decide: "Conclude" };
+  const next = changeProposalMergeNext(request, merging, bounds);
+  switch (next.next) {
+    case "Merge":
+      return allClosingLifecycles.includes(finalization.lifecycle)
+        ? { decide: "Abort" }
+        : {
+            decide: "MergeProposal",
+            request,
+            merge: finalizationProposalMergeRequest(request, evidence),
+          };
+    case "ReadByNumber":
+      return {
+        decide: "ReconcileMerge",
+        request,
+        merge: finalizationProposalMergeRequest(request, evidence),
+      };
+    case "RefuseAttempt":
+      return { decide: "RefuseMergeAttempt" };
+    case "Concluded":
+      return finalizationProposalMerged(next.merge);
+    case "Refused":
+      return { decide: "Hold", hold: "ProposalRefused" };
+    case "Held":
+      return {
+        decide: "Hold",
+        hold: finalizationProposalMergeHeld(next.reason),
+      };
+    default:
+      return assertNever(next);
+  }
+}
+
 /**
  * The one act one gathered proposal authorizes. A deployment that binds no forge
  * for the repository is denied rather than crashed, because a binding is
  * operational and a ticket is not evidence about one.
  */
 export function finalizationProposalNext(
+  finalization: FinalizationProposalStanding,
   gathered: FinalizationProposalGathered,
-  bounds: ChangeProposalPublicationBounds,
+  bounds: FinalizationProposalBounds,
 ): FinalizationProposalDecision {
   if (gathered.gathered === "Unbound")
     return { decide: "Hold", hold: "ProposalDenied" };
@@ -134,10 +295,13 @@ export function finalizationProposalNext(
   if (gathered.gathered === "BaseIsHead")
     return { decide: "Hold", hold: "ProposalBaseIsHead" };
   const { request } = gathered;
+  const merged = finalizationProposalMergedStanding(finalization.mode);
+  const merges = merged === "Accepted";
   const next = changeProposalPublicationNext(
     request,
     gathered.publication,
-    bounds,
+    bounds.publication,
+    merged,
   );
   switch (next.next) {
     case "Create":
@@ -147,7 +311,15 @@ export function finalizationProposalNext(
     case "RefuseAttempt":
       return { decide: "RefuseProposalAttempt" };
     case "Accepted":
-      return { decide: "Conclude" };
+      return merges
+        ? finalizationProposalMergeNext(
+            finalization,
+            request,
+            next.evidence,
+            gathered.merging,
+            bounds.merging,
+          )
+        : { decide: "Conclude" };
     case "Refused":
       return { decide: "Hold", hold: "ProposalRefused" };
     case "Held":
@@ -212,6 +384,76 @@ export function finalizationProposalReadingRecording(
     case "Absent":
     case "Contradictory":
       return { record: "Reconciliation", reconciled };
+    case "Unavailable":
+      return { record: "Nothing", hold: "ProposalUnavailable" };
+    case "Denied":
+      return { record: "Nothing", hold: "ProposalDenied" };
+    default:
+      return assertNever(reconciled);
+  }
+}
+
+/**
+ * What one forge answer about merging is written against the row, and what it
+ * leaves the pass holding. Nothing here writes anything; the caller performs
+ * the arm it names.
+ */
+export type FinalizationProposalMergeRecording =
+  | { readonly record: "Merge"; readonly merged: ChangeProposalMergeAnswer }
+  | {
+      readonly record: "Reading";
+      readonly reconciled: ChangeProposalMergeReconciliationAnswer;
+    }
+  | { readonly record: "Decline"; readonly hold: FinalizationHoldKind }
+  | { readonly record: "Nothing"; readonly hold: FinalizationHoldKind }
+  | { readonly record: "Unanswered" };
+
+/**
+ * What one merge's answer is written down as. A forge that would not take the
+ * merge has said nothing about it, so the attempt it declined is released and
+ * the merge it stood for is unspent; one that refused without naming a reason
+ * has said nothing a row settles on, and is read back like an answer nobody
+ * heard at all.
+ */
+export function finalizationProposalMergeRecording(
+  merged: ChangeProposalMerged,
+): FinalizationProposalMergeRecording {
+  switch (merged.merged) {
+    case "Merged":
+    case "HeadMoved":
+      return { record: "Merge", merged };
+    case "NotMergeable":
+      return merged.reason === "Unknown"
+        ? { record: "Unanswered" }
+        : {
+            record: "Merge",
+            merged: { merged: "NotMergeable", reason: merged.reason },
+          };
+    case "Unavailable":
+      return { record: "Decline", hold: "ProposalUnavailable" };
+    case "Denied":
+      return { record: "Decline", hold: "ProposalDenied" };
+    case "Ambiguous":
+      return { record: "Unanswered" };
+    default:
+      return assertNever(merged);
+  }
+}
+
+/**
+ * What one reading of a merge is written down as. A read that could not be made
+ * and one the forge refused are answers about this deployment rather than about
+ * the proposal, so neither is recorded and neither spends a reading.
+ */
+export function finalizationProposalMergeReadingRecording(
+  reconciled: ChangeProposalMergeReconciled,
+): FinalizationProposalMergeRecording {
+  switch (reconciled.reconciled) {
+    case "Accepted":
+    case "Unmerged":
+    case "Absent":
+    case "Contradictory":
+      return { record: "Reading", reconciled };
     case "Unavailable":
       return { record: "Nothing", hold: "ProposalUnavailable" };
     case "Denied":
@@ -306,10 +548,22 @@ export interface ChangeProposalAsked {
   readonly body: string;
 }
 
+/** One answer offered against the merge half of that row: what a merge returned, or what one reading read. */
+export interface ChangeProposalMergeResult {
+  readonly claim: FinalizationClaim;
+  readonly result:
+    | { readonly records: "Merge"; readonly merged: ChangeProposalMergeAnswer }
+    | {
+        readonly records: "Reading";
+        readonly reconciled: ChangeProposalMergeReconciliationAnswer;
+      };
+}
+
 /** One stored proposal whole: what it asked the forge for, and what has come back. */
 export interface StoredChangeProposal {
   readonly asked: ChangeProposalAsked;
   readonly publication: OpenedChangeProposalPublication;
+  readonly merging: ChangeProposalMerging;
 }
 
 /**
@@ -343,5 +597,25 @@ export interface FinalizerProposalStore {
   /** Records one answer against that row, the creation's being writable exactly once. */
   recordChangeProposal(
     record: ChangeProposalResult,
+  ): Promise<ChangeProposalWritten>;
+
+  /** Counts one merge attempt, refused where a merge is already in flight or answered. */
+  markChangeProposalMergeAttempt(
+    claim: FinalizationClaim,
+  ): Promise<ChangeProposalWritten>;
+
+  /** Records that no reading found the merge in flight, which releases the attempt it spent. */
+  refuseChangeProposalMergeAttempt(
+    claim: FinalizationClaim,
+  ): Promise<ChangeProposalWritten>;
+
+  /** Records that the forge would not take the merge, which releases the attempt unspent. */
+  declineChangeProposalMergeAttempt(
+    claim: FinalizationClaim,
+  ): Promise<ChangeProposalWritten>;
+
+  /** Records one answer about merging against that row, the merge's being writable exactly once. */
+  recordChangeProposalMerge(
+    record: ChangeProposalMergeResult,
   ): Promise<ChangeProposalWritten>;
 }

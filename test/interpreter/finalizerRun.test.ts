@@ -30,6 +30,11 @@ import {
   type ChangeProposalForges,
   type ChangeProposalPort,
   type ChangeProposalCreationStored,
+  type ChangeProposalMerged,
+  type ChangeProposalMergeAnswer,
+  type ChangeProposalMergeReconciliationStored,
+  type ChangeProposalMergeRequest,
+  type ChangeProposalMerging,
   type ChangeProposalRead,
   type ChangeProposalReconciliationStored,
   type ChangeProposalRequest,
@@ -37,9 +42,11 @@ import {
 } from "../../src/interpreter/changeProposal.ts";
 import type {
   ChangeProposalAsked,
+  ChangeProposalMergeResult,
   ChangeProposalRecord,
   ChangeProposalResult,
   FinalizerProposalStore,
+  StoredChangeProposal,
 } from "../../src/interpreter/finalizationProposal.ts";
 import {
   allClosingLifecycles,
@@ -63,6 +70,8 @@ import {
   type CommitPermit,
   type FinalizationAttempt,
   type FinalizationClaim,
+  type FinalizationConclusion,
+  type FinalizationFailureKind,
   type FinalizationView,
   type FinalizerStore,
   type GitPromotionPort,
@@ -180,6 +189,17 @@ function claimOf(request: string): FinalizationClaim {
 /** One prepared attempt over the target the fixture remote reports. */
 function attemptOf(request: string): FinalizationAttempt {
   return {
+    ...attemptBaseOf(request),
+    outcome: "Prepared",
+    candidate: asGitObjectId(commitOf("c")),
+  };
+}
+
+/** Everything one attempt says about itself before its outcome does. */
+function attemptBaseOf(
+  request: string,
+): Omit<FinalizationAttempt, "outcome" | "candidate" | "failureKind"> {
+  return {
     attempt: asFinalizationAttemptId(`attempt-${request}`),
     request,
     ticket: asTicketId(1),
@@ -192,10 +212,16 @@ function attemptOf(request: string): FinalizationAttempt {
     configurationRevision: "revision-run",
     configurationDigest: commitOf("b").repeat(2).slice(0, 64),
     approvalRequired: false,
-    outcome: "Prepared",
-    candidate: asGitObjectId(commitOf("c")),
     attemptDigest: commitOf("d").repeat(2).slice(0, 64),
   };
+}
+
+/** The attempt one failure leaves, which pins no candidate because it produced none. */
+function attemptFailedOf(
+  request: string,
+  kind: FinalizationFailureKind,
+): FinalizationAttempt {
+  return { ...attemptBaseOf(request), outcome: "Failed", failureKind: kind };
 }
 
 /** One granted permit for one attempt. */
@@ -216,10 +242,13 @@ interface FinalizerRecorder
   readonly readings: ReconciliationRecord[];
   readonly settled: string[];
   readonly submitted: string[];
+  /** The conclusion each of those offers carried, which is what the request ends as. */
+  readonly concluded: FinalizationConclusion[];
   readonly attempts: AttemptRecord[];
   readonly asks: ApprovalAsk[];
   readonly opened: ChangeProposalRecord[];
   readonly results: ChangeProposalResult[];
+  readonly mergeResults: ChangeProposalMergeResult[];
   gathering: HandoffGathering;
   asked: ApprovalAsked;
   granted?: PermitGranted;
@@ -232,6 +261,13 @@ interface FinalizerRecorder
   proposalReadings: number;
   proposalCreation?: ChangeProposalCreationStored;
   proposalReading?: ChangeProposalReconciliationStored | undefined;
+  /** The counters the merge half of that row keeps, which are the whole of its state. */
+  proposalMergeAttempts: number;
+  proposalMergeRefusals: number;
+  proposalMergeDeclines: number;
+  proposalMergeReadings: number;
+  proposalMerge?: ChangeProposalMergeAnswer;
+  proposalMergeReading?: ChangeProposalMergeReconciliationStored | undefined;
   /** Whether this store can hold the evidence an answer carries at all. */
   unstorable?: boolean;
   /** Whether every result is refused, which is what the pass sees of a crash before one lands. */
@@ -274,15 +310,7 @@ function recordingProposals(
   store: () => FinalizerRecorder,
 ): FinalizerProposalStore {
   return {
-    changeProposal: () => {
-      const own = store();
-      const asked = own.askedProposal;
-      return Promise.resolve(
-        asked === undefined
-          ? undefined
-          : { asked, publication: proposalPublicationOf(own) },
-      );
-    },
+    changeProposal: () => Promise.resolve(recordedProposalOf(store())),
     markChangeProposalAttempt: (record) => {
       const own = store();
       if (
@@ -337,6 +365,85 @@ function recordingProposals(
       own.results.push(record);
       return Promise.resolve({ wrote: "Row" });
     },
+    ...recordingProposalMerges(store),
+  };
+}
+
+/** What one fixture row reads back as, absent until an attempt has written one. */
+function recordedProposalOf(
+  own: FinalizerRecorder,
+): StoredChangeProposal | undefined {
+  const asked = own.askedProposal;
+  return asked === undefined
+    ? undefined
+    : {
+        asked,
+        publication: proposalPublicationOf(own),
+        merging: proposalMergingOf(own),
+      };
+}
+
+/**
+ * The merge half of that row, which keeps its own counters exactly as the
+ * create's half keeps its: an attempt is counted before the merge it stands
+ * for, the answer is written once, and a released attempt takes its reading
+ * with it. A merge is asked only of a row whose create was answered, which is
+ * the evidence the number comes out of.
+ */
+function recordingProposalMerges(
+  store: () => FinalizerRecorder,
+): Pick<
+  FinalizerProposalStore,
+  | "markChangeProposalMergeAttempt"
+  | "refuseChangeProposalMergeAttempt"
+  | "declineChangeProposalMergeAttempt"
+  | "recordChangeProposalMerge"
+> {
+  return {
+    markChangeProposalMergeAttempt: () => {
+      const own = store();
+      if (
+        own.dropAttempts === true ||
+        own.proposalMerge !== undefined ||
+        own.proposalMergeAttempts !== proposalMergeReleasesOf(own) ||
+        own.proposalCreation === undefined
+      )
+        return Promise.resolve({ wrote: "Nothing" });
+      own.proposalMergeAttempts += 1;
+      return Promise.resolve({ wrote: "Row" });
+    },
+    refuseChangeProposalMergeAttempt: () => {
+      const own = store();
+      if (!proposalMergeReleasable(own))
+        return Promise.resolve({ wrote: "Nothing" });
+      own.proposalMergeRefusals += 1;
+      own.proposalMergeReading = undefined;
+      return Promise.resolve({ wrote: "Row" });
+    },
+    declineChangeProposalMergeAttempt: () => {
+      const own = store();
+      if (!proposalMergeReleasable(own))
+        return Promise.resolve({ wrote: "Nothing" });
+      own.proposalMergeDeclines += 1;
+      own.proposalMergeReading = undefined;
+      return Promise.resolve({ wrote: "Row" });
+    },
+    recordChangeProposalMerge: (record) => {
+      const own = store();
+      if (own.dropResults === true || !proposalMergeReleasable(own))
+        return Promise.resolve({ wrote: "Nothing" });
+      if (record.result.records === "Merge")
+        own.proposalMerge = record.result.merged;
+      else {
+        own.proposalMergeReading =
+          own.unstorable === true
+            ? { reconciled: "Unstorable" }
+            : record.result.reconciled;
+        own.proposalMergeReadings += 1;
+      }
+      own.mergeResults.push(record);
+      return Promise.resolve({ wrote: "Row" });
+    },
   };
 }
 
@@ -370,6 +477,63 @@ function proposalPublicationOf(
       };
 }
 
+/** The merge attempts something has caught up with, whether or not they spent a merge. */
+function proposalMergeReleasesOf(own: FinalizerRecorder): number {
+  return own.proposalMergeRefusals + own.proposalMergeDeclines;
+}
+
+/** Whether one merge is in flight, which is what a release and an answer both need. */
+function proposalMergeReleasable(own: FinalizerRecorder): boolean {
+  return (
+    own.proposalMerge === undefined &&
+    own.proposalMergeAttempts === proposalMergeReleasesOf(own) + 1
+  );
+}
+
+/** Which of the four states the fixture's merge counters put its row in. */
+function proposalMergingOf(own: FinalizerRecorder): ChangeProposalMerging {
+  const merge = own.proposalMerge;
+  if (merge !== undefined) return { merging: "Answered", merge };
+  if (own.proposalMergeAttempts === 0) return { merging: "Unasked" };
+  const merges = own.proposalMergeAttempts - own.proposalMergeDeclines;
+  return own.proposalMergeAttempts === proposalMergeReleasesOf(own)
+    ? { merging: "Idle", merges }
+    : {
+        merging: "Unanswered",
+        merges,
+        readings: own.proposalMergeReadings,
+        reading: own.proposalMergeReading,
+      };
+}
+
+/** The empty ledgers a fixture store starts with, one per kind of move it records. */
+function recordingLedgers(): Pick<
+  FinalizerRecorder,
+  | "grants"
+  | "readings"
+  | "settled"
+  | "submitted"
+  | "concluded"
+  | "attempts"
+  | "asks"
+  | "opened"
+  | "results"
+  | "mergeResults"
+> {
+  return {
+    grants: [],
+    readings: [],
+    settled: [],
+    submitted: [],
+    concluded: [],
+    attempts: [],
+    asks: [],
+    opened: [],
+    results: [],
+    mergeResults: [],
+  };
+}
+
 /** The counters a fixture row starts at, which is what a store holding no proposal counts. */
 function recordingProposalCounters(): Pick<
   FinalizerRecorder,
@@ -377,12 +541,20 @@ function recordingProposalCounters(): Pick<
   | "proposalRefusals"
   | "proposalDeclines"
   | "proposalReadings"
+  | "proposalMergeAttempts"
+  | "proposalMergeRefusals"
+  | "proposalMergeDeclines"
+  | "proposalMergeReadings"
 > {
   return {
     proposalAttempts: 0,
     proposalRefusals: 0,
     proposalDeclines: 0,
     proposalReadings: 0,
+    proposalMergeAttempts: 0,
+    proposalMergeRefusals: 0,
+    proposalMergeDeclines: 0,
+    proposalMergeReadings: 0,
   };
 }
 
@@ -392,14 +564,7 @@ function recordingStore(
   held: readonly HeldPermit[] = [],
 ): FinalizerRecorder {
   const own: FinalizerRecorder = {
-    grants: [],
-    readings: [],
-    settled: [],
-    submitted: [],
-    attempts: [],
-    asks: [],
-    opened: [],
-    results: [],
+    ...recordingLedgers(),
     ...recordingProposalCounters(),
     ...recordingProposals(() => own),
     gathering: {
@@ -443,6 +608,7 @@ function recordingStore(
       Promise.resolve(held.slice(0, permitsMax)),
     submitResult: (offer) => {
       own.submitted.push(offer.claim.request);
+      own.concluded.push(offer.conclusion);
       return Promise.resolve({
         submitted: "Submitted",
         operation: "operation",
@@ -645,10 +811,18 @@ function forgesOf(port?: ChangeProposalPort): ChangeProposalForges {
 interface ForgeRecorder extends ChangeProposalPort {
   readonly creates: ChangeProposalRequest[];
   readonly reads: ChangeProposalRequest[];
+  readonly merges: ChangeProposalMergeRequest[];
+  readonly numbered: ChangeProposalMergeRequest[];
   /** Whether the row saying a create may have happened was already there when it was called. */
   readonly openedBeforeCreate: boolean[];
+  /** Whether the row saying a merge may have happened was already there when it was called. */
+  readonly mergedBeforeMerge: boolean[];
   created: ChangeProposalCreated["created"];
   read: ChangeProposalRead["read"];
+  merged: ChangeProposalMerged;
+  /** What a reading by number finds, and what the proposal it found says about itself. */
+  numberRead: ChangeProposalRead["read"];
+  numberEvidence: Partial<ChangeProposalEvidence>;
 }
 
 /** The evidence the forge answers a request with, which is that request's own fields. */
@@ -683,9 +857,15 @@ function recordingForge(store: FinalizerRecorder): ForgeRecorder {
   const own: ForgeRecorder = {
     creates: [],
     reads: [],
+    merges: [],
+    numbered: [],
     openedBeforeCreate: [],
+    mergedBeforeMerge: [],
     created: "Ambiguous",
     read: "Absent",
+    merged: { merged: "Merged", mergeCommit: asGitObjectId(commitOf("e")) },
+    numberRead: "Found",
+    numberEvidence: {},
     create: (request) => {
       own.creates.push(request);
       own.openedBeforeCreate.push(store.opened.length > 0);
@@ -709,14 +889,40 @@ function recordingForge(store: FinalizerRecorder): ForgeRecorder {
           : { read },
       );
     },
-    readByNumber: () => {
-      throw new Error("the pass read a proposal by number");
+    readByNumber: (request) => {
+      own.numbered.push(request);
+      const read = own.numberRead;
+      return Promise.resolve(
+        read === "Found"
+          ? {
+              read,
+              evidence: forgeEvidence(
+                proposedRequestOf(own),
+                own.numberEvidence,
+              ),
+            }
+          : { read },
+      );
     },
-    merge: () => {
-      throw new Error("the pass asked this forge to merge a proposal");
+    merge: (request) => {
+      own.merges.push(request);
+      own.mergedBeforeMerge.push(store.proposalMergeAttempts > 0);
+      return Promise.resolve(own.merged);
     },
   };
   return own;
+}
+
+/**
+ * The request this forge was asked to open, which is what a reading by number
+ * is checked against. Every case reading one back has opened it first, so a
+ * store with no create recorded is a fixture that never reached the read.
+ */
+function proposedRequestOf(own: ForgeRecorder): ChangeProposalRequest {
+  const request = own.creates.at(-1);
+  if (request === undefined)
+    throw new Error("a proposal was read by number before it was opened");
+  return request;
 }
 
 /** The service a case drives, over the ceilings it names. */
@@ -1370,24 +1576,192 @@ test("a brief that lands by merging its proposal opens one exactly as a brief th
   ]);
   const forge = recordingForge(store);
   forge.created = "Created";
-  const service = proposingService(
-    store,
-    recordingGit(),
-    forge,
-    {},
-    "PullRequestMerge",
-  );
+  const service = mergingService(store, forge);
 
   const opening = await passOver(service);
 
   assert.equal(opening.proposals, 1);
   assert.equal(forge.creates[0]?.head.ref, briefBranch);
   assert.equal(forge.creates[0]?.base.ref, landingBranch);
+  assert.deepEqual(forge.merges, [], "a create is not yet a proposal to merge");
+});
+
+/** The service a merging case drives: the same brief, landing by merging what it opened. */
+function mergingService(
+  store: FinalizerRecorder,
+  forge: ForgeRecorder,
+  bounds: Partial<typeof finalizerDefaults> = {},
+): FinalizerService {
+  return proposingService(
+    store,
+    recordingGit(),
+    forge,
+    bounds,
+    "PullRequestMerge",
+  );
+}
+
+test("a merging brief asks for the merge its proved proposal authorizes and concludes on the commit", async () => {
+  const store = recordingStore([
+    proposedView("request-one", "PullRequestMerge"),
+  ]);
+  const forge = recordingForge(store);
+  forge.created = "Created";
+  const service = mergingService(store, forge);
+
+  await passOver(service);
+  const merging = await passOver(service);
+
+  assert.equal(merging.proposals, 1);
+  assert.equal(merging.conclusions, 0, "a merge is not yet proof of one");
+  assert.deepEqual(
+    forge.mergedBeforeMerge,
+    [true],
+    "the row saying a merge may have happened was written before it was called",
+  );
+  assert.equal(forge.merges[0]?.proposal.number, 3);
+  assert.equal(forge.merges[0]?.headCommit, commitOf("c"));
+  assert.equal(forge.merges[0]?.marker, forge.creates[0]?.marker);
+  assert.equal(store.mergeResults[0]?.result.records, "Merge");
 
   const proved = await passOver(service);
 
   assert.equal(proved.conclusions, 1);
-  assert.equal(forge.creates.length, 1, "no second create was authorized");
+  assert.equal(forge.merges.length, 1, "no second merge was authorized");
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+  assert.deepEqual(store.proposalMerge, {
+    merged: "Merged",
+    mergeCommit: commitOf("e"),
+  });
+});
+
+test("a merge nobody heard the fate of is read back by number and concluded on what it read", async () => {
+  const store = recordingStore([
+    proposedView("request-one", "PullRequestMerge"),
+  ]);
+  const forge = recordingForge(store);
+  forge.created = "Created";
+  forge.merged = { merged: "Ambiguous" };
+  forge.numberEvidence = {
+    status: "Merged",
+    mergeCommit: asGitObjectId(commitOf("f")),
+  };
+  const service = mergingService(store, forge);
+
+  await passOver(service);
+  const asked = await passOver(service);
+
+  assert.equal(asked.proposals, 1);
+  assert.equal(
+    store.mergeResults.length,
+    0,
+    "an ambiguous merge settles nothing",
+  );
+
+  const reading = await passOver(service);
+
+  assert.equal(reading.proposals, 1);
+  assert.equal(forge.numbered.length, 1);
+  assert.equal(
+    forge.merges.length,
+    1,
+    "a merge in flight authorizes no second",
+  );
+  assert.equal(store.mergeResults[0]?.result.records, "Reading");
+
+  const proved = await passOver(service);
+
+  assert.equal(proved.conclusions, 1);
+  assert.deepEqual(store.submitted, ["request-one"]);
+});
+
+test("a merge the forge's own rules blocked is held for an operator and never asked again", async () => {
+  const emitted: FinalizerHoldReason[] = [];
+  const store = recordingStore([
+    proposedView("request-one", "PullRequestMerge"),
+  ]);
+  const forge = recordingForge(store);
+  forge.created = "Created";
+  forge.merged = { merged: "NotMergeable", reason: "Blocked" };
+  const service = {
+    ...mergingService(store, forge),
+    metrics: finalizerTelemetry({
+      ...silentFinalizerMetrics,
+      holding: (reason) => emitted.push(reason),
+    }),
+  };
+
+  await passOver(service);
+  await passOver(service);
+  const held = await passOver(service);
+
+  assert.equal(held.conclusions, 0);
+  assert.equal(
+    held.proposals,
+    0,
+    "a blocked merge spends no further forge act",
+  );
+  assert.deepEqual(emitted, ["ProposalMergeBlocked"]);
+  assert.equal(forge.merges.length, 1);
+});
+
+test("a merge the forge refused for a conflict fails this finalization as a preparation's conflict does", async () => {
+  const store = recordingStore([
+    proposedView("request-one", "PullRequestMerge"),
+  ]);
+  const forge = recordingForge(store);
+  forge.created = "Created";
+  forge.merged = { merged: "NotMergeable", reason: "Conflict" };
+  const service = mergingService(store, forge);
+
+  await passOver(service);
+  await passOver(service);
+  const conflicted = await passOver(service);
+
+  assert.equal(conflicted.preparations, 1);
+  const recorded = store.attempts[0];
+  assert.equal(recorded?.outcome, "Failed");
+  assert.equal(recorded?.failureKind, "MergeConflict");
+  assert.equal(
+    recorded?.conflictManifest,
+    undefined,
+    "the forge named no paths, and an empty manifest is evidence of nothing",
+  );
+
+  const settling = recordingStore([
+    {
+      ...promotableView("request-one"),
+      attempt: attemptFailedOf("request-one", "MergeConflict"),
+      attemptsMade: 2,
+    },
+  ]);
+
+  const concluded = await passOver(serviceOf(settling, recordingGit()));
+
+  assert.equal(concluded.conclusions, 1);
+  assert.deepEqual(settling.concluded, [
+    { outcome: "FinalizationFailed", kind: "MergeConflict" },
+  ]);
+});
+
+test("a project that will admit no further act aborts the finalization rather than merging", async () => {
+  const store = recordingStore([
+    {
+      ...proposedView("request-one", "PullRequestMerge"),
+      lifecycle: "Deleting",
+    },
+  ]);
+  const forge = recordingForge(store);
+  forge.created = "Created";
+  const service = mergingService(store, forge);
+
+  await passOver(service);
+  const aborting = await passOver(service);
+
+  assert.deepEqual(forge.merges, []);
+  assert.equal(aborting.preparations, 1);
+  assert.equal(store.attempts[0]?.outcome, "Failed");
+  assert.equal(store.attempts[0]?.failureKind, "PreparationFailed");
 });
 
 test("a proposing brief naming no base opens into the branch the remote defaults to", async () => {

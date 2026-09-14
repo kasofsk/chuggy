@@ -54,6 +54,7 @@ import {
   asRepositoryId,
   type FinalizationClaim,
 } from "../../src/interpreter/finalizer.ts";
+import type { FinalizerProposalStore } from "../../src/interpreter/finalizationProposal.ts";
 import {
   handoffAccepted,
   handoffSuperseded,
@@ -326,6 +327,12 @@ interface ProposalState {
   readonly refusals: string;
   readonly declines: string;
   readonly reconciliations: string;
+  readonly merge: string | null;
+  readonly merge_reading: string | null;
+  readonly merge_attempts: string;
+  readonly merge_refusals: string;
+  readonly merge_declines: string;
+  readonly merge_readings: string;
 }
 
 /** The change proposal this project's request left, and nothing where it left none. */
@@ -337,7 +344,12 @@ async function proposalOf(
             creation, reconciliation,
             attempts::text AS attempts, refusals::text AS refusals,
             declines::text AS declines,
-            reconciliations::text AS reconciliations
+            reconciliations::text AS reconciliations,
+            merge, merge_reading,
+            merge_attempts::text AS merge_attempts,
+            merge_refusals::text AS merge_refusals,
+            merge_declines::text AS merge_declines,
+            merge_readings::text AS merge_readings
        FROM finalization_change_proposal WHERE tenant=$1 AND project=$2`,
     [project.partition.tenant, project.partition.project],
   )) as readonly unknown[] as readonly ProposalState[];
@@ -1042,6 +1054,247 @@ test("no answer about a create is recorded by a holder a takeover has retired", 
   );
 });
 
+/**
+ * A claimed request whose proposal is opened and answered, which is the row a
+ * merge is asked over: the store's own methods are what put it there, so what
+ * a case drives is the adapter and not an insert shaped like one.
+ */
+async function proposalMergeStoreSubject(label: string): Promise<{
+  project: FinalizerProject;
+  claim: FinalizationClaim;
+}> {
+  const project = await proposalRowSubject(label);
+  const claim = await finalizerClaim(rig, project, `owner-${label}`);
+  return { project, claim };
+}
+
+/** The evidence a merge reading stores, which is this request's own proposal read back. */
+function proposalStoredEvidence(
+  project: FinalizerProject,
+): ChangeProposalEvidence {
+  return proposalEvidenceTitled(project, "ticket 1: propose it");
+}
+
+/**
+ * Every write about merging that one row admits only while a merge is in
+ * flight, offered one at a time because each is guarded on the state the last
+ * one left.
+ */
+async function proposalMergeWritesRefused(
+  store: FinalizerProposalStore,
+  claim: FinalizationClaim,
+  why: string,
+): Promise<void> {
+  assert.deepEqual(
+    await store.refuseChangeProposalMergeAttempt(claim),
+    { wrote: "Nothing" },
+    why,
+  );
+  assert.deepEqual(
+    await store.declineChangeProposalMergeAttempt(claim),
+    { wrote: "Nothing" },
+    why,
+  );
+  assert.deepEqual(
+    await store.recordChangeProposalMerge({
+      claim,
+      result: { records: "Merge", merged: { merged: "HeadMoved" } },
+    }),
+    { wrote: "Nothing" },
+    why,
+  );
+  assert.deepEqual(
+    await store.recordChangeProposalMerge({
+      claim,
+      result: { records: "Reading", reconciled: { reconciled: "Absent" } },
+    }),
+    { wrote: "Nothing" },
+    why,
+  );
+}
+
+/**
+ * One claimed request whose proposal is answered and whose merge is not yet
+ * asked, reached through the store's own methods so what a case drives is the
+ * adapter rather than an insert shaped like one.
+ */
+async function proposalMergeProved(label: string): Promise<{
+  project: FinalizerProject;
+  claim: FinalizationClaim;
+  store: ReturnType<typeof postgresFinalizer>;
+  evidence: ChangeProposalEvidence;
+}> {
+  const { project, claim } = await proposalMergeStoreSubject(label);
+  const store = postgresFinalizer(rig.pool);
+  const evidence = proposalStoredEvidence(project);
+  assert.deepEqual(
+    await store.markChangeProposalMergeAttempt(claim),
+    { wrote: "Nothing" },
+    "a merge is asked only of a proposal this row has evidence of",
+  );
+  await store.recordChangeProposal({
+    claim,
+    result: { records: "Creation", created: { created: "Created", evidence } },
+  });
+  return { project, claim, store, evidence };
+}
+
+test("a merge is counted before it is asked, and released by what came of it", async () => {
+  const { claim, store, evidence } = await proposalMergeProved(
+    "proposalmergecounted",
+  );
+
+  assert.deepEqual((await store.changeProposal(claim))?.merging, {
+    merging: "Unasked",
+  });
+  assert.deepEqual(await store.markChangeProposalMergeAttempt(claim), {
+    wrote: "Row",
+  });
+  assert.deepEqual((await store.changeProposal(claim))?.merging, {
+    merging: "Unanswered",
+    merges: 1,
+    readings: 0,
+    reading: undefined,
+  });
+  assert.deepEqual(
+    await store.markChangeProposalMergeAttempt(claim),
+    { wrote: "Nothing" },
+    "a merge in flight authorizes no second",
+  );
+
+  await store.recordChangeProposalMerge({
+    claim,
+    result: {
+      records: "Reading",
+      reconciled: { reconciled: "Unmerged", evidence },
+    },
+  });
+  assert.deepEqual((await store.changeProposal(claim))?.merging, {
+    merging: "Unanswered",
+    merges: 1,
+    readings: 1,
+    reading: { reconciled: "Unmerged", evidence },
+  });
+
+  assert.deepEqual(await store.refuseChangeProposalMergeAttempt(claim), {
+    wrote: "Row",
+  });
+  assert.deepEqual(
+    (await store.changeProposal(claim))?.merging,
+    { merging: "Idle", merges: 1 },
+    "a released attempt takes its reading with it and leaves the merge it spent counted",
+  );
+
+  await store.markChangeProposalMergeAttempt(claim);
+  assert.deepEqual(await store.declineChangeProposalMergeAttempt(claim), {
+    wrote: "Row",
+  });
+  assert.deepEqual(
+    (await store.changeProposal(claim))?.merging,
+    { merging: "Idle", merges: 1 },
+    "and one the forge would not take is released unspent",
+  );
+  await proposalMergeWritesRefused(
+    store,
+    claim,
+    "nothing in flight is nothing to release or answer for",
+  );
+});
+
+test("a merge the forge answered is written once and closes what the row admits", async () => {
+  const { claim, store } = await proposalMergeProved("proposalmergeanswered");
+  const mergeCommit = asGitObjectId(finalizerCommit());
+
+  await store.markChangeProposalMergeAttempt(claim);
+  assert.deepEqual(
+    await store.recordChangeProposalMerge({
+      claim,
+      result: { records: "Merge", merged: { merged: "Merged", mergeCommit } },
+    }),
+    { wrote: "Row" },
+  );
+
+  assert.deepEqual((await store.changeProposal(claim))?.merging, {
+    merging: "Answered",
+    merge: { merged: "Merged", mergeCommit },
+  });
+  const why = "an answered merge authorizes nothing further";
+  assert.deepEqual(
+    await store.markChangeProposalMergeAttempt(claim),
+    { wrote: "Nothing" },
+    why,
+  );
+  await proposalMergeWritesRefused(store, claim, why);
+});
+
+test("no answer about a merge is recorded by a holder a takeover has retired", async () => {
+  const { project, claim } = await proposalMergeStoreSubject(
+    "proposalmergefenced",
+  );
+  const store = postgresFinalizer(rig.pool);
+  const evidence = proposalStoredEvidence(project);
+  await store.recordChangeProposal({
+    claim,
+    result: { records: "Creation", created: { created: "Created", evidence } },
+  });
+  await store.markChangeProposalMergeAttempt(claim);
+
+  await proposalClaimRetired(project);
+
+  assert.deepEqual(
+    await store.recordChangeProposalMerge({
+      claim,
+      result: { records: "Merge", merged: { merged: "HeadMoved" } },
+    }),
+    { wrote: "Nothing" },
+  );
+  assert.deepEqual(
+    await store.recordChangeProposalMerge({
+      claim,
+      result: {
+        records: "Reading",
+        reconciled: { reconciled: "Unmerged", evidence },
+      },
+    }),
+    { wrote: "Nothing" },
+  );
+  assert.deepEqual(await store.refuseChangeProposalMergeAttempt(claim), {
+    wrote: "Nothing",
+  });
+  assert.deepEqual(await store.declineChangeProposalMergeAttempt(claim), {
+    wrote: "Nothing",
+  });
+  const untouched = await proposalOf(project);
+  assert.deepEqual(
+    [
+      untouched?.merge,
+      untouched?.merge_attempts,
+      untouched?.merge_refusals,
+      untouched?.merge_declines,
+    ],
+    [null, "1", "0", "0"],
+    "the row another finalizer now owns stands exactly as it stood",
+  );
+
+  const unasked = await proposalMergeStoreSubject("proposalmergeunfenced");
+  await store.recordChangeProposal({
+    claim: unasked.claim,
+    result: {
+      records: "Creation",
+      created: {
+        created: "Created",
+        evidence: proposalStoredEvidence(unasked.project),
+      },
+    },
+  });
+  await proposalClaimRetired(unasked.project);
+  assert.deepEqual(
+    await store.markChangeProposalMergeAttempt(unasked.claim),
+    { wrote: "Nothing" },
+    "and a merge a retired holder would ask for is counted by nobody",
+  );
+});
+
 test("a takeover leaves an old-epoch holder unable to answer for the create it made", async () => {
   const project = await proposalRowSubject("proposalepoch");
   const claim = await finalizerClaim(rig, project, "owner-proposalepoch");
@@ -1258,6 +1511,254 @@ test("a change proposal counts one act at a time and never more creates than it 
     "3",
     "a declined attempt releases the row as surely as a refused one",
   );
+});
+
+/**
+ * A row whose create is answered and whose merge is in flight, which is the
+ * only state a merge answer is written from: the number the merge addressed
+ * came out of that evidence, and the attempt was counted before the call.
+ */
+async function proposalMergeSubject(label: string): Promise<FinalizerProject> {
+  const project = await proposalRowSubject(label);
+  await rig.as(
+    `UPDATE finalization_change_proposal
+        SET creation='Created', creation_evidence=${proposalEvidenceStored}
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    proposalRowKey(project),
+  );
+  await rig.as(
+    `UPDATE finalization_change_proposal SET merge_attempts = merge_attempts + 1
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    proposalRowKey(project),
+  );
+  return project;
+}
+
+/** What one merge answer this relation refuses looks like, with why it is unreadable. */
+const proposalMergesRefused: readonly (readonly [string, string])[] = [
+  ["merge='Landed'", "an arm no merge answers with"],
+  ["merge='Merged'", "a landing naming no commit"],
+  [`merge='Merged', merge_commit='zz'`, "a commit that is no object id"],
+  [
+    `merge='HeadMoved', merge_commit='${finalizerCommit()}'`,
+    "a commit under an arm that leaves none",
+  ],
+  ["merge='NotMergeable'", "a refusal naming no reason"],
+  [
+    "merge='NotMergeable', merge_reason='Unknown'",
+    "a reason no refusal settles on",
+  ],
+  [
+    "merge='HeadMoved', merge_reason='Conflict'",
+    "a reason under an arm that has none",
+  ],
+];
+
+test("what a merge answered carries exactly what its arm has, in both directions", async () => {
+  const project = await proposalMergeSubject("proposalmergewhole");
+  const key = proposalRowKey(project);
+  for (const [answer, why] of proposalMergesRefused) {
+    assert.match(
+      await rig.refusal(
+        `UPDATE finalization_change_proposal SET ${answer}
+          WHERE tenant=$1 AND project=$2 AND request=$3`,
+        key,
+      ),
+      /finalization_change_proposal_merge_is_whole/u,
+      why,
+    );
+  }
+  await rig.as(
+    `UPDATE finalization_change_proposal
+        SET merge='Merged', merge_commit='${finalizerCommit()}'
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    key,
+  );
+  assert.equal(
+    (await proposalOf(project))?.merge,
+    "Merged",
+    "the same answer whole is admitted",
+  );
+  assert.match(
+    await rig.refusal(
+      `UPDATE finalization_change_proposal SET merge='HeadMoved', merge_commit=NULL
+        WHERE tenant=$1 AND project=$2 AND request=$3`,
+      key,
+    ),
+    /merged once and read back after/u,
+  );
+});
+
+/** What one stored merge reading this relation refuses looks like, with why. */
+const proposalMergeReadingsRefused: readonly (readonly [string, string])[] = [
+  [
+    `merge_reading_evidence=${proposalEvidenceStored}`,
+    "evidence of a reading nothing took",
+  ],
+  ["merge_reading='Landed'", "an arm no reading answers with"],
+  ["merge_reading='Accepted'", "an arm whose proposal is missing"],
+  [
+    `merge_reading='Contradictory', merge_reading_evidence=${proposalEvidenceStored}`,
+    "a contradiction naming nothing",
+  ],
+  [
+    `merge_reading='Accepted', merge_reading_evidence=${proposalEvidenceStored},
+     merge_reading_contradiction='Closed'`,
+    "a contradiction under an arm that is none",
+  ],
+  [
+    `merge_reading='Contradictory', merge_reading_contradiction='Landed',
+     merge_reading_evidence=${proposalEvidenceStored}`,
+    "a contradiction nothing contradicts",
+  ],
+  [
+    `merge_reading='Accepted',
+     merge_reading_evidence=to_jsonb(repeat('x',${String(proposalEvidenceCharsMax + 1)}))`,
+    "evidence larger than this relation holds",
+  ],
+];
+
+test("a merge reading names a proposal exactly where its arm has one", async () => {
+  const project = await proposalMergeSubject("proposalmergereading");
+  const key = proposalRowKey(project);
+  for (const [reading, why] of proposalMergeReadingsRefused) {
+    assert.match(
+      await rig.refusal(
+        `UPDATE finalization_change_proposal SET ${reading}
+          WHERE tenant=$1 AND project=$2 AND request=$3`,
+        key,
+      ),
+      /finalization_change_proposal_merge_is_whole/u,
+      why,
+    );
+  }
+  await rig.as(
+    `UPDATE finalization_change_proposal
+        SET merge_reading='Absent', merge_readings=merge_readings+1
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    key,
+  );
+  assert.equal(
+    (await proposalOf(project))?.merge_readings,
+    "1",
+    "a reading that found no proposal names none, and is admitted",
+  );
+});
+
+test("a merge is asked only of a proposal this row has evidence of", async () => {
+  const project = await proposalRowSubject("proposalmergeunproved");
+  assert.match(
+    await rig.refusal(
+      `UPDATE finalization_change_proposal SET merge_attempts = merge_attempts + 1
+        WHERE tenant=$1 AND project=$2 AND request=$3`,
+      proposalRowKey(project),
+    ),
+    /finalization_change_proposal_merges_are_counted/u,
+  );
+});
+
+/** Every merge counter a row keeps, each advancing one step at a time and no further. */
+const proposalMergeCountersAdvanced = [
+  "merge_attempts",
+  "merge_refusals",
+  "merge_declines",
+  "merge_readings",
+];
+
+test("a merge counts one act at a time and never more merges than it made", async () => {
+  const project = await proposalMergeSubject("proposalmergecounts");
+  const key = proposalRowKey(project);
+  for (const counter of proposalMergeCountersAdvanced) {
+    for (const step of proposalCounterStepsRefused) {
+      assert.match(
+        await rig.refusal(
+          `UPDATE finalization_change_proposal SET ${counter} = ${counter} ${step}
+            WHERE tenant=$1 AND project=$2 AND request=$3`,
+          key,
+        ),
+        /counts one act at a time/u,
+        `${counter} ${step}`,
+      );
+    }
+  }
+  assert.match(
+    await rig.refusal(
+      `UPDATE finalization_change_proposal SET merge_attempts = merge_attempts + 1
+        WHERE tenant=$1 AND project=$2 AND request=$3`,
+      key,
+    ),
+    /finalization_change_proposal_merges_are_counted/u,
+    "a second merge while one is in flight is the row this relation refuses",
+  );
+  await rig.as(
+    `UPDATE finalization_change_proposal SET merge_refusals = merge_refusals + 1
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    key,
+  );
+  assert.match(
+    await rig.refusal(
+      `UPDATE finalization_change_proposal SET merge='HeadMoved'
+        WHERE tenant=$1 AND project=$2 AND request=$3`,
+      key,
+    ),
+    /finalization_change_proposal_merges_are_counted/u,
+    "an answer about a merge nothing has in flight is an answer about nothing",
+  );
+  await rig.as(
+    `UPDATE finalization_change_proposal SET merge_attempts = merge_attempts + 1
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    key,
+  );
+  await rig.as(
+    `UPDATE finalization_change_proposal SET merge_declines = merge_declines + 1
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    key,
+  );
+  const released = await proposalOf(project);
+  assert.deepEqual(
+    [
+      released?.merge_attempts,
+      released?.merge_refusals,
+      released?.merge_declines,
+    ],
+    ["2", "1", "1"],
+    "a released merge attempt is what makes another merge possible",
+  );
+});
+
+/** Every merge counter a row is born at, and the value none of them is born at. */
+const proposalMergeCountersBorn = [
+  "merge_refusals",
+  "merge_declines",
+  "merge_readings",
+];
+
+test("no merge counter is born below nothing, whatever a role inserts", async () => {
+  const project = await proposalPromotedSubject("proposalmergeborn");
+  const permit = await permitOf(project);
+  for (const counter of proposalMergeCountersBorn) {
+    assert.match(
+      await rig.ownerRefusal(
+        `INSERT INTO finalization_change_proposal
+           (tenant,project,request,permit,proposal_request,head_ref,head_commit,
+            base_ref,base_commit,title,body,${counter})
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ticket 1: propose it','propose it',-1)`,
+        [
+          project.partition.tenant,
+          project.partition.project,
+          project.request,
+          permit,
+          finalizerDigest(),
+          briefBranch,
+          finalizerCommit(),
+          landingBranch,
+          finalizerCommit(),
+        ],
+      ),
+      /finalization_change_proposal_merges_are_counted/u,
+      counter,
+    );
+  }
 });
 
 test("a change proposal is never born answered, whatever a role writes into it", async () => {

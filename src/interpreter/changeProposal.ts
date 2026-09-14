@@ -512,10 +512,18 @@ export function changeProposalRequest(
   };
 }
 
+/**
+ * What a proposal the forge has already merged is to the request that opened
+ * it: the contradiction it is where the merge was somebody else's to make, and
+ * the thing asked for where the request would have merged it itself.
+ */
+export type ChangeProposalMergedStanding = "Contradictory" | "Accepted";
+
 /** Whether one proposal is this request's, and what it is not where it is not. */
 function proposalContradiction(
   request: ChangeProposalRequest,
   evidence: ChangeProposalEvidence,
+  merged: ChangeProposalMergedStanding,
 ): ChangeProposalContradiction | undefined {
   if (evidence.identity.forge !== request.binding.forge) return "ForgeMismatch";
   if (evidence.marker !== request.marker) return "MarkerMismatch";
@@ -525,7 +533,8 @@ function proposalContradiction(
   if (evidence.title !== request.title || evidence.body !== request.body)
     return "MetadataMismatch";
   if (evidence.status === "Closed") return "Closed";
-  if (evidence.status === "Merged") return "Merged";
+  if (evidence.status === "Merged")
+    return merged === "Accepted" ? undefined : "Merged";
   if (evidence.status === "Superseded") return "Superseded";
   return undefined;
 }
@@ -534,6 +543,7 @@ function proposalContradiction(
 export function reconcileChangeProposal(
   request: ChangeProposalRequest,
   read: ChangeProposalRead,
+  merged: ChangeProposalMergedStanding,
 ): ChangeProposalReconciled {
   switch (read.read) {
     case "Absent":
@@ -543,7 +553,11 @@ export function reconcileChangeProposal(
     case "Denied":
       return { reconciled: "Denied" };
     case "Found": {
-      const contradiction = proposalContradiction(request, read.evidence);
+      const contradiction = proposalContradiction(
+        request,
+        read.evidence,
+        merged,
+      );
       return contradiction === undefined
         ? { reconciled: "Accepted", evidence: read.evidence }
         : {
@@ -559,8 +573,9 @@ export function reconcileChangeProposal(
 function proposalEvidenceNext(
   request: ChangeProposalRequest,
   evidence: ChangeProposalEvidence,
+  merged: ChangeProposalMergedStanding,
 ): ChangeProposalPublicationNext {
-  const contradiction = proposalContradiction(request, evidence);
+  const contradiction = proposalContradiction(request, evidence, merged);
   return contradiction === undefined
     ? { next: "Accepted", evidence }
     : { next: "Refused", contradiction, evidence };
@@ -589,6 +604,7 @@ function proposalUnansweredNext(
     { readonly publication: "Unanswered" }
   >,
   bounds: ChangeProposalPublicationBounds,
+  merged: ChangeProposalMergedStanding,
 ): ChangeProposalPublicationNext {
   if (publication.creations < 1)
     throw new RangeError("proposal publication: nothing is in flight");
@@ -599,7 +615,7 @@ function proposalUnansweredNext(
     reading?.reconciled === "Accepted" ||
     reading?.reconciled === "Contradictory"
   )
-    return proposalEvidenceNext(request, reading.evidence);
+    return proposalEvidenceNext(request, reading.evidence, merged);
   return publication.reconciliations <
     publication.creations * bounds.reconciliationsMax
     ? { next: "Reconcile" }
@@ -615,6 +631,7 @@ export function changeProposalPublicationNext(
   request: ChangeProposalRequest,
   publication: ChangeProposalPublication,
   bounds: ChangeProposalPublicationBounds,
+  merged: ChangeProposalMergedStanding,
 ): ChangeProposalPublicationNext {
   proposalBoundsAsserted(bounds);
   switch (publication.publication) {
@@ -625,11 +642,11 @@ export function changeProposalPublicationNext(
         ? { next: "Create" }
         : { next: "Held", reason: "CreationsExhausted" };
     case "Unanswered":
-      return proposalUnansweredNext(request, publication, bounds);
+      return proposalUnansweredNext(request, publication, bounds, merged);
     case "Answered":
       return publication.creation.created === "Unstorable"
         ? { next: "Held", reason: "EvidenceUnstorable" }
-        : proposalEvidenceNext(request, publication.creation.evidence);
+        : proposalEvidenceNext(request, publication.creation.evidence, merged);
     default:
       return assertNever(publication);
   }
@@ -684,6 +701,10 @@ export type ChangeProposalMergeAnswer =
       readonly merged: "NotMergeable";
       readonly reason: ChangeProposalUnmergeableSettled;
     };
+
+/** Every arm a merge settles a row with, so a suite and a database CHECK iterate rather than restate. */
+export const allChangeProposalMergeAnswers: readonly ChangeProposalMergeAnswer["merged"][] =
+  ["Merged", "HeadMoved", "NotMergeable"];
 
 export type ChangeProposalMergeReconciled =
   | {
@@ -806,7 +827,11 @@ export function reconcileChangeProposalMerge(
       return { reconciled: "Denied" };
     case "Found": {
       const evidence = read.evidence;
-      const contradiction = proposalContradiction(request, evidence);
+      const contradiction = proposalContradiction(
+        request,
+        evidence,
+        "Contradictory",
+      );
       if (contradiction === undefined)
         return { reconciled: "Unmerged", evidence };
       if (contradiction !== "Merged")
@@ -837,7 +862,11 @@ function proposalMergeEvidenceNext(
   request: ChangeProposalRequest,
   evidence: ChangeProposalEvidence,
 ): ChangeProposalMergingNext | undefined {
-  const contradiction = proposalContradiction(request, evidence);
+  const contradiction = proposalContradiction(
+    request,
+    evidence,
+    "Contradictory",
+  );
   if (contradiction !== undefined && contradiction !== "Merged")
     return { next: "Refused", contradiction, evidence };
   if (contradiction === "Merged")
