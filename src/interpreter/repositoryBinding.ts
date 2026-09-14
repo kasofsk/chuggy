@@ -120,17 +120,25 @@ export function asRepositoryLanding(mode: string): RepositoryLanding {
   return { mode: known };
 }
 
-/** One of a project's bindings, as a reader choosing between them sees it. */
+/**
+ * One of a project's bindings, as a reader choosing between them sees it.
+ * `retiredAt` is absent on a live binding and is the instant a retired one
+ * stopped being elected; the row itself stays, because the work already done
+ * against that repository names it.
+ */
 export interface ProjectRepositoryBound {
   readonly repository: RepositoryId;
   readonly boundAt: string;
   readonly landing: RepositoryLanding;
+  readonly retiredAt?: string;
 }
 
 /**
- * Every repository one project binds, oldest first — the order
- * `read_project_repository_binding` already elects by, so the head of this list
- * is the binding every caller naming no repository works against.
+ * Every repository one project binds, oldest first and retired ones among
+ * them — the order `read_project_repository_binding` already elects by, so the
+ * head of the live ones is the binding every caller naming no repository works
+ * against. A retirement is answered rather than filtered out, because this
+ * listing is the only account an administrator has of whether one landed.
  */
 export interface ProjectRepositoryBindings {
   bindings(partition: Partition): Promise<readonly ProjectRepositoryBound[]>;
@@ -173,4 +181,33 @@ export interface ProjectRepositoryLandingStore {
   setLanding(
     command: ProjectRepositoryLandingCommand,
   ): Promise<ProjectRepositoryLandingOutcome>;
+}
+
+/** One binding to retire, which is the whole of the request: retirement has no second value. */
+export interface ProjectRepositoryRetirementCommand {
+  readonly partition: Partition;
+  readonly repository: RepositoryId;
+}
+
+/**
+ * What retiring one binding came to, with no crossing to report: a retirement
+ * names its own repository and moves it one way, so a binding already retired
+ * answers `Retired` carrying the instant it was first retired at. `Unavailable`
+ * is a write that did not complete under its lock and can be made again.
+ */
+export type ProjectRepositoryRetirementOutcome =
+  | { readonly outcome: "Retired"; readonly binding: ProjectRepositoryBound }
+  | { readonly outcome: "NotBound" }
+  | { readonly outcome: "Unavailable" };
+
+/**
+ * One binding retired. It is a port of its own rather than a method on the
+ * landing, because a landing is a setting a project edits back and forth and a
+ * retirement is the end of the binding: nothing here clears one, which is what
+ * makes the fact reliable to read.
+ */
+export interface ProjectRepositoryRetirementStore {
+  retire(
+    command: ProjectRepositoryRetirementCommand,
+  ): Promise<ProjectRepositoryRetirementOutcome>;
 }

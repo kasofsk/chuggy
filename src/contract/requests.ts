@@ -144,6 +144,15 @@ export const projectRepositoryLandingSchema = z.strictObject({
 });
 
 /**
+ * One binding retired. It carries the repository and nothing else: retirement
+ * is one-way and names its own row, so there is no value for a second writer
+ * to be deciding against and nothing for an expected one to fence.
+ */
+export const projectRepositoryRetirementSchema = z.strictObject({
+  repository: bodyIdentitySchema,
+});
+
+/**
  * Whether a ticket's authoring and its brief agree about landing. Landing is a
  * parameter of the managed finalizer, so a ticket authored to run none names
  * none: the pairing is stated here rather than on either schema, neither of

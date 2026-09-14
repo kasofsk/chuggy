@@ -77,12 +77,15 @@
  * ticket of its project, a thread is a member's own and drafts against any of
  * them, an inquiry is a fork of a lead, and the session relation carries
  * neither a ticket nor a repository. So the binding asked for here is the
- * project's oldest, and where a project binds several that privileges one — an
- * election 080 left standing, kept until a session can name the tree its next
- * turn is about, because a lead judging a ticket needs a tree and none of the
- * tickets it holds is more its own than another. Work and evaluation are not
- * placed here at all: the execution scheduler places them, against the
- * repository their input bundle pins, which is the ticket's own.
+ * project's oldest LIVE one — a retired binding names a repository the project
+ * has stopped reading, and placing a session against one is how a session
+ * comes to hold a tree nothing serves any more. Where a project binds several
+ * live repositories that still privileges one, an election 080 left standing,
+ * kept until a session can name the tree its next turn is about, because a
+ * lead judging a ticket needs a tree and none of the tickets it holds is more
+ * its own than another. Work and evaluation are not placed here at all: the
+ * execution scheduler places them, against the repository their input bundle
+ * pins, which is the ticket's own.
  *
  * THE BINDING IS READ BEFORE THE ATTEMPT IS OPENED. The read depends on nothing
  * an attempt produces, and a raise after `openAttempt` would leave an opened,

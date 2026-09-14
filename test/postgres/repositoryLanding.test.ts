@@ -14,7 +14,6 @@ import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   postgresProjectRepositoryBindings,
   postgresProjectRepositoryLanding,
-  postgresRepositoryBinding,
 } from "../../src/adapters/postgres/repositoryBinding.ts";
 import { apiRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
@@ -23,9 +22,8 @@ import {
   asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
-import { checkedRepositoryBindingCommand } from "../../src/interpreter/repositoryBinding.ts";
+import { fixtureBoundRepository } from "./repositoryBindingFixture.ts";
 import {
-  postgresHarnessEpoch,
   postgresHarnessOpen,
   postgresHarnessPartition,
   postgresHarnessRolePool,
@@ -83,23 +81,10 @@ async function bindAt(
   partition: Partition,
   label: string,
 ): Promise<FixtureBinding> {
-  const recoveryEpoch = await postgresHarnessEpoch(harness.store);
-  const repository = `repository-${label}-${randomUUID()}`;
-  assert.equal(
-    await postgresRepositoryBinding(pool).bind(
-      checkedRepositoryBindingCommand({
-        tenant: partition.tenant,
-        project: partition.project,
-        repository,
-        recoveryEpoch,
-        operation: `operation-${randomUUID()}`,
-        authorityKind: "Administrator",
-        authoritySubject: "test-operator",
-      }),
-    ),
-    "Bound",
-  );
-  return { partition, repository };
+  return {
+    partition,
+    repository: await fixtureBoundRepository(harness, pool, partition, label),
+  };
 }
 
 function landingStore() {

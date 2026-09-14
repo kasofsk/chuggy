@@ -116,6 +116,7 @@ import type {
   ProjectRepositoryBindingWrite,
   ProjectRepositoryBound,
   ProjectRepositoryLandingStore,
+  ProjectRepositoryRetirementStore,
   RepositoryLanding,
 } from "./repositoryBinding.ts";
 
@@ -315,6 +316,18 @@ export type ProjectRepositoryLandingResult =
   | { readonly result: "NotFound" }
   | { readonly result: "Unavailable" };
 
+/**
+ * What retiring one binding came to. `Retired` carries the row as it now
+ * stands, which is what the caller reads to see that the retirement landed; a
+ * repository this project does not bind is the same miss as a project it may
+ * not see.
+ */
+export type ProjectRepositoryRetirementResult =
+  | { readonly result: "Retired"; readonly repository: ProjectRepositoryBound }
+  | { readonly result: "NotBound" }
+  | { readonly result: "NotFound" }
+  | { readonly result: "Unavailable" };
+
 /** One claim as a caller sends it: which forge, which app, and which installation of it. */
 export interface ForgeInstallationClaimRequest {
   readonly forge: ForgeId;
@@ -384,11 +397,12 @@ export interface RepositoryOnboardingPorts {
   readonly bindings: ProjectRepositoryBindings;
   readonly binding: ProjectRepositoryBindingWrite;
   readonly landing: ProjectRepositoryLandingStore;
+  readonly retirement: ProjectRepositoryRetirementStore;
   readonly configurations?: RepositoryConfigurationsPorts;
   readonly creation?: RepositoryCreationPorts;
 }
 
-/** The eight questions the onboarding routes ask, each behind the permit it needs. */
+/** The nine questions the onboarding routes ask, each behind the permit it needs. */
 export interface RepositoryOnboarding {
   forgeApps(): Promise<ForgeAppsResult>;
 
@@ -433,6 +447,12 @@ export interface RepositoryOnboarding {
     expected: RepositoryLanding,
     landing: RepositoryLanding,
   ): Promise<ProjectRepositoryLandingResult>;
+
+  retireRepository(
+    principal: Principal,
+    partition: Partition,
+    repository: RepositoryId,
+  ): Promise<ProjectRepositoryRetirementResult>;
 }
 
 /** The half composed for one app on one forge, and nothing where this deployment holds no key for it. */
@@ -1042,6 +1062,36 @@ async function setLanding(
   }
 }
 
+/**
+ * One binding retired, behind the permit that binds: ending a binding is the
+ * same administration as making one, and a project this caller may not
+ * administer is not there.
+ */
+async function retireRepository(
+  ports: RepositoryOnboardingPorts,
+  principal: Principal,
+  partition: Partition,
+  repository: RepositoryId,
+): Promise<ProjectRepositoryRetirementResult> {
+  const authority = await ports.access.authorize(
+    principal,
+    partition,
+    "Administer",
+  );
+  if (authority === undefined) return { result: "NotFound" };
+  const written = await ports.retirement.retire({ partition, repository });
+  switch (written.outcome) {
+    case "Retired":
+      return { result: "Retired", repository: written.binding };
+    case "NotBound":
+      return { result: "NotBound" };
+    case "Unavailable":
+      return { result: "Unavailable" };
+    default:
+      return assertNever(written);
+  }
+}
+
 export function repositoryOnboarding(
   ports: RepositoryOnboardingPorts,
 ): RepositoryOnboarding {
@@ -1085,5 +1135,8 @@ export function repositoryOnboarding(
 
     setLanding: (principal, partition, repository, expected, landing) =>
       setLanding(ports, principal, partition, repository, expected, landing),
+
+    retireRepository: (principal, partition, repository) =>
+      retireRepository(ports, principal, partition, repository),
   };
 }
