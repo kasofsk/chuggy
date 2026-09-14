@@ -280,12 +280,11 @@ test("binding a retired repository again reinstates it and answers as a bind", a
 });
 
 /**
- * The route's role reaches the retirement through the door and not the
- * relation, which is what every other write against this table already holds
- * to. The repository named is one nothing binds, so the call proves the grant
- * without retiring anything.
+ * The route's role reaches the retirement through the door, which is what every
+ * other write against this table already goes through. The repository named is
+ * one nothing binds, so the call proves the grant without retiring anything.
  */
-test("the API retires through the door and still cannot reach the relation", async () => {
+test("the API's own role holds the retirement door", async () => {
   const partition = await fixtureProject("retire-privilege");
   assert.equal(
     await harness.attemptAs(

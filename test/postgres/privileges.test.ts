@@ -19,6 +19,7 @@ import {
   repositoryBindingWriteFunction,
   repositoryLandingReadFunction,
   repositoryLandingWriteFunction,
+  repositoryRetirementWriteFunction,
   schedulerRole,
   selectorReviewRole,
   selectorServiceRole,
@@ -1142,17 +1143,27 @@ test("the binding every evidence function opens with is nobody's to call", async
 });
 
 /**
- * The two landing doors. Reading and moving a binding's landing is the API's
- * question, asked on behalf of one project by a route it already gates; every
- * other runtime role reads a landing as part of a row it already holds a door
- * for, so none of them holds these.
+ * The two landing doors and the retirement. Reading a binding's landing, moving
+ * it and ending the binding are the API's questions, asked on behalf of one
+ * project by routes it already gates; every other runtime role reads a binding
+ * as part of a row it already holds a door for, so none of them holds these.
  */
-test("no runtime role but the API reads or moves a binding's landing", async () => {
+test("no runtime role but the API reads or moves a binding's landing, or retires one", async () => {
   const calls = [
-    `SELECT landing_mode FROM ${repositoryLandingReadFunction}('tenant','project','repository')`,
-    `SELECT outcome FROM ${repositoryLandingWriteFunction}('tenant','project','repository','Push','Push')`,
-  ];
-  for (const call of calls) {
+    [
+      repositoryLandingReadFunction,
+      `SELECT landing_mode FROM ${repositoryLandingReadFunction}('tenant','project','repository')`,
+    ],
+    [
+      repositoryLandingWriteFunction,
+      `SELECT outcome FROM ${repositoryLandingWriteFunction}('tenant','project','repository','Push','Push')`,
+    ],
+    [
+      repositoryRetirementWriteFunction,
+      `SELECT outcome FROM ${repositoryRetirementWriteFunction}('tenant','project','repository')`,
+    ],
+  ] as const;
+  for (const [door, call] of calls) {
     for (const role of [
       ticketServiceRole,
       selectorServiceRole,
@@ -1163,17 +1174,13 @@ test("no runtime role but the API reads or moves a binding's landing", async () 
     ])
       assert.match(
         (await harness.attemptAs(role, call)) ?? "",
-        postgresHarnessDenial(
-          call.includes(repositoryLandingWriteFunction)
-            ? repositoryLandingWriteFunction
-            : repositoryLandingReadFunction,
-        ),
+        postgresHarnessDenial(door),
         `${role}: ${call}`,
       );
     assert.equal(
       await harness.attemptAs(apiRole, call),
       undefined,
-      `the role whose routes answer a landing holds the door: ${call}`,
+      `the role whose routes answer a binding holds the door: ${call}`,
     );
   }
 });

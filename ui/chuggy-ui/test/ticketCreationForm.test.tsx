@@ -419,6 +419,26 @@ test("a project binding nothing is neither asked for a repository nor sends one"
   expect(briefOf(held.sent)).not.toHaveProperty("repository");
 });
 
+/**
+ * A retired binding is one the authority refuses a brief against, so a project
+ * whose only binding is retired is drawn as a project that binds nothing: the
+ * field is absent rather than seeded with a repository the release would be
+ * refused for, and the body names none.
+ */
+test("a project whose only binding is retired is asked for no repository", async () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, [], creationInitialization, [
+    creationBinding(chuggy, "Push", "2026-09-14T00:00:00Z"),
+  ]);
+  expect(picker()).toBeNull();
+  typeIntent("ship it");
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  expect(briefOf(held.sent)).not.toHaveProperty("repository");
+});
+
 test("a sole binding is the choice already made, and it reaches the wire", async () => {
   const held = api({ state: "Succeeded" });
   draw(held.ports, [], creationInitialization, [creationBinding(chuggy)]);
