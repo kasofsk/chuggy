@@ -658,7 +658,7 @@ test("evidence carries what the forge answered and never what the request asked"
     const read = await fixtureAdapter(recorder).readByMarker(request);
     const answered = { ...fixtureEvidence(request), ...one.evidence };
     assert.deepEqual(read, { read: "Found", evidence: answered });
-    assert.deepEqual(reconcileChangeProposal(request, read), {
+    assert.deepEqual(reconcileChangeProposal(request, read, "Contradictory"), {
       reconciled: "Contradictory",
       contradiction: one.contradiction,
       evidence: answered,

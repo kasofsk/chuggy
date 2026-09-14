@@ -102,6 +102,10 @@ import { projectRowCounter } from "./rows.ts";
 import {
   finalizerChangeProposalAttempt,
   finalizerChangeProposalDecline,
+  finalizerChangeProposalMergeAttempt,
+  finalizerChangeProposalMergeDecline,
+  finalizerChangeProposalMergeRecord,
+  finalizerChangeProposalMergeRefuse,
   finalizerChangeProposalRead,
   finalizerChangeProposalRecord,
   finalizerChangeProposalRefuse,
@@ -765,6 +769,22 @@ function postgresFinalizerProposals(pool: pg.Pool): FinalizerProposalStore {
     recordChangeProposal: (record) =>
       postgresTransaction(pool, (client) =>
         finalizerChangeProposalRecord(client, record),
+      ),
+    markChangeProposalMergeAttempt: (claim) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalMergeAttempt(client, claim),
+      ),
+    refuseChangeProposalMergeAttempt: (claim) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalMergeRefuse(client, claim),
+      ),
+    declineChangeProposalMergeAttempt: (claim) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalMergeDecline(client, claim),
+      ),
+    recordChangeProposalMerge: (record) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalMergeRecord(client, record),
       ),
   };
 }

@@ -68,8 +68,11 @@ import {
   allChangeProposalContradictions,
   allChangeProposalCreationsStored,
   allChangeProposalMergeabilities,
+  allChangeProposalMergeAnswers,
+  allChangeProposalMergeReconciliationsStored,
   allChangeProposalReconciliationsStored,
   allChangeProposalStatuses,
+  allChangeProposalUnmergeableSettled,
   asChangeProposalRequestIdentity,
   asForgeBindingId,
   asProposalDisplayUrl,
@@ -81,12 +84,17 @@ import {
   type ChangeProposalCreationAnswer,
   type ChangeProposalCreationStored,
   type ChangeProposalEvidence,
+  type ChangeProposalMergeAnswer,
+  type ChangeProposalMergeReconciliationAnswer,
+  type ChangeProposalMergeReconciliationStored,
+  type ChangeProposalMerging,
   type ChangeProposalReconciliationAnswer,
   type ChangeProposalReconciliationStored,
   type OpenedChangeProposalPublication,
 } from "../../interpreter/changeProposal.ts";
 import type {
   ChangeProposalAsked,
+  ChangeProposalMergeResult,
   ChangeProposalRecord,
   ChangeProposalResult,
   ChangeProposalWritten,
@@ -121,6 +129,16 @@ interface ChangeProposalRow {
   readonly refusals: string;
   readonly declines: string;
   readonly reconciliations: string;
+  readonly merge: string | null;
+  readonly merge_reason: string | null;
+  readonly merge_commit: string | null;
+  readonly merge_reading: string | null;
+  readonly merge_reading_contradiction: string | null;
+  readonly merge_reading_evidence: unknown;
+  readonly merge_attempts: string;
+  readonly merge_refusals: string;
+  readonly merge_declines: string;
+  readonly merge_readings: string;
 }
 
 /** The columns one answer writes, whichever arm it came back on. */
@@ -291,6 +309,128 @@ function changeProposalReconciledOf(
   }
 }
 
+/** What the row says the merge came to, narrowed to the closed set a row records. */
+function changeProposalMergedOf(
+  row: ChangeProposalRow & { readonly merge: string },
+): ChangeProposalMergeAnswer {
+  const merged = finalizerRowValue(
+    allChangeProposalMergeAnswers,
+    row.merge,
+    "change proposal merge",
+  );
+  switch (merged) {
+    case "Merged": {
+      if (row.merge_commit === null) {
+        throw new Error("finalizer row: a merge names no commit it left");
+      }
+      return { merged, mergeCommit: asGitObjectId(row.merge_commit) };
+    }
+    case "HeadMoved":
+      return { merged };
+    case "NotMergeable": {
+      if (row.merge_reason === null) {
+        throw new Error("finalizer row: a refused merge names no reason");
+      }
+      return {
+        merged,
+        reason: finalizerRowValue(
+          allChangeProposalUnmergeableSettled,
+          row.merge_reason,
+          "change proposal merge reason",
+        ),
+      };
+    }
+    default:
+      return assertNever(merged);
+  }
+}
+
+/** What the row says the last reading of the merge came to, narrowed the same way. */
+function changeProposalMergeReadOf(
+  row: ChangeProposalRow & { readonly merge_reading: string },
+): ChangeProposalMergeReconciliationStored {
+  const reconciled = finalizerRowValue(
+    allChangeProposalMergeReconciliationsStored,
+    row.merge_reading,
+    "change proposal merge reading",
+  );
+  switch (reconciled) {
+    case "Accepted":
+    case "Unmerged":
+      return {
+        reconciled,
+        evidence: changeProposalEvidenceOf(
+          row.merge_reading_evidence,
+          reconciled,
+        ),
+      };
+    case "Contradictory":
+      return {
+        reconciled,
+        contradiction: changeProposalContradictionOf(
+          row.merge_reading_contradiction,
+          reconciled,
+        ),
+        evidence: changeProposalEvidenceOf(
+          row.merge_reading_evidence,
+          reconciled,
+        ),
+      };
+    case "Absent":
+    case "Unstorable":
+      return { reconciled };
+    default:
+      return assertNever(reconciled);
+  }
+}
+
+/**
+ * Which of the four states the merge half of the row stands in. A row nobody
+ * has asked a merge of is apart from one whose merges have all been released,
+ * because the second has spent something and the first has not.
+ */
+function mergingOf(row: ChangeProposalRow): ChangeProposalMerging {
+  const merge = row.merge;
+  if (merge !== null)
+    return {
+      merging: "Answered",
+      merge: changeProposalMergedOf({ ...row, merge }),
+    };
+  const attempts = projectRowCounter(
+    row.merge_attempts,
+    "change proposal merge attempts",
+  );
+  if (attempts === 0) return { merging: "Unasked" };
+  const refusals = projectRowCounter(
+    row.merge_refusals,
+    "change proposal merge refusals",
+  );
+  const declines = projectRowCounter(
+    row.merge_declines,
+    "change proposal merge declines",
+  );
+  const merges = attempts - declines;
+  if (attempts === refusals + declines) return { merging: "Idle", merges };
+  if (attempts !== refusals + declines + 1) {
+    throw new Error(
+      "finalizer row: a change proposal counts more merges in flight than one",
+    );
+  }
+  const reading = row.merge_reading;
+  return {
+    merging: "Unanswered",
+    merges,
+    readings: projectRowCounter(
+      row.merge_readings,
+      "change proposal merge readings",
+    ),
+    reading:
+      reading === null
+        ? undefined
+        : changeProposalMergeReadOf({ ...row, merge_reading: reading }),
+  };
+}
+
 /** What the row says the forge was asked for, which every later pass rebuilds its request from. */
 function changeProposalAskedOf(row: ChangeProposalRow): ChangeProposalAsked {
   return {
@@ -372,14 +512,24 @@ export async function finalizerChangeProposalRead(
             reconciliation, reconciliation_contradiction, reconciliation_evidence,
             attempts::text AS attempts, refusals::text AS refusals,
             declines::text AS declines,
-            reconciliations::text AS reconciliations
+            reconciliations::text AS reconciliations,
+            merge, merge_reason, merge_commit,
+            merge_reading, merge_reading_contradiction, merge_reading_evidence,
+            merge_attempts::text AS merge_attempts,
+            merge_refusals::text AS merge_refusals,
+            merge_declines::text AS merge_declines,
+            merge_readings::text AS merge_readings
        FROM finalization_change_proposal
       WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
         AND request = ${claim.request}`,
   );
   const row = found.rows[0];
   if (row === undefined) return undefined;
-  return { asked: changeProposalAskedOf(row), publication: publicationOf(row) };
+  return {
+    asked: changeProposalAskedOf(row),
+    publication: publicationOf(row),
+    merging: mergingOf(row),
+  };
 }
 
 /**
@@ -602,6 +752,150 @@ export function finalizerChangeProposalRecord(
         record.result.created,
       )
     : finalizerChangeProposalReconciled(
+        client,
+        record.claim,
+        record.result.reconciled,
+      );
+}
+
+/**
+ * Counts the attempt one merge is about to be made under. A row already
+ * counting a merge nobody heard back from, one already answered, one holding no
+ * evidence of a proposal to address, and one whose claim has been retired are
+ * each left exactly as they stand.
+ */
+export async function finalizerChangeProposalMergeAttempt(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+): Promise<ChangeProposalWritten> {
+  if (!(await finalizerChangeProposalClaimStands(client, claim)))
+    return { wrote: "Nothing" };
+  const marked = await client.query(
+    sql`UPDATE finalization_change_proposal
+        SET merge_attempts = merge_attempts + 1
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND merge IS NULL
+        AND merge_attempts = merge_refusals + merge_declines
+        AND (creation_evidence IS NOT NULL
+             OR reconciliation_evidence IS NOT NULL)`,
+  );
+  return marked.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
+}
+
+/**
+ * Releases the merge attempt in flight, counting it against the merges this
+ * request is allowed where the forge may have made it and not counting it where
+ * the forge would not. The reading goes with it, because the next reading is
+ * about whatever merge comes after this one.
+ */
+async function finalizerChangeProposalMergeReleased(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+  released: "Refused" | "Declined",
+): Promise<ChangeProposalWritten> {
+  if (!(await finalizerChangeProposalClaimStands(client, claim)))
+    return { wrote: "Nothing" };
+  const wrote = await client.query(
+    sql`UPDATE finalization_change_proposal
+        SET merge_refusals = merge_refusals + ${released === "Refused" ? 1 : 0},
+            merge_declines = merge_declines + ${released === "Declined" ? 1 : 0},
+            merge_reading = NULL,
+            merge_reading_contradiction = NULL,
+            merge_reading_evidence = NULL
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND merge IS NULL
+        AND merge_attempts = merge_refusals + merge_declines + 1`,
+  );
+  return wrote.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
+}
+
+/** Records that no reading found the merge in flight, which spends it and releases the attempt. */
+export function finalizerChangeProposalMergeRefuse(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+): Promise<ChangeProposalWritten> {
+  return finalizerChangeProposalMergeReleased(client, claim, "Refused");
+}
+
+/** Records that the forge would not take the merge, which releases the attempt unspent. */
+export function finalizerChangeProposalMergeDecline(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+): Promise<ChangeProposalWritten> {
+  return finalizerChangeProposalMergeReleased(client, claim, "Declined");
+}
+
+/** Records what the merge answered, over the attempt still in flight. */
+async function finalizerChangeProposalMerged(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+  merged: ChangeProposalMergeAnswer,
+): Promise<ChangeProposalWritten> {
+  if (!(await finalizerChangeProposalClaimStands(client, claim)))
+    return { wrote: "Nothing" };
+  const recorded = await client.query(
+    sql`UPDATE finalization_change_proposal
+        SET merge = ${merged.merged},
+            merge_reason = ${merged.merged === "NotMergeable" ? merged.reason : null},
+            merge_commit = ${merged.merged === "Merged" ? merged.mergeCommit : null}
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND merge IS NULL
+        AND merge_attempts = merge_refusals + merge_declines + 1`,
+  );
+  return recorded.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
+}
+
+/** The columns one reading of a merge writes, a reading that found nothing carrying no evidence. */
+function changeProposalMergeReadingColumns(
+  reconciled: ChangeProposalMergeReconciliationAnswer,
+): ChangeProposalResultColumns {
+  if (reconciled.reconciled === "Absent")
+    return { kind: reconciled.reconciled, contradiction: null, evidence: null };
+  return changeProposalEvidenceColumns(
+    reconciled.reconciled,
+    reconciled.reconciled === "Contradictory" ? reconciled.contradiction : null,
+    reconciled.evidence,
+  );
+}
+
+/**
+ * Records what one reading of the merge read and counts it, over the merge it
+ * was taken about. A reading is only ever taken about a merge nobody heard back
+ * from, so a row that has since been answered or released takes none.
+ */
+async function finalizerChangeProposalMergeRead(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+  reconciled: ChangeProposalMergeReconciliationAnswer,
+): Promise<ChangeProposalWritten> {
+  if (!(await finalizerChangeProposalClaimStands(client, claim)))
+    return { wrote: "Nothing" };
+  const columns = changeProposalMergeReadingColumns(reconciled);
+  const recorded = await client.query(
+    sql`UPDATE finalization_change_proposal
+        SET merge_reading = ${columns.kind},
+            merge_reading_contradiction = ${columns.contradiction},
+            merge_reading_evidence = ${columns.evidence}::jsonb,
+            merge_readings = merge_readings + 1
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND merge IS NULL
+        AND merge_attempts = merge_refusals + merge_declines + 1`,
+  );
+  return recorded.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
+}
+
+/** Records one answer about merging against the row in flight, whichever of the two it is. */
+export function finalizerChangeProposalMergeRecord(
+  client: pg.PoolClient,
+  record: ChangeProposalMergeResult,
+): Promise<ChangeProposalWritten> {
+  return record.result.records === "Merge"
+    ? finalizerChangeProposalMerged(client, record.claim, record.result.merged)
+    : finalizerChangeProposalMergeRead(
         client,
         record.claim,
         record.result.reconciled,

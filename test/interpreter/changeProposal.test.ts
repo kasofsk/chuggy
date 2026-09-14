@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  allChangeProposalMergeAnswers,
   allChangeProposalMergeReconciliations,
+  allChangeProposalMerges,
   asForgeBindingId,
   asForgeCredentialReference,
   asChangeProposalRequestIdentity,
@@ -39,6 +41,7 @@ import {
   gitRefNameCharsMax,
 } from "../../src/interpreter/finalizer.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import { populated } from "./roster.ts";
 const requestIdentity = asChangeProposalRequestIdentity("a".repeat(64));
 const requestPartition = {
   tenant: asTenantId("tenant"),
@@ -85,18 +88,58 @@ function evidence(
 
 test("ambiguous creation is accepted only after the deterministic marker reconciles", () => {
   assert.deepEqual(
-    reconcileChangeProposal(request, {
-      read: "Found",
-      evidence: evidence(),
-    }),
+    reconcileChangeProposal(
+      request,
+      {
+        read: "Found",
+        evidence: evidence(),
+      },
+      "Contradictory",
+    ),
     { reconciled: "Accepted", evidence: evidence() },
   );
-  assert.deepEqual(reconcileChangeProposal(request, { read: "Absent" }), {
-    reconciled: "Absent",
-  });
-  assert.deepEqual(reconcileChangeProposal(request, { read: "Unavailable" }), {
-    reconciled: "Unavailable",
-  });
+  assert.deepEqual(
+    reconcileChangeProposal(request, { read: "Absent" }, "Contradictory"),
+    {
+      reconciled: "Absent",
+    },
+  );
+  assert.deepEqual(
+    reconcileChangeProposal(request, { read: "Unavailable" }, "Contradictory"),
+    {
+      reconciled: "Unavailable",
+    },
+  );
+});
+
+test("a proposal already merged contradicts only the landing that was not going to merge it", () => {
+  const merged = evidence({ status: "Merged" });
+  const closed = evidence({ status: "Closed" });
+  assert.deepEqual(
+    reconcileChangeProposal(
+      request,
+      { read: "Found", evidence: merged },
+      "Contradictory",
+    ),
+    { reconciled: "Contradictory", contradiction: "Merged", evidence: merged },
+  );
+  assert.deepEqual(
+    reconcileChangeProposal(
+      request,
+      { read: "Found", evidence: merged },
+      "Accepted",
+    ),
+    { reconciled: "Accepted", evidence: merged },
+  );
+  assert.deepEqual(
+    reconcileChangeProposal(
+      request,
+      { read: "Found", evidence: closed },
+      "Accepted",
+    ),
+    { reconciled: "Contradictory", contradiction: "Closed", evidence: closed },
+    "a landing that merges accepts nothing else it did not ask for",
+  );
 });
 
 /** The ceilings every publication case below is continued under. */
@@ -113,7 +156,12 @@ function unanswered(
 
 test("a create nobody heard back from is read back within its bound and then released", () => {
   assert.deepEqual(
-    changeProposalPublicationNext(request, unanswered(1, 0), bounds),
+    changeProposalPublicationNext(
+      request,
+      unanswered(1, 0),
+      bounds,
+      "Contradictory",
+    ),
     {
       next: "Reconcile",
     },
@@ -123,6 +171,7 @@ test("a create nobody heard back from is read back within its bound and then rel
       request,
       unanswered(1, 1, { reconciled: "Absent" }),
       bounds,
+      "Contradictory",
     ),
     { next: "Reconcile" },
   );
@@ -131,6 +180,7 @@ test("a create nobody heard back from is read back within its bound and then rel
       request,
       unanswered(1, 2, { reconciled: "Absent" }),
       bounds,
+      "Contradictory",
     ),
     { next: "RefuseAttempt" },
     "readings that all found nothing prove the create was never taken",
@@ -140,6 +190,7 @@ test("a create nobody heard back from is read back within its bound and then rel
       request,
       unanswered(2, 3, { reconciled: "Absent" }),
       bounds,
+      "Contradictory",
     ),
     { next: "Reconcile" },
     "the second attempt is read back under a budget of its own",
@@ -148,7 +199,12 @@ test("a create nobody heard back from is read back within its bound and then rel
 
 test("only a state with nothing in flight creates, and only while the creations are unspent", () => {
   assert.deepEqual(
-    changeProposalPublicationNext(request, { publication: "Unopened" }, bounds),
+    changeProposalPublicationNext(
+      request,
+      { publication: "Unopened" },
+      bounds,
+      "Contradictory",
+    ),
     { next: "Create" },
   );
   assert.deepEqual(
@@ -156,6 +212,7 @@ test("only a state with nothing in flight creates, and only while the creations 
       request,
       { publication: "Idle", creations: 1 },
       bounds,
+      "Contradictory",
     ),
     { next: "Create" },
     "a create that spent one of them leaves another one to make",
@@ -165,6 +222,7 @@ test("only a state with nothing in flight creates, and only while the creations 
       request,
       { publication: "Idle", creations: 2 },
       bounds,
+      "Contradictory",
     ),
     { next: "Held", reason: "CreationsExhausted" },
   );
@@ -176,6 +234,7 @@ test("an answer whose evidence nothing could store is held rather than proposed 
       request,
       { publication: "Answered", creation: { created: "Unstorable" } },
       bounds,
+      "Contradictory",
     ),
     { next: "Held", reason: "EvidenceUnstorable" },
   );
@@ -184,6 +243,7 @@ test("an answer whose evidence nothing could store is held rather than proposed 
       request,
       unanswered(1, 1, { reconciled: "Unstorable" }),
       bounds,
+      "Contradictory",
     ),
     { next: "Held", reason: "EvidenceUnstorable" },
   );
@@ -201,6 +261,7 @@ test("a bound that is not a count is refused rather than treated as none", () =>
             request,
             { publication: "Unopened" },
             offered,
+            "Contradictory",
           ),
         RangeError,
         JSON.stringify(offered),
@@ -223,7 +284,12 @@ test("no publication in flight and no answered one reaches a create", () => {
   ];
   for (const publication of publications) {
     assert.notEqual(
-      changeProposalPublicationNext(request, publication, bounds).next,
+      changeProposalPublicationNext(
+        request,
+        publication,
+        bounds,
+        "Contradictory",
+      ).next,
       "Create",
       JSON.stringify(publication).slice(0, 60),
     );
@@ -304,10 +370,30 @@ test("closed, merged, retargeted, and mismatched proposals are explicit contradi
   for (const [overrides, contradiction] of cases) {
     const found = evidence(overrides);
     assert.deepEqual(
-      reconcileChangeProposal(request, { read: "Found", evidence: found }),
+      reconcileChangeProposal(
+        request,
+        { read: "Found", evidence: found },
+        "Contradictory",
+      ),
       { reconciled: "Contradictory", contradiction, evidence: found },
     );
   }
+});
+
+test("a publication answered by a merged proposal settles on what the landing asked for", () => {
+  const merged = evidence({ status: "Merged" });
+  const answered: ChangeProposalPublication = {
+    publication: "Answered",
+    creation: { created: "Created", evidence: merged },
+  };
+  assert.deepEqual(
+    changeProposalPublicationNext(request, answered, bounds, "Contradictory"),
+    { next: "Refused", contradiction: "Merged", evidence: merged },
+  );
+  assert.deepEqual(
+    changeProposalPublicationNext(request, answered, bounds, "Accepted"),
+    { next: "Accepted", evidence: merged },
+  );
 });
 
 test("a base branch that moved between the observation and the create is the same proposal", () => {
@@ -318,7 +404,11 @@ test("a base branch that moved between the observation and the create is the sam
     },
   });
   assert.deepEqual(
-    reconcileChangeProposal(request, { read: "Found", evidence: moved }),
+    reconcileChangeProposal(
+      request,
+      { read: "Found", evidence: moved },
+      "Contradictory",
+    ),
     { reconciled: "Accepted", evidence: moved },
   );
   assert.deepEqual(
@@ -329,6 +419,7 @@ test("a base branch that moved between the observation and the create is the sam
         creation: { created: "Created", evidence: moved },
       },
       bounds,
+      "Contradictory",
     ),
     { next: "Accepted", evidence: moved },
   );
@@ -339,11 +430,20 @@ test("a head branch pushed to between the create and the reading is the same pro
     head: { ref: request.head.ref, commit: asGitObjectId("d".repeat(40)) },
   });
   assert.deepEqual(
-    reconcileChangeProposal(request, { read: "Found", evidence: pushed }),
+    reconcileChangeProposal(
+      request,
+      { read: "Found", evidence: pushed },
+      "Contradictory",
+    ),
     { reconciled: "Accepted", evidence: pushed },
   );
   assert.deepEqual(
-    changeProposalPublicationNext(request, unanswered(1, 0), bounds),
+    changeProposalPublicationNext(
+      request,
+      unanswered(1, 0),
+      bounds,
+      "Contradictory",
+    ),
     { next: "Reconcile" },
     "the reading that finds it is the one this recovers through",
   );
@@ -366,6 +466,7 @@ test("created and existing evidence from another forge is never accepted", () =>
           creation: { created, evidence: wrongForge },
         },
         bounds,
+        "Contradictory",
       ),
       {
         next: "Refused",
@@ -389,7 +490,12 @@ test("stored reconciliation results are rebound to the current request", () => {
     },
   ] as const) {
     assert.deepEqual(
-      changeProposalPublicationNext(request, unanswered(1, 1, reading), bounds),
+      changeProposalPublicationNext(
+        request,
+        unanswered(1, 1, reading),
+        bounds,
+        "Contradictory",
+      ),
       {
         next: "Refused",
         contradiction: "RepositoryMismatch",
@@ -777,6 +883,16 @@ test("a merge the forge answered is concluded from the row, a blocked one held",
     ),
     { next: "Held", reason: "Blocked" },
   );
+});
+
+test("every arm a merge settles a row with is one a merge answers with at all", () => {
+  const answered = new Set<string>(allChangeProposalMerges);
+  for (const merged of populated(
+    allChangeProposalMergeAnswers,
+    "the merge answers",
+  )) {
+    assert.ok(answered.has(merged), `${merged} is no arm a merge answers with`);
+  }
 });
 
 test("a stored merge reading is rebound to the current request", () => {
