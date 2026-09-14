@@ -36,7 +36,6 @@
  */
 
 import { projectRepositoriesAnsweredMax } from "../../../../contract/http.ts";
-import { briefFinalizationModes } from "../../../../contract/rosters.ts";
 import { briefFinalizationDefault } from "../../../../interpreter/ticketBrief.ts";
 import {
   apiRole,
@@ -55,13 +54,18 @@ const landingReadSignature = "text,text,text";
 const landingWriteSignature = "text,text,text,text,text";
 const listSignature = "text,text,bigint";
 
+/** The roster as it stood when this migration ran; a later widening moves in its own migration, not here. */
+const briefFinalizationModesAt90 = ["Push", "PullRequest"] as const;
+
 /** The mode a binding made before this column existed lands by, which is the one every brief took. */
 const bindingLanding = [
   `ALTER TABLE project_repository
      ADD COLUMN landing_mode text NOT NULL
        DEFAULT '${briefFinalizationDefault.mode}',
      ADD CONSTRAINT project_repository_landing_mode_is_known
-       CHECK (landing_mode IN (${schemaTextSet([...briefFinalizationModes])}))`,
+       CHECK (landing_mode IN (${schemaTextSet([
+         ...briefFinalizationModesAt90,
+       ])}))`,
   `CREATE OR REPLACE FUNCTION project_repository_is_immutable() RETURNS trigger
      LANGUAGE plpgsql SET search_path=pg_catalog,public,pg_temp AS $$ BEGIN
      IF TG_OP='UPDATE'

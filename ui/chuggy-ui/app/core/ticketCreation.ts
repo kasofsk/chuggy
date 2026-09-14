@@ -28,7 +28,10 @@ import {
   briefTitleCharsMax,
 } from "../../../../src/contract/brief.ts";
 import { draftCreationSchema } from "../../../../src/contract/requests.ts";
-import type { BriefFinalizationMode } from "../../../../src/contract/rosters.ts";
+import {
+  briefFinalizationProposes,
+  type BriefFinalizationMode,
+} from "../../../../src/contract/rosters.ts";
 import type { PublicMutation } from "../../../../src/contract/requests.ts";
 import type {
   ConfigurationSummary,
@@ -235,6 +238,7 @@ function creationTargetBranchUnnamed(mode: BriefFinalizationMode): string {
     case "Push":
       return "the branch the work happened on";
     case "PullRequest":
+    case "PullRequestMerge":
       return "the repository's default branch";
   }
 }
@@ -351,7 +355,7 @@ function creationLandingFault(
   form: TicketCreationForm,
   branches: CreationBranches,
 ): CreationFault | undefined {
-  if (form.landingMode !== "PullRequest") return undefined;
+  if (!briefFinalizationProposes(form.landingMode)) return undefined;
   if (branches.branch.named === "Prefixed") return undefined;
   if (branches.target.named === "Prefixed") return undefined;
   if (branches.branch.named !== "Ref")

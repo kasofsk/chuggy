@@ -66,7 +66,10 @@
  * it runs, so a decision never acquires a mock.
  */
 
-import type { BriefFinalizationMode } from "../contract/rosters.ts";
+import {
+  briefFinalizationProposes,
+  type BriefFinalizationMode,
+} from "../contract/rosters.ts";
 import type { FinalizationOutcome } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import { asBoundedText } from "./boundedText.ts";
@@ -570,7 +573,12 @@ export type FinalizationHoldKind =
   | "ProposalBaseUnreadable"
   | "ProposalBaseIsHead"
   | "ProposalEvidenceUnstorable"
-  | "ProposalCreationsExhausted";
+  | "ProposalCreationsExhausted"
+  | "ProposalAbsent"
+  | "ProposalHeadMoved"
+  | "ProposalMergeBlocked"
+  | "ProposalMergesExhausted"
+  | "ProposalUnaddressed";
 
 /** Every hold kind, so a suite iterates over them rather than restating them. */
 export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
@@ -587,6 +595,11 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "ProposalBaseIsHead",
   "ProposalEvidenceUnstorable",
   "ProposalCreationsExhausted",
+  "ProposalAbsent",
+  "ProposalHeadMoved",
+  "ProposalMergeBlocked",
+  "ProposalMergesExhausted",
+  "ProposalUnaddressed",
 ];
 
 /** The one conclusive thing `Core` is told, which carries a kind only where the model prices a failure. */
@@ -712,7 +725,7 @@ function finalizationNextPromoted(
   }
   if (
     view.claim.kind === "RunFinalizer" &&
-    view.finalizationMode === "PullRequest"
+    briefFinalizationProposes(view.finalizationMode)
   ) {
     return { decide: "Propose" };
   }
@@ -1009,6 +1022,8 @@ export interface FinalizerConfig {
   readonly proposalsPerPassMax: number;
   readonly proposalCreationsMax: number;
   readonly proposalReconciliationsMax: number;
+  readonly proposalMergesMax: number;
+  readonly proposalMergeReadingsMax: number;
 }
 
 /** The values a deployment starts from when it names none. */
@@ -1023,6 +1038,8 @@ export const finalizerDefaults: FinalizerConfig = {
   proposalsPerPassMax: 8,
   proposalCreationsMax: 3,
   proposalReconciliationsMax: 3,
+  proposalMergesMax: 3,
+  proposalMergeReadingsMax: 3,
 };
 
 /**

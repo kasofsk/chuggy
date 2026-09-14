@@ -1,19 +1,21 @@
-import { briefFinalizationModes } from "../../../../contract/rosters.ts";
 import { schemaTextSet, type Migration } from "../shared.ts";
 
+/** The roster as it stood when this migration ran; a later widening moves in its own migration, not here. */
+const briefFinalizationModesAt51 = ["Push", "PullRequest"] as const;
+
 /**
- * The enlarged roster, and the two references a proposal stands between. A push
- * may land where its work happened and so may name no target; a pull request is
- * opened from the branch the work happened on into the one it names, so it has
- * both and they are different branches. The server refuses the pairing rather
- * than leaving a row only the interpreter would have caught.
+ * The enlarged roster, and the two references a proposal stands between: a
+ * push may land where its work happened and so may name no target, while a
+ * pull request opens from the branch the work happened on into the one it
+ * names, so it has both and they differ. The server refuses the pairing
+ * rather than leaving a row only the interpreter would have caught.
  */
 const briefPullRequestFinalization = [
   `ALTER TABLE draft_brief
      DROP CONSTRAINT draft_brief_finalization_mode_is_known,
      ADD CONSTRAINT draft_brief_finalization_mode_is_known
        CHECK (finalization_mode IN (${schemaTextSet([
-         ...briefFinalizationModes,
+         ...briefFinalizationModesAt51,
        ])})),
      ADD CONSTRAINT draft_brief_finalization_is_whole
        CHECK (finalization_mode <> 'PullRequest'

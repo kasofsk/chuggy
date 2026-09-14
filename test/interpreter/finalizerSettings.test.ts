@@ -106,6 +106,8 @@ test("every pass and pace bound a deployment names reaches the parsed configurat
     CHUG_FINALIZER_PROPOSALS_PER_PASS_MAX: "9",
     CHUG_FINALIZER_PROPOSAL_CREATIONS_MAX: "11",
     CHUG_FINALIZER_PROPOSAL_RECONCILIATIONS_MAX: "10",
+    CHUG_FINALIZER_PROPOSAL_MERGES_MAX: "12",
+    CHUG_FINALIZER_PROPOSAL_MERGE_READINGS_MAX: "13",
   });
   assert.deepEqual(settings.runtime, {
     idleIntervalMilliseconds: 250,
@@ -122,6 +124,8 @@ test("every pass and pace bound a deployment names reaches the parsed configurat
     proposalsPerPassMax: 9,
     proposalCreationsMax: 11,
     proposalReconciliationsMax: 10,
+    proposalMergesMax: 12,
+    proposalMergeReadingsMax: 13,
   });
 });
 

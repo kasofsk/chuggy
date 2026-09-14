@@ -414,10 +414,12 @@ test("a landing is named as a noun and explained as what it does", () => {
   expect(briefFinalizationModes.map(landingLabel)).toStrictEqual([
     "Push",
     "Pull request",
+    "Pull request, then merge",
   ]);
   expect(briefFinalizationModes.map(landingEffect)).toStrictEqual([
     "Commits straight onto the target branch",
     "Opens a pull request into the target branch",
+    "Opens a pull request into the target branch and merges it",
   ]);
 });
 
@@ -446,4 +448,10 @@ test("a landing read back names its reference, and a proposal names the default"
   expect(briefLandingLine({ mode: "PullRequest", target: undefined })).toBe(
     "Pull request · into the default branch",
   );
+  expect(
+    briefLandingLine({ mode: "PullRequestMerge", target: "refs/heads/main" }),
+  ).toBe("Pull request, then merge · into refs/heads/main");
+  expect(
+    briefLandingLine({ mode: "PullRequestMerge", target: undefined }),
+  ).toBe("Pull request, then merge · into the default branch");
 });
