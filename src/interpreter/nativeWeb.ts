@@ -15,6 +15,14 @@ import {
   type SessionStoreStream,
   type SessionTurnId,
 } from "./agentSession.ts";
+import {
+  authorizedProjectMutation,
+  authorizedProjectRead,
+  authorizedProjectValue,
+  type AuthorizedResult,
+} from "./authorizedProject.ts";
+export type { AuthorizedResult } from "./authorizedProject.ts";
+
 import type { Principal } from "./principal.ts";
 import type { EscalationReason, ResumePoint } from "../contract/rosters.ts";
 import { phaseTags, type Phase } from "../domain/generated/modelTypes.ts";
@@ -461,10 +469,6 @@ export type NativeCancellation =
   | { readonly result: "NotFound" }
   | { readonly result: "Found"; readonly cancellation: Cancelled };
 
-export type AuthorizedResult<Value> =
-  | { readonly result: "NotFound" }
-  | { readonly result: "Authorized"; readonly value: Value };
-
 export interface NativeWeb {
   submit(
     principal: Principal,
@@ -798,20 +802,12 @@ function nativeConfigurationMethods(
   authoring: AuthoringStore,
 ): Pick<NativeWeb, "configuration" | "configurations"> {
   return {
-    configurations: async (principal, partition, query) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? { result: "NotFound" }
-        : {
-            result: "Authorized",
-            value: await authoring.configurations(
-              partition,
-              checkedConfigurationPageQuery(query),
-            ),
-          },
-    configuration: async (principal, partition, revision) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? undefined
-        : authoring.configuration(partition, revision),
+    configurations: authorizedProjectValue(access, (partition, query) =>
+      authoring.configurations(partition, checkedConfigurationPageQuery(query)),
+    ),
+    configuration: authorizedProjectRead(access, (partition, revision) =>
+      authoring.configuration(partition, revision),
+    ),
   };
 }
 
@@ -840,20 +836,12 @@ function nativeDraftReadMethods(
   authoring: AuthoringStore,
 ): Pick<NativeWeb, "draft" | "drafts"> {
   return {
-    draft: async (principal, partition, ticket) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? undefined
-        : authoring.draft(partition, ticket),
-    drafts: async (principal, partition, query) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? { result: "NotFound" }
-        : {
-            result: "Authorized",
-            value: await authoring.drafts(
-              partition,
-              checkedDraftPageQuery(query),
-            ),
-          },
+    draft: authorizedProjectRead(access, (partition, ticket) =>
+      authoring.draft(partition, ticket),
+    ),
+    drafts: authorizedProjectValue(access, (partition, query) =>
+      authoring.drafts(partition, checkedDraftPageQuery(query)),
+    ),
   };
 }
 
@@ -863,60 +851,38 @@ function nativeAuthoringMethods(
 ): NativeAuthoringMethods {
   return {
     ...nativeDraftReadMethods(access, authoring),
-    createConfiguration: async (principal, input) => {
-      const authority = await access.authorize(
+    createConfiguration: (principal, input) =>
+      authorizedProjectMutation(
+        access,
         principal,
         input.partition,
-        "Mutate",
-      );
-      return authority === undefined
-        ? { result: "NotFound" }
-        : {
-            result: "Authorized",
-            value: await authoring.createConfiguration({ ...input, authority }),
-          };
-    },
+        (authority) => authoring.createConfiguration({ ...input, authority }),
+      ),
     createDraft: async (principal, input) => {
       checkedDraftLanding(input);
-      const authority = await access.authorize(
+      return authorizedProjectMutation(
+        access,
         principal,
         input.partition,
-        "Mutate",
+        (authority) => authoring.createDraft({ ...input, authority }),
       );
-      return authority === undefined
-        ? { result: "NotFound" }
-        : {
-            result: "Authorized",
-            value: await authoring.createDraft({ ...input, authority }),
-          };
     },
     reviseDraft: async (principal, input) => {
       checkedDraftLanding(input);
-      const authority = await access.authorize(
+      return authorizedProjectMutation(
+        access,
         principal,
         input.partition,
-        "Mutate",
+        (authority) => authoring.reviseDraft({ ...input, authority }),
       );
-      return authority === undefined
-        ? { result: "NotFound" }
-        : {
-            result: "Authorized",
-            value: await authoring.reviseDraft({ ...input, authority }),
-          };
     },
-    deleteDraft: async (principal, input) => {
-      const authority = await access.authorize(
+    deleteDraft: (principal, input) =>
+      authorizedProjectMutation(
+        access,
         principal,
         input.partition,
-        "Mutate",
-      );
-      return authority === undefined
-        ? { result: "NotFound" }
-        : {
-            result: "Authorized",
-            value: await authoring.deleteDraft({ ...input, authority }),
-          };
-    },
+        (authority) => authoring.deleteDraft({ ...input, authority }),
+      ),
   };
 }
 
@@ -967,24 +933,15 @@ function nativeOperationalMethods(
     return outputContents;
   };
   return {
-    operationalStatus: async (principal, partition) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? { result: "NotFound" }
-        : { result: "Authorized", value: await operations().status(partition) },
-    executions: async (principal, partition, query) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? { result: "NotFound" }
-        : {
-            result: "Authorized",
-            value: await operations().executions(
-              partition,
-              checkedExecutionListQuery(query),
-            ),
-          },
-    execution: async (principal, partition, execution) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? undefined
-        : operations().execution(partition, execution),
+    operationalStatus: authorizedProjectValue(access, (partition) =>
+      operations().status(partition),
+    ),
+    executions: authorizedProjectValue(access, (partition, query) =>
+      operations().executions(partition, checkedExecutionListQuery(query)),
+    ),
+    execution: authorizedProjectRead(access, (partition, execution) =>
+      operations().execution(partition, execution),
+    ),
     outputContent: async (principal, partition, execution, ordinal) => {
       if ((await access.authorize(principal, partition, "Read")) === undefined)
         return { read: "NotFound" };
@@ -1066,15 +1023,16 @@ function nativeRunEvidenceMethods(
     return evidenceContents;
   };
   return {
-    runTurns: async (principal, partition, execution, attempt, query) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? undefined
-        : reads().turns(
-            partition,
-            execution,
-            attempt,
-            checkedRunTurnsQuery(query),
-          ),
+    runTurns: authorizedProjectRead(
+      access,
+      (partition, execution, attempt, query) =>
+        reads().turns(
+          partition,
+          execution,
+          attempt,
+          checkedRunTurnsQuery(query),
+        ),
+    ),
     runTranscript: async (principal, partition, execution, attempt, after) => {
       if ((await access.authorize(principal, partition, "Read")) === undefined)
         return { read: "NotFound" };
@@ -1114,24 +1072,15 @@ function nativeTicketMethods(
   reads: NativeReadStore,
 ): Pick<NativeWeb, "ticket" | "ticketNativeActions" | "nativeActions"> {
   return {
-    ticket: async (principal, partition, ticket) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? undefined
-        : reads.ticket(partition, ticket),
-    ticketNativeActions: async (principal, partition, ticket) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? undefined
-        : reads.ticketNativeActions(partition, ticket),
-    nativeActions: async (principal, partition, query) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? { result: "NotFound" }
-        : {
-            result: "Authorized",
-            value: await reads.nativeActions(
-              partition,
-              checkedNativeActionPageQuery(query),
-            ),
-          },
+    ticket: authorizedProjectRead(access, (partition, ticket) =>
+      reads.ticket(partition, ticket),
+    ),
+    ticketNativeActions: authorizedProjectRead(access, (partition, ticket) =>
+      reads.ticketNativeActions(partition, ticket),
+    ),
+    nativeActions: authorizedProjectValue(access, (partition, query) =>
+      reads.nativeActions(partition, checkedNativeActionPageQuery(query)),
+    ),
   };
 }
 
@@ -1871,10 +1820,9 @@ function nativeProjectionMethods(
   "operation" | "project" | "ticket" | "ticketNativeActions" | "nativeActions"
 > {
   return {
-    operation: async (principal, partition, operation) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? undefined
-        : reads.operation(partition, operation),
+    operation: authorizedProjectRead(access, (partition, operation) =>
+      reads.operation(partition, operation),
+    ),
     project: async (principal, partition, query) =>
       (await access.authorize(principal, partition, "Read")) === undefined
         ? { result: "NotFound" }
@@ -1945,16 +1893,9 @@ export function nativeWeb(
     submit: nativeSubmitMethod(access, inbox, backlog),
     ...nativeProjectionMethods(access, reads),
     cancel: nativeCancelMethod(access, reads, inbox),
-    notifications: async (principal, partition, cursor) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? { result: "NotFound" }
-        : {
-            result: "Authorized",
-            value: await notifications.read(
-              partition,
-              checkedNotificationCursor(cursor),
-            ),
-          },
+    notifications: authorizedProjectValue(access, (partition, cursor) =>
+      notifications.read(partition, checkedNotificationCursor(cursor)),
+    ),
     dispatchView: nativeDispatchViewMethod(access, dispatchViews),
     projectInventory: async (principal, after, limit) => {
       if (inventory === undefined)
@@ -1968,27 +1909,20 @@ function nativeDispatchViewMethod(
   access: ProjectAccess,
   views?: DispatchViewStore,
 ): NativeWeb["dispatchView"] {
-  return async (principal, partition, query) => {
-    if ((await access.authorize(principal, partition, "Read")) === undefined)
-      return { result: "NotFound" };
+  return authorizedProjectValue(access, (partition, query) => {
     if (views === undefined)
       throw new Error("native web: no dispatch-view store was composed");
-    return {
-      result: "Authorized",
-      value: await views.read(partition, checkedDispatchViewQuery(query)),
-    };
-  };
+    return views.read(partition, checkedDispatchViewQuery(query));
+  });
 }
 
 function nativeSelectorContextMethod(
   access: ProjectAccess,
   contexts?: SelectorOperationalContextRead,
 ): NativeWeb["selectorOperationalContext"] {
-  return async (principal, partition) => {
-    if ((await access.authorize(principal, partition, "Read")) === undefined)
-      return { result: "NotFound" };
+  return authorizedProjectValue(access, (partition) => {
     if (contexts === undefined)
       throw new Error("native web: no selector context source was composed");
-    return { result: "Authorized", value: await contexts.context(partition) };
-  };
+    return contexts.context(partition);
+  });
 }
