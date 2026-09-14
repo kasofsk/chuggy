@@ -2,7 +2,6 @@ import {
   briefBranchCharsMax,
   briefBranchPrefix,
 } from "../../../../contract/brief.ts";
-import { briefFinalizationModes } from "../../../../contract/rosters.ts";
 import { briefFinalizationDefault } from "../../../../interpreter/ticketBrief.ts";
 import {
   apiRole,
@@ -13,6 +12,9 @@ import {
   schemaTextSet,
   type Migration,
 } from "../shared.ts";
+
+/** The roster as it stood when this migration ran; a later widening moves in its own migration, not here. */
+const briefFinalizationModesAt50 = ["Push"] as const;
 
 const draftCreateSignature =
   "text,text,text,text,bigint,text,text,text[],text,text,text,text,text";
@@ -31,7 +33,7 @@ const briefFinalization = [
      ADD COLUMN finalization_target text,
      ADD CONSTRAINT draft_brief_finalization_mode_is_known
        CHECK (finalization_mode IN (${schemaTextSet([
-         ...briefFinalizationModes,
+         ...briefFinalizationModesAt50,
        ])})),
      ADD CONSTRAINT draft_brief_finalization_target_is_a_ref
        CHECK (finalization_target IS NULL

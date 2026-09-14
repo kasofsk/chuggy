@@ -577,7 +577,8 @@ export type FinalizationHoldKind =
   | "ProposalAbsent"
   | "ProposalHeadMoved"
   | "ProposalMergeBlocked"
-  | "ProposalMergesExhausted";
+  | "ProposalMergesExhausted"
+  | "ProposalUnaddressed";
 
 /** Every hold kind, so a suite iterates over them rather than restating them. */
 export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
@@ -598,6 +599,7 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "ProposalHeadMoved",
   "ProposalMergeBlocked",
   "ProposalMergesExhausted",
+  "ProposalUnaddressed",
 ];
 
 /** The one conclusive thing `Core` is told, which carries a kind only where the model prices a failure. */

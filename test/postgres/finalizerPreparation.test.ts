@@ -330,6 +330,8 @@ interface ProposalState {
   readonly reconciliations: string;
   readonly merge: string | null;
   readonly merge_reading: string | null;
+  readonly merge_reading_contradiction: string | null;
+  readonly merge_reading_evidence: unknown;
   readonly merge_attempts: string;
   readonly merge_refusals: string;
   readonly merge_declines: string;
@@ -347,6 +349,7 @@ async function proposalOf(
             declines::text AS declines,
             reconciliations::text AS reconciliations,
             merge, merge_reading,
+            merge_reading_contradiction, merge_reading_evidence,
             merge_attempts::text AS merge_attempts,
             merge_refusals::text AS merge_refusals,
             merge_declines::text AS merge_declines,
@@ -924,6 +927,33 @@ test("evidence carrying an unpaired surrogate settles the create the same way", 
   );
 });
 
+test("evidence naming a proposal no number addresses is read back as the creation it is", async () => {
+  const project = await proposalRowSubject("proposalunnumbered");
+  const claim = await finalizerClaim(rig, project, "proposalunnumbered");
+  const store = postgresFinalizer(rig.pool);
+  const named = proposalEvidenceTitled(project, "ticket 1: propose it");
+  const evidence: ChangeProposalEvidence = {
+    ...named,
+    identity: { forge: named.identity.forge, remote: named.identity.remote },
+  };
+  assert.deepEqual(
+    await store.recordChangeProposal({
+      claim,
+      result: {
+        records: "Creation",
+        created: { created: "Created", evidence },
+      },
+    }),
+    { wrote: "Row" },
+    "what a landing wrote before it could merge is evidence like any other",
+  );
+  assert.deepEqual(
+    (await store.changeProposal(claim))?.publication,
+    { publication: "Answered", creation: { created: "Created", evidence } },
+    "and a row carrying it is read rather than raising out of the pass",
+  );
+});
+
 test("evidence larger than this relation holds settles the create the same way", async () => {
   const project = await proposalRowSubject("proposalhuge");
   const claim = await finalizerClaim(rig, project, "proposalhuge");
@@ -1188,7 +1218,9 @@ test("a merge is counted before it is asked, and released by what came of it", a
 });
 
 test("a merge the forge would not take is released unspent, and its reading goes with it", async () => {
-  const { claim, store } = await proposalMergeProved("proposalmergedeclined");
+  const { project, claim, store } = await proposalMergeProved(
+    "proposalmergedeclined",
+  );
 
   await store.markChangeProposalMergeAttempt(claim);
   assert.deepEqual(
@@ -1216,6 +1248,16 @@ test("a merge the forge would not take is released unspent, and its reading goes
     (await store.changeProposal(claim))?.merging,
     { merging: "Idle", merges: 0 },
     "an attempt the forge would not take leaves no merge behind it",
+  );
+  const unread = await proposalOf(project);
+  assert.deepEqual(
+    [
+      unread?.merge_reading,
+      unread?.merge_reading_contradiction,
+      unread?.merge_reading_evidence,
+    ],
+    [null, null, null],
+    "the reading the released attempt made is gone from the row with it",
   );
   await proposalMergeWritesRefused(
     store,

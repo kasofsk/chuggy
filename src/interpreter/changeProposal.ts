@@ -186,14 +186,31 @@ export function forgeBindingOf(
 }
 
 /**
- * What one proposal is on its forge. The number is beside the forge's own
- * identity for it because that identity names a proposal and does not address
- * one, and the acts a proposal is asked to perform are addressed by number.
+ * What one proposal is on its forge, whose number stands beside the forge's own
+ * identity for it because that identity names a proposal rather than addressing
+ * one.
+ *
+ * An answer stored before any landing could ask a proposal to do anything
+ * carries no number and is read and compared exactly as it always was; only the
+ * acts addressed to one need it, and those refuse its absence as a value.
  */
 export interface ChangeProposalIdentity {
   readonly forge: ForgeBindingId;
   readonly remote: ProposalRemoteIdentity;
+  readonly number?: ProposalNumber;
+}
+
+/** One proposal a number addresses, which is the only kind an act can be asked of. */
+export interface ChangeProposalAddress extends ChangeProposalIdentity {
   readonly number: ProposalNumber;
+}
+
+/** The proposal a number addresses, and nothing where the identity carries none. */
+export function changeProposalAddressed(
+  identity: ChangeProposalIdentity,
+): ChangeProposalAddress | undefined {
+  const number = identity.number;
+  return number === undefined ? undefined : { ...identity, number };
 }
 
 export interface ChangeProposalRequest {
@@ -658,7 +675,7 @@ export function changeProposalPublicationNext(
  * the merge is conditional on, and what authorizes the act.
  */
 export interface ChangeProposalMergeRequest extends ChangeProposalCredentialRequest {
-  readonly proposal: ChangeProposalIdentity;
+  readonly proposal: ChangeProposalAddress;
   readonly marker: ProposalMarker;
   readonly headCommit: GitObjectId;
 }
@@ -789,20 +806,31 @@ export type ChangeProposalMergingNext =
         "MergesExhausted" | "Blocked" | "ProposalAbsent" | "EvidenceUnstorable";
     };
 
-/** Refuses a merge naming a proposal on another forge, and a number no proposal is addressed by. */
+/** What a merge is offered under, before this boundary has checked it addresses one proposal. */
+export interface ChangeProposalMergeInput extends Omit<
+  ChangeProposalMergeRequest,
+  "proposal"
+> {
+  readonly proposal: ChangeProposalIdentity;
+}
+
+/** Refuses a merge naming a proposal on another forge, and one no number addresses. */
 export function changeProposalMergeRequest(
-  input: ChangeProposalMergeRequest,
+  input: ChangeProposalMergeInput,
 ): ChangeProposalMergeRequest {
   if (input.proposal.forge !== input.binding.forge)
     throw new TypeError("a merge names a proposal on another forge");
+  const proposal = changeProposalAddressed(input.proposal);
+  if (proposal === undefined)
+    throw new TypeError("a merge names a proposal no number addresses");
   return {
     binding: input.binding,
     partition: input.partition,
     repository: input.repository,
     proposal: {
-      forge: input.proposal.forge,
-      remote: input.proposal.remote,
-      number: asProposalNumber(input.proposal.number),
+      forge: proposal.forge,
+      remote: proposal.remote,
+      number: asProposalNumber(proposal.number),
     },
     marker: asProposalMarker(input.marker),
     headCommit: input.headCommit,

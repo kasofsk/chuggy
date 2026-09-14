@@ -1928,15 +1928,28 @@ test("migration 50 lands an existing brief where its work happened and takes a t
   });
 });
 
+test("the mode roster 50 installed refuses the pull request that came after it", async () => {
+  await migrationDatabase("i50roster", async (subject) => {
+    await migrationSeedApplied(subject, 50);
+    await applyMigration(subject, 50);
+    await seedBrieflessDraft(subject);
+    await subject.query(
+      `INSERT INTO draft_brief (tenant,project,ticket,intent,branch)
+       VALUES ('tenant','project',1,'Fix the importer.','refs/heads/rt/ticket-brief')`,
+    );
+    await assert.rejects(
+      subject.query(
+        `UPDATE draft_brief SET finalization_mode='PullRequest' WHERE ticket=1`,
+      ),
+      /draft_brief_finalization_mode_is_known/u,
+      "50's own CHECK is frozen to the roster it was written against",
+    );
+  });
+});
+
 test("migration 51 admits a mode installed before it existed and refuses one opening from or into nothing", async () => {
   await migrationDatabase("brief_pull_request", async (subject) => {
     await migrationSeedApplied(subject, 51);
-    await subject.query(
-      `ALTER TABLE draft_brief
-         DROP CONSTRAINT draft_brief_finalization_mode_is_known,
-         ADD CONSTRAINT draft_brief_finalization_mode_is_known CHECK
-           (finalization_mode IN (${schemaTextSet(["Push"])}))`,
-    );
     await seedBrieflessDraft(subject);
     await subject.query(
       `INSERT INTO draft_brief (tenant,project,ticket,intent,branch)
