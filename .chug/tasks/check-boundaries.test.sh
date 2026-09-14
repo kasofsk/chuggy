@@ -326,140 +326,78 @@ check "an orphan module is a finding" 1 "$RC" "no-orphan-module:"
 # --- A console's own boundaries, and the one between consoles ----------------
 
 # Every case below puts the console under a name, because the rules are written
-# per console: a fixture that put app/ and dom/ directly under ui/ would name
-# the console "app", and the pair rule would then be looking for a dom/ inside
-# it and finding nothing to fire on.
-
-# The allowed direction first: the document layer reads the decision layer, and
-# a red here would mean the rule over-fires on the one edge the split exists to
-# take. The src/ pair is what keeps the tracked-source precondition satisfied
-# and neither file an orphan.
-fixture
-mkdir -p "$R/ui/console/app" "$R/ui/console/dom"
-printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
-printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
-printf '%s\n' 'export const decide = () => 1' > "$R/ui/console/app/decide.js"
-printf '%s\n' 'import { decide } from "../app/decide.js"' 'export const draw = () => decide()' > "$R/ui/console/dom/draw.js"
-seal
-check "the console's document layer may read its decisions" 0 "$RC" "graph clean"
+# per console: a fixture that put app/ directly under ui/ would name the console
+# "app", and no rule stated over a console would be looking at the directory it
+# is about.
 
 # The public contract is the one module outside ui/ a console may reach, and it
-# is why the console the next slices build has no second copy of the wire. The
-# fixture's contract imports nothing, because whether a console may reach the
-# parser the real one imports is the separate question kasofsk/chuggy#315
-# answers over the console that builds.
+# is why no console here carries a second copy of the wire. The fixture's
+# contract imports nothing, because whether a console may reach the parser the
+# real one imports is what chuggy-ui-decisions-render-nothing answers below.
 fixture
-mkdir -p "$R/ui/console/app" "$R/src/contract"
+mkdir -p "$R/ui/one/app" "$R/src/contract"
 printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
 printf '%s\n' 'export const wireVersion = 1' > "$R/src/contract/wire.ts"
 printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
-printf '%s\n' 'import { wireVersion } from "../../../src/contract/wire.ts"' 'export const decide = () => wireVersion' > "$R/ui/console/app/decide.js"
+printf '%s\n' 'import { wireVersion } from "../../../src/contract/wire.ts"' 'export const decide = () => wireVersion' > "$R/ui/one/app/decide.js"
 seal
 check "a console may reach the public contract" 0 "$RC" "graph clean"
 
 # The exemption is the contract and nothing beside it: a console reaching the
 # server's own layers is the finding the rule exists for.
 fixture
-mkdir -p "$R/ui/console/app" "$R/src/adapters"
+mkdir -p "$R/ui/one/app" "$R/src/adapters"
 printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
 printf '%s\n' 'export const stub = 1' > "$R/src/adapters/stub.ts"
 printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
-printf '%s\n' 'import { stub } from "../../../src/adapters/stub.js"' 'export const decide = () => stub' > "$R/ui/console/app/decide.js"
+printf '%s\n' 'import { stub } from "../../../src/adapters/stub.js"' 'export const decide = () => stub' > "$R/ui/one/app/decide.js"
 seal
 check "a console may not reach an adapter" 1 "$RC" "console-reaches-no-source:"
 
 # Every file is individually innocent: only a path through the graph reaches
 # out of ui/, which is what the rule's `reachable` flag is for.
 fixture
-mkdir -p "$R/ui/console/app"
+mkdir -p "$R/ui/one/app"
 printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
-printf '%s\n' 'import { x } from "../../../src/domain/a.ts"' 'export const shared = x' > "$R/ui/console/app/shared.js"
-printf '%s\n' 'import { shared } from "./shared.js"' 'export const decide = () => shared' > "$R/ui/console/app/decide.js"
+printf '%s\n' 'import { x } from "../../../src/domain/a.ts"' 'export const shared = x' > "$R/ui/one/app/shared.js"
+printf '%s\n' 'import { shared } from "./shared.js"' 'export const decide = () => shared' > "$R/ui/one/app/decide.js"
 seal
 check "the console may not REACH the server's source" 1 "$RC" "console-reaches-no-source:"
 
-# The same shape one directory down: a relay belonging to neither is what a
-# per-import rule would miss. This case is also what holds the pair rule to a
-# construct that fires: written with a `$1` backreference in a `reachable`
-# rule's `to.path` it matches nothing, and the only symptom is this line going
-# green.
+# A package is what the rule above leaves alone: a console bundles what it
+# reaches and serves the bundle, so a client dependency is its own business.
 fixture
-mkdir -p "$R/ui/console/app" "$R/ui/console/dom"
+mkdir -p "$R/ui/one/app"
 printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
 printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
-printf '%s\n' 'export const write = () => 1' > "$R/ui/console/dom/write.js"
-printf '%s\n' 'import { write } from "../dom/write.js"' 'export const relay = write' > "$R/ui/console/app/relay.js"
-printf '%s\n' 'import { relay } from "./relay.js"' 'export const decide = () => relay()' > "$R/ui/console/app/decide.js"
+printf '%s\n' 'import { z } from "zod"' 'export const decide = () => z' > "$R/ui/one/app/decide.js"
 seal
-check "a console decision may not REACH the document layer" 1 "$RC" "console-decisions-touch-no-document:"
-
-# The rule over every console stops at this tree's source, so it is the one
-# that answers for a console nothing else here names. A package is what it
-# leaves alone and the case below it is what proves the difference.
-fixture
-mkdir -p "$R/ui/built/app" "$R/src/adapters"
-printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
-printf '%s\n' 'export const stub = 1' > "$R/src/adapters/stub.ts"
-printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
-printf '%s\n' 'import { stub } from "../../../src/adapters/stub.ts"' 'export const decide = () => stub' > "$R/ui/built/app/decide.js"
-seal
-check "a console that builds may not reach an adapter either" 1 "$RC" "console-reaches-no-source:"
-
-# A package is the client dependency the unbuilt console exists without, and
-# the console that builds fetches its bundle rather than the package, so only
-# the first is bound. The pair is what says the scope is the rule.
-fixture
-mkdir -p "$R/ui/console/app"
-printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
-printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
-printf '%s\n' 'import { z } from "zod"' 'export const decide = () => z' > "$R/ui/console/app/decide.js"
-seal
-check "the unbuilt console may not reach a package" 1 "$RC" "unbuilt-console-uses-no-package:"
-
-fixture
-mkdir -p "$R/ui/built/app"
-printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
-printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
-printf '%s\n' 'import { z } from "zod"' 'export const decide = () => z' > "$R/ui/built/app/decide.js"
-seal
-check "a console that builds may reach a package" 0 "$RC" "graph clean"
-
-# The decision/document split is the unbuilt console's own, and a console
-# layered some other way states its own. Both halves are needed: a rule written
-# over every console binds a directory pair that means nothing there.
-fixture
-mkdir -p "$R/ui/built/app" "$R/ui/built/dom"
-printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
-printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
-printf '%s\n' 'export const write = () => 1' > "$R/ui/built/dom/write.js"
-printf '%s\n' 'import { write } from "../dom/write.js"' 'export const decide = () => write()' > "$R/ui/built/app/decide.js"
-seal
-check "another console's decisions may touch its own document layer" 0 "$RC" "graph clean"
+check "a console may reach a package" 0 "$RC" "graph clean"
 
 # Two consoles are two artifacts, and a helper reachable from both is the
 # client dependency neither has. Reachability again, and through a relay,
 # because one console importing another by name is the shape a per-import rule
 # would already catch.
 fixture
-mkdir -p "$R/ui/console/app" "$R/ui/admin/app"
+mkdir -p "$R/ui/one/app" "$R/ui/two/app"
 printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
 printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
-printf '%s\n' 'export const shared = () => 1' > "$R/ui/console/app/shared.js"
-printf '%s\n' 'import { shared } from "../../console/app/shared.js"' 'export const relay = shared' > "$R/ui/admin/app/relay.js"
-printf '%s\n' 'import { relay } from "./relay.js"' 'export const decide = () => relay()' > "$R/ui/admin/app/decide.js"
+printf '%s\n' 'export const shared = () => 1' > "$R/ui/one/app/shared.js"
+printf '%s\n' 'import { shared } from "../../one/app/shared.js"' 'export const relay = shared' > "$R/ui/two/app/relay.js"
+printf '%s\n' 'import { relay } from "./relay.js"' 'export const decide = () => relay()' > "$R/ui/two/app/decide.js"
 seal
 check "one console may not REACH another" 1 "$RC" "no-console-sees-another:"
 
-# --- The console that builds, and its own two boundaries -------------------
+# --- chuggy-ui's own boundaries ---------------------------------------------
 
-# Node's own modules are not packages, and the console that builds is the one
-# that could plausibly reach for one: it has a toolchain, so `node:fs` resolves
-# for it at build time and is gone by the time a browser has the bundle.
+# Node's own modules are not packages, and a console is what could plausibly
+# reach for one: it has a toolchain, so `node:fs` resolves for it at build
+# time and is gone by the time a browser has the bundle.
 fixture
-mkdir -p "$R/ui/built/src"
+mkdir -p "$R/ui/one/src"
 printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
 printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
-printf '%s\n' 'import { readFileSync } from "node:fs"' 'export const read = readFileSync' > "$R/ui/built/src/decide.ts"
+printf '%s\n' 'import { readFileSync } from "node:fs"' 'export const read = readFileSync' > "$R/ui/one/src/decide.ts"
 seal
 check "a console that builds may not reach a platform module" 1 "$RC" "console-reaches-no-source:"
 
@@ -476,7 +414,10 @@ printf '%s\n' 'import { relay } from "./relay.ts"' 'export const draw = () => re
 seal
 check "the served source may not REACH the build's own configuration" 1 "$RC" "chuggy-ui-is-what-a-browser-fetches:"
 
-# The decision layer's own bound, through a relay for the same reason.
+# The decision layer's own bound, through a relay for the same reason. This
+# case is also what holds the rule to a construct that fires: written over
+# every console with a `$1` backreference in a `reachable` rule's `to.path` it
+# matches nothing, and the only symptom is this line going green.
 fixture
 mkdir -p "$R/ui/chuggy-ui/app/core" "$R/ui/chuggy-ui/app/browser"
 printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"

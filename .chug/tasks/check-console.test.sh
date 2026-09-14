@@ -104,8 +104,8 @@ check "outside a git checkout exits 2, not 0" 2 "$RC" "not a git checkout"
 # A tree with no console that builds is clean and says what it did instead of
 # counting nothing.
 fixture
-mkdir -p "$R/ui/console/app"
-printf '%s\n' 'export const decide = () => 1' > "$R/ui/console/app/decide.js"
+mkdir -p "$R/ui/plain/app"
+printf '%s\n' 'export const decide = () => 1' > "$R/ui/plain/app/decide.js"
 seal
 check "a console with no manifest is not this gate's" 0 "$RC" "nothing to run"
 

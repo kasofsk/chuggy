@@ -61,9 +61,6 @@
 #   CHUG_IMAGE_PLATFORM the platform to build for. Default `linux/amd64`, which
 #                       is the rig node's architecture; a node of another one is
 #                       what this is for.
-#   CHUG_WEB_SITE       the repository-relative directory whose contents become
-#                       the web image's document root. Required by `web`, and
-#                       it has no default: this serves what it is pointed at.
 #   CHUG_RIG_SSH        the ssh destination of the k3s node. Unset, the import
 #                       runs against this host's own containerd.
 #
@@ -88,16 +85,6 @@ for name in "$@"; do
 	if [ ! -f "images/$name/Dockerfile" ]; then
 		echo "build-and-import: LINTER ERROR — images/$name/Dockerfile is not there, so $name is not an image this tree builds"
 		exit 2
-	fi
-	if [ "$name" = "web" ]; then
-		if [ -z "${CHUG_WEB_SITE:-}" ]; then
-			echo "build-and-import: LINTER ERROR — CHUG_WEB_SITE must name the directory whose contents the web image serves"
-			exit 2
-		fi
-		if [ ! -d "$CHUG_WEB_SITE" ]; then
-			echo "build-and-import: LINTER ERROR — CHUG_WEB_SITE names $CHUG_WEB_SITE, which is not a directory in this checkout"
-			exit 2
-		fi
 	fi
 done
 
@@ -141,11 +128,7 @@ for name in "$@"; do
 	echo "--- $reference"
 
 	set +e
-	if [ "$name" = "web" ]; then
-		docker build --platform "$platform" --provenance=false -f "images/$name/Dockerfile" --build-arg "site=$CHUG_WEB_SITE" -t "$reference" .
-	else
-		docker build --platform "$platform" --provenance=false -f "images/$name/Dockerfile" -t "$reference" .
-	fi
+	docker build --platform "$platform" --provenance=false -f "images/$name/Dockerfile" -t "$reference" .
 	built=$?
 	set -e
 	if [ "$built" -ne 0 ]; then

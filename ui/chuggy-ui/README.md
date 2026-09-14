@@ -105,20 +105,18 @@ access token comes back with an empty audience and every read is refused.
 
 ## The image
 
-`images/web/Dockerfile` serves whatever directory it is pointed at, so this
-console's build output is that directory:
+`images/chuggy-ui/Dockerfile` installs and bundles this console inside the
+build, so what it serves is a function of the commit rather than of whichever
+Node the host had:
 
 ```sh
-npm run build --prefix ui/chuggy-ui
-CHUG_WEB_SITE=<the dist directory this build wrote> \
-  deploy/rig/images/build-and-import.sh web
+deploy/rig/images/build-and-import.sh chuggy-ui
 ```
 
 `deploy/rig/images/README.md` is the procedure and says what the image answers.
-Nothing about that image changes for this console: `images/web/nginx.conf`
-already sends `default-src 'none'` with `script-src 'self'` and
-`style-src 'self'`, and the emitted document loads one script and one stylesheet
-from this origin and nothing else.
+`images/chuggy-ui/nginx.conf` sends `default-src 'none'` with
+`script-src 'self'` and `style-src 'self'`, and the emitted document loads one
+script and one stylesheet from this origin and nothing else.
 
 ## The session
 

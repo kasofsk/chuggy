@@ -18,11 +18,11 @@
 #
 # ONLY WHAT MOVED IS REBUILT. The fabric's manifests say which commit is live,
 # and each image is rebuilt when a path its Dockerfile copies changed between
-# that commit and HEAD. The realtime console is built by `images/chuggy-ui/`,
-# which installs and bundles inside the image, so what it serves is a function
-# of the commit and not of whichever Node and `node_modules` the host had; it
-# is published under the `web` repository the fabric's consistency check
-# requires of both consoles. An image that did not move keeps its digest, so
+# that commit and HEAD. The console is built by `images/chuggy-ui/`, which
+# installs and bundles inside the image, so what it serves is a function of the
+# commit and not of whichever Node and `node_modules` the host had; it is
+# published under the `web` repository the fabric's consistency check requires
+# of it. An image that did not move keeps its digest, so
 # its Deployment is not restarted for a release that changed nothing it
 # serves. The worker image is not this script's — the fabric's own build
 # system makes it and a separate change admits it — so a change under
@@ -59,15 +59,15 @@
 # manifest names.
 #
 # `--console` IS BOTH PHASES IN ONE RUN, for a release in which only the
-# realtime console moved. Every other manifest then takes an annotation and no
+# console moved. Every other manifest then takes an annotation and no
 # new image, so nothing that carries a heartbeat restarts and the live-attempt
 # refusal is not consulted; the gate is the gates the change since the live
 # commit affects rather than every gate; and the pull request is opened,
 # merged and rolled out without a pause, because a diff that is digests and
 # annotations is read mechanically and not reviewed. A change that also moves
-# the api or the old console is refused under it and goes the long way, and a
-# migration is under `src/`, so it moves the api. So is a release that moves
-# the rig back, because it has no change since the live commit to gate over.
+# the api is refused under it and goes the long way, and a migration is under
+# `src/`, so it moves the api. So is a release that moves the rig back, because
+# it has no change since the live commit to gate over.
 #
 # Usage:
 #   deploy/rig/deploy-to-gtr.sh            gate, build, publish, open the PR
@@ -321,17 +321,14 @@ moved() { # <path>...
 }
 api_moved=0
 ui_moved=0
-web_moved=0
 if moved src images/api package.json package-lock.json; then api_moved=1; fi
-if moved ui/chuggy-ui src/contract scripts/console-policy.ts scripts/check-console-policy.ts images/chuggy-ui images/web/nginx.conf package.json package-lock.json; then ui_moved=1; fi
-if moved ui/console images/web; then web_moved=1; fi
+if moved ui/chuggy-ui src/contract scripts/console-policy.ts scripts/check-console-policy.ts images/chuggy-ui package.json package-lock.json; then ui_moved=1; fi
 if moved images/worker; then
 	say "WARNING — images/worker changed since $deployed; the worker is built and admitted by the fabric, not here, and this release does not move it"
 fi
 if [ "$console" -eq 1 ]; then
 	[ "$ui_moved" -eq 1 ] || refuse "nothing the console serves moved since $deployed, so there is no console release"
 	[ "$api_moved" -eq 0 ] || refuse "the change since $deployed moves the api, so it is not a console release; run without --console"
-	[ "$web_moved" -eq 0 ] || refuse "the change since $deployed moves the old console, so it is not a console release; run without --console"
 fi
 
 # --- the gate -------------------------------------------------------------------
@@ -380,11 +377,6 @@ if [ "$ui_moved" -eq 1 ]; then
 	say "building chuggy-ui:$tag"
 	build chuggy-ui "CHUG_IMAGE_TAG=$tag"
 fi
-if [ "$web_moved" -eq 1 ]; then
-	say "building web:$tag"
-	build web "CHUG_IMAGE_TAG=$tag" CHUG_WEB_SITE=ui/console
-fi
-
 # --- the registry ---------------------------------------------------------------
 
 # The node's containerd is the client: the imported image is tagged with the
@@ -402,15 +394,13 @@ publish() { # <image> <repository> <tag>
 }
 api_digest=""
 ui_digest=""
-web_digest=""
 if [ "$api_moved" -eq 1 ]; then publish api api "$tag"; api_digest="$digest"; fi
 if [ "$ui_moved" -eq 1 ]; then publish chuggy-ui web "chuggy-ui-$tag"; ui_digest="$digest"; fi
-if [ "$web_moved" -eq 1 ]; then publish web web "$tag"; web_digest="$digest"; fi
 
 # --- the manifests --------------------------------------------------------------
 
 api_manifests="chuggy-api.yaml chuggy-configuration-importer.yaml chuggy-finalizer.yaml chuggy-migrate.yaml chuggy-scheduler.yaml chuggy-selector.yaml chuggy-ticket-service.yaml chuggy-worker-plane.yaml"
-console_manifests="chuggy-ui.yaml chuggy-web.yaml"
+console_manifests="chuggy-ui.yaml"
 
 rewrite() { # <manifest> <sed expression>
 	[ -f "$apps/$1" ] || refuse "the fabric has no $1 to edit"
@@ -434,10 +424,6 @@ if [ -n "$ui_digest" ]; then
 	rewrite chuggy-ui.yaml "$(image_line web "$ui_digest")"
 	[ "$(manifest_image chuggy-ui.yaml)" = "$registry_prefix/web@$ui_digest" ] || fail "chuggy-ui.yaml does not carry the console digest after the edit"
 fi
-if [ -n "$web_digest" ]; then
-	rewrite chuggy-web.yaml "$(image_line web "$web_digest")"
-	[ "$(manifest_image chuggy-web.yaml)" = "$registry_prefix/web@$web_digest" ] || fail "chuggy-web.yaml does not carry the old console digest after the edit"
-fi
 git -C "$fabric" diff --quiet && fail "the edit changed no manifest, so there is no release to commit"
 set +e
 python3 "$fabric/scripts/check-release-consistency" "$apps"
@@ -458,8 +444,7 @@ kube kustomize "$apps" >/dev/null || fail "the edited manifests do not render"
 	git log --format='  %h %s' "$deployed..HEAD"
 	printf '\n'
 	if [ -n "$api_digest" ]; then printf 'api: %s\n' "$api_digest"; else printf 'api: unchanged\n'; fi
-	if [ -n "$ui_digest" ]; then printf 'web (chuggy-ui): %s\n' "$ui_digest"; else printf 'web (chuggy-ui): unchanged\n'; fi
-	if [ -n "$web_digest" ]; then printf 'web (console): %s\n' "$web_digest"; else printf 'web (console): unchanged\n'; fi
+	if [ -n "$ui_digest" ]; then printf 'web: %s\n' "$ui_digest"; else printf 'web: unchanged\n'; fi
 	if [ -n "$migrations" ]; then
 		printf '\nMigrations the Job applies, below which the only way back is a restore:\n'
 		printf '%s\n' "$migrations" | sed 's|^.*/|  |'

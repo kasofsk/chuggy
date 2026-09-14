@@ -2,7 +2,7 @@
  * What a built console's document may carry, the cascade order the stylesheet
  * it loads must be emitted in, and the values its utilities layer may state.
  *
- * The policy `images/web/nginx.conf` serves a console under is
+ * The policy `images/chuggy-ui/nginx.conf` serves a console under is
  * `default-src 'none'` with `script-src 'self'` and `style-src 'self'` — no
  * `'unsafe-inline'`, no nonce — so an inline script or style is a page that
  * loads in a dev server and is blank in production, and a subresource from
