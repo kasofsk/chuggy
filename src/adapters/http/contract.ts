@@ -114,43 +114,28 @@ const inventoryCursorSchema = z.strictObject({
   project: z.string(),
 });
 
-const configurationCursorSchema = z.strictObject({
-  version: z.literal(nativeHttpVersion),
-  tenant: z.string(),
-  project: z.string(),
+const configurationCursorSchema = inventoryCursorSchema.extend({
   createdAt: z.string().refine((value) => Number.isFinite(Date.parse(value)), {
     message: "Expected a timestamp",
   }),
   revision: z.string().min(1),
 });
 
-const ticketActivityCursorSchema = z.strictObject({
-  version: z.literal(nativeHttpVersion),
-  tenant: z.string(),
-  project: z.string(),
+const ticketActivityCursorSchema = inventoryCursorSchema.extend({
   sequence: z.number().int().safe().nonnegative(),
   ticket: z.number().int().safe().positive(),
 });
 
-const draftCursorSchema = z.strictObject({
-  version: z.literal(nativeHttpVersion),
-  tenant: z.string(),
-  project: z.string(),
+const draftCursorSchema = inventoryCursorSchema.extend({
   ticket: z.number().int().safe().positive(),
 });
 
-const executionCursorSchema = z.strictObject({
-  version: z.literal(nativeHttpVersion),
-  tenant: z.string(),
-  project: z.string(),
+const executionCursorSchema = inventoryCursorSchema.extend({
   ticket: z.number().int().safe().positive(),
   task: z.number().int().safe().positive(),
 });
 
-const nativeActionCursorSchema = z.strictObject({
-  version: z.literal(nativeHttpVersion),
-  tenant: z.string(),
-  project: z.string(),
+const nativeActionCursorSchema = inventoryCursorSchema.extend({
   authorizingSequence: z.number().int().safe().positive(),
   action: z.string().min(1),
 });
@@ -375,28 +360,19 @@ export interface ParsedSubmission {
   readonly command: TicketCommand;
 }
 
-export function encodeTicketActivityCursor(
-  partition: Partition,
-  cursor: TicketActivityPosition,
-): string {
+/** Encodes only the fields selected by a cursor's payload projection. */
+function cursorEncoded(partition: Partition, payload: object = {}): string {
   return Buffer.from(
     JSON.stringify({
       version: nativeHttpVersion,
       tenant: partition.tenant,
       project: partition.project,
-      sequence: cursor.sequence,
-      ticket: cursor.ticket,
+      ...payload,
     }),
   ).toString("base64url");
 }
 
-/**
- * A cursor's payload, decoded from the base64url JSON every cursor is written
- * as. A value that is neither leaves here as the `RangeError` the error handler
- * already reads as the caller's fault, rather than as the `SyntaxError`
- * `JSON.parse` raises and no handler can tell from a corrupt stored document.
- */
-function decodedCursor(value: string, what: string): unknown {
+function cursorDecoded(value: string, what: string): unknown {
   if (
     value.length === 0 ||
     textCodePointsCount(value) > nativeHttpCursorCharsMax
@@ -409,181 +385,101 @@ function decodedCursor(value: string, what: string): unknown {
   }
 }
 
-export function parseTicketActivityCursor(
-  value: string,
-  expected: Partition,
-): TicketActivityPosition {
-  const decoded: unknown = decodedCursor(value, "ticket activity");
-  const cursor = ticketActivityCursorSchema.parse(decoded);
-  const partition = parsePartition(cursor.tenant, cursor.project);
-  if (
-    partition.tenant !== expected.tenant ||
-    partition.project !== expected.project
-  )
-    throw new RangeError("ticket activity cursor belongs to another project");
-  const parsed = {
+/** A project cursor binds its payload to the issuing partition and exact wire bytes. */
+function projectCursorCodec<
+  Payload extends { tenant: string; project: string },
+  Value,
+>(
+  what: string,
+  schema: z.ZodType<Payload>,
+  read: (payload: Payload) => Value,
+  write: (value: Value) => object,
+) {
+  const encode = (partition: Partition, value: Value): string =>
+    cursorEncoded(partition, write(value));
+  const parse = (value: string, expected: Partition): Value => {
+    const cursor = schema.parse(cursorDecoded(value, what));
+    const partition = parsePartition(cursor.tenant, cursor.project);
+    if (
+      partition.tenant !== expected.tenant ||
+      partition.project !== expected.project
+    )
+      throw new RangeError(`${what} cursor belongs to another project`);
+    const parsed = read(cursor);
+    if (encode(partition, parsed) !== value)
+      throw new RangeError(`${what} cursor is not canonically encoded`);
+    return parsed;
+  };
+  return { encode, parse };
+}
+
+export const {
+  encode: encodeTicketActivityCursor,
+  parse: parseTicketActivityCursor,
+} = projectCursorCodec(
+  "ticket activity",
+  ticketActivityCursorSchema,
+  (cursor): TicketActivityPosition => ({
     sequence: cursor.sequence,
     ticket: asTicketId(cursor.ticket),
-  };
-  if (encodeTicketActivityCursor(partition, parsed) !== value)
-    throw new RangeError("ticket activity cursor is not canonically encoded");
-  return parsed;
-}
+  }),
+  (cursor) => ({ sequence: cursor.sequence, ticket: cursor.ticket }),
+);
 
-export function encodeExecutionCursor(
-  partition: Partition,
-  cursor: ExecutionPageCursor,
-): string {
-  return Buffer.from(
-    JSON.stringify({
-      version: nativeHttpVersion,
-      tenant: partition.tenant,
-      project: partition.project,
-      ticket: cursor.ticket,
-      task: cursor.task,
+export const { encode: encodeExecutionCursor, parse: parseExecutionCursor } =
+  projectCursorCodec(
+    "execution",
+    executionCursorSchema,
+    (cursor): ExecutionPageCursor => ({
+      ticket: asTicketId(cursor.ticket),
+      task: asTaskId(cursor.task),
     }),
-  ).toString("base64url");
-}
+    (cursor) => ({ ticket: cursor.ticket, task: cursor.task }),
+  );
 
-export function parseExecutionCursor(
-  value: string,
-  expected: Partition,
-): ExecutionPageCursor {
-  const decoded: unknown = decodedCursor(value, "execution");
-  const cursor = executionCursorSchema.parse(decoded);
-  const partition = parsePartition(cursor.tenant, cursor.project);
-  if (
-    partition.tenant !== expected.tenant ||
-    partition.project !== expected.project
-  )
-    throw new RangeError("execution cursor belongs to another project");
-  const parsed = {
-    ticket: asTicketId(cursor.ticket),
-    task: asTaskId(cursor.task),
-  };
-  if (encodeExecutionCursor(partition, parsed) !== value)
-    throw new RangeError("execution cursor is not canonically encoded");
-  return parsed;
-}
-
-export function encodeNativeActionCursor(
-  partition: Partition,
-  cursor: NativeActionPosition,
-): string {
-  return Buffer.from(
-    JSON.stringify({
-      version: nativeHttpVersion,
-      tenant: partition.tenant,
-      project: partition.project,
-      authorizingSequence: cursor.authorizingSequence,
-      action: cursor.action,
-    }),
-  ).toString("base64url");
-}
-
-export function parseNativeActionCursor(
-  value: string,
-  expected: Partition,
-): NativeActionPosition {
-  const decoded: unknown = decodedCursor(value, "native action");
-  const cursor = nativeActionCursorSchema.parse(decoded);
-  const partition = parsePartition(cursor.tenant, cursor.project);
-  if (
-    partition.tenant !== expected.tenant ||
-    partition.project !== expected.project
-  )
-    throw new RangeError("native action cursor belongs to another project");
-  const parsed = {
+export const {
+  encode: encodeNativeActionCursor,
+  parse: parseNativeActionCursor,
+} = projectCursorCodec(
+  "native action",
+  nativeActionCursorSchema,
+  (cursor): NativeActionPosition => ({
     authorizingSequence: cursor.authorizingSequence,
     action: cursor.action,
-  };
-  if (encodeNativeActionCursor(partition, parsed) !== value)
-    throw new RangeError("native action cursor is not canonically encoded");
-  return parsed;
-}
+  }),
+  (cursor) => ({
+    authorizingSequence: cursor.authorizingSequence,
+    action: cursor.action,
+  }),
+);
 
-export function encodeConfigurationCursor(
-  partition: Partition,
-  cursor: ConfigurationPageCursor,
-): string {
-  return Buffer.from(
-    JSON.stringify({
-      version: nativeHttpVersion,
-      tenant: partition.tenant,
-      project: partition.project,
-      createdAt: cursor.createdAt,
-      revision: cursor.revision,
-    }),
-  ).toString("base64url");
-}
-
-export function parseConfigurationCursor(
-  value: string,
-  expected: Partition,
-): ConfigurationPageCursor {
-  const decoded: unknown = decodedCursor(value, "configuration");
-  const cursor = configurationCursorSchema.parse(decoded);
-  const partition = parsePartition(cursor.tenant, cursor.project);
-  if (
-    partition.tenant !== expected.tenant ||
-    partition.project !== expected.project
-  )
-    throw new RangeError("configuration cursor belongs to another project");
-  const parsed = {
+export const {
+  encode: encodeConfigurationCursor,
+  parse: parseConfigurationCursor,
+} = projectCursorCodec(
+  "configuration",
+  configurationCursorSchema,
+  (cursor): ConfigurationPageCursor => ({
     createdAt: asPublicInstant(cursor.createdAt),
     revision: asConfigurationRevisionId(cursor.revision),
-  };
-  if (encodeConfigurationCursor(partition, parsed) !== value)
-    throw new RangeError("configuration cursor is not canonically encoded");
-  return parsed;
-}
+  }),
+  (cursor) => ({ createdAt: cursor.createdAt, revision: cursor.revision }),
+);
 
-/** Where a page of drafts resumes, which is the last ticket the page before it answered. */
-export function encodeDraftCursor(
-  partition: Partition,
-  cursor: DraftPageCursor,
-): string {
-  return Buffer.from(
-    JSON.stringify({
-      version: nativeHttpVersion,
-      tenant: partition.tenant,
-      project: partition.project,
-      ticket: cursor,
-    }),
-  ).toString("base64url");
-}
-
-export function parseDraftCursor(
-  value: string,
-  expected: Partition,
-): DraftPageCursor {
-  const decoded: unknown = decodedCursor(value, "draft");
-  const cursor = draftCursorSchema.parse(decoded);
-  const partition = parsePartition(cursor.tenant, cursor.project);
-  if (
-    partition.tenant !== expected.tenant ||
-    partition.project !== expected.project
-  )
-    throw new RangeError("draft cursor belongs to another project");
-  const parsed = asTicketId(cursor.ticket);
-  if (encodeDraftCursor(partition, parsed) !== value)
-    throw new RangeError("draft cursor is not canonically encoded");
-  return parsed;
-}
+export const { encode: encodeDraftCursor, parse: parseDraftCursor } =
+  projectCursorCodec(
+    "draft",
+    draftCursorSchema,
+    (cursor): DraftPageCursor => asTicketId(cursor.ticket),
+    (cursor) => ({ ticket: cursor }),
+  );
 
 export function encodeInventoryCursor(partition: Partition): string {
-  return Buffer.from(
-    JSON.stringify({
-      version: nativeHttpVersion,
-      tenant: partition.tenant,
-      project: partition.project,
-    }),
-  ).toString("base64url");
+  return cursorEncoded(partition);
 }
 
 export function parseInventoryCursor(value: string): Partition {
-  const decoded: unknown = decodedCursor(value, "inventory");
-  const cursor = inventoryCursorSchema.parse(decoded);
+  const cursor = inventoryCursorSchema.parse(cursorDecoded(value, "inventory"));
   const partition = parsePartition(cursor.tenant, cursor.project);
   if (encodeInventoryCursor(partition) !== value)
     throw new RangeError("inventory cursor is not canonically encoded");

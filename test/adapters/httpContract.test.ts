@@ -467,3 +467,70 @@ test("the repository a brief names crosses the door on creation and on revision"
     "a brief naming none reaches the interpreter naming none",
   );
 });
+
+const cursorCompatibilityCases = [
+  {
+    encode: () => encodeDraftCursor(parsePartition("t", "p"), id(7)),
+    parse: parseDraftCursor,
+    payload: { ticket: 7 },
+  },
+  {
+    encode: () =>
+      encodeExecutionCursor(parsePartition("t", "p"), {
+        ticket: id(7),
+        task: asTaskId(2),
+      }),
+    parse: parseExecutionCursor,
+    payload: { ticket: 7, task: 2 },
+  },
+  {
+    encode: () =>
+      encodeTicketActivityCursor(parsePartition("t", "p"), {
+        ticket: id(7),
+        sequence: 3,
+      }),
+    parse: parseTicketActivityCursor,
+    payload: { sequence: 3, ticket: 7 },
+  },
+  {
+    encode: () =>
+      encodeNativeActionCursor(parsePartition("t", "p"), {
+        action: "a",
+        authorizingSequence: 3,
+      }),
+    parse: parseNativeActionCursor,
+    payload: { authorizingSequence: 3, action: "a" },
+  },
+  {
+    encode: () =>
+      encodeConfigurationCursor(parsePartition("t", "p"), {
+        revision: asConfigurationRevisionId("r"),
+        createdAt: asPublicInstant("2026-08-24T12:00:00Z"),
+      }),
+    parse: parseConfigurationCursor,
+    payload: { createdAt: "2026-08-24T12:00:00Z", revision: "r" },
+  },
+];
+
+test("project cursor codecs preserve wire order and reject foreign or altered envelopes", () => {
+  const partition = parsePartition("t", "p");
+  const encode = (value: object) =>
+    Buffer.from(JSON.stringify(value)).toString("base64url");
+  for (const entry of cursorCompatibilityCases) {
+    const envelope = {
+      version: 1,
+      tenant: "t",
+      project: "p",
+      ...entry.payload,
+    };
+    assert.equal(entry.encode(), encode(envelope));
+    for (const altered of [
+      { ...envelope, tenant: "other" },
+      { ...envelope, project: "other" },
+      { ...envelope, version: 2 },
+      { ...envelope, extra: true },
+      { ...entry.payload, version: 1, tenant: "t", project: "p" },
+    ])
+      assert.throws(() => entry.parse(encode(altered), partition));
+  }
+});
