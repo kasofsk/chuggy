@@ -165,9 +165,8 @@ module.exports = {
         "something a browser can be served: src/ would mean shipping " +
         "TypeScript no browser parses, and test/ or model/ would mean " +
         "shipping what is not the product at all. A package is the one thing " +
-        "outside ui/ this rule leaves to the console, because whether a " +
-        "client dependency is available to it depends on whether it builds, " +
-        "and the console that does not build answers for that below. Node's " +
+        "outside ui/ this rule leaves to the console, because a console " +
+        "bundles what it reaches and ships the bundle. Node's " +
         "own modules are not packages: they resolve to a bare specifier, so " +
         "this rule refuses them to every console. A package is recognised by " +
         "the node_modules directory holding it and not by where that " +
@@ -176,8 +175,8 @@ module.exports = {
         "reachability and " +
         "as one rule over the whole directory, because the shape that breaks " +
         "it is a shared helper somebody adds between a console and the server " +
-        "to stop writing a constant twice — which is what test/ui/ holds the " +
-        "two copies equal for instead.",
+        "to stop writing a constant twice — which is what src/contract/, the " +
+        "one exemption above, already is.",
       severity: "error",
       from: { path: "^ui/" },
       to: {
@@ -185,51 +184,6 @@ module.exports = {
         path: "^(?!ui/)",
         pathNot: "node_modules/|^src/contract/",
       },
-    },
-    {
-      name: "unbuilt-console-uses-no-package",
-      comment:
-        "ui/console/ is plain files a browser fetches as they stand, so a " +
-        "package it reached would have to be fetched the same way — which is " +
-        "the client dependency a console without a build step exists " +
-        "without. This is the half of the rule above that stops being true " +
-        "of a console the moment it builds, which is why it is stated over " +
-        "the console it is true of rather than over ui/: a console that " +
-        "builds collects the rule bounding what it may reach in the commit " +
-        "that lands its directory, as every other directory here does.",
-      severity: "error",
-      from: { path: "^ui/console/" },
-      to: { reachable: true, path: "node_modules/" },
-    },
-    {
-      name: "console-decisions-touch-no-document",
-      comment:
-        "ui/console/app/ is that console's decision layer and its sibling " +
-        "dom/ is what performs its effects, which is the same split the " +
-        "interpreter and the adapters have and it is enforced the same way. " +
-        "The split is that console's own and the rule names it: a console " +
-        "layered some other way is not bound by a rule about a layering it " +
-        "does not have, and states its own with the commit that lands it. " +
-        "What it buys is that every arrangement the console can show " +
-        "is reachable from a suite with no browser: a decision that reached " +
-        "the document would need one to be tested, and this tree has no " +
-        "browser harness to give it. Reachability again, because a relay " +
-        "belonging to neither directory is the shape a per-import rule " +
-        "misses. It is stated over EVERY dom/ under ui/ rather than the " +
-        "matching one, which is wider than the split it names and is sound " +
-        "only because no-console-sees-another holds below: a decision that " +
-        "reached a sibling console's document layer is already a finding " +
-        "there, so the two rules together admit exactly the one edge this " +
-        "one is about. Writing the pair over every console with a $1 " +
-        "backreference would say it exactly, and does not work — " +
-        "dependency-cruiser substitutes a capture group into " +
-        "`to.pathNot`, and into `to.path` on a plain dependency rule, but " +
-        "not into `to.path` on a `reachable` one, where it matches nothing " +
-        "and the rule passes everything. check-boundaries.test.sh carries " +
-        "the case that would go quiet if someone tries it again.",
-      severity: "error",
-      from: { path: "^ui/console/app/" },
-      to: { reachable: true, path: "^ui/[^/]+/dom/" },
     },
     {
       name: "no-console-sees-another",
@@ -281,10 +235,9 @@ module.exports = {
       comment:
         "ui/chuggy-ui/app/core/ is that console's decision layer and " +
         "ui/chuggy-ui/app/browser/ is what performs its effects and draws " +
-        "them, which is " +
-        "the split ui/console/ has under another pair of names and is the " +
-        "reason this console states its own rather than inheriting one about " +
-        "a layering it does not have. The core reaches its own files, the " +
+        "them. A console layered some other way is not bound by a rule " +
+        "about a layering it does not have, and states its own with the " +
+        "commit that lands it. The core reaches its own files, the " +
         "public contract, and the parser the contract is written in — a " +
         "closed list, so React, the router, the query cache and the " +
         "platform's own globals are all outside it. What it buys is that the " +
@@ -293,7 +246,13 @@ module.exports = {
         "decision that reached a component would need one mounted to be " +
         "tested, and a suite that mounts a tree to check a bound is a suite " +
         "nobody adds a case to. Reachability, because the shape that breaks " +
-        "it is a hook somebody adds between the two.",
+        "it is a hook somebody adds between the two. Written over every " +
+        "console at once with a $1 backreference it would say the same " +
+        "thing and fire on nothing: dependency-cruiser substitutes a " +
+        "capture group into `to.pathNot`, and into `to.path` on a plain " +
+        "dependency rule, but not into `to.path` on a `reachable` one, " +
+        "where it matches nothing and the rule passes everything. " +
+        "check-boundaries.test.sh carries the case that would go quiet.",
       severity: "error",
       from: { path: "^ui/chuggy-ui/app/core/" },
       to: {

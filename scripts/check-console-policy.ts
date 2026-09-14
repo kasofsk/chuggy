@@ -1,6 +1,6 @@
 /**
  * A built console's document and the stylesheet it loads, held to the policy
- * `images/web/nginx.conf` serves it under, to the cascade order the design
+ * `images/chuggy-ui/nginx.conf` serves it under, to the cascade order the design
  * system is built on, and to the values its utilities layer may state.
  *
  * It reads what the build wrote rather than what the sources say, because the

@@ -1,9 +1,8 @@
 #!/bin/sh
 # Shell test for build-and-import.sh, over what it names and no more: the
 # arguments it will and will not accept, the tag it derives and what it refuses
-# to derive one from, the build argument the web image cannot be built without,
-# and the read-back that stands between an import's exit status and the claim
-# that the node holds the image.
+# to derive one from, and the read-back that stands between an import's exit
+# status and the claim that the node holds the image.
 #
 # WHY IT IS A SUITE AND NOT A RIG RUN. Every refusal here is one whose absence
 # reads as agreement: a dirty tree tagged with a commit it is not built from, an
@@ -113,10 +112,9 @@ STUB
 chmod +x "$BIN/docker" "$BIN/k3s" "$BIN/sudo" "$BIN/ssh"
 
 fresh_repo "$REPO"
-mkdir -p "$REPO/images/api" "$REPO/images/web" "$REPO/deploy/rig/images" "$REPO/site"
+mkdir -p "$REPO/images/api" "$REPO/images/chuggy-ui" "$REPO/deploy/rig/images"
 : > "$REPO/images/api/Dockerfile"
-: > "$REPO/images/web/Dockerfile"
-: > "$REPO/site/index.html"
+: > "$REPO/images/chuggy-ui/Dockerfile"
 cp "$SUT" "$REPO/deploy/rig/images/build-and-import.sh"
 git -C "$REPO" add -A
 git -C "$REPO" commit -qm fixture
@@ -126,7 +124,7 @@ fresh_case() {
 	: > "$LOG"
 	: > "$PRESENT"
 	rm -f "$REPO/dirt"
-	unset CHUG_IMAGE_TAG CHUG_IMAGE_PLATFORM CHUG_WEB_SITE CHUG_RIG_SSH
+	unset CHUG_IMAGE_TAG CHUG_IMAGE_PLATFORM CHUG_RIG_SSH
 	unset CHUG_STUB_BUILD_RC CHUG_STUB_EMPTY_SAVE CHUG_STUB_IMPORT_RC CHUG_STUB_LS_RC
 }
 
@@ -162,38 +160,12 @@ run scheduler
 check "an image with no Dockerfile is refused" 2 "$RC" "is not an image this tree builds"
 check "an unbuildable name reaches no tool" 2 "$RC" "$untouched"
 
-# --- the web image's document root, which has no default ---------------------
-
-fresh_case
-run web
-check "web without a site is refused" 2 "$RC" "CHUG_WEB_SITE must name"
-check "web without a site reaches no tool" 2 "$RC" "$untouched"
-
-fresh_case
-export CHUG_WEB_SITE=nowhere
-run web
-check "web with a site that is not there is refused" 2 "$RC" "not a directory in this checkout"
-check "web with an absent site reaches no tool" 2 "$RC" "$untouched"
-
-# The mirror: the directory is there, so the build runs and carries it.
-fresh_case
-export CHUG_IMAGE_TAG=fixed
-export CHUG_WEB_SITE=site
-printf 'chuggy.invalid/web:fixed\n' > "$PRESENT"
-run web
-check "web builds with the site it was given" 0 "$RC" "build-arg site=site"
-check "the web build is tagged for the node" 0 "$RC" "chuggy.invalid/web:fixed"
-# The site is the only thing the two builds differ by, so it is the branch a
-# flag can go missing from while the other one still carries it.
-check "the web build names the node's architecture" 0 "$RC" "platform linux/amd64"
-check "the web build asks for no attestation" 0 "$RC" "provenance=false"
-
 # The refusal is per named image and comes before any of them is built, so a run
 # that names a buildable image alongside an unbuildable one builds neither.
 fresh_case
-run api web
-check "an unsatisfiable image refuses the whole run" 2 "$RC" "CHUG_WEB_SITE must name"
-check "an unsatisfiable image leaves its neighbour unbuilt" 2 "$RC" "$untouched"
+run api scheduler
+check "an unbuildable image refuses the whole run" 2 "$RC" "is not an image this tree builds"
+check "an unbuildable image leaves its neighbour unbuilt" 2 "$RC" "$untouched"
 
 # --- the tag, which the manifests will reference -----------------------------
 

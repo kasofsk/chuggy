@@ -40,7 +40,6 @@ digest_of() { # <letter>
 }
 OLD_API="$(digest_of a)"
 OLD_UI="$(digest_of b)"
-OLD_WEB="$(digest_of c)"
 NEW="$(digest_of d)"
 STALE="$(digest_of e)"
 MERGED="$(printf '%040d' 0 | tr 0 f)"
@@ -98,7 +97,7 @@ case "$args" in
 *' annotate '*) ;;
 *'{.status.artifact.revision}'* | *'{.status.lastAppliedRevision}'*) printf 'main@sha1:%s' "${CHUG_STUB_MERGED:-}" ;;
 *' wait '*) exit "${CHUG_STUB_JOB_RC:-0}" ;;
-*' get deployments '*) printf 'chuggy-api\nchuggy-ui\nchuggy-web\nunmanaged\n' ;;
+*' get deployments '*) printf 'chuggy-api\nchuggy-ui\nunmanaged\n' ;;
 *' rollout status '*) exit "${CHUG_STUB_ROLLOUT_RC:-0}" ;;
 *' get deployment/'*)
 	name=""
@@ -161,10 +160,10 @@ git init -q --bare "$ORIGIN"
 fresh_repo "$REPO"
 git -C "$REPO" remote add origin "$ORIGIN"
 mkdir -p "$REPO/src/contract" "$REPO/src/adapters/postgres/schema/migrations" "$REPO/ui/chuggy-ui" \
-	"$REPO/ui/console" "$REPO/images/api" "$REPO/images/web" "$REPO/images/chuggy-ui" "$REPO/images/worker" \
+	"$REPO/images/api" "$REPO/images/chuggy-ui" "$REPO/images/worker" \
 	"$REPO/scripts" "$REPO/.chug/tasks" "$REPO/deploy/rig/images"
-for file in src/a.ts src/contract/c.ts ui/chuggy-ui/app.ts ui/console/index.html images/api/Dockerfile \
-	images/web/Dockerfile images/web/nginx.conf images/chuggy-ui/Dockerfile images/worker/Dockerfile package.json \
+for file in src/a.ts src/contract/c.ts ui/chuggy-ui/app.ts images/api/Dockerfile \
+	images/chuggy-ui/Dockerfile images/chuggy-ui/nginx.conf images/worker/Dockerfile package.json \
 	package-lock.json scripts/console-policy.ts scripts/check-console-policy.ts \
 	src/adapters/postgres/schema/migrations/001-a.ts src/adapters/postgres/schema/migrations/index.ts; do
 	printf 'fixture\n' >"$REPO/$file"
@@ -176,7 +175,7 @@ exit "${CHUG_STUB_GATE_RC:-0}"
 STUB
 cat >"$REPO/deploy/rig/images/build-and-import.sh" <<'STUB'
 #!/bin/sh
-printf 'build-and-import %s tag=%s site=%s prefix=%s\n' "$*" "${CHUG_IMAGE_TAG:-}" "${CHUG_WEB_SITE:-}" "${CHUG_IMAGE_PREFIX:-}" >>"$CHUG_STUB_LOG"
+printf 'build-and-import %s tag=%s prefix=%s\n' "$*" "${CHUG_IMAGE_TAG:-}" "${CHUG_IMAGE_PREFIX:-}" >>"$CHUG_STUB_LOG"
 exit "${CHUG_STUB_BUILD_RC:-0}"
 STUB
 chmod +x "$REPO/.chug/tasks/ci.sh" "$REPO/deploy/rig/images/build-and-import.sh"
@@ -212,7 +211,6 @@ for name in chuggy-api chuggy-configuration-importer chuggy-finalizer chuggy-sch
 	manifest "$name" Deployment api "$OLD_API" >"$FABRIC_SEED/cluster/apps/$name.yaml"
 done
 manifest chuggy-ui Deployment web "$OLD_UI" >"$FABRIC_SEED/cluster/apps/chuggy-ui.yaml"
-manifest chuggy-web Deployment web "$OLD_WEB" >"$FABRIC_SEED/cluster/apps/chuggy-web.yaml"
 # The migrate manifest carries a ServiceAccount named after the Job's family,
 # an init container from a public repository, and then the Job: the release
 # must find the Job's name and the release image past both.
@@ -388,10 +386,8 @@ released chuggy-ui.yaml >"$OUT"
 check "the console manifest selects the registry's digest" 0 "$RC" "chuggy/web@$NEW"
 released chuggy-api.yaml >"$OUT"
 check "the api manifest keeps its digest" 0 "$RC" "chuggy/api@$OLD_API"
-released chuggy-web.yaml >"$OUT"
-check "the old console keeps its digest" 0 "$RC" "chuggy/web@$OLD_WEB"
 printf 'source commits moved: %s\n' "$(count_in_release "source-commit: $TAG")" >"$OUT"
-check "the source commit moves on every manifest" 0 "$RC" "source commits moved: 10"
+check "the source commit moves on every manifest" 0 "$RC" "source commits moved: 9"
 printf 'stale source commits: %s\n' "$(count_in_release "source-commit: $DEPLOYED")" >"$OUT"
 check "no manifest keeps the old source commit" 0 "$RC" "stale source commits: 0"
 released chuggy-migrate.yaml >"$OUT"
@@ -409,7 +405,7 @@ check "the pull request reports the gate" 0 "$RC" "Gate at $TAG: clean"
 fresh_case
 advance src/a.ts
 run
-check "a server change builds the api" 0 "$RC" "build-and-import api tag=$TAG site= prefix=registry.chuggy.internal/chuggy"
+check "a server change builds the api" 0 "$RC" "build-and-import api tag=$TAG prefix=registry.chuggy.internal/chuggy"
 check "a server change builds only the api" 0 "$RC" "builds attempted: 1"
 # The builder's suite runs inside the gate and reads the builder's variables,
 # so the gate must not inherit them.
@@ -424,14 +420,6 @@ fresh_case
 advance src/contract/c.ts
 run
 check "a contract change rebuilds the api and the console" 0 "$RC" "builds attempted: 2"
-
-fresh_case
-advance ui/console/index.html
-run
-check "an old console change builds the web image over it" 0 "$RC" "build-and-import web tag=$TAG site=ui/console"
-OUT="$WORK/.release"
-released chuggy-web.yaml >"$OUT"
-check "the old console manifest selects the new digest" 0 "$RC" "chuggy/web@$NEW"
 
 fresh_case
 advance images/worker/Dockerfile
@@ -628,7 +616,7 @@ check "the merge is the fabric's" 0 "$RC" "gh pr merge 9 -R gdoteof/chuggy-fabri
 check "the source is asked to reconcile" 0 "$RC" "annotate --overwrite gitrepository/fabric reconcile.fluxcd.io/requestedAt="
 check "then the applications are" 0 "$RC" "annotate --overwrite kustomization/apps reconcile.fluxcd.io/requestedAt="
 check "the migrate Job is waited on by its release name" 0 "$RC" "wait --for=condition=complete job/chuggy-migrate-$TAG-registry"
-check "each managed Deployment is rolled out" 0 "$RC" "rollout status deployment/chuggy-web"
+check "each managed Deployment is rolled out" 0 "$RC" "rollout status deployment/chuggy-ui"
 printf 'unmanaged rollouts: %s\n' "$(grep -c 'rollout status deployment/unmanaged' "$LOG" || true)" >>"$OUT"
 check "a Deployment with no manifest is not held to one" 0 "$RC" "unmanaged rollouts: 0"
 printf 'first of merge and reconcile: %s\n' "$(grep -o 'gh pr merge\|annotate' "$LOG" | head -n 1)" >>"$OUT"
@@ -669,11 +657,6 @@ run --console
 check "a change that moves the api is not a console release" 2 "$RC" "moves the api, so it is not a console release"
 check "a refused console release runs no gate" 2 "$RC" "gates run: 0"
 check "a refused console release builds nothing" 2 "$RC" "builds attempted: 0"
-
-fresh_case
-advance ui/chuggy-ui/app.ts ui/console/index.html
-run --console
-check "a change that moves the old console is not a console release" 2 "$RC" "moves the old console"
 
 fresh_case
 advance ui/chuggy-ui/app.ts src/adapters/postgres/schema/migrations/050-b.ts

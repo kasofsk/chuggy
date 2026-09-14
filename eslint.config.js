@@ -99,29 +99,6 @@ const noAmbientGlobals = (subject) => [
   })),
 ];
 
-// The platform capability the console's files may name. Everything a browser
-// and the suite runner both provide is spelled once here, and a name absent
-// from it is `no-undef`.
-const browserCapabilities = Object.fromEntries(
-  [
-    "AbortController",
-    "TextDecoder",
-    "TextEncoder",
-    "URL",
-    "URLSearchParams",
-    "clearTimeout",
-    "console",
-    "crypto",
-    "document",
-    "fetch",
-    "history",
-    "location",
-    "sessionStorage",
-    "setTimeout",
-    "window",
-  ].map((name) => [name, "readonly"]),
-);
-
 const noAmbientDraws = (subject) => [
   "error",
   {
@@ -204,13 +181,12 @@ export default tseslint.config(
   // the directory and `.jscpd.json` the worktrees under it, each for its own
   // tool; the gates scoped by `git ls-files` never see an untracked tree.
   //
-  // A console that BUILDS is declined whole, source and output alike, because
-  // neither half is this configuration's to judge: its sources are TypeScript
-  // outside `tsconfig.json`'s program, so the type-aware rules would have no
-  // program to ask, and the browser-globals block below is scoped to `.js` and
-  // would not reach them anyway. What lints it is its own config, run by its
-  // own `lint` script, which `.chug/tasks/check-console.sh` calls. Prettier
-  // still owns its sources: there is one formatter in this tree.
+  // A console is declined whole, source and output alike, because neither half
+  // is this configuration's to judge: its sources are TypeScript outside
+  // `tsconfig.json`'s program, so the type-aware rules would have no program to
+  // ask. What lints it is its own config, run by its own `lint` script, which
+  // `.chug/tasks/check-console.sh` calls. Prettier still owns its sources:
+  // there is one formatter in this tree.
   {
     ignores: [
       "node_modules/**",
@@ -389,32 +365,15 @@ export default tseslint.config(
         },
       ]
     : []),
-  // The configs themselves, and every console's document layer. Both sit
-  // outside tsconfig.json's include, so the type-aware rules have no program to
-  // ask and are turned off rather than left to fail on every run. A console's
-  // `app/` is inside that include and is excluded here, so its decisions keep
-  // house rules 3 and 4 while the DOM writes beneath them do not.
+  // The configs themselves, and the worker image's modules. Both sit outside
+  // tsconfig.json's include, so the type-aware rules have no program to ask and
+  // are turned off rather than left to fail on every run.
   {
     files: ["**/*.js", "**/*.mjs"],
-    ignores: ["ui/*/app/**"],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: {
       globals: { process: "readonly" },
       parserOptions: { projectService: false },
-    },
-  },
-  // The console runs in a browser, and this is the closed roster of platform
-  // capability it may name: one it reaches for and this list does not carry is
-  // `no-undef` rather than a runtime surprise in somebody's tab. `process` is
-  // taken back from the block above, which grants it to a config file.
-  {
-    files: ["ui/**/*.js"],
-    languageOptions: { globals: browserCapabilities },
-    rules: {
-      "no-restricted-globals": [
-        "error",
-        { name: "process", message: "the console runs in a browser." },
-      ],
     },
   },
   {

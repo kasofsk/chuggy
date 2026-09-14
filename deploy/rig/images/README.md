@@ -1,9 +1,9 @@
 # The rig's container images
 
 Two images and the one way they reach the rig. `images/api/Dockerfile` is the
-native HTTP API; `images/web/Dockerfile` is an nginx that serves a directory of
-static files and does nothing else. Each argues itself in its own header, and
-this is the procedure.
+native HTTP API; `images/chuggy-ui/Dockerfile` bundles the console and serves
+the bundle from an nginx that does nothing else. Each argues itself in its own
+header, and this is the procedure.
 
 The rig has no registry, and on a single-node k3s it does not need one: the
 kubelet reads the node's own containerd, so an archive imported there is an
@@ -31,15 +31,16 @@ one explicitly, which is how a build says out loud that it is naming something
 else. `CHUG_RIG_SSH` sends the import to a node over ssh instead of this host's
 own containerd.
 
-The web image serves what it is pointed at and has no default:
+The console image installs and bundles inside the build, so what it serves is a
+function of the commit rather than of this host's Node:
 
 ```sh
-CHUG_WEB_SITE=<directory> deploy/rig/images/build-and-import.sh web
+deploy/rig/images/build-and-import.sh chuggy-ui
 ```
 
-That directory's contents become the document root. `images/web/Dockerfile`
-states the whole of what the image then answers, and the two paths a deployment
-has to act on are these:
+The bundle becomes the document root. `images/chuggy-ui/nginx.conf` states the
+whole of what the image then answers, and the two paths a deployment has to act
+on are these:
 
 - **`/config.json` is mounted, never baked.** The image serves it from
   `/etc/chuggy/web/config.json`, outside the document root, with `no-store`. A
@@ -58,7 +59,7 @@ because the routes belong to the client.
 | Image | Reference | Serves on | Liveness | Readiness |
 |---|---|---|---|---|
 | API | `chuggy.invalid/api:<tag>` | 3000 | `GET /health/live` | `GET /health/ready` |
-| Web | `chuggy.invalid/web:<tag>` | 8080 | `GET /healthz` | `GET /healthz` |
+| Console | `chuggy.invalid/chuggy-ui:<tag>` | 8080 | `GET /healthz` | `GET /healthz` |
 
 Both probe paths are unauthenticated. `/health/ready` asks the database whether
 this process is connected as the role it must be and may call what it must
@@ -83,7 +84,7 @@ securityContext:
   seccompProfile: { type: RuntimeDefault }
 ```
 
-The web image's nginx writes its pid and every temporary path under `/tmp`, so
+The console image's nginx writes its pid and every temporary path under `/tmp`, so
 it needs an `emptyDir` mounted there. Its other mount is the deployment's
 `/config.json`, read-only at `/etc/chuggy/web/config.json`; neither the fallback
 nor that file needs anything writable. The API deployment supplies writable
