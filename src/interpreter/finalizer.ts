@@ -407,6 +407,17 @@ export async function repositoryTargetObserved(
     : base;
 }
 
+/**
+ * What proves a publication was taken up: a path the handoff repository must
+ * come to hold, and the seconds from the publication it has to appear in. The
+ * witness is that path standing and never what the file at it says, so what the
+ * handoff repository made of the request stays the handoff repository's to say.
+ */
+export interface HandoffPublicationWitness {
+  readonly path: string;
+  readonly provenWithinSecs: number;
+}
+
 export interface PromoteForHandoffRequest {
   readonly kind: "PromoteForHandoff";
   readonly configurationRevision: string;

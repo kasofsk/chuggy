@@ -31,6 +31,7 @@ export function handoffFixture(
       identity: "ContainerBuildRequest",
       version: 1,
       parameters: {
+        sourceRepositoryId: "ledger",
         targetImageRepository: "registry.example/ledger",
         builderProfile: "rootless-multiarch",
         platforms: ["linux/amd64", "linux/arm64"],

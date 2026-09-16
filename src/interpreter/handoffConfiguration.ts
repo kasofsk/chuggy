@@ -1,9 +1,15 @@
 /** Pinned configuration and deterministic rendering for a direct Git handoff. */
 
-import { textCodePointsCount } from "../contract/http.ts";
-import type { GitObjectId, GitRefName, RepositoryId } from "./finalizer.ts";
+import { artifactDigestChars, textCodePointsCount } from "../contract/http.ts";
+import type {
+  GitObjectId,
+  GitRefName,
+  HandoffPublicationWitness,
+  RepositoryId,
+} from "./finalizer.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 import {
+  allGitObjectIdChars,
   asGitObjectId,
   asGitRefName,
   asRepositoryId,
@@ -13,6 +19,7 @@ import { asArtifactDigest, type ArtifactDigest } from "./resultManifest.ts";
 
 declare const credentialReferenceBrand: unique symbol;
 declare const handoffPathBrand: unique symbol;
+declare const handoffPathTemplateBrand: unique symbol;
 declare const handoffRequestDigestBrand: unique symbol;
 declare const handoffConfigurationRevisionBrand: unique symbol;
 
@@ -20,6 +27,12 @@ export type CredentialReference = string & {
   readonly [credentialReferenceBrand]: true;
 };
 export type HandoffPath = string & { readonly [handoffPathBrand]: true };
+
+/** A path a publication renders its own variables into, proved at readiness to render a `HandoffPath`. */
+export type HandoffPathTemplate = string & {
+  readonly [handoffPathTemplateBrand]: true;
+};
+
 export type HandoffRequestDigest = string & {
   readonly [handoffRequestDigestBrand]: true;
 };
@@ -49,6 +62,9 @@ export const handoffParameterCharsMax = 256;
 export const handoffPathCharsMax = 512;
 export const handoffConfigurationRevisionCharsMax = 256;
 
+/** The longest a publication may be given to be witnessed, so a deadline is one. */
+export const handoffWitnessProvenWithinSecsMax = 7 * 24 * 60 * 60;
+
 export function asHandoffConfigurationRevision(
   value: string,
 ): HandoffConfigurationRevision {
@@ -72,9 +88,17 @@ export interface HandoffRepositoryRole {
 }
 
 export interface ContainerBuildParameters {
+  /** The label the handoff repository files this source under, which is nothing but a path component. */
+  readonly sourceRepositoryId: string;
   readonly targetImageRepository: string;
   readonly builderProfile: string;
   readonly platforms: readonly string[];
+}
+
+/** The witness a configuration declares, its path a template the publication renders. */
+export interface HandoffWitnessTemplate {
+  readonly pathTemplate: HandoffPathTemplate;
+  readonly provenWithinSecs: number;
 }
 
 export interface PinnedHandoffConfiguration {
@@ -88,7 +112,8 @@ export interface PinnedHandoffConfiguration {
     readonly version: typeof handoffRendererVersion;
     readonly parameters: ContainerBuildParameters;
   };
-  readonly destinationPath: HandoffPath;
+  readonly destinationPath: HandoffPathTemplate;
+  readonly publicationWitness?: HandoffWitnessTemplate;
   readonly outputBytesMax: number;
 }
 
@@ -108,6 +133,7 @@ export type HandoffConfigurationFault =
   | "RendererUnknown"
   | "RendererParametersInvalid"
   | "DestinationPathInvalid"
+  | "PublicationWitnessInvalid"
   | "OutputBoundInvalid"
   | "ConfigurationPinInvalid";
 
@@ -145,6 +171,7 @@ export interface PublishHandoffRequestConfiguration {
   readonly acceptedWorkCommit: GitObjectId;
   readonly mode: "DirectCommit";
   readonly destinationPath: HandoffPath;
+  readonly publicationWitness?: HandoffPublicationWitness;
   readonly output: string;
   readonly requestDigest: HandoffRequestDigest;
 }
@@ -253,17 +280,130 @@ function handoffPath(value: unknown): HandoffPath | undefined {
     : (value as HandoffPath);
 }
 
+/** The values a path template is rendered over, which is the whole roster of them. */
+export interface HandoffPathValues {
+  readonly sourceRepositoryId: string;
+  readonly sourceCommit: string;
+  readonly requestDigest: string;
+}
+
+/** What one variable stands for, and `undefined` where the template named nothing this tree renders. */
+function handoffPathValue(
+  values: HandoffPathValues,
+  name: string,
+): string | undefined {
+  switch (name) {
+    case "sourceRepositoryId":
+      return values.sourceRepositoryId;
+    case "sourceCommit":
+      return values.sourceCommit;
+    case "requestDigest":
+      return values.requestDigest;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * The text a template comes to once its variables stand in it. Every brace must
+ * open a variable this roster names and close it, so a misspelled one is
+ * refused rather than rendered literally into a path nobody will ever write.
+ */
+function handoffPathSubstituted(
+  template: string,
+  values: HandoffPathValues,
+): string | undefined {
+  const parts: string[] = [];
+  let rest = template;
+  for (let open = rest.indexOf("{"); open >= 0; open = rest.indexOf("{")) {
+    const close = rest.indexOf("}", open);
+    const literal = rest.slice(0, open);
+    if (close < 0 || literal.includes("}")) return undefined;
+    const value = handoffPathValue(values, rest.slice(open + 1, close));
+    if (value === undefined) return undefined;
+    parts.push(literal, value);
+    rest = rest.slice(close + 1);
+  }
+  return rest.includes("}") ? undefined : [...parts, rest].join("");
+}
+
+/**
+ * The widest values a publication can ever render, so a template proved here to
+ * render a path renders one whatever commit and digest it is later given.
+ */
+function handoffPathWidest(sourceRepositoryId: string): HandoffPathValues {
+  return {
+    sourceRepositoryId,
+    sourceCommit: "0".repeat(Math.max(...allGitObjectIdChars)),
+    requestDigest: "0".repeat(artifactDigestChars),
+  };
+}
+
+/** Refuses a template that does not render a path this tree writes, at the widest values it will be given. */
+function handoffPathTemplate(
+  value: unknown,
+  sourceRepositoryId: string,
+): HandoffPathTemplate | undefined {
+  if (typeof value !== "string") return undefined;
+  const widest = handoffPathSubstituted(
+    value,
+    handoffPathWidest(sourceRepositoryId),
+  );
+  return widest !== undefined && handoffPath(widest) !== undefined
+    ? (value as HandoffPathTemplate)
+    : undefined;
+}
+
+/** Renders one template the readiness already proved, the invariant asserted rather than re-decided. */
+function handoffPathRendered(
+  template: HandoffPathTemplate,
+  values: HandoffPathValues,
+): HandoffPath {
+  const substituted = handoffPathSubstituted(template, values);
+  const rendered =
+    substituted === undefined ? undefined : handoffPath(substituted);
+  if (rendered === undefined) {
+    throw new RangeError(
+      "handoff renderer: a pinned template rendered no path",
+    );
+  }
+  return rendered;
+}
+
+function handoffWitness(
+  value: unknown,
+  sourceRepositoryId: string,
+): HandoffWitnessTemplate | undefined {
+  const record = handoffRecord(value);
+  if (record === undefined) return undefined;
+  const pathTemplate = handoffPathTemplate(
+    record["pathTemplate"],
+    sourceRepositoryId,
+  );
+  const provenWithinSecs = record["provenWithinSecs"];
+  if (
+    pathTemplate === undefined ||
+    !Number.isSafeInteger(provenWithinSecs) ||
+    (provenWithinSecs as number) < 1 ||
+    (provenWithinSecs as number) > handoffWitnessProvenWithinSecsMax
+  )
+    return undefined;
+  return { pathTemplate, provenWithinSecs: provenWithinSecs as number };
+}
+
 function handoffParameters(
   value: unknown,
 ): ContainerBuildParameters | undefined {
   const record = handoffRecord(value);
   if (record === undefined) return undefined;
+  const sourceRepositoryId = handoffBoundedText(record["sourceRepositoryId"]);
   const targetImageRepository = handoffBoundedText(
     record["targetImageRepository"],
   );
   const builderProfile = handoffBoundedText(record["builderProfile"]);
   const platforms = record["platforms"];
   if (
+    sourceRepositoryId === undefined ||
     targetImageRepository === undefined ||
     builderProfile === undefined ||
     !Array.isArray(platforms) ||
@@ -274,10 +414,53 @@ function handoffParameters(
   )
     return undefined;
   return {
+    sourceRepositoryId,
     targetImageRepository,
     builderProfile,
     platforms: platforms as string[],
   };
+}
+
+/** Where one configuration publishes, and what proves the publication was taken up. */
+type HandoffDestination = Pick<
+  PinnedHandoffConfiguration,
+  "destinationPath" | "publicationWitness"
+>;
+
+/** What reading both found, so the one path grammar answers for both in one place. */
+type HandoffDestinationRead =
+  | { readonly read: "Destination"; readonly destination: HandoffDestination }
+  | {
+      readonly read: "Incomplete";
+      readonly fault: HandoffConfigurationFault;
+    };
+
+/**
+ * Both paths a configuration names, each a template over the values the
+ * publication renders and each held to the grammar a written path must satisfy.
+ * A configuration declaring no witness is complete without one.
+ */
+function handoffDestination(
+  handoff: Record<string, unknown>,
+  parameters: ContainerBuildParameters,
+): HandoffDestinationRead {
+  const source = parameters.sourceRepositoryId;
+  const destinationPath = handoffPathTemplate(
+    handoff["destinationPath"],
+    source,
+  );
+  if (destinationPath === undefined)
+    return { read: "Incomplete", fault: "DestinationPathInvalid" };
+  const declared = handoff["publicationWitness"];
+  if (declared === undefined)
+    return { read: "Destination", destination: { destinationPath } };
+  const publicationWitness = handoffWitness(declared, source);
+  return publicationWitness === undefined
+    ? { read: "Incomplete", fault: "PublicationWitnessInvalid" }
+    : {
+        read: "Destination",
+        destination: { destinationPath, publicationWitness },
+      };
 }
 
 /** Validates the authored handoff shape without resolving any operational binding. */
@@ -316,9 +499,9 @@ export function authoredHandoffConfigurationReadiness(
   const parameters = handoffParameters(renderer["parameters"]);
   if (parameters === undefined)
     return { readiness: "Incomplete", fault: "RendererParametersInvalid" };
-  const destinationPath = handoffPath(handoff["destinationPath"]);
-  if (destinationPath === undefined)
-    return { readiness: "Incomplete", fault: "DestinationPathInvalid" };
+  const destination = handoffDestination(handoff, parameters);
+  if (destination.read === "Incomplete")
+    return { readiness: "Incomplete", fault: destination.fault };
   const outputBytesMax = handoff["outputBytesMax"];
   if (
     !Number.isSafeInteger(outputBytesMax) ||
@@ -338,7 +521,7 @@ export function authoredHandoffConfigurationReadiness(
         version: handoffRendererVersion,
         parameters,
       },
-      destinationPath,
+      ...destination.destination,
       outputBytesMax: outputBytesMax as number,
     },
   };
@@ -414,6 +597,27 @@ function handoffRendererInput(
   });
 }
 
+/**
+ * The witness this publication must come to hold, at the values the request
+ * itself resolved to. It is no part of the identity above: what proves a
+ * publication was taken up says nothing about what was published, so raising
+ * the deadline must not send the same bytes to a second path.
+ */
+function handoffPublicationWitness(
+  pinned: PinnedHandoffConfiguration,
+  values: HandoffPathValues,
+): Pick<PublishHandoffRequestConfiguration, "publicationWitness"> {
+  const declared = pinned.publicationWitness;
+  return declared === undefined
+    ? {}
+    : {
+        publicationWitness: {
+          path: handoffPathRendered(declared.pathTemplate, values),
+          provenWithinSecs: declared.provenWithinSecs,
+        },
+      };
+}
+
 /** Renders the exact accepted commit and derives the identity of every published effect. */
 export function publishHandoffConfiguration(
   pinned: PinnedHandoffConfiguration,
@@ -444,6 +648,11 @@ export function publishHandoffConfiguration(
     throw new RangeError(
       "handoff digest function does not depend on its input",
     );
+  const values: HandoffPathValues = {
+    sourceRepositoryId: pinned.renderer.parameters.sourceRepositoryId,
+    sourceCommit: acceptedWorkCommit,
+    requestDigest,
+  };
   return {
     kind: "PublishHandoff",
     pin: pinned.pin,
@@ -451,7 +660,8 @@ export function publishHandoffConfiguration(
     acceptedWorkRepository: pinned.work.repository,
     acceptedWorkCommit,
     mode: pinned.mode,
-    destinationPath: pinned.destinationPath,
+    destinationPath: handoffPathRendered(pinned.destinationPath, values),
+    ...handoffPublicationWitness(pinned, values),
     output,
     requestDigest,
   };

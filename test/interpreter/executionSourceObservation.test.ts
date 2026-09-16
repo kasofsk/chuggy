@@ -40,6 +40,7 @@ const configuredWorkSource = canonicalConfigurationOf({
       identity: "ContainerBuildRequest",
       version: 1,
       parameters: {
+        sourceRepositoryId: "work",
         targetImageRepository: "registry.example/work",
         builderProfile: "rootless",
         platforms: ["linux/amd64"],

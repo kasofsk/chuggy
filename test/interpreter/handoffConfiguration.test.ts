@@ -6,6 +6,7 @@ import { canonicalConfigurationOf } from "../../src/interpreter/authoring.ts";
 import {
   authoredHandoffConfigurationReadiness,
   asHandoffRequestDigest,
+  handoffWitnessProvenWithinSecsMax,
   pinnedHandoffConfigurationReadiness,
   promoteForHandoffConfiguration,
   publishHandoffConfiguration,
@@ -28,6 +29,29 @@ function ready(overrides: Record<string, unknown> = {}) {
   const parsed = pinnedHandoffConfigurationReadiness(canonical, pin, digest);
   if (parsed.readiness === "Incomplete") throw new Error(parsed.fault);
   return parsed.configuration;
+}
+
+/**
+ * The fixture's renderer with one parameter varied, so a case never drops the
+ * rest. A parameter varied to `undefined` is left out, which is what a
+ * configuration omitting it looks like.
+ */
+function parametersWith(
+  varied: Record<string, unknown>,
+): Record<string, unknown> {
+  const renderer = handoffFixture()["renderer"] as Record<string, unknown>;
+  const parameters = {
+    ...(renderer["parameters"] as Record<string, unknown>),
+    ...varied,
+  };
+  return {
+    renderer: {
+      ...renderer,
+      parameters: Object.fromEntries(
+        Object.entries(parameters).filter(([, value]) => value !== undefined),
+      ),
+    },
+  };
 }
 
 test("independent repository roles produce only pinned direct request configurations", () => {
@@ -84,17 +108,8 @@ test("every publication-affecting field changes the request identity", () => {
         },
       },
     }),
-    ready({
-      renderer: {
-        identity: "ContainerBuildRequest",
-        version: 1,
-        parameters: {
-          targetImageRepository: "registry.example/ledger-next",
-          builderProfile: "rootless-multiarch",
-          platforms: ["linux/amd64", "linux/arm64"],
-        },
-      },
-    }),
+    ready(parametersWith({ targetImageRepository: "registry.example/next" })),
+    ready(parametersWith({ sourceRepositoryId: "ledger-next" })),
   ];
   for (const variant of variants) {
     assert.notEqual(
@@ -152,6 +167,10 @@ test("unsupported identities, modes, refs, paths, roles, and bounds are refused"
     ],
     [document({ destinationPath: "/request.json" }), "DestinationPathInvalid"],
     [document({ outputBytesMax: 999_999 }), "OutputBoundInvalid"],
+    [
+      document(parametersWith({ sourceRepositoryId: undefined })),
+      "RendererParametersInvalid",
+    ],
   ];
   for (const [value, fault] of cases) {
     assert.deepEqual(
@@ -230,4 +249,131 @@ test("request digests refuse malformed and input-independent hash results", () =
     () => publishHandoffConfiguration(ready(), commit, () => "d".repeat(64)),
     /does not depend on its input/u,
   );
+});
+
+/** The templated paths the publication renders, which is what the effort's two sides agreed on. */
+const templated = {
+  destinationPath:
+    "requests/{sourceRepositoryId}/{sourceCommit}/{requestDigest}.json",
+  publicationWitness: {
+    pathTemplate:
+      "results/{sourceRepositoryId}/{sourceCommit}/request-{requestDigest}.json",
+    provenWithinSecs: 21_600,
+  },
+};
+
+test("a path template renders every variable it names, and the witness renders over the same values", () => {
+  const publication = publishHandoffConfiguration(
+    ready(templated),
+    commit,
+    digest,
+  );
+  const rendered = publication.requestDigest;
+  assert.equal(
+    publication.destinationPath,
+    `requests/ledger/${commit}/${rendered}.json`,
+  );
+  assert.deepEqual(publication.publicationWitness, {
+    path: `results/ledger/${commit}/request-${rendered}.json`,
+    provenWithinSecs: 21_600,
+  });
+});
+
+test("a template with no variable renders itself, and a configuration declaring no witness carries none", () => {
+  const publication = publishHandoffConfiguration(ready(), commit, digest);
+  assert.equal(publication.destinationPath, "builds/ledger/request.json");
+  assert.equal(publication.publicationWitness, undefined);
+});
+
+test("the witness is no part of the request identity, so a deadline moves no published bytes", () => {
+  const baseline = publishHandoffConfiguration(
+    ready(templated),
+    commit,
+    digest,
+  );
+  const longer = publishHandoffConfiguration(
+    ready({
+      ...templated,
+      publicationWitness: {
+        ...templated.publicationWitness,
+        provenWithinSecs: 43_200,
+      },
+    }),
+    commit,
+    digest,
+  );
+  assert.equal(longer.requestDigest, baseline.requestDigest);
+  assert.equal(longer.destinationPath, baseline.destinationPath);
+  assert.equal(longer.publicationWitness?.provenWithinSecs, 43_200);
+});
+
+test("a variable nothing renders, an unclosed one, and one escaping the repository are refused", () => {
+  const cases: readonly [Record<string, unknown>, string][] = [
+    [
+      { destinationPath: "requests/{sourceBranch}.json" },
+      "DestinationPathInvalid",
+    ],
+    [
+      { destinationPath: "requests/{sourceCommit.json" },
+      "DestinationPathInvalid",
+    ],
+    [
+      { destinationPath: "requests/}sourceCommit{.json" },
+      "DestinationPathInvalid",
+    ],
+    [
+      {
+        ...parametersWith({ sourceRepositoryId: "../.." }),
+        destinationPath: "requests/{sourceRepositoryId}/one.json",
+      },
+      "DestinationPathInvalid",
+    ],
+    [
+      { destinationPath: `${"x".repeat(500)}/{requestDigest}.json` },
+      "DestinationPathInvalid",
+    ],
+    [
+      {
+        ...templated,
+        publicationWitness: {
+          pathTemplate: "r/{nothing}.json",
+          provenWithinSecs: 60,
+        },
+      },
+      "PublicationWitnessInvalid",
+    ],
+    [
+      {
+        ...templated,
+        publicationWitness: { pathTemplate: "r.json", provenWithinSecs: 0 },
+      },
+      "PublicationWitnessInvalid",
+    ],
+    [
+      {
+        ...templated,
+        publicationWitness: {
+          pathTemplate: "r.json",
+          provenWithinSecs: handoffWitnessProvenWithinSecsMax + 1,
+        },
+      },
+      "PublicationWitnessInvalid",
+    ],
+    [
+      { ...templated, publicationWitness: "results/r.json" },
+      "PublicationWitnessInvalid",
+    ],
+  ];
+  for (const [overrides, fault] of cases) {
+    const canonical = canonicalConfigurationOf(document(overrides));
+    assert.deepEqual(
+      pinnedHandoffConfigurationReadiness(
+        canonical,
+        { revision: "revision-17", digest: digest(canonical) },
+        digest,
+      ),
+      { readiness: "Incomplete", fault },
+      JSON.stringify(overrides),
+    );
+  }
 });
